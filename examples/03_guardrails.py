@@ -17,14 +17,20 @@ agent = Agent(
 )
 
 if __name__ == "__main__":
-    # This should work fine
-    result = agent.run("What is the weather like today?")
-    print(f"Clean output: {result.output}")
+    import os
 
-    # This would be blocked by the PII guardrail if the LLM
-    # includes personal info in the response
-    try:
-        result = agent.run("Tell me about user accounts")
-        print(f"Output: {result.output}")
-    except Exception as e:
-        print(f"Blocked: {e}")
+    if not os.environ.get("OPENAI_API_KEY"):
+        print("Skipping: OPENAI_API_KEY not set")
+        print("Run with: export OPENAI_API_KEY=sk-... && python examples/03_guardrails.py")
+    else:
+        # This should work fine
+        result = agent.run("What is the weather like today?")
+        print(f"Clean output: {result.output}")
+
+        # This would be blocked by the PII guardrail if the LLM
+        # includes personal info in the response
+        try:
+            result = agent.run("Tell me about user accounts")
+            print(f"Output: {result.output}")
+        except Exception as e:
+            print(f"Blocked: {e}")

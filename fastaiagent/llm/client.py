@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Any
 
@@ -123,9 +124,14 @@ class LLMClient:
             else:
                 body["max_completion_tokens"] = max_tok
 
+        api_key = self.api_key or os.environ.get("OPENAI_API_KEY", "")
+        if not api_key:
+            raise LLMProviderError(
+                "No API key provided. Set api_key parameter or OPENAI_API_KEY env var."
+            )
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key or ''}",
+            "Authorization": f"Bearer {api_key}",
         }
 
         url = f"{self.base_url.rstrip('/')}/chat/completions"
@@ -204,9 +210,14 @@ class LLMClient:
                 })
             body["tools"] = anthropic_tools
 
+        api_key = self.api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            raise LLMProviderError(
+                "No API key provided. Set api_key parameter or ANTHROPIC_API_KEY env var."
+            )
         headers = {
             "Content-Type": "application/json",
-            "x-api-key": self.api_key or "",
+            "x-api-key": api_key,
             "anthropic-version": "2023-06-01",
         }
 

@@ -21,7 +21,13 @@ agent = Agent(
 )
 
 if __name__ == "__main__":
-    result = agent.run("Please greet Alice")
-    print(f"Output: {result.output}")
-    print(f"Tool calls: {result.tool_calls}")
-    print(f"Tokens used: {result.tokens_used}")
+    import os
+
+    if not os.environ.get("OPENAI_API_KEY"):
+        print("Skipping: OPENAI_API_KEY not set")
+        print("Run with: export OPENAI_API_KEY=sk-... && python examples/01_simple_agent.py")
+    else:
+        result = agent.run("Please greet Alice")
+        print(f"Output: {result.output}")
+        print(f"Tool calls: {result.tool_calls}")
+        print(f"Tokens used: {result.tokens_used}")

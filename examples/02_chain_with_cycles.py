@@ -37,6 +37,12 @@ chain.connect("evaluate", "research", max_iterations=3, exit_condition="quality 
 chain.connect("evaluate", "respond", condition="quality >= 0.8")
 
 if __name__ == "__main__":
-    result = chain.execute({"message": "What are the latest trends in AI agents?"})
-    print(f"Output: {result.output}")
-    print(f"Execution ID: {result.execution_id}")
+    import os
+
+    if not os.environ.get("OPENAI_API_KEY"):
+        print("Skipping: OPENAI_API_KEY not set")
+        print("Run with: export OPENAI_API_KEY=sk-... && python examples/02_chain_with_cycles.py")
+    else:
+        result = chain.execute({"message": "What are the latest trends in AI agents?"})
+        print(f"Output: {result.output}")
+        print(f"Execution ID: {result.execution_id}")
