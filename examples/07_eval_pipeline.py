@@ -29,12 +29,14 @@ def has_answer(input: str, output: str, expected: str | None = None) -> ScorerRe
 
 if __name__ == "__main__":
     # Define test cases
-    dataset = Dataset.from_list([
-        {"input": "What is 2+2?", "expected": "4"},
-        {"input": "What color is the sky?", "expected": "blue"},
-        {"input": "Who wrote Hamlet?", "expected": "Shakespeare"},
-        {"input": "What is quantum computing?", "expected": "quantum"},
-    ])
+    dataset = Dataset.from_list(
+        [
+            {"input": "What is 2+2?", "expected": "4"},
+            {"input": "What color is the sky?", "expected": "blue"},
+            {"input": "Who wrote Hamlet?", "expected": "Shakespeare"},
+            {"input": "What is quantum computing?", "expected": "quantum"},
+        ]
+    )
 
     # Run evaluation with multiple scorers
     results = evaluate(

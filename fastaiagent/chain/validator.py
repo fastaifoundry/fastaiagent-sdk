@@ -5,9 +5,7 @@ from __future__ import annotations
 from fastaiagent.chain.node import Edge, NodeConfig
 
 
-def detect_cycles(
-    nodes: list[NodeConfig], edges: list[Edge]
-) -> list[list[str]]:
+def detect_cycles(nodes: list[NodeConfig], edges: list[Edge]) -> list[list[str]]:
     """Find all cycles in the chain graph. Returns list of node-id cycles."""
     adj: dict[str, list[str]] = {n.id: [] for n in nodes}
     for e in edges:
@@ -38,9 +36,7 @@ def detect_cycles(
     return cycles
 
 
-def validate_chain(
-    nodes: list[NodeConfig], edges: list[Edge]
-) -> list[str]:
+def validate_chain(nodes: list[NodeConfig], edges: list[Edge]) -> list[str]:
     """Validate chain structure. Returns list of error messages."""
     errors: list[str] = []
     node_ids = {n.id for n in nodes}
@@ -70,8 +66,7 @@ def validate_chain(
             max_iter = edge.cycle_config.get("max_iterations")
             if not max_iter or max_iter < 1:
                 errors.append(
-                    f"Cyclic edge {edge.source} → {edge.target} "
-                    f"must have max_iterations >= 1"
+                    f"Cyclic edge {edge.source} → {edge.target} must have max_iterations >= 1"
                 )
 
     return errors

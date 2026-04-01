@@ -53,7 +53,7 @@ class ForkedReplay:
         self._steps = steps
         self._modifications: dict[str, Any] = {}
 
-    def modify_input(self, new_input: dict) -> ForkedReplay:
+    def modify_input(self, new_input: dict[str, Any]) -> ForkedReplay:
         self._modifications["input"] = new_input
         return self
 
@@ -65,7 +65,7 @@ class ForkedReplay:
         self._modifications["config"] = kwargs
         return self
 
-    def modify_state(self, new_state: dict) -> ForkedReplay:
+    def modify_state(self, new_state: dict[str, Any]) -> ForkedReplay:
         self._modifications["state"] = new_state
         return self
 

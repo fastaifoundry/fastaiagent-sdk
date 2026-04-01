@@ -191,6 +191,7 @@ class TestChainExecution:
     @pytest.mark.asyncio
     async def test_hitl_with_handler(self):
         """HITL node calls the handler."""
+
         def handler(node, context, state):
             return True
 

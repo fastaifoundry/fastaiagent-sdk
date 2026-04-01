@@ -223,7 +223,7 @@ for c in chunks:
 | Field | Type | Description |
 |-------|------|-------------|
 | `chunk` | `Chunk` | The matched chunk |
-| `score` | `float` | Cosine similarity score (0.0–1.0) |
+| `score` | `float` | Cosine similarity score (0.0-1.0) |
 
 ### Chunk
 
@@ -346,3 +346,11 @@ agent = Agent(
 result = agent.run("Can I return a digital product?")
 print(result.output)
 ```
+
+---
+
+## Next Steps
+
+- [Agents](../agents/index.md) — Build agents that use knowledge bases
+- [Tools](../tools/index.md) — Learn about tool types
+- [Evaluation](../evaluation/index.md) — Test knowledge base accuracy

@@ -31,7 +31,7 @@ class ToolCall(BaseModel):
     name: str
     arguments: dict[str, Any] = Field(default_factory=dict)
 
-    def to_openai_format(self) -> dict:
+    def to_openai_format(self) -> dict[str, Any]:
         """Convert to OpenAI function-calling format."""
         import json
 
@@ -54,7 +54,7 @@ class Message(BaseModel):
     tool_calls: list[ToolCall] | None = None
     tool_call_id: str | None = None
 
-    def to_openai_format(self) -> dict:
+    def to_openai_format(self) -> dict[str, Any]:
         """Convert to OpenAI-compatible message dict."""
         msg: dict[str, Any] = {"role": self.role.value}
         if self.content is not None:
@@ -68,7 +68,7 @@ class Message(BaseModel):
         return msg
 
     @classmethod
-    def from_openai_format(cls, data: dict) -> Message:
+    def from_openai_format(cls, data: dict[str, Any]) -> Message:
         """Create from an OpenAI-compatible message dict."""
         import json
 
@@ -80,9 +80,7 @@ class Message(BaseModel):
                 args = func.get("arguments", "{}")
                 if isinstance(args, str):
                     args = json.loads(args) if args else {}
-                tool_calls.append(
-                    ToolCall(id=tc["id"], name=func["name"], arguments=args)
-                )
+                tool_calls.append(ToolCall(id=tc["id"], name=func["name"], arguments=args))
         return cls(
             role=MessageRole(data["role"]),
             content=data.get("content"),

@@ -28,7 +28,7 @@ class MCPTool(Tool):
         tool_name: str = "",
         auth_token: str | None = None,
         description: str = "",
-        parameters: dict | None = None,
+        parameters: dict[str, Any] | None = None,
     ):
         self.server_url = server_url
         self.tool_name = tool_name or name
@@ -36,8 +36,8 @@ class MCPTool(Tool):
         super().__init__(name=name, description=description, parameters=parameters)
 
     async def _send_jsonrpc(
-        self, method: str, params: dict | None = None
-    ) -> dict:
+        self, method: str, params: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """Send a JSON-RPC 2.0 request to the MCP server."""
         import httpx
 
@@ -58,15 +58,15 @@ class MCPTool(Tool):
             data = resp.json()
 
         if "error" in data:
-            raise ToolExecutionError(
-                f"MCP error: {data['error'].get('message', 'Unknown')}"
-            )
-        return data.get("result", {})
+            raise ToolExecutionError(f"MCP error: {data['error'].get('message', 'Unknown')}")
+        result: dict[str, Any] = data.get("result", {})
+        return result
 
-    async def discover_tools(self) -> list[dict]:
+    async def discover_tools(self) -> list[dict[str, Any]]:
         """List available tools on the MCP server."""
         result = await self._send_jsonrpc("tools/list")
-        return result.get("tools", [])
+        tools: list[dict[str, Any]] = result.get("tools", [])
+        return tools
 
     async def aexecute(self, arguments: dict[str, Any]) -> ToolResult:
         """Execute the tool via MCP server."""
@@ -98,14 +98,14 @@ class MCPTool(Tool):
     def _tool_type(self) -> str:
         return "mcp"
 
-    def _config_dict(self) -> dict:
+    def _config_dict(self) -> dict[str, Any]:
         return {
             "server_url": self.server_url,
             "tool_name": self.tool_name,
         }
 
     @classmethod
-    def _from_dict(cls, data: dict) -> MCPTool:
+    def _from_dict(cls, data: dict[str, Any]) -> MCPTool:
         config = data.get("config", {})
         return cls(
             name=data["name"],

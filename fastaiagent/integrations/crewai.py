@@ -12,11 +12,9 @@ def enable() -> None:
         return
 
     try:
-        import crewai  # type: ignore[import-not-found]  # noqa: F401
+        import crewai  # noqa: F401
     except ImportError:
-        raise ImportError(
-            "CrewAI is required. Install with: pip install fastaiagent[crewai]"
-        )
+        raise ImportError("CrewAI is required. Install with: pip install fastaiagent[crewai]")
 
     _enabled = True
 

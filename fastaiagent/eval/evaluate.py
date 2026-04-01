@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from fastaiagent._internal.async_utils import run_sync
+from fastaiagent._internal.errors import EvalError
 from fastaiagent.eval.builtins import BUILTIN_SCORERS
 from fastaiagent.eval.dataset import Dataset
 from fastaiagent.eval.results import EvalResults
@@ -15,8 +16,8 @@ from fastaiagent.eval.scorer import Scorer
 
 
 def evaluate(
-    agent_fn: Callable,
-    dataset: Dataset | str | list[dict],
+    agent_fn: Callable[..., Any],
+    dataset: Dataset | str | list[dict[str, Any]],
     scorers: list[Scorer | str] | None = None,
     concurrency: int = 4,
     **kwargs: Any,
@@ -31,14 +32,12 @@ def evaluate(
         )
         print(results.summary())
     """
-    return run_sync(
-        aevaluate(agent_fn, dataset, scorers, concurrency, **kwargs)
-    )
+    return run_sync(aevaluate(agent_fn, dataset, scorers, concurrency, **kwargs))
 
 
 async def aevaluate(
-    agent_fn: Callable,
-    dataset: Dataset | str | list[dict],
+    agent_fn: Callable[..., Any],
+    dataset: Dataset | str | list[dict[str, Any]],
     scorers: list[Scorer | str] | None = None,
     concurrency: int = 4,
     **kwargs: Any,
@@ -60,13 +59,18 @@ async def aevaluate(
 
     # Resolve scorers
     resolved_scorers: list[Scorer] = []
-    for s in (scorers or ["exact_match"]):
+    for s in scorers or ["exact_match"]:
         if isinstance(s, str):
             cls = BUILTIN_SCORERS.get(s)
             if cls:
                 resolved_scorers.append(cls())
             else:
-                raise ValueError(f"Unknown scorer: {s}")
+                available = ", ".join(sorted(BUILTIN_SCORERS.keys()))
+                raise EvalError(
+                    f"Unknown scorer '{s}'. "
+                    f"Available built-in scorers: {available}. "
+                    f"Or pass a Scorer instance directly."
+                )
         else:
             resolved_scorers.append(s)
 
@@ -75,7 +79,7 @@ async def aevaluate(
     # Run evaluation
     sem = asyncio.Semaphore(concurrency)
 
-    async def eval_one(item: dict) -> None:
+    async def eval_one(item: dict[str, Any]) -> None:
         async with sem:
             input_text = item.get("input", str(item))
             expected = item.get("expected_output", item.get("expected"))

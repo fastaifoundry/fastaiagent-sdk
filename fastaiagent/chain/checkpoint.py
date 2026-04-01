@@ -70,11 +70,11 @@ class CheckpointStore:
         execution_id: str,
         node_id: str,
         node_index: int,
-        state_snapshot: dict,
-        node_input: dict | None = None,
-        node_output: dict | None = None,
+        state_snapshot: dict[str, Any],
+        node_input: dict[str, Any] | None = None,
+        node_output: dict[str, Any] | None = None,
         iteration: int = 0,
-        iteration_counters: dict | None = None,
+        iteration_counters: dict[str, int] | None = None,
     ) -> Checkpoint:
         """Save a checkpoint after a node completes."""
         cp = Checkpoint(
@@ -98,11 +98,18 @@ class CheckpointStore:
                 iteration_counters, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                cp.id, cp.chain_name, cp.execution_id, cp.node_id,
-                cp.node_index, cp.status,
-                json.dumps(cp.state_snapshot), json.dumps(cp.node_input),
-                json.dumps(cp.node_output), cp.iteration,
-                json.dumps(cp.iteration_counters), cp.created_at,
+                cp.id,
+                cp.chain_name,
+                cp.execution_id,
+                cp.node_id,
+                cp.node_index,
+                cp.status,
+                json.dumps(cp.state_snapshot),
+                json.dumps(cp.node_input),
+                json.dumps(cp.node_output),
+                cp.iteration,
+                json.dumps(cp.iteration_counters),
+                cp.created_at,
             ),
         )
         return cp
@@ -125,7 +132,7 @@ class CheckpointStore:
         )
         return self._row_to_checkpoint(row) if row else None
 
-    def _row_to_checkpoint(self, row: dict) -> Checkpoint:
+    def _row_to_checkpoint(self, row: dict[str, Any]) -> Checkpoint:
         return Checkpoint(
             id=row["id"],
             chain_name=row["chain_name"],

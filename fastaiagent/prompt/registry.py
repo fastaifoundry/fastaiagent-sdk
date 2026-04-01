@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import Any
 
 from fastaiagent.prompt.fragment import Fragment
 from fastaiagent.prompt.prompt import Prompt
@@ -29,7 +30,7 @@ class PromptRegistry:
         name: str,
         template: str,
         fragments: list[str] | None = None,
-        metadata: dict | None = None,
+        metadata: dict[str, Any] | None = None,
         version: int | None = None,
     ) -> Prompt:
         """Register a new prompt (creates a new version)."""
@@ -58,9 +59,7 @@ class PromptRegistry:
         self._fragments[name] = fragment
         return fragment
 
-    def load(
-        self, name: str, version: int | None = None, alias: str | None = None
-    ) -> Prompt:
+    def load(self, name: str, version: int | None = None, alias: str | None = None) -> Prompt:
         """Load a prompt, resolving {{@fragment}} references."""
         prompt = self._storage.load_prompt(name, version=version, alias=alias)
 
@@ -78,7 +77,7 @@ class PromptRegistry:
     def _resolve_fragments(self, template: str) -> str:
         """Replace {{@fragment_name}} with fragment content."""
 
-        def replacer(match: re.Match) -> str:
+        def replacer(match: re.Match[str]) -> str:
             frag_name = match.group(1)
             # Check in-memory cache first
             if frag_name in self._fragments:
@@ -91,9 +90,10 @@ class PromptRegistry:
             except Exception:
                 return match.group(0)  # leave unresolved
 
-        return re.sub(r"\{\{@(\w+)\}\}", replacer, template)
+        result: str = re.sub(r"\{\{@(\w+)\}\}", replacer, template)
+        return result
 
-    def list(self) -> list[dict]:
+    def list(self) -> list[dict[str, Any]]:
         """List all registered prompts."""
         return self._storage.list_prompts()
 

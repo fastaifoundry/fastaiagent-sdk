@@ -39,6 +39,9 @@ coverage.xml
 .fastaiagent/
 .prompts/
 
+# MkDocs build output
+site/
+
 # Internal / private
 claude_files/
 

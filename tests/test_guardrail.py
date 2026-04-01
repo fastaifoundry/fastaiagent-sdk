@@ -296,9 +296,7 @@ class TestExecutor:
                 fn=lambda text: True,
             ),
         ]
-        results = await execute_guardrails(
-            guardrails, "test data", GuardrailPosition.output
-        )
+        results = await execute_guardrails(guardrails, "test data", GuardrailPosition.output)
         assert len(results) == 2
         assert all(r.passed for r in results)
 
@@ -313,9 +311,7 @@ class TestExecutor:
             ),
         ]
         with pytest.raises(GuardrailBlockedError, match="blocker"):
-            await execute_guardrails(
-                guardrails, "test data", GuardrailPosition.output
-            )
+            await execute_guardrails(guardrails, "test data", GuardrailPosition.output)
 
     @pytest.mark.asyncio
     async def test_non_blocking_doesnt_raise(self):
@@ -327,9 +323,7 @@ class TestExecutor:
                 fn=lambda text: False,
             ),
         ]
-        results = await execute_guardrails(
-            guardrails, "test data", GuardrailPosition.output
-        )
+        results = await execute_guardrails(guardrails, "test data", GuardrailPosition.output)
         assert len(results) == 1
         assert results[0].passed is False
 
@@ -347,7 +341,5 @@ class TestExecutor:
                 fn=lambda text: True,
             ),
         ]
-        results = await execute_guardrails(
-            guardrails, "test", GuardrailPosition.input
-        )
+        results = await execute_guardrails(guardrails, "test", GuardrailPosition.input)
         assert len(results) == 1

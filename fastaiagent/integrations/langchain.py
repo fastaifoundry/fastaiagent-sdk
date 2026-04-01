@@ -14,7 +14,7 @@ def enable() -> None:
         return
 
     try:
-        import langchain_core.callbacks  # type: ignore[import-not-found]  # noqa: F401
+        import langchain_core.callbacks  # noqa: F401
     except ImportError:
         raise ImportError(
             "langchain-core is required. Install with: pip install fastaiagent[langchain]"
@@ -32,16 +32,18 @@ def disable() -> None:
 def get_callback_handler() -> Any:
     """Get the FastAIAgent LangChain callback handler."""
     try:
-        from langchain_core.callbacks import BaseCallbackHandler  # type: ignore[import-not-found]
+        from langchain_core.callbacks import BaseCallbackHandler
     except ImportError:
         raise ImportError(
             "langchain-core is required. Install with: pip install fastaiagent[langchain]"
         )
 
-    class FastAIAgentCallbackHandler(BaseCallbackHandler):
+    class FastAIAgentCallbackHandler(BaseCallbackHandler):  # type: ignore[misc]
         """LangChain callback handler that emits OTel spans."""
 
-        def on_llm_start(self, serialized: dict, prompts: list[str], **kwargs: Any) -> None:
+        def on_llm_start(
+            self, serialized: dict[str, Any], prompts: list[str], **kwargs: Any
+        ) -> None:
             from fastaiagent.trace.otel import get_tracer
 
             tracer = get_tracer("fastaiagent.integrations.langchain")
@@ -54,7 +56,7 @@ def get_callback_handler() -> Any:
             if spans:
                 spans[-1].end()
 
-        def on_tool_start(self, serialized: dict, input_str: str, **kwargs: Any) -> None:
+        def on_tool_start(self, serialized: dict[str, Any], input_str: str, **kwargs: Any) -> None:
             from fastaiagent.trace.otel import get_tracer
 
             tracer = get_tracer("fastaiagent.integrations.langchain")

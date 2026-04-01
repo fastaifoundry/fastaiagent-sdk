@@ -72,8 +72,14 @@ def toxicity_check(
 ) -> Guardrail:
     """Create a keyword-based toxicity guardrail."""
     toxic_words = [
-        "hate", "kill", "attack", "destroy", "threat",
-        "racist", "sexist", "slur",
+        "hate",
+        "kill",
+        "attack",
+        "destroy",
+        "threat",
+        "racist",
+        "sexist",
+        "slur",
     ]
 
     def check_toxicity(text: str) -> GuardrailResult:

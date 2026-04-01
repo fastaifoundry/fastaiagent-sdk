@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import re
 import uuid
+from collections.abc import Callable
 from typing import Any
 
 from fastaiagent._internal.errors import (
@@ -19,7 +20,7 @@ from fastaiagent.chain.state import ChainState
 def _render_template(template: str, context: dict[str, Any]) -> str:
     """Render {{path.to.value}} templates against context."""
 
-    def replacer(match: re.Match) -> str:
+    def replacer(match: re.Match[str]) -> str:
         path = match.group(1).strip()
         parts = path.split(".")
         value: Any = context
@@ -46,14 +47,15 @@ def _evaluate_condition(expression: str, context: dict[str, Any]) -> bool:
     rendered = _render_template(expression, context)
 
     # Try simple comparisons: "value >= 0.8", "status == done"
-    for op, fn in [
+    comparisons: list[tuple[str, Callable[[str, str], bool]]] = [
         (">=", lambda a, b: float(a) >= float(b)),
         ("<=", lambda a, b: float(a) <= float(b)),
         ("!=", lambda a, b: str(a).strip() != str(b).strip()),
         ("==", lambda a, b: str(a).strip() == str(b).strip()),
         (">", lambda a, b: float(a) > float(b)),
         ("<", lambda a, b: float(a) < float(b)),
-    ]:
+    ]
+    for op, fn in comparisons:
         if op in rendered:
             parts = rendered.split(op, 1)
             if len(parts) == 2:
@@ -70,7 +72,7 @@ async def execute_chain(
     nodes: list[NodeConfig],
     edges: list[Edge],
     initial_state: dict[str, Any],
-    state_schema: dict | None = None,
+    state_schema: dict[str, Any] | None = None,
     checkpoint_store: CheckpointStore | None = None,
     chain_name: str = "",
     execution_id: str | None = None,
@@ -117,7 +119,16 @@ async def execute_chain(
 
         step_count += 1
         if step_count > max_total_steps:
-            raise ChainError(f"Chain exceeded maximum total steps ({max_total_steps})")
+            name = chain_name or "unnamed"
+            raise ChainError(
+                f"Chain '{name}' exceeded maximum total steps "
+                f"({max_total_steps}). This usually means cycles "
+                f"are not terminating as expected.\n"
+                f"Options:\n"
+                f"  1. Review exit_condition on cyclic edges\n"
+                f"  2. Lower max_iterations on cycles\n"
+                f"  3. Split the chain into smaller sub-chains"
+            )
 
         # Build context for this node
         context = {
@@ -174,9 +185,15 @@ async def execute_chain(
             if iteration_counters[counter_key] >= max_iter:
                 on_max = edge.cycle_config.get("on_max_reached", "error")
                 if on_max == "error":
+                    src, tgt = edge.source, edge.target
                     raise ChainCycleError(
-                        f"Cycle {edge.source} → {edge.target} exceeded "
-                        f"max_iterations ({max_iter})"
+                        f"Cycle '{src}' -> '{tgt}' exceeded "
+                        f"max_iterations ({max_iter}).\n"
+                        f"Options:\n"
+                        f"  1. Increase the limit: "
+                        f"max_iterations={max_iter * 2}\n"
+                        f"  2. Add an exit_condition\n"
+                        f"  3. Set on_max_reached='continue'"
                     )
                 continue  # "continue" or "exit_to_node" — just proceed
 
@@ -265,7 +282,7 @@ async def _execute_node(
                 if isinstance(r, Exception):
                     outputs.append({"error": str(r)})
                 else:
-                    outputs.append({"output": r.output})
+                    outputs.append({"output": getattr(r, "output", str(r))})
             return {"outputs": outputs}
         return {"outputs": []}
 
@@ -282,9 +299,7 @@ async def _execute_node(
         return {"error": f"Unknown node type: {node.type}"}
 
 
-def _topological_sort(
-    nodes: list[NodeConfig], edges: list[Edge]
-) -> list[str]:
+def _topological_sort(nodes: list[NodeConfig], edges: list[Edge]) -> list[str]:
     """Topological sort of nodes, ignoring cyclic edges."""
     adj: dict[str, list[str]] = {n.id: [] for n in nodes}
     in_degree: dict[str, int] = {n.id: 0 for n in nodes}

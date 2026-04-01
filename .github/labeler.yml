@@ -1,0 +1,42 @@
+documentation:
+  - changed-files:
+      - any-glob-to-any-file: ["docs/**", "*.md"]
+tests:
+  - changed-files:
+      - any-glob-to-any-file: ["tests/**"]
+ci:
+  - changed-files:
+      - any-glob-to-any-file: [".github/**"]
+agents:
+  - changed-files:
+      - any-glob-to-any-file: ["fastaiagent/agent/**"]
+chains:
+  - changed-files:
+      - any-glob-to-any-file: ["fastaiagent/chain/**"]
+tools:
+  - changed-files:
+      - any-glob-to-any-file: ["fastaiagent/tool/**"]
+guardrails:
+  - changed-files:
+      - any-glob-to-any-file: ["fastaiagent/guardrail/**"]
+tracing:
+  - changed-files:
+      - any-glob-to-any-file: ["fastaiagent/trace/**"]
+evaluation:
+  - changed-files:
+      - any-glob-to-any-file: ["fastaiagent/eval/**"]
+knowledge-base:
+  - changed-files:
+      - any-glob-to-any-file: ["fastaiagent/kb/**"]
+prompts:
+  - changed-files:
+      - any-glob-to-any-file: ["fastaiagent/prompt/**"]
+integrations:
+  - changed-files:
+      - any-glob-to-any-file: ["fastaiagent/integrations/**"]
+platform:
+  - changed-files:
+      - any-glob-to-any-file: ["fastaiagent/_platform/**", "fastaiagent/deploy/**"]
+cli:
+  - changed-files:
+      - any-glob-to-any-file: ["fastaiagent/cli/**"]

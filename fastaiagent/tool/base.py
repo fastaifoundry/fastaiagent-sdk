@@ -31,7 +31,7 @@ class Tool:
         self,
         name: str,
         description: str = "",
-        parameters: dict | None = None,
+        parameters: dict[str, Any] | None = None,
     ):
         self.name = name
         self.description = description
@@ -45,7 +45,7 @@ class Tool:
         """Execute the tool asynchronously. Override in subclasses."""
         raise NotImplementedError("Subclasses must implement aexecute()")
 
-    def to_openai_format(self) -> dict:
+    def to_openai_format(self) -> dict[str, Any]:
         """Convert to OpenAI function-calling tool format."""
         return {
             "type": "function",
@@ -56,7 +56,7 @@ class Tool:
             },
         }
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to canonical format."""
         return {
             "name": self.name,
@@ -69,18 +69,18 @@ class Tool:
     def _tool_type(self) -> str:
         return "base"
 
-    def _config_dict(self) -> dict:
+    def _config_dict(self) -> dict[str, Any]:
         return {}
 
     @classmethod
-    def from_dict(cls, data: dict) -> Tool:
+    def from_dict(cls, data: dict[str, Any]) -> Tool:
         """Deserialize from canonical format — dispatches to correct subclass."""
         from fastaiagent.tool.function import FunctionTool
         from fastaiagent.tool.mcp import MCPTool
         from fastaiagent.tool.rest import RESTTool
 
         tool_type = data.get("tool_type", "function")
-        dispatch = {
+        dispatch: dict[str, type[Tool]] = {
             "function": FunctionTool,
             "rest_api": RESTTool,
             "mcp": MCPTool,
@@ -92,4 +92,5 @@ class Tool:
                 description=data.get("description", ""),
                 parameters=data.get("parameters"),
             )
-        return target_cls._from_dict(data)
+        result: Tool = target_cls._from_dict(data)  # type: ignore[attr-defined]
+        return result

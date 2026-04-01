@@ -25,8 +25,11 @@ class ToolUsageAccuracy(Scorer):
         correct = len(expected_tools & actual_tools)
         score = correct / max(len(expected_tools), 1)
 
-        return ScorerResult(score=score, passed=score >= 0.5,
-                            reason=f"Correct tools: {correct}/{len(expected_tools)}")
+        return ScorerResult(
+            score=score,
+            passed=score >= 0.5,
+            reason=f"Correct tools: {correct}/{len(expected_tools)}",
+        )
 
 
 class StepEfficiency(Scorer):
@@ -43,8 +46,11 @@ class StepEfficiency(Scorer):
             return ScorerResult(score=1.0, passed=True)
 
         score = min(expected_steps / actual_steps, 1.0)
-        return ScorerResult(score=score, passed=score >= 0.5,
-                            reason=f"Steps: {actual_steps} (expected: {expected_steps})")
+        return ScorerResult(
+            score=score,
+            passed=score >= 0.5,
+            reason=f"Steps: {actual_steps} (expected: {expected_steps})",
+        )
 
 
 class PathCorrectness(Scorer):
@@ -62,11 +68,12 @@ class PathCorrectness(Scorer):
 
         lcs_len = self._lcs_length(actual, expected_traj)
         score = lcs_len / max(len(expected_traj), 1)
-        return ScorerResult(score=score, passed=score >= 0.5,
-                            reason=f"Path LCS: {lcs_len}/{len(expected_traj)}")
+        return ScorerResult(
+            score=score, passed=score >= 0.5, reason=f"Path LCS: {lcs_len}/{len(expected_traj)}"
+        )
 
     @staticmethod
-    def _lcs_length(a: list, b: list) -> int:
+    def _lcs_length(a: list[Any], b: list[Any]) -> int:
         m, n = len(a), len(b)
         dp = [[0] * (n + 1) for _ in range(m + 1)]
         for i in range(1, m + 1):
@@ -97,5 +104,6 @@ class CycleEfficiency(Scorer):
                 cycles += 1
 
         score = 1.0 - (cycles / max(len(actual), 1))
-        return ScorerResult(score=max(score, 0.0), passed=score >= 0.5,
-                            reason=f"Cycles: {cycles}/{len(actual)}")
+        return ScorerResult(
+            score=max(score, 0.0), passed=score >= 0.5, reason=f"Cycles: {cycles}/{len(actual)}"
+        )

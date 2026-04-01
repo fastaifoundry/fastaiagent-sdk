@@ -29,7 +29,7 @@ class RESTTool(Tool):
         headers: dict[str, str] | None = None,
         body_mapping: str = "json_body",
         description: str = "",
-        parameters: dict | None = None,
+        parameters: dict[str, Any] | None = None,
     ):
         self.url = url
         self.method = method.upper()
@@ -73,7 +73,7 @@ class RESTTool(Tool):
     def _tool_type(self) -> str:
         return "rest_api"
 
-    def _config_dict(self) -> dict:
+    def _config_dict(self) -> dict[str, Any]:
         return {
             "url": self.url,
             "method": self.method,
@@ -82,7 +82,7 @@ class RESTTool(Tool):
         }
 
     @classmethod
-    def _from_dict(cls, data: dict) -> RESTTool:
+    def _from_dict(cls, data: dict[str, Any]) -> RESTTool:
         config = data.get("config", {})
         return cls(
             name=data["name"],

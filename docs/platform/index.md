@@ -32,7 +32,7 @@ The SDK serializes resources to canonical JSON format and sends them to the plat
 
 A domain is the top-level workspace that isolates resources and team access.
 
-- Go to Settings → Domains → Create Domain
+- Go to Settings -> Domains -> Create Domain
 - Give it a name (e.g., "Engineering", "Customer Support")
 
 ### 3. Create a Project
@@ -40,12 +40,12 @@ A domain is the top-level workspace that isolates resources and team access.
 A project groups related agents, chains, and tools within a domain.
 
 - Navigate to your domain
-- Go to Projects → Create Project
+- Go to Projects -> Create Project
 - Give it a name (e.g., "Support Bots", "Internal Tools")
 
 ### 4. Create an API Key
 
-- Go to Settings → API Keys → Create Key
+- Go to Settings -> API Keys -> Create Key
 - Select the **domain** and optionally a specific **project**
 - Select scopes: `agent:write`, `chain:write`, `tool:write`, `guardrail:write`, `prompt:write`
 - Copy the key (shown only once): `fa_k_...`
@@ -389,3 +389,12 @@ for r in results:
 # Created: chain:demo-pipeline
 # Created: prompt:demo-prompt
 ```
+
+---
+
+## Next Steps
+
+- [Agents](../agents/index.md) — Build agents to push to the platform
+- [Chains](../chains/index.md) — Build chains for the visual editor
+- [Prompts](../prompts/index.md) — Manage prompts with versioning
+- [Integrations](../integrations/index.md) — Auto-trace external frameworks

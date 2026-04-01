@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from fastaiagent.kb.chunking import Chunk, chunk_text
 from fastaiagent.kb.document import Document, ingest_file
 from fastaiagent.kb.embedding import Embedder, get_default_embedder
 from fastaiagent.kb.search import SearchResult, search
+from fastaiagent.tool.base import Tool
 
 
 class LocalKB:
@@ -37,7 +39,7 @@ class LocalKB:
         self._chunks: list[Chunk] = []
         self._embeddings: list[list[float]] = []
 
-    def add(self, path_or_text: str, metadata: dict | None = None) -> int:
+    def add(self, path_or_text: str, metadata: dict[str, Any] | None = None) -> int:
         """Add a file or raw text to the knowledge base. Returns chunk count.
 
         If path_or_text is a valid file path, the file is ingested.
@@ -87,7 +89,7 @@ class LocalKB:
         query_emb = self._embedder.embed([query])[0]
         return search(query_emb, self._embeddings, self._chunks, top_k=top_k)
 
-    def as_tool(self):
+    def as_tool(self) -> Tool:
         """Create a FunctionTool that wraps this KB for agent use."""
         from fastaiagent.tool.function import FunctionTool
 
@@ -106,7 +108,7 @@ class LocalKB:
             description=f"Search the '{self.name}' knowledge base",
         )
 
-    def status(self) -> dict:
+    def status(self) -> dict[str, Any]:
         """Get KB status."""
         return {
             "name": self.name,

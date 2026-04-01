@@ -67,7 +67,7 @@ class LLMClient:
     def complete(
         self,
         messages: list[Message],
-        tools: list[dict] | None = None,
+        tools: list[dict[str, Any]] | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """Synchronous completion."""
@@ -76,17 +76,17 @@ class LLMClient:
     async def acomplete(
         self,
         messages: list[Message],
-        tools: list[dict] | None = None,
+        tools: list[dict[str, Any]] | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """Async completion — routes to the appropriate provider."""
         start = time.monotonic()
         provider_fn = self._get_provider_fn()
-        response = await provider_fn(messages, tools, **kwargs)
+        response: LLMResponse = await provider_fn(messages, tools, **kwargs)
         response.latency_ms = int((time.monotonic() - start) * 1000)
         return response
 
-    def _get_provider_fn(self):
+    def _get_provider_fn(self) -> Any:
         providers = {
             "openai": self._call_openai,
             "anthropic": self._call_anthropic,
@@ -97,11 +97,16 @@ class LLMClient:
         }
         fn = providers.get(self.provider)
         if fn is None:
-            raise LLMError(f"Unsupported provider: {self.provider}")
+            supported = ", ".join(sorted(providers.keys()))
+            raise LLMError(
+                f"Unsupported provider '{self.provider}'. "
+                f"Supported providers: {supported}.\n"
+                f"Example: LLMClient(provider='openai', model='gpt-4o')"
+            )
         return fn
 
     async def _call_openai(
-        self, messages: list[Message], tools: list[dict] | None = None, **kwargs: Any
+        self, messages: list[Message], tools: list[dict[str, Any]] | None = None, **kwargs: Any
     ) -> LLMResponse:
         """Call OpenAI-compatible endpoint."""
         import httpx
@@ -126,7 +131,10 @@ class LLMClient:
         api_key = self.api_key or os.environ.get("OPENAI_API_KEY", "")
         if not api_key:
             raise LLMProviderError(
-                "No API key provided. Set api_key parameter or OPENAI_API_KEY env var."
+                f"No API key for provider '{self.provider}'. "
+                f"Set the api_key parameter or the OPENAI_API_KEY environment variable.\n"
+                f"Example: LLMClient(provider='{self.provider}', "
+                f"model='{self.model}', api_key='sk-...')"
             )
         headers = {
             "Content-Type": "application/json",
@@ -137,14 +145,12 @@ class LLMClient:
         async with httpx.AsyncClient(timeout=120) as client:
             resp = await client.post(url, json=body, headers=headers)
             if resp.status_code != 200:
-                raise LLMProviderError(
-                    f"OpenAI API error {resp.status_code}: {resp.text}"
-                )
+                raise LLMProviderError(f"OpenAI API error {resp.status_code}: {resp.text}")
             data = resp.json()
 
         return self._parse_openai_response(data)
 
-    def _parse_openai_response(self, data: dict) -> LLMResponse:
+    def _parse_openai_response(self, data: dict[str, Any]) -> LLMResponse:
         """Parse OpenAI-compatible response into LLMResponse."""
         import json
 
@@ -158,9 +164,7 @@ class LLMClient:
                 args = func.get("arguments", "{}")
                 if isinstance(args, str):
                     args = json.loads(args) if args else {}
-                tool_calls.append(
-                    ToolCall(id=tc["id"], name=func["name"], arguments=args)
-                )
+                tool_calls.append(ToolCall(id=tc["id"], name=func["name"], arguments=args))
 
         return LLMResponse(
             content=msg.get("content"),
@@ -171,7 +175,7 @@ class LLMClient:
         )
 
     async def _call_anthropic(
-        self, messages: list[Message], tools: list[dict] | None = None, **kwargs: Any
+        self, messages: list[Message], tools: list[dict[str, Any]] | None = None, **kwargs: Any
     ) -> LLMResponse:
         """Call Anthropic Messages API."""
         import httpx
@@ -182,33 +186,39 @@ class LLMClient:
         #   - assistant messages with tool_calls → content blocks with type: tool_use
         #   - tool messages → user messages with content blocks type: tool_result
         system_parts = []
-        filtered_msgs: list[dict] = []
+        filtered_msgs: list[dict[str, Any]] = []
         for m in messages:
             if m.role == MessageRole.system:
                 system_parts.append(m.content or "")
             elif m.role == MessageRole.assistant and m.tool_calls:
                 # Convert to Anthropic tool_use content blocks
-                content: list[dict] = []
+                content: list[dict[str, Any]] = []
                 if m.content:
                     content.append({"type": "text", "text": m.content})
                 for tc in m.tool_calls:
-                    content.append({
-                        "type": "tool_use",
-                        "id": tc.id,
-                        "name": tc.name,
-                        "input": tc.arguments,
-                    })
+                    content.append(
+                        {
+                            "type": "tool_use",
+                            "id": tc.id,
+                            "name": tc.name,
+                            "input": tc.arguments,
+                        }
+                    )
                 filtered_msgs.append({"role": "assistant", "content": content})
             elif m.role == MessageRole.tool:
                 # Convert to Anthropic tool_result content block
-                filtered_msgs.append({
-                    "role": "user",
-                    "content": [{
-                        "type": "tool_result",
-                        "tool_use_id": m.tool_call_id,
-                        "content": m.content or "",
-                    }],
-                })
+                filtered_msgs.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": m.tool_call_id,
+                                "content": m.content or "",
+                            }
+                        ],
+                    }
+                )
             else:
                 filtered_msgs.append(m.to_openai_format())
 
@@ -227,19 +237,24 @@ class LLMClient:
             anthropic_tools = []
             for t in tools:
                 func = t.get("function", t)
-                anthropic_tools.append({
-                    "name": func["name"],
-                    "description": func.get("description", ""),
-                    "input_schema": func.get(
-                        "parameters", {"type": "object", "properties": {}}
-                    ),
-                })
+                anthropic_tools.append(
+                    {
+                        "name": func["name"],
+                        "description": func.get("description", ""),
+                        "input_schema": func.get(
+                            "parameters", {"type": "object", "properties": {}}
+                        ),
+                    }
+                )
             body["tools"] = anthropic_tools
 
         api_key = self.api_key or os.environ.get("ANTHROPIC_API_KEY", "")
         if not api_key:
             raise LLMProviderError(
-                "No API key provided. Set api_key parameter or ANTHROPIC_API_KEY env var."
+                f"No API key for provider 'anthropic'. "
+                f"Set the api_key parameter or the ANTHROPIC_API_KEY environment variable.\n"
+                f"Example: LLMClient(provider='anthropic', "
+                f"model='{self.model}', api_key='sk-ant-...')"
             )
         headers = {
             "Content-Type": "application/json",
@@ -251,9 +266,7 @@ class LLMClient:
         async with httpx.AsyncClient(timeout=120) as client:
             resp = await client.post(url, json=body, headers=headers)
             if resp.status_code != 200:
-                raise LLMProviderError(
-                    f"Anthropic API error {resp.status_code}: {resp.text}"
-                )
+                raise LLMProviderError(f"Anthropic API error {resp.status_code}: {resp.text}")
             data = resp.json()
 
         # Parse Anthropic response
@@ -276,9 +289,7 @@ class LLMClient:
         usage = {
             "prompt_tokens": usage_raw.get("input_tokens", 0),
             "completion_tokens": usage_raw.get("output_tokens", 0),
-            "total_tokens": (
-                usage_raw.get("input_tokens", 0) + usage_raw.get("output_tokens", 0)
-            ),
+            "total_tokens": (usage_raw.get("input_tokens", 0) + usage_raw.get("output_tokens", 0)),
         }
 
         # Normalize finish reason
@@ -297,7 +308,7 @@ class LLMClient:
         )
 
     async def _call_ollama(
-        self, messages: list[Message], tools: list[dict] | None = None, **kwargs: Any
+        self, messages: list[Message], tools: list[dict[str, Any]] | None = None, **kwargs: Any
     ) -> LLMResponse:
         """Call Ollama API."""
         import httpx
@@ -324,9 +335,7 @@ class LLMClient:
         async with httpx.AsyncClient(timeout=120) as client:
             resp = await client.post(url, json=body)
             if resp.status_code != 200:
-                raise LLMProviderError(
-                    f"Ollama API error {resp.status_code}: {resp.text}"
-                )
+                raise LLMProviderError(f"Ollama API error {resp.status_code}: {resp.text}")
             data = resp.json()
 
         msg = data.get("message", {})
@@ -345,9 +354,7 @@ class LLMClient:
         usage = {
             "prompt_tokens": data.get("prompt_eval_count", 0),
             "completion_tokens": data.get("eval_count", 0),
-            "total_tokens": (
-                data.get("prompt_eval_count", 0) + data.get("eval_count", 0)
-            ),
+            "total_tokens": (data.get("prompt_eval_count", 0) + data.get("eval_count", 0)),
         }
 
         finish_reason = "tool_calls" if tool_calls else "stop"
@@ -361,17 +368,15 @@ class LLMClient:
         )
 
     async def _call_bedrock(
-        self, messages: list[Message], tools: list[dict] | None = None, **kwargs: Any
+        self, messages: list[Message], tools: list[dict[str, Any]] | None = None, **kwargs: Any
     ) -> LLMResponse:
         """Call AWS Bedrock (via boto3)."""
         try:
             import boto3
         except ImportError:
             raise LLMError(
-                "boto3 is required for Bedrock provider. "
-                "Install it with: pip install boto3"
+                "boto3 is required for Bedrock provider. Install it with: pip install boto3"
             )
-
 
         client = boto3.client("bedrock-runtime", region_name=self._extra.get("region", "us-east-1"))
         msg_dicts = [m.to_openai_format() for m in messages]
@@ -421,9 +426,7 @@ class LLMClient:
         usage = {
             "prompt_tokens": usage_raw.get("inputTokens", 0),
             "completion_tokens": usage_raw.get("outputTokens", 0),
-            "total_tokens": (
-                usage_raw.get("inputTokens", 0) + usage_raw.get("outputTokens", 0)
-            ),
+            "total_tokens": (usage_raw.get("inputTokens", 0) + usage_raw.get("outputTokens", 0)),
         }
 
         stop_reason = response.get("stopReason", "")
@@ -440,7 +443,7 @@ class LLMClient:
             finish_reason=finish_reason,
         )
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to canonical format."""
         data: dict[str, Any] = {
             "provider": self.provider,
@@ -455,7 +458,7 @@ class LLMClient:
         return data
 
     @classmethod
-    def from_dict(cls, data: dict) -> LLMClient:
+    def from_dict(cls, data: dict[str, Any]) -> LLMClient:
         """Deserialize from canonical format."""
         return cls(
             provider=data.get("provider", "openai"),

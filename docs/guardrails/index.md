@@ -315,7 +315,7 @@ for r in results:
 | Field | Type | Description |
 |-------|------|-------------|
 | `passed` | `bool` | Whether validation passed |
-| `score` | `float \| None` | Optional quality score (0.0–1.0) |
+| `score` | `float \| None` | Optional quality score (0.0-1.0) |
 | `message` | `str \| None` | Human-readable explanation |
 | `execution_time_ms` | `int` | How long the check took |
 | `metadata` | `dict` | Extra data (e.g., detected PII types, blocked categories) |
@@ -352,3 +352,11 @@ except GuardrailBlockedError as e:
     print(f"Message: {e}")                    # Why it blocked
     print(f"Results: {e.results}")            # All guardrail results up to the failure
 ```
+
+---
+
+## Next Steps
+
+- [Agents](../agents/index.md) — Attach guardrails to agents
+- [Tools](../tools/index.md) — Guard tool calls and results
+- [Platform Sync](../platform/index.md) — Push guardrails to the platform

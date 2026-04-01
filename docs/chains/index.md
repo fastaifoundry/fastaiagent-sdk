@@ -38,7 +38,7 @@ print(result.execution_id)     # UUID for checkpointing/resume
 | `condition` | Branch based on state | See [Conditional Branching](#conditional-branching) |
 | `transformer` | Render a template | `chain.add_node("fmt", type=NodeType.transformer, template="Hello {{state.name}}")` |
 | `parallel` | Run multiple agents concurrently | See [Parallel Execution](#parallel-execution) |
-| `hitl` | Pause for human approval | See [Human-in-the-Loop](#human-in-the-loop) |
+| `hitl` | Pause for human approval | See [Human-in-the-Loop](hitl.md) |
 | `start` / `end` | Explicit entry/exit points | `chain.add_node("in", type=NodeType.start)` |
 
 ```python
@@ -69,29 +69,6 @@ chain.connect("classify", "general_agent")  # default fallback
 ```
 
 Condition expressions support: `==`, `!=`, `>`, `<`, `>=`, `<=`, `contains`, `startswith`. Values are resolved from chain state using `{{path.to.value}}` templates.
-
-### Cyclic Edges (Retry Loops)
-
-Create loops that retry until a condition is met or a max iteration count is reached:
-
-```python
-chain.connect("research", "evaluate")
-chain.connect(
-    "evaluate", "research",
-    max_iterations=3,                    # Max 3 retries
-    exit_condition="quality >= 0.8",     # Exit loop when quality is high enough
-)
-chain.connect("evaluate", "respond", condition="quality >= 0.8")
-```
-
-**Cycle configuration:**
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `max_iterations` | Upper bound on loop count | Required for cyclic edges |
-| `exit_condition` | Expression to exit early | None (runs until max) |
-
-When `max_iterations` is exceeded, a `ChainCycleError` is raised.
 
 ## Typed State
 
@@ -134,89 +111,6 @@ chain.add_node(
     template="Customer {{state.name}} (priority: {{state.priority}}): {{node_results.classify.output}}",
 )
 ```
-
-## Checkpointing
-
-Chains automatically checkpoint state after each node. If execution fails, you can resume from the last successful checkpoint.
-
-```python
-from fastaiagent.chain.checkpoint import CheckpointStore
-
-# Enable checkpointing (on by default)
-chain = Chain("my-pipeline")
-chain.add_node("step1", agent=agent1)
-chain.add_node("step2", agent=agent2)
-chain.add_node("step3", agent=agent3)
-chain.connect("step1", "step2")
-chain.connect("step2", "step3")
-
-# First run — step2 might fail
-try:
-    result = chain.execute({"input": "data"})
-except Exception as e:
-    print(f"Failed at: {e}")
-    print(f"Execution ID: {result.execution_id}")  # Save this
-```
-
-### Resuming from Checkpoint
-
-```python
-# Resume from where it failed
-result = await chain.resume(
-    execution_id="<saved-execution-id>",
-    modified_state={"retry_count": 1},  # Optional: modify state before resuming
-)
-```
-
-### Custom Checkpoint Store
-
-```python
-store = CheckpointStore(db_path="/path/to/checkpoints.db")
-chain = Chain("my-pipeline", checkpoint_store=store)
-```
-
-### Inspecting Checkpoints
-
-```python
-store = CheckpointStore()
-checkpoints = store.load(execution_id="<id>")
-for cp in checkpoints:
-    print(f"Node: {cp.node_id}, State: {cp.state_snapshot}")
-
-latest = store.get_latest(execution_id="<id>")
-print(f"Last completed: {latest.node_id}")
-```
-
-### Disabling Checkpointing
-
-For lightweight chains that don't need persistence:
-
-```python
-chain = Chain("quick-pipeline", checkpoint_enabled=False)
-```
-
-## Human-in-the-Loop
-
-HITL nodes pause execution for human approval:
-
-```python
-chain = Chain("approval-pipeline")
-chain.add_node("draft", agent=drafter_agent)
-chain.add_node("review", type=NodeType.hitl)
-chain.add_node("send", agent=sender_agent)
-chain.connect("draft", "review")
-chain.connect("review", "send")
-
-# With a custom approval handler
-def approval_handler(node, context, state):
-    draft = context["node_results"]["draft"]
-    print(f"Review this draft: {draft}")
-    return input("Approve? (y/n): ").lower() == "y"
-
-result = chain.execute({"message": "Write a response"}, hitl_handler=approval_handler)
-```
-
-If no handler is provided, HITL nodes auto-approve (useful for testing).
 
 ## Parallel Execution
 
@@ -287,7 +181,7 @@ Every chain execution returns a `ChainResult`:
 | `output` | `Any` | Final node's output |
 | `final_state` | `dict` | Chain state after all nodes complete |
 | `execution_id` | `str` | UUID for checkpointing and resume |
-| `node_results` | `dict` | Map of node_id → output for each executed node |
+| `node_results` | `dict` | Map of node_id -> output for each executed node |
 
 ```python
 result = chain.execute({"message": "Hello"})
@@ -395,3 +289,13 @@ result = chain.execute(
 )
 print(result.output)
 ```
+
+---
+
+## Next Steps
+
+- [Cyclic Workflows](cyclic-workflows.md) — Retry loops, max iterations, and exit conditions
+- [Checkpointing](checkpointing.md) — Save and resume chain execution
+- [Human-in-the-Loop](hitl.md) — Pause chains for human approval
+- [Agents](../agents/index.md) — Core agent documentation
+- [Platform Sync](../platform/index.md) — Push chains to the platform visual editor

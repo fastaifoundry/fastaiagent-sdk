@@ -12,7 +12,7 @@ def run_eval(
     dataset: str = typer.Option(..., help="Path to dataset (JSONL or CSV)"),
     agent: str = typer.Option(..., help="Agent module:function (e.g., myapp:agent.run)"),
     scorers: str = typer.Option("exact_match", help="Comma-separated scorer names"),
-):
+) -> None:
     """Run an evaluation."""
     console.print(f"Running evaluation with dataset={dataset}, agent={agent}, scorers={scorers}")
     console.print("[dim]Use the Python API for full evaluation features.[/dim]")
@@ -22,6 +22,6 @@ def run_eval(
 def compare_evals(
     run_a: str = typer.Argument(..., help="First eval run file"),
     run_b: str = typer.Argument(..., help="Second eval run file"),
-):
+) -> None:
     """Compare two evaluation runs."""
     console.print(f"Comparing {run_a} vs {run_b}")

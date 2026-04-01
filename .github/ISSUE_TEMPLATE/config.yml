@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions & Discussions
+    url: https://github.com/fastaifoundry/fastaiagent-sdk/discussions
+    about: Ask questions, share ideas, and discuss FastAIAgent SDK
+  - name: Discord Community
+    url: https://discord.gg/fastaiagent
+    about: Chat with the community and get help in real-time

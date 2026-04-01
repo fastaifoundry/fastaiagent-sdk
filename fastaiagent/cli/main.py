@@ -22,7 +22,7 @@ app.add_typer(kb_app, name="kb", help="Manage knowledge bases")
 
 
 @app.command()
-def version():
+def version() -> None:
     """Show the SDK version."""
     from fastaiagent._version import __version__
 
@@ -42,7 +42,7 @@ def push(
         help="Agent module:name to push (e.g., myapp:support_agent)",
     ),
     chain: str | None = typer.Option(None, help="Chain module:name to push"),
-):
+) -> None:
     """Push resources to the FastAIAgent platform."""
     from rich.console import Console
 

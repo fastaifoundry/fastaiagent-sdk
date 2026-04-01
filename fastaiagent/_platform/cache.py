@@ -6,6 +6,7 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,7 @@ class OfflineCache:
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
-    def get(self, key: str) -> dict | None:
+    def get(self, key: str) -> dict[str, Any] | None:
         """Get cached data. Returns None if expired or missing."""
         path = self.cache_dir / f"{key}.json"
         if not path.exists():
@@ -31,17 +32,18 @@ class OfflineCache:
             if expires_at and datetime.fromisoformat(expires_at) < datetime.now(timezone.utc):
                 path.unlink(missing_ok=True)
                 return None
-            return data.get("value")
+            result: dict[str, Any] | None = data.get("value")
+            return result
         except Exception:
             return None
 
-    def set(self, key: str, value: dict, ttl_seconds: int = 3600) -> None:
+    def set(self, key: str, value: dict[str, Any], ttl_seconds: int = 3600) -> None:
         """Cache data with TTL."""
         path = self.cache_dir / f"{key}.json"
         expires_at = (datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)).isoformat()
         path.write_text(json.dumps({"value": value, "expires_at": expires_at}))
 
-    def buffer_push(self, resource_type: str, data: dict) -> None:
+    def buffer_push(self, resource_type: str, data: dict[str, Any]) -> None:
         """Buffer a push for later retry when platform is reachable."""
         buffer_dir = self.cache_dir / "push_buffer"
         buffer_dir.mkdir(exist_ok=True)
@@ -49,7 +51,7 @@ class OfflineCache:
         path = buffer_dir / f"{resource_type}_{ts}.json"
         path.write_text(json.dumps({"type": resource_type, "data": data}))
 
-    def get_buffered_pushes(self) -> list[dict]:
+    def get_buffered_pushes(self) -> list[dict[str, Any]]:
         """Get all buffered pushes."""
         buffer_dir = self.cache_dir / "push_buffer"
         if not buffer_dir.exists():

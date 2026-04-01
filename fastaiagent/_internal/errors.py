@@ -1,5 +1,7 @@
 """All custom exception classes for the FastAIAgent SDK."""
 
+from typing import Any
+
 
 class FastAIAgentError(Exception):
     """Base exception for all FastAIAgent SDK errors."""
@@ -87,10 +89,16 @@ class GuardrailError(FastAIAgentError):
 class GuardrailBlockedError(GuardrailError):
     """A blocking guardrail rejected the input/output."""
 
-    def __init__(self, guardrail_name: str, message: str = "", results: list | None = None):
+    def __init__(self, guardrail_name: str, message: str = "", results: list[Any] | None = None):
         self.guardrail_name = guardrail_name
         self.results = results or []
         super().__init__(message or f"Blocked by guardrail: {guardrail_name}")
+
+    def __repr__(self) -> str:
+        return (
+            f"GuardrailBlockedError(guardrail_name={self.guardrail_name!r}, "
+            f"results={self.results!r})"
+        )
 
 
 # --- Trace errors ---
@@ -117,6 +125,14 @@ class PlatformAuthError(PlatformError):
 
 class PlatformTierLimitError(PlatformError):
     """Platform tier limit reached."""
+
+    def __init__(self, message: str = "", resource_type: str = "", limit: int = 0):
+        self.resource_type = resource_type
+        self.limit = limit
+        super().__init__(message or f"Tier limit reached for {resource_type} (limit: {limit})")
+
+    def __repr__(self) -> str:
+        return f"PlatformTierLimitError(resource_type={self.resource_type!r}, limit={self.limit!r})"
 
 
 class PlatformNotFoundError(PlatformError):

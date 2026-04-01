@@ -43,7 +43,4 @@ def search(
     scores.sort(key=lambda x: x[1], reverse=True)
     top = scores[:top_k]
 
-    return [
-        SearchResult(chunk=chunks[idx], score=score)
-        for idx, score in top
-    ]
+    return [SearchResult(chunk=chunks[idx], score=score) for idx, score in top]

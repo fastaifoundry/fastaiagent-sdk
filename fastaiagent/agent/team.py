@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from fastaiagent._internal.async_utils import run_sync
@@ -56,9 +57,7 @@ class Supervisor:
         self.system_prompt = system_prompt or self._build_supervisor_prompt()
 
     def _build_supervisor_prompt(self) -> str:
-        worker_desc = "\n".join(
-            f"- {w.role}: {w.description}" for w in self.workers
-        )
+        worker_desc = "\n".join(f"- {w.role}: {w.description}" for w in self.workers)
         return (
             f"You are a supervisor managing a team of workers.\n"
             f"Available workers:\n{worker_desc}\n\n"
@@ -66,13 +65,14 @@ class Supervisor:
             f"Synthesize results into a final answer."
         )
 
-    def _build_worker_tools(self) -> list[Tool]:
+    def _build_worker_tools(self) -> Sequence[Tool]:
         """Create tool definitions for each worker."""
         from fastaiagent.tool.function import FunctionTool
 
-        tools = []
+        tools: list[Tool] = []
         for worker in self.workers:
-            async def delegate(task: str, _worker=worker) -> str:
+
+            async def delegate(task: str, _worker: Worker = worker) -> str:
                 result = await _worker.agent.arun(task)
                 return result.output
 

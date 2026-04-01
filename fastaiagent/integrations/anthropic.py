@@ -16,7 +16,7 @@ def enable() -> None:
         return
 
     try:
-        import anthropic  # type: ignore[import-not-found]
+        import anthropic
     except ImportError:
         raise ImportError(
             "Anthropic SDK is required. Install with: pip install fastaiagent[anthropic]"
@@ -53,7 +53,7 @@ def disable() -> None:
     if not _enabled:
         return
     try:
-        import anthropic  # type: ignore[import-not-found]
+        import anthropic
 
         if _original_create:
             anthropic.resources.messages.Messages.create = _original_create

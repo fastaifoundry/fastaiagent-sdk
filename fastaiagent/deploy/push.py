@@ -42,9 +42,12 @@ def push_resource(api: PlatformAPI, resource: Any, **kwargs: Any) -> PushResult:
     elif isinstance(resource, Prompt):
         return _push_prompt(api, resource)
     else:
-        raise TypeError(
-            f"Cannot push {type(resource).__name__}. "
-            f"Pushable types: Agent, Chain, Tool, Guardrail, Prompt."
+        from fastaiagent._internal.errors import FastAIAgentError
+
+        raise FastAIAgentError(
+            f"Cannot push object of type '{type(resource).__name__}'. "
+            f"Pushable types: Agent, Chain, Tool, Guardrail, Prompt.\n"
+            f"Example: fa.push(Agent(name='my-agent', ...)) or fa.push(Chain(name='my-chain', ...))"
         )
 
 
@@ -59,7 +62,7 @@ def push_all(api: PlatformAPI, resources: list[Any]) -> list[PushResult]:
     from fastaiagent.prompt.prompt import Prompt
     from fastaiagent.tool.base import Tool
 
-    payload: dict[str, list[dict]] = {
+    payload: dict[str, list[dict[str, Any]]] = {
         "tools": [],
         "guardrails": [],
         "agents": [],
@@ -94,9 +97,12 @@ def push_all(api: PlatformAPI, resources: list[Any]) -> list[PushResult]:
 def _push_agent(api: PlatformAPI, agent: Any) -> PushResult:
     """Push an agent with its tools and guardrails."""
     data = agent.to_dict()
-    result = api.post("/public/v1/sdk/push", {
-        "agents": [data],
-    })
+    result = api.post(
+        "/public/v1/sdk/push",
+        {
+            "agents": [data],
+        },
+    )
     created_items = result.get("created", [])
     updated_items = result.get("updated", [])
 
@@ -114,7 +120,7 @@ def _push_agent(api: PlatformAPI, agent: Any) -> PushResult:
 
 def _push_chain(api: PlatformAPI, chain: Any) -> PushResult:
     """Push a chain. Node agents are pushed separately if attached."""
-    payload: dict[str, list[dict]] = {"chains": [chain.to_dict()], "agents": []}
+    payload: dict[str, list[dict[str, Any]]] = {"chains": [chain.to_dict()], "agents": []}
 
     # Auto-push agents attached to nodes
     for node in chain.nodes:

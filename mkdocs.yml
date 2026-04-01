@@ -1,0 +1,125 @@
+site_name: FastAIAgent SDK
+site_url: https://docs.fastaiagent.net
+site_description: "Build, debug, evaluate, and operate AI agents. The only SDK with fork-and-rerun Agent Replay."
+repo_url: https://github.com/fastaifoundry/fastaiagent-sdk
+repo_name: fastaifoundry/fastaiagent-sdk
+copyright: Copyright &copy; 2026 FastAIFoundry
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.indexes
+    - search.highlight
+    - search.suggest
+    - toc.follow
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [.]
+          options:
+            show_source: true
+            show_root_heading: true
+            show_bases: true
+            show_signature_annotations: true
+            separate_signature: true
+            members_order: source
+            docstring_style: google
+  - section-index
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.snippets
+  - pymdownx.inlinehilite
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+  - tables
+  - def_list
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - getting-started/index.md
+      - Installation: getting-started/installation.md
+      - "Build Your First Agent": getting-started/first-agent.md
+  - Agents:
+      - agents/index.md
+      - Tools: agents/tools.md
+      - Memory: agents/memory.md
+      - "Multi-Agent Teams": agents/teams.md
+  - Chains:
+      - chains/index.md
+      - "Cyclic Workflows": chains/cyclic-workflows.md
+      - Checkpointing: chains/checkpointing.md
+      - "Human-in-the-Loop": chains/hitl.md
+  - Guardrails:
+      - guardrails/index.md
+  - Tools:
+      - tools/index.md
+      - "Function Tools": tools/function-tools.md
+      - "REST Tools": tools/rest-tools.md
+      - "MCP Tools": tools/mcp-tools.md
+      - "Schema Drift Detection": tools/schema-drift.md
+  - Prompts:
+      - prompts/index.md
+  - Knowledge Base:
+      - knowledge-base/index.md
+  - Evaluation:
+      - evaluation/index.md
+      - "LLM-as-Judge": evaluation/llm-judge.md
+      - "Trajectory Scoring": evaluation/trajectory-scoring.md
+      - "Session Scoring": evaluation/session-scoring.md
+  - Tracing:
+      - tracing/index.md
+  - Agent Replay:
+      - replay/index.md
+  - Platform:
+      - platform/index.md
+  - Integrations:
+      - integrations/index.md
+  - CLI Reference:
+      - cli/index.md
+  - Tutorials:
+      - tutorials/index.md
+      - "Build Your First Agent in 5 Minutes": tutorials/first-agent.md
+      - "Trace a LangChain Agent in 2 Minutes": tutorials/trace-langchain.md
+      - "Debug with Agent Replay": tutorials/debug-with-replay.md
+  - Migration Guides:
+      - migration-guides/index.md
+      - "From LangSmith": migration-guides/from-langsmith.md
+      - "From Langfuse": migration-guides/from-langfuse.md
+      - "From MLflow": migration-guides/from-mlflow.md
+  - API Reference:
+      - api-reference/index.md

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastaiagent._internal.errors import GuardrailBlockedError
 from fastaiagent.guardrail.guardrail import GuardrailPosition, GuardrailResult
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 async def execute_guardrails(
     guardrails: list[Guardrail],
-    data: str | dict,
+    data: str | dict[str, Any],
     position: GuardrailPosition,
 ) -> list[GuardrailResult]:
     """Execute guardrails for a given position.
@@ -52,8 +52,6 @@ async def execute_guardrails(
             if isinstance(r, GuardrailResult):
                 results.append(r)
             elif isinstance(r, Exception):
-                results.append(
-                    GuardrailResult(passed=False, message=str(r))
-                )
+                results.append(GuardrailResult(passed=False, message=str(r)))
 
     return results

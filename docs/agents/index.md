@@ -174,35 +174,6 @@ guardrail = Guardrail(
 - `blocking=True` — raises `GuardrailBlockedError` if validation fails
 - `blocking=False` — logs the failure but continues execution
 
-## Agent with Memory
-
-Memory lets agents remember previous conversations.
-
-```python
-from fastaiagent import Agent, LLMClient
-from fastaiagent.agent import AgentMemory
-
-memory = AgentMemory(max_messages=20)
-
-agent = Agent(
-    name="assistant",
-    system_prompt="Remember what users tell you. Be brief.",
-    llm=LLMClient(provider="openai", model="gpt-4.1"),
-    memory=memory,
-)
-
-agent.run("My name is Alice.")
-result = agent.run("What's my name?")
-print(result.output)  # "Your name is Alice."
-
-# Save memory to disk
-memory.save("memory.json")
-
-# Load in a new session
-new_memory = AgentMemory()
-new_memory.load("memory.json")
-```
-
 ## Agent Configuration
 
 ```python
@@ -218,39 +189,6 @@ agent = Agent(
         max_tokens=1000,      # Max response tokens
     ),
 )
-```
-
-## Supervisor / Worker Teams
-
-A supervisor agent delegates tasks to specialized worker agents.
-
-```python
-from fastaiagent import Agent, LLMClient
-from fastaiagent.agent import Supervisor, Worker
-
-researcher = Agent(
-    name="researcher",
-    system_prompt="Research topics thoroughly. Return facts only.",
-    llm=LLMClient(provider="openai", model="gpt-4.1"),
-)
-
-writer = Agent(
-    name="writer",
-    system_prompt="Write clear, concise content from research.",
-    llm=LLMClient(provider="anthropic", model="claude-sonnet-4-20250514"),
-)
-
-supervisor = Supervisor(
-    name="team-lead",
-    llm=LLMClient(provider="openai", model="gpt-4.1"),
-    workers=[
-        Worker(agent=researcher, role="researcher", description="Finds facts"),
-        Worker(agent=writer, role="writer", description="Writes content"),
-    ],
-)
-
-result = supervisor.run("Write a summary of AI trends in 2025")
-print(result.output)
 ```
 
 ## Sync vs Async
@@ -314,3 +252,13 @@ except GuardrailBlockedError as e:
 except LLMProviderError as e:
     print(f"LLM error: {e}")
 ```
+
+---
+
+## Next Steps
+
+- [Agent Memory](memory.md) — Give agents conversation memory across turns
+- [Multi-Agent Teams](teams.md) — Build supervisor/worker agent teams
+- [Tools](tools.md) — Deep dive into using tools with agents
+- [Guardrails](../guardrails/index.md) — Full guardrail reference
+- [Chains](../chains/index.md) — Compose agents into multi-step workflows

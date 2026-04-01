@@ -11,12 +11,18 @@ from fastaiagent.kb import LocalKB
 kb = LocalKB(name="product-docs", path="/tmp/fastaiagent-example-kb/")
 
 # Add some content
-kb.add("Our refund policy allows returns within 30 days of purchase. "
-       "Items must be in original condition. Digital products are non-refundable.")
-kb.add("Shipping typically takes 3-5 business days for domestic orders. "
-       "International shipping takes 7-14 business days. Express shipping is available.")
-kb.add("To contact support, email support@example.com or call 1-800-EXAMPLE. "
-       "Support hours are Monday-Friday 9am-5pm EST.")
+kb.add(
+    "Our refund policy allows returns within 30 days of purchase. "
+    "Items must be in original condition. Digital products are non-refundable."
+)
+kb.add(
+    "Shipping typically takes 3-5 business days for domestic orders. "
+    "International shipping takes 7-14 business days. Express shipping is available."
+)
+kb.add(
+    "To contact support, email support@example.com or call 1-800-EXAMPLE. "
+    "Support hours are Monday-Friday 9am-5pm EST."
+)
 
 print(f"KB status: {kb.status()}")
 

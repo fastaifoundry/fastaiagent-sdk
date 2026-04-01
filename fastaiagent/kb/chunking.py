@@ -21,7 +21,7 @@ def chunk_text(
     text: str,
     chunk_size: int = 512,
     overlap: int = 50,
-    metadata: dict | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> list[Chunk]:
     """Recursively split text into chunks."""
     if not text.strip():
@@ -51,9 +51,7 @@ def chunk_text(
     return result
 
 
-def _recursive_split(
-    text: str, separators: list[str], chunk_size: int
-) -> list[str]:
+def _recursive_split(text: str, separators: list[str], chunk_size: int) -> list[str]:
     """Split text recursively using separators in order."""
     if len(text) <= chunk_size:
         return [text.strip()] if text.strip() else []

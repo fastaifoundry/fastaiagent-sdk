@@ -46,10 +46,7 @@ if __name__ == "__main__":
 
     if not os.environ.get("OPENAI_API_KEY"):
         print("Skipping: OPENAI_API_KEY not set")
-        print(
-            "Run: export OPENAI_API_KEY=sk-..."
-            " && python examples/02_chain_with_cycles.py"
-        )
+        print("Run: export OPENAI_API_KEY=sk-... && python examples/02_chain_with_cycles.py")
     else:
         print("Running research → respond chain...")
         result = chain.execute({"message": "AI agent frameworks in 2025"})

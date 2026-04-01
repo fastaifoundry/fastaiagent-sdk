@@ -8,10 +8,7 @@ from fastaiagent.eval.builtins import Contains, ExactMatch
 
 def bench_eval(num_cases=100):
     # Create dataset
-    items = [
-        {"input": f"Question {i}", "expected": f"answer_{i}"}
-        for i in range(num_cases)
-    ]
+    items = [{"input": f"Question {i}", "expected": f"answer_{i}"} for i in range(num_cases)]
     dataset = Dataset.from_list(items)
 
     # Simple agent (no LLM calls)

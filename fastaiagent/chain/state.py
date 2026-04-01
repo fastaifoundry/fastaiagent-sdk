@@ -36,14 +36,12 @@ class ChainState:
         """Restore from a checkpoint snapshot."""
         return cls(initial=data)
 
-    def validate(self, schema: dict) -> None:
+    def validate(self, schema: dict[str, Any]) -> None:
         """Validate state against a JSON Schema. Raises on failure."""
         violations = validate_schema(schema, self._data)
         if violations:
             messages = [v.message for v in violations[:5]]
-            raise ChainStateValidationError(
-                f"State validation failed: {'; '.join(messages)}"
-            )
+            raise ChainStateValidationError(f"State validation failed: {'; '.join(messages)}")
 
     @property
     def data(self) -> dict[str, Any]:

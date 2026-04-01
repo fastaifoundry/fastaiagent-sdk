@@ -56,9 +56,7 @@ def _get_json_type(value: Any) -> str:
     return type(value).__name__
 
 
-def validate_schema(
-    schema: dict, response: Any, path: str = ""
-) -> list[SchemaViolation]:
+def validate_schema(schema: dict[str, Any], response: Any, path: str = "") -> list[SchemaViolation]:
     """Validate a response against a JSON Schema and return violations."""
     violations: list[SchemaViolation] = []
 
@@ -96,9 +94,7 @@ def validate_schema(
         for field_name, field_schema in properties.items():
             if field_name in response:
                 field_path = f"{path}.{field_name}" if path else field_name
-                violations.extend(
-                    validate_schema(field_schema, response[field_name], field_path)
-                )
+                violations.extend(validate_schema(field_schema, response[field_name], field_path))
 
         # Check for unexpected fields (additionalProperties)
         if schema.get("additionalProperties") is False:
@@ -142,7 +138,7 @@ def _type_matches(expected: str, value: Any) -> bool:
 
 
 def detect_drift(
-    tool_name: str, output_schema: dict, responses: list[Any]
+    tool_name: str, output_schema: dict[str, Any], responses: list[Any]
 ) -> DriftReport:
     """Detect schema drift across multiple tool responses."""
     all_violations: list[SchemaViolation] = []

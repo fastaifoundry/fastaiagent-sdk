@@ -54,7 +54,7 @@ class Guardrail:
         config: dict[str, Any] | None = None,
         blocking: bool = True,
         description: str = "",
-        fn: Callable | None = None,
+        fn: Callable[..., Any] | None = None,
     ):
         self.name = name
         self.guardrail_type = guardrail_type
@@ -64,11 +64,11 @@ class Guardrail:
         self.description = description
         self.fn = fn  # for code guardrails with inline function
 
-    def execute(self, data: str | dict) -> GuardrailResult:
+    def execute(self, data: str | dict[str, Any]) -> GuardrailResult:
         """Execute the guardrail synchronously."""
         return run_sync(self.aexecute(data))
 
-    async def aexecute(self, data: str | dict) -> GuardrailResult:
+    async def aexecute(self, data: str | dict[str, Any]) -> GuardrailResult:
         """Execute the guardrail asynchronously."""
         import time
 
@@ -79,7 +79,7 @@ class Guardrail:
         result.execution_time_ms = int((time.monotonic() - start) * 1000)
         return result
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to canonical format."""
         return {
             "name": self.name,
@@ -91,7 +91,7 @@ class Guardrail:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> Guardrail:
+    def from_dict(cls, data: dict[str, Any]) -> Guardrail:
         """Deserialize from canonical format."""
         return cls(
             name=data["name"],

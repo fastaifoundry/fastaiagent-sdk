@@ -32,7 +32,7 @@ def serialize_value(value: Any) -> Any:
     return str(value)
 
 
-def to_json(data: dict, pretty: bool = False) -> str:
+def to_json(data: dict[str, Any], pretty: bool = False) -> str:
     """Convert a dict to JSON string."""
     kwargs: dict[str, Any] = {}
     if pretty:
@@ -40,6 +40,7 @@ def to_json(data: dict, pretty: bool = False) -> str:
     return json.dumps(data, default=str, **kwargs)
 
 
-def from_json(text: str) -> dict:
+def from_json(text: str) -> dict[str, Any]:
     """Parse a JSON string to dict."""
-    return json.loads(text)
+    result: dict[str, Any] = json.loads(text)
+    return result

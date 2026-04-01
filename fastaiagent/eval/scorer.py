@@ -27,7 +27,7 @@ class Scorer:
         raise NotImplementedError
 
     @staticmethod
-    def code(name: str | None = None) -> Callable:
+    def code(name: str | None = None) -> Callable[..., Any]:
         """Decorator to create a custom code scorer.
 
         Example:
@@ -36,7 +36,7 @@ class Scorer:
                 return ScorerResult(score=1.0 if len(output) > 10 else 0.0, passed=len(output) > 10)
         """
 
-        def decorator(fn: Callable) -> CodeScorer:
+        def decorator(fn: Callable[..., Any]) -> CodeScorer:
             return CodeScorer(name=name or fn.__name__, fn=fn)
 
         return decorator
@@ -45,7 +45,7 @@ class Scorer:
 class CodeScorer(Scorer):
     """A scorer backed by a Python function."""
 
-    def __init__(self, name: str, fn: Callable):
+    def __init__(self, name: str, fn: Callable[..., Any]):
         self.name = name
         self._fn = fn
 

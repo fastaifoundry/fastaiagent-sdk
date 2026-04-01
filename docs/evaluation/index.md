@@ -244,157 +244,6 @@ def scored(input, output, expected=None):
     return len(output) / 100  # Score based on length
 ```
 
-## LLM Judge
-
-Use an LLM to evaluate output quality:
-
-```python
-from fastaiagent.eval import LLMJudge
-
-judge = LLMJudge(
-    criteria="correctness",
-    llm=LLMClient(provider="openai", model="gpt-4.1"),
-)
-
-# Use in evaluation
-results = evaluate(
-    agent_fn=my_agent,
-    dataset=dataset,
-    scorers=[judge],
-)
-```
-
-### Custom Judge Prompt
-
-```python
-judge = LLMJudge(
-    criteria="helpfulness",
-    prompt_template=(
-        "Rate the following response for helpfulness.\n\n"
-        "User question: {input}\n"
-        "Expected answer: {expected}\n"
-        "Actual response: {output}\n\n"
-        'Respond with JSON: {{"score": <0.0-1.0>, "reasoning": "<explanation>"}}'
-    ),
-    llm=LLMClient(provider="anthropic", model="claude-sonnet-4-20250514"),
-)
-```
-
-The judge LLM must respond with JSON containing `score` and `reasoning` fields.
-
-### Scale Types
-
-```python
-LLMJudge(criteria="quality", scale="binary")   # 0 or 1
-LLMJudge(criteria="quality", scale="0-1")      # 0.0 to 1.0 (default)
-LLMJudge(criteria="quality", scale="1-5")      # 1 to 5, normalized
-```
-
-## Trajectory Scorers
-
-Evaluate the **path** an agent took — which tools it called and in what order.
-
-### ToolUsageAccuracy
-
-Did the agent use the correct tools?
-
-```python
-from fastaiagent.eval.trajectory import ToolUsageAccuracy
-
-scorer = ToolUsageAccuracy()
-result = scorer.score(
-    input="", output="",
-    actual_trajectory=["search", "calculate"],
-    expected_trajectory=["search", "calculate", "format"],
-)
-# score = 2/3 = 0.667 (used 2 of 3 expected tools)
-```
-
-### StepEfficiency
-
-Did the agent solve the problem in the expected number of steps?
-
-```python
-from fastaiagent.eval.trajectory import StepEfficiency
-
-scorer = StepEfficiency()
-result = scorer.score(
-    input="", output="",
-    actual_steps=6,
-    expected_steps=3,
-)
-# score = 3/6 = 0.5 (took twice as many steps as expected)
-```
-
-### PathCorrectness
-
-Did the agent follow the correct sequence? Uses Longest Common Subsequence.
-
-```python
-from fastaiagent.eval.trajectory import PathCorrectness
-
-scorer = PathCorrectness()
-result = scorer.score(
-    input="", output="",
-    actual_trajectory=["search", "validate", "calculate", "respond"],
-    expected_trajectory=["search", "calculate", "respond"],
-)
-# LCS = ["search", "calculate", "respond"] → score = 3/3 = 1.0
-```
-
-### CycleEfficiency
-
-Did the agent avoid unnecessary repeated tool calls?
-
-```python
-from fastaiagent.eval.trajectory import CycleEfficiency
-
-scorer = CycleEfficiency()
-result = scorer.score(
-    input="", output="",
-    actual_trajectory=["search", "search", "search", "respond"],
-)
-# 2 repeated consecutive calls out of 4 → score = 1.0 - 2/4 = 0.5
-```
-
-## Session Scorers
-
-Evaluate multi-turn conversations as a whole.
-
-### ConversationCoherence
-
-Are the agent's responses coherent across turns?
-
-```python
-from fastaiagent.eval.session import ConversationCoherence
-
-scorer = ConversationCoherence()
-result = scorer.score(
-    input="", output="final response",
-    turns=[
-        {"role": "user", "content": "What is X?"},
-        {"role": "assistant", "content": "X is..."},
-        {"role": "user", "content": "Tell me more"},
-        {"role": "assistant", "content": "Additionally..."},
-    ],
-)
-```
-
-### GoalCompletion
-
-Did the conversation achieve its goal?
-
-```python
-from fastaiagent.eval.session import GoalCompletion
-
-scorer = GoalCompletion()
-result = scorer.score(
-    input="", output="Your order ships tomorrow via FedEx.",
-    goal="Provide shipping information for the customer's order",
-)
-# Measures keyword overlap between output and goal
-```
-
 ## EvalResults
 
 ### Summary
@@ -469,7 +318,7 @@ results = evaluate(
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `score` | `float` | Numeric score (0.0–1.0) |
+| `score` | `float` | Numeric score (0.0-1.0) |
 | `passed` | `bool` | Whether the test case passed |
 | `reason` | `str \| None` | Explanation of the score |
 
@@ -502,3 +351,12 @@ try:
 except ValueError as e:
     print(f"Unknown scorer: {e}")
 ```
+
+---
+
+## Next Steps
+
+- [LLM Judge](llm-judge.md) — Use an LLM to evaluate output quality
+- [Trajectory Scoring](trajectory-scoring.md) — Evaluate the path an agent took
+- [Session Scoring](session-scoring.md) — Evaluate multi-turn conversations
+- [Agents](../agents/index.md) — Build agents to evaluate

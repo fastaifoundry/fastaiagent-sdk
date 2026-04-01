@@ -8,6 +8,7 @@ import httpx
 import pytest
 
 from fastaiagent._internal.errors import (
+    FastAIAgentError,
     PlatformAuthError,
     PlatformConnectionError,
     PlatformNotFoundError,
@@ -44,20 +45,22 @@ class TestPlatformAPIErrors:
     def test_403_scope_raises_auth_error(self):
         api = PlatformAPI(api_key="key", base_url="https://example.com")
         with pytest.raises(PlatformAuthError, match="scope"):
-            api._handle_response(self._make_response(
-                403,
-                {"detail": {
-                    "error": "insufficient_scope",
-                    "detail": "API key lacks required scope: agent:write",
-                }},
-            ))
+            api._handle_response(
+                self._make_response(
+                    403,
+                    {
+                        "detail": {
+                            "error": "insufficient_scope",
+                            "detail": "API key lacks required scope: agent:write",
+                        }
+                    },
+                )
+            )
 
     def test_403_tier_raises_tier_error(self):
         api = PlatformAPI(api_key="key", base_url="https://example.com")
         with pytest.raises(PlatformTierLimitError, match="Tier limit"):
-            api._handle_response(self._make_response(
-                403, {"detail": "Tier limit exceeded"}
-            ))
+            api._handle_response(self._make_response(403, {"detail": "Tier limit exceeded"}))
 
     def test_404_raises_not_found(self):
         api = PlatformAPI(api_key="key", base_url="https://example.com")
@@ -175,7 +178,7 @@ class TestPushResource:
 
     def test_push_unsupported_type_raises(self):
         api = MagicMock(spec=PlatformAPI)
-        with pytest.raises(TypeError, match="Cannot push"):
+        with pytest.raises(FastAIAgentError, match="Cannot push"):
             push_resource(api, "not a resource")
 
 
@@ -232,9 +235,7 @@ class TestFastAI:
     def test_push_all_delegates(self):
         fa = FastAI(api_key="fa_k_test")
         with patch("fastaiagent.client.push_all") as mock_push_all:
-            mock_push_all.return_value = [
-                PushResult(resource_type="agent", name="a", created=True)
-            ]
+            mock_push_all.return_value = [PushResult(resource_type="agent", name="a", created=True)]
             results = fa.push_all([Agent(name="a", llm=LLMClient())])
             assert len(results) == 1
 

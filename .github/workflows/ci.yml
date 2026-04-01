@@ -36,3 +36,36 @@ jobs:
       - run: pip install ruff
       - run: ruff check .
       - run: ruff format --check .
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+      - name: Run mypy
+        run: mypy fastaiagent/ --ignore-missing-imports
+
+  optional-deps:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        extras: ["", "openai", "anthropic", "kb", "all"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install with extras
+        run: |
+          if [ -z "${{ matrix.extras }}" ]; then
+            pip install -e ".[dev]"
+          else
+            pip install -e ".[${{ matrix.extras }},dev]"
+          fi
+      - name: Run tests
+        run: pytest tests/ -v --tb=short

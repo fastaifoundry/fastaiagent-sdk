@@ -1,0 +1,43 @@
+name: New Integration Request
+description: Request auto-tracing support for a new framework
+labels: ["enhancement", "integration"]
+body:
+  - type: input
+    id: framework
+    attributes:
+      label: Framework / Library Name
+      placeholder: "e.g., DSPy, PydanticAI, AutoGen"
+    validations:
+      required: true
+
+  - type: input
+    id: framework-version
+    attributes:
+      label: Framework Version
+      placeholder: "e.g., >= 2.0"
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What Should Be Traced?
+      description: What spans/events would be useful to capture?
+    validations:
+      required: true
+
+  - type: textarea
+    id: api-design
+    attributes:
+      label: Proposed API
+      description: How the integration should work from the user's perspective
+      render: python
+      value: |
+        import fastaiagent
+        fastaiagent.integrations.<framework>.enable()
+
+        # Existing framework code runs as usual, now with tracing
+
+  - type: input
+    id: docs-link
+    attributes:
+      label: Framework Documentation Link
+      placeholder: "https://..."

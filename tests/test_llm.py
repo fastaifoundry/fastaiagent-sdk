@@ -106,9 +106,7 @@ class TestLLMClient:
         assert llm.base_url == "https://api.openai.com/v1"
 
     def test_construction_custom(self):
-        llm = LLMClient(
-            provider="anthropic", model="claude-sonnet-4-20250514", api_key="sk-test"
-        )
+        llm = LLMClient(provider="anthropic", model="claude-sonnet-4-20250514", api_key="sk-test")
         assert llm.provider == "anthropic"
         assert llm.model == "claude-sonnet-4-20250514"
         assert llm.base_url == "https://api.anthropic.com/v1"
@@ -237,9 +235,7 @@ class TestLLMClientAnthropic:
 
         llm = LLMClient(provider="anthropic", model="claude-sonnet-4-20250514", api_key="sk-ant")
         with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_response):
-            result = await llm.acomplete(
-                [SystemMessage("Be helpful"), UserMessage("Hi")]
-            )
+            result = await llm.acomplete([SystemMessage("Be helpful"), UserMessage("Hi")])
 
         assert result.content == "Hello from Claude!"
         assert result.usage["prompt_tokens"] == 12

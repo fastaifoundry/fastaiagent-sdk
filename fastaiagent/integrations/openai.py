@@ -17,11 +17,9 @@ def enable() -> None:
         return
 
     try:
-        import openai  # type: ignore[import-not-found]
+        import openai
     except ImportError:
-        raise ImportError(
-            "OpenAI SDK is required. Install with: pip install fastaiagent[openai]"
-        )
+        raise ImportError("OpenAI SDK is required. Install with: pip install fastaiagent[openai]")
 
     completions_cls = openai.resources.chat.completions.Completions
 
@@ -45,7 +43,7 @@ def enable() -> None:
                 )
             return result
 
-    completions_cls.create = traced_create
+    completions_cls.create = traced_create  # type: ignore[assignment,method-assign]
     _enabled = True
 
 
@@ -56,10 +54,10 @@ def disable() -> None:
         return
 
     try:
-        import openai  # type: ignore[import-not-found]
+        import openai
 
         if _original_create:
-            openai.resources.chat.completions.Completions.create = _original_create
+            openai.resources.chat.completions.Completions.create = _original_create  # type: ignore[method-assign]
     except ImportError:
         pass
 

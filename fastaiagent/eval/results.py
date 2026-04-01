@@ -26,8 +26,7 @@ class EvalResults:
             avg_score = sum(r.score for r in results) / len(results)
             pass_rate = sum(1 for r in results if r.passed) / len(results)
             lines.append(
-                f"{name}: avg={avg_score:.2f} pass_rate={pass_rate:.0%}"
-                f" ({len(results)} cases)"
+                f"{name}: avg={avg_score:.2f} pass_rate={pass_rate:.0%} ({len(results)} cases)"
             )
         return "\n".join(lines)
 
@@ -35,10 +34,7 @@ class EvalResults:
         """Export results to file."""
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        data = {
-            name: [r.model_dump() for r in results]
-            for name, results in self.scores.items()
-        }
+        data = {name: [r.model_dump() for r in results] for name, results in self.scores.items()}
         path.write_text(json.dumps(data, indent=2))
 
     def compare(self, other: EvalResults) -> str:

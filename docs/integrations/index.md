@@ -270,3 +270,11 @@ result = my_langchain_agent.invoke(
 # $ fastaiagent traces list
 # Both OpenAI and LangChain traces appear in the same list
 ```
+
+---
+
+## Next Steps
+
+- [Tracing](../tracing/index.md) — How traces are stored and exported
+- [Replay](../replay/index.md) — Debug traced executions with fork-and-rerun
+- [Agents](../agents/index.md) — Build agents with the SDK

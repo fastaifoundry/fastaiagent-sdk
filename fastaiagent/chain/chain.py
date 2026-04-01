@@ -39,7 +39,7 @@ class Chain:
     def __init__(
         self,
         name: str,
-        state_schema: dict | None = None,
+        state_schema: dict[str, Any] | None = None,
         checkpoint_enabled: bool = True,
         checkpoint_store: CheckpointStore | None = None,
     ):
@@ -149,7 +149,7 @@ class Chain:
         )
 
     async def resume(
-        self, execution_id: str, modified_state: dict | None = None
+        self, execution_id: str, modified_state: dict[str, Any] | None = None
     ) -> ChainResult:
         """Resume a failed/paused chain execution from the last checkpoint."""
         store = self._checkpoint_store or CheckpointStore()
@@ -157,9 +157,7 @@ class Chain:
         if latest is None:
             from fastaiagent._internal.errors import ChainCheckpointError
 
-            raise ChainCheckpointError(
-                f"No checkpoint found for execution '{execution_id}'"
-            )
+            raise ChainCheckpointError(f"No checkpoint found for execution '{execution_id}'")
 
         state = latest.state_snapshot
         if modified_state:
@@ -195,7 +193,7 @@ class Chain:
             node_results=raw["node_results"],
         )
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to canonical format (ReactFlow-compatible)."""
         d: dict[str, Any] = {
             "name": self.name,
@@ -207,7 +205,7 @@ class Chain:
         return d
 
     @classmethod
-    def from_dict(cls, data: dict) -> Chain:
+    def from_dict(cls, data: dict[str, Any]) -> Chain:
         """Deserialize from canonical format."""
         chain = cls(
             name=data["name"],

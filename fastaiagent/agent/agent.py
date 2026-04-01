@@ -31,7 +31,7 @@ class AgentResult(BaseModel):
     """Result of an agent execution."""
 
     output: str = ""
-    tool_calls: list[dict] = Field(default_factory=list)
+    tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     tokens_used: int = 0
     cost: float = 0.0
     latency_ms: int = 0
@@ -76,17 +76,13 @@ class Agent:
         """Synchronous execution."""
         return run_sync(self.arun(input, trace=trace, **kwargs))
 
-    async def arun(
-        self, input: str, *, trace: bool = True, **kwargs: Any
-    ) -> AgentResult:
+    async def arun(self, input: str, *, trace: bool = True, **kwargs: Any) -> AgentResult:
         """Async execution with tool-calling loop."""
         start = time.monotonic()
 
         # Execute input guardrails (blocking)
         if self.guardrails:
-            await execute_guardrails(
-                self.guardrails, input, GuardrailPosition.input
-            )
+            await execute_guardrails(self.guardrails, input, GuardrailPosition.input)
 
         # Build messages
         messages = self._build_messages(input)
@@ -104,9 +100,7 @@ class Agent:
 
         # Execute output guardrails
         if self.guardrails:
-            await execute_guardrails(
-                self.guardrails, output, GuardrailPosition.output
-            )
+            await execute_guardrails(self.guardrails, output, GuardrailPosition.output)
 
         # Store in memory
         if self.memory:
@@ -139,7 +133,7 @@ class Agent:
         messages.append(UserMessage(input))
         return messages
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to canonical format for platform push."""
         return {
             "name": self.name,
@@ -152,7 +146,7 @@ class Agent:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> Agent:
+    def from_dict(cls, data: dict[str, Any]) -> Agent:
         """Deserialize from canonical format (platform pull)."""
         return cls(
             name=data["name"],

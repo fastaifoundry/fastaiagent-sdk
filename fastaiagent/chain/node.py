@@ -32,11 +32,11 @@ class NodeConfig(BaseModel):
     tool: Any = None  # Tool instance
     tool_name: str | None = None
     config: dict[str, Any] = Field(default_factory=dict)
-    position: dict[str, float] = Field(default_factory=lambda: {"x": 0, "y": 0})
+    position: dict[str, float] = Field(default_factory=lambda: {"x": 0.0, "y": 0.0})
 
     model_config = {"arbitrary_types_allowed": True}
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
             "id": self.id,
             "type": self.type.value,
@@ -51,7 +51,7 @@ class NodeConfig(BaseModel):
         return d
 
     @classmethod
-    def from_dict(cls, data: dict) -> NodeConfig:
+    def from_dict(cls, data: dict[str, Any]) -> NodeConfig:
         config = data.get("config", {})
         return cls(
             id=data["id"],
@@ -75,7 +75,7 @@ class Edge(BaseModel):
     is_cyclic: bool = False
     cycle_config: dict[str, Any] = Field(default_factory=dict)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
             "source": self.source,
             "target": self.target,
@@ -92,7 +92,7 @@ class Edge(BaseModel):
         return d
 
     @classmethod
-    def from_dict(cls, data: dict) -> Edge:
+    def from_dict(cls, data: dict[str, Any]) -> Edge:
         return cls(
             id=data.get("id", ""),
             source=data["source"],

@@ -245,3 +245,11 @@ try:
 except ReplayError as e:
     print(f"Error: {e}")  # "Step -1 out of range (0-3)"
 ```
+
+---
+
+## Next Steps
+
+- [Tracing](../tracing/index.md) — How traces are captured and stored
+- [Chains Checkpointing](../chains/checkpointing.md) — Resume failed chains from checkpoints
+- [Evaluation](../evaluation/index.md) — Systematically test agent quality

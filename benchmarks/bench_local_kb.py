@@ -11,8 +11,10 @@ def bench_kb_search(num_chunks=1000):
 
     # Add chunks
     for i in range(num_chunks):
-        kb.add(f"Document chunk {i}: This is sample content about topic {i % 50}. "
-               f"It contains information relevant to category {i % 10}.")
+        kb.add(
+            f"Document chunk {i}: This is sample content about topic {i % 50}. "
+            f"It contains information relevant to category {i % 10}."
+        )
 
     # Benchmark search
     start = time.monotonic()

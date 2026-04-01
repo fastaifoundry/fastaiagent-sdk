@@ -283,3 +283,11 @@ OTel TracerProvider (singleton)
 - **BatchSpanProcessor** batches spans for efficient export to remote backends
 - Multiple exporters can run simultaneously
 - The TracerProvider is a singleton — initialized on first use, reused globally
+
+---
+
+## Next Steps
+
+- [Replay](../replay/index.md) — Debug agent execution with fork-and-rerun
+- [Integrations](../integrations/index.md) — Auto-trace OpenAI, Anthropic, LangChain, CrewAI
+- [Agents](../agents/index.md) — Build agents with automatic tracing

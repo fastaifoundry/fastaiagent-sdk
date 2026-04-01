@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from opentelemetry.sdk.trace.export import SpanExporter
 
-_provider = None
+_provider: Any = None
 
 
-def get_tracer_provider():
+def get_tracer_provider() -> Any:
     """Get or create the OTel TracerProvider singleton."""
     global _provider
     if _provider is None:
@@ -27,7 +27,7 @@ def get_tracer_provider():
     return _provider
 
 
-def get_tracer(name: str = "fastaiagent"):
+def get_tracer(name: str = "fastaiagent") -> Any:
     """Get a tracer instance."""
     return get_tracer_provider().get_tracer(name)
 

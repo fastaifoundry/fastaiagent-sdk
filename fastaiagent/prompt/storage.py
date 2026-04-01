@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from fastaiagent._internal.errors import PromptNotFoundError
 from fastaiagent.prompt.fragment import Fragment
@@ -74,20 +75,23 @@ class YAMLStorage:
             raise FragmentNotFoundError(f"Fragment '{name}' not found")
         return Fragment.from_dict(json.loads(file.read_text()))
 
-    def list_prompts(self) -> list[dict]:
-        results = []
+    def list_prompts(self) -> list[dict[str, Any]]:
+        results: list[dict[str, Any]] = []
         for file in sorted(self.path.glob("*.json")):
             if file.name.startswith("_fragment_"):
                 continue
             data = self._load_file(file)
-            results.append({
-                "name": data.get("name", file.stem),
-                "latest_version": data.get("latest_version", 1),
-                "versions": len(data.get("versions", [])),
-            })
+            results.append(
+                {
+                    "name": data.get("name", file.stem),
+                    "latest_version": data.get("latest_version", 1),
+                    "versions": len(data.get("versions", [])),
+                }
+            )
         return results
 
-    def _load_file(self, file: Path) -> dict:
+    def _load_file(self, file: Path) -> dict[str, Any]:
         if not file.exists():
             return {}
-        return json.loads(file.read_text())
+        result: dict[str, Any] = json.loads(file.read_text())
+        return result

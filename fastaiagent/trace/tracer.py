@@ -8,7 +8,7 @@ from typing import Any
 
 
 @contextmanager
-def trace_context(name: str, **attributes: Any) -> Generator:
+def trace_context(name: str, **attributes: Any) -> Generator[Any, None, None]:
     """Context manager that creates an OTel span.
 
     Example:

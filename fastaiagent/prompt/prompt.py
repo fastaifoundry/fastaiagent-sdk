@@ -31,7 +31,7 @@ class Prompt(BaseModel):
             result = result.replace(f"{{{{{key}}}}}", str(value))
         return result
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
             "template": self.template,
@@ -41,5 +41,5 @@ class Prompt(BaseModel):
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> Prompt:
+    def from_dict(cls, data: dict[str, Any]) -> Prompt:
         return cls(**data)

@@ -23,7 +23,7 @@ class SpanData(BaseModel):
     end_time: str = ""
     status: str = "OK"
     attributes: dict[str, Any] = Field(default_factory=dict)
-    events: list[dict] = Field(default_factory=list)
+    events: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class TraceData(BaseModel):
@@ -178,7 +178,11 @@ class TraceStore:
         if not rows:
             from fastaiagent._internal.errors import TraceError
 
-            raise TraceError(f"Trace '{trace_id}' not found")
+            raise TraceError(
+                f"Trace '{trace_id}' not found in local storage.\n"
+                f"Use TraceStore.list_traces() to see available traces, or check that "
+                f"tracing was enabled when the agent ran (trace=True)."
+            )
 
         spans = []
         for row in rows:

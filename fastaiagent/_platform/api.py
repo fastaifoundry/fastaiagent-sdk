@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import httpx
 
 from fastaiagent._internal.errors import (
@@ -37,7 +39,7 @@ class PlatformAPI:
             "User-Agent": f"fastaiagent-sdk/{__version__}",
         }
 
-    def _handle_response(self, response: httpx.Response) -> dict:
+    def _handle_response(self, response: httpx.Response) -> dict[str, Any]:
         """Handle HTTP response, raising appropriate SDK errors."""
         if response.status_code == 401:
             raise PlatformAuthError(
@@ -66,9 +68,7 @@ class PlatformAPI:
             raise PlatformNotFoundError(f"Resource not found: {response.url}")
         elif response.status_code == 429:
             retry_after = response.headers.get("Retry-After", "60")
-            raise PlatformRateLimitError(
-                f"Rate limit exceeded. Retry after {retry_after} seconds."
-            )
+            raise PlatformRateLimitError(f"Rate limit exceeded. Retry after {retry_after} seconds.")
         elif response.status_code >= 500:
             raise PlatformConnectionError(
                 f"Platform server error ({response.status_code}). "
@@ -76,9 +76,10 @@ class PlatformAPI:
             )
 
         response.raise_for_status()
-        return response.json()
+        result: dict[str, Any] = response.json()
+        return result
 
-    def post(self, path: str, data: dict) -> dict:
+    def post(self, path: str, data: dict[str, Any]) -> dict[str, Any]:
         """Synchronous POST request."""
         try:
             with httpx.Client(timeout=self._timeout) as client:
@@ -94,7 +95,7 @@ class PlatformAPI:
                 "and verify the target URL is correct."
             )
 
-    async def apost(self, path: str, data: dict) -> dict:
+    async def apost(self, path: str, data: dict[str, Any]) -> dict[str, Any]:
         """Async POST request."""
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:

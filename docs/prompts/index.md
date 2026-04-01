@@ -314,3 +314,11 @@ try:
 except PromptNotFoundError:
     print("Alias not found")
 ```
+
+---
+
+## Next Steps
+
+- [Agents](../agents/index.md) — Use prompts with agents
+- [Platform Sync](../platform/index.md) — Push prompts to the platform
+- [Evaluation](../evaluation/index.md) — Test prompt variations with eval

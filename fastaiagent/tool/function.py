@@ -10,7 +10,7 @@ from fastaiagent._internal.errors import ToolExecutionError
 from fastaiagent.tool.base import Tool, ToolResult
 
 
-def _python_type_to_json_schema(tp: type) -> dict:
+def _python_type_to_json_schema(tp: type) -> dict[str, Any]:
     """Convert a Python type annotation to JSON Schema type."""
     mapping = {
         str: {"type": "string"},
@@ -28,7 +28,7 @@ def _python_type_to_json_schema(tp: type) -> dict:
     return mapping.get(tp, {"type": "string"})
 
 
-def _generate_schema(fn: Callable) -> dict:
+def _generate_schema(fn: Callable[..., Any]) -> dict[str, Any]:
     """Generate JSON Schema parameters from function type hints."""
     sig = inspect.signature(fn)
     try:
@@ -77,9 +77,9 @@ class FunctionTool(Tool):
     def __init__(
         self,
         name: str,
-        fn: Callable | None = None,
+        fn: Callable[..., Any] | None = None,
         description: str = "",
-        parameters: dict | None = None,
+        parameters: dict[str, Any] | None = None,
     ):
         self.fn = fn
         if fn and not description:
@@ -103,11 +103,11 @@ class FunctionTool(Tool):
     def _tool_type(self) -> str:
         return "function"
 
-    def _config_dict(self) -> dict:
+    def _config_dict(self) -> dict[str, Any]:
         return {}
 
     @classmethod
-    def _from_dict(cls, data: dict) -> FunctionTool:
+    def _from_dict(cls, data: dict[str, Any]) -> FunctionTool:
         return cls(
             name=data["name"],
             description=data.get("description", ""),
@@ -115,7 +115,7 @@ class FunctionTool(Tool):
         )
 
 
-def tool(name: str | None = None, description: str = "") -> Callable:
+def tool(name: str | None = None, description: str = "") -> Callable[..., Any]:
     """Decorator to create a FunctionTool from a function.
 
     Example:
@@ -124,7 +124,7 @@ def tool(name: str | None = None, description: str = "") -> Callable:
             return f"Hello, {name}!"
     """
 
-    def decorator(fn: Callable) -> FunctionTool:
+    def decorator(fn: Callable[..., Any]) -> FunctionTool:
         tool_name = name or fn.__name__
         tool_desc = description or inspect.getdoc(fn) or ""
         return FunctionTool(name=tool_name, fn=fn, description=tool_desc)

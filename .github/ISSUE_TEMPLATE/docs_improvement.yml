@@ -1,0 +1,40 @@
+name: Documentation Improvement
+description: Suggest an improvement to the documentation
+labels: ["documentation"]
+body:
+  - type: input
+    id: page
+    attributes:
+      label: Page / Section
+      description: Which documentation page or section needs improvement?
+      placeholder: "e.g., getting-started/installation.md or Chains > Checkpointing"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: Type of Improvement
+      options:
+        - Fix incorrect information
+        - Add missing information
+        - Improve clarity / wording
+        - Add code example
+        - Fix broken link
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What needs to be changed and why?
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested Improvement
+      description: How you think it should read (optional)

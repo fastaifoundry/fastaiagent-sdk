@@ -39,7 +39,7 @@ class SQLiteHelper:
             self._conn.execute("PRAGMA journal_mode=WAL")
         return self._conn
 
-    def execute(self, sql: str, params: tuple | dict = ()) -> sqlite3.Cursor:
+    def execute(self, sql: str, params: tuple[Any, ...] | dict[str, Any] = ()) -> sqlite3.Cursor:
         """Execute a SQL statement."""
         with self._lock:
             conn = self._get_conn()
@@ -47,7 +47,9 @@ class SQLiteHelper:
             conn.commit()
             return cursor
 
-    def executemany(self, sql: str, params_list: list[tuple | dict]) -> sqlite3.Cursor:
+    def executemany(
+        self, sql: str, params_list: list[tuple[Any, ...] | dict[str, Any]]
+    ) -> sqlite3.Cursor:
         """Execute a SQL statement with multiple parameter sets."""
         with self._lock:
             conn = self._get_conn()
@@ -55,7 +57,9 @@ class SQLiteHelper:
             conn.commit()
             return cursor
 
-    def fetchone(self, sql: str, params: tuple | dict = ()) -> dict[str, Any] | None:
+    def fetchone(
+        self, sql: str, params: tuple[Any, ...] | dict[str, Any] = ()
+    ) -> dict[str, Any] | None:
         """Execute a query and return the first row as a dict."""
         with self._lock:
             conn = self._get_conn()
@@ -65,7 +69,9 @@ class SQLiteHelper:
                 return None
             return dict(row)
 
-    def fetchall(self, sql: str, params: tuple | dict = ()) -> list[dict[str, Any]]:
+    def fetchall(
+        self, sql: str, params: tuple[Any, ...] | dict[str, Any] = ()
+    ) -> list[dict[str, Any]]:
         """Execute a query and return all rows as dicts."""
         with self._lock:
             conn = self._get_conn()

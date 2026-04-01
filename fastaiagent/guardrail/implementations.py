@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from fastaiagent.guardrail.guardrail import Guardrail
 
 
-async def run_guardrail(guardrail: Guardrail, data: str | dict) -> GuardrailResult:
+async def run_guardrail(guardrail: Guardrail, data: str | dict[str, Any]) -> GuardrailResult:
     """Run a guardrail based on its implementation type."""
     runners = {
         GuardrailType.code: _run_code,
@@ -25,7 +25,7 @@ async def run_guardrail(guardrail: Guardrail, data: str | dict) -> GuardrailResu
     return await runner(guardrail, data)
 
 
-async def _run_code(guardrail: Guardrail, data: str | dict) -> GuardrailResult:
+async def _run_code(guardrail: Guardrail, data: str | dict[str, Any]) -> GuardrailResult:
     """Execute a code guardrail — runs a Python function."""
     if guardrail.fn is not None:
         try:
@@ -47,9 +47,15 @@ async def _run_code(guardrail: Guardrail, data: str | dict) -> GuardrailResult:
     text = data if isinstance(data, str) else json.dumps(data)
     safe_globals: dict[str, Any] = {
         "__builtins__": {
-            "len": len, "str": str, "int": int, "float": float,
-            "bool": bool, "list": list, "dict": dict,
-            "re": re, "json": json,
+            "len": len,
+            "str": str,
+            "int": int,
+            "float": float,
+            "bool": bool,
+            "list": list,
+            "dict": dict,
+            "re": re,
+            "json": json,
         }
     }
     safe_locals: dict[str, Any] = {"data": text, "result": True}
@@ -61,7 +67,7 @@ async def _run_code(guardrail: Guardrail, data: str | dict) -> GuardrailResult:
         return GuardrailResult(passed=False, message=f"Code execution error: {e}")
 
 
-async def _run_llm_judge(guardrail: Guardrail, data: str | dict) -> GuardrailResult:
+async def _run_llm_judge(guardrail: Guardrail, data: str | dict[str, Any]) -> GuardrailResult:
     """Execute an LLM judge guardrail."""
     from fastaiagent.llm import LLMClient, SystemMessage, UserMessage
 
@@ -77,10 +83,12 @@ async def _run_llm_judge(guardrail: Guardrail, data: str | dict) -> GuardrailRes
     llm = LLMClient(**llm_config) if llm_config else LLMClient()
 
     try:
-        response = await llm.acomplete([
-            SystemMessage("You are a judge. Respond with PASS or FAIL only."),
-            UserMessage(prompt),
-        ])
+        response = await llm.acomplete(
+            [
+                SystemMessage("You are a judge. Respond with PASS or FAIL only."),
+                UserMessage(prompt),
+            ]
+        )
         content = (response.content or "").strip().upper()
         passed = pass_value.upper() in content
         return GuardrailResult(passed=passed, message=response.content)
@@ -88,7 +96,7 @@ async def _run_llm_judge(guardrail: Guardrail, data: str | dict) -> GuardrailRes
         return GuardrailResult(passed=False, message=f"LLM judge error: {e}")
 
 
-async def _run_regex(guardrail: Guardrail, data: str | dict) -> GuardrailResult:
+async def _run_regex(guardrail: Guardrail, data: str | dict[str, Any]) -> GuardrailResult:
     """Execute a regex guardrail."""
     pattern = guardrail.config.get("pattern", "")
     should_match = guardrail.config.get("should_match", False)
@@ -114,7 +122,7 @@ async def _run_regex(guardrail: Guardrail, data: str | dict) -> GuardrailResult:
         return GuardrailResult(passed=False, message=f"Invalid regex: {e}")
 
 
-async def _run_schema(guardrail: Guardrail, data: str | dict) -> GuardrailResult:
+async def _run_schema(guardrail: Guardrail, data: str | dict[str, Any]) -> GuardrailResult:
     """Execute a JSON schema validation guardrail."""
     schema = guardrail.config.get("schema", {})
 
@@ -139,7 +147,7 @@ async def _run_schema(guardrail: Guardrail, data: str | dict) -> GuardrailResult
     return GuardrailResult(passed=True)
 
 
-async def _run_classifier(guardrail: Guardrail, data: str | dict) -> GuardrailResult:
+async def _run_classifier(guardrail: Guardrail, data: str | dict[str, Any]) -> GuardrailResult:
     """Execute a classifier guardrail (keyword/pattern-based)."""
     categories = guardrail.config.get("categories", {})
     blocked_categories = guardrail.config.get("blocked", [])

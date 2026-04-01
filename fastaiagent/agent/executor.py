@@ -22,7 +22,7 @@ async def execute_tool_loop(
     max_iterations: int = 10,
     tool_choice: str = "auto",
     tracer: Any = None,
-) -> tuple[LLMResponse, list[dict]]:
+) -> tuple[LLMResponse, list[dict[str, Any]]]:
     """Execute the agent's tool-calling loop.
 
     Sends messages to the LLM. If the LLM requests tool calls,
@@ -34,7 +34,7 @@ async def execute_tool_loop(
     """
     tool_defs = [t.to_openai_format() for t in tools] if tools else None
     tools_by_name = {t.name: t for t in tools}
-    all_tool_calls: list[dict] = []
+    all_tool_calls: list[dict[str, Any]] = []
 
     for iteration in range(max_iterations):
         # Call LLM
@@ -45,9 +45,7 @@ async def execute_tool_loop(
             return response, all_tool_calls
 
         # Build assistant message with tool calls
-        messages.append(
-            AssistantMessage(content=response.content, tool_calls=response.tool_calls)
-        )
+        messages.append(AssistantMessage(content=response.content, tool_calls=response.tool_calls))
 
         # Execute each tool call
         for tc in response.tool_calls:
@@ -82,5 +80,10 @@ async def execute_tool_loop(
             all_tool_calls.append(tool_call_record)
 
     raise MaxIterationsError(
-        f"Agent exceeded maximum iterations ({max_iterations})"
+        f"Agent exceeded maximum iterations ({max_iterations}). "
+        f"The LLM continued requesting tool calls beyond the limit.\n"
+        f"Options:\n"
+        f"  1. Increase the limit: AgentConfig(max_iterations={max_iterations * 2})\n"
+        f"  2. Review the system prompt to ensure the agent can reach a final answer\n"
+        f"  3. Simplify the available tools to reduce unnecessary tool-calling loops"
     )

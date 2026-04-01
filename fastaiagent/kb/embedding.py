@@ -39,11 +39,9 @@ class FastEmbedEmbedder:
 
     def __init__(self, model_name: str = "BAAI/bge-small-en-v1.5"):
         try:
-            from fastembed import TextEmbedding  # type: ignore[import-not-found]
+            from fastembed import TextEmbedding
         except ImportError:
-            raise ImportError(
-                "FastEmbed is required. Install with: pip install fastaiagent[kb]"
-            )
+            raise ImportError("FastEmbed is required. Install with: pip install fastaiagent[kb]")
         self._model = TextEmbedding(model_name=model_name)
 
     def embed(self, texts: list[str]) -> list[list[float]]:
@@ -56,11 +54,9 @@ class OpenAIEmbedder:
 
     def __init__(self, model: str = "text-embedding-3-small", api_key: str | None = None):
         try:
-            import openai  # type: ignore[import-not-found]
+            import openai
         except ImportError:
-            raise ImportError(
-                "openai is required. Install with: pip install fastaiagent[openai]"
-            )
+            raise ImportError("openai is required. Install with: pip install fastaiagent[openai]")
         self._client = openai.OpenAI(api_key=api_key)
         self._model = model
 

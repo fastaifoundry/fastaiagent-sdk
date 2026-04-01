@@ -1,3 +1,9 @@
+# Getting Started
+
+Welcome to the FastAIAgent SDK. This guide walks you through the foundational component of the SDK -- the `LLMClient` -- which powers every agent, chain, guardrail judge, and eval scorer. Once you understand the LLM client, you can build on top of it with agents, tools, chains, and more.
+
+---
+
 # LLM Client
 
 The `LLMClient` is the most fundamental component of the SDK. Every agent, chain, guardrail judge, and eval scorer depends on it. It provides a unified interface to call any LLM provider — OpenAI, Anthropic, Ollama, Azure, Bedrock, or any OpenAI-compatible endpoint — through a single API.
@@ -239,3 +245,11 @@ except LLMProviderError as e:
 except LLMError as e:
     print(f"LLM error: {e}")  # Unsupported provider, missing key, etc.
 ```
+
+---
+
+## Next Steps
+
+- [Agents](../agents/index.md) — Build autonomous agents on top of the LLM client
+- [Tools](../tools/index.md) — Give agents the ability to take actions
+- [Chains](../chains/index.md) — Compose agents into multi-step workflows

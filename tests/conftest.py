@@ -50,9 +50,7 @@ def mock_llm_with_tools() -> MockLLMClient:
         responses=[
             LLMResponse(
                 content=None,
-                tool_calls=[
-                    ToolCall(id="call_1", name="search", arguments={"query": "test"})
-                ],
+                tool_calls=[ToolCall(id="call_1", name="search", arguments={"query": "test"})],
                 finish_reason="tool_calls",
                 usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
             ),

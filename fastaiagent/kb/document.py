@@ -37,7 +37,7 @@ def ingest_file(path: str | Path) -> list[Document]:
 def _ingest_pdf(path: Path) -> list[Document]:
     """Ingest a PDF file using PyMuPDF (optional dependency)."""
     try:
-        import pymupdf  # type: ignore[import-not-found]
+        import pymupdf
     except ImportError:
         raise ImportError(
             "PDF ingestion requires pymupdf. Install with: pip install fastaiagent[kb]"

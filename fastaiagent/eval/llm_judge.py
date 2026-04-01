@@ -60,10 +60,12 @@ class LLMJudge(Scorer):
         prompt = prompt.replace("{expected}", expected or "N/A")
 
         try:
-            response = await llm.acomplete([
-                SystemMessage("You are an evaluation judge. Respond with JSON only."),
-                UserMessage(prompt),
-            ])
+            response = await llm.acomplete(
+                [
+                    SystemMessage("You are an evaluation judge. Respond with JSON only."),
+                    UserMessage(prompt),
+                ]
+            )
             content = response.content or ""
 
             # Parse JSON response

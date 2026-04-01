@@ -41,18 +41,18 @@ class Dataset:
         return cls(items)
 
     @classmethod
-    def from_list(cls, items: list[dict]) -> Dataset:
+    def from_list(cls, items: list[dict[str, Any]]) -> Dataset:
         return cls(items)
 
     @classmethod
-    def from_dict(cls, data: dict) -> Dataset:
+    def from_dict(cls, data: dict[str, Any]) -> Dataset:
         return cls(data.get("items", []))
 
-    def __iter__(self) -> Iterator[dict]:
+    def __iter__(self) -> Iterator[dict[str, Any]]:
         return iter(self._items)
 
     def __len__(self) -> int:
         return len(self._items)
 
-    def __getitem__(self, idx: int) -> dict:
+    def __getitem__(self, idx: int) -> dict[str, Any]:
         return self._items[idx]

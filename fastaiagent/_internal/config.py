@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from functools import lru_cache
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -34,11 +35,11 @@ class SDKConfig(BaseModel):
             "log_level": ("FASTAIAGENT_LOG_LEVEL", str),
             "default_timeout": ("FASTAIAGENT_DEFAULT_TIMEOUT", int),
         }
-        kwargs: dict = {}
+        kwargs: dict[str, Any] = {}
         for field_name, (env_var, converter) in env_map.items():
             value = os.environ.get(env_var)
             if value is not None:
-                kwargs[field_name] = converter(value)
+                kwargs[field_name] = converter(value)  # type: ignore[operator]
         return cls(**kwargs)
 
 

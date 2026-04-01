@@ -8,7 +8,7 @@ console = Console()
 
 
 @kb_app.command("status")
-def kb_status(name: str = typer.Option("default", help="KB name")):
+def kb_status(name: str = typer.Option("default", help="KB name")) -> None:
     """Show knowledge base status."""
     from fastaiagent.kb import LocalKB
 
@@ -23,7 +23,7 @@ def kb_status(name: str = typer.Option("default", help="KB name")):
 def kb_add(
     file_path: str = typer.Argument(..., help="File to add"),
     name: str = typer.Option("default", help="KB name"),
-):
+) -> None:
     """Add a file to the knowledge base."""
     from fastaiagent.kb import LocalKB
 

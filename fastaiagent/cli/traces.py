@@ -9,7 +9,7 @@ console = Console()
 
 
 @traces_app.command("list")
-def list_traces(last_hours: int = typer.Option(24, help="Show traces from last N hours")):
+def list_traces(last_hours: int = typer.Option(24, help="Show traces from last N hours")) -> None:
     """List recent traces."""
     from fastaiagent.trace.storage import TraceStore
 
@@ -44,7 +44,7 @@ def list_traces(last_hours: int = typer.Option(24, help="Show traces from last N
 def export_trace(
     trace_id: str = typer.Argument(..., help="Trace ID to export"),
     format: str = typer.Option("json", help="Export format (json)"),
-):
+) -> None:
     """Export a trace."""
     from fastaiagent.trace.storage import TraceStore
 

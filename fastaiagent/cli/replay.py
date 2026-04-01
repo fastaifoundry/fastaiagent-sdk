@@ -8,7 +8,7 @@ console = Console()
 
 
 @replay_app.command("show")
-def show_replay(trace_id: str = typer.Argument(..., help="Trace ID to replay")):
+def show_replay(trace_id: str = typer.Argument(..., help="Trace ID to replay")) -> None:
     """Show replay steps for a trace."""
     from fastaiagent.trace.replay import Replay
 
@@ -20,7 +20,7 @@ def show_replay(trace_id: str = typer.Argument(..., help="Trace ID to replay")):
 def inspect_step(
     trace_id: str = typer.Argument(..., help="Trace ID"),
     step: int = typer.Argument(..., help="Step number to inspect"),
-):
+) -> None:
     """Inspect a specific replay step."""
     from fastaiagent.trace.replay import Replay
 

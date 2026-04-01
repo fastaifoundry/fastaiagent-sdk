@@ -16,7 +16,7 @@ def _make_trace(num_spans: int = 3) -> TraceData:
             trace_id="trace_001",
             name=f"step_{i}",
             start_time=f"2025-01-01T00:00:0{i}Z",
-            end_time=f"2025-01-01T00:00:0{i+1}Z",
+            end_time=f"2025-01-01T00:00:0{i + 1}Z",
             attributes={"step": i},
         )
         for i in range(num_spans)

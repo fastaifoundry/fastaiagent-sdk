@@ -88,7 +88,8 @@ class TestTrajectoryScorers:
     def test_tool_usage_accuracy(self):
         s = ToolUsageAccuracy()
         r = s.score(
-            input="", output="",
+            input="",
+            output="",
             actual_trajectory=["search", "calculate"],
             expected_trajectory=["search", "calculate", "format"],
         )
@@ -102,7 +103,8 @@ class TestTrajectoryScorers:
     def test_path_correctness(self):
         s = PathCorrectness()
         r = s.score(
-            input="", output="",
+            input="",
+            output="",
             actual_trajectory=["a", "b", "c", "d"],
             expected_trajectory=["a", "c", "d"],
         )
@@ -111,7 +113,8 @@ class TestTrajectoryScorers:
     def test_cycle_efficiency(self):
         s = CycleEfficiency()
         r = s.score(
-            input="", output="",
+            input="",
+            output="",
             actual_trajectory=["a", "a", "b", "b", "c"],
         )
         assert r.score < 1.0  # has repeated consecutive calls

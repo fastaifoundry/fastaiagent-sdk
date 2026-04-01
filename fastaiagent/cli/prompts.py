@@ -9,7 +9,7 @@ console = Console()
 
 
 @prompts_app.command("list")
-def list_prompts(path: str = typer.Option(".prompts/", help="Prompts directory")):
+def list_prompts(path: str = typer.Option(".prompts/", help="Prompts directory")) -> None:
     """List registered prompts."""
     from fastaiagent.prompt import PromptRegistry
 
@@ -37,7 +37,7 @@ def diff_prompts(
     v1: int = typer.Argument(..., help="First version"),
     v2: int = typer.Argument(..., help="Second version"),
     path: str = typer.Option(".prompts/", help="Prompts directory"),
-):
+) -> None:
     """Show diff between two prompt versions."""
     from fastaiagent.prompt import PromptRegistry
 
