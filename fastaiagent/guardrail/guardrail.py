@@ -8,6 +8,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from fastaiagent._internal.async_utils import run_sync
+
 
 class GuardrailPosition(str, Enum):
     """Where in the pipeline this guardrail runs."""
@@ -64,9 +66,7 @@ class Guardrail:
 
     def execute(self, data: str | dict) -> GuardrailResult:
         """Execute the guardrail synchronously."""
-        import asyncio
-
-        return asyncio.run(self.aexecute(data))
+        return run_sync(self.aexecute(data))
 
     async def aexecute(self, data: str | dict) -> GuardrailResult:
         """Execute the guardrail asynchronously."""

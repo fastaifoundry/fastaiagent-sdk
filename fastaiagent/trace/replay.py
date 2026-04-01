@@ -83,9 +83,9 @@ class ForkedReplay:
         )
 
     def rerun(self) -> ReplayResult:
-        import asyncio
+        from fastaiagent._internal.async_utils import run_sync
 
-        return asyncio.run(self.arerun())
+        return run_sync(self.arerun())
 
     def compare(self, new_result: ReplayResult) -> ComparisonResult:
         return ComparisonResult(

@@ -16,7 +16,7 @@ def greet(name: str) -> str:
 agent = Agent(
     name="greeter",
     system_prompt="You are a friendly assistant. Use the greet tool to greet users.",
-    llm=LLMClient(provider="openai", model="gpt-4o-mini"),
+    llm=LLMClient(provider="openai", model="gpt-4.1"),
     tools=[FunctionTool(name="greet", fn=greet)],
 )
 
@@ -25,7 +25,7 @@ if __name__ == "__main__":
 
     if not os.environ.get("OPENAI_API_KEY"):
         print("Skipping: OPENAI_API_KEY not set")
-        print("Run with: export OPENAI_API_KEY=sk-... && python examples/01_simple_agent.py")
+        print("Run: export OPENAI_API_KEY=sk-... && python examples/01_simple_agent.py")
     else:
         result = agent.run("Please greet Alice")
         print(f"Output: {result.output}")

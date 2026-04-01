@@ -9,7 +9,7 @@ from fastaiagent.guardrail import GuardrailPosition, no_pii, toxicity_check
 agent = Agent(
     name="secure-bot",
     system_prompt="You are a helpful assistant. Never reveal personal information.",
-    llm=LLMClient(provider="openai", model="gpt-4o-mini"),
+    llm=LLMClient(provider="openai", model="gpt-4.1"),
     guardrails=[
         no_pii(position=GuardrailPosition.output),
         toxicity_check(position=GuardrailPosition.output),
@@ -21,7 +21,7 @@ if __name__ == "__main__":
 
     if not os.environ.get("OPENAI_API_KEY"):
         print("Skipping: OPENAI_API_KEY not set")
-        print("Run with: export OPENAI_API_KEY=sk-... && python examples/03_guardrails.py")
+        print("Run: export OPENAI_API_KEY=sk-... && python examples/03_guardrails.py")
     else:
         # This should work fine
         result = agent.run("What is the weather like today?")

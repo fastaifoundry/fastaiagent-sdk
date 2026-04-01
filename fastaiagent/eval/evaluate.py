@@ -7,6 +7,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from fastaiagent._internal.async_utils import run_sync
 from fastaiagent.eval.builtins import BUILTIN_SCORERS
 from fastaiagent.eval.dataset import Dataset
 from fastaiagent.eval.results import EvalResults
@@ -30,7 +31,7 @@ def evaluate(
         )
         print(results.summary())
     """
-    return asyncio.run(
+    return run_sync(
         aevaluate(agent_fn, dataset, scorers, concurrency, **kwargs)
     )
 

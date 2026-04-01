@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from fastaiagent._internal.async_utils import run_sync
 from fastaiagent.agent.agent import Agent, AgentConfig, AgentResult
 from fastaiagent.llm.client import LLMClient
 from fastaiagent.tool.base import Tool
@@ -96,9 +97,7 @@ class Supervisor:
 
     def run(self, input: str, **kwargs: Any) -> AgentResult:
         """Run the supervisor synchronously."""
-        import asyncio
-
-        return asyncio.run(self.arun(input, **kwargs))
+        return run_sync(self.arun(input, **kwargs))
 
     async def arun(self, input: str, **kwargs: Any) -> AgentResult:
         """Run the supervisor — delegates to workers via tool calls."""

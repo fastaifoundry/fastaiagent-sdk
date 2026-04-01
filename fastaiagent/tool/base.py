@@ -6,6 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from fastaiagent._internal.async_utils import run_sync
+
 
 class ToolResult(BaseModel):
     """Result of a tool execution."""
@@ -37,9 +39,7 @@ class Tool:
 
     def execute(self, arguments: dict[str, Any]) -> ToolResult:
         """Execute the tool synchronously."""
-        import asyncio
-
-        return asyncio.run(self.aexecute(arguments))
+        return run_sync(self.aexecute(arguments))
 
     async def aexecute(self, arguments: dict[str, Any]) -> ToolResult:
         """Execute the tool asynchronously. Override in subclasses."""

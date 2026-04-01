@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
 import time
 from collections.abc import Sequence
 from typing import Any
 
 from pydantic import BaseModel, Field
 
+from fastaiagent._internal.async_utils import run_sync
 from fastaiagent.agent.executor import execute_tool_loop
 from fastaiagent.agent.memory import AgentMemory
 from fastaiagent.guardrail.executor import execute_guardrails
@@ -74,7 +74,7 @@ class Agent:
 
     def run(self, input: str, *, trace: bool = True, **kwargs: Any) -> AgentResult:
         """Synchronous execution."""
-        return asyncio.run(self.arun(input, trace=trace, **kwargs))
+        return run_sync(self.arun(input, trace=trace, **kwargs))
 
     async def arun(
         self, input: str, *, trace: bool = True, **kwargs: Any

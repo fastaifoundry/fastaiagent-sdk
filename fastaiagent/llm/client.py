@@ -8,6 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from fastaiagent._internal.async_utils import run_sync
 from fastaiagent._internal.errors import LLMError, LLMProviderError
 from fastaiagent.llm.message import Message, MessageRole, ToolCall
 
@@ -17,7 +18,7 @@ class LLMResponse(BaseModel):
 
     content: str | None = None
     tool_calls: list[ToolCall] = Field(default_factory=list)
-    usage: dict[str, int] = Field(default_factory=dict)
+    usage: dict[str, Any] = Field(default_factory=dict)
     model: str = ""
     finish_reason: str = ""
     latency_ms: int = 0
@@ -70,9 +71,7 @@ class LLMClient:
         **kwargs: Any,
     ) -> LLMResponse:
         """Synchronous completion."""
-        import asyncio
-
-        return asyncio.run(self.acomplete(messages, tools=tools, **kwargs))
+        return run_sync(self.acomplete(messages, tools=tools, **kwargs))
 
     async def acomplete(
         self,
@@ -178,11 +177,38 @@ class LLMClient:
         import httpx
 
         # Extract system messages — Anthropic uses a separate 'system' field
+        # Convert OpenAI message format to Anthropic format:
+        #   - system messages → separate 'system' field
+        #   - assistant messages with tool_calls → content blocks with type: tool_use
+        #   - tool messages → user messages with content blocks type: tool_result
         system_parts = []
-        filtered_msgs = []
+        filtered_msgs: list[dict] = []
         for m in messages:
             if m.role == MessageRole.system:
                 system_parts.append(m.content or "")
+            elif m.role == MessageRole.assistant and m.tool_calls:
+                # Convert to Anthropic tool_use content blocks
+                content: list[dict] = []
+                if m.content:
+                    content.append({"type": "text", "text": m.content})
+                for tc in m.tool_calls:
+                    content.append({
+                        "type": "tool_use",
+                        "id": tc.id,
+                        "name": tc.name,
+                        "input": tc.arguments,
+                    })
+                filtered_msgs.append({"role": "assistant", "content": content})
+            elif m.role == MessageRole.tool:
+                # Convert to Anthropic tool_result content block
+                filtered_msgs.append({
+                    "role": "user",
+                    "content": [{
+                        "type": "tool_result",
+                        "tool_use_id": m.tool_call_id,
+                        "content": m.content or "",
+                    }],
+                })
             else:
                 filtered_msgs.append(m.to_openai_format())
 

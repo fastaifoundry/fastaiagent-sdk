@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from fastaiagent._internal.async_utils import run_sync
 from fastaiagent.eval.scorer import Scorer, ScorerResult
 
 
@@ -44,9 +45,7 @@ class LLMJudge(Scorer):
         self, input: str, output: str, expected: str | None = None, **kwargs: Any
     ) -> ScorerResult:
         """Score using LLM judge (sync)."""
-        import asyncio
-
-        return asyncio.run(self.ascore(input, output, expected, **kwargs))
+        return run_sync(self.ascore(input, output, expected, **kwargs))
 
     async def ascore(
         self, input: str, output: str, expected: str | None = None, **kwargs: Any

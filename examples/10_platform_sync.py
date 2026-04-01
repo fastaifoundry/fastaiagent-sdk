@@ -3,37 +3,44 @@
 Shows how to sync SDK resources to the platform for
 visual editing, monitoring, and team collaboration.
 
-NOTE: Push-only sync (SDK → Platform). Phase 40 feature.
+Usage:
+    export ANTHROPIC_API_KEY=sk-ant-...
+    export FASTAIAGENT_API_KEY=fa_k_...
+    export FASTAIAGENT_TARGET=http://localhost:8001
+    python examples/10_platform_sync.py
 """
 
-# from fastaiagent import Agent, Chain, FastAI, LLMClient
-#
-# # Connect to platform
-# fa = FastAI(api_key="sk-...", project="customer-support")
-#
-# # Define agent locally
-# agent = Agent(
-#     name="support-bot",
-#     system_prompt="You are a helpful support agent.",
-#     llm=LLMClient(provider="openai", model="gpt-4o"),
-# )
-#
-# # Push to platform — appears in the visual editor
-# result = fa.push(agent)
-# print(f"Pushed: {result.url}")
-#
-# # Traces automatically sent to platform dashboard
-# with fa.trace("support-session"):
-#     output = agent.run("How do I get a refund?")
+import os
+
+from fastaiagent import Agent, FastAI, FunctionTool, LLMClient
 
 if __name__ == "__main__":
-    print("Platform Sync example (Phase 40)")
-    print("=" * 40)
-    print()
-    print("SDK → Platform push will be available in Phase 40.")
-    print("The SDK works fully standalone without platform connection.")
-    print()
-    print("When available:")
-    print("  fa = FastAI(api_key='sk-...', project='my-project')")
-    print("  fa.push(my_agent)    # Push agent to platform")
-    print("  fa.push(my_chain)    # Push chain to visual editor")
+    api_key = os.environ.get("FASTAIAGENT_API_KEY", "")
+    target = os.environ.get("FASTAIAGENT_TARGET", "http://localhost:8001")
+
+    if not api_key:
+        print("Skipping: FASTAIAGENT_API_KEY not set")
+        print("Run: export FASTAIAGENT_API_KEY=fa_k_... && python examples/10_platform_sync.py")
+    else:
+        # Define an agent locally
+        def lookup(query: str) -> str:
+            """Look up information."""
+            return f"Found info for: {query}"
+
+        agent = Agent(
+            name="sdk-demo-agent",
+            system_prompt="You are a demo agent pushed from the SDK.",
+            llm=LLMClient(provider="openai", model="gpt-4.1"),
+            tools=[FunctionTool(name="lookup", fn=lookup)],
+        )
+
+        # Connect to platform and push
+        fa = FastAI(api_key=api_key, target=target)
+
+        print(f"Pushing agent '{agent.name}' to {target}...")
+        result = fa.push(agent)
+        print(f"  Resource: {result.resource_type}")
+        print(f"  Name: {result.name}")
+        print(f"  Created: {result.created}")
+        print(f"  Dependencies: {result.dependencies_pushed}")
+        print("Done!")

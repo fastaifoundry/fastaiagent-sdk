@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 from pydantic import BaseModel, Field
 
+from fastaiagent._internal.async_utils import run_sync
 from fastaiagent.chain.checkpoint import CheckpointStore
 from fastaiagent.chain.executor import execute_chain
 from fastaiagent.chain.node import Edge, NodeConfig, NodeType
@@ -115,9 +115,7 @@ class Chain:
         **kwargs: Any,
     ) -> ChainResult:
         """Synchronous execution."""
-        return asyncio.run(
-            self.aexecute(initial_state, trace=trace, **kwargs)
-        )
+        return run_sync(self.aexecute(initial_state, trace=trace, **kwargs))
 
     async def aexecute(
         self,
