@@ -1,6 +1,6 @@
 [project]
 name = "fastaiagent"
-version = "0.1.0a1"
+version = "0.1.0a3"
 description = "Build, debug, evaluate, and operate AI agents. The only SDK with fork-and-rerun Agent Replay."
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -59,8 +59,8 @@ dev = [
 fastaiagent = "fastaiagent.cli.main:app"
 
 [project.urls]
-Homepage = "https://fastaiagent.net"
-Documentation = "https://docs.fastaiagent.net"
+Homepage = "https://github.com/fastaifoundry/fastaiagent-sdk"
+Documentation = "https://github.com/fastaifoundry/fastaiagent-sdk/tree/main/docs"
 Repository = "https://github.com/fastaifoundry/fastaiagent-sdk"
 Issues = "https://github.com/fastaifoundry/fastaiagent-sdk/issues"
 Changelog = "https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/CHANGELOG.md"

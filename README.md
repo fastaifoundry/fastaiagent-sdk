@@ -121,12 +121,12 @@ pip install "fastaiagent[all]"          # Everything
 
 ## Documentation
 
-- [Getting Started](https://docs.fastaiagent.net/getting-started/)
-- [Agent Replay Guide](https://docs.fastaiagent.net/replay/)
-- [Building Chains with Cycles](https://docs.fastaiagent.net/chains/cyclic-workflows/)
-- [Guardrails](https://docs.fastaiagent.net/guardrails/)
-- [Evaluation](https://docs.fastaiagent.net/evaluation/)
-- [API Reference](https://docs.fastaiagent.net/api-reference/)
+- [Getting Started](https://github.com/fastaifoundry/fastaiagent-sdk/tree/main/docs/getting-started)
+- [Agent Replay Guide](https://github.com/fastaifoundry/fastaiagent-sdk/tree/main/docs/replay)
+- [Building Chains with Cycles](https://github.com/fastaifoundry/fastaiagent-sdk/tree/main/docs/chains)
+- [Guardrails](https://github.com/fastaifoundry/fastaiagent-sdk/tree/main/docs/guardrails)
+- [Evaluation](https://github.com/fastaifoundry/fastaiagent-sdk/tree/main/docs/evaluation)
+- [API Reference](https://github.com/fastaifoundry/fastaiagent-sdk/tree/main/docs/api-reference)
 
 ## Contributing
 
