@@ -156,6 +156,14 @@ class TraceStore:
     def __init__(self, db_path: str | None = None):
         self.db_path = db_path or get_config().trace_db_path
         self._db = SQLiteHelper(self.db_path)
+        self._init_schema()
+
+    def _init_schema(self) -> None:
+        """Ensure the spans table exists (safe on existing DBs)."""
+        for stmt in _SCHEMA.strip().split(";"):
+            stmt = stmt.strip()
+            if stmt:
+                self._db.execute(stmt)
 
     @classmethod
     def default(cls) -> TraceStore:

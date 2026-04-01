@@ -38,10 +38,22 @@ class LocalKB:
         self._embeddings: list[list[float]] = []
 
     def add(self, path_or_text: str, metadata: dict | None = None) -> int:
-        """Add a file or raw text to the knowledge base. Returns chunk count."""
-        p = Path(path_or_text)
-        if p.exists():
-            docs = ingest_file(p)
+        """Add a file or raw text to the knowledge base. Returns chunk count.
+
+        If path_or_text is a valid file path, the file is ingested.
+        Otherwise it is treated as raw text content.
+        """
+        # Guard against OSError on long strings passed to Path.exists()
+        is_file = False
+        if len(path_or_text) <= 255:
+            try:
+                p = Path(path_or_text)
+                is_file = p.exists() and p.is_file()
+            except OSError:
+                is_file = False
+
+        if is_file:
+            docs = ingest_file(Path(path_or_text))
         else:
             docs = [Document(content=path_or_text, metadata=metadata or {})]
 
