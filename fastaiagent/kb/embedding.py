@@ -77,6 +77,6 @@ def get_default_embedder() -> Embedder:
         pass
     try:
         return OpenAIEmbedder()
-    except ImportError:
+    except (ImportError, Exception):
         pass
     return SimpleEmbedder()
