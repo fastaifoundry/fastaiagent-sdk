@@ -11,7 +11,7 @@
 The SDK is a **separate open-source repository**. It has zero dependency on the platform codebase. They communicate exclusively via the platform's existing Public API (43+ endpoints, Phase 19).
 
 ```
-GitHub Organization: github.com/fastai-foundry
+GitHub Organization: github.com/fastaifoundry
 │
 ├── fastaiagent-sdk              ← NEW: Open source, Apache 2.0
 │   ├── fastaiagent/             ← Python package (pip install fastaiagent)
@@ -36,7 +36,7 @@ GitHub Organization: github.com/fastai-foundry
 ```
 ┌─────────────────────────────┐       HTTPS        ┌────────────────────────────┐
 │  fastaiagent-sdk            │ ──────────────────→ │  FastAIAgent Platform      │
-│  (github.com/fastai-foundry │                     │  (private repo)            │
+│  (github.com/fastaifoundry │                     │  (private repo)            │
 │   /fastaiagent-sdk)         │  Public API         │                            │
 │                             │  POST /api/v1/agents│  API routes (71 files)     │
 │  pip install fastaiagent    │  GET /api/v1/traces │  Services (178 files)      │
@@ -231,7 +231,7 @@ Week 5:  Full test suite (200+ tests)
 **Repository:** `github.com/fastaifoundry/fastaiagent-sdk`
 
 **Step 1: Create repository on GitHub**
-- Organization: `fastai-foundry`
+- Organization: `fastaifoundry`
 - Repository name: `fastaiagent-sdk`
 - Visibility: Public
 - License: Apache 2.0
@@ -760,7 +760,7 @@ Apache 2.0 — see [LICENSE](LICENSE).
 ```
 
 **Tasks for 39.1:**
-- [ ] Create repository on GitHub under `fastai-foundry` organization
+- [ ] Create repository on GitHub under `fastaifoundry` organization
 - [ ] Push all config files: pyproject.toml, LICENSE, README, CONTRIBUTING, CODE_OF_CONDUCT
 - [ ] Create complete directory structure with all `__init__.py` files
 - [ ] Set up CI workflow (runs on PR, tests on 4 Python versions × 3 OS)
