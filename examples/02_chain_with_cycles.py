@@ -17,8 +17,20 @@ def make_agent(name: str, prompt: str) -> Agent:
 
 chain = Chain("research-pipeline")
 chain.add_node("research", agent=make_agent("researcher", "Research the given topic thoroughly."))
-chain.add_node("evaluate", agent=make_agent("evaluator", "Evaluate if the research is sufficient. Set quality score."))
-chain.add_node("respond", agent=make_agent("responder", "Write a final response using the research."))
+chain.add_node(
+    "evaluate",
+    agent=make_agent(
+        "evaluator",
+        "Evaluate if the research is sufficient. Set quality score.",
+    ),
+)
+chain.add_node(
+    "respond",
+    agent=make_agent(
+        "responder",
+        "Write a final response using the research.",
+    ),
+)
 
 chain.connect("research", "evaluate")
 chain.connect("evaluate", "research", max_iterations=3, exit_condition="quality >= 0.8")

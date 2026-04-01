@@ -12,7 +12,9 @@ class ToolUsageAccuracy(Scorer):
 
     name = "tool_usage_accuracy"
 
-    def score(self, input: str, output: str, expected: str | None = None, **kw: Any) -> ScorerResult:
+    def score(
+        self, input: str, output: str, expected: str | None = None, **kw: Any
+    ) -> ScorerResult:
         actual = kw.get("actual_trajectory", [])
         expected_traj = kw.get("expected_trajectory", [])
         if not expected_traj:
@@ -32,7 +34,9 @@ class StepEfficiency(Scorer):
 
     name = "step_efficiency"
 
-    def score(self, input: str, output: str, expected: str | None = None, **kw: Any) -> ScorerResult:
+    def score(
+        self, input: str, output: str, expected: str | None = None, **kw: Any
+    ) -> ScorerResult:
         actual_steps = kw.get("actual_steps", 0)
         expected_steps = kw.get("expected_steps", actual_steps)
         if actual_steps == 0:
@@ -48,7 +52,9 @@ class PathCorrectness(Scorer):
 
     name = "path_correctness"
 
-    def score(self, input: str, output: str, expected: str | None = None, **kw: Any) -> ScorerResult:
+    def score(
+        self, input: str, output: str, expected: str | None = None, **kw: Any
+    ) -> ScorerResult:
         actual = kw.get("actual_trajectory", [])
         expected_traj = kw.get("expected_trajectory", [])
         if not expected_traj:
@@ -77,7 +83,9 @@ class CycleEfficiency(Scorer):
 
     name = "cycle_efficiency"
 
-    def score(self, input: str, output: str, expected: str | None = None, **kw: Any) -> ScorerResult:
+    def score(
+        self, input: str, output: str, expected: str | None = None, **kw: Any
+    ) -> ScorerResult:
         actual = kw.get("actual_trajectory", [])
         if not actual:
             return ScorerResult(score=1.0, passed=True)

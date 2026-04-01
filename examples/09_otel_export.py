@@ -5,7 +5,7 @@ to external observability tools.
 Requires: pip install fastaiagent[otel-export]
 """
 
-from fastaiagent.trace import add_exporter, trace_context
+from fastaiagent.trace import trace_context
 
 # Add an OTLP HTTP exporter
 # from fastaiagent.trace.export import create_otlp_exporter

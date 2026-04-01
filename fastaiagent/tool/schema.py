@@ -27,7 +27,10 @@ class DriftReport(BaseModel):
     @property
     def summary(self) -> str:
         if not self.drift_detected:
-            return f"No drift detected for '{self.tool_name}' across {self.responses_checked} responses"
+            return (
+                f"No drift detected for '{self.tool_name}' "
+                f"across {self.responses_checked} responses"
+            )
         return (
             f"Drift detected for '{self.tool_name}': "
             f"{len(self.violations)} violations across {self.responses_checked} responses"

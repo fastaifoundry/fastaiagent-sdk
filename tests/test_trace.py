@@ -46,7 +46,7 @@ class TestTraceContext:
             span.set_attribute("test.key", "value")
 
     def test_nested_spans(self):
-        with trace_context("parent") as parent_span:
+        with trace_context("parent"):
             with trace_context("child") as child_span:
                 assert child_span is not None
 

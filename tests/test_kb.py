@@ -6,9 +6,9 @@ import pytest
 
 from fastaiagent.kb import LocalKB
 from fastaiagent.kb.chunking import Chunk, chunk_text
-from fastaiagent.kb.document import Document, ingest_file
+from fastaiagent.kb.document import ingest_file
 from fastaiagent.kb.embedding import SimpleEmbedder
-from fastaiagent.kb.search import SearchResult, cosine_similarity, search
+from fastaiagent.kb.search import cosine_similarity, search
 
 
 class TestDocument:

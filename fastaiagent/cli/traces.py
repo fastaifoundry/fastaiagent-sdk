@@ -28,7 +28,13 @@ def list_traces(last_hours: int = typer.Option(24, help="Show traces from last N
     table.add_column("Time")
 
     for t in traces:
-        table.add_row(t.trace_id[:12] + "...", t.name, t.status, str(t.span_count), t.start_time[:19])
+        table.add_row(
+            t.trace_id[:12] + "...",
+            t.name,
+            t.status,
+            str(t.span_count),
+            t.start_time[:19],
+        )
 
     console.print(table)
     store.close()

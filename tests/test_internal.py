@@ -3,7 +3,7 @@
 import os
 from datetime import datetime
 from enum import Enum
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 from pydantic import BaseModel
@@ -24,7 +24,6 @@ from fastaiagent._internal.errors import (
 )
 from fastaiagent._internal.serialization import from_json, serialize_value, to_json
 from fastaiagent._internal.storage import SQLiteHelper
-
 
 # --- Error hierarchy tests ---
 

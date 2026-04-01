@@ -32,8 +32,15 @@ def version():
 @app.command()
 def push(
     api_key: str = typer.Option(..., envvar="FASTAIAGENT_API_KEY", help="Platform API key"),
-    target: str = typer.Option("https://app.fastaiagent.net", envvar="FASTAIAGENT_TARGET", help="Platform URL"),
-    agent: str | None = typer.Option(None, help="Agent module:name to push (e.g., myapp:support_agent)"),
+    target: str = typer.Option(
+        "https://app.fastaiagent.net",
+        envvar="FASTAIAGENT_TARGET",
+        help="Platform URL",
+    ),
+    agent: str | None = typer.Option(
+        None,
+        help="Agent module:name to push (e.g., myapp:support_agent)",
+    ),
     chain: str | None = typer.Option(None, help="Chain module:name to push"),
 ):
     """Push resources to the FastAIAgent platform."""
@@ -47,13 +54,13 @@ def push(
 
     from fastaiagent.client import FastAI
 
-    fa = FastAI(api_key=api_key, target=target)
+    FastAI(api_key=api_key, target=target)
     console.print(f"Connecting to {target}...")
 
     if agent:
-        console.print(f"[dim]Push via Python API: fa.push(my_agent)[/dim]")
+        console.print("[dim]Push via Python API: fa.push(my_agent)[/dim]")
     if chain:
-        console.print(f"[dim]Push via Python API: fa.push(my_chain)[/dim]")
+        console.print("[dim]Push via Python API: fa.push(my_chain)[/dim]")
 
 
 if __name__ == "__main__":

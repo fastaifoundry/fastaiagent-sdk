@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from fastaiagent._version import __version__
-
 if TYPE_CHECKING:
     from opentelemetry.sdk.trace.export import SpanExporter
 

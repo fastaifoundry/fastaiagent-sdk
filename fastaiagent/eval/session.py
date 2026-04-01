@@ -12,7 +12,9 @@ class ConversationCoherence(Scorer):
 
     name = "conversation_coherence"
 
-    def score(self, input: str, output: str, expected: str | None = None, **kw: Any) -> ScorerResult:
+    def score(
+        self, input: str, output: str, expected: str | None = None, **kw: Any
+    ) -> ScorerResult:
         turns = kw.get("turns", [])
         if not turns:
             return ScorerResult(score=1.0, passed=True, reason="No turns to evaluate")
@@ -27,7 +29,9 @@ class GoalCompletion(Scorer):
 
     name = "goal_completion"
 
-    def score(self, input: str, output: str, expected: str | None = None, **kw: Any) -> ScorerResult:
+    def score(
+        self, input: str, output: str, expected: str | None = None, **kw: Any
+    ) -> ScorerResult:
         goal = kw.get("goal", expected)
         if not goal:
             return ScorerResult(score=0.0, passed=False, reason="No goal specified")

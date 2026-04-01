@@ -4,8 +4,8 @@ Shows how to run systematic evaluation with built-in
 and custom scorers.
 """
 
-from fastaiagent.eval import Dataset, EvalResults, Scorer, ScorerResult, evaluate
-from fastaiagent.eval.builtins import Contains, ExactMatch
+from fastaiagent.eval import Dataset, Scorer, ScorerResult, evaluate
+from fastaiagent.eval.builtins import Contains
 
 
 # A simple agent function (replace with your real agent)

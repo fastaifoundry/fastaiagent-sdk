@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from fastaiagent._internal.errors import FragmentNotFoundError, PromptNotFoundError
+from fastaiagent._internal.errors import PromptNotFoundError
 from fastaiagent.prompt import Fragment, Prompt, PromptRegistry
 
 

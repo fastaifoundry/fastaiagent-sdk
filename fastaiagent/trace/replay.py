@@ -7,7 +7,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from fastaiagent._internal.errors import ReplayError
-from fastaiagent.trace.storage import SpanData, TraceData, TraceStore
+from fastaiagent.trace.storage import TraceData, TraceStore
 
 
 class ReplayStep(BaseModel):

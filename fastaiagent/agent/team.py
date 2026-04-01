@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from fastaiagent.agent.agent import Agent, AgentConfig, AgentResult
 from fastaiagent.llm.client import LLMClient
-from fastaiagent.llm.message import SystemMessage, UserMessage
 from fastaiagent.tool.base import Tool
 
 
@@ -84,7 +82,12 @@ class Supervisor:
                     description=f"Delegate a task to {worker.role}: {worker.description}",
                     parameters={
                         "type": "object",
-                        "properties": {"task": {"type": "string", "description": "The task to delegate"}},
+                        "properties": {
+                            "task": {
+                                "type": "string",
+                                "description": "The task to delegate",
+                            }
+                        },
                         "required": ["task"],
                     },
                 )

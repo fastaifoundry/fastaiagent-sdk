@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -117,12 +116,17 @@ class LocalStorageProcessor:
 
         status = "OK"
         if hasattr(span, "status") and span.status:
-            status = span.status.status_code.name if hasattr(span.status.status_code, "name") else str(span.status.status_code)
+            status = (
+                span.status.status_code.name
+                if hasattr(span.status.status_code, "name")
+                else str(span.status.status_code)
+            )
 
         db = self._get_db()
         db.execute(
             """INSERT OR REPLACE INTO spans
-               (span_id, trace_id, parent_span_id, name, start_time, end_time, status, attributes, events)
+               (span_id, trace_id, parent_span_id, name,
+                start_time, end_time, status, attributes, events)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 span_id,
@@ -196,7 +200,6 @@ class TraceStore:
 
     def list_traces(self, last_hours: int = 24, **filters: Any) -> list[TraceSummary]:
         """List recent traces."""
-        cutoff = datetime.now(tz=timezone.utc).isoformat()
         rows = self._db.fetchall(
             """SELECT trace_id,
                       MIN(name) as name,

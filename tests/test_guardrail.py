@@ -17,7 +17,6 @@ from fastaiagent.guardrail import (
     toxicity_check,
 )
 
-
 # --- Guardrail base tests ---
 
 
@@ -110,7 +109,10 @@ class TestRegexGuardrail:
         g = Guardrail(
             name="no_emails",
             guardrail_type=GuardrailType.regex,
-            config={"pattern": r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", "should_match": False},
+            config={
+                "pattern": r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
+                "should_match": False,
+            },
         )
         result = await g.aexecute("Hello world")
         assert result.passed is True
@@ -120,7 +122,10 @@ class TestRegexGuardrail:
         g = Guardrail(
             name="no_emails",
             guardrail_type=GuardrailType.regex,
-            config={"pattern": r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", "should_match": False},
+            config={
+                "pattern": r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
+                "should_match": False,
+            },
         )
         result = await g.aexecute("Contact me at user@example.com")
         assert result.passed is False

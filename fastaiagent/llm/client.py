@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, AsyncIterator, Iterator
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -335,7 +335,6 @@ class LLMClient:
                 "Install it with: pip install boto3"
             )
 
-        import json
 
         client = boto3.client("bedrock-runtime", region_name=self._extra.get("region", "us-east-1"))
         msg_dicts = [m.to_openai_format() for m in messages]

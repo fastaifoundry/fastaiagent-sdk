@@ -16,15 +16,14 @@ from fastaiagent._internal.errors import (
 )
 from fastaiagent._platform.api import PlatformAPI
 from fastaiagent._platform.cache import OfflineCache
-from fastaiagent.agent import Agent, AgentConfig
-from fastaiagent.chain import Chain, NodeType
+from fastaiagent.agent import Agent
+from fastaiagent.chain import Chain
 from fastaiagent.client import FastAI
 from fastaiagent.deploy.push import PushResult, push_all, push_resource
 from fastaiagent.guardrail import Guardrail
 from fastaiagent.llm import LLMClient
 from fastaiagent.prompt import Prompt
 from fastaiagent.tool import FunctionTool
-
 
 # --- PlatformAPI error handling tests ---
 
@@ -46,7 +45,11 @@ class TestPlatformAPIErrors:
         api = PlatformAPI(api_key="key", base_url="https://example.com")
         with pytest.raises(PlatformAuthError, match="scope"):
             api._handle_response(self._make_response(
-                403, {"detail": {"error": "insufficient_scope", "detail": "API key lacks required scope: agent:write"}}
+                403,
+                {"detail": {
+                    "error": "insufficient_scope",
+                    "detail": "API key lacks required scope: agent:write",
+                }},
             ))
 
     def test_403_tier_raises_tier_error(self):

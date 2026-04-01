@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from fastaiagent.eval.builtins import BUILTIN_SCORERS
 from fastaiagent.eval.dataset import Dataset
 from fastaiagent.eval.results import EvalResults
-from fastaiagent.eval.scorer import Scorer, ScorerResult
+from fastaiagent.eval.scorer import Scorer
 
 
 def evaluate(

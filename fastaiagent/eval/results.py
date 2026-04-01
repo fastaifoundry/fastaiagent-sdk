@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 
 from fastaiagent.eval.scorer import ScorerResult
 
@@ -26,7 +25,10 @@ class EvalResults:
                 continue
             avg_score = sum(r.score for r in results) / len(results)
             pass_rate = sum(1 for r in results if r.passed) / len(results)
-            lines.append(f"{name}: avg={avg_score:.2f} pass_rate={pass_rate:.0%} ({len(results)} cases)")
+            lines.append(
+                f"{name}: avg={avg_score:.2f} pass_rate={pass_rate:.0%}"
+                f" ({len(results)} cases)"
+            )
         return "\n".join(lines)
 
     def export(self, path: str | Path, format: str = "json") -> None:

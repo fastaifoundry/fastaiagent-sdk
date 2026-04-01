@@ -3,15 +3,15 @@
 from fastaiagent._version import __version__
 from fastaiagent.agent import Agent, AgentConfig, AgentResult
 from fastaiagent.chain import Chain, ChainResult, ChainState
+from fastaiagent.client import FastAI
 from fastaiagent.eval import Dataset, EvalResults, Scorer, evaluate
-from fastaiagent.guardrail import Guardrail, GuardrailResult, no_pii, json_valid, toxicity_check
+from fastaiagent.guardrail import Guardrail, GuardrailResult, json_valid, no_pii, toxicity_check
 from fastaiagent.kb import LocalKB
 from fastaiagent.llm import LLMClient, Message
 from fastaiagent.prompt import Prompt, PromptRegistry
 from fastaiagent.tool import FunctionTool, MCPTool, RESTTool, Tool, tool
 from fastaiagent.trace import TraceStore, trace_context
 from fastaiagent.trace.replay import Replay
-from fastaiagent.client import FastAI
 
 
 def init(

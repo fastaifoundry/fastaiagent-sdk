@@ -5,16 +5,14 @@ from __future__ import annotations
 import pytest
 
 from fastaiagent._internal.errors import (
-    ChainCycleError,
     ChainStateValidationError,
 )
-from fastaiagent.agent import Agent, AgentConfig, AgentResult
+from fastaiagent.agent import Agent
 from fastaiagent.chain import Chain, ChainResult, ChainState, NodeType
 from fastaiagent.chain.checkpoint import CheckpointStore
 from fastaiagent.chain.node import Edge, NodeConfig
 from fastaiagent.chain.validator import detect_cycles, validate_chain
 from fastaiagent.llm.client import LLMClient, LLMResponse
-from fastaiagent.tool import FunctionTool
 
 
 class MockLLMClient(LLMClient):

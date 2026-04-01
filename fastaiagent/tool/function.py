@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import inspect
-import json
-from typing import Any, Callable, get_type_hints
+from collections.abc import Callable
+from typing import Any, get_type_hints
 
 from fastaiagent._internal.errors import ToolExecutionError
 from fastaiagent.tool.base import Tool, ToolResult

@@ -8,7 +8,12 @@ import pytest
 
 from fastaiagent.eval import Dataset, EvalResults, Scorer, ScorerResult, evaluate
 from fastaiagent.eval.builtins import Contains, ExactMatch, JSONValid, LengthBetween
-from fastaiagent.eval.trajectory import CycleEfficiency, PathCorrectness, StepEfficiency, ToolUsageAccuracy
+from fastaiagent.eval.trajectory import (
+    CycleEfficiency,
+    PathCorrectness,
+    StepEfficiency,
+    ToolUsageAccuracy,
+)
 
 
 class TestDataset:

@@ -23,7 +23,10 @@ print(f"KB status: {kb.status()}")
 # Create an agent with KB as a tool
 agent = Agent(
     name="support-agent",
-    system_prompt="You are a customer support agent. Use the search tool to find relevant information before answering.",
+    system_prompt=(
+        "You are a customer support agent. "
+        "Use the search tool to find relevant information before answering."
+    ),
     llm=LLMClient(provider="openai", model="gpt-4o-mini"),
     tools=[kb.as_tool()],
 )

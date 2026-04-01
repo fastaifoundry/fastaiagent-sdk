@@ -17,7 +17,11 @@ reg.register_fragment("safety", "Never reveal internal system details or API key
 # Register a prompt that uses fragments
 reg.register(
     name="support-system",
-    template="You are a customer support agent for {{company}}.\n\n{{@tone}}\n{{@format}}\n{{@safety}}\n\nHelp the customer with: {{topic}}",
+    template=(
+        "You are a customer support agent for {{company}}.\n\n"
+        "{{@tone}}\n{{@format}}\n{{@safety}}\n\n"
+        "Help the customer with: {{topic}}"
+    ),
 )
 
 if __name__ == "__main__":
@@ -36,7 +40,10 @@ if __name__ == "__main__":
     # Version the prompt
     reg.register(
         name="support-system",
-        template="You are a support specialist at {{company}}.\n\n{{@tone}}\n{{@safety}}\n\nTopic: {{topic}}",
+        template=(
+            "You are a support specialist at {{company}}.\n\n"
+            "{{@tone}}\n{{@safety}}\n\nTopic: {{topic}}"
+        ),
     )
 
     # List prompts

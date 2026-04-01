@@ -9,7 +9,6 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from fastaiagent._internal.errors import AgentError
 from fastaiagent.agent.executor import execute_tool_loop
 from fastaiagent.agent.memory import AgentMemory
 from fastaiagent.guardrail.executor import execute_guardrails

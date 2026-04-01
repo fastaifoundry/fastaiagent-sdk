@@ -14,7 +14,7 @@ def enable() -> None:
         return
 
     try:
-        from langchain_core.callbacks import BaseCallbackHandler  # type: ignore[import-not-found]
+        import langchain_core.callbacks  # type: ignore[import-not-found]  # noqa: F401
     except ImportError:
         raise ImportError(
             "langchain-core is required. Install with: pip install fastaiagent[langchain]"

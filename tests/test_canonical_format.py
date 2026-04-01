@@ -5,11 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from fastaiagent.agent import Agent
 from fastaiagent.chain import Chain
-from fastaiagent.chain.node import Edge, NodeConfig
 from fastaiagent.guardrail import Guardrail
 from fastaiagent.prompt import Prompt
 from fastaiagent.tool import Tool

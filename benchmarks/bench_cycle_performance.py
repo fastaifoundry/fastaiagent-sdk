@@ -4,7 +4,6 @@ import asyncio
 import time
 
 from fastaiagent.chain import Chain, NodeType
-from fastaiagent.chain.node import NodeConfig
 
 
 async def bench_cycles(max_iterations=100):
@@ -13,8 +12,8 @@ async def bench_cycles(max_iterations=100):
     # No actual execution — just measure the framework overhead
     # of cycle tracking and state management
 
-    from fastaiagent.chain.state import ChainState
     from fastaiagent.chain.executor import _evaluate_condition
+    from fastaiagent.chain.state import ChainState
 
     state = ChainState({"count": 0})
     start = time.monotonic()

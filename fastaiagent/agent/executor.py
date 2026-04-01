@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import time
 from typing import Any
 
 from fastaiagent._internal.errors import MaxIterationsError, ToolExecutionError
@@ -11,9 +10,7 @@ from fastaiagent.llm.client import LLMResponse
 from fastaiagent.llm.message import (
     AssistantMessage,
     Message,
-    SystemMessage,
     ToolMessage,
-    UserMessage,
 )
 from fastaiagent.tool.base import Tool
 

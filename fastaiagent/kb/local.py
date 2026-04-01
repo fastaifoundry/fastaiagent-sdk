@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 from fastaiagent.kb.chunking import Chunk, chunk_text
 from fastaiagent.kb.document import Document, ingest_file

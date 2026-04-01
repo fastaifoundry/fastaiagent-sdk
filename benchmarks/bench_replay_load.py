@@ -1,6 +1,5 @@
 """Benchmark: Replay load. Target: 1000-span trace <2s."""
 
-import tempfile
 import time
 
 from fastaiagent.trace.replay import Replay

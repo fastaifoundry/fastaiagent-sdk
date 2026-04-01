@@ -45,7 +45,13 @@ async def _run_code(guardrail: Guardrail, data: str | dict) -> GuardrailResult:
         return GuardrailResult(passed=True, message="No code configured")
 
     text = data if isinstance(data, str) else json.dumps(data)
-    safe_globals: dict[str, Any] = {"__builtins__": {"len": len, "str": str, "int": int, "float": float, "bool": bool, "list": list, "dict": dict, "re": re, "json": json}}
+    safe_globals: dict[str, Any] = {
+        "__builtins__": {
+            "len": len, "str": str, "int": int, "float": float,
+            "bool": bool, "list": list, "dict": dict,
+            "re": re, "json": json,
+        }
+    }
     safe_locals: dict[str, Any] = {"data": text, "result": True}
 
     try:
@@ -153,6 +159,10 @@ async def _run_classifier(guardrail: Guardrail, data: str | dict) -> GuardrailRe
 
     return GuardrailResult(
         passed=passed,
-        message=f"Detected categories: {detected}. Blocked: {blocked}" if detected else "No categories detected",
+        message=(
+            f"Detected categories: {detected}. Blocked: {blocked}"
+            if detected
+            else "No categories detected"
+        ),
         metadata={"detected": detected, "blocked": blocked},
     )

@@ -4,7 +4,7 @@ Demonstrates PII blocking, toxicity checks, and JSON validation.
 """
 
 from fastaiagent import Agent, LLMClient
-from fastaiagent.guardrail import Guardrail, GuardrailPosition, json_valid, no_pii, toxicity_check
+from fastaiagent.guardrail import GuardrailPosition, no_pii, toxicity_check
 
 agent = Agent(
     name="secure-bot",

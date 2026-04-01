@@ -95,23 +95,23 @@ class Message(BaseModel):
 # --- Factory functions ---
 
 
-def SystemMessage(content: str) -> Message:
+def SystemMessage(content: str) -> Message:  # noqa: N802
     """Create a system message."""
     return Message(role=MessageRole.system, content=content)
 
 
-def UserMessage(content: str) -> Message:
+def UserMessage(content: str) -> Message:  # noqa: N802
     """Create a user message."""
     return Message(role=MessageRole.user, content=content)
 
 
-def AssistantMessage(
+def AssistantMessage(  # noqa: N802
     content: str | None = None, tool_calls: list[ToolCall] | None = None
 ) -> Message:
     """Create an assistant message."""
     return Message(role=MessageRole.assistant, content=content, tool_calls=tool_calls)
 
 
-def ToolMessage(content: str, tool_call_id: str) -> Message:
+def ToolMessage(content: str, tool_call_id: str) -> Message:  # noqa: N802
     """Create a tool result message."""
     return Message(role=MessageRole.tool, content=content, tool_call_id=tool_call_id)

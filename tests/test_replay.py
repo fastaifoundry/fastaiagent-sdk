@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from fastaiagent._internal.errors import ReplayError
-from fastaiagent.trace.replay import ForkedReplay, Replay, ReplayStep
+from fastaiagent.trace.replay import ForkedReplay, Replay
 from fastaiagent.trace.storage import SpanData, TraceData
 
 

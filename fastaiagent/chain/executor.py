@@ -10,7 +10,6 @@ from typing import Any
 from fastaiagent._internal.errors import (
     ChainCycleError,
     ChainError,
-    ChainStateValidationError,
 )
 from fastaiagent.chain.checkpoint import CheckpointStore
 from fastaiagent.chain.node import Edge, NodeConfig, NodeType

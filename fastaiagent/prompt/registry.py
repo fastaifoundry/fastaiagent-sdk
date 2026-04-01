@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-from typing import Any
 
 from fastaiagent.prompt.fragment import Fragment
 from fastaiagent.prompt.prompt import Prompt

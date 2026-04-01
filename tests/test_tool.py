@@ -6,8 +6,7 @@ import pytest
 
 from fastaiagent._internal.errors import ToolExecutionError
 from fastaiagent.tool import FunctionTool, MCPTool, RESTTool, Tool, ToolResult, tool
-from fastaiagent.tool.schema import DriftReport, detect_drift, validate_schema
-
+from fastaiagent.tool.schema import detect_drift, validate_schema
 
 # --- ToolResult tests ---
 
