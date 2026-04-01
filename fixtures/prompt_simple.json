@@ -1,0 +1,10 @@
+{
+  "name": "customer-greeting",
+  "template": "Hello {{customer_name}}, welcome to {{company}}! How can I help you today?",
+  "variables": ["customer_name", "company"],
+  "version": 1,
+  "metadata": {
+    "category": "agent",
+    "author": "support-team"
+  }
+}

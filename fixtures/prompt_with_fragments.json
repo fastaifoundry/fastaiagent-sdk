@@ -1,0 +1,10 @@
+{
+  "name": "support-prompt",
+  "template": "You are a support agent for {{company}}.\n\n{{@tone}}\n{{@format}}\n\nAnswer the customer's question about: {{topic}}",
+  "variables": ["company", "topic"],
+  "version": 1,
+  "metadata": {
+    "category": "system",
+    "fragments": ["tone", "format"]
+  }
+}

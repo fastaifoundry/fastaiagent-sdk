@@ -1,0 +1,36 @@
+{
+  "name": "typed-pipeline",
+  "nodes": [
+    {
+      "id": "classify",
+      "type": "agent",
+      "label": "Classifier",
+      "position": {"x": 0, "y": 0},
+      "config": {"agent_name": "classifier"}
+    },
+    {
+      "id": "route",
+      "type": "condition",
+      "label": "Router",
+      "position": {"x": 200, "y": 0},
+      "config": {
+        "conditions": [
+          {"expression": "category == billing", "handle": "billing"},
+          {"expression": "category == technical", "handle": "technical"}
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {"source": "classify", "target": "route"}
+  ],
+  "state_schema": {
+    "type": "object",
+    "properties": {
+      "message": {"type": "string"},
+      "category": {"type": "string"},
+      "priority": {"type": "integer"}
+    },
+    "required": ["message"]
+  }
+}

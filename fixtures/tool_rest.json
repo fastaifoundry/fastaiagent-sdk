@@ -1,0 +1,25 @@
+{
+  "name": "weather_api",
+  "description": "Get current weather for a location",
+  "tool_type": "rest_api",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "city": {
+        "type": "string",
+        "description": "City name"
+      },
+      "units": {
+        "type": "string",
+        "description": "Temperature units (metric or imperial)"
+      }
+    },
+    "required": ["city"]
+  },
+  "config": {
+    "url": "https://api.weather.example.com/v1/current",
+    "method": "GET",
+    "headers": {"X-API-Key": "{{API_KEY}}"},
+    "body_mapping": "query_params"
+  }
+}

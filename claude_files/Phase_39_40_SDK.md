@@ -248,7 +248,7 @@ description = "Build, debug, evaluate, and operate AI agents. The only SDK with 
 readme = "README.md"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.10"
-authors = [{name = "Fast AI", email = "sdk@fastaiagent.net"}]
+authors = [{name = "FastAIFoundry", email = "support@fastaifoundry.com"}]
 
 keywords = [
     "ai-agents", "agent-debugging", "agent-replay", 

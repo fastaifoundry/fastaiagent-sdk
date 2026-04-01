@@ -1,0 +1,28 @@
+{
+  "name": "support-multiturn",
+  "dataset_type": "multi_turn",
+  "items": [
+    {
+      "input": {"message": "I need help with my order"},
+      "expected_output": {"intent": "order_help"},
+      "conversation": [
+        {"role": "user", "content": "I need help with my order"},
+        {"role": "assistant", "content": "I'd be happy to help! Could you provide your order number?"},
+        {"role": "user", "content": "It's ORDER-12345"},
+        {"role": "assistant", "content": "I found your order. It's currently in transit and expected to arrive by Friday."}
+      ],
+      "expected_trajectory": ["classify_intent", "lookup_order", "check_shipping", "respond"],
+      "tags": ["order", "shipping"]
+    },
+    {
+      "input": {"message": "How do I reset my password?"},
+      "expected_output": {"intent": "password_reset"},
+      "conversation": [
+        {"role": "user", "content": "How do I reset my password?"},
+        {"role": "assistant", "content": "Go to Settings > Security > Reset Password. You'll receive an email with a reset link."}
+      ],
+      "expected_trajectory": ["classify_intent", "search_docs", "respond"],
+      "tags": ["account", "password"]
+    }
+  ]
+}

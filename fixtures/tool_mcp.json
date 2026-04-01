@@ -1,0 +1,23 @@
+{
+  "name": "file_search",
+  "description": "Search files in the codebase",
+  "tool_type": "mcp",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "Search query"
+      },
+      "file_pattern": {
+        "type": "string",
+        "description": "Glob pattern for file filtering"
+      }
+    },
+    "required": ["query"]
+  },
+  "config": {
+    "server_url": "http://localhost:3000/mcp",
+    "tool_name": "search_files"
+  }
+}

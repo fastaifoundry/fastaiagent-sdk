@@ -1,0 +1,16 @@
+{
+  "name": "calculate",
+  "description": "Perform a mathematical calculation",
+  "tool_type": "function",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "expression": {
+        "type": "string",
+        "description": "Mathematical expression to evaluate"
+      }
+    },
+    "required": ["expression"]
+  },
+  "config": {}
+}

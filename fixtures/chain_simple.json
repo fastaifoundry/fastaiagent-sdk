@@ -1,0 +1,30 @@
+{
+  "name": "linear-pipeline",
+  "nodes": [
+    {
+      "id": "input",
+      "type": "start",
+      "label": "Input",
+      "position": {"x": 0, "y": 0},
+      "config": {}
+    },
+    {
+      "id": "process",
+      "type": "agent",
+      "label": "Processor",
+      "position": {"x": 200, "y": 0},
+      "config": {"agent_name": "processor"}
+    },
+    {
+      "id": "output",
+      "type": "end",
+      "label": "Output",
+      "position": {"x": 400, "y": 0},
+      "config": {}
+    }
+  ],
+  "edges": [
+    {"source": "input", "target": "process"},
+    {"source": "process", "target": "output"}
+  ]
+}

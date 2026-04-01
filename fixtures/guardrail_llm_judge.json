@@ -1,0 +1,15 @@
+{
+  "name": "relevance_judge",
+  "guardrail_type": "llm_judge",
+  "position": "output",
+  "config": {
+    "prompt": "Is the following response relevant and helpful? Respond with PASS or FAIL.\n\nResponse: {data}",
+    "pass_value": "PASS",
+    "llm": {
+      "provider": "openai",
+      "model": "gpt-4o-mini"
+    }
+  },
+  "blocking": false,
+  "description": "LLM judge that evaluates response relevance"
+}

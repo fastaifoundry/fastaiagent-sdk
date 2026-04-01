@@ -1,0 +1,44 @@
+{
+  "name": "retry-pipeline",
+  "nodes": [
+    {
+      "id": "research",
+      "type": "agent",
+      "label": "Researcher",
+      "position": {"x": 0, "y": 0},
+      "config": {"agent_name": "researcher"}
+    },
+    {
+      "id": "evaluate",
+      "type": "agent",
+      "label": "Evaluator",
+      "position": {"x": 200, "y": 0},
+      "config": {"agent_name": "evaluator"}
+    },
+    {
+      "id": "respond",
+      "type": "agent",
+      "label": "Responder",
+      "position": {"x": 400, "y": 0},
+      "config": {"agent_name": "responder"}
+    }
+  ],
+  "edges": [
+    {"source": "research", "target": "evaluate"},
+    {
+      "source": "evaluate",
+      "target": "research",
+      "is_cyclic": true,
+      "cycle_config": {
+        "max_iterations": 3,
+        "exit_condition": "quality >= 0.8",
+        "on_max_reached": "error"
+      }
+    },
+    {
+      "source": "evaluate",
+      "target": "respond",
+      "condition": "quality >= 0.8"
+    }
+  ]
+}

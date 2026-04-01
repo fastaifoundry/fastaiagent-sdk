@@ -1,0 +1,30 @@
+{
+  "name": "parallel-pipeline",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "label": "Start",
+      "position": {"x": 0, "y": 0},
+      "config": {}
+    },
+    {
+      "id": "parallel_search",
+      "type": "parallel",
+      "label": "Parallel Search",
+      "position": {"x": 200, "y": 0},
+      "config": {}
+    },
+    {
+      "id": "merge",
+      "type": "transformer",
+      "label": "Merge Results",
+      "position": {"x": 400, "y": 0},
+      "config": {"template": "Combined: {{node_results.parallel_search.outputs}}"}
+    }
+  ],
+  "edges": [
+    {"source": "start", "target": "parallel_search"},
+    {"source": "parallel_search", "target": "merge"}
+  ]
+}

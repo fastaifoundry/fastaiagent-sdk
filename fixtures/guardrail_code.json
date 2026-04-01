@@ -1,0 +1,10 @@
+{
+  "name": "no_profanity",
+  "guardrail_type": "code",
+  "position": "output",
+  "config": {
+    "code": "bad_words = ['badword1', 'badword2']\nresult = not any(w in data.lower() for w in bad_words)"
+  },
+  "blocking": true,
+  "description": "Blocks output containing profanity"
+}

@@ -1,0 +1,34 @@
+{
+  "name": "support-bot",
+  "agent_type": "single",
+  "system_prompt": "You are a helpful customer support agent. Answer questions clearly and concisely.",
+  "llm_endpoint": {
+    "provider": "openai",
+    "model": "gpt-4o"
+  },
+  "tools": [
+    {
+      "name": "search_docs",
+      "description": "Search the documentation for relevant articles",
+      "tool_type": "function",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search query"
+          }
+        },
+        "required": ["query"]
+      },
+      "config": {}
+    }
+  ],
+  "guardrails": [],
+  "config": {
+    "max_iterations": 10,
+    "tool_choice": "auto",
+    "temperature": null,
+    "max_tokens": null
+  }
+}

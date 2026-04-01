@@ -1,0 +1,12 @@
+{
+  "name": "no_urls",
+  "guardrail_type": "regex",
+  "position": "output",
+  "config": {
+    "pattern": "https?://[^\\s]+",
+    "should_match": false,
+    "case_insensitive": true
+  },
+  "blocking": true,
+  "description": "Blocks output containing URLs"
+}

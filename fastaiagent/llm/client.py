@@ -1,0 +1,431 @@
+"""LLMClient — unified multi-provider LLM abstraction."""
+
+from __future__ import annotations
+
+import time
+from typing import Any, AsyncIterator, Iterator
+
+from pydantic import BaseModel, Field
+
+from fastaiagent._internal.errors import LLMError, LLMProviderError
+from fastaiagent.llm.message import Message, MessageRole, ToolCall
+
+
+class LLMResponse(BaseModel):
+    """Normalized response from any LLM provider."""
+
+    content: str | None = None
+    tool_calls: list[ToolCall] = Field(default_factory=list)
+    usage: dict[str, int] = Field(default_factory=dict)
+    model: str = ""
+    finish_reason: str = ""
+    latency_ms: int = 0
+
+
+class LLMClient:
+    """Unified LLM client supporting multiple providers.
+
+    Providers: openai, anthropic, ollama, azure, bedrock, custom.
+
+    Example:
+        llm = LLMClient(provider="openai", model="gpt-4o", api_key="sk-...")
+        response = llm.complete([UserMessage("Hello")])
+    """
+
+    def __init__(
+        self,
+        provider: str = "openai",
+        model: str = "gpt-4o-mini",
+        api_key: str | None = None,
+        base_url: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        **kwargs: Any,
+    ):
+        self.provider = provider
+        self.model = model
+        self.api_key = api_key
+        self.base_url = base_url or self._default_base_url(provider)
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self._extra = kwargs
+
+    @staticmethod
+    def _default_base_url(provider: str) -> str:
+        defaults = {
+            "openai": "https://api.openai.com/v1",
+            "anthropic": "https://api.anthropic.com/v1",
+            "ollama": "http://localhost:11434",
+            "azure": "",
+            "bedrock": "",
+            "custom": "",
+        }
+        return defaults.get(provider, "")
+
+    def complete(
+        self,
+        messages: list[Message],
+        tools: list[dict] | None = None,
+        **kwargs: Any,
+    ) -> LLMResponse:
+        """Synchronous completion."""
+        import asyncio
+
+        return asyncio.run(self.acomplete(messages, tools=tools, **kwargs))
+
+    async def acomplete(
+        self,
+        messages: list[Message],
+        tools: list[dict] | None = None,
+        **kwargs: Any,
+    ) -> LLMResponse:
+        """Async completion — routes to the appropriate provider."""
+        start = time.monotonic()
+        provider_fn = self._get_provider_fn()
+        response = await provider_fn(messages, tools, **kwargs)
+        response.latency_ms = int((time.monotonic() - start) * 1000)
+        return response
+
+    def _get_provider_fn(self):
+        providers = {
+            "openai": self._call_openai,
+            "anthropic": self._call_anthropic,
+            "ollama": self._call_ollama,
+            "azure": self._call_openai,  # Azure uses OpenAI-compatible API
+            "bedrock": self._call_bedrock,
+            "custom": self._call_openai,  # Custom endpoints are OpenAI-compatible
+        }
+        fn = providers.get(self.provider)
+        if fn is None:
+            raise LLMError(f"Unsupported provider: {self.provider}")
+        return fn
+
+    async def _call_openai(
+        self, messages: list[Message], tools: list[dict] | None = None, **kwargs: Any
+    ) -> LLMResponse:
+        """Call OpenAI-compatible endpoint."""
+        import httpx
+
+        msg_dicts = [m.to_openai_format() for m in messages]
+        body: dict[str, Any] = {
+            "model": self.model,
+            "messages": msg_dicts,
+        }
+        if tools:
+            body["tools"] = tools
+        if self.temperature is not None:
+            body["temperature"] = self.temperature
+        # OpenAI uses max_completion_tokens for newer models
+        max_tok = kwargs.get("max_tokens", self.max_tokens)
+        if max_tok is not None:
+            if self.provider == "custom":
+                body["max_tokens"] = max_tok
+            else:
+                body["max_completion_tokens"] = max_tok
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key or ''}",
+        }
+
+        url = f"{self.base_url.rstrip('/')}/chat/completions"
+        async with httpx.AsyncClient(timeout=120) as client:
+            resp = await client.post(url, json=body, headers=headers)
+            if resp.status_code != 200:
+                raise LLMProviderError(
+                    f"OpenAI API error {resp.status_code}: {resp.text}"
+                )
+            data = resp.json()
+
+        return self._parse_openai_response(data)
+
+    def _parse_openai_response(self, data: dict) -> LLMResponse:
+        """Parse OpenAI-compatible response into LLMResponse."""
+        import json
+
+        choice = data.get("choices", [{}])[0]
+        msg = choice.get("message", {})
+
+        tool_calls = []
+        if raw_tc := msg.get("tool_calls"):
+            for tc in raw_tc:
+                func = tc.get("function", {})
+                args = func.get("arguments", "{}")
+                if isinstance(args, str):
+                    args = json.loads(args) if args else {}
+                tool_calls.append(
+                    ToolCall(id=tc["id"], name=func["name"], arguments=args)
+                )
+
+        return LLMResponse(
+            content=msg.get("content"),
+            tool_calls=tool_calls,
+            usage=data.get("usage", {}),
+            model=data.get("model", self.model),
+            finish_reason=choice.get("finish_reason", ""),
+        )
+
+    async def _call_anthropic(
+        self, messages: list[Message], tools: list[dict] | None = None, **kwargs: Any
+    ) -> LLMResponse:
+        """Call Anthropic Messages API."""
+        import httpx
+
+        # Extract system messages — Anthropic uses a separate 'system' field
+        system_parts = []
+        filtered_msgs = []
+        for m in messages:
+            if m.role == MessageRole.system:
+                system_parts.append(m.content or "")
+            else:
+                filtered_msgs.append(m.to_openai_format())
+
+        body: dict[str, Any] = {
+            "model": self.model,
+            "messages": filtered_msgs,
+            "max_tokens": kwargs.get("max_tokens", self.max_tokens) or 4096,
+        }
+        if system_parts:
+            body["system"] = "\n\n".join(system_parts)
+        if self.temperature is not None:
+            body["temperature"] = self.temperature
+
+        # Convert tools from OpenAI format to Anthropic format
+        if tools:
+            anthropic_tools = []
+            for t in tools:
+                func = t.get("function", t)
+                anthropic_tools.append({
+                    "name": func["name"],
+                    "description": func.get("description", ""),
+                    "input_schema": func.get(
+                        "parameters", {"type": "object", "properties": {}}
+                    ),
+                })
+            body["tools"] = anthropic_tools
+
+        headers = {
+            "Content-Type": "application/json",
+            "x-api-key": self.api_key or "",
+            "anthropic-version": "2023-06-01",
+        }
+
+        url = f"{self.base_url.rstrip('/')}/messages"
+        async with httpx.AsyncClient(timeout=120) as client:
+            resp = await client.post(url, json=body, headers=headers)
+            if resp.status_code != 200:
+                raise LLMProviderError(
+                    f"Anthropic API error {resp.status_code}: {resp.text}"
+                )
+            data = resp.json()
+
+        # Parse Anthropic response
+        content_text = ""
+        tool_calls = []
+        for block in data.get("content", []):
+            if block.get("type") == "text":
+                content_text += block.get("text", "")
+            elif block.get("type") == "tool_use":
+                tool_calls.append(
+                    ToolCall(
+                        id=block["id"],
+                        name=block["name"],
+                        arguments=block.get("input", {}),
+                    )
+                )
+
+        # Normalize usage
+        usage_raw = data.get("usage", {})
+        usage = {
+            "prompt_tokens": usage_raw.get("input_tokens", 0),
+            "completion_tokens": usage_raw.get("output_tokens", 0),
+            "total_tokens": (
+                usage_raw.get("input_tokens", 0) + usage_raw.get("output_tokens", 0)
+            ),
+        }
+
+        # Normalize finish reason
+        stop_reason = data.get("stop_reason", "")
+        finish_reason = {
+            "end_turn": "stop",
+            "tool_use": "tool_calls",
+        }.get(stop_reason, stop_reason)
+
+        return LLMResponse(
+            content=content_text or None,
+            tool_calls=tool_calls,
+            usage=usage,
+            model=data.get("model", self.model),
+            finish_reason=finish_reason,
+        )
+
+    async def _call_ollama(
+        self, messages: list[Message], tools: list[dict] | None = None, **kwargs: Any
+    ) -> LLMResponse:
+        """Call Ollama API."""
+        import httpx
+
+        msg_dicts = [m.to_openai_format() for m in messages]
+        body: dict[str, Any] = {
+            "model": self.model,
+            "messages": msg_dicts,
+            "stream": False,
+        }
+        if tools:
+            body["tools"] = tools
+
+        options: dict[str, Any] = {}
+        if self.temperature is not None:
+            options["temperature"] = self.temperature
+        max_tok = kwargs.get("max_tokens", self.max_tokens)
+        if max_tok is not None:
+            options["num_predict"] = max_tok
+        if options:
+            body["options"] = options
+
+        url = f"{self.base_url.rstrip('/')}/api/chat"
+        async with httpx.AsyncClient(timeout=120) as client:
+            resp = await client.post(url, json=body)
+            if resp.status_code != 200:
+                raise LLMProviderError(
+                    f"Ollama API error {resp.status_code}: {resp.text}"
+                )
+            data = resp.json()
+
+        msg = data.get("message", {})
+        tool_calls = []
+        if raw_tc := msg.get("tool_calls"):
+            for i, tc in enumerate(raw_tc):
+                func = tc.get("function", {})
+                tool_calls.append(
+                    ToolCall(
+                        id=f"call_{i}",
+                        name=func.get("name", ""),
+                        arguments=func.get("arguments", {}),
+                    )
+                )
+
+        usage = {
+            "prompt_tokens": data.get("prompt_eval_count", 0),
+            "completion_tokens": data.get("eval_count", 0),
+            "total_tokens": (
+                data.get("prompt_eval_count", 0) + data.get("eval_count", 0)
+            ),
+        }
+
+        finish_reason = "tool_calls" if tool_calls else "stop"
+
+        return LLMResponse(
+            content=msg.get("content"),
+            tool_calls=tool_calls,
+            usage=usage,
+            model=self.model,
+            finish_reason=finish_reason,
+        )
+
+    async def _call_bedrock(
+        self, messages: list[Message], tools: list[dict] | None = None, **kwargs: Any
+    ) -> LLMResponse:
+        """Call AWS Bedrock (via boto3)."""
+        try:
+            import boto3
+        except ImportError:
+            raise LLMError(
+                "boto3 is required for Bedrock provider. "
+                "Install it with: pip install boto3"
+            )
+
+        import json
+
+        client = boto3.client("bedrock-runtime", region_name=self._extra.get("region", "us-east-1"))
+        msg_dicts = [m.to_openai_format() for m in messages]
+
+        # Extract system for Bedrock/Anthropic models
+        system_parts = []
+        filtered = []
+        for m in msg_dicts:
+            if m["role"] == "system":
+                system_parts.append({"text": m.get("content", "")})
+            else:
+                filtered.append(m)
+
+        body: dict[str, Any] = {
+            "messages": filtered,
+        }
+        if system_parts:
+            body["system"] = system_parts
+
+        inference_config: dict[str, Any] = {}
+        if self.temperature is not None:
+            inference_config["temperature"] = self.temperature
+        max_tok = kwargs.get("max_tokens", self.max_tokens) or 4096
+        inference_config["maxTokens"] = max_tok
+        body["inferenceConfig"] = inference_config
+
+        response = client.converse(modelId=self.model, **body)
+
+        output = response.get("output", {})
+        msg_out = output.get("message", {})
+        content_text = ""
+        tool_calls = []
+        for block in msg_out.get("content", []):
+            if "text" in block:
+                content_text += block["text"]
+            elif "toolUse" in block:
+                tu = block["toolUse"]
+                tool_calls.append(
+                    ToolCall(
+                        id=tu.get("toolUseId", ""),
+                        name=tu.get("name", ""),
+                        arguments=tu.get("input", {}),
+                    )
+                )
+
+        usage_raw = response.get("usage", {})
+        usage = {
+            "prompt_tokens": usage_raw.get("inputTokens", 0),
+            "completion_tokens": usage_raw.get("outputTokens", 0),
+            "total_tokens": (
+                usage_raw.get("inputTokens", 0) + usage_raw.get("outputTokens", 0)
+            ),
+        }
+
+        stop_reason = response.get("stopReason", "")
+        finish_reason = {
+            "end_turn": "stop",
+            "tool_use": "tool_calls",
+        }.get(stop_reason, stop_reason)
+
+        return LLMResponse(
+            content=content_text or None,
+            tool_calls=tool_calls,
+            usage=usage,
+            model=self.model,
+            finish_reason=finish_reason,
+        )
+
+    def to_dict(self) -> dict:
+        """Serialize to canonical format."""
+        data: dict[str, Any] = {
+            "provider": self.provider,
+            "model": self.model,
+        }
+        if self.base_url and self.base_url != self._default_base_url(self.provider):
+            data["base_url"] = self.base_url
+        if self.temperature is not None:
+            data["temperature"] = self.temperature
+        if self.max_tokens is not None:
+            data["max_tokens"] = self.max_tokens
+        return data
+
+    @classmethod
+    def from_dict(cls, data: dict) -> LLMClient:
+        """Deserialize from canonical format."""
+        return cls(
+            provider=data.get("provider", "openai"),
+            model=data.get("model", "gpt-4o-mini"),
+            api_key=data.get("api_key"),
+            base_url=data.get("base_url"),
+            temperature=data.get("temperature"),
+            max_tokens=data.get("max_tokens"),
+        )

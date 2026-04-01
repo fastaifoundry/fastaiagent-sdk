@@ -1,0 +1,73 @@
+{
+  "trace_id": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
+  "name": "agent.support-bot",
+  "start_time": "2025-01-15T10:30:00.000Z",
+  "end_time": "2025-01-15T10:30:02.500Z",
+  "status": "OK",
+  "metadata": {
+    "agent_name": "support-bot",
+    "input": "How do I get a refund?"
+  },
+  "spans": [
+    {
+      "span_id": "span_001",
+      "trace_id": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
+      "parent_span_id": null,
+      "name": "agent.run",
+      "start_time": "2025-01-15T10:30:00.000Z",
+      "end_time": "2025-01-15T10:30:02.500Z",
+      "status": "OK",
+      "attributes": {
+        "fastai.agent.name": "support-bot",
+        "gen_ai.system": "openai",
+        "gen_ai.request.model": "gpt-4o"
+      },
+      "events": []
+    },
+    {
+      "span_id": "span_002",
+      "trace_id": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
+      "parent_span_id": "span_001",
+      "name": "llm.chat_completion",
+      "start_time": "2025-01-15T10:30:00.100Z",
+      "end_time": "2025-01-15T10:30:01.200Z",
+      "status": "OK",
+      "attributes": {
+        "gen_ai.system": "openai",
+        "gen_ai.request.model": "gpt-4o",
+        "gen_ai.usage.input_tokens": 150,
+        "gen_ai.usage.output_tokens": 45
+      },
+      "events": []
+    },
+    {
+      "span_id": "span_003",
+      "trace_id": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
+      "parent_span_id": "span_001",
+      "name": "tool.search_docs",
+      "start_time": "2025-01-15T10:30:01.300Z",
+      "end_time": "2025-01-15T10:30:01.800Z",
+      "status": "OK",
+      "attributes": {
+        "fastai.tool.name": "search_docs"
+      },
+      "events": []
+    },
+    {
+      "span_id": "span_004",
+      "trace_id": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
+      "parent_span_id": "span_001",
+      "name": "llm.chat_completion",
+      "start_time": "2025-01-15T10:30:01.900Z",
+      "end_time": "2025-01-15T10:30:02.400Z",
+      "status": "OK",
+      "attributes": {
+        "gen_ai.system": "openai",
+        "gen_ai.request.model": "gpt-4o",
+        "gen_ai.usage.input_tokens": 280,
+        "gen_ai.usage.output_tokens": 120
+      },
+      "events": []
+    }
+  ]
+}

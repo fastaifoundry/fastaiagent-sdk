@@ -1,0 +1,74 @@
+{
+  "name": "full-pipeline",
+  "nodes": [
+    {
+      "id": "intake",
+      "type": "start",
+      "label": "Intake",
+      "position": {"x": 0, "y": 0},
+      "config": {}
+    },
+    {
+      "id": "classify",
+      "type": "agent",
+      "label": "Classifier",
+      "position": {"x": 200, "y": 0},
+      "config": {"agent_name": "classifier"}
+    },
+    {
+      "id": "research",
+      "type": "agent",
+      "label": "Researcher",
+      "position": {"x": 400, "y": 0},
+      "config": {"agent_name": "researcher"}
+    },
+    {
+      "id": "evaluate",
+      "type": "agent",
+      "label": "Evaluator",
+      "position": {"x": 400, "y": 200},
+      "config": {"agent_name": "evaluator"}
+    },
+    {
+      "id": "approve",
+      "type": "hitl",
+      "label": "Approval",
+      "position": {"x": 600, "y": 0},
+      "config": {"approval_message": "Review before responding"}
+    },
+    {
+      "id": "respond",
+      "type": "agent",
+      "label": "Responder",
+      "position": {"x": 800, "y": 0},
+      "config": {"agent_name": "responder"}
+    }
+  ],
+  "edges": [
+    {"source": "intake", "target": "classify"},
+    {"source": "classify", "target": "research"},
+    {"source": "research", "target": "evaluate"},
+    {
+      "source": "evaluate",
+      "target": "research",
+      "is_cyclic": true,
+      "cycle_config": {
+        "max_iterations": 3,
+        "exit_condition": "quality >= 0.8",
+        "on_max_reached": "error"
+      }
+    },
+    {"source": "evaluate", "target": "approve", "condition": "quality >= 0.8"},
+    {"source": "approve", "target": "respond"}
+  ],
+  "state_schema": {
+    "type": "object",
+    "properties": {
+      "message": {"type": "string"},
+      "category": {"type": "string"},
+      "quality": {"type": "number"},
+      "response": {"type": "string"}
+    },
+    "required": ["message"]
+  }
+}

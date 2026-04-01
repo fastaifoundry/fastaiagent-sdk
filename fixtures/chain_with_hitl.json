@@ -1,0 +1,30 @@
+{
+  "name": "approval-pipeline",
+  "nodes": [
+    {
+      "id": "draft",
+      "type": "agent",
+      "label": "Drafter",
+      "position": {"x": 0, "y": 0},
+      "config": {"agent_name": "drafter"}
+    },
+    {
+      "id": "approve",
+      "type": "hitl",
+      "label": "Manager Approval",
+      "position": {"x": 200, "y": 0},
+      "config": {"approval_message": "Please review the draft before sending."}
+    },
+    {
+      "id": "send",
+      "type": "agent",
+      "label": "Sender",
+      "position": {"x": 400, "y": 0},
+      "config": {"agent_name": "sender"}
+    }
+  ],
+  "edges": [
+    {"source": "draft", "target": "approve"},
+    {"source": "approve", "target": "send"}
+  ]
+}
