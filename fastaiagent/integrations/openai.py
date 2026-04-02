@@ -43,7 +43,7 @@ def enable() -> None:
                 )
             return result
 
-    completions_cls.create = traced_create  # type: ignore[assignment,method-assign]
+    completions_cls.create = traced_create  # type: ignore[assignment]
     _enabled = True
 
 

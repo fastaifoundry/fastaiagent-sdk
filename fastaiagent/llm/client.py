@@ -34,7 +34,7 @@ def _strip_code_fences(text: str) -> str:
     return m.group(1).strip() if m else text
 
 
-def _augment_system_for_response_format(system_text: str | None, response_format: dict) -> str:
+def _augment_system_for_response_format(system_text: str | None, response_format: dict[str, Any]) -> str:
     """Inject JSON instructions into system prompt for providers without native response_format."""
     rf_type = response_format.get("type", "text") if isinstance(response_format, dict) else "text"
     if rf_type == "json_object":
@@ -56,7 +56,7 @@ def _augment_system_for_response_format(system_text: str | None, response_format
     return system_text or ""
 
 
-def _ollama_format_from_response_format(response_format: dict) -> str | dict | None:
+def _ollama_format_from_response_format(response_format: dict[str, Any]) -> str | dict[str, Any] | None:
     """Convert OpenAI response_format to Ollama 'format' parameter."""
     rf_type = response_format.get("type", "text") if isinstance(response_format, dict) else "text"
     if rf_type == "json_object":
