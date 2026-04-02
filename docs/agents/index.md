@@ -191,6 +191,31 @@ agent = Agent(
 )
 ```
 
+## Streaming
+
+Stream tokens from the agent as they are generated, rather than waiting for the full response:
+
+```python
+from fastaiagent.llm.stream import TextDelta, ToolCallStart
+
+async for event in agent.astream("What's the weather in Paris?"):
+    if isinstance(event, TextDelta):
+        print(event.text, end="", flush=True)
+    elif isinstance(event, ToolCallStart):
+        print(f"\n[Calling {event.tool_name}...]")
+```
+
+A sync wrapper is also available:
+
+```python
+result = agent.stream("Hello")  # returns AgentResult
+print(result.output)
+```
+
+Streaming runs input guardrails before streaming begins and output guardrails after streaming completes. Memory is updated at the end.
+
+See [Streaming](../streaming/index.md) for full details, event types, and chat UI patterns.
+
 ## Sync vs Async
 
 Every method has both sync and async versions:
@@ -203,7 +228,18 @@ result = agent.run("Hello")
 result = await agent.arun("Hello")
 ```
 
-The sync `run()` safely handles being called from within an async context (e.g., Jupyter notebooks, async frameworks).
+Streaming also has both forms:
+
+```python
+# Async — yields events in real time
+async for event in agent.astream("Hello"):
+    ...
+
+# Sync — collects into AgentResult
+result = agent.stream("Hello")
+```
+
+The sync `run()` and `stream()` safely handle being called from within an async context (e.g., Jupyter notebooks, async frameworks).
 
 ## Serialization
 

@@ -7,7 +7,7 @@ from fastaiagent.client import FastAI
 from fastaiagent.eval import Dataset, EvalResults, Scorer, evaluate
 from fastaiagent.guardrail import Guardrail, GuardrailResult, json_valid, no_pii, toxicity_check
 from fastaiagent.kb import LocalKB
-from fastaiagent.llm import LLMClient, Message
+from fastaiagent.llm import LLMClient, Message, StreamEvent, TextDelta
 from fastaiagent.prompt import Prompt, PromptRegistry
 from fastaiagent.tool import FunctionTool, MCPTool, RESTTool, Tool, tool
 from fastaiagent.trace import TraceStore, trace_context
@@ -39,6 +39,8 @@ __all__ = [
     # LLM
     "LLMClient",
     "Message",
+    "StreamEvent",
+    "TextDelta",
     # Tool
     "Tool",
     "FunctionTool",

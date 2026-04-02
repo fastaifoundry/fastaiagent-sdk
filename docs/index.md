@@ -49,6 +49,8 @@ print(result.trace.summary())
 ## Core Features
 
 - **[Agents](agents/index.md)** — Build agents with tools, memory, and multi-agent teams
+- **[Streaming](streaming/index.md)** — Real-time token delivery from LLM to your app
+- **[Structured Output](structured-output/index.md)** — Force LLM responses into typed JSON schemas
 - **[Chains](chains/index.md)** — Directed graph workflows with cycles, typed state, and checkpointing
 - **[Guardrails](guardrails/index.md)** — Input/output/tool validation (code, regex, LLM judge)
 - **[Tracing](tracing/index.md)** — OTel-native tracing with local SQLite storage

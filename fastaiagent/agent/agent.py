@@ -3,18 +3,19 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Sequence
+from collections.abc import AsyncGenerator, Sequence
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 from fastaiagent._internal.async_utils import run_sync
-from fastaiagent.agent.executor import execute_tool_loop
+from fastaiagent.agent.executor import execute_tool_loop, stream_tool_loop
 from fastaiagent.agent.memory import AgentMemory
 from fastaiagent.guardrail.executor import execute_guardrails
 from fastaiagent.guardrail.guardrail import Guardrail, GuardrailPosition
 from fastaiagent.llm.client import LLMClient
 from fastaiagent.llm.message import Message, SystemMessage, UserMessage
+from fastaiagent.llm.stream import StreamEvent, TextDelta
 from fastaiagent.tool.base import Tool
 
 
@@ -94,6 +95,7 @@ class Agent:
             tools=self.tools,
             max_iterations=self.config.max_iterations,
             tool_choice=self.config.tool_choice,
+            **kwargs,
         )
 
         output = response.content or ""
@@ -118,6 +120,71 @@ class Agent:
             tokens_used=tokens,
             latency_ms=latency,
         )
+
+    async def astream(
+        self, input: str, *, trace: bool = True, **kwargs: Any
+    ) -> AsyncGenerator[StreamEvent, None]:
+        """Async streaming execution — yields StreamEvent objects as tokens arrive.
+
+        Runs input guardrails before streaming begins. Output guardrails
+        run after streaming completes. Memory is updated at the end.
+
+        Example:
+            async for event in agent.astream("Hello"):
+                if isinstance(event, TextDelta):
+                    print(event.text, end="", flush=True)
+        """
+        # Execute input guardrails (blocking)
+        if self.guardrails:
+            await execute_guardrails(self.guardrails, input, GuardrailPosition.input)
+
+        messages = self._build_messages(input)
+
+        # Stream tool loop — yields events to caller
+        accumulated_text = ""
+        async for event in stream_tool_loop(
+            llm=self.llm,
+            messages=messages,
+            tools=self.tools,
+            max_iterations=self.config.max_iterations,
+            tool_choice=self.config.tool_choice,
+        ):
+            if isinstance(event, TextDelta):
+                accumulated_text += event.text
+            yield event
+
+        output = accumulated_text
+
+        # Execute output guardrails
+        if self.guardrails:
+            await execute_guardrails(self.guardrails, output, GuardrailPosition.output)
+
+        # Store in memory
+        if self.memory:
+            self.memory.add(UserMessage(input))
+            from fastaiagent.llm.message import AssistantMessage
+
+            self.memory.add(AssistantMessage(output))
+
+    def stream(self, input: str, *, trace: bool = True, **kwargs: Any) -> AgentResult:
+        """Synchronous streaming — collects stream into AgentResult.
+
+        For true streaming, use ``astream()`` in an async context.
+        """
+
+        async def _collect() -> AgentResult:
+            start = time.monotonic()
+            text_parts: list[str] = []
+            async for event in self.astream(input, trace=trace, **kwargs):
+                if isinstance(event, TextDelta):
+                    text_parts.append(event.text)
+            latency = int((time.monotonic() - start) * 1000)
+            return AgentResult(
+                output="".join(text_parts),
+                latency_ms=latency,
+            )
+
+        return run_sync(_collect())
 
     def _build_messages(self, input: str) -> list[Message]:
         """Build the message array for the LLM."""

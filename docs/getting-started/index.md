@@ -184,6 +184,57 @@ response = llm.complete(messages)
 response = await llm.acomplete(messages)
 ```
 
+### Streaming
+
+Stream tokens as they are generated, rather than waiting for the full response:
+
+```python
+from fastaiagent.llm.stream import TextDelta, Usage
+
+# Async streaming — yields StreamEvent objects
+async for event in llm.astream([UserMessage("Hello!")]):
+    if isinstance(event, TextDelta):
+        print(event.text, end="", flush=True)
+    elif isinstance(event, Usage):
+        print(f"\nTokens: {event.prompt_tokens} in, {event.completion_tokens} out")
+
+# Sync streaming — collects into LLMResponse
+response = llm.stream([UserMessage("Hello!")])
+print(response.content)
+```
+
+Streaming is supported for OpenAI, Anthropic, Ollama, Azure, and Custom providers. See [Streaming](../streaming/index.md) for full details.
+
+### Structured Output
+
+Force the LLM to respond with valid JSON matching a specific schema:
+
+```python
+response = llm.complete(
+    [UserMessage("Describe Paris")],
+    response_format={
+        "type": "json_schema",
+        "json_schema": {
+            "name": "city_info",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "country": {"type": "string"},
+                },
+                "required": ["name", "country"],
+            },
+        },
+    },
+)
+
+import json
+data = json.loads(response.content)
+print(data["name"])  # "Paris"
+```
+
+Three modes: `"text"` (default), `"json_object"` (any JSON), `"json_schema"` (schema-validated JSON). Works across OpenAI, Anthropic, and Ollama with automatic provider adaptation. See [Structured Output](../structured-output/index.md) for full details.
+
 ## Serialization
 
 ```python
@@ -251,5 +302,6 @@ except LLMError as e:
 ## Next Steps
 
 - [Agents](../agents/index.md) — Build autonomous agents on top of the LLM client
+- [Streaming](../streaming/index.md) — Real-time token delivery from LLM to your app
 - [Tools](../tools/index.md) — Give agents the ability to take actions
 - [Chains](../chains/index.md) — Compose agents into multi-step workflows

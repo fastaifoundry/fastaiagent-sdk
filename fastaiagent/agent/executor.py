@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncGenerator
 from typing import Any
 
 from fastaiagent._internal.errors import MaxIterationsError, ToolExecutionError
@@ -10,7 +11,15 @@ from fastaiagent.llm.client import LLMResponse
 from fastaiagent.llm.message import (
     AssistantMessage,
     Message,
+    ToolCall,
     ToolMessage,
+)
+from fastaiagent.llm.stream import (
+    StreamEvent,
+    TextDelta,
+    ToolCallEnd,
+    ToolCallStart,
+    Usage,
 )
 from fastaiagent.tool.base import Tool
 
@@ -22,6 +31,7 @@ async def execute_tool_loop(
     max_iterations: int = 10,
     tool_choice: str = "auto",
     tracer: Any = None,
+    **kwargs: Any,
 ) -> tuple[LLMResponse, list[dict[str, Any]]]:
     """Execute the agent's tool-calling loop.
 
@@ -38,7 +48,7 @@ async def execute_tool_loop(
 
     for iteration in range(max_iterations):
         # Call LLM
-        response = await llm.acomplete(messages, tools=tool_defs)
+        response = await llm.acomplete(messages, tools=tool_defs, **kwargs)
 
         # No tool calls — we're done
         if not response.tool_calls:
@@ -78,6 +88,90 @@ async def execute_tool_loop(
 
             messages.append(ToolMessage(content=result_text, tool_call_id=tc.id))
             all_tool_calls.append(tool_call_record)
+
+    raise MaxIterationsError(
+        f"Agent exceeded maximum iterations ({max_iterations}). "
+        f"The LLM continued requesting tool calls beyond the limit.\n"
+        f"Options:\n"
+        f"  1. Increase the limit: AgentConfig(max_iterations={max_iterations * 2})\n"
+        f"  2. Review the system prompt to ensure the agent can reach a final answer\n"
+        f"  3. Simplify the available tools to reduce unnecessary tool-calling loops"
+    )
+
+
+async def stream_tool_loop(
+    llm: Any,
+    messages: list[Message],
+    tools: list[Tool],
+    max_iterations: int = 10,
+    tool_choice: str = "auto",
+) -> AsyncGenerator[StreamEvent, None]:
+    """Streaming version of execute_tool_loop.
+
+    Yields StreamEvent objects as tokens arrive from the LLM.
+    Handles tool execution between streaming iterations.
+
+    The final TextDelta events contain the agent's response text.
+    ToolCallStart/ToolCallEnd events are emitted for both LLM-requested
+    tool calls and their execution results.
+    """
+    tool_defs = [t.to_openai_format() for t in tools] if tools else None
+    tools_by_name = {t.name: t for t in tools}
+
+    for iteration in range(max_iterations):
+        # Stream from LLM
+        accumulated_text = ""
+        pending_tool_calls: list[ToolCall] = []
+        total_usage = Usage()
+
+        async for event in llm.astream(messages, tools=tool_defs):
+            if isinstance(event, TextDelta):
+                accumulated_text += event.text
+                yield event
+            elif isinstance(event, ToolCallStart):
+                yield event
+            elif isinstance(event, ToolCallEnd):
+                pending_tool_calls.append(
+                    ToolCall(id=event.call_id, name=event.tool_name, arguments=event.arguments)
+                )
+                yield event
+            elif isinstance(event, Usage):
+                total_usage = event
+                yield event
+            # Don't yield StreamDone here — we may have more iterations
+
+        # No tool calls — final response, we're done
+        if not pending_tool_calls:
+            return
+
+        # Append assistant message with accumulated content + tool calls
+        messages.append(
+            AssistantMessage(
+                content=accumulated_text or None,
+                tool_calls=pending_tool_calls,
+            )
+        )
+
+        # Execute each tool call
+        for tc in pending_tool_calls:
+            tool = tools_by_name.get(tc.name)
+            if tool is None:
+                result_text = f"Error: Unknown tool '{tc.name}'"
+            else:
+                try:
+                    result = await tool.aexecute(tc.arguments)
+                    if result.success:
+                        result_text = (
+                            json.dumps(result.output, default=str)
+                            if not isinstance(result.output, str)
+                            else result.output
+                        )
+                    else:
+                        result_text = f"Error: {result.error}"
+                except ToolExecutionError as e:
+                    result_text = f"Error: {e}"
+
+            messages.append(ToolMessage(content=result_text, tool_call_id=tc.id))
 
     raise MaxIterationsError(
         f"Agent exceeded maximum iterations ({max_iterations}). "

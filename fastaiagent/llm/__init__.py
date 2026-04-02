@@ -10,6 +10,14 @@ from fastaiagent.llm.message import (
     ToolMessage,
     UserMessage,
 )
+from fastaiagent.llm.stream import (
+    StreamDone,
+    StreamEvent,
+    TextDelta,
+    ToolCallEnd,
+    ToolCallStart,
+    Usage,
+)
 
 __all__ = [
     "LLMClient",
@@ -21,4 +29,11 @@ __all__ = [
     "UserMessage",
     "AssistantMessage",
     "ToolMessage",
+    # Streaming
+    "StreamEvent",
+    "TextDelta",
+    "ToolCallStart",
+    "ToolCallEnd",
+    "Usage",
+    "StreamDone",
 ]
