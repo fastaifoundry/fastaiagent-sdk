@@ -13,7 +13,9 @@ class TestCLI:
     def test_version(self):
         result = runner.invoke(app, ["version"])
         assert result.exit_code == 0
-        assert "0.1.0a1" in result.output
+        from fastaiagent._version import __version__
+
+        assert __version__ in result.output
 
     def test_help(self):
         result = runner.invoke(app, ["--help"])

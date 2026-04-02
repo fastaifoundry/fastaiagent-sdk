@@ -15,6 +15,7 @@ def _can_import(module_name: str) -> bool:
         return False
 
 
+@pytest.mark.skipif(not _can_import("openai"), reason="openai not installed")
 class TestOpenAIIntegration:
     def test_enable_disable_cycle(self) -> None:
         """enable() then disable() should restore original state."""
