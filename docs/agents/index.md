@@ -241,6 +241,27 @@ result = agent.stream("Hello")
 
 The sync `run()` and `stream()` safely handle being called from within an async context (e.g., Jupyter notebooks, async frameworks).
 
+## Dynamic Instructions
+
+System prompts can be a callable that receives the `RunContext`, enabling per-request personalization:
+
+```python
+agent = Agent(
+    name="personalized",
+    system_prompt=lambda ctx: (
+        f"You help {ctx.state.user_name} with their {ctx.state.plan} plan."
+        if ctx else
+        "You are a general-purpose assistant."
+    ),
+    llm=LLMClient(provider="openai", model="gpt-4.1"),
+)
+
+ctx = RunContext(state=UserState(user_name="Alice", plan="pro"))
+result = agent.run("Help me", context=ctx)
+```
+
+See [Dynamic Instructions](dynamic-instructions.md) for full details.
+
 ## Serialization
 
 Agents can be serialized to JSON and restored:
@@ -293,6 +314,7 @@ except LLMProviderError as e:
 
 ## Next Steps
 
+- [Dynamic Instructions](dynamic-instructions.md) — Personalize system prompts per-request
 - [Agent Memory](memory.md) — Give agents conversation memory across turns
 - [Multi-Agent Teams](teams.md) — Build supervisor/worker agent teams
 - [Tools](tools.md) — Deep dive into using tools with agents

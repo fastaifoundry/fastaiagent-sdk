@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Callable, Sequence
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -59,7 +59,7 @@ class Agent:
     def __init__(
         self,
         name: str,
-        system_prompt: str = "",
+        system_prompt: str | Callable[..., str] = "",
         llm: LLMClient | None = None,
         tools: Sequence[Tool] | None = None,
         guardrails: Sequence[Guardrail] | None = None,
@@ -91,7 +91,7 @@ class Agent:
             await execute_guardrails(self.guardrails, input, GuardrailPosition.input)
 
         # Build messages
-        messages = self._build_messages(input)
+        messages = self._build_messages(input, context=context)
 
         # Execute tool-calling loop
         response, tool_calls = await execute_tool_loop(
@@ -144,7 +144,7 @@ class Agent:
         if self.guardrails:
             await execute_guardrails(self.guardrails, input, GuardrailPosition.input)
 
-        messages = self._build_messages(input)
+        messages = self._build_messages(input, context=context)
 
         # Stream tool loop — yields events to caller
         accumulated_text = ""
@@ -195,12 +195,19 @@ class Agent:
 
         return run_sync(_collect())
 
-    def _build_messages(self, input: str) -> list[Message]:
+    def _resolve_system_prompt(self, context: RunContext | None = None) -> str:
+        """Resolve system_prompt to a string. Calls it if callable."""
+        if callable(self.system_prompt):
+            return self.system_prompt(context)
+        return self.system_prompt
+
+    def _build_messages(self, input: str, context: RunContext | None = None) -> list[Message]:
         """Build the message array for the LLM."""
         messages: list[Message] = []
 
-        if self.system_prompt:
-            messages.append(SystemMessage(self.system_prompt))
+        system_text = self._resolve_system_prompt(context)
+        if system_text:
+            messages.append(SystemMessage(system_text))
 
         # Add memory context
         if self.memory:
@@ -211,6 +218,11 @@ class Agent:
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to canonical format for platform push."""
+        if callable(self.system_prompt):
+            raise ValueError(
+                f"Agent '{self.name}' has a callable system_prompt which cannot be "
+                f"serialized. Use a static string for agents pushed to the platform."
+            )
         return {
             "name": self.name,
             "agent_type": "single",
