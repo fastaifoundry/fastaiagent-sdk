@@ -1,7 +1,7 @@
 """FastAIAgent SDK — Build, debug, evaluate, and operate AI agents."""
 
 from fastaiagent._version import __version__
-from fastaiagent.agent import Agent, AgentConfig, AgentResult, RunContext
+from fastaiagent.agent import Agent, AgentConfig, AgentResult, RunContext, Supervisor, Worker
 from fastaiagent.chain import Chain, ChainResult, ChainState
 from fastaiagent.client import FastAI
 from fastaiagent.eval import Dataset, EvalResults, Scorer, evaluate
@@ -33,6 +33,8 @@ __all__ = [
     "AgentConfig",
     "AgentResult",
     "RunContext",
+    "Supervisor",
+    "Worker",
     # Chain
     "Chain",
     "ChainResult",

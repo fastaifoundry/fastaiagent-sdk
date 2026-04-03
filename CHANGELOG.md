@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0a7] - 2026-04-03
+
+### Added
+- **Supervisor/Worker context passthrough**: `RunContext` now flows from `Supervisor` through to all worker agents and their tools. Worker tools declaring `RunContext` parameters receive the same context the supervisor was called with.
+- **Supervisor streaming**: `Supervisor.astream()` (async generator) and `Supervisor.stream()` (sync collector) for real-time token streaming during team delegation.
+- **Supervisor dynamic instructions**: `Supervisor.system_prompt` now accepts `str | Callable[..., str]`, matching `Agent` behavior. Callable prompts receive the `RunContext` at execution time.
+- **Top-level exports**: `Supervisor` and `Worker` now importable via `from fastaiagent import Supervisor, Worker`.
+- `Worker.description` safely handles callable `system_prompt` (previously crashed with `TypeError`).
+- Documentation: updated `docs/agents/teams.md` with context, streaming, dynamic instructions sections and API reference.
+- Example: `18_supervisor_worker.py` demonstrating delegation, context passthrough, dynamic instructions, and streaming.
+- 17 unit tests in `tests/test_team.py` covering all new supervisor/worker features.
+
+### Fixed
+- `Worker.__init__` no longer crashes when the wrapped agent has a callable `system_prompt`.
+- `Supervisor._build_worker_tools()` now uses stateless per-call tool rebuilding (concurrent-safe).
+
 ## [0.1.0a6] - 2026-04-03
 
 ### Added

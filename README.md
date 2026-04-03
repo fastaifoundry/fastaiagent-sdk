@@ -5,7 +5,7 @@ The only SDK with **Agent Replay** — fork-and-rerun debugging for AI agents.
 
 Works standalone or connected to the [FastAIAgent Platform](https://fastaiagent.net) for visual editing, production monitoring, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=0.1.0a6)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=0.1.0a7)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -81,6 +81,39 @@ chain.connect("evaluate", "research", max_iterations=3, exit_condition="quality 
 chain.connect("evaluate", "respond", condition="quality >= 0.8")
 
 result = chain.execute({"message": "My order is late"}, trace=True)
+```
+
+## Multi-agent teams with context
+
+```python
+from fastaiagent import Agent, LLMClient, RunContext, Supervisor, Worker, tool
+
+@tool(name="get_tickets")
+def get_tickets(ctx: RunContext[AppState], status: str) -> str:
+    """Get support tickets for the current user."""
+    return ctx.state.db.query("tickets", user_id=ctx.state.user_id, status=status)
+
+support = Agent(name="support", llm=llm, tools=[get_tickets], system_prompt="Handle tickets.")
+billing = Agent(name="billing", llm=llm, tools=[get_billing], system_prompt="Handle billing.")
+
+supervisor = Supervisor(
+    name="customer-service",
+    llm=LLMClient(provider="openai", model="gpt-4o"),
+    workers=[
+        Worker(agent=support, role="support", description="Manages tickets"),
+        Worker(agent=billing, role="billing", description="Handles billing"),
+    ],
+    system_prompt=lambda ctx: f"You lead support for {ctx.state.company}. Be helpful.",
+)
+
+# Context flows to all workers and their tools
+ctx = RunContext(state=AppState(db=db, user_id="u-1", company="Acme"))
+result = supervisor.run("Show my open tickets and billing", context=ctx)
+
+# Stream the supervisor's response
+async for event in supervisor.astream("Help me", context=ctx):
+    if isinstance(event, TextDelta):
+        print(event.text, end="")
 ```
 
 ## Connect to FastAIAgent Platform (optional)
