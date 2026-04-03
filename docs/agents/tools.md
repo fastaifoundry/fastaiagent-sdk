@@ -98,6 +98,10 @@ agent = Agent(
 | `"required"` | LLM must call at least one tool |
 | `"none"` | LLM cannot call tools |
 
+## Context & Dependency Injection
+
+Tools that need runtime dependencies (DB connections, API clients, user sessions) can use `RunContext` for clean, type-safe dependency injection. See [Context & Dependency Injection](../tools/context.md) for the full guide.
+
 ---
 
 ## Next Steps

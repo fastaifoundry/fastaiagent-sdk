@@ -4,10 +4,21 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Callable
-from typing import Any, get_type_hints
+from typing import Any, get_origin, get_type_hints
 
 from fastaiagent._internal.errors import ToolExecutionError
+from fastaiagent.agent.context import RunContext
 from fastaiagent.tool.base import Tool, ToolResult
+
+
+def _is_context_param(annotation: Any) -> bool:
+    """Check if a type annotation is RunContext or RunContext[T]."""
+    if annotation is RunContext:
+        return True
+    origin = get_origin(annotation)
+    if origin is RunContext:
+        return True
+    return False
 
 
 def _python_type_to_json_schema(tp: type) -> dict[str, Any]:
@@ -43,6 +54,11 @@ def _generate_schema(fn: Callable[..., Any]) -> dict[str, Any]:
         if param_name in ("self", "cls"):
             continue
         tp = hints.get(param_name, str)
+
+        # Skip context parameters — these are injected, not from LLM
+        if _is_context_param(tp):
+            continue
+
         prop = _python_type_to_json_schema(tp)
 
         # Use docstring or param name as description
@@ -82,18 +98,46 @@ class FunctionTool(Tool):
         parameters: dict[str, Any] | None = None,
     ):
         self.fn = fn
-        if fn and not description:
-            description = inspect.getdoc(fn) or ""
-        if fn and parameters is None:
-            parameters = _generate_schema(fn)
+        self._context_param_name: str | None = None
+
+        if fn:
+            if not description:
+                description = inspect.getdoc(fn) or ""
+            if parameters is None:
+                parameters = _generate_schema(fn)
+            # Detect context parameter at init time (not per-call)
+            self._context_param_name = self._detect_context_param(fn)
+
         super().__init__(name=name, description=description, parameters=parameters)
 
-    async def aexecute(self, arguments: dict[str, Any]) -> ToolResult:
-        """Execute the wrapped function."""
+    @staticmethod
+    def _detect_context_param(fn: Callable[..., Any]) -> str | None:
+        """Find the parameter name annotated as RunContext, if any."""
+        try:
+            hints = get_type_hints(fn)
+        except Exception:
+            return None
+        for param_name, annotation in hints.items():
+            if _is_context_param(annotation):
+                return param_name
+        return None
+
+    async def aexecute(
+        self,
+        arguments: dict[str, Any],
+        context: Any | None = None,
+    ) -> ToolResult:
+        """Execute the wrapped function, injecting context if declared."""
         if self.fn is None:
             return ToolResult(error="No function attached to this tool")
         try:
-            result = self.fn(**arguments)
+            call_args = dict(arguments)
+
+            # Inject context if the function declares a context parameter
+            if self._context_param_name is not None and context is not None:
+                call_args[self._context_param_name] = context
+
+            result = self.fn(**call_args)
             if inspect.isawaitable(result):
                 result = await result
             return ToolResult(output=result)

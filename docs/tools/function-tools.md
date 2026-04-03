@@ -106,10 +106,26 @@ tool = FunctionTool(
 )
 ```
 
+## Context & Dependency Injection
+
+Tools that need runtime dependencies (DB connections, API clients, user sessions) can declare a `RunContext` parameter. The SDK injects it automatically and hides it from the LLM.
+
+```python
+from fastaiagent import RunContext, tool
+
+@tool(name="get_customer")
+def get_customer(ctx: RunContext[MyDeps], customer_id: str) -> str:
+    """Fetch customer details."""
+    return ctx.state.db.get("customers", customer_id)
+```
+
+See [Context & Dependency Injection](context.md) for the full guide.
+
 ---
 
 ## Next Steps
 
+- [Context & Dependency Injection](context.md) — Pass runtime dependencies to tools
 - [RESTTool](rest-tools.md) — Call HTTP APIs as tools
 - [MCPTool](mcp-tools.md) — Connect to MCP servers
 - [Schema Drift Detection](schema-drift.md) — Detect when tool responses change

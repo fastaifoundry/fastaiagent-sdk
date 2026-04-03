@@ -37,11 +37,15 @@ class Tool:
         self.description = description
         self.parameters = parameters or {"type": "object", "properties": {}}
 
-    def execute(self, arguments: dict[str, Any]) -> ToolResult:
+    def execute(self, arguments: dict[str, Any], context: Any | None = None) -> ToolResult:
         """Execute the tool synchronously."""
-        return run_sync(self.aexecute(arguments))
+        return run_sync(self.aexecute(arguments, context=context))
 
-    async def aexecute(self, arguments: dict[str, Any]) -> ToolResult:
+    async def aexecute(
+        self,
+        arguments: dict[str, Any],
+        context: Any | None = None,
+    ) -> ToolResult:
         """Execute the tool asynchronously. Override in subclasses."""
         raise NotImplementedError("Subclasses must implement aexecute()")
 

@@ -9,6 +9,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from fastaiagent._internal.async_utils import run_sync
+from fastaiagent.agent.context import RunContext
 from fastaiagent.agent.executor import execute_tool_loop, stream_tool_loop
 from fastaiagent.agent.memory import AgentMemory
 from fastaiagent.guardrail.executor import execute_guardrails
@@ -73,11 +74,15 @@ class Agent:
         self.memory = memory
         self.config = config or AgentConfig()
 
-    def run(self, input: str, *, trace: bool = True, **kwargs: Any) -> AgentResult:
+    def run(
+        self, input: str, *, context: RunContext | None = None, trace: bool = True, **kwargs: Any
+    ) -> AgentResult:
         """Synchronous execution."""
-        return run_sync(self.arun(input, trace=trace, **kwargs))
+        return run_sync(self.arun(input, context=context, trace=trace, **kwargs))
 
-    async def arun(self, input: str, *, trace: bool = True, **kwargs: Any) -> AgentResult:
+    async def arun(
+        self, input: str, *, context: RunContext | None = None, trace: bool = True, **kwargs: Any
+    ) -> AgentResult:
         """Async execution with tool-calling loop."""
         start = time.monotonic()
 
@@ -95,6 +100,7 @@ class Agent:
             tools=self.tools,
             max_iterations=self.config.max_iterations,
             tool_choice=self.config.tool_choice,
+            context=context,
             **kwargs,
         )
 
@@ -122,7 +128,7 @@ class Agent:
         )
 
     async def astream(
-        self, input: str, *, trace: bool = True, **kwargs: Any
+        self, input: str, *, context: RunContext | None = None, trace: bool = True, **kwargs: Any
     ) -> AsyncGenerator[StreamEvent, None]:
         """Async streaming execution — yields StreamEvent objects as tokens arrive.
 
@@ -148,6 +154,7 @@ class Agent:
             tools=self.tools,
             max_iterations=self.config.max_iterations,
             tool_choice=self.config.tool_choice,
+            context=context,
         ):
             if isinstance(event, TextDelta):
                 accumulated_text += event.text
@@ -166,7 +173,9 @@ class Agent:
 
             self.memory.add(AssistantMessage(output))
 
-    def stream(self, input: str, *, trace: bool = True, **kwargs: Any) -> AgentResult:
+    def stream(
+        self, input: str, *, context: RunContext | None = None, trace: bool = True, **kwargs: Any
+    ) -> AgentResult:
         """Synchronous streaming — collects stream into AgentResult.
 
         For true streaming, use ``astream()`` in an async context.
@@ -175,7 +184,7 @@ class Agent:
         async def _collect() -> AgentResult:
             start = time.monotonic()
             text_parts: list[str] = []
-            async for event in self.astream(input, trace=trace, **kwargs):
+            async for event in self.astream(input, context=context, trace=trace, **kwargs):
                 if isinstance(event, TextDelta):
                     text_parts.append(event.text)
             latency = int((time.monotonic() - start) * 1000)

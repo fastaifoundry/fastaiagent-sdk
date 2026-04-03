@@ -31,6 +31,7 @@ async def execute_tool_loop(
     max_iterations: int = 10,
     tool_choice: str = "auto",
     tracer: Any = None,
+    context: Any | None = None,
     **kwargs: Any,
 ) -> tuple[LLMResponse, list[dict[str, Any]]]:
     """Execute the agent's tool-calling loop.
@@ -72,7 +73,7 @@ async def execute_tool_loop(
                 tool_call_record["error"] = result_text
             else:
                 try:
-                    result = await tool.aexecute(tc.arguments)
+                    result = await tool.aexecute(tc.arguments, context=context)
                     if result.success:
                         result_text = (
                             json.dumps(result.output, default=str)
@@ -105,6 +106,7 @@ async def stream_tool_loop(
     tools: list[Tool],
     max_iterations: int = 10,
     tool_choice: str = "auto",
+    context: Any | None = None,
 ) -> AsyncGenerator[StreamEvent, None]:
     """Streaming version of execute_tool_loop.
 
@@ -159,7 +161,7 @@ async def stream_tool_loop(
                 result_text = f"Error: Unknown tool '{tc.name}'"
             else:
                 try:
-                    result = await tool.aexecute(tc.arguments)
+                    result = await tool.aexecute(tc.arguments, context=context)
                     if result.success:
                         result_text = (
                             json.dumps(result.output, default=str)

@@ -68,7 +68,7 @@ class MCPTool(Tool):
         tools: list[dict[str, Any]] = result.get("tools", [])
         return tools
 
-    async def aexecute(self, arguments: dict[str, Any]) -> ToolResult:
+    async def aexecute(self, arguments: dict[str, Any], context: Any | None = None) -> ToolResult:
         """Execute the tool via MCP server."""
         try:
             result = await self._send_jsonrpc(

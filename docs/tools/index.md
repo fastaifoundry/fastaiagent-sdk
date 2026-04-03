@@ -124,6 +124,7 @@ except ToolExecutionError as e:
 ## Next Steps
 
 - [FunctionTool](function-tools.md) — Wrap Python functions as tools
+- [Context & Dependency Injection](context.md) — Pass runtime dependencies to tools
 - [RESTTool](rest-tools.md) — Call HTTP APIs as tools
 - [MCPTool](mcp-tools.md) — Connect to MCP servers
 - [Schema Drift Detection](schema-drift.md) — Detect when tool responses change

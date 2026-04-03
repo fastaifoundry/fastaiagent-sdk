@@ -37,7 +37,7 @@ class RESTTool(Tool):
         self.body_mapping = body_mapping  # json_body, query_params, path_params
         super().__init__(name=name, description=description, parameters=parameters)
 
-    async def aexecute(self, arguments: dict[str, Any]) -> ToolResult:
+    async def aexecute(self, arguments: dict[str, Any], context: Any | None = None) -> ToolResult:
         """Execute the REST API call."""
         import httpx
 
