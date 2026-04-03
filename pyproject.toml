@@ -1,6 +1,6 @@
 [project]
 name = "fastaiagent"
-version = "0.1.0a4"
+version = "0.1.0a5"
 description = "Build, debug, evaluate, and operate AI agents. The only SDK with fork-and-rerun Agent Replay."
 readme = "README.md"
 license = {text = "Apache-2.0"}
