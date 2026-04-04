@@ -205,6 +205,133 @@ except json.JSONDecodeError:
 
 > **Note:** With OpenAI's `strict: true` mode, invalid JSON should not occur. With Anthropic or Ollama, the LLM may occasionally return imperfect JSON. Always include a `json.JSONDecodeError` handler as a safety net.
 
+## Output Type (Pydantic Models)
+
+Instead of manually constructing `response_format` dicts and parsing JSON, use `output_type` on Agent to get automatic Pydantic model parsing:
+
+```python
+from pydantic import BaseModel
+from fastaiagent import Agent, LLMClient
+
+class Person(BaseModel):
+    name: str
+    age: int
+    city: str
+
+agent = Agent(
+    name="extractor",
+    system_prompt="Extract person info from the message.",
+    llm=LLMClient(provider="openai", model="gpt-4.1"),
+    output_type=Person,
+)
+
+result = agent.run("Alice is 30 and lives in Tokyo.")
+print(result.parsed.name)   # "Alice"
+print(result.parsed.age)    # 30
+print(result.parsed.city)   # "Tokyo"
+print(result.output)         # Raw JSON string
+```
+
+### How it works
+
+1. The SDK generates a `response_format` from `output_type.model_json_schema()`
+2. The format is passed to the LLM as a kwarg (works with all providers)
+3. The JSON response is automatically parsed into a Pydantic model on `result.parsed`
+4. If parsing fails, `result.parsed` is `None` and `result.output` contains the raw text
+
+### Nested models
+
+```python
+class Address(BaseModel):
+    street: str
+    city: str
+
+class Customer(BaseModel):
+    name: str
+    address: Address
+
+agent = Agent(name="extractor", output_type=Customer, ...)
+result = agent.run("John at 123 Main St, SF")
+print(result.parsed.address.city)  # "SF"
+```
+
+### Streaming
+
+`stream()` collects all tokens and parses at the end:
+
+```python
+result = agent.stream("Alice is 30 from Tokyo.")
+print(result.parsed)  # Person(name='Alice', age=30, city='Tokyo')
+```
+
+### Serialization
+
+`to_dict()` includes the JSON schema in `config.response_format`. The `output_type` Python class cannot be restored from `from_dict()` — the schema is informational.
+
+## LLM Parameters
+
+`LLMClient` supports additional sampling parameters with automatic per-provider mapping:
+
+```python
+llm = LLMClient(
+    provider="openai",
+    model="gpt-4.1",
+    temperature=0.7,
+    top_p=0.9,
+    seed=42,
+    stop=["END", "\n\n"],
+    frequency_penalty=0.5,
+    presence_penalty=0.3,
+    parallel_tool_calls=False,
+)
+```
+
+**Per-call override:**
+
+```python
+response = llm.complete(messages, top_p=0.5)  # overrides 0.9 for this call
+```
+
+**Provider compatibility:**
+
+| Parameter | OpenAI | Anthropic | Ollama | Bedrock |
+|-----------|:------:|:---------:|:------:|:-------:|
+| `top_p` | Yes | Yes | Yes | Yes |
+| `stop` | Yes | Yes (as `stop_sequences`) | Yes | Yes (as `stopSequences`) |
+| `seed` | Yes | -- | Yes | -- |
+| `frequency_penalty` | Yes | -- | Yes | -- |
+| `presence_penalty` | Yes | -- | Yes | -- |
+| `parallel_tool_calls` | Yes | -- | -- | -- |
+
+Unsupported parameters are silently skipped for each provider.
+
+## Retry with Backoff
+
+`LLMClient` supports automatic retries on transient errors (HTTP 429 rate limits and 5xx server errors):
+
+```python
+llm = LLMClient(
+    provider="openai",
+    model="gpt-4.1",
+    max_retries=3,  # Retry up to 3 times
+)
+```
+
+**Behavior:**
+- Retries on: 429 (rate limit), 500+ (server errors)
+- No retry on: 400, 401, 403, 404 (client errors)
+- Backoff: exponential (1s, 2s, 4s, 8s, ... capped at 30s)
+- `LLMProviderError.status_code` gives the HTTP status code
+
+```python
+from fastaiagent._internal.errors import LLMProviderError
+
+try:
+    response = llm.complete(messages)
+except LLMProviderError as e:
+    print(f"Status: {e.status_code}")  # e.g., 429
+```
+
 ---
 
 ## Next Steps

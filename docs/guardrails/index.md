@@ -252,14 +252,38 @@ content_filter = Guardrail(
 
 ## Positions
 
-Where in the execution pipeline the guardrail runs:
+All four guardrail positions are fully wired and operational:
 
 | Position | When it runs | Use case |
 |----------|-------------|----------|
 | `GuardrailPosition.input` | Before LLM sees user message | Block PII, profanity, prompt injection |
 | `GuardrailPosition.output` | After LLM responds | Block PII leaks, validate format, quality check |
-| `GuardrailPosition.tool_call` | Before tool executes | Restrict URLs, validate arguments |
-| `GuardrailPosition.tool_result` | After tool returns | Validate tool output, filter sensitive data |
+| `GuardrailPosition.tool_call` | Before tool executes | Restrict URLs, validate arguments, audit |
+| `GuardrailPosition.tool_result` | After tool returns (success only) | Validate tool output, filter sensitive data |
+
+```python
+from fastaiagent import Agent, LLMClient
+from fastaiagent.guardrail import Guardrail, GuardrailPosition, allowed_domains
+
+agent = Agent(
+    name="safe-agent",
+    llm=LLMClient(provider="openai", model="gpt-4.1"),
+    tools=[my_api_tool],
+    guardrails=[
+        # Block tool calls to unapproved domains
+        allowed_domains(["api.mycompany.com"]),
+        # Block sensitive data in tool results
+        Guardrail(
+            name="no-secrets-in-results",
+            position=GuardrailPosition.tool_result,
+            blocking=True,
+            fn=lambda text: "sk-" not in text,
+        ),
+    ],
+)
+```
+
+Tool-position guardrails work in both `arun()` and `astream()` execution modes.
 
 ```python
 from fastaiagent.guardrail import GuardrailPosition

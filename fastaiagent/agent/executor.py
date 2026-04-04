@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastaiagent._internal.errors import MaxIterationsError, ToolExecutionError
+from fastaiagent.guardrail.executor import execute_guardrails
+from fastaiagent.guardrail.guardrail import GuardrailPosition
 from fastaiagent.llm.client import LLMResponse
 from fastaiagent.llm.message import (
     AssistantMessage,
@@ -23,6 +25,9 @@ from fastaiagent.llm.stream import (
 )
 from fastaiagent.tool.base import Tool
 
+if TYPE_CHECKING:
+    from fastaiagent.guardrail.guardrail import Guardrail
+
 
 async def execute_tool_loop(
     llm: Any,
@@ -32,6 +37,7 @@ async def execute_tool_loop(
     tool_choice: str = "auto",
     tracer: Any = None,
     context: Any | None = None,
+    guardrails: list[Guardrail] | None = None,
     **kwargs: Any,
 ) -> tuple[LLMResponse, list[dict[str, Any]]]:
     """Execute the agent's tool-calling loop.
@@ -73,6 +79,15 @@ async def execute_tool_loop(
                 tool_call_record["error"] = result_text
             else:
                 try:
+                    # Tool-call guardrail: validate arguments before execution
+                    if guardrails:
+                        tc_data = json.dumps(
+                            {"tool": tc.name, "arguments": tc.arguments}, default=str
+                        )
+                        await execute_guardrails(
+                            guardrails, tc_data, GuardrailPosition.tool_call
+                        )
+
                     result = await tool.aexecute(tc.arguments, context=context)
                     if result.success:
                         result_text = (
@@ -80,6 +95,11 @@ async def execute_tool_loop(
                             if not isinstance(result.output, str)
                             else result.output
                         )
+                        # Tool-result guardrail: validate output after execution
+                        if guardrails:
+                            await execute_guardrails(
+                                guardrails, result_text, GuardrailPosition.tool_result
+                            )
                     else:
                         result_text = f"Error: {result.error}"
                     tool_call_record["output"] = result_text
@@ -107,6 +127,8 @@ async def stream_tool_loop(
     max_iterations: int = 10,
     tool_choice: str = "auto",
     context: Any | None = None,
+    guardrails: list[Guardrail] | None = None,
+    **kwargs: Any,
 ) -> AsyncGenerator[StreamEvent, None]:
     """Streaming version of execute_tool_loop.
 
@@ -126,7 +148,7 @@ async def stream_tool_loop(
         pending_tool_calls: list[ToolCall] = []
         total_usage = Usage()
 
-        async for event in llm.astream(messages, tools=tool_defs):
+        async for event in llm.astream(messages, tools=tool_defs, **kwargs):
             if isinstance(event, TextDelta):
                 accumulated_text += event.text
                 yield event
@@ -161,6 +183,15 @@ async def stream_tool_loop(
                 result_text = f"Error: Unknown tool '{tc.name}'"
             else:
                 try:
+                    # Tool-call guardrail: validate arguments before execution
+                    if guardrails:
+                        tc_data = json.dumps(
+                            {"tool": tc.name, "arguments": tc.arguments}, default=str
+                        )
+                        await execute_guardrails(
+                            guardrails, tc_data, GuardrailPosition.tool_call
+                        )
+
                     result = await tool.aexecute(tc.arguments, context=context)
                     if result.success:
                         result_text = (
@@ -168,6 +199,11 @@ async def stream_tool_loop(
                             if not isinstance(result.output, str)
                             else result.output
                         )
+                        # Tool-result guardrail: validate output after execution
+                        if guardrails:
+                            await execute_guardrails(
+                                guardrails, result_text, GuardrailPosition.tool_result
+                            )
                     else:
                         result_text = f"Error: {result.error}"
                 except ToolExecutionError as e:

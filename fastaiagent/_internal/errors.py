@@ -70,6 +70,10 @@ class LLMError(FastAIAgentError):
 class LLMProviderError(LLMError):
     """Error from an LLM provider."""
 
+    def __init__(self, message: str = "", status_code: int | None = None):
+        self.status_code = status_code
+        super().__init__(message)
+
 
 class LLMRateLimitError(LLMError):
     """LLM provider rate limit exceeded."""

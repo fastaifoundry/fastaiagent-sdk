@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import AsyncGenerator, Callable, Sequence
 from typing import Any
@@ -14,7 +15,7 @@ from fastaiagent.agent.executor import execute_tool_loop, stream_tool_loop
 from fastaiagent.agent.memory import AgentMemory
 from fastaiagent.guardrail.executor import execute_guardrails
 from fastaiagent.guardrail.guardrail import Guardrail, GuardrailPosition
-from fastaiagent.llm.client import LLMClient
+from fastaiagent.llm.client import LLMClient, _strip_code_fences
 from fastaiagent.llm.message import Message, SystemMessage, UserMessage
 from fastaiagent.llm.stream import StreamEvent, TextDelta
 from fastaiagent.tool.base import Tool
@@ -33,6 +34,7 @@ class AgentResult(BaseModel):
     """Result of an agent execution."""
 
     output: str = ""
+    parsed: Any | None = None
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     tokens_used: int = 0
     cost: float = 0.0
@@ -65,6 +67,7 @@ class Agent:
         guardrails: Sequence[Guardrail] | None = None,
         memory: AgentMemory | None = None,
         config: AgentConfig | None = None,
+        output_type: type | None = None,
     ):
         self.name = name
         self.system_prompt = system_prompt
@@ -73,6 +76,30 @@ class Agent:
         self.guardrails: list[Guardrail] = list(guardrails) if guardrails else []
         self.memory = memory
         self.config = config or AgentConfig()
+        self.output_type = output_type
+
+    def _build_response_format(self) -> dict[str, Any] | None:
+        """Build response_format dict from output_type for structured output."""
+        if self.output_type is None:
+            return None
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "name": self.output_type.__name__,
+                "schema": self.output_type.model_json_schema(),
+            },
+        }
+
+    def _parse_output(self, text: str) -> Any | None:
+        """Parse LLM text output into output_type Pydantic model."""
+        if self.output_type is None or not text:
+            return None
+        try:
+            clean = _strip_code_fences(text)
+            data = json.loads(clean)
+            return self.output_type.model_validate(data)
+        except Exception:
+            return None
 
     def run(
         self, input: str, *, context: RunContext | None = None, trace: bool = True, **kwargs: Any
@@ -123,6 +150,11 @@ class Agent:
         # Build messages
         messages = self._build_messages(input, context=context)
 
+        # Inject response_format for structured output
+        response_format = self._build_response_format()
+        if response_format is not None:
+            kwargs["response_format"] = response_format
+
         # Execute tool-calling loop
         response, tool_calls = await execute_tool_loop(
             llm=self.llm,
@@ -131,10 +163,12 @@ class Agent:
             max_iterations=self.config.max_iterations,
             tool_choice=self.config.tool_choice,
             context=context,
+            guardrails=self.guardrails or None,
             **kwargs,
         )
 
         output = response.content or ""
+        parsed = self._parse_output(output)
 
         # Execute output guardrails
         if self.guardrails:
@@ -152,6 +186,7 @@ class Agent:
 
         return AgentResult(
             output=output,
+            parsed=parsed,
             tool_calls=tool_calls,
             tokens_used=tokens,
             latency_ms=latency,
@@ -176,6 +211,11 @@ class Agent:
 
         messages = self._build_messages(input, context=context)
 
+        # Inject response_format for structured output
+        response_format = self._build_response_format()
+        if response_format is not None:
+            kwargs["response_format"] = response_format
+
         # Stream tool loop — yields events to caller
         accumulated_text = ""
         async for event in stream_tool_loop(
@@ -185,6 +225,8 @@ class Agent:
             max_iterations=self.config.max_iterations,
             tool_choice=self.config.tool_choice,
             context=context,
+            guardrails=self.guardrails or None,
+            **kwargs,
         ):
             if isinstance(event, TextDelta):
                 accumulated_text += event.text
@@ -218,8 +260,11 @@ class Agent:
                 if isinstance(event, TextDelta):
                     text_parts.append(event.text)
             latency = int((time.monotonic() - start) * 1000)
+            output = "".join(text_parts)
+            parsed = self._parse_output(output)
             return AgentResult(
-                output="".join(text_parts),
+                output=output,
+                parsed=parsed,
                 latency_ms=latency,
             )
 
@@ -253,7 +298,7 @@ class Agent:
                 f"Agent '{self.name}' has a callable system_prompt which cannot be "
                 f"serialized. Use a static string for agents pushed to the platform."
             )
-        return {
+        d: dict[str, Any] = {
             "name": self.name,
             "agent_type": "single",
             "system_prompt": self.system_prompt,
@@ -262,10 +307,21 @@ class Agent:
             "guardrails": [g.to_dict() for g in self.guardrails],
             "config": self.config.model_dump(),
         }
+        # Include response_format schema if output_type is set.
+        # Note: output_type (a Python class) cannot be restored from JSON.
+        response_format = self._build_response_format()
+        if response_format is not None:
+            d["config"]["response_format"] = response_format
+        return d
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Agent:
-        """Deserialize from canonical format (platform pull)."""
+        """Deserialize from canonical format (platform pull).
+
+        Note: output_type cannot be restored from serialized data because
+        it is a Python class. The response_format schema in config is
+        informational and will be passed through to the LLM if present.
+        """
         return cls(
             name=data["name"],
             system_prompt=data.get("system_prompt", ""),

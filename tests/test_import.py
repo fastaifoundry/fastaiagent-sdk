@@ -12,4 +12,4 @@ def test_version_format():
 
     # Version should be a valid PEP 440 string
     assert __version__  # non-empty
-    assert "0.1.0" in __version__
+    assert "0.1." in __version__

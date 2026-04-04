@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json as _json
 import os
 import re
@@ -96,6 +97,13 @@ class LLMClient:
         base_url: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        max_retries: int = 0,
+        top_p: float | None = None,
+        stop: str | list[str] | None = None,
+        seed: int | None = None,
+        frequency_penalty: float | None = None,
+        presence_penalty: float | None = None,
+        parallel_tool_calls: bool | None = None,
         **kwargs: Any,
     ):
         self.provider = provider
@@ -104,7 +112,26 @@ class LLMClient:
         self.base_url = base_url or self._default_base_url(provider)
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.max_retries = max_retries
+        self.top_p = top_p
+        self.stop = stop
+        self.seed = seed
+        self.frequency_penalty = frequency_penalty
+        self.presence_penalty = presence_penalty
+        self.parallel_tool_calls = parallel_tool_calls
         self._extra = kwargs
+
+    @staticmethod
+    def _should_retry(status_code: int | None) -> bool:
+        """Retry on rate limit (429) and server errors (5xx)."""
+        if status_code is None:
+            return False
+        return status_code == 429 or status_code >= 500
+
+    @staticmethod
+    def _retry_delay(attempt: int) -> float:
+        """Exponential backoff: 1s, 2s, 4s, 8s, ... capped at 30s."""
+        return min(2 ** attempt, 30)
 
     @staticmethod
     def _default_base_url(provider: str) -> str:
@@ -136,9 +163,19 @@ class LLMClient:
         """Async completion — routes to the appropriate provider."""
         start = time.monotonic()
         provider_fn = self._get_provider_fn()
-        response: LLMResponse = await provider_fn(messages, tools, **kwargs)
-        response.latency_ms = int((time.monotonic() - start) * 1000)
-        return response
+
+        for attempt in range(self.max_retries + 1):
+            try:
+                response: LLMResponse = await provider_fn(messages, tools, **kwargs)
+                response.latency_ms = int((time.monotonic() - start) * 1000)
+                return response
+            except LLMProviderError as e:
+                if attempt < self.max_retries and self._should_retry(e.status_code):
+                    await asyncio.sleep(self._retry_delay(attempt))
+                    continue
+                raise
+
+        raise LLMProviderError("Retries exhausted")  # unreachable — satisfies type checker
 
     async def astream(
         self,
@@ -167,8 +204,17 @@ class LLMClient:
                 f"Streaming not supported for provider '{self.provider}'. "
                 f"Supported streaming providers: openai, anthropic, ollama, azure, custom."
             )
-        async for event in fn(messages, tools, **kwargs):
-            yield event
+
+        for attempt in range(self.max_retries + 1):
+            try:
+                async for event in fn(messages, tools, **kwargs):
+                    yield event
+                return
+            except LLMProviderError as e:
+                if attempt < self.max_retries and self._should_retry(e.status_code):
+                    await asyncio.sleep(self._retry_delay(attempt))
+                    continue
+                raise
 
     def stream(
         self,
@@ -266,6 +312,25 @@ class LLMClient:
         response_format = kwargs.get("response_format")
         if response_format is not None:
             body["response_format"] = response_format
+        # Additional parameters
+        top_p = kwargs.get("top_p", self.top_p)
+        if top_p is not None:
+            body["top_p"] = top_p
+        stop = kwargs.get("stop", self.stop)
+        if stop is not None:
+            body["stop"] = stop
+        seed = kwargs.get("seed", self.seed)
+        if seed is not None:
+            body["seed"] = seed
+        freq_pen = kwargs.get("frequency_penalty", self.frequency_penalty)
+        if freq_pen is not None:
+            body["frequency_penalty"] = freq_pen
+        pres_pen = kwargs.get("presence_penalty", self.presence_penalty)
+        if pres_pen is not None:
+            body["presence_penalty"] = pres_pen
+        ptc = kwargs.get("parallel_tool_calls", self.parallel_tool_calls)
+        if ptc is not None and tools:
+            body["parallel_tool_calls"] = ptc
 
         api_key = self.api_key or os.environ.get("OPENAI_API_KEY", "")
         if not api_key:
@@ -284,7 +349,10 @@ class LLMClient:
         async with httpx.AsyncClient(timeout=120) as client:
             resp = await client.post(url, json=body, headers=headers)
             if resp.status_code != 200:
-                raise LLMProviderError(f"OpenAI API error {resp.status_code}: {resp.text}")
+                raise LLMProviderError(
+                    f"OpenAI API error {resp.status_code}: {resp.text}",
+                    status_code=resp.status_code,
+                )
             data = resp.json()
 
         return self._parse_openai_response(data)
@@ -377,6 +445,13 @@ class LLMClient:
             body["system"] = system_text
         if self.temperature is not None:
             body["temperature"] = self.temperature
+        # Additional parameters (Anthropic supports top_p and stop_sequences)
+        top_p = kwargs.get("top_p", self.top_p)
+        if top_p is not None:
+            body["top_p"] = top_p
+        stop = kwargs.get("stop", self.stop)
+        if stop is not None:
+            body["stop_sequences"] = [stop] if isinstance(stop, str) else stop
 
         # Convert tools from OpenAI format to Anthropic format
         if tools:
@@ -412,7 +487,10 @@ class LLMClient:
         async with httpx.AsyncClient(timeout=120) as client:
             resp = await client.post(url, json=body, headers=headers)
             if resp.status_code != 200:
-                raise LLMProviderError(f"Anthropic API error {resp.status_code}: {resp.text}")
+                raise LLMProviderError(
+                    f"Anthropic API error {resp.status_code}: {resp.text}",
+                    status_code=resp.status_code,
+                )
             data = resp.json()
 
         # Parse Anthropic response
@@ -480,6 +558,22 @@ class LLMClient:
         max_tok = kwargs.get("max_tokens", self.max_tokens)
         if max_tok is not None:
             options["num_predict"] = max_tok
+        # Additional parameters
+        top_p = kwargs.get("top_p", self.top_p)
+        if top_p is not None:
+            options["top_p"] = top_p
+        stop = kwargs.get("stop", self.stop)
+        if stop is not None:
+            options["stop"] = [stop] if isinstance(stop, str) else stop
+        seed = kwargs.get("seed", self.seed)
+        if seed is not None:
+            options["seed"] = seed
+        freq_pen = kwargs.get("frequency_penalty", self.frequency_penalty)
+        if freq_pen is not None:
+            options["frequency_penalty"] = freq_pen
+        pres_pen = kwargs.get("presence_penalty", self.presence_penalty)
+        if pres_pen is not None:
+            options["presence_penalty"] = pres_pen
         if options:
             body["options"] = options
         # Structured output
@@ -493,7 +587,10 @@ class LLMClient:
         async with httpx.AsyncClient(timeout=120) as client:
             resp = await client.post(url, json=body)
             if resp.status_code != 200:
-                raise LLMProviderError(f"Ollama API error {resp.status_code}: {resp.text}")
+                raise LLMProviderError(
+                    f"Ollama API error {resp.status_code}: {resp.text}",
+                    status_code=resp.status_code,
+                )
             data = resp.json()
 
         msg = data.get("message", {})
@@ -559,6 +656,13 @@ class LLMClient:
             inference_config["temperature"] = self.temperature
         max_tok = kwargs.get("max_tokens", self.max_tokens) or 4096
         inference_config["maxTokens"] = max_tok
+        # Additional parameters (Bedrock supports topP and stopSequences)
+        top_p = kwargs.get("top_p", self.top_p)
+        if top_p is not None:
+            inference_config["topP"] = top_p
+        stop = kwargs.get("stop", self.stop)
+        if stop is not None:
+            inference_config["stopSequences"] = [stop] if isinstance(stop, str) else stop
         body["inferenceConfig"] = inference_config
 
         response = client.converse(modelId=self.model, **body)
@@ -630,6 +734,25 @@ class LLMClient:
         response_format = kwargs.get("response_format")
         if response_format is not None:
             body["response_format"] = response_format
+        # Additional parameters
+        top_p = kwargs.get("top_p", self.top_p)
+        if top_p is not None:
+            body["top_p"] = top_p
+        stop = kwargs.get("stop", self.stop)
+        if stop is not None:
+            body["stop"] = stop
+        seed = kwargs.get("seed", self.seed)
+        if seed is not None:
+            body["seed"] = seed
+        freq_pen = kwargs.get("frequency_penalty", self.frequency_penalty)
+        if freq_pen is not None:
+            body["frequency_penalty"] = freq_pen
+        pres_pen = kwargs.get("presence_penalty", self.presence_penalty)
+        if pres_pen is not None:
+            body["presence_penalty"] = pres_pen
+        ptc = kwargs.get("parallel_tool_calls", self.parallel_tool_calls)
+        if ptc is not None and tools:
+            body["parallel_tool_calls"] = ptc
 
         api_key = self.api_key or os.environ.get("OPENAI_API_KEY", "")
         if not api_key:
@@ -651,7 +774,8 @@ class LLMClient:
                 if resp.status_code != 200:
                     body_text = await resp.aread()
                     raise LLMProviderError(
-                        f"OpenAI API error {resp.status_code}: {body_text.decode()}"
+                        f"OpenAI API error {resp.status_code}: {body_text.decode()}",
+                        status_code=resp.status_code,
                     )
 
                 async for line in resp.aiter_lines():
@@ -765,6 +889,13 @@ class LLMClient:
             body["system"] = stream_system_text
         if self.temperature is not None:
             body["temperature"] = self.temperature
+        # Additional parameters (Anthropic supports top_p and stop_sequences)
+        top_p = kwargs.get("top_p", self.top_p)
+        if top_p is not None:
+            body["top_p"] = top_p
+        stop = kwargs.get("stop", self.stop)
+        if stop is not None:
+            body["stop_sequences"] = [stop] if isinstance(stop, str) else stop
 
         if tools:
             anthropic_tools = []
@@ -807,7 +938,8 @@ class LLMClient:
                 if resp.status_code != 200:
                     body_text = await resp.aread()
                     raise LLMProviderError(
-                        f"Anthropic API error {resp.status_code}: {body_text.decode()}"
+                        f"Anthropic API error {resp.status_code}: {body_text.decode()}",
+                        status_code=resp.status_code,
                     )
 
                 event_type = ""
@@ -889,6 +1021,22 @@ class LLMClient:
         max_tok = kwargs.get("max_tokens", self.max_tokens)
         if max_tok is not None:
             options["num_predict"] = max_tok
+        # Additional parameters
+        top_p = kwargs.get("top_p", self.top_p)
+        if top_p is not None:
+            options["top_p"] = top_p
+        stop = kwargs.get("stop", self.stop)
+        if stop is not None:
+            options["stop"] = [stop] if isinstance(stop, str) else stop
+        seed = kwargs.get("seed", self.seed)
+        if seed is not None:
+            options["seed"] = seed
+        freq_pen = kwargs.get("frequency_penalty", self.frequency_penalty)
+        if freq_pen is not None:
+            options["frequency_penalty"] = freq_pen
+        pres_pen = kwargs.get("presence_penalty", self.presence_penalty)
+        if pres_pen is not None:
+            options["presence_penalty"] = pres_pen
         if options:
             body["options"] = options
         # Structured output
@@ -907,7 +1055,8 @@ class LLMClient:
                 if resp.status_code != 200:
                     body_text = await resp.aread()
                     raise LLMProviderError(
-                        f"Ollama API error {resp.status_code}: {body_text.decode()}"
+                        f"Ollama API error {resp.status_code}: {body_text.decode()}",
+                        status_code=resp.status_code,
                     )
 
                 async for line in resp.aiter_lines():
@@ -953,6 +1102,20 @@ class LLMClient:
             data["temperature"] = self.temperature
         if self.max_tokens is not None:
             data["max_tokens"] = self.max_tokens
+        if self.max_retries:
+            data["max_retries"] = self.max_retries
+        if self.top_p is not None:
+            data["top_p"] = self.top_p
+        if self.stop is not None:
+            data["stop"] = self.stop
+        if self.seed is not None:
+            data["seed"] = self.seed
+        if self.frequency_penalty is not None:
+            data["frequency_penalty"] = self.frequency_penalty
+        if self.presence_penalty is not None:
+            data["presence_penalty"] = self.presence_penalty
+        if self.parallel_tool_calls is not None:
+            data["parallel_tool_calls"] = self.parallel_tool_calls
         return data
 
     @classmethod
@@ -965,4 +1128,11 @@ class LLMClient:
             base_url=data.get("base_url"),
             temperature=data.get("temperature"),
             max_tokens=data.get("max_tokens"),
+            max_retries=data.get("max_retries", 0),
+            top_p=data.get("top_p"),
+            stop=data.get("stop"),
+            seed=data.get("seed"),
+            frequency_penalty=data.get("frequency_penalty"),
+            presence_penalty=data.get("presence_penalty"),
+            parallel_tool_calls=data.get("parallel_tool_calls"),
         )
