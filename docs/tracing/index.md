@@ -18,8 +18,12 @@ agent = Agent(
 # This execution is automatically traced
 result = agent.run("Hello")
 
-# View traces via CLI
-# $ fastaiagent traces list
+# Every result includes a trace_id
+print(result.trace_id)  # e.g. "b6acf1ef2c2779bbc2fcf80802ae0534"
+
+# Use it to replay and debug later
+from fastaiagent.trace import Replay
+replay = Replay.load(result.trace_id)
 ```
 
 ## Manual Tracing with Context Manager

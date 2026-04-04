@@ -5,12 +5,33 @@ The only SDK with **Agent Replay** — fork-and-rerun debugging for AI agents.
 
 Works standalone or connected to the [FastAIAgent Platform](https://fastaiagent.net) for visual editing, production monitoring, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=0.1.0a7)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=0.1.2)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
 
 ---
+
+## Quickstart
+
+```python
+from fastaiagent import Agent, LLMClient
+
+# Create an LLM client
+llm = LLMClient(provider="openai", model="gpt-4o")
+
+# Create an agent
+agent = Agent(
+    name="my-agent",
+    system_prompt="You are a helpful assistant.",
+    llm=llm,
+)
+
+# Run it
+result = agent.run("What is the capital of France?")
+print(result.output)
+print(result.trace_id)  # every run is traced — use this ID for replay/debugging
+```
 
 ## Debug a failing agent in 30 seconds
 

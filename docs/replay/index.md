@@ -13,6 +13,27 @@ When an agent fails in production — hallucinates, calls the wrong tool, gives 
 5. Rerun from that point only
 6. Compare the original vs fixed result
 
+## Where Do Trace IDs Come From?
+
+Every `agent.run()` automatically generates a trace. The trace ID is returned in the result:
+
+```python
+result = agent.run("Help me with my order")
+print(result.trace_id)  # "b6acf1ef2c2779bbc2fcf80802ae0534"
+```
+
+You can also browse past traces programmatically or via CLI:
+
+```python
+from fastaiagent.trace import TraceStore
+for t in TraceStore().list_traces(last_hours=24):
+    print(f"{t.trace_id}  {t.name}  {t.status}")
+```
+
+```bash
+fastaiagent traces list --last-hours 24
+```
+
 ## Loading a Replay
 
 ### From Local Trace Storage
@@ -20,7 +41,7 @@ When an agent fails in production — hallucinates, calls the wrong tool, gives 
 ```python
 from fastaiagent.trace.replay import Replay
 
-# Load by trace ID (from fastaiagent traces list)
+# Load by trace ID (from result.trace_id or fastaiagent traces list)
 replay = Replay.load("b6acf1ef2c2779bbc2fcf80802ae0534")
 ```
 

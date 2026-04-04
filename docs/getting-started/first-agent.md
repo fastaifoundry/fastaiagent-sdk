@@ -34,25 +34,41 @@ agent = Agent(
     tools=[weather_tool]
 )
 
-# Run it with tracing
-result = agent.run("What's the weather in San Francisco?", trace=True)
+# Run it — every run is automatically traced
+result = agent.run("What's the weather in San Francisco?")
 print(result.output)
+print(result.trace_id)  # e.g. "b6acf1ef2c2779bbc2fcf80802ae0534"
 ```
 
-## Step 3: See the Trace
+## Step 3: View and Replay the Trace
 
 ```python
-print(result.trace.summary())
-# Steps: 3 | Duration: 1.2s | Tokens: 245 | Cost: $0.001
+from fastaiagent.trace import Replay
+
+# Load the trace using the trace_id from the result
+replay = Replay.load(result.trace_id)
+print(replay.summary())
+# Trace: b6acf1ef2c2779bbc2fcf80802ae0534
+# Steps: 3 | Duration: 1.2s | Tokens: 245
 # Step 1: LLM call (choose tool) - 400ms
 # Step 2: Tool call (get-weather) - 5ms
 # Step 3: LLM call (final response) - 750ms
 ```
 
-## Step 4: View Traces via CLI
+## Step 4: Browse Past Traces
+
+```python
+from fastaiagent.trace import TraceStore
+
+store = TraceStore()
+for t in store.list_traces(last_hours=24):
+    print(f"{t.trace_id[:12]}  {t.name}  {t.status}")
+```
+
+Or via CLI:
 
 ```bash
-fastaiagent traces list --last 24h
+fastaiagent traces list --last-hours 24
 ```
 
 That's it. You've built an agent with a tool and full tracing.

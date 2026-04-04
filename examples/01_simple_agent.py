@@ -31,3 +31,4 @@ if __name__ == "__main__":
         print(f"Output: {result.output}")
         print(f"Tool calls: {result.tool_calls}")
         print(f"Tokens used: {result.tokens_used}")
+        print(f"Trace ID: {result.trace_id}")  # use with Replay.load() for debugging
