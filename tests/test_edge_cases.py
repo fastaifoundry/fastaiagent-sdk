@@ -212,13 +212,14 @@ class TestExecutionEdgeCases:
         with pytest.raises(EvalError, match="Available built-in scorers"):
             evaluate(lambda x: x, [{"input": "hi", "expected": "hi"}], scorers=["nonexistent"])
 
-    def test_push_unsupported_type_is_actionable(self):
-        """Pushing unsupported type should list pushable types."""
-        from fastaiagent.deploy.push import push_resource
+    def test_connect_not_connected_error_is_actionable(self):
+        """PlatformNotConnectedError should suggest fa.connect()."""
+        from fastaiagent._internal.errors import PlatformNotConnectedError
 
-        api = MagicMock()
-        with pytest.raises(FastAIAgentError, match="Pushable types"):
-            push_resource(api, 42)
+        with pytest.raises(PlatformNotConnectedError, match="fa.connect"):
+            raise PlatformNotConnectedError(
+                "Not connected to platform. Call fa.connect() first."
+            )
 
 
 # ===========================================================================

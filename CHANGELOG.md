@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0] - 2026-04-04
+
+### Added
+- **`fa.connect()`** — Connect the SDK to FastAIAgent Platform for observability, prompt management, and evaluation services. All SDK features work without connect(). This adds platform backends alongside local storage.
+- **`fa.disconnect()`** — Revert to local-only mode.
+- **`fa.is_connected`** — Check connection status.
+- **Platform trace export** — Traces automatically sent to platform via OTel `BatchSpanProcessor` when connected. Local SQLite always available as fallback.
+- **`TraceData.publish()`** — Manual backfill of local traces to the platform.
+- **`Replay.from_platform(trace_id)`** — Pull any trace from the platform and replay locally.
+- **`PromptRegistry.get(slug, version, source)`** — Pull prompts from platform with TTL caching (`source="auto"`, `"platform"`, `"local"`).
+- **`PromptRegistry.publish(slug, content, variables)`** — Publish prompts to the platform registry.
+- **`PromptRegistry.refresh(slug)`** — Invalidate platform prompt cache.
+- **`Dataset.from_platform(name)`** — Pull eval datasets from the platform.
+- **`Dataset.publish(name)`** — Push datasets to the platform.
+- **`EvalResults.publish(run_name)`** — Publish eval results to the platform.
+- **`Scorer.from_platform(name)`** — Pull scorer configs (LLM judge) from the platform.
+- **`PlatformNotConnectedError`** — Clear error when platform methods are called without `fa.connect()`.
+- `PlatformAPI.get()` / `PlatformAPI.aget()` — GET request support for platform API client.
+- `get_platform_api()` helper — Creates `PlatformAPI` from current connection state.
+
+### Removed
+- **`fa.init()`** — Replaced by `fa.connect()`.
+- **`fa.push()` / `fa.push_all()`** — No agent definition sync. Agents are code, not config to push.
+- **`FastAI` class** — Replaced by module-level `connect()`/`disconnect()`.
+- **`PushResult`** — No longer needed.
+- **`OfflineCache`** (`_platform/cache.py`) — Push buffer no longer needed.
+- **`deploy/push.py`** — Push deployment logic removed.
+- **CLI `push` command** — Removed.
+
+### Changed
+- `client.py` rewritten: `FastAI` class → `_Connection` singleton with `connect()`/`disconnect()`.
+- `_platform/api.py` refactored: removed push-only docstrings, added GET methods.
+- `__init__.py` updated: exports `connect`, `disconnect`, `is_connected` instead of `FastAI`, `init`.
+
 ## [0.1.0a7] - 2026-04-03
 
 ### Added

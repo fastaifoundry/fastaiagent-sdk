@@ -9,6 +9,7 @@ import httpx
 from fastaiagent._internal.errors import (
     PlatformAuthError,
     PlatformConnectionError,
+    PlatformNotConnectedError,
     PlatformNotFoundError,
     PlatformRateLimitError,
     PlatformTierLimitError,
@@ -19,7 +20,7 @@ from fastaiagent._version import __version__
 class PlatformAPI:
     """HTTP client for the FastAIAgent platform public API.
 
-    Authenticates via X-API-Key header. All requests go to /public/v1/sdk/*.
+    Authenticates via X-API-Key header.
     """
 
     def __init__(
@@ -61,7 +62,7 @@ class PlatformAPI:
             if "scope" in str(detail).lower():
                 raise PlatformAuthError(
                     f"Insufficient permissions: {detail}. "
-                    "Ensure your API key has the required write scopes."
+                    "Ensure your API key has the required scopes."
                 )
             raise PlatformAuthError(f"Forbidden: {detail}")
         elif response.status_code == 404:
@@ -78,6 +79,38 @@ class PlatformAPI:
         response.raise_for_status()
         result: dict[str, Any] = response.json()
         return result
+
+    def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Synchronous GET request."""
+        try:
+            with httpx.Client(timeout=self._timeout) as client:
+                response = client.get(
+                    f"{self._base_url}{path}",
+                    params=params,
+                    headers=self._headers(),
+                )
+                return self._handle_response(response)
+        except httpx.ConnectError:
+            raise PlatformConnectionError(
+                "Cannot connect to platform. Check your internet connection "
+                "and verify the target URL is correct."
+            )
+
+    async def aget(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Async GET request."""
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                response = await client.get(
+                    f"{self._base_url}{path}",
+                    params=params,
+                    headers=self._headers(),
+                )
+                return self._handle_response(response)
+        except httpx.ConnectError:
+            raise PlatformConnectionError(
+                "Cannot connect to platform. Check your internet connection "
+                "and verify the target URL is correct."
+            )
 
     def post(self, path: str, data: dict[str, Any]) -> dict[str, Any]:
         """Synchronous POST request."""
@@ -110,3 +143,17 @@ class PlatformAPI:
                 "Cannot connect to platform. Check your internet connection "
                 "and verify the target URL is correct."
             )
+
+
+def get_platform_api() -> PlatformAPI:
+    """Get a PlatformAPI instance using the current connection."""
+    from fastaiagent.client import _connection
+
+    if not _connection.is_connected:
+        raise PlatformNotConnectedError(
+            "Not connected to platform. Call fa.connect() first."
+        )
+    return PlatformAPI(
+        api_key=_connection.api_key or "",
+        base_url=_connection.target,
+    )

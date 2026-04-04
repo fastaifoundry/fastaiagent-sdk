@@ -29,39 +29,5 @@ def version() -> None:
     typer.echo(f"fastaiagent {__version__}")
 
 
-@app.command()
-def push(
-    api_key: str = typer.Option(..., envvar="FASTAIAGENT_API_KEY", help="Platform API key"),
-    target: str = typer.Option(
-        "https://app.fastaiagent.net",
-        envvar="FASTAIAGENT_TARGET",
-        help="Platform URL",
-    ),
-    agent: str | None = typer.Option(
-        None,
-        help="Agent module:name to push (e.g., myapp:support_agent)",
-    ),
-    chain: str | None = typer.Option(None, help="Chain module:name to push"),
-) -> None:
-    """Push resources to the FastAIAgent platform."""
-    from rich.console import Console
-
-    console = Console()
-
-    if not agent and not chain:
-        console.print("[red]Specify --agent or --chain to push.[/red]")
-        raise typer.Exit(1)
-
-    from fastaiagent.client import FastAI
-
-    FastAI(api_key=api_key, target=target)
-    console.print(f"Connecting to {target}...")
-
-    if agent:
-        console.print("[dim]Push via Python API: fa.push(my_agent)[/dim]")
-    if chain:
-        console.print("[dim]Push via Python API: fa.push(my_chain)[/dim]")
-
-
 if __name__ == "__main__":
     app()

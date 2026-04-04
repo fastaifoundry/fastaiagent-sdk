@@ -262,12 +262,13 @@ data = prompt.to_dict()
 restored = Prompt.from_dict(data)
 ```
 
-Push to platform:
+Publish to platform:
 ```python
-from fastaiagent import FastAI
+import fastaiagent as fa
 
-fa = FastAI(api_key="fa_k_...", target="http://localhost:8001")
-fa.push(prompt)  # Creates prompt + version on the platform
+fa.connect(api_key="fa-...", project="my-project")
+registry = PromptRegistry()
+registry.publish(slug="greeting", content=prompt.template, variables=prompt.variables)
 ```
 
 ## CLI Commands
@@ -317,8 +318,48 @@ except PromptNotFoundError:
 
 ---
 
+## Platform Prompt Registry
+
+When connected to the FastAIAgent Platform, `PromptRegistry` can pull versioned prompts from the platform and publish prompts to it:
+
+```python
+import fastaiagent as fa
+
+fa.connect(api_key="fa-...", project="my-project")
+
+registry = PromptRegistry()
+
+# Pull prompt from platform (latest deployed version)
+prompt = registry.get("support-prompt")
+
+# Pull specific version
+prompt = registry.get("support-prompt", version=3)
+
+# Explicit source override
+prompt = registry.get("support-prompt", source="platform")  # platform only
+prompt = registry.get("support-prompt", source="local")      # local only
+
+# Publish a prompt to the platform
+registry.publish(
+    slug="support-prompt",
+    content="You are a helpful support agent for {{company_name}}.",
+    variables=["company_name"],
+)
+
+# Refresh cached prompt
+registry.refresh("support-prompt")
+```
+
+**Resolution order** (`source="auto"`, the default):
+- If connected: checks platform first, falls back to local
+- If not connected: local only
+
+**Caching**: Platform prompts are cached locally after first fetch (TTL: 5 minutes by default). Use `registry.refresh(slug)` to invalidate manually.
+
+---
+
 ## Next Steps
 
 - [Agents](../agents/index.md) — Use prompts with agents
-- [Platform Sync](../platform/index.md) — Push prompts to the platform
+- [Platform Connection](../platform/index.md) — Connect to the platform
 - [Evaluation](../evaluation/index.md) — Test prompt variations with eval

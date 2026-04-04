@@ -286,6 +286,34 @@ OTel TracerProvider (singleton)
 
 ---
 
+## Platform Export
+
+When connected to the FastAIAgent Platform, traces are automatically sent to the platform dashboard alongside local SQLite storage. No code changes needed.
+
+```python
+import fastaiagent as fa
+
+fa.connect(api_key="fa-...", project="my-project")
+
+# Every agent.run() now sends traces to both local SQLite and platform
+result = agent.run("Help me")
+# View in platform dashboard: execution traces, token costs, latency
+```
+
+**Manual backfill** — publish existing local traces to the platform:
+
+```python
+trace_store = TraceStore()
+traces = trace_store.list_traces(limit=100)
+for t_summary in traces:
+    trace_data = trace_store.get_trace(t_summary.trace_id)
+    trace_data.publish()  # sends to platform
+```
+
+If the platform is unreachable, traces are safe in local SQLite. No operation fails because the platform is down.
+
+---
+
 ## Next Steps
 
 - [Replay](../replay/index.md) — Debug agent execution with fork-and-rerun

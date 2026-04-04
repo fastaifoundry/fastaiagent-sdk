@@ -84,6 +84,36 @@ class Agent:
         self, input: str, *, context: RunContext | None = None, trace: bool = True, **kwargs: Any
     ) -> AgentResult:
         """Async execution with tool-calling loop."""
+        if trace:
+            return await self._arun_traced(input, context=context, **kwargs)
+        return await self._arun_core(input, context=context, **kwargs)
+
+    async def _arun_traced(
+        self, input: str, *, context: RunContext | None = None, **kwargs: Any
+    ) -> AgentResult:
+        """Execute with OTel tracing."""
+        from fastaiagent.trace.otel import get_tracer
+
+        tracer = get_tracer()
+        with tracer.start_as_current_span(f"agent.{self.name}") as span:
+            span.set_attribute("agent.name", self.name)
+            span.set_attribute("agent.input", input)
+
+            result = await self._arun_core(input, context=context, **kwargs)
+
+            span.set_attribute("agent.output", result.output)
+            span.set_attribute("agent.tokens_used", result.tokens_used)
+            span.set_attribute("agent.latency_ms", result.latency_ms)
+
+            # Set trace_id on result
+            ctx = span.get_span_context()
+            result.trace_id = format(ctx.trace_id, "032x")
+            return result
+
+    async def _arun_core(
+        self, input: str, *, context: RunContext | None = None, **kwargs: Any
+    ) -> AgentResult:
+        """Core execution without tracing."""
         start = time.monotonic()
 
         # Execute input guardrails (blocking)

@@ -32,7 +32,7 @@ Auto-generated reference documentation for all public FastAIAgent SDK classes an
 
 ## Platform
 
-- **[FastAI](../platform/index.md)** — `FastAI`, `PushResult`
+- **[Connection](../platform/index.md)** — `fa.connect()`, `fa.disconnect()`, `fa.is_connected`
 
 ---
 

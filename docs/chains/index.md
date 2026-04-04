@@ -209,7 +209,7 @@ data = chain.to_dict()
 chain = Chain.from_dict(data)
 ```
 
-This is the format used when pushing to the platform with `fa.push(chain)`. Chains pushed to the platform appear in the visual editor.
+This canonical format can be used to serialize/deserialize chains for storage or transfer.
 
 ## Sync vs Async
 

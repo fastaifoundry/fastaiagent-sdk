@@ -143,6 +143,10 @@ class PlatformConnectionError(PlatformError):
     """Cannot connect to the platform."""
 
 
+class PlatformNotConnectedError(PlatformError):
+    """SDK is not connected to the platform. Call fa.connect() first."""
+
+
 class PlatformRateLimitError(PlatformError):
     """Platform rate limit exceeded."""
 

@@ -119,20 +119,23 @@ async for event in supervisor.astream("Help me", context=ctx):
 ## Connect to FastAIAgent Platform (optional)
 
 ```python
-from fastaiagent import FastAI
+import fastaiagent as fa
 
-fa = FastAI(api_key="sk-...", project="customer-support")
+fa.connect(api_key="fa-...", project="my-project")
 
-# Push your agent to the platform — see it in the visual editor
-fa.push(chain)
+# Traces automatically sent to platform dashboard
+result = agent.run("Help me")
 
-# Traces appear in the platform dashboard
-# Prompts sync between code and platform
-# Eval results visible in the platform
+# Pull versioned prompts from platform
+prompt = PromptRegistry().get("support-prompt")
+
+# Publish eval results to platform
+results = evaluate(agent, dataset=dataset)
+results.publish()
 ```
 
-**SDK works standalone. Platform adds: visual chain editor, production monitoring,
-advanced KB intelligence, prompt optimization, team collaboration, HITL approval workflows.**
+**SDK works standalone. Platform adds: production observability, prompt management,
+evaluation dashboards, team collaboration, HITL approval workflows.**
 
 [Free tier available →](https://app.fastaiagent.net)
 

@@ -7,7 +7,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from fastaiagent._internal.errors import ReplayError
-from fastaiagent.trace.storage import TraceData, TraceStore
+from fastaiagent.trace.storage import SpanData, TraceData, TraceStore
 
 
 class ReplayStep(BaseModel):
@@ -115,6 +115,33 @@ class Replay:
         """Load a replay from a stored trace."""
         store = store or TraceStore.default()
         trace_data = store.get_trace(trace_id)
+        return cls(trace_data)
+
+    @classmethod
+    def from_platform(cls, trace_id: str) -> Replay:
+        """Pull a trace from the platform and create a Replay."""
+        from fastaiagent._internal.errors import PlatformNotConnectedError
+        from fastaiagent._platform.api import get_platform_api
+        from fastaiagent.client import _connection
+
+        if not _connection.is_connected:
+            raise PlatformNotConnectedError(
+                "Not connected to platform. Call fa.connect() first."
+            )
+        api = get_platform_api()
+        data = api.get(f"/public/v1/traces/{trace_id}")
+        spans = [
+            SpanData(**s) for s in data.get("spans", [])
+        ]
+        trace_data = TraceData(
+            trace_id=data.get("trace_id", trace_id),
+            name=data.get("name", ""),
+            start_time=data.get("start_time", ""),
+            end_time=data.get("end_time", ""),
+            status=data.get("status", "OK"),
+            metadata=data.get("metadata", {}),
+            spans=spans,
+        )
         return cls(trace_data)
 
     def _build_steps(self) -> list[ReplayStep]:

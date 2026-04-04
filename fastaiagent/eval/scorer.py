@@ -26,6 +26,28 @@ class Scorer:
     ) -> ScorerResult:
         raise NotImplementedError
 
+    @classmethod
+    def from_platform(cls, name: str) -> Scorer:
+        """Pull scorer config from platform (e.g., LLM judge config)."""
+        from fastaiagent._internal.errors import PlatformNotConnectedError
+        from fastaiagent._platform.api import get_platform_api
+        from fastaiagent.client import _connection
+
+        if not _connection.is_connected:
+            raise PlatformNotConnectedError(
+                "Not connected to platform. Call fa.connect() first."
+            )
+        api = get_platform_api()
+        data = api.get(f"/public/v1/eval/scorers/{name}")
+
+        from fastaiagent.eval.llm_judge import LLMJudge
+
+        return LLMJudge(
+            criteria=data.get("criteria", "correctness"),
+            prompt_template=data.get("prompt_template"),
+            scale=data.get("scale", "binary"),
+        )
+
     @staticmethod
     def code(name: str | None = None) -> Callable[..., Any]:
         """Decorator to create a custom code scorer.

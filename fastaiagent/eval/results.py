@@ -37,6 +37,23 @@ class EvalResults:
         data = {name: [r.model_dump() for r in results] for name, results in self.scores.items()}
         path.write_text(json.dumps(data, indent=2))
 
+    def publish(self, run_name: str | None = None) -> None:
+        """Publish eval results to platform."""
+        from fastaiagent._internal.errors import PlatformNotConnectedError
+        from fastaiagent._platform.api import get_platform_api
+        from fastaiagent.client import _connection
+
+        if not _connection.is_connected:
+            raise PlatformNotConnectedError(
+                "Not connected to platform. Call fa.connect() first."
+            )
+        api = get_platform_api()
+        data = {name: [r.model_dump() for r in results] for name, results in self.scores.items()}
+        api.post(
+            "/public/v1/eval/runs",
+            {"run_name": run_name, "scores": data},
+        )
+
     def compare(self, other: EvalResults) -> str:
         """Compare with another set of results."""
         lines = ["Comparison", "=" * 50]

@@ -354,6 +354,38 @@ except ValueError as e:
 
 ---
 
+## Platform Integration
+
+When connected to the FastAIAgent Platform, you can pull shared datasets, publish results, and pull scorer configs:
+
+```python
+import fastaiagent as fa
+
+fa.connect(api_key="fa-...", project="my-project")
+
+# Pull dataset from platform
+dataset = Dataset.from_platform("golden-test-set")
+
+# Run eval locally — scoring happens on your machine
+results = evaluate(agent, dataset=dataset)
+
+# Publish results to platform dashboard
+results.publish(run_name="v2.1-release-candidate")
+
+# Push a local dataset to platform for team sharing
+local_dataset = Dataset.from_jsonl("my_tests.jsonl")
+local_dataset.publish("regression-tests")
+
+# Pull scorer config from platform (e.g., LLM judge)
+scorer = Scorer.from_platform("correctness-judge")
+results = evaluate(agent, dataset=dataset, scorers=[scorer])
+results.publish()
+```
+
+All eval execution runs locally (your scorers, your LLM costs). The platform provides dataset sharing, result dashboards, and score trend tracking.
+
+---
+
 ## Next Steps
 
 - [LLM Judge](llm-judge.md) — Use an LLM to evaluate output quality

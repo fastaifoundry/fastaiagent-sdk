@@ -37,6 +37,26 @@ class TraceData(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     spans: list[SpanData] = Field(default_factory=list)
 
+    def publish(self) -> None:
+        """Publish this trace to the platform (for manual backfill)."""
+        from fastaiagent._internal.errors import PlatformNotConnectedError
+        from fastaiagent._platform.api import get_platform_api
+
+        from fastaiagent.client import _connection
+
+        if not _connection.is_connected:
+            raise PlatformNotConnectedError(
+                "Not connected to platform. Call fa.connect() first."
+            )
+        api = get_platform_api()
+        api.post(
+            "/public/v1/traces/ingest",
+            {
+                "project": _connection.project,
+                "spans": [s.model_dump() for s in self.spans],
+            },
+        )
+
 
 class TraceSummary(BaseModel):
     """Summary of a trace for listing."""

@@ -97,27 +97,12 @@ fastaiagent kb search <name> "query text"
 fastaiagent kb status <name>
 ```
 
-### `fastaiagent push`
-
-Push resources to the FastAIAgent Platform.
-
-```bash
-# Push an agent (requires FASTAIAGENT_API_KEY)
-fastaiagent push --agent myapp:support_agent
-
-# Push a chain
-fastaiagent push --chain myapp:support_chain
-
-# Custom platform URL
-fastaiagent push --agent myapp:bot --target https://custom.fastaiagent.net
-```
-
 ## Environment Variables
 
 | Variable | Default | Used By |
 |----------|---------|---------|
-| `FASTAIAGENT_API_KEY` | — | `push` command |
-| `FASTAIAGENT_TARGET` | `https://app.fastaiagent.net` | `push` command |
+| `FASTAIAGENT_API_KEY` | — | `fa.connect()` |
+| `FASTAIAGENT_TARGET` | `https://app.fastaiagent.net` | `fa.connect()` |
 | `OPENAI_API_KEY` | — | LLM calls (OpenAI provider) |
 | `ANTHROPIC_API_KEY` | — | LLM calls (Anthropic provider) |
 

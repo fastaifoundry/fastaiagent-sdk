@@ -3,7 +3,7 @@
 from fastaiagent._version import __version__
 from fastaiagent.agent import Agent, AgentConfig, AgentResult, RunContext, Supervisor, Worker
 from fastaiagent.chain import Chain, ChainResult, ChainState
-from fastaiagent.client import FastAI
+from fastaiagent.client import connect, disconnect
 from fastaiagent.eval import Dataset, EvalResults, Scorer, evaluate
 from fastaiagent.guardrail import Guardrail, GuardrailResult, json_valid, no_pii, toxicity_check
 from fastaiagent.kb import LocalKB
@@ -14,20 +14,19 @@ from fastaiagent.trace import TraceStore, trace_context
 from fastaiagent.trace.replay import Replay
 
 
-def init(
-    api_key: str | None = None,
-    target: str = "https://app.fastaiagent.net",
-    project: str | None = None,
-) -> FastAI | None:
-    """Quick setup: connect to platform + enable tracing."""
-    if api_key:
-        return FastAI(api_key=api_key, target=target, project=project)
-    return None
+def __getattr__(name: str) -> object:
+    if name == "is_connected":
+        from fastaiagent.client import _connection
+
+        return _connection.is_connected
+    raise AttributeError(f"module 'fastaiagent' has no attribute {name!r}")
 
 
 __all__ = [
     "__version__",
-    "init",
+    "connect",
+    "disconnect",
+    "is_connected",
     # Agent
     "Agent",
     "AgentConfig",
@@ -70,6 +69,4 @@ __all__ = [
     "TraceStore",
     "trace_context",
     "Replay",
-    # Platform
-    "FastAI",
 ]

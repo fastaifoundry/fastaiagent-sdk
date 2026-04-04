@@ -1,4 +1,4 @@
-"""Tests for Phase 40: Platform API client, push module, and FastAI client."""
+"""Tests for platform API client and connection management."""
 
 from __future__ import annotations
 
@@ -8,23 +8,15 @@ import httpx
 import pytest
 
 from fastaiagent._internal.errors import (
-    FastAIAgentError,
     PlatformAuthError,
     PlatformConnectionError,
+    PlatformNotConnectedError,
     PlatformNotFoundError,
     PlatformRateLimitError,
     PlatformTierLimitError,
 )
-from fastaiagent._platform.api import PlatformAPI
-from fastaiagent._platform.cache import OfflineCache
-from fastaiagent.agent import Agent
-from fastaiagent.chain import Chain
-from fastaiagent.client import FastAI
-from fastaiagent.deploy.push import PushResult, push_all, push_resource
-from fastaiagent.guardrail import Guardrail
-from fastaiagent.llm import LLMClient
-from fastaiagent.prompt import Prompt
-from fastaiagent.tool import FunctionTool
+from fastaiagent._platform.api import PlatformAPI, get_platform_api
+from fastaiagent.client import _connection, connect, disconnect
 
 # --- PlatformAPI error handling tests ---
 
@@ -99,177 +91,170 @@ class TestPlatformAPIHeaders:
         assert headers["Content-Type"] == "application/json"
 
 
-# --- Push module tests ---
-
-
-class TestPushResource:
-    def test_push_agent(self):
-        api = MagicMock(spec=PlatformAPI)
-        api.post.return_value = {
-            "created": ["agent:test-agent", "tool:search"],
-            "updated": [],
-            "errors": [],
-        }
-
-        agent = Agent(
-            name="test-agent",
-            system_prompt="Be helpful",
-            llm=LLMClient(provider="openai", model="gpt-4o"),
-            tools=[FunctionTool(name="search", description="Search")],
+class TestPlatformAPIGet:
+    def test_get_calls_correct_url(self):
+        api = PlatformAPI(api_key="key", base_url="https://example.com")
+        mock_response = httpx.Response(
+            200,
+            json={"data": "test"},
+            request=httpx.Request("GET", "https://example.com/public/v1/test"),
         )
+        with patch("httpx.Client") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client.__enter__ = MagicMock(return_value=mock_client)
+            mock_client.__exit__ = MagicMock(return_value=False)
+            mock_client.get.return_value = mock_response
+            mock_client_cls.return_value = mock_client
 
-        result = push_resource(api, agent)
-        assert isinstance(result, PushResult)
-        assert result.resource_type == "agent"
-        assert result.name == "test-agent"
-        assert result.created is True
-        assert "tool:search" in result.dependencies_pushed
-
-        # Verify API was called with correct path
-        api.post.assert_called_once()
-        call_args = api.post.call_args
-        assert call_args[0][0] == "/public/v1/sdk/push"
-
-    def test_push_chain(self):
-        api = MagicMock(spec=PlatformAPI)
-        api.post.return_value = {
-            "created": ["chain:my-pipeline"],
-            "updated": [],
-            "errors": [],
-        }
-
-        chain = Chain("my-pipeline")
-        chain.add_node("a", name="Step A")
-        chain.add_node("b", name="Step B")
-        chain.connect("a", "b")
-
-        result = push_resource(api, chain)
-        assert result.resource_type == "chain"
-        assert result.name == "my-pipeline"
-        assert result.created is True
-
-    def test_push_tool(self):
-        api = MagicMock(spec=PlatformAPI)
-        api.post.return_value = {"id": "tool-123", "name": "calc", "created": True}
-
-        tool = FunctionTool(name="calc", description="Calculator")
-        result = push_resource(api, tool)
-        assert result.resource_type == "tool"
-        assert result.name == "calc"
-        assert result.platform_id == "tool-123"
-
-    def test_push_guardrail(self):
-        api = MagicMock(spec=PlatformAPI)
-        api.post.return_value = {"id": "gr-123", "name": "no_pii", "created": True}
-
-        gr = Guardrail(name="no_pii", description="Block PII")
-        result = push_resource(api, gr)
-        assert result.resource_type == "guardrail"
-        assert result.name == "no_pii"
-
-    def test_push_prompt(self):
-        api = MagicMock(spec=PlatformAPI)
-        api.post.return_value = {"id": "p-123", "name": "greeting", "created": True}
-
-        prompt = Prompt(name="greeting", template="Hello {{name}}!")
-        result = push_resource(api, prompt)
-        assert result.resource_type == "prompt"
-        assert result.name == "greeting"
-
-    def test_push_unsupported_type_raises(self):
-        api = MagicMock(spec=PlatformAPI)
-        with pytest.raises(FastAIAgentError, match="Cannot push"):
-            push_resource(api, "not a resource")
+            result = api.get("/public/v1/test", params={"version": 3})
+            assert result == {"data": "test"}
+            mock_client.get.assert_called_once()
 
 
-class TestBatchPush:
-    def test_push_all(self):
-        api = MagicMock(spec=PlatformAPI)
-        api.post.return_value = {
-            "created": ["agent:bot", "tool:search"],
-            "updated": ["chain:pipeline"],
-            "errors": [],
-        }
-
-        agent = Agent(name="bot", llm=LLMClient())
-        chain = Chain("pipeline")
-        tool = FunctionTool(name="search", description="Search")
-
-        results = push_all(api, [agent, chain, tool])
-        assert len(results) == 3
-        assert any(r.name == "bot" and r.created for r in results)
-        assert any(r.name == "pipeline" and not r.created for r in results)
-
-    def test_push_all_serializes_correctly(self):
-        api = MagicMock(spec=PlatformAPI)
-        api.post.return_value = {"created": [], "updated": [], "errors": []}
-
-        agent = Agent(name="a", system_prompt="test", llm=LLMClient())
-        push_all(api, [agent])
-
-        call_data = api.post.call_args[0][1]
-        assert len(call_data["agents"]) == 1
-        assert call_data["agents"][0]["name"] == "a"
-        assert call_data["agents"][0]["system_prompt"] == "test"
+# --- Connection management tests ---
 
 
-# --- FastAI client tests ---
+class TestConnection:
+    def setup_method(self):
+        """Reset connection state before each test."""
+        _connection.api_key = None
+        _connection.target = "https://app.fastaiagent.net"
+        _connection.project = None
+        _connection._platform_processor = None
+
+    def teardown_method(self):
+        """Clean up connection state after each test."""
+        _connection.api_key = None
+        _connection.target = "https://app.fastaiagent.net"
+        _connection.project = None
+        _connection._platform_processor = None
+
+    def test_not_connected_by_default(self):
+        assert _connection.is_connected is False
+
+    def test_connect_sets_state(self):
+        mock_response = httpx.Response(
+            200,
+            json={"ok": True},
+            request=httpx.Request("GET", "https://example.com/public/v1/auth/check"),
+        )
+        with patch("httpx.Client") as mock_client_cls, \
+             patch("fastaiagent.trace.otel.get_tracer_provider") as mock_tp, \
+             patch("fastaiagent.trace.platform_export.PlatformSpanExporter"):
+            mock_client = MagicMock()
+            mock_client.__enter__ = MagicMock(return_value=mock_client)
+            mock_client.__exit__ = MagicMock(return_value=False)
+            mock_client.get.return_value = mock_response
+            mock_client_cls.return_value = mock_client
+            mock_tp.return_value = MagicMock()
+
+            connect(api_key="fa_k_test", target="https://staging.example.com", project="proj")
+
+        assert _connection.is_connected is True
+        assert _connection.api_key == "fa_k_test"
+        assert _connection.target == "https://staging.example.com"
+        assert _connection.project == "proj"
+
+    def test_connect_strips_trailing_slash(self):
+        mock_response = httpx.Response(
+            200,
+            json={"ok": True},
+            request=httpx.Request("GET", "https://example.com/public/v1/auth/check"),
+        )
+        with patch("httpx.Client") as mock_client_cls, \
+             patch("fastaiagent.trace.otel.get_tracer_provider") as mock_tp, \
+             patch("fastaiagent.trace.platform_export.PlatformSpanExporter"):
+            mock_client = MagicMock()
+            mock_client.__enter__ = MagicMock(return_value=mock_client)
+            mock_client.__exit__ = MagicMock(return_value=False)
+            mock_client.get.return_value = mock_response
+            mock_client_cls.return_value = mock_client
+            mock_tp.return_value = MagicMock()
+
+            connect(api_key="fa_k_test", target="https://example.com/")
+
+        assert _connection.target == "https://example.com"
+
+    def test_connect_auth_failure_resets_state(self):
+        mock_response = httpx.Response(
+            401,
+            json={},
+            request=httpx.Request("GET", "https://example.com/public/v1/auth/check"),
+        )
+        with patch("httpx.Client") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client.__enter__ = MagicMock(return_value=mock_client)
+            mock_client.__exit__ = MagicMock(return_value=False)
+            mock_client.get.return_value = mock_response
+            mock_client_cls.return_value = mock_client
+
+            with pytest.raises(PlatformAuthError, match="Invalid API key"):
+                connect(api_key="bad-key")
+
+        assert _connection.is_connected is False
+
+    def test_disconnect_clears_state(self):
+        _connection.api_key = "fa_k_test"
+        _connection.project = "proj"
+        _connection._platform_processor = MagicMock()
+
+        disconnect()
+
+        assert _connection.is_connected is False
+        assert _connection.api_key is None
+        assert _connection.project is None
+
+    def test_headers_property(self):
+        _connection.api_key = "fa_k_test"
+        headers = _connection.headers
+        assert headers["X-API-Key"] == "fa_k_test"
+        assert headers["Content-Type"] == "application/json"
+        assert "fastaiagent-sdk" in headers["User-Agent"]
 
 
-class TestFastAI:
-    def test_construction(self):
-        fa = FastAI(api_key="fa_k_test", target="https://staging.example.com", project="my-proj")
-        assert fa.project == "my-proj"
-        assert fa._api._api_key == "fa_k_test"
-        assert fa._api._base_url == "https://staging.example.com"
+class TestGetPlatformAPI:
+    def setup_method(self):
+        _connection.api_key = None
+        _connection.target = "https://app.fastaiagent.net"
+        _connection.project = None
 
-    def test_push_delegates_to_push_resource(self):
-        fa = FastAI(api_key="fa_k_test")
-        with patch("fastaiagent.client.push_resource") as mock_push:
-            mock_push.return_value = PushResult(resource_type="agent", name="bot", created=True)
-            agent = Agent(name="bot", llm=LLMClient())
-            result = fa.push(agent)
-            assert result.name == "bot"
-            mock_push.assert_called_once()
+    def teardown_method(self):
+        _connection.api_key = None
 
-    def test_push_all_delegates(self):
-        fa = FastAI(api_key="fa_k_test")
-        with patch("fastaiagent.client.push_all") as mock_push_all:
-            mock_push_all.return_value = [PushResult(resource_type="agent", name="a", created=True)]
-            results = fa.push_all([Agent(name="a", llm=LLMClient())])
-            assert len(results) == 1
+    def test_raises_when_not_connected(self):
+        with pytest.raises(PlatformNotConnectedError, match="fa.connect"):
+            get_platform_api()
+
+    def test_returns_api_when_connected(self):
+        _connection.api_key = "fa_k_test"
+        _connection.target = "https://staging.example.com"
+        api = get_platform_api()
+        assert isinstance(api, PlatformAPI)
+        assert api._api_key == "fa_k_test"
+        assert api._base_url == "https://staging.example.com"
 
 
-# --- Offline cache tests ---
+class TestModuleLevelAPI:
+    def setup_method(self):
+        _connection.api_key = None
+        _connection.project = None
 
+    def teardown_method(self):
+        _connection.api_key = None
+        _connection.project = None
 
-class TestOfflineCache:
-    def test_set_and_get(self, temp_dir):
-        cache = OfflineCache(cache_dir=str(temp_dir / "cache"))
-        cache.set("test-key", {"data": "hello"}, ttl_seconds=3600)
-        result = cache.get("test-key")
-        assert result == {"data": "hello"}
+    def test_is_connected_attribute(self):
+        import fastaiagent as fa
 
-    def test_get_expired(self, temp_dir):
-        cache = OfflineCache(cache_dir=str(temp_dir / "cache"))
-        cache.set("test-key", {"data": "old"}, ttl_seconds=-1)  # already expired
-        result = cache.get("test-key")
-        assert result is None
+        assert fa.is_connected is False
+        _connection.api_key = "test"
+        assert fa.is_connected is True
+        _connection.api_key = None
 
-    def test_get_missing(self, temp_dir):
-        cache = OfflineCache(cache_dir=str(temp_dir / "cache"))
-        assert cache.get("nonexistent") is None
+    def test_connect_and_disconnect_exported(self):
+        import fastaiagent as fa
 
-    def test_buffer_push(self, temp_dir):
-        cache = OfflineCache(cache_dir=str(temp_dir / "cache"))
-        cache.buffer_push("agent", {"name": "test"})
-        cache.buffer_push("chain", {"name": "pipeline"})
-        buffered = cache.get_buffered_pushes()
-        assert len(buffered) == 2
-
-    def test_clear_buffer(self, temp_dir):
-        cache = OfflineCache(cache_dir=str(temp_dir / "cache"))
-        cache.buffer_push("agent", {"name": "test"})
-        count = cache.clear_buffer()
-        assert count == 1
-        assert len(cache.get_buffered_pushes()) == 0
+        assert hasattr(fa, "connect")
+        assert hasattr(fa, "disconnect")
+        assert callable(fa.connect)
+        assert callable(fa.disconnect)

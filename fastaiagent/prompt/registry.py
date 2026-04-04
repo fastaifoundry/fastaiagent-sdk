@@ -1,17 +1,20 @@
-"""Prompt registry with versioning, aliases, and fragment composition."""
+"""Prompt registry with versioning, aliases, fragment composition, and platform support."""
 
 from __future__ import annotations
 
 import re
+import time
 from typing import Any
 
 from fastaiagent.prompt.fragment import Fragment
 from fastaiagent.prompt.prompt import Prompt
 from fastaiagent.prompt.storage import YAMLStorage
 
+_DEFAULT_CACHE_TTL = 300  # 5 minutes
+
 
 class PromptRegistry:
-    """Local file-based prompt registry.
+    """Prompt registry with local file storage and optional platform support.
 
     Example:
         reg = PromptRegistry()
@@ -19,11 +22,69 @@ class PromptRegistry:
         reg.register(name="greeting", template="Hello {{name}}. {{@tone}}")
         prompt = reg.load("greeting")
         text = prompt.format(name="World")
+
+    With platform:
+        fa.connect(api_key="fa-...", project="my-project")
+        reg = PromptRegistry()
+        prompt = reg.get("support-prompt")  # fetches from platform
     """
 
     def __init__(self, store: str = "local", path: str = ".prompts/"):
         self._storage = YAMLStorage(path=path)
         self._fragments: dict[str, Fragment] = {}
+        self._platform_cache: dict[tuple[str, int | None], tuple[Prompt, float]] = {}
+        self._cache_ttl: int = _DEFAULT_CACHE_TTL
+
+    def get(
+        self,
+        slug: str,
+        version: int | None = None,
+        source: str = "auto",
+    ) -> Prompt:
+        """Get a prompt by slug.
+
+        source: "auto" (platform if connected, else local),
+                "platform" (platform only), "local" (local only)
+        """
+        if source == "platform" or (source == "auto" and self._is_connected()):
+            prompt = self._fetch_from_platform(slug, version)
+            if prompt:
+                return prompt
+            if source == "platform":
+                from fastaiagent._internal.errors import PromptNotFoundError
+
+                raise PromptNotFoundError(f"Prompt '{slug}' not found on platform")
+        return self._fetch_from_local(slug, version)
+
+    def publish(
+        self,
+        slug: str,
+        content: str,
+        variables: list[str] | None = None,
+    ) -> None:
+        """Publish a prompt to the platform registry."""
+        from fastaiagent._internal.errors import PlatformNotConnectedError
+        from fastaiagent._platform.api import get_platform_api
+
+        if not self._is_connected():
+            raise PlatformNotConnectedError(
+                "Not connected to platform. Call fa.connect() first."
+            )
+        api = get_platform_api()
+        api.post(
+            "/public/v1/prompts",
+            {
+                "slug": slug,
+                "content": content,
+                "variables": variables or [],
+            },
+        )
+
+    def refresh(self, slug: str) -> None:
+        """Invalidate the platform cache for a prompt."""
+        keys_to_remove = [k for k in self._platform_cache if k[0] == slug]
+        for k in keys_to_remove:
+            del self._platform_cache[k]
 
     def register(
         self,
@@ -60,7 +121,7 @@ class PromptRegistry:
         return fragment
 
     def load(self, name: str, version: int | None = None, alias: str | None = None) -> Prompt:
-        """Load a prompt, resolving {{@fragment}} references."""
+        """Load a prompt from local storage, resolving {{@fragment}} references."""
         prompt = self._storage.load_prompt(name, version=version, alias=alias)
 
         # Resolve fragment references
@@ -73,6 +134,53 @@ class PromptRegistry:
                 metadata=prompt.metadata,
             )
         return prompt
+
+    def _fetch_from_local(self, slug: str, version: int | None = None) -> Prompt:
+        """Fetch prompt from local storage."""
+        return self.load(slug, version=version)
+
+    def _fetch_from_platform(self, slug: str, version: int | None = None) -> Prompt | None:
+        """Fetch prompt from platform with TTL caching."""
+        cache_key = (slug, version)
+
+        # Check cache
+        if cache_key in self._platform_cache:
+            prompt, expires_at = self._platform_cache[cache_key]
+            if time.monotonic() < expires_at:
+                return prompt
+            del self._platform_cache[cache_key]
+
+        from fastaiagent._internal.errors import PlatformNotConnectedError
+
+        try:
+            from fastaiagent._platform.api import get_platform_api
+
+            api = get_platform_api()
+            params: dict[str, Any] = {}
+            if version is not None:
+                params["version"] = version
+            data = api.get(f"/public/v1/prompts/{slug}", params=params or None)
+
+            prompt = Prompt(
+                name=data.get("slug", slug),
+                template=data.get("content", ""),
+                variables=data.get("variables", []),
+                version=data.get("version", 1),
+                metadata=data.get("metadata", {}),
+            )
+
+            # Cache with TTL
+            self._platform_cache[cache_key] = (prompt, time.monotonic() + self._cache_ttl)
+            return prompt
+        except PlatformNotConnectedError:
+            raise
+        except Exception:
+            return None
+
+    def _is_connected(self) -> bool:
+        from fastaiagent.client import _connection
+
+        return _connection.is_connected
 
     def _resolve_fragments(self, template: str) -> str:
         """Replace {{@fragment_name}} with fragment content."""

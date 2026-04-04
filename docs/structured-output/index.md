@@ -167,7 +167,7 @@ print(person)  # {"name": "Alice", "age": 30, "city": "Paris"}
 
 ## Platform Compatibility
 
-The `response_format` structure matches the FastAIAgent Platform's `ResponseFormat` schema. When pushing agents to the platform, the same format works in both SDK and platform API invocations.
+The `response_format` structure matches the FastAIAgent Platform's `ResponseFormat` schema, ensuring compatibility between SDK and platform API invocations.
 
 **Platform request format:**
 ```json

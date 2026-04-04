@@ -58,7 +58,7 @@ print(result.trace.summary())
 - **[Evaluation](evaluation/index.md)** — Scorers, datasets, LLM-as-judge, trajectory eval
 - **[Prompts](prompts/index.md)** — Registry with versioning and fragment composition
 - **[Knowledge Base](knowledge-base/index.md)** — Local file ingestion with embedding search
-- **[Platform Sync](platform/index.md)** — Push agents to the FastAIAgent visual editor
+- **[Platform Connection](platform/index.md)** — Connect for traces, prompts, eval, and replay
 - **[Integrations](integrations/index.md)** — Auto-tracing for OpenAI, Anthropic, LangChain, CrewAI
 
 ---

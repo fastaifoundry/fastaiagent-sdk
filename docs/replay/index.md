@@ -248,6 +248,27 @@ except ReplayError as e:
 
 ---
 
+## Platform Replay
+
+When connected to the FastAIAgent Platform, you can pull any trace from the platform (including traces from other team members) and replay locally:
+
+```python
+import fastaiagent as fa
+
+fa.connect(api_key="fa-...", project="my-project")
+
+# Pull a platform trace and replay locally
+replay = Replay.from_platform(trace_id="tr-abc123")
+replay.step_through()
+
+# Fork from a platform trace
+forked = replay.fork_at(step=3)
+forked.modify_prompt("Updated system prompt")
+result = forked.rerun()
+```
+
+---
+
 ## Next Steps
 
 - [Tracing](../tracing/index.md) — How traces are captured and stored

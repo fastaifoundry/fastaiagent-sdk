@@ -242,7 +242,7 @@ except LLMProviderError as e:
 
 ## Platform Compatibility
 
-The SDK's `StreamEvent` types (`TextDelta`, `ToolCallStart`, `ToolCallEnd`, `Usage`, `StreamDone`) align with the FastAIAgent Platform's streaming protocol. When you push an agent to the platform, its streaming endpoints use the same event types, making it straightforward to build clients that work with both local SDK streaming and platform streaming.
+The SDK's `StreamEvent` types (`TextDelta`, `ToolCallStart`, `ToolCallEnd`, `Usage`, `StreamDone`) align with the FastAIAgent Platform's streaming protocol. The same event types work in both local SDK streaming and platform streaming, making it straightforward to build clients that work with both.
 
 ---
 

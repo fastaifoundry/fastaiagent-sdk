@@ -1,7 +1,7 @@
-"""Example 10: Push agents/chains to FastAIAgent Platform.
+"""Example 10: Connect to FastAIAgent Platform.
 
-Shows how to sync SDK resources to the platform for
-visual editing, monitoring, and team collaboration.
+Shows how to connect the SDK to the platform for automatic
+trace export, prompt management, and evaluation services.
 
 Usage:
     export ANTHROPIC_API_KEY=sk-ant-...
@@ -12,7 +12,8 @@ Usage:
 
 import os
 
-from fastaiagent import Agent, FastAI, FunctionTool, LLMClient
+import fastaiagent as fa
+from fastaiagent import Agent, FunctionTool, LLMClient
 
 if __name__ == "__main__":
     api_key = os.environ.get("FASTAIAGENT_API_KEY", "")
@@ -22,6 +23,9 @@ if __name__ == "__main__":
         print("Skipping: FASTAIAGENT_API_KEY not set")
         print("Run: export FASTAIAGENT_API_KEY=fa_k_... && python examples/10_platform_sync.py")
     else:
+        # Connect to platform — traces auto-sent, prompts available
+        fa.connect(api_key=api_key, target=target, project="demo")
+
         # Define an agent locally
         def lookup(query: str) -> str:
             """Look up information."""
@@ -29,18 +33,17 @@ if __name__ == "__main__":
 
         agent = Agent(
             name="sdk-demo-agent",
-            system_prompt="You are a demo agent pushed from the SDK.",
+            system_prompt="You are a demo agent. Use tools to answer questions.",
             llm=LLMClient(provider="openai", model="gpt-4.1"),
             tools=[FunctionTool(name="lookup", fn=lookup)],
         )
 
-        # Connect to platform and push
-        fa = FastAI(api_key=api_key, target=target)
+        # Run the agent — trace automatically sent to platform
+        result = agent.run("Look up information about FastAIAgent")
+        print(f"Output: {result.output}")
+        print(f"Trace ID: {result.trace_id}")
+        print("Trace automatically sent to platform dashboard!")
 
-        print(f"Pushing agent '{agent.name}' to {target}...")
-        result = fa.push(agent)
-        print(f"  Resource: {result.resource_type}")
-        print(f"  Name: {result.name}")
-        print(f"  Created: {result.created}")
-        print(f"  Dependencies: {result.dependencies_pushed}")
-        print("Done!")
+        # Disconnect when done
+        fa.disconnect()
+        print("Disconnected.")
