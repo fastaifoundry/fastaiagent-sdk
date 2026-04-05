@@ -65,6 +65,39 @@ result = scorer.score(
 # 2 repeated consecutive calls out of 4 → score = 1.0 - 2/4 = 0.5
 ```
 
+## ToolCallCorrectness
+
+Did the agent call the right tools with the right arguments? This is stricter than `ToolUsageAccuracy` — it validates both tool name **and** arguments using deep equality.
+
+```python
+from fastaiagent.eval.trajectory import ToolCallCorrectness
+
+scorer = ToolCallCorrectness()
+result = scorer.score(
+    input="", output="",
+    actual_tool_calls=[
+        {"name": "search", "arguments": {"query": "Paris"}},
+        {"name": "format", "arguments": {"style": "markdown"}},
+    ],
+    expected_tool_calls=[
+        {"name": "search", "arguments": {"query": "Paris"}},
+        {"name": "format", "arguments": {"style": "markdown"}},
+    ],
+)
+# score = 2/2 = 1.0 (both calls match name + args)
+```
+
+If the tool name matches but arguments differ, the call is **not** counted:
+
+```python
+result = scorer.score(
+    input="", output="",
+    actual_tool_calls=[{"name": "search", "arguments": {"query": "London"}}],
+    expected_tool_calls=[{"name": "search", "arguments": {"query": "Paris"}}],
+)
+# score = 0/1 = 0.0 (wrong arguments)
+```
+
 ## Using in Evaluation
 
 Pass trajectory scorers to `evaluate()` like any other scorer. Your dataset items should include `expected_trajectory` fields:

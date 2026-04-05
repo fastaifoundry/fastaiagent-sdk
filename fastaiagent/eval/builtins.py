@@ -116,7 +116,41 @@ class CostUnder(Scorer):
 
 # Registry of built-in scorers by name
 BUILTIN_SCORERS: dict[str, type[Scorer]] = {
+    # Core
     "exact_match": ExactMatch,
     "contains": Contains,
     "json_valid": JSONValid,
+    "regex_match": RegexMatch,
+    "length_between": LengthBetween,
+    "latency": Latency,
+    "cost_under": CostUnder,
 }
+
+
+def _register_extended_scorers() -> None:
+    """Lazily register RAG, safety, and similarity scorers on first access."""
+    from fastaiagent.eval.rag import AnswerRelevancy, ContextPrecision, ContextRecall, Faithfulness
+    from fastaiagent.eval.safety import Bias, PIILeakage, Toxicity
+    from fastaiagent.eval.similarity import BLEUScore, LevenshteinDistance, ROUGEScore, SemanticSimilarity
+
+    BUILTIN_SCORERS.update(
+        {
+            # RAG
+            "faithfulness": Faithfulness,
+            "answer_relevancy": AnswerRelevancy,
+            "context_precision": ContextPrecision,
+            "context_recall": ContextRecall,
+            # Safety
+            "toxicity": Toxicity,
+            "bias": Bias,
+            "pii_leakage": PIILeakage,
+            # Similarity & NLP
+            "semantic_similarity": SemanticSimilarity,
+            "bleu": BLEUScore,
+            "rouge": ROUGEScore,
+            "levenshtein": LevenshteinDistance,
+        }
+    )
+
+
+_register_extended_scorers()

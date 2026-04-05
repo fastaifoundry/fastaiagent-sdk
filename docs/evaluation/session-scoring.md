@@ -4,38 +4,62 @@ Evaluate multi-turn conversations as a whole. Session scorers assess coherence a
 
 ## ConversationCoherence
 
-Are the agent's responses coherent across turns?
+Are the agent's responses coherent across turns? Detects self-contradictions and topic drift by analyzing consecutive turns.
+
+Checks for:
+- **Self-contradiction signals** — phrases like "actually, I was wrong", "let me correct", etc.
+- **Topic drift** — low vocabulary overlap between consecutive turns
 
 ```python
 from fastaiagent.eval.session import ConversationCoherence
 
 scorer = ConversationCoherence()
+
+# Coherent conversation
 result = scorer.score(
     input="", output="final response",
     turns=[
-        {"role": "user", "content": "What is X?"},
-        {"role": "assistant", "content": "X is..."},
-        {"role": "user", "content": "Tell me more"},
-        {"role": "assistant", "content": "Additionally..."},
+        {"role": "user", "content": "What is Python?"},
+        {"role": "assistant", "content": "Python is a programming language."},
+        {"role": "user", "content": "Who created it?"},
+        {"role": "assistant", "content": "Python was created by Guido van Rossum."},
     ],
 )
-```
+# score ≈ 1.0 (no contradictions, on-topic)
 
-The scorer analyzes the conversation flow to ensure the assistant's responses are contextually consistent and build upon previous turns.
+# Contradictory conversation
+result = scorer.score(
+    input="", output="final response",
+    turns=[
+        {"content": "The capital of France is London."},
+        {"content": "Actually, I was wrong. The capital is Paris."},
+    ],
+)
+# score ≈ 0.5 (contradiction detected)
+```
 
 ## GoalCompletion
 
-Did the conversation achieve its goal?
+Did the conversation achieve its goal? Uses keyword recall (with stop-word filtering), key-phrase matching, and checklist detection for structured goals.
 
 ```python
 from fastaiagent.eval.session import GoalCompletion
 
 scorer = GoalCompletion()
+
+# Simple goal
 result = scorer.score(
     input="", output="Your order ships tomorrow via FedEx.",
     goal="Provide shipping information for the customer's order",
 )
-# Measures keyword overlap between output and goal
+
+# Structured checklist goal
+result = scorer.score(
+    input="",
+    output="Install Python 3.12, create a venv, and run pip install.",
+    goal="1. Install Python\n2. Set up virtual environment\n3. Install dependencies",
+)
+# Detects checklist items and scores each separately
 ```
 
 ## Using in Evaluation

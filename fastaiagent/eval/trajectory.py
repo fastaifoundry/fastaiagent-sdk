@@ -107,3 +107,53 @@ class CycleEfficiency(Scorer):
         return ScorerResult(
             score=max(score, 0.0), passed=score >= 0.5, reason=f"Cycles: {cycles}/{len(actual)}"
         )
+
+
+class ToolCallCorrectness(Scorer):
+    """Validates tool calls by name AND arguments (deep equality).
+
+    Stricter than ``ToolUsageAccuracy`` which only checks tool names as sets.
+    This scorer verifies that each expected tool call has a matching actual call
+    with the same name and identical arguments.
+
+    Pass via kwargs:
+        - ``actual_tool_calls``: list of dicts ``[{"name": "...", "arguments": {...}}, ...]``
+        - ``expected_tool_calls``: list of dicts with the same structure
+
+    Example:
+        scorer = ToolCallCorrectness()
+        result = scorer.score(
+            input="", output="",
+            actual_tool_calls=[{"name": "search", "arguments": {"query": "Paris"}}],
+            expected_tool_calls=[{"name": "search", "arguments": {"query": "Paris"}}],
+        )
+        # score=1.0, passed=True
+    """
+
+    name = "tool_call_correctness"
+
+    def score(
+        self, input: str, output: str, expected: str | None = None, **kw: Any
+    ) -> ScorerResult:
+        actual = list(kw.get("actual_tool_calls", []))
+        expected_calls = kw.get("expected_tool_calls", [])
+
+        if not expected_calls:
+            return ScorerResult(score=1.0, passed=True, reason="No expected tool calls")
+
+        # Greedy matching: for each expected call, find a matching actual call
+        remaining = list(actual)
+        matched = 0
+        for exp in expected_calls:
+            for i, act in enumerate(remaining):
+                if act.get("name") == exp.get("name") and act.get("arguments") == exp.get("arguments"):
+                    matched += 1
+                    remaining.pop(i)
+                    break
+
+        score = matched / len(expected_calls)
+        return ScorerResult(
+            score=round(score, 4),
+            passed=score >= 0.5,
+            reason=f"Correct calls: {matched}/{len(expected_calls)} (name+args match)",
+        )

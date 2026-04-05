@@ -199,7 +199,7 @@ results = evaluate(
 )
 ```
 
-Available names: `exact_match`, `contains`, `json_valid`
+Available names: `exact_match`, `contains`, `json_valid`, `regex_match`, `length_between`, `latency`, `cost_under`, `faithfulness`, `answer_relevancy`, `context_precision`, `context_recall`, `toxicity`, `bias`, `pii_leakage`, `semantic_similarity`, `bleu`, `rouge`, `levenshtein`
 
 ## Custom Code Scorers
 
@@ -389,6 +389,9 @@ All eval execution runs locally (your scorers, your LLM costs). The platform pro
 ## Next Steps
 
 - [LLM Judge](llm-judge.md) — Use an LLM to evaluate output quality
+- [RAG Metrics](rag-metrics.md) — Faithfulness, relevancy, and context evaluation
+- [Safety Metrics](safety-metrics.md) — Toxicity, bias, and PII detection
+- [Similarity Metrics](similarity-metrics.md) — Embedding-based and classical NLP metrics
 - [Trajectory Scoring](trajectory-scoring.md) — Evaluate the path an agent took
 - [Session Scoring](session-scoring.md) — Evaluate multi-turn conversations
 - [Agents](../agents/index.md) — Build agents to evaluate
