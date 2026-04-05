@@ -86,8 +86,13 @@ if __name__ == "__main__":
 
     registry = PromptRegistry()
 
+    # Use timestamped slugs to avoid collisions with prior runs
+    run_ts = int(time.time())
+    support_slug = f"support-agent-prompt-{run_ts}"
+    math_slug = f"math-tutor-prompt-{run_ts}"
+
     registry.publish(
-        slug="support-agent-prompt",
+        slug=support_slug,
         content=(
             "You are a customer support agent for {{company}}.\n"
             "Be helpful, concise, and professional.\n"
@@ -95,10 +100,10 @@ if __name__ == "__main__":
         ),
         variables=["company"],
     )
-    print("  Published: support-agent-prompt")
+    print(f"  Published: {support_slug}")
 
     registry.publish(
-        slug="math-tutor-prompt",
+        slug=math_slug,
         content=(
             "You are a math tutor for {{school}}.\n"
             "Explain step by step. Use the calculate tool for verification.\n"
@@ -106,7 +111,7 @@ if __name__ == "__main__":
         ),
         variables=["school"],
     )
-    print("  Published: math-tutor-prompt")
+    print(f"  Published: {math_slug}")
     print()
 
     # ════════════════════════════════════════════
@@ -117,11 +122,11 @@ if __name__ == "__main__":
     print("  Step 3: Fetch prompts from platform")
     print("=" * 60)
 
-    support_prompt = registry.get("support-agent-prompt", source="platform")
+    support_prompt = registry.get(support_slug, source="platform")
     print(f"  Fetched: {support_prompt.name} v{support_prompt.version}")
     print(f"  Variables: {support_prompt.variables}")
 
-    math_prompt = registry.get("math-tutor-prompt", source="platform")
+    math_prompt = registry.get(math_slug, source="platform")
     print(f"  Fetched: {math_prompt.name} v{math_prompt.version}")
     print()
 
@@ -232,10 +237,6 @@ if __name__ == "__main__":
         {"input": "What's the status of ORD-999?", "expected": "not found"},
     ])
 
-    # Publish dataset to platform
-    dataset.publish("support-bot-golden-set")
-    print("  Published dataset: support-bot-golden-set (4 items)")
-
     # Run eval locally
     def support_fn(input_text: str) -> str:
         return support_agent.run(input_text, trace=False).output
@@ -249,9 +250,14 @@ if __name__ == "__main__":
     results = evaluate(agent_fn=support_fn, dataset=dataset, scorers=[contains_keyword])
     print(f"\n  {results.summary()}")
 
-    # Publish results to platform
-    results.publish(run_name="support-bot-v1-golden")
-    print("\n  Published eval run: support-bot-v1-golden")
+    # Publish dataset and results to platform (requires eval:execute scope)
+    try:
+        dataset.publish("support-bot-golden-set")
+        print("  Published dataset: support-bot-golden-set (4 items)")
+        results.publish(run_name="support-bot-v1-golden")
+        print("  Published eval run: support-bot-v1-golden")
+    except Exception as e:
+        print(f"  Skipped publishing to platform: {e}")
     print()
 
     # ════════════════════════════════════════════

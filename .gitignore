@@ -45,6 +45,9 @@ site/
 # Internal / private
 claude_files/
 
+# Scripts / recordings / videos
+scripts/
+
 # OS
 .DS_Store
 Thumbs.db
