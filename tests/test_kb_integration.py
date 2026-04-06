@@ -14,7 +14,15 @@ import textwrap
 import pytest
 
 from fastaiagent.kb import LocalKB
-from fastaiagent.kb.embedding import FastEmbedEmbedder
+
+try:
+    from fastaiagent.kb.embedding import FastEmbedEmbedder
+
+    _HAS_FASTEMBED = True
+except ImportError:
+    _HAS_FASTEMBED = False
+
+pytestmark = pytest.mark.skipif(not _HAS_FASTEMBED, reason="fastembed not installed")
 
 
 @pytest.fixture(scope="module")

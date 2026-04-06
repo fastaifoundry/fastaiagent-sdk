@@ -14,6 +14,15 @@ from fastaiagent.kb.document import ingest_file
 from fastaiagent.kb.embedding import SimpleEmbedder
 from fastaiagent.kb.search import FaissIndex
 
+try:
+    import faiss  # noqa: F401
+
+    _HAS_FAISS = True
+except ImportError:
+    _HAS_FAISS = False
+
+_skip_no_faiss = pytest.mark.skipif(not _HAS_FAISS, reason="faiss-cpu not installed")
+
 
 # ---------------------------------------------------------------------------
 # Document ingestion
@@ -103,6 +112,7 @@ class TestEmbedding:
 # ---------------------------------------------------------------------------
 
 
+@_skip_no_faiss
 class TestFaissIndex:
     def test_flat_index_add_and_search(self):
         embedder = SimpleEmbedder(dimensions=32)
@@ -219,6 +229,7 @@ class TestBM25Index:
 # ---------------------------------------------------------------------------
 
 
+@_skip_no_faiss
 class TestLocalKB:
     def test_add_text_and_search(self, temp_dir):
         kb = LocalKB(
@@ -280,6 +291,7 @@ class TestLocalKB:
 # ---------------------------------------------------------------------------
 
 
+@_skip_no_faiss
 class TestPersistence:
     def test_save_and_reload(self, temp_dir):
         """Data persists across LocalKB instances."""
@@ -349,6 +361,7 @@ class TestPersistence:
 # ---------------------------------------------------------------------------
 
 
+@_skip_no_faiss
 class TestCRUD:
     def test_delete_by_id(self, temp_dir):
         kb = LocalKB(
@@ -459,6 +472,7 @@ class TestCRUD:
 # ---------------------------------------------------------------------------
 
 
+@_skip_no_faiss
 class TestSearchTypes:
     def test_vector_only(self, temp_dir):
         kb = LocalKB(
@@ -549,6 +563,7 @@ class TestSearchTypes:
 # ---------------------------------------------------------------------------
 
 
+@_skip_no_faiss
 class TestDirectoryIngestion:
     def test_add_directory(self, temp_dir):
         docs_dir = temp_dir / "docs"
