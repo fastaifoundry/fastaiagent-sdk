@@ -1,6 +1,6 @@
 [project]
 name = "fastaiagent"
-version = "0.1.4"
+version = "0.1.5"
 description = "Build, debug, evaluate, and operate AI agents. The only SDK with fork-and-rerun Agent Replay."
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -36,7 +36,7 @@ openai = ["openai>=1.0"]
 anthropic = ["anthropic>=0.20"]
 langchain = ["langchain-core>=0.2"]
 crewai = ["crewai>=1.0"]
-kb = ["fastembed>=0.3", "pymupdf>=1.23"]
+kb = ["fastembed>=0.3", "pymupdf>=1.23", "faiss-cpu>=1.7"]
 otel-export = [
     "opentelemetry-exporter-otlp>=1.20",
 ]

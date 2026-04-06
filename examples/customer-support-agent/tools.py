@@ -14,32 +14,25 @@ from context import Deps
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# Persistent KB with hybrid search (FAISS + BM25).
+# On first run: ingests docs and persists to SQLite.
+# On subsequent runs: loads instantly from disk — no re-embedding.
 kb = fa.LocalKB(
     name="support-kb",
-    path=os.path.join(_SCRIPT_DIR, ".fastaiagent-kb", "support-kb"),
+    path=os.path.join(_SCRIPT_DIR, ".fastaiagent-kb"),
     chunk_size=512,
     chunk_overlap=50,
 )
 
-_kb_ready = False
-
-
-def _ensure_kb():
-    global _kb_ready
-    if not _kb_ready:
-        kb_dir = os.path.join(_SCRIPT_DIR, "knowledge")
-        for fname in sorted(os.listdir(kb_dir)):
-            fpath = os.path.join(kb_dir, fname)
-            if os.path.isfile(fpath):
-                kb.add(fpath)
-        _kb_ready = True
+# Ingest knowledge files if KB is empty (first run or after clear)
+if kb.status()["chunk_count"] == 0:
+    kb.add(os.path.join(_SCRIPT_DIR, "knowledge"))
 
 
 @fa.tool()
 async def search_kb(query: str, ctx: fa.RunContext[Deps]) -> str:
     """Search the support knowledge base for product information, FAQs, and company policies.
     Always use this tool before answering product or policy questions."""
-    _ensure_kb()
     results = kb.search(query, top_k=3)
     if not results:
         return "No relevant information found in the knowledge base."

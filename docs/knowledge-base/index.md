@@ -1,6 +1,6 @@
 # Knowledge Base
 
-LocalKB provides a file-based knowledge base with document ingestion, recursive text chunking, embedding, and cosine similarity search. It works entirely offline and can be plugged into any agent as a tool.
+LocalKB is a production-ready, built-in knowledge base with FAISS vector search, BM25 keyword search, hybrid search, SQLite persistence, and full CRUD operations. No external infrastructure required.
 
 ## Quick Start
 
@@ -9,16 +9,18 @@ from fastaiagent.kb import LocalKB
 
 kb = LocalKB(name="product-docs")
 
-# Add content (text or files)
+# Add content (text, files, or directories)
 kb.add("Refund policy: Returns accepted within 30 days of purchase.")
-kb.add("Shipping: 3-5 business days domestic, 7-14 days international.")
 kb.add("/path/to/faq.md")
+kb.add("docs/")  # recursively ingests .txt, .md, .pdf
 
-# Search
+# Search (hybrid by default — combines FAISS + BM25)
 results = kb.search("How do I return an item?", top_k=3)
 for r in results:
     print(f"[{r.score:.3f}] {r.chunk.content[:80]}...")
 ```
+
+Restart the process — your data is still there. No re-embedding.
 
 ## Adding Content
 
@@ -38,11 +40,13 @@ kb.add("docs/manual.pdf")      # Requires pymupdf
 kb.add("docs/notes.txt")
 ```
 
-Each file is:
-1. Read and extracted to text (PDF pages extracted individually)
-2. Split into chunks (default 512 characters with 50-character overlap)
-3. Embedded into vectors
-4. Stored in memory for search
+### Directories
+
+Recursively ingests all supported files:
+
+```python
+kb.add("docs/")  # Scans for .txt, .md, .pdf recursively
+```
 
 ### Multiple Documents
 
@@ -57,7 +61,57 @@ count = kb.add_documents(docs)
 print(f"Added {count} chunks")
 ```
 
+Each file is:
+1. Read and extracted to text (PDF pages extracted individually)
+2. Split into chunks (default 512 characters with 50-character overlap)
+3. Embedded into vectors (skipped for `search_type="keyword"`)
+4. Stored in SQLite (if `persist=True`) and indexed for search
+
 ## Searching
+
+### Search Types
+
+LocalKB supports three search modes. Choose based on your query patterns:
+
+| Search Type | How It Works | Best For |
+|------------|-------------|----------|
+| `"vector"` | FAISS semantic similarity | Natural language queries ("how do I get a refund") |
+| `"keyword"` | BM25 term matching | Exact terms, codes, IDs ("ERR-4012", "TXN-88421") |
+| `"hybrid"` (default) | Vector + BM25 combined | Real-world queries mixing both ("ERR-4012 payment not working") |
+
+```python
+# Hybrid (default) — best of both worlds
+kb = LocalKB(name="support-docs")
+
+# Vector only — semantic search
+kb = LocalKB(name="docs", search_type="vector")
+
+# Keyword only — no embedder needed, zero embedding cost
+kb = LocalKB(name="logs", search_type="keyword")
+```
+
+**Keyword mode** is especially useful when you don't need semantic search — it skips embedding entirely, meaning no embedder is initialized, no API calls, and instant ingestion.
+
+### Hybrid Search and Alpha Tuning
+
+In hybrid mode, results from FAISS and BM25 are normalized and combined:
+
+```
+final_score = alpha * vector_score + (1 - alpha) * bm25_score
+```
+
+```python
+# Semantic-heavy (default) — good for most cases
+kb = LocalKB(name="docs", alpha=0.7)
+
+# Equal weight — queries mix codes + natural language
+kb = LocalKB(name="docs", alpha=0.5)
+
+# Keyword-heavy — technical docs with lots of IDs/codes
+kb = LocalKB(name="docs", alpha=0.3)
+```
+
+### Searching
 
 ```python
 results = kb.search("refund policy", top_k=5)
@@ -69,11 +123,6 @@ for r in results:
     print()
 ```
 
-**How search works:**
-1. Your query is embedded using the same embedder as the documents
-2. Cosine similarity is computed against every chunk's embedding
-3. Top-K results are returned, sorted by score (highest first)
-
 ### Empty KB
 
 Searching an empty KB returns an empty list — no error:
@@ -84,6 +133,98 @@ results = kb.search("anything")
 print(len(results))  # 0
 ```
 
+## FAISS Index Types
+
+LocalKB uses FAISS for vector search. Three index types are available:
+
+| Index Type | Algorithm | Accuracy | Speed | When to Use |
+|-----------|-----------|----------|-------|-------------|
+| `"flat"` (default) | Brute-force inner product | Exact (100%) | O(N) per query | Up to ~100K chunks. No tuning needed. Start here. |
+| `"ivf"` | Inverted file index | ~95-99% (approximate) | Sublinear | 100K-1M chunks. Trades small accuracy for faster search. |
+| `"hnsw"` | Hierarchical Navigable Small World graph | ~99% (approximate) | Very fast | Large KBs needing both speed and high recall. Uses more memory. |
+
+```python
+# Default — exact search, no config needed
+kb = LocalKB(name="docs")
+
+# Large KB — use IVF for faster approximate search
+kb = LocalKB(name="big-docs", index_type="ivf")
+
+# Speed-critical — HNSW for fastest recall
+kb = LocalKB(name="realtime", index_type="hnsw")
+```
+
+Start with `"flat"` (the default). You only need `"ivf"` or `"hnsw"` if search latency becomes noticeable — typically above 100K chunks.
+
+## Persistence
+
+By default, LocalKB persists all data to SQLite. Chunks and embeddings survive process restarts — no re-embedding needed.
+
+```python
+# Persistent (default)
+kb = LocalKB(name="docs")
+kb.add("important content")
+# Data saved to .fastaiagent/kb/docs/kb.sqlite
+
+# After restart:
+kb = LocalKB(name="docs")
+print(kb.status()["chunk_count"])  # Still there!
+```
+
+### Temporary KB
+
+For throwaway use cases (single agent run, dynamic API content, testing):
+
+```python
+kb = LocalKB(name="scratch", persist=False)
+kb.add("temporary content from an API call")
+results = kb.search("keyword")
+# No files created, data gone when process ends
+```
+
+### Context Manager
+
+```python
+with LocalKB(name="docs") as kb:
+    kb.add("content")
+    results = kb.search("query")
+# Database connection closed automatically
+```
+
+## Update and Delete
+
+All CRUD operations persist to SQLite and update search indexes.
+
+### Delete by Chunk ID
+
+```python
+kb.add("Content to delete")
+chunk_id = kb._chunks[0].id
+kb.delete(chunk_id)  # Returns True if found
+```
+
+### Delete by Source File
+
+```python
+kb.add("docs/faq.md")
+deleted = kb.delete_by_source("docs/faq.md")
+print(f"Removed {deleted} chunks")
+```
+
+### Update a Chunk
+
+```python
+kb.add("Original content")
+chunk_id = kb._chunks[0].id
+kb.update(chunk_id, "Updated content")  # Re-embeds automatically
+```
+
+### Clear Entire KB
+
+```python
+kb.clear()  # Removes all chunks, embeddings, and indexes
+```
+
 ## Using KB as an Agent Tool
 
 The most common pattern — give your agent access to a knowledge base:
@@ -92,7 +233,7 @@ The most common pattern — give your agent access to a knowledge base:
 from fastaiagent import Agent, LLMClient
 from fastaiagent.kb import LocalKB
 
-# Build the KB
+# Build the KB (persisted — only need to add once)
 kb = LocalKB(name="product-docs")
 kb.add("Refund policy: Returns within 30 days. Items must be in original condition.")
 kb.add("Shipping: 3-5 business days domestic. Express shipping available.")
@@ -120,6 +261,30 @@ The tool returns formatted search results:
 
 [Score: 0.412] Support hours: Monday-Friday 9am-5pm EST.
 ```
+
+## Multi-KB Agent Pattern
+
+Use domain-sharded KBs with an agent that routes queries to the right KB:
+
+```python
+kb_billing = LocalKB(name="billing")
+kb_billing.add("billing-docs/")
+
+kb_shipping = LocalKB(name="shipping")
+kb_shipping.add("shipping-docs/")
+
+kb_returns = LocalKB(name="returns")
+kb_returns.add("return-policy-docs/")
+
+agent = Agent(
+    name="support-agent",
+    system_prompt="Search the relevant KB based on the customer's question.",
+    llm=LLMClient(provider="openai", model="gpt-4.1"),
+    tools=[kb_billing.as_tool(), kb_shipping.as_tool(), kb_returns.as_tool()],
+)
+```
+
+Each KB is searched independently — search stays fast even with thousands of documents across all domains.
 
 ## Embedding Providers
 
@@ -215,7 +380,7 @@ chunks = chunk_text(
 )
 
 for c in chunks:
-    print(f"[{c.index}] {c.start_char}-{c.end_char}: {c.content[:40]}...")
+    print(f"[{c.id}] {c.start_char}-{c.end_char}: {c.content[:40]}...")
 ```
 
 ## Search Result
@@ -223,12 +388,13 @@ for c in chunks:
 | Field | Type | Description |
 |-------|------|-------------|
 | `chunk` | `Chunk` | The matched chunk |
-| `score` | `float` | Cosine similarity score (0.0-1.0) |
+| `score` | `float` | Similarity score (higher is better) |
 
 ### Chunk
 
 | Field | Type | Description |
 |-------|------|-------------|
+| `id` | `str` | Unique UUID for the chunk |
 | `content` | `str` | Chunk text |
 | `metadata` | `dict` | Source info, custom metadata |
 | `index` | `int` | Position in the original document |
@@ -240,31 +406,31 @@ for c in chunks:
 ```python
 status = kb.status()
 print(status)
-# {"name": "product-docs", "chunk_count": 15, "path": ".fastaiagent/kb"}
+# {
+#     "name": "product-docs",
+#     "chunk_count": 15,
+#     "path": ".fastaiagent/kb/product-docs",
+#     "persist": True,
+#     "search_type": "hybrid",
+#     "index_type": "flat"
+# }
 ```
 
-## Cosine Similarity
-
-The search function under the hood:
+## Full Configuration Reference
 
 ```python
-from fastaiagent.kb.search import cosine_similarity
-
-score = cosine_similarity(vector_a, vector_b)
-# 1.0 = identical, 0.0 = orthogonal, -1.0 = opposite
+kb = LocalKB(
+    name="docs",                        # KB name (used in path and tool name)
+    path=".fastaiagent/kb/",            # Base storage directory
+    embedder=FastEmbedEmbedder(),       # Embedding provider (auto-selected if omitted)
+    chunk_size=512,                     # Max characters per chunk
+    chunk_overlap=50,                   # Character overlap between chunks
+    persist=True,                       # Save to SQLite (False for in-memory only)
+    search_type="hybrid",              # "vector" | "keyword" | "hybrid"
+    index_type="flat",                 # "flat" | "ivf" | "hnsw"
+    alpha=0.7,                         # Vector vs BM25 weight in hybrid mode
+)
 ```
-
-## Storage
-
-KB data is stored in memory during the session. The path parameter controls where auxiliary files go:
-
-```python
-kb = LocalKB(name="docs", path=".fastaiagent/kb/")
-```
-
-Default: `.fastaiagent/kb/`
-
-> **Note:** The current implementation keeps chunks and embeddings in memory. For large knowledge bases in production, use the platform KB which provides persistent vector storage with hybrid search, reranking, and contextual enrichment.
 
 ## CLI Commands
 
@@ -272,26 +438,20 @@ Default: `.fastaiagent/kb/`
 # Check KB status
 fastaiagent kb status --name product-docs
 
-# Add a file
+# Add a file or directory
 fastaiagent kb add ./docs/readme.md --name product-docs
-```
+fastaiagent kb add ./docs/ --name product-docs
 
-Example:
-```
-$ fastaiagent kb status --name product-docs
-KB: product-docs
-Chunks: 15
-Path: .fastaiagent/kb
+# Delete chunks from a source file
+fastaiagent kb delete ./docs/old-faq.md --name product-docs
 
-$ fastaiagent kb add ./docs/faq.md --name product-docs
-Added 8 chunks from ./docs/faq.md
+# Clear all data
+fastaiagent kb clear --name product-docs
 ```
 
 ## Error Handling
 
 ```python
-from fastaiagent._internal.errors import KBError
-
 # Nonexistent path — treated as raw text, NOT an error
 kb.add("/nonexistent/file.txt")
 # Adds the string "/nonexistent/file.txt" as a text chunk
@@ -309,6 +469,13 @@ try:
     kb.add("document.pdf")  # Only works if document.pdf exists
 except ImportError:
     print("Install pymupdf: pip install fastaiagent[kb]")
+
+# Embedding dimension mismatch on reload
+try:
+    kb = LocalKB(name="docs", embedder=SimpleEmbedder(dimensions=64))
+    # Fails if KB was created with a different dimension embedder
+except ValueError as e:
+    print(f"Dimension mismatch: {e}")
 ```
 
 ## Complete Example
@@ -318,17 +485,17 @@ from fastaiagent import Agent, LLMClient
 from fastaiagent.kb import LocalKB
 from fastaiagent.kb.embedding import OpenAIEmbedder
 
-# 1. Build a KB with OpenAI embeddings
+# 1. Build a KB with OpenAI embeddings (persisted — run once)
 kb = LocalKB(
     name="company-docs",
     embedder=OpenAIEmbedder(),
     chunk_size=512,
 )
 
-# 2. Ingest files
+# 2. Ingest files and directories
 kb.add("docs/refund-policy.md")
 kb.add("docs/shipping-guide.md")
-kb.add("docs/faq.md")
+kb.add("docs/faq/")               # Recursive directory ingestion
 print(f"KB ready: {kb.status()['chunk_count']} chunks")
 
 # 3. Create agent with KB tool

@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] - 2026-04-06
+
+### Added
+- **LocalKB persistence** — Chunks and embeddings now auto-save to SQLite and auto-load on restart. No re-embedding on process restart. Use `persist=False` for in-memory-only throwaway KBs.
+- **FAISS vector search** — Replaced pure-Python cosine similarity with FAISS (`IndexFlatIP`). Configurable index types: `"flat"` (default, exact), `"ivf"` (approximate, 100K-1M), `"hnsw"` (graph-based, fast recall). `faiss-cpu` added to `[kb]` extra.
+- **BM25 keyword search** (`fastaiagent/kb/bm25.py`) — Lightweight in-memory BM25 index with no external dependencies. Catches exact terms, error codes, and IDs that vector search misses.
+- **Hybrid search** (default) — Combined FAISS + BM25 with configurable `alpha` weighting. `search_type` parameter: `"hybrid"` (default), `"vector"`, `"keyword"`.
+- **CRUD operations** on LocalKB — `delete(chunk_id)`, `delete_by_source(source)`, `update(chunk_id, content)`, `clear()`. All persist to SQLite and rebuild active indexes.
+- **Directory ingestion** — `kb.add("docs/")` recursively ingests all `.txt`, `.md`, `.pdf` files.
+- **Chunk UUID** — `Chunk` model now has an `id` field (auto-generated UUID) for update/delete operations.
+- **Conditional index creation** — `search_type="keyword"` skips embedding entirely (no embedder needed, no FAISS, zero embedding cost).
+- CLI commands: `fastaiagent kb clear`, `fastaiagent kb delete`.
+- Exports: `Chunk` and `SearchResult` now exported from `fastaiagent.kb`.
+- Integration tests with real FastEmbed embeddings (`tests/test_kb_integration.py`).
+- Comprehensive docs: search types, index types, alpha tuning, CRUD, persistence, multi-KB pattern.
+
+### Changed
+- `LocalKB.__init__` — New parameters: `persist`, `search_type`, `index_type`, `alpha`. All backward compatible with defaults.
+- `kb.status()` — Now includes `persist`, `search_type`, `index_type` fields.
+- Customer-support-agent example updated to use persistence (no more `_ensure_kb()` global flag pattern).
+
 ## [0.1.4] - 2026-04-05
 
 ### Added
