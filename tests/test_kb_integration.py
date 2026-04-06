@@ -13,16 +13,11 @@ import textwrap
 
 import pytest
 
+# Skip entire module at collection time if fastembed is not available
+fastembed = pytest.importorskip("fastembed", reason="fastembed not installed (pip install fastaiagent[kb])")
+
 from fastaiagent.kb import LocalKB
-
-try:
-    from fastaiagent.kb.embedding import FastEmbedEmbedder
-
-    _HAS_FASTEMBED = True
-except ImportError:
-    _HAS_FASTEMBED = False
-
-pytestmark = pytest.mark.skipif(not _HAS_FASTEMBED, reason="fastembed not installed")
+from fastaiagent.kb.embedding import FastEmbedEmbedder
 
 
 @pytest.fixture(scope="module")
