@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Literal
 
-import numpy as np
 from pydantic import BaseModel
 
 from fastaiagent.kb.chunking import Chunk
@@ -68,12 +67,14 @@ class FaissIndex:
         """Add embeddings to the index."""
         if not embeddings:
             return
+        import numpy as np
+
         arr = np.array(embeddings, dtype=np.float32)
         if self._index_type == "ivf" and not self._trained:
             self._train_if_needed(arr)
         self._index.add(arr)
 
-    def _train_if_needed(self, arr: np.ndarray) -> None:
+    def _train_if_needed(self, arr) -> None:
         """Train IVF index if not yet trained."""
         if self._trained:
             return
@@ -92,6 +93,8 @@ class FaissIndex:
         """Search and return list of (index, score) pairs."""
         if self._index.ntotal == 0:
             return []
+        import numpy as np
+
         q = np.array([query_embedding], dtype=np.float32)
         k = min(top_k, self._index.ntotal)
         scores, indices = self._index.search(q, k)
