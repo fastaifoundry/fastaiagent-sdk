@@ -222,16 +222,46 @@ Traces are always stored locally AND sent to exporters — adding an exporter do
 
 ## Custom Storage Path
 
-```python
-from fastaiagent._internal.config import SDKConfig
+Traces are always stored as SQLite. The database path can point to any filesystem location — local disk or a cloud-mounted volume.
 
-# Via environment variable
-# export FASTAIAGENT_TRACE_DB_PATH=/custom/path/traces.db
+### Local
 
-# Or via config
-from fastaiagent.trace.storage import TraceStore
-store = TraceStore(db_path="/custom/path/traces.db")
+```bash
+export FASTAIAGENT_TRACE_DB_PATH=/data/my-project/traces.db
 ```
+
+```python
+from fastaiagent.trace import TraceStore
+store = TraceStore(db_path="/data/my-project/traces.db")
+```
+
+### Cloud-Mounted Filesystems
+
+Mount a cloud volume and point the trace path to it. SQLite works on any POSIX-compatible filesystem mount:
+
+| Cloud Provider | Mount Tool | Example Path |
+|----------------|-----------|--------------|
+| **Azure Files** | Azure File Share (SMB/NFS) | `/mnt/azure-share/traces.db` |
+| **AWS S3** | [Mountpoint for S3](https://github.com/awslabs/mountpoint-s3) or s3fs-fuse | `/mnt/s3-bucket/traces.db` |
+| **AWS EFS** | NFS mount | `/mnt/efs/traces.db` |
+| **GCS** | [Cloud Storage FUSE](https://cloud.google.com/storage/docs/gcs-fuse) | `/mnt/gcs-bucket/traces.db` |
+
+```bash
+# Azure Files example
+export FASTAIAGENT_TRACE_DB_PATH=/mnt/azure-share/traces.db
+
+# S3 via Mountpoint
+export FASTAIAGENT_TRACE_DB_PATH=/mnt/s3-bucket/traces.db
+```
+
+```python
+# Or set programmatically
+store = TraceStore(db_path="/mnt/azure-share/traces.db")
+```
+
+> **Note:** SQLite requires a filesystem that supports file locking. Most cloud-mounted POSIX filesystems (Azure Files, EFS, GCS FUSE) support this. Object-storage mounts (S3 Mountpoint, s3fs-fuse) work for single-writer scenarios — avoid concurrent writes from multiple processes to the same SQLite file on these mounts.
+
+See [Example 10](https://github.com/anthropics/fastaiagent-sdk/blob/main/examples/10_trace_query.py) for a runnable demo of trace querying with custom storage paths.
 
 ## CLI Commands
 
@@ -323,3 +353,8 @@ If the platform is unreachable, traces are safe in local SQLite. No operation fa
 - [Replay](../replay/index.md) — Debug agent execution with fork-and-rerun
 - [Integrations](../integrations/index.md) — Auto-trace OpenAI, Anthropic, LangChain, CrewAI
 - [Agents](../agents/index.md) — Build agents with automatic tracing
+
+## Examples
+
+- [Example 09](https://github.com/anthropics/fastaiagent-sdk/blob/main/examples/09_otel_export.py) — Export traces to OTel collectors (Jaeger, Datadog)
+- [Example 10](https://github.com/anthropics/fastaiagent-sdk/blob/main/examples/10_trace_query.py) — Query, search, and export local traces with custom storage paths
