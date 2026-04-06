@@ -258,6 +258,7 @@ class TestDataEdgeCases:
             kb = LocalKB(name="empty", path=tmp)
             results = kb.search("anything")
             assert results == []
+            kb.close()
 
     def test_kb_status_with_no_documents(self):
         """KB status works with empty KB."""
@@ -267,6 +268,7 @@ class TestDataEdgeCases:
             kb = LocalKB(name="empty", path=tmp)
             status = kb.status()
             assert status["chunk_count"] == 0
+            kb.close()
 
     def test_chunk_text_with_empty_input(self):
         """Chunking empty text should return empty list."""
