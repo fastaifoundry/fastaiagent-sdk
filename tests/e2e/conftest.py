@@ -110,6 +110,46 @@ def require_ollama_running(host: str = "http://localhost:11434") -> None:
         )
 
 
+def require_otlp_endpoint(
+    ingest_url: str = "http://localhost:4318/v1/traces",
+    query_url: str = "http://localhost:16686/api/services",
+) -> None:
+    """Skip the current test when an OTLP collector is not reachable.
+
+    Probes both the ingest URL (OTLP HTTP receiver) and the query URL
+    (Jaeger / Tempo / similar query API). A GET against the ingest
+    endpoint should return 405 Method Not Allowed (it's POST-only);
+    a GET against the query URL should return 200. Both must be alive
+    for the round-trip gate to mean anything.
+
+    Always a skip (never a hard fail), even under ``E2E_REQUIRED=1``,
+    because GitHub Actions runners do not have Jaeger running by
+    default. Locally, ``docker run -p 4318:4318 -p 16686:16686 jaegertracing/all-in-one``
+    (or equivalent) to exercise this gate.
+    """
+    import httpx
+
+    try:
+        resp = httpx.get(ingest_url, timeout=2.0)
+    except Exception as e:
+        pytest.skip(f"OTLP ingest not reachable at {ingest_url}: {e}")
+    # OTLP HTTP ingest expects POST; 405 on GET is the healthy sign.
+    if resp.status_code not in (200, 202, 405):
+        pytest.skip(
+            f"OTLP ingest at {ingest_url} returned unexpected status "
+            f"{resp.status_code} on GET — collector may not be healthy"
+        )
+
+    try:
+        q = httpx.get(query_url, timeout=2.0)
+    except Exception as e:
+        pytest.skip(f"OTLP query API not reachable at {query_url}: {e}")
+    if q.status_code != 200:
+        pytest.skip(
+            f"OTLP query API at {query_url} returned status {q.status_code}"
+        )
+
+
 @pytest.fixture(scope="module")
 def gate_state() -> dict[str, Any]:
     """Module-scoped scratchpad threading state across ordered gate sub-tests.
