@@ -89,6 +89,27 @@ def require_import(module: str) -> None:
         pytest.skip(f"Optional dependency '{module}' not importable — gate step skipped")
 
 
+def require_ollama_running(host: str = "http://localhost:11434") -> None:
+    """Skip the current test when a local Ollama daemon is not reachable.
+
+    Always a skip (never a hard fail), even under ``E2E_REQUIRED=1``,
+    because GitHub Actions runners do not have Ollama installed and
+    most user laptops won't either. Locally, install + start Ollama
+    (``brew install ollama && ollama serve``) and pull at least one
+    small model (``ollama pull gemma2:2b``) to exercise this gate.
+    """
+    import httpx
+
+    try:
+        resp = httpx.get(f"{host.rstrip('/')}/api/tags", timeout=2.0)
+    except Exception as e:
+        pytest.skip(f"Ollama daemon not reachable at {host}: {e}")
+    if resp.status_code != 200:
+        pytest.skip(
+            f"Ollama daemon at {host} returned status {resp.status_code}"
+        )
+
+
 @pytest.fixture(scope="module")
 def gate_state() -> dict[str, Any]:
     """Module-scoped scratchpad threading state across ordered gate sub-tests.
