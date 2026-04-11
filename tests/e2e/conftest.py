@@ -60,6 +60,35 @@ def require_platform() -> None:
         )
 
 
+def require_anthropic() -> None:
+    """Skip/fail the current test when ``ANTHROPIC_API_KEY`` is not set.
+
+    Used by provider-specific gates (Anthropic, LangChain w/ Claude, etc.).
+    Same skip-local, fail-on-CI contract as require_env().
+    """
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return
+    message = "ANTHROPIC_API_KEY not set — skipping Anthropic-specific gate step"
+    if os.environ.get("E2E_REQUIRED") == "1":
+        pytest.fail(message)
+    pytest.skip(message)
+
+
+def require_import(module: str) -> None:
+    """Skip the current test when an optional dependency is not importable.
+
+    Used by integration gates (LangChain, CrewAI, etc.) that depend on
+    packages listed under optional extras. Never fails in CI — missing
+    optional deps are always a skip, even under E2E_REQUIRED=1, because
+    CI explicitly installs ``[all,dev]`` and a missing import there is a
+    packaging issue to fix separately, not a gate failure.
+    """
+    try:
+        __import__(module)
+    except ImportError:
+        pytest.skip(f"Optional dependency '{module}' not importable — gate step skipped")
+
+
 @pytest.fixture(scope="module")
 def gate_state() -> dict[str, Any]:
     """Module-scoped scratchpad threading state across ordered gate sub-tests.
