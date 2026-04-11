@@ -9,7 +9,7 @@ from fastaiagent.guardrail import Guardrail, GuardrailResult, json_valid, no_pii
 from fastaiagent.kb import LocalKB
 from fastaiagent.llm import LLMClient, Message, StreamEvent, TextDelta
 from fastaiagent.prompt import Prompt, PromptRegistry
-from fastaiagent.tool import FunctionTool, MCPTool, RESTTool, Tool, tool
+from fastaiagent.tool import FunctionTool, MCPTool, RESTTool, Tool, ToolRegistry, tool
 from fastaiagent.trace import TraceStore, trace_context
 from fastaiagent.trace.replay import Replay
 
@@ -48,6 +48,7 @@ __all__ = [
     "FunctionTool",
     "RESTTool",
     "MCPTool",
+    "ToolRegistry",
     "tool",
     # Guardrail
     "Guardrail",
