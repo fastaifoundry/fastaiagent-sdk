@@ -2,7 +2,19 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any
+
+
+def trace_payloads_enabled() -> bool:
+    """Whether to capture payload-bearing trace attributes (prompts, messages, responses).
+
+    Defaults to True. Set ``FASTAIAGENT_TRACE_PAYLOADS=0`` to disable when payloads
+    may contain PII or sensitive data. Structural metadata (provider, model, tool
+    schemas, guardrail config) is always captured regardless of this flag — only
+    free-text content is gated.
+    """
+    return os.environ.get("FASTAIAGENT_TRACE_PAYLOADS", "1") != "0"
 
 # GenAI semantic conventions (OTel standard)
 GENAI_ATTRIBUTES = {
@@ -50,8 +62,18 @@ def set_genai_attributes(
     input_tokens: int | None = None,
     output_tokens: int | None = None,
     finish_reasons: list[str] | None = None,
+    request_messages: str | None = None,
+    request_tools: str | None = None,
+    response_content: str | None = None,
+    response_tool_calls: str | None = None,
+    finish_reason: str | None = None,
 ) -> None:
-    """Set GenAI semantic convention attributes on a span."""
+    """Set GenAI semantic convention attributes on a span.
+
+    Payload-bearing fields (request_messages, request_tools, response_content,
+    response_tool_calls) are pre-serialized JSON strings provided by the caller
+    and are gated by ``trace_payloads_enabled()``.
+    """
     attrs: dict[str, Any] = {}
     if system is not None:
         attrs["gen_ai.system"] = system
@@ -67,6 +89,17 @@ def set_genai_attributes(
         attrs["gen_ai.usage.output_tokens"] = output_tokens
     if finish_reasons is not None:
         attrs["gen_ai.response.finish_reasons"] = str(finish_reasons)
+    if finish_reason is not None:
+        attrs["gen_ai.response.finish_reason"] = finish_reason
+    if trace_payloads_enabled():
+        if request_messages is not None:
+            attrs["gen_ai.request.messages"] = request_messages
+        if request_tools is not None:
+            attrs["gen_ai.request.tools"] = request_tools
+        if response_content is not None:
+            attrs["gen_ai.response.content"] = response_content
+        if response_tool_calls is not None:
+            attrs["gen_ai.response.tool_calls"] = response_tool_calls
     set_span_attributes(span, **attrs)
 
 

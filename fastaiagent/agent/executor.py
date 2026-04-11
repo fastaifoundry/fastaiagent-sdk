@@ -29,6 +29,79 @@ if TYPE_CHECKING:
     from fastaiagent.guardrail.guardrail import Guardrail
 
 
+async def _invoke_tool_with_span(
+    tool: Tool | None,
+    tool_name: str,
+    arguments: dict[str, Any],
+    context: Any | None,
+    guardrails: list[Guardrail] | None,
+    tool_call_record: dict[str, Any] | None = None,
+) -> str:
+    """Execute a single tool call inside an OTel span and return the textual result.
+
+    Always creates a span (even for unknown tools) so dashboards see the attempt.
+    Captures tool.name and tool.status unconditionally; tool.args / tool.result
+    are gated by ``trace_payloads_enabled()``.
+    """
+    from fastaiagent.trace.otel import get_tracer
+    from fastaiagent.trace.span import trace_payloads_enabled
+
+    tracer = get_tracer("fastaiagent.agent.executor")
+    with tracer.start_as_current_span(f"tool.{tool_name}") as span:
+        span.set_attribute("tool.name", tool_name)
+        if trace_payloads_enabled():
+            try:
+                span.set_attribute("tool.args", json.dumps(arguments, default=str))
+            except Exception:
+                pass
+
+        if tool is None:
+            result_text = f"Error: Unknown tool '{tool_name}'"
+            span.set_attribute("tool.status", "unknown")
+            if tool_call_record is not None:
+                tool_call_record["error"] = result_text
+            return result_text
+
+        try:
+            # Tool-call guardrail: validate arguments before execution
+            if guardrails:
+                tc_data = json.dumps(
+                    {"tool": tool_name, "arguments": arguments}, default=str
+                )
+                await execute_guardrails(guardrails, tc_data, GuardrailPosition.tool_call)
+
+            result = await tool.aexecute(arguments, context=context)
+            if result.success:
+                result_text = (
+                    json.dumps(result.output, default=str)
+                    if not isinstance(result.output, str)
+                    else result.output
+                )
+                # Tool-result guardrail: validate output after execution
+                if guardrails:
+                    await execute_guardrails(
+                        guardrails, result_text, GuardrailPosition.tool_result
+                    )
+                span.set_attribute("tool.status", "ok")
+            else:
+                result_text = f"Error: {result.error}"
+                span.set_attribute("tool.status", "error")
+                span.set_attribute("tool.error", str(result.error))
+
+            if trace_payloads_enabled():
+                span.set_attribute("tool.result", result_text)
+            if tool_call_record is not None:
+                tool_call_record["output"] = result_text
+            return result_text
+        except ToolExecutionError as e:
+            result_text = f"Error: {e}"
+            span.set_attribute("tool.status", "error")
+            span.set_attribute("tool.error", str(e))
+            if tool_call_record is not None:
+                tool_call_record["error"] = str(e)
+            return result_text
+
+
 async def execute_tool_loop(
     llm: Any,
     messages: list[Message],
@@ -74,38 +147,14 @@ async def execute_tool_loop(
             }
 
             tool = tools_by_name.get(tc.name)
-            if tool is None:
-                result_text = f"Error: Unknown tool '{tc.name}'"
-                tool_call_record["error"] = result_text
-            else:
-                try:
-                    # Tool-call guardrail: validate arguments before execution
-                    if guardrails:
-                        tc_data = json.dumps(
-                            {"tool": tc.name, "arguments": tc.arguments}, default=str
-                        )
-                        await execute_guardrails(
-                            guardrails, tc_data, GuardrailPosition.tool_call
-                        )
-
-                    result = await tool.aexecute(tc.arguments, context=context)
-                    if result.success:
-                        result_text = (
-                            json.dumps(result.output, default=str)
-                            if not isinstance(result.output, str)
-                            else result.output
-                        )
-                        # Tool-result guardrail: validate output after execution
-                        if guardrails:
-                            await execute_guardrails(
-                                guardrails, result_text, GuardrailPosition.tool_result
-                            )
-                    else:
-                        result_text = f"Error: {result.error}"
-                    tool_call_record["output"] = result_text
-                except ToolExecutionError as e:
-                    result_text = f"Error: {e}"
-                    tool_call_record["error"] = str(e)
+            result_text = await _invoke_tool_with_span(
+                tool=tool,
+                tool_name=tc.name,
+                arguments=tc.arguments,
+                context=context,
+                guardrails=guardrails,
+                tool_call_record=tool_call_record,
+            )
 
             messages.append(ToolMessage(content=result_text, tool_call_id=tc.id))
             all_tool_calls.append(tool_call_record)
@@ -179,35 +228,13 @@ async def stream_tool_loop(
         # Execute each tool call
         for tc in pending_tool_calls:
             tool = tools_by_name.get(tc.name)
-            if tool is None:
-                result_text = f"Error: Unknown tool '{tc.name}'"
-            else:
-                try:
-                    # Tool-call guardrail: validate arguments before execution
-                    if guardrails:
-                        tc_data = json.dumps(
-                            {"tool": tc.name, "arguments": tc.arguments}, default=str
-                        )
-                        await execute_guardrails(
-                            guardrails, tc_data, GuardrailPosition.tool_call
-                        )
-
-                    result = await tool.aexecute(tc.arguments, context=context)
-                    if result.success:
-                        result_text = (
-                            json.dumps(result.output, default=str)
-                            if not isinstance(result.output, str)
-                            else result.output
-                        )
-                        # Tool-result guardrail: validate output after execution
-                        if guardrails:
-                            await execute_guardrails(
-                                guardrails, result_text, GuardrailPosition.tool_result
-                            )
-                    else:
-                        result_text = f"Error: {result.error}"
-                except ToolExecutionError as e:
-                    result_text = f"Error: {e}"
+            result_text = await _invoke_tool_with_span(
+                tool=tool,
+                tool_name=tc.name,
+                arguments=tc.arguments,
+                context=context,
+                guardrails=guardrails,
+            )
 
             messages.append(ToolMessage(content=result_text, tool_call_id=tc.id))
 

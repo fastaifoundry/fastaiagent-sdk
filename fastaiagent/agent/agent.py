@@ -120,11 +120,35 @@ class Agent:
     ) -> AgentResult:
         """Execute with OTel tracing."""
         from fastaiagent.trace.otel import get_tracer
+        from fastaiagent.trace.span import trace_payloads_enabled
 
         tracer = get_tracer()
         with tracer.start_as_current_span(f"agent.{self.name}") as span:
             span.set_attribute("agent.name", self.name)
             span.set_attribute("agent.input", input)
+
+            # Reconstruction metadata for ForkedReplay.arerun (always captured —
+            # structural, not payload).
+            span.set_attribute("agent.config", json.dumps(self.config.model_dump()))
+            span.set_attribute(
+                "agent.tools", json.dumps([t.to_dict() for t in self.tools])
+            )
+            span.set_attribute(
+                "agent.guardrails", json.dumps([g.to_dict() for g in self.guardrails])
+            )
+            span.set_attribute("agent.llm.provider", self.llm.provider)
+            span.set_attribute("agent.llm.model", self.llm.model)
+            span.set_attribute("agent.llm.config", json.dumps(self.llm.to_dict()))
+
+            # Resolved system prompt (payload-gated).
+            if trace_payloads_enabled():
+                try:
+                    resolved_prompt = self._resolve_system_prompt(context)
+                    if resolved_prompt:
+                        span.set_attribute("agent.system_prompt", resolved_prompt)
+                except Exception:
+                    # Callable system_prompt that needs context — best-effort only.
+                    pass
 
             result = await self._arun_core(input, context=context, **kwargs)
 
