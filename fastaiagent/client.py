@@ -38,6 +38,26 @@ class _Connection:
 _connection = _Connection()
 
 
+def _normalize_target(target: str) -> str:
+    """Normalize a platform target URL.
+
+    Ensures a scheme is present (defaults to ``http://`` for localhost/
+    private hosts, ``https://`` otherwise) and strips trailing slashes.
+    httpx rejects URLs without a scheme with an opaque error, so we
+    do this upfront to give users a clear, tolerant experience.
+    """
+    t = (target or "").strip().rstrip("/")
+    if not t:
+        return t
+    if "://" in t:
+        return t
+    host = t.split("/", 1)[0].split(":", 1)[0].lower()
+    is_local = host in {"localhost", "127.0.0.1", "0.0.0.0", "::1"} or host.endswith(
+        ".localhost"
+    )
+    return f"{'http' if is_local else 'https'}://{t}"
+
+
 def connect(
     api_key: str,
     target: str = "https://app.fastaiagent.net",
@@ -58,7 +78,7 @@ def connect(
     from fastaiagent._internal.errors import PlatformAuthError, PlatformConnectionError
 
     _connection.api_key = api_key
-    _connection.target = target.rstrip("/")
+    _connection.target = _normalize_target(target)
     _connection.project = project
 
     # Lightweight auth check — also captures domain/project from the key
