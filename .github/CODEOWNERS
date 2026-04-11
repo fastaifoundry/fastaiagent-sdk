@@ -1,0 +1,13 @@
+# GitHub Code Owners — https://docs.github.com/en/repositories/managing-your-repositories-settings-and-security/customizing-your-repository/about-code-owners
+#
+# Every path in this repository is owned by the account below. When combined
+# with the "Require review from Code Owners" rule on the main branch ruleset,
+# this means pull requests targeting main must be approved by the code owner
+# before they can be merged. Other reviewers may still comment and approve,
+# but their approvals do not satisfy the ruleset requirement.
+#
+# The bypass list on the ruleset allows the code owner to merge their own
+# PRs without approval (GitHub disallows self-approval), so a solo maintainer
+# is not locked out of their own work.
+
+* @fastaifoundry
