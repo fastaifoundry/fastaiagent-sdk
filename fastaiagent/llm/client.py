@@ -35,6 +35,16 @@ def _strip_code_fences(text: str) -> str:
     return m.group(1).strip() if m else text
 
 
+def _serialize_for_span(value: Any) -> str | None:
+    """JSON-encode an arbitrary structure for span attributes, swallowing errors."""
+    if value is None:
+        return None
+    try:
+        return _json.dumps(value, default=str)
+    except Exception:
+        return None
+
+
 def _augment_system_for_response_format(system_text: str | None, response_format: dict[str, Any]) -> str:
     """Inject JSON instructions into system prompt for providers without native response_format."""
     rf_type = response_format.get("type", "text") if isinstance(response_format, dict) else "text"
@@ -160,7 +170,40 @@ class LLMClient:
         tools: list[dict[str, Any]] | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
-        """Async completion — routes to the appropriate provider."""
+        """Async completion — routes to the appropriate provider.
+
+        Wraps the call in an OTel span so every LLM call shows up on the
+        replay timeline regardless of provider. The integration-level monkey
+        patches in ``fastaiagent/integrations/`` only fire for users calling
+        the bare provider SDKs directly; LLMClient hits provider HTTP APIs
+        with httpx, so this wrapper is what produces spans for the agent
+        flow.
+        """
+        from fastaiagent.trace.otel import get_tracer
+        from fastaiagent.trace.span import set_genai_attributes
+
+        tracer = get_tracer("fastaiagent.llm.client")
+        with tracer.start_as_current_span(f"llm.{self.provider}.{self.model}") as span:
+            set_genai_attributes(
+                span,
+                system=self.provider,
+                model=self.model,
+                temperature=kwargs.get("temperature", self.temperature),
+                max_tokens=kwargs.get("max_tokens", self.max_tokens),
+                request_messages=_serialize_for_span([m.to_openai_format() for m in messages]),
+                request_tools=_serialize_for_span(tools),
+            )
+            return await self._acomplete_with_retries(span, messages, tools, **kwargs)
+
+    async def _acomplete_with_retries(
+        self,
+        span: Any,
+        messages: list[Message],
+        tools: list[dict[str, Any]] | None = None,
+        **kwargs: Any,
+    ) -> LLMResponse:
+        from fastaiagent.trace.span import set_genai_attributes
+
         start = time.monotonic()
         provider_fn = self._get_provider_fn()
 
@@ -168,6 +211,23 @@ class LLMClient:
             try:
                 response: LLMResponse = await provider_fn(messages, tools, **kwargs)
                 response.latency_ms = int((time.monotonic() - start) * 1000)
+                set_genai_attributes(
+                    span,
+                    input_tokens=response.usage.get("prompt_tokens")
+                    or response.usage.get("input_tokens"),
+                    output_tokens=response.usage.get("completion_tokens")
+                    or response.usage.get("output_tokens"),
+                    response_content=response.content,
+                    response_tool_calls=_serialize_for_span(
+                        [
+                            {"id": tc.id, "name": tc.name, "arguments": tc.arguments}
+                            for tc in response.tool_calls
+                        ]
+                    )
+                    if response.tool_calls
+                    else None,
+                    finish_reason=response.finish_reason or None,
+                )
                 return response
             except LLMProviderError as e:
                 if attempt < self.max_retries and self._should_retry(e.status_code):
