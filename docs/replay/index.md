@@ -132,6 +132,24 @@ print(f"New output: {result.new_output}")
 print(f"Steps executed: {result.steps_executed}")
 ```
 
+### How `rerun()` reconstructs the agent
+
+`ForkedReplay.rerun()` is a real re-execution, not a stub. Under the hood it:
+
+1. Finds the root `agent.{name}` span in the loaded trace.
+2. Reads the [Agent Reconstruction Attributes](../tracing/index.md#agent-reconstruction-attributes-used-by-replay) off that span — `agent.config`, `agent.tools`, `agent.guardrails`, `agent.llm.config`, `agent.system_prompt`, `agent.input` — and decodes them into the canonical `Agent.from_dict` payload.
+3. Applies your `modify_prompt` / `modify_config` / `modify_input` modifications on top of that payload.
+4. Rebinds tool callables by name via the [`ToolRegistry`](../tools/index.md#toolregistry). Tools created with `FunctionTool(name=..., fn=...)` or the `@tool` decorator auto-register at construction, so replay inside the same process picks them up automatically.
+5. Builds a new `Agent` via `Agent.from_dict()` and calls `agent.arun(new_input)`. A new trace is emitted for the rerun, and its `trace_id` is returned on `ReplayResult.trace_id`.
+
+**v1 scope.** The rerun re-executes the agent **from the top** with modifications applied — it does not literally resume the LLM loop at `fork_point` with prior messages pre-seeded. `fork_point` is still recorded and used by `compare()` to mark where divergence logically happened, so downstream tooling sees your intent. Mid-trace resume (replaying captured messages up to `fork_point` then continuing from there) requires a stable per-provider message-history representation and is planned as a follow-up.
+
+**What you need for `rerun()` to work:**
+
+- The SDK is at a version that captures `agent.*` reconstruction attributes (`0.1.7+`). Traces from older versions can still be loaded and stepped through, but `rerun()` will fail to reconstruct the agent — re-run the agent once on the new SDK to capture a rerun-capable trace.
+- Any Python tool callables the agent used are registered in the [`ToolRegistry`](../tools/index.md#toolregistry) of the replay process. Importing the module that defines the tools is usually enough.
+- `FASTAIAGENT_TRACE_PAYLOADS=0` was not set when the original trace was captured, *if* you want the resolved system prompt to round-trip. When payloads were off, modifications still work but the reconstructed agent uses whatever prompt your code supplies via `modify_prompt()`.
+
 ### Available Modifications
 
 | Method | What it changes |

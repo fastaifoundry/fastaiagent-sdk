@@ -89,7 +89,52 @@ restored = Tool.from_dict(data)
 # Returns RESTTool if tool_type is "rest_api", FunctionTool if "function", etc.
 ```
 
-> **Note:** `FunctionTool` serialization stores the schema but NOT the Python function itself. After `from_dict()`, the restored tool will have the correct schema but no executable function. This is by design — functions can't be serialized to JSON.
+> **FunctionTool callables and the ToolRegistry.** Python function objects can't be serialized to JSON, so `FunctionTool.to_dict()` only stores the schema. To make `from_dict()` usable for [Agent Replay](../replay/index.md), every `FunctionTool` that is constructed with a live `fn=...` is automatically registered in the process-wide [`ToolRegistry`](#toolregistry). When `Tool.from_dict()` sees a tool name that's been registered, it returns the live tool (with the callable) instead of a schema-only skeleton. Replay reconstructions in the same process that created the tools "just work".
+
+## ToolRegistry
+
+A process-wide, name-keyed registry that holds live tool callables so replay can rebind them after reconstruction from a trace.
+
+```python
+from fastaiagent import FunctionTool, ToolRegistry, tool
+
+# Creating a FunctionTool with a callable auto-registers it
+def lookup_order(order_id: str) -> str:
+    """Look up an order by ID."""
+    return f"Order {order_id}: shipped"
+
+t = FunctionTool(name="lookup_order", fn=lookup_order)
+assert ToolRegistry.get("lookup_order") is t
+
+# The @tool decorator also auto-registers
+@tool(name="echo")
+def echo(msg: str) -> str:
+    return msg
+
+assert ToolRegistry.get("echo") is not None
+```
+
+### API
+
+| Method | Behavior |
+|--------|----------|
+| `ToolRegistry.register(tool)` | Store a tool by `tool.name`. Last-write-wins — re-registering the same name replaces. Returns the tool. |
+| `ToolRegistry.get(name)` | Return the registered tool, or `None`. |
+| `ToolRegistry.all()` | Return a copy of the full registry (name → tool). |
+| `ToolRegistry.unregister(name)` | Remove by name, returning the removed tool or `None`. |
+| `ToolRegistry.clear()` | Drop all entries. Intended for tests. |
+
+### When you need it
+
+You generally do not need to touch `ToolRegistry` directly — auto-registration at `FunctionTool.__init__` covers the common case. You need it explicitly when:
+
+- **Replaying a trace in a different process than the one that created the tools.** Import your tool module in the replay process so the tools get registered at import time, or re-register manually.
+- **Unit tests that want to start from a clean slate** — call `ToolRegistry.clear()` in setup.
+- **Distinct tools with the same name** — registration is last-write-wins, so give tools unique names if you care about isolation.
+
+### What happens when a tool isn't registered?
+
+When `Tool.from_dict()` reconstructs a `FunctionTool` whose name isn't in the registry, it logs a warning and returns a schema-only skeleton. Calling `tool.aexecute()` on that skeleton returns a `ToolResult(error="No function attached...")`. Replay reruns that invoke the tool will surface the error to the agent (as the tool message content), not crash — the agent can then react to the "tool missing" signal.
 
 ## Sync vs Async
 

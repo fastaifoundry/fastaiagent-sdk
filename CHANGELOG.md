@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] - 2026-04-11
+
+### Added
+- **End-to-end quality gate** — A pytest suite under `tests/e2e/test_quality_gate.py` that runs the full 16-step product lifecycle with real assertions: install → connect → create agent → add tool → add guardrail → run → inspect → trace_id → verify on platform → run eval → check scores → load replay → fork at step 2 → rerun → compare. Wired into `.github/workflows/ci.yml` as a required status check.
+  - `E2E_REQUIRED=1` flips the gate from local-skip to hard-fail on missing env — CI sets this, local developers get clean skips.
+  - `E2E_SKIP_PLATFORM=1` bypasses the `connect` and `verify-trace-on-platform` steps while still exercising agent, eval, and replay. Used on CI when hitting a remote platform every commit is not desired; locally, leave unset and point `FASTAIAGENT_TARGET` at your dev platform to exercise the full flow.
+- **`ToolRegistry`** — A process-wide, name-keyed registry that holds live tool callables so Agent Replay can rebind them by name after reconstruction from a trace. `FunctionTool(name=..., fn=...)` and the `@tool` decorator auto-register on construction, so most code needs no changes. Exported as `fastaiagent.ToolRegistry`. See [docs/tools/index.md#toolregistry](docs/tools/index.md).
+- **Real `ForkedReplay.arerun()`** — Replaces the previous stub. Reconstructs an `Agent` from the root agent span's attributes (`agent.config`, `agent.tools`, `agent.guardrails`, `agent.llm.config`, `agent.system_prompt`, `agent.input`), applies `modify_prompt`/`modify_config`/`modify_input`, rebinds tools via the `ToolRegistry`, and re-executes via `agent.arun`. `ComparisonResult.new_steps` now contains the spans from the rerun trace. v1 re-runs from the top with modifications applied; mid-trace resume (replaying messages up to `fork_point`) is planned as a follow-up.
+- **Enriched span instrumentation** — Agent, tool, and LLM spans now carry the metadata needed for replay reconstruction and richer observability:
+  - Agent root span: `agent.config`, `agent.tools`, `agent.guardrails`, `agent.llm.provider`, `agent.llm.model`, `agent.llm.config`, `agent.system_prompt` (payload-gated).
+  - LLM span (`llm.{provider}.{model}`, wrapped around `LLMClient.acomplete`): `gen_ai.request.messages`, `gen_ai.request.tools`, `gen_ai.response.content`, `gen_ai.response.tool_calls`, `gen_ai.response.finish_reason`, plus existing model/token/temperature attributes. Emitted for every provider regardless of whether users call the bare provider SDK.
+  - Tool span (`tool.{name}`, new): `tool.name`, `tool.status` (`ok`/`error`/`unknown`), `tool.args`, `tool.result`, `tool.error` (payload-gated).
+- **`FASTAIAGENT_TRACE_PAYLOADS` env var** — Set to `0` to skip capturing payload-bearing span attributes (messages, responses, resolved prompts, tool args/results). Defaults to on; structural metadata (tool/guardrail/LLM schemas, token counts, finish reasons) is always captured.
+
+### Fixed
+- **LLM calls were producing no spans on the agent flow.** `LLMClient` hits provider HTTP APIs with `httpx.AsyncClient` and never imports the `openai`/`anthropic` Python SDKs, so the monkey-patches in `fastaiagent/integrations/openai.py` and `anthropic.py` were dead code for real agent execution — every `agent.run()` produced a trace with only the root agent span (and, after this release, the tool span), no LLM call span. Fixed by wrapping `LLMClient.acomplete` in an OTel span at the dispatch level so every provider produces consistent `llm.{provider}.{model}` spans. The integration-level patches still fire for users calling bare provider SDKs directly. Discovered by the new e2e quality gate on its first real run.
+- **`fa.connect("localhost:8001")` threw an opaque `httpx` error on missing URL scheme.** Added `_normalize_target()` to `fastaiagent.client` which prepends `http://` for localhost and private hosts, `https://` otherwise. Users can now pass `localhost:8001`, `http://localhost:8001`, or `https://app.fastaiagent.net` interchangeably.
+
+### Tests
+- 566 unit tests + 16 e2e gate steps, all green locally against real OpenAI and a local docker-compose platform.
+- `tests/test_replay.py` — added `_make_agent_trace()` helper and `stub_agent_arun` fixture; rewrote `test_rerun`/`test_compare` for the real `arerun`; added `test_rerun_applies_prompt_modification` and `test_rerun_raises_when_trace_has_no_spans`.
+
 ## [0.1.6] - 2026-04-06
 
 ### Fixed
