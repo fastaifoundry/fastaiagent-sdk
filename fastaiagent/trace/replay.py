@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import json
+import logging
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 from fastaiagent._internal.errors import ReplayError
 from fastaiagent.trace.storage import SpanData, TraceData, TraceStore
+
+_log = logging.getLogger(__name__)
 
 
 class ReplayStep(BaseModel):
@@ -70,16 +74,53 @@ class ForkedReplay:
         return self
 
     async def arerun(self) -> ReplayResult:
-        """Rerun from fork point with modifications.
+        """Rerun the agent with modifications applied.
 
-        In a full implementation this reconstructs the agent/chain from
-        trace metadata and re-executes. For now returns a placeholder.
+        Reconstructs an ``Agent`` from span attributes captured on the original
+        trace (see ``fastaiagent/agent/agent.py::_arun_traced``), applies any
+        user modifications (modify_input / modify_prompt / modify_config), and
+        re-executes via ``agent.arun``.
+
+        v1 note: modifications are applied to the agent as a whole, then the
+        agent re-runs from the top with the (possibly modified) input. True
+        mid-trace resume — replaying messages up to ``fork_point`` then
+        continuing — is a v2 concern and requires a stable on-span message
+        history representation across providers. ``compare()`` still marks
+        ``diverged_at = fork_point`` so downstream tooling sees where the
+        user asked for divergence.
         """
+        from fastaiagent.agent.agent import Agent
+
+        root = self._find_root_span()
+        if root is None:
+            raise ReplayError(
+                f"Trace {self._trace.trace_id} has no spans — cannot reconstruct agent."
+            )
+
+        agent_dict = self._build_agent_dict(root)
+        self._apply_agent_modifications(agent_dict)
+
+        original_input = self._extract_original_input(root)
+        new_input = self._modifications.get("input", original_input)
+        if isinstance(new_input, dict):
+            # modify_input accepts a dict; flatten to a string prompt if needed.
+            new_input = new_input.get("input") or json.dumps(new_input, default=str)
+
+        try:
+            agent = Agent.from_dict(agent_dict)
+        except Exception as e:
+            raise ReplayError(
+                f"Failed to reconstruct agent from trace {self._trace.trace_id}: {e}"
+            ) from e
+
+        new_result = await agent.arun(str(new_input))
+
+        original_output = root.attributes.get("agent.output")
         return ReplayResult(
-            original_output=self._steps[-1].output if self._steps else None,
-            new_output=None,
+            original_output=original_output,
+            new_output=new_result.output,
             steps_executed=len(self._steps) - self._fork_point,
-            trace_id=self._trace.trace_id,
+            trace_id=new_result.trace_id,
         )
 
     def rerun(self) -> ReplayResult:
@@ -88,10 +129,73 @@ class ForkedReplay:
         return run_sync(self.arerun())
 
     def compare(self, new_result: ReplayResult) -> ComparisonResult:
+        """Build a side-by-side comparison between the original and rerun traces."""
+        new_steps: list[ReplayStep] = []
+        if new_result.trace_id:
+            try:
+                new_replay = Replay.load(new_result.trace_id)
+                new_steps = new_replay.steps()
+            except Exception as e:
+                _log.warning(
+                    "compare(): could not load rerun trace %s: %s",
+                    new_result.trace_id,
+                    e,
+                )
         return ComparisonResult(
             original_steps=self._steps,
+            new_steps=new_steps,
             diverged_at=self._fork_point,
         )
+
+    # ── Internals ──────────────────────────────────────────────────────────
+
+    def _find_root_span(self) -> SpanData | None:
+        """Locate the root agent span (parent_span_id is falsy, or name starts
+        with 'agent.'). Falls back to the first span in document order."""
+        for span in self._trace.spans:
+            if not span.parent_span_id and span.name.startswith("agent."):
+                return span
+        for span in self._trace.spans:
+            if not span.parent_span_id:
+                return span
+        return self._trace.spans[0] if self._trace.spans else None
+
+    def _build_agent_dict(self, root: SpanData) -> dict[str, Any]:
+        """Reconstruct the canonical Agent.from_dict payload from span attrs."""
+        attrs = root.attributes or {}
+
+        def _load_json(key: str, default: Any) -> Any:
+            raw = attrs.get(key)
+            if raw is None:
+                return default
+            if isinstance(raw, str):
+                try:
+                    return json.loads(raw)
+                except json.JSONDecodeError:
+                    return default
+            return raw
+
+        return {
+            "name": attrs.get("agent.name", "replayed-agent"),
+            "agent_type": "single",
+            "system_prompt": attrs.get("agent.system_prompt", ""),
+            "llm_endpoint": _load_json("agent.llm.config", {}),
+            "tools": _load_json("agent.tools", []),
+            "guardrails": _load_json("agent.guardrails", []),
+            "config": _load_json("agent.config", {}),
+        }
+
+    def _apply_agent_modifications(self, agent_dict: dict[str, Any]) -> None:
+        if "prompt" in self._modifications:
+            agent_dict["system_prompt"] = self._modifications["prompt"]
+        if "config" in self._modifications:
+            cfg = agent_dict.setdefault("config", {})
+            if isinstance(cfg, dict):
+                cfg.update(self._modifications["config"])
+
+    def _extract_original_input(self, root: SpanData) -> str:
+        raw = (root.attributes or {}).get("agent.input", "")
+        return raw if isinstance(raw, str) else json.dumps(raw, default=str)
 
 
 class Replay:

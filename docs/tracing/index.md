@@ -164,6 +164,51 @@ The SDK follows the OpenTelemetry GenAI semantic conventions for LLM-related att
 | `fastai.guardrail.passed` | Whether guardrail passed |
 | `fastai.cost.total_usd` | Accumulated cost |
 
+### Agent Reconstruction Attributes (used by Replay)
+
+Every `agent.run()` root span carries enough metadata for [Agent Replay](../replay/index.md) to reconstruct the agent from a stored trace and rerun it. These are always captured (structural, not payload):
+
+| Attribute | Description |
+|-----------|-------------|
+| `agent.name` | Agent name |
+| `agent.input` | Input passed to `agent.run()` |
+| `agent.output` | Final output |
+| `agent.tokens_used` | Total tokens consumed |
+| `agent.latency_ms` | Wall-clock duration |
+| `agent.config` | JSON-encoded `AgentConfig` (max_iterations, temperature, max_tokens, etc.) |
+| `agent.tools` | JSON-encoded list of tool schemas (name, description, parameters) |
+| `agent.guardrails` | JSON-encoded list of guardrails (name, position, blocking, type) |
+| `agent.llm.provider` | LLM provider (`openai`, `anthropic`, ...) |
+| `agent.llm.model` | Model id |
+| `agent.llm.config` | JSON-encoded `LLMClient.to_dict()` (api_key stripped) |
+
+Tool invocations emit their own `tool.{name}` span with:
+
+| Attribute | Description |
+|-----------|-------------|
+| `tool.name` | Tool name |
+| `tool.status` | `ok` / `error` / `unknown` |
+| `tool.args` | JSON-encoded arguments (payload-gated — see below) |
+| `tool.result` | JSON-encoded return value (payload-gated) |
+| `tool.error` | Error string when status is `error` |
+
+LLM calls emit `llm.{provider}.{model}` spans with standard GenAI attributes plus payload-gated `gen_ai.request.messages`, `gen_ai.request.tools`, `gen_ai.response.content`, `gen_ai.response.tool_calls`, and `gen_ai.response.finish_reason`.
+
+### Payload Gating (`FASTAIAGENT_TRACE_PAYLOADS`)
+
+Payload-bearing attributes — LLM messages, LLM response content, tool arguments, tool results, and resolved system prompts — can contain sensitive data. They default to **captured** so replay reconstruction works out of the box, but you can turn them off globally:
+
+```bash
+export FASTAIAGENT_TRACE_PAYLOADS=0
+```
+
+With payloads disabled:
+- Structural metadata (`agent.config`, `agent.tools`, `agent.guardrails`, `agent.llm.config`, `gen_ai.system`, `gen_ai.request.model`, token counts, finish reasons, `tool.name`/`tool.status`) is still captured — traces remain useful for monitoring and performance analysis.
+- Free-text payloads (messages, responses, prompts, tool args/results) are skipped.
+- Replay reconstruction still works for agent config and tool schemas, but reruns lose the original resolved prompt if your code relied on span-captured prompts.
+
+Defaults to `1` (on). Set to `0` in production environments handling PII if you do not otherwise scrub traces at the exporter layer.
+
 ### Setting Attributes Programmatically
 
 ```python

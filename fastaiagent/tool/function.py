@@ -110,6 +110,13 @@ class FunctionTool(Tool):
 
         super().__init__(name=name, description=description, parameters=parameters)
 
+        # Auto-register callable-backed tools so ForkedReplay.arerun can rebind
+        # them by name after reconstruction from span attributes.
+        if fn is not None:
+            from fastaiagent.tool.registry import ToolRegistry
+
+            ToolRegistry.register(self)
+
     @staticmethod
     def _detect_context_param(fn: Callable[..., Any]) -> str | None:
         """Find the parameter name annotated as RunContext, if any."""
@@ -152,8 +159,24 @@ class FunctionTool(Tool):
 
     @classmethod
     def _from_dict(cls, data: dict[str, Any]) -> FunctionTool:
+        # Prefer a live registered tool so replay reruns actually execute code.
+        from fastaiagent.tool.registry import ToolRegistry
+
+        name = data["name"]
+        registered = ToolRegistry.get(name)
+        if isinstance(registered, cls):
+            return registered
+
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "FunctionTool '%s' not found in ToolRegistry — reconstructed without "
+            "callable. Reruns that invoke this tool will surface a 'no function "
+            "attached' error to the agent.",
+            name,
+        )
         return cls(
-            name=data["name"],
+            name=name,
             description=data.get("description", ""),
             parameters=data.get("parameters"),
         )

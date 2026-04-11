@@ -1,6 +1,6 @@
 [project]
 name = "fastaiagent"
-version = "0.1.6"
+version = "0.1.7"
 description = "Build, debug, evaluate, and operate AI agents. The only SDK with fork-and-rerun Agent Replay."
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -75,6 +75,9 @@ packages = ["fastaiagent"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "e2e: end-to-end quality gate — requires real API keys and a running platform",
+]
 
 [tool.ruff]
 target-version = "py310"

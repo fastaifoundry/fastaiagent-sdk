@@ -3,11 +3,49 @@
 from __future__ import annotations
 
 import functools
+import json
 from typing import Any
 
 _original_create = None
 _original_acreate = None
 _enabled = False
+
+
+def _serialize_messages(messages: Any) -> str | None:
+    if messages is None:
+        return None
+    try:
+        return json.dumps(messages, default=str)
+    except Exception:
+        return None
+
+
+def _extract_response_payload(result: Any) -> tuple[str | None, str | None, str | None]:
+    """Pull (content, tool_calls_json, finish_reason) from an OpenAI completion."""
+    content: str | None = None
+    tool_calls_json: str | None = None
+    finish_reason: str | None = None
+    try:
+        choice = result.choices[0]
+        msg = choice.message
+        content = getattr(msg, "content", None)
+        tcs = getattr(msg, "tool_calls", None)
+        if tcs:
+            tool_calls_json = json.dumps(
+                [
+                    {
+                        "id": getattr(t, "id", None),
+                        "name": getattr(getattr(t, "function", None), "name", None),
+                        "arguments": getattr(getattr(t, "function", None), "arguments", None),
+                    }
+                    for t in tcs
+                ],
+                default=str,
+            )
+        finish_reason = getattr(choice, "finish_reason", None)
+    except Exception:
+        pass
+    return content, tool_calls_json, finish_reason
 
 
 def enable() -> None:
@@ -33,7 +71,15 @@ def enable() -> None:
         tracer = get_tracer("fastaiagent.integrations.openai")
         model = kwargs.get("model", "unknown")
         with tracer.start_as_current_span(f"openai.chat.{model}") as span:
-            set_genai_attributes(span, system="openai", model=model)
+            set_genai_attributes(
+                span,
+                system="openai",
+                model=model,
+                temperature=kwargs.get("temperature"),
+                max_tokens=kwargs.get("max_tokens"),
+                request_messages=_serialize_messages(kwargs.get("messages")),
+                request_tools=_serialize_messages(kwargs.get("tools")),
+            )
             result = _original_create(self_inner, *args, **kwargs)
             if hasattr(result, "usage") and result.usage:
                 set_genai_attributes(
@@ -41,6 +87,13 @@ def enable() -> None:
                     input_tokens=result.usage.prompt_tokens,
                     output_tokens=result.usage.completion_tokens,
                 )
+            content, tool_calls_json, finish_reason = _extract_response_payload(result)
+            set_genai_attributes(
+                span,
+                response_content=content,
+                response_tool_calls=tool_calls_json,
+                finish_reason=finish_reason,
+            )
             return result
 
     completions_cls.create = traced_create  # type: ignore[assignment]
