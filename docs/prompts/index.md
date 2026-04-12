@@ -358,6 +358,10 @@ registry.refresh("support-prompt")
 
 ---
 
+## Internals
+
+For contributors who need to understand the platform publish/fetch code paths, TTL cache implementation, local YAML storage layout, fragment resolution, or how `source="auto"` decides between platform and local, see [Platform API Internals](../internals/platform-api.md).
+
 ## Next Steps
 
 - [Agents](../agents/index.md) — Use prompts with agents

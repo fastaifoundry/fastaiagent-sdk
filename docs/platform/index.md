@@ -246,6 +246,10 @@ TraceData.publish() -> None
 
 ---
 
+## Internals
+
+For contributors who need to understand the HTTP client, the connection lifecycle, the per-feature caching/fallback behavior, error handling, or how to add a new platform-facing endpoint, see [Platform API Internals](../internals/platform-api.md).
+
 ## Next Steps
 
 - [Agents](../agents/index.md) — Build agents
