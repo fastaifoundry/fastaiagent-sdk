@@ -386,6 +386,10 @@ All eval execution runs locally (your scorers, your LLM costs). The platform pro
 
 ---
 
+## Internals
+
+For contributors who need to understand the evaluation loop, scorer resolution pipeline, how built-in scorers are implemented (pure code vs LLM-based vs embedding-based), or how to add a new scorer, see [Evaluation System Internals](../internals/evaluation-system.md).
+
 ## Next Steps
 
 - [LLM Judge](llm-judge.md) — Use an LLM to evaluate output quality
