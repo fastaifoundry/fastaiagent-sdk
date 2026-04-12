@@ -306,7 +306,7 @@ store = TraceStore(db_path="/mnt/azure-share/traces.db")
 
 > **Note:** SQLite requires a filesystem that supports file locking. Most cloud-mounted POSIX filesystems (Azure Files, EFS, GCS FUSE) support this. Object-storage mounts (S3 Mountpoint, s3fs-fuse) work for single-writer scenarios — avoid concurrent writes from multiple processes to the same SQLite file on these mounts.
 
-See [Example 10](https://github.com/anthropics/fastaiagent-sdk/blob/main/examples/10_trace_query.py) for a runnable demo of trace querying with custom storage paths.
+See [Example 10](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/10_trace_query.py) for a runnable demo of trace querying with custom storage paths.
 
 ## CLI Commands
 
@@ -405,5 +405,5 @@ For contributors who need to modify the tracing layer, add new span attributes, 
 
 ## Examples
 
-- [Example 09](https://github.com/anthropics/fastaiagent-sdk/blob/main/examples/09_otel_export.py) — Export traces to OTel collectors (Jaeger, Datadog)
-- [Example 10](https://github.com/anthropics/fastaiagent-sdk/blob/main/examples/10_trace_query.py) — Query, search, and export local traces with custom storage paths
+- [Example 09](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/09_otel_export.py) — Export traces to OTel collectors (Jaeger, Datadog)
+- [Example 10](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/10_trace_query.py) — Query, search, and export local traces with custom storage paths
