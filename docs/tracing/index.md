@@ -393,6 +393,10 @@ If the platform is unreachable, traces are safe in local SQLite. No operation fa
 
 ---
 
+## Internals
+
+For contributors who need to modify the tracing layer, add new span attributes, debug missing spans, or understand the dual-sink model (SQLite + platform), see [Tracing Architecture (Internals)](../internals/tracing-architecture.md).
+
 ## Next Steps
 
 - [Replay](../replay/index.md) — Debug agent execution with fork-and-rerun

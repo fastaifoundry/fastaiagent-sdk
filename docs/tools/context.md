@@ -212,6 +212,39 @@ Typed dependency injection container for agent execution.
 
 ---
 
+## Using RunContext with `from __future__ import annotations`
+
+If your file uses `from __future__ import annotations` (common in modern Python for deferred type evaluation), there is an important requirement: **`RunContext` and any type referenced in the generic parameter must be imported at module level, not lazily inside a function or method.**
+
+With `from __future__ import annotations`, all annotations become strings that are resolved lazily via `get_type_hints(fn)` against the function's `__globals__` (the defining module's top-level namespace). If `RunContext` is imported inside a function scope, resolution fails silently and the SDK falls back to treating the context parameter as a plain `str` type in the tool's JSON schema. The LLM then sees `ctx: string` and hallucinates a string value instead of the SDK injecting the real context.
+
+```python
+# WRONG — RunContext imported lazily, not visible in __globals__
+from __future__ import annotations
+
+def make_tools():
+    from fastaiagent.agent.context import RunContext  # Too late!
+
+    @tool(name="whoami")
+    def whoami(ctx: RunContext[AppState]) -> str:
+        return ctx.state.user_id  # ctx is actually a string here!
+
+# CORRECT — RunContext and AppState imported at module level
+from __future__ import annotations
+from fastaiagent.agent.context import RunContext
+from myapp import AppState
+
+@tool(name="whoami")
+def whoami(ctx: RunContext[AppState]) -> str:
+    return ctx.state.user_id  # ctx is a real RunContext[AppState]
+```
+
+This also applies to the dataclass/type used as the generic parameter (`AppState` in the example). Both must be in the module's top-level namespace for `get_type_hints()` to resolve `RunContext[AppState]` correctly.
+
+If you're not using `from __future__ import annotations`, this is not a concern — annotations are evaluated eagerly at class/function definition time and `RunContext` just needs to be importable at that point.
+
+---
+
 ## Next Steps
 
 - [FunctionTool](function-tools.md) — Wrap Python functions as tools

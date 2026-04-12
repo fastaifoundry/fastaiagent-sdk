@@ -34,6 +34,35 @@ The handler has access to:
 - `context` — includes `node_results` from all previously executed nodes
 - `state` — the current chain state
 
+## Rejection Behavior
+
+When the handler returns `False`, the HITL node records `approved=False` on its result dict, but **the chain continues running**. Rejection does not halt execution. This is by design — the HITL node captures the decision, but downstream nodes decide what to do with it.
+
+If you need halt-on-reject, combine a HITL node with a **condition node** that branches on the `approved` field:
+
+```python
+chain.add_node("draft", agent=drafter_agent)
+chain.add_node("review", type=NodeType.hitl)
+chain.add_node("check_approval", type=NodeType.condition,
+               conditions=[{"expression": "{{state.output.approved}} == True", "handle": "approved"}])
+chain.add_node("send", agent=sender_agent)
+chain.add_node("abort", type=NodeType.end)
+
+chain.connect("draft", "review")
+chain.connect("review", "check_approval")
+chain.connect("check_approval", "send", condition="approved")
+chain.connect("check_approval", "abort")  # Default route if not approved
+```
+
+You can inspect the approval decision after execution:
+
+```python
+result = chain.execute({"message": "..."}, hitl_handler=my_handler)
+review_result = result.node_results.get("review", {})
+print(review_result.get("approved"))   # True or False
+print(review_result.get("message"))    # "Auto-approved (no HITL handler)" if no handler
+```
+
 ## Auto-Approve (Testing)
 
 If no handler is provided, HITL nodes auto-approve. This is useful for testing:

@@ -172,6 +172,24 @@ Checks for:
 - Orphaned nodes (no incoming or outgoing edges)
 - Cyclic edges without `max_iterations`
 
+## Tool Node State Behavior
+
+When a tool node executes, its return value is wrapped in `{"output": <return_value>, "error": <error_or_None>}` and merged into chain state. This means each successive tool node **overwrites** `state.output` with its own wrapped result.
+
+If you need to thread a value across multiple tool nodes (e.g., a `seed_value` that step A produces and step C reads), put it on the **top-level state** via `initial_state` to `chain.execute()` or `modified_state` to `chain.resume()` — not as a return value from a tool node. Top-level state keys persist because nothing overwrites them.
+
+```python
+# This is fragile — step_c can't reliably read step_a's output
+# because step_b's output overwrites state.output
+
+# This is reliable — seed_value persists at the top level
+result = chain.execute({"seed_value": "original", "message": "go"})
+# In the tool node, read via input_mapping:
+#   input_mapping={"seed": "{{state.seed_value}}"}
+```
+
+Agent nodes do not have this wrapping quirk — their output is stored under `_{node_id}_output` in state, preserving it across nodes.
+
 ## ChainResult
 
 Every chain execution returns a `ChainResult`:
