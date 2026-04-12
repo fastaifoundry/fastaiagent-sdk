@@ -133,6 +133,38 @@ fa.disconnect()
 
 After disconnect, traces go to local SQLite only. `is_connected` returns `False`. Any platform-facing call (publish, get, etc.) either raises `PlatformNotConnectedError` or silently falls back to local.
 
+### Authentication & Scopes
+
+**Authentication is purely API-key-based.** No JWT, no OAuth, no session tokens. Every HTTP request carries `X-API-Key: {api_key}` as the sole credential.
+
+**Scopes are server-side enforcement only.** At connect time, the auth check response returns a `scopes` list (e.g., `["prompt:write", "trace:read", "eval:execute", ...]`). The SDK stores them on `_connection.scopes` and logs them at INFO level, but **never checks them before making API calls**. There are no scope constants, enums, or pre-flight checks anywhere in the SDK.
+
+When a call hits an endpoint the key isn't authorized for, the platform returns 403. The SDK's `_handle_response()` parses the 403 detail body to distinguish two cases:
+
+| If detail contains | Exception | Meaning |
+|-----|-----|-----|
+| `"tier"` | `PlatformTierLimitError` | Plan/subscription limit hit (billing problem) |
+| `"scope"` | `PlatformAuthError` with scope message | Key lacks required permission (key config problem) |
+| Neither | `PlatformAuthError` with generic "Forbidden" | Catch-all |
+
+**Known scopes** (returned by the platform, not defined in SDK code):
+
+| Scope | Likely gates |
+|-------|-------------|
+| `prompt:write` | POST `/public/v1/prompts` |
+| `trace:read` | GET `/public/v1/traces/{id}` |
+| `eval:execute` | POST `/public/v1/eval/runs` |
+| `eval:read` | GET `/public/v1/eval/datasets/{name}` |
+| `agent:write` / `agent:execute` | Agent definitions + execution via platform |
+| `chain:write` / `chain:execute` | Chain definitions + execution via platform |
+| `tool:write` | Tool definitions pushed to platform |
+| `guardrail:write` | Guardrail definitions pushed to platform |
+| `kb:read` | Knowledge base reads via platform |
+| `usage:read` | Usage/billing data |
+| `feedback:write` | Feedback/annotations |
+
+**One silent-failure edge case:** `PlatformSpanExporter.export()` returns `SUCCESS` regardless of HTTP status. If the key lacks the trace write scope, traces silently don't land on the platform and the user is never notified. All other platform features raise explicitly on 403.
+
 ---
 
 ## The PlatformAPI HTTP Client
