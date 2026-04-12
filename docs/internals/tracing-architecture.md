@@ -343,11 +343,22 @@ The check is called at the point where the attribute would be set, not at storag
 
 **File:** `fastaiagent/trace/replay.py`
 
-When `Replay.load(trace_id)` is called:
+### Two loading paths — same output shape
+
+Replays can be loaded from either local SQLite or the platform. Both paths produce the same `TraceData` / `SpanData` shape, so `fork_at()`, `rerun()`, and `compare()` work identically regardless of the source.
+
+**`Replay.load(trace_id)` — from local SQLite:**
 
 1. `TraceStore.get_trace(trace_id)` queries SQLite for all spans with that trace_id
 2. Each row's `attributes` JSON is deserialized into `SpanData.attributes`
 3. `Replay._build_steps()` converts each `SpanData` into a `ReplayStep`
+
+**`Replay.from_platform(trace_id)` — from the platform API:**
+
+1. `api.get(f"/public/v1/traces/{trace_id}")` fetches the trace from the platform
+2. The platform returns a different schema than local SQLite — field names differ and attributes are split across `input` and `output` dicts (see [platform-api.md](platform-api.md#trace-fetch-replayfrom_platformtrace_id) for the full mapping table)
+3. `from_platform()` maps each platform span to `SpanData`: `s["id"]` → `span_id`, `s["input"] + s["output"]` → merged `attributes`, `trace_id` propagated from the trace envelope
+4. The resulting `TraceData` is identical in shape to what `Replay.load()` produces — downstream code sees no difference
 
 When `ForkedReplay.arerun()` is called:
 

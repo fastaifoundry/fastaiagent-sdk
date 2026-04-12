@@ -223,7 +223,37 @@ class Replay:
 
     @classmethod
     def from_platform(cls, trace_id: str) -> Replay:
-        """Pull a trace from the platform and create a Replay."""
+        """Pull a trace from the platform and create a Replay.
+
+        The platform API returns a different schema than local SQLite
+        storage. This method maps the platform response into the SDK's
+        internal ``TraceData`` / ``SpanData`` models:
+
+        Platform span shape::
+
+            {
+                "id": "44aea511e72b02ee",       ← maps to span_id
+                "span_type": "sdk",
+                "name": "agent.support-bot",
+                "status": "unset",
+                "input": { ...all span attributes... },
+                "output": { ...may contain additional attrs... },
+                "start_time": "...",
+                "end_time": "...",
+                "metadata": {}
+            }
+
+        SDK ``SpanData`` shape::
+
+            SpanData(span_id, trace_id, parent_span_id, name, attributes, ...)
+
+        Key differences:
+        - ``id`` (platform) → ``span_id`` (SDK)
+        - ``trace_id`` is on the trace envelope, not on each span
+        - ``parent_span_id`` is not provided by the platform — set to None
+        - ``input`` + ``output`` dicts are merged into ``attributes``
+        - ``span_type`` and ``metadata`` are platform-specific fields
+        """
         from fastaiagent._internal.errors import PlatformNotConnectedError
         from fastaiagent._platform.api import get_platform_api
         from fastaiagent.client import _connection
@@ -234,14 +264,43 @@ class Replay:
             )
         api = get_platform_api()
         data = api.get(f"/public/v1/traces/{trace_id}")
-        spans = [
-            SpanData(**s) for s in data.get("spans", [])
-        ]
+
+        resolved_trace_id = data.get("trace_id") or data.get("id") or trace_id
+
+        spans = []
+        for s in data.get("spans", []):
+            # Merge input + output dicts into a single attributes dict.
+            # The platform stores pre-execution attrs in "input" and
+            # post-execution attrs in "output". The SDK expects one flat
+            # "attributes" dict.
+            attrs: dict[str, Any] = {}
+            if isinstance(s.get("input"), dict):
+                attrs.update(s["input"])
+            if isinstance(s.get("output"), dict):
+                attrs.update(s["output"])
+
+            spans.append(
+                SpanData(
+                    span_id=s.get("id") or s.get("span_id", ""),
+                    trace_id=resolved_trace_id,
+                    parent_span_id=s.get("parent_span_id"),
+                    name=s.get("name", ""),
+                    start_time=s.get("start_time", ""),
+                    end_time=s.get("end_time", ""),
+                    status=s.get("status", "OK"),
+                    attributes=attrs,
+                    events=s.get("events", []),
+                )
+            )
+
+        # Derive trace-level fields from the first span if the platform
+        # response doesn't carry them at the top level.
+        first_span = spans[0] if spans else None
         trace_data = TraceData(
-            trace_id=data.get("trace_id", trace_id),
-            name=data.get("name", ""),
-            start_time=data.get("start_time", ""),
-            end_time=data.get("end_time", ""),
+            trace_id=resolved_trace_id,
+            name=data.get("name") or (first_span.name if first_span else ""),
+            start_time=data.get("start_time") or (first_span.start_time if first_span else ""),
+            end_time=data.get("end_time") or (spans[-1].end_time if spans else ""),
             status=data.get("status", "OK"),
             metadata=data.get("metadata", {}),
             spans=spans,
