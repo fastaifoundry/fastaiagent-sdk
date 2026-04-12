@@ -5,10 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.8] - 2026-04-12
+
+### Fixed
+- **`Replay.from_platform(trace_id)` was completely broken** — crashed with a Pydantic `ValidationError` on every call because the platform API returns a different span schema (`id` not `span_id`, attributes split into `input`/`output` dicts instead of a single `attributes` dict, no `trace_id` on individual spans). Fixed by mapping the platform schema to the SDK's internal `SpanData` model. Verified end-to-end: agent.run → push to platform → Replay.from_platform → fork → rerun → compare, all working.
+- **Broken example links in tracing docs** — three links in `docs/tracing/index.md` pointed to `github.com/anthropics/fastaiagent-sdk` (does not exist). Corrected to `github.com/fastaifoundry/fastaiagent-sdk`.
 
 ### Added
-- **`.github/CODEOWNERS`** — designates `@fastaifoundry` as the sole code owner for every path in the repo. Paired with the "Require review from Code Owners" rule on the main branch ruleset, this ensures PRs targeting `main` can only be unblocked by the owner's approval. External contributors and future collaborators may still review, but their approvals are informational only.
+- **`.github/CODEOWNERS`** — designates `@fastaifoundry` as the sole code owner. Paired with "Require review from Code Owners" ruleset on `main`, only the owner's approval can unblock PRs.
+- **Expanded e2e quality gate coverage** — 20 gate files covering 81+ assertions across every user-facing surface (Anthropic, Azure, Ollama providers; streaming; structured output; chains + resume; supervisor/worker; RESTTool; LocalKB; prompt registry; error paths; LangChain; CrewAI; MCPTool; HITL; OTLP export to Jaeger).
+- **`docs/internals/tracing-architecture.md`** — contributor-facing deep dive into the span lifecycle (creation → SQLite → platform → OTLP → replay), with attribute tables, span tree diagrams, common mistakes section.
+- **`docs/internals/platform-api.md`** — contributor-facing deep dive into platform communication (connection lifecycle, PlatformAPI HTTP client, all 8 endpoints, prompt registry caching, graceful degradation patterns, authentication & scopes).
+- **`docs/internals/evaluation-system.md`** — contributor-facing deep dive into the eval framework (evaluate loop, dataset/scorer resolution, all 18 built-in scorers, LLM judge pattern, EvalResults).
+- **Doc fixes** — HITL rejection behavior documented (does NOT halt chain); chain tool-node `state.output` wrapping quirk documented; `RunContext` + `from __future__ import annotations` footgun documented; `examples/04_agent_replay.py` rewritten to use real agent run instead of a fake trace.
 
 ## [0.1.7] - 2026-04-11
 
