@@ -449,7 +449,9 @@ See [tracing-architecture.md](tracing-architecture.md) for the full span lifecyc
 
 ### Trace Fetch: `Replay.from_platform(trace_id)`
 
-**File:** `fastaiagent/trace/replay.py` (lines 121–145)
+**File:** `fastaiagent/trace/replay.py`
+
+The platform API returns a different span schema than local SQLite. The `from_platform()` method maps between them.
 
 ```
 Replay.from_platform("abc123")
@@ -459,13 +461,50 @@ Replay.from_platform("abc123")
     ├── get_platform_api()
     │
     ├── api.get("/public/v1/traces/abc123")
-    │       Response: {"trace_id", "name", "start_time", "end_time", "status",
-    │                  "metadata", "spans": [{...}, ...]}
+    │       Platform response:
+    │       {
+    │           "id": "abc123...",         ← trace-level, maps to trace_id
+    │           "source": "sdk",
+    │           "status": "completed",
+    │           "total_tokens": 98,
+    │           "total_duration_ms": 2923,
+    │           "spans": [
+    │               {
+    │                   "id": "44aea...",  ← maps to span_id (NOT span_id)
+    │                   "span_type": "sdk",
+    │                   "name": "agent.support-bot",
+    │                   "status": "unset",
+    │                   "input": { ...all span attributes... },
+    │                   "output": { ...may have additional attrs... },
+    │                   "start_time": "...",
+    │                   "end_time": "...",
+    │                   "metadata": {}
+    │               }
+    │           ]
+    │       }
     │
-    ├── Parse each span into SpanData(span_id, trace_id, name, attributes, ...)
+    ├── Map each platform span to SDK SpanData:
+    │       span["id"]                    → SpanData.span_id
+    │       trace-level data["id"]        → SpanData.trace_id
+    │       None                          → SpanData.parent_span_id (not in platform response)
+    │       span["input"] + span["output"]→ SpanData.attributes  (merged into one dict)
+    │       span["name"]                  → SpanData.name
+    │       span["start_time/end_time"]   → SpanData.start_time/end_time
     │
-    └── Construct TraceData → Replay(trace_data)
+    └── Construct TraceData(trace_id, name, spans=[...]) → Replay(trace_data)
 ```
+
+**Key schema differences** (platform vs local SQLite):
+
+| Field | Platform response | SDK `SpanData` | Mapping |
+|-------|------------------|----------------|---------|
+| Span identifier | `"id"` | `span_id` | `s["id"]` → `span_id` |
+| Trace identifier | On trace envelope `data["id"]` | On each span `trace_id` | Propagated from envelope |
+| Parent span | Not provided | `parent_span_id` | Set to `None` |
+| Attributes | Split: `"input"` + `"output"` dicts | Single `attributes` dict | Merged: `input.update(output)` |
+| Extra fields | `span_type`, `metadata` | Not in model | Ignored |
+
+This mapping means `Replay.from_platform()` traces and `Replay.load()` traces produce the same `TraceData` / `SpanData` shape downstream — `fork_at()`, `rerun()`, and `compare()` work identically regardless of the source.
 
 ---
 
