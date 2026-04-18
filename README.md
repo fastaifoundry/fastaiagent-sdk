@@ -104,6 +104,17 @@ chain.connect("evaluate", "respond", condition="quality >= 0.8")
 result = chain.execute({"message": "My order is late"}, trace=True)
 ```
 
+## Deploying
+
+A fastaiagent agent is a plain Python object — wrap it in any web framework and ship it anywhere Python runs. [docs/deployment](docs/deployment/index.md) has copy-paste recipes for:
+
+- **[FastAPI + Uvicorn](docs/deployment/fastapi.md)** — the baseline. Works on a laptop or any VM / container.
+- **[Docker → Cloud Run / Fly / Render / Railway](docs/deployment/docker.md)** — one Dockerfile, four managed container platforms.
+- **[Modal](docs/deployment/modal.md)** — serverless Python with no container work.
+- **[Replicate (Cog)](docs/deployment/replicate.md)** — public inference endpoint.
+
+Every recipe exposes the same `POST /run` + `POST /run/stream` contract so callers don't care where the agent lives. See the runnable starter: [examples/33_deploy_fastapi.py](examples/33_deploy_fastapi.py).
+
 ## Expose agents as MCP servers (Claude Desktop / Cursor / Continue / Zed)
 
 Any `Agent` or `Chain` becomes an MCP server with one line:
