@@ -36,6 +36,44 @@ class MockLLMClient(LLMClient):
         self._call_count += 1
         return response
 
+    async def astream(self, messages, tools=None, **kwargs):
+        """Yield stream events from the next canned response.
+
+        Not a real token stream — we emit the full text as a single
+        ``TextDelta`` plus any tool calls as paired ``ToolCallStart``/
+        ``ToolCallEnd``. Good enough to exercise
+        :class:`fastaiagent.agent.Swarm.astream`, middleware on the stream
+        path, and anything else that consumes stream events.
+        """
+        from fastaiagent.llm.stream import (
+            StreamDone,
+            TextDelta,
+            ToolCallEnd,
+            ToolCallStart,
+            Usage,
+        )
+
+        self._calls.append({"messages": messages, "tools": tools, "kwargs": kwargs})
+        if self._call_count < len(self._responses):
+            response = self._responses[self._call_count]
+        else:
+            response = self._responses[-1]
+        self._call_count += 1
+
+        if response.content:
+            yield TextDelta(text=response.content)
+        for tc in response.tool_calls:
+            yield ToolCallStart(call_id=tc.id, tool_name=tc.name)
+            yield ToolCallEnd(
+                call_id=tc.id, tool_name=tc.name, arguments=dict(tc.arguments)
+            )
+        usage = response.usage or {}
+        yield Usage(
+            prompt_tokens=int(usage.get("prompt_tokens", 0)),
+            completion_tokens=int(usage.get("completion_tokens", 0)),
+        )
+        yield StreamDone()
+
 
 @pytest.fixture
 def mock_llm() -> MockLLMClient:

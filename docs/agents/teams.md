@@ -1,5 +1,14 @@
 # Multi-Agent Teams
 
+FastAIAgent ships two multi-agent topologies:
+
+- **Supervisor / Worker** (this page) — a centralized LLM delegates to specialist workers and synthesizes their outputs. Hub-and-spoke.
+- **[Swarm](swarm.md)** — peer-to-peer mesh where each agent decides when to hand off control to another. No coordinator.
+
+Use **Supervisor** when a central LLM should orchestrate and synthesize results. Use **Swarm** when the routing decision belongs to the specialist itself, or when you want a looping workflow like `writer ↔ critic` without a hub in the middle. See the [Swarm vs Supervisor comparison](swarm.md#swarm-vs-supervisor--when-to-use-which) for a full decision matrix.
+
+## Supervisor / Worker Pattern
+
 A supervisor agent delegates tasks to specialized worker agents. This pattern is useful when different parts of a task require different expertise, models, or tool sets.
 
 ## Supervisor / Worker Pattern

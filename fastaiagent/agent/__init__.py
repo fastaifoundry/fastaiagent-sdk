@@ -17,6 +17,7 @@ from fastaiagent.agent.middleware import (
     ToolBudget,
     TrimLongMessages,
 )
+from fastaiagent.agent.swarm import Swarm, SwarmError, SwarmState
 from fastaiagent.agent.team import Supervisor, Worker
 
 __all__ = [
@@ -34,6 +35,9 @@ __all__ = [
     "StaticBlock",
     "SummaryBlock",
     "Supervisor",
+    "Swarm",
+    "SwarmError",
+    "SwarmState",
     "ToolBudget",
     "TrimLongMessages",
     "VectorBlock",

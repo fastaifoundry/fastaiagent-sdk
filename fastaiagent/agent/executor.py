@@ -212,6 +212,11 @@ async def execute_tool_loop(
                         mw_ctx, wrap_target, dict(tc.arguments), _terminal
                     )
                 except StopAgent as stop:
+                    # Include the in-flight tool-call record; the terminal
+                    # closure already populated ``output``/``error`` via
+                    # ``_invoke_tool_with_span`` before the stopper fired.
+                    if tool_call_record not in all_tool_calls:
+                        all_tool_calls.append(tool_call_record)
                     return (
                         LLMResponse(content=str(stop), finish_reason="stop"),
                         all_tool_calls,

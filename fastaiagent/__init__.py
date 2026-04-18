@@ -17,6 +17,9 @@ from fastaiagent.agent import (
     StaticBlock,
     SummaryBlock,
     Supervisor,
+    Swarm,
+    SwarmError,
+    SwarmState,
     ToolBudget,
     TrimLongMessages,
     VectorBlock,
@@ -28,6 +31,7 @@ from fastaiagent.eval import Dataset, EvalResults, Scorer, evaluate
 from fastaiagent.guardrail import Guardrail, GuardrailResult, json_valid, no_pii, toxicity_check
 from fastaiagent.kb import KeywordStore, LocalKB, MetadataStore, VectorStore
 from fastaiagent.llm import LLMClient, Message, StreamEvent, TextDelta
+from fastaiagent.llm.stream import HandoffEvent
 from fastaiagent.prompt import Prompt, PromptRegistry
 from fastaiagent.tool import FunctionTool, MCPTool, RESTTool, Tool, ToolRegistry, tool
 from fastaiagent.trace import TraceStore, trace_context
@@ -54,6 +58,11 @@ __all__ = [
     "RunContext",
     "Supervisor",
     "Worker",
+    # Swarm
+    "Swarm",
+    "SwarmError",
+    "SwarmState",
+    "HandoffEvent",
     # Middleware
     "AgentMiddleware",
     "MiddlewareContext",

@@ -5,7 +5,7 @@ The only SDK with **Agent Replay** — fork-and-rerun debugging for AI agents.
 
 Works standalone or connected to the [FastAIAgent Platform](https://fastaiagent.net) for visual editing, production monitoring, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=0.4.0)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=0.5.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -103,6 +103,30 @@ chain.connect("evaluate", "respond", condition="quality >= 0.8")
 
 result = chain.execute({"message": "My order is late"}, trace=True)
 ```
+
+## Peer-to-peer swarms with handoffs
+
+Beyond the central-coordinator Supervisor/Worker pattern, agents can hand off to each other directly:
+
+```python
+from fastaiagent import Agent, LLMClient, Swarm
+
+llm = LLMClient(provider="openai", model="gpt-4o-mini")
+
+triage = Agent(name="triage", llm=llm, system_prompt="Hand off to the right specialist.")
+coder = Agent(name="coder", llm=llm, system_prompt="Answer Python questions.")
+writer = Agent(name="writer", llm=llm, system_prompt="Help with prose.")
+
+swarm = Swarm(
+    name="help_desk",
+    agents=[triage, coder, writer],
+    entrypoint="triage",
+    handoffs={"triage": ["coder", "writer"], "coder": [], "writer": []},
+)
+result = swarm.run("How do I reverse a list in Python?")
+```
+
+The currently active agent decides when to transfer control — no central LLM. See [docs/agents/swarm.md](docs/agents/swarm.md) for the full guide, and [Swarm vs Supervisor](docs/agents/swarm.md#swarm-vs-supervisor--when-to-use-which) for when to pick which.
 
 ## Long-term memory with composable blocks
 

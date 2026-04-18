@@ -337,7 +337,8 @@ See [Middleware](middleware.md) for the full reference, ordering semantics, and 
 - [Middleware](middleware.md) — Composable pre/post model hooks and tool wrappers
 - [Dynamic Instructions](dynamic-instructions.md) — Personalize system prompts per-request
 - [Agent Memory](memory.md) — Give agents conversation memory across turns
-- [Multi-Agent Teams](teams.md) — Build supervisor/worker agent teams
+- [Multi-Agent Teams](teams.md) — Supervisor / Worker (centralized delegation)
+- [Swarm](swarm.md) — Peer-to-peer handoff topology (no coordinator)
 - [Tools](tools.md) — Deep dive into using tools with agents
 - [Guardrails](../guardrails/index.md) — Full guardrail reference
 - [Chains](../chains/index.md) — Compose agents into multi-step workflows
