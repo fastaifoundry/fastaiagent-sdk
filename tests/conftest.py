@@ -61,3 +61,77 @@ def mock_llm_with_tools() -> MockLLMClient:
             ),
         ]
     )
+
+
+@pytest.fixture
+def recording_middleware():
+    """Factory for a middleware that records every hook invocation.
+
+    Returns a ``(middleware, records)`` tuple. ``records`` is a dict with
+    keys ``before_model``, ``after_model``, ``wrap_tool`` each mapping to
+    a list of capture dicts. Tests assert on these to verify ordering and
+    hook semantics.
+    """
+    from fastaiagent.agent.middleware import AgentMiddleware
+
+    def _factory(name: str = "rec"):
+        records: dict = {"before_model": [], "after_model": [], "wrap_tool": []}
+
+        class _Recording(AgentMiddleware):
+            def __init__(self) -> None:
+                self.name = name
+
+            async def before_model(self, ctx, messages):
+                records["before_model"].append(
+                    {
+                        "name": self.name,
+                        "turn": ctx.turn,
+                        "agent_name": ctx.agent_name,
+                        "message_count": len(messages),
+                    }
+                )
+                return messages
+
+            async def after_model(self, ctx, response):
+                records["after_model"].append(
+                    {
+                        "name": self.name,
+                        "turn": ctx.turn,
+                        "content": response.content,
+                    }
+                )
+                return response
+
+            async def wrap_tool(self, ctx, tool, args, call_next):
+                records["wrap_tool"].append(
+                    {
+                        "name": self.name,
+                        "phase": "enter",
+                        "tool": tool.name,
+                        "tool_call_index": ctx.tool_call_index,
+                    }
+                )
+                result = await call_next(tool, args)
+                records["wrap_tool"].append(
+                    {
+                        "name": self.name,
+                        "phase": "exit",
+                        "tool": tool.name,
+                    }
+                )
+                return result
+
+        return _Recording(), records
+
+    return _factory
+
+
+@pytest.fixture
+def noop_middleware():
+    """A canonical no-op middleware — byte-for-byte identity on every hook."""
+    from fastaiagent.agent.middleware import AgentMiddleware
+
+    class _NoOp(AgentMiddleware):
+        name = "noop"
+
+    return _NoOp()

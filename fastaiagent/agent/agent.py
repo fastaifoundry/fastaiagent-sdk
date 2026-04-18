@@ -13,6 +13,11 @@ from fastaiagent._internal.async_utils import run_sync
 from fastaiagent.agent.context import RunContext
 from fastaiagent.agent.executor import execute_tool_loop, stream_tool_loop
 from fastaiagent.agent.memory import AgentMemory
+from fastaiagent.agent.middleware import (
+    AgentMiddleware,
+    MiddlewareContext,
+    _MiddlewarePipeline,
+)
 from fastaiagent.guardrail.executor import execute_guardrails
 from fastaiagent.guardrail.guardrail import Guardrail, GuardrailPosition
 from fastaiagent.llm.client import LLMClient, _strip_code_fences
@@ -68,6 +73,7 @@ class Agent:
         memory: AgentMemory | None = None,
         config: AgentConfig | None = None,
         output_type: type | None = None,
+        middleware: Sequence[AgentMiddleware] | None = None,
     ):
         self.name = name
         self.system_prompt = system_prompt
@@ -77,6 +83,8 @@ class Agent:
         self.memory = memory
         self.config = config or AgentConfig()
         self.output_type = output_type
+        self.middleware: list[AgentMiddleware] = list(middleware) if middleware else []
+        self._mw_pipeline = _MiddlewarePipeline(self.middleware)
 
     def _build_response_format(self) -> dict[str, Any] | None:
         """Build response_format dict from output_type for structured output."""
@@ -179,7 +187,13 @@ class Agent:
         if response_format is not None:
             kwargs["response_format"] = response_format
 
-        # Execute tool-calling loop
+        # Middleware context shared across the whole run.
+        mw_ctx: MiddlewareContext | None = None
+        if self._mw_pipeline:
+            mw_ctx = MiddlewareContext(run_context=context, agent_name=self.name)
+
+        # Execute tool-calling loop. StopAgent raised by middleware is caught
+        # inside the loop so that partial tool-call records are preserved.
         response, tool_calls = await execute_tool_loop(
             llm=self.llm,
             messages=messages,
@@ -188,6 +202,8 @@ class Agent:
             tool_choice=self.config.tool_choice,
             context=context,
             guardrails=self.guardrails or None,
+            mw_pipeline=self._mw_pipeline if self._mw_pipeline else None,
+            mw_ctx=mw_ctx,
             **kwargs,
         )
 

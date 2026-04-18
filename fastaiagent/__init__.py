@@ -1,7 +1,20 @@
 """FastAIAgent SDK — Build, debug, evaluate, and operate AI agents."""
 
+from fastaiagent._internal.errors import StopAgent
 from fastaiagent._version import __version__
-from fastaiagent.agent import Agent, AgentConfig, AgentResult, RunContext, Supervisor, Worker
+from fastaiagent.agent import (
+    Agent,
+    AgentConfig,
+    AgentMiddleware,
+    AgentResult,
+    MiddlewareContext,
+    RedactPII,
+    RunContext,
+    Supervisor,
+    ToolBudget,
+    TrimLongMessages,
+    Worker,
+)
 from fastaiagent.chain import Chain, ChainResult, ChainState
 from fastaiagent.client import connect, disconnect
 from fastaiagent.eval import Dataset, EvalResults, Scorer, evaluate
@@ -34,6 +47,13 @@ __all__ = [
     "RunContext",
     "Supervisor",
     "Worker",
+    # Middleware
+    "AgentMiddleware",
+    "MiddlewareContext",
+    "StopAgent",
+    "TrimLongMessages",
+    "ToolBudget",
+    "RedactPII",
     # Chain
     "Chain",
     "ChainResult",

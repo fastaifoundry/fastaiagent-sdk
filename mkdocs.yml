@@ -79,6 +79,7 @@ nav:
       - Tools: agents/tools.md
       - "Dynamic Instructions": agents/dynamic-instructions.md
       - Memory: agents/memory.md
+      - Middleware: agents/middleware.md
       - "Multi-Agent Teams": agents/teams.md
   - Chains:
       - chains/index.md

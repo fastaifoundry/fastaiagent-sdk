@@ -6,7 +6,8 @@ import json
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any
 
-from fastaiagent._internal.errors import MaxIterationsError, ToolExecutionError
+from fastaiagent._internal.errors import MaxIterationsError, StopAgent, ToolExecutionError
+from fastaiagent.agent.middleware import MiddlewareContext, _MiddlewarePipeline
 from fastaiagent.guardrail.executor import execute_guardrails
 from fastaiagent.guardrail.guardrail import GuardrailPosition
 from fastaiagent.llm.client import LLMResponse
@@ -23,10 +24,27 @@ from fastaiagent.llm.stream import (
     ToolCallStart,
     Usage,
 )
-from fastaiagent.tool.base import Tool
+from fastaiagent.tool.base import Tool, ToolResult
 
 if TYPE_CHECKING:
     from fastaiagent.guardrail.guardrail import Guardrail
+
+
+class _StubTool(Tool):
+    """Placeholder Tool used when the LLM requests a tool that is not registered.
+
+    Passed into ``wrap_tool`` middleware so that middleware always sees a Tool
+    object. The ``aexecute`` path is never reached — the terminal closure
+    handles the unknown-tool branch directly.
+    """
+
+    def __init__(self, name: str):
+        super().__init__(name=name, description="(unknown tool)")
+
+    async def aexecute(
+        self, arguments: dict[str, Any], context: Any | None = None
+    ) -> ToolResult:
+        return ToolResult(error=f"Unknown tool '{self.name}'")
 
 
 async def _invoke_tool_with_span(
@@ -111,6 +129,8 @@ async def execute_tool_loop(
     tracer: Any = None,
     context: Any | None = None,
     guardrails: list[Guardrail] | None = None,
+    mw_pipeline: _MiddlewarePipeline | None = None,
+    mw_ctx: MiddlewareContext | None = None,
     **kwargs: Any,
 ) -> tuple[LLMResponse, list[dict[str, Any]]]:
     """Execute the agent's tool-calling loop.
@@ -118,6 +138,10 @@ async def execute_tool_loop(
     Sends messages to the LLM. If the LLM requests tool calls,
     executes them, appends results, and loops. Stops when the LLM
     returns a final response (no tool calls) or max_iterations is reached.
+
+    When ``mw_pipeline`` and ``mw_ctx`` are provided, middleware hooks fire:
+    ``before_model`` before each LLM call, ``after_model`` after each LLM
+    response, and ``wrap_tool`` around each tool invocation.
 
     Returns:
         Tuple of (final LLM response, list of all tool call records)
@@ -127,8 +151,23 @@ async def execute_tool_loop(
     all_tool_calls: list[dict[str, Any]] = []
 
     for iteration in range(max_iterations):
+        # Middleware: before_model (may raise StopAgent)
+        if mw_pipeline and mw_ctx is not None:
+            mw_ctx.turn = iteration
+            try:
+                messages = await mw_pipeline.apply_before_model(mw_ctx, messages)
+            except StopAgent as stop:
+                return LLMResponse(content=str(stop), finish_reason="stop"), all_tool_calls
+
         # Call LLM
         response = await llm.acomplete(messages, tools=tool_defs, **kwargs)
+
+        # Middleware: after_model (may raise StopAgent)
+        if mw_pipeline and mw_ctx is not None:
+            try:
+                response = await mw_pipeline.apply_after_model(mw_ctx, response)
+            except StopAgent as stop:
+                return LLMResponse(content=str(stop), finish_reason="stop"), all_tool_calls
 
         # No tool calls — we're done
         if not response.tool_calls:
@@ -138,7 +177,7 @@ async def execute_tool_loop(
         messages.append(AssistantMessage(content=response.content, tool_calls=response.tool_calls))
 
         # Execute each tool call
-        for tc in response.tool_calls:
+        for idx, tc in enumerate(response.tool_calls):
             tool_call_record = {
                 "iteration": iteration,
                 "tool_name": tc.name,
@@ -147,14 +186,51 @@ async def execute_tool_loop(
             }
 
             tool = tools_by_name.get(tc.name)
-            result_text = await _invoke_tool_with_span(
-                tool=tool,
-                tool_name=tc.name,
-                arguments=tc.arguments,
-                context=context,
-                guardrails=guardrails,
-                tool_call_record=tool_call_record,
-            )
+
+            if mw_pipeline and mw_ctx is not None:
+                mw_ctx.tool_call_index = idx
+
+                async def _terminal(
+                    t: Tool,
+                    a: dict[str, Any],
+                    _tc: Any = tc,
+                    _record: dict[str, Any] = tool_call_record,
+                ) -> ToolResult:
+                    text = await _invoke_tool_with_span(
+                        tool=tools_by_name.get(_tc.name),
+                        tool_name=_tc.name,
+                        arguments=a,
+                        context=context,
+                        guardrails=guardrails,
+                        tool_call_record=_record,
+                    )
+                    return ToolResult(output=text)
+
+                wrap_target = tool if tool is not None else _StubTool(tc.name)
+                try:
+                    tr = await mw_pipeline.invoke_tool(
+                        mw_ctx, wrap_target, dict(tc.arguments), _terminal
+                    )
+                except StopAgent as stop:
+                    return (
+                        LLMResponse(content=str(stop), finish_reason="stop"),
+                        all_tool_calls,
+                    )
+                if isinstance(tr.output, str):
+                    result_text = tr.output
+                elif tr.error is not None:
+                    result_text = f"Error: {tr.error}"
+                else:
+                    result_text = json.dumps(tr.output, default=str)
+            else:
+                result_text = await _invoke_tool_with_span(
+                    tool=tool,
+                    tool_name=tc.name,
+                    arguments=tc.arguments,
+                    context=context,
+                    guardrails=guardrails,
+                    tool_call_record=tool_call_record,
+                )
 
             messages.append(ToolMessage(content=result_text, tool_call_id=tc.id))
             all_tool_calls.append(tool_call_record)

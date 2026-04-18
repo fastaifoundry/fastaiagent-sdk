@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-04-18
+
+### Added
+- **`AgentMiddleware`** — composable pre/post model hooks and tool wrappers for transforming messages, responses, and tool calls without subclassing `Agent`. Three hooks:
+  - `before_model(ctx, messages)` — transform messages before the LLM call. Runs in declaration order.
+  - `after_model(ctx, response)` — inspect or rewrite the LLM response. Runs in reverse declaration order.
+  - `wrap_tool(ctx, tool, args, call_next)` — onion-wrap each tool invocation. First middleware is outermost.
+- **`MiddlewareContext`** — per-run context passed to every hook. Exposes `turn`, `tool_call_index`, mutable `scratch` dict, and `agent_name`.
+- **Built-in middleware**:
+  - `TrimLongMessages(keep_last=20)` — cap message-history size while preserving the leading system prompt.
+  - `ToolBudget(max_calls=10, message=...)` — cooperatively stop the run after N tool invocations.
+  - `RedactPII(patterns=..., placeholder="[REDACTED]")` — redact email, phone, SSN, and credit-card patterns from outbound messages and inbound responses.
+- **`StopAgent`** exception — raise from any middleware hook to end a run cooperatively; the `AgentResult.output` carries the message.
+- **`Agent.__init__`** now accepts `middleware: Sequence[AgentMiddleware] | None = None`. When `None` (the default), behavior is byte-for-byte identical to 0.1.8.
+- Docs: new page [docs/agents/middleware.md](docs/agents/middleware.md) covering the hook reference, ordering semantics, built-ins, custom middleware patterns, and interaction with guardrails. Cross-links added from `docs/agents/index.md` and `docs/guardrails/index.md`.
+- Example: [examples/27_middleware_tool_budget.py](examples/27_middleware_tool_budget.py) — demonstrates `ToolBudget` + `TrimLongMessages` + `RedactPII`. Includes an offline demo using `MockLLMClient` that runs without API keys.
+
+### Changed
+- `execute_tool_loop` (internal) gained optional `mw_pipeline` and `mw_ctx` parameters. When unset, the hot path is unchanged.
+
 ## [0.1.8] - 2026-04-12
 
 ### Fixed

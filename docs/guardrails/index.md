@@ -2,6 +2,8 @@
 
 Guardrails validate data at every stage of agent execution — before the LLM sees user input, after the LLM responds, and around tool calls. They can block unsafe content, enforce schemas, detect PII, or run any custom validation logic.
 
+> **Guardrails vs Middleware.** Guardrails **assert** (pass/fail, block/allow). [Middleware](../agents/middleware.md) **transforms** (trim history, redact, rewrite). Use a guardrail when you want a policy check that raises on failure; use middleware when you want to change the data flowing through the pipeline. Input guardrails run before middleware's `before_model`; output guardrails run after middleware's `after_model`.
+
 ## How Guardrails Work
 
 ```

@@ -312,8 +312,29 @@ except LLMProviderError as e:
 
 ---
 
+## Middleware
+
+Middleware intercepts and transforms messages, responses, and tool calls without subclassing `Agent`. Use it for message trimming, PII redaction, tool-call budgets, caching, and other cross-cutting concerns.
+
+```python
+from fastaiagent import Agent, TrimLongMessages, ToolBudget, RedactPII
+
+agent = Agent(
+    name="controlled",
+    llm=LLMClient(provider="openai", model="gpt-4.1"),
+    middleware=[
+        TrimLongMessages(keep_last=20),
+        RedactPII(),
+        ToolBudget(max_calls=10),
+    ],
+)
+```
+
+See [Middleware](middleware.md) for the full reference, ordering semantics, and how to write your own.
+
 ## Next Steps
 
+- [Middleware](middleware.md) — Composable pre/post model hooks and tool wrappers
 - [Dynamic Instructions](dynamic-instructions.md) — Personalize system prompts per-request
 - [Agent Memory](memory.md) — Give agents conversation memory across turns
 - [Multi-Agent Teams](teams.md) — Build supervisor/worker agent teams
