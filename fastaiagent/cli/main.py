@@ -51,10 +51,23 @@ _KNOWN_EXTRAS: list[tuple[str, str]] = [
 
 
 def _installed_extras() -> list[str]:
+    """Return the subset of known extras whose upstream package is importable.
+
+    ``importlib.util.find_spec`` can raise ``ModuleNotFoundError`` for dotted
+    paths when an intermediate namespace package is present but the requested
+    submodule is not (e.g. ``opentelemetry.exporter.otlp`` when only
+    ``opentelemetry.api`` is installed). We treat any such raise as "not
+    installed" — the goal is a best-effort readout for bug reports, not a
+    strict check.
+    """
     names: list[str] = []
     for extra_name, module_name in _KNOWN_EXTRAS:
-        if importlib.util.find_spec(module_name) is not None:
-            names.append(extra_name)
+        try:
+            if importlib.util.find_spec(module_name) is not None:
+                names.append(extra_name)
+        except (ImportError, ValueError):
+            # ValueError is raised by find_spec on some odd parent-missing cases.
+            continue
     return names
 
 
