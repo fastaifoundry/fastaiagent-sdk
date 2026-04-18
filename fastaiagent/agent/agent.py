@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from fastaiagent._internal.async_utils import run_sync
 from fastaiagent.agent.context import RunContext
 from fastaiagent.agent.executor import execute_tool_loop, stream_tool_loop
-from fastaiagent.agent.memory import AgentMemory
+from fastaiagent.agent.memory import AgentMemory, ComposableMemory
 from fastaiagent.agent.middleware import (
     AgentMiddleware,
     MiddlewareContext,
@@ -70,7 +70,7 @@ class Agent:
         llm: LLMClient | None = None,
         tools: Sequence[Tool] | None = None,
         guardrails: Sequence[Guardrail] | None = None,
-        memory: AgentMemory | None = None,
+        memory: AgentMemory | ComposableMemory | None = None,
         config: AgentConfig | None = None,
         output_type: type | None = None,
         middleware: Sequence[AgentMiddleware] | None = None,
@@ -324,9 +324,10 @@ class Agent:
         if system_text:
             messages.append(SystemMessage(system_text))
 
-        # Add memory context
+        # Add memory context. ComposableMemory uses ``input`` to run
+        # query-conditioned blocks (e.g. VectorBlock); AgentMemory ignores it.
         if self.memory:
-            messages.extend(self.memory.get_context())
+            messages.extend(self.memory.get_context(query=input))
 
         messages.append(UserMessage(input))
         return messages

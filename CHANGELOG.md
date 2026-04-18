@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-04-18
+
+### Added
+- **`ComposableMemory`** — a sliding-window `AgentMemory` augmented with a list of long-term memory blocks. Accepted by `Agent(memory=...)` as a drop-in replacement for `AgentMemory`.
+- **`MemoryBlock` ABC** — minimal two-method interface (`on_message`, `render`) for writing your own memory block. Shipped blocks:
+  - **`StaticBlock(text)`** — a fixed system-level fact injected every turn.
+  - **`SummaryBlock(llm=..., keep_last=..., summarize_every=...)`** — rolling LLM-generated summary of older turns.
+  - **`VectorBlock(store=..., top_k=...)`** — semantic recall over past messages via any `VectorStore` backend (FAISS, Qdrant, Chroma, ...). Built on the 0.3.0 KB protocols.
+  - **`FactExtractionBlock(llm=..., max_facts=...)`** — durable-fact extraction via a cheap LLM, deduped and capped.
+- **`Agent._build_messages`** now passes the current user input as `query` to `memory.get_context(query=...)`. `AgentMemory` ignores the extra argument; `ComposableMemory` uses it for query-conditioned blocks like `VectorBlock`.
+- **Persistence** — `ComposableMemory.save(path)` / `load(path)` round-trips the primary window and each block to a directory (`primary.json` + `blocks/{name}.json`).
+- **Docs**: rewrote [docs/agents/memory.md](docs/agents/memory.md) with a composable-memory section, the four shipped blocks, a `MoodBlock` custom-block worked example, and ordering guidance. Cross-linked from [docs/agents/index.md](docs/agents/index.md) and [docs/knowledge-base/backends.md](docs/knowledge-base/backends.md).
+- **Example**: [examples/30_memory_blocks.py](examples/30_memory_blocks.py) — a 6-turn conversation exercising all four blocks end-to-end; verified live against OpenAI `gpt-4o-mini`.
+- **Tests**: `tests/test_memory_blocks.py` — 17 deterministic + 2 live-LLM tests covering block semantics, ordering, composition, backward compat, block-failure isolation, namespace isolation, save/load round-trip, and real LLM behavior for `SummaryBlock` and `FactExtractionBlock`.
+
+### Changed
+- `AgentMemory.get_context` grew an optional `query: str = ""` argument (ignored by `AgentMemory`; used by `ComposableMemory`). Backward compatible — existing calls with no args still work.
+- `Agent.memory` accepts `AgentMemory | ComposableMemory | None`.
+
+### Deferred
+- Async parallel methods (`aon_message`, `arender`) on `MemoryBlock` — additive, planned as a follow-up. Same rationale as the KB protocols' async deferral (see `fastaiagent/kb/protocols.py` module docstring).
+
 ## [0.3.0] - 2026-04-18
 
 ### Added

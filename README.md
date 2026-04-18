@@ -5,7 +5,7 @@ The only SDK with **Agent Replay** — fork-and-rerun debugging for AI agents.
 
 Works standalone or connected to the [FastAIAgent Platform](https://fastaiagent.net) for visual editing, production monitoring, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=0.3.0)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=0.4.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -103,6 +103,34 @@ chain.connect("evaluate", "respond", condition="quality >= 0.8")
 
 result = chain.execute({"message": "My order is late"}, trace=True)
 ```
+
+## Long-term memory with composable blocks
+
+Beyond a sliding window, layer static facts, a rolling summary, semantic recall, and fact extraction into one memory object:
+
+```python
+from fastaiagent import Agent, LLMClient, ComposableMemory, AgentMemory
+from fastaiagent import StaticBlock, SummaryBlock, VectorBlock, FactExtractionBlock
+from fastaiagent.kb.backends.faiss import FaissVectorStore
+
+llm = LLMClient(provider="openai", model="gpt-4o-mini")
+
+agent = Agent(
+    name="assistant",
+    llm=llm,
+    memory=ComposableMemory(
+        blocks=[
+            StaticBlock("User is Upendra. Prefers terse answers."),
+            SummaryBlock(llm=llm, keep_last=10, summarize_every=5),
+            VectorBlock(store=FaissVectorStore(dimension=384)),
+            FactExtractionBlock(llm=llm, max_facts=100),
+        ],
+        primary=AgentMemory(max_messages=20),
+    ),
+)
+```
+
+`VectorBlock` works with any `VectorStore` (Qdrant / Chroma / custom). Write your own block by subclassing `MemoryBlock` with two methods. See [docs/agents/memory.md](docs/agents/memory.md).
 
 ## Swap the KB storage layer
 
