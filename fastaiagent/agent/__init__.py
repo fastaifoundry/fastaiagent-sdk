@@ -2,7 +2,14 @@
 
 from fastaiagent.agent.agent import Agent, AgentConfig, AgentResult
 from fastaiagent.agent.context import RunContext
-from fastaiagent.agent.memory import AgentMemory
+from fastaiagent.agent.memory import AgentMemory, ComposableMemory
+from fastaiagent.agent.memory_blocks import (
+    FactExtractionBlock,
+    MemoryBlock,
+    StaticBlock,
+    SummaryBlock,
+    VectorBlock,
+)
 from fastaiagent.agent.middleware import (
     AgentMiddleware,
     MiddlewareContext,
@@ -15,14 +22,20 @@ from fastaiagent.agent.team import Supervisor, Worker
 __all__ = [
     "Agent",
     "AgentConfig",
-    "AgentMiddleware",
     "AgentMemory",
+    "AgentMiddleware",
     "AgentResult",
+    "ComposableMemory",
+    "FactExtractionBlock",
+    "MemoryBlock",
     "MiddlewareContext",
     "RedactPII",
     "RunContext",
+    "StaticBlock",
+    "SummaryBlock",
     "Supervisor",
     "ToolBudget",
     "TrimLongMessages",
+    "VectorBlock",
     "Worker",
 ]

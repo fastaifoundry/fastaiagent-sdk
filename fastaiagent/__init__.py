@@ -5,14 +5,21 @@ from fastaiagent._version import __version__
 from fastaiagent.agent import (
     Agent,
     AgentConfig,
+    AgentMemory,
     AgentMiddleware,
     AgentResult,
+    ComposableMemory,
+    FactExtractionBlock,
+    MemoryBlock,
     MiddlewareContext,
     RedactPII,
     RunContext,
+    StaticBlock,
+    SummaryBlock,
     Supervisor,
     ToolBudget,
     TrimLongMessages,
+    VectorBlock,
     Worker,
 )
 from fastaiagent.chain import Chain, ChainResult, ChainState
@@ -54,6 +61,14 @@ __all__ = [
     "TrimLongMessages",
     "ToolBudget",
     "RedactPII",
+    # Memory
+    "AgentMemory",
+    "ComposableMemory",
+    "MemoryBlock",
+    "StaticBlock",
+    "SummaryBlock",
+    "VectorBlock",
+    "FactExtractionBlock",
     # Chain
     "Chain",
     "ChainResult",
