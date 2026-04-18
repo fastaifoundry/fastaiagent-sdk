@@ -19,7 +19,7 @@ from fastaiagent.chain import Chain, ChainResult, ChainState
 from fastaiagent.client import connect, disconnect
 from fastaiagent.eval import Dataset, EvalResults, Scorer, evaluate
 from fastaiagent.guardrail import Guardrail, GuardrailResult, json_valid, no_pii, toxicity_check
-from fastaiagent.kb import LocalKB
+from fastaiagent.kb import KeywordStore, LocalKB, MetadataStore, VectorStore
 from fastaiagent.llm import LLMClient, Message, StreamEvent, TextDelta
 from fastaiagent.prompt import Prompt, PromptRegistry
 from fastaiagent.tool import FunctionTool, MCPTool, RESTTool, Tool, ToolRegistry, tool
@@ -81,6 +81,9 @@ __all__ = [
     "Prompt",
     # KB
     "LocalKB",
+    "VectorStore",
+    "KeywordStore",
+    "MetadataStore",
     # Eval
     "evaluate",
     "Dataset",

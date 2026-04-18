@@ -5,7 +5,7 @@ The only SDK with **Agent Replay** — fork-and-rerun debugging for AI agents.
 
 Works standalone or connected to the [FastAIAgent Platform](https://fastaiagent.net) for visual editing, production monitoring, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=0.2.0)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=0.3.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -103,6 +103,29 @@ chain.connect("evaluate", "respond", condition="quality >= 0.8")
 
 result = chain.execute({"message": "My order is late"}, trace=True)
 ```
+
+## Swap the KB storage layer
+
+Default `LocalKB` ships with FAISS + BM25 + SQLite — zero setup. Point at Qdrant, Chroma, or your own backend with one kwarg:
+
+```python
+from fastaiagent.kb import LocalKB
+from fastaiagent.kb.backends.qdrant import QdrantVectorStore
+
+kb = LocalKB(
+    name="product-docs",
+    search_type="vector",
+    vector_store=QdrantVectorStore(
+        url="http://localhost:6333",
+        collection="product-docs",
+        dimension=1536,
+    ),
+)
+kb.add("docs/")
+results = kb.search("refund policy", top_k=5)
+```
+
+Adapters shipped: **FAISS**, **BM25**, **SQLite** (defaults), **Qdrant** (`fastaiagent[qdrant]`), **Chroma** (`fastaiagent[chroma]`). Write your own against the `VectorStore` / `KeywordStore` / `MetadataStore` protocols — see [docs/knowledge-base/backends.md](docs/knowledge-base/backends.md).
 
 ## Shape agent behavior with middleware
 

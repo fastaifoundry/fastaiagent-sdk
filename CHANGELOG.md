@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-04-18
+
+### Added
+- **Pluggable KB storage backends** — `LocalKB` now accepts `vector_store`, `keyword_store`, and `metadata_store` kwargs. Default behavior (FAISS + BM25 + SQLite) is byte-for-byte identical to 0.2.x.
+- **Three storage protocols** exposed at the top level: `VectorStore`, `KeywordStore`, `MetadataStore` (structural `typing.Protocol` — no base class required).
+- **`fastaiagent.kb.backends`** submodule with shipping adapters:
+  - `FaissVectorStore` — wraps the existing FAISS index (default vector backend)
+  - `BM25KeywordStore` — wraps the existing pure-Python BM25 index (default keyword backend)
+  - `SqliteMetadataStore` — wraps the existing SQLite document+chunk store (default metadata backend)
+  - `QdrantVectorStore` — Qdrant adapter. Install `fastaiagent[qdrant]`. Supports remote HTTP, Qdrant Cloud (`api_key=`), and in-process `location=":memory:"`.
+  - `ChromaVectorStore` — Chroma adapter. Install `fastaiagent[chroma]`. Supports ephemeral, persistent (`persist_path=`), and remote (`host=`) modes.
+- Optional dependencies: `fastaiagent[qdrant]`, `fastaiagent[chroma]`.
+- Docs: new [docs/knowledge-base/backends.md](docs/knowledge-base/backends.md) (backend reference) and [docs/knowledge-base/custom-backend.md](docs/knowledge-base/custom-backend.md) (write-your-own guide). Cross-link added from `docs/knowledge-base/index.md`.
+- Examples: [examples/28_kb_chroma.py](examples/28_kb_chroma.py), [examples/29_kb_qdrant.py](examples/29_kb_qdrant.py) — both runnable with only the respective extra installed.
+- Tests: `tests/test_kb_protocols.py` (contract suite parametrized over backends), `tests/test_kb_backend_defaults.py` (backward-compat), `tests/test_kb_chroma.py` + `tests/test_kb_qdrant.py` (live, gated by pytest markers).
+
+### Changed
+- `LocalKB` internals renamed for clarity: `_faiss_index` → `_vector`, `_bm25_index` → `_keyword`, `_db` metadata path → `_metadata`. `_embeddings` list removed; embeddings now live inside their backend and `MetadataStore`. Public API unchanged.
+- `SqliteMetadataStore` keeps the existing `chunks` table name so previously-persisted KBs load without migration.
+
+### Deferred
+- Async (`aadd`, `asearch`, `aembed`, ...) parallel methods on the protocols and backends — planned as an additive change, explicitly not in 0.3.0. See the `fastaiagent/kb/protocols.py` module docstring for the roadmap.
+
 ## [0.2.0] - 2026-04-18
 
 ### Added
