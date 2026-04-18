@@ -57,7 +57,7 @@ print(result.trace.summary())
 - **[Agent Replay](replay/index.md)** — Fork-and-rerun debugging at any execution step
 - **[Evaluation](evaluation/index.md)** — Scorers, datasets, LLM-as-judge, trajectory eval
 - **[Prompts](prompts/index.md)** — Registry with versioning and fragment composition
-- **[Knowledge Base](knowledge-base/index.md)** — Local file ingestion with embedding search
+- **[Knowledge Base](knowledge-base/index.md)** — Local file ingestion with embedding search, or [`PlatformKB`](knowledge-base/platform-kb.md) for hosted KBs
 - **[Platform Connection](platform/index.md)** — Connect for traces, prompts, eval, and replay
 - **[Integrations](integrations/index.md)** — Auto-tracing for OpenAI, Anthropic, LangChain, CrewAI
 

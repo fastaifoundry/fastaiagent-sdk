@@ -4,6 +4,8 @@ LocalKB is a production-ready, built-in knowledge base with FAISS vector search,
 
 > **New in 0.3.0 — Pluggable backends.** The vector, keyword, and metadata stores behind `LocalKB` are now swappable. Default behavior (FAISS + BM25 + SQLite) is unchanged. Point at a remote **Qdrant** or **Chroma** instance with a single kwarg. See [Backends](backends.md).
 
+> **Hosted KBs.** For KBs uploaded and managed on the FastAIAgent platform, use [`PlatformKB`](platform-kb.md) — same `search()` surface, retrieval runs on the platform.
+
 ## Quick Start
 
 ```python

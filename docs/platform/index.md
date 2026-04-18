@@ -154,6 +154,27 @@ local_dataset.publish("regression-tests")
 scorer = Scorer.from_platform("correctness-judge")
 ```
 
+### Knowledge Bases
+
+Query a KB that was uploaded and ingested on the platform — the platform runs the full retrieval pipeline (hybrid search, reranking, relevance gate). Requires the `kb:read` scope on your API key.
+
+```python
+kb = fa.PlatformKB(kb_id="kb_abc123")
+
+results = kb.search("refund policy", top_k=3)
+for r in results:
+    print(f"[{r.score:.3f}] {r.chunk.content[:80]}...")
+
+# Same wiring as LocalKB — agents don't know which they got.
+agent = fa.Agent(
+    name="policy-bot",
+    llm=fa.LLMClient(provider="openai", model="gpt-4o-mini"),
+    tools=[kb.as_tool()],
+)
+```
+
+See [PlatformKB](../knowledge-base/platform-kb.md) for the full API and platform vs. local trade-offs.
+
 ### Replay
 
 Pull any trace from the platform and replay locally:
@@ -176,7 +197,7 @@ result = forked.rerun()
 | Tool implementations | Tools are Python functions in SDK |
 | Guardrail definitions | Guardrails are code-configured in SDK |
 | Chain definitions | Chains are code in SDK |
-| KB data/documents | LocalKB is local |
+| KB ingestion / document upload | Done on the platform UI or admin API, not via `fa.connect()`. Use [`PlatformKB`](../knowledge-base/platform-kb.md) at runtime to *query* a platform-hosted KB |
 | LLM endpoint credentials | SDK manages its own API keys |
 
 ## Offline / Disconnected Behavior

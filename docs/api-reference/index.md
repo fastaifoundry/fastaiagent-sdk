@@ -25,6 +25,7 @@ Auto-generated reference documentation for all public FastAIAgent SDK classes an
 
 - **[PromptRegistry](../prompts/index.md)** — `PromptRegistry`, `Prompt`, `Fragment`
 - **[LocalKB](../knowledge-base/index.md)** — `LocalKB`, `Document`, `SearchResult`
+- **[PlatformKB](../knowledge-base/platform-kb.md)** — `PlatformKB` (hosted; thin client over `/public/v1/knowledge-bases/{id}/search`)
 
 ## Evaluation
 

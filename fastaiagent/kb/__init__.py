@@ -3,6 +3,7 @@
 from fastaiagent.kb.chunking import Chunk
 from fastaiagent.kb.document import Document
 from fastaiagent.kb.local import LocalKB
+from fastaiagent.kb.platform import PlatformKB
 from fastaiagent.kb.protocols import KeywordStore, MetadataStore, VectorStore
 from fastaiagent.kb.search import SearchResult
 
@@ -12,6 +13,7 @@ __all__ = [
     "KeywordStore",
     "LocalKB",
     "MetadataStore",
+    "PlatformKB",
     "SearchResult",
     "VectorStore",
 ]
