@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-04-18
+
+### Added
+- **`Swarm`** — peer-to-peer multi-agent topology. Each agent can hand off control to allowed peers via auto-injected `handoff_to_<peer>` tools; no central coordinator LLM. Implements the same `run`/`arun`/`astream`/`stream` surface as `Agent`, so it drops into any `Chain` node.
+- **`SwarmState`** — a plain dataclass: `shared` (free-form blackboard), `handoff_count`, `path`, `last_reason`.
+- **`SwarmError`** — raised on structural violations (missing entrypoint, duplicate agent names, disallowed handoff, cycle-guard exhausted).
+- **`HandoffEvent(from_agent, to_agent, reason)`** — new stream event emitted by `Swarm.astream` on every transition, tagged onto the stream before the target agent starts streaming.
+- **Handoff allowlist** — `handoffs: dict[str, list[str]]`. Default is full mesh. Attempts to hand off outside the allowlist raise `SwarmError`.
+- **Cycle guard** — `max_handoffs` kwarg (default 8). The guard message includes the full visited path for debugging.
+- **Shared blackboard** — the auto-generated handoff tool accepts an optional `context=` dict; entries merge into `SwarmState.shared` and are exposed to the next agent via the briefing prompt.
+- **Serialization** — `Swarm.to_dict()` / `Swarm.from_dict(data, agents=...)` — structural round-trip; the caller supplies live `Agent` instances.
+- **Docs**: new [docs/agents/swarm.md](docs/agents/swarm.md) with full reference, Swarm-vs-Supervisor decision matrix, streaming, shared-memory, and KB-integration patterns. Cross-linked from [docs/agents/teams.md](docs/agents/teams.md) and [docs/agents/index.md](docs/agents/index.md).
+- **Example**: [examples/31_swarm_research_team.py](examples/31_swarm_research_team.py) — triage → coder/writer swarm with real tools (pypi-lookup), constrained allowlist, and streaming with `HandoffEvent`.
+- **Tests**:
+  - `tests/test_swarm.py` — 17 deterministic + 1 live-LLM test covering construction validation, one-hop and multi-hop routing, allowlist, cycle guard, blackboard, serialization, streaming.
+  - `tests/test_multi_agent_integration.py` — 5 live integration tests covering Supervisor+KB, Supervisor+ComposableMemory, Swarm+KB, Swarm+shared-memory-with-VectorBlock, Swarm writer-critic loop — all exercised against real OpenAI `gpt-4o-mini` and real FAISS.
+- `MockLLMClient.astream` — deterministic stream-path fixture in `tests/conftest.py` so other tests can exercise streaming code paths without live APIs. (Unit test infra only; does not alter the `LLMClient` public behavior.)
+
+### Changed
+- `execute_tool_loop` now appends the in-flight tool-call record to `all_tool_calls` **before** returning from a `StopAgent` catch, so callers inspecting the completed-but-stopping run still see the final tool call. This was required for Swarm handoff detection; also benefits any middleware that raises `StopAgent` from `wrap_tool`.
+
+### Deferred
+- Streaming-path `AgentMiddleware` integration (Gap 3 follow-up). The `_ExitAfterHandoff` middleware that Swarm uses internally runs on the non-streaming path only; `Swarm.astream` detects handoffs directly from stream events and breaks out of the inner agent's stream as soon as one fires. This is functionally equivalent for swarm semantics; general streaming middleware ships in a later minor version.
+
 ## [0.4.0] - 2026-04-18
 
 ### Added

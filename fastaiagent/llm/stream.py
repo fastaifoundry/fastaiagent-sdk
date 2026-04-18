@@ -7,7 +7,7 @@ enabling seamless compatibility between SDK streaming and platform streaming.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Union
+from typing import Any
 
 
 @dataclass
@@ -49,4 +49,18 @@ class StreamDone:
     pass
 
 
-StreamEvent = Union[TextDelta, ToolCallStart, ToolCallEnd, Usage, StreamDone]
+@dataclass
+class HandoffEvent:
+    """Emitted by :class:`fastaiagent.agent.Swarm` when control passes from
+    one agent to another.
+
+    Tagged onto the stream ahead of the target agent's first TextDelta so UI
+    layers can render an "agent switch" affordance.
+    """
+
+    from_agent: str
+    to_agent: str
+    reason: str = ""
+
+
+StreamEvent = TextDelta | ToolCallStart | ToolCallEnd | Usage | StreamDone | HandoffEvent

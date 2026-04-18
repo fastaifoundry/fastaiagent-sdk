@@ -81,6 +81,7 @@ nav:
       - Memory: agents/memory.md
       - Middleware: agents/middleware.md
       - "Multi-Agent Teams": agents/teams.md
+      - Swarm: agents/swarm.md
   - Chains:
       - chains/index.md
       - "Cyclic Workflows": chains/cyclic-workflows.md
