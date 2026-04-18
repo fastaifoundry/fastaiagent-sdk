@@ -5,7 +5,7 @@ The only SDK with **Agent Replay** — fork-and-rerun debugging for AI agents.
 
 Works standalone or connected to the [FastAIAgent Platform](https://fastaiagent.net) for visual editing, production monitoring, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=0.1.8)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=0.2.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -103,6 +103,27 @@ chain.connect("evaluate", "respond", condition="quality >= 0.8")
 
 result = chain.execute({"message": "My order is late"}, trace=True)
 ```
+
+## Shape agent behavior with middleware
+
+Compose pre/post model hooks and tool wrappers without subclassing `Agent`:
+
+```python
+from fastaiagent import Agent, LLMClient, TrimLongMessages, RedactPII, ToolBudget
+
+agent = Agent(
+    name="controlled",
+    llm=LLMClient(provider="openai", model="gpt-4o"),
+    tools=[search_tool],
+    middleware=[
+        TrimLongMessages(keep_last=30),   # cap history size
+        RedactPII(),                      # scrub emails/phones/SSNs both directions
+        ToolBudget(max_calls=5),          # cooperatively stop after 5 tool calls
+    ],
+)
+```
+
+Write your own by subclassing `AgentMiddleware` and overriding `before_model`, `after_model`, or `wrap_tool`. See [docs/agents/middleware.md](docs/agents/middleware.md) for ordering, hook reference, and custom patterns.
 
 ## Multi-agent teams with context
 

@@ -22,6 +22,20 @@ class MaxIterationsError(AgentError):
     """Agent exceeded maximum iteration count in tool-calling loop."""
 
 
+class StopAgent(AgentError):  # noqa: N818  # cooperative-stop signal, not a policy error
+    """Raised by middleware to short-circuit an agent run with a final message.
+
+    When raised inside a middleware hook, the tool-calling loop exits cleanly
+    and the agent returns an ``AgentResult`` whose ``output`` is the exception
+    message. Unlike ``GuardrailBlockedError``, this is a cooperative stop, not
+    a policy rejection — use it for budget limits, completion signals, etc.
+    """
+
+    def __init__(self, message: str, reason: str = ""):
+        self.reason = reason
+        super().__init__(message)
+
+
 # --- Chain errors ---
 
 
