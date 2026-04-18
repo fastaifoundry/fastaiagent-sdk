@@ -60,6 +60,21 @@ class Tool:
             },
         }
 
+    def to_mcp_schema(self) -> dict[str, Any]:
+        """Convert to MCP tool-schema shape (``name`` / ``description`` / ``inputSchema``).
+
+        Used by :class:`fastaiagent.tool.mcp_server.FastAIAgentMCPServer` when
+        an agent's tools are exposed individually (``expose_tools=True``).
+        """
+        params = self.parameters or {"type": "object", "properties": {}}
+        if "type" not in params:
+            params = {"type": "object", **params}
+        return {
+            "name": self.name,
+            "description": self.description or self.name,
+            "inputSchema": params,
+        }
+
     def to_dict(self) -> dict[str, Any]:
         """Serialize to canonical format."""
         return {

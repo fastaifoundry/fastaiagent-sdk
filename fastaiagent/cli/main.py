@@ -4,6 +4,7 @@ import typer
 
 from fastaiagent.cli.eval import eval_app
 from fastaiagent.cli.kb import kb_app
+from fastaiagent.cli.mcp import mcp_app
 from fastaiagent.cli.prompts import prompts_app
 from fastaiagent.cli.replay import replay_app
 from fastaiagent.cli.traces import traces_app
@@ -19,6 +20,7 @@ app.add_typer(replay_app, name="replay", help="Agent Replay")
 app.add_typer(eval_app, name="eval", help="Run evaluations")
 app.add_typer(prompts_app, name="prompts", help="Manage prompts")
 app.add_typer(kb_app, name="kb", help="Manage knowledge bases")
+app.add_typer(mcp_app, name="mcp", help="Expose an Agent or Chain as an MCP server")
 
 
 @app.command()
