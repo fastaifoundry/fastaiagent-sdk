@@ -7,7 +7,7 @@ import uuid
 
 import pytest
 
-from fastaiagent.kb import Chunk, LocalKB, SearchResult
+from fastaiagent.kb import Chunk, LocalKB
 from fastaiagent.kb.bm25 import BM25Index
 from fastaiagent.kb.chunking import chunk_text
 from fastaiagent.kb.document import ingest_file
@@ -484,7 +484,7 @@ class TestSearchTypes:
         kb.add("JavaScript web development.")
         results = kb.search("Python", top_k=1)
         assert len(results) == 1
-        assert kb._bm25_index is None
+        assert kb._keyword is None
 
     def test_keyword_only(self, temp_dir):
         kb = LocalKB(
@@ -498,7 +498,7 @@ class TestSearchTypes:
         assert "ERR-4012" in results[0].chunk.content
         # No embedder should be initialized
         assert kb._embedder is None
-        assert kb._faiss_index is None
+        assert kb._vector is None
 
     def test_keyword_no_embeddings_stored(self, temp_dir):
         """keyword mode should not compute or store embeddings."""
@@ -507,7 +507,8 @@ class TestSearchTypes:
             search_type="keyword",
         )
         kb.add("Some text content")
-        assert len(kb._embeddings) == 0
+        # Keyword-only mode has no vector backend.
+        assert kb._vector is None
 
         # SQLite should have NULL embeddings
         from fastaiagent._internal.storage import SQLiteHelper

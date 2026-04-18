@@ -98,6 +98,8 @@ nav:
       - prompts/index.md
   - Knowledge Base:
       - knowledge-base/index.md
+      - Backends: knowledge-base/backends.md
+      - "Custom Backend": knowledge-base/custom-backend.md
   - Evaluation:
       - evaluation/index.md
       - "LLM-as-Judge": evaluation/llm-judge.md

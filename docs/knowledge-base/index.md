@@ -2,6 +2,8 @@
 
 LocalKB is a production-ready, built-in knowledge base with FAISS vector search, BM25 keyword search, hybrid search, SQLite persistence, and full CRUD operations. No external infrastructure required.
 
+> **New in 0.3.0 — Pluggable backends.** The vector, keyword, and metadata stores behind `LocalKB` are now swappable. Default behavior (FAISS + BM25 + SQLite) is unchanged. Point at a remote **Qdrant** or **Chroma** instance with a single kwarg. See [Backends](backends.md).
+
 ## Quick Start
 
 ```python
@@ -518,6 +520,7 @@ print(result.output)
 
 ## Next Steps
 
+- [Backends](backends.md) — Pluggable vector, keyword, and metadata storage (Qdrant, Chroma, custom)
 - [Agents](../agents/index.md) — Build agents that use knowledge bases
 - [Tools](../tools/index.md) — Learn about tool types
 - [Evaluation](../evaluation/index.md) — Test knowledge base accuracy
