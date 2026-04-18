@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-04-18
+
+### Added — Platform-hosted Knowledge Bases
+- **`fa.PlatformKB(kb_id=...)`** — new thin client for KBs hosted on the FastAIAgent platform. Calls `POST /public/v1/knowledge-bases/{id}/search`; the platform runs the full retrieval pipeline (hybrid search, reranking, relevance gate — whatever the KB is configured for). Exposes `.search()`, `.asearch()`, and `.as_tool()` — drop-in compatible with `LocalKB` for `Agent(tools=[kb.as_tool()])`. Requires `fa.connect(api_key=...)` and an API key with the `kb:read` scope.
+- New docs page [docs/knowledge-base/platform-kb.md](docs/knowledge-base/platform-kb.md).
+- New example [examples/34_platform_kb.py](examples/34_platform_kb.py) — `PlatformKB` wired into an `Agent`, end-to-end live-verified against a local platform + real OpenAI.
+- New integration suite `tests/integration/test_platform_kb.py` — 8 cases against a live platform + real retrieval (no mocks): direct sync search, async search, `top_k` bounds, `PlatformNotFoundError` on bad id, empty `kb_id` rejected, `.as_tool()` + `SearchResult` parity, metadata passthrough, Agent end-to-end.
+
 ## [0.6.1] - 2026-04-18
 
 ### Added — CLI polish

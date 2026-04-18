@@ -100,6 +100,7 @@ nav:
       - prompts/index.md
   - Knowledge Base:
       - knowledge-base/index.md
+      - "Platform KB": knowledge-base/platform-kb.md
       - Backends: knowledge-base/backends.md
       - "Custom Backend": knowledge-base/custom-backend.md
   - Evaluation:
