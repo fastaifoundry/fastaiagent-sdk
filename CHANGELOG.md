@@ -5,13 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.1] - 2026-04-18
 
-### Added
-- **Deployment recipes** — new [docs/deployment/](docs/deployment/index.md) section with copy-paste guides for **FastAPI + Uvicorn**, **Docker → Cloud Run / Fly / Render / Railway / ECS**, **Modal**, and **Replicate (Cog)**. Every recipe exposes the same `GET /health` + `POST /run` + `POST /run/stream` contract so callers are platform-portable. Cross-linked from `README.md` and the mkdocs nav.
-- **Example**: [examples/33_deploy_fastapi.py](examples/33_deploy_fastapi.py) — runnable FastAPI server implementing the uniform deployment contract. Live-verified end-to-end against real OpenAI `gpt-4o-mini`: `GET /health`, `POST /run` (trace-id, tokens, latency in response), and `POST /run/stream` (SSE token stream) all working.
+### Added — CLI polish
+- **`fastaiagent version`** now lists installed optional extras: `fastaiagent 0.6.1 [openai, anthropic, kb, qdrant, chroma, mcp-server]`. Handy in bug reports.
+- **`fastaiagent connect --api-key ...`** / **`fastaiagent disconnect`** — save / remove Platform credentials at `~/.fastaiagent/credentials.toml` (chmod 0600). Auth check runs before the key is persisted.
+- **`fastaiagent auth status`** — show whether credentials are saved, which source is active (env vs file), and a masked key preview.
+- **`fastaiagent auth env`** — print `export` lines for sourcing: `eval "$(fastaiagent auth env)"`.
+- **`fastaiagent kb list [--path ROOT]`** — enumerate all persistent KBs under a root directory. Shows name, chunk count, and path in a Rich table.
+- **`fastaiagent agent serve path/to/file.py:my_agent [--port 8000]`** — run any `Agent` or `Chain` as a FastAPI service that implements the uniform deployment contract (`GET /health`, `POST /run`, `POST /run/stream`). Saves copy-pasting the 80-line starter server. Live-verified against real OpenAI `gpt-4o-mini` — `Paris.` response in 1353ms with trace_id; SSE stream delivered TextDelta events for "Hello there, friend".
+- **`fastaiagent replay fork <trace_id> [--step N] [--prompt ...] [--input ...] [--output rerun.json]`** — CLI surface for `Replay.load(id).fork_at(step).modify_prompt(...).modify_input(...).rerun()`. Writes the rerun result to JSON or prints it.
 
-Docs-only release; no code, no version bump, no behavioral change. The fastaiagent library remains a plain Python package that runs anywhere.
+### Deployment recipes (previously 0.6.1 was staged as unreleased — now shipped with this bump)
+- New [docs/deployment/](docs/deployment/index.md) section with recipes for **FastAPI + Uvicorn**, **Docker → Cloud Run / Fly / Render / Railway / ECS**, **Modal**, and **Replicate (Cog)**. Every recipe exposes the same uniform contract as `agent serve`.
+- **Example**: [examples/33_deploy_fastapi.py](examples/33_deploy_fastapi.py) — runnable FastAPI server. Live-verified end-to-end.
+
+### Tests
+- `tests/test_cli.py` — +9 tests covering the new commands (16/16 pass). `agent serve` live-smoke-tested against real OpenAI.
+
+### Notes
+- No breaking changes. No library-behavior changes. `Agent`, `Chain`, `Swarm`, `ComposableMemory`, MCP server, and KB protocols are untouched. Existing CLI commands work exactly as before.
 
 ## [0.6.0] - 2026-04-18
 

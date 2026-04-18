@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
+import importlib.util
 import sys
 from pathlib import Path
 from typing import Any
@@ -26,8 +28,6 @@ def _resolve_target(spec: str) -> Any:
     path = Path(module_part)
     if path.exists():
         # File path — load the module by file name.
-        import importlib.util
-
         module_name = path.stem
         spec_obj = importlib.util.spec_from_file_location(module_name, str(path))
         if spec_obj is None or spec_obj.loader is None:

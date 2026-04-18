@@ -1,10 +1,59 @@
 """CLI commands for knowledge base management."""
 
+from __future__ import annotations
+
+from pathlib import Path
+
 import typer
 from rich.console import Console
+from rich.table import Table
 
 kb_app = typer.Typer()
 console = Console()
+
+
+@kb_app.command("list")
+def kb_list(
+    path: str = typer.Option(
+        ".fastaiagent/kb/",
+        "--path",
+        help="Root directory to scan for KBs.",
+    ),
+) -> None:
+    """List all knowledge bases under the given root directory."""
+    root = Path(path)
+    if not root.exists():
+        console.print(f"No KBs found — {root} does not exist.")
+        return
+
+    from fastaiagent.kb import LocalKB
+
+    rows: list[tuple[str, int, str]] = []
+    for child in sorted(root.iterdir()):
+        if not child.is_dir():
+            continue
+        sqlite = child / "kb.sqlite"
+        if not sqlite.exists():
+            continue
+        try:
+            kb = LocalKB(name=child.name, path=str(root))
+            status = kb.status()
+            rows.append((status["name"], status["chunk_count"], str(child)))
+            kb.close()
+        except Exception as err:  # pragma: no cover — surface odd KBs but keep scanning
+            rows.append((child.name, -1, f"(error: {err})"))
+
+    if not rows:
+        console.print(f"No persistent KBs found under {root}.")
+        return
+
+    table = Table(title=f"Knowledge bases under {root}")
+    table.add_column("Name")
+    table.add_column("Chunks", justify="right")
+    table.add_column("Path")
+    for name, count, rel in rows:
+        table.add_row(name, str(count) if count >= 0 else "?", rel)
+    console.print(table)
 
 
 @kb_app.command("status")
