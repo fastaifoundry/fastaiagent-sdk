@@ -118,7 +118,7 @@ class ChromaVectorStore:
         self._collection.upsert(
             ids=[c.id for c in chunks],
             documents=[c.content for c in chunks],
-            embeddings=[list(e) for e in embeddings],  # type: ignore[arg-type]
+            embeddings=[list(e) for e in embeddings],
             metadatas=[self._metadata_for(c) for c in chunks],
         )
 
@@ -126,7 +126,7 @@ class ChromaVectorStore:
         self, query_embedding: list[float], top_k: int
     ) -> list[tuple[Chunk, float]]:
         res = self._collection.query(
-            query_embeddings=[list(query_embedding)],  # type: ignore[arg-type]
+            query_embeddings=[list(query_embedding)],
             n_results=top_k,
         )
         ids = (res.get("ids") or [[]])[0]

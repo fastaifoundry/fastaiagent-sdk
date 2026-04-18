@@ -134,7 +134,7 @@ class QdrantVectorStore:
             )
             hits = response.points
         else:  # pragma: no cover — exercised only on qdrant-client < 1.10
-            hits = self._client.search(  # type: ignore[attr-defined]
+            hits = self._client.search(
                 collection_name=self._collection,
                 query_vector=list(query_embedding),
                 limit=top_k,

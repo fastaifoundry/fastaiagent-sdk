@@ -95,19 +95,12 @@ class LocalKB:
 
             self._keyword = BM25KeywordStore()
 
-        # Eagerly construct the default vector store by probing the embedder
-        # for its output dimension. This keeps ``status()`` accurate right
-        # after construction (matches pre-0.3.0 user expectations).
+        # Vector store is constructed lazily — the default backend imports
+        # ``faiss``, which is an optional dependency. Construction happens
+        # on first ``add()`` via ``_ensure_vector_store``. This mirrors the
+        # pre-0.3.0 behavior where ``LocalKB()`` worked without ``[kb]`` as
+        # long as you didn't try to do vector search.
         self._chunks: list[Chunk] = []
-        if (
-            self._vector is None
-            and self._embedder is not None
-            and search_type in ("vector", "hybrid")
-        ):
-            from fastaiagent.kb.backends.faiss import FaissVectorStore
-
-            probe_dim = len(self._embedder.embed(["_probe_"])[0])
-            self._vector = FaissVectorStore(dimension=probe_dim, index_type=index_type)
 
         if self._metadata is not None:
             self._load_from_metadata()

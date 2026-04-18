@@ -3,6 +3,9 @@
 Goal: the existing ``LocalKB(name=...)`` surface with no backend kwargs must
 behave the same way it did in 0.2.0 and earlier — default FAISS + BM25 + SQLite,
 persistence across reopens, hybrid search, delete/update semantics intact.
+
+These tests require ``faiss-cpu`` (the ``[kb]`` extra). They are skipped when
+it is not installed, matching ``tests/test_kb.py``.
 """
 
 from __future__ import annotations
@@ -11,11 +14,20 @@ from pathlib import Path
 
 import pytest
 
-from fastaiagent.kb import LocalKB
-from fastaiagent.kb.backends.bm25 import BM25KeywordStore
-from fastaiagent.kb.backends.faiss import FaissVectorStore
-from fastaiagent.kb.backends.sqlite import SqliteMetadataStore
-from fastaiagent.kb.embedding import SimpleEmbedder
+try:
+    import faiss  # noqa: F401
+
+    _HAS_FAISS = True
+except ImportError:
+    _HAS_FAISS = False
+
+pytestmark = pytest.mark.skipif(not _HAS_FAISS, reason="faiss-cpu not installed")
+
+from fastaiagent.kb import LocalKB  # noqa: E402 — after feature-flag imports
+from fastaiagent.kb.backends.bm25 import BM25KeywordStore  # noqa: E402
+from fastaiagent.kb.backends.faiss import FaissVectorStore  # noqa: E402
+from fastaiagent.kb.backends.sqlite import SqliteMetadataStore  # noqa: E402
+from fastaiagent.kb.embedding import SimpleEmbedder  # noqa: E402
 
 
 def _kb(tmp_path: Path, name: str = "t", **kwargs) -> LocalKB:
@@ -30,12 +42,20 @@ def _kb(tmp_path: Path, name: str = "t", **kwargs) -> LocalKB:
 
 
 def test_localkb_defaults_uses_faiss_bm25_sqlite(tmp_path: Path) -> None:
-    """Default backends match the pre-0.3.0 stack."""
+    """Default backends match the pre-0.3.0 stack.
+
+    The vector backend is constructed lazily on first ``add()`` — so the
+    keyword and metadata backends are visible immediately, and the vector
+    backend appears after the first content is ingested.
+    """
     kb = _kb(tmp_path)
-    status = kb.status()
-    assert status["vector_backend"] == "FaissVectorStore"
-    assert status["keyword_backend"] == "BM25KeywordStore"
-    assert status["metadata_backend"] == "SqliteMetadataStore"
+    status_before = kb.status()
+    assert status_before["keyword_backend"] == "BM25KeywordStore"
+    assert status_before["metadata_backend"] == "SqliteMetadataStore"
+
+    kb.add("probe")
+    status_after = kb.status()
+    assert status_after["vector_backend"] == "FaissVectorStore"
 
 
 def test_localkb_add_and_hybrid_search(tmp_path: Path) -> None:

@@ -11,11 +11,19 @@ from pathlib import Path
 
 import pytest
 
-from fastaiagent.kb.backends.bm25 import BM25KeywordStore
-from fastaiagent.kb.backends.faiss import FaissVectorStore
-from fastaiagent.kb.backends.sqlite import SqliteMetadataStore
-from fastaiagent.kb.chunking import Chunk
-from fastaiagent.kb.document import Document
+try:
+    import faiss  # noqa: F401
+
+    _HAS_FAISS = True
+except ImportError:
+    _HAS_FAISS = False
+
+_skip_no_faiss = pytest.mark.skipif(not _HAS_FAISS, reason="faiss-cpu not installed")
+
+from fastaiagent.kb.backends.bm25 import BM25KeywordStore  # noqa: E402
+from fastaiagent.kb.backends.sqlite import SqliteMetadataStore  # noqa: E402
+from fastaiagent.kb.chunking import Chunk  # noqa: E402
+from fastaiagent.kb.document import Document  # noqa: E402
 
 DIM = 16
 
@@ -103,8 +111,11 @@ class VectorStoreContract:
         assert store.search(_simple_embed(["x"])[0], top_k=1) == []
 
 
+@_skip_no_faiss
 class TestFaissVectorStoreContract(VectorStoreContract):
     def make(self) -> object:
+        from fastaiagent.kb.backends.faiss import FaissVectorStore
+
         return FaissVectorStore(dimension=DIM, index_type="flat")
 
 
