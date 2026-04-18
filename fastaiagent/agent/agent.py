@@ -332,6 +332,36 @@ class Agent:
         messages.append(UserMessage(input))
         return messages
 
+    def as_mcp_server(
+        self,
+        transport: str = "stdio",
+        expose_tools: bool = False,
+        expose_system_prompt: bool = True,
+        tool_name: str | None = None,
+        tool_description: str | None = None,
+    ) -> Any:
+        """Expose this agent as an MCP server.
+
+        Returns a :class:`fastaiagent.tool.mcp_server.FastAIAgentMCPServer`.
+        Call ``await server.run()`` to start the stdio loop.
+
+        Requires ``pip install 'fastaiagent[mcp-server]'``.
+
+        Example::
+
+            agent.as_mcp_server(transport="stdio").run()
+        """
+        from fastaiagent.tool.mcp_server import FastAIAgentMCPServer
+
+        return FastAIAgentMCPServer(
+            target=self,
+            transport=transport,  # type: ignore[arg-type]
+            expose_tools=expose_tools,
+            expose_system_prompt=expose_system_prompt,
+            tool_name=tool_name,
+            tool_description=tool_description,
+        )
+
     def to_dict(self) -> dict[str, Any]:
         """Serialize to canonical format for platform push."""
         if callable(self.system_prompt):

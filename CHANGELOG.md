@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-04-18
+
+### Added
+- **`FastAIAgentMCPServer`** — expose any `Agent` or `Chain` as an [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server. Claude Desktop, Cursor, Continue, Zed, or any MCP client (including fastaiagent's own `MCPTool`) can now invoke your agents as tools.
+- **`Agent.as_mcp_server(...)`** and **`Chain.as_mcp_server(...)`** factory methods — one-liner creation of the server wrapper. Lazy import of the upstream `mcp` SDK: `import fastaiagent` does not pull it in unless a user touches the MCP server path.
+- **`Tool.to_mcp_schema()`** — helper that renders a fastaiagent `Tool` in the MCP tool-schema shape (`name` / `description` / `inputSchema`), alongside the existing `to_openai_format()`.
+- **CLI subcommand**: `fastaiagent mcp serve path/to/agent_file.py:my_agent` — starts an MCP stdio server from the command line. Accepts file paths or dotted module paths; `--expose-tools` surfaces inner tools; `--name` overrides the primary tool name.
+- **Optional extra**: `pip install 'fastaiagent[mcp-server]'` → `mcp>=1.2`.
+- **Docs**: new [docs/tools/mcp-server.md](docs/tools/mcp-server.md) with Claude Desktop / Cursor / Continue / Zed registration snippets and a full composed example (agent + KB + memory). Cross-linked from the existing [docs/tools/mcp-tools.md](docs/tools/mcp-tools.md).
+- **Example**: [examples/32_mcp_expose_agent.py](examples/32_mcp_expose_agent.py) — a research assistant with a real `research_lookup` tool, ready to run and register with Claude Desktop. Verified live: real OpenAI drove the agent through the MCP protocol, tool was invoked, response flowed back.
+- **Tests**: `tests/test_mcp_server.py` — 10 tests, including a **full-protocol end-to-end test** (initialize → tools/list → tools/call → prompts/list → prompts/get) using the upstream `mcp` SDK's in-memory transport. No protocol mocking.
+
+### Deferred
+- `transport="sse"` and `transport="streamable-http"` — accepted as values but raise `NotImplementedError` on `run()`. Only `stdio` ships in 0.6.0; the remote transports are tracked as 0.6.x follow-ups.
+- MCP resources (mapping `LocalKB` namespaces to MCP resources) — not yet implemented.
+- Auth middleware for remote transports — will compose with `AgentMiddleware` when SSE/HTTP land.
+
 ## [0.5.0] - 2026-04-18
 
 ### Added

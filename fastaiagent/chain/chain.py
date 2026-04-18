@@ -193,6 +193,34 @@ class Chain:
             node_results=raw["node_results"],
         )
 
+    def as_mcp_server(
+        self,
+        transport: str = "stdio",
+        tool_name: str | None = None,
+        tool_description: str | None = None,
+    ) -> Any:
+        """Expose this chain as an MCP server.
+
+        Returns a :class:`fastaiagent.tool.mcp_server.FastAIAgentMCPServer`.
+        Call ``await server.run()`` to start the stdio loop.
+
+        Requires ``pip install 'fastaiagent[mcp-server]'``.
+
+        Example::
+
+            chain.as_mcp_server(transport="stdio").run()
+        """
+        from fastaiagent.tool.mcp_server import FastAIAgentMCPServer
+
+        return FastAIAgentMCPServer(
+            target=self,
+            transport=transport,  # type: ignore[arg-type]
+            expose_tools=False,
+            expose_system_prompt=False,
+            tool_name=tool_name,
+            tool_description=tool_description,
+        )
+
     def to_dict(self) -> dict[str, Any]:
         """Serialize to canonical format (ReactFlow-compatible)."""
         d: dict[str, Any] = {

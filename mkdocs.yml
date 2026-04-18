@@ -94,6 +94,7 @@ nav:
       - "Function Tools": tools/function-tools.md
       - "REST Tools": tools/rest-tools.md
       - "MCP Tools": tools/mcp-tools.md
+      - "MCP Server": tools/mcp-server.md
       - "Schema Drift Detection": tools/schema-drift.md
   - Prompts:
       - prompts/index.md

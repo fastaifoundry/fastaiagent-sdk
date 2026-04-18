@@ -2,6 +2,8 @@
 
 Connects to a Model Context Protocol (MCP) server via JSON-RPC 2.0.
 
+> **See also:** [Expose an Agent or Chain as an MCP Server](mcp-server.md) — the complement that lets Claude Desktop / Cursor / Continue / Zed call your fastaiagent agents as tools. Same protocol, opposite direction.
+
 ## Basic Usage
 
 ```python

@@ -5,7 +5,7 @@ The only SDK with **Agent Replay** — fork-and-rerun debugging for AI agents.
 
 Works standalone or connected to the [FastAIAgent Platform](https://fastaiagent.net) for visual editing, production monitoring, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=0.5.0)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=0.6.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -103,6 +103,37 @@ chain.connect("evaluate", "respond", condition="quality >= 0.8")
 
 result = chain.execute({"message": "My order is late"}, trace=True)
 ```
+
+## Expose agents as MCP servers (Claude Desktop / Cursor / Continue / Zed)
+
+Any `Agent` or `Chain` becomes an MCP server with one line:
+
+```python
+from fastaiagent import Agent, LLMClient
+
+agent = Agent(name="research_assistant", llm=LLMClient(provider="openai", model="gpt-4o"))
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(agent.as_mcp_server(transport="stdio").run())
+```
+
+Register it in `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "research-assistant": {
+      "command": "python",
+      "args": ["/absolute/path/to/my_agent.py"]
+    }
+  }
+}
+```
+
+Claude Desktop now treats your fastaiagent as a callable tool. Same config shape for Cursor / Continue / Zed. Or use the CLI: `fastaiagent mcp serve my_agent.py:agent`. See [docs/tools/mcp-server.md](docs/tools/mcp-server.md).
+
+Install: `pip install 'fastaiagent[mcp-server]'`.
 
 ## Peer-to-peer swarms with handoffs
 

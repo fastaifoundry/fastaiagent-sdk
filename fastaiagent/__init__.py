@@ -43,6 +43,12 @@ def __getattr__(name: str) -> object:
         from fastaiagent.client import _connection
 
         return _connection.is_connected
+    if name == "FastAIAgentMCPServer":
+        # Lazy: avoid pulling in the optional ``mcp`` package at import time.
+        # Requires ``pip install 'fastaiagent[mcp-server]'``.
+        from fastaiagent.tool.mcp_server import FastAIAgentMCPServer
+
+        return FastAIAgentMCPServer
     raise AttributeError(f"module 'fastaiagent' has no attribute {name!r}")
 
 
