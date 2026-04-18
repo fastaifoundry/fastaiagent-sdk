@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Deployment recipes** — new [docs/deployment/](docs/deployment/index.md) section with copy-paste guides for **FastAPI + Uvicorn**, **Docker → Cloud Run / Fly / Render / Railway / ECS**, **Modal**, and **Replicate (Cog)**. Every recipe exposes the same `GET /health` + `POST /run` + `POST /run/stream` contract so callers are platform-portable. Cross-linked from `README.md` and the mkdocs nav.
+- **Example**: [examples/33_deploy_fastapi.py](examples/33_deploy_fastapi.py) — runnable FastAPI server implementing the uniform deployment contract. Live-verified end-to-end against real OpenAI `gpt-4o-mini`: `GET /health`, `POST /run` (trace-id, tokens, latency in response), and `POST /run/stream` (SSE token stream) all working.
+
+Docs-only release; no code, no version bump, no behavioral change. The fastaiagent library remains a plain Python package that runs anywhere.
+
 ## [0.6.0] - 2026-04-18
 
 ### Added

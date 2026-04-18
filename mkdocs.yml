@@ -116,6 +116,12 @@ nav:
       - replay/index.md
   - Platform:
       - platform/index.md
+  - Deployment:
+      - deployment/index.md
+      - "FastAPI + Uvicorn": deployment/fastapi.md
+      - "Docker → Cloud Run / Fly / Render": deployment/docker.md
+      - Modal: deployment/modal.md
+      - "Replicate (Cog)": deployment/replicate.md
   - Integrations:
       - integrations/index.md
   - CLI Reference:
