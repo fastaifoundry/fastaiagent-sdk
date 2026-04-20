@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.8.0] - 2026-04-20
 
+### Changed — graduated from Alpha to Beta
+
+PyPI classifier moved from `Development Status :: 3 - Alpha` to
+`Development Status :: 4 - Beta`. Public API is stable enough for
+production use behind the usual "still pre-1.0" caveat.
+
 ### Added — Local UI
 
 A single-user, Platform-lookalike web UI that ships inside the wheel. Run
