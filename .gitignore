@@ -47,7 +47,8 @@ ui-frontend/node_modules/
 ui-frontend/dist/
 ui-frontend/test-results/
 ui-frontend/playwright-report/
-fastaiagent/ui/static/
+fastaiagent/ui/static/*
+!fastaiagent/ui/static/.gitkeep
 
 # Internal / private
 claude_files/
