@@ -5,6 +5,91 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-04-20
+
+### Added — KB retrieval tracing
+
+``LocalKB.search()``, ``PlatformKB.search()``, and ``PlatformKB.asearch()``
+now emit a ``retrieval.<kb_name>`` span with ``retrieval.backend``,
+``retrieval.search_type``, ``retrieval.query`` (payload-gated),
+``retrieval.top_k``, ``retrieval.result_count``, ``retrieval.latency_ms``,
+and ``retrieval.doc_ids`` (payload-gated). The span nests as a child of
+the ``tool.*`` span when the KB is wired in via ``kb.as_tool()``, so the
+trace tree becomes ``agent → tool → retrieval`` without extra work.
+
+### Changed — unified workflow tracing for Chain / Swarm / Supervisor
+
+Multi-agent runs used to fragment into N orphan agent traces. They now
+emit a single root span with ``fastaiagent.runner.type`` set to
+``chain``, ``swarm``, or ``supervisor``, so a chain of 3 agents shows up
+as **one** trace with a Gantt-style tree of agents and LLM calls
+underneath.
+
+- ``Chain.aexecute()`` wraps in ``chain.<name>`` + sets ``chain.name``,
+  ``chain.node_count``, ``chain.node_ids``, ``chain.input``,
+  ``chain.output``, ``chain.execution_id``.
+- ``Swarm.arun()`` wraps in ``swarm.<name>`` + sets ``swarm.name``,
+  ``swarm.entrypoint``, ``swarm.agent_count``, ``swarm.input``,
+  ``swarm.output``, ``swarm.handoff_count``.
+- ``Supervisor.arun()`` wraps in ``supervisor.<name>`` + sets
+  ``supervisor.name``, ``supervisor.worker_count``,
+  ``supervisor.input``, ``supervisor.output``.
+- UI: new Workflow badge in the traces table + trace detail summary bar;
+  new Runner filter pill (Agent / Chain / Swarm / Supervisor); new
+  ``runner_type`` query param on ``/api/traces``.
+
+### Changed — graduated from Alpha to Beta
+
+PyPI classifier moved from `Development Status :: 3 - Alpha` to
+`Development Status :: 4 - Beta`. Public API is stable enough for
+production use behind the usual "still pre-1.0" caveat.
+
+### Added — Local UI
+
+A single-user, Platform-lookalike web UI that ships inside the wheel. Run
+`pip install 'fastaiagent[ui]'` then `fastaiagent ui` — bcrypt-hashed local
+auth, browser opens automatically, nothing leaves your machine.
+
+- **`fastaiagent ui`** CLI (`start`, `reset-password`) — FastAPI + uvicorn,
+  `127.0.0.1:7842` by default, `--no-auth` / `--no-open` / `--port` / `--db` /
+  `--auth-file` / `--host` flags, interactive first-run credential prompt.
+- **Pages**: Overview, Traces list + Trace detail (Gantt-style span tree +
+  Input/Output/Attributes/Events inspector), Agent Replay (fork dialog,
+  rerun, side-by-side comparison, "save as regression test"), Eval Runs
+  (trend chart + per-case scorer chips), Prompts browser + editor (gated on
+  local registry), Guardrail events, Agent directory + agent detail.
+- **Tech**: React 19 + Vite + Tailwind v4 + shadcn/ui, design tokens
+  vendored from the SaaS Platform for visual parity; TanStack Query with
+  manual refetch (no live stream — simple REST refresh UX).
+
+### Changed — unified local storage (breaking)
+
+All local persistence now lives in a single SQLite file at
+`./.fastaiagent/local.db` (was: `traces.db` + `checkpoints.db` + `.prompts/`
+YAML files).
+
+- `PromptRegistry` is now SQLite-backed (`YAMLStorage` → `SQLiteStorage`);
+  public API unchanged.
+- `TraceStore`, `CheckpointStore` write to `local.db`.
+- `EvalResults.persist_local()` writes one `eval_runs` row + N `eval_cases`
+  rows; `evaluate()` calls it automatically (opt out with `persist=False`).
+- `Guardrail.aexecute()` writes to `guardrail_events` when
+  `FASTAIAGENT_UI_ENABLED=true` (no-op otherwise).
+- Legacy env vars (`FASTAIAGENT_TRACE_DB_PATH`, `FASTAIAGENT_CHECKPOINT_DB_PATH`,
+  `FASTAIAGENT_PROMPT_DIR`) still work but emit `DeprecationWarning`.
+- **`fastaiagent migrate`** copies legacy `traces.db` + `checkpoints.db` +
+  `.prompts/` into `local.db`. Auto-invoked by `fastaiagent ui start` on
+  first run if legacy files are detected.
+
+### Added — config fields
+
+- `SDKConfig.local_db_path` (default `.fastaiagent/local.db`) + env var
+  `FASTAIAGENT_LOCAL_DB`.
+- `SDKConfig.ui_enabled`, `ui_host`, `ui_port` + env vars
+  `FASTAIAGENT_UI_ENABLED`, `FASTAIAGENT_UI_HOST`, `FASTAIAGENT_UI_PORT`.
+- `PromptRegistry.is_local()` returns True iff the DB file lives inside
+  the current working directory — used by the UI to gate prompt editing.
+
 ## [0.7.0] - 2026-04-18
 
 ### Added — Platform-hosted Knowledge Bases

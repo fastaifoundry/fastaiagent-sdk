@@ -77,6 +77,13 @@ class Guardrail:
         start = time.monotonic()
         result = await run_guardrail(self, data)
         result.execution_time_ms = int((time.monotonic() - start) * 1000)
+
+        from fastaiagent._internal.config import get_config
+
+        if get_config().ui_enabled:
+            from fastaiagent.ui.events import log_guardrail_event
+
+            log_guardrail_event(self, result)
         return result
 
     def to_dict(self) -> dict[str, Any]:

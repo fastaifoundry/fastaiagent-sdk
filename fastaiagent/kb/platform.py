@@ -42,20 +42,42 @@ class PlatformKB:
         self.name = kb_id  # parity with LocalKB.name
 
     def search(self, query: str, top_k: int = 5) -> list[SearchResult]:
-        api = get_platform_api()
-        response = api.post(
-            f"/public/v1/knowledge-bases/{self.kb_id}/search",
-            {"query": query, "top_k": top_k},
-        )
-        return self._parse_results(response.get("results", []))
+        from fastaiagent.kb._tracing import retrieval_span
+
+        with retrieval_span(
+            kb_name=self.name,
+            backend="platform",
+            search_type=None,
+            query=query,
+            top_k=top_k,
+        ) as span:
+            api = get_platform_api()
+            response = api.post(
+                f"/public/v1/knowledge-bases/{self.kb_id}/search",
+                {"query": query, "top_k": top_k},
+            )
+            results = self._parse_results(response.get("results", []))
+            span.record(results)
+            return results
 
     async def asearch(self, query: str, top_k: int = 5) -> list[SearchResult]:
-        api = get_platform_api()
-        response = await api.apost(
-            f"/public/v1/knowledge-bases/{self.kb_id}/search",
-            {"query": query, "top_k": top_k},
-        )
-        return self._parse_results(response.get("results", []))
+        from fastaiagent.kb._tracing import retrieval_span
+
+        with retrieval_span(
+            kb_name=self.name,
+            backend="platform",
+            search_type=None,
+            query=query,
+            top_k=top_k,
+        ) as span:
+            api = get_platform_api()
+            response = await api.apost(
+                f"/public/v1/knowledge-bases/{self.kb_id}/search",
+                {"query": query, "top_k": top_k},
+            )
+            results = self._parse_results(response.get("results", []))
+            span.record(results)
+            return results
 
     def as_tool(self) -> Tool:
         """Create a FunctionTool that wraps this KB for agent use.

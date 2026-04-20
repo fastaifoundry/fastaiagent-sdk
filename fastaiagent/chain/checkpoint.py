@@ -52,7 +52,7 @@ class CheckpointStore:
     """SQLite-backed checkpoint storage for chain execution resume."""
 
     def __init__(self, db_path: str | None = None):
-        self.db_path = db_path or get_config().checkpoint_db_path
+        self.db_path = db_path or get_config().resolved_checkpoint_db_path
         self._db: SQLiteHelper | None = None
 
     def _get_db(self) -> SQLiteHelper:

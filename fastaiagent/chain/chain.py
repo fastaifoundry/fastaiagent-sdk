@@ -130,16 +130,49 @@ class Chain:
         if self.checkpoint_enabled:
             store = self._checkpoint_store or CheckpointStore()
 
-        raw = await execute_chain(
-            nodes=self.nodes,
-            edges=self.edges,
-            initial_state=initial_state or {},
-            state_schema=self.state_schema,
-            checkpoint_store=store,
-            chain_name=self.name,
-            execution_id=execution_id,
-            hitl_handler=hitl_handler,
-        )
+        # Wrap the whole chain in a root span so every child agent span is a
+        # descendant of it — the UI can then render a chain as one trace with
+        # a tree of agents, rather than N orphan agent traces.
+        from fastaiagent.trace.otel import get_tracer
+
+        tracer = get_tracer()
+        with tracer.start_as_current_span(f"chain.{self.name}") as span:
+            span.set_attribute("chain.name", self.name)
+            span.set_attribute("chain.node_count", len(self.nodes))
+            span.set_attribute(
+                "chain.node_ids", ",".join(n.id for n in self.nodes)
+            )
+            span.set_attribute("fastaiagent.runner.type", "chain")
+            if initial_state:
+                import json
+
+                try:
+                    span.set_attribute(
+                        "chain.input", json.dumps(initial_state, default=str)
+                    )
+                except (TypeError, ValueError):
+                    pass
+
+            raw = await execute_chain(
+                nodes=self.nodes,
+                edges=self.edges,
+                initial_state=initial_state or {},
+                state_schema=self.state_schema,
+                checkpoint_store=store,
+                chain_name=self.name,
+                execution_id=execution_id,
+                hitl_handler=hitl_handler,
+            )
+
+            try:
+                import json as _json
+
+                span.set_attribute(
+                    "chain.output", _json.dumps(raw.get("output"), default=str)
+                )
+            except (TypeError, ValueError):
+                pass
+            span.set_attribute("chain.execution_id", raw.get("execution_id") or "")
 
         return ChainResult(
             output=raw["output"],

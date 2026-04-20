@@ -41,7 +41,6 @@ class TraceData(BaseModel):
         """Publish this trace to the platform (for manual backfill)."""
         from fastaiagent._internal.errors import PlatformNotConnectedError
         from fastaiagent._platform.api import get_platform_api
-
         from fastaiagent.client import _connection
 
         if not _connection.is_connected:
@@ -90,7 +89,7 @@ class LocalStorageProcessor:
     """OTel SpanProcessor that writes spans to local SQLite."""
 
     def __init__(self, db_path: str | None = None):
-        self.db_path = db_path or get_config().trace_db_path
+        self.db_path = db_path or get_config().resolved_trace_db_path
         self._db: SQLiteHelper | None = None
 
     def _on_ending(self, span: Any) -> None:
@@ -174,7 +173,7 @@ class TraceStore:
     """Query interface for locally stored traces."""
 
     def __init__(self, db_path: str | None = None):
-        self.db_path = db_path or get_config().trace_db_path
+        self.db_path = db_path or get_config().resolved_trace_db_path
         self._db = SQLiteHelper(self.db_path)
         self._init_schema()
 

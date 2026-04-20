@@ -244,12 +244,24 @@ class LocalKB:
         if not self._chunks and (self._vector is None or self._vector.count() == 0):
             return []
 
-        if self.search_type == "vector":
-            return self._vector_search(query, top_k)
-        elif self.search_type == "keyword":
-            return self._keyword_search(query, top_k)
-        else:
-            return self._hybrid_search(query, top_k)
+        from fastaiagent.kb._tracing import retrieval_span
+
+        backend = type(self._vector).__name__.lower().replace("vectorstore", "") or "local"
+        with retrieval_span(
+            kb_name=self.name,
+            backend=backend,
+            search_type=self.search_type,
+            query=query,
+            top_k=top_k,
+        ) as span:
+            if self.search_type == "vector":
+                results = self._vector_search(query, top_k)
+            elif self.search_type == "keyword":
+                results = self._keyword_search(query, top_k)
+            else:
+                results = self._hybrid_search(query, top_k)
+            span.record(results)
+            return results
 
     def _vector_search(self, query: str, top_k: int) -> list[SearchResult]:
         if not self._embedder or self._vector is None:

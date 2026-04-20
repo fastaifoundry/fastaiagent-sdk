@@ -18,7 +18,7 @@
       "end_time": "2025-01-15T10:30:02.500Z",
       "status": "OK",
       "attributes": {
-        "fastai.agent.name": "support-bot",
+        "agent.name": "support-bot",
         "gen_ai.system": "openai",
         "gen_ai.request.model": "gpt-4o"
       },
@@ -49,7 +49,7 @@
       "end_time": "2025-01-15T10:30:01.800Z",
       "status": "OK",
       "attributes": {
-        "fastai.tool.name": "search_docs"
+        "fastaiagent.tool.name": "search_docs"
       },
       "events": []
     },

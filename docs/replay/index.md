@@ -231,7 +231,7 @@ $ fastaiagent replay inspect b6acf1ef2c27 2
 
 Step 2: tool.search_docs
   Timestamp: 2025-01-15T10:30:01.300Z
-  Attributes: {'fastai.tool.name': 'search_docs'}
+  Attributes: {'fastaiagent.tool.name': 'search_docs'}
 ```
 
 ## Debugging Workflow

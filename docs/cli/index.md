@@ -182,7 +182,7 @@ Requires: `pip install 'fastaiagent[mcp-server]'`.
 | `FASTAIAGENT_API_KEY` | Platform connection (Python + CLI) |
 | `FASTAIAGENT_TARGET` | Platform URL override |
 | `FASTAIAGENT_PROJECT` | Platform project override |
-| `FASTAIAGENT_TRACE_DB_PATH` | Local SQLite trace store |
+| `FASTAIAGENT_LOCAL_DB` | Local SQLite trace store |
 | `FASTAIAGENT_CHECKPOINT_DB_PATH` | Local checkpoint store |
 | `FASTAIAGENT_LIVE_OPENAI_MODEL` | Override OpenAI model in live tests |
 | `FASTAIAGENT_LIVE_ANTHROPIC_MODEL` | Override Anthropic model in live tests |

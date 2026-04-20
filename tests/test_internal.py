@@ -82,7 +82,15 @@ class TestConfig:
     def test_default_config(self):
         config = SDKConfig()
         assert config.trace_enabled is True
-        assert config.trace_db_path == ".fastaiagent/traces.db"
+        assert config.local_db_path == ".fastaiagent/local.db"
+        assert config.trace_db_path is None
+        assert config.checkpoint_db_path is None
+        assert config.prompt_dir is None
+        assert config.resolved_trace_db_path == ".fastaiagent/local.db"
+        assert config.resolved_checkpoint_db_path == ".fastaiagent/local.db"
+        assert config.ui_enabled is False
+        assert config.ui_host == "127.0.0.1"
+        assert config.ui_port == 7842
         assert config.log_level == "WARNING"
         assert config.default_timeout == 120
 
@@ -90,10 +98,26 @@ class TestConfig:
         os.environ["FASTAIAGENT_TRACE_ENABLED"] = "false"
         os.environ["FASTAIAGENT_LOG_LEVEL"] = "DEBUG"
         os.environ["FASTAIAGENT_DEFAULT_TIMEOUT"] = "60"
+        os.environ["FASTAIAGENT_LOCAL_DB"] = "/tmp/custom.db"
+        os.environ["FASTAIAGENT_UI_PORT"] = "9000"
         config = SDKConfig.from_env()
         assert config.trace_enabled is False
         assert config.log_level == "DEBUG"
         assert config.default_timeout == 60
+        assert config.local_db_path == "/tmp/custom.db"
+        assert config.resolved_trace_db_path == "/tmp/custom.db"
+        assert config.ui_port == 9000
+
+    def test_legacy_env_var_emits_deprecation(self):
+        import warnings
+
+        os.environ["FASTAIAGENT_TRACE_DB_PATH"] = "/tmp/legacy-traces.db"
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            config = SDKConfig.from_env()
+        assert any(issubclass(w.category, DeprecationWarning) for w in caught)
+        # Legacy path still honored for back-compat via the resolved helper.
+        assert config.resolved_trace_db_path == "/tmp/legacy-traces.db"
 
     def test_get_config_singleton(self):
         c1 = get_config()

@@ -1,11 +1,12 @@
 # FastAIAgent SDK
 
 **Build, debug, evaluate, and operate AI agents.**
-The only SDK with **Agent Replay** — fork-and-rerun debugging for AI agents.
+The only SDK with **Agent Replay** — fork-and-rerun debugging — and a
+**zero-ceremony Local UI** that ships inside the Python wheel.
 
 Works standalone or connected to the [FastAIAgent Platform](https://fastaiagent.net) for visual editing, production monitoring, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=0.7.0)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=0.8.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -52,6 +53,24 @@ result = forked.rerun()
 ```
 
 **No other SDK can do this.**
+
+## See every trace, eval, and prompt in your browser — no Docker, no signup
+
+```bash
+pip install 'fastaiagent[ui]'
+fastaiagent ui
+```
+
+Opens a polished web UI at `http://127.0.0.1:7842`. Every agent run you
+execute lands here — span tree with Gantt-style timing, JSON-viewer
+inspector, Agent Replay fork-and-rerun in the browser, eval runs with
+pass-rate trend charts, prompt editor with version lineage, guardrail
+events, agent scorecards. Everything stored in one SQLite file at
+`./.fastaiagent/local.db`. Bcrypt-hashed local auth. Nothing phones home.
+
+![FastAIAgent Local UI — trace detail](docs/ui/screenshots/03-trace-detail.png)
+
+See [docs/ui/](docs/ui/index.md) for the full tour with 12 screenshots.
 
 ## Evaluate agents systematically
 

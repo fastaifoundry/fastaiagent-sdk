@@ -122,14 +122,30 @@ class Supervisor:
 
     async def arun(self, input: str, *, context: RunContext | None = None, **kwargs: Any) -> AgentResult:
         """Run the supervisor — delegates to workers via tool calls."""
-        agent = Agent(
-            name=self.name,
-            system_prompt=self.system_prompt,
-            llm=self.llm,
-            tools=self._build_worker_tools(context=context),
-            config=AgentConfig(max_iterations=self.max_delegation_rounds * 2),
-        )
-        return await agent.arun(input, context=context, **kwargs)
+        from fastaiagent.trace.otel import get_tracer
+
+        tracer = get_tracer()
+        # Root span wraps the supervisor run so the delegated worker spans
+        # nest as children in the UI span tree.
+        with tracer.start_as_current_span(f"supervisor.{self.name}") as span:
+            span.set_attribute("supervisor.name", self.name)
+            span.set_attribute(
+                "supervisor.worker_count",
+                len(getattr(self, "workers", []) or []),
+            )
+            span.set_attribute("fastaiagent.runner.type", "supervisor")
+            span.set_attribute("supervisor.input", input)
+
+            agent = Agent(
+                name=self.name,
+                system_prompt=self.system_prompt,
+                llm=self.llm,
+                tools=self._build_worker_tools(context=context),
+                config=AgentConfig(max_iterations=self.max_delegation_rounds * 2),
+            )
+            result = await agent.arun(input, context=context, **kwargs)
+            span.set_attribute("supervisor.output", result.output)
+            return result
 
     async def astream(
         self, input: str, *, context: RunContext | None = None, **kwargs: Any

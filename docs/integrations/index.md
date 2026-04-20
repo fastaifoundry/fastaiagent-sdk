@@ -30,7 +30,7 @@ response = client.chat.completions.create(
     messages=[{"role": "user", "content": "Hello"}],
 )
 
-# Traces are stored in .fastaiagent/traces.db
+# Traces are stored in .fastaiagent/local.db
 # View with: fastaiagent traces list
 ```
 
@@ -182,7 +182,7 @@ from fastaiagent.trace.export import create_otlp_exporter
 add_exporter(create_otlp_exporter("http://localhost:4318/v1/traces"))
 
 # Now all traces (from any integration) are sent to both:
-# 1. Local SQLite (.fastaiagent/traces.db)
+# 1. Local SQLite (.fastaiagent/local.db)
 # 2. Your OTel backend
 ```
 

@@ -115,6 +115,8 @@ nav:
       - tracing/index.md
   - Agent Replay:
       - replay/index.md
+  - Local UI:
+      - ui/index.md
   - Platform:
       - platform/index.md
   - Deployment:

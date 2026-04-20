@@ -13,7 +13,7 @@ Requires: pip install fastaiagent[langchain]
 # agent = create_tool_calling_agent(...)
 # result = agent.invoke({"input": "Hello"})
 
-# Traces are stored locally in .fastaiagent/traces.db
+# Traces are stored locally in .fastaiagent/local.db
 # View them with: fastaiagent traces list
 
 if __name__ == "__main__":
