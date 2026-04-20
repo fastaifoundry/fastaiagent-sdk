@@ -15,9 +15,19 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from typer.testing import CliRunner
+import pytest
 
-from fastaiagent.cli.main import app as main_app
+# The `ui start` command lazy-imports fastapi + uvicorn + bcrypt + itsdangerous.
+# Running these tests without the `[ui]` extra would exit non-zero with a
+# ModuleNotFoundError inside the Typer runner; skip the whole module instead.
+pytest.importorskip("fastapi")
+pytest.importorskip("uvicorn")
+pytest.importorskip("bcrypt")
+pytest.importorskip("itsdangerous")
+
+from typer.testing import CliRunner  # noqa: E402
+
+from fastaiagent.cli.main import app as main_app  # noqa: E402
 from fastaiagent.cli.ui import ui_app
 
 runner = CliRunner()
