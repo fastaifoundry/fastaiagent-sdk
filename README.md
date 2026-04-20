@@ -6,7 +6,7 @@ The only SDK with **Agent Replay** — fork-and-rerun debugging — and a
 
 Works standalone or connected to the [FastAIAgent Platform](https://fastaiagent.net) for visual editing, production monitoring, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=0.8.0)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=0.8.1)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -68,9 +68,9 @@ pass-rate trend charts, prompt editor with version lineage, guardrail
 events, agent scorecards. Everything stored in one SQLite file at
 `./.fastaiagent/local.db`. Bcrypt-hashed local auth. Nothing phones home.
 
-![FastAIAgent Local UI — trace detail](docs/ui/screenshots/03-trace-detail.png)
+![FastAIAgent Local UI — trace detail](https://raw.githubusercontent.com/fastaifoundry/fastaiagent-sdk/main/docs/ui/screenshots/03-trace-detail.png)
 
-See [docs/ui/](docs/ui/index.md) for the full tour with 12 screenshots.
+See [docs/ui/](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/ui/index.md) for the full tour with 12 screenshots.
 
 ## Evaluate agents systematically
 
