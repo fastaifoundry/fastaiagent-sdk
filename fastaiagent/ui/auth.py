@@ -108,7 +108,7 @@ def delete_auth_file(path: Path | None = None) -> bool:
 def verify_password(password: str, auth: AuthFile) -> bool:
     import bcrypt
 
-    return bcrypt.checkpw(password.encode(), auth.password_hash.encode())
+    return bool(bcrypt.checkpw(password.encode(), auth.password_hash.encode()))
 
 
 def _serializer(session_secret: str) -> Any:

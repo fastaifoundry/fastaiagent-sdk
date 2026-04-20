@@ -99,9 +99,9 @@ def list_agents(
     ctx = get_context(request)
     db = ctx.db()
     try:
-        rows = db.fetchall(
-            "SELECT * FROM spans WHERE parent_span_id IS NULL OR parent_span_id = ''"
-        )
+        # Scan every agent.* span, not just root spans. With workflow
+        # wrappers (chain/swarm/supervisor), agents always run as children.
+        rows = db.fetchall("SELECT * FROM spans WHERE name LIKE 'agent.%'")
         by_agent = _aggregate(rows)
         return {"agents": [_format(b) for b in by_agent.values()]}
     finally:
@@ -117,9 +117,7 @@ def get_agent(
     ctx = get_context(request)
     db = ctx.db()
     try:
-        rows = db.fetchall(
-            "SELECT * FROM spans WHERE parent_span_id IS NULL OR parent_span_id = ''"
-        )
+        rows = db.fetchall("SELECT * FROM spans WHERE name LIKE 'agent.%'")
         by_agent = _aggregate(rows)
         if name not in by_agent:
             raise HTTPException(
