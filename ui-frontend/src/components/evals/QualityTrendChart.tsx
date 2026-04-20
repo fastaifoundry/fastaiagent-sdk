@@ -36,7 +36,7 @@ export function QualityTrendChart({ points }: Props) {
 
   return (
     <ResponsiveContainer width="100%" height={180}>
-      <LineChart data={data} margin={{ top: 8, right: 16, bottom: 4, left: -16 }}>
+      <LineChart data={data} margin={{ top: 8, right: 16, bottom: 4, left: 12 }}>
         <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
         <XAxis
           dataKey="ts"
@@ -57,7 +57,7 @@ export function QualityTrendChart({ points }: Props) {
           tickFormatter={(v) => `${v}%`}
           stroke="currentColor"
           className="text-muted-foreground text-xs"
-          width={40}
+          width={48}
         />
         <Tooltip
           cursor={{ stroke: "var(--color-primary)", strokeWidth: 1 }}
