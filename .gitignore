@@ -42,8 +42,16 @@ coverage.xml
 # MkDocs build output
 site/
 
+# Frontend build artifacts (built fresh by CI; bundled into the wheel)
+ui-frontend/node_modules/
+ui-frontend/dist/
+ui-frontend/test-results/
+ui-frontend/playwright-report/
+fastaiagent/ui/static/
+
 # Internal / private
 claude_files/
+.claude/
 
 # Scripts / recordings / videos
 scripts/

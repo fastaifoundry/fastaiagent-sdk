@@ -5,7 +5,7 @@ The only SDK with **Agent Replay** — fork-and-rerun debugging for AI agents.
 
 Works standalone or connected to the [FastAIAgent Platform](https://fastaiagent.net) for visual editing, production monitoring, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=0.7.0)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=0.8.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -52,6 +52,20 @@ result = forked.rerun()
 ```
 
 **No other SDK can do this.**
+
+## Browse traces, evals, prompts in your browser — no Docker, no signup
+
+```bash
+pip install 'fastaiagent[ui]'
+fastaiagent ui
+```
+
+First run prompts for a username + password, opens `http://127.0.0.1:7842`,
+and shows every trace, eval run, guardrail event, and prompt version from
+`./.fastaiagent/local.db`. Agent Replay runs interactively in the browser.
+Bcrypt-hashed local auth; nothing phones home.
+
+See [docs/ui/](docs/ui/) for the full tour.
 
 ## Evaluate agents systematically
 

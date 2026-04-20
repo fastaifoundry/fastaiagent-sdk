@@ -4,17 +4,19 @@ from __future__ import annotations
 
 import re
 import time
+from pathlib import Path
 from typing import Any
 
+from fastaiagent._internal.config import get_config
 from fastaiagent.prompt.fragment import Fragment
 from fastaiagent.prompt.prompt import Prompt
-from fastaiagent.prompt.storage import YAMLStorage
+from fastaiagent.prompt.storage import SQLiteStorage
 
 _DEFAULT_CACHE_TTL = 300  # 5 minutes
 
 
 class PromptRegistry:
-    """Prompt registry with local file storage and optional platform support.
+    """Prompt registry backed by the unified local SQLite store.
 
     Example:
         reg = PromptRegistry()
@@ -29,11 +31,26 @@ class PromptRegistry:
         prompt = reg.get("support-prompt")  # fetches from platform
     """
 
-    def __init__(self, store: str = "local", path: str = ".prompts/"):
-        self._storage = YAMLStorage(path=path)
+    def __init__(self, store: str = "local", path: str | None = None):
+        resolved = path if path is not None else get_config().local_db_path
+        self._storage = SQLiteStorage(resolved)
         self._fragments: dict[str, Fragment] = {}
         self._platform_cache: dict[tuple[str, int | None], tuple[Prompt, float]] = {}
         self._cache_ttl: int = _DEFAULT_CACHE_TTL
+
+    def is_local(self) -> bool:
+        """True iff the backing SQLite file resolves inside the current project tree.
+
+        Gates the UI's prompt editor: when False the editor goes read-only and a
+        banner explains the registry is owned by an external environment.
+        """
+        try:
+            storage_file = self._storage.file.resolve()
+            cwd = Path.cwd().resolve()
+            storage_file.relative_to(cwd)
+            return True
+        except (ValueError, OSError):
+            return False
 
     def get(
         self,

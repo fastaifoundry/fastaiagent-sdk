@@ -11,9 +11,11 @@ from fastaiagent.cli.auth import auth_app, connect, disconnect
 from fastaiagent.cli.eval import eval_app
 from fastaiagent.cli.kb import kb_app
 from fastaiagent.cli.mcp import mcp_app
+from fastaiagent.cli.migrate import migrate_command
 from fastaiagent.cli.prompts import prompts_app
 from fastaiagent.cli.replay import replay_app
 from fastaiagent.cli.traces import traces_app
+from fastaiagent.cli.ui import ui_app
 
 app = typer.Typer(
     name="fastaiagent",
@@ -29,10 +31,15 @@ app.add_typer(kb_app, name="kb", help="Manage knowledge bases")
 app.add_typer(mcp_app, name="mcp", help="Expose an Agent or Chain as an MCP server")
 app.add_typer(agent_app, name="agent", help="Run an Agent or Chain as a service")
 app.add_typer(auth_app, name="auth", help="Inspect saved Platform credentials")
+app.add_typer(ui_app, name="ui", help="Local web UI (traces, prompts, evals, guardrails)")
 
 # Top-level connect/disconnect for the common case.
 app.command(name="connect", help="Save Platform credentials and verify the key.")(connect)
 app.command(name="disconnect", help="Remove saved Platform credentials.")(disconnect)
+app.command(
+    name="migrate",
+    help="Copy legacy traces.db, checkpoints.db, and .prompts/ into local.db.",
+)(migrate_command)
 
 
 # Known optional extras and the packages that identify them. We probe each

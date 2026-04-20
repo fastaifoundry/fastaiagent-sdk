@@ -235,3 +235,50 @@ class TestPromptRegistry:
         """Template with no {{}} has empty variables list."""
         p = Prompt(name="static", template="No variables here.")
         assert p.variables == []
+
+    # --- SQLite-backed registry specifics (post-YAML migration) ---
+
+    def test_registry_accepts_db_file_path(self, temp_dir):
+        db = temp_dir / "local.db"
+        reg = PromptRegistry(path=str(db))
+        reg.register("greet", "Hello {{name}}!")
+        assert db.exists()
+        assert reg.load("greet").template == "Hello {{name}}!"
+
+    def test_registry_accepts_directory_path(self, temp_dir):
+        dir_path = temp_dir / "prompts"
+        reg = PromptRegistry(path=str(dir_path))
+        reg.register("greet", "Hello!")
+        # Legacy dir form places local.db inside the directory.
+        assert (dir_path / "local.db").exists()
+
+    def test_is_local_when_file_inside_cwd(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        reg = PromptRegistry(path=str(tmp_path / "local.db"))
+        assert reg.is_local() is True
+
+    def test_is_local_false_when_file_outside_cwd(self, tmp_path, monkeypatch):
+        outside = tmp_path / "elsewhere"
+        outside.mkdir()
+        cwd = tmp_path / "project"
+        cwd.mkdir()
+        monkeypatch.chdir(cwd)
+        reg = PromptRegistry(path=str(outside / "local.db"))
+        assert reg.is_local() is False
+
+    def test_prompts_share_local_db_with_other_stores(self, temp_dir):
+        """Prompts, traces, checkpoints all land in one SQLite file."""
+        db = temp_dir / "local.db"
+        reg = PromptRegistry(path=str(db))
+        reg.register("hello", "Hello {{name}}!")
+
+        from fastaiagent._internal.storage import SQLiteHelper
+
+        with SQLiteHelper(db) as raw:
+            tables = {
+                r["name"]
+                for r in raw.fetchall(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            }
+        assert {"prompts", "prompt_versions", "spans", "checkpoints"}.issubset(tables)

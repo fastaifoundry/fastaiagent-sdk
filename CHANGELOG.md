@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-04-20
+
+### Added — Local UI
+
+A single-user, Platform-lookalike web UI that ships inside the wheel. Run
+`pip install 'fastaiagent[ui]'` then `fastaiagent ui` — bcrypt-hashed local
+auth, browser opens automatically, nothing leaves your machine.
+
+- **`fastaiagent ui`** CLI (`start`, `reset-password`) — FastAPI + uvicorn,
+  `127.0.0.1:7842` by default, `--no-auth` / `--no-open` / `--port` / `--db` /
+  `--auth-file` / `--host` flags, interactive first-run credential prompt.
+- **Pages**: Overview, Traces list + Trace detail (Gantt-style span tree +
+  Input/Output/Attributes/Events inspector), Agent Replay (fork dialog,
+  rerun, side-by-side comparison, "save as regression test"), Eval Runs
+  (trend chart + per-case scorer chips), Prompts browser + editor (gated on
+  local registry), Guardrail events, Agent directory + agent detail.
+- **Tech**: React 19 + Vite + Tailwind v4 + shadcn/ui, design tokens
+  vendored from the SaaS Platform for visual parity; TanStack Query with
+  manual refetch (no live stream — simple REST refresh UX).
+
+### Changed — unified local storage (breaking)
+
+All local persistence now lives in a single SQLite file at
+`./.fastaiagent/local.db` (was: `traces.db` + `checkpoints.db` + `.prompts/`
+YAML files).
+
+- `PromptRegistry` is now SQLite-backed (`YAMLStorage` → `SQLiteStorage`);
+  public API unchanged.
+- `TraceStore`, `CheckpointStore` write to `local.db`.
+- `EvalResults.persist_local()` writes one `eval_runs` row + N `eval_cases`
+  rows; `evaluate()` calls it automatically (opt out with `persist=False`).
+- `Guardrail.aexecute()` writes to `guardrail_events` when
+  `FASTAIAGENT_UI_ENABLED=true` (no-op otherwise).
+- Legacy env vars (`FASTAIAGENT_TRACE_DB_PATH`, `FASTAIAGENT_CHECKPOINT_DB_PATH`,
+  `FASTAIAGENT_PROMPT_DIR`) still work but emit `DeprecationWarning`.
+- **`fastaiagent migrate`** copies legacy `traces.db` + `checkpoints.db` +
+  `.prompts/` into `local.db`. Auto-invoked by `fastaiagent ui start` on
+  first run if legacy files are detected.
+
+### Added — config fields
+
+- `SDKConfig.local_db_path` (default `.fastaiagent/local.db`) + env var
+  `FASTAIAGENT_LOCAL_DB`.
+- `SDKConfig.ui_enabled`, `ui_host`, `ui_port` + env vars
+  `FASTAIAGENT_UI_ENABLED`, `FASTAIAGENT_UI_HOST`, `FASTAIAGENT_UI_PORT`.
+- `PromptRegistry.is_local()` returns True iff the DB file lives inside
+  the current working directory — used by the UI to gate prompt editing.
+
 ## [0.7.0] - 2026-04-18
 
 ### Added — Platform-hosted Knowledge Bases

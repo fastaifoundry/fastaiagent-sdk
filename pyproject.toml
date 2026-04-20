@@ -1,6 +1,6 @@
 [project]
 name = "fastaiagent"
-version = "0.7.0"
+version = "0.8.0"
 description = "Build, debug, evaluate, and operate AI agents. The only SDK with fork-and-rerun Agent Replay."
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -43,7 +43,14 @@ mcp-server = ["mcp>=1.2"]
 otel-export = [
     "opentelemetry-exporter-otlp>=1.20",
 ]
-all = ["fastaiagent[openai,anthropic,langchain,crewai,kb,qdrant,chroma,mcp-server,otel-export]"]
+ui = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "aiosqlite>=0.19",
+    "bcrypt>=4.0",
+    "itsdangerous>=2.1",
+]
+all = ["fastaiagent[openai,anthropic,langchain,crewai,kb,qdrant,chroma,mcp-server,otel-export,ui]"]
 docs = [
     "mkdocs>=1.6",
     "mkdocs-material>=9.5",
@@ -74,6 +81,12 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["fastaiagent"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"fastaiagent/ui/static" = "fastaiagent/ui/static"
+
+[tool.hatch.build.targets.sdist]
+exclude = ["fastaiagent/ui/static", "ui-frontend/node_modules", "ui-frontend/dist"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
