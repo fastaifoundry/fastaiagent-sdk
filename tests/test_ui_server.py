@@ -49,13 +49,13 @@ def seeded_db(temp_dir: Path) -> Path:
                 "OK",
                 json.dumps(
                     {
-                        "fastai.agent.name": "example-agent",
-                        "fastai.cost.total_usd": 0.0012,
+                        "agent.name": "example-agent",
+                        "fastaiagent.cost.total_usd": 0.0012,
                         "gen_ai.usage.input_tokens": 80,
                         "gen_ai.usage.output_tokens": 40,
-                        "fastai.thread.id": "t-1",
-                        "fastai.prompt.name": "greet",
-                        "fastai.prompt.version": "1",
+                        "fastaiagent.thread.id": "t-1",
+                        "fastaiagent.prompt.name": "greet",
+                        "fastaiagent.prompt.version": "1",
                     }
                 ),
                 "[]",

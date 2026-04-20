@@ -64,7 +64,7 @@ parent-operation
 
 ## Local Storage
 
-All traces are stored automatically in a local SQLite database at `.fastaiagent/traces.db`. No configuration needed.
+All traces are stored automatically in a local SQLite database at `.fastaiagent/local.db`. No configuration needed.
 
 ### Querying Traces
 
@@ -154,15 +154,15 @@ The SDK follows the OpenTelemetry GenAI semantic conventions for LLM-related att
 
 | Attribute | Description |
 |-----------|-------------|
-| `fastai.agent.name` | Agent name |
-| `fastai.chain.name` | Chain name |
-| `fastai.chain.node_id` | Current node in chain |
-| `fastai.chain.iteration` | Cycle iteration count |
-| `fastai.tool.name` | Tool being executed |
-| `fastai.checkpoint.id` | Checkpoint ID |
-| `fastai.guardrail.name` | Guardrail name |
-| `fastai.guardrail.passed` | Whether guardrail passed |
-| `fastai.cost.total_usd` | Accumulated cost |
+| `agent.name` | Agent name |
+| `fastaiagent.chain.name` | Chain name |
+| `fastaiagent.chain.node_id` | Current node in chain |
+| `fastaiagent.chain.iteration` | Cycle iteration count |
+| `fastaiagent.tool.name` | Tool being executed |
+| `fastaiagent.checkpoint.id` | Checkpoint ID |
+| `fastaiagent.guardrail.name` | Guardrail name |
+| `fastaiagent.guardrail.passed` | Whether guardrail passed |
+| `fastaiagent.cost.total_usd` | Accumulated cost |
 
 ### Agent Reconstruction Attributes (used by Replay)
 
@@ -272,12 +272,12 @@ Traces are always stored as SQLite. The database path can point to any filesyste
 ### Local
 
 ```bash
-export FASTAIAGENT_TRACE_DB_PATH=/data/my-project/traces.db
+export FASTAIAGENT_LOCAL_DB=/data/my-project/local.db
 ```
 
 ```python
 from fastaiagent.trace import TraceStore
-store = TraceStore(db_path="/data/my-project/traces.db")
+store = TraceStore(db_path="/data/my-project/local.db")
 ```
 
 ### Cloud-Mounted Filesystems
@@ -286,22 +286,22 @@ Mount a cloud volume and point the trace path to it. SQLite works on any POSIX-c
 
 | Cloud Provider | Mount Tool | Example Path |
 |----------------|-----------|--------------|
-| **Azure Files** | Azure File Share (SMB/NFS) | `/mnt/azure-share/traces.db` |
-| **AWS S3** | [Mountpoint for S3](https://github.com/awslabs/mountpoint-s3) or s3fs-fuse | `/mnt/s3-bucket/traces.db` |
-| **AWS EFS** | NFS mount | `/mnt/efs/traces.db` |
-| **GCS** | [Cloud Storage FUSE](https://cloud.google.com/storage/docs/gcs-fuse) | `/mnt/gcs-bucket/traces.db` |
+| **Azure Files** | Azure File Share (SMB/NFS) | `/mnt/azure-share/local.db` |
+| **AWS S3** | [Mountpoint for S3](https://github.com/awslabs/mountpoint-s3) or s3fs-fuse | `/mnt/s3-bucket/local.db` |
+| **AWS EFS** | NFS mount | `/mnt/efs/local.db` |
+| **GCS** | [Cloud Storage FUSE](https://cloud.google.com/storage/docs/gcs-fuse) | `/mnt/gcs-bucket/local.db` |
 
 ```bash
 # Azure Files example
-export FASTAIAGENT_TRACE_DB_PATH=/mnt/azure-share/traces.db
+export FASTAIAGENT_LOCAL_DB=/mnt/azure-share/local.db
 
 # S3 via Mountpoint
-export FASTAIAGENT_TRACE_DB_PATH=/mnt/s3-bucket/traces.db
+export FASTAIAGENT_LOCAL_DB=/mnt/s3-bucket/local.db
 ```
 
 ```python
 # Or set programmatically
-store = TraceStore(db_path="/mnt/azure-share/traces.db")
+store = TraceStore(db_path="/mnt/azure-share/local.db")
 ```
 
 > **Note:** SQLite requires a filesystem that supports file locking. Most cloud-mounted POSIX filesystems (Azure Files, EFS, GCS FUSE) support this. Object-storage mounts (S3 Mountpoint, s3fs-fuse) work for single-writer scenarios — avoid concurrent writes from multiple processes to the same SQLite file on these mounts.
@@ -351,7 +351,7 @@ Your Code
     ▼
 OTel TracerProvider (singleton)
     │
-    ├── LocalStorageProcessor → SQLite (.fastaiagent/traces.db)
+    ├── LocalStorageProcessor → SQLite (.fastaiagent/local.db)
     │
     ├── BatchSpanProcessor → OTLP Exporter (Jaeger, Datadog, etc.)
     │

@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { TraceDetail, TraceFilters, TracesPage, SpanTreeNode } from "@/lib/types";
 
@@ -8,6 +8,7 @@ function buildQuery(filters: TraceFilters): string {
   if (filters.status) params.set("status", filters.status);
   if (filters.q) params.set("q", filters.q);
   if (filters.thread_id) params.set("thread_id", filters.thread_id);
+  if (filters.runner_type) params.set("runner_type", filters.runner_type);
   if (filters.since) params.set("since", filters.since);
   if (filters.until) params.set("until", filters.until);
   if (filters.min_duration_ms != null) params.set("min_duration_ms", String(filters.min_duration_ms));
@@ -40,5 +41,22 @@ export function useTraceSpans(traceId: string | undefined) {
     queryKey: ["trace-spans", traceId],
     queryFn: () => api.get<{ tree: SpanTreeNode }>(`/traces/${traceId}/spans`),
     enabled: !!traceId,
+  });
+}
+
+export function useDeleteTrace() {
+  return useMutation({
+    mutationFn: (traceId: string) =>
+      api.delete<{ deleted: number }>(`/traces/${traceId}`),
+  });
+}
+
+export function useBulkDeleteTraces() {
+  return useMutation({
+    mutationFn: (traceIds: string[]) =>
+      api.post<{ deleted: number; requested: number }>(
+        "/traces/bulk-delete",
+        { trace_ids: traceIds }
+      ),
   });
 }

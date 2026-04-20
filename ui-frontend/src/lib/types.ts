@@ -2,6 +2,8 @@
  * Shared TypeScript types mirroring the FastAPI server's Pydantic models.
  */
 
+export type RunnerType = "agent" | "chain" | "swarm" | "supervisor";
+
 export interface TraceRow {
   trace_id: string;
   name: string;
@@ -14,6 +16,8 @@ export interface TraceRow {
   thread_id: string | null;
   total_cost_usd: number | null;
   total_tokens: number | null;
+  runner_type: RunnerType;
+  runner_name: string | null;
 }
 
 export interface TracesPage {
@@ -51,6 +55,8 @@ export interface TraceDetail {
   total_cost_usd: number | null;
   total_tokens: number | null;
   span_count: number;
+  runner_type: RunnerType;
+  runner_name: string | null;
   spans: SpanRow[];
 }
 
@@ -158,6 +164,93 @@ export interface EvalTrendPoint {
   dataset_name: string | null;
 }
 
+export interface AnalyticsPoint {
+  bucket: string;
+  trace_count: number;
+  error_count: number;
+  error_rate: number;
+  cost_usd: number;
+  p50_ms: number | null;
+  p95_ms: number | null;
+  p99_ms: number | null;
+}
+
+export interface AnalyticsSummary {
+  trace_count: number;
+  error_count: number;
+  error_rate: number;
+  total_cost_usd: number;
+  p50_ms: number | null;
+  p95_ms: number | null;
+  p99_ms: number | null;
+}
+
+export interface AnalyticsAgent {
+  agent_name: string;
+  run_count: number;
+  avg_latency_ms?: number;
+  total_cost_usd: number;
+  avg_cost_usd?: number;
+  error_count: number;
+}
+
+export interface AnalyticsPayload {
+  window_hours: number;
+  granularity: "hour" | "day";
+  summary: AnalyticsSummary;
+  points: AnalyticsPoint[];
+  top_slowest_agents: AnalyticsAgent[];
+  top_priciest_agents: AnalyticsAgent[];
+}
+
+export interface TraceScores {
+  trace_id: string;
+  guardrail_events: {
+    event_id: string;
+    guardrail_name: string;
+    guardrail_type: string | null;
+    position: string | null;
+    outcome: string | null;
+    score: number | null;
+    message: string | null;
+    agent_name: string | null;
+    timestamp: string | null;
+  }[];
+  eval_cases: {
+    case_id: string;
+    run_id: string;
+    ordinal: number;
+    per_scorer: Record<string, { passed: boolean; score: number; reason?: string | null }>;
+    run_name: string | null;
+    dataset_name: string | null;
+    started_at: string | null;
+    input: unknown;
+    expected_output: unknown;
+    actual_output: unknown;
+  }[];
+}
+
+export interface ThreadTrace {
+  trace_id: string;
+  name: string;
+  start_time: string;
+  end_time: string | null;
+  status: string;
+  span_count: number;
+  duration_ms: number | null;
+  agent_name: string | null;
+  thread_id: string | null;
+  total_cost_usd: number | null;
+  total_tokens: number | null;
+  runner_type: RunnerType;
+  runner_name: string | null;
+}
+
+export interface ThreadDetail {
+  thread_id: string;
+  traces: ThreadTrace[];
+}
+
 export interface GuardrailEvent {
   event_id: string;
   trace_id: string | null;
@@ -203,6 +296,7 @@ export interface TraceFilters {
   status?: string | null;
   q?: string;
   thread_id?: string | null;
+  runner_type?: RunnerType | null;
   since?: string;
   until?: string;
   min_duration_ms?: number;

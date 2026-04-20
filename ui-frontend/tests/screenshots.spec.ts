@@ -33,7 +33,7 @@ test("01 — Overview / home", async ({ page }) => {
 test("02 — Traces list", async ({ page }) => {
   await page.goto("/traces");
   await expect(page.getByRole("heading", { name: /Traces/i })).toBeVisible();
-  await expect(page.getByText("agent.support-bot")).toBeVisible();
+  await expect(page.getByText("agent.support-bot").first()).toBeVisible();
   await page.waitForTimeout(200);
   await page.screenshot(SHOT("02-traces"));
 });
@@ -121,4 +121,26 @@ test("12 — Login page", async ({ page }) => {
   await expect(page.getByLabel(/password/i)).toBeVisible();
   await page.waitForTimeout(150);
   await page.screenshot(SHOT("12-login"));
+});
+
+test("13 — Analytics", async ({ page }) => {
+  await page.goto("/analytics");
+  await expect(page.getByRole("heading", { name: /Analytics/i })).toBeVisible();
+  await expect(page.getByText(/Latency percentiles/i)).toBeVisible();
+  await page.waitForTimeout(500);
+  await page.screenshot(SHOT("13-analytics"));
+});
+
+test("14 — Thread view", async ({ page }) => {
+  await page.goto("/threads/session-demo");
+  await expect(page.getByRole("heading", { name: /Thread/i })).toBeVisible();
+  await page.waitForTimeout(250);
+  await page.screenshot(SHOT("14-thread"));
+});
+
+test("15 — Trace detail with scores card", async ({ page }) => {
+  await page.goto("/traces/aaaaaaaaaaaaaaaaaaaaaaaaaaaa1111");
+  await expect(page.getByText(/Scores/i).first()).toBeVisible();
+  await page.waitForTimeout(400);
+  await page.screenshot(SHOT("15-trace-scores"));
 });

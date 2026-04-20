@@ -4,7 +4,7 @@ Traces are stored automatically in a local SQLite database every time
 an agent or chain runs. This example shows how to use TraceStore to
 list, inspect, search, and export those traces.
 
-The SQLite database defaults to .fastaiagent/traces.db but can point to
+The SQLite database defaults to .fastaiagent/local.db but can point to
 any location — including cloud-mounted filesystems (Azure Files, S3 via
 Mountpoint/s3fs, EFS, GCS FUSE, etc.).
 
@@ -12,7 +12,7 @@ Usage:
     python examples/10_trace_query.py
 
     # Custom storage location (local or mounted):
-    FASTAIAGENT_TRACE_DB_PATH=/mnt/azure-share/traces.db python examples/10_trace_query.py
+    FASTAIAGENT_LOCAL_DB=/mnt/azure-share/local.db python examples/10_trace_query.py
 """
 
 import json
@@ -25,7 +25,7 @@ def create_sample_traces() -> list[str]:
     trace_ids = []
 
     with trace_context("data-pipeline") as span:
-        span.set_attribute("fastai.agent.name", "ingest-bot")
+        span.set_attribute("agent.name", "ingest-bot")
         span.set_attribute("pipeline.stage", "extract")
 
         with trace_context("fetch-api"):
@@ -38,7 +38,7 @@ def create_sample_traces() -> list[str]:
         trace_ids.append(format(span.get_span_context().trace_id, "032x"))
 
     with trace_context("support-agent") as span:
-        span.set_attribute("fastai.agent.name", "support-bot")
+        span.set_attribute("agent.name", "support-bot")
         span.set_attribute("gen_ai.system", "openai")
         span.set_attribute("gen_ai.request.model", "gpt-4.1")
 
@@ -59,10 +59,10 @@ if __name__ == "__main__":
     print(f"\nCreated {len(trace_ids)} sample traces.\n")
 
     # ── 2. Open the trace store ──────────────────────────────────
-    # Default path: .fastaiagent/traces.db
-    # Override with FASTAIAGENT_TRACE_DB_PATH env var, or pass db_path:
-    #   store = TraceStore(db_path="/mnt/azure-share/traces.db")
-    #   store = TraceStore(db_path="/mnt/s3-bucket/traces.db")
+    # Default path: .fastaiagent/local.db
+    # Override with FASTAIAGENT_LOCAL_DB env var, or pass db_path:
+    #   store = TraceStore(db_path="/mnt/azure-share/local.db")
+    #   store = TraceStore(db_path="/mnt/s3-bucket/local.db")
     store = TraceStore()
 
     # ── 3. List recent traces ────────────────────────────────────
@@ -104,11 +104,11 @@ if __name__ == "__main__":
 
     # ── 7. Custom storage location examples ──────────────────────
     print("Storage location options:")
-    print("  Local (default):  .fastaiagent/traces.db")
-    print("  Custom local:     FASTAIAGENT_TRACE_DB_PATH=/data/traces.db")
-    print("  Azure Files:      FASTAIAGENT_TRACE_DB_PATH=/mnt/azure-share/traces.db")
-    print("  S3 (Mountpoint):  FASTAIAGENT_TRACE_DB_PATH=/mnt/s3-bucket/traces.db")
-    print("  EFS:              FASTAIAGENT_TRACE_DB_PATH=/mnt/efs/traces.db")
-    print("  GCS FUSE:         FASTAIAGENT_TRACE_DB_PATH=/mnt/gcs-bucket/traces.db")
+    print("  Local (default):  .fastaiagent/local.db")
+    print("  Custom local:     FASTAIAGENT_LOCAL_DB=/data/local.db")
+    print("  Azure Files:      FASTAIAGENT_LOCAL_DB=/mnt/azure-share/local.db")
+    print("  S3 (Mountpoint):  FASTAIAGENT_LOCAL_DB=/mnt/s3-bucket/local.db")
+    print("  EFS:              FASTAIAGENT_LOCAL_DB=/mnt/efs/local.db")
+    print("  GCS FUSE:         FASTAIAGENT_LOCAL_DB=/mnt/gcs-bucket/local.db")
 
     store.close()

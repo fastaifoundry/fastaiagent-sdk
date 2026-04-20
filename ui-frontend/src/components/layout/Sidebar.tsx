@@ -1,6 +1,7 @@
 import { Link, NavLink } from "react-router-dom";
 import {
   Activity,
+  BarChart3,
   Bot,
   FileText,
   LayoutDashboard,
@@ -30,6 +31,7 @@ const SECTIONS: NavSection[] = [
     label: "// OBSERVABILITY",
     items: [
       { to: "/traces", label: "Traces", icon: Activity },
+      { to: "/analytics", label: "Analytics", icon: BarChart3 },
       { to: "/guardrails", label: "Guardrail Events", icon: Shield },
     ],
   },

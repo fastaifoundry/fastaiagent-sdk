@@ -17,6 +17,8 @@ const SAMPLE: TraceRow[] = [
     thread_id: null,
     total_cost_usd: 0.0042,
     total_tokens: 512,
+    runner_type: "agent",
+    runner_name: "support-bot",
   },
   {
     trace_id: "failing01234567890abc",
@@ -30,6 +32,8 @@ const SAMPLE: TraceRow[] = [
     thread_id: null,
     total_cost_usd: null,
     total_tokens: null,
+    runner_type: "agent",
+    runner_name: "flaky",
   },
 ];
 
@@ -61,8 +65,23 @@ describe("TracesTable", () => {
     renderWithProviders(<TracesTable rows={SAMPLE} />);
     expect(screen.getByRole("columnheader", { name: "Trace" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Name" })).toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: "Agent" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Workflow" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Runner" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Thread" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Status" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Cost" })).toBeInTheDocument();
+  });
+
+  it("renders a clickable thread chip when thread_id is present", () => {
+    renderWithProviders(
+      <TracesTable
+        rows={[
+          { ...SAMPLE[0], thread_id: "session-demo" },
+          SAMPLE[1],
+        ]}
+      />
+    );
+    const threadLink = screen.getByRole("link", { name: /session-demo/i });
+    expect(threadLink).toHaveAttribute("href", "/threads/session-demo");
   });
 });

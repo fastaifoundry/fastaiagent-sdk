@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.8.0] - 2026-04-20
 
+### Added — KB retrieval tracing
+
+``LocalKB.search()``, ``PlatformKB.search()``, and ``PlatformKB.asearch()``
+now emit a ``retrieval.<kb_name>`` span with ``retrieval.backend``,
+``retrieval.search_type``, ``retrieval.query`` (payload-gated),
+``retrieval.top_k``, ``retrieval.result_count``, ``retrieval.latency_ms``,
+and ``retrieval.doc_ids`` (payload-gated). The span nests as a child of
+the ``tool.*`` span when the KB is wired in via ``kb.as_tool()``, so the
+trace tree becomes ``agent → tool → retrieval`` without extra work.
+
+### Changed — unified workflow tracing for Chain / Swarm / Supervisor
+
+Multi-agent runs used to fragment into N orphan agent traces. They now
+emit a single root span with ``fastaiagent.runner.type`` set to
+``chain``, ``swarm``, or ``supervisor``, so a chain of 3 agents shows up
+as **one** trace with a Gantt-style tree of agents and LLM calls
+underneath.
+
+- ``Chain.aexecute()`` wraps in ``chain.<name>`` + sets ``chain.name``,
+  ``chain.node_count``, ``chain.node_ids``, ``chain.input``,
+  ``chain.output``, ``chain.execution_id``.
+- ``Swarm.arun()`` wraps in ``swarm.<name>`` + sets ``swarm.name``,
+  ``swarm.entrypoint``, ``swarm.agent_count``, ``swarm.input``,
+  ``swarm.output``, ``swarm.handoff_count``.
+- ``Supervisor.arun()`` wraps in ``supervisor.<name>`` + sets
+  ``supervisor.name``, ``supervisor.worker_count``,
+  ``supervisor.input``, ``supervisor.output``.
+- UI: new Workflow badge in the traces table + trace detail summary bar;
+  new Runner filter pill (Agent / Chain / Swarm / Supervisor); new
+  ``runner_type`` query param on ``/api/traces``.
+
 ### Changed — graduated from Alpha to Beta
 
 PyPI classifier moved from `Development Status :: 3 - Alpha` to

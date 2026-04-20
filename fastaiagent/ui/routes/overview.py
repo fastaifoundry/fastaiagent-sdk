@@ -71,6 +71,8 @@ def overview(
                LIMIT 10""",
             (day_ago,),
         )
+        from fastaiagent.ui.attrs import attr
+
         agents_with_errors: dict[str, int] = {}
         for row in recent_errors:
             attrs_raw = row.get("attributes") or "{}"
@@ -78,7 +80,7 @@ def overview(
                 attrs = json.loads(attrs_raw)
             except json.JSONDecodeError:
                 attrs = {}
-            name = attrs.get("fastai.agent.name")
+            name = attr(attrs, "agent.name")
             if name:
                 agents_with_errors[name] = agents_with_errors.get(name, 0) + 1
 

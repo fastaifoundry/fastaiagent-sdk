@@ -235,9 +235,9 @@ async def _execute_node(
     if node.type == NodeType.agent:
         if node.agent is None:
             return {"error": f"No agent attached to node '{node.id}'"}
+        # Agent spans nest under the chain root span — see Chain.aexecute.
         result = await node.agent.arun(
             str(context.get("input", "")),
-            trace=False,
         )
         return {"output": result.output, "tool_calls": result.tool_calls}
 

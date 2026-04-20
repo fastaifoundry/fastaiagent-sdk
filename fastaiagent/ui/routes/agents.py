@@ -16,13 +16,15 @@ def _aggregate(
     spans: list[dict[str, Any]],
 ) -> dict[str, dict[str, Any]]:
     """Bucket root spans by agent name, computing per-agent stats."""
+    from fastaiagent.ui.attrs import attr, trace_cost_usd
+
     by_agent: dict[str, dict[str, Any]] = {}
     for span in spans:
         try:
             attrs = json.loads(span.get("attributes") or "{}")
         except json.JSONDecodeError:
             attrs = {}
-        name = attrs.get("fastai.agent.name")
+        name = attr(attrs, "agent.name")
         if not name:
             continue
         bucket = by_agent.setdefault(
@@ -44,15 +46,34 @@ def _aggregate(
             bucket["error_count"] += 1
         start = span.get("start_time") or ""
         end = span.get("end_time") or ""
-        try:
-            from datetime import datetime
+        latency_ms = attr(attrs, "agent.latency_ms")
+        if latency_ms is not None:
+            try:
+                bucket["total_duration_ms"] += int(float(latency_ms))
+            except (TypeError, ValueError):
+                pass
+        else:
+            try:
+                from datetime import datetime
 
-            a = datetime.fromisoformat(start)
-            b = datetime.fromisoformat(end)
-            bucket["total_duration_ms"] += int((b - a).total_seconds() * 1000)
-        except (ValueError, TypeError):
-            pass
-        bucket["total_cost_usd"] += float(attrs.get("fastai.cost.total_usd") or 0.0)
+                a = datetime.fromisoformat(start)
+                b = datetime.fromisoformat(end)
+                bucket["total_duration_ms"] += int((b - a).total_seconds() * 1000)
+            except (ValueError, TypeError):
+                pass
+        reported_cost = trace_cost_usd(attrs)
+        if reported_cost is not None:
+            bucket["total_cost_usd"] += reported_cost
+        else:
+            from fastaiagent.ui.pricing import compute_cost_usd
+
+            est = compute_cost_usd(
+                attrs.get("gen_ai.request.model"),
+                attrs.get("gen_ai.usage.input_tokens"),
+                attrs.get("gen_ai.usage.output_tokens"),
+            )
+            if est is not None:
+                bucket["total_cost_usd"] += est
         if start > bucket["last_run"]:
             bucket["last_run"] = start
     return by_agent

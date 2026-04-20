@@ -34,9 +34,89 @@ def seed(db_path: Path) -> None:
     now = datetime.now(tz=timezone.utc)
     with SQLiteHelper(db_path) as db:
         _seed_traces(db, now)
+        _seed_analytics_spread(db, now)
         _seed_prompts(db, now)
         _seed_evals(db, now)
         _seed_guardrails(db, now)
+
+
+def _seed_analytics_spread(db: SQLiteHelper, now: datetime) -> None:
+    """Fill the last 7 days with varied traces so /analytics has a real chart."""
+    import random
+
+    rng = random.Random(42)
+    agents = [
+        ("support-bot", 1200, 2800, 0.004),
+        ("recommender", 400, 1200, 0.0015),
+    ]
+    for hour_offset in range(7 * 24):
+        for _ in range(2):
+            agent, low, high, base_cost = rng.choice(agents)
+            start = now - timedelta(hours=hour_offset, minutes=rng.randint(0, 59))
+            dur = rng.randint(low, high) + rng.randint(-200, 200)
+            end = start + timedelta(milliseconds=max(50, dur))
+            errored = rng.random() < 0.08
+            tokens_in = rng.randint(80, 400)
+            tokens_out = rng.randint(40, 200)
+            thread_id = (
+                f"session-{rng.randint(1, 30)}" if rng.random() < 0.3 else None
+            )
+            attrs = {
+                "agent.name": agent,
+                "fastaiagent.cost.total_usd": round(base_cost * rng.uniform(0.7, 1.6), 6),
+                "gen_ai.request.model": "gpt-4o-mini",
+                "gen_ai.usage.input_tokens": tokens_in,
+                "gen_ai.usage.output_tokens": tokens_out,
+            }
+            if thread_id:
+                attrs["fastaiagent.thread.id"] = thread_id
+            span_id = f"s-a-{hour_offset}-{rng.randint(0, 1_000_000):x}"
+            trace_id = f"auto-{hour_offset}-{rng.randint(0, 1_000_000):x}"
+            db.execute(
+                """INSERT INTO spans
+                   (span_id, trace_id, parent_span_id, name, start_time, end_time,
+                    status, attributes, events)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, '[]')""",
+                (
+                    span_id,
+                    trace_id,
+                    None,
+                    f"agent.{agent}",
+                    start.isoformat(),
+                    end.isoformat(),
+                    "ERROR" if errored else "OK",
+                    json.dumps(attrs),
+                ),
+            )
+    # Demo session that the /threads screenshot targets.
+    for i in range(4):
+        start = now - timedelta(hours=2, minutes=30 - i * 6)
+        end = start + timedelta(milliseconds=800 + i * 120)
+        db.execute(
+            """INSERT INTO spans
+               (span_id, trace_id, parent_span_id, name, start_time, end_time,
+                status, attributes, events)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, '[]')""",
+            (
+                f"s-demo-{i}",
+                f"demo-thread-trace-{i}",
+                None,
+                "agent.support-bot",
+                start.isoformat(),
+                end.isoformat(),
+                "OK",
+                json.dumps(
+                    {
+                        "agent.name": "support-bot",
+                        "fastaiagent.thread.id": "session-demo",
+                        "fastaiagent.cost.total_usd": 0.002 + i * 0.001,
+                        "gen_ai.request.model": "gpt-4o-mini",
+                        "gen_ai.usage.input_tokens": 120 + i * 30,
+                        "gen_ai.usage.output_tokens": 80 + i * 20,
+                    }
+                ),
+            ),
+        )
 
 
 def _seed_traces(db: SQLiteHelper, now: datetime) -> None:
@@ -57,12 +137,12 @@ def _seed_traces(db: SQLiteHelper, now: datetime) -> None:
             base + timedelta(milliseconds=1800),
             "OK",
             {
-                "fastai.agent.name": "support-bot",
-                "fastai.cost.total_usd": 0.0042,
+                "agent.name": "support-bot",
+                "fastaiagent.cost.total_usd": 0.0042,
                 "gen_ai.usage.input_tokens": 180,
                 "gen_ai.usage.output_tokens": 90,
-                "fastai.prompt.name": "ui-demo.support",
-                "fastai.prompt.version": "1",
+                "fastaiagent.prompt.name": "ui-demo.support",
+                "fastaiagent.prompt.version": "1",
                 "agent.input": "My order hasn't shipped — can you check?",
                 "agent.output": "I can see order #4271 shipped yesterday via FedEx. Tracking: 8421099.",
             },
@@ -114,8 +194,8 @@ def _seed_traces(db: SQLiteHelper, now: datetime) -> None:
                 base_b + timedelta(milliseconds=5300),
                 "ERROR",
                 {
-                    "fastai.agent.name": "flaky",
-                    "fastai.cost.total_usd": 0.0031,
+                    "agent.name": "flaky",
+                    "fastaiagent.cost.total_usd": 0.0031,
                     "gen_ai.usage.input_tokens": 220,
                     "gen_ai.usage.output_tokens": 40,
                     "agent.input": "Give me the PII for customer 42",

@@ -7,6 +7,7 @@ import { TableSkeleton } from "@/components/shared/LoadingSkeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { SpanInspector } from "@/components/traces/SpanInspector";
 import { SpanTree } from "@/components/traces/SpanTree";
+import { TraceScoresCard } from "@/components/traces/TraceScoresCard";
 import { TraceSummaryBar } from "@/components/traces/TraceSummaryBar";
 import { useTrace, useTraceSpans } from "@/hooks/use-traces";
 import type { SpanRow } from "@/lib/types";
@@ -114,6 +115,8 @@ export function TraceDetailPage() {
           <SpanInspector span={selectedSpan} />
         </div>
       </div>
+
+      <TraceScoresCard traceId={trace.data.trace_id} />
     </div>
   );
 }

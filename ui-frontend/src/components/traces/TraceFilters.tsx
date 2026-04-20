@@ -2,7 +2,7 @@ import { Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import type { TraceFilters as F } from "@/lib/types";
+import type { RunnerType, TraceFilters as F } from "@/lib/types";
 
 const RANGES: { label: string; hours: number | null }[] = [
   { label: "15m", hours: 0.25 },
@@ -45,7 +45,16 @@ export function TraceFiltersBar({ filters, onChange }: Props) {
     !!filters.status ||
     !!filters.q ||
     !!filters.thread_id ||
+    !!filters.runner_type ||
     !!filters.since;
+
+  const RUNNERS: { value: RunnerType | null; label: string }[] = [
+    { value: null, label: "All" },
+    { value: "agent", label: "Agent" },
+    { value: "chain", label: "Chain" },
+    { value: "swarm", label: "Swarm" },
+    { value: "supervisor", label: "Supervisor" },
+  ];
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -95,6 +104,35 @@ export function TraceFiltersBar({ filters, onChange }: Props) {
           onChange({ ...filters, agent: e.target.value || null, page: 1 })
         }
         placeholder="Agent name"
+        className="w-44"
+      />
+
+      <div className="flex items-center gap-1 rounded-md border bg-card p-0.5">
+        {RUNNERS.map((r) => (
+          <button
+            key={r.label}
+            type="button"
+            onClick={() =>
+              onChange({ ...filters, runner_type: r.value, page: 1 })
+            }
+            className={cn(
+              "rounded px-2 py-1 text-[11px] font-mono font-medium uppercase tracking-wider transition-colors",
+              (filters.runner_type ?? null) === r.value
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            )}
+          >
+            {r.label}
+          </button>
+        ))}
+      </div>
+
+      <Input
+        value={filters.thread_id ?? ""}
+        onChange={(e) =>
+          onChange({ ...filters, thread_id: e.target.value || null, page: 1 })
+        }
+        placeholder="Thread id"
         className="w-44"
       />
 

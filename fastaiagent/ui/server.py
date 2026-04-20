@@ -21,6 +21,7 @@ from fastaiagent.ui.db import init_local_db
 from fastaiagent.ui.deps import AppContext
 from fastaiagent.ui.routes import (
     agents,
+    analytics,
     auth,
     evals,
     guardrails,
@@ -74,6 +75,7 @@ def build_app(
         prompts.router,
         guardrails.router,
         agents.router,
+        analytics.router,
     ):
         app.include_router(r)
 

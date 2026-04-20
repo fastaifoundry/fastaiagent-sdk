@@ -18,7 +18,7 @@
       "end_time": "2025-01-15T11:00:08.000Z",
       "status": "OK",
       "attributes": {
-        "fastai.chain.name": "support-pipeline"
+        "fastaiagent.chain.name": "support-pipeline"
       },
       "events": []
     },
@@ -31,8 +31,8 @@
       "end_time": "2025-01-15T11:00:03.000Z",
       "status": "OK",
       "attributes": {
-        "fastai.chain.node_id": "research",
-        "fastai.chain.iteration": 1
+        "fastaiagent.chain.node_id": "research",
+        "fastaiagent.chain.iteration": 1
       },
       "events": []
     },
@@ -45,8 +45,8 @@
       "end_time": "2025-01-15T11:00:05.000Z",
       "status": "OK",
       "attributes": {
-        "fastai.chain.node_id": "evaluate",
-        "fastai.chain.iteration": 1
+        "fastaiagent.chain.node_id": "evaluate",
+        "fastaiagent.chain.iteration": 1
       },
       "events": []
     },
@@ -59,8 +59,8 @@
       "end_time": "2025-01-15T11:00:07.500Z",
       "status": "OK",
       "attributes": {
-        "fastai.chain.node_id": "respond",
-        "fastai.checkpoint.id": "cp_003"
+        "fastaiagent.chain.node_id": "respond",
+        "fastaiagent.checkpoint.id": "cp_003"
       },
       "events": []
     }

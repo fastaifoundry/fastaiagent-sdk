@@ -80,10 +80,39 @@ can jump straight in.
 
 Compact, monospace-numeric list with filters on top: search across
 name/input/output, time-range pills (15m / 1h / 24h / 7d / All), status
-selector, agent name. Per-row copy-trace-id and favorite buttons. Click any
-row to open the detail view.
+selector, **runner-type pill (Agent / Chain / Swarm / Supervisor)**, agent
+name, and thread id. Every row carries a **Workflow** badge that tells you
+at a glance whether the trace was a single agent or a multi-agent
+orchestration. Per-row copy-trace-id, favorite, and delete buttons. Click
+any row to open the detail view; multi-select + bulk delete available
+from a sticky toolbar.
 
 ![Traces list](screenshots/02-traces.png)
+
+#### How workflows are traced
+
+`Agent.arun()` emits an `agent.<name>` root span. When you run a
+**Chain**, **Swarm**, or **Supervisor**, the SDK wraps the whole run in
+one `chain.<name>` / `swarm.<name>` / `supervisor.<name>` root span, and
+every child agent + LLM call nests beneath it. That means a 3-agent
+chain is **one** trace with a tree, not three orphan agent traces — and
+the Workflow badge shows you which kind of runner it was.
+
+Everything the SDK does is traced as a span in that tree:
+
+| Span name | Emitted by | Notable attributes |
+|---|---|---|
+| `agent.<name>` | `Agent.arun()` | `agent.name`, `agent.input`, `agent.output`, `agent.tokens_used`, `agent.latency_ms`, `agent.llm.*` |
+| `chain.<name>` / `swarm.<name>` / `supervisor.<name>` | `Chain.execute()` / `Swarm.arun()` / `Supervisor.arun()` | `fastaiagent.runner.type`, `chain.node_count`, `swarm.entrypoint`, etc. |
+| `llm.<provider>.<model>` | `LLMClient.complete()` | `gen_ai.request.*`, `gen_ai.usage.*`, `gen_ai.response.*` |
+| `tool.<name>` | every `@tool` / `FunctionTool.aexecute` | `tool.name`, `tool.args`, `tool.status`, `tool.result`, `tool.error` |
+| `retrieval.<kb_name>` | `LocalKB.search()` / `PlatformKB.search()` | `retrieval.backend`, `retrieval.search_type`, `retrieval.query`, `retrieval.top_k`, `retrieval.result_count`, `retrieval.latency_ms`, `retrieval.doc_ids` |
+
+The Inspector's **Input** tab surfaces whichever of `*.input` / `tool.args` /
+`retrieval.query` is present on the selected span; **Output** surfaces
+`*.output` / `tool.result` / `retrieval.doc_ids` / `gen_ai.response.*`.
+Payload-bearing attributes (messages, queries, doc ids) respect
+`FASTAIAGENT_TRACE_PAYLOADS=0` if you want structural-only tracing.
 
 ### Trace detail
 
@@ -165,6 +194,48 @@ Cards summarizing every agent the SDK has seen: run count, success rate
 to see the full trace list filtered to that agent.
 
 ![Agents](screenshots/11-agents.png)
+
+### Analytics
+
+Latency percentiles (p50 / p95 / p99), cost over time, error rate, and
+trace volume charts across a configurable window (24h / 7d / 30d). Below,
+top-5 slowest agents and top-5 priciest agents — Langfuse-style signals
+that tell you where to invest performance or cost work.
+
+![Analytics](screenshots/13-analytics.png)
+
+### Thread view
+
+Agent runs that share the same `thread_id` span attribute group into a
+thread (equivalent to a "session" in Langfuse). Open one from the **Thread**
+column on the Traces list, from the pill on a Trace Detail summary bar, or
+by hitting `/threads/<id>` directly.
+
+![Thread view](screenshots/14-thread.png)
+
+### Scores on a trace
+
+The Trace Detail page now shows every score attached to the trace: each
+guardrail event (passed / blocked / warned) and every eval case that
+pointed at this trace. Click through to the owning eval run.
+
+![Trace scores](screenshots/15-trace-scores.png)
+
+---
+
+## Managing disk space
+
+Traces add up. Two ways to clean up:
+
+- **Per-row**: trash icon on any row of `/traces`, with a confirmation
+  dialog that lists exactly what will be removed (spans, notes, favorites,
+  and linked guardrail events — eval cases are kept with a nulled
+  `trace_id`).
+- **Bulk**: select checkboxes on the left of `/traces` and click
+  **Delete N** in the sticky bulk-action toolbar.
+
+Or at the filesystem level, `rm .fastaiagent/local.db` nukes everything
+local and `fastaiagent ui` starts fresh.
 
 ---
 

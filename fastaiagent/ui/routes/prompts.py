@@ -30,11 +30,19 @@ def list_prompts(
     try:
         enriched: list[dict[str, Any]] = []
         for p in prompts:
+            # Accept every prefix variant so this count works across traces
+            # from older SDK releases too.
             trace_count = db.fetchone(
                 """SELECT COUNT(DISTINCT trace_id) AS n
                    FROM spans
-                   WHERE attributes LIKE ?""",
-                (f'%"fastai.prompt.name": "{p["name"]}"%',),
+                   WHERE attributes LIKE ?
+                      OR attributes LIKE ?
+                      OR attributes LIKE ?""",
+                (
+                    f'%"fastaiagent.prompt.name": "{p["name"]}"%',
+                    f'%"prompt.name": "{p["name"]}"%',
+                    f'%"fastai.prompt.name": "{p["name"]}"%',
+                ),
             )
             enriched.append(
                 {
@@ -172,16 +180,25 @@ def lineage(
     ctx = get_context(request)
     db = ctx.db()
     try:
-        like = f'%"fastai.prompt.name": "{slug}"%'
+        likes = (
+            f'%"fastaiagent.prompt.name": "{slug}"%',
+            f'%"prompt.name": "{slug}"%',
+            f'%"fastai.prompt.name": "{slug}"%',
+        )
         trace_rows = db.fetchall(
-            """SELECT DISTINCT trace_id FROM spans WHERE attributes LIKE ?""",
-            (like,),
+            """SELECT DISTINCT trace_id FROM spans
+               WHERE attributes LIKE ?
+                  OR attributes LIKE ?
+                  OR attributes LIKE ?""",
+            likes,
         )
         eval_rows = db.fetchall(
             """SELECT DISTINCT run_id FROM eval_cases
                JOIN spans ON eval_cases.trace_id = spans.trace_id
-               WHERE spans.attributes LIKE ?""",
-            (like,),
+               WHERE spans.attributes LIKE ?
+                  OR spans.attributes LIKE ?
+                  OR spans.attributes LIKE ?""",
+            likes,
         )
         return {
             "trace_ids": [r["trace_id"] for r in trace_rows],

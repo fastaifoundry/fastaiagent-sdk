@@ -16,7 +16,7 @@ agent.run("hello")
     ▼
 OTel TracerProvider (singleton)
     │
-    ├── LocalStorageProcessor ──► SQLite (.fastaiagent/traces.db)
+    ├── LocalStorageProcessor ──► SQLite (.fastaiagent/local.db)
     │       (synchronous, every span, immediate)
     │
     └── BatchSpanProcessor ──► PlatformSpanExporter ──► POST /public/v1/traces/ingest
@@ -257,7 +257,7 @@ The reconstructed `SpanData.attributes` dict is exactly what was set on the orig
 
 ### Default database path
 
-`FASTAIAGENT_TRACE_DB_PATH` env var, defaults to `.fastaiagent/traces.db` relative to the working directory.
+`FASTAIAGENT_LOCAL_DB` env var, defaults to `.fastaiagent/local.db` relative to the working directory.
 
 ---
 

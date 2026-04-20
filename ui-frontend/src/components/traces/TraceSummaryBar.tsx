@@ -1,7 +1,9 @@
-import { Copy } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Copy, MessagesSquare } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { TraceStatusBadge } from "./TraceStatusBadge";
+import { WorkflowBadge } from "./WorkflowBadge";
 import { copyToClipboard, formatCost, formatDurationMs, formatTimeAgo, formatTokens } from "@/lib/format";
 import type { TraceDetail } from "@/lib/types";
 
@@ -49,6 +51,20 @@ export function TraceSummaryBar({ trace, duration_ms }: Props) {
           </span>
         </div>
         <TraceStatusBadge status={trace.status} />
+        <WorkflowBadge
+          type={trace.runner_type}
+          name={trace.runner_name ?? trace.agent_name}
+          variant="full"
+        />
+        {trace.thread_id && (
+          <Link
+            to={`/threads/${encodeURIComponent(trace.thread_id)}`}
+            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-mono text-muted-foreground hover:border-primary hover:text-primary"
+          >
+            <MessagesSquare className="h-3 w-3" />
+            thread {trace.thread_id.slice(0, 10)}
+          </Link>
+        )}
       </div>
       <div className="flex flex-wrap items-center gap-8">
         <Stat label="Agent" value={trace.agent_name ?? "—"} />

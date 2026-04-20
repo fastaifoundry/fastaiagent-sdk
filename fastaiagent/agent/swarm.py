@@ -205,6 +205,29 @@ class Swarm:
         Returns the final agent's :class:`AgentResult`, enriched with path
         metadata under ``tool_calls`` so callers can inspect the handoff chain.
         """
+        from fastaiagent.trace.otel import get_tracer
+
+        tracer = get_tracer()
+        # Root span wraps the whole swarm run so every child agent span is a
+        # descendant — the UI renders one trace with the handoff path.
+        with tracer.start_as_current_span(f"swarm.{self.name}") as span:
+            span.set_attribute("swarm.name", self.name)
+            span.set_attribute("swarm.entrypoint", self.entrypoint)
+            span.set_attribute(
+                "swarm.agent_count", len(getattr(self, "agents", []) or [])
+            )
+            span.set_attribute("fastaiagent.runner.type", "swarm")
+            span.set_attribute("swarm.input", input)
+
+            result = await self._arun_swarm(input, context=context, **kwargs)
+
+            span.set_attribute("swarm.output", result.output)
+            span.set_attribute("swarm.handoff_count", len(result.tool_calls or []))
+        return result
+
+    async def _arun_swarm(
+        self, input: str, *, context: RunContext | None = None, **kwargs: Any
+    ) -> AgentResult:
         start = time.monotonic()
         state = SwarmState()
         state.path.append(self.entrypoint)

@@ -224,7 +224,7 @@ reg = PromptRegistry(path="/path/to/my/prompts/")
 
 Or via environment variable:
 ```bash
-export FASTAIAGENT_PROMPT_DIR=/path/to/my/prompts/
+export FASTAIAGENT_LOCAL_DB=/path/to/my/prompts/
 ```
 
 ## Prompt Object

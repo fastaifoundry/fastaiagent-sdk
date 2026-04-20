@@ -13,7 +13,11 @@ const INPUT_KEYS = new Set([
   "gen_ai.request.messages",
   "gen_ai.request.prompt",
   "agent.input",
+  "chain.input",
+  "swarm.input",
+  "supervisor.input",
   "tool.input",
+  "tool.args",
   "retrieval.query",
   "input",
 ]);
@@ -22,8 +26,13 @@ const OUTPUT_KEYS = new Set([
   "gen_ai.response.content",
   "gen_ai.response.tool_calls",
   "agent.output",
+  "chain.output",
+  "swarm.output",
+  "supervisor.output",
   "tool.output",
-  "retrieval.results",
+  "tool.result",
+  "retrieval.doc_ids",
+  "retrieval.result_count",
   "output",
 ]);
 

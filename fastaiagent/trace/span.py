@@ -27,20 +27,27 @@ GENAI_ATTRIBUTES = {
     "gen_ai.response.finish_reasons": list,
 }
 
-# FastAIAgent custom attributes (namespaced)
-FASTAI_ATTRIBUTES = {
-    "fastai.agent.name": str,
-    "fastai.chain.name": str,
-    "fastai.chain.node_id": str,
-    "fastai.chain.iteration": int,
-    "fastai.tool.name": str,
-    "fastai.checkpoint.id": str,
-    "fastai.guardrail.name": str,
-    "fastai.guardrail.passed": bool,
-    "fastai.prompt.name": str,
-    "fastai.prompt.version": int,
-    "fastai.cost.total_usd": float,
+# FastAIAgent custom attributes (namespaced as ``fastaiagent.*`` — the short
+# form ``fastai.*`` is reserved by fast.ai, a different company, so we never
+# emit it).
+FASTAIAGENT_ATTRIBUTES = {
+    "fastaiagent.agent.name": str,
+    "fastaiagent.chain.name": str,
+    "fastaiagent.chain.node_id": str,
+    "fastaiagent.chain.iteration": int,
+    "fastaiagent.tool.name": str,
+    "fastaiagent.checkpoint.id": str,
+    "fastaiagent.guardrail.name": str,
+    "fastaiagent.guardrail.passed": bool,
+    "fastaiagent.prompt.name": str,
+    "fastaiagent.prompt.version": int,
+    "fastaiagent.cost.total_usd": float,
+    "fastaiagent.thread.id": str,
 }
+
+# Back-compat alias — remove in 0.9. Existing callers that imported the old
+# name keep working; new code should reach for ``FASTAIAGENT_ATTRIBUTES``.
+FASTAI_ATTRIBUTES = FASTAIAGENT_ATTRIBUTES
 
 
 def set_span_attributes(span: Any, **kwargs: Any) -> None:
@@ -103,10 +110,16 @@ def set_genai_attributes(
     set_span_attributes(span, **attrs)
 
 
-def set_fastai_attributes(span: Any, **kwargs: Any) -> None:
+def set_fastaiagent_attributes(span: Any, **kwargs: Any) -> None:
     """Set FastAIAgent custom attributes on a span.
 
-    Keys should be without the 'fastai.' prefix — it's added automatically.
+    Keys should be without the ``fastaiagent.`` prefix — it's added
+    automatically. We use ``fastaiagent.*`` rather than ``fastai.*`` so we
+    don't squat on fast.ai's namespace.
     """
-    prefixed = {f"fastai.{k}": v for k, v in kwargs.items() if v is not None}
+    prefixed = {f"fastaiagent.{k}": v for k, v in kwargs.items() if v is not None}
     set_span_attributes(span, **prefixed)
+
+
+# Back-compat alias — remove in 0.9.
+set_fastai_attributes = set_fastaiagent_attributes

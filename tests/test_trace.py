@@ -166,12 +166,14 @@ class TestSpanHelpers:
         assert attr_dict["gen_ai.request.model"] == "gpt-4o"
         assert attr_dict["gen_ai.usage.input_tokens"] == 100
 
-    def test_set_fastai_attributes(self):
+    def test_set_fastaiagent_attributes(self):
         from unittest.mock import MagicMock
 
         span = MagicMock()
         set_fastai_attributes(span, **{"agent.name": "test-agent", "tool.name": "search"})
         calls = span.set_attribute.call_args_list
         attr_dict = {call[0][0]: call[0][1] for call in calls}
-        assert attr_dict["fastai.agent.name"] == "test-agent"
-        assert attr_dict["fastai.tool.name"] == "search"
+        # The helper always prefixes with the canonical ``fastaiagent.``
+        # namespace (never ``fastai.`` — that's fast.ai's trademark).
+        assert attr_dict["fastaiagent.agent.name"] == "test-agent"
+        assert attr_dict["fastaiagent.tool.name"] == "search"

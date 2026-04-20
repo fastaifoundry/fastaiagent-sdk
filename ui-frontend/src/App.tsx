@@ -45,6 +45,12 @@ const AgentDetailPage = lazy(() =>
 const CompareTracesPage = lazy(() =>
   import("@/pages/stubs").then((m) => ({ default: m.CompareTracesPage }))
 );
+const AnalyticsPage = lazy(() =>
+  import("@/pages/AnalyticsPage").then((m) => ({ default: m.AnalyticsPage }))
+);
+const ThreadPage = lazy(() =>
+  import("@/pages/ThreadPage").then((m) => ({ default: m.ThreadPage }))
+);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -103,6 +109,22 @@ export default function App() {
               }
             >
               <Route path="/" element={<OverviewPage />} />
+              <Route
+                path="/analytics"
+                element={
+                  <Suspense fallback={<PageFallback />}>
+                    <AnalyticsPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/threads/:threadId"
+                element={
+                  <Suspense fallback={<PageFallback />}>
+                    <ThreadPage />
+                  </Suspense>
+                }
+              />
               <Route
                 path="/traces"
                 element={

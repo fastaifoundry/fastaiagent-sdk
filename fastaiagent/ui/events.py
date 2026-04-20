@@ -102,7 +102,11 @@ def _fill_span_context(
         raw_attrs = getattr(span, "attributes", None)
         if raw_attrs:
             try:
-                agent_name = dict(raw_attrs).get("fastai.agent.name")
+                attrs_dict = dict(raw_attrs)
             except (TypeError, AttributeError):
-                pass
+                attrs_dict = {}
+            from fastaiagent.ui.attrs import attr
+
+            resolved = attr(attrs_dict, "agent.name")
+            agent_name = str(resolved) if resolved is not None else None
     return trace_id, span_id, agent_name
