@@ -213,17 +213,52 @@ http://127.0.0.1:7842/traces/<trace_id>/replay
 
 Click any span in the timeline → **Fork here** → pick one of the four
 tabs (Prompt / Input / Tool response / LLM params) → edit → **Rerun
-from this point**. The right pane fills with the forked run's spans
-as they arrive. The bottom pane renders a per-step diff using
-[`react-diff-viewer-continued`](https://github.com/Aeolun/react-diff-viewer-continued);
-the step matching `comparison.diverged_at` is highlighted. **Save as
+from this step**. The right pane fills with the forked run's spans as
+they arrive.
+
+Below, a **Rerun complete** card appears with three pieces:
+
+1. **Side-by-side output cards** — the original final output and the
+   rerun's final output, rendered through `JsonViewer`.
+2. **Step-by-step comparison grid** — one row per step, with the
+   original span name on the left and the rerun's on the right. Rows
+   at or after `comparison.diverged_at` are highlighted with a left
+   border bar and a "diverged at step N" badge at the top right.
+3. **Expandable per-step diff** — click the chevron on any row whose
+   inputs or outputs differ and a split-view diff
+   (powered by [`react-diff-viewer-continued`](https://github.com/Aeolun/react-diff-viewer-continued))
+   expands inline, showing exactly what changed on that step.
+
+The diff respects your current theme (light/dark). **Save as
 regression test** appends the case to
 `./.fastaiagent/regression_tests.jsonl` — the same file you'd write to
 from code.
 
-See screenshots
-[`04-agent-replay.png`](../ui/screenshots/04-agent-replay.png) and
-[`05-replay-fork-dialog.png`](../ui/screenshots/05-replay-fork-dialog.png).
+![Agent Replay side-by-side comparison](../ui/screenshots/20-replay-comparison.png)
+
+The replay page itself and the fork dialog are captured separately:
+
+- [`04-agent-replay.png`](../ui/screenshots/04-agent-replay.png) — the
+  `/traces/:id/replay` page with span tree + inspector.
+- [`05-replay-fork-dialog.png`](../ui/screenshots/05-replay-fork-dialog.png)
+  — the Fork-and-rerun dialog with its four tabs.
+
+### Clickable walkthrough
+
+1. From any trace on `/traces`, click **Open in Replay** (or navigate
+   directly to `/traces/<id>/replay`).
+2. Click the span you want to branch from. The inspector on the right
+   shows its inputs, outputs, attributes, and events.
+3. Click **Fork here**. Pick the tab for the field you want to change
+   (Prompt / Input / Tool response / LLM params).
+4. Edit the field. Click **Rerun from this step**. The UI fires three
+   sequential requests behind the scenes: `POST /api/replay/<id>/fork`
+   → `PATCH /api/replay/forks/<fork_id>` → `POST /api/replay/forks/<fork_id>/rerun`.
+5. When the rerun lands, the page auto-fetches the comparison and
+   renders the card described above.
+6. Click any row's chevron to see the per-step diff. Click **Save as
+   regression test** to append the case to
+   `./.fastaiagent/regression_tests.jsonl`.
 
 ### End-to-end bug-fix walkthrough
 

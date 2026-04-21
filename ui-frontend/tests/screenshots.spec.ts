@@ -182,3 +182,144 @@ test("19 — KB detail — lineage tab", async ({ page }) => {
   await page.waitForTimeout(300);
   await page.screenshot(SHOT("19-kb-lineage"));
 });
+
+test("20 — Agent Replay comparison view", async ({ page }) => {
+  // CI / the docs snapshot doesn't have LLM credentials, so we can't
+  // actually rerun. Stub the fork + rerun + compare routes with a
+  // realistic refund-bot bug fix so the ReplayDiffView renders with
+  // meaningful content for the screenshot.
+
+  const traceId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaa1111"; // seeded trace
+  const forkId = "fork-screenshot-0001";
+  const rerunTraceId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaa2222";
+
+  const originalSteps = [
+    {
+      step: 0,
+      span_name: "agent.support-bot",
+      span_id: "s0",
+      input: { query: "When do refunds get processed?" },
+      output: {},
+      attributes: { "agent.name": "support-bot" },
+      timestamp: new Date().toISOString(),
+    },
+    {
+      step: 1,
+      span_name: "llm.chat",
+      span_id: "s1",
+      input: {
+        system: "You are a customer support agent. Help the user.",
+        user: "When do refunds get processed?",
+      },
+      output: { text: "Refunds are processed within 14 business days." },
+      attributes: { "gen_ai.request.model": "gpt-4o-mini" },
+      timestamp: new Date().toISOString(),
+    },
+  ];
+
+  const newSteps = [
+    originalSteps[0],
+    {
+      step: 1,
+      span_name: "llm.chat",
+      span_id: "s1-rerun",
+      input: {
+        system:
+          "You are a customer support agent. Refunds are processed within 7 business days of receiving the return. Reply in one sentence.",
+        user: "When do refunds get processed?",
+      },
+      output: { text: "Refunds are processed within 7 business days." },
+      attributes: { "gen_ai.request.model": "gpt-4o-mini" },
+      timestamp: new Date().toISOString(),
+    },
+  ];
+
+  // Stub POST /api/replay/{traceId}/fork
+  await page.route(`**/api/replay/${traceId}/fork`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ fork_id: forkId }),
+    })
+  );
+
+  // Stub PATCH /api/replay/forks/{forkId}
+  await page.route(`**/api/replay/forks/${forkId}`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ fork_id: forkId, applied: true }),
+    })
+  );
+
+  // Stub POST /api/replay/forks/{forkId}/rerun
+  await page.route(`**/api/replay/forks/${forkId}/rerun`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        fork_id: forkId,
+        new_trace_id: rerunTraceId,
+        new_output: { text: "Refunds are processed within 7 business days." },
+        original_output: {
+          text: "Refunds are processed within 14 business days.",
+        },
+        steps_executed: newSteps.length,
+      }),
+    })
+  );
+
+  // Stub GET /api/replay/forks/{forkId}/compare
+  await page.route(
+    `**/api/replay/forks/${forkId}/compare*`,
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          original_steps: originalSteps,
+          new_steps: newSteps,
+          diverged_at: 1,
+        }),
+      })
+  );
+
+  await page.goto(`/traces/${traceId}/replay`);
+  await expect(page.getByRole("heading", { name: /Agent Replay/i })).toBeVisible();
+
+  // Pick the LLM span so Fork is enabled.
+  await page.getByText("llm.chat").first().click();
+  await page.getByRole("button", { name: /Fork here/i }).click();
+  await expect(page.getByRole("heading", { name: /Fork and rerun/i })).toBeVisible();
+
+  // Type a new prompt so the modify step also fires (stubbed).
+  await page
+    .locator("textarea")
+    .first()
+    .fill(
+      "You are a customer support agent. Refunds are processed within 7 business days."
+    );
+
+  await page.getByRole("button", { name: /Rerun from this step/i }).click();
+
+  // Wait for ReplayDiffView to render — give it more time than default
+  // because the client runs 3 sequential requests (fork, modify, rerun)
+  // before onRerunComplete fires. "Rerun complete" text appears twice
+  // (card heading + sonner toast) so pick the first one.
+  await expect(page.getByText(/Rerun complete/i).first()).toBeVisible({
+    timeout: 15000,
+  });
+  await expect(page.getByText(/diverged at step 1/i)).toBeVisible({
+    timeout: 10000,
+  });
+
+  // Expand the diverged step so the screenshot shows input+output diff content.
+  const expandBtn = page.getByRole("button", { name: /expand step diff/i }).first();
+  await expandBtn.click();
+  // The DiffBlock labels "Input"/"Output" appear once each inside the expanded
+  // row — match the first to dodge other instances (inspector tabs, etc).
+  await expect(page.getByText("Input").first()).toBeVisible();
+
+  await page.waitForTimeout(400);
+  await page.screenshot(SHOT("20-replay-comparison"));
+});
