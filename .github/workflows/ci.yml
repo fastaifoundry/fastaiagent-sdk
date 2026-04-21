@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        extras: ["", "openai", "anthropic", "kb", "all"]
+        extras: ["", "openai", "anthropic", "kb", "ui", "ui,kb", "all"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

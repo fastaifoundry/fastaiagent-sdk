@@ -6,7 +6,7 @@ The only SDK with **Agent Replay** — fork-and-rerun debugging — and a
 
 Works standalone or connected to the [FastAIAgent Platform](https://fastaiagent.net) for visual editing, production monitoring, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=0.8.1)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=0.9.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -65,12 +65,13 @@ Opens a polished web UI at `http://127.0.0.1:7842`. Every agent run you
 execute lands here — span tree with Gantt-style timing, JSON-viewer
 inspector, Agent Replay fork-and-rerun in the browser, eval runs with
 pass-rate trend charts, prompt editor with version lineage, guardrail
-events, agent scorecards. Everything stored in one SQLite file at
+events, agent scorecards, and a **read-only browser + search playground
+for every `LocalKB`** you've built. Everything stored in one SQLite file at
 `./.fastaiagent/local.db`. Bcrypt-hashed local auth. Nothing phones home.
 
 ![FastAIAgent Local UI — trace detail](https://raw.githubusercontent.com/fastaifoundry/fastaiagent-sdk/main/docs/ui/screenshots/03-trace-detail.png)
 
-See [docs/ui/](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/ui/index.md) for the full tour with 12 screenshots.
+See [docs/ui/](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/ui/index.md) for the full tour; the KB browser is documented at [docs/ui/kb.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/ui/kb.md).
 
 ## Evaluate agents systematically
 

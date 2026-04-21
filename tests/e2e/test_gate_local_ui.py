@@ -180,6 +180,32 @@ def no_auth_client(seeded_db: Path) -> TestClient:
     return TestClient(app)
 
 
+@pytest.fixture
+def seeded_kb_client(seeded_db: Path, tmp_path: Path, monkeypatch) -> TestClient:
+    """Like no_auth_client but also seeds a real LocalKB under FASTAIAGENT_KB_DIR."""
+    pytest.importorskip("faiss")
+    from fastaiagent.kb.local import LocalKB
+
+    kb_root = tmp_path / "kb"
+    kb_root.mkdir()
+    monkeypatch.setenv("FASTAIAGENT_KB_DIR", str(kb_root))
+
+    source_dir = tmp_path / "policies"
+    source_dir.mkdir()
+    (source_dir / "refunds.md").write_text(
+        "Refunds are processed within 7 business days after receiving the return.\n"
+    )
+    (source_dir / "shipping.md").write_text(
+        "Shipping is free on orders over $50.\n"
+    )
+    kb = LocalKB(name="support-docs", path=str(kb_root), chunk_size=120, chunk_overlap=20)
+    kb.add(str(source_dir / "refunds.md"))
+    kb.add(str(source_dir / "shipping.md"))
+
+    app = build_app(db_path=str(seeded_db), no_auth=True)
+    return TestClient(app)
+
+
 class TestUIServerSurfaces:
     """Every major read surface returns 200 with the shape the UI expects."""
 
@@ -272,6 +298,39 @@ class TestUIServerSurfaces:
         assert guards == []
         # Eval case is preserved but detached (trace_id nulled).
         assert eval_case is not None and eval_case["trace_id"] is None
+
+
+class TestKBBrowser:
+    """The read-only KB browser — list, detail, documents, search, lineage."""
+
+    def test_list_includes_seeded_collection(self, seeded_kb_client: TestClient):
+        r = seeded_kb_client.get("/api/kb")
+        assert r.status_code == 200
+        names = [c["name"] for c in r.json()["collections"]]
+        assert "support-docs" in names
+
+    def test_collection_detail(self, seeded_kb_client: TestClient):
+        r = seeded_kb_client.get("/api/kb/support-docs")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["chunk_count"] >= 2
+        assert body["doc_count"] == 2
+
+    def test_documents_list(self, seeded_kb_client: TestClient):
+        r = seeded_kb_client.get("/api/kb/support-docs/documents")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["total"] == 2
+
+    def test_search_returns_refund_doc(self, seeded_kb_client: TestClient):
+        r = seeded_kb_client.post(
+            "/api/kb/support-docs/search",
+            json={"query": "refund", "top_k": 3},
+        )
+        assert r.status_code == 200
+        hits = r.json()["results"]
+        assert len(hits) >= 1
+        assert "refund" in hits[0]["content"].lower()
 
 
 class TestUIAuthPath:

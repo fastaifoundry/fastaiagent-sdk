@@ -144,3 +144,41 @@ test("15 — Trace detail with scores card", async ({ page }) => {
   await page.waitForTimeout(400);
   await page.screenshot(SHOT("15-trace-scores"));
 });
+
+test("16 — KB list", async ({ page }) => {
+  await page.goto("/kb");
+  await expect(page.getByRole("heading", { name: /Knowledge Bases/i })).toBeVisible();
+  await expect(page.getByText("support-kb").first()).toBeVisible();
+  await page.waitForTimeout(200);
+  await page.screenshot(SHOT("16-kb-list"));
+});
+
+test("17 — KB detail — documents tab", async ({ page }) => {
+  await page.goto("/kb/support-kb");
+  await expect(page.getByRole("heading", { name: /support-kb/i })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /Documents/i })).toBeVisible();
+  // First document preview from the seeded corpus.
+  await expect(page.getByText(/Refund policy/i).first()).toBeVisible();
+  await page.waitForTimeout(250);
+  await page.screenshot(SHOT("17-kb-documents"));
+});
+
+test("18 — KB detail — search playground", async ({ page }) => {
+  await page.goto("/kb/support-kb");
+  await page.getByRole("tab", { name: /Search playground/i }).click();
+  const queryInput = page.getByLabel(/Query/i);
+  await queryInput.fill("refund policy");
+  await page.getByRole("button", { name: /^Run$/ }).click();
+  await expect(page.getByText(/result/i).first()).toBeVisible();
+  await page.waitForTimeout(400);
+  await page.screenshot(SHOT("18-kb-search"));
+});
+
+test("19 — KB detail — lineage tab", async ({ page }) => {
+  await page.goto("/kb/support-kb");
+  await page.getByRole("tab", { name: /Lineage/i }).click();
+  // Seed writes 3 retrieval spans attributed to support-bot.
+  await expect(page.getByText(/support-bot/i).first()).toBeVisible();
+  await page.waitForTimeout(300);
+  await page.screenshot(SHOT("19-kb-lineage"));
+});

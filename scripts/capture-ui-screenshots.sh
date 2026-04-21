@@ -7,14 +7,19 @@ set -euo pipefail
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-TMP_DB="$(mktemp -d)/ui-snapshot.db"
-trap 'rm -rf "$(dirname "$TMP_DB")"' EXIT
+TMP_ROOT="$(mktemp -d)"
+TMP_DB="$TMP_ROOT/ui-snapshot.db"
+TMP_KB_ROOT="$TMP_ROOT/kb"
+trap 'rm -rf "$TMP_ROOT"' EXIT
 
 echo "▸ seeding snapshot DB at $TMP_DB"
 python scripts/seed_ui_snapshot.py "$TMP_DB"
 
-echo "▸ starting FastAPI on port 7843 (--no-auth, snapshot DB)"
-python -c "
+echo "▸ seeding LocalKB at $TMP_KB_ROOT (+retrieval spans)"
+python scripts/seed_ui_kb.py "$TMP_KB_ROOT" --db "$TMP_DB"
+
+echo "▸ starting FastAPI on port 7843 (--no-auth, snapshot DB, KB root=$TMP_KB_ROOT)"
+FASTAIAGENT_KB_DIR="$TMP_KB_ROOT" python -c "
 import sys, uvicorn
 from fastaiagent.ui.server import build_app
 app = build_app(db_path='$TMP_DB', no_auth=True)

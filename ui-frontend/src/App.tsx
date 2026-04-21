@@ -51,6 +51,12 @@ const AnalyticsPage = lazy(() =>
 const ThreadPage = lazy(() =>
   import("@/pages/ThreadPage").then((m) => ({ default: m.ThreadPage }))
 );
+const KbListPage = lazy(() =>
+  import("@/pages/KbListPage").then((m) => ({ default: m.KbListPage }))
+);
+const KbDetailPage = lazy(() =>
+  import("@/pages/KbDetailPage").then((m) => ({ default: m.KbDetailPage }))
+);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -210,6 +216,22 @@ export default function App() {
                 element={
                   <Suspense fallback={<PageFallback />}>
                     <AgentDetailPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/kb"
+                element={
+                  <Suspense fallback={<PageFallback />}>
+                    <KbListPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/kb/:name"
+                element={
+                  <Suspense fallback={<PageFallback />}>
+                    <KbDetailPage />
                   </Suspense>
                 }
               />

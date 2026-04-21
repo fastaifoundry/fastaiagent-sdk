@@ -25,6 +25,7 @@ from fastaiagent.ui.routes import (
     auth,
     evals,
     guardrails,
+    kb,
     overview,
     prompts,
     replay,
@@ -76,6 +77,7 @@ def build_app(
         guardrails.router,
         agents.router,
         analytics.router,
+        kb.router,
     ):
         app.include_router(r)
 

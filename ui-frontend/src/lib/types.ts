@@ -306,3 +306,91 @@ export interface TraceFilters {
   page?: number;
   page_size?: number;
 }
+
+export interface KbSummary {
+  name: string;
+  path: string;
+  chunk_count: number;
+  doc_count: number;
+  last_updated: string;
+  size_bytes: number;
+}
+
+export interface KbListResponse {
+  root: string;
+  collections: KbSummary[];
+}
+
+export interface KbDetail {
+  name: string;
+  path: string;
+  chunk_count: number;
+  doc_count: number;
+  size_bytes: number;
+  last_updated: string;
+  metadata_keys: string[];
+}
+
+export interface KbDocumentRow {
+  source: string;
+  chunk_count: number;
+  preview: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface KbDocumentsResponse {
+  total: number;
+  page: number;
+  page_size: number;
+  documents: KbDocumentRow[];
+}
+
+export interface KbChunk {
+  id: string;
+  content: string;
+  metadata: Record<string, unknown>;
+  index: number;
+  start_char: number;
+  end_char: number;
+}
+
+export interface KbChunksResponse {
+  source: string;
+  chunks: KbChunk[];
+}
+
+export interface KbSearchHit {
+  id: string;
+  content: string;
+  metadata: Record<string, unknown>;
+  score: number;
+  source: string | null;
+  index: number;
+}
+
+export interface KbSearchResponse {
+  query: string;
+  top_k: number;
+  search_type: string;
+  results: KbSearchHit[];
+}
+
+export interface KbLineageAgent {
+  agent_name: string;
+  retrieval_count: number;
+}
+
+export interface KbLineageTrace {
+  trace_id: string;
+  name: string;
+  start_time: string;
+  status: string;
+  agent_name: string | null;
+}
+
+export interface KbLineageResponse {
+  kb_name: string;
+  retrieval_count: number;
+  agents: KbLineageAgent[];
+  recent_traces: KbLineageTrace[];
+}
