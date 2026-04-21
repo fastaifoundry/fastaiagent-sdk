@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.3] - 2026-04-21
+
+### Added — Eval Compare page + richer Run Detail
+
+New `/evals/compare` page pairs two eval runs side-by-side. Cases are
+matched by `ordinal` (falling back to `input` equality for reordered
+datasets) and bucketed into **regressed** (passed in A, failed in B),
+**improved** (failed in A, passed in B), and **unchanged**. Each
+regressed / improved card renders two diffs — expected vs actual-B,
+then actual-A vs actual-B — with per-scorer delta chips
+ring-highlighted for scorers whose outcome flipped. Header stats show
+pass-rate delta and cost delta.
+
+`/evals/:id` gets:
+
+- Expandable case rows with an inline `expected vs actual` diff
+  powered by `react-diff-viewer-continued`.
+- A filter bar (outcome / scorer / substring search).
+- A scorer-chip header row with per-scorer `pass/total` counts,
+  colored by pass-rate (green ≥90%, amber 70–89%, red <70%).
+- Explicit **Trace** and **Replay** link buttons on every case.
+
+`/evals` (list) gets **Cost** and **Avg latency** columns derived
+from joining `eval_cases.trace_id` back to the `spans` table.
+
+### Added — `results.run_id` on `evaluate()`
+
+`evaluate()` and `EvalResults.persist_local()` now populate
+`results.run_id` so callers can deep-link into the Local UI
+(e.g. `/evals/<run_id>` or `/evals/compare?a=…&b=…`) without
+re-querying the DB. Purely additive; existing code is unaffected.
+
+### Added — `examples/40_evals_compare.py`
+
+Runnable before/after demo: one vague system prompt (produces 0%),
+one tight system prompt (produces 100%), prints the exact compare
+URL. Drops two real eval runs into local.db ready to browse.
+
 ## [0.9.2] - 2026-04-21
 
 ### Added — Workflows directory in the Local UI
