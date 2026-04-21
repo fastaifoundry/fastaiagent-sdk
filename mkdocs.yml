@@ -117,6 +117,7 @@ nav:
       - replay/index.md
   - Local UI:
       - ui/index.md
+      - "Knowledge Bases browser": ui/kb.md
   - Platform:
       - platform/index.md
   - Deployment:

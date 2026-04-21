@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-04-21
+
+### Added — Local UI knowledge-base browser
+
+New read-only surface in the Local UI for every `LocalKB` collection on
+disk. Routes for listing collections, document / chunk introspection,
+a **search playground** (one request, one response — no streaming), and
+a **lineage** tab that scans `spans` for `retrieval.<kb>` spans to show
+which agents and traces have been hitting the KB.
+
+- **Sidebar → Knowledge Bases** (`/kb`) enumerates every subdirectory of
+  `./.fastaiagent/kb/` (or `$FASTAIAGENT_KB_DIR`) containing a
+  `kb.sqlite` file.
+- **Collection detail** (`/kb/:name`) with three tabs:
+  - *Documents* — grouped by `metadata.source`, with per-chunk inspector.
+  - *Search playground* — calls the same `kb.search()` used at runtime.
+  - *Lineage* — agents + recent traces derived from retrieval spans.
+- Strictly read-only. Adds/deletes/re-indexing stay in code, consistent
+  with the rest of the Local tier.
+
+New REST endpoints (`/api/kb/...`): `GET /api/kb`,
+`GET /api/kb/{name}`, `GET /api/kb/{name}/documents`,
+`GET /api/kb/{name}/chunks`, `POST /api/kb/{name}/search`,
+`GET /api/kb/{name}/lineage`.
+
+Tests: 9 pytest cases against a real `LocalKB` (no mocks); 4 e2e-gate
+cases; 2 Vitest cases; 4 new Playwright screenshots (`16-kb-list`,
+`17-kb-documents`, `18-kb-search`, `19-kb-lineage`) embedded in docs.
+
+CI: matrix expanded with `ui` and `ui,kb` extras so the KB browser
+routes are exercised under the minimum required dependency combo.
+
+Docs: [docs/ui/kb.md](docs/ui/kb.md), README updated, new example
+[examples/37_kb_ui.py](examples/37_kb_ui.py).
+
 ## [0.8.1] - 2026-04-21
 
 ### Fixed

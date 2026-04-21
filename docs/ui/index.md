@@ -221,6 +221,40 @@ pointed at this trace. Click through to the owning eval run.
 
 ![Trace scores](screenshots/15-trace-scores.png)
 
+### Knowledge Bases (read-only)
+
+**Sidebar → Knowledge Bases**. Every `LocalKB` collection found under
+`./.fastaiagent/kb/` (or `$FASTAIAGENT_KB_DIR`) appears with its document
+count, chunk count, size on disk, and last-updated timestamp.
+
+![Knowledge Bases list](screenshots/16-kb-list.png)
+
+Open a collection to get three tabs:
+
+- **Documents** — every ingested source with chunk count and preview; click
+  one to see its chunks inline.
+
+  ![KB documents tab](screenshots/17-kb-documents.png)
+
+- **Search playground** — type a query, pick a `top_k`, click **Run**. The
+  UI calls the same `kb.search()` you'd use from code and shows ranked
+  chunks with similarity scores and metadata. No streaming — one
+  request, one set of results, user clicks **Refresh** for more.
+
+  ![KB search playground](screenshots/18-kb-search.png)
+
+- **Lineage** — agents and recent traces that issued `retrieval.<kb>`
+  spans, derived from the spans table. Great for answering "who's
+  actually hitting this KB and when?"
+
+  ![KB lineage tab](screenshots/19-kb-lineage.png)
+
+The UI never writes to a KB. Adding, deleting, or re-indexing documents
+stays in code (`kb.add()`, `kb.delete()`, `kb.clear()`) — the Local UI
+is a read-only browser, consistent with the rest of Local tier.
+
+See [KB browser →](kb.md) for the full tour.
+
 ---
 
 ## Managing disk space

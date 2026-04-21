@@ -3,6 +3,7 @@ import {
   Activity,
   BarChart3,
   Bot,
+  Database,
   FileText,
   LayoutDashboard,
   Shield,
@@ -42,6 +43,10 @@ const SECTIONS: NavSection[] = [
   {
     label: "// PROMPT REGISTRY",
     items: [{ to: "/prompts", label: "Prompts", icon: FileText }],
+  },
+  {
+    label: "// KNOWLEDGE",
+    items: [{ to: "/kb", label: "Knowledge Bases", icon: Database }],
   },
   {
     label: "// AGENTS",
