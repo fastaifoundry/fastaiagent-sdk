@@ -171,6 +171,10 @@ def list_traces(
         pattern="^(agent|chain|swarm|supervisor)$",
         description="Filter by root runner type (agent|chain|swarm|supervisor).",
     ),
+    runner_name: str | None = Query(
+        default=None,
+        description="Filter by specific chain/swarm/supervisor name (pairs with runner_type).",
+    ),
     min_duration_ms: int | None = Query(default=None),
     max_duration_ms: int | None = Query(default=None),
     min_cost: float | None = Query(default=None),
@@ -225,6 +229,8 @@ def list_traces(
             if thread_id and summary["thread_id"] != thread_id:
                 continue
             if runner_type and summary["runner_type"] != runner_type:
+                continue
+            if runner_name and summary["runner_name"] != runner_name:
                 continue
             duration = _ms(summary["start_time"], summary["end_time"])
             if min_duration_ms is not None and (

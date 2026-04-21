@@ -14,6 +14,7 @@ describe("Sidebar", () => {
     expect(screen.getByRole("link", { name: /Prompts/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Agents/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Knowledge Bases/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Workflows/i })).toBeInTheDocument();
   });
 
   it("does NOT render higher-tier Platform-only surfaces", () => {

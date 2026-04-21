@@ -38,6 +38,53 @@ def seed(db_path: Path) -> None:
         _seed_prompts(db, now)
         _seed_evals(db, now)
         _seed_guardrails(db, now)
+        _seed_workflows(db, now)
+
+
+def _seed_workflows(db: SQLiteHelper, now: datetime) -> None:
+    """Chain/swarm/supervisor root spans for the /workflows screenshots."""
+    import random
+
+    rng = random.Random(7)
+    fixtures = [
+        ("chain", "support-triage", 6, 3, 0.05, 1400),
+        ("chain", "refund-flow", 4, 4, 0.0, 2100),
+        ("swarm", "research-team", 3, 5, 0.10, 4500),
+        ("supervisor", "incident-commander", 2, 6, 0.00, 3200),
+    ]
+    for runner_type, name, runs, node_count, fail_rate, base_ms in fixtures:
+        for i in range(runs):
+            start = now - timedelta(hours=rng.randint(1, 48), minutes=rng.randint(0, 59))
+            dur = base_ms + rng.randint(-300, 500)
+            end = start + timedelta(milliseconds=max(100, dur))
+            errored = rng.random() < fail_rate
+            cost = round(base_ms * 0.000002 + rng.random() * 0.001, 6)
+            trace_id = f"wf-{runner_type}-{name}-{i:02d}"
+            span_id = f"s-{runner_type}-{name}-{i:02d}"
+            attrs = {
+                f"{runner_type}.name": name,
+                f"{runner_type}.node_count": node_count,
+                "fastaiagent.runner.type": runner_type,
+                "fastaiagent.cost.total_usd": cost,
+                "gen_ai.request.model": "gpt-4o-mini",
+                "gen_ai.usage.input_tokens": 120 + i * 40,
+                "gen_ai.usage.output_tokens": 60 + i * 20,
+            }
+            db.execute(
+                """INSERT INTO spans
+                   (span_id, trace_id, parent_span_id, name, start_time, end_time,
+                    status, attributes, events)
+                   VALUES (?, ?, NULL, ?, ?, ?, ?, ?, '[]')""",
+                (
+                    span_id,
+                    trace_id,
+                    f"{runner_type}.{name}",
+                    start.isoformat(),
+                    end.isoformat(),
+                    "ERROR" if errored else "OK",
+                    json.dumps(attrs),
+                ),
+            )
 
 
 def _seed_analytics_spread(db: SQLiteHelper, now: datetime) -> None:

@@ -300,6 +300,41 @@ class TestUIServerSurfaces:
         assert eval_case is not None and eval_case["trace_id"] is None
 
 
+class TestWorkflowsDirectory:
+    """Chains / swarms / supervisors derived from root spans."""
+
+    def test_list_surfaces_the_seeded_chain(self, no_auth_client: TestClient):
+        r = no_auth_client.get("/api/workflows")
+        assert r.status_code == 200
+        rows = r.json()["workflows"]
+        chains = [w for w in rows if w["runner_type"] == "chain"]
+        assert any(w["workflow_name"] == "support" for w in chains)
+
+    def test_detail_returns_run_stats(self, no_auth_client: TestClient):
+        r = no_auth_client.get("/api/workflows/chain/support")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["runner_type"] == "chain"
+        assert body["workflow_name"] == "support"
+        assert body["run_count"] >= 1
+
+    def test_filter_by_runner_type(self, no_auth_client: TestClient):
+        r = no_auth_client.get("/api/workflows?runner_type=chain")
+        assert r.status_code == 200
+        assert all(w["runner_type"] == "chain" for w in r.json()["workflows"])
+
+    def test_detail_404_for_missing(self, no_auth_client: TestClient):
+        r = no_auth_client.get("/api/workflows/chain/nope")
+        assert r.status_code == 404
+
+    def test_traces_drill_down_by_runner_name(self, no_auth_client: TestClient):
+        r = no_auth_client.get("/api/traces?runner_type=chain&runner_name=support")
+        assert r.status_code == 200
+        rows = r.json()["rows"]
+        assert len(rows) >= 1
+        assert all(row["runner_name"] == "support" for row in rows)
+
+
 class TestKBBrowser:
     """The read-only KB browser — list, detail, documents, search, lineage."""
 

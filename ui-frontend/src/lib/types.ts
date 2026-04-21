@@ -36,7 +36,13 @@ export interface SpanRow {
   end_time: string;
   status: string;
   attributes: Record<string, unknown>;
-  events: { name: string; timestamp: string }[];
+  events: SpanEvent[];
+}
+
+export interface SpanEvent {
+  name: string;
+  timestamp: string;
+  attributes?: Record<string, unknown>;
 }
 
 export interface SpanTreeNode {
@@ -297,6 +303,7 @@ export interface TraceFilters {
   q?: string;
   thread_id?: string | null;
   runner_type?: RunnerType | null;
+  runner_name?: string | null;
   since?: string;
   until?: string;
   min_duration_ms?: number;
@@ -305,6 +312,22 @@ export interface TraceFilters {
   min_tokens?: number;
   page?: number;
   page_size?: number;
+}
+
+export interface WorkflowSummary {
+  runner_type: Exclude<RunnerType, "agent">;
+  workflow_name: string;
+  run_count: number;
+  success_rate: number;
+  error_count: number;
+  avg_latency_ms: number;
+  avg_cost_usd: number;
+  last_run: string;
+  node_count: number | null;
+}
+
+export interface WorkflowListResponse {
+  workflows: WorkflowSummary[];
 }
 
 export interface KbSummary {

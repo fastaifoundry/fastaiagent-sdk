@@ -126,7 +126,21 @@ class LocalStorageProcessor:
         events = []
         if hasattr(span, "events") and span.events:
             for e in span.events:
-                events.append({"name": e.name, "timestamp": str(e.timestamp)})
+                # Preserve event attributes — OTel's record_exception stores
+                # exception.type / exception.message / exception.stacktrace on
+                # the event, which lets the UI render a useful traceback panel
+                # instead of just "exception @ <ts>".
+                raw_attrs = getattr(e, "attributes", None)
+                event_attrs = (
+                    {str(k): v for k, v in raw_attrs.items()} if raw_attrs else {}
+                )
+                events.append(
+                    {
+                        "name": e.name,
+                        "timestamp": str(e.timestamp),
+                        "attributes": event_attrs,
+                    }
+                )
 
         start_ns = span.start_time or 0
         end_ns = span.end_time or 0

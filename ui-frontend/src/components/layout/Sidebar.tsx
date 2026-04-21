@@ -5,6 +5,7 @@ import {
   Bot,
   Database,
   FileText,
+  GitBranch,
   LayoutDashboard,
   Shield,
   TrendingUp,
@@ -49,8 +50,11 @@ const SECTIONS: NavSection[] = [
     items: [{ to: "/kb", label: "Knowledge Bases", icon: Database }],
   },
   {
-    label: "// AGENTS",
-    items: [{ to: "/agents", label: "Agents", icon: Bot }],
+    label: "// WORKFLOWS & AGENTS",
+    items: [
+      { to: "/workflows", label: "Workflows", icon: GitBranch },
+      { to: "/agents", label: "Agents", icon: Bot },
+    ],
   },
 ];
 

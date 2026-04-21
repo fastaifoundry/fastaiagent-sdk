@@ -40,10 +40,13 @@ def _aggregate(
             },
         )
         bucket["run_count"] += 1
-        if span.get("status") == "OK":
-            bucket["success_count"] += 1
-        else:
+        # OTel convention: UNSET is the default for a span that completed
+        # normally without the SDK explicitly marking it OK. Treat UNSET
+        # and OK as success; only ERROR counts as a failure.
+        if span.get("status") == "ERROR":
             bucket["error_count"] += 1
+        else:
+            bucket["success_count"] += 1
         start = span.get("start_time") or ""
         end = span.get("end_time") or ""
         latency_ms = attr(attrs, "agent.latency_ms")
