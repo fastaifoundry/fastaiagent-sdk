@@ -5,6 +5,57 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.4] - 2026-04-21
+
+### Added — per-agent Tools directory
+
+New **Tools** section on `/agents/<name>` shows what each agent is
+registered with and what it actually calls. One row per tool with:
+
+- **Origin chip** — color-coded by kind: `function` (green) for
+  `@tool` / `FunctionTool`, `kb` (blue) for `LocalKB.as_tool()`,
+  `mcp` (purple) for MCP-backed tools, `rest` (amber) for `RESTTool`,
+  `custom` (grey) for user-defined `Tool` subclasses, `unknown` (red)
+  for LLM-hallucinated names that weren't registered.
+- Call count, success rate, avg latency, last-used timestamp.
+- Status badges: `unused` when a registered tool has never been
+  called (dead-code signal), `unregistered` when the LLM invoked a
+  name that wasn't in the agent's `tools=[...]` list (hallucination
+  signal).
+
+### Added — `Tool.origin` class attribute
+
+`Tool` gets a public `origin: str = "custom"` class attr. Subclasses
+override: `FunctionTool → "function"`, `MCPTool → "mcp"`,
+`RESTTool → "rest"`. `LocalKB.as_tool()` instance-overrides to
+`"kb"`. Serialized by `Tool.to_dict()`, so the SDK's existing
+`agent.tools` span attribute is now automatically origin-typed on
+every new run — no agent-side changes needed.
+
+Also emits `tool.origin` on every `tool.*` execution span (falls
+back to `"unknown"` for LLM-hallucinated tool names).
+
+Traces emitted before 0.9.4 render with the `unknown` chip.
+
+### Added — search bars on `/agents`, `/workflows`, `/kb`
+
+Each directory page gets a lightweight client-side search input.
+Substring match on the already-loaded list, `useMemo`-cached, zero
+backend calls, zero debounce, zero new deps. The header description
+updates to `"N of M match 'query'"` while filtering. Empty state
+distinguishes "no data yet" vs "no match for this search."
+
+`/traces` already has backend-backed full-text search via the
+`q` query param — no change there.
+
+### Added — `examples/41_agent_tools.py`
+
+Runnable demo that registers one tool of each origin (`@tool` +
+`LocalKB.as_tool()` + custom `Tool` subclass), runs the agent so two
+of three get called, and points you at `/agents/tool-curator` to see
+the Tools section populated with all three chip colors and an
+`unused` badge.
+
 ## [0.9.3] - 2026-04-21
 
 ### Added — Eval Compare page + richer Run Detail
