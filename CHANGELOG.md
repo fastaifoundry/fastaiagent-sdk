@@ -5,6 +5,56 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.2] - 2026-04-21
+
+### Added — Workflows directory in the Local UI
+
+New `/workflows` sidebar entry enumerates every **chain, swarm, and
+supervisor** that has produced a root span. Cards per workflow show
+node count, runs, success rate, avg latency, avg cost, and last run;
+top-of-page tabs filter by runner type. Click a card →
+`/workflows/:type/:name` detail page with a filtered trace list for
+that specific workflow (via a new `runner_name` query filter on
+`/api/traces`).
+
+The sidebar's previous `// AGENTS` one-item section is regrouped as
+`// WORKFLOWS & AGENTS` holding both links.
+
+### Changed — Events tab now renders exception tracebacks properly
+
+The Trace Detail page's **Events** tab was a raw JSON dump. It now:
+
+- Renders OpenTelemetry `record_exception` events as a dedicated
+  error card: `exception.type` prominent, `exception.message` on one
+  line, full `exception.stacktrace` hidden behind an expandable
+  **Traceback** disclosure.
+- Renders generic / custom events (`span.add_event(...)`) with a
+  name row plus a collapsible JSON attributes viewer.
+- Replaces the empty-state line with a short explainer of what span
+  events are, so users landing cold don't see a cryptic message.
+
+Required a small backend fix: `fastaiagent/trace/storage.py` and
+`fastaiagent/trace/platform_export.py` were dropping `event.attributes`
+during serialization, so the well-known `exception.type` /
+`exception.message` / `exception.stacktrace` keys never reached the
+UI. Both paths now preserve the full attribute bag.
+
+### Fixed — OTel `UNSET` status no longer miscounted as error
+
+`/api/agents` and `/api/workflows` were treating `span.status = UNSET`
+as a failure. OpenTelemetry convention is `UNSET` = normally-completing
+(unless code explicitly marks it), `OK` = explicit success, `ERROR` =
+failure. The SDK doesn't mark successful spans as `OK`, so every real
+agent and workflow was showing 0% success rate in the UI. Fixed both
+aggregators — only `ERROR` counts as a failure now.
+
+### Added — `examples/39_workflows_demo.py`
+
+Runnable demo that executes one of each workflow runner against
+OpenAI — 3-node chain, 3-agent swarm with handoffs, supervisor + 2
+workers. Produces 9 real workflow traces in `local.db` so a new user
+can run the demo and immediately see the Workflows page populated.
+
 ## [0.9.1] - 2026-04-21
 
 ### Changed — Agent Replay side-by-side comparison
