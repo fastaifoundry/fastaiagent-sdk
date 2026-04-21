@@ -1,6 +1,8 @@
-import { Database, RefreshCw } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Database, RefreshCw, Search } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { TableSkeleton } from "@/components/shared/LoadingSkeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { DirectoryCard } from "@/components/shared/DirectoryCard";
@@ -9,7 +11,13 @@ import { formatTimeAgo } from "@/lib/format";
 
 export function KbListPage() {
   const kbs = useKbCollections();
-  const rows = kbs.data?.collections ?? [];
+  const [query, setQuery] = useState("");
+  const allRows = kbs.data?.collections ?? [];
+  const rows = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return allRows;
+    return allRows.filter((kb) => kb.name.toLowerCase().includes(needle));
+  }, [allRows, query]);
 
   return (
     <div className="space-y-5">
@@ -17,10 +25,23 @@ export function KbListPage() {
         title="Knowledge Bases"
         description={
           kbs.data
-            ? `${rows.length} collection${rows.length === 1 ? "" : "s"} under ${kbs.data.root}`
+            ? query
+              ? `${rows.length} of ${allRows.length} collections match "${query}"`
+              : `${allRows.length} collection${allRows.length === 1 ? "" : "s"} under ${kbs.data.root}`
             : undefined
         }
       >
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="search"
+            placeholder="Search KBs…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="h-8 w-56 pl-7 text-xs"
+            aria-label="Search knowledge bases"
+          />
+        </div>
         <Button
           variant="outline"
           size="sm"
@@ -36,11 +57,17 @@ export function KbListPage() {
 
       {kbs.isLoading ? (
         <TableSkeleton rows={3} />
-      ) : rows.length === 0 ? (
+      ) : allRows.length === 0 ? (
         <EmptyState
           title="No LocalKB collections found"
           icon={Database}
           description={`Create one in code — LocalKB(name="docs").add("./docs") — then refresh.`}
+        />
+      ) : rows.length === 0 ? (
+        <EmptyState
+          title="No collections match that search"
+          icon={Database}
+          description={`Nothing matches "${query}". Clear the search to see all ${allRows.length}.`}
         />
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

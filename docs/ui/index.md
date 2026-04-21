@@ -283,9 +283,43 @@ Drill into one workflow to see its per-run trace list:
 
 Cards summarizing every agent the SDK has seen: run count, success rate
 (color-graded), average latency, average cost, last-run time. Click a card
-to see the full trace list filtered to that agent.
+to see the full trace list filtered to that agent, **plus a Tools section**
+showing what's registered, what's been called, and origin-typed chips
+(`function`, `kb`, `mcp`, `rest`, `custom`).
 
 ![Agents](screenshots/11-agents.png)
+
+#### Tools per agent
+
+Each row on `/agents/:name` shows one tool with:
+
+- **Name + description** — the tool's declared signature.
+- **Origin chip** — color-coded by kind:
+  `function` (green) for `@tool` / `FunctionTool`,
+  `kb` (blue) for `LocalKB.as_tool()`,
+  `mcp` (purple) for MCP-backed tools,
+  `rest` (amber) for `RESTTool`,
+  `custom` (grey) for user-defined `Tool` subclasses,
+  `unknown` (red) for hallucinated names the LLM called but weren't
+  registered.
+- **Calls / success / avg latency / last used** — aggregated from every
+  `tool.*` span under an `agent.<name>` span.
+- **Status badges** — `unused` when a tool is registered but has never
+  been called (suggests dead code), `unregistered` when the LLM has
+  called a tool name that wasn't in the agent's `tools=[...]` list
+  (suggests a hallucinated tool call — worth a guardrail).
+
+Registered tools come off the most recent agent root span's
+`agent.tools` attribute (SDK emits this automatically from
+`to_dict()`). Usage data comes from descendant `tool.*` spans. Traces
+emitted before 0.9.4 won't have `origin` recorded — those rows render
+with the `unknown` chip.
+
+![Agent tools section](screenshots/27-agent-tools.png)
+
+See [`examples/41_agent_tools.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/41_agent_tools.py)
+for a runnable demo that registers one tool of each origin, runs the
+agent, and points you at the detail page.
 
 ### Analytics
 

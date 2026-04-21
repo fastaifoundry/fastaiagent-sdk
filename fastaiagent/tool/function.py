@@ -90,6 +90,8 @@ class FunctionTool(Tool):
         result = tool.execute({"name": "World"})
     """
 
+    origin = "function"
+
     def __init__(
         self,
         name: str,

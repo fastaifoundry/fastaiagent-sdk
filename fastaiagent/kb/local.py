@@ -427,11 +427,14 @@ class LocalKB:
                 parts.append(f"[Score: {r.score:.3f}] {r.chunk.content[:200]}")
             return "\n\n".join(parts)
 
-        return FunctionTool(
+        tool = FunctionTool(
             name=f"search_{self.name}",
             fn=kb_search,
             description=f"Search the '{self.name}' knowledge base",
         )
+        # Distinguish KB-derived tools from plain @tool functions in the UI.
+        tool.origin = "kb"
+        return tool
 
     # ------------------------------------------------------------------
     # Status & lifecycle

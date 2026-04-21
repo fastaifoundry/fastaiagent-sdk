@@ -67,6 +67,12 @@ async def _invoke_tool_with_span(
     tracer = get_tracer("fastaiagent.agent.executor")
     with tracer.start_as_current_span(f"tool.{tool_name}") as span:
         span.set_attribute("tool.name", tool_name)
+        # Origin lets the UI group "function / kb / mcp / rest / custom"
+        # without having to cross-reference agent.tools. "unknown" when the
+        # LLM hallucinates a tool that isn't registered.
+        span.set_attribute(
+            "tool.origin", getattr(tool, "origin", "unknown") if tool else "unknown"
+        )
         if trace_payloads_enabled():
             try:
                 span.set_attribute("tool.args", json.dumps(arguments, default=str))

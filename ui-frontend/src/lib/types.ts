@@ -367,6 +367,38 @@ export interface WorkflowListResponse {
   workflows: WorkflowSummary[];
 }
 
+export type ToolOrigin =
+  | "function"
+  | "mcp"
+  | "rest"
+  | "kb"
+  | "custom"
+  | "unknown";
+
+export interface RegisteredTool {
+  name: string;
+  description: string;
+  origin: ToolOrigin;
+  used: boolean;
+}
+
+export interface UsedTool {
+  name: string;
+  origin: ToolOrigin;
+  call_count: number;
+  error_count: number;
+  success_rate: number;
+  avg_latency_ms: number;
+  last_used: string;
+  registered: boolean;
+}
+
+export interface AgentToolsResponse {
+  agent_name: string;
+  registered: RegisteredTool[];
+  used: UsedTool[];
+}
+
 export interface KbSummary {
   name: string;
   path: string;

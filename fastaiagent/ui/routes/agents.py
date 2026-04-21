@@ -129,3 +129,148 @@ def get_agent(
         return _format(by_agent[name])
     finally:
         db.close()
+
+
+@router.get("/{name}/tools")
+def get_agent_tools(
+    request: Request,
+    name: str,
+    _user: str = Depends(require_session),
+) -> dict[str, Any]:
+    """Return tools **registered** with this agent and tools **used** at runtime.
+
+    *Registered* is read off the most-recent ``agent.<name>`` root span (the
+    SDK emits ``agent.tools`` as JSON on every run — stays None for traces
+    emitted before 0.9.4). *Used* scans every ``tool.<name>`` descendant of
+    an ``agent.<name>`` span across the whole DB and aggregates call count,
+    error count, and avg latency per tool name.
+
+    The UI cross-references the two so it can badge registered-but-never-used
+    tools (suggests dead code) and used-but-not-registered names
+    (suggests an LLM hallucination).
+    """
+    from datetime import datetime
+
+    from fastaiagent.ui.attrs import attr
+
+    ctx = get_context(request)
+    db = ctx.db()
+    try:
+        # ── Registered: latest agent.<name> root span with agent.tools JSON ─
+        registered: list[dict[str, Any]] = []
+        agent_rows = db.fetchall(
+            "SELECT attributes FROM spans WHERE name = ? "
+            "ORDER BY start_time DESC LIMIT 1",
+            (f"agent.{name}",),
+        )
+        if agent_rows:
+            try:
+                attrs = json.loads(agent_rows[0].get("attributes") or "{}")
+            except json.JSONDecodeError:
+                attrs = {}
+            raw = attr(attrs, "agent.tools")
+            if isinstance(raw, str):
+                try:
+                    parsed = json.loads(raw)
+                except json.JSONDecodeError:
+                    parsed = []
+                if isinstance(parsed, list):
+                    for t in parsed:
+                        if isinstance(t, dict) and "name" in t:
+                            registered.append(
+                                {
+                                    "name": t.get("name"),
+                                    "origin": t.get("origin") or "unknown",
+                                    "description": t.get("description") or "",
+                                }
+                            )
+
+        # ── Used: aggregate tool.* spans whose parent chain rolls up to agent.<name> ─
+        # Pull every trace that touched this agent, then collect tool.* spans
+        # in those traces. Simpler than a recursive CTE and correct for the
+        # one-level nesting we ship today.
+        tool_agg: dict[str, dict[str, Any]] = {}
+        trace_rows = db.fetchall(
+            "SELECT DISTINCT trace_id FROM spans WHERE name = ?",
+            (f"agent.{name}",),
+        )
+        trace_ids = [r["trace_id"] for r in trace_rows if r.get("trace_id")]
+        if trace_ids:
+            placeholders = ",".join("?" * len(trace_ids))
+            tool_span_rows = db.fetchall(
+                f"""SELECT name, status, start_time, end_time, attributes
+                    FROM spans
+                    WHERE trace_id IN ({placeholders})
+                      AND name LIKE 'tool.%'""",
+                tuple(trace_ids),
+            )
+            for span in tool_span_rows:
+                try:
+                    sattrs = json.loads(span.get("attributes") or "{}")
+                except json.JSONDecodeError:
+                    sattrs = {}
+                tool_name = attr(sattrs, "tool.name") or (
+                    span["name"][len("tool.") :] if span["name"] else "?"
+                )
+                bucket = tool_agg.setdefault(
+                    tool_name,
+                    {
+                        "name": tool_name,
+                        "origin": attr(sattrs, "tool.origin") or "unknown",
+                        "call_count": 0,
+                        "error_count": 0,
+                        "total_duration_ms": 0,
+                        "last_used": "",
+                    },
+                )
+                bucket["call_count"] += 1
+                # tool.status is "ok" / "error" / "unknown"; OTel-level
+                # status may also say ERROR.
+                tstatus = attr(sattrs, "tool.status")
+                if tstatus == "error" or span.get("status") == "ERROR":
+                    bucket["error_count"] += 1
+                try:
+                    a_time = datetime.fromisoformat(span["start_time"])
+                    b_time = datetime.fromisoformat(span["end_time"])
+                    bucket["total_duration_ms"] += int(
+                        (b_time - a_time).total_seconds() * 1000
+                    )
+                except (ValueError, TypeError):
+                    pass
+                start = span.get("start_time") or ""
+                if start > bucket["last_used"]:
+                    bucket["last_used"] = start
+
+        used: list[dict[str, Any]] = []
+        for bucket in tool_agg.values():
+            runs = bucket["call_count"] or 1
+            used.append(
+                {
+                    "name": bucket["name"],
+                    "origin": bucket["origin"],
+                    "call_count": bucket["call_count"],
+                    "error_count": bucket["error_count"],
+                    "success_rate": (
+                        (bucket["call_count"] - bucket["error_count"]) / runs
+                    ),
+                    "avg_latency_ms": bucket["total_duration_ms"] / runs,
+                    "last_used": bucket["last_used"],
+                }
+            )
+        used.sort(key=lambda r: -r["call_count"])
+
+        # ── Cross-reference: mark registered tools that were never called ──
+        used_names = {u["name"] for u in used}
+        registered_names = {r["name"] for r in registered}
+        for row in registered:
+            row["used"] = row["name"] in used_names
+        for row in used:
+            row["registered"] = row["name"] in registered_names
+
+        return {
+            "agent_name": name,
+            "registered": registered,
+            "used": used,
+        }
+    finally:
+        db.close()
