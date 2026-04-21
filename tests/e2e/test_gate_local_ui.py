@@ -300,6 +300,32 @@ class TestUIServerSurfaces:
         assert eval_case is not None and eval_case["trace_id"] is None
 
 
+class TestEvalsEnhancements:
+    """0.9.3 enhancements: cost+latency aggregates, case filters, compare deltas."""
+
+    def test_list_exposes_cost_and_latency(self, no_auth_client: TestClient):
+        r = no_auth_client.get("/api/evals")
+        assert r.status_code == 200
+        rows = r.json()["rows"]
+        assert rows, "seeded fixture includes an eval run"
+        first = rows[0]
+        assert "cost_usd" in first and "avg_latency_ms" in first
+        assert "case_count" in first
+
+    def test_run_detail_has_scorer_summary(self, no_auth_client: TestClient):
+        r = no_auth_client.get("/api/evals/run-1")
+        assert r.status_code == 200
+        body = r.json()
+        assert "scorer_summary" in body["run"]
+        assert body["total_cases"] >= 1
+
+    def test_case_filter_by_outcome_returns_200(
+        self, no_auth_client: TestClient
+    ):
+        r = no_auth_client.get("/api/evals/run-1?outcome=passed")
+        assert r.status_code == 200
+
+
 class TestWorkflowsDirectory:
     """Chains / swarms / supervisors derived from root spans."""
 

@@ -16,7 +16,7 @@ import { EmptyState } from "@/components/shared/EmptyState";
 import { PassRateBar } from "@/components/evals/PassRateBar";
 import { QualityTrendChart } from "@/components/evals/QualityTrendChart";
 import { useEvalRuns, useEvalTrend } from "@/hooks/use-evals";
-import { formatTimeAgo } from "@/lib/format";
+import { formatCost, formatDurationMs, formatTimeAgo } from "@/lib/format";
 
 export function EvalRunsPage() {
   const navigate = useNavigate();
@@ -83,6 +83,8 @@ export function EvalRunsPage() {
                 <TableHead>Agent</TableHead>
                 <TableHead>Scorers</TableHead>
                 <TableHead className="w-[200px]">Pass rate</TableHead>
+                <TableHead className="w-[100px]">Cost</TableHead>
+                <TableHead className="w-[110px]">Avg latency</TableHead>
                 <TableHead className="w-[120px]">Started</TableHead>
               </TableRow>
             </TableHeader>
@@ -113,6 +115,14 @@ export function EvalRunsPage() {
                       passCount={row.pass_count}
                       failCount={row.fail_count}
                     />
+                  </TableCell>
+                  <TableCell className="font-mono text-xs tabular-nums">
+                    {row.cost_usd != null ? formatCost(row.cost_usd) : "—"}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs tabular-nums">
+                    {row.avg_latency_ms != null
+                      ? formatDurationMs(row.avg_latency_ms)
+                      : "—"}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     {formatTimeAgo(row.started_at)}
