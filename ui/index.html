@@ -1,0 +1,3590 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Build, debug, evaluate, and operate AI agents. The only SDK with fork-and-rerun Agent Replay.">
+      
+      
+      
+        <link rel="canonical" href="https://docs.fastaiagent.net/ui/">
+      
+      
+        <link rel="prev" href="../replay/">
+      
+      
+        <link rel="next" href="kb/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Local UI - FastAIAgent SDK</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#local-ui" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="FastAIAgent SDK" class="md-header__button md-logo" aria-label="FastAIAgent SDK" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            FastAIAgent SDK
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Local UI
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/fastaifoundry/fastaiagent-sdk" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    fastaifoundry/fastaiagent-sdk
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../getting-started/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Getting Started
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../agents/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Agents
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../chains/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Chains
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../guardrails/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Guardrails
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../tools/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Tools
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../prompts/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Prompts
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../knowledge-base/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Knowledge Base
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../evaluation/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Evaluation
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../tracing/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Tracing
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../replay/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Agent Replay
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    <li class="md-tabs__item md-tabs__item--active">
+      <a href="./" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Local UI
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../platform/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Platform
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../deployment/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Deployment
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../integrations/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Integrations
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../cli/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  CLI Reference
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../tutorials/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Tutorials
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../migration-guides/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Migration Guides
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../api-reference/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  API Reference
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="FastAIAgent SDK" class="md-nav__button md-logo" aria-label="FastAIAgent SDK" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    FastAIAgent SDK
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/fastaifoundry/fastaiagent-sdk" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    fastaifoundry/fastaiagent-sdk
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../getting-started/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/first-agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Build Your First Agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../agents/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agents
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Agents
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agents/tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agents/dynamic-instructions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dynamic Instructions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agents/memory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agents/middleware/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Middleware
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agents/teams/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multi-Agent Teams
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agents/swarm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Swarm
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../chains/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Chains
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Chains
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../chains/cyclic-workflows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cyclic Workflows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../chains/checkpointing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Checkpointing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../chains/hitl/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Human-in-the-Loop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guardrails/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guardrails
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../tools/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6" id="__nav_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Tools
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tools/function-tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Function Tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tools/rest-tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    REST Tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tools/mcp-tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tools/mcp-server/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tools/schema-drift/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Schema Drift Detection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../prompts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prompts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../knowledge-base/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Knowledge Base
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_8" id="__nav_8_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Knowledge Base
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../knowledge-base/platform-kb/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Platform KB
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../knowledge-base/backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backends
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../knowledge-base/custom-backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Custom Backend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../evaluation/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Evaluation
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9" id="__nav_9_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Evaluation
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../evaluation/llm-judge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM-as-Judge
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../evaluation/rag-metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RAG Metrics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../evaluation/safety-metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Safety Metrics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../evaluation/similarity-metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Similarity & NLP Metrics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../evaluation/trajectory-scoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trajectory Scoring
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../evaluation/session-scoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Session Scoring
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tracing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tracing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../replay/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent Replay
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_12" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="./" class="md-nav__link md-nav__link--active">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Local UI
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link md-nav__link--active" for="__nav_12" id="__nav_12_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_12_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_12">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Local UI
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="kb/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Knowledge Bases browser
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../platform/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Platform
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_14" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../deployment/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_14" id="__nav_14_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_14_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_14">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Deployment
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../deployment/fastapi/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FastAPI + Uvicorn
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../deployment/docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker → Cloud Run / Fly / Render
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../deployment/modal/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Modal
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../deployment/replicate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Replicate (Cog)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../integrations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Integrations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_17" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../tutorials/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorials
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_17" id="__nav_17_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_17_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_17">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Tutorials
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/first-agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Build Your First Agent in 5 Minutes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/trace-langchain/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trace a LangChain Agent in 2 Minutes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/debug-with-replay/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Debug with Agent Replay
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_18" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../migration-guides/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Migration Guides
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_18" id="__nav_18_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_18_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_18">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Migration Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../migration-guides/from-langsmith/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    From LangSmith
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../migration-guides/from-langfuse/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    From Langfuse
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../migration-guides/from-mlflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    From MLflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#install" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Install
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#first-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        First run
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flags
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Flags">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#forgot-password" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Forgot password
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tour" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tour
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Tour">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#home" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Home
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#traces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Traces
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Traces">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-workflows-are-traced" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How workflows are traced
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#trace-detail" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trace detail
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Trace detail">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#about-the-events-tab" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        About the Events tab
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agent-replay" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agent Replay
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#eval-runs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Eval runs
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Eval runs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#compare-two-runs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Compare two runs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#prompts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prompts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#guardrail-events" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Guardrail events
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workflows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workflows
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Agents
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Agents">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tools-per-agent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tools per agent
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#analytics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Analytics
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#thread-view" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Thread view
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scores-on-a-trace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scores on a trace
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#knowledge-bases-read-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Knowledge Bases (read-only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#managing-disk-space" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Managing disk space
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#migration-from-07x" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Migration from 0.7.x
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#privacy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Privacy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Testing
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="local-ui">Local UI<a class="headerlink" href="#local-ui" title="Permanent link">&para;</a></h1>
+<p>A polished, single-user web UI for traces, eval runs, prompts, guardrail events,
+and agents — shipped inside the <code>fastaiagent</code> wheel. Runs on your laptop, reads
+from <code>./.fastaiagent/local.db</code>, nothing leaves the machine.</p>
+<div class="admonition tip">
+<p class="admonition-title">Your project, your UI</p>
+<p>Zero Docker. Zero Postgres. Zero cloud account.
+<code>pip install 'fastaiagent[ui]'</code>, run <code>fastaiagent ui</code>, done.</p>
+</div>
+<h2 id="install">Install<a class="headerlink" href="#install" title="Permanent link">&para;</a></h2>
+<p>The UI's web stack (FastAPI, uvicorn, aiosqlite, bcrypt, itsdangerous) lives
+behind an optional extra so non-UI users don't pay for it.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;fastaiagent[ui]&#39;</span>
+</code></pre></div>
+<h2 id="first-run">First run<a class="headerlink" href="#first-run" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>fastaiagent<span class="w"> </span>ui
+</code></pre></div>
+<p>First launch prompts for a username and password, saves a bcrypt-hashed
+credential to <code>./.fastaiagent/auth.json</code>, and opens your browser on
+<code>http://127.0.0.1:7842</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>FastAIAgent Local UI — first run
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>Set a username: upendra
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>Set a password: ***
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>Confirm password: ***
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>✓ Credentials saved to ./.fastaiagent/auth.json
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>Starting UI on http://127.0.0.1:7842
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>Opening browser...
+</code></pre></div>
+<p><img alt="Login page" src="screenshots/12-login.png" /></p>
+<h2 id="flags">Flags<a class="headerlink" href="#flags" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Default</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--host</code></td>
+<td><code>127.0.0.1</code></td>
+<td>Bind address. Keep on loopback unless you really need LAN access.</td>
+</tr>
+<tr>
+<td><code>--port</code></td>
+<td><code>7842</code></td>
+<td>Pick anything you like.</td>
+</tr>
+<tr>
+<td><code>--no-auth</code></td>
+<td>off</td>
+<td>Skip login entirely. Intended for throwaway containers, not everyday use.</td>
+</tr>
+<tr>
+<td><code>--no-open</code></td>
+<td>off</td>
+<td>Don't launch the browser.</td>
+</tr>
+<tr>
+<td><code>--db PATH</code></td>
+<td><code>./.fastaiagent/local.db</code></td>
+<td>Override the local DB path. Also settable via <code>FASTAIAGENT_LOCAL_DB</code>.</td>
+</tr>
+<tr>
+<td><code>--auth-file PATH</code></td>
+<td><code>./.fastaiagent/auth.json</code></td>
+<td>Override the credentials file.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="forgot-password">Forgot password<a class="headerlink" href="#forgot-password" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>fastaiagent<span class="w"> </span>ui<span class="w"> </span>reset-password
+</code></pre></div>
+<p>Deletes <code>./.fastaiagent/auth.json</code>. Next <code>fastaiagent ui</code> prompts you to
+create new credentials.</p>
+<hr />
+<h2 id="tour">Tour<a class="headerlink" href="#tour" title="Permanent link">&para;</a></h2>
+<p>Screenshots below are captured from a real running instance against the
+seeded snapshot DB — they stay in sync with the code via
+<code>scripts/capture-ui-screenshots.sh</code>.</p>
+<h3 id="home">Home<a class="headerlink" href="#home" title="Permanent link">&para;</a></h3>
+<p>The overview lands you on "what happened since I last looked": traces in the
+last 24 hours, failing traces, eval runs in the last 7 days, and average
+pass rate. Two side-panels list the most recent traces and eval runs so you
+can jump straight in.</p>
+<p><img alt="Home overview" src="screenshots/01-overview.png" /></p>
+<h3 id="traces">Traces<a class="headerlink" href="#traces" title="Permanent link">&para;</a></h3>
+<p>Compact, monospace-numeric list with filters on top: search across
+name/input/output, time-range pills (15m / 1h / 24h / 7d / All), status
+selector, <strong>runner-type pill (Agent / Chain / Swarm / Supervisor)</strong>, agent
+name, and thread id. Every row carries a <strong>Workflow</strong> badge that tells you
+at a glance whether the trace was a single agent or a multi-agent
+orchestration. Per-row copy-trace-id, favorite, and delete buttons. Click
+any row to open the detail view; multi-select + bulk delete available
+from a sticky toolbar.</p>
+<p><img alt="Traces list" src="screenshots/02-traces.png" /></p>
+<h4 id="how-workflows-are-traced">How workflows are traced<a class="headerlink" href="#how-workflows-are-traced" title="Permanent link">&para;</a></h4>
+<p><code>Agent.arun()</code> emits an <code>agent.&lt;name&gt;</code> root span. When you run a
+<strong>Chain</strong>, <strong>Swarm</strong>, or <strong>Supervisor</strong>, the SDK wraps the whole run in
+one <code>chain.&lt;name&gt;</code> / <code>swarm.&lt;name&gt;</code> / <code>supervisor.&lt;name&gt;</code> root span, and
+every child agent + LLM call nests beneath it. That means a 3-agent
+chain is <strong>one</strong> trace with a tree, not three orphan agent traces — and
+the Workflow badge shows you which kind of runner it was.</p>
+<p>Everything the SDK does is traced as a span in that tree:</p>
+<table>
+<thead>
+<tr>
+<th>Span name</th>
+<th>Emitted by</th>
+<th>Notable attributes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>agent.&lt;name&gt;</code></td>
+<td><code>Agent.arun()</code></td>
+<td><code>agent.name</code>, <code>agent.input</code>, <code>agent.output</code>, <code>agent.tokens_used</code>, <code>agent.latency_ms</code>, <code>agent.llm.*</code></td>
+</tr>
+<tr>
+<td><code>chain.&lt;name&gt;</code> / <code>swarm.&lt;name&gt;</code> / <code>supervisor.&lt;name&gt;</code></td>
+<td><code>Chain.execute()</code> / <code>Swarm.arun()</code> / <code>Supervisor.arun()</code></td>
+<td><code>fastaiagent.runner.type</code>, <code>chain.node_count</code>, <code>swarm.entrypoint</code>, etc.</td>
+</tr>
+<tr>
+<td><code>llm.&lt;provider&gt;.&lt;model&gt;</code></td>
+<td><code>LLMClient.complete()</code></td>
+<td><code>gen_ai.request.*</code>, <code>gen_ai.usage.*</code>, <code>gen_ai.response.*</code></td>
+</tr>
+<tr>
+<td><code>tool.&lt;name&gt;</code></td>
+<td>every <code>@tool</code> / <code>FunctionTool.aexecute</code></td>
+<td><code>tool.name</code>, <code>tool.args</code>, <code>tool.status</code>, <code>tool.result</code>, <code>tool.error</code></td>
+</tr>
+<tr>
+<td><code>retrieval.&lt;kb_name&gt;</code></td>
+<td><code>LocalKB.search()</code> / <code>PlatformKB.search()</code></td>
+<td><code>retrieval.backend</code>, <code>retrieval.search_type</code>, <code>retrieval.query</code>, <code>retrieval.top_k</code>, <code>retrieval.result_count</code>, <code>retrieval.latency_ms</code>, <code>retrieval.doc_ids</code></td>
+</tr>
+</tbody>
+</table>
+<p>The Inspector's <strong>Input</strong> tab surfaces whichever of <code>*.input</code> / <code>tool.args</code> /
+<code>retrieval.query</code> is present on the selected span; <strong>Output</strong> surfaces
+<code>*.output</code> / <code>tool.result</code> / <code>retrieval.doc_ids</code> / <code>gen_ai.response.*</code>.
+Payload-bearing attributes (messages, queries, doc ids) respect
+<code>FASTAIAGENT_TRACE_PAYLOADS=0</code> if you want structural-only tracing.</p>
+<h3 id="trace-detail">Trace detail<a class="headerlink" href="#trace-detail" title="Permanent link">&para;</a></h3>
+<p>Summary bar across the top with trace id, agent, duration, span count,
+tokens, cost, and status pill. The left pane is a Gantt-style span tree —
+icons and colors per span type (agent / LLM / tool / retrieval / guardrail),
+indentation reflects the parent→child relationship, error spans are marked.
+The right pane is an inspector with four tabs:</p>
+<table>
+<thead>
+<tr>
+<th>Tab</th>
+<th>Contents</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Input</strong></td>
+<td>What went into this step. Picks the input-shaped keys out of span attributes: <code>gen_ai.request.messages</code>, <code>agent.input</code>, <code>tool.args</code>, <code>retrieval.query</code>, etc.</td>
+</tr>
+<tr>
+<td><strong>Output</strong></td>
+<td>What the step produced. Picks the output-shaped keys: <code>gen_ai.response.content</code>, <code>agent.output</code>, <code>tool.result</code>, <code>retrieval.doc_ids</code>, etc.</td>
+</tr>
+<tr>
+<td><strong>Attributes</strong></td>
+<td>Everything else — the remaining OpenTelemetry attributes (agent name, model, tokens, cost, runner type, thread id, payload-gated retrieval fields, …).</td>
+</tr>
+<tr>
+<td><strong>Events</strong></td>
+<td>OpenTelemetry-level <em>timestamped occurrences</em> attached to the span — separate from attributes. See below.</td>
+</tr>
+</tbody>
+</table>
+<p><img alt="Trace detail" src="screenshots/03-trace-detail.png" /></p>
+<h4 id="about-the-events-tab">About the Events tab<a class="headerlink" href="#about-the-events-tab" title="Permanent link">&para;</a></h4>
+<p>A span's events are a list of <code>{name, timestamp, attributes}</code> records.
+The dominant case in the fastaiagent SDK is automatic: whenever code
+running inside a span raises, OTel's <code>span.record_exception(exc)</code>
+records an event named <code>"exception"</code> carrying three well-known
+attributes:</p>
+<ul>
+<li><code>exception.type</code> — e.g. <code>ValueError</code></li>
+<li><code>exception.message</code> — the exception message</li>
+<li><code>exception.stacktrace</code> — the full traceback as a multi-line string</li>
+</ul>
+<p>The UI recognizes this shape and renders it as a dedicated exception
+card: type in bold red, message on one line, full traceback hidden
+behind an expandable <strong>Traceback</strong> disclosure (so the page stays
+scannable). A clean happy-path run leaves this tab empty.</p>
+<p>Custom <code>span.add_event(name, attributes)</code> calls — or events from other
+OpenTelemetry auto-instrumentation — render with a generic name row
+plus a collapsible JSON attributes viewer.</p>
+<h3 id="agent-replay">Agent Replay<a class="headerlink" href="#agent-replay" title="Permanent link">&para;</a></h3>
+<p>The same span tree as Trace Detail, but with a <strong>Fork here</strong> button in the
+header. Pick a span on the tree, open the fork dialog.</p>
+<p><img alt="Agent Replay" src="screenshots/04-agent-replay.png" /></p>
+<p>The fork dialog has four tabs for the four kinds of modification:</p>
+<ul>
+<li><strong>Prompt</strong> — override the system prompt at the forked step.</li>
+<li><strong>Input</strong> — provide a new input JSON at this span.</li>
+<li><strong>Tool response</strong> — inject a canned tool return value.</li>
+<li><strong>LLM params</strong> — change temperature / max tokens.</li>
+</ul>
+<p><img alt="Fork dialog" src="screenshots/05-replay-fork-dialog.png" /></p>
+<p>After rerun completes, a side-by-side comparison panel appears below with
+the original vs. new output and a step-by-step comparison of both traces,
+highlighting where they diverged. A <strong>Save as regression test</strong> button
+appends the case to <code>./.fastaiagent/regression_tests.jsonl</code> so
+<code>evaluate()</code> can pick it up.</p>
+<h3 id="eval-runs">Eval runs<a class="headerlink" href="#eval-runs" title="Permanent link">&para;</a></h3>
+<p>A pass-rate trend chart at the top (runs over time, grouped by dataset) plus
+a table of every run with dataset, scorers, pass-rate bar, <strong>total cost</strong>
+(derived from the traces each case ran on), <strong>avg latency</strong>, and started-ago.</p>
+<p><img alt="Eval runs" src="screenshots/24-evals-list.png" /></p>
+<p>Click a run to see per-case results. The header shows a row of <strong>scorer
+chips</strong> — each chip colored by pass-rate (green ≥90%, amber 70–89%, red
+&lt;70%) with the raw pass/total count right-aligned — so you see which
+scorer is dragging the run down at a glance. Above the cases table, a
+filter bar lets you narrow down by outcome (passed/failed), by scorer,
+or by substring match on input/expected/actual.</p>
+<p>Each case row has a chevron — click it and the row expands in-place to
+show the input, a side-by-side <strong>expected vs actual</strong> diff powered by
+<code>react-diff-viewer-continued</code>, the per-scorer chips (with reasons on
+hover), and <strong>Trace</strong> + <strong>Replay</strong> buttons to open the originating
+trace.</p>
+<p><img alt="Eval run detail" src="screenshots/25-eval-detail.png" /></p>
+<h4 id="compare-two-runs">Compare two runs<a class="headerlink" href="#compare-two-runs" title="Permanent link">&para;</a></h4>
+<p>From any run detail page, click <strong>Compare with…</strong> (or visit
+<code>/evals/compare</code> directly) to pick two runs and see what changed.</p>
+<p>The compare page groups cases into four buckets:</p>
+<ul>
+<li><strong>Regressed</strong> — passed in A, failed in B. Red card.</li>
+<li><strong>Improved</strong> — failed in A, passed in B. Green card.</li>
+<li><strong>Unchanged pass</strong> / <strong>Unchanged fail</strong> — counted but not expanded,
+  so the page stays focused on what actually changed.</li>
+</ul>
+<p>Each regressed / improved case renders as a <code>CaseDiffCard</code> with two
+side-by-side diffs: <strong>expected vs actual (B)</strong> on top, and <strong>actual
+(A) vs actual (B)</strong> below so you can see exactly how the output
+drifted between runs. Scorer chips are ringed with a primary border
+when that particular scorer flipped between A and B. Header stats
+show pass-rate delta and cost delta.</p>
+<p>Cases are matched between the two runs first by <code>ordinal</code>, with a
+fall-back to <code>input</code> equality — so a dataset with reordered cases
+still aligns correctly.</p>
+<p><img alt="Eval compare" src="screenshots/26-eval-compare.png" /></p>
+<p>See <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/40_evals_compare.py"><code>examples/40_evals_compare.py</code></a>
+for an end-to-end before/after demo you can run against your own
+<code>OPENAI_API_KEY</code>. It prints the exact <code>/evals/compare?a=…&amp;b=…</code> URL
+when it's done.</p>
+<h3 id="prompts">Prompts<a class="headerlink" href="#prompts" title="Permanent link">&para;</a></h3>
+<p>Registry browser — list every prompt with latest version, total versions,
+and the number of traces that used it. Click to edit.</p>
+<p><img alt="Prompts list" src="screenshots/08-prompts.png" /></p>
+<p>The editor lists versions on the left, with the template on the right
+(auto-detected <code>{{variable}}</code> placeholders shown in the header). Save
+creates a new version; the lineage panel below lists every trace and eval
+run using this prompt.</p>
+<p>When the registry lives outside the current project folder the editor is
+disabled and a banner explains why (the rule is "UI mutates only what's
+clearly local and personal"; external paths are owned by whoever runs that
+environment).</p>
+<p><img alt="Prompt editor" src="screenshots/09-prompt-editor.png" /></p>
+<h3 id="guardrail-events">Guardrail events<a class="headerlink" href="#guardrail-events" title="Permanent link">&para;</a></h3>
+<p>Every guardrail firing — name, type, position, outcome pill (passed /
+blocked / warned), score, agent, message. Filter by rule / outcome / agent.
+Click the ↗ icon to jump to the parent trace.</p>
+<p><img alt="Guardrail events" src="screenshots/10-guardrails.png" /></p>
+<h3 id="workflows">Workflows<a class="headerlink" href="#workflows" title="Permanent link">&para;</a></h3>
+<p>Read-only directory of every <strong>chain, swarm, and supervisor</strong> run by the
+SDK. One card per <code>(runner_type, workflow_name)</code>, with node count,
+runs, success rate, avg latency, avg cost, and last run time. Top-of-page
+tabs filter the list by runner type (All / Chains / Swarms / Supervisors).</p>
+<p>Click a card to open the workflow's detail page, which drills into the
+trace list filtered by <code>runner_type</code> + <code>runner_name</code> — so you see every
+run of that specific chain/swarm/supervisor, nothing else.</p>
+<p>The screenshots below are from actual agent runs (via
+<a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/39_workflows_demo.py"><code>examples/39_workflows_demo.py</code></a>),
+not synthetic fixtures:</p>
+<p><img alt="Workflows directory" src="screenshots/21-workflows.png" /></p>
+<p>Filter by runner type — swarms only:</p>
+<p><img alt="Workflows — swarms" src="screenshots/23-workflows-swarms.png" /></p>
+<p>Drill into one workflow to see its per-run trace list:</p>
+<p><img alt="Workflow detail" src="screenshots/22-workflow-detail.png" /></p>
+<h3 id="agents">Agents<a class="headerlink" href="#agents" title="Permanent link">&para;</a></h3>
+<p>Cards summarizing every agent the SDK has seen: run count, success rate
+(color-graded), average latency, average cost, last-run time. Click a card
+to see the full trace list filtered to that agent, <strong>plus a Tools section</strong>
+showing what's registered, what's been called, and origin-typed chips
+(<code>function</code>, <code>kb</code>, <code>mcp</code>, <code>rest</code>, <code>custom</code>).</p>
+<p><img alt="Agents" src="screenshots/11-agents.png" /></p>
+<h4 id="tools-per-agent">Tools per agent<a class="headerlink" href="#tools-per-agent" title="Permanent link">&para;</a></h4>
+<p>Each row on <code>/agents/:name</code> shows one tool with:</p>
+<ul>
+<li><strong>Name + description</strong> — the tool's declared signature.</li>
+<li><strong>Origin chip</strong> — color-coded by kind:
+  <code>function</code> (green) for <code>@tool</code> / <code>FunctionTool</code>,
+  <code>kb</code> (blue) for <code>LocalKB.as_tool()</code>,
+  <code>mcp</code> (purple) for MCP-backed tools,
+  <code>rest</code> (amber) for <code>RESTTool</code>,
+  <code>custom</code> (grey) for user-defined <code>Tool</code> subclasses,
+  <code>unknown</code> (red) for hallucinated names the LLM called but weren't
+  registered.</li>
+<li><strong>Calls / success / avg latency / last used</strong> — aggregated from every
+  <code>tool.*</code> span under an <code>agent.&lt;name&gt;</code> span.</li>
+<li><strong>Status badges</strong> — <code>unused</code> when a tool is registered but has never
+  been called (suggests dead code), <code>unregistered</code> when the LLM has
+  called a tool name that wasn't in the agent's <code>tools=[...]</code> list
+  (suggests a hallucinated tool call — worth a guardrail).</li>
+</ul>
+<p>Registered tools come off the most recent agent root span's
+<code>agent.tools</code> attribute (SDK emits this automatically from
+<code>to_dict()</code>). Usage data comes from descendant <code>tool.*</code> spans. Traces
+emitted before 0.9.4 won't have <code>origin</code> recorded — those rows render
+with the <code>unknown</code> chip.</p>
+<p><img alt="Agent tools section" src="screenshots/27-agent-tools.png" /></p>
+<p>See <a href="https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/41_agent_tools.py"><code>examples/41_agent_tools.py</code></a>
+for a runnable demo that registers one tool of each origin, runs the
+agent, and points you at the detail page.</p>
+<h3 id="analytics">Analytics<a class="headerlink" href="#analytics" title="Permanent link">&para;</a></h3>
+<p>Latency percentiles (p50 / p95 / p99), cost over time, error rate, and
+trace volume charts across a configurable window (24h / 7d / 30d). Below,
+top-5 slowest agents and top-5 priciest agents — Langfuse-style signals
+that tell you where to invest performance or cost work.</p>
+<p><img alt="Analytics" src="screenshots/13-analytics.png" /></p>
+<h3 id="thread-view">Thread view<a class="headerlink" href="#thread-view" title="Permanent link">&para;</a></h3>
+<p>Agent runs that share the same <code>thread_id</code> span attribute group into a
+thread (equivalent to a "session" in Langfuse). Open one from the <strong>Thread</strong>
+column on the Traces list, from the pill on a Trace Detail summary bar, or
+by hitting <code>/threads/&lt;id&gt;</code> directly.</p>
+<p><img alt="Thread view" src="screenshots/14-thread.png" /></p>
+<h3 id="scores-on-a-trace">Scores on a trace<a class="headerlink" href="#scores-on-a-trace" title="Permanent link">&para;</a></h3>
+<p>The Trace Detail page now shows every score attached to the trace: each
+guardrail event (passed / blocked / warned) and every eval case that
+pointed at this trace. Click through to the owning eval run.</p>
+<p><img alt="Trace scores" src="screenshots/15-trace-scores.png" /></p>
+<h3 id="knowledge-bases-read-only">Knowledge Bases (read-only)<a class="headerlink" href="#knowledge-bases-read-only" title="Permanent link">&para;</a></h3>
+<p><strong>Sidebar → Knowledge Bases</strong>. Every <code>LocalKB</code> collection found under
+<code>./.fastaiagent/kb/</code> (or <code>$FASTAIAGENT_KB_DIR</code>) appears with its document
+count, chunk count, size on disk, and last-updated timestamp.</p>
+<p><img alt="Knowledge Bases list" src="screenshots/16-kb-list.png" /></p>
+<p>Open a collection to get three tabs:</p>
+<ul>
+<li><strong>Documents</strong> — every ingested source with chunk count and preview; click
+  one to see its chunks inline.</li>
+</ul>
+<p><img alt="KB documents tab" src="screenshots/17-kb-documents.png" /></p>
+<ul>
+<li><strong>Search playground</strong> — type a query, pick a <code>top_k</code>, click <strong>Run</strong>. The
+  UI calls the same <code>kb.search()</code> you'd use from code and shows ranked
+  chunks with similarity scores and metadata. No streaming — one
+  request, one set of results, user clicks <strong>Refresh</strong> for more.</li>
+</ul>
+<p><img alt="KB search playground" src="screenshots/18-kb-search.png" /></p>
+<ul>
+<li><strong>Lineage</strong> — agents and recent traces that issued <code>retrieval.&lt;kb&gt;</code>
+  spans, derived from the spans table. Great for answering "who's
+  actually hitting this KB and when?"</li>
+</ul>
+<p><img alt="KB lineage tab" src="screenshots/19-kb-lineage.png" /></p>
+<p>The UI never writes to a KB. Adding, deleting, or re-indexing documents
+stays in code (<code>kb.add()</code>, <code>kb.delete()</code>, <code>kb.clear()</code>) — the Local UI
+is a read-only browser, consistent with the rest of Local tier.</p>
+<p>See <a href="kb/">KB browser →</a> for the full tour.</p>
+<hr />
+<h2 id="managing-disk-space">Managing disk space<a class="headerlink" href="#managing-disk-space" title="Permanent link">&para;</a></h2>
+<p>Traces add up. Two ways to clean up:</p>
+<ul>
+<li><strong>Per-row</strong>: trash icon on any row of <code>/traces</code>, with a confirmation
+  dialog that lists exactly what will be removed (spans, notes, favorites,
+  and linked guardrail events — eval cases are kept with a nulled
+  <code>trace_id</code>).</li>
+<li><strong>Bulk</strong>: select checkboxes on the left of <code>/traces</code> and click
+  <strong>Delete N</strong> in the sticky bulk-action toolbar.</li>
+</ul>
+<p>Or at the filesystem level, <code>rm .fastaiagent/local.db</code> nukes everything
+local and <code>fastaiagent ui</code> starts fresh.</p>
+<hr />
+<h2 id="data">Data<a class="headerlink" href="#data" title="Permanent link">&para;</a></h2>
+<p>Everything lives in a single SQLite file at <code>./.fastaiagent/local.db</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Category</th>
+<th>Tables</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Traces</td>
+<td><code>spans</code></td>
+</tr>
+<tr>
+<td>Checkpoints</td>
+<td><code>checkpoints</code></td>
+</tr>
+<tr>
+<td>Prompts</td>
+<td><code>prompts</code>, <code>prompt_versions</code>, <code>prompt_aliases</code>, <code>prompt_fragments</code></td>
+</tr>
+<tr>
+<td>Evals</td>
+<td><code>eval_runs</code>, <code>eval_cases</code></td>
+</tr>
+<tr>
+<td>Guardrails</td>
+<td><code>guardrail_events</code></td>
+</tr>
+<tr>
+<td>UI view-state</td>
+<td><code>trace_notes</code>, <code>trace_favorites</code>, <code>saved_filters</code></td>
+</tr>
+</tbody>
+</table>
+<p>No cloud dependency. No external service. Copy the file, back it up, or
+<code>rm .fastaiagent/local.db</code> to start fresh.</p>
+<h2 id="migration-from-07x">Migration from 0.7.x<a class="headerlink" href="#migration-from-07x" title="Permanent link">&para;</a></h2>
+<p>0.7.x wrote three locations: <code>.fastaiagent/traces.db</code>, <code>.fastaiagent/checkpoints.db</code>,
+and <code>./.prompts/*.yaml</code>. 0.8 unifies them into <code>./.fastaiagent/local.db</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>fastaiagent<span class="w"> </span>migrate
+</code></pre></div>
+<p>Copies spans, checkpoints, prompts, and fragments from the legacy stores
+into <code>local.db</code>. Idempotent — safe to run multiple times. Legacy files are
+left in place; delete them once you've confirmed the report.</p>
+<p><code>fastaiagent ui start</code> invokes <code>migrate</code> automatically when it notices
+legacy files on first launch.</p>
+<h2 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Permanent link">&para;</a></h2>
+<p>The UI is a FastAPI server plus a static React SPA:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>fastaiagent ui  ──►  FastAPI (uvicorn)  ──►  local.db (SQLite)
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>                      │                      ▲
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>                      ▼                      │
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>                    static/index.html        │ writes
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>                    + assets/                │
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>                                            agent runs,
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>                                            guardrail execs,
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>                                            evaluate() calls
+</code></pre></div>
+<p>The frontend is a plain React 19 + Vite SPA built at release time and bundled
+into the wheel under <code>fastaiagent/ui/static/</code>. At runtime, FastAPI serves the
+bundle and an <code>/api/*</code> REST surface. <strong>There is no WebSocket or live stream</strong> —
+every page refreshes on user action via React Query.</p>
+<h2 id="privacy">Privacy<a class="headerlink" href="#privacy" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Binds to <code>127.0.0.1</code> by default — nothing on your LAN can reach it.</li>
+<li><code>HttpOnly</code> + <code>SameSite=Strict</code> session cookie.</li>
+<li>No telemetry. No phone-home. No account.</li>
+<li><code>--no-auth</code> is available for throwaway containers but NOT the default.</li>
+</ul>
+<h2 id="testing">Testing<a class="headerlink" href="#testing" title="Permanent link">&para;</a></h2>
+<p>The UI ships with a full test pyramid:</p>
+<ul>
+<li><strong>Backend (pytest)</strong> — <code>tests/test_ui_server.py</code> exercises every REST
+  route against a real FastAPI app + real SQLite fixtures + real bcrypt
+  auth. <code>tests/test_ui_events.py</code>, <code>tests/test_ui_cli.py</code>,
+  <code>tests/test_ui_migration.py</code>, <code>tests/test_ui_db.py</code> cover the rest.</li>
+<li><strong>Frontend unit (Vitest + Testing Library)</strong> — real DOM rendering
+  through the Provider stack (<code>src/test/utils.tsx</code>). Coverage includes
+  format helpers, status badges, pass-rate bar, sidebar routing, traces
+  table, span tree interactions, and the login flow.</li>
+<li><strong>Frontend E2E / screenshots (Playwright)</strong> —
+  <code>ui-frontend/tests/screenshots.spec.ts</code> drives a real browser against the
+  FastAPI server and captures the screenshots shown above. Run it with:</li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>bash<span class="w"> </span>scripts/capture-ui-screenshots.sh
+</code></pre></div>
+<p>The script seeds a snapshot DB, starts the server on <code>127.0.0.1:7843</code> in
+  <code>--no-auth</code> mode, runs every screenshot test, and tears down.</p>
+<p>All three layers run against real libraries (real SQLite, real FastAPI,
+real browser, real bcrypt) — no mocking of the subject under test.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; 2026 FastAIFoundry
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.code.copy", "content.code.annotate", "content.tabs.link", "navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "search.suggest", "toc.follow"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
