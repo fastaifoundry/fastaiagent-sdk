@@ -1,13 +1,11 @@
-import { Link } from "react-router-dom";
 import { Database, RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TableSkeleton } from "@/components/shared/LoadingSkeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { DirectoryCard } from "@/components/shared/DirectoryCard";
 import { useKbCollections } from "@/hooks/use-kb";
 import { formatTimeAgo } from "@/lib/format";
-import { cn } from "@/lib/utils";
 
 export function KbListPage() {
   const kbs = useKbCollections();
@@ -47,49 +45,26 @@ export function KbListPage() {
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {rows.map((kb) => (
-            <Link key={kb.name} to={`/kb/${encodeURIComponent(kb.name)}`}>
-              <Card className="h-full transition-colors hover:border-primary">
-                <CardHeader className="pb-3">
-                  <CardTitle className="flex items-center gap-2 text-sm">
-                    <Database className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    <span className="truncate">{kb.name}</span>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3 pt-0">
-                  <dl className="grid grid-cols-2 gap-2 text-xs">
-                    <Stat label="Documents" value={kb.doc_count.toString()} />
-                    <Stat label="Chunks" value={kb.chunk_count.toString()} />
-                    <Stat label="Size" value={formatBytes(kb.size_bytes)} />
-                    <Stat label="Updated" value={formatTimeAgo(kb.last_updated)} />
-                  </dl>
-                  <div className="truncate font-mono text-[11px] text-muted-foreground">
-                    {kb.path}
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
+            <DirectoryCard
+              key={kb.name}
+              to={`/kb/${encodeURIComponent(kb.name)}`}
+              icon={Database}
+              title={kb.name}
+              stats={[
+                { label: "Documents", value: kb.doc_count.toString() },
+                { label: "Chunks", value: kb.chunk_count.toString() },
+                { label: "Size", value: formatBytes(kb.size_bytes) },
+                { label: "Updated", value: formatTimeAgo(kb.last_updated) },
+              ]}
+              footer={
+                <div className="truncate font-mono text-[11px] text-muted-foreground">
+                  {kb.path}
+                </div>
+              }
+            />
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  accent,
-}: {
-  label: string;
-  value: string;
-  accent?: string;
-}) {
-  return (
-    <div>
-      <dt className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
-        {label}
-      </dt>
-      <dd className={cn("font-mono text-sm tabular-nums", accent)}>{value}</dd>
     </div>
   );
 }
