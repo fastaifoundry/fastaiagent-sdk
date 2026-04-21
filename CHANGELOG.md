@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2026-04-21
+
+### Changed — Agent Replay side-by-side comparison
+
+The Local UI's `AgentReplayPage` now renders **real per-step input and
+output diffs** when you fork and rerun a trace. Previously the
+step-by-step grid only compared span names; divergence in actual
+content was invisible. The `ReplayDiffView` component was rewritten:
+
+- Each step row is now collapsible. Rows whose `input` or `output`
+  differ show a chevron.
+- On expand, the row renders a split-view diff powered by
+  `react-diff-viewer-continued` for `input` and `output` separately,
+  with word-level diff method and a theme-aware palette.
+- Diverged rows (at or after `comparison.diverged_at`) are highlighted
+  with a left-border bar + subtle background tint, and a "diverged at
+  step N" badge appears at the top-right of the grid.
+
+Closes the feature gap between the SDK's `ForkedReplay.compare()` and
+what the UI actually rendered. No SDK-side changes.
+
+New Playwright screenshot
+[`20-replay-comparison.png`](docs/ui/screenshots/20-replay-comparison.png)
+captures the post-rerun view with an expanded diverged row so the docs
+stay in sync with what the code does.
+
+Wheel bundle ships the rebuilt frontend — `pip install 'fastaiagent[ui]'`
+picks up the new view automatically.
+
 ## [0.9.0] - 2026-04-21
 
 ### Added — Local UI knowledge-base browser
