@@ -103,6 +103,12 @@ export interface EvalRunRow {
   fail_count: number | null;
   pass_rate: number | null;
   metadata: Record<string, unknown> | null;
+  // Added in 0.9.3 — aggregated from eval_cases.trace_id → spans.
+  cost_usd?: number;
+  avg_latency_ms?: number;
+  case_count?: number;
+  // Only set on the run-detail response.
+  scorer_summary?: Record<string, { pass: number; fail: number }>;
 }
 
 export interface EvalCaseRow {
@@ -119,6 +125,37 @@ export interface EvalCaseRow {
 export interface EvalRunDetail {
   run: EvalRunRow;
   cases: EvalCaseRow[];
+  total_cases: number;
+}
+
+export interface EvalCaseFilters {
+  scorer?: string | null;
+  outcome?: "passed" | "failed" | null;
+  q?: string;
+}
+
+export interface EvalScorerDelta {
+  scorer: string;
+  passed_before: boolean;
+  passed_after: boolean;
+  changed: boolean;
+}
+
+export interface EvalComparePair {
+  a: EvalCaseRow;
+  b: EvalCaseRow;
+  scorer_deltas: EvalScorerDelta[];
+}
+
+export interface EvalCompareResponse {
+  run_a: EvalRunRow;
+  run_b: EvalRunRow;
+  regressed: EvalComparePair[];
+  improved: EvalComparePair[];
+  unchanged_pass: number;
+  unchanged_fail: number;
+  pass_rate_delta: number;
+  cost_delta_usd: number;
 }
 
 export interface PromptListItem {

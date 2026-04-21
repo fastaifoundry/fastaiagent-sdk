@@ -29,6 +29,9 @@ class EvalResults:
     def __init__(self, scores: dict[str, list[ScorerResult]] | None = None):
         self.scores: dict[str, list[ScorerResult]] = scores or {}
         self.cases: list[EvalCaseRecord] = []
+        # Populated by ``persist_local()`` (or ``evaluate()`` when persist=True)
+        # so callers can deep-link into the Local UI at /evals/<run_id>.
+        self.run_id: str | None = None
 
     def add(self, scorer_name: str, result: ScorerResult) -> None:
         self.scores.setdefault(scorer_name, []).append(result)
@@ -149,6 +152,9 @@ class EvalResults:
                 )
         finally:
             db.close()
+        # Stash on self so callers who hold a reference can deep-link into
+        # the UI without threading the return value through their code.
+        self.run_id = run_id
         return run_id
 
     def compare(self, other: EvalResults) -> str:

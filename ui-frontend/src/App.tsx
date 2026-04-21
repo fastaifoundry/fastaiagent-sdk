@@ -27,6 +27,11 @@ const EvalRunDetailPage = lazy(() =>
     default: m.EvalRunDetailPage,
   }))
 );
+const EvalComparePage = lazy(() =>
+  import("@/pages/EvalComparePage").then((m) => ({
+    default: m.EvalComparePage,
+  }))
+);
 const PromptsPage = lazy(() =>
   import("@/pages/PromptsPage").then((m) => ({ default: m.PromptsPage }))
 );
@@ -176,6 +181,14 @@ export default function App() {
                 element={
                   <Suspense fallback={<PageFallback />}>
                     <EvalRunsPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/evals/compare"
+                element={
+                  <Suspense fallback={<PageFallback />}>
+                    <EvalComparePage />
                   </Suspense>
                 }
               />

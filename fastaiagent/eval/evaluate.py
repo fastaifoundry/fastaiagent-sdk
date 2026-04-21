@@ -155,11 +155,14 @@ async def aevaluate(
 
     if persist:
         try:
-            results.persist_local(
+            run_id = results.persist_local(
                 run_name=run_name,
                 dataset_name=resolved_dataset_name,
                 agent_name=agent_name,
             )
+            # Stash the run_id on the returned object so callers can deep-link
+            # into the Local UI (e.g. /evals/<run_id> or /evals/compare?a=…).
+            results.run_id = run_id
         except Exception:
             # Persistence is best-effort — never fail a run because the
             # local UI DB couldn't be written.

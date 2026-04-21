@@ -177,15 +177,55 @@ appends the case to `./.fastaiagent/regression_tests.jsonl` so
 ### Eval runs
 
 A pass-rate trend chart at the top (runs over time, grouped by dataset) plus
-a table of every run with dataset, scorers, pass-rate bar, and started-ago.
+a table of every run with dataset, scorers, pass-rate bar, **total cost**
+(derived from the traces each case ran on), **avg latency**, and started-ago.
 
-![Eval runs](screenshots/06-evals.png)
+![Eval runs](screenshots/24-evals-list.png)
 
-Click a run to see per-case results. Each case shows input / expected /
-actual plus a pass/fail chip per scorer. Click the ▶ icon on any row to
-open that case's trace in Replay.
+Click a run to see per-case results. The header shows a row of **scorer
+chips** — each chip colored by pass-rate (green ≥90%, amber 70–89%, red
+<70%) with the raw pass/total count right-aligned — so you see which
+scorer is dragging the run down at a glance. Above the cases table, a
+filter bar lets you narrow down by outcome (passed/failed), by scorer,
+or by substring match on input/expected/actual.
 
-![Eval run detail](screenshots/07-eval-detail.png)
+Each case row has a chevron — click it and the row expands in-place to
+show the input, a side-by-side **expected vs actual** diff powered by
+`react-diff-viewer-continued`, the per-scorer chips (with reasons on
+hover), and **Trace** + **Replay** buttons to open the originating
+trace.
+
+![Eval run detail](screenshots/25-eval-detail.png)
+
+#### Compare two runs
+
+From any run detail page, click **Compare with…** (or visit
+`/evals/compare` directly) to pick two runs and see what changed.
+
+The compare page groups cases into four buckets:
+
+- **Regressed** — passed in A, failed in B. Red card.
+- **Improved** — failed in A, passed in B. Green card.
+- **Unchanged pass** / **Unchanged fail** — counted but not expanded,
+  so the page stays focused on what actually changed.
+
+Each regressed / improved case renders as a `CaseDiffCard` with two
+side-by-side diffs: **expected vs actual (B)** on top, and **actual
+(A) vs actual (B)** below so you can see exactly how the output
+drifted between runs. Scorer chips are ringed with a primary border
+when that particular scorer flipped between A and B. Header stats
+show pass-rate delta and cost delta.
+
+Cases are matched between the two runs first by `ordinal`, with a
+fall-back to `input` equality — so a dataset with reordered cases
+still aligns correctly.
+
+![Eval compare](screenshots/26-eval-compare.png)
+
+See [`examples/40_evals_compare.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/40_evals_compare.py)
+for an end-to-end before/after demo you can run against your own
+`OPENAI_API_KEY`. It prints the exact `/evals/compare?a=…&b=…` URL
+when it's done.
 
 ### Prompts
 

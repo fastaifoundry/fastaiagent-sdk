@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type {
+  EvalCaseFilters,
+  EvalCompareResponse,
   EvalRunDetail,
   EvalRunsPage,
   EvalTrendPoint,
@@ -29,11 +31,35 @@ export function useEvalRuns(filters: Filters = {}) {
   });
 }
 
-export function useEvalRun(runId: string | undefined) {
+export function useEvalRun(
+  runId: string | undefined,
+  filters: EvalCaseFilters = {}
+) {
   return useQuery({
-    queryKey: ["eval", runId],
-    queryFn: () => api.get<EvalRunDetail>(`/evals/${runId}`),
+    queryKey: ["eval", runId, filters],
+    queryFn: () => {
+      const p = new URLSearchParams();
+      if (filters.scorer) p.set("scorer", filters.scorer);
+      if (filters.outcome) p.set("outcome", filters.outcome);
+      if (filters.q) p.set("q", filters.q);
+      const qs = p.toString() ? `?${p.toString()}` : "";
+      return api.get<EvalRunDetail>(`/evals/${runId}${qs}`);
+    },
     enabled: !!runId,
+    // Case filters change often (typing in the search box) — keep the
+    // data snappy but avoid hammering the server; useQuery's default
+    // debounce-on-rerender is already tight enough, so no extra logic.
+  });
+}
+
+export function useEvalCompare(a: string | undefined, b: string | undefined) {
+  return useQuery({
+    queryKey: ["eval-compare", a, b],
+    queryFn: () =>
+      api.get<EvalCompareResponse>(
+        `/evals/compare?a=${encodeURIComponent(a!)}&b=${encodeURIComponent(b!)}`
+      ),
+    enabled: !!a && !!b,
   });
 }
 
