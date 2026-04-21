@@ -21,6 +21,8 @@ class MCPTool(Tool):
         )
     """
 
+    origin = "mcp"
+
     def __init__(
         self,
         name: str,

@@ -280,6 +280,19 @@ class TestUIServerSurfaces:
         assert r.status_code == 200
         assert any(a["agent_name"] == "researcher" for a in r.json()["agents"])
 
+    def test_agent_tools_endpoint_returns_empty_lists_by_default(
+        self, no_auth_client: TestClient
+    ):
+        # Seeded fixture's agent.researcher span has no agent.tools
+        # attribute and no descendant tool.* spans — the endpoint should
+        # still return 200 with empty lists rather than 404.
+        r = no_auth_client.get("/api/agents/researcher/tools")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["agent_name"] == "researcher"
+        assert body["registered"] == []
+        assert body["used"] == []
+
     def test_bulk_delete_cascades(self, no_auth_client: TestClient, seeded_db: Path):
         r = no_auth_client.post(
             "/api/traces/bulk-delete", json={"trace_ids": ["trace-gate"]}

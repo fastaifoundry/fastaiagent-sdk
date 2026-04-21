@@ -21,6 +21,8 @@ class RESTTool(Tool):
         )
     """
 
+    origin = "rest"
+
     def __init__(
         self,
         name: str,

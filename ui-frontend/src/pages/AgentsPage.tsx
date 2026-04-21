@@ -1,6 +1,8 @@
-import { AlertTriangle, Bot, RefreshCw } from "lucide-react";
+import { useMemo, useState } from "react";
+import { AlertTriangle, Bot, RefreshCw, Search } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { TableSkeleton } from "@/components/shared/LoadingSkeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { DirectoryCard } from "@/components/shared/DirectoryCard";
@@ -9,7 +11,18 @@ import { formatCost, formatDurationMs, formatTimeAgo } from "@/lib/format";
 
 export function AgentsPage() {
   const agents = useAgents();
-  const rows = agents.data?.agents ?? [];
+  const [query, setQuery] = useState("");
+  const allRows = agents.data?.agents ?? [];
+  // Client-side filter — /api/agents already returns the full list, so a
+  // simple substring match on agent_name is all we need. No extra fetches,
+  // no debounce, no round-trip.
+  const rows = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return allRows;
+    return allRows.filter((a) =>
+      a.agent_name.toLowerCase().includes(needle)
+    );
+  }, [allRows, query]);
 
   return (
     <div className="space-y-5">
@@ -17,10 +30,23 @@ export function AgentsPage() {
         title="Agents"
         description={
           agents.data
-            ? `${rows.length} agent${rows.length === 1 ? "" : "s"} seen`
+            ? query
+              ? `${rows.length} of ${allRows.length} agents match "${query}"`
+              : `${allRows.length} agent${allRows.length === 1 ? "" : "s"} seen`
             : undefined
         }
       >
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="search"
+            placeholder="Search agents…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="h-8 w-56 pl-7 text-xs"
+            aria-label="Search agents"
+          />
+        </div>
         <Button
           variant="outline"
           size="sm"
@@ -36,11 +62,17 @@ export function AgentsPage() {
 
       {agents.isLoading ? (
         <TableSkeleton rows={4} />
-      ) : rows.length === 0 ? (
+      ) : allRows.length === 0 ? (
         <EmptyState
           title="No agents yet"
           icon={Bot}
           description="Agent definitions live in code. Once an agent runs and a trace lands, it'll show up here."
+        />
+      ) : rows.length === 0 ? (
+        <EmptyState
+          title="No agents match that search"
+          icon={Bot}
+          description={`Nothing matches "${query}". Clear the search to see all ${allRows.length}.`}
         />
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

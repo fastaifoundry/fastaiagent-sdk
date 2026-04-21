@@ -57,6 +57,9 @@ claude_files/
 # Scripts / recordings / videos
 scripts/
 
+# Ad-hoc source dirs created by examples that seed a KB (e.g. 37, 41).
+.fastaiagent-source-docs/
+
 # OS
 .DS_Store
 Thumbs.db

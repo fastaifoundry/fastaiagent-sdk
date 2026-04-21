@@ -27,6 +27,14 @@ class Tool:
     Subclasses: FunctionTool, RESTTool, MCPTool.
     """
 
+    # Display origin for the Local UI. Subclasses override to one of
+    # "function" / "mcp" / "rest". ``LocalKB.as_tool()`` overrides the
+    # instance to "kb". Anything left at "custom" is a user-defined Tool
+    # subclass. Surfaces on /agents/<name> as a colored chip so users can
+    # tell at a glance whether a tool came from a decorator, an MCP server,
+    # a REST spec, a knowledge base, or their own code.
+    origin: str = "custom"
+
     def __init__(
         self,
         name: str,
@@ -81,6 +89,7 @@ class Tool:
             "name": self.name,
             "description": self.description,
             "tool_type": self._tool_type(),
+            "origin": self.origin,
             "parameters": self.parameters,
             "config": self._config_dict(),
         }

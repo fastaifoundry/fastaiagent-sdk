@@ -6,7 +6,8 @@ import { StatCard } from "@/components/shared/StatCard";
 import { TableSkeleton } from "@/components/shared/LoadingSkeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { TracesTable } from "@/components/traces/TracesTable";
-import { useAgent } from "@/hooks/use-agents";
+import { AgentToolsSection } from "@/components/agents/AgentToolsSection";
+import { useAgent, useAgentTools } from "@/hooks/use-agents";
 import { useTraces } from "@/hooks/use-traces";
 import { formatCost, formatDurationMs, formatTimeAgo } from "@/lib/format";
 
@@ -14,6 +15,7 @@ export function AgentDetailPage() {
   const { name } = useParams<{ name: string }>();
   const agent = useAgent(name);
   const traces = useTraces({ agent: name ?? null, page: 1, page_size: 50 });
+  const tools = useAgentTools(name);
 
   if (agent.isLoading) return <TableSkeleton rows={4} />;
   if (agent.error || !agent.data) {
@@ -37,12 +39,15 @@ export function AgentDetailPage() {
           onClick={() => {
             agent.refetch();
             traces.refetch();
+            tools.refetch();
           }}
-          disabled={agent.isFetching || traces.isFetching}
+          disabled={agent.isFetching || traces.isFetching || tools.isFetching}
         >
           <RefreshCw
             className={`mr-1.5 h-3.5 w-3.5 ${
-              agent.isFetching || traces.isFetching ? "animate-spin" : ""
+              agent.isFetching || traces.isFetching || tools.isFetching
+                ? "animate-spin"
+                : ""
             }`}
           />
           Refresh
@@ -69,6 +74,8 @@ export function AgentDetailPage() {
         Last run {formatTimeAgo(agent.data.last_run)} · {agent.data.error_count}{" "}
         error{agent.data.error_count === 1 ? "" : "s"} tracked.
       </p>
+
+      <AgentToolsSection data={tools.data} />
 
       {traces.isLoading ? (
         <TableSkeleton rows={6} />
