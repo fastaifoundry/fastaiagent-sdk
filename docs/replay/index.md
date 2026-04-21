@@ -202,6 +202,36 @@ print(f"Diverged at step: {comparison.diverged_at}")
 | `steps_executed` | `int` | Number of steps executed in the rerun |
 | `trace_id` | `str \| None` | Trace ID of the original execution |
 
+### Side-by-side comparison in the Local UI
+
+Everything above is also available as a visual diff in the Local UI.
+After running `fastaiagent ui`, open:
+
+```
+http://127.0.0.1:7842/traces/<trace_id>/replay
+```
+
+Click any span in the timeline → **Fork here** → pick one of the four
+tabs (Prompt / Input / Tool response / LLM params) → edit → **Rerun
+from this point**. The right pane fills with the forked run's spans
+as they arrive. The bottom pane renders a per-step diff using
+[`react-diff-viewer-continued`](https://github.com/Aeolun/react-diff-viewer-continued);
+the step matching `comparison.diverged_at` is highlighted. **Save as
+regression test** appends the case to
+`./.fastaiagent/regression_tests.jsonl` — the same file you'd write to
+from code.
+
+See screenshots
+[`04-agent-replay.png`](../ui/screenshots/04-agent-replay.png) and
+[`05-replay-fork-dialog.png`](../ui/screenshots/05-replay-fork-dialog.png).
+
+### End-to-end bug-fix walkthrough
+
+A full scripted example — buggy prompt → fork → fix → rerun → compare
+→ assert → save-as-regression → UI deep links — lives at
+[`examples/38_replay_comparison.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/38_replay_comparison.py).
+Pair it with the Local UI page above for the visual side-by-side.
+
 ## CLI Commands
 
 ```bash
