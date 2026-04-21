@@ -120,10 +120,37 @@ Summary bar across the top with trace id, agent, duration, span count,
 tokens, cost, and status pill. The left pane is a Gantt-style span tree —
 icons and colors per span type (agent / LLM / tool / retrieval / guardrail),
 indentation reflects the parent→child relationship, error spans are marked.
-The right pane is an inspector with four tabs (**Input / Output /
-Attributes / Events**); each renders as a JSON viewer with copy-on-hover.
+The right pane is an inspector with four tabs:
+
+| Tab | Contents |
+|---|---|
+| **Input** | What went into this step. Picks the input-shaped keys out of span attributes: `gen_ai.request.messages`, `agent.input`, `tool.args`, `retrieval.query`, etc. |
+| **Output** | What the step produced. Picks the output-shaped keys: `gen_ai.response.content`, `agent.output`, `tool.result`, `retrieval.doc_ids`, etc. |
+| **Attributes** | Everything else — the remaining OpenTelemetry attributes (agent name, model, tokens, cost, runner type, thread id, payload-gated retrieval fields, …). |
+| **Events** | OpenTelemetry-level *timestamped occurrences* attached to the span — separate from attributes. See below. |
 
 ![Trace detail](screenshots/03-trace-detail.png)
+
+#### About the Events tab
+
+A span's events are a list of `{name, timestamp, attributes}` records.
+The dominant case in the fastaiagent SDK is automatic: whenever code
+running inside a span raises, OTel's `span.record_exception(exc)`
+records an event named `"exception"` carrying three well-known
+attributes:
+
+- `exception.type` — e.g. `ValueError`
+- `exception.message` — the exception message
+- `exception.stacktrace` — the full traceback as a multi-line string
+
+The UI recognizes this shape and renders it as a dedicated exception
+card: type in bold red, message on one line, full traceback hidden
+behind an expandable **Traceback** disclosure (so the page stays
+scannable). A clean happy-path run leaves this tab empty.
+
+Custom `span.add_event(name, attributes)` calls — or events from other
+OpenTelemetry auto-instrumentation — render with a generic name row
+plus a collapsible JSON attributes viewer.
 
 ### Agent Replay
 
@@ -186,6 +213,31 @@ blocked / warned), score, agent, message. Filter by rule / outcome / agent.
 Click the ↗ icon to jump to the parent trace.
 
 ![Guardrail events](screenshots/10-guardrails.png)
+
+### Workflows
+
+Read-only directory of every **chain, swarm, and supervisor** run by the
+SDK. One card per `(runner_type, workflow_name)`, with node count,
+runs, success rate, avg latency, avg cost, and last run time. Top-of-page
+tabs filter the list by runner type (All / Chains / Swarms / Supervisors).
+
+Click a card to open the workflow's detail page, which drills into the
+trace list filtered by `runner_type` + `runner_name` — so you see every
+run of that specific chain/swarm/supervisor, nothing else.
+
+The screenshots below are from actual agent runs (via
+[`examples/39_workflows_demo.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/39_workflows_demo.py)),
+not synthetic fixtures:
+
+![Workflows directory](screenshots/21-workflows.png)
+
+Filter by runner type — swarms only:
+
+![Workflows — swarms](screenshots/23-workflows-swarms.png)
+
+Drill into one workflow to see its per-run trace list:
+
+![Workflow detail](screenshots/22-workflow-detail.png)
 
 ### Agents
 

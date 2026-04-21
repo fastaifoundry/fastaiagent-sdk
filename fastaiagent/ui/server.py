@@ -30,6 +30,7 @@ from fastaiagent.ui.routes import (
     prompts,
     replay,
     traces,
+    workflows,
 )
 
 
@@ -78,6 +79,7 @@ def build_app(
         agents.router,
         analytics.router,
         kb.router,
+        workflows.router,
     ):
         app.include_router(r)
 

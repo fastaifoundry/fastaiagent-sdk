@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { JsonViewer } from "@/components/shared/JsonViewer";
+import { EventsPane } from "./EventsPane";
 import { TraceStatusBadge } from "./TraceStatusBadge";
 import { formatDurationMs } from "@/lib/format";
 import type { SpanRow } from "@/lib/types";
@@ -117,11 +118,7 @@ export function SpanInspector({ span }: Props) {
           <PaneContent value={partitioned.rest} emptyLabel="No attributes." />
         </TabsContent>
         <TabsContent value="events" className="p-4 pt-3">
-          {span.events.length > 0 ? (
-            <JsonViewer data={span.events} />
-          ) : (
-            <p className="text-xs text-muted-foreground">No events emitted.</p>
-          )}
+          <EventsPane events={span.events} />
         </TabsContent>
       </Tabs>
     </div>

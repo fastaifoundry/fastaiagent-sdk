@@ -57,6 +57,14 @@ const KbListPage = lazy(() =>
 const KbDetailPage = lazy(() =>
   import("@/pages/KbDetailPage").then((m) => ({ default: m.KbDetailPage }))
 );
+const WorkflowsPage = lazy(() =>
+  import("@/pages/WorkflowsPage").then((m) => ({ default: m.WorkflowsPage }))
+);
+const WorkflowDetailPage = lazy(() =>
+  import("@/pages/WorkflowDetailPage").then((m) => ({
+    default: m.WorkflowDetailPage,
+  }))
+);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -232,6 +240,22 @@ export default function App() {
                 element={
                   <Suspense fallback={<PageFallback />}>
                     <KbDetailPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/workflows"
+                element={
+                  <Suspense fallback={<PageFallback />}>
+                    <WorkflowsPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/workflows/:runnerType/:name"
+                element={
+                  <Suspense fallback={<PageFallback />}>
+                    <WorkflowDetailPage />
                   </Suspense>
                 }
               />

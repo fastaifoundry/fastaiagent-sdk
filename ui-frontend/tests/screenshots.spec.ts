@@ -323,3 +323,23 @@ test("20 — Agent Replay comparison view", async ({ page }) => {
   await page.waitForTimeout(400);
   await page.screenshot(SHOT("20-replay-comparison"));
 });
+
+// The Workflows-directory screenshots (21, 22, 23) are regenerated from the
+// LIVE ./.fastaiagent/local.db after running examples/39_workflows_demo.py,
+// not from the snapshot seeder. See ui-frontend/tests/workflows-live.spec.ts
+// for the regeneration script. These scenarios stay as UI smoke-tests only.
+
+test("21 — Workflows directory (smoke)", async ({ page }) => {
+  await page.goto("/workflows");
+  await expect(page.getByRole("heading", { name: /Workflows/i })).toBeVisible();
+  await expect(page.getByText("support-triage").first()).toBeVisible();
+  await expect(page.getByText("research-team").first()).toBeVisible();
+});
+
+test("22 — Workflow detail smoke — chain support-triage", async ({ page }) => {
+  await page.goto("/workflows/chain/support-triage");
+  await expect(
+    page.getByRole("heading", { name: /support-triage/i })
+  ).toBeVisible();
+  await expect(page.getByText(/Avg latency/i)).toBeVisible();
+});
