@@ -8,6 +8,7 @@ all four commands wired into ``cli/main.py``.
 from __future__ import annotations
 
 import json
+import re
 import textwrap
 import uuid
 from pathlib import Path
@@ -278,7 +279,8 @@ def test_setup_checkpointer_sqlite(tmp_path: Path) -> None:
 def test_setup_checkpointer_postgres_requires_connection_string() -> None:
     result = runner.invoke(app, ["setup-checkpointer", "--backend", "postgres"])
     assert result.exit_code != 0
-    assert "connection-string" in result.output
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+    assert "is required for the postgres backend" in plain
 
 
 def test_setup_checkpointer_unknown_backend(tmp_path: Path) -> None:
