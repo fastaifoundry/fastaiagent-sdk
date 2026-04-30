@@ -80,6 +80,9 @@ Changelog = "https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/CHANGELO
 requires = ["hatchling>=1.18"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build]
+exclude = ["**/.gitkeep"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["fastaiagent"]
 
