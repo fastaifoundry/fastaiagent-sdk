@@ -13,6 +13,8 @@ Works standalone or connected to the [FastAIAgent Platform](https://fastaiagent.
 | Feature | FastAIAgent | LangSmith | Langfuse |
 |---------|-------------|-----------|----------|
 | **Agent Replay (fork-and-rerun)** | Yes | No | No |
+| **Durable HITL — pause for days, resume from any process** | Yes | No | No |
+| **`@idempotent` side-effect protection** | Yes | No | No |
 | **Build agents in code** | Yes | No | No |
 | **Cyclic chain workflows** | Yes | LangGraph | No |
 | **Built-in guardrails** | Yes | No | No |
@@ -49,6 +51,7 @@ print(result.trace.summary())
 ## Core Features
 
 - **[Agents](agents/index.md)** — Build agents with tools, memory, and multi-agent teams
+- **[Durability](durability/index.md)** — Pause for human approval, survive crashes, resume from any process. SQLite locally, Postgres in production.
 - **[Streaming](streaming/index.md)** — Real-time token delivery from LLM to your app
 - **[Structured Output](structured-output/index.md)** — Force LLM responses into typed JSON schemas
 - **[Chains](chains/index.md)** — Directed graph workflows with cycles, typed state, and checkpointing
