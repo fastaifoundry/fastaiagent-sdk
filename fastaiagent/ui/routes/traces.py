@@ -105,10 +105,7 @@ def _summarize_trace(spans: list[dict[str, Any]]) -> dict[str, Any]:
             elif span_name.startswith("agent."):
                 runner_type = "agent"
         if runner_name is None and runner_type:
-            runner_name = (
-                attr(attrs, f"{runner_type}.name")
-                or attr(attrs, "agent.name")
-            )
+            runner_name = attr(attrs, f"{runner_type}.name") or attr(attrs, "agent.name")
         if agent_name is None:
             agent_name = attr(attrs, "agent.name")
         if thread_id is None:
@@ -233,22 +230,16 @@ def list_traces(
             if runner_name and summary["runner_name"] != runner_name:
                 continue
             duration = _ms(summary["start_time"], summary["end_time"])
-            if min_duration_ms is not None and (
-                duration is None or duration < min_duration_ms
-            ):
+            if min_duration_ms is not None and (duration is None or duration < min_duration_ms):
                 continue
-            if max_duration_ms is not None and (
-                duration is None or duration > max_duration_ms
-            ):
+            if max_duration_ms is not None and (duration is None or duration > max_duration_ms):
                 continue
             if min_cost is not None and (
-                summary["total_cost_usd"] is None
-                or summary["total_cost_usd"] < min_cost
+                summary["total_cost_usd"] is None or summary["total_cost_usd"] < min_cost
             ):
                 continue
             if min_tokens is not None and (
-                summary["total_tokens"] is None
-                or summary["total_tokens"] < min_tokens
+                summary["total_tokens"] is None or summary["total_tokens"] < min_tokens
             ):
                 continue
 
@@ -275,17 +266,13 @@ def list_traces(
 
 
 @router.get("/traces/threads")
-def list_threads(
-    request: Request, _user: str = Depends(require_session)
-) -> dict[str, Any]:
+def list_threads(request: Request, _user: str = Depends(require_session)) -> dict[str, Any]:
     ctx = get_context(request)
     db = ctx.db()
     try:
         from fastaiagent.ui.attrs import attr
 
-        rows = db.fetchall(
-            "SELECT trace_id, attributes FROM spans WHERE parent_span_id IS NULL"
-        )
+        rows = db.fetchall("SELECT trace_id, attributes FROM spans WHERE parent_span_id IS NULL")
         groups: dict[str, list[str]] = {}
         for row in rows:
             attrs = _row_attrs(row)
@@ -308,6 +295,7 @@ def compare_traces(
     ctx = get_context(request)
     db = ctx.db()
     try:
+
         def spans_for(trace_id: str) -> list[SpanRow]:
             rows = db.fetchall(
                 "SELECT * FROM spans WHERE trace_id = ? ORDER BY start_time",
@@ -315,8 +303,10 @@ def compare_traces(
             )
             return [_row_to_span(r) for r in rows]
 
-        return {"a": [s.model_dump() for s in spans_for(a)],
-                "b": [s.model_dump() for s in spans_for(b)]}
+        return {
+            "a": [s.model_dump() for s in spans_for(a)],
+            "b": [s.model_dump() for s in spans_for(b)],
+        }
     finally:
         db.close()
 
@@ -440,9 +430,7 @@ def get_trace(
             (trace_id,),
         )
         if not rows:
-            raise HTTPException(
-                status.HTTP_404_NOT_FOUND, f"Trace '{trace_id}' not found"
-            )
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"Trace '{trace_id}' not found")
         spans = [_row_to_span(r) for r in rows]
         summary = _summarize_trace(rows)
         return {
@@ -478,9 +466,7 @@ def get_spans(
             (trace_id,),
         )
         if not rows:
-            raise HTTPException(
-                status.HTTP_404_NOT_FOUND, f"Trace '{trace_id}' not found"
-            )
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"Trace '{trace_id}' not found")
         return {"tree": _build_tree(rows).model_dump()}
     finally:
         db.close()
@@ -508,9 +494,7 @@ def _delete_traces(db: Any, trace_ids: list[str]) -> int:
         return 0
     deleted = 0
     for tid in trace_ids:
-        before = db.fetchone(
-            "SELECT COUNT(*) AS n FROM spans WHERE trace_id = ?", (tid,)
-        )
+        before = db.fetchone("SELECT COUNT(*) AS n FROM spans WHERE trace_id = ?", (tid,))
         if not before or (before.get("n") or 0) == 0:
             continue
         db.execute("DELETE FROM spans WHERE trace_id = ?", (tid,))
@@ -518,9 +502,7 @@ def _delete_traces(db: Any, trace_ids: list[str]) -> int:
         db.execute("DELETE FROM trace_favorites WHERE trace_id = ?", (tid,))
         db.execute("DELETE FROM guardrail_events WHERE trace_id = ?", (tid,))
         # Detach eval cases but keep the run — evals aren't owned by traces.
-        db.execute(
-            "UPDATE eval_cases SET trace_id = NULL WHERE trace_id = ?", (tid,)
-        )
+        db.execute("UPDATE eval_cases SET trace_id = NULL WHERE trace_id = ?", (tid,))
         deleted += 1
     return deleted
 
@@ -536,9 +518,7 @@ def delete_trace(
     try:
         count = _delete_traces(db, [trace_id])
         if count == 0:
-            raise HTTPException(
-                status.HTTP_404_NOT_FOUND, f"Trace '{trace_id}' not found"
-            )
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"Trace '{trace_id}' not found")
         return {"deleted": count}
     finally:
         db.close()
@@ -601,9 +581,7 @@ def toggle_favorite(
             (trace_id,),
         )
         if existing:
-            db.execute(
-                "DELETE FROM trace_favorites WHERE trace_id = ?", (trace_id,)
-            )
+            db.execute("DELETE FROM trace_favorites WHERE trace_id = ?", (trace_id,))
             return {"favorited": False}
         db.execute(
             "INSERT INTO trace_favorites (trace_id, created_at) VALUES (?, ?)",

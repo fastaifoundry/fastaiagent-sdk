@@ -6,7 +6,7 @@ The only SDK with **Agent Replay** — fork-and-rerun debugging — and a
 
 Works standalone or connected to the [FastAIAgent Platform](https://fastaiagent.net) for visual editing, production monitoring, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=0.9.4)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.0.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -53,6 +53,48 @@ result = forked.rerun()
 ```
 
 **No other SDK can do this.**
+
+## Pause for human approval. For days.
+
+```python
+from fastaiagent import Chain, FunctionTool, Resume, SQLiteCheckpointer, interrupt
+from fastaiagent.chain.node import NodeType
+
+
+def approve(amount: str):
+    if int(amount) > 10_000:
+        decision = interrupt(reason="manager_approval", context={"amount": int(amount)})
+        return {"approved": decision.approved}
+    return {"approved": True}
+
+
+chain = Chain("refund-flow", checkpointer=SQLiteCheckpointer())
+chain.add_node(
+    "approve",
+    tool=FunctionTool(name="approve_tool", fn=approve),
+    type=NodeType.tool,
+    input_mapping={"amount": "{{state.amount}}"},
+)
+
+from fastaiagent._internal.async_utils import run_sync
+
+# First run — suspends and the process can exit cleanly.
+result = chain.execute({"amount": 50_000}, execution_id="refund-abc")
+assert result.status == "paused"
+
+# Hours, days, or a server restart later, in any process:
+result = run_sync(chain.aresume(
+    "refund-abc",
+    resume_value=Resume(approved=True, metadata={"approver": "alice"}),
+))
+assert result.status == "completed"
+```
+
+Crash-proof agents (real `SIGKILL` resumes at the last checkpoint),
+SQLite locally / Postgres in production (same Protocol surface), the
+`@idempotent` decorator that makes `charge_customer` safe to call
+inside a paused node, and a built-in `/approvals` UI to drive the
+resume from a browser. See [docs/durability/](docs/durability/index.md).
 
 ## See every trace, eval, and prompt in your browser — no Docker, no signup
 

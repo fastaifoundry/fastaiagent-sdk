@@ -1,5 +1,0 @@
-# This directory holds the built React SPA that ships inside the wheel.
-# The real contents are produced by `cd ui-frontend && npm run build`.
-# CI releases run that step before `python -m build`; plain `pip install -e .`
-# gets this placeholder and `fastaiagent ui` returns a 503 with a "frontend
-# bundle not found" message, gracefully pointing the user at the build step.

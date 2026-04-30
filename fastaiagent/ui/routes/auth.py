@@ -33,12 +33,8 @@ def login(body: LoginRequest, request: Request, response: Response) -> dict[str,
         return {"status": "ok", "username": "anonymous"}
 
     auth = ctx.auth()
-    if auth is None or auth.username != body.username or not verify_password(
-        body.password, auth
-    ):
-        raise HTTPException(
-            status.HTTP_401_UNAUTHORIZED, "Invalid username or password"
-        )
+    if auth is None or auth.username != body.username or not verify_password(body.password, auth):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid username or password")
     issue_session_cookie(response, auth)
     return {"status": "ok", "username": auth.username}
 

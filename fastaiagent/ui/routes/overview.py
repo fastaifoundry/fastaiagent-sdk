@@ -14,9 +14,7 @@ router = APIRouter(prefix="/api", tags=["overview"])
 
 
 @router.get("/overview")
-def overview(
-    request: Request, _user: str = Depends(require_session)
-) -> dict[str, Any]:
+def overview(request: Request, _user: str = Depends(require_session)) -> dict[str, Any]:
     ctx = get_context(request)
     db = ctx.db()
     try:
@@ -84,19 +82,26 @@ def overview(
             if name:
                 agents_with_errors[name] = agents_with_errors.get(name, 0) + 1
 
+        # Phase 10 — durability KPIs for the Home page.
+        pending_approvals = db.fetchone("SELECT COUNT(*) AS n FROM pending_interrupts")
+        failed_executions = db.fetchone(
+            """SELECT COUNT(DISTINCT execution_id) AS n FROM checkpoints
+               WHERE status IN ('failed', 'interrupted')"""
+        )
+
         return {
             "traces_last_24h": total_day["n"] if total_day else 0,
             "failing_traces_last_24h": failing_day["n"] if failing_day else 0,
             "eval_runs_last_7d": runs_week["n"] if runs_week else 0,
             "avg_pass_rate_last_7d": (avg_pass["pr"] or 0.0) if avg_pass else 0.0,
+            "pending_approvals_count": (pending_approvals["n"] if pending_approvals else 0),
+            "failed_executions_count": (failed_executions["n"] if failed_executions else 0),
             "recent_traces": recent_traces,
             "recent_eval_runs": recent_runs,
             "prompt_changes_last_7d": prompt_changes,
             "agents_with_errors": [
                 {"agent_name": k, "error_count": v}
-                for k, v in sorted(
-                    agents_with_errors.items(), key=lambda kv: -kv[1]
-                )
+                for k, v in sorted(agents_with_errors.items(), key=lambda kv: -kv[1])
             ],
         }
     finally:

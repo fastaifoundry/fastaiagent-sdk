@@ -88,9 +88,7 @@ def _flaky_step_b_fn(seed: str) -> dict[str, Any]:
     """
     _FLAKY_STATE["attempts"] += 1
     if _FLAKY_STATE["attempts"] == 1:
-        raise RuntimeError(
-            f"simulated transient failure on attempt {_FLAKY_STATE['attempts']}"
-        )
+        raise RuntimeError(f"simulated transient failure on attempt {_FLAKY_STATE['attempts']}")
     return {
         "step_b_processed": seed,
         "step_b_attempt": _FLAKY_STATE["attempts"],
@@ -105,15 +103,14 @@ def _step_c_fn(seed: str) -> dict[str, Any]:
 
 def _build_chain(checkpoint_db_path: str):
     """Construct the linear test chain with an isolated checkpoint store."""
-    from fastaiagent import Chain, FunctionTool
-    from fastaiagent.chain.checkpoint import CheckpointStore
+    from fastaiagent import Chain, FunctionTool, SQLiteCheckpointer
     from fastaiagent.chain.node import NodeType
 
-    store = CheckpointStore(db_path=checkpoint_db_path)
+    store = SQLiteCheckpointer(db_path=checkpoint_db_path)
     chain = Chain(
         "chain-resume-gate",
         checkpoint_enabled=True,
-        checkpoint_store=store,
+        checkpointer=store,
     )
     chain.add_node(
         "step_a",
@@ -163,14 +160,12 @@ class TestChainResumeGate:
         gate_state["execution_id"] = execution_id
         gate_state["ckpt_db"] = ckpt_db
 
-    def test_02_checkpoint_contains_step_a_only(
-        self, gate_state: dict[str, Any]
-    ) -> None:
+    def test_02_checkpoint_contains_step_a_only(self, gate_state: dict[str, Any]) -> None:
         require_env()
         store = gate_state["store"]
         execution_id = gate_state["execution_id"]
 
-        checkpoints = store.load(execution_id)
+        checkpoints = store.list(execution_id)
         node_ids = [cp.node_id for cp in checkpoints]
         assert "step_a" in node_ids, (
             f"step_a checkpoint missing — checkpoint store did not record "
@@ -184,16 +179,14 @@ class TestChainResumeGate:
             f"step_c was never reached, must not have a checkpoint: {node_ids}"
         )
 
-        latest = store.get_latest(execution_id)
+        latest = store.get_last(execution_id)
         assert latest is not None
         assert latest.node_id == "step_a"
         assert latest.state_snapshot.get("seed_value") == "original", (
             f"step_a snapshot did not capture seed_value: {latest.state_snapshot}"
         )
 
-    def test_03_resume_with_modified_state_completes(
-        self, gate_state: dict[str, Any]
-    ) -> None:
+    def test_03_resume_with_modified_state_completes(self, gate_state: dict[str, Any]) -> None:
         """Resume should re-run step_b (now succeeding) and finish step_c.
 
         The modified_state override should patch seed_value before
@@ -216,9 +209,7 @@ class TestChainResumeGate:
         )
 
         assert result is not None, "resume returned None"
-        assert result.execution_id == execution_id, (
-            "resumed run lost the original execution_id"
-        )
+        assert result.execution_id == execution_id, "resumed run lost the original execution_id"
         # The flaky tool was retried and produced output on the second call.
         assert _FLAKY_STATE["attempts"] >= 2, (
             f"flaky tool was not retried; attempts={_FLAKY_STATE['attempts']}"
@@ -240,26 +231,22 @@ class TestChainResumeGate:
         # seed value via its input_mapping.
         last_output = final_state.get("output")
         assert isinstance(last_output, dict), (
-            f"state.output should hold the last step's return dict, "
-            f"got: {last_output!r}"
+            f"state.output should hold the last step's return dict, got: {last_output!r}"
         )
         assert last_output.get("step_c_done") is True, (
-            f"step_c did not complete on resume — state.output is not from "
-            f"step_c: {last_output}"
+            f"step_c did not complete on resume — state.output is not from step_c: {last_output}"
         )
         assert last_output.get("final_seed") == "patched", (
             f"step_c did not see the patched seed_value: {last_output}"
         )
 
-    def test_04_resumed_run_recheckpointed_steps_b_and_c(
-        self, gate_state: dict[str, Any]
-    ) -> None:
+    def test_04_resumed_run_recheckpointed_steps_b_and_c(self, gate_state: dict[str, Any]) -> None:
         """After a successful resume, step_b and step_c should be checkpointed."""
         require_env()
         store = gate_state["store"]
         execution_id = gate_state["execution_id"]
 
-        checkpoints = store.load(execution_id)
+        checkpoints = store.list(execution_id)
         node_ids = [cp.node_id for cp in checkpoints]
         assert "step_b" in node_ids, (
             f"step_b checkpoint missing after successful resume: {node_ids}"
@@ -269,11 +256,9 @@ class TestChainResumeGate:
         )
 
         # Latest checkpoint should be step_c (the last node).
-        latest = store.get_latest(execution_id)
+        latest = store.get_last(execution_id)
         assert latest is not None
-        assert latest.node_id == "step_c", (
-            f"latest checkpoint is not step_c: {latest.node_id}"
-        )
+        assert latest.node_id == "step_c", f"latest checkpoint is not step_c: {latest.node_id}"
         # Top-level seed_value carried through the resume's modified_state.
         assert latest.state_snapshot.get("seed_value") == "patched", (
             f"latest checkpoint missing patched seed_value: {latest.state_snapshot}"

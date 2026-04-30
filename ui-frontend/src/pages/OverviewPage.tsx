@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { StatCard } from "@/components/shared/StatCard";
@@ -12,6 +13,8 @@ interface OverviewPayload {
   failing_traces_last_24h: number;
   eval_runs_last_7d: number;
   avg_pass_rate_last_7d: number;
+  pending_approvals_count: number;
+  failed_executions_count: number;
   recent_traces: { trace_id: string; name: string; start_time: string; status: string }[];
   recent_eval_runs: {
     run_id: string;
@@ -52,6 +55,27 @@ export function OverviewPage() {
             data ? `${Math.round((data.avg_pass_rate_last_7d ?? 0) * 100)}%` : "—"
           }
         />
+      </div>
+
+      {/* v1.0 durability KPIs — paused workflows + failed/interrupted runs.
+          Each card is wrapped in a Link so a click jumps straight to the
+          relevant page. */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+        <Link to="/approvals" className="block transition-transform hover:scale-[1.01]">
+          <StatCard
+            label="Pending approvals"
+            value={String(data?.pending_approvals_count ?? "—")}
+          />
+        </Link>
+        <Link
+          to="/approvals"
+          className="block transition-transform hover:scale-[1.01]"
+        >
+          <StatCard
+            label="Failed executions"
+            value={String(data?.failed_executions_count ?? "—")}
+          />
+        </Link>
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

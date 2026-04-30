@@ -26,6 +26,14 @@ from fastaiagent.agent import (
     Worker,
 )
 from fastaiagent.chain import Chain, ChainResult, ChainState
+from fastaiagent.chain.idempotent import IdempotencyError, idempotent
+from fastaiagent.chain.interrupt import (
+    AlreadyResumed,
+    InterruptSignal,
+    Resume,
+    interrupt,
+)
+from fastaiagent.checkpointers import Checkpointer, PendingInterrupt, SQLiteCheckpointer
 from fastaiagent.client import connect, disconnect
 from fastaiagent.eval import Dataset, EvalResults, Scorer, evaluate
 from fastaiagent.guardrail import Guardrail, GuardrailResult, json_valid, no_pii, toxicity_check
@@ -88,6 +96,16 @@ __all__ = [
     "Chain",
     "ChainResult",
     "ChainState",
+    # Durability
+    "Checkpointer",
+    "SQLiteCheckpointer",
+    "PendingInterrupt",
+    "interrupt",
+    "Resume",
+    "InterruptSignal",
+    "AlreadyResumed",
+    "idempotent",
+    "IdempotencyError",
     # LLM
     "LLMClient",
     "Message",

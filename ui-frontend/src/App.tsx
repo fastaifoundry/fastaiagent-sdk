@@ -70,6 +70,17 @@ const WorkflowDetailPage = lazy(() =>
     default: m.WorkflowDetailPage,
   }))
 );
+const ApprovalsPage = lazy(() =>
+  import("@/pages/ApprovalsPage").then((m) => ({ default: m.ApprovalsPage }))
+);
+const ApprovalDetailPage = lazy(() =>
+  import("@/pages/ApprovalDetailPage").then((m) => ({
+    default: m.ApprovalDetailPage,
+  }))
+);
+const ExecutionPage = lazy(() =>
+  import("@/pages/ExecutionPage").then((m) => ({ default: m.ExecutionPage }))
+);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -269,6 +280,30 @@ export default function App() {
                 element={
                   <Suspense fallback={<PageFallback />}>
                     <WorkflowDetailPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/approvals"
+                element={
+                  <Suspense fallback={<PageFallback />}>
+                    <ApprovalsPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/approvals/:execution_id"
+                element={
+                  <Suspense fallback={<PageFallback />}>
+                    <ApprovalDetailPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/executions/:execution_id"
+                element={
+                  <Suspense fallback={<PageFallback />}>
+                    <ExecutionPage />
                   </Suspense>
                 }
               />

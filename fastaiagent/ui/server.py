@@ -8,7 +8,9 @@ auth file, and ``--no-auth`` flag. ``uvicorn`` then serves it.
 from __future__ import annotations
 
 import importlib.resources as resources
+from collections.abc import Iterable
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
@@ -24,6 +26,7 @@ from fastaiagent.ui.routes import (
     analytics,
     auth,
     evals,
+    executions,
     guardrails,
     kb,
     overview,
@@ -53,19 +56,40 @@ def build_app(
     db_path: str | None = None,
     auth_path: Path | None = None,
     no_auth: bool = False,
+    runners: Iterable[Any] | None = None,
 ) -> FastAPI:
-    """Create a FastAPI app bound to a specific local.db and auth.json."""
+    """Create a FastAPI app bound to a specific local.db and auth.json.
+
+    ``runners`` (optional) is an iterable of resumable objects (Chain,
+    Agent, Swarm, Supervisor) the server can call ``aresume(...)`` on.
+    Each must expose ``.name`` and ``.aresume(...)``. The
+    ``POST /api/executions/{id}/resume`` endpoint looks one up by the
+    checkpoint's ``chain_name`` field and returns 503 if no match.
+    """
     resolved_db = db_path or get_config().local_db_path
     resolved_auth = auth_path or default_auth_path()
 
     # Eagerly ensure the schema exists so every route can assume it's there.
     init_local_db(resolved_db).close()
 
+    runner_map: dict[str, Any] = {}
+    if runners is not None:
+        for r in runners:
+            name = getattr(r, "name", None)
+            if not name or not hasattr(r, "aresume"):
+                raise ValueError(
+                    "build_app(runners=...) entries must have a .name and "
+                    "an .aresume() method (Chain/Agent/Swarm/Supervisor). "
+                    f"Got: {r!r}"
+                )
+            runner_map[str(name)] = r
+
     app = FastAPI(title="FastAIAgent", version="0.1", docs_url=None, redoc_url=None)
     app.state.context = AppContext(
         db_path=resolved_db,
         auth_path=resolved_auth,
         no_auth=no_auth,
+        runners=runner_map,
     )
 
     for r in (
@@ -80,6 +104,7 @@ def build_app(
         analytics.router,
         kb.router,
         workflows.router,
+        executions.router,
     ):
         app.include_router(r)
 
@@ -87,9 +112,7 @@ def build_app(
     if static is not None:
         assets_dir = static / "assets"
         if assets_dir.exists():
-            app.mount(
-                "/assets", StaticFiles(directory=str(assets_dir)), name="assets"
-            )
+            app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
 
         index_file = static / "index.html"
 

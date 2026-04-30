@@ -96,9 +96,7 @@ def _format(bucket: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.get("")
-def list_agents(
-    request: Request, _user: str = Depends(require_session)
-) -> dict[str, Any]:
+def list_agents(request: Request, _user: str = Depends(require_session)) -> dict[str, Any]:
     ctx = get_context(request)
     db = ctx.db()
     try:
@@ -123,9 +121,7 @@ def get_agent(
         rows = db.fetchall("SELECT * FROM spans WHERE name LIKE 'agent.%'")
         by_agent = _aggregate(rows)
         if name not in by_agent:
-            raise HTTPException(
-                status.HTTP_404_NOT_FOUND, f"Agent '{name}' not found"
-            )
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"Agent '{name}' not found")
         return _format(by_agent[name])
     finally:
         db.close()
@@ -159,8 +155,7 @@ def get_agent_tools(
         # ── Registered: latest agent.<name> root span with agent.tools JSON ─
         registered: list[dict[str, Any]] = []
         agent_rows = db.fetchall(
-            "SELECT attributes FROM spans WHERE name = ? "
-            "ORDER BY start_time DESC LIMIT 1",
+            "SELECT attributes FROM spans WHERE name = ? ORDER BY start_time DESC LIMIT 1",
             (f"agent.{name}",),
         )
         if agent_rows:
@@ -232,9 +227,7 @@ def get_agent_tools(
                 try:
                     a_time = datetime.fromisoformat(span["start_time"])
                     b_time = datetime.fromisoformat(span["end_time"])
-                    bucket["total_duration_ms"] += int(
-                        (b_time - a_time).total_seconds() * 1000
-                    )
+                    bucket["total_duration_ms"] += int((b_time - a_time).total_seconds() * 1000)
                 except (ValueError, TypeError):
                     pass
                 start = span.get("start_time") or ""
@@ -250,9 +243,7 @@ def get_agent_tools(
                     "origin": bucket["origin"],
                     "call_count": bucket["call_count"],
                     "error_count": bucket["error_count"],
-                    "success_rate": (
-                        (bucket["call_count"] - bucket["error_count"]) / runs
-                    ),
+                    "success_rate": ((bucket["call_count"] - bucket["error_count"]) / runs),
                     "avg_latency_ms": bucket["total_duration_ms"] / runs,
                     "last_used": bucket["last_used"],
                 }

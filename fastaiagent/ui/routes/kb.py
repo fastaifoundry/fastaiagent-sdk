@@ -98,9 +98,7 @@ async def list_collections(
                     "path": str(entry),
                     "chunk_count": info["chunk_count"],
                     "doc_count": info["doc_count"],
-                    "last_updated": time.strftime(
-                        "%Y-%m-%dT%H:%M:%SZ", time.gmtime(stat.st_mtime)
-                    ),
+                    "last_updated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(stat.st_mtime)),
                     "size_bytes": stat.st_size,
                 }
             )
@@ -139,9 +137,7 @@ async def get_collection(
         "chunk_count": info["chunk_count"],
         "doc_count": info["doc_count"],
         "size_bytes": stat.st_size,
-        "last_updated": time.strftime(
-            "%Y-%m-%dT%H:%M:%SZ", time.gmtime(stat.st_mtime)
-        ),
+        "last_updated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(stat.st_mtime)),
         "metadata_keys": sorted(sample_keys),
     }
 
@@ -164,8 +160,7 @@ async def list_documents(
     offset = (page - 1) * page_size
     with _open_readonly(db_path) as conn:
         total_row = conn.execute(
-            "SELECT COUNT(DISTINCT COALESCE(json_extract(metadata, '$.source'), id)) "
-            "FROM chunks"
+            "SELECT COUNT(DISTINCT COALESCE(json_extract(metadata, '$.source'), id)) FROM chunks"
         ).fetchone()
         total = int(total_row[0]) if total_row and total_row[0] is not None else 0
         rows = conn.execute(

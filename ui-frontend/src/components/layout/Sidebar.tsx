@@ -3,6 +3,7 @@ import {
   Activity,
   BarChart3,
   Bot,
+  CheckSquare,
   Database,
   FileText,
   GitBranch,
@@ -36,6 +37,10 @@ const SECTIONS: NavSection[] = [
       { to: "/analytics", label: "Analytics", icon: BarChart3 },
       { to: "/guardrails", label: "Guardrail Events", icon: Shield },
     ],
+  },
+  {
+    label: "// HITL",
+    items: [{ to: "/approvals", label: "Approvals", icon: CheckSquare }],
   },
   {
     label: "// EVALUATION",

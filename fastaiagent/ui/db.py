@@ -11,15 +11,42 @@ migrations required to bring the file up to ``CURRENT_SCHEMA_VERSION``.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
 
-CURRENT_SCHEMA_VERSION = 1
+CURRENT_SCHEMA_VERSION = 2
+
+# A migration step is either a SQL string or a callable that takes the
+# ``SQLiteHelper`` and runs whatever logic it needs (e.g., gated
+# ``ALTER TABLE`` for SQLite versions before 3.35).
+_Step = str | Callable[[SQLiteHelper], None]
 
 
-_MIGRATIONS: dict[int, list[str]] = {
+def _add_column_if_missing(db: SQLiteHelper, table: str, column: str, ddl: str) -> None:
+    """``ALTER TABLE table ADD COLUMN column ddl`` if the column does not exist.
+
+    SQLite < 3.35 lacks ``ADD COLUMN IF NOT EXISTS``; check ``PRAGMA
+    table_info`` first.
+    """
+    rows = db.fetchall(f"PRAGMA table_info({table})")
+    existing = {r["name"] for r in rows}
+    if column in existing:
+        return
+    db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+
+
+def _v2_add_checkpoint_columns(db: SQLiteHelper) -> None:
+    _add_column_if_missing(db, "checkpoints", "checkpoint_id", "TEXT")
+    _add_column_if_missing(db, "checkpoints", "parent_checkpoint_id", "TEXT")
+    _add_column_if_missing(db, "checkpoints", "interrupt_reason", "TEXT")
+    _add_column_if_missing(db, "checkpoints", "interrupt_context", "TEXT DEFAULT '{}'")
+    _add_column_if_missing(db, "checkpoints", "agent_path", "TEXT")
+
+
+_MIGRATIONS: dict[int, list[_Step]] = {
     1: [
         # Trace spans (moved from traces.db).
         """CREATE TABLE IF NOT EXISTS spans (
@@ -127,12 +154,9 @@ _MIGRATIONS: dict[int, list[str]] = {
             timestamp      TEXT,
             metadata       TEXT
         )""",
-        "CREATE INDEX IF NOT EXISTS idx_guardrail_events_trace_id"
-        " ON guardrail_events(trace_id)",
-        "CREATE INDEX IF NOT EXISTS idx_guardrail_events_agent"
-        " ON guardrail_events(agent_name)",
-        "CREATE INDEX IF NOT EXISTS idx_guardrail_events_rule"
-        " ON guardrail_events(guardrail_name)",
+        "CREATE INDEX IF NOT EXISTS idx_guardrail_events_trace_id ON guardrail_events(trace_id)",
+        "CREATE INDEX IF NOT EXISTS idx_guardrail_events_agent ON guardrail_events(agent_name)",
+        "CREATE INDEX IF NOT EXISTS idx_guardrail_events_rule ON guardrail_events(guardrail_name)",
         # UI view-state.
         """CREATE TABLE IF NOT EXISTS trace_notes (
             trace_id   TEXT PRIMARY KEY,
@@ -148,6 +172,37 @@ _MIGRATIONS: dict[int, list[str]] = {
             name       TEXT,
             filters    TEXT,
             created_at TEXT
+        )""",
+    ],
+    2: [
+        # v1.0 durability — extend `checkpoints` and add new tables.
+        _v2_add_checkpoint_columns,
+        # Backfill checkpoint_id for existing rows so older executions stay
+        # resumable through the new SQLiteCheckpointer.
+        "UPDATE checkpoints SET checkpoint_id = id WHERE checkpoint_id IS NULL",
+        "CREATE INDEX IF NOT EXISTS idx_cp_checkpoint_id ON checkpoints(checkpoint_id)",
+        # Partial index for the failure / interrupt list views (Approvals,
+        # Failed Executions). Cheap to maintain and dramatically narrows the
+        # scan when most rows are 'completed'.
+        "CREATE INDEX IF NOT EXISTS idx_cp_status_problem"
+        " ON checkpoints(status) WHERE status IN ('failed','interrupted')",
+        # Idempotency cache for the @idempotent decorator (Phase 3).
+        """CREATE TABLE IF NOT EXISTS idempotency_cache (
+            execution_id TEXT NOT NULL,
+            function_key TEXT NOT NULL,
+            result       TEXT NOT NULL,
+            created_at   TEXT NOT NULL,
+            PRIMARY KEY (execution_id, function_key)
+        )""",
+        # Pending interrupts for the /approvals UI and resume coordination.
+        """CREATE TABLE IF NOT EXISTS pending_interrupts (
+            execution_id TEXT NOT NULL PRIMARY KEY,
+            chain_name   TEXT NOT NULL,
+            node_id      TEXT NOT NULL,
+            reason       TEXT NOT NULL,
+            context      TEXT NOT NULL,
+            agent_path   TEXT,
+            created_at   TEXT NOT NULL
         )""",
     ],
 }
@@ -171,8 +226,11 @@ def _run_migrations(db: SQLiteHelper) -> None:
     for version in sorted(_MIGRATIONS):
         if version <= current:
             continue
-        for stmt in _MIGRATIONS[version]:
-            db.execute(stmt)
+        for step in _MIGRATIONS[version]:
+            if isinstance(step, str):
+                db.execute(step)
+            else:
+                step(db)
         _set_user_version(db, version)
 
 

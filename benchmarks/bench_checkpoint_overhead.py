@@ -3,22 +3,26 @@
 import tempfile
 import time
 
-from fastaiagent.chain.checkpoint import CheckpointStore
+from fastaiagent import SQLiteCheckpointer
+from fastaiagent.chain.checkpoint import Checkpoint
 
 
 def bench_checkpoint(num_nodes=100):
     with tempfile.TemporaryDirectory() as tmp:
-        store = CheckpointStore(db_path=f"{tmp}/bench.db")
+        store = SQLiteCheckpointer(db_path=f"{tmp}/bench.db")
+        store.setup()
         state = {"key": "value", "data": list(range(100))}
 
         start = time.monotonic()
         for i in range(num_nodes):
-            store.save(
-                chain_name="bench-chain",
-                execution_id="exec-001",
-                node_id=f"node_{i}",
-                node_index=i,
-                state_snapshot=state,
+            store.put(
+                Checkpoint(
+                    chain_name="bench-chain",
+                    execution_id="exec-001",
+                    node_id=f"node_{i}",
+                    node_index=i,
+                    state_snapshot=state,
+                )
             )
         elapsed = time.monotonic() - start
         per_node_ms = (elapsed / num_nodes) * 1000

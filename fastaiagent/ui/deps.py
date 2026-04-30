@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from fastapi import Request
 
@@ -15,6 +16,11 @@ class AppContext:
 
     Held on ``app.state.context`` so tests and ``fastaiagent ui start``
     can inject a custom DB path without touching the global config.
+
+    ``runners`` is an optional registry of resumable objects (Chain / Agent /
+    Swarm / Supervisor), keyed by their ``.name``. The ``/api/executions``
+    POST resume endpoint looks up a runner by the checkpoint's ``chain_name``
+    field. Empty by default — resume is a no-op until a runner is registered.
     """
 
     def __init__(
@@ -23,10 +29,12 @@ class AppContext:
         db_path: str,
         auth_path: Path,
         no_auth: bool,
+        runners: dict[str, Any] | None = None,
     ) -> None:
         self.db_path = db_path
         self.auth_path = auth_path
         self.no_auth = no_auth
+        self.runners: dict[str, Any] = dict(runners) if runners else {}
         self._auth_cache: AuthFile | None = None
 
     def auth(self) -> AuthFile | None:

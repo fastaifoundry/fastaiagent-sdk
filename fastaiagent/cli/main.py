@@ -8,12 +8,14 @@ import typer
 
 from fastaiagent.cli.agent import agent_app
 from fastaiagent.cli.auth import auth_app, connect, disconnect
+from fastaiagent.cli.checkpointer import register as register_checkpointer_commands
 from fastaiagent.cli.eval import eval_app
 from fastaiagent.cli.kb import kb_app
 from fastaiagent.cli.mcp import mcp_app
 from fastaiagent.cli.migrate import migrate_command
 from fastaiagent.cli.prompts import prompts_app
 from fastaiagent.cli.replay import replay_app
+from fastaiagent.cli.resume import register as register_resume_commands
 from fastaiagent.cli.traces import traces_app
 from fastaiagent.cli.ui import ui_app
 
@@ -40,6 +42,12 @@ app.command(
     name="migrate",
     help="Copy legacy traces.db, checkpoints.db, and .prompts/ into local.db.",
 )(migrate_command)
+
+# v1.0 durability — top-level commands so the user can `fastaiagent resume`,
+# `fastaiagent list-pending`, `fastaiagent inspect`, and
+# `fastaiagent setup-checkpointer` directly.
+register_resume_commands(app)
+register_checkpointer_commands(app)
 
 
 # Known optional extras and the packages that identify them. We probe each

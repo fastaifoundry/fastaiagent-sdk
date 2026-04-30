@@ -82,11 +82,21 @@ nav:
       - Middleware: agents/middleware.md
       - "Multi-Agent Teams": agents/teams.md
       - Swarm: agents/swarm.md
+      - Durability: agents/durability.md
   - Chains:
       - chains/index.md
       - "Cyclic Workflows": chains/cyclic-workflows.md
       - Checkpointing: chains/checkpointing.md
       - "Human-in-the-Loop": chains/hitl.md
+      - "Idempotency": chains/idempotency.md
+  - Durability:
+      - durability/index.md
+      - Quickstart: durability/quickstart.md
+      - "Side effects & idempotency": durability/side-effects.md
+      - Patterns: durability/patterns.md
+      - "Multi-agent": durability/multi-agent.md
+      - Checkpointers: durability/checkpointers.md
+      - "API reference": durability/api-reference.md
   - Guardrails:
       - guardrails/index.md
   - Tools:
@@ -137,6 +147,7 @@ nav:
       - "Debug with Agent Replay": tutorials/debug-with-replay.md
   - Migration Guides:
       - migration-guides/index.md
+      - "From LangGraph": migration-guides/from-langgraph.md
       - "From LangSmith": migration-guides/from-langsmith.md
       - "From Langfuse": migration-guides/from-langfuse.md
       - "From MLflow": migration-guides/from-mlflow.md
