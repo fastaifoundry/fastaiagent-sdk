@@ -26,6 +26,11 @@ fastaiagent --help
 | `fastaiagent kb` | Manage local knowledge bases |
 | `fastaiagent agent` | Run an Agent or Chain as an HTTP service |
 | `fastaiagent mcp` | Expose an Agent or Chain as an MCP server |
+| `fastaiagent resume` | Resume a paused execution (durability) |
+| `fastaiagent list-pending` | List pending interrupts awaiting human approval |
+| `fastaiagent inspect` | Show checkpoint history for an execution |
+| `fastaiagent setup-checkpointer` | Provision the durability backend (SQLite or Postgres) |
+| `fastaiagent migrate` | Copy legacy `traces.db` / `checkpoints.db` / `.prompts/` into `local.db` |
 
 ---
 
@@ -33,7 +38,7 @@ fastaiagent --help
 
 ```bash
 $ fastaiagent version
-fastaiagent 0.6.1 [openai, anthropic, kb, qdrant, chroma, mcp-server]
+fastaiagent 1.0.0 [openai, anthropic, langchain, crewai, kb, qdrant, chroma, mcp-server, otel-export, postgres]
 ```
 
 Brackets list the optional extras whose upstream package is importable. Useful when debugging "which extras did this env install?" in bug reports.
@@ -175,6 +180,71 @@ Requires: `pip install 'fastaiagent[mcp-server]'`.
 
 ---
 
+## Durability commands
+
+The four commands below cover the v1.0 [durability](../durability/index.md) workflow: pause an execution with `interrupt()`, list what's waiting, then resume from any process.
+
+### `fastaiagent list-pending`
+
+Rich-rendered table of every pending interrupt in the local store:
+
+```bash
+fastaiagent list-pending
+fastaiagent list-pending --db-path /var/lib/fastaiagent/local.db
+fastaiagent list-pending --limit 50
+```
+
+### `fastaiagent inspect <execution_id>`
+
+Checkpoint history for one execution — node-by-node statuses, timestamps, and `agent_path` for multi-agent topologies:
+
+```bash
+fastaiagent inspect refund-abc
+fastaiagent inspect refund-abc --db-path ./.fastaiagent/local.db
+```
+
+Exits **1** when the execution has no checkpoints.
+
+### `fastaiagent resume <execution_id>`
+
+Loads the runner via a Python entrypoint and calls `aresume(...)`:
+
+```bash
+# Approve
+fastaiagent resume refund-abc --runner myapp.flows:build_chain
+
+# Reject with a reason
+fastaiagent resume refund-abc \
+    --runner myapp.flows:build_chain \
+    --value '{"approved": false, "metadata": {"reason": "amount above threshold"}}'
+```
+
+Exits **2** on `AlreadyResumed` (another resumer claimed the pending row first — a deterministic outcome, not a bug).
+
+### `fastaiagent setup-checkpointer`
+
+Provisions the durability backend's schema. Idempotent for both backends.
+
+```bash
+# Local SQLite (default)
+fastaiagent setup-checkpointer
+
+# Postgres
+fastaiagent setup-checkpointer \
+    --backend postgres \
+    --connection-string "$DATABASE_URL"
+
+# Custom Postgres schema (so two installs share one DB)
+fastaiagent setup-checkpointer \
+    --backend postgres \
+    --connection-string "$DATABASE_URL" \
+    --schema fa_prod
+```
+
+See [docs/durability/checkpointers.md](../durability/checkpointers.md) for the full backend reference.
+
+---
+
 ## Environment variables
 
 | Variable | Used by |
@@ -182,8 +252,8 @@ Requires: `pip install 'fastaiagent[mcp-server]'`.
 | `FASTAIAGENT_API_KEY` | Platform connection (Python + CLI) |
 | `FASTAIAGENT_TARGET` | Platform URL override |
 | `FASTAIAGENT_PROJECT` | Platform project override |
-| `FASTAIAGENT_LOCAL_DB` | Local SQLite trace store |
-| `FASTAIAGENT_CHECKPOINT_DB_PATH` | Local checkpoint store |
+| `FASTAIAGENT_LOCAL_DB` | Local SQLite store (traces, checkpoints, idempotency, prompts) |
+| `FASTAIAGENT_CHECKPOINT_DB_PATH` | Override checkpoint store path (legacy; prefer `FASTAIAGENT_LOCAL_DB`) |
 | `FASTAIAGENT_LIVE_OPENAI_MODEL` | Override OpenAI model in live tests |
 | `FASTAIAGENT_LIVE_ANTHROPIC_MODEL` | Override Anthropic model in live tests |
 | `OPENAI_API_KEY` | LLM calls (OpenAI) |
@@ -191,6 +261,7 @@ Requires: `pip install 'fastaiagent[mcp-server]'`.
 
 ## Next Steps
 
+- [Durability — pause and resume](../durability/index.md)
 - [Tracing Guide](../tracing/index.md)
 - [Agent Replay](../replay/index.md)
 - [Evaluation](../evaluation/index.md)

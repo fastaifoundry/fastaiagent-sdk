@@ -23,6 +23,7 @@ FastAIAgent uses optional dependencies to keep the core package lightweight.
 | `crewai` | CrewAI auto-tracing | `pip install "fastaiagent[crewai]"` |
 | `kb` | Local knowledge base (FastEmbed + PyMuPDF) | `pip install "fastaiagent[kb]"` |
 | `otel-export` | OpenTelemetry OTLP exporter | `pip install "fastaiagent[otel-export]"` |
+| `postgres` | Postgres durability backend (psycopg3) | `pip install "fastaiagent[postgres]"` |
 | `all` | All of the above | `pip install "fastaiagent[all]"` |
 
 ## Development Setup
@@ -39,7 +40,7 @@ pip install -e ".[dev,all]"
 
 ```python
 import fastaiagent
-print(fastaiagent.__version__)  # 0.1.0a1
+print(fastaiagent.__version__)  # 1.0.0
 ```
 
 ## Environment Variables

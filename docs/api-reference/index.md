@@ -16,6 +16,15 @@ Auto-generated reference documentation for all public FastAIAgent SDK classes an
 
 - **[Guardrail](../guardrails/index.md)** — `Guardrail`, `GuardrailResult`, `no_pii`, `json_valid`, `toxicity_check`
 
+## Durability (v1.0)
+
+- **[interrupt / Resume](../durability/api-reference.md)** — `interrupt(reason, context)`, `Resume(approved, metadata)`, `InterruptSignal`, `AlreadyResumed`
+- **[@idempotent](../chains/idempotency.md)** — `idempotent`, `IdempotencyError`
+- **[Checkpointer Protocol](../durability/checkpointers.md)** — `Checkpointer`, `SQLiteCheckpointer`, `PostgresCheckpointer`, `PendingInterrupt`, `Checkpoint`
+- **Resume entrypoints** — `Chain.aresume(execution_id, *, resume_value=Resume(...))`, `Agent.aresume(...)`, `Swarm.aresume(...)`, `Supervisor.aresume(...)`. All four runner types share the same atomic-claim contract.
+
+See the full [durability API reference](../durability/api-reference.md) for exact method signatures, the `Checkpointer` Protocol surface, and the `agent_path` hierarchy used by multi-agent topologies.
+
 ## Observability
 
 - **[TraceStore](../tracing/index.md)** — `TraceStore`, `TraceData`, `SpanData`, `trace_context`
