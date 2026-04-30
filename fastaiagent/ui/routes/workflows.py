@@ -186,8 +186,7 @@ def get_workflow(
     db = ctx.db()
     try:
         rows = db.fetchall(
-            "SELECT * FROM spans WHERE parent_span_id IS NULL "
-            "AND name LIKE ?",
+            "SELECT * FROM spans WHERE parent_span_id IS NULL AND name LIKE ?",
             (f"{runner_type}.%",),
         )
         by_wf = _aggregate(rows)

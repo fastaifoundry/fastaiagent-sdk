@@ -36,9 +36,7 @@ def _unpack(row: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def _trace_cost_and_latency(
-    db: Any, trace_ids: list[str]
-) -> tuple[float, float]:
+def _trace_cost_and_latency(db: Any, trace_ids: list[str]) -> tuple[float, float]:
     """Return (total_cost_usd, avg_latency_ms) for the given trace_ids.
 
     Scans root spans only (parent_span_id IS NULL) since those carry the
@@ -87,9 +85,7 @@ def _trace_cost_and_latency(
     return total_cost, avg_latency
 
 
-def _run_with_aggregates(
-    db: Any, run: dict[str, Any]
-) -> dict[str, Any]:
+def _run_with_aggregates(db: Any, run: dict[str, Any]) -> dict[str, Any]:
     """Decorate a run row with cost_usd + avg_latency_ms derived from its cases."""
     case_rows = db.fetchall(
         "SELECT trace_id FROM eval_cases WHERE run_id = ? AND trace_id IS NOT NULL",
@@ -126,11 +122,7 @@ def _case_outcome(case: dict[str, Any]) -> str:
     if not isinstance(per, dict) or not per:
         return "passed"
     return (
-        "passed"
-        if all(
-            isinstance(v, dict) and v.get("passed") for v in per.values()
-        )
-        else "failed"
+        "passed" if all(isinstance(v, dict) and v.get("passed") for v in per.values()) else "failed"
     )
 
 
@@ -155,9 +147,7 @@ def list_runs(
             clauses.append("agent_name = ?")
             params.append(agent)
         where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-        total_row = db.fetchone(
-            f"SELECT COUNT(*) AS n FROM eval_runs {where_sql}", tuple(params)
-        )
+        total_row = db.fetchone(f"SELECT COUNT(*) AS n FROM eval_runs {where_sql}", tuple(params))
         total = int((total_row or {}).get("n") or 0)
         rows = db.fetchall(
             f"""SELECT * FROM eval_runs {where_sql}
@@ -215,12 +205,11 @@ def compare(
     ctx = get_context(request)
     db = ctx.db()
     try:
+
         def get_run(run_id: str) -> dict[str, Any]:
             row = db.fetchone("SELECT * FROM eval_runs WHERE run_id = ?", (run_id,))
             if row is None:
-                raise HTTPException(
-                    status.HTTP_404_NOT_FOUND, f"Eval run '{run_id}' not found"
-                )
+                raise HTTPException(status.HTTP_404_NOT_FOUND, f"Eval run '{run_id}' not found")
             return _run_with_aggregates(db, _unpack(row))
 
         def get_cases(run_id: str) -> list[dict[str, Any]]:
@@ -300,9 +289,7 @@ def compare(
         db.close()
 
 
-def _scorer_deltas(
-    a: dict[str, Any], b: dict[str, Any]
-) -> list[dict[str, Any]]:
+def _scorer_deltas(a: dict[str, Any], b: dict[str, Any]) -> list[dict[str, Any]]:
     """Per-scorer {passed_before, passed_after, changed} list for one case pair."""
     per_a = a.get("per_scorer") or {}
     per_b = b.get("per_scorer") or {}
@@ -349,9 +336,7 @@ def get_run(
     try:
         run_row = db.fetchone("SELECT * FROM eval_runs WHERE run_id = ?", (run_id,))
         if run_row is None:
-            raise HTTPException(
-                status.HTTP_404_NOT_FOUND, f"Eval run '{run_id}' not found"
-            )
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"Eval run '{run_id}' not found")
         case_rows = db.fetchall(
             """SELECT * FROM eval_cases
                WHERE run_id = ?

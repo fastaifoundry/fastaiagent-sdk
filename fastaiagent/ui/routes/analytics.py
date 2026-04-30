@@ -93,11 +93,14 @@ def analytics(
             if reported is not None:
                 span_cost = reported
             else:
-                span_cost = compute_cost_usd(
-                    attrs.get("gen_ai.request.model"),
-                    attrs.get("gen_ai.usage.input_tokens"),
-                    attrs.get("gen_ai.usage.output_tokens"),
-                ) or 0.0
+                span_cost = (
+                    compute_cost_usd(
+                        attrs.get("gen_ai.request.model"),
+                        attrs.get("gen_ai.usage.input_tokens"),
+                        attrs.get("gen_ai.usage.output_tokens"),
+                    )
+                    or 0.0
+                )
             series[bucket]["cost_usd"] += span_cost
 
             if is_root:
@@ -182,9 +185,7 @@ def analytics(
                     "run_count": stats["run_count"],
                     "total_cost_usd": stats["total_cost_usd"],
                     "avg_cost_usd": (
-                        stats["total_cost_usd"] / stats["run_count"]
-                        if stats["run_count"]
-                        else 0.0
+                        stats["total_cost_usd"] / stats["run_count"] if stats["run_count"] else 0.0
                     ),
                     "error_count": stats["errors"],
                 }

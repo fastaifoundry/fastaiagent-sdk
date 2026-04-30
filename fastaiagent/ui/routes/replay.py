@@ -34,9 +34,7 @@ def _register_fork(forked: Any) -> str:
 def _get_fork(fork_id: str) -> Any:
     with _forks_lock:
         if fork_id not in _forks:
-            raise HTTPException(
-                status.HTTP_404_NOT_FOUND, f"Fork '{fork_id}' not found"
-            )
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"Fork '{fork_id}' not found")
         return _forks[fork_id]
 
 
@@ -45,9 +43,7 @@ def _replay_for(db_path: str, trace_id: str) -> Replay:
     try:
         return Replay.load(trace_id, store=store)
     except Exception as e:
-        raise HTTPException(
-            status.HTTP_404_NOT_FOUND, f"Trace '{trace_id}' not found: {e}"
-        ) from e
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Trace '{trace_id}' not found: {e}") from e
 
 
 @router.get("/{trace_id}")
@@ -142,9 +138,7 @@ def compare_fork(
     try:
         new_trace = store.get_trace(against)
     except Exception as e:
-        raise HTTPException(
-            status.HTTP_404_NOT_FOUND, f"Trace '{against}' not found: {e}"
-        ) from e
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Trace '{against}' not found: {e}") from e
     # Build a ReplayResult-like object so compare() can reload the new trace.
     from fastaiagent.trace.replay import ReplayResult
 
@@ -176,16 +170,11 @@ def save_as_test(
     _get_fork(fork_id)
     ctx = get_context(request)
     db_dir = Path(ctx.db_path).parent
-    path = Path(body.dataset_path) if body.dataset_path else (
-        db_dir / "regression_tests.jsonl"
-    )
+    path = Path(body.dataset_path) if body.dataset_path else (db_dir / "regression_tests.jsonl")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.touch(exist_ok=True)
     with path.open("a") as f:
-        f.write(
-            json.dumps({"input": body.input, "expected_output": body.expected_output})
-            + "\n"
-        )
+        f.write(json.dumps({"input": body.input, "expected_output": body.expected_output}) + "\n")
     return {"path": str(path)}
 
 

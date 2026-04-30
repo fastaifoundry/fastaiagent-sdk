@@ -5,6 +5,327 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-04-30
+
+**The durability release.** Every workflow can now suspend for human
+approval, survive a crash, and resume from any process — locally on
+SQLite or in production on Postgres. Same SDK, same primitives. See
+[docs/durability/](docs/durability/index.md).
+
+### ⚠️ Breaking changes
+
+Two intentional renames; everything else from 0.9.x keeps working.
+
+- `CheckpointStore` → `SQLiteCheckpointer`. The new
+  [`Checkpointer` Protocol](docs/durability/checkpointers.md) is the
+  storage surface; `SQLiteCheckpointer` and `PostgresCheckpointer` are
+  the two shipped implementations.
+- `Chain(checkpoint_store=…)` → `Chain(checkpointer=…)`. No deprecation
+  alias — 1.0 is the breaking-change window. Search-and-replace fix.
+
+The `Checkpointer` method surface is `setup` / `put` / `get_last` /
+`get_by_id` / `list` / `list_pending_interrupts` / `delete_execution` /
+`prune` / `record_interrupt` / `delete_pending_interrupt_atomic` /
+`get_idempotent` / `put_idempotent` / `put_writes`. (Old names: `save`,
+`load`, `get_latest` — all renamed.)
+
+Migration is automatic: `local.db` schema bumps from v1 to v2 on first
+run, backfills `checkpoint_id = id` for pre-existing rows, and adds the
+`idempotency_cache` and `pending_interrupts` tables.
+
+### Added — Local UI durability surface (v1.0 Phase 10)
+
+- New ``/approvals`` page lists every pending interrupt as a Rich-style
+  table: `execution_id`, `chain_name`, `reason`, `agent_path`
+  breadcrumb, age. Client-side filter inputs for substring search and
+  reason narrowing — no backend round-trip per keystroke. Refresh button
+  re-fetches; no SSE / WebSocket per the refresh-based reads memory rule.
+- New ``/approvals/:execution_id`` detail page shows the **frozen
+  context** (the dict passed to `interrupt()`) in a JSON viewer next to
+  Approve / Reject buttons and a reason textarea. Approve fires
+  `POST /api/executions/:id/resume {"approved": true, "metadata": {"reason": "..."}}`;
+  Reject fires the same with `approved: false`. Both navigate to
+  ``/executions/:execution_id`` on success.
+- New ``/executions/:execution_id`` page renders the checkpoint history
+  in chronological order: `node_id`, `status` (color-coded), `agent_path`,
+  `created_at`. Click any row → its `state_snapshot` opens in the JSON
+  viewer pane. Resume CTA appears when the latest checkpoint is
+  `interrupted` or `failed`.
+- New ``// HITL`` sidebar section with **Approvals** as the only entry —
+  matches the existing `// SECTION` convention.
+- Two new home KPI cards: **Pending approvals** and **Failed
+  executions**. Both link to `/approvals`. Counts come from the new
+  `pending_approvals_count` and `failed_executions_count` fields on
+  `GET /api/overview`.
+- New TanStack Query hooks `usePendingInterrupts`, `useResumeExecution`,
+  `useExecution`, `usePendingForExecution` — keyed and cached so the
+  Approvals → Detail → Execution flow feels instant.
+- New `tests/e2e/test_gate_local_ui_durability.py` — boots the same
+  FastAPI app the SPA talks to, walks the full pause→resume cycle the
+  Approve button triggers, asserts the overview counters drop after the
+  resume, and verifies a double-clicked Approve gets `409 Conflict`.
+
+### Added — HTTP resume endpoints + CLI (v1.0 Phase 9)
+
+- New `fastaiagent/ui/routes/executions.py` adds three endpoints to the
+  built-in FastAPI app:
+  - `GET /api/executions/{execution_id}` — full checkpoint history (used
+    by the v1.0 `/executions/:id` detail page in Phase 10).
+  - `GET /api/pending-interrupts` — list of suspended workflows for the
+    `/approvals` page.
+  - `POST /api/executions/{execution_id}/resume` — body
+    `{"approved": bool, "metadata": {...}, "reason": "?"}`. Looks up a
+    runner by the checkpoint's `chain_name`, calls `aresume(...)`, returns
+    the `ChainResult` / `AgentResult` JSON. Concurrent / replayed
+    requests get **409 Conflict** when the pending row was already
+    claimed (`AlreadyResumed`). Missing-runner returns **503** with the
+    message `"No runner registered for {chain_name}: pass runners=[...]
+    to build_app()."`.
+- `build_app(...)` accepts an optional `runners=` iterable of resumable
+  objects (Chain, Agent, Swarm, Supervisor). The server validates each
+  has `.name` and `.aresume(...)` and stores them on `AppContext.runners`
+  for the resume endpoint to look up.
+- New `Chain.aresume(...)` async alias matches the
+  `Agent` / `Swarm` / `Supervisor` surface so the four runner types are
+  uniformly callable from the HTTP / CLI entrypoints.
+
+### Added — `fastaiagent` CLI durability commands
+
+- `fastaiagent resume <execution_id> --runner module:attr [--value JSON]`
+  — loads the runner via a Python entrypoint and calls
+  `aresume(execution_id, resume_value=Resume(...))`. Exit code **2** on
+  `AlreadyResumed`.
+- `fastaiagent list-pending [--db-path PATH] [--limit N]` — Rich-rendered
+  table of every pending interrupt in the local store.
+- `fastaiagent inspect <execution_id> [--db-path PATH]` — Rich-rendered
+  checkpoint history for one execution. Exit code **1** if no
+  checkpoints exist.
+- `fastaiagent setup-checkpointer --backend [sqlite|postgres]
+  --connection-string ...` — provisions / verifies the durability
+  backend's schema. Idempotent for both backends.
+
+All four commands are registered as top-level subcommands so `fastaiagent
+resume` / `fastaiagent list-pending` / `fastaiagent inspect` /
+`fastaiagent setup-checkpointer` work directly.
+
+### Added — Postgres backend (v1.0 Phase 8)
+
+- New `PostgresCheckpointer` ships under the `[postgres]` extra
+  (`pip install 'fastaiagent[postgres]'`). Same surface as
+  `SQLiteCheckpointer` — Chain / Agent / Swarm / Supervisor only need to
+  swap the constructor argument:
+  ```python
+  chain = Chain("flow", checkpointer=PostgresCheckpointer(
+      "postgresql://user:pass@host/db"
+  ))
+  ```
+- Uses psycopg3 (not psycopg2) for native `JSONB` adaptation and modern
+  `psycopg_pool.ConnectionPool`. All JSON columns are `JSONB`, all
+  timestamps are `TIMESTAMPTZ`, `node_index` is a real `INTEGER`.
+- Schema is namespaced (default `fastaiagent`); a configurable
+  `schema=` kwarg lets two SDK installations share one database. Schema
+  versioning via a `schema_version` table; `setup()` is idempotent.
+- The atomic pending-interrupt claim is a single
+  `DELETE … RETURNING *` — Postgres MVCC guarantees that of N concurrent
+  resumers, exactly one wins; the rest see `AlreadyResumed`.
+- Partial index on `status WHERE status IN ('failed', 'interrupted')`
+  for fast `/approvals` and Failed Executions list queries — most rows
+  are `'completed'` and don't need to be scanned.
+
+### Added — `tests/integration/` Postgres suite
+
+- `tests/integration/test_postgres_checkpointer.py` (spec test #11):
+  protocol round-trip suite parameterized over both `SQLiteCheckpointer`
+  and `PostgresCheckpointer`. Drift between the two backends surfaces
+  immediately. **52 tests total** (26 per backend).
+- `tests/integration/test_postgres_concurrent_resume.py` (spec test #12):
+  eight threads race to claim a pending interrupt; exactly one wins, the
+  other seven see `AlreadyResumed`. Run against both backends.
+- Tests gate on `PG_TEST_DSN`; they skip cleanly when unset, so local
+  runs without Docker still work.
+
+### Added — Postgres CI service
+
+- `.github/workflows/ci.yml` `e2e-quality-gate` job grew a
+  `postgres:16-alpine` service container and a new step that runs the
+  durability integration tests against it. The `optional-deps` job got
+  `"postgres"` added to its extras matrix, so installing the extra alone
+  is also covered.
+
+### Added — Supervisor / Worker durability (v1.0 Phase 7)
+
+- `Supervisor` accepts an optional `checkpointer=` kwarg. The supervisor's
+  inner Agent is built with `agent_path_label="supervisor:<name>"` and the
+  shared checkpointer; each delegated `Worker.agent` is cloned with
+  `agent_path_label="worker:<role>"` and the same checkpointer. Net: every
+  checkpoint a worker writes lands at `supervisor:<s>/worker:<r>/...`,
+  exactly the hierarchical path the v1 spec calls for.
+- New `Agent` constructor kwarg `agent_path_label`. Defaults to
+  `"agent:<name>"`. `Supervisor` and the `Worker` clones use it to override
+  the segment they contribute to `_agent_path`. Same nesting rules apply —
+  parent topology's prefix is preserved.
+- The `delegate_to_<role>` tools the supervisor builds are now
+  durability-aware: when a checkpoint exists under
+  `supervisor:<s>/worker:<r>` for the active execution, the tool calls
+  `worker_clone.aresume(execution_id, agent_path_prefix=…)` (with the
+  supervisor's `_resume_value` in scope if any). Otherwise it runs the
+  worker fresh. Paused workers re-raise `_AgentInterrupted` through the
+  delegate tool so the supervisor's `_arun_core` returns paused with the
+  worker's full nested `agent_path` on the pending row.
+- New `supervisor.resume(execution_id, *, resume_value=Resume(...))` and
+  `supervisor.aresume(...)`. Recovers the original input from the
+  supervisor's earliest checkpoint, binds `_resume_value`, and re-runs
+  `supervisor.arun(input, execution_id=…)`. The supervisor's LLM is
+  re-issued (deterministic mock LLMs reproduce the same delegation
+  decisions); each delegate tool resumes its worker if state exists, runs
+  fresh otherwise.
+
+### Changed — `Agent.aresume` accepts `agent_path_prefix`
+
+- `Agent.aresume(...)` now takes an advanced `agent_path_prefix=` kwarg
+  that scopes checkpoint lookups to a subtree. Used by Supervisor's
+  delegate tool so a worker's resume sees the worker's own latest
+  checkpoint instead of a sibling supervisor pre-tool checkpoint that was
+  written more recently.
+
+### Changed — `FunctionTool.aexecute` propagates more control-flow signals
+
+- `InterruptSignal`, `_AgentInterrupted`, and now `AlreadyResumed`
+  propagate through tool boundaries unchanged instead of being wrapped as
+  `ToolExecutionError`. Lets the parent executor handle suspension /
+  claim-once-resume at the right level.
+
+### Added — Swarm durability (v1.0 Phase 6)
+
+- `Swarm` accepts an optional `checkpointer=` kwarg. When set, the swarm
+  writes a `handoff:N` boundary checkpoint before each agent runs, capturing
+  `active_agent`, the inbound `current_input`, the full `SwarmState`
+  (`shared_context`, `path`, `handoff_count`, `last_reason`),
+  `accumulated_tool_calls`, and `total_tokens`. `agent_path` is set to
+  `swarm:<name>` on every handoff row.
+- The cloned active agent inherits the swarm's checkpointer, so its turn /
+  tool / interrupted checkpoints write under the nested path
+  `swarm:<s>/agent:<a>/[tool:<t>]`. Tools inside swarm agents can call
+  `interrupt()` and the resulting `pending_interrupts` row carries the full
+  three-level `agent_path`.
+- `swarm.run(input, *, execution_id=…)` returns
+  `AgentResult(status="paused", pending_interrupt=…)` whenever a child
+  agent suspends; the swarm itself does not need to do anything special.
+- New `swarm.resume(execution_id, *, resume_value=Resume(...))` and
+  `swarm.aresume(...)`. The resumer (a) recovers `SwarmState` from the
+  most recent `handoff:N` row, (b) parses the active agent from
+  `agent_path`, (c) calls `agent.aresume(...)` for interrupt resume or
+  `agent.arun(...)` for crash recovery, and (d) re-enters the loop —
+  remaining handoffs, allowlists, and `max_handoffs` still apply.
+
+### Changed — `Checkpointer.get_last` ordering
+
+- `SQLiteCheckpointer.get_last` now orders by `created_at DESC, rowid DESC`
+  instead of `node_index DESC, created_at DESC`. With multi-level
+  topologies (Swarm/Agent/Chain mixed under one execution), per-level
+  `node_index` numbering no longer forms a coherent global order. Sorting
+  by write time correctly returns the most recently committed checkpoint
+  in every case. Chain-only and Agent-only behavior is unchanged.
+
+### Added — single-Agent durability (v1.0 Phase 5)
+
+- `Agent` accepts an optional `checkpointer=` kwarg. When set, the
+  tool-calling loop writes a turn-boundary checkpoint before each LLM call
+  and a pre-tool checkpoint before each tool runs. `agent_path` is set on
+  every checkpoint so multi-agent topologies (Phases 6-7) can prefix it.
+- `agent.run(input, *, execution_id=...)` returns
+  `AgentResult(status="paused", pending_interrupt={...})` when a tool calls
+  `interrupt()`. Atomic checkpoint + `pending_interrupts` write — same
+  contract as Chain.
+- New `agent.resume(execution_id, *, resume_value=Resume(...))` and
+  `agent.aresume(...)`. Three resume shapes are handled:
+  1. **Interrupted**: pending row claimed atomically; suspended tool
+     re-invoked with `_resume_value` in scope so `interrupt()` returns
+     the value; loop continues.
+  2. **Pre-tool checkpoint after a real crash (e.g. SIGKILL)**: the saved
+     tool is re-invoked with the saved args; the LLM is **not** re-called.
+  3. **Turn-boundary checkpoint**: loop re-enters at that turn, re-issuing
+     the LLM call. Wrap side-effectful tool functions with `@idempotent`
+     to avoid double-execution.
+- `AgentResult` gains `status`, `pending_interrupt`, and `execution_id`.
+- `Agent` with no checkpointer is fully backward compatible — all 19
+  legacy `tests/test_agent.py` cases still pass.
+
+### Added — crash-recovery validation gate (v1.0 Phase 4)
+
+- New `tests/e2e/test_gate_crash_recovery.py`: a real-`SIGKILL`
+  end-to-end gate that proves the "crash-proof agents" claim. A worker
+  subprocess runs a 5-node chain, the parent kills it mid-`step_3`, and an
+  in-process `chain.resume()` finishes nodes 3-5. Asserts checkpoint count,
+  resume start node, and timestamp ordering between worker- and resumer-
+  written checkpoints.
+- Loop count is configurable via `E2E_CRASH_LOOPS` (default 3 locally,
+  set to 10 in CI to catch flakiness). Phase 4 introduces no SDK code
+  changes — it is a validation that Phase 1's storage foundation holds up
+  under a real crash.
+
+### Added — `@idempotent` side-effect protection (v1.0 Phase 3)
+
+- New `@idempotent` decorator: caches a function's result by
+  `(execution_id, sha256(args, kwargs))` so a re-executed node — typically
+  the suspended node on resume from `interrupt()` — does not re-run the
+  side effect. Outside a chain run the decorator is a pass-through.
+- Custom `key_fn=` lets non-JSON arguments (live objects, sessions)
+  participate in caching by name.
+- Returns are stored via `pydantic_core.to_jsonable_python`, so Pydantic
+  models and dataclasses cache cleanly. Non-JSON-serializable returns raise
+  the new `IdempotencyError` at the first call.
+- New exports from the top-level `fastaiagent` package: `idempotent`,
+  `IdempotencyError`.
+- `Checkpointer.prune(older_than)` no longer touches `interrupted`
+  checkpoints — pending HITL workflows survive maintenance sweeps.
+- `SQLiteCheckpointer.put_idempotent` is now strict: it stores only valid
+  JSON values (no silent `default=str` coercion).
+
+### Added — suspending HITL via `interrupt()` (v1.0 Phase 2)
+
+- New `interrupt(reason, context)` primitive: any chain node can call it to
+  suspend the workflow cleanly. The executor catches the signal, persists an
+  interrupted checkpoint and a `pending_interrupts` row in one transaction,
+  and `Chain.execute()` returns `ChainResult(status="paused", pending_interrupt=…)`.
+- New `Resume` value type and `Chain.resume(execution_id, *, resume_value=…)`.
+  The resumer atomically claims the `pending_interrupts` row before
+  re-executing the suspended node; concurrent resumers see `AlreadyResumed`.
+- `ChainResult` gains `status` (`"completed"` / `"paused"`) and
+  `pending_interrupt` fields. Default status is `"completed"`, so existing
+  code paths are unaffected.
+- New exports from the top-level `fastaiagent` package: `interrupt`, `Resume`,
+  `InterruptSignal`, `AlreadyResumed`.
+- Frozen-context invariant: the `context` dict passed to `interrupt()` is
+  JSON-serialized into the checkpoint and the `pending_interrupts` row at
+  suspend time. The resumer always sees the original snapshot — context is
+  never recomputed. Document this loudly in approval flows.
+- Existing `NodeType.hitl` blocking-handler path is untouched; the six
+  `tests/e2e/test_gate_hitl.py` sub-tests continue to pass.
+
+### Changed — durability storage foundation (v1.0 Phase 1)
+
+- Renamed `CheckpointStore` to `SQLiteCheckpointer` and introduced a
+  `Checkpointer` protocol so additional backends can be plugged in.
+- Renamed the `Chain(checkpoint_store=…)` kwarg to `Chain(checkpointer=…)`.
+  No deprecation alias — 1.0 is the breaking-change window.
+- The `Checkpointer` surface is now `setup` / `put` / `get_last` /
+  `get_by_id` / `list` / `list_pending_interrupts` / `delete_execution` /
+  `prune` (`save` → `put`, `load` → `list`, `get_latest` → `get_last`).
+
+### Added
+
+- `Checkpointer`, `SQLiteCheckpointer`, and `PendingInterrupt` are exported
+  from the top-level `fastaiagent` package.
+- New `Checkpoint` fields: `checkpoint_id`, `parent_checkpoint_id`,
+  `interrupt_reason`, `interrupt_context`, `agent_path` (used by Phases 2-7
+  for HITL suspend/resume and multi-agent durability).
+- `local.db` schema bumped to v2 with two new tables (`idempotency_cache`,
+  `pending_interrupts`) and indexes on `checkpoint_id` and on the partial
+  set of `failed`/`interrupted` statuses. Migration runs automatically on
+  the next `Chain` execution and backfills `checkpoint_id = id` for
+  pre-existing rows.
+
 ## [0.9.4] - 2026-04-21
 
 ### Added — per-agent Tools directory

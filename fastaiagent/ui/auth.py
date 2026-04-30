@@ -60,9 +60,7 @@ def auth_file_exists(path: Path | None = None) -> bool:
     return (path or default_auth_path()).exists()
 
 
-def create_auth_file(
-    username: str, password: str, *, path: Path | None = None
-) -> AuthFile:
+def create_auth_file(username: str, password: str, *, path: Path | None = None) -> AuthFile:
     """Hash the password, mint a session secret, and write ``auth.json``.
 
     Raises ``FileExistsError`` if one is already present — use
@@ -73,9 +71,7 @@ def create_auth_file(
 
     target = path or default_auth_path()
     if target.exists():
-        raise FileExistsError(
-            f"{target} already exists. Delete it to reset credentials."
-        )
+        raise FileExistsError(f"{target} already exists. Delete it to reset credentials.")
     target.parent.mkdir(parents=True, exist_ok=True)
 
     password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
@@ -143,9 +139,7 @@ def read_session_cookie(request: Request, auth: AuthFile) -> dict[str, Any] | No
     if not token:
         return None
     try:
-        payload = _serializer(auth.session_secret).loads(
-            token, max_age=SESSION_MAX_AGE_SECONDS
-        )
+        payload = _serializer(auth.session_secret).loads(token, max_age=SESSION_MAX_AGE_SECONDS)
     except (BadSignature, SignatureExpired):
         return None
     return payload if isinstance(payload, dict) else None

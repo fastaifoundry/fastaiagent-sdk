@@ -7,19 +7,28 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from fastaiagent._internal.async_utils import run_sync
-from fastaiagent.chain.checkpoint import CheckpointStore
 from fastaiagent.chain.executor import execute_chain
+from fastaiagent.chain.interrupt import AlreadyResumed, Resume
 from fastaiagent.chain.node import Edge, NodeConfig, NodeType
 from fastaiagent.chain.validator import validate_chain
+from fastaiagent.checkpointers import Checkpointer, SQLiteCheckpointer
 
 
 class ChainResult(BaseModel):
-    """Result of a chain execution."""
+    """Result of a chain execution.
+
+    ``status`` is ``"completed"`` for a normal run, or ``"paused"`` when a
+    node called :func:`interrupt`. In the paused case ``pending_interrupt``
+    holds ``{reason, context, node_id, agent_path}`` — the same payload the
+    ``/approvals`` UI reads from the ``pending_interrupts`` table.
+    """
 
     output: Any = None
     final_state: dict[str, Any] = Field(default_factory=dict)
     execution_id: str = ""
     node_results: dict[str, Any] = Field(default_factory=dict)
+    status: str = "completed"
+    pending_interrupt: dict[str, Any] | None = None
 
     model_config = {"arbitrary_types_allowed": True}
 
@@ -41,14 +50,14 @@ class Chain:
         name: str,
         state_schema: dict[str, Any] | None = None,
         checkpoint_enabled: bool = True,
-        checkpoint_store: CheckpointStore | None = None,
+        checkpointer: Checkpointer | None = None,
     ):
         self.name = name
         self.state_schema = state_schema
         self.nodes: list[NodeConfig] = []
         self.edges: list[Edge] = []
         self.checkpoint_enabled = checkpoint_enabled
-        self._checkpoint_store = checkpoint_store
+        self._checkpointer = checkpointer
 
     def add_node(
         self,
@@ -126,9 +135,10 @@ class Chain:
         **kwargs: Any,
     ) -> ChainResult:
         """Async execution of the chain."""
-        store = None
+        store: Checkpointer | None = None
         if self.checkpoint_enabled:
-            store = self._checkpoint_store or CheckpointStore()
+            store = self._checkpointer or SQLiteCheckpointer()
+            store.setup()
 
         # Wrap the whole chain in a root span so every child agent span is a
         # descendant of it — the UI can then render a chain as one trace with
@@ -139,17 +149,13 @@ class Chain:
         with tracer.start_as_current_span(f"chain.{self.name}") as span:
             span.set_attribute("chain.name", self.name)
             span.set_attribute("chain.node_count", len(self.nodes))
-            span.set_attribute(
-                "chain.node_ids", ",".join(n.id for n in self.nodes)
-            )
+            span.set_attribute("chain.node_ids", ",".join(n.id for n in self.nodes))
             span.set_attribute("fastaiagent.runner.type", "chain")
             if initial_state:
                 import json
 
                 try:
-                    span.set_attribute(
-                        "chain.input", json.dumps(initial_state, default=str)
-                    )
+                    span.set_attribute("chain.input", json.dumps(initial_state, default=str))
                 except (TypeError, ValueError):
                     pass
 
@@ -158,7 +164,7 @@ class Chain:
                 edges=self.edges,
                 initial_state=initial_state or {},
                 state_schema=self.state_schema,
-                checkpoint_store=store,
+                checkpointer=store,
                 chain_name=self.name,
                 execution_id=execution_id,
                 hitl_handler=hitl_handler,
@@ -167,9 +173,7 @@ class Chain:
             try:
                 import json as _json
 
-                span.set_attribute(
-                    "chain.output", _json.dumps(raw.get("output"), default=str)
-                )
+                span.set_attribute("chain.output", _json.dumps(raw.get("output"), default=str))
             except (TypeError, ValueError):
                 pass
             span.set_attribute("chain.execution_id", raw.get("execution_id") or "")
@@ -179,14 +183,30 @@ class Chain:
             final_state=raw["final_state"],
             execution_id=raw["execution_id"],
             node_results=raw["node_results"],
+            status=raw.get("status", "completed"),
+            pending_interrupt=raw.get("pending_interrupt"),
         )
 
     async def resume(
-        self, execution_id: str, modified_state: dict[str, Any] | None = None
+        self,
+        execution_id: str,
+        modified_state: dict[str, Any] | None = None,
+        *,
+        resume_value: Resume | None = None,
     ) -> ChainResult:
-        """Resume a failed/paused chain execution from the last checkpoint."""
-        store = self._checkpoint_store or CheckpointStore()
-        latest = store.get_latest(execution_id)
+        """Resume a failed/paused chain execution from the last checkpoint.
+
+        For an *interrupted* checkpoint (``interrupt()`` was called), pass a
+        :class:`Resume` value. The resumer atomically claims the
+        ``pending_interrupts`` row before starting; concurrent resumers see
+        :class:`AlreadyResumed`.
+
+        For a *failed* checkpoint, ``modified_state`` lets you patch state
+        before the next node runs (the existing v0.x behavior).
+        """
+        store: Checkpointer = self._checkpointer or SQLiteCheckpointer()
+        store.setup()
+        latest = store.get_last(execution_id)
         if latest is None:
             from fastaiagent._internal.errors import ChainCheckpointError
 
@@ -196,27 +216,49 @@ class Chain:
         if modified_state:
             state.update(modified_state)
 
-        # Find the next node after the checkpoint
         from fastaiagent.chain.executor import _topological_sort
 
         order = _topological_sort(self.nodes, self.edges)
-        resume_idx = None
-        for i, nid in enumerate(order):
-            if nid == latest.node_id:
-                resume_idx = i + 1
-                break
 
-        next_node = order[resume_idx] if resume_idx and resume_idx < len(order) else None
+        start_node: str | None
+        if resume_value is not None:
+            # Caller is resuming an interrupted workflow. Atomically claim
+            # the pending row — concurrent resumers see AlreadyResumed.
+            claimed = store.delete_pending_interrupt_atomic(execution_id)
+            if claimed is None:
+                raise AlreadyResumed(
+                    f"Execution '{execution_id}' has no pending interrupt to claim — "
+                    "either it was never suspended or another resumer already won."
+                )
+            # Re-execute the interrupted node from the top so interrupt() can
+            # return the resume_value.
+            start_node = claimed.node_id
+        elif latest.status == "interrupted":
+            from fastaiagent._internal.errors import ChainCheckpointError
+
+            raise ChainCheckpointError(
+                f"Execution '{execution_id}' is suspended on interrupt(); "
+                "pass resume_value=Resume(...) to chain.resume()."
+            )
+        else:
+            # Existing failed/completed path: start at the *next* node.
+            resume_idx = None
+            for i, nid in enumerate(order):
+                if nid == latest.node_id:
+                    resume_idx = i + 1
+                    break
+            start_node = order[resume_idx] if resume_idx and resume_idx < len(order) else None
 
         raw = await execute_chain(
             nodes=self.nodes,
             edges=self.edges,
             initial_state=state,
             state_schema=self.state_schema,
-            checkpoint_store=store,
+            checkpointer=store,
             chain_name=self.name,
             execution_id=execution_id,
-            resume_from_node=next_node,
+            resume_from_node=start_node,
+            resume_value=resume_value,
         )
 
         return ChainResult(
@@ -224,6 +266,23 @@ class Chain:
             final_state=raw["final_state"],
             execution_id=raw["execution_id"],
             node_results=raw["node_results"],
+            status=raw.get("status", "completed"),
+            pending_interrupt=raw.get("pending_interrupt"),
+        )
+
+    # Alias matching the ``aresume()`` contract that ``Agent`` / ``Swarm`` /
+    # ``Supervisor`` expose. Lets the v1.0 HTTP / CLI resume entrypoints
+    # treat all four runner types uniformly.
+    async def aresume(
+        self,
+        execution_id: str,
+        *,
+        resume_value: Resume | None = None,
+        modified_state: dict[str, Any] | None = None,
+    ) -> ChainResult:
+        """Async alias for :meth:`resume` (matches the Agent/Swarm/Supervisor surface)."""
+        return await self.resume(
+            execution_id, modified_state=modified_state, resume_value=resume_value
         )
 
     def as_mcp_server(

@@ -151,6 +151,15 @@ class FunctionTool(Tool):
                 result = await result
             return ToolResult(output=result)
         except Exception as e:
+            # Control-flow signals from interrupt() / nested agent
+            # suspension / claim-once-resume propagate through tool
+            # boundaries unchanged so the parent executor (or the user)
+            # can handle them at the right level.
+            from fastaiagent.agent.executor import _AgentInterrupted
+            from fastaiagent.chain.interrupt import AlreadyResumed, InterruptSignal
+
+            if isinstance(e, InterruptSignal | _AgentInterrupted | AlreadyResumed):
+                raise
             raise ToolExecutionError(f"Tool '{self.name}' failed: {e}") from e
 
     def _tool_type(self) -> str:

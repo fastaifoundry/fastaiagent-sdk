@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
+from fastaiagent import SQLiteCheckpointer
 from fastaiagent._internal.errors import (
     ChainStateValidationError,
 )
 from fastaiagent.agent import Agent
 from fastaiagent.chain import Chain, ChainResult, ChainState, NodeType
-from fastaiagent.chain.checkpoint import CheckpointStore
 from fastaiagent.chain.node import Edge, NodeConfig
 from fastaiagent.chain.validator import detect_cycles, validate_chain
 from fastaiagent.llm.client import LLMClient, LLMResponse
@@ -208,15 +208,15 @@ class TestCheckpoint:
     @pytest.mark.asyncio
     async def test_checkpoints_saved(self, temp_dir):
         """Chain saves checkpoints after each node."""
-        store = CheckpointStore(db_path=str(temp_dir / "cp.db"))
-        chain = Chain("cp-test", checkpoint_store=store)
+        store = SQLiteCheckpointer(db_path=str(temp_dir / "cp.db"))
+        chain = Chain("cp-test", checkpointer=store)
         chain.add_node("a", agent=_make_agent("a"))
         chain.add_node("b", agent=_make_agent("b"))
         chain.connect("a", "b")
 
         result = await chain.aexecute({"input": "test"})
 
-        checkpoints = store.load(result.execution_id)
+        checkpoints = store.list(result.execution_id)
         assert len(checkpoints) == 2
         assert checkpoints[0].node_id == "a"
         assert checkpoints[1].node_id == "b"
@@ -224,14 +224,14 @@ class TestCheckpoint:
 
     @pytest.mark.asyncio
     async def test_checkpoint_get_latest(self, temp_dir):
-        store = CheckpointStore(db_path=str(temp_dir / "cp.db"))
-        chain = Chain("cp-test", checkpoint_store=store)
+        store = SQLiteCheckpointer(db_path=str(temp_dir / "cp.db"))
+        chain = Chain("cp-test", checkpointer=store)
         chain.add_node("a", agent=_make_agent("a"))
         chain.add_node("b", agent=_make_agent("b"))
         chain.connect("a", "b")
 
         result = await chain.aexecute({"input": "test"})
-        latest = store.get_latest(result.execution_id)
+        latest = store.get_last(result.execution_id)
         assert latest is not None
         assert latest.node_id == "b"
         store.close()

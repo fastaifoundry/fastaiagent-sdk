@@ -42,6 +42,7 @@ surface as :class:`fastaiagent.agent.Agent`, so it drops into a
 from __future__ import annotations
 
 import time
+import uuid
 from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -51,6 +52,15 @@ from fastaiagent._internal.errors import AgentError, StopAgent
 from fastaiagent.agent.agent import Agent, AgentResult
 from fastaiagent.agent.context import RunContext
 from fastaiagent.agent.middleware import AgentMiddleware
+from fastaiagent.chain.checkpoint import Checkpoint
+from fastaiagent.chain.idempotent import _current_checkpointer
+from fastaiagent.chain.interrupt import (
+    AlreadyResumed,
+    Resume,
+    _agent_path,
+    _execution_id,
+)
+from fastaiagent.checkpointers import Checkpointer, SQLiteCheckpointer
 from fastaiagent.llm.message import AssistantMessage, UserMessage
 from fastaiagent.llm.stream import (
     HandoffEvent,
@@ -129,6 +139,52 @@ def _decode_handoff(tool_output: Any) -> tuple[str, str] | None:
     return parts[1], parts[2]
 
 
+def _swarm_snapshot(
+    *,
+    iteration: int,
+    current: str,
+    current_input: str,
+    original_input: str,
+    state: SwarmState,
+    accumulated_tool_calls: list[dict[str, Any]],
+    total_tokens: int,
+) -> dict[str, Any]:
+    """Serialize the swarm loop's hot state into a JSON-safe dict."""
+    return {
+        "iteration": iteration,
+        "active_agent": current,
+        "current_input": current_input,
+        "original_input": original_input,
+        "shared_context": dict(state.shared),
+        "handoff_count": state.handoff_count,
+        "path": list(state.path),
+        "last_reason": state.last_reason,
+        "accumulated_tool_calls": list(accumulated_tool_calls),
+        "total_tokens": total_tokens,
+    }
+
+
+def _restore_state(snapshot: dict[str, Any]) -> SwarmState:
+    """Inverse of :func:`_swarm_snapshot` — rebuild a :class:`SwarmState`."""
+    state = SwarmState()
+    state.shared = dict(snapshot.get("shared_context", {}))
+    state.handoff_count = int(snapshot.get("handoff_count", 0))
+    state.path = list(snapshot.get("path", []))
+    state.last_reason = str(snapshot.get("last_reason", ""))
+    return state
+
+
+def _parse_active_agent(swarm_name: str, agent_path: str | None) -> str | None:
+    """Extract the ``<agent>`` segment from a ``swarm:<s>/agent:<a>/...`` path."""
+    if not agent_path:
+        return None
+    prefix = f"swarm:{swarm_name}/agent:"
+    if not agent_path.startswith(prefix):
+        return None
+    rest = agent_path[len(prefix) :]
+    return rest.split("/", 1)[0] if rest else None
+
+
 class Swarm:
     """A set of peer agents that hand off to each other via tool calls.
 
@@ -150,6 +206,7 @@ class Swarm:
         entrypoint: str,
         handoffs: dict[str, list[str]] | None = None,
         max_handoffs: int = 8,
+        checkpointer: Checkpointer | None = None,
     ):
         if not agents:
             raise SwarmError("Swarm requires at least one agent")
@@ -160,50 +217,55 @@ class Swarm:
         self.agents: dict[str, Agent] = {}
         for agent in agents:
             if agent.name in self.agents:
-                raise SwarmError(
-                    f"Duplicate agent name {agent.name!r} in swarm {name!r}"
-                )
+                raise SwarmError(f"Duplicate agent name {agent.name!r} in swarm {name!r}")
             self.agents[agent.name] = agent
 
         if entrypoint not in self.agents:
-            raise SwarmError(
-                f"entrypoint {entrypoint!r} not in agents: {list(self.agents)}"
-            )
+            raise SwarmError(f"entrypoint {entrypoint!r} not in agents: {list(self.agents)}")
         self.entrypoint = entrypoint
 
         if handoffs is None:
-            handoffs = {
-                src: [dst for dst in self.agents if dst != src]
-                for src in self.agents
-            }
+            handoffs = {src: [dst for dst in self.agents if dst != src] for src in self.agents}
         for src, targets in handoffs.items():
             if src not in self.agents:
-                raise SwarmError(
-                    f"handoffs key {src!r} not in agents: {list(self.agents)}"
-                )
+                raise SwarmError(f"handoffs key {src!r} not in agents: {list(self.agents)}")
             for dst in targets:
                 if dst not in self.agents:
-                    raise SwarmError(
-                        f"handoffs[{src!r}] references unknown agent {dst!r}"
-                    )
+                    raise SwarmError(f"handoffs[{src!r}] references unknown agent {dst!r}")
         self.handoffs = handoffs
         self.max_handoffs = max_handoffs
+        self._checkpointer: Checkpointer | None = checkpointer
 
     # ------------------------------------------------------------------
     # Run
     # ------------------------------------------------------------------
 
-    def run(self, input: str, *, context: RunContext | None = None) -> AgentResult:
+    def run(
+        self,
+        input: str,
+        *,
+        context: RunContext | None = None,
+        execution_id: str | None = None,
+    ) -> AgentResult:
         """Synchronous execution."""
-        return run_sync(self.arun(input, context=context))
+        return run_sync(self.arun(input, context=context, execution_id=execution_id))
 
     async def arun(
-        self, input: str, *, context: RunContext | None = None, **kwargs: Any
+        self,
+        input: str,
+        *,
+        context: RunContext | None = None,
+        execution_id: str | None = None,
+        **kwargs: Any,
     ) -> AgentResult:
         """Run the swarm until an agent produces a final answer with no handoff.
 
         Returns the final agent's :class:`AgentResult`, enriched with path
         metadata under ``tool_calls`` so callers can inspect the handoff chain.
+
+        ``execution_id`` (optional) names this run for resume; pair with a
+        ``checkpointer`` on the Swarm to get crash- and interrupt-recovery
+        via :meth:`resume`.
         """
         from fastaiagent.trace.otel import get_tracer
 
@@ -213,37 +275,141 @@ class Swarm:
         with tracer.start_as_current_span(f"swarm.{self.name}") as span:
             span.set_attribute("swarm.name", self.name)
             span.set_attribute("swarm.entrypoint", self.entrypoint)
-            span.set_attribute(
-                "swarm.agent_count", len(getattr(self, "agents", []) or [])
-            )
+            span.set_attribute("swarm.agent_count", len(getattr(self, "agents", []) or []))
             span.set_attribute("fastaiagent.runner.type", "swarm")
             span.set_attribute("swarm.input", input)
 
-            result = await self._arun_swarm(input, context=context, **kwargs)
+            result = await self._arun_swarm(
+                input, context=context, execution_id=execution_id, **kwargs
+            )
 
             span.set_attribute("swarm.output", result.output)
             span.set_attribute("swarm.handoff_count", len(result.tool_calls or []))
         return result
 
     async def _arun_swarm(
-        self, input: str, *, context: RunContext | None = None, **kwargs: Any
+        self,
+        input: str,
+        *,
+        context: RunContext | None = None,
+        execution_id: str | None = None,
+        **kwargs: Any,
     ) -> AgentResult:
-        start = time.monotonic()
-        state = SwarmState()
-        state.path.append(self.entrypoint)
+        exec_id = execution_id or str(uuid.uuid4())
 
-        current = self.entrypoint
-        current_input = input
-        accumulated_tool_calls: list[dict[str, Any]] = []
-        final_output = ""
-        total_tokens = 0
+        # Bind execution-scoped ContextVars so child agents inherit and
+        # extend ``_agent_path`` with their own segment.
+        exec_token = _execution_id.set(exec_id)
+        ap_token = _agent_path.set(f"swarm:{self.name}")
+        cp_token = _current_checkpointer.set(self._checkpointer)
+
+        if self._checkpointer is not None:
+            self._checkpointer.setup()
+
+        try:
+            state = SwarmState()
+            state.path.append(self.entrypoint)
+            return await self._run_loop(
+                exec_id=exec_id,
+                current=self.entrypoint,
+                current_input=input,
+                original_input=input,
+                state=state,
+                accumulated_tool_calls=[],
+                total_tokens=0,
+                start_iter=0,
+                start=time.monotonic(),
+                context=context,
+                kwargs=kwargs,
+            )
+        finally:
+            _current_checkpointer.reset(cp_token)
+            _agent_path.reset(ap_token)
+            _execution_id.reset(exec_token)
+
+    async def _run_loop(
+        self,
+        *,
+        exec_id: str,
+        current: str,
+        current_input: str,
+        original_input: str,
+        state: SwarmState,
+        accumulated_tool_calls: list[dict[str, Any]],
+        total_tokens: int,
+        start_iter: int,
+        start: float,
+        context: RunContext[Any] | None,
+        kwargs: dict[str, Any],
+        skip_first_checkpoint: bool = False,
+        first_agent_result: AgentResult | None = None,
+    ) -> AgentResult:
+        """Core swarm loop, factored so :meth:`aresume` can re-enter it.
+
+        ``first_agent_result`` lets ``aresume`` inject the result of the
+        first (resumed) agent without re-running it. Subsequent iterations
+        run normally.
+        """
+        iteration = start_iter
+        injected = first_agent_result
 
         while True:
-            active = self._active_agent(current, state, context=context)
-            # kwargs (response_format, etc.) flow through to the active agent.
-            result = await active.arun(current_input, context=context, **kwargs)
-            total_tokens += result.tokens_used
+            # Handoff-boundary checkpoint — captures everything needed to
+            # resume right before the active agent runs. ``skip_first_checkpoint``
+            # lets aresume re-enter without writing a duplicate.
+            if self._checkpointer is not None and not (
+                skip_first_checkpoint and iteration == start_iter
+            ):
+                self._checkpointer.put(
+                    Checkpoint(
+                        checkpoint_id=str(uuid.uuid4()),
+                        chain_name=self.name,
+                        execution_id=exec_id,
+                        node_id=f"handoff:{iteration}",
+                        node_index=iteration,
+                        status="completed",
+                        state_snapshot=_swarm_snapshot(
+                            iteration=iteration,
+                            current=current,
+                            current_input=current_input,
+                            original_input=original_input,
+                            state=state,
+                            accumulated_tool_calls=accumulated_tool_calls,
+                            total_tokens=total_tokens,
+                        ),
+                        agent_path=f"swarm:{self.name}",
+                    )
+                )
 
+            if injected is not None:
+                result = injected
+                injected = None
+            else:
+                active = self._active_agent(current, state, context=context)
+                # Pass the same execution_id to child agents so all
+                # checkpoints land under one umbrella execution.
+                result = await active.arun(
+                    current_input,
+                    context=context,
+                    execution_id=exec_id,
+                    **kwargs,
+                )
+
+            # Bubble paused state up — the active agent already wrote its
+            # interrupted checkpoint with the swarm-prefixed agent_path.
+            if result.status == "paused":
+                latency = int((time.monotonic() - start) * 1000)
+                return AgentResult(
+                    output="",
+                    tool_calls=accumulated_tool_calls,
+                    tokens_used=total_tokens + result.tokens_used,
+                    latency_ms=latency,
+                    execution_id=exec_id,
+                    status="paused",
+                    pending_interrupt=result.pending_interrupt,
+                )
+
+            total_tokens += result.tokens_used
             handoff = self._find_handoff(result)
             for call in result.tool_calls:
                 call_copy = dict(call)
@@ -251,8 +417,15 @@ class Swarm:
                 accumulated_tool_calls.append(call_copy)
 
             if handoff is None:
-                final_output = result.output
-                break
+                latency = int((time.monotonic() - start) * 1000)
+                return AgentResult(
+                    output=result.output,
+                    tool_calls=accumulated_tool_calls,
+                    tokens_used=total_tokens,
+                    latency_ms=latency,
+                    execution_id=exec_id,
+                    status="completed",
+                )
 
             target, reason = handoff
             if target not in self.handoffs.get(current, []):
@@ -268,21 +441,148 @@ class Swarm:
                 )
             state.last_reason = reason
             state.path.append(target)
-            # The next agent receives a handoff briefing, not the raw input.
             current_input = (
                 f"{current} handed off to you with reason: {reason!r}. "
-                f"Earlier request: {input!r}. Current shared state: {state.shared!r}. "
-                f"Please continue."
+                f"Earlier request: {original_input!r}. Current shared state: "
+                f"{state.shared!r}. Please continue."
             )
             current = target
+            iteration += 1
 
-        latency = int((time.monotonic() - start) * 1000)
-        return AgentResult(
-            output=final_output,
-            tool_calls=accumulated_tool_calls,
-            tokens_used=total_tokens,
-            latency_ms=latency,
+    def resume(
+        self,
+        execution_id: str,
+        *,
+        resume_value: Resume | None = None,
+        context: RunContext[Any] | None = None,
+        **kwargs: Any,
+    ) -> AgentResult:
+        """Synchronous resume wrapper around :meth:`aresume`."""
+        return run_sync(
+            self.aresume(
+                execution_id,
+                resume_value=resume_value,
+                context=context,
+                **kwargs,
+            )
         )
+
+    async def aresume(
+        self,
+        execution_id: str,
+        *,
+        resume_value: Resume | None = None,
+        context: RunContext[Any] | None = None,
+        **kwargs: Any,
+    ) -> AgentResult:
+        """Resume a paused or crashed swarm run.
+
+        Determines the active agent from the latest checkpoint's
+        ``agent_path``, recovers :class:`SwarmState` from the most recent
+        ``handoff:N`` boundary, then either resumes the active agent's own
+        interrupted run (when ``resume_value`` is given) or re-runs it
+        fresh (crash recovery). After the active agent returns, the swarm
+        loop continues normally — handoffs, allowlists, max_handoffs all
+        still apply.
+        """
+        from fastaiagent._internal.errors import ChainCheckpointError
+
+        store: Checkpointer = self._checkpointer or SQLiteCheckpointer()
+        store.setup()
+
+        latest = store.get_last(execution_id)
+        if latest is None:
+            raise ChainCheckpointError(f"No checkpoint found for swarm execution '{execution_id}'")
+
+        # Find the most recent handoff:N boundary to recover SwarmState.
+        # Walk the checkpoint list in reverse — handoff rows always carry
+        # ``agent_path == swarm:<self.name>``.
+        all_cps = store.list(execution_id, limit=500)
+        handoff_cp = None
+        for cp in reversed(all_cps):
+            if cp.node_id.startswith("handoff:") and cp.agent_path == f"swarm:{self.name}":
+                handoff_cp = cp
+                break
+        if handoff_cp is None:
+            raise ChainCheckpointError(
+                f"Swarm execution '{execution_id}' has no handoff checkpoints — "
+                "did this swarm ever run?"
+            )
+
+        snapshot = handoff_cp.state_snapshot
+        active_name = _parse_active_agent(self.name, latest.agent_path) or str(
+            snapshot.get("active_agent", self.entrypoint)
+        )
+        if active_name not in self.agents:
+            raise ChainCheckpointError(
+                f"Swarm execution '{execution_id}' references active agent "
+                f"{active_name!r}, which is not registered on this Swarm."
+            )
+
+        # Reject mismatched resume shapes early.
+        if resume_value is None and latest.status == "interrupted":
+            raise ChainCheckpointError(
+                f"Swarm execution '{execution_id}' is suspended on interrupt(); "
+                "pass resume_value=Resume(...) to swarm.resume()."
+            )
+
+        state = _restore_state(snapshot)
+        current_input = str(snapshot.get("current_input", ""))
+        original_input = str(snapshot.get("original_input", current_input))
+        accumulated = list(snapshot.get("accumulated_tool_calls", []))
+        total_tokens = int(snapshot.get("total_tokens", 0))
+        iteration = int(snapshot.get("iteration", 0))
+
+        if self._checkpointer is not None:
+            self._checkpointer.setup()
+
+        # Bind ContextVars so the resumed agent inherits the swarm prefix.
+        exec_token = _execution_id.set(execution_id)
+        ap_token = _agent_path.set(f"swarm:{self.name}")
+        cp_token = _current_checkpointer.set(self._checkpointer)
+        try:
+            active_agent = self._active_agent(active_name, state, context=context)
+            # Re-run the active agent. ``aresume`` handles interrupt-claim
+            # + suspended-tool re-entry; plain ``arun`` is the crash-recovery
+            # path (re-issues LLM, re-runs tools).
+            if resume_value is not None or latest.status == "interrupted":
+                first_result = await active_agent.aresume(
+                    execution_id,
+                    resume_value=resume_value,
+                    context=context,
+                    **kwargs,
+                )
+            else:
+                first_result = await active_agent.arun(
+                    current_input,
+                    context=context,
+                    execution_id=execution_id,
+                    **kwargs,
+                )
+
+            return await self._run_loop(
+                exec_id=execution_id,
+                current=active_name,
+                current_input=current_input,
+                original_input=original_input,
+                state=state,
+                accumulated_tool_calls=accumulated,
+                total_tokens=total_tokens,
+                start_iter=iteration,
+                start=time.monotonic(),
+                context=context,
+                kwargs=kwargs,
+                skip_first_checkpoint=True,
+                first_agent_result=first_result,
+            )
+        except AlreadyResumed:
+            # Re-raise so callers can distinguish "already resumed" from
+            # generic checkpoint errors.
+            raise
+        finally:
+            _current_checkpointer.reset(cp_token)
+            _agent_path.reset(ap_token)
+            _execution_id.reset(exec_token)
 
     async def astream(
         self, input: str, *, context: RunContext | None = None, **kwargs: Any
@@ -307,21 +607,11 @@ class Swarm:
                     # active agent's tool loop doesn't keep looping (the
                     # sync-path stop-after-handoff middleware does not fire
                     # in the streaming path in 0.5.0).
-                    if isinstance(event, ToolCallEnd) and event.tool_name.startswith(
-                        "handoff_to_"
-                    ):
+                    if isinstance(event, ToolCallEnd) and event.tool_name.startswith("handoff_to_"):
                         target = event.tool_name[len("handoff_to_") :]
-                        reason = (
-                            str(event.arguments.get("reason", ""))
-                            if event.arguments
-                            else ""
-                        )
+                        reason = str(event.arguments.get("reason", "")) if event.arguments else ""
                         handoff_from_stream = (target, reason)
-                        ctx_delta = (
-                            event.arguments.get("context")
-                            if event.arguments
-                            else None
-                        )
+                        ctx_delta = event.arguments.get("context") if event.arguments else None
                         if isinstance(ctx_delta, dict):
                             state.shared.update(ctx_delta)
                         yield event
@@ -340,9 +630,7 @@ class Swarm:
                 )
             state.handoff_count += 1
             if state.handoff_count > self.max_handoffs:
-                raise SwarmError(
-                    f"Swarm {self.name!r} exceeded max_handoffs={self.max_handoffs}"
-                )
+                raise SwarmError(f"Swarm {self.name!r} exceeded max_handoffs={self.max_handoffs}")
             yield HandoffEvent(from_agent=current, to_agent=target, reason=reason)
             state.path.append(target)
             state.last_reason = reason
@@ -402,6 +690,10 @@ class Swarm:
             config=base.config,
             output_type=base.output_type,
             middleware=merged_middleware,
+            # Forward the swarm's checkpointer so the cloned agent writes
+            # turn / tool / interrupted checkpoints under the same execution
+            # with the nested ``swarm:.../agent:...`` path.
+            checkpointer=self._checkpointer,
         )
 
     def _build_handoff_tools(self, current: str, state: SwarmState) -> list[Tool]:
@@ -410,9 +702,7 @@ class Swarm:
         for peer in self.handoffs.get(current, []):
             peer_agent = self.agents[peer]
             peer_desc = (
-                peer_agent.system_prompt[:160]
-                if isinstance(peer_agent.system_prompt, str)
-                else ""
+                peer_agent.system_prompt[:160] if isinstance(peer_agent.system_prompt, str) else ""
             )
 
             def _handoff(
@@ -496,18 +786,14 @@ class Swarm:
         }
 
     @classmethod
-    def from_dict(
-        cls, data: dict[str, Any], agents: Sequence[Agent]
-    ) -> Swarm:
+    def from_dict(cls, data: dict[str, Any], agents: Sequence[Agent]) -> Swarm:
         """Restore a swarm from a dict + live agents. Caller supplies the
         reconstructed :class:`Agent` instances; names must match ``data["agent_names"]``.
         """
         expected = set(data.get("agent_names", []))
         got = {a.name for a in agents}
         if expected != got:
-            raise SwarmError(
-                f"from_dict: expected agents {sorted(expected)}, got {sorted(got)}"
-            )
+            raise SwarmError(f"from_dict: expected agents {sorted(expected)}, got {sorted(got)}")
         return cls(
             name=data["name"],
             agents=list(agents),

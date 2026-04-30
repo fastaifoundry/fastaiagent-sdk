@@ -52,9 +52,7 @@ def migrate_to_local_db(
     report = MigrationReport()
 
     trace_path = _path_if_exists(legacy_trace_db, Path(".fastaiagent/traces.db"))
-    checkpoint_path = _path_if_exists(
-        legacy_checkpoint_db, Path(".fastaiagent/checkpoints.db")
-    )
+    checkpoint_path = _path_if_exists(legacy_checkpoint_db, Path(".fastaiagent/checkpoints.db"))
     prompt_dir = _path_if_exists(legacy_prompt_dir, Path(".prompts"))
 
     if trace_path and trace_path.resolve() == target.resolve():
@@ -121,9 +119,7 @@ def migrate_to_local_db(
     return report
 
 
-def _path_if_exists(
-    explicit: Path | str | None, default: Path
-) -> Path | None:
+def _path_if_exists(explicit: Path | str | None, default: Path) -> Path | None:
     candidate = Path(explicit) if explicit is not None else default
     return candidate if candidate.exists() else None
 
@@ -167,9 +163,7 @@ def _copy_yaml_prompts(prompt_dir: Path, target: SQLiteHelper) -> tuple[int, int
         if file.name.startswith("_fragment_"):
             name = file.stem[len("_fragment_") :]
             content = json.loads(file.read_text()).get("content", "")
-            existing = target.fetchone(
-                "SELECT name FROM prompt_fragments WHERE name = ?", (name,)
-            )
+            existing = target.fetchone("SELECT name FROM prompt_fragments WHERE name = ?", (name,))
             if existing is None:
                 target.execute(
                     """INSERT INTO prompt_fragments (name, content, created_at, updated_at)

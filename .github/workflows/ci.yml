@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        extras: ["", "openai", "anthropic", "kb", "ui", "ui,kb", "all"]
+        extras: ["", "openai", "anthropic", "kb", "ui", "ui,kb", "postgres", "all"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -50,6 +50,22 @@ jobs:
   e2e-quality-gate:
     runs-on: ubuntu-latest
     needs: test
+    services:
+      # Postgres backend for the durability integration tests
+      # (tests/integration/test_postgres_*). Tests skip cleanly when
+      # PG_TEST_DSN is unset, so local runs without Docker still work.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: fastaiagent_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
     env:
       E2E_REQUIRED: "1"
       # Skip platform-push/verify steps on CI — you exercise those locally
@@ -58,6 +74,7 @@ jobs:
       E2E_SKIP_PLATFORM: "1"
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      PG_TEST_DSN: postgresql://postgres:test@localhost:5432/fastaiagent_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -67,3 +84,5 @@ jobs:
         run: pip install -e ".[all,dev]"
       - name: Run end-to-end quality gate
         run: pytest tests/e2e/ -v -m e2e --tb=short
+      - name: Run Postgres durability integration tests
+        run: pytest tests/integration/test_postgres_checkpointer.py tests/integration/test_postgres_concurrent_resume.py -v --tb=short

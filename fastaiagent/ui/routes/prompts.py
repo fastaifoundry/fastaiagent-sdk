@@ -20,9 +20,7 @@ def _registry(request: Request) -> PromptRegistry:
 
 
 @router.get("")
-def list_prompts(
-    request: Request, _user: str = Depends(require_session)
-) -> dict[str, Any]:
+def list_prompts(request: Request, _user: str = Depends(require_session)) -> dict[str, Any]:
     ctx = get_context(request)
     reg = _registry(request)
     prompts = reg.list()
@@ -94,9 +92,7 @@ def list_versions(
             (slug,),
         )
         if not rows:
-            raise HTTPException(
-                status.HTTP_404_NOT_FOUND, f"Prompt '{slug}' not found"
-            )
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"Prompt '{slug}' not found")
         return {"versions": rows}
     finally:
         db.close()

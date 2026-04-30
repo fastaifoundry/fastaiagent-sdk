@@ -12,9 +12,20 @@ from fastaiagent._internal.errors import (
     ChainCycleError,
     ChainError,
 )
-from fastaiagent.chain.checkpoint import CheckpointStore
+from fastaiagent.chain.checkpoint import Checkpoint
+from fastaiagent.chain.idempotent import _current_checkpointer
+from fastaiagent.chain.interrupt import (
+    InterruptSignal,
+    Resume,
+    _agent_path,
+    _resume_value,
+)
+from fastaiagent.chain.interrupt import (
+    _execution_id as _execution_id_var,
+)
 from fastaiagent.chain.node import Edge, NodeConfig, NodeType
 from fastaiagent.chain.state import ChainState
+from fastaiagent.checkpointers.protocol import Checkpointer, PendingInterrupt
 
 
 def _render_template(template: str, context: dict[str, Any]) -> str:
@@ -73,11 +84,12 @@ async def execute_chain(
     edges: list[Edge],
     initial_state: dict[str, Any],
     state_schema: dict[str, Any] | None = None,
-    checkpoint_store: CheckpointStore | None = None,
+    checkpointer: Checkpointer | None = None,
     chain_name: str = "",
     execution_id: str | None = None,
     resume_from_node: str | None = None,
     hitl_handler: Any = None,
+    resume_value: Resume | None = None,
 ) -> dict[str, Any]:
     """Execute a chain as a state machine.
 
@@ -86,6 +98,13 @@ async def execute_chain(
         final_state: state dict at completion
         execution_id: for resume
         node_results: dict of node_id -> result
+        status: "completed" or "paused"
+        pending_interrupt: dict (only when status == "paused")
+
+    ``resume_value``, when provided, is injected into the ``_resume_value``
+    ContextVar for the *first* node executed (the one being resumed). It is
+    cleared before subsequent nodes run so a chain that pauses again works
+    cleanly.
     """
     execution_id = execution_id or str(uuid.uuid4())
     state = ChainState(initial_state)
@@ -93,136 +112,207 @@ async def execute_chain(
     iteration_counters: dict[str, int] = {}
     node_map = {n.id: n for n in nodes}
 
-    # Validate state against schema if provided
-    if state_schema:
-        state.validate(state_schema)
+    # Make execution_id visible to interrupt() / @idempotent.
+    exec_id_token = _execution_id_var.set(execution_id)
+    # Make the active checkpointer reachable by ``@idempotent``.
+    cp_token = _current_checkpointer.set(checkpointer)
 
-    # Determine execution order via topological sort (non-cyclic edges)
-    exec_order = _topological_sort(nodes, edges)
-
-    # If resuming, skip to the resume point
-    start_idx = 0
-    if resume_from_node:
-        for i, nid in enumerate(exec_order):
-            if nid == resume_from_node:
-                start_idx = i
-                break
-
-    max_total_steps = 500
-    step_count = 0
-
-    for idx in range(start_idx, len(exec_order)):
-        node_id = exec_order[idx]
-        node = node_map.get(node_id)
-        if node is None:
-            continue
-
-        step_count += 1
-        if step_count > max_total_steps:
-            name = chain_name or "unnamed"
-            raise ChainError(
-                f"Chain '{name}' exceeded maximum total steps "
-                f"({max_total_steps}). This usually means cycles "
-                f"are not terminating as expected.\n"
-                f"Options:\n"
-                f"  1. Review exit_condition on cyclic edges\n"
-                f"  2. Lower max_iterations on cycles\n"
-                f"  3. Split the chain into smaller sub-chains"
-            )
-
-        # Build context for this node
-        context = {
-            "input": initial_state,
-            "state": state.data,
-            "node_results": node_results,
-        }
-
-        # Execute the node
-        result = await _execute_node(node, context, state, hitl_handler)
-        node_results[node_id] = result
-
-        # Update state with result
-        if isinstance(result, dict):
-            state.update(result)
-        elif result is not None:
-            state.set(f"_{node_id}_output", result)
-
-        # Validate state after update
+    try:
+        # Validate state against schema if provided
         if state_schema:
             state.validate(state_schema)
 
-        # Checkpoint
-        if checkpoint_store:
-            checkpoint_store.save(
-                chain_name=chain_name,
-                execution_id=execution_id,
-                node_id=node_id,
-                node_index=idx,
-                state_snapshot=state.snapshot(),
-                node_output={"output": result} if not isinstance(result, dict) else result,
-                iteration_counters=iteration_counters,
-            )
+        # Determine execution order via topological sort (non-cyclic edges)
+        exec_order = _topological_sort(nodes, edges)
 
-        # Handle cyclic edges from this node
-        for edge in edges:
-            if edge.source != node_id or not edge.is_cyclic:
+        # If resuming, skip to the resume point
+        start_idx = 0
+        if resume_from_node:
+            for i, nid in enumerate(exec_order):
+                if nid == resume_from_node:
+                    start_idx = i
+                    break
+
+        max_total_steps = 500
+        step_count = 0
+
+        for idx in range(start_idx, len(exec_order)):
+            node_id = exec_order[idx]
+            node = node_map.get(node_id)
+            if node is None:
                 continue
 
-            counter_key = edge.cycle_config.get(
-                "iteration_counter_key", f"cycle_{edge.source}_{edge.target}"
-            )
-            max_iter = edge.cycle_config.get("max_iterations", 10)
-            exit_condition = edge.cycle_config.get("exit_condition")
+            step_count += 1
+            if step_count > max_total_steps:
+                name = chain_name or "unnamed"
+                raise ChainError(
+                    f"Chain '{name}' exceeded maximum total steps "
+                    f"({max_total_steps}). This usually means cycles "
+                    f"are not terminating as expected.\n"
+                    f"Options:\n"
+                    f"  1. Review exit_condition on cyclic edges\n"
+                    f"  2. Lower max_iterations on cycles\n"
+                    f"  3. Split the chain into smaller sub-chains"
+                )
 
-            iteration_counters.setdefault(counter_key, 0)
-            iteration_counters[counter_key] += 1
+            # Build context for this node
+            context = {
+                "input": initial_state,
+                "state": state.data,
+                "node_results": node_results,
+            }
 
-            # Check exit condition
-            if exit_condition and _evaluate_condition(exit_condition, context):
-                continue  # exit the cycle, proceed normally
+            # Execute the node, catching ``InterruptSignal`` from interrupt().
+            # The first node of a resume sees ``_resume_value`` set; clear it
+            # afterwards so a subsequent interrupt() call further down the
+            # chain can suspend again.
+            resume_token = None
+            if idx == start_idx and resume_value is not None:
+                resume_token = _resume_value.set(resume_value)
+            try:
+                result = await _execute_node(node, context, state, hitl_handler)
+            except InterruptSignal as sig:
+                # Persist the suspension and bubble paused status up.
+                ap = _agent_path.get()
+                interrupt_ckpt = Checkpoint(
+                    checkpoint_id=str(uuid.uuid4()),
+                    chain_name=chain_name,
+                    execution_id=execution_id,
+                    node_id=node_id,
+                    node_index=idx,
+                    status="interrupted",
+                    state_snapshot=state.snapshot(),
+                    iteration_counters=iteration_counters,
+                    interrupt_reason=sig.reason,
+                    interrupt_context=sig.context,
+                    agent_path=ap,
+                )
+                pending = PendingInterrupt(
+                    execution_id=execution_id,
+                    chain_name=chain_name,
+                    node_id=node_id,
+                    reason=sig.reason,
+                    context=sig.context,
+                    agent_path=ap,
+                )
+                if checkpointer is not None:
+                    checkpointer.record_interrupt(interrupt_ckpt, pending)
+                return {
+                    "output": None,
+                    "final_state": state.snapshot(),
+                    "execution_id": execution_id,
+                    "node_results": node_results,
+                    "status": "paused",
+                    "pending_interrupt": {
+                        "reason": sig.reason,
+                        "context": sig.context,
+                        "node_id": node_id,
+                        "agent_path": ap,
+                    },
+                }
+            finally:
+                if resume_token is not None:
+                    _resume_value.reset(resume_token)
 
-            # Check max iterations
-            if iteration_counters[counter_key] >= max_iter:
-                on_max = edge.cycle_config.get("on_max_reached", "error")
-                if on_max == "error":
-                    src, tgt = edge.source, edge.target
-                    raise ChainCycleError(
-                        f"Cycle '{src}' -> '{tgt}' exceeded "
-                        f"max_iterations ({max_iter}).\n"
-                        f"Options:\n"
-                        f"  1. Increase the limit: "
-                        f"max_iterations={max_iter * 2}\n"
-                        f"  2. Add an exit_condition\n"
-                        f"  3. Set on_max_reached='continue'"
+            node_results[node_id] = result
+
+            # Update state with result
+            if isinstance(result, dict):
+                state.update(result)
+            elif result is not None:
+                state.set(f"_{node_id}_output", result)
+
+            # Validate state after update
+            if state_schema:
+                state.validate(state_schema)
+
+            # Checkpoint
+            if checkpointer is not None:
+                checkpointer.put(
+                    Checkpoint(
+                        checkpoint_id=str(uuid.uuid4()),
+                        chain_name=chain_name,
+                        execution_id=execution_id,
+                        node_id=node_id,
+                        node_index=idx,
+                        status="completed",
+                        state_snapshot=state.snapshot(),
+                        node_output=(
+                            {"output": result} if not isinstance(result, dict) else result
+                        ),
+                        iteration_counters=iteration_counters,
                     )
-                continue  # "continue" or "exit_to_node" — just proceed
+                )
 
-            # Re-execute from the cycle target
-            cycle_result = await execute_chain(
-                nodes=nodes,
-                edges=edges,
-                initial_state=state.snapshot(),
-                state_schema=state_schema,
-                checkpoint_store=checkpoint_store,
-                chain_name=chain_name,
-                execution_id=execution_id,
-                resume_from_node=edge.target,
-                hitl_handler=hitl_handler,
-            )
-            # Merge cycle results
-            state = ChainState(cycle_result["final_state"])
-            node_results.update(cycle_result["node_results"])
-            break  # only follow one cyclic edge
+            # Handle cyclic edges from this node
+            for edge in edges:
+                if edge.source != node_id or not edge.is_cyclic:
+                    continue
 
-    # Determine final output
-    output = node_results.get(exec_order[-1]) if exec_order else state.data
+                counter_key = edge.cycle_config.get(
+                    "iteration_counter_key", f"cycle_{edge.source}_{edge.target}"
+                )
+                max_iter = edge.cycle_config.get("max_iterations", 10)
+                exit_condition = edge.cycle_config.get("exit_condition")
 
-    return {
-        "output": output,
-        "final_state": state.snapshot(),
-        "execution_id": execution_id,
-        "node_results": node_results,
-    }
+                iteration_counters.setdefault(counter_key, 0)
+                iteration_counters[counter_key] += 1
+
+                # Check exit condition
+                if exit_condition and _evaluate_condition(exit_condition, context):
+                    continue  # exit the cycle, proceed normally
+
+                # Check max iterations
+                if iteration_counters[counter_key] >= max_iter:
+                    on_max = edge.cycle_config.get("on_max_reached", "error")
+                    if on_max == "error":
+                        src, tgt = edge.source, edge.target
+                        raise ChainCycleError(
+                            f"Cycle '{src}' -> '{tgt}' exceeded "
+                            f"max_iterations ({max_iter}).\n"
+                            f"Options:\n"
+                            f"  1. Increase the limit: "
+                            f"max_iterations={max_iter * 2}\n"
+                            f"  2. Add an exit_condition\n"
+                            f"  3. Set on_max_reached='continue'"
+                        )
+                    continue  # "continue" or "exit_to_node" — just proceed
+
+                # Re-execute from the cycle target
+                cycle_result = await execute_chain(
+                    nodes=nodes,
+                    edges=edges,
+                    initial_state=state.snapshot(),
+                    state_schema=state_schema,
+                    checkpointer=checkpointer,
+                    chain_name=chain_name,
+                    execution_id=execution_id,
+                    resume_from_node=edge.target,
+                    hitl_handler=hitl_handler,
+                )
+                # If a node inside the cycle interrupted, bubble paused
+                # status up — don't merge state from a partial run.
+                if cycle_result.get("status") == "paused":
+                    return cycle_result
+                # Merge cycle results
+                state = ChainState(cycle_result["final_state"])
+                node_results.update(cycle_result["node_results"])
+                break  # only follow one cyclic edge
+
+        # Determine final output
+        output = node_results.get(exec_order[-1]) if exec_order else state.data
+
+        return {
+            "output": output,
+            "final_state": state.snapshot(),
+            "execution_id": execution_id,
+            "node_results": node_results,
+            "status": "completed",
+            "pending_interrupt": None,
+        }
+    finally:
+        _execution_id_var.reset(exec_id_token)
+        _current_checkpointer.reset(cp_token)
 
 
 async def _execute_node(
