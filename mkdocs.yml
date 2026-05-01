@@ -135,6 +135,7 @@ nav:
   - Local UI:
       - ui/index.md
       - "Knowledge Bases browser": ui/kb.md
+      - "Workflow visualization": ui/workflow-visualization.md
   - Platform:
       - platform/index.md
   - Deployment:

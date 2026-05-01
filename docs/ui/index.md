@@ -279,6 +279,15 @@ Drill into one workflow to see its per-run trace list:
 
 ![Workflow detail](screenshots/22-workflow-detail.png)
 
+#### Topology view
+
+When a runner is registered with `build_app(runners=[chain])`, the
+detail page also renders an interactive React Flow topology of nodes and
+edges. Conditional edges, HITL gates, swarm handoffs, and supervisor
+delegations all get distinct visual treatments. See
+[Workflow visualization](workflow-visualization.md) for the full
+reference.
+
 ### Agents
 
 Cards summarizing every agent the SDK has seen: run count, success rate

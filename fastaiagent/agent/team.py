@@ -373,3 +373,28 @@ class Supervisor:
             return AgentResult(output="".join(text_parts), latency_ms=latency)
 
         return run_sync(_collect())
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize the supervisor structure for the Local UI topology view.
+
+        Worker agents are referenced by name + role; rebuilding requires the
+        caller to pass the live :class:`Worker` instances back in.
+        """
+        return {
+            "name": self.name,
+            "supervisor_llm": {
+                "provider": getattr(self.llm, "provider", ""),
+                "model": getattr(self.llm, "model", ""),
+            },
+            "workers": [
+                {
+                    "role": w.role,
+                    "agent_name": w.agent.name,
+                    "description": w.description,
+                    "model": getattr(w.agent.llm, "model", ""),
+                    "tools": [t.name for t in (w.agent.tools or [])],
+                }
+                for w in self.workers
+            ],
+            "max_delegation_rounds": self.max_delegation_rounds,
+        }

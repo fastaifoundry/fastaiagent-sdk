@@ -109,6 +109,46 @@ def list_agents(request: Request, _user: str = Depends(require_session)) -> dict
         db.close()
 
 
+def _runner_type_of(runner: Any) -> str | None:
+    cls = type(runner).__name__.lower()
+    if "chain" in cls:
+        return "chain"
+    if "swarm" in cls:
+        return "swarm"
+    if "supervisor" in cls:
+        return "supervisor"
+    return None
+
+
+def _registered_workflows_for(ctx: Any, agent_name: str) -> list[dict[str, str]]:
+    """List registered workflows whose graph mentions this agent.
+
+    Used by the Agent detail page to surface a topology preview link.
+    """
+    out: list[dict[str, str]] = []
+    runners = getattr(ctx, "runners", {}) or {}
+    for r in runners.values():
+        rtype = _runner_type_of(r)
+        if rtype is None:
+            continue
+        members: set[str] = set()
+        if rtype == "chain":
+            for n in getattr(r, "nodes", []) or []:
+                a = getattr(n, "agent", None)
+                if a is not None:
+                    members.add(getattr(a, "name", ""))
+        elif rtype == "swarm":
+            members.update(getattr(r, "agents", {}).keys())
+        elif rtype == "supervisor":
+            for w in getattr(r, "workers", []) or []:
+                a = getattr(w, "agent", None)
+                if a is not None:
+                    members.add(getattr(a, "name", ""))
+        if agent_name in members:
+            out.append({"runner_type": rtype, "name": getattr(r, "name", "")})
+    return out
+
+
 @router.get("/{name}")
 def get_agent(
     request: Request,
@@ -122,7 +162,9 @@ def get_agent(
         by_agent = _aggregate(rows)
         if name not in by_agent:
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"Agent '{name}' not found")
-        return _format(by_agent[name])
+        payload = _format(by_agent[name])
+        payload["workflows"] = _registered_workflows_for(ctx, name)
+        return payload
     finally:
         db.close()
 

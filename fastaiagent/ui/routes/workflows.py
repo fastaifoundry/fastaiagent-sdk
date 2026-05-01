@@ -165,6 +165,7 @@ def list_workflows(
         by_wf = _aggregate(rows)
         return {
             "workflows": [_format(b) for b in by_wf.values()],
+            "registered": bool(getattr(ctx, "runners", {})),
         }
     finally:
         db.close()
@@ -199,3 +200,229 @@ def get_workflow(
         return _format(by_wf[key])
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# Topology
+# ---------------------------------------------------------------------------
+
+
+def _runner_type_of(runner: Any) -> str:
+    """Best-effort type tag for a registered runner."""
+    cls = type(runner).__name__.lower()
+    if "chain" in cls:
+        return "chain"
+    if "swarm" in cls:
+        return "swarm"
+    if "supervisor" in cls:
+        return "supervisor"
+    return cls
+
+
+def _chain_topology(runner: Any) -> dict[str, Any]:
+    """Convert a Chain to the topology shape expected by the frontend."""
+    from fastaiagent.chain.executor import _topological_sort
+
+    raw = runner.to_dict()
+    nodes_raw = raw.get("nodes", [])
+    edges_raw = raw.get("edges", [])
+
+    # Frontend node payload: id + type + label + per-node metadata.
+    nodes: list[dict[str, Any]] = []
+    tools_out: list[dict[str, Any]] = []
+    for n in runner.nodes:
+        node_payload: dict[str, Any] = {
+            "id": n.id,
+            "type": n.type.value,
+            "label": n.name or n.id,
+        }
+        if n.agent is not None:
+            agent = n.agent
+            node_payload["agent_name"] = getattr(agent, "name", None)
+            llm = getattr(agent, "llm", None)
+            if llm is not None:
+                node_payload["model"] = getattr(llm, "model", "")
+                node_payload["provider"] = getattr(llm, "provider", "")
+            node_payload["tool_count"] = len(getattr(agent, "tools", []) or [])
+            for t in getattr(agent, "tools", []) or []:
+                tools_out.append(
+                    {
+                        "owner": n.id,
+                        "name": getattr(t, "name", str(t)),
+                        "type": "function",
+                    }
+                )
+        if n.tool is not None:
+            node_payload["tool_name"] = getattr(n.tool, "name", None)
+        nodes.append(node_payload)
+
+    edges: list[dict[str, Any]] = []
+    for e in edges_raw:
+        edge_payload: dict[str, Any] = {
+            "from": e["source"],
+            "to": e["target"],
+            "type": "conditional" if e.get("condition") else "sequential",
+        }
+        if e.get("condition"):
+            edge_payload["condition"] = e["condition"]
+        if e.get("label"):
+            edge_payload["label"] = e["label"]
+        if e.get("is_cyclic"):
+            edge_payload["is_cyclic"] = True
+            edge_payload["cycle_config"] = e.get("cycle_config", {})
+        edges.append(edge_payload)
+
+    order = _topological_sort(runner.nodes, runner.edges)
+    entrypoint = order[0] if order else (nodes_raw[0]["id"] if nodes_raw else None)
+
+    return {
+        "name": runner.name,
+        "type": "chain",
+        "nodes": nodes,
+        "edges": edges,
+        "entrypoint": entrypoint,
+        "tools": tools_out,
+        "knowledge_bases": [],
+    }
+
+
+def _swarm_topology(runner: Any) -> dict[str, Any]:
+    """Convert a Swarm into nodes (one per peer) + handoff edges."""
+    raw = runner.to_dict()
+    nodes: list[dict[str, Any]] = []
+    tools_out: list[dict[str, Any]] = []
+    for agent_name, agent in runner.agents.items():
+        node_payload: dict[str, Any] = {
+            "id": agent_name,
+            "type": "agent",
+            "label": agent_name,
+            "agent_name": agent_name,
+        }
+        llm = getattr(agent, "llm", None)
+        if llm is not None:
+            node_payload["model"] = getattr(llm, "model", "")
+            node_payload["provider"] = getattr(llm, "provider", "")
+        node_payload["tool_count"] = len(getattr(agent, "tools", []) or [])
+        for t in getattr(agent, "tools", []) or []:
+            tools_out.append(
+                {
+                    "owner": agent_name,
+                    "name": getattr(t, "name", str(t)),
+                    "type": "function",
+                }
+            )
+        nodes.append(node_payload)
+
+    edges: list[dict[str, Any]] = []
+    for source, targets in raw.get("handoffs", {}).items():
+        for target in targets:
+            edges.append(
+                {
+                    "from": source,
+                    "to": target,
+                    "type": "handoff",
+                    "label": "handoff",
+                }
+            )
+
+    return {
+        "name": runner.name,
+        "type": "swarm",
+        "nodes": nodes,
+        "edges": edges,
+        "entrypoint": raw.get("entrypoint"),
+        "tools": tools_out,
+        "knowledge_bases": [],
+        "max_handoffs": raw.get("max_handoffs"),
+    }
+
+
+def _supervisor_topology(runner: Any) -> dict[str, Any]:
+    """Convert a Supervisor into one supervisor node + worker nodes + delegation edges."""
+    raw = runner.to_dict()
+    sup_id = f"supervisor:{runner.name}"
+    sup_llm = raw.get("supervisor_llm", {})
+    nodes: list[dict[str, Any]] = [
+        {
+            "id": sup_id,
+            "type": "supervisor",
+            "label": runner.name,
+            "model": sup_llm.get("model", ""),
+            "provider": sup_llm.get("provider", ""),
+        }
+    ]
+    edges: list[dict[str, Any]] = []
+    tools_out: list[dict[str, Any]] = []
+    for w in raw.get("workers", []):
+        worker_id = f"worker:{w['role']}"
+        nodes.append(
+            {
+                "id": worker_id,
+                "type": "agent",
+                "label": w["role"],
+                "agent_name": w.get("agent_name"),
+                "model": w.get("model", ""),
+                "description": w.get("description", ""),
+                "tool_count": len(w.get("tools", [])),
+            }
+        )
+        edges.append(
+            {
+                "from": sup_id,
+                "to": worker_id,
+                "type": "delegation",
+                "label": "delegate",
+            }
+        )
+        for tool_name in w.get("tools", []):
+            tools_out.append(
+                {
+                    "owner": worker_id,
+                    "name": tool_name,
+                    "type": "function",
+                }
+            )
+
+    return {
+        "name": runner.name,
+        "type": "supervisor",
+        "nodes": nodes,
+        "edges": edges,
+        "entrypoint": sup_id,
+        "tools": tools_out,
+        "knowledge_bases": [],
+        "max_delegation_rounds": raw.get("max_delegation_rounds"),
+    }
+
+
+@router.get("/{runner_type}/{name}/topology")
+def get_topology(
+    request: Request,
+    runner_type: str,
+    name: str,
+    _user: str = Depends(require_session),
+) -> dict[str, Any]:
+    """Return the runtime graph for a registered Chain/Swarm/Supervisor.
+
+    Reads from ``app.state.context.runners`` — runners must be passed to
+    :func:`fastaiagent.ui.server.build_app` via ``runners=[...]``.
+    """
+    if runner_type not in _RUNNER_TYPES:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"runner_type must be one of {list(_RUNNER_TYPES)}",
+        )
+    ctx = get_context(request)
+    runners = getattr(ctx, "runners", {}) or {}
+    runner = runners.get(name)
+    if runner is None or _runner_type_of(runner) != runner_type:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            f"{runner_type} '{name}' is not registered with the local UI server. "
+            "Pass it to build_app(runners=[...]) to enable topology.",
+        )
+    if runner_type == "chain":
+        return _chain_topology(runner)
+    if runner_type == "swarm":
+        return _swarm_topology(runner)
+    return _supervisor_topology(runner)
