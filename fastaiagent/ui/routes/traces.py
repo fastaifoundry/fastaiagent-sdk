@@ -186,6 +186,9 @@ def list_traces(
     try:
         clauses: list[str] = []
         params: list[Any] = []
+        if ctx.project_id:
+            clauses.append("project_id = ?")
+            params.append(ctx.project_id)
         if since:
             clauses.append("start_time >= ?")
             params.append(since)
@@ -425,10 +428,17 @@ def get_trace(
     ctx = get_context(request)
     db = ctx.db()
     try:
-        rows = db.fetchall(
-            "SELECT * FROM spans WHERE trace_id = ? ORDER BY start_time",
-            (trace_id,),
-        )
+        if ctx.project_id:
+            rows = db.fetchall(
+                "SELECT * FROM spans WHERE trace_id = ? AND project_id = ? "
+                "ORDER BY start_time",
+                (trace_id, ctx.project_id),
+            )
+        else:
+            rows = db.fetchall(
+                "SELECT * FROM spans WHERE trace_id = ? ORDER BY start_time",
+                (trace_id,),
+            )
         if not rows:
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"Trace '{trace_id}' not found")
         spans = [_row_to_span(r) for r in rows]

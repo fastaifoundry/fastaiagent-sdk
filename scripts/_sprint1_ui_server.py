@@ -36,10 +36,24 @@ def main() -> None:
     parser.add_argument("--db", required=True)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=7843)
+    parser.add_argument(
+        "--project-id",
+        default="",
+        help=(
+            "Project id the UI scopes to. Defaults to '' (legacy unscoped) "
+            "so the seed data — which doesn't carry a project stamp — still "
+            "renders. Pass a non-empty id to demonstrate per-project filtering."
+        ),
+    )
     args = parser.parse_args()
 
     chain = _load_example_chain()
-    app = build_app(db_path=args.db, no_auth=True, runners=[chain])
+    app = build_app(
+        db_path=args.db,
+        no_auth=True,
+        runners=[chain],
+        project_id=args.project_id,
+    )
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
 
 

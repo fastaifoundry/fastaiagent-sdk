@@ -150,18 +150,27 @@ def list_workflows(
     ctx = get_context(request)
     db = ctx.db()
     try:
+        pid_clause = "AND project_id = ?" if ctx.project_id else ""
         if runner_type:
-            rows = db.fetchall(
+            sql = (
                 "SELECT * FROM spans WHERE parent_span_id IS NULL "
-                "AND name LIKE ? ORDER BY start_time DESC",
-                (f"{runner_type}.%",),
+                f"AND name LIKE ? {pid_clause} ORDER BY start_time DESC"
             )
+            params: tuple = (
+                (f"{runner_type}.%", ctx.project_id)
+                if ctx.project_id
+                else (f"{runner_type}.%",)
+            )
+            rows = db.fetchall(sql, params)
         else:
-            rows = db.fetchall(
+            sql = (
                 "SELECT * FROM spans WHERE parent_span_id IS NULL "
                 "AND (name LIKE 'chain.%' OR name LIKE 'swarm.%' "
-                "OR name LIKE 'supervisor.%') ORDER BY start_time DESC"
+                f"OR name LIKE 'supervisor.%') {pid_clause} "
+                "ORDER BY start_time DESC"
             )
+            params = (ctx.project_id,) if ctx.project_id else ()
+            rows = db.fetchall(sql, params)
         by_wf = _aggregate(rows)
         return {
             "workflows": [_format(b) for b in by_wf.values()],
@@ -186,10 +195,17 @@ def get_workflow(
     ctx = get_context(request)
     db = ctx.db()
     try:
-        rows = db.fetchall(
-            "SELECT * FROM spans WHERE parent_span_id IS NULL AND name LIKE ?",
-            (f"{runner_type}.%",),
-        )
+        if ctx.project_id:
+            rows = db.fetchall(
+                "SELECT * FROM spans WHERE parent_span_id IS NULL "
+                "AND name LIKE ? AND project_id = ?",
+                (f"{runner_type}.%", ctx.project_id),
+            )
+        else:
+            rows = db.fetchall(
+                "SELECT * FROM spans WHERE parent_span_id IS NULL AND name LIKE ?",
+                (f"{runner_type}.%",),
+            )
         by_wf = _aggregate(rows)
         key = (runner_type, name)
         if key not in by_wf:

@@ -23,8 +23,13 @@ python scripts/seed_ui_snapshot.py "$TMP_DB"
 echo "▸ overlaying Sprint 1 fixtures (multimodal trace, checkpoints)"
 python scripts/seed_ui_sprint1.py "$TMP_DB"
 
-echo "▸ starting FastAPI on port 7844 (--no-auth, snapshot DB, runners=[chain])"
-python scripts/_sprint1_ui_server.py --db "$TMP_DB" --host 127.0.0.1 --port 7844 &
+echo "▸ starting FastAPI on port 7844 (--no-auth, snapshot DB, runners=[chain], project=sprint1-demo)"
+# Tag every read with project_id="sprint1-demo" so the breadcrumb shows
+# the project name and the leakage tests have something to assert on.
+# All seed rows in the snapshot DB also stamp project_id="sprint1-demo".
+python scripts/_sprint1_ui_server.py \
+    --db "$TMP_DB" --host 127.0.0.1 --port 7844 \
+    --project-id sprint1-demo &
 SERVER_PID=$!
 cleanup() {
   kill "$SERVER_PID" 2>/dev/null || true

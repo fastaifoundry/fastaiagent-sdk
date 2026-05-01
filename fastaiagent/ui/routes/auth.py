@@ -24,6 +24,7 @@ class StatusResponse(BaseModel):
     authenticated: bool
     username: str | None
     no_auth: bool
+    project_id: str = ""
 
 
 @router.post("/login")
@@ -48,11 +49,16 @@ def logout(response: Response) -> dict[str, str]:
 @router.get("/status", response_model=StatusResponse)
 def status_endpoint(request: Request) -> StatusResponse:
     ctx = get_context(request)
+    pid = ctx.project_id
     if ctx.no_auth:
-        return StatusResponse(authenticated=True, username="anonymous", no_auth=True)
+        return StatusResponse(
+            authenticated=True, username="anonymous", no_auth=True, project_id=pid
+        )
     auth = ctx.auth()
     if auth is None:
-        return StatusResponse(authenticated=False, username=None, no_auth=False)
+        return StatusResponse(
+            authenticated=False, username=None, no_auth=False, project_id=pid
+        )
     from fastaiagent.ui.auth import read_session_cookie
 
     payload = read_session_cookie(request, auth)
@@ -61,5 +67,8 @@ def status_endpoint(request: Request) -> StatusResponse:
             authenticated=True,
             username=payload.get("username", auth.username),
             no_auth=False,
+            project_id=pid,
         )
-    return StatusResponse(authenticated=False, username=None, no_auth=False)
+    return StatusResponse(
+        authenticated=False, username=None, no_auth=False, project_id=pid
+    )

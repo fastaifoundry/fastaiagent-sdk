@@ -61,6 +61,37 @@ def seed(db_path: Path) -> None:
         _seed_multimodal_trace(db, now)
         _seed_checkpoints(db, now)
         _seed_cost_spans(db, now)
+        _stamp_project_id(db, project_id="sprint1-demo")
+
+
+def _stamp_project_id(db: SQLiteHelper, *, project_id: str) -> None:
+    """Stamp every seeded row with the same project_id so the scoped UI
+    sees them. Without this, the v4 backfill leaves rows with whatever
+    cwd basename the migration captured, which is fragile across CI
+    machines.
+    """
+    for table in (
+        "spans",
+        "checkpoints",
+        "pending_interrupts",
+        "idempotency_cache",
+        "trace_attachments",
+        "prompts",
+        "prompt_versions",
+        "eval_runs",
+        "eval_cases",
+        "guardrail_events",
+    ):
+        rows = db.fetchall(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (table,),
+        )
+        if not rows:
+            continue
+        cols = {r["name"] for r in db.fetchall(f"PRAGMA table_info({table})")}
+        if "project_id" not in cols:
+            continue
+        db.execute(f"UPDATE {table} SET project_id = ?", (project_id,))
 
 
 def _seed_multimodal_trace(db: SQLiteHelper, now: datetime) -> None:

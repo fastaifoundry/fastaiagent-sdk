@@ -102,7 +102,13 @@ def list_agents(request: Request, _user: str = Depends(require_session)) -> dict
     try:
         # Scan every agent.* span, not just root spans. With workflow
         # wrappers (chain/swarm/supervisor), agents always run as children.
-        rows = db.fetchall("SELECT * FROM spans WHERE name LIKE 'agent.%'")
+        if ctx.project_id:
+            rows = db.fetchall(
+                "SELECT * FROM spans WHERE name LIKE 'agent.%' AND project_id = ?",
+                (ctx.project_id,),
+            )
+        else:
+            rows = db.fetchall("SELECT * FROM spans WHERE name LIKE 'agent.%'")
         by_agent = _aggregate(rows)
         return {"agents": [_format(b) for b in by_agent.values()]}
     finally:
@@ -158,7 +164,13 @@ def get_agent(
     ctx = get_context(request)
     db = ctx.db()
     try:
-        rows = db.fetchall("SELECT * FROM spans WHERE name LIKE 'agent.%'")
+        if ctx.project_id:
+            rows = db.fetchall(
+                "SELECT * FROM spans WHERE name LIKE 'agent.%' AND project_id = ?",
+                (ctx.project_id,),
+            )
+        else:
+            rows = db.fetchall("SELECT * FROM spans WHERE name LIKE 'agent.%'")
         by_agent = _aggregate(rows)
         if name not in by_agent:
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"Agent '{name}' not found")

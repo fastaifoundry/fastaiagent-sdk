@@ -132,11 +132,13 @@ def save_attachment(
         metadata=meta,
         created_at=_now_iso(),
     )
+    from fastaiagent._internal.project import safe_get_project_id
+
     db.execute(
         """INSERT OR REPLACE INTO trace_attachments
         (attachment_id, trace_id, span_id, media_type, size_bytes,
-         thumbnail, full_data, metadata_json, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+         thumbnail, full_data, metadata_json, created_at, project_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             record.attachment_id,
             record.trace_id,
@@ -147,6 +149,7 @@ def save_attachment(
             record.full_data,
             json.dumps(meta),
             record.created_at,
+            safe_get_project_id(),
         ),
     )
     return record

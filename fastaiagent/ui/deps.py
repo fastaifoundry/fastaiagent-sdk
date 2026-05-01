@@ -30,12 +30,17 @@ class AppContext:
         auth_path: Path,
         no_auth: bool,
         runners: dict[str, Any] | None = None,
+        project_id: str | None = None,
     ) -> None:
         self.db_path = db_path
         self.auth_path = auth_path
         self.no_auth = no_auth
         self.runners: dict[str, Any] = dict(runners) if runners else {}
         self._auth_cache: AuthFile | None = None
+        # Project the UI is scoped to. Read-path SQL filters by this so the
+        # same Postgres can host multiple projects without cross-contamination.
+        # Resolved once at build_app() time from ProjectConfig.
+        self.project_id: str = project_id or ""
 
     def auth(self) -> AuthFile | None:
         if self.no_auth:
@@ -57,6 +62,17 @@ def get_context(request: Request) -> AppContext:
     ctx = request.app.state.context
     assert isinstance(ctx, AppContext)
     return ctx
+
+
+def current_project_id(request: Request) -> str:
+    """Return the project_id the UI is scoped to.
+
+    Returns ``""`` when scoping is disabled (legacy DB or test fixtures
+    that didn't seed a project). Endpoints that filter by project_id
+    should treat ``""`` as "show everything for backwards-compat" so
+    pre-v4 traces (project_id='') still surface.
+    """
+    return get_context(request).project_id
 
 
 def require_session(request: Request) -> str:

@@ -140,6 +140,7 @@ nav:
       - "Checkpoint inspector": ui/checkpoint-inspector.md
       - "Cost tracking": ui/cost-tracking.md
       - "Export trace as JSON": ui/export-trace.md
+      - "Project scoping": ui/projects.md
   - Platform:
       - platform/index.md
   - Deployment:

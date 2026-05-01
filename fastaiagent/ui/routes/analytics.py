@@ -79,13 +79,22 @@ def analytics(
     db = ctx.db()
     try:
         since = datetime.now(tz=timezone.utc) - timedelta(hours=hours)
-        rows = db.fetchall(
-            """SELECT trace_id, parent_span_id, name, start_time, end_time,
-                      status, attributes
-               FROM spans
-               WHERE start_time >= ?""",
-            (since.isoformat(),),
-        )
+        if ctx.project_id:
+            rows = db.fetchall(
+                """SELECT trace_id, parent_span_id, name, start_time, end_time,
+                          status, attributes
+                   FROM spans
+                   WHERE start_time >= ? AND project_id = ?""",
+                (since.isoformat(), ctx.project_id),
+            )
+        else:
+            rows = db.fetchall(
+                """SELECT trace_id, parent_span_id, name, start_time, end_time,
+                          status, attributes
+                   FROM spans
+                   WHERE start_time >= ?""",
+                (since.isoformat(),),
+            )
 
         # Roots define a trace for this aggregation (one duration per trace).
         trace_stats: dict[str, dict[str, Any]] = {}
@@ -288,13 +297,22 @@ def cost_breakdown(
     db = ctx.db()
     try:
         since = datetime.now(tz=timezone.utc) - timedelta(hours=_period_to_hours(period))
-        rows = db.fetchall(
-            """SELECT trace_id, parent_span_id, name, start_time, end_time,
-                      status, attributes
-               FROM spans
-               WHERE start_time >= ?""",
-            (since.isoformat(),),
-        )
+        if ctx.project_id:
+            rows = db.fetchall(
+                """SELECT trace_id, parent_span_id, name, start_time, end_time,
+                          status, attributes
+                   FROM spans
+                   WHERE start_time >= ? AND project_id = ?""",
+                (since.isoformat(), ctx.project_id),
+            )
+        else:
+            rows = db.fetchall(
+                """SELECT trace_id, parent_span_id, name, start_time, end_time,
+                          status, attributes
+                   FROM spans
+                   WHERE start_time >= ?""",
+                (since.isoformat(),),
+            )
 
         if group_by == "model":
             return {

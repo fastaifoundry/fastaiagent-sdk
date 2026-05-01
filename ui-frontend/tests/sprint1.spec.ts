@@ -302,3 +302,21 @@ test("sprint1-5b — exporting downloads a self-contained JSON", async ({
   ]);
   expect(download.suggestedFilename()).toContain(MM_TRACE_ID);
 });
+
+// ---------------------------------------------------------------------------
+// Feature 6 — Project scoping (breadcrumb evidence)
+// ---------------------------------------------------------------------------
+
+test("sprint1-6 — header breadcrumb shows the active project name", async ({
+  page,
+}) => {
+  await page.goto("/");
+  // ``Local UI // sprint1-demo // auth disabled`` is what the orchestrator
+  // wires up via ``--project-id sprint1-demo``.
+  const breadcrumb = page.getByTestId("header-breadcrumb");
+  await expect(breadcrumb).toBeVisible();
+  await expect(page.getByTestId("project-id")).toHaveText("sprint1-demo");
+
+  await page.waitForTimeout(300);
+  await page.screenshot(SHOT("sprint1-6-project-breadcrumb"));
+});

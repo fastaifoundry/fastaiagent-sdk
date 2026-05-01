@@ -317,6 +317,14 @@ checkboxes for embedding attachment bytes and checkpoint state. The
 same export is available via `fastaiagent export-trace --trace-id <id>
 --output <path>` on the CLI. See [Export trace as JSON](export-trace.md).
 
+#### Project scoping
+
+The header breadcrumb shows the current project name
+(`Local UI // my-project // auth disabled`). Every read endpoint
+filters by `project_id` so multiple projects can share a single
+Postgres backend without cross-contamination. See
+[Project scoping](projects.md).
+
 ### Agents
 
 Cards summarizing every agent the SDK has seen: run count, success rate

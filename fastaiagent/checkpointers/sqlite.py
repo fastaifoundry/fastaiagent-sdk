@@ -68,6 +68,8 @@ class SQLiteCheckpointer:
 
         # ``id`` is the legacy primary key column; mirror checkpoint_id into
         # it so old SELECTs and the migrator's INSERT OR IGNORE still work.
+        from fastaiagent._internal.project import safe_get_project_id
+
         self._conn().execute(
             """INSERT INTO checkpoints
                (id, checkpoint_id, parent_checkpoint_id, chain_name,
@@ -75,8 +77,8 @@ class SQLiteCheckpointer:
                 state_snapshot, node_input, node_output,
                 iteration, iteration_counters,
                 interrupt_reason, interrupt_context, agent_path,
-                created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                created_at, project_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 checkpoint.checkpoint_id,
                 checkpoint.checkpoint_id,
@@ -95,6 +97,7 @@ class SQLiteCheckpointer:
                 json.dumps(checkpoint.interrupt_context),
                 checkpoint.agent_path,
                 checkpoint.created_at,
+                safe_get_project_id(),
             ),
         )
 
@@ -174,6 +177,9 @@ class SQLiteCheckpointer:
         if not pending.created_at:
             pending.created_at = checkpoint.created_at
 
+        from fastaiagent._internal.project import safe_get_project_id
+
+        pid = safe_get_project_id()
         db = self._conn()
         # Reach for the underlying sqlite3 connection so we can wrap the
         # two inserts in a single explicit transaction. SQLiteHelper.execute
@@ -189,8 +195,8 @@ class SQLiteCheckpointer:
                         state_snapshot, node_input, node_output,
                         iteration, iteration_counters,
                         interrupt_reason, interrupt_context, agent_path,
-                        created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        created_at, project_id)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         checkpoint.checkpoint_id,
                         checkpoint.checkpoint_id,
@@ -209,13 +215,14 @@ class SQLiteCheckpointer:
                         json.dumps(checkpoint.interrupt_context),
                         checkpoint.agent_path,
                         checkpoint.created_at,
+                        pid,
                     ),
                 )
                 conn.execute(
                     """INSERT INTO pending_interrupts
                        (execution_id, chain_name, node_id, reason, context,
-                        agent_path, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                        agent_path, created_at, project_id)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         pending.execution_id,
                         pending.chain_name,
@@ -224,6 +231,7 @@ class SQLiteCheckpointer:
                         json.dumps(pending.context),
                         pending.agent_path,
                         pending.created_at,
+                        pid,
                     ),
                 )
                 conn.commit()
@@ -312,15 +320,18 @@ class SQLiteCheckpointer:
         # via ``default=str``. The ``@idempotent`` decorator runs
         # ``pydantic_core.to_jsonable_python`` first, so by the time we get
         # here the value is plain JSON-shaped data.
+        from fastaiagent._internal.project import safe_get_project_id
+
         self._conn().execute(
             """INSERT OR REPLACE INTO idempotency_cache
-               (execution_id, function_key, result, created_at)
-               VALUES (?, ?, ?, ?)""",
+               (execution_id, function_key, result, created_at, project_id)
+               VALUES (?, ?, ?, ?, ?)""",
             (
                 execution_id,
                 function_key,
                 json.dumps(result),
                 datetime.now(tz=timezone.utc).isoformat(),
+                safe_get_project_id(),
             ),
         )
 

@@ -49,11 +49,14 @@ def log_guardrail_event(
         helper = init_local_db(resolved_db)
         import json
 
+        from fastaiagent._internal.project import safe_get_project_id
+
         helper.execute(
             """INSERT INTO guardrail_events
                (event_id, trace_id, span_id, guardrail_name, guardrail_type,
-                position, outcome, score, message, agent_name, timestamp, metadata)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                position, outcome, score, message, agent_name, timestamp, metadata,
+                project_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 uuid.uuid4().hex,
                 trace_id,
@@ -67,6 +70,7 @@ def log_guardrail_event(
                 agent_name,
                 timestamp,
                 json.dumps(result.metadata or {}),
+                safe_get_project_id(),
             ),
         )
     finally:

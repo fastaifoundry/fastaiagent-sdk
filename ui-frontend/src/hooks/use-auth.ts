@@ -7,6 +7,7 @@ interface AuthStatus {
   authenticated: boolean;
   username: string | null;
   no_auth: boolean;
+  project_id?: string;
 }
 
 /**

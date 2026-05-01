@@ -5,7 +5,13 @@ interface AuthState {
   username: string | null;
   authenticated: boolean;
   noAuth: boolean;
-  setStatus: (status: { authenticated: boolean; username: string | null; no_auth: boolean }) => void;
+  projectId: string;
+  setStatus: (status: {
+    authenticated: boolean;
+    username: string | null;
+    no_auth: boolean;
+    project_id?: string;
+  }) => void;
   clear: () => void;
 }
 
@@ -15,13 +21,25 @@ export const useAuthStore = create<AuthState>()(
       username: null,
       authenticated: false,
       noAuth: false,
-      setStatus: ({ authenticated, username, no_auth }) =>
-        set({ authenticated, username, noAuth: no_auth }),
-      clear: () => set({ username: null, authenticated: false }),
+      projectId: "",
+      setStatus: ({ authenticated, username, no_auth, project_id }) =>
+        set({
+          authenticated,
+          username,
+          noAuth: no_auth,
+          projectId: project_id ?? "",
+        }),
+      clear: () =>
+        set({ username: null, authenticated: false, projectId: "" }),
     }),
     {
       name: "fastaiagent-auth",
-      partialize: (s) => ({ username: s.username, authenticated: s.authenticated, noAuth: s.noAuth }),
+      partialize: (s) => ({
+        username: s.username,
+        authenticated: s.authenticated,
+        noAuth: s.noAuth,
+        projectId: s.projectId,
+      }),
     }
   )
 );
