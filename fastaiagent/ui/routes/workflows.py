@@ -208,12 +208,32 @@ def get_workflow(
             )
         by_wf = _aggregate(rows)
         key = (runner_type, name)
-        if key not in by_wf:
-            raise HTTPException(
-                status.HTTP_404_NOT_FOUND,
-                f"{runner_type.capitalize()} '{name}' not found",
-            )
-        return _format(by_wf[key])
+        if key in by_wf:
+            return _format(by_wf[key])
+        # Fall back to the registered runner — lets a freshly-registered
+        # workflow render its topology before its first run lands spans
+        # in the DB. The summary stats are zero until then.
+        registered = (getattr(ctx, "runners", {}) or {}).get(name)
+        if registered is not None and _runner_type_of(registered) == runner_type:
+            return {
+                "runner_type": runner_type,
+                "workflow_name": name,
+                "run_count": 0,
+                "success_rate": 0.0,
+                "error_count": 0,
+                "avg_latency_ms": 0.0,
+                "avg_cost_usd": 0.0,
+                "last_run": "",
+                "node_count": (
+                    len(getattr(registered, "nodes", []))
+                    if hasattr(registered, "nodes")
+                    else None
+                ),
+            }
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            f"{runner_type.capitalize()} '{name}' not found",
+        )
     finally:
         db.close()
 
