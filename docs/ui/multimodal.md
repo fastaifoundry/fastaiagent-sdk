@@ -93,3 +93,20 @@ assert has_multimodal_part(msg)
 The Python helper is the source of truth for which content shapes count
 as multimodal — both the e2e tests and the frontend's renderer agree on
 the same set of types.
+
+## Try it from the examples
+
+These examples produce traces with multimodal input that the inline
+renderer picks up:
+
+- [`examples/43_multimodal_image.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/43_multimodal_image.py)
+  — vision LLM describes a synthetic image. Look at the LLM span's
+  Input tab in the Local UI.
+- [`examples/44_multimodal_pdf.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/44_multimodal_pdf.py)
+  — agent reads a PDF. The trace's Input tab shows the document card
+  with the page-count badge.
+- [`examples/45_multimodal_chain.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/45_multimodal_chain.py)
+  — multimodal payload survives a Chain-state checkpoint round-trip.
+- [`examples/46_multimodal_swarm.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/46_multimodal_swarm.py)
+  — multimodal input flows through a Swarm with handoffs; the inline
+  thumbnail appears on whichever agent currently holds the request.

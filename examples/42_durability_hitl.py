@@ -127,6 +127,15 @@ def main() -> None:
     except AlreadyResumed as exc:
         print(f"\nsecond aresume correctly raised: AlreadyResumed: {exc}")
 
+    print(
+        "\nTo render the topology + checkpoint inspector in the Local UI, "
+        "register the chain with build_app:\n"
+        "    from fastaiagent.ui.server import build_app\n"
+        "    app = build_app(runners=[chain])\n"
+        "Then visit http://127.0.0.1:7843/workflows/chain/refund-flow "
+        "for the topology and /executions/<id> for the checkpoint timeline."
+    )
+
 
 if __name__ == "__main__":
     main()

@@ -135,6 +135,13 @@ with SQLiteHelper(".fastaiagent/local.db") as db:
     )
 ```
 
+## Try it from the examples
+
+[`examples/48_export_trace.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/48_export_trace.py)
+runs a small Agent and writes its trace to ``trace.json`` using the
+same `export_trace_to_file` helper. After running, inspect the JSON to
+see the schema in action.
+
 ## Where the screenshot comes from
 
 The dialog screenshot is captured by

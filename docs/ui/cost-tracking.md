@@ -88,6 +88,22 @@ Bump the rates here whenever a provider changes their per-million
 pricing — the dashboards re-aggregate from raw token counts on every
 read, so updates apply retroactively.
 
+## Try it from the examples
+
+Any example that runs an LLM through `fastaiagent` populates the cost
+breakdowns. For a quick spread across multiple models / agents / chain
+nodes:
+
+- [`examples/35_local_ui.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/35_local_ui.py)
+  — produces traces, evals, and guardrail events the cost dashboard
+  aggregates.
+- [`examples/39_workflows_demo.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/39_workflows_demo.py)
+  — runs Chain + Swarm + Supervisor in one script, so the **By node**
+  tab has multiple `chain_name` values to slice.
+
+After running either, open Analytics in the Local UI and scroll to the
+**// COST BREAKDOWN** section.
+
 ## Where the screenshots come from
 
 Both screenshots are captured by `scripts/capture-sprint1-screenshots.sh`

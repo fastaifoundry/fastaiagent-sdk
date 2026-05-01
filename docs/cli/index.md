@@ -31,6 +31,7 @@ fastaiagent --help
 | `fastaiagent inspect` | Show checkpoint history for an execution |
 | `fastaiagent setup-checkpointer` | Provision the durability backend (SQLite or Postgres) |
 | `fastaiagent migrate` | Copy legacy `traces.db` / `checkpoints.db` / `.prompts/` into `local.db` |
+| `fastaiagent export-trace` | Export one trace as a self-contained JSON file (same payload as the Local UI's Export button) |
 
 ---
 
@@ -258,6 +259,32 @@ See [docs/durability/checkpointers.md](../durability/checkpointers.md) for the f
 | `FASTAIAGENT_LIVE_ANTHROPIC_MODEL` | Override Anthropic model in live tests |
 | `OPENAI_API_KEY` | LLM calls (OpenAI) |
 | `ANTHROPIC_API_KEY` | LLM calls (Anthropic) |
+
+## `fastaiagent export-trace`
+
+Export a single trace as a self-contained JSON file. Reads the local
+SQLite directly — no UI server required.
+
+```bash
+fastaiagent export-trace --trace-id <id> --output trace.json
+fastaiagent export-trace --trace-id <id> --output trace-full.json \
+    --include-attachments --include-checkpoint-state
+```
+
+Flags:
+
+- `--trace-id <id>` (required) — the trace to export.
+- `--output <path>` (default `trace.json`) — destination file.
+- `--include-attachments` — embed image / PDF bytes (base64) in the
+  JSON. Off by default; files can balloon to many MB.
+- `--include-checkpoint-state` — embed full `state_snapshot` blocks
+  for each checkpoint. Off by default.
+- `--db <path>` — override the local DB; defaults to whatever
+  `SDKConfig.local_db_path` resolves to (typically
+  `.fastaiagent/local.db`).
+
+Same JSON shape comes out of the Local UI's Export dialog. See
+[Export trace as JSON](../ui/export-trace.md) for the schema.
 
 ## Next Steps
 

@@ -159,6 +159,14 @@ def main() -> None:
         "Please rewrite this to be more professional: 'hey this thing kinda works lol'",
     )
 
+    print(
+        "\nTo render the swarm topology (peer-to-peer handoff edges) in "
+        "the Local UI, register the Swarm with build_app:\n"
+        "    from fastaiagent.ui.server import build_app\n"
+        "    app = build_app(runners=[swarm])\n"
+        "Then visit http://127.0.0.1:7843/workflows/swarm/triage_swarm"
+    )
+
 
 if __name__ == "__main__":
     main()

@@ -179,3 +179,19 @@ set_project_id("test-fixture")
 config = load_or_create()
 print(config.project_id, config.created_at, config.sdk_version)
 ```
+
+## Verify it end-to-end
+
+[`scripts/verify_project_scoping.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/scripts/verify_project_scoping.py)
+spins up two project directories sharing one SQLite DB, runs a real
+``Agent.run()`` in each, then boots two scoped FastAPI servers and
+asserts no cross-project string ever appears in the other project's
+response. Run it after a fresh checkout:
+
+```bash
+python scripts/verify_project_scoping.py
+# ✅ ALL VERIFICATIONS PASSED — project scoping holds end-to-end.
+```
+
+The script is the canonical "does this actually work?" demo and runs
+against the real SDK + real FastAPI + real SQLite (no mocks).

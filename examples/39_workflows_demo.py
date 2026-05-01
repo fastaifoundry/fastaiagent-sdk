@@ -204,9 +204,13 @@ def main() -> None:
     require_key()
     llm = LLMClient(provider="openai", model="gpt-4o-mini")
 
-    run_chain(build_chain(llm))
-    run_swarm(build_swarm(llm))
-    run_supervisor(build_supervisor(llm))
+    chain = build_chain(llm)
+    swarm = build_swarm(llm)
+    supervisor = build_supervisor(llm)
+
+    run_chain(chain)
+    run_swarm(swarm)
+    run_supervisor(supervisor)
 
     section("Done")
     print("All three workflow runners produced traces. Open the UI:")
@@ -217,6 +221,17 @@ def main() -> None:
     print("  /workflows/chain/content-pipeline")
     print("  /workflows/swarm/support-triage")
     print("  /workflows/supervisor/incident-commander")
+    print()
+    print(
+        "To render the topology view (graph of nodes and edges) for each, "
+        "register the runners when starting the UI:\n"
+        "    import uvicorn\n"
+        "    from fastaiagent.ui.server import build_app\n"
+        "    app = build_app(runners=[chain, swarm, supervisor])\n"
+        "    uvicorn.run(app, host='127.0.0.1', port=7843)\n"
+        "Then click any of the three URLs above — the topology canvas "
+        "appears under the // TOPOLOGY heading."
+    )
 
 
 if __name__ == "__main__":
