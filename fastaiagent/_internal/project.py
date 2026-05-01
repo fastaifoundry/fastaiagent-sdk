@@ -156,22 +156,30 @@ def reset_for_testing() -> None:
 
 
 def safe_get_project_id() -> str:
-    """Like :func:`get_project_id` but never raises and never creates files.
+    """Like :func:`get_project_id` but never raises.
 
-    Used at SDK write sites where the filesystem may be read-only or
-    where the developer explicitly opted out (``trace=False``). Returns
-    the empty string if anything goes wrong; the DB column has a
-    NOT NULL DEFAULT '' so the row still inserts.
+    Used at SDK write sites — the first call from a fresh directory
+    creates ``.fastaiagent/config.toml`` (matching the spec's
+    "first execution creates the project config" contract). If the
+    filesystem is read-only or any other ``OSError`` happens, falls
+    back to the cwd basename without raising; the DB column has a
+    ``NOT NULL DEFAULT ''`` so the row still inserts.
     """
+    global _INSTANCE
     try:
         if _OVERRIDE is not None:
             return _OVERRIDE
         if _INSTANCE is not None:
             return _INSTANCE.project_id
-        path = _config_path()
-        if path.exists():
-            return ProjectConfig.from_toml(path.read_text()).project_id
-        return Path.cwd().name or ""
+        # Resolve via load_or_create so the first SDK write from a
+        # fresh project dir lands the config.toml + .gitignore.
+        try:
+            _INSTANCE = load_or_create()
+            return _INSTANCE.project_id
+        except OSError:
+            # Read-only fs or similar — fall through to a non-persistent
+            # best-effort id so the SDK still writes the row.
+            return Path.cwd().name or ""
     except OSError:
         return ""
 
