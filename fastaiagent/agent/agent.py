@@ -34,7 +34,30 @@ from fastaiagent.guardrail.guardrail import Guardrail, GuardrailPosition
 from fastaiagent.llm.client import LLMClient, _strip_code_fences
 from fastaiagent.llm.message import Message, SystemMessage, UserMessage
 from fastaiagent.llm.stream import StreamEvent, TextDelta
+from fastaiagent.multimodal.image import Image as MultimodalImage
+from fastaiagent.multimodal.pdf import PDF as MultimodalPDF  # noqa: N811
+from fastaiagent.multimodal.types import ContentPart, normalize_input
 from fastaiagent.tool.base import Tool
+
+AgentInput = str | MultimodalImage | MultimodalPDF | list[ContentPart]
+
+
+def _input_summary_text(parts: list[ContentPart]) -> str:
+    """Concatenate the text portions of a multimodal input.
+
+    Used wherever a string is required (memory, guardrails, span attributes)
+    but the user passed a multimodal list. Image/PDF parts are replaced
+    with a short marker so the trace stays readable.
+    """
+    pieces: list[str] = []
+    for part in parts:
+        if isinstance(part, str):
+            pieces.append(part)
+        elif isinstance(part, MultimodalImage):
+            pieces.append(f"[image:{part.media_type}:{part.size_bytes()}b]")
+        elif isinstance(part, MultimodalPDF):
+            pieces.append(f"[pdf:{part.size_bytes()}b]")
+    return " ".join(pieces)
 
 
 class AgentConfig(BaseModel):
@@ -139,14 +162,18 @@ class Agent:
 
     def run(
         self,
-        input: str,
+        input: AgentInput,
         *,
         context: RunContext | None = None,
         trace: bool = True,
         execution_id: str | None = None,
         **kwargs: Any,
     ) -> AgentResult:
-        """Synchronous execution."""
+        """Synchronous execution.
+
+        ``input`` is a string, an :class:`Image`, a :class:`PDF`, or a list
+        of those parts. The list form sends multimodal content to the LLM.
+        """
         return run_sync(
             self.arun(
                 input,
@@ -159,7 +186,7 @@ class Agent:
 
     async def arun(
         self,
-        input: str,
+        input: AgentInput,
         *,
         context: RunContext | None = None,
         trace: bool = True,
@@ -168,6 +195,7 @@ class Agent:
     ) -> AgentResult:
         """Async execution with tool-calling loop.
 
+        ``input`` may be a string or a multimodal list (text + Image + PDF).
         ``execution_id`` (optional) names this run for resume. If omitted,
         a UUID is generated. Pair with a ``checkpointer`` on the Agent to
         get crash- and interrupt-recovery via :meth:`resume`.
@@ -180,7 +208,7 @@ class Agent:
 
     async def _arun_traced(
         self,
-        input: str,
+        input: AgentInput,
         *,
         context: RunContext | None = None,
         execution_id: str | None = None,
@@ -193,7 +221,50 @@ class Agent:
         tracer = get_tracer()
         with tracer.start_as_current_span(f"agent.{self.name}") as span:
             span.set_attribute("agent.name", self.name)
-            span.set_attribute("agent.input", input)
+            # Span attributes must be primitives — coerce multimodal input
+            # to a readable text summary.
+            normalized_input_parts: list[ContentPart] = (
+                [input] if isinstance(input, str) else normalize_input(input)
+            )
+            input_text = (
+                input
+                if isinstance(input, str)
+                else _input_summary_text(normalized_input_parts)
+            )
+            span.set_attribute("agent.input", input_text)
+
+            # Persist multimodal attachments (Image/PDF) to the
+            # ``trace_attachments`` table so the UI / Replay can fetch
+            # thumbnails and (optionally) the original bytes.
+            try:
+                from fastaiagent.multimodal.image import Image as _MMImage
+                from fastaiagent.multimodal.pdf import PDF as _MMPDF
+
+                if any(
+                    isinstance(p, (_MMImage, _MMPDF)) for p in normalized_input_parts
+                ):
+                    from fastaiagent.trace.attachments import save_parts_for_span
+                    from fastaiagent.trace.storage import TraceStore
+
+                    span_ctx = span.get_span_context()
+                    saved = save_parts_for_span(
+                        db=TraceStore.default()._db,
+                        trace_id=format(span_ctx.trace_id, "032x"),
+                        span_id=format(span_ctx.span_id, "016x"),
+                        parts=normalized_input_parts,
+                        role="input",
+                    )
+                    if saved:
+                        span.set_attribute(
+                            "fastaiagent.input.attachment_ids",
+                            json.dumps([r.attachment_id for r in saved]),
+                        )
+                        span.set_attribute(
+                            "fastaiagent.input.media_count", len(saved)
+                        )
+            except Exception:
+                # Trace persistence must never fail the agent run.
+                pass
 
             # Reconstruction metadata for ForkedReplay.arerun (always captured —
             # structural, not payload).
@@ -231,7 +302,7 @@ class Agent:
 
     async def _arun_core(
         self,
-        input: str,
+        input: AgentInput,
         *,
         context: RunContext | None = None,
         execution_id: str | None = None,
@@ -260,9 +331,19 @@ class Agent:
             self._checkpointer.setup()
 
         try:
-            # Execute input guardrails (blocking).
+            # Normalize once — every downstream step uses the same shape.
+            normalized_parts: list[ContentPart] = (
+                [input] if isinstance(input, str) else normalize_input(input)
+            )
+            input_text = (
+                input if isinstance(input, str) else _input_summary_text(normalized_parts)
+            )
+
+            # Execute input guardrails (blocking). Guardrails are text-only
+            # today; we pass the text summary so policies still trigger on
+            # the textual portion of multimodal input.
             if self.guardrails:
-                await execute_guardrails(self.guardrails, input, GuardrailPosition.input)
+                await execute_guardrails(self.guardrails, input_text, GuardrailPosition.input)
 
             # Build messages — when resuming, restore the saved history.
             messages = (
@@ -320,9 +401,10 @@ class Agent:
             if self.guardrails:
                 await execute_guardrails(self.guardrails, output, GuardrailPosition.output)
 
-            # Store in memory.
+            # Store in memory. Memory backends are text-only; record the
+            # text summary so multimodal calls don't break the memory store.
             if self.memory:
-                self.memory.add(UserMessage(input))
+                self.memory.add(UserMessage(input_text))
                 from fastaiagent.llm.message import AssistantMessage
 
                 self.memory.add(AssistantMessage(output))
@@ -345,9 +427,17 @@ class Agent:
             _execution_id.reset(exec_token)
 
     async def astream(
-        self, input: str, *, context: RunContext | None = None, trace: bool = True, **kwargs: Any
+        self,
+        input: AgentInput,
+        *,
+        context: RunContext | None = None,
+        trace: bool = True,
+        **kwargs: Any,
     ) -> AsyncGenerator[StreamEvent, None]:
         """Async streaming execution — yields StreamEvent objects as tokens arrive.
+
+        ``input`` accepts the same shapes as :py:meth:`arun` (string,
+        ``Image``, ``PDF``, or a mixed list).
 
         Runs input guardrails before streaming begins. Output guardrails
         run after streaming completes. Memory is updated at the end.
@@ -357,9 +447,15 @@ class Agent:
                 if isinstance(event, TextDelta):
                     print(event.text, end="", flush=True)
         """
-        # Execute input guardrails (blocking)
+        input_text = (
+            input
+            if isinstance(input, str)
+            else _input_summary_text(normalize_input(input))
+        )
+
+        # Execute input guardrails (blocking) on the text portion.
         if self.guardrails:
-            await execute_guardrails(self.guardrails, input, GuardrailPosition.input)
+            await execute_guardrails(self.guardrails, input_text, GuardrailPosition.input)
 
         messages = self._build_messages(input, context=context)
 
@@ -390,9 +486,9 @@ class Agent:
         if self.guardrails:
             await execute_guardrails(self.guardrails, output, GuardrailPosition.output)
 
-        # Store in memory
+        # Store in memory (text summary for multimodal inputs).
         if self.memory:
-            self.memory.add(UserMessage(input))
+            self.memory.add(UserMessage(input_text))
             from fastaiagent.llm.message import AssistantMessage
 
             self.memory.add(AssistantMessage(output))
@@ -511,10 +607,16 @@ class Agent:
 
         # Original input from the first user message — re-passed only so
         # ``_arun_core`` can record it in memory at the end of the run.
-        original_input = ""
+        # Multimodal resumes: the first user message may be a list, in which
+        # case the saved messages already carry the multimodal content. We
+        # only need a text summary here for memory.add() at the end.
+        original_input: str = ""
         for m in messages:
             if m.role.value == "user" and m.content:
-                original_input = m.content
+                if isinstance(m.content, str):
+                    original_input = m.content
+                else:
+                    original_input = _input_summary_text(list(m.content))
                 break
 
         if not is_tool_boundary:
@@ -650,20 +752,42 @@ class Agent:
             return self.system_prompt(context)
         return self.system_prompt
 
-    def _build_messages(self, input: str, context: RunContext | None = None) -> list[Message]:
-        """Build the message array for the LLM."""
+    def _build_messages(
+        self, input: AgentInput, context: RunContext | None = None
+    ) -> list[Message]:
+        """Build the message array for the LLM.
+
+        Accepts string, ``Image``, ``PDF``, or a list of those parts. When
+        the input is multimodal, the trailing user message carries a
+        ``list[ContentPart]`` that ``LLMClient`` later renders per provider.
+        """
         messages: list[Message] = []
 
         system_text = self._resolve_system_prompt(context)
         if system_text:
             messages.append(SystemMessage(system_text))
 
-        # Add memory context. ComposableMemory uses ``input`` to run
-        # query-conditioned blocks (e.g. VectorBlock); AgentMemory ignores it.
-        if self.memory:
-            messages.extend(self.memory.get_context(query=input))
+        if isinstance(input, str):
+            user_content: str | list[ContentPart] = input
+            query_text = input
+        else:
+            parts = normalize_input(input)
+            # Single-string lists collapse back to plain strings so the wire
+            # shape is identical to the legacy text-only path.
+            if len(parts) == 1 and isinstance(parts[0], str):
+                user_content = parts[0]
+                query_text = parts[0]
+            else:
+                user_content = parts
+                query_text = _input_summary_text(parts)
 
-        messages.append(UserMessage(input))
+        # Add memory context. ComposableMemory uses the query text to run
+        # query-conditioned blocks (e.g. VectorBlock); AgentMemory ignores
+        # it. Multimodal queries fall back to their text summary.
+        if self.memory:
+            messages.extend(self.memory.get_context(query=query_text))
+
+        messages.append(UserMessage(user_content))
         return messages
 
     def as_mcp_server(

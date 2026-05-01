@@ -32,6 +32,12 @@ class SDKConfig(BaseModel):
     log_level: str = Field(default="WARNING")
     default_timeout: int = Field(default=120)
 
+    # Multimodal config — see docs/multimodal/.
+    pdf_mode: str = Field(default="auto")
+    max_image_size_mb: float = Field(default=20.0)
+    max_pdf_pages: int = Field(default=20)
+    trace_full_images: bool = Field(default=False)
+
     @property
     def resolved_trace_db_path(self) -> str:
         return self.trace_db_path or self.local_db_path

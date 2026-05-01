@@ -57,7 +57,17 @@ class ForkedReplay:
         self._steps = steps
         self._modifications: dict[str, Any] = {}
 
-    def modify_input(self, new_input: dict[str, Any]) -> ForkedReplay:
+    def modify_input(self, new_input: Any) -> ForkedReplay:
+        """Override the input the rerun will use.
+
+        Accepts the same shapes as :py:meth:`Agent.run`:
+
+        * a string (legacy)
+        * a single ``Image`` / ``PDF`` instance
+        * a ``list[ContentPart]`` (mix of strings, ``Image``, ``PDF``)
+        * a ``dict`` with a ``"input"`` key (legacy contract — flattened to
+          a string before rerun)
+        """
         self._modifications["input"] = new_input
         return self
 
@@ -100,11 +110,21 @@ class ForkedReplay:
         agent_dict = self._build_agent_dict(root)
         self._apply_agent_modifications(agent_dict)
 
+        from fastaiagent.multimodal.image import Image as _MMImage
+        from fastaiagent.multimodal.pdf import PDF as _MMPDF
+
         original_input = self._extract_original_input(root)
         new_input = self._modifications.get("input", original_input)
+
+        # Accept the same input shapes as ``Agent.run``. Plain strings,
+        # ``Image``, ``PDF``, and lists of ContentPart are passed through
+        # unchanged. Legacy dict form is flattened.
         if isinstance(new_input, dict):
-            # modify_input accepts a dict; flatten to a string prompt if needed.
             new_input = new_input.get("input") or json.dumps(new_input, default=str)
+        elif isinstance(new_input, (_MMImage, _MMPDF, list)):
+            pass  # Multimodal-ready — Agent.arun accepts these directly.
+        elif not isinstance(new_input, str):
+            new_input = str(new_input)
 
         try:
             agent = Agent.from_dict(agent_dict)
@@ -113,7 +133,7 @@ class ForkedReplay:
                 f"Failed to reconstruct agent from trace {self._trace.trace_id}: {e}"
             ) from e
 
-        new_result = await agent.arun(str(new_input))
+        new_result = await agent.arun(new_input)
 
         original_output = root.attributes.get("agent.output")
         return ReplayResult(

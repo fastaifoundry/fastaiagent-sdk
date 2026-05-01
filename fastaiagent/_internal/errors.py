@@ -196,3 +196,29 @@ class KBError(FastAIAgentError):
 
 class EvalError(FastAIAgentError):
     """Error related to evaluation operations."""
+
+
+# --- Multimodal errors ---
+
+
+class MultimodalError(FastAIAgentError):
+    """Error related to multimodal input (image, PDF) handling."""
+
+
+class UnsupportedFormatError(MultimodalError):
+    """The provided media format / scheme is not supported."""
+
+
+class NonVisionModelError(MultimodalError):
+    """The configured LLM model does not support vision input."""
+
+    def __init__(self, message: str = "", *, provider: str = "", model: str = ""):
+        self.provider = provider
+        self.model = model
+        if not message:
+            message = (
+                f"model {model!r} on provider {provider!r} does not support image input; "
+                f"use a vision-capable model (e.g. gpt-4o, claude-sonnet-4-6) "
+                f"or pass text-only input"
+            )
+        super().__init__(message)

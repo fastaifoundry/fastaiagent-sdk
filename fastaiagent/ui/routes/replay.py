@@ -79,11 +79,64 @@ def fork(
 
 
 class ModifyRequest(BaseModel):
+    """Modifications to apply to a forked replay before rerun.
+
+    ``input`` accepts the same shapes as :py:meth:`Agent.run`:
+
+    * ``str`` — text-only replacement
+    * ``dict`` — legacy ``{"input": "..."}`` form
+    * ``list[dict]`` — multimodal: each part is one of
+      ``{"type": "text", "text": "..."}``,
+      ``{"type": "image", "data_base64": "...", "media_type": "image/jpeg"}``,
+      ``{"type": "pdf", "data_base64": "..."}``
+    """
+
     prompt: str | None = None
-    input: dict[str, Any] | None = None
+    input: dict[str, Any] | list[dict[str, Any]] | str | None = None
     tool_response: dict[str, Any] | None = None
     config: dict[str, Any] | None = None
     state: dict[str, Any] | None = None
+
+
+def _resolve_modify_input(value: Any) -> Any:
+    """Turn wire-format multimodal markers into real ``Image``/``PDF`` instances.
+
+    Strings, dicts (legacy), and other non-list values are returned
+    unchanged so the existing ``Replay.modify_input`` contract still holds.
+    """
+    if not isinstance(value, list):
+        return value
+
+    from fastaiagent.multimodal.image import Image as MMImage
+    from fastaiagent.multimodal.pdf import PDF as MMPDF
+
+    resolved: list[Any] = []
+    for part in value:
+        if isinstance(part, str):
+            resolved.append(part)
+            continue
+        if not isinstance(part, dict):
+            resolved.append(part)
+            continue
+        kind = part.get("type")
+        if kind == "text":
+            resolved.append(part.get("text", ""))
+        elif kind == "image" and "data_base64" in part:
+            resolved.append(
+                MMImage.from_dict(
+                    {
+                        "data_base64": part["data_base64"],
+                        "media_type": part.get("media_type", "image/png"),
+                        "source_url": part.get("source_url"),
+                        "detail": part.get("detail", "auto"),
+                    }
+                )
+            )
+        elif kind == "pdf" and "data_base64" in part:
+            resolved.append(MMPDF.from_dict({"data_base64": part["data_base64"]}))
+        else:
+            resolved.append(part)
+    return resolved
 
 
 @router.patch("/forks/{fork_id}")
@@ -96,7 +149,7 @@ def modify_fork(
     if body.prompt is not None:
         forked.modify_prompt(body.prompt)
     if body.input is not None:
-        forked.modify_input(body.input)
+        forked.modify_input(_resolve_modify_input(body.input))
     if body.tool_response is not None:
         forked.modify_state({"tool_response": body.tool_response})
     if body.config is not None:

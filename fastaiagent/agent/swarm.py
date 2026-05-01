@@ -139,23 +139,66 @@ def _decode_handoff(tool_output: Any) -> tuple[str, str] | None:
     return parts[1], parts[2]
 
 
+def _build_handoff_input(
+    *,
+    source: str,
+    reason: str,
+    original_input: Any,
+    state: SwarmState,
+) -> Any:
+    """Build the input the handoff target receives.
+
+    Wraps the handoff context (who handed off, why, what's in shared state)
+    around the *original* user request — so multimodal payloads (Image,
+    PDF) flow through to the target intact rather than being collapsed to
+    a string. Pure text inputs keep the legacy single-string template.
+    """
+    from fastaiagent.multimodal.image import Image as MMImage
+    from fastaiagent.multimodal.pdf import PDF as MMPDF
+
+    handoff_text = (
+        f"{source} handed off to you with reason: {reason!r}. "
+        f"Current shared state: {state.shared!r}. "
+        f"The original request follows — please continue."
+    )
+    if isinstance(original_input, str):
+        return (
+            f"{source} handed off to you with reason: {reason!r}. "
+            f"Earlier request: {original_input!r}. Current shared state: "
+            f"{state.shared!r}. Please continue."
+        )
+    if isinstance(original_input, (MMImage, MMPDF)):
+        return [handoff_text, original_input]
+    if isinstance(original_input, list):
+        return [handoff_text, *original_input]
+    return f"{source} handed off to you with reason: {reason!r}. Please continue."
+
+
 def _swarm_snapshot(
     *,
     iteration: int,
     current: str,
-    current_input: str,
-    original_input: str,
+    current_input: Any,
+    original_input: Any,
     state: SwarmState,
     accumulated_tool_calls: list[dict[str, Any]],
     total_tokens: int,
 ) -> dict[str, Any]:
-    """Serialize the swarm loop's hot state into a JSON-safe dict."""
+    """Serialize the swarm loop's hot state into a JSON-safe dict.
+
+    Reuses the Chain-side multimodal walker so ``Image``/``PDF`` instances
+    placed in ``state.shared`` (or in ``current_input`` / ``original_input``
+    when the swarm was started with multimodal content) survive the JSON
+    round-trip to SQLite and rehydrate on resume.
+    """
+    from fastaiagent.chain.state import _serialize_for_checkpoint
+
     return {
         "iteration": iteration,
         "active_agent": current,
-        "current_input": current_input,
-        "original_input": original_input,
-        "shared_context": dict(state.shared),
+        "current_input": _serialize_for_checkpoint(current_input),
+        "original_input": _serialize_for_checkpoint(original_input),
+        "shared_context": _serialize_for_checkpoint(dict(state.shared)),
         "handoff_count": state.handoff_count,
         "path": list(state.path),
         "last_reason": state.last_reason,
@@ -166,8 +209,10 @@ def _swarm_snapshot(
 
 def _restore_state(snapshot: dict[str, Any]) -> SwarmState:
     """Inverse of :func:`_swarm_snapshot` — rebuild a :class:`SwarmState`."""
+    from fastaiagent.chain.state import _hydrate_from_checkpoint
+
     state = SwarmState()
-    state.shared = dict(snapshot.get("shared_context", {}))
+    state.shared = _hydrate_from_checkpoint(dict(snapshot.get("shared_context", {})))
     state.handoff_count = int(snapshot.get("handoff_count", 0))
     state.path = list(snapshot.get("path", []))
     state.last_reason = str(snapshot.get("last_reason", ""))
@@ -242,17 +287,19 @@ class Swarm:
 
     def run(
         self,
-        input: str,
+        input: Any,
         *,
         context: RunContext | None = None,
         execution_id: str | None = None,
     ) -> AgentResult:
-        """Synchronous execution."""
+        """Synchronous execution. ``input`` may be a string or any of the
+        multimodal shapes ``Agent.run`` accepts (``Image``, ``PDF``, or a
+        list of content parts)."""
         return run_sync(self.arun(input, context=context, execution_id=execution_id))
 
     async def arun(
         self,
-        input: str,
+        input: Any,
         *,
         context: RunContext | None = None,
         execution_id: str | None = None,
@@ -277,7 +324,16 @@ class Swarm:
             span.set_attribute("swarm.entrypoint", self.entrypoint)
             span.set_attribute("swarm.agent_count", len(getattr(self, "agents", []) or []))
             span.set_attribute("fastaiagent.runner.type", "swarm")
-            span.set_attribute("swarm.input", input)
+            # OTel only accepts primitive attribute values — coerce
+            # multimodal lists to a readable text summary the same way
+            # ``Agent._arun_traced`` does.
+            from fastaiagent.agent.agent import _input_summary_text
+            from fastaiagent.multimodal.types import normalize_input
+
+            swarm_input_text = (
+                input if isinstance(input, str) else _input_summary_text(normalize_input(input))
+            )
+            span.set_attribute("swarm.input", swarm_input_text)
 
             result = await self._arun_swarm(
                 input, context=context, execution_id=execution_id, **kwargs
@@ -289,7 +345,7 @@ class Swarm:
 
     async def _arun_swarm(
         self,
-        input: str,
+        input: Any,
         *,
         context: RunContext | None = None,
         execution_id: str | None = None,
@@ -332,8 +388,8 @@ class Swarm:
         *,
         exec_id: str,
         current: str,
-        current_input: str,
-        original_input: str,
+        current_input: Any,
+        original_input: Any,
         state: SwarmState,
         accumulated_tool_calls: list[dict[str, Any]],
         total_tokens: int,
@@ -441,10 +497,11 @@ class Swarm:
                 )
             state.last_reason = reason
             state.path.append(target)
-            current_input = (
-                f"{current} handed off to you with reason: {reason!r}. "
-                f"Earlier request: {original_input!r}. Current shared state: "
-                f"{state.shared!r}. Please continue."
+            current_input = _build_handoff_input(
+                source=current,
+                reason=reason,
+                original_input=original_input,
+                state=state,
             )
             current = target
             iteration += 1
@@ -585,7 +642,7 @@ class Swarm:
             _execution_id.reset(exec_token)
 
     async def astream(
-        self, input: str, *, context: RunContext | None = None, **kwargs: Any
+        self, input: Any, *, context: RunContext | None = None, **kwargs: Any
     ) -> AsyncGenerator[StreamEvent, None]:
         """Stream events from the currently active agent. Handoffs emit a
         :class:`HandoffEvent` before the target agent starts streaming.
@@ -634,14 +691,15 @@ class Swarm:
             yield HandoffEvent(from_agent=current, to_agent=target, reason=reason)
             state.path.append(target)
             state.last_reason = reason
-            current_input = (
-                f"{current} handed off to you with reason: {reason!r}. "
-                f"Earlier request: {input!r}. Current shared state: {state.shared!r}. "
-                f"Please continue."
+            current_input = _build_handoff_input(
+                source=current,
+                reason=reason,
+                original_input=input,
+                state=state,
             )
             current = target
 
-    def stream(self, input: str, *, context: RunContext | None = None) -> AgentResult:
+    def stream(self, input: Any, *, context: RunContext | None = None) -> AgentResult:
         """Synchronous streaming — collects into an :class:`AgentResult`."""
 
         async def _collect() -> AgentResult:

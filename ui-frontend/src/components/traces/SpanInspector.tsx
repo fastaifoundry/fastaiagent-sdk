@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { JsonViewer } from "@/components/shared/JsonViewer";
+import { AttachmentGallery } from "@/components/multimodal/AttachmentGallery";
 import { EventsPane } from "./EventsPane";
 import { TraceStatusBadge } from "./TraceStatusBadge";
 import { formatDurationMs } from "@/lib/format";
@@ -77,6 +78,13 @@ export function SpanInspector({ span }: Props) {
     return { input, output, rest };
   }, [span]);
 
+  // The agent traces multimodal input parts as their own attachments;
+  // surfacing the count here flips on the gallery in the Input tab.
+  const inputMediaCount = useMemo(() => {
+    const raw = (span?.attributes ?? {})["fastaiagent.input.media_count"];
+    return typeof raw === "number" ? raw : Number(raw ?? 0) || 0;
+  }, [span]);
+
   if (!span) {
     return (
       <div className="flex h-full items-center justify-center rounded-md border border-dashed p-12 text-center text-sm text-muted-foreground">
@@ -109,6 +117,9 @@ export function SpanInspector({ span }: Props) {
           <TabsTrigger value="events">Events</TabsTrigger>
         </TabsList>
         <TabsContent value="input" className="p-4 pt-3">
+          {inputMediaCount > 0 ? (
+            <AttachmentGallery traceId={span.trace_id} spanId={span.span_id} />
+          ) : null}
           <PaneContent value={partitioned.input} emptyLabel="No input captured." />
         </TabsContent>
         <TabsContent value="output" className="p-4 pt-3">

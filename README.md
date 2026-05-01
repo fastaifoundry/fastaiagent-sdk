@@ -6,7 +6,7 @@ The only SDK with **Agent Replay** — fork-and-rerun debugging — and a
 
 Works standalone or connected to the [FastAIAgent Platform](https://fastaiagent.net) for visual editing, production monitoring, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.0.0)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.1.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -33,6 +33,25 @@ result = agent.run("What is the capital of France?")
 print(result.output)
 print(result.trace_id)  # every run is traced — use this ID for replay/debugging
 ```
+
+## Multimodal — images and PDFs as first-class inputs
+
+```python
+from fastaiagent import Agent, LLMClient, Image, PDF
+
+agent = Agent(name="claims", llm=LLMClient(provider="anthropic", model="claude-sonnet-4-20250514"))
+
+result = agent.run([
+    "Compare the photo to the policy and assess the claim.",
+    Image.from_file("damage.jpg"),
+    PDF.from_file("policy.pdf"),
+])
+print(result.output)
+```
+
+The same code works against OpenAI, Azure, Anthropic, Bedrock, and Ollama —
+provider-specific wire formatting (and OpenAI's tool-message workaround) is
+handled inside `LLMClient`. See [docs/multimodal/](docs/multimodal/index.md).
 
 ## Debug a failing agent in 30 seconds
 

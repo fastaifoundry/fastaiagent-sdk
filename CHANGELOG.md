@@ -5,6 +5,69 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-05-01
+
+**The multimodal release.** Images and PDFs are now first-class inputs to
+every primitive — Agent, Chain, Swarm, Supervisor, Replay, Eval, and the
+Local UI. Provider-specific wire formatting is hidden behind `LLMClient`
+so the same code works against OpenAI, Azure, Anthropic, Bedrock, and
+Ollama. See [docs/multimodal/](docs/multimodal/index.md).
+
+### Added
+
+- `fastaiagent.Image` and `fastaiagent.PDF` content types with
+  `from_file` / `from_url` / `from_bytes` constructors and `to_dict` /
+  `from_dict` serialization.
+- `fastaiagent.normalize_input` and `ContentPart` alias.
+- Agent / Chain / Swarm / Supervisor accept `Union[str, Image, PDF, list[ContentPart]]`.
+- `LLMClient(pdf_mode=..., max_pdf_pages=..., max_image_size_mb=...)` config.
+- Vision-capable model registry (`is_vision_capable`, `supports_native_pdf`)
+  with prefix matching for OpenAI, Azure, Anthropic, Bedrock, and Ollama.
+- Auto-resize for oversized images via Pillow with a logged warning.
+- Auto-detection of PDF processing mode (`pdf_mode="auto"` →
+  Anthropic-native / vision / text based on the model's capability).
+- Tool returns of `Image` / `PDF` flow back to the next LLM turn; OpenAI
+  splits tool messages into a (tool-text, user-multimodal) pair to satisfy
+  its API.
+- `trace_attachments` table — span inputs and outputs persist
+  thumbnails (always) and full bytes (opt-in via
+  `fa.config.trace_full_images=True`).
+- `GET /api/traces/{trace_id}/spans/{span_id}/attachments` and
+  `GET /api/traces/{trace_id}/spans/{span_id}/attachments/{attachment_id}`
+  REST endpoints — REST-only, no SSE.
+- `Replay.fork_at(step).modify_input(...)` accepts strings, single
+  `Image` / `PDF`, or a `list[ContentPart]`. The Local UI fork dialog
+  ships an "Add image" file picker that builds the payload.
+- `Dataset.from_jsonl` recognises `{"type":"image","path":...}` /
+  `{"type":"pdf","path":...}` markers in the `input` field; paths are
+  resolved relative to the JSONL file.
+- React UI: `AttachmentGallery` component renders thumbnails inline in
+  the `SpanInspector` Input tab.
+- 90+ new tests across multimodal/agent/chain/swarm/replay/eval/UI
+  layers, plus 7 real-API e2e gates against OpenAI gpt-4o and Anthropic
+  Claude Sonnet 4.
+
+### Changed
+
+- `Message.content` widened from `str | None` to
+  `str | list[ContentPart] | None` (backward compatible).
+- `Agent.run` / `arun` / `astream` input typed as `AgentInput`.
+- DB schema bumped to v3 (forward-only migration adds
+  `trace_attachments` + index; checkpoint migration tests now use
+  `CURRENT_SCHEMA_VERSION` so future bumps don't churn assertions).
+- `Pillow>=10.0` and `pymupdf>=1.24` are now base dependencies (they
+  were previously available only via the `[kb]` extra). Adds ~30 MB to a
+  minimal install in exchange for first-class multimodal support out of
+  the box.
+
+### Deferred
+
+- Vertex / Gemini provider — first-class support is scoped for a
+  follow-up release.
+- Audio / video input — explicitly out of scope.
+- Image/PDF *output* (model-generated artefacts) — planned for a later
+  release.
+
 ## [1.0.0] - 2026-04-30
 
 **The durability release.** Every workflow can now suspend for human
