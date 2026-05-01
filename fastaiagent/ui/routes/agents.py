@@ -7,7 +7,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from fastaiagent.ui.deps import get_context, require_session
+from fastaiagent.ui.deps import get_context, project_filter, require_session
 
 router = APIRouter(prefix="/api/agents", tags=["agents"])
 
@@ -205,12 +205,25 @@ def get_agent_tools(
 
     ctx = get_context(request)
     db = ctx.db()
+    pid_clause, pid_params = project_filter(ctx)
     try:
+        # Project-scope guard: 404 if this agent has no spans in this project,
+        # so cross-project name probing can't confirm existence.
+        if ctx.project_id:
+            probe = db.fetchone(
+                "SELECT 1 FROM spans WHERE name = ? AND project_id = ? LIMIT 1",
+                (f"agent.{name}", ctx.project_id),
+            )
+            if probe is None:
+                raise HTTPException(
+                    status.HTTP_404_NOT_FOUND, f"Agent '{name}' not found"
+                )
         # ── Registered: latest agent.<name> root span with agent.tools JSON ─
         registered: list[dict[str, Any]] = []
         agent_rows = db.fetchall(
-            "SELECT attributes FROM spans WHERE name = ? ORDER BY start_time DESC LIMIT 1",
-            (f"agent.{name}",),
+            f"SELECT attributes FROM spans WHERE name = ? {pid_clause} "
+            "ORDER BY start_time DESC LIMIT 1",
+            (f"agent.{name}", *pid_params),
         )
         if agent_rows:
             try:
@@ -240,8 +253,8 @@ def get_agent_tools(
         # one-level nesting we ship today.
         tool_agg: dict[str, dict[str, Any]] = {}
         trace_rows = db.fetchall(
-            "SELECT DISTINCT trace_id FROM spans WHERE name = ?",
-            (f"agent.{name}",),
+            f"SELECT DISTINCT trace_id FROM spans WHERE name = ? {pid_clause}",
+            (f"agent.{name}", *pid_params),
         )
         trace_ids = [r["trace_id"] for r in trace_rows if r.get("trace_id")]
         if trace_ids:
@@ -250,8 +263,8 @@ def get_agent_tools(
                 f"""SELECT name, status, start_time, end_time, attributes
                     FROM spans
                     WHERE trace_id IN ({placeholders})
-                      AND name LIKE 'tool.%'""",
-                tuple(trace_ids),
+                      AND name LIKE 'tool.%' {pid_clause}""",
+                (*trace_ids, *pid_params),
             )
             for span in tool_span_rows:
                 try:

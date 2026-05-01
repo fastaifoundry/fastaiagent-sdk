@@ -312,16 +312,28 @@ async def kb_lineage(
     limit = max(min(limit, 500), 1)
     span_name = f"retrieval.{name}"
     db = ctx.db()
-    span_rows = db.fetchall(
-        """
-        SELECT trace_id, span_id, start_time, attributes
-        FROM spans
-        WHERE name = ?
-        ORDER BY start_time DESC
-        LIMIT ?
-        """,
-        (span_name, limit),
-    )
+    if ctx.project_id:
+        span_rows = db.fetchall(
+            """
+            SELECT trace_id, span_id, start_time, attributes
+            FROM spans
+            WHERE name = ? AND project_id = ?
+            ORDER BY start_time DESC
+            LIMIT ?
+            """,
+            (span_name, ctx.project_id, limit),
+        )
+    else:
+        span_rows = db.fetchall(
+            """
+            SELECT trace_id, span_id, start_time, attributes
+            FROM spans
+            WHERE name = ?
+            ORDER BY start_time DESC
+            LIMIT ?
+            """,
+            (span_name, limit),
+        )
     from fastaiagent.ui.attrs import attr
 
     agents: dict[str, int] = {}
@@ -342,11 +354,19 @@ async def kb_lineage(
 
     recent_traces = []
     for tid in trace_ids[:20]:
-        root = db.fetchone(
-            "SELECT name, start_time, attributes, status "
-            "FROM spans WHERE trace_id = ? AND parent_span_id IS NULL LIMIT 1",
-            (tid,),
-        )
+        if ctx.project_id:
+            root = db.fetchone(
+                "SELECT name, start_time, attributes, status "
+                "FROM spans WHERE trace_id = ? AND parent_span_id IS NULL "
+                "AND project_id = ? LIMIT 1",
+                (tid, ctx.project_id),
+            )
+        else:
+            root = db.fetchone(
+                "SELECT name, start_time, attributes, status "
+                "FROM spans WHERE trace_id = ? AND parent_span_id IS NULL LIMIT 1",
+                (tid,),
+            )
         if not root:
             continue
         try:

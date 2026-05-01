@@ -8,7 +8,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 
-from fastaiagent.ui.deps import get_context, require_session
+from fastaiagent.ui.deps import get_context, project_filter, require_session
 
 router = APIRouter(prefix="/api", tags=["overview"])
 
@@ -16,6 +16,7 @@ router = APIRouter(prefix="/api", tags=["overview"])
 @router.get("/overview")
 def overview(request: Request, _user: str = Depends(require_session)) -> dict[str, Any]:
     ctx = get_context(request)
+    pid_clause, pid_params = project_filter(ctx)
     db = ctx.db()
     try:
         now = datetime.now(tz=timezone.utc)
@@ -23,51 +24,61 @@ def overview(request: Request, _user: str = Depends(require_session)) -> dict[st
         week_ago = (now - timedelta(days=7)).isoformat()
 
         total_day = db.fetchone(
-            "SELECT COUNT(DISTINCT trace_id) AS n FROM spans WHERE start_time >= ?",
-            (day_ago,),
+            f"SELECT COUNT(DISTINCT trace_id) AS n FROM spans "
+            f"WHERE start_time >= ? {pid_clause}",
+            (day_ago, *pid_params),
         )
         failing_day = db.fetchone(
-            """SELECT COUNT(DISTINCT trace_id) AS n FROM spans
-               WHERE status != 'OK' AND start_time >= ?""",
-            (day_ago,),
+            f"""SELECT COUNT(DISTINCT trace_id) AS n FROM spans
+               WHERE status != 'OK' AND start_time >= ? {pid_clause}""",
+            (day_ago, *pid_params),
         )
         runs_week = db.fetchone(
-            "SELECT COUNT(*) AS n FROM eval_runs WHERE started_at >= ?",
-            (week_ago,),
+            f"SELECT COUNT(*) AS n FROM eval_runs WHERE started_at >= ? {pid_clause}",
+            (week_ago, *pid_params),
         )
         avg_pass = db.fetchone(
-            "SELECT AVG(pass_rate) AS pr FROM eval_runs WHERE started_at >= ?",
-            (week_ago,),
+            f"SELECT AVG(pass_rate) AS pr FROM eval_runs WHERE started_at >= ? {pid_clause}",
+            (week_ago, *pid_params),
+        )
+        # GROUP BY trace_id queries can't take a WHERE on project_id without
+        # a clause — inject it via the same helper at the outermost WHERE.
+        where_for_recent = (
+            f"WHERE project_id = ?" if ctx.project_id else ""
         )
         recent_traces = db.fetchall(
-            """SELECT trace_id, MIN(name) AS name, MIN(start_time) AS start_time,
+            f"""SELECT trace_id, MIN(name) AS name, MIN(start_time) AS start_time,
                       MIN(status) AS status
                FROM spans
+               {where_for_recent}
                GROUP BY trace_id
                ORDER BY start_time DESC
-               LIMIT 5"""
+               LIMIT 5""",
+            (ctx.project_id,) if ctx.project_id else (),
         )
         recent_runs = db.fetchall(
-            """SELECT run_id, run_name, dataset_name, pass_rate, started_at
+            f"""SELECT run_id, run_name, dataset_name, pass_rate, started_at
                FROM eval_runs
+               {where_for_recent}
                ORDER BY started_at DESC
-               LIMIT 5"""
+               LIMIT 5""",
+            (ctx.project_id,) if ctx.project_id else (),
         )
         prompt_changes = db.fetchall(
-            """SELECT slug, version, created_at
+            f"""SELECT slug, version, created_at
                FROM prompt_versions
-               WHERE created_at >= ?
+               WHERE created_at >= ? {pid_clause}
                ORDER BY created_at DESC
                LIMIT 10""",
-            (week_ago,),
+            (week_ago, *pid_params),
         )
         recent_errors = db.fetchall(
-            """SELECT trace_id, name, start_time, status, attributes
+            f"""SELECT trace_id, name, start_time, status, attributes
                FROM spans
-               WHERE status != 'OK' AND start_time >= ?
+               WHERE status != 'OK' AND start_time >= ? {pid_clause}
                ORDER BY start_time DESC
                LIMIT 10""",
-            (day_ago,),
+            (day_ago, *pid_params),
         )
         from fastaiagent.ui.attrs import attr
 
@@ -83,10 +94,14 @@ def overview(request: Request, _user: str = Depends(require_session)) -> dict[st
                 agents_with_errors[name] = agents_with_errors.get(name, 0) + 1
 
         # Phase 10 — durability KPIs for the Home page.
-        pending_approvals = db.fetchone("SELECT COUNT(*) AS n FROM pending_interrupts")
+        pending_approvals = db.fetchone(
+            f"SELECT COUNT(*) AS n FROM pending_interrupts {where_for_recent}",
+            (ctx.project_id,) if ctx.project_id else (),
+        )
         failed_executions = db.fetchone(
-            """SELECT COUNT(DISTINCT execution_id) AS n FROM checkpoints
-               WHERE status IN ('failed', 'interrupted')"""
+            f"""SELECT COUNT(DISTINCT execution_id) AS n FROM checkpoints
+               WHERE status IN ('failed', 'interrupted') {pid_clause}""",
+            tuple(pid_params),
         )
 
         return {

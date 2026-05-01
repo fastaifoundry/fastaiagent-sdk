@@ -60,6 +60,9 @@ def list_events(
         if until:
             clauses.append("timestamp <= ?")
             params.append(until)
+        if ctx.project_id:
+            clauses.append("project_id = ?")
+            params.append(ctx.project_id)
 
         where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         count_row = db.fetchone(

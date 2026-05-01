@@ -200,15 +200,32 @@ def save_parts_for_span(
 
 
 def get_attachment(
-    *, db: SQLiteHelper, attachment_id: str
+    *,
+    db: SQLiteHelper,
+    attachment_id: str,
+    project_id: str | None = None,
 ) -> AttachmentRecord | None:
-    """Fetch a single attachment row. Returns ``None`` when absent."""
-    row = db.fetchone(
-        """SELECT attachment_id, trace_id, span_id, media_type, size_bytes,
-                  thumbnail, full_data, metadata_json, created_at
-           FROM trace_attachments WHERE attachment_id = ?""",
-        (attachment_id,),
-    )
+    """Fetch a single attachment row. Returns ``None`` when absent.
+
+    ``project_id`` (optional) scopes the read so cross-project lookups
+    don't leak. Pass the empty string or ``None`` for the legacy
+    unscoped behavior used by tests with no project_id stamping.
+    """
+    if project_id:
+        row = db.fetchone(
+            """SELECT attachment_id, trace_id, span_id, media_type, size_bytes,
+                      thumbnail, full_data, metadata_json, created_at
+               FROM trace_attachments
+               WHERE attachment_id = ? AND project_id = ?""",
+            (attachment_id, project_id),
+        )
+    else:
+        row = db.fetchone(
+            """SELECT attachment_id, trace_id, span_id, media_type, size_bytes,
+                      thumbnail, full_data, metadata_json, created_at
+               FROM trace_attachments WHERE attachment_id = ?""",
+            (attachment_id,),
+        )
     if not row:
         return None
     return AttachmentRecord(
@@ -225,17 +242,35 @@ def get_attachment(
 
 
 def list_attachments_for_span(
-    *, db: SQLiteHelper, trace_id: str, span_id: str
+    *,
+    db: SQLiteHelper,
+    trace_id: str,
+    span_id: str,
+    project_id: str | None = None,
 ) -> list[AttachmentRecord]:
-    """All attachments for a span, ordered by creation."""
-    rows = db.fetchall(
-        """SELECT attachment_id, trace_id, span_id, media_type, size_bytes,
-                  thumbnail, full_data, metadata_json, created_at
-           FROM trace_attachments
-           WHERE trace_id = ? AND span_id = ?
-           ORDER BY created_at""",
-        (trace_id, span_id),
-    )
+    """All attachments for a span, ordered by creation.
+
+    ``project_id`` (optional) scopes the read so cross-project lookups
+    don't leak.
+    """
+    if project_id:
+        rows = db.fetchall(
+            """SELECT attachment_id, trace_id, span_id, media_type, size_bytes,
+                      thumbnail, full_data, metadata_json, created_at
+               FROM trace_attachments
+               WHERE trace_id = ? AND span_id = ? AND project_id = ?
+               ORDER BY created_at""",
+            (trace_id, span_id, project_id),
+        )
+    else:
+        rows = db.fetchall(
+            """SELECT attachment_id, trace_id, span_id, media_type, size_bytes,
+                      thumbnail, full_data, metadata_json, created_at
+               FROM trace_attachments
+               WHERE trace_id = ? AND span_id = ?
+               ORDER BY created_at""",
+            (trace_id, span_id),
+        )
     return [
         AttachmentRecord(
             attachment_id=r["attachment_id"],

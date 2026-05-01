@@ -9,7 +9,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 
-from fastaiagent.ui.deps import get_context, require_session
+from fastaiagent.ui.deps import get_context, project_filter, require_session
 
 router = APIRouter(prefix="/api", tags=["traces"])
 
@@ -217,10 +217,15 @@ def list_traces(
         paginated = trace_rows[offset : offset + page_size]
 
         out: list[TraceRow] = []
+        # Reuse the outer project filter so the inner per-trace SELECT is
+        # also scoped — defense in depth even though the outer query has
+        # already narrowed the trace_ids to this project.
+        inner_pid_clause, inner_pid_params = project_filter(ctx)
         for row in paginated:
             spans = db.fetchall(
-                "SELECT * FROM spans WHERE trace_id = ? ORDER BY start_time",
-                (row["trace_id"],),
+                f"SELECT * FROM spans WHERE trace_id = ? {inner_pid_clause} "
+                "ORDER BY start_time",
+                (row["trace_id"], *inner_pid_params),
             )
             summary = _summarize_trace(spans)
 
@@ -272,10 +277,14 @@ def list_traces(
 def list_threads(request: Request, _user: str = Depends(require_session)) -> dict[str, Any]:
     ctx = get_context(request)
     db = ctx.db()
+    pid_clause, pid_params = project_filter(ctx)
     try:
         from fastaiagent.ui.attrs import attr
 
-        rows = db.fetchall("SELECT trace_id, attributes FROM spans WHERE parent_span_id IS NULL")
+        rows = db.fetchall(
+            f"SELECT trace_id, attributes FROM spans WHERE parent_span_id IS NULL {pid_clause}",
+            tuple(pid_params),
+        )
         groups: dict[str, list[str]] = {}
         for row in rows:
             attrs = _row_attrs(row)
@@ -297,12 +306,14 @@ def compare_traces(
 ) -> dict[str, Any]:
     ctx = get_context(request)
     db = ctx.db()
+    pid_clause, pid_params = project_filter(ctx)
     try:
 
         def spans_for(trace_id: str) -> list[SpanRow]:
             rows = db.fetchall(
-                "SELECT * FROM spans WHERE trace_id = ? ORDER BY start_time",
-                (trace_id,),
+                f"SELECT * FROM spans WHERE trace_id = ? {pid_clause} "
+                "ORDER BY start_time",
+                (trace_id, *pid_params),
             )
             return [_row_to_span(r) for r in rows]
 
@@ -328,24 +339,26 @@ def get_trace_scores(
     """
     ctx = get_context(request)
     db = ctx.db()
+    pid_clause, pid_params = project_filter(ctx)
+    pid_clause_c, _ = project_filter(ctx, alias="c")
     try:
         guardrail_rows = db.fetchall(
-            """SELECT event_id, guardrail_name, guardrail_type, position,
+            f"""SELECT event_id, guardrail_name, guardrail_type, position,
                       outcome, score, message, agent_name, timestamp
                FROM guardrail_events
-               WHERE trace_id = ?
+               WHERE trace_id = ? {pid_clause}
                ORDER BY timestamp""",
-            (trace_id,),
+            (trace_id, *pid_params),
         )
         eval_rows = db.fetchall(
-            """SELECT c.case_id, c.run_id, c.ordinal, c.per_scorer,
+            f"""SELECT c.case_id, c.run_id, c.ordinal, c.per_scorer,
                       c.input, c.expected_output, c.actual_output,
                       r.run_name, r.dataset_name, r.started_at
                FROM eval_cases c
                LEFT JOIN eval_runs r ON c.run_id = r.run_id
-               WHERE c.trace_id = ?
+               WHERE c.trace_id = ? {pid_clause_c}
                ORDER BY r.started_at DESC""",
-            (trace_id,),
+            (trace_id, *pid_params),
         )
         for row in eval_rows:
             for key in ("per_scorer", "input", "expected_output", "actual_output"):
@@ -372,27 +385,30 @@ def get_thread(
     """List every trace sharing ``thread_id``, newest first, with summaries."""
     ctx = get_context(request)
     db = ctx.db()
+    pid_clause, pid_params = project_filter(ctx)
     try:
         # Accept every prefix variant so traces from older SDK releases still
         # surface here. Three LIKEs rather than one regex — SQLite LIKE is
         # cheap on the small tables this tool targets.
         trace_rows = db.fetchall(
-            """SELECT DISTINCT trace_id
+            f"""SELECT DISTINCT trace_id
                FROM spans
-               WHERE attributes LIKE ?
+               WHERE (attributes LIKE ?
                   OR attributes LIKE ?
-                  OR attributes LIKE ?""",
+                  OR attributes LIKE ?) {pid_clause}""",
             (
                 f'%"fastaiagent.thread.id": "{thread_id}"%',
                 f'%"thread.id": "{thread_id}"%',
                 f'%"agent.thread_id": "{thread_id}"%',
+                *pid_params,
             ),
         )
         out: list[dict[str, Any]] = []
         for row in trace_rows:
             spans = db.fetchall(
-                "SELECT * FROM spans WHERE trace_id = ? ORDER BY start_time",
-                (row["trace_id"],),
+                f"SELECT * FROM spans WHERE trace_id = ? {pid_clause} "
+                "ORDER BY start_time",
+                (row["trace_id"], *pid_params),
             )
             summary = _summarize_trace(spans)
             duration = _ms(summary["start_time"], summary["end_time"])
@@ -470,10 +486,11 @@ def get_spans(
 ) -> dict[str, Any]:
     ctx = get_context(request)
     db = ctx.db()
+    pid_clause, pid_params = project_filter(ctx)
     try:
         rows = db.fetchall(
-            "SELECT * FROM spans WHERE trace_id = ? ORDER BY start_time",
-            (trace_id,),
+            f"SELECT * FROM spans WHERE trace_id = ? {pid_clause} ORDER BY start_time",
+            (trace_id, *pid_params),
         )
         if not rows:
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"Trace '{trace_id}' not found")
@@ -500,7 +517,12 @@ def list_span_attachments(
     ctx = get_context(request)
     db = ctx.db()
     try:
-        records = list_attachments_for_span(db=db, trace_id=trace_id, span_id=span_id)
+        records = list_attachments_for_span(
+            db=db,
+            trace_id=trace_id,
+            span_id=span_id,
+            project_id=ctx.project_id or None,
+        )
         return {
             "attachments": [
                 {
@@ -540,7 +562,11 @@ def get_span_attachment(
     ctx = get_context(request)
     db = ctx.db()
     try:
-        record = get_attachment(db=db, attachment_id=attachment_id)
+        record = get_attachment(
+            db=db,
+            attachment_id=attachment_id,
+            project_id=ctx.project_id or None,
+        )
         if record is None or record.trace_id != trace_id or record.span_id != span_id:
             raise HTTPException(
                 status.HTTP_404_NOT_FOUND,

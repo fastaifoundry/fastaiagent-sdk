@@ -75,6 +75,25 @@ def current_project_id(request: Request) -> str:
     return get_context(request).project_id
 
 
+def project_filter(ctx: AppContext, *, alias: str | None = None) -> tuple[str, tuple[Any, ...]]:
+    """Return the SQL clause + bind tuple for a project_id filter.
+
+    Use to mechanically scope every project-owned SELECT::
+
+        clause, params_extra = project_filter(ctx)
+        rows = db.fetchall(f"SELECT * FROM spans WHERE x = ? {clause}", (x, *params_extra))
+
+    When the AppContext has no ``project_id`` set (legacy / test
+    fixtures), returns ``("", ())`` so the caller's SQL is unchanged.
+    Always emits ``AND project_id = ?`` (with the optional table alias)
+    so it composes cleanly inside an existing WHERE clause.
+    """
+    if not ctx.project_id:
+        return "", ()
+    column = f"{alias}.project_id" if alias else "project_id"
+    return f"AND {column} = ?", (ctx.project_id,)
+
+
 def require_session(request: Request) -> str:
     """FastAPI dependency that returns the logged-in username.
 

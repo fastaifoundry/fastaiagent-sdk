@@ -81,17 +81,39 @@ Existing rows pre-migration are backfilled with the current
 
 ## What gets filtered
 
-Every Local UI read endpoint that surfaces project-owned data filters
-by `project_id`:
+**Every** Local UI read endpoint that surfaces project-owned data
+filters by `project_id`. The list below is exhaustive — a parameterised
+leakage test in
+[`tests/e2e/test_project_scoping.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/tests/e2e/test_project_scoping.py)
+asserts that none of these reveal another project's data:
 
-- `GET /api/traces`, `GET /api/traces/{trace_id}`
-- `GET /api/agents`, `GET /api/agents/{name}`
-- `GET /api/workflows`, `GET /api/workflows/{type}/{name}`
-- `GET /api/analytics`, `GET /api/analytics/costs`
+- Traces — `GET /api/traces`, `GET /api/traces/{id}`,
+  `GET /api/traces/{id}/spans`, `GET /api/traces/{id}/scores`,
+  `GET /api/traces/{id}/spans/{span_id}/attachments` (+ binary stream),
+  `GET /api/traces/threads`, `GET /api/threads/{thread_id}`,
+  `GET /api/traces/compare`
+- Agents — `GET /api/agents`, `GET /api/agents/{name}`,
+  `GET /api/agents/{name}/tools`
+- Workflows — `GET /api/workflows`, `GET /api/workflows/{type}/{name}`
+- Analytics — `GET /api/analytics`, `GET /api/analytics/costs`
+- Overview — `GET /api/overview`
+- Prompts — `GET /api/prompts`, `GET /api/prompts/{slug}`,
+  `GET /api/prompts/{slug}/versions`,
+  `GET /api/prompts/{slug}/lineage`
+- Evals — `GET /api/evals`, `GET /api/evals/{run_id}`,
+  `GET /api/evals/trend`, `GET /api/evals/compare`
+- Guardrails — `GET /api/guardrails`
+- Executions — `GET /api/pending-interrupts`,
+  `GET /api/executions/{id}`,
+  `GET /api/executions/{id}/idempotency-cache`,
+  `POST /api/executions/{id}/resume`
+- KB lineage — `GET /api/kb/{name}/lineage`
 
-Endpoints that work with primary keys (e.g. fetching one specific
-prompt by slug, one eval case by id) are scoped via the underlying
-table read; cross-project reads return 404 instead of leaking.
+Per-id endpoints (single trace, single eval run, single prompt,
+single execution) return **404** for cross-project lookups so a
+probing caller can't even confirm the resource exists in another
+project. List endpoints return 200 with no rows belonging to other
+projects.
 
 When `project_id` is the empty string the filter is skipped — this is
 the **legacy / unscoped mode** used by tests and pre-v4 databases.
