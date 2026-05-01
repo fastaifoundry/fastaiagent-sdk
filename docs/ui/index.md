@@ -304,6 +304,12 @@ adjacent expanded rows and an idempotency-cache panel listing the
 `@idempotent` results that would be skipped on resume. See
 [Checkpoint inspector](checkpoint-inspector.md).
 
+#### Cost tracking
+
+A **// COST BREAKDOWN** section at the bottom of Analytics slices spend
+three ways: by model, by agent, or by chain node. See
+[Cost tracking](cost-tracking.md).
+
 ### Agents
 
 Cards summarizing every agent the SDK has seen: run count, success rate

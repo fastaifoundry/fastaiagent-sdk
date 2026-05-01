@@ -429,6 +429,43 @@ export interface WorkflowTopology {
   max_delegation_rounds?: number;
 }
 
+// ---------------------------------------------------------------------------
+// Cost breakdown
+// ---------------------------------------------------------------------------
+
+export type CostGroupBy = "model" | "agent" | "node";
+
+export interface CostByModelRow {
+  model: string;
+  calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+}
+
+export interface CostByAgentRow {
+  agent: string;
+  runs: number;
+  avg_tokens: number;
+  avg_cost_usd: number;
+  total_cost_usd: number;
+}
+
+export interface CostByNodeRow {
+  node: string;
+  executions: number;
+  avg_duration_ms: number;
+  avg_cost_usd: number;
+  percent_of_total: number;
+}
+
+export interface CostBreakdownResponse {
+  group_by: CostGroupBy;
+  period: string;
+  chain_name?: string | null;
+  rows: CostByModelRow[] | CostByAgentRow[] | CostByNodeRow[];
+}
+
 export type ToolOrigin =
   | "function"
   | "mcp"

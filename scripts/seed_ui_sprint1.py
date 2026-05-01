@@ -60,6 +60,7 @@ def seed(db_path: Path) -> None:
     with SQLiteHelper(db_path) as db:
         _seed_multimodal_trace(db, now)
         _seed_checkpoints(db, now)
+        _seed_cost_spans(db, now)
 
 
 def _seed_multimodal_trace(db: SQLiteHelper, now: datetime) -> None:
@@ -147,6 +148,75 @@ def _seed_multimodal_trace(db: SQLiteHelper, now: datetime) -> None:
                 img_bytes,  # store full data so the modal opens
                 json.dumps({"width": 320, "height": 200}),
                 _iso(now),
+            ),
+        )
+
+
+def _seed_cost_spans(db: SQLiteHelper, now: datetime) -> None:
+    """Cost-bearing LLM spans for the cost-breakdown screenshots.
+
+    Lay down a couple of named-chain runs across two models so the
+    by-model / by-agent / by-node tables all have meaningful rows.
+    """
+    base = now - timedelta(hours=2)
+    fixtures = [
+        # (model, in_tokens, out_tokens, agent, chain_node)
+        ("gpt-4o", 1240, 340, "researcher", "research"),
+        ("gpt-4o-mini", 890, 290, "summarizer", "summarize"),
+        ("gpt-4o-mini", 1100, 380, "researcher", "research"),
+        ("claude-sonnet-4", 120, 28, "support-bot", "respond"),
+        ("gpt-4o-mini", 540, 160, "support-bot", "respond"),
+    ]
+    for i, (model, in_t, out_t, agent_name, node_id) in enumerate(fixtures):
+        trace_id = f"cost-trace-{i:02d}"
+        root_id = f"cost-root-{i:02d}"
+        llm_id = f"cost-llm-{i:02d}"
+        start = base + timedelta(minutes=i * 7)
+        end = start + timedelta(milliseconds=400 + i * 100)
+        # Root agent span — the by-agent breakdown counts these as runs.
+        db.execute(
+            """INSERT OR REPLACE INTO spans
+               (span_id, trace_id, parent_span_id, name, start_time, end_time,
+                status, attributes, events)
+               VALUES (?, ?, NULL, ?, ?, ?, 'OK', ?, '[]')""",
+            (
+                root_id,
+                trace_id,
+                f"agent.{agent_name}",
+                _iso(start),
+                _iso(end),
+                json.dumps(
+                    {
+                        "agent.name": agent_name,
+                        "chain.name": "support-flow",
+                        "chain.node_id": node_id,
+                    }
+                ),
+            ),
+        )
+        # LLM child span — the by-model and by-node breakdowns aggregate here.
+        db.execute(
+            """INSERT OR REPLACE INTO spans
+               (span_id, trace_id, parent_span_id, name, start_time, end_time,
+                status, attributes, events)
+               VALUES (?, ?, ?, ?, ?, ?, 'OK', ?, '[]')""",
+            (
+                llm_id,
+                trace_id,
+                root_id,
+                f"llm.openai.{model}",
+                _iso(start),
+                _iso(end),
+                json.dumps(
+                    {
+                        "gen_ai.request.model": model,
+                        "gen_ai.usage.input_tokens": in_t,
+                        "gen_ai.usage.output_tokens": out_t,
+                        "agent.name": agent_name,
+                        "chain.name": "support-flow",
+                        "chain.node_id": node_id,
+                    }
+                ),
             ),
         )
 

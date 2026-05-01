@@ -138,6 +138,7 @@ nav:
       - "Workflow visualization": ui/workflow-visualization.md
       - "Multimodal traces": ui/multimodal.md
       - "Checkpoint inspector": ui/checkpoint-inspector.md
+      - "Cost tracking": ui/cost-tracking.md
   - Platform:
       - platform/index.md
   - Deployment:

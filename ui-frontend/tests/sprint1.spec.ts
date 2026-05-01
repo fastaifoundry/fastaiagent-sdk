@@ -196,3 +196,57 @@ test("sprint1-3b — expanding two adjacent rows shows the state diff", async ({
   await page.waitForTimeout(300);
   await page.screenshot(SHOT("sprint1-3b-checkpoint-state-diff"));
 });
+
+// ---------------------------------------------------------------------------
+// Feature 4 — Cost tracking dashboard
+// ---------------------------------------------------------------------------
+
+test("sprint1-4 — analytics page renders the cost breakdown by model", async ({
+  page,
+}) => {
+  await page.goto("/analytics");
+  await expect(
+    page.getByRole("heading", { name: /Analytics/i })
+  ).toBeVisible();
+
+  // Scroll to the cost breakdown section.
+  const section = page.locator('[data-testid="cost-breakdown-section"]');
+  await section.scrollIntoViewIfNeeded();
+
+  // The default tab is "By model" — table renders one row per LLM model
+  // the seeder used.
+  const tab = page.locator('[data-testid="cost-breakdown-model"]');
+  await expect(tab).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText("gpt-4o-mini").first()).toBeVisible();
+  await expect(page.getByText("claude-sonnet-4").first()).toBeVisible();
+
+  await page.waitForTimeout(300);
+  await page.screenshot(SHOT("sprint1-4-cost-by-model"));
+});
+
+test("sprint1-4b — by-agent and by-node breakdowns light up on tab switch", async ({
+  page,
+}) => {
+  await page.goto("/analytics");
+  await page
+    .locator('[data-testid="cost-breakdown-section"]')
+    .scrollIntoViewIfNeeded();
+
+  // By agent tab — agent rows from the seed.
+  await page.getByRole("tab", { name: /By agent/i }).click();
+  await expect(
+    page.locator('[data-testid="cost-breakdown-agent"]')
+  ).toBeVisible();
+  await expect(page.getByText("researcher").first()).toBeVisible();
+
+  // By node tab — requires a chain name. Type one in.
+  await page.getByRole("tab", { name: /By node/i }).click();
+  await page.getByLabel(/Chain name/i).fill("support-flow");
+  await expect(
+    page.locator('[data-testid="cost-breakdown-node"]')
+  ).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText("research").first()).toBeVisible();
+
+  await page.waitForTimeout(300);
+  await page.screenshot(SHOT("sprint1-4b-cost-by-node"));
+});
