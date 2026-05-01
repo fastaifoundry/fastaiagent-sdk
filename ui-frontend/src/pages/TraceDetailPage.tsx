@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ChevronLeft, Download, Play, RefreshCw } from "lucide-react";
+import { ChevronLeft, Play, RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { TableSkeleton } from "@/components/shared/LoadingSkeleton";
@@ -9,6 +9,7 @@ import { SpanInspector } from "@/components/traces/SpanInspector";
 import { SpanTree } from "@/components/traces/SpanTree";
 import { TraceScoresCard } from "@/components/traces/TraceScoresCard";
 import { TraceSummaryBar } from "@/components/traces/TraceSummaryBar";
+import { ExportTraceDialog } from "@/components/traces/ExportTraceDialog";
 import { useTrace, useTraceSpans } from "@/hooks/use-traces";
 import type { SpanRow } from "@/lib/types";
 
@@ -79,16 +80,7 @@ export function TraceDetailPage() {
           />
           Refresh
         </Button>
-        <a
-          href={`/api/traces/${trace.data.trace_id}/export`}
-          target="_blank"
-          rel="noreferrer"
-        >
-          <Button variant="outline" size="sm">
-            <Download className="mr-1.5 h-3.5 w-3.5" />
-            Export
-          </Button>
-        </a>
+        <ExportTraceDialog traceId={trace.data.trace_id} />
         <Link to={`/traces/${trace.data.trace_id}/replay`}>
           <Button size="sm">
             <Play className="mr-1.5 h-3.5 w-3.5" />

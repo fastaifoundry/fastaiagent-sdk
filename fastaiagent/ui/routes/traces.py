@@ -554,9 +554,61 @@ def get_span_attachment(
 def export_trace(
     request: Request,
     trace_id: str,
+    include_attachments: bool = Query(
+        False, description="Embed attachment bytes as base64 in the JSON."
+    ),
+    include_checkpoint_state: bool = Query(
+        False,
+        description="Include the full state_snapshot for each checkpoint.",
+    ),
     _user: str = Depends(require_session),
-) -> dict[str, Any]:
-    return get_trace(request, trace_id, _user)
+) -> Any:
+    """Self-contained, human-readable JSON export of a trace.
+
+    Schema is single-sourced via :func:`fastaiagent.trace.trace_export.build_export_payload`,
+    so the same shape is used by ``fastaiagent export-trace`` on the CLI.
+    Attachments default to metadata-only — set ``include_attachments=true``
+    to embed base64 bytes (caps streamed response at 100 MB).
+    """
+    import json as _json
+
+    from fastapi.responses import Response
+
+    from fastaiagent.trace.trace_export import build_export_payload
+
+    ctx = get_context(request)
+    db = ctx.db()
+    try:
+        try:
+            payload = build_export_payload(
+                db,
+                trace_id,
+                include_attachments=include_attachments,
+                include_checkpoint_state=include_checkpoint_state,
+            )
+        except KeyError as exc:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND, f"Trace '{trace_id}' not found"
+            ) from exc
+    finally:
+        db.close()
+
+    body = _json.dumps(payload, indent=2, default=str)
+    if len(body) > 100 * 1024 * 1024:
+        raise HTTPException(
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            (
+                f"Export for trace '{trace_id}' would exceed the 100MB cap. "
+                "Re-export without --include-attachments or filter via the CLI."
+            ),
+        )
+    return Response(
+        content=body,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="trace-{trace_id}.json"'
+        },
+    )
 
 
 class BulkDeleteRequest(BaseModel):

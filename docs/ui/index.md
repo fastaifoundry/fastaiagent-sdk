@@ -310,6 +310,13 @@ A **// COST BREAKDOWN** section at the bottom of Analytics slices spend
 three ways: by model, by agent, or by chain node. See
 [Cost tracking](cost-tracking.md).
 
+#### Export trace as JSON
+
+The trace detail page has an **Export** button that opens a dialog with
+checkboxes for embedding attachment bytes and checkpoint state. The
+same export is available via `fastaiagent export-trace --trace-id <id>
+--output <path>` on the CLI. See [Export trace as JSON](export-trace.md).
+
 ### Agents
 
 Cards summarizing every agent the SDK has seen: run count, success rate

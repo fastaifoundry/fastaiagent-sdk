@@ -250,3 +250,55 @@ test("sprint1-4b — by-agent and by-node breakdowns light up on tab switch", as
   await page.waitForTimeout(300);
   await page.screenshot(SHOT("sprint1-4b-cost-by-node"));
 });
+
+// ---------------------------------------------------------------------------
+// Feature 5 — Export trace as JSON
+// ---------------------------------------------------------------------------
+
+test("sprint1-5 — export dialog opens and toggles change the download URL", async ({
+  page,
+}) => {
+  await page.goto(`/traces/${MM_TRACE_ID}`);
+  await expect(
+    page.getByRole("heading", { name: /agent\.vision-bot/i })
+  ).toBeVisible();
+
+  // Click the Export button in the page header to open the dialog.
+  await page.getByTestId("export-trace-button").click();
+  const dialog = page.getByTestId("export-trace-dialog");
+  await expect(dialog).toBeVisible();
+  await expect(
+    dialog.getByText(/Export trace as JSON/i)
+  ).toBeVisible();
+
+  // Default href has no query params.
+  const downloadAnchor = page.getByTestId("export-trace-download");
+  await expect(downloadAnchor).toHaveAttribute(
+    "href",
+    `/api/traces/${MM_TRACE_ID}/export`
+  );
+
+  // Tick "Include image / PDF data".
+  await page.getByTestId("export-include-attachments").click();
+  await expect(downloadAnchor).toHaveAttribute(
+    "href",
+    /include_attachments=true/
+  );
+
+  await page.waitForTimeout(300);
+  await page.screenshot(SHOT("sprint1-5-export-dialog"));
+});
+
+test("sprint1-5b — exporting downloads a self-contained JSON", async ({
+  page,
+}) => {
+  await page.goto(`/traces/${MM_TRACE_ID}`);
+  await page.getByTestId("export-trace-button").click();
+
+  // Click the Download anchor and capture the response.
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByTestId("export-trace-download").click(),
+  ]);
+  expect(download.suggestedFilename()).toContain(MM_TRACE_ID);
+});

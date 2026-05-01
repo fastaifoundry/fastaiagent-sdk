@@ -139,6 +139,7 @@ nav:
       - "Multimodal traces": ui/multimodal.md
       - "Checkpoint inspector": ui/checkpoint-inspector.md
       - "Cost tracking": ui/cost-tracking.md
+      - "Export trace as JSON": ui/export-trace.md
   - Platform:
       - platform/index.md
   - Deployment:

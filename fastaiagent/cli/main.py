@@ -50,6 +50,51 @@ register_resume_commands(app)
 register_checkpointer_commands(app)
 
 
+@app.command(
+    name="export-trace",
+    help=(
+        "Export one trace as a self-contained JSON file. Reads the local "
+        "SQLite DB directly — no UI server required."
+    ),
+)
+def export_trace_cli(
+    trace_id: str = typer.Option(..., "--trace-id", help="Trace ID to export."),
+    output: str = typer.Option(
+        "trace.json", "--output", "-o", help="Output JSON file path."
+    ),
+    include_attachments: bool = typer.Option(
+        False,
+        "--include-attachments",
+        help="Embed image / PDF bytes (base64) in the JSON.",
+    ),
+    include_checkpoint_state: bool = typer.Option(
+        False,
+        "--include-checkpoint-state",
+        help="Embed the full state_snapshot for each checkpoint.",
+    ),
+    db_path: str | None = typer.Option(
+        None,
+        "--db",
+        help=(
+            "Path to local.db. Defaults to the one fastaiagent.config "
+            "resolves (typically .fastaiagent/local.db)."
+        ),
+    ),
+) -> None:
+    from fastaiagent._internal.config import get_config
+    from fastaiagent.trace.trace_export import export_trace_to_file
+
+    resolved = db_path or get_config().local_db_path
+    out = export_trace_to_file(
+        resolved,
+        trace_id,
+        output,
+        include_attachments=include_attachments,
+        include_checkpoint_state=include_checkpoint_state,
+    )
+    typer.echo(f"wrote {out}")
+
+
 # Known optional extras and the packages that identify them. We probe each
 # to produce an honest "what's installed" readout in `fastaiagent version`.
 _KNOWN_EXTRAS: list[tuple[str, str]] = [
