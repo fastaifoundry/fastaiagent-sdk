@@ -17,7 +17,7 @@ from pathlib import Path
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
 
-CURRENT_SCHEMA_VERSION = 3
+CURRENT_SCHEMA_VERSION = 4
 
 # A migration step is either a SQL string or a callable that takes the
 # ``SQLiteHelper`` and runs whatever logic it needs (e.g., gated
@@ -103,6 +103,34 @@ def _v4_backfill_project_id(db: SQLiteHelper) -> None:
             f"UPDATE {table} SET project_id = ? WHERE project_id = ''",
             (pid,),
         )
+
+
+def _v4_create_project_indexes(db: SQLiteHelper) -> None:
+    """Add per-project hot-path indexes on tables that exist.
+
+    Legacy fixtures (checkpoint-only DBs) don't have a ``spans``
+    table; ``IF NOT EXISTS`` on the index doesn't protect against the
+    underlying table being missing, so we gate the CREATE INDEX on a
+    sqlite_master probe.
+    """
+    for table, sql in [
+        (
+            "spans",
+            "CREATE INDEX IF NOT EXISTS idx_spans_project "
+            "ON spans(project_id, start_time DESC)",
+        ),
+        (
+            "checkpoints",
+            "CREATE INDEX IF NOT EXISTS idx_checkpoints_project "
+            "ON checkpoints(project_id, execution_id)",
+        ),
+    ]:
+        rows = db.fetchall(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (table,),
+        )
+        if rows:
+            db.execute(sql)
 
 
 _MIGRATIONS: dict[int, list[_Step]] = {
@@ -291,11 +319,11 @@ _MIGRATIONS: dict[int, list[_Step]] = {
         # SQLite → Postgres migration.
         _v4_add_project_id_columns,
         _v4_backfill_project_id,
-        # Per-project hot-path indexes.
-        """CREATE INDEX IF NOT EXISTS idx_spans_project
-            ON spans(project_id, start_time DESC)""",
-        """CREATE INDEX IF NOT EXISTS idx_checkpoints_project
-            ON checkpoints(project_id, execution_id)""",
+        # Per-project hot-path indexes. Gated on the underlying table
+        # existing — legacy DBs (e.g. checkpoint-only fixtures) might
+        # not have a ``spans`` table at all, and ``IF NOT EXISTS`` on
+        # the index doesn't protect against the table being missing.
+        _v4_create_project_indexes,
     ],
 }
 

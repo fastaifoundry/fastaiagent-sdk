@@ -213,11 +213,22 @@ class TraceStore:
 
     def __init__(self, db_path: str | None = None):
         self.db_path = db_path or get_config().resolved_trace_db_path
-        self._db = SQLiteHelper(self.db_path)
-        self._init_schema()
+        # Run the full migration ladder (incl. v2/v3/v4) so spans /
+        # checkpoints / trace_attachments / project_id columns are in
+        # place even when TraceStore is the first thing the user calls.
+        # Falls back to the inline ``_SCHEMA`` block if the UI module
+        # isn't importable (which only happens in unusual install
+        # configurations — every supported install has it).
+        try:
+            from fastaiagent.ui.db import init_local_db
+
+            self._db = init_local_db(self.db_path)
+        except (ImportError, RuntimeError):
+            self._db = SQLiteHelper(self.db_path)
+            self._init_schema()
 
     def _init_schema(self) -> None:
-        """Ensure the spans table exists (safe on existing DBs)."""
+        """Legacy fallback — only runs when ``init_local_db`` failed."""
         for stmt in _SCHEMA.strip().split(";"):
             stmt = stmt.strip()
             if stmt:
