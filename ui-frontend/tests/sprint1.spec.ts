@@ -76,3 +76,57 @@ test("sprint1-1b — clicking a node opens the detail panel", async ({ page }) =
   await page.waitForTimeout(300);
   await page.screenshot(SHOT("sprint1-1b-workflow-node-detail"));
 });
+
+// ---------------------------------------------------------------------------
+// Feature 2 — Multimodal trace rendering
+// ---------------------------------------------------------------------------
+
+const MM_TRACE_ID = "mm00000000000000000000000000mm01";
+
+test("sprint1-2 — multimodal trace input renders inline image thumbnail", async ({
+  page,
+}) => {
+  await page.goto(`/traces/${MM_TRACE_ID}`);
+
+  // Span tree loads on the left; pick the LLM span which carries the
+  // gen_ai.request.messages attribute with the image content part.
+  await expect(
+    page.getByRole("heading", { name: /agent\.vision-bot/i })
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: /llm\.openai\.gpt-4o-mini/ })
+    .first()
+    .click();
+
+  // The Input tab is selected by default. The MixedContentView should
+  // detect the image_url part and render an <img>.
+  await expect(
+    page.locator('[data-testid="mixed-content-view"]')
+  ).toBeVisible({ timeout: 5000 });
+  await expect(page.locator("img").first()).toBeVisible();
+
+  // The accompanying text part renders too.
+  await expect(
+    page.getByText(/What's in this image\?/i).first()
+  ).toBeVisible();
+
+  await page.waitForTimeout(400);
+  await page.screenshot(SHOT("sprint1-2-multimodal-input"));
+});
+
+test("sprint1-2b — attachment gallery + thumbnail render below content parts", async ({
+  page,
+}) => {
+  await page.goto(`/traces/${MM_TRACE_ID}`);
+
+  // The root agent span has fastaiagent.input.media_count=1 → AttachmentGallery
+  // fetches the thumbnail tile from the binary endpoint and renders it.
+  await page
+    .getByRole("button", { name: /agent\.vision-bot/i })
+    .first()
+    .click();
+  await expect(page.locator("img").first()).toBeVisible({ timeout: 5000 });
+
+  await page.waitForTimeout(400);
+  await page.screenshot(SHOT("sprint1-2b-multimodal-gallery"));
+});

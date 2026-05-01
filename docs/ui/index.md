@@ -288,6 +288,13 @@ delegations all get distinct visual treatments. See
 [Workflow visualization](workflow-visualization.md) for the full
 reference.
 
+#### Multimodal trace rendering
+
+Span input/output tabs render inline image thumbnails and PDF cards
+when the message content carries them — no more raw base64 in the JSON.
+See [Multimodal traces](multimodal.md) for the full reference and a
+screenshot.
+
 ### Agents
 
 Cards summarizing every agent the SDK has seen: run count, success rate

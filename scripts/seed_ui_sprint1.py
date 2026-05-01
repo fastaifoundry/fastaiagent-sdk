@@ -14,6 +14,7 @@ production. The DB path comes from ``argv[1]``.
 from __future__ import annotations
 
 import argparse
+import base64
 import io
 import json
 import sys
@@ -69,6 +70,14 @@ def _seed_multimodal_trace(db: SQLiteHelper, now: datetime) -> None:
     start = now - timedelta(minutes=5)
     end = start + timedelta(seconds=3)
 
+    # Embed the real image bytes as a data URL inside the message so the
+    # MixedContentView's <img> renders without a server round-trip — the
+    # screenshot shows the actual blue rectangle, not a broken-image alt.
+    img_bytes = _png_thumb_bytes()
+    img_data_url = (
+        "data:image/jpeg;base64," + base64.b64encode(img_bytes).decode("ascii")
+    )
+
     # Mixed content message (text + image_url) — what extract_content_parts walks.
     user_msg = [
         {
@@ -77,10 +86,11 @@ def _seed_multimodal_trace(db: SQLiteHelper, now: datetime) -> None:
                 {"type": "text", "text": "What's in this image? Describe in one sentence."},
                 {
                     "type": "image_url",
-                    "image_url": {
-                        "url": "data:image/jpeg;base64,…(thumbnail elided in seed)…",
-                    },
+                    "image_url": {"url": img_data_url},
                     "media_type": "image/jpeg",
+                    "size_bytes": len(img_bytes),
+                    "width": 320,
+                    "height": 200,
                 },
             ],
         }
@@ -100,6 +110,9 @@ def _seed_multimodal_trace(db: SQLiteHelper, now: datetime) -> None:
         "gen_ai.usage.output_tokens": 20,
         "gen_ai.request.messages": json.dumps(user_msg),
         "gen_ai.response.content": "A solid blue rectangle, roughly 320 by 200 pixels.",
+        # Surface the gallery on the LLM span as well so devs can see the
+        # ``trace_attachments`` row — it's where the SDK persists the bytes.
+        "fastaiagent.input.media_count": 1,
     }
 
     for sid, parent, name, attrs, status in [
@@ -114,25 +127,28 @@ def _seed_multimodal_trace(db: SQLiteHelper, now: datetime) -> None:
             (sid, trace_id, parent, name, _iso(start), _iso(end), status, json.dumps(attrs)),
         )
 
-    # The actual attachment — span_id matches the LLM span where the image was sent.
-    img_bytes = _png_thumb_bytes()
-    db.execute(
-        """INSERT OR REPLACE INTO trace_attachments
-           (attachment_id, trace_id, span_id, media_type, size_bytes,
-            thumbnail, full_data, metadata_json, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            uuid.uuid4().hex,
-            trace_id,
-            span_llm,
-            "image/jpeg",
-            len(img_bytes),
-            img_bytes,
-            img_bytes,  # store full data so the modal opens
-            json.dumps({"width": 320, "height": 200}),
-            _iso(now),
-        ),
-    )
+    # Associate the attachment with both the agent root span and the LLM
+    # child span. Real SDK runs write the row twice (once when the agent
+    # receives the multimodal input and again when the LLM sees it). The
+    # screenshot shows the gallery rendering on either side.
+    for sid in (span_root, span_llm):
+        db.execute(
+            """INSERT OR REPLACE INTO trace_attachments
+               (attachment_id, trace_id, span_id, media_type, size_bytes,
+                thumbnail, full_data, metadata_json, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                uuid.uuid4().hex,
+                trace_id,
+                sid,
+                "image/jpeg",
+                len(img_bytes),
+                img_bytes,
+                img_bytes,  # store full data so the modal opens
+                json.dumps({"width": 320, "height": 200}),
+                _iso(now),
+            ),
+        )
 
 
 def _seed_checkpoints(db: SQLiteHelper, now: datetime) -> None:
