@@ -472,6 +472,84 @@ def get_spans(
         db.close()
 
 
+@router.get("/traces/{trace_id}/spans/{span_id}/attachments")
+def list_span_attachments(
+    request: Request,
+    trace_id: str,
+    span_id: str,
+    _user: str = Depends(require_session),
+) -> dict[str, Any]:
+    """Return the attachment metadata for a span (no binary payload).
+
+    Frontend uses this to render thumbnail tiles in the trace inspector;
+    each row's ``attachment_id`` is then passed to the binary endpoint
+    below for the thumbnail or full image bytes.
+    """
+    from fastaiagent.trace.attachments import list_attachments_for_span
+
+    ctx = get_context(request)
+    db = ctx.db()
+    try:
+        records = list_attachments_for_span(db=db, trace_id=trace_id, span_id=span_id)
+        return {
+            "attachments": [
+                {
+                    "attachment_id": r.attachment_id,
+                    "media_type": r.media_type,
+                    "size_bytes": r.size_bytes,
+                    "metadata": r.metadata,
+                    "has_full_data": r.full_data is not None,
+                    "created_at": r.created_at,
+                }
+                for r in records
+            ]
+        }
+    finally:
+        db.close()
+
+
+@router.get("/traces/{trace_id}/spans/{span_id}/attachments/{attachment_id}")
+def get_span_attachment(
+    request: Request,
+    trace_id: str,
+    span_id: str,
+    attachment_id: str,
+    full: bool = Query(default=False, description="Return original bytes when available."),
+    _user: str = Depends(require_session),
+) -> Any:
+    """Stream the binary payload (thumbnail by default, original when ?full=1).
+
+    The thumbnail is always available for image / PDF attachments — PDFs
+    render as a JPEG of page 1. ``full=1`` returns ``full_data`` when the
+    SDK was running with ``trace_full_images=True``; otherwise 404.
+    """
+    from fastapi.responses import Response
+
+    from fastaiagent.trace.attachments import get_attachment
+
+    ctx = get_context(request)
+    db = ctx.db()
+    try:
+        record = get_attachment(db=db, attachment_id=attachment_id)
+        if record is None or record.trace_id != trace_id or record.span_id != span_id:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                f"Attachment '{attachment_id}' not found on span '{span_id}'",
+            )
+        if full:
+            if record.full_data is None:
+                raise HTTPException(
+                    status.HTTP_404_NOT_FOUND,
+                    "full_data not stored — set fa.config.trace_full_images=True before the run",
+                )
+            return Response(content=record.full_data, media_type=record.media_type)
+        if record.thumbnail is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "no thumbnail for this attachment")
+        return Response(content=record.thumbnail, media_type="image/jpeg")
+    finally:
+        db.close()
+
+
 @router.get("/traces/{trace_id}/export")
 def export_trace(
     request: Request,

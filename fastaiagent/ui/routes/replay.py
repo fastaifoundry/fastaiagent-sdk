@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
 from fastaiagent._internal.errors import ReplayError
+from fastaiagent.multimodal.format import resolve_wire_markers as _resolve_modify_input
 from fastaiagent.trace.replay import Replay
 from fastaiagent.trace.storage import TraceStore
 from fastaiagent.ui.deps import get_context, require_session
@@ -79,8 +80,20 @@ def fork(
 
 
 class ModifyRequest(BaseModel):
+    """Modifications to apply to a forked replay before rerun.
+
+    ``input`` accepts the same shapes as :py:meth:`Agent.run`:
+
+    * ``str`` — text-only replacement
+    * ``dict`` — legacy ``{"input": "..."}`` form
+    * ``list[dict]`` — multimodal: each part is one of
+      ``{"type": "text", "text": "..."}``,
+      ``{"type": "image", "data_base64": "...", "media_type": "image/jpeg"}``,
+      ``{"type": "pdf", "data_base64": "..."}``
+    """
+
     prompt: str | None = None
-    input: dict[str, Any] | None = None
+    input: dict[str, Any] | list[dict[str, Any]] | str | None = None
     tool_response: dict[str, Any] | None = None
     config: dict[str, Any] | None = None
     state: dict[str, Any] | None = None
@@ -96,7 +109,7 @@ def modify_fork(
     if body.prompt is not None:
         forked.modify_prompt(body.prompt)
     if body.input is not None:
-        forked.modify_input(body.input)
+        forked.modify_input(_resolve_modify_input(body.input))
     if body.tool_response is not None:
         forked.modify_state({"tool_response": body.tool_response})
     if body.config is not None:

@@ -1,0 +1,4 @@
+{"input": "plain text input", "expected": "ok"}
+{"input": [{"type": "text", "text": "What letters do you see?"}, {"type": "image", "path": "cat.jpg"}], "expected": "CAT"}
+{"input": [{"type": "text", "text": "Summarize the contract."}, {"type": "pdf", "path": "contract.pdf"}], "expected": "Two-year service agreement"}
+{"input": [{"type": "text", "text": "Describe receipt."}, {"type": "image", "path": "receipt.png", "detail": "high"}], "expected": "$47.50"}

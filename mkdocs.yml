@@ -121,6 +121,13 @@ nav:
       - "Similarity & NLP Metrics": evaluation/similarity-metrics.md
       - "Trajectory Scoring": evaluation/trajectory-scoring.md
       - "Session Scoring": evaluation/session-scoring.md
+  - Multimodal:
+      - multimodal/index.md
+      - "When to Use It": multimodal/when-to-use.md
+      - Images: multimodal/images.md
+      - PDFs: multimodal/pdfs.md
+      - "Provider Support": multimodal/providers.md
+      - "Multimodal Eval": multimodal/eval.md
   - Tracing:
       - tracing/index.md
   - Agent Replay:

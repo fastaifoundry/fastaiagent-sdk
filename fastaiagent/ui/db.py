@@ -17,7 +17,7 @@ from pathlib import Path
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
 
-CURRENT_SCHEMA_VERSION = 2
+CURRENT_SCHEMA_VERSION = 3
 
 # A migration step is either a SQL string or a callable that takes the
 # ``SQLiteHelper`` and runs whatever logic it needs (e.g., gated
@@ -204,6 +204,25 @@ _MIGRATIONS: dict[int, list[_Step]] = {
             agent_path   TEXT,
             created_at   TEXT NOT NULL
         )""",
+    ],
+    3: [
+        # Multimodal attachments. Span ``attributes`` JSON only stores
+        # metadata + thumbnails; full bytes live here so the trace DB
+        # doesn't balloon. ``thumbnail`` is always populated; ``full_data``
+        # only when ``fa.config.trace_full_images=True``.
+        """CREATE TABLE IF NOT EXISTS trace_attachments (
+            attachment_id  TEXT PRIMARY KEY,
+            trace_id       TEXT NOT NULL,
+            span_id        TEXT NOT NULL,
+            media_type     TEXT NOT NULL,
+            size_bytes     INTEGER NOT NULL,
+            thumbnail      BLOB,
+            full_data      BLOB,
+            metadata_json  TEXT DEFAULT '{}',
+            created_at     TEXT NOT NULL
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_trace_attachments_span
+            ON trace_attachments(trace_id, span_id)""",
     ],
 }
 

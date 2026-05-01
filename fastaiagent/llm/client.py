@@ -45,7 +45,9 @@ def _serialize_for_span(value: Any) -> str | None:
         return None
 
 
-def _augment_system_for_response_format(system_text: str | None, response_format: dict[str, Any]) -> str:
+def _augment_system_for_response_format(
+    system_text: str | None, response_format: dict[str, Any]
+) -> str:
     """Inject JSON instructions into system prompt for providers without native response_format."""
     rf_type = response_format.get("type", "text") if isinstance(response_format, dict) else "text"
     if rf_type == "json_object":
@@ -67,7 +69,41 @@ def _augment_system_for_response_format(system_text: str | None, response_format
     return system_text or ""
 
 
-def _ollama_format_from_response_format(response_format: dict[str, Any]) -> str | dict[str, Any] | None:
+def _coerce_system_content_to_text(content: Any) -> str:
+    """System prompts must be strings. Reject multimodal system content explicitly."""
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    raise LLMError(
+        "system messages must be strings; multimodal content is not allowed in system prompts"
+    )
+
+
+def _anthropic_tool_result_content(content: Any) -> Any:
+    """Build the ``content`` value for an Anthropic ``tool_result`` block.
+
+    Anthropic accepts either a string or a list of typed blocks (text/image).
+    String content passes through unchanged for backward compatibility.
+    Multimodal tool returns (a ``list[ContentPart]``) get formatted via
+    :func:`format_multimodal_message` so images embedded in tool results
+    reach the model.
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        from fastaiagent.multimodal.format import format_multimodal_message
+
+        formatted = format_multimodal_message(content, "anthropic")
+        return formatted.get("content", "")
+    return str(content)
+
+
+def _ollama_format_from_response_format(
+    response_format: dict[str, Any],
+) -> str | dict[str, Any] | None:
     """Convert OpenAI response_format to Ollama 'format' parameter."""
     rf_type = response_format.get("type", "text") if isinstance(response_format, dict) else "text"
     if rf_type == "json_object":
@@ -114,6 +150,9 @@ class LLMClient:
         frequency_penalty: float | None = None,
         presence_penalty: float | None = None,
         parallel_tool_calls: bool | None = None,
+        pdf_mode: str = "auto",
+        max_pdf_pages: int = 20,
+        max_image_size_mb: float | None = None,
         **kwargs: Any,
     ):
         self.provider = provider
@@ -129,7 +168,22 @@ class LLMClient:
         self.frequency_penalty = frequency_penalty
         self.presence_penalty = presence_penalty
         self.parallel_tool_calls = parallel_tool_calls
+        self.pdf_mode = pdf_mode
+        self.max_pdf_pages = max_pdf_pages
+        self.max_image_size_mb = max_image_size_mb
         self._extra = kwargs
+
+    def _provider_dict_kwargs(self) -> dict[str, Any]:
+        """Build the kwargs passed to ``Message.to_provider_dict`` from this client's config."""
+        from fastaiagent.multimodal.registry import is_vision_capable
+
+        return {
+            "model": self.model,
+            "pdf_mode": self.pdf_mode,
+            "is_vision_capable": is_vision_capable(self.provider, self.model),
+            "max_pdf_pages": self.max_pdf_pages,
+            "max_image_size_mb": self.max_image_size_mb,
+        }
 
     @staticmethod
     def _should_retry(status_code: int | None) -> bool:
@@ -141,7 +195,7 @@ class LLMClient:
     @staticmethod
     def _retry_delay(attempt: int) -> float:
         """Exponential backoff: 1s, 2s, 4s, 8s, ... capped at 30s."""
-        return min(2 ** attempt, 30)
+        return min(2**attempt, 30)
 
     @staticmethod
     def _default_base_url(provider: str) -> str:
@@ -346,13 +400,58 @@ class LLMClient:
             )
         return fn
 
+    def _split_multimodal_tool_messages_for_openai(
+        self, messages: list[Message]
+    ) -> list[Message]:
+        """Split tool messages with multimodal content into (tool, user) pairs.
+
+        OpenAI's chat-completions API rejects ``image_url`` blocks inside
+        tool-result messages — only user messages may carry images. When a
+        tool returns an :class:`Image` or :class:`PDF` (in vision mode),
+        the executor records a ``ToolMessage`` whose content is a
+        ``list[ContentPart]``. For OpenAI we split that into:
+
+        * a tool message with the textual summary only (satisfies the API)
+        * a synthetic user message with the multimodal content prefixed by
+          a short label (``"Here is the result of <tool>:"``)
+
+        Anthropic and Bedrock accept images directly inside tool-result
+        blocks, so this rewrite is OpenAI-only.
+        """
+        out: list[Message] = []
+        for m in messages:
+            if (
+                m.role != MessageRole.tool
+                or not m.has_multimodal_content()
+                or not isinstance(m.content, list)
+            ):
+                out.append(m)
+                continue
+            text_parts = [p for p in m.content if isinstance(p, str)]
+            media_parts = [p for p in m.content if not isinstance(p, str)]
+            summary = "\n".join(text_parts) if text_parts else "[tool returned multimodal content]"
+            out.append(
+                Message(
+                    role=MessageRole.tool,
+                    content=summary,
+                    tool_call_id=m.tool_call_id,
+                )
+            )
+            user_parts: list[Any] = ["Here is the multimodal result from the previous tool call:"]
+            user_parts.extend(media_parts)
+            out.append(Message(role=MessageRole.user, content=user_parts))
+        return out
+
     async def _call_openai(
         self, messages: list[Message], tools: list[dict[str, Any]] | None = None, **kwargs: Any
     ) -> LLMResponse:
         """Call OpenAI-compatible endpoint."""
         import httpx
 
-        msg_dicts = [m.to_openai_format() for m in messages]
+        prepared = self._split_multimodal_tool_messages_for_openai(messages)
+        msg_dicts = [
+            m.to_provider_dict("openai", **self._provider_dict_kwargs()) for m in prepared
+        ]
         body: dict[str, Any] = {
             "model": self.model,
             "messages": msg_dicts,
@@ -452,11 +551,11 @@ class LLMClient:
         #   - system messages → separate 'system' field
         #   - assistant messages with tool_calls → content blocks with type: tool_use
         #   - tool messages → user messages with content blocks type: tool_result
-        system_parts = []
+        system_parts: list[str] = []
         filtered_msgs: list[dict[str, Any]] = []
         for m in messages:
             if m.role == MessageRole.system:
-                system_parts.append(m.content or "")
+                system_parts.append(_coerce_system_content_to_text(m.content))
             elif m.role == MessageRole.assistant and m.tool_calls:
                 # Convert to Anthropic tool_use content blocks
                 content: list[dict[str, Any]] = []
@@ -481,13 +580,15 @@ class LLMClient:
                             {
                                 "type": "tool_result",
                                 "tool_use_id": m.tool_call_id,
-                                "content": m.content or "",
+                                "content": _anthropic_tool_result_content(m.content),
                             }
                         ],
                     }
                 )
             else:
-                filtered_msgs.append(m.to_openai_format())
+                filtered_msgs.append(
+                    m.to_provider_dict("anthropic", **self._provider_dict_kwargs())
+                )
 
         system_text = "\n\n".join(system_parts) if system_parts else None
 
@@ -570,7 +671,9 @@ class LLMClient:
 
         # Strip markdown code fences if response_format was requested
         if content_text and response_format is not None:
-            rf_type = response_format.get("type", "text") if isinstance(response_format, dict) else "text"
+            rf_type = (
+                response_format.get("type", "text") if isinstance(response_format, dict) else "text"
+            )
             if rf_type in ("json_object", "json_schema"):
                 content_text = _strip_code_fences(content_text)
 
@@ -603,7 +706,7 @@ class LLMClient:
         """Call Ollama API."""
         import httpx
 
-        msg_dicts = [m.to_openai_format() for m in messages]
+        msg_dicts = [m.to_provider_dict("ollama", **self._provider_dict_kwargs()) for m in messages]
         body: dict[str, Any] = {
             "model": self.model,
             "messages": msg_dicts,
@@ -694,7 +797,9 @@ class LLMClient:
             )
 
         client = boto3.client("bedrock-runtime", region_name=self._extra.get("region", "us-east-1"))
-        msg_dicts = [m.to_openai_format() for m in messages]
+        msg_dicts = [
+            m.to_provider_dict("bedrock", **self._provider_dict_kwargs()) for m in messages
+        ]
 
         # Extract system for Bedrock/Anthropic models
         system_parts = []
@@ -773,7 +878,10 @@ class LLMClient:
         """Stream from OpenAI-compatible endpoint via SSE."""
         import httpx
 
-        msg_dicts = [m.to_openai_format() for m in messages]
+        prepared = self._split_multimodal_tool_messages_for_openai(messages)
+        msg_dicts = [
+            m.to_provider_dict("openai", **self._provider_dict_kwargs()) for m in prepared
+        ]
         body: dict[str, Any] = {
             "model": self.model,
             "messages": msg_dicts,
@@ -906,7 +1014,7 @@ class LLMClient:
         filtered_msgs: list[dict[str, Any]] = []
         for m in messages:
             if m.role == MessageRole.system:
-                system_parts.append(m.content or "")
+                system_parts.append(_coerce_system_content_to_text(m.content))
             elif m.role == MessageRole.assistant and m.tool_calls:
                 content: list[dict[str, Any]] = []
                 if m.content:
@@ -924,20 +1032,24 @@ class LLMClient:
                             {
                                 "type": "tool_result",
                                 "tool_use_id": m.tool_call_id,
-                                "content": m.content or "",
+                                "content": _anthropic_tool_result_content(m.content),
                             }
                         ],
                     }
                 )
             else:
-                filtered_msgs.append(m.to_openai_format())
+                filtered_msgs.append(
+                    m.to_provider_dict("anthropic", **self._provider_dict_kwargs())
+                )
 
         stream_system_text = "\n\n".join(system_parts) if system_parts else None
 
         # Augment system prompt for response_format (Anthropic has no native support)
         response_format = kwargs.get("response_format")
         if response_format is not None:
-            stream_system_text = _augment_system_for_response_format(stream_system_text, response_format)
+            stream_system_text = _augment_system_for_response_format(
+                stream_system_text, response_format
+            )
 
         body: dict[str, Any] = {
             "model": self.model,
@@ -1066,7 +1178,7 @@ class LLMClient:
         """Stream from Ollama API via newline-delimited JSON."""
         import httpx
 
-        msg_dicts = [m.to_openai_format() for m in messages]
+        msg_dicts = [m.to_provider_dict("ollama", **self._provider_dict_kwargs()) for m in messages]
         body: dict[str, Any] = {
             "model": self.model,
             "messages": msg_dicts,
@@ -1142,9 +1254,7 @@ class LLMClient:
                                 name = func.get("name", "")
                                 args = func.get("arguments", {})
                                 yield ToolCallStart(call_id=call_id, tool_name=name)
-                                yield ToolCallEnd(
-                                    call_id=call_id, tool_name=name, arguments=args
-                                )
+                                yield ToolCallEnd(call_id=call_id, tool_name=name, arguments=args)
 
         if prompt_tokens or completion_tokens:
             yield Usage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens)

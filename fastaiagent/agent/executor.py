@@ -185,6 +185,45 @@ class _StubTool(Tool):
         return ToolResult(error=f"Unknown tool '{self.name}'")
 
 
+def _coerce_tool_output_to_message_content(
+    output: Any,
+) -> tuple[str | list[Any], str]:
+    """Map a tool's return value to ``(message_content, summary_text)``.
+
+    ``message_content`` becomes the next ``ToolMessage.content`` — for
+    multimodal returns it's a ``list[ContentPart]`` so images flow back to
+    the LLM verbatim. ``summary_text`` is always a string and is used for
+    tracing, guardrails, and memory.
+    """
+    from fastaiagent.multimodal.image import Image as MMImage
+    from fastaiagent.multimodal.pdf import PDF as MMPDF
+
+    if isinstance(output, MMImage):
+        summary = (
+            f"[tool returned image: media_type={output.media_type}, "
+            f"size_bytes={output.size_bytes()}]"
+        )
+        return [summary, output], summary
+    if isinstance(output, MMPDF):
+        try:
+            page_count = output.page_count()
+        except Exception:
+            page_count = -1
+        summary = (
+            f"[tool returned pdf: size_bytes={output.size_bytes()}, pages={page_count}]"
+        )
+        return [summary, output], summary
+    if isinstance(output, list) and any(
+        isinstance(p, (MMImage, MMPDF)) for p in output
+    ):
+        summary = "[tool returned multimodal content with " + str(len(output)) + " parts]"
+        return list(output), summary
+    if isinstance(output, str):
+        return output, output
+    text = json.dumps(output, default=str)
+    return text, text
+
+
 async def _invoke_tool_with_span(
     tool: Tool | None,
     tool_name: str,
@@ -192,12 +231,18 @@ async def _invoke_tool_with_span(
     context: Any | None,
     guardrails: list[Guardrail] | None,
     tool_call_record: dict[str, Any] | None = None,
-) -> str:
-    """Execute a single tool call inside an OTel span and return the textual result.
+) -> tuple[str | list[Any], str]:
+    """Execute a single tool call inside an OTel span.
 
-    Always creates a span (even for unknown tools) so dashboards see the attempt.
-    Captures tool.name and tool.status unconditionally; tool.args / tool.result
-    are gated by ``trace_payloads_enabled()``.
+    Returns a ``(message_content, summary_text)`` pair. ``message_content``
+    is what goes into the next ``ToolMessage`` — a string for plain returns
+    and a ``list[ContentPart]`` when a tool returns ``Image``/``PDF``.
+    ``summary_text`` is the string form used for traces, guardrails, and
+    the ``tool_call_record`` so existing dashboards keep working unchanged.
+
+    Always creates a span (even for unknown tools) so dashboards see the
+    attempt. ``tool.name`` and ``tool.status`` are captured unconditionally;
+    ``tool.args`` / ``tool.result`` are gated by ``trace_payloads_enabled()``.
     """
     from fastaiagent.trace.otel import get_tracer
     from fastaiagent.trace.span import trace_payloads_enabled
@@ -220,7 +265,7 @@ async def _invoke_tool_with_span(
             span.set_attribute("tool.status", "unknown")
             if tool_call_record is not None:
                 tool_call_record["error"] = result_text
-            return result_text
+            return result_text, result_text
 
         try:
             # Tool-call guardrail: validate arguments before execution
@@ -230,10 +275,8 @@ async def _invoke_tool_with_span(
 
             result = await tool.aexecute(arguments, context=context)
             if result.success:
-                result_text = (
-                    json.dumps(result.output, default=str)
-                    if not isinstance(result.output, str)
-                    else result.output
+                message_content, result_text = _coerce_tool_output_to_message_content(
+                    result.output
                 )
                 # Tool-result guardrail: validate output after execution
                 if guardrails:
@@ -241,6 +284,7 @@ async def _invoke_tool_with_span(
                 span.set_attribute("tool.status", "ok")
             else:
                 result_text = f"Error: {result.error}"
+                message_content = result_text
                 span.set_attribute("tool.status", "error")
                 span.set_attribute("tool.error", str(result.error))
 
@@ -248,14 +292,14 @@ async def _invoke_tool_with_span(
                 span.set_attribute("tool.result", result_text)
             if tool_call_record is not None:
                 tool_call_record["output"] = result_text
-            return result_text
+            return message_content, result_text
         except ToolExecutionError as e:
             result_text = f"Error: {e}"
             span.set_attribute("tool.status", "error")
             span.set_attribute("tool.error", str(e))
             if tool_call_record is not None:
                 tool_call_record["error"] = str(e)
-            return result_text
+            return result_text, result_text
 
 
 async def execute_tool_loop(
@@ -371,7 +415,11 @@ async def execute_tool_loop(
                         _tc: Any = tc,
                         _record: dict[str, Any] = tool_call_record,
                     ) -> ToolResult:
-                        text = await _invoke_tool_with_span(
+                        # Middleware path: multimodal tool returns flatten to
+                        # the string summary because ``ToolResult.output`` is
+                        # text-only today. Non-middleware path preserves
+                        # ContentParts; see the ``else`` branch below.
+                        _, summary_text = await _invoke_tool_with_span(
                             tool=tools_by_name.get(_tc.name),
                             tool_name=_tc.name,
                             arguments=a,
@@ -379,7 +427,7 @@ async def execute_tool_loop(
                             guardrails=guardrails,
                             tool_call_record=_record,
                         )
-                        return ToolResult(output=text)
+                        return ToolResult(output=summary_text)
 
                     wrap_target = tool if tool is not None else _StubTool(tc.name)
                     try:
@@ -396,14 +444,15 @@ async def execute_tool_loop(
                             LLMResponse(content=str(stop), finish_reason="stop"),
                             all_tool_calls,
                         )
+                    tool_message_content: str | list[Any]
                     if isinstance(tr.output, str):
-                        result_text = tr.output
+                        tool_message_content = tr.output
                     elif tr.error is not None:
-                        result_text = f"Error: {tr.error}"
+                        tool_message_content = f"Error: {tr.error}"
                     else:
-                        result_text = json.dumps(tr.output, default=str)
+                        tool_message_content = json.dumps(tr.output, default=str)
                 else:
-                    result_text = await _invoke_tool_with_span(
+                    tool_message_content, _ = await _invoke_tool_with_span(
                         tool=tool,
                         tool_name=tc.name,
                         arguments=tc.arguments,
@@ -430,7 +479,7 @@ async def execute_tool_loop(
                 # to whatever owns suspension (typically a parent Chain).
                 raise
 
-            messages.append(ToolMessage(content=result_text, tool_call_id=tc.id))
+            messages.append(ToolMessage(content=tool_message_content, tool_call_id=tc.id))
             all_tool_calls.append(tool_call_record)
 
     raise MaxIterationsError(
@@ -502,7 +551,7 @@ async def stream_tool_loop(
         # Execute each tool call
         for tc in pending_tool_calls:
             tool = tools_by_name.get(tc.name)
-            result_text = await _invoke_tool_with_span(
+            tool_message_content, _ = await _invoke_tool_with_span(
                 tool=tool,
                 tool_name=tc.name,
                 arguments=tc.arguments,
@@ -510,7 +559,7 @@ async def stream_tool_loop(
                 guardrails=guardrails,
             )
 
-            messages.append(ToolMessage(content=result_text, tool_call_id=tc.id))
+            messages.append(ToolMessage(content=tool_message_content, tool_call_id=tc.id))
 
     raise MaxIterationsError(
         f"Agent exceeded maximum iterations ({max_iterations}). "

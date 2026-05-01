@@ -40,6 +40,7 @@ from fastaiagent.guardrail import Guardrail, GuardrailResult, json_valid, no_pii
 from fastaiagent.kb import KeywordStore, LocalKB, MetadataStore, PlatformKB, VectorStore
 from fastaiagent.llm import LLMClient, Message, StreamEvent, TextDelta
 from fastaiagent.llm.stream import HandoffEvent
+from fastaiagent.multimodal import PDF, ContentPart, Image, normalize_input
 from fastaiagent.prompt import Prompt, PromptRegistry
 from fastaiagent.tool import FunctionTool, MCPTool, RESTTool, Tool, ToolRegistry, tool
 from fastaiagent.trace import TraceStore, trace_context
@@ -111,6 +112,11 @@ __all__ = [
     "Message",
     "StreamEvent",
     "TextDelta",
+    # Multimodal
+    "Image",
+    "PDF",
+    "ContentPart",
+    "normalize_input",
     # Tool
     "Tool",
     "FunctionTool",

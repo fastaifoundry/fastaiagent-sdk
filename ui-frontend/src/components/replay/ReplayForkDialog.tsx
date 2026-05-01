@@ -40,6 +40,34 @@ function tryParse(value: string): Record<string, unknown> | null {
   }
 }
 
+/** Parse a value that the user may have typed as either a JSON object or a
+ * JSON list of multimodal parts. Returns the value to send as ``input`` on
+ * the modify endpoint, or ``null`` if the JSON is malformed. */
+function tryParseInput(value: string): unknown {
+  const trimmed = value.trim();
+  if (!trimmed) return {};
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+}
+
+/** Read a File via FileReader and return its base64 payload (no prefix). */
+async function fileToBase64(file: File): Promise<string> {
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error);
+    reader.onload = () => {
+      const result = reader.result as string;
+      // result looks like "data:image/jpeg;base64,...."
+      const comma = result.indexOf(",");
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 export function ReplayForkDialog({
   traceId,
   step,
@@ -71,9 +99,11 @@ export function ReplayForkDialog({
     if (!step) return;
 
     // Validate JSON inputs up front so we fail before committing a fork.
-    const parsedInput = inputJson ? tryParse(inputJson) : null;
+    // ``input`` accepts either a JSON object (legacy form) or a list of
+    // typed parts (multimodal — see ``ReplayForkDialog`` Image tab below).
+    const parsedInput = inputJson ? tryParseInput(inputJson) : null;
     if (inputJson && parsedInput === null) {
-      toast.error("Input must be valid JSON object");
+      toast.error("Input must be valid JSON object or list of parts");
       return;
     }
     const parsedTool = toolJson ? tryParse(toolJson) : null;
@@ -87,7 +117,20 @@ export function ReplayForkDialog({
 
       const mods: Record<string, unknown> = {};
       if (prompt) mods.prompt = prompt;
-      if (parsedInput && Object.keys(parsedInput).length > 0) mods.input = parsedInput;
+      if (parsedInput !== null) {
+        if (Array.isArray(parsedInput)) {
+          // List of multimodal parts — send as-is; the backend resolver
+          // turns each ``{"type":"image","data_base64":...}`` entry into
+          // a real ``Image`` before the rerun.
+          if (parsedInput.length > 0) mods.input = parsedInput;
+        } else if (
+          parsedInput &&
+          typeof parsedInput === "object" &&
+          Object.keys(parsedInput as Record<string, unknown>).length > 0
+        ) {
+          mods.input = parsedInput;
+        }
+      }
       if (parsedTool && Object.keys(parsedTool).length > 0) mods.tool_response = parsedTool;
 
       const config: Record<string, unknown> = {};
@@ -162,17 +205,55 @@ export function ReplayForkDialog({
           </TabsContent>
 
           <TabsContent value="input" className="space-y-2">
-            <Label htmlFor="fork-input">Input override (JSON object)</Label>
+            <Label htmlFor="fork-input">Input override (JSON object or list of parts)</Label>
             <Textarea
               id="fork-input"
               value={inputJson}
               onChange={(e) => setInputJson(e.target.value)}
-              placeholder='{"input": "new user prompt"}'
+              placeholder='{"input": "new user prompt"}  or  [{"type":"text","text":"..."},{"type":"image","data_base64":"..."}]'
               rows={6}
               className="font-mono text-xs"
             />
+            <div className="flex flex-wrap items-center gap-2">
+              <Label htmlFor="fork-replace-image" className="text-xs">
+                Replace image:
+              </Label>
+              <Input
+                id="fork-replace-image"
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  try {
+                    const data_base64 = await fileToBase64(file);
+                    const isPdf = file.type === "application/pdf";
+                    const parts: unknown[] = [
+                      { type: "text", text: "Replaced via fork dialog" },
+                      isPdf
+                        ? { type: "pdf", data_base64 }
+                        : {
+                            type: "image",
+                            data_base64,
+                            media_type: file.type || "image/png",
+                          },
+                    ];
+                    setInputJson(JSON.stringify(parts, null, 2));
+                  } catch (err) {
+                    toast.error(`Failed to read file: ${String(err)}`);
+                  } finally {
+                    e.target.value = "";
+                  }
+                }}
+                className="text-xs"
+              />
+            </div>
             <p className="text-xs text-muted-foreground">
-              Blank = no change. JSON must parse to an object.
+              Blank = no change. JSON object replaces the prompt (legacy
+              form); JSON list replaces with a multimodal payload — each
+              part is one of <code>{`{"type":"text",...}`}</code>,{" "}
+              <code>{`{"type":"image","data_base64":"..."}`}</code>, or{" "}
+              <code>{`{"type":"pdf","data_base64":"..."}`}</code>.
             </p>
           </TabsContent>
 

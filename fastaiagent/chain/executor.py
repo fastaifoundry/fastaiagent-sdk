@@ -325,10 +325,20 @@ async def _execute_node(
     if node.type == NodeType.agent:
         if node.agent is None:
             return {"error": f"No agent attached to node '{node.id}'"}
+        # Accept the same shapes ``Agent.run`` accepts so multimodal Chain
+        # state can flow into a vision agent without the executor flattening
+        # it. Dict inputs are still stringified for the legacy convention
+        # (``chain.execute({"message": "..."})``).
+        from fastaiagent.multimodal.image import Image as _MMImage
+        from fastaiagent.multimodal.pdf import PDF as _MMPDF
+
+        raw_input = context.get("input", "")
+        if isinstance(raw_input, (str, _MMImage, _MMPDF, list)):
+            agent_input = raw_input
+        else:
+            agent_input = str(raw_input)
         # Agent spans nest under the chain root span — see Chain.aexecute.
-        result = await node.agent.arun(
-            str(context.get("input", "")),
-        )
+        result = await node.agent.arun(agent_input)
         return {"output": result.output, "tool_calls": result.tool_calls}
 
     elif node.type == NodeType.tool:
@@ -362,9 +372,17 @@ async def _execute_node(
         if not child_agents:
             return {"outputs": []}
         tasks = []
+        from fastaiagent.multimodal.image import Image as _MMImage
+        from fastaiagent.multimodal.pdf import PDF as _MMPDF
+
+        raw_parallel_input = context.get("input", "")
+        if isinstance(raw_parallel_input, (str, _MMImage, _MMPDF, list)):
+            parallel_input = raw_parallel_input
+        else:
+            parallel_input = str(raw_parallel_input)
         for child in child_agents:
             if hasattr(child, "arun"):
-                tasks.append(child.arun(str(context.get("input", "")), trace=False))
+                tasks.append(child.arun(parallel_input, trace=False))
         if tasks:
             results = await asyncio.gather(*tasks, return_exceptions=True)
             outputs = []

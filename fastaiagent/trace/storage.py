@@ -82,6 +82,18 @@ CREATE TABLE IF NOT EXISTS spans (
 );
 CREATE INDEX IF NOT EXISTS idx_spans_trace_id ON spans (trace_id);
 CREATE INDEX IF NOT EXISTS idx_spans_start_time ON spans (start_time);
+CREATE TABLE IF NOT EXISTS trace_attachments (
+    attachment_id  TEXT PRIMARY KEY,
+    trace_id       TEXT NOT NULL,
+    span_id        TEXT NOT NULL,
+    media_type     TEXT NOT NULL,
+    size_bytes     INTEGER NOT NULL,
+    thumbnail      BLOB,
+    full_data      BLOB,
+    metadata_json  TEXT DEFAULT '{}',
+    created_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_trace_attachments_span ON trace_attachments(trace_id, span_id);
 """
 
 

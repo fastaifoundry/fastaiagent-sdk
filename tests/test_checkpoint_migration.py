@@ -146,7 +146,9 @@ class TestCheckpointMigration:
         assert latest.agent_path is None
         store.close()
 
-    def test_user_version_is_2_after_migrate(self, temp_dir):
+    def test_user_version_is_current_after_migrate(self, temp_dir):
+        from fastaiagent.ui.db import CURRENT_SCHEMA_VERSION
+
         path = temp_dir / "legacy.db"
         _seed_v1_local_db(path)
 
@@ -154,9 +156,11 @@ class TestCheckpointMigration:
 
         with SQLiteHelper(path) as db:
             row = db.fetchone("PRAGMA user_version")
-        assert next(iter(row.values())) == 2
+        assert next(iter(row.values())) == CURRENT_SCHEMA_VERSION
 
-    def test_setup_is_idempotent_on_already_v2_db(self, temp_dir):
+    def test_setup_is_idempotent_on_already_migrated_db(self, temp_dir):
+        from fastaiagent.ui.db import CURRENT_SCHEMA_VERSION
+
         path = temp_dir / "fresh.db"
 
         store_a = SQLiteCheckpointer(db_path=str(path))
@@ -168,5 +172,5 @@ class TestCheckpointMigration:
         store_b.setup()
         with SQLiteHelper(path) as db:
             row = db.fetchone("PRAGMA user_version")
-        assert next(iter(row.values())) == 2
+        assert next(iter(row.values())) == CURRENT_SCHEMA_VERSION
         store_b.close()
