@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-05-01
+
+### Fixed
+
+- `from fastaiagent.trace import Replay` now works. The README, tracing
+  guide, getting-started tutorial, and `debug-with-replay` tutorial all
+  documented this import form, but `fastaiagent.trace.__init__` only
+  re-exported `TraceStore` / `TraceData` / `trace_context` etc. — `Replay`
+  was reachable only via `from fastaiagent.trace.replay import Replay` or
+  `from fastaiagent import Replay`. Re-export added so the documented
+  form just works. Pre-existed in 1.1.0 and earlier; reported by a user
+  copying the README quickstart.
+- `docs/tutorials/debug-with-replay.md` rewritten to use the actual
+  Replay API (`Replay.load`, `replay.summary`, `replay.step_through`,
+  `forked.modify_prompt`, `forked.rerun`, `forked.compare`). The earlier
+  version referenced a fictional `FastAI` class with `fa.traces.pull(…)`
+  and `fa.pull_agent(…)` methods that never existed in the public SDK.
+
+### Added
+
+- `tests/test_doc_snippet_imports.py` — parametrised regression test
+  that walks every Markdown file in the README and `docs/` tree,
+  extracts Python code blocks, and asserts every `from fastaiagent…
+  import …` (and `import fastaiagent…`) statement actually resolves in
+  a fresh namespace. Caught both bugs above on first run.
+
 ## [1.1.0] - 2026-05-01
 
 **The multimodal release.** Images and PDFs are now first-class inputs to
