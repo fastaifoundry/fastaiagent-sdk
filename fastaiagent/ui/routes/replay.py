@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
 from fastaiagent._internal.errors import ReplayError
+from fastaiagent.multimodal.format import resolve_wire_markers as _resolve_modify_input
 from fastaiagent.trace.replay import Replay
 from fastaiagent.trace.storage import TraceStore
 from fastaiagent.ui.deps import get_context, require_session
@@ -96,47 +97,6 @@ class ModifyRequest(BaseModel):
     tool_response: dict[str, Any] | None = None
     config: dict[str, Any] | None = None
     state: dict[str, Any] | None = None
-
-
-def _resolve_modify_input(value: Any) -> Any:
-    """Turn wire-format multimodal markers into real ``Image``/``PDF`` instances.
-
-    Strings, dicts (legacy), and other non-list values are returned
-    unchanged so the existing ``Replay.modify_input`` contract still holds.
-    """
-    if not isinstance(value, list):
-        return value
-
-    from fastaiagent.multimodal.image import Image as MMImage
-    from fastaiagent.multimodal.pdf import PDF as MMPDF
-
-    resolved: list[Any] = []
-    for part in value:
-        if isinstance(part, str):
-            resolved.append(part)
-            continue
-        if not isinstance(part, dict):
-            resolved.append(part)
-            continue
-        kind = part.get("type")
-        if kind == "text":
-            resolved.append(part.get("text", ""))
-        elif kind == "image" and "data_base64" in part:
-            resolved.append(
-                MMImage.from_dict(
-                    {
-                        "data_base64": part["data_base64"],
-                        "media_type": part.get("media_type", "image/png"),
-                        "source_url": part.get("source_url"),
-                        "detail": part.get("detail", "auto"),
-                    }
-                )
-            )
-        elif kind == "pdf" and "data_base64" in part:
-            resolved.append(MMPDF.from_dict({"data_base64": part["data_base64"]}))
-        else:
-            resolved.append(part)
-    return resolved
 
 
 @router.patch("/forks/{fork_id}")

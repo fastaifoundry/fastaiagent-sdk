@@ -44,6 +44,57 @@ _BEDROCK_IMAGE_FORMAT_FROM_MEDIA_TYPE: dict[str, str] = {
 }
 
 
+def resolve_wire_markers(value: Any) -> Any:
+    """Inverse of the wire-format encoding produced by the formatter.
+
+    Walks a list of ``{"type": ..., ...}`` dict markers and rebuilds real
+    ``Image`` / ``PDF`` instances. Used by the Local UI Replay-fork modify
+    endpoint when the frontend posts a JSON list of typed parts. Pure —
+    no FastAPI / no I/O — so test code can import it without pulling the
+    ``[ui]`` extra.
+
+    Strings, dicts in legacy form, and other non-list values pass through
+    unchanged so existing callers keep working.
+
+    Supported part shapes::
+
+        {"type": "text", "text": "..."}
+        {"type": "image", "data_base64": "...", "media_type": "image/jpeg",
+         "source_url": ?, "detail": ?}
+        {"type": "pdf",   "data_base64": "..."}
+    """
+    if not isinstance(value, list):
+        return value
+
+    resolved: list[Any] = []
+    for part in value:
+        if isinstance(part, str):
+            resolved.append(part)
+            continue
+        if not isinstance(part, dict):
+            resolved.append(part)
+            continue
+        kind = part.get("type")
+        if kind == "text":
+            resolved.append(part.get("text", ""))
+        elif kind == "image" and "data_base64" in part:
+            resolved.append(
+                Image.from_dict(
+                    {
+                        "data_base64": part["data_base64"],
+                        "media_type": part.get("media_type", "image/png"),
+                        "source_url": part.get("source_url"),
+                        "detail": part.get("detail", "auto"),
+                    }
+                )
+            )
+        elif kind == "pdf" and "data_base64" in part:
+            resolved.append(PDF.from_dict({"data_base64": part["data_base64"]}))
+        else:
+            resolved.append(part)
+    return resolved
+
+
 def format_multimodal_message(
     parts: list[ContentPart],
     provider: str,

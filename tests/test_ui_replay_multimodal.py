@@ -4,6 +4,11 @@ The frontend's "Replace image" button posts a JSON list with base64 data
 URLs; the backend resolver turns those into real ``Image``/``PDF``
 instances before handing them to ``forked.modify_input``. These tests
 exercise the resolver directly with real Pillow bytes — no HTTP, no mocks.
+
+Imported from ``fastaiagent.multimodal.format`` rather than
+``fastaiagent.ui.routes.replay`` so the test runs without the ``[ui]``
+extra (which pulls FastAPI). Same function — the route module just
+re-exports it.
 """
 
 from __future__ import annotations
@@ -12,7 +17,7 @@ import base64
 from pathlib import Path
 
 from fastaiagent import PDF, Image
-from fastaiagent.ui.routes.replay import _resolve_modify_input
+from fastaiagent.multimodal.format import resolve_wire_markers as _resolve_modify_input
 
 FIXTURES = Path(__file__).parent / "fixtures" / "multimodal"
 
