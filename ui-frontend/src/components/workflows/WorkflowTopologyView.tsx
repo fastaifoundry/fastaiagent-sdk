@@ -202,6 +202,16 @@ export function WorkflowTopologyView({
           edgeTypes={EDGE_TYPES as Record<string, React.ComponentType<any>>}
           onNodeClick={onNodeClick}
           fitView
+          fitViewOptions={{
+            // Generous padding so the graph doesn't crowd the canvas
+            // edges. Clamp the max zoom so small graphs (3–5 nodes)
+            // don't blow up to fill the whole height.
+            padding: 0.3,
+            maxZoom: compact ? 1 : 0.85,
+            minZoom: 0.2,
+          }}
+          minZoom={0.15}
+          maxZoom={2}
           panOnScroll={!compact}
           nodesDraggable={!compact}
           nodesConnectable={false}
