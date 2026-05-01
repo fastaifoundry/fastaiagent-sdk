@@ -11,6 +11,13 @@ Demonstrates the v1.0 durability primitives:
 * :func:`fastaiagent.idempotent` absorbs the side-effect re-execution
   inherent to replay semantics. Wrap any non-idempotent call.
 
+After running, open ``fastaiagent ui`` and visit
+``/executions/<execution_id>`` to see the checkpoint inspector — a
+vertical timeline with state diff and idempotency cache. The expected
+output is captured in
+``docs/ui/screenshots/sprint1-3-checkpoint-timeline.png``; see
+``docs/ui/checkpoint-inspector.md`` for a walkthrough.
+
 Prereqs:
     pip install fastaiagent
 """

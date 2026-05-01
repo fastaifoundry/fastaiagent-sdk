@@ -97,6 +97,44 @@ def get_execution(
         store.close()
 
 
+@router.get("/executions/{execution_id}/idempotency-cache")
+def list_idempotency_cache(
+    execution_id: str,
+    request: Request,
+    _user: str = Depends(require_session),
+) -> dict[str, Any]:
+    """Cached ``@idempotent`` results for one execution.
+
+    Helps developers verify their ``@idempotent`` decorator works — these
+    are the calls that would be skipped on resume.
+    """
+    ctx = get_context(request)
+    db = ctx.db()
+    try:
+        rows = db.fetchall(
+            "SELECT function_key, result, created_at "
+            "FROM idempotency_cache WHERE execution_id = ? "
+            "ORDER BY created_at ASC",
+            (execution_id,),
+        )
+        items = []
+        for r in rows:
+            try:
+                result = json.loads(r.get("result") or "null")
+            except json.JSONDecodeError:
+                result = r.get("result")
+            items.append(
+                {
+                    "function_key": r.get("function_key"),
+                    "result": result,
+                    "created_at": r.get("created_at"),
+                }
+            )
+        return {"execution_id": execution_id, "count": len(items), "items": items}
+    finally:
+        db.close()
+
+
 @router.get("/pending-interrupts")
 def list_pending_interrupts(
     request: Request,

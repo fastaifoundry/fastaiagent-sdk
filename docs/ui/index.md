@@ -295,6 +295,15 @@ when the message content carries them — no more raw base64 in the JSON.
 See [Multimodal traces](multimodal.md) for the full reference and a
 screenshot.
 
+#### Checkpoint inspector
+
+The execution detail page (`/executions/{id}`) shows a vertical
+timeline of every checkpoint, expandable to reveal `state_snapshot` /
+`node_input` / `node_output`, with an automatic state diff between
+adjacent expanded rows and an idempotency-cache panel listing the
+`@idempotent` results that would be skipped on resume. See
+[Checkpoint inspector](checkpoint-inspector.md).
+
 ### Agents
 
 Cards summarizing every agent the SDK has seen: run count, success rate

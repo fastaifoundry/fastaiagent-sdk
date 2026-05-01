@@ -137,6 +137,7 @@ nav:
       - "Knowledge Bases browser": ui/kb.md
       - "Workflow visualization": ui/workflow-visualization.md
       - "Multimodal traces": ui/multimodal.md
+      - "Checkpoint inspector": ui/checkpoint-inspector.md
   - Platform:
       - platform/index.md
   - Deployment:

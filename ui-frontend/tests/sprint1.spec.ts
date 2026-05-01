@@ -130,3 +130,69 @@ test("sprint1-2b — attachment gallery + thumbnail render below content parts",
   await page.waitForTimeout(400);
   await page.screenshot(SHOT("sprint1-2b-multimodal-gallery"));
 });
+
+// ---------------------------------------------------------------------------
+// Feature 3 — Checkpoint inspector
+// ---------------------------------------------------------------------------
+
+const EXEC_ID = "exec-sprint1-mm-00001";
+
+test("sprint1-3 — checkpoint timeline shows completed and interrupted steps", async ({
+  page,
+}) => {
+  await page.goto(`/executions/${EXEC_ID}`);
+
+  await expect(
+    page.getByRole("heading", { name: /Execution/i })
+  ).toBeVisible();
+
+  // Vertical timeline renders one row per checkpoint, each tagged with status.
+  const timeline = page.locator('[data-testid="checkpoint-timeline"]');
+  await expect(timeline).toBeVisible();
+  await expect(
+    page.locator('[data-checkpoint-status="completed"]')
+  ).toBeVisible();
+  await expect(
+    page.locator('[data-checkpoint-status="interrupted"]')
+  ).toBeVisible();
+
+  // Recoverable callout fires for the latest interrupted checkpoint.
+  await expect(page.getByText(/recoverable/i)).toBeVisible();
+
+  // Idempotency cache section lists the seeded @idempotent rows.
+  const idem = page.locator('[data-testid="idempotency-cache"]');
+  await expect(idem).toBeVisible();
+  await expect(
+    page.getByText(/charge_customer:cust_42:500/)
+  ).toBeVisible();
+
+  await page.waitForTimeout(300);
+  await page.screenshot(SHOT("sprint1-3-checkpoint-timeline"));
+});
+
+test("sprint1-3b — expanding two adjacent rows shows the state diff", async ({
+  page,
+}) => {
+  await page.goto(`/executions/${EXEC_ID}`);
+  await expect(
+    page.locator('[data-testid="checkpoint-timeline"]')
+  ).toBeVisible();
+
+  // Expand both checkpoint rows to reveal the diff card below.
+  const rows = page.locator(
+    '[data-testid="checkpoint-timeline"] li[data-checkpoint-status]'
+  );
+  await rows.nth(0).getByRole("button").click();
+  await rows.nth(1).getByRole("button").click();
+
+  const diff = page.locator('[data-testid="state-diff"]');
+  await expect(diff).toBeVisible({ timeout: 3000 });
+  await expect(diff.getByText(/Added|Changed/i).first()).toBeVisible();
+
+  // Scroll the diff card into view so the screenshot framing actually
+  // shows it (full-page captures still include it, but the focused
+  // viewport area is what readers look at first).
+  await diff.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(300);
+  await page.screenshot(SHOT("sprint1-3b-checkpoint-state-diff"));
+});
