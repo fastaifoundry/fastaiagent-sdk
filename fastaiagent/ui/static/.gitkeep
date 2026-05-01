@@ -1,0 +1,9 @@
+# Placeholder so `fastaiagent/ui/static/` exists on a fresh checkout.
+#
+# The directory is gitignored (`fastaiagent/ui/static/*` in .gitignore)
+# because the Vite-built frontend bundle is generated, not source. But
+# pyproject.toml's `[tool.hatch.build.targets.wheel.force-include]` entry
+# requires the path to *exist* at wheel-build time. Without this file,
+# CI fails with `Forced include not found: fastaiagent/ui/static`.
+#
+# Run `cd ui-frontend && npm run build` to populate it before building.
