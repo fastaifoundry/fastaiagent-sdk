@@ -164,7 +164,7 @@ class Agent:
         self,
         input: AgentInput,
         *,
-        context: RunContext | None = None,
+        context: RunContext[Any] | None = None,
         trace: bool = True,
         execution_id: str | None = None,
         **kwargs: Any,
@@ -188,7 +188,7 @@ class Agent:
         self,
         input: AgentInput,
         *,
-        context: RunContext | None = None,
+        context: RunContext[Any] | None = None,
         trace: bool = True,
         execution_id: str | None = None,
         **kwargs: Any,
@@ -210,7 +210,7 @@ class Agent:
         self,
         input: AgentInput,
         *,
-        context: RunContext | None = None,
+        context: RunContext[Any] | None = None,
         execution_id: str | None = None,
         **kwargs: Any,
     ) -> AgentResult:
@@ -304,7 +304,7 @@ class Agent:
         self,
         input: AgentInput,
         *,
-        context: RunContext | None = None,
+        context: RunContext[Any] | None = None,
         execution_id: str | None = None,
         _resumed_messages: list[Message] | None = None,
         _start_iteration: int = 0,
@@ -430,7 +430,7 @@ class Agent:
         self,
         input: AgentInput,
         *,
-        context: RunContext | None = None,
+        context: RunContext[Any] | None = None,
         trace: bool = True,
         **kwargs: Any,
     ) -> AsyncGenerator[StreamEvent, None]:
@@ -722,7 +722,7 @@ class Agent:
             )
 
     def stream(
-        self, input: str, *, context: RunContext | None = None, trace: bool = True, **kwargs: Any
+        self, input: str, *, context: RunContext[Any] | None = None, trace: bool = True, **kwargs: Any
     ) -> AgentResult:
         """Synchronous streaming — collects stream into AgentResult.
 
@@ -746,14 +746,14 @@ class Agent:
 
         return run_sync(_collect())
 
-    def _resolve_system_prompt(self, context: RunContext | None = None) -> str:
+    def _resolve_system_prompt(self, context: RunContext[Any] | None = None) -> str:
         """Resolve system_prompt to a string. Calls it if callable."""
         if callable(self.system_prompt):
             return self.system_prompt(context)
         return self.system_prompt
 
     def _build_messages(
-        self, input: AgentInput, context: RunContext | None = None
+        self, input: AgentInput, context: RunContext[Any] | None = None
     ) -> list[Message]:
         """Build the message array for the LLM.
 

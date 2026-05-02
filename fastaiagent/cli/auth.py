@@ -29,7 +29,7 @@ def _read_credentials() -> dict[str, Any]:
     if not _CREDENTIALS_PATH.exists():
         return {}
     try:
-        import tomllib  # type: ignore[import-untyped]  # py 3.11+, no stubs
+        import tomllib
 
         parsed: dict[str, Any] = tomllib.loads(_CREDENTIALS_PATH.read_text())
         return parsed
