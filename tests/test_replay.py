@@ -8,7 +8,8 @@ import pytest
 
 from fastaiagent._internal.errors import ReplayError
 from fastaiagent.agent.agent import AgentResult
-from fastaiagent.trace.replay import ForkedReplay, Replay
+from fastaiagent.tool.function import FunctionTool
+from fastaiagent.trace.replay import ForkedReplay, Replay, ReplayStep
 from fastaiagent.trace.storage import SpanData, TraceData
 
 
@@ -221,3 +222,59 @@ class TestForkedReplay:
         comparison = forked.compare(result)
         assert comparison.diverged_at == 1
         assert len(comparison.original_steps) == len(trace.spans)
+
+    def test_with_tools_override(self):
+        """Verify with_tools() stores live tool instances for rerun."""
+        trace = _make_agent_trace()
+        replay = Replay(trace)
+        forked = replay.fork_at(step=0)
+
+        def my_tool(query: str) -> str:
+            return "tool result"
+
+        live_tool = FunctionTool(name="my_tool", fn=my_tool)
+        forked.with_tools([live_tool])
+
+        assert "tools" in forked._modifications
+        assert len(forked._modifications["tools"]) == 1
+        assert forked._modifications["tools"][0].fn is not None
+
+    def test_with_tools_is_chainable(self):
+        """with_tools() returns self for method chaining."""
+        trace = _make_agent_trace()
+        replay = Replay(trace)
+        forked = replay.fork_at(step=0)
+
+        def my_tool(query: str) -> str:
+            return "tool result"
+
+        live_tool = FunctionTool(name="my_tool", fn=my_tool)
+        result = forked.with_tools([live_tool])
+        assert result is forked
+
+    def test_rerun_applies_tool_override(self, stub_agent_arun, monkeypatch):
+        """Verify with_tools() feeds live tools into the reconstructed agent."""
+        captured: dict = {}
+        from fastaiagent.agent.agent import Agent
+
+        original_arun = stub_agent_arun
+
+        async def _capturing_arun(self, input, **kwargs):
+            captured["tools"] = list(self.tools)
+            return await original_arun(self, input, **kwargs)
+
+        monkeypatch.setattr(Agent, "arun", _capturing_arun)
+
+        def my_tool(query: str) -> str:
+            return "tool result"
+
+        live_tool = FunctionTool(name="my_tool", fn=my_tool)
+
+        trace = _make_agent_trace()
+        replay = Replay(trace)
+        forked = replay.fork_at(step=0).with_tools([live_tool])
+        forked.rerun()
+
+        assert len(captured["tools"]) == 1
+        assert captured["tools"][0].name == "my_tool"
+        assert captured["tools"][0].fn is not None

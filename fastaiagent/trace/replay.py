@@ -83,6 +83,24 @@ class ForkedReplay:
         self._modifications["state"] = new_state
         return self
 
+    def with_tools(self, tools: list[Any]) -> ForkedReplay:
+        """Override the tools used during rerun.
+
+        When the original trace used tools with dynamic callables (e.g.,
+        ``kb.as_tool()``), those callables cannot be reconstructed from
+        span attributes. Pass the live tool instances here so the rerun
+        agent can actually execute them.
+
+        Example::
+
+            forked = replay.fork_at(step=0)
+            forked.with_tools([kb.as_tool(), my_other_tool])
+            forked.modify_prompt("Be more concise.")
+            result = forked.rerun()
+        """
+        self._modifications["tools"] = tools
+        return self
+
     async def arerun(self) -> ReplayResult:
         """Rerun the agent with modifications applied.
 
@@ -132,6 +150,11 @@ class ForkedReplay:
             raise ReplayError(
                 f"Failed to reconstruct agent from trace {self._trace.trace_id}: {e}"
             ) from e
+
+        # Apply tool overrides — replaces the serialization-only tools with
+        # live callable instances so the rerun can actually execute them.
+        if "tools" in self._modifications:
+            agent.tools = list(self._modifications["tools"])
 
         new_result = await agent.arun(new_input)
 
