@@ -110,7 +110,8 @@ class Faithfulness(Scorer):
                     [
                         SystemMessage("You are a fact-checking assistant. Respond with JSON only."),
                         UserMessage(
-                            "Determine if the following claim is supported by the given context.\n\n"
+                            "Determine if the following claim is supported by "
+                            "the given context.\n\n"
                             f"Context: {context}\n\n"
                             f"Claim: {claim}\n\n"
                             'Respond with JSON: {{"supported": true/false, "reasoning": "..."}}'

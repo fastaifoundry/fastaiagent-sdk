@@ -48,7 +48,9 @@ class FaissIndex:
         elif index_type == "ivf":
             quantizer = faiss.IndexFlatIP(dimension)
             # nlist=100 is a good default; auto-adjusted in _train_if_needed
-            index = faiss.IndexIVFFlat(quantizer, dimension, min(100, 1), faiss.METRIC_INNER_PRODUCT)
+            index = faiss.IndexIVFFlat(
+                quantizer, dimension, min(100, 1), faiss.METRIC_INNER_PRODUCT
+            )
             index.nprobe = 10
             return index
         elif index_type == "hnsw":

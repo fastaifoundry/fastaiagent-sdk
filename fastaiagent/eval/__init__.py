@@ -7,7 +7,12 @@ from fastaiagent.eval.rag import AnswerRelevancy, ContextPrecision, ContextRecal
 from fastaiagent.eval.results import EvalResults
 from fastaiagent.eval.safety import Bias, PIILeakage, Toxicity
 from fastaiagent.eval.scorer import Scorer, ScorerResult
-from fastaiagent.eval.similarity import BLEUScore, LevenshteinDistance, ROUGEScore, SemanticSimilarity
+from fastaiagent.eval.similarity import (
+    BLEUScore,
+    LevenshteinDistance,
+    ROUGEScore,
+    SemanticSimilarity,
+)
 
 __all__ = [
     # Core

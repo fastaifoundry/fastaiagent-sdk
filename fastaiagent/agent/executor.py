@@ -518,7 +518,6 @@ async def stream_tool_loop(
         # Stream from LLM
         accumulated_text = ""
         pending_tool_calls: list[ToolCall] = []
-        total_usage = Usage()
 
         async for event in llm.astream(messages, tools=tool_defs, **kwargs):
             if isinstance(event, TextDelta):
@@ -532,7 +531,6 @@ async def stream_tool_loop(
                 )
                 yield event
             elif isinstance(event, Usage):
-                total_usage = event
                 yield event
             # Don't yield StreamDone here — we may have more iterations
 
