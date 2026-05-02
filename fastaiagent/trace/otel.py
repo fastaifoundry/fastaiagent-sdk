@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from opentelemetry.sdk.trace.export import SpanExporter
@@ -46,5 +49,5 @@ def reset() -> None:
         try:
             _provider.shutdown()
         except Exception:
-            pass
+            logger.debug("Failed to shutdown tracer provider", exc_info=True)
     _provider = None

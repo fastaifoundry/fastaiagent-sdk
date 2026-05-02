@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import httpx
@@ -15,6 +16,8 @@ from fastaiagent._internal.errors import (
     PlatformTierLimitError,
 )
 from fastaiagent._version import __version__
+
+logger = logging.getLogger(__name__)
 
 
 class PlatformAPI:
@@ -54,7 +57,7 @@ class PlatformAPI:
                 if isinstance(detail, dict):
                     detail = detail.get("detail", str(detail))
             except Exception:
-                pass
+                logger.debug("Failed to parse platform 403 response body", exc_info=True)
             if "tier" in str(detail).lower():
                 raise PlatformTierLimitError(
                     f"Tier limit reached: {detail}. Upgrade at https://app.fastaiagent.net/billing"

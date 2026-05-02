@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any
 
 from fastaiagent._internal.async_utils import run_sync
 from fastaiagent.eval.scorer import Scorer, ScorerResult
+
+logger = logging.getLogger(__name__)
 
 
 def _strip_code_fences(text: str) -> str:
@@ -123,6 +126,7 @@ class Faithfulness(Scorer):
                 if verdict.get("supported", False):
                     supported += 1
             except Exception:
+                logger.debug("Failed to verify claim in faithfulness scorer", exc_info=True)
                 continue
 
         score_val = supported / len(claims)
@@ -252,6 +256,7 @@ class ContextPrecision(Scorer):
                 data = json.loads(raw)
                 relevance.append(bool(data.get("relevant", False)))
             except Exception:
+                logger.debug("Failed to evaluate context relevance for chunk", exc_info=True)
                 relevance.append(False)
 
         # Average Precision
@@ -359,6 +364,9 @@ class ContextRecall(Scorer):
                 if data.get("present", False):
                     found += 1
             except Exception:
+                logger.debug(
+                    "Failed to check claim presence in context recall scorer", exc_info=True,
+                )
                 continue
 
         score_val = found / len(claims)

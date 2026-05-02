@@ -12,12 +12,15 @@ Platform's visual canvas — not here.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from fastaiagent.ui.deps import get_context, require_session
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
 
@@ -95,7 +98,7 @@ def _aggregate(
             b = datetime.fromisoformat(end)
             bucket["total_duration_ms"] += int((b - a).total_seconds() * 1000)
         except (ValueError, TypeError):
-            pass
+            logger.debug("Failed to compute workflow span duration from timestamps", exc_info=True)
 
         reported_cost = trace_cost_usd(attrs)
         if reported_cost is not None:

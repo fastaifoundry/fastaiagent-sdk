@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,8 @@ from fastaiagent.eval.builtins import BUILTIN_SCORERS
 from fastaiagent.eval.dataset import Dataset
 from fastaiagent.eval.results import EvalCaseRecord, EvalResults
 from fastaiagent.eval.scorer import Scorer
+
+logger = logging.getLogger(__name__)
 
 
 def evaluate(
@@ -166,6 +169,6 @@ async def aevaluate(
         except Exception:
             # Persistence is best-effort — never fail a run because the
             # local UI DB couldn't be written.
-            pass
+            logger.warning("Failed to persist eval run to local DB", exc_info=True)
 
     return results

@@ -8,6 +8,7 @@ pulling the needed columns into Python and sorting is fine.
 from __future__ import annotations
 
 import json
+import logging
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -17,6 +18,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastaiagent.ui.attrs import attr, trace_cost_usd
 from fastaiagent.ui.deps import get_context, require_session
 from fastaiagent.ui.pricing import compute_cost_usd
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
@@ -142,7 +145,7 @@ def analytics(
                             datetime.fromisoformat(end) - datetime.fromisoformat(start)
                         ).total_seconds() * 1000.0
                     except (ValueError, TypeError):
-                        pass
+                        logger.debug("Failed to compute analytics span duration", exc_info=True)
 
                 trace_stats[row["trace_id"]] = {
                     "duration_ms": dur_ms,

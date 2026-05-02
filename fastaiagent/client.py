@@ -146,7 +146,7 @@ def disconnect() -> None:
             _connection._platform_processor.force_flush(timeout_millis=5000)
             _connection._platform_processor.shutdown()
         except Exception:
-            pass
+            logger.debug("Failed to flush/shutdown platform processor on disconnect", exc_info=True)
         _connection._platform_processor = None
     _connection.api_key = None
     _connection.project = None

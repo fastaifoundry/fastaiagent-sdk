@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any
@@ -29,6 +30,8 @@ from fastaiagent.llm.stream import (
     Usage,
 )
 from fastaiagent.tool.base import Tool, ToolResult
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from fastaiagent.guardrail.guardrail import Guardrail
@@ -258,7 +261,7 @@ async def _invoke_tool_with_span(
             try:
                 span.set_attribute("tool.args", json.dumps(arguments, default=str))
             except Exception:
-                pass
+                logger.debug("Failed to serialize tool arguments for trace", exc_info=True)
 
         if tool is None:
             result_text = f"Error: Unknown tool '{tool_name}'"

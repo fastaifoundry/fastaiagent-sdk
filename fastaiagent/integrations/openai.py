@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import functools
 import json
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 _original_create = None
 _original_acreate = None
@@ -17,6 +20,7 @@ def _serialize_messages(messages: Any) -> str | None:
     try:
         return json.dumps(messages, default=str)
     except Exception:
+        logger.debug("Failed to serialize OpenAI messages for trace", exc_info=True)
         return None
 
 
@@ -44,7 +48,7 @@ def _extract_response_payload(result: Any) -> tuple[str | None, str | None, str 
             )
         finish_reason = getattr(choice, "finish_reason", None)
     except Exception:
-        pass
+        logger.debug("Failed to extract OpenAI response payload for trace", exc_info=True)
     return content, tool_calls_json, finish_reason
 
 
@@ -112,7 +116,7 @@ def disable() -> None:
         if _original_create:
             openai.resources.chat.completions.Completions.create = _original_create  # type: ignore[method-assign]
     except ImportError:
-        pass
+        logger.debug("OpenAI SDK not available during disable", exc_info=True)
 
     _enabled = False
     _original_create = None

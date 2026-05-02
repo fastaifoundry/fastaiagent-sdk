@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -12,6 +13,8 @@ from fastaiagent.chain.interrupt import AlreadyResumed, Resume
 from fastaiagent.chain.node import Edge, NodeConfig, NodeType
 from fastaiagent.chain.validator import validate_chain
 from fastaiagent.checkpointers import Checkpointer, SQLiteCheckpointer
+
+logger = logging.getLogger(__name__)
 
 
 class ChainResult(BaseModel):
@@ -157,7 +160,7 @@ class Chain:
                 try:
                     span.set_attribute("chain.input", json.dumps(initial_state, default=str))
                 except (TypeError, ValueError):
-                    pass
+                    logger.debug("Failed to serialize chain input for trace", exc_info=True)
 
             raw = await execute_chain(
                 nodes=self.nodes,
@@ -175,7 +178,7 @@ class Chain:
 
                 span.set_attribute("chain.output", _json.dumps(raw.get("output"), default=str))
             except (TypeError, ValueError):
-                pass
+                logger.debug("Failed to serialize chain output for trace", exc_info=True)
             span.set_attribute("chain.execution_id", raw.get("execution_id") or "")
 
         return ChainResult(
