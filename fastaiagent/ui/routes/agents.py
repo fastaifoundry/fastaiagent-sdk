@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from fastaiagent.ui.deps import get_context, require_session
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/agents", tags=["agents"])
 
@@ -54,7 +57,7 @@ def _aggregate(
             try:
                 bucket["total_duration_ms"] += int(float(latency_ms))
             except (TypeError, ValueError):
-                pass
+                logger.debug("Failed to parse agent.latency_ms: %r", latency_ms, exc_info=True)
         else:
             try:
                 from datetime import datetime
@@ -63,7 +66,7 @@ def _aggregate(
                 b = datetime.fromisoformat(end)
                 bucket["total_duration_ms"] += int((b - a).total_seconds() * 1000)
             except (ValueError, TypeError):
-                pass
+                logger.debug("Failed to compute agent span duration from timestamps", exc_info=True)
         reported_cost = trace_cost_usd(attrs)
         if reported_cost is not None:
             bucket["total_cost_usd"] += reported_cost
@@ -229,7 +232,9 @@ def get_agent_tools(
                     b_time = datetime.fromisoformat(span["end_time"])
                     bucket["total_duration_ms"] += int((b_time - a_time).total_seconds() * 1000)
                 except (ValueError, TypeError):
-                    pass
+                    logger.debug(
+                        "Failed to compute tool span duration from timestamps", exc_info=True,
+                    )
                 start = span.get("start_time") or ""
                 if start > bucket["last_used"]:
                     bucket["last_used"] = start

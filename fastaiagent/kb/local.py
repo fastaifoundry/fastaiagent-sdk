@@ -7,6 +7,7 @@ by passing a ``VectorStore`` / ``KeywordStore`` / ``MetadataStore`` instance.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any, Literal
 
@@ -16,6 +17,8 @@ from fastaiagent.kb.embedding import Embedder, get_default_embedder
 from fastaiagent.kb.protocols import KeywordStore, MetadataStore, VectorStore
 from fastaiagent.kb.search import IndexType, SearchResult
 from fastaiagent.tool.base import Tool
+
+logger = logging.getLogger(__name__)
 
 SearchType = Literal["vector", "keyword", "hybrid"]
 
@@ -179,7 +182,10 @@ class LocalKB:
                     docs = ingest_file(p)
                     return self.add_documents(docs)
             except OSError:
-                pass
+                logger.debug(
+                    "Path %r is not a valid file/directory, treating as text",
+                    path_or_text, exc_info=True,
+                )
 
         docs = [Document(content=path_or_text, metadata=metadata or {})]
         return self.add_documents(docs)

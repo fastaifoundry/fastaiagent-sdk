@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 import uuid
 from collections.abc import Callable
@@ -26,6 +27,8 @@ from fastaiagent.chain.interrupt import (
 from fastaiagent.chain.node import Edge, NodeConfig, NodeType
 from fastaiagent.chain.state import ChainState
 from fastaiagent.checkpointers.protocol import Checkpointer, PendingInterrupt
+
+logger = logging.getLogger(__name__)
 
 
 def _render_template(template: str, context: dict[str, Any]) -> str:

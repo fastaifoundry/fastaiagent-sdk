@@ -8,6 +8,7 @@ auth file, and ``--no-auth`` flag. ``uvicorn`` then serves it.
 from __future__ import annotations
 
 import importlib.resources as resources
+import logging
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
@@ -36,6 +37,8 @@ from fastaiagent.ui.routes import (
     workflows,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def _static_dir() -> Path | None:
     """Locate the bundled frontend static assets, if present."""
@@ -45,7 +48,7 @@ def _static_dir() -> Path | None:
         if packaged.is_dir():
             return Path(str(packaged))
     except (ModuleNotFoundError, AttributeError, FileNotFoundError):
-        pass
+        logger.debug("Packaged static assets not found, falling back to sibling dir", exc_info=True)
     # Fall back to the sibling of this file (editable installs).
     candidate = Path(__file__).parent / "static"
     return candidate if candidate.exists() else None

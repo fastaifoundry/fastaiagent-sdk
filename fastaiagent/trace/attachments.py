@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -25,6 +26,8 @@ from typing import Any
 
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
+
+logger = logging.getLogger(__name__)
 
 _THUMBNAIL_MAX_PX: int = 256
 _THUMBNAIL_QUALITY: int = 75
@@ -68,6 +71,7 @@ def _build_thumbnail(data: bytes, media_type: str) -> tuple[bytes | None, dict[s
             thumb.save(buf, format="JPEG", quality=_THUMBNAIL_QUALITY)
         return buf.getvalue(), {"width": width, "height": height}
     except Exception:
+        logger.debug("Failed to build image thumbnail", exc_info=True)
         return None, {}
 
 
@@ -85,6 +89,7 @@ def _build_pdf_thumbnail(data: bytes) -> tuple[bytes | None, dict[str, Any]]:
             page_count = doc.page_count
         return _build_thumbnail(png, "image/png")[0], {"page_count": page_count}
     except Exception:
+        logger.debug("Failed to build PDF thumbnail", exc_info=True)
         return None, {}
 
 

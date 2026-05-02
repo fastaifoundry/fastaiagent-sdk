@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import time
 from pathlib import Path
@@ -11,6 +12,8 @@ from fastaiagent._internal.config import get_config
 from fastaiagent.prompt.fragment import Fragment
 from fastaiagent.prompt.prompt import Prompt
 from fastaiagent.prompt.storage import SQLiteStorage
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_CACHE_TTL = 300  # 5 minutes
 
@@ -192,6 +195,7 @@ class PromptRegistry:
         except PlatformNotConnectedError:
             raise
         except Exception:
+            logger.debug("Failed to fetch prompt from platform", exc_info=True)
             return None
 
     def _is_connected(self) -> bool:
@@ -213,6 +217,7 @@ class PromptRegistry:
                 self._fragments[frag_name] = fragment
                 return fragment.content
             except Exception:
+                logger.debug("Failed to resolve prompt fragment %r", frag_name, exc_info=True)
                 return match.group(0)  # leave unresolved
 
         result: str = re.sub(r"\{\{@(\w+)\}\}", replacer, template)

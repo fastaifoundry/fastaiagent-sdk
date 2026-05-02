@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import inspect
+import logging
 from collections.abc import Callable
 from typing import Any, get_origin, get_type_hints
 
 from fastaiagent._internal.errors import ToolExecutionError
 from fastaiagent.agent.context import RunContext
 from fastaiagent.tool.base import Tool, ToolResult
+
+logger = logging.getLogger(__name__)
 
 
 def _is_context_param(annotation: Any) -> bool:
@@ -45,6 +48,7 @@ def _generate_schema(fn: Callable[..., Any]) -> dict[str, Any]:
     try:
         hints = get_type_hints(fn)
     except Exception:
+        logger.debug("Failed to get type hints for function %r", fn, exc_info=True)
         hints = {}
 
     properties = {}
@@ -125,6 +129,7 @@ class FunctionTool(Tool):
         try:
             hints = get_type_hints(fn)
         except Exception:
+            logger.debug("Failed to get type hints for context param detection", exc_info=True)
             return None
         for param_name, annotation in hints.items():
             if _is_context_param(annotation):

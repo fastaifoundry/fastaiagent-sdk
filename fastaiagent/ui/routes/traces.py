@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
@@ -10,6 +11,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 
 from fastaiagent.ui.deps import get_context, require_session
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["traces"])
 
@@ -121,7 +124,9 @@ def _summarize_trace(spans: list[dict[str, Any]]) -> dict[str, Any]:
             try:
                 total_tokens += int(agent_total)
             except (TypeError, ValueError):
-                pass
+                logger.debug(
+                    "Failed to parse agent.tokens_used: %r", agent_total, exc_info=True,
+                )
         else:
             total_tokens += input_tokens + output_tokens
         if reported_cost is not None:
@@ -350,7 +355,9 @@ def get_trace_scores(
                     try:
                         row[key] = json.loads(row[key])
                     except json.JSONDecodeError:
-                        pass
+                        logger.debug(
+                            "Failed to parse JSON for eval case field %r", key, exc_info=True,
+                        )
         return {
             "trace_id": trace_id,
             "guardrail_events": guardrail_rows,

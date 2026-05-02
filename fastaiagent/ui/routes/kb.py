@@ -8,6 +8,7 @@ lineage endpoints. No mutations — add / delete / re-index stay in code.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sqlite3
 import time
@@ -18,6 +19,8 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from fastaiagent.ui.deps import get_context, require_session
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/kb", tags=["kb"])
 
@@ -50,6 +53,7 @@ def _safe_int(conn: sqlite3.Connection, sql: str) -> int:
         row = conn.execute(sql).fetchone()
         return int(row[0]) if row and row[0] is not None else 0
     except sqlite3.Error:
+        logger.debug("Failed to execute KB stat query: %s", sql, exc_info=True)
         return 0
 
 
@@ -71,9 +75,10 @@ def _collection_stats(db_path: Path) -> dict[str, Any]:
                     ).fetchall()
                     docs = sum(1 for r in rows if r[0])
                 except sqlite3.Error:
-                    pass
+                    logger.debug("Failed to count distinct sources in KB", exc_info=True)
         return {"chunk_count": chunks, "doc_count": docs}
     except sqlite3.Error:
+        logger.warning("Failed to read KB collection stats from %s", db_path, exc_info=True)
         return {"chunk_count": 0, "doc_count": 0}
 
 
@@ -128,9 +133,9 @@ async def get_collection(
                     md = json.loads(row[0] or "{}")
                     sample_keys.update(md.keys())
                 except (json.JSONDecodeError, TypeError):
-                    pass
+                    logger.debug("Failed to parse KB chunk metadata JSON", exc_info=True)
     except sqlite3.Error:
-        pass
+        logger.warning("Failed to read KB metadata sample from %s", name, exc_info=True)
     return {
         "name": name,
         "path": str(db_path.parent),
