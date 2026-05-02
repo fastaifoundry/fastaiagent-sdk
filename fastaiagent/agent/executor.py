@@ -500,12 +500,29 @@ async def stream_tool_loop(
     tool_choice: str = "auto",
     context: Any | None = None,
     guardrails: list[Guardrail] | None = None,
+    mw_pipeline: _MiddlewarePipeline | None = None,
+    mw_ctx: MiddlewareContext | None = None,
+    *,
+    checkpointer: Checkpointer | None = None,
+    execution_id: str | None = None,
+    agent_name: str = "",
+    start_iteration: int = 0,
     **kwargs: Any,
 ) -> AsyncGenerator[StreamEvent, None]:
     """Streaming version of execute_tool_loop.
 
     Yields StreamEvent objects as tokens arrive from the LLM.
     Handles tool execution between streaming iterations.
+
+    When ``mw_pipeline`` and ``mw_ctx`` are provided, middleware hooks fire:
+    ``before_model`` before each LLM stream, ``after_model`` after each
+    streamed response is fully accumulated, and ``wrap_tool`` around each
+    tool invocation.
+
+    When ``checkpointer`` and ``execution_id`` are provided, the loop writes
+    a turn-boundary checkpoint before each LLM stream and a pre-tool
+    checkpoint before each tool runs. ``InterruptSignal`` raised from inside
+    any tool is caught and handled identically to ``execute_tool_loop``.
 
     The final TextDelta events contain the agent's response text.
     ToolCallStart/ToolCallEnd events are emitted for both LLM-requested
@@ -514,7 +531,25 @@ async def stream_tool_loop(
     tool_defs = [t.to_openai_format() for t in tools] if tools else None
     tools_by_name = {t.name: t for t in tools}
 
-    for iteration in range(max_iterations):
+    for iteration in range(start_iteration, max_iterations):
+        # Turn-boundary checkpoint — the resume point for crashes mid-LLM.
+        if checkpointer is not None and execution_id is not None:
+            _put_turn_checkpoint(
+                checkpointer=checkpointer,
+                execution_id=execution_id,
+                agent_name=agent_name,
+                iteration=iteration,
+                messages=messages,
+            )
+
+        # Middleware: before_model (may raise StopAgent)
+        if mw_pipeline and mw_ctx is not None:
+            mw_ctx.turn = iteration
+            try:
+                messages = await mw_pipeline.apply_before_model(mw_ctx, messages)
+            except StopAgent:
+                return
+
         # Stream from LLM
         accumulated_text = ""
         pending_tool_calls: list[ToolCall] = []
@@ -536,6 +571,28 @@ async def stream_tool_loop(
                 yield event
             # Don't yield StreamDone here — we may have more iterations
 
+        # Middleware: after_model — build an LLMResponse from accumulated
+        # stream data and let middleware inspect/rewrite it. This runs after
+        # streaming completes but before tool execution, so the stream events
+        # have already been yielded to the caller.
+        if mw_pipeline and mw_ctx is not None:
+            response = LLMResponse(
+                content=accumulated_text or None,
+                tool_calls=list(pending_tool_calls),
+                usage={
+                    "prompt_tokens": total_usage.prompt_tokens,
+                    "completion_tokens": total_usage.completion_tokens,
+                },
+                finish_reason="tool_calls" if pending_tool_calls else "stop",
+            )
+            try:
+                response = await mw_pipeline.apply_after_model(mw_ctx, response)
+            except StopAgent:
+                return
+            # Reflect any middleware mutations back into the loop state.
+            accumulated_text = response.content or ""
+            pending_tool_calls = list(response.tool_calls)
+
         # No tool calls — final response, we're done
         if not pending_tool_calls:
             return
@@ -549,15 +606,77 @@ async def stream_tool_loop(
         )
 
         # Execute each tool call
-        for tc in pending_tool_calls:
+        for idx, tc in enumerate(pending_tool_calls):
             tool = tools_by_name.get(tc.name)
-            tool_message_content, _ = await _invoke_tool_with_span(
-                tool=tool,
-                tool_name=tc.name,
-                arguments=tc.arguments,
-                context=context,
-                guardrails=guardrails,
-            )
+
+            # Pre-tool checkpoint — captures tool args at the moment of
+            # dispatch. Resume re-enters the tool with these same args.
+            if checkpointer is not None and execution_id is not None:
+                _put_tool_checkpoint(
+                    checkpointer=checkpointer,
+                    execution_id=execution_id,
+                    agent_name=agent_name,
+                    iteration=iteration,
+                    tool_name=tc.name,
+                    tool_call_id=tc.id,
+                    tool_args=dict(tc.arguments),
+                    messages=messages,
+                )
+
+            try:
+                if mw_pipeline and mw_ctx is not None:
+                    mw_ctx.tool_call_index = idx
+
+                    async def _terminal(
+                        t: Tool,
+                        a: dict[str, Any],
+                        _tc: Any = tc,
+                    ) -> ToolResult:
+                        _, summary_text = await _invoke_tool_with_span(
+                            tool=tools_by_name.get(_tc.name),
+                            tool_name=_tc.name,
+                            arguments=a,
+                            context=context,
+                            guardrails=guardrails,
+                        )
+                        return ToolResult(output=summary_text)
+
+                    wrap_target = tool if tool is not None else _StubTool(tc.name)
+                    try:
+                        tr = await mw_pipeline.invoke_tool(
+                            mw_ctx, wrap_target, dict(tc.arguments), _terminal
+                        )
+                    except StopAgent:
+                        return
+                    tool_message_content: str | list[Any]
+                    if isinstance(tr.output, str):
+                        tool_message_content = tr.output
+                    elif tr.error is not None:
+                        tool_message_content = f"Error: {tr.error}"
+                    else:
+                        tool_message_content = json.dumps(tr.output, default=str)
+                else:
+                    tool_message_content, _ = await _invoke_tool_with_span(
+                        tool=tool,
+                        tool_name=tc.name,
+                        arguments=tc.arguments,
+                        context=context,
+                        guardrails=guardrails,
+                    )
+            except InterruptSignal as sig:
+                if checkpointer is not None and execution_id is not None:
+                    raise _record_agent_interrupt(
+                        checkpointer=checkpointer,
+                        execution_id=execution_id,
+                        agent_name=agent_name,
+                        iteration=iteration,
+                        tool_name=tc.name,
+                        tool_call_id=tc.id,
+                        tool_args=dict(tc.arguments),
+                        messages=messages,
+                        sig=sig,
+                    ) from None
+                raise
 
             messages.append(ToolMessage(content=tool_message_content, tool_call_id=tc.id))
 
