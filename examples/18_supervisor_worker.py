@@ -228,3 +228,11 @@ if __name__ == "__main__":
     example_dynamic_instructions()
     asyncio.run(example_streaming())
     example_sync_streaming()
+
+    print(
+        "\nTo render the supervisor topology in the Local UI, register the "
+        "Supervisor with build_app:\n"
+        "    from fastaiagent.ui.server import build_app\n"
+        "    app = build_app(runners=[supervisor])\n"
+        "Then visit http://127.0.0.1:7843/workflows/supervisor/customer-service"
+    )

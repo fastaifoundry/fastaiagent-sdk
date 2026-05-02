@@ -24,6 +24,9 @@ import {
 } from "@/components/ui/table";
 import { TableSkeleton } from "@/components/shared/LoadingSkeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+import { CostBreakdownTable } from "@/components/analytics/CostBreakdownTable";
 import { useAnalytics } from "@/hooks/use-analytics";
 import { formatCost, formatDurationMs } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -34,9 +37,19 @@ const WINDOW_CHOICES: { label: string; hours: number; granularity: "hour" | "day
   { label: "30d", hours: 24 * 30, granularity: "day" },
 ];
 
+type CostPeriod = "1d" | "7d" | "30d" | "all";
+
+function periodFromChoice(label: string): CostPeriod {
+  if (label === "24h") return "1d";
+  if (label === "7d") return "7d";
+  if (label === "30d") return "30d";
+  return "all";
+}
+
 export function AnalyticsPage() {
   const [choice, setChoice] = useState(WINDOW_CHOICES[1]);
   const analytics = useAnalytics(choice.hours, choice.granularity);
+  const [costChainName, setCostChainName] = useState("");
 
   const chartData = useMemo(() => {
     const rows = analytics.data?.points ?? [];
@@ -363,6 +376,52 @@ export function AnalyticsPage() {
                 </Table>
               </CardContent>
             </Card>
+          </div>
+
+          <div data-testid="cost-breakdown-section">
+            <h2 className="mb-3 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              // COST BREAKDOWN
+            </h2>
+            <Tabs defaultValue="model">
+              <TabsList>
+                <TabsTrigger value="model">By model</TabsTrigger>
+                <TabsTrigger value="agent">By agent</TabsTrigger>
+                <TabsTrigger value="node">By node</TabsTrigger>
+              </TabsList>
+              <TabsContent value="model" className="mt-3">
+                <CostBreakdownTable
+                  groupBy="model"
+                  period={periodFromChoice(choice.label)}
+                />
+              </TabsContent>
+              <TabsContent value="agent" className="mt-3">
+                <CostBreakdownTable
+                  groupBy="agent"
+                  period={periodFromChoice(choice.label)}
+                />
+              </TabsContent>
+              <TabsContent value="node" className="mt-3 space-y-3">
+                <Input
+                  type="text"
+                  placeholder="Enter chain name (required) — e.g. support-flow"
+                  value={costChainName}
+                  onChange={(e) => setCostChainName(e.target.value)}
+                  className="max-w-sm font-mono text-sm"
+                  aria-label="Chain name"
+                />
+                {costChainName ? (
+                  <CostBreakdownTable
+                    groupBy="node"
+                    period={periodFromChoice(choice.label)}
+                    chainName={costChainName}
+                  />
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Enter a chain name above to see per-node cost breakdown.
+                  </p>
+                )}
+              </TabsContent>
+            </Tabs>
           </div>
         </>
       )}

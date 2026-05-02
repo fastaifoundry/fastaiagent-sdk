@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { JsonViewer } from "@/components/shared/JsonViewer";
 import { AttachmentGallery } from "@/components/multimodal/AttachmentGallery";
+import { MixedContentView } from "./MixedContentView";
 import { EventsPane } from "./EventsPane";
 import { TraceStatusBadge } from "./TraceStatusBadge";
 import { formatDurationMs } from "@/lib/format";
@@ -120,10 +121,20 @@ export function SpanInspector({ span }: Props) {
           {inputMediaCount > 0 ? (
             <AttachmentGallery traceId={span.trace_id} spanId={span.span_id} />
           ) : null}
-          <PaneContent value={partitioned.input} emptyLabel="No input captured." />
+          <MixedContentView
+            value={partitioned.input}
+            traceId={span.trace_id}
+            spanId={span.span_id}
+            emptyLabel="No input captured."
+          />
         </TabsContent>
         <TabsContent value="output" className="p-4 pt-3">
-          <PaneContent value={partitioned.output} emptyLabel="No output captured." />
+          <MixedContentView
+            value={partitioned.output}
+            traceId={span.trace_id}
+            spanId={span.span_id}
+            emptyLabel="No output captured."
+          />
         </TabsContent>
         <TabsContent value="attributes" className="p-4 pt-3">
           <PaneContent value={partitioned.rest} emptyLabel="No attributes." />
@@ -148,3 +159,5 @@ function PaneContent({
   }
   return <JsonViewer data={value} />;
 }
+
+// PaneContent is kept for the Attributes tab (raw key/value JSON).

@@ -110,14 +110,17 @@ class EvalResults:
                     fail_count += 1
         pass_rate = (pass_count / total) if total else 0.0
 
+        from fastaiagent._internal.project import safe_get_project_id
+
+        pid = safe_get_project_id()
         db = init_local_db(resolved)
         try:
             db.execute(
                 """INSERT INTO eval_runs
                    (run_id, run_name, dataset_name, agent_name, agent_version,
                     scorers, started_at, finished_at, pass_count, fail_count,
-                    pass_rate, metadata)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    pass_rate, metadata, project_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     run_id,
                     run_name,
@@ -131,14 +134,15 @@ class EvalResults:
                     fail_count,
                     pass_rate,
                     json.dumps({}),
+                    pid,
                 ),
             )
             for ordinal, case in enumerate(self.cases):
                 db.execute(
                     """INSERT INTO eval_cases
                        (case_id, run_id, ordinal, input, expected_output,
-                        actual_output, trace_id, per_scorer)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                        actual_output, trace_id, per_scorer, project_id)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         uuid.uuid4().hex,
                         run_id,
@@ -148,6 +152,7 @@ class EvalResults:
                         json.dumps(case.actual_output, default=str),
                         case.trace_id,
                         json.dumps(case.per_scorer),
+                        pid,
                     ),
                 )
         finally:

@@ -324,6 +324,7 @@ export interface AgentSummary {
   avg_latency_ms: number;
   avg_cost_usd: number;
   last_run: string;
+  workflows?: { runner_type: "chain" | "swarm" | "supervisor"; name: string }[];
 }
 
 export interface ForkModifications {
@@ -365,6 +366,104 @@ export interface WorkflowSummary {
 
 export interface WorkflowListResponse {
   workflows: WorkflowSummary[];
+  registered?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Workflow topology (used by the Local UI's React Flow canvas)
+// ---------------------------------------------------------------------------
+
+export type TopologyNodeType =
+  | "agent"
+  | "tool"
+  | "condition"
+  | "parallel"
+  | "hitl"
+  | "start"
+  | "end"
+  | "transformer"
+  | "supervisor";
+
+export interface TopologyNode {
+  id: string;
+  type: TopologyNodeType;
+  label: string;
+  agent_name?: string;
+  tool_name?: string;
+  model?: string;
+  provider?: string;
+  description?: string;
+  tool_count?: number;
+}
+
+export type TopologyEdgeType =
+  | "sequential"
+  | "conditional"
+  | "handoff"
+  | "delegation";
+
+export interface TopologyEdge {
+  from: string;
+  to: string;
+  type: TopologyEdgeType;
+  label?: string;
+  condition?: string;
+  is_cyclic?: boolean;
+}
+
+export interface TopologyTool {
+  owner: string;
+  name: string;
+  type: string;
+}
+
+export interface WorkflowTopology {
+  name: string;
+  type: "chain" | "swarm" | "supervisor";
+  nodes: TopologyNode[];
+  edges: TopologyEdge[];
+  entrypoint: string | null;
+  tools: TopologyTool[];
+  knowledge_bases: { owner: string; name: string }[];
+  max_handoffs?: number;
+  max_delegation_rounds?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Cost breakdown
+// ---------------------------------------------------------------------------
+
+export type CostGroupBy = "model" | "agent" | "node";
+
+export interface CostByModelRow {
+  model: string;
+  calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+}
+
+export interface CostByAgentRow {
+  agent: string;
+  runs: number;
+  avg_tokens: number;
+  avg_cost_usd: number;
+  total_cost_usd: number;
+}
+
+export interface CostByNodeRow {
+  node: string;
+  executions: number;
+  avg_duration_ms: number;
+  avg_cost_usd: number;
+  percent_of_total: number;
+}
+
+export interface CostBreakdownResponse {
+  group_by: CostGroupBy;
+  period: string;
+  chain_name?: string | null;
+  rows: CostByModelRow[] | CostByAgentRow[] | CostByNodeRow[];
 }
 
 export type ToolOrigin =

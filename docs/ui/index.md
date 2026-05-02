@@ -279,6 +279,52 @@ Drill into one workflow to see its per-run trace list:
 
 ![Workflow detail](screenshots/22-workflow-detail.png)
 
+#### Topology view
+
+When a runner is registered with `build_app(runners=[chain])`, the
+detail page also renders an interactive React Flow topology of nodes and
+edges. Conditional edges, HITL gates, swarm handoffs, and supervisor
+delegations all get distinct visual treatments. See
+[Workflow visualization](workflow-visualization.md) for the full
+reference.
+
+#### Multimodal trace rendering
+
+Span input/output tabs render inline image thumbnails and PDF cards
+when the message content carries them — no more raw base64 in the JSON.
+See [Multimodal traces](multimodal.md) for the full reference and a
+screenshot.
+
+#### Checkpoint inspector
+
+The execution detail page (`/executions/{id}`) shows a vertical
+timeline of every checkpoint, expandable to reveal `state_snapshot` /
+`node_input` / `node_output`, with an automatic state diff between
+adjacent expanded rows and an idempotency-cache panel listing the
+`@idempotent` results that would be skipped on resume. See
+[Checkpoint inspector](checkpoint-inspector.md).
+
+#### Cost tracking
+
+A **// COST BREAKDOWN** section at the bottom of Analytics slices spend
+three ways: by model, by agent, or by chain node. See
+[Cost tracking](cost-tracking.md).
+
+#### Export trace as JSON
+
+The trace detail page has an **Export** button that opens a dialog with
+checkboxes for embedding attachment bytes and checkpoint state. The
+same export is available via `fastaiagent export-trace --trace-id <id>
+--output <path>` on the CLI. See [Export trace as JSON](export-trace.md).
+
+#### Project scoping
+
+The header breadcrumb shows the current project name
+(`Local UI // my-project // auth disabled`). Every read endpoint
+filters by `project_id` so multiple projects can share a single
+Postgres backend without cross-contamination. See
+[Project scoping](projects.md).
+
 ### Agents
 
 Cards summarizing every agent the SDK has seen: run count, success rate

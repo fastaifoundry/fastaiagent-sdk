@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from fastaiagent._internal.errors import FragmentNotFoundError, PromptNotFoundError
 from fastaiagent.prompt.registry import PromptRegistry
-from fastaiagent.ui.deps import get_context, require_session
+from fastaiagent.ui.deps import get_context, project_filter, require_session
 
 router = APIRouter(prefix="/api/prompts", tags=["prompts"])
 
@@ -25,21 +25,35 @@ def list_prompts(request: Request, _user: str = Depends(require_session)) -> dic
     reg = _registry(request)
     prompts = reg.list()
     db = ctx.db()
+    pid_clause, pid_params = project_filter(ctx)
+    # Filter the file-registry list down to prompts that are actually
+    # owned by this project. The ``prompts`` table has a ``project_id``
+    # stamp; the on-disk registry doesn't, so we cross-reference.
+    if ctx.project_id:
+        own_slugs = {
+            r["slug"]
+            for r in db.fetchall(
+                "SELECT slug FROM prompts WHERE project_id = ?",
+                (ctx.project_id,),
+            )
+        }
+        prompts = [p for p in prompts if p.get("name") in own_slugs]
     try:
         enriched: list[dict[str, Any]] = []
         for p in prompts:
             # Accept every prefix variant so this count works across traces
             # from older SDK releases too.
             trace_count = db.fetchone(
-                """SELECT COUNT(DISTINCT trace_id) AS n
+                f"""SELECT COUNT(DISTINCT trace_id) AS n
                    FROM spans
-                   WHERE attributes LIKE ?
+                   WHERE (attributes LIKE ?
                       OR attributes LIKE ?
-                      OR attributes LIKE ?""",
+                      OR attributes LIKE ?) {pid_clause}""",
                 (
                     f'%"fastaiagent.prompt.name": "{p["name"]}"%',
                     f'%"prompt.name": "{p["name"]}"%',
                     f'%"fastai.prompt.name": "{p["name"]}"%',
+                    *pid_params,
                 ),
             )
             enriched.append(
@@ -60,6 +74,20 @@ def get_prompt(
     slug: str,
     _user: str = Depends(require_session),
 ) -> dict[str, Any]:
+    ctx = get_context(request)
+    if ctx.project_id:
+        # 404 cross-project lookups before opening the registry to avoid
+        # confirming the slug exists in another project.
+        db = ctx.db()
+        try:
+            row = db.fetchone(
+                "SELECT 1 FROM prompts WHERE slug = ? AND project_id = ? LIMIT 1",
+                (slug, ctx.project_id),
+            )
+        finally:
+            db.close()
+        if row is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"Prompt '{slug}' not found")
     reg = _registry(request)
     try:
         prompt = reg.load(slug)
@@ -83,13 +111,14 @@ def list_versions(
 ) -> dict[str, Any]:
     ctx = get_context(request)
     db = ctx.db()
+    pid_clause, pid_params = project_filter(ctx)
     try:
         rows = db.fetchall(
-            """SELECT slug, version, template, variables, created_at, created_by
+            f"""SELECT slug, version, template, variables, created_at, created_by
                FROM prompt_versions
-               WHERE slug = ?
+               WHERE slug = ? {pid_clause}
                ORDER BY CAST(version AS INTEGER) ASC""",
-            (slug,),
+            (slug, *pid_params),
         )
         if not rows:
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"Prompt '{slug}' not found")
@@ -175,6 +204,8 @@ def lineage(
 ) -> dict[str, Any]:
     ctx = get_context(request)
     db = ctx.db()
+    pid_clause, pid_params = project_filter(ctx)
+    pid_clause_spans, _ = project_filter(ctx, alias="spans")
     try:
         likes = (
             f'%"fastaiagent.prompt.name": "{slug}"%',
@@ -182,19 +213,19 @@ def lineage(
             f'%"fastai.prompt.name": "{slug}"%',
         )
         trace_rows = db.fetchall(
-            """SELECT DISTINCT trace_id FROM spans
-               WHERE attributes LIKE ?
+            f"""SELECT DISTINCT trace_id FROM spans
+               WHERE (attributes LIKE ?
                   OR attributes LIKE ?
-                  OR attributes LIKE ?""",
-            likes,
+                  OR attributes LIKE ?) {pid_clause}""",
+            (*likes, *pid_params),
         )
         eval_rows = db.fetchall(
-            """SELECT DISTINCT run_id FROM eval_cases
+            f"""SELECT DISTINCT run_id FROM eval_cases
                JOIN spans ON eval_cases.trace_id = spans.trace_id
-               WHERE spans.attributes LIKE ?
+               WHERE (spans.attributes LIKE ?
                   OR spans.attributes LIKE ?
-                  OR spans.attributes LIKE ?""",
-            likes,
+                  OR spans.attributes LIKE ?) {pid_clause_spans}""",
+            (*likes, *pid_params),
         )
         return {
             "trace_ids": [r["trace_id"] for r in trace_rows],

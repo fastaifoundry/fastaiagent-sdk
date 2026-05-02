@@ -13,7 +13,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
-from fastaiagent.ui.deps import get_context, require_session
+from fastaiagent.ui.deps import get_context, project_filter, require_session
 
 router = APIRouter(prefix="/api/evals", tags=["evals"])
 
@@ -36,7 +36,9 @@ def _unpack(row: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def _trace_cost_and_latency(db: Any, trace_ids: list[str]) -> tuple[float, float]:
+def _trace_cost_and_latency(
+    db: Any, trace_ids: list[str], *, project_id: str = ""
+) -> tuple[float, float]:
     """Return (total_cost_usd, avg_latency_ms) for the given trace_ids.
 
     Scans root spans only (parent_span_id IS NULL) since those carry the
@@ -51,11 +53,17 @@ def _trace_cost_and_latency(db: Any, trace_ids: list[str]) -> tuple[float, float
     from fastaiagent.ui.pricing import compute_cost_usd
 
     placeholders = ",".join("?" * len(trace_ids))
+    pid_extra = ""
+    pid_params: tuple = ()
+    if project_id:
+        pid_extra = "AND project_id = ?"
+        pid_params = (project_id,)
     rows = db.fetchall(
         f"""SELECT trace_id, attributes, start_time, end_time
             FROM spans
-            WHERE parent_span_id IS NULL AND trace_id IN ({placeholders})""",
-        tuple(trace_ids),
+            WHERE parent_span_id IS NULL
+              AND trace_id IN ({placeholders}) {pid_extra}""",
+        (*trace_ids, *pid_params),
     )
     total_cost = 0.0
     total_latency_ms = 0.0
@@ -85,14 +93,19 @@ def _trace_cost_and_latency(db: Any, trace_ids: list[str]) -> tuple[float, float
     return total_cost, avg_latency
 
 
-def _run_with_aggregates(db: Any, run: dict[str, Any]) -> dict[str, Any]:
+def _run_with_aggregates(
+    db: Any, run: dict[str, Any], *, project_id: str = ""
+) -> dict[str, Any]:
     """Decorate a run row with cost_usd + avg_latency_ms derived from its cases."""
+    pid_extra = "AND project_id = ?" if project_id else ""
+    pid_params: tuple = (project_id,) if project_id else ()
     case_rows = db.fetchall(
-        "SELECT trace_id FROM eval_cases WHERE run_id = ? AND trace_id IS NOT NULL",
-        (run["run_id"],),
+        f"SELECT trace_id FROM eval_cases "
+        f"WHERE run_id = ? AND trace_id IS NOT NULL {pid_extra}",
+        (run["run_id"], *pid_params),
     )
     trace_ids = [r["trace_id"] for r in case_rows if r["trace_id"]]
-    cost, latency = _trace_cost_and_latency(db, trace_ids)
+    cost, latency = _trace_cost_and_latency(db, trace_ids, project_id=project_id)
     out = dict(run)
     out["cost_usd"] = round(cost, 6)
     out["avg_latency_ms"] = round(latency, 2)
@@ -146,6 +159,9 @@ def list_runs(
         if agent:
             clauses.append("agent_name = ?")
             params.append(agent)
+        if ctx.project_id:
+            clauses.append("project_id = ?")
+            params.append(ctx.project_id)
         where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         total_row = db.fetchone(f"SELECT COUNT(*) AS n FROM eval_runs {where_sql}", tuple(params))
         total = int((total_row or {}).get("n") or 0)
@@ -155,7 +171,10 @@ def list_runs(
                 LIMIT ? OFFSET ?""",
             tuple(params) + (page_size, (page - 1) * page_size),
         )
-        enriched = [_run_with_aggregates(db, _unpack(r)) for r in rows]
+        enriched = [
+            _run_with_aggregates(db, _unpack(r), project_id=ctx.project_id)
+            for r in rows
+        ]
         return {
             "rows": enriched,
             "total": total,
@@ -175,13 +194,21 @@ def trend(
     ctx = get_context(request)
     db = ctx.db()
     try:
-        clause = "WHERE dataset_name = ?" if dataset else ""
+        clauses: list[str] = []
+        params: list[Any] = []
+        if dataset:
+            clauses.append("dataset_name = ?")
+            params.append(dataset)
+        if ctx.project_id:
+            clauses.append("project_id = ?")
+            params.append(ctx.project_id)
+        clause = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         rows = db.fetchall(
             f"""SELECT started_at, pass_rate, dataset_name
                 FROM eval_runs
                 {clause}
                 ORDER BY started_at ASC""",
-            (dataset,) if dataset else (),
+            tuple(params),
         )
         return {"points": rows}
     finally:
@@ -204,22 +231,26 @@ def compare(
     """
     ctx = get_context(request)
     db = ctx.db()
+    pid_clause, pid_params = project_filter(ctx)
     try:
 
         def get_run(run_id: str) -> dict[str, Any]:
-            row = db.fetchone("SELECT * FROM eval_runs WHERE run_id = ?", (run_id,))
+            row = db.fetchone(
+                f"SELECT * FROM eval_runs WHERE run_id = ? {pid_clause}",
+                (run_id, *pid_params),
+            )
             if row is None:
                 raise HTTPException(status.HTTP_404_NOT_FOUND, f"Eval run '{run_id}' not found")
-            return _run_with_aggregates(db, _unpack(row))
+            return _run_with_aggregates(db, _unpack(row), project_id=ctx.project_id)
 
         def get_cases(run_id: str) -> list[dict[str, Any]]:
             return [
                 _unpack(r)
                 for r in db.fetchall(
-                    """SELECT * FROM eval_cases
-                       WHERE run_id = ?
+                    f"""SELECT * FROM eval_cases
+                       WHERE run_id = ? {pid_clause}
                        ORDER BY ordinal""",
-                    (run_id,),
+                    (run_id, *pid_params),
                 )
             ]
 
@@ -333,15 +364,19 @@ def get_run(
 ) -> dict[str, Any]:
     ctx = get_context(request)
     db = ctx.db()
+    pid_clause, pid_params = project_filter(ctx)
     try:
-        run_row = db.fetchone("SELECT * FROM eval_runs WHERE run_id = ?", (run_id,))
+        run_row = db.fetchone(
+            f"SELECT * FROM eval_runs WHERE run_id = ? {pid_clause}",
+            (run_id, *pid_params),
+        )
         if run_row is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"Eval run '{run_id}' not found")
         case_rows = db.fetchall(
-            """SELECT * FROM eval_cases
-               WHERE run_id = ?
+            f"""SELECT * FROM eval_cases
+               WHERE run_id = ? {pid_clause}
                ORDER BY ordinal""",
-            (run_id,),
+            (run_id, *pid_params),
         )
         all_cases = [_unpack(c) for c in case_rows]
         # Scorer-summary is over ALL cases, not the filtered subset, so the

@@ -114,10 +114,36 @@ def _all_doc_imports() -> list[ImportSite]:
 
 @pytest.mark.parametrize("site", _all_doc_imports(), ids=lambda s: f"{s.file.name}:{s.line}")
 def test_documented_fastaiagent_import_resolves(site: ImportSite) -> None:
-    """Each documented ``fastaiagent`` import must resolve in a fresh namespace."""
+    """Each documented ``fastaiagent`` import must resolve in a fresh namespace.
+
+    A ``ModuleNotFoundError`` for a third-party module (``fastapi``,
+    ``langchain``, ``qdrant_client``, …) means the documented snippet
+    targets an *optional* extra that isn't installed in this test
+    environment — skip rather than fail, so the bare-install matrix
+    doesn't go red just because the snippet uses ``[ui]`` or ``[kb]``
+    features. A failure inside ``fastaiagent.*`` always counts as a
+    real bug (re-export drift, renamed symbol, etc.).
+    """
     namespace: dict[str, object] = {}
     try:
         exec(compile(site.code, str(site.file), "exec"), namespace)
+    except ModuleNotFoundError as e:
+        missing = (e.name or "").split(".")[0]
+        if missing and missing != "fastaiagent":
+            pytest.skip(
+                f"snippet at {site.file.name}:{site.line} needs optional "
+                f"third-party module {missing!r} "
+                f"(install with the matching ``fastaiagent[<extra>]``)"
+            )
+        relative = site.file.relative_to(REPO_ROOT)
+        pytest.fail(
+            f"Broken documented import at {relative}:{site.line}\n"
+            f"    {site.code}\n"
+            f"  → {type(e).__name__}: {e}\n"
+            f"This statement appears in published docs / the README — "
+            f"new users copy-paste it verbatim. Re-export the missing "
+            f"symbol or fix the import path."
+        )
     except ImportError as e:
         relative = site.file.relative_to(REPO_ROOT)
         pytest.fail(

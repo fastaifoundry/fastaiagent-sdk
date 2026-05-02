@@ -17,7 +17,7 @@ from pathlib import Path
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
 
-CURRENT_SCHEMA_VERSION = 3
+CURRENT_SCHEMA_VERSION = 4
 
 # A migration step is either a SQL string or a callable that takes the
 # ``SQLiteHelper`` and runs whatever logic it needs (e.g., gated
@@ -44,6 +44,93 @@ def _v2_add_checkpoint_columns(db: SQLiteHelper) -> None:
     _add_column_if_missing(db, "checkpoints", "interrupt_reason", "TEXT")
     _add_column_if_missing(db, "checkpoints", "interrupt_context", "TEXT DEFAULT '{}'")
     _add_column_if_missing(db, "checkpoints", "agent_path", "TEXT")
+
+
+# v4 — project scoping. Stamp every UI-visible record with project_id so the
+# same DB can host multiple projects.
+_PROJECT_TABLES = (
+    "spans",
+    "checkpoints",
+    "pending_interrupts",
+    "idempotency_cache",
+    "trace_attachments",
+    "prompts",
+    "prompt_versions",
+    "eval_runs",
+    "eval_cases",
+    "guardrail_events",
+)
+
+
+def _v4_add_project_id_columns(db: SQLiteHelper) -> None:
+    """Add ``project_id TEXT NOT NULL DEFAULT ''`` to every project-scoped
+    table. SQLite < 3.35 doesn't support ``ADD COLUMN IF NOT EXISTS``, so
+    we check ``PRAGMA table_info`` per table.
+    """
+    for table in _PROJECT_TABLES:
+        # Some installs may not have every table (e.g. legacy DB without
+        # idempotency_cache). Skip rather than crash.
+        rows = db.fetchall(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (table,),
+        )
+        if not rows:
+            continue
+        _add_column_if_missing(
+            db, table, "project_id", "TEXT NOT NULL DEFAULT ''"
+        )
+
+
+def _v4_backfill_project_id(db: SQLiteHelper) -> None:
+    """Backfill empty ``project_id`` rows with the current project's id.
+
+    Runs once per database; idempotent because it only updates rows where
+    ``project_id = ''``.
+    """
+    from fastaiagent._internal.project import safe_get_project_id
+
+    pid = safe_get_project_id()
+    if not pid:
+        return
+    for table in _PROJECT_TABLES:
+        rows = db.fetchall(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (table,),
+        )
+        if not rows:
+            continue
+        db.execute(
+            f"UPDATE {table} SET project_id = ? WHERE project_id = ''",
+            (pid,),
+        )
+
+
+def _v4_create_project_indexes(db: SQLiteHelper) -> None:
+    """Add per-project hot-path indexes on tables that exist.
+
+    Legacy fixtures (checkpoint-only DBs) don't have a ``spans``
+    table; ``IF NOT EXISTS`` on the index doesn't protect against the
+    underlying table being missing, so we gate the CREATE INDEX on a
+    sqlite_master probe.
+    """
+    for table, sql in [
+        (
+            "spans",
+            "CREATE INDEX IF NOT EXISTS idx_spans_project "
+            "ON spans(project_id, start_time DESC)",
+        ),
+        (
+            "checkpoints",
+            "CREATE INDEX IF NOT EXISTS idx_checkpoints_project "
+            "ON checkpoints(project_id, execution_id)",
+        ),
+    ]:
+        rows = db.fetchall(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (table,),
+        )
+        if rows:
+            db.execute(sql)
 
 
 _MIGRATIONS: dict[int, list[_Step]] = {
@@ -223,6 +310,20 @@ _MIGRATIONS: dict[int, list[_Step]] = {
         )""",
         """CREATE INDEX IF NOT EXISTS idx_trace_attachments_span
             ON trace_attachments(trace_id, span_id)""",
+    ],
+    4: [
+        # Project scoping. Every UI-visible record gets a project_id stamp
+        # so the same Postgres can host multiple projects without
+        # cross-contamination. SQLite gets the column too — redundant for
+        # one-DB-per-project use but lets data carry its project across
+        # SQLite → Postgres migration.
+        _v4_add_project_id_columns,
+        _v4_backfill_project_id,
+        # Per-project hot-path indexes. Gated on the underlying table
+        # existing — legacy DBs (e.g. checkpoint-only fixtures) might
+        # not have a ``spans`` table at all, and ``IF NOT EXISTS`` on
+        # the index doesn't protect against the table being missing.
+        _v4_create_project_indexes,
     ],
 }
 

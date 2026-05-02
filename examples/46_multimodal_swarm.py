@@ -125,6 +125,14 @@ def main() -> None:
     print(f"Handoffs: {[c.get('tool_name') for c in handoffs2]}")
     print(f"Trace ID: {result2.trace_id}")
 
+    print(
+        "\nTo render the swarm topology in the Local UI, register the "
+        "Swarm with build_app:\n"
+        "    from fastaiagent.ui.server import build_app\n"
+        "    app = build_app(runners=[swarm])\n"
+        "Then visit http://127.0.0.1:7843/workflows/swarm/claims_swarm"
+    )
+
 
 if __name__ == "__main__":
     main()

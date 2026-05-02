@@ -57,6 +57,7 @@ def build_app(
     auth_path: Path | None = None,
     no_auth: bool = False,
     runners: Iterable[Any] | None = None,
+    project_id: str | None = None,
 ) -> FastAPI:
     """Create a FastAPI app bound to a specific local.db and auth.json.
 
@@ -65,9 +66,19 @@ def build_app(
     Each must expose ``.name`` and ``.aresume(...)``. The
     ``POST /api/executions/{id}/resume`` endpoint looks one up by the
     checkpoint's ``chain_name`` field and returns 503 if no match.
+
+    ``project_id`` (optional) overrides the project the UI scopes to.
+    When omitted, ``ProjectConfig.get_project_id()`` is used (which
+    resolves ``./.fastaiagent/config.toml`` or the directory name).
+    Endpoints filter SQL by this id so multiple projects can share the
+    same DB (Postgres) without cross-contamination.
     """
     resolved_db = db_path or get_config().local_db_path
     resolved_auth = auth_path or default_auth_path()
+    # Default to unscoped (project_id="") so test fixtures that don't seed
+    # project_id keep working. The ``fastaiagent ui`` CLI explicitly sets
+    # this via ProjectConfig so real users get isolation by default.
+    resolved_project_id = project_id if project_id is not None else ""
 
     # Eagerly ensure the schema exists so every route can assume it's there.
     init_local_db(resolved_db).close()
@@ -90,6 +101,7 @@ def build_app(
         auth_path=resolved_auth,
         no_auth=no_auth,
         runners=runner_map,
+        project_id=resolved_project_id,
     )
 
     for r in (

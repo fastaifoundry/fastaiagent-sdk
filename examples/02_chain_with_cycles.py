@@ -54,3 +54,10 @@ if __name__ == "__main__":
         print(f"\nFinal output: {result.output}")
         print(f"Execution ID: {result.execution_id}")
         print(f"Nodes executed: {list(result.node_results.keys())}")
+        print(
+            "\nTo render the topology view in the Local UI, register "
+            "this chain with build_app:\n"
+            "    from fastaiagent.ui.server import build_app\n"
+            "    app = build_app(runners=[chain])\n"
+            "Then visit http://127.0.0.1:7843/workflows/chain/research-pipeline"
+        )

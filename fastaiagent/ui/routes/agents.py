@@ -7,7 +7,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from fastaiagent.ui.deps import get_context, require_session
+from fastaiagent.ui.deps import get_context, project_filter, require_session
 
 router = APIRouter(prefix="/api/agents", tags=["agents"])
 
@@ -102,11 +102,57 @@ def list_agents(request: Request, _user: str = Depends(require_session)) -> dict
     try:
         # Scan every agent.* span, not just root spans. With workflow
         # wrappers (chain/swarm/supervisor), agents always run as children.
-        rows = db.fetchall("SELECT * FROM spans WHERE name LIKE 'agent.%'")
+        if ctx.project_id:
+            rows = db.fetchall(
+                "SELECT * FROM spans WHERE name LIKE 'agent.%' AND project_id = ?",
+                (ctx.project_id,),
+            )
+        else:
+            rows = db.fetchall("SELECT * FROM spans WHERE name LIKE 'agent.%'")
         by_agent = _aggregate(rows)
         return {"agents": [_format(b) for b in by_agent.values()]}
     finally:
         db.close()
+
+
+def _runner_type_of(runner: Any) -> str | None:
+    cls = type(runner).__name__.lower()
+    if "chain" in cls:
+        return "chain"
+    if "swarm" in cls:
+        return "swarm"
+    if "supervisor" in cls:
+        return "supervisor"
+    return None
+
+
+def _registered_workflows_for(ctx: Any, agent_name: str) -> list[dict[str, str]]:
+    """List registered workflows whose graph mentions this agent.
+
+    Used by the Agent detail page to surface a topology preview link.
+    """
+    out: list[dict[str, str]] = []
+    runners = getattr(ctx, "runners", {}) or {}
+    for r in runners.values():
+        rtype = _runner_type_of(r)
+        if rtype is None:
+            continue
+        members: set[str] = set()
+        if rtype == "chain":
+            for n in getattr(r, "nodes", []) or []:
+                a = getattr(n, "agent", None)
+                if a is not None:
+                    members.add(getattr(a, "name", ""))
+        elif rtype == "swarm":
+            members.update(getattr(r, "agents", {}).keys())
+        elif rtype == "supervisor":
+            for w in getattr(r, "workers", []) or []:
+                a = getattr(w, "agent", None)
+                if a is not None:
+                    members.add(getattr(a, "name", ""))
+        if agent_name in members:
+            out.append({"runner_type": rtype, "name": getattr(r, "name", "")})
+    return out
 
 
 @router.get("/{name}")
@@ -118,11 +164,19 @@ def get_agent(
     ctx = get_context(request)
     db = ctx.db()
     try:
-        rows = db.fetchall("SELECT * FROM spans WHERE name LIKE 'agent.%'")
+        if ctx.project_id:
+            rows = db.fetchall(
+                "SELECT * FROM spans WHERE name LIKE 'agent.%' AND project_id = ?",
+                (ctx.project_id,),
+            )
+        else:
+            rows = db.fetchall("SELECT * FROM spans WHERE name LIKE 'agent.%'")
         by_agent = _aggregate(rows)
         if name not in by_agent:
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"Agent '{name}' not found")
-        return _format(by_agent[name])
+        payload = _format(by_agent[name])
+        payload["workflows"] = _registered_workflows_for(ctx, name)
+        return payload
     finally:
         db.close()
 
@@ -151,12 +205,25 @@ def get_agent_tools(
 
     ctx = get_context(request)
     db = ctx.db()
+    pid_clause, pid_params = project_filter(ctx)
     try:
+        # Project-scope guard: 404 if this agent has no spans in this project,
+        # so cross-project name probing can't confirm existence.
+        if ctx.project_id:
+            probe = db.fetchone(
+                "SELECT 1 FROM spans WHERE name = ? AND project_id = ? LIMIT 1",
+                (f"agent.{name}", ctx.project_id),
+            )
+            if probe is None:
+                raise HTTPException(
+                    status.HTTP_404_NOT_FOUND, f"Agent '{name}' not found"
+                )
         # ── Registered: latest agent.<name> root span with agent.tools JSON ─
         registered: list[dict[str, Any]] = []
         agent_rows = db.fetchall(
-            "SELECT attributes FROM spans WHERE name = ? ORDER BY start_time DESC LIMIT 1",
-            (f"agent.{name}",),
+            f"SELECT attributes FROM spans WHERE name = ? {pid_clause} "
+            "ORDER BY start_time DESC LIMIT 1",
+            (f"agent.{name}", *pid_params),
         )
         if agent_rows:
             try:
@@ -186,8 +253,8 @@ def get_agent_tools(
         # one-level nesting we ship today.
         tool_agg: dict[str, dict[str, Any]] = {}
         trace_rows = db.fetchall(
-            "SELECT DISTINCT trace_id FROM spans WHERE name = ?",
-            (f"agent.{name}",),
+            f"SELECT DISTINCT trace_id FROM spans WHERE name = ? {pid_clause}",
+            (f"agent.{name}", *pid_params),
         )
         trace_ids = [r["trace_id"] for r in trace_rows if r.get("trace_id")]
         if trace_ids:
@@ -196,8 +263,8 @@ def get_agent_tools(
                 f"""SELECT name, status, start_time, end_time, attributes
                     FROM spans
                     WHERE trace_id IN ({placeholders})
-                      AND name LIKE 'tool.%'""",
-                tuple(trace_ids),
+                      AND name LIKE 'tool.%' {pid_clause}""",
+                (*trace_ids, *pid_params),
             )
             for span in tool_span_rows:
                 try:

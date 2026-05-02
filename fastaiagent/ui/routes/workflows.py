@@ -150,21 +150,31 @@ def list_workflows(
     ctx = get_context(request)
     db = ctx.db()
     try:
+        pid_clause = "AND project_id = ?" if ctx.project_id else ""
         if runner_type:
-            rows = db.fetchall(
+            sql = (
                 "SELECT * FROM spans WHERE parent_span_id IS NULL "
-                "AND name LIKE ? ORDER BY start_time DESC",
-                (f"{runner_type}.%",),
+                f"AND name LIKE ? {pid_clause} ORDER BY start_time DESC"
             )
+            params: tuple = (
+                (f"{runner_type}.%", ctx.project_id)
+                if ctx.project_id
+                else (f"{runner_type}.%",)
+            )
+            rows = db.fetchall(sql, params)
         else:
-            rows = db.fetchall(
+            sql = (
                 "SELECT * FROM spans WHERE parent_span_id IS NULL "
                 "AND (name LIKE 'chain.%' OR name LIKE 'swarm.%' "
-                "OR name LIKE 'supervisor.%') ORDER BY start_time DESC"
+                f"OR name LIKE 'supervisor.%') {pid_clause} "
+                "ORDER BY start_time DESC"
             )
+            params = (ctx.project_id,) if ctx.project_id else ()
+            rows = db.fetchall(sql, params)
         by_wf = _aggregate(rows)
         return {
             "workflows": [_format(b) for b in by_wf.values()],
+            "registered": bool(getattr(ctx, "runners", {})),
         }
     finally:
         db.close()
@@ -185,17 +195,270 @@ def get_workflow(
     ctx = get_context(request)
     db = ctx.db()
     try:
-        rows = db.fetchall(
-            "SELECT * FROM spans WHERE parent_span_id IS NULL AND name LIKE ?",
-            (f"{runner_type}.%",),
-        )
+        if ctx.project_id:
+            rows = db.fetchall(
+                "SELECT * FROM spans WHERE parent_span_id IS NULL "
+                "AND name LIKE ? AND project_id = ?",
+                (f"{runner_type}.%", ctx.project_id),
+            )
+        else:
+            rows = db.fetchall(
+                "SELECT * FROM spans WHERE parent_span_id IS NULL AND name LIKE ?",
+                (f"{runner_type}.%",),
+            )
         by_wf = _aggregate(rows)
         key = (runner_type, name)
-        if key not in by_wf:
-            raise HTTPException(
-                status.HTTP_404_NOT_FOUND,
-                f"{runner_type.capitalize()} '{name}' not found",
-            )
-        return _format(by_wf[key])
+        if key in by_wf:
+            return _format(by_wf[key])
+        # Fall back to the registered runner — lets a freshly-registered
+        # workflow render its topology before its first run lands spans
+        # in the DB. The summary stats are zero until then.
+        registered = (getattr(ctx, "runners", {}) or {}).get(name)
+        if registered is not None and _runner_type_of(registered) == runner_type:
+            return {
+                "runner_type": runner_type,
+                "workflow_name": name,
+                "run_count": 0,
+                "success_rate": 0.0,
+                "error_count": 0,
+                "avg_latency_ms": 0.0,
+                "avg_cost_usd": 0.0,
+                "last_run": "",
+                "node_count": (
+                    len(getattr(registered, "nodes", []))
+                    if hasattr(registered, "nodes")
+                    else None
+                ),
+            }
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            f"{runner_type.capitalize()} '{name}' not found",
+        )
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# Topology
+# ---------------------------------------------------------------------------
+
+
+def _runner_type_of(runner: Any) -> str:
+    """Best-effort type tag for a registered runner."""
+    cls = type(runner).__name__.lower()
+    if "chain" in cls:
+        return "chain"
+    if "swarm" in cls:
+        return "swarm"
+    if "supervisor" in cls:
+        return "supervisor"
+    return cls
+
+
+def _chain_topology(runner: Any) -> dict[str, Any]:
+    """Convert a Chain to the topology shape expected by the frontend."""
+    from fastaiagent.chain.executor import _topological_sort
+
+    raw = runner.to_dict()
+    nodes_raw = raw.get("nodes", [])
+    edges_raw = raw.get("edges", [])
+
+    # Frontend node payload: id + type + label + per-node metadata.
+    nodes: list[dict[str, Any]] = []
+    tools_out: list[dict[str, Any]] = []
+    for n in runner.nodes:
+        node_payload: dict[str, Any] = {
+            "id": n.id,
+            "type": n.type.value,
+            "label": n.name or n.id,
+        }
+        if n.agent is not None:
+            agent = n.agent
+            node_payload["agent_name"] = getattr(agent, "name", None)
+            llm = getattr(agent, "llm", None)
+            if llm is not None:
+                node_payload["model"] = getattr(llm, "model", "")
+                node_payload["provider"] = getattr(llm, "provider", "")
+            node_payload["tool_count"] = len(getattr(agent, "tools", []) or [])
+            for t in getattr(agent, "tools", []) or []:
+                tools_out.append(
+                    {
+                        "owner": n.id,
+                        "name": getattr(t, "name", str(t)),
+                        "type": "function",
+                    }
+                )
+        if n.tool is not None:
+            node_payload["tool_name"] = getattr(n.tool, "name", None)
+        nodes.append(node_payload)
+
+    edges: list[dict[str, Any]] = []
+    for e in edges_raw:
+        edge_payload: dict[str, Any] = {
+            "from": e["source"],
+            "to": e["target"],
+            "type": "conditional" if e.get("condition") else "sequential",
+        }
+        if e.get("condition"):
+            edge_payload["condition"] = e["condition"]
+        if e.get("label"):
+            edge_payload["label"] = e["label"]
+        if e.get("is_cyclic"):
+            edge_payload["is_cyclic"] = True
+            edge_payload["cycle_config"] = e.get("cycle_config", {})
+        edges.append(edge_payload)
+
+    order = _topological_sort(runner.nodes, runner.edges)
+    entrypoint = order[0] if order else (nodes_raw[0]["id"] if nodes_raw else None)
+
+    return {
+        "name": runner.name,
+        "type": "chain",
+        "nodes": nodes,
+        "edges": edges,
+        "entrypoint": entrypoint,
+        "tools": tools_out,
+        "knowledge_bases": [],
+    }
+
+
+def _swarm_topology(runner: Any) -> dict[str, Any]:
+    """Convert a Swarm into nodes (one per peer) + handoff edges."""
+    raw = runner.to_dict()
+    nodes: list[dict[str, Any]] = []
+    tools_out: list[dict[str, Any]] = []
+    for agent_name, agent in runner.agents.items():
+        node_payload: dict[str, Any] = {
+            "id": agent_name,
+            "type": "agent",
+            "label": agent_name,
+            "agent_name": agent_name,
+        }
+        llm = getattr(agent, "llm", None)
+        if llm is not None:
+            node_payload["model"] = getattr(llm, "model", "")
+            node_payload["provider"] = getattr(llm, "provider", "")
+        node_payload["tool_count"] = len(getattr(agent, "tools", []) or [])
+        for t in getattr(agent, "tools", []) or []:
+            tools_out.append(
+                {
+                    "owner": agent_name,
+                    "name": getattr(t, "name", str(t)),
+                    "type": "function",
+                }
+            )
+        nodes.append(node_payload)
+
+    edges: list[dict[str, Any]] = []
+    for source, targets in raw.get("handoffs", {}).items():
+        for target in targets:
+            edges.append(
+                {
+                    "from": source,
+                    "to": target,
+                    "type": "handoff",
+                    "label": "handoff",
+                }
+            )
+
+    return {
+        "name": runner.name,
+        "type": "swarm",
+        "nodes": nodes,
+        "edges": edges,
+        "entrypoint": raw.get("entrypoint"),
+        "tools": tools_out,
+        "knowledge_bases": [],
+        "max_handoffs": raw.get("max_handoffs"),
+    }
+
+
+def _supervisor_topology(runner: Any) -> dict[str, Any]:
+    """Convert a Supervisor into one supervisor node + worker nodes + delegation edges."""
+    raw = runner.to_dict()
+    sup_id = f"supervisor:{runner.name}"
+    sup_llm = raw.get("supervisor_llm", {})
+    nodes: list[dict[str, Any]] = [
+        {
+            "id": sup_id,
+            "type": "supervisor",
+            "label": runner.name,
+            "model": sup_llm.get("model", ""),
+            "provider": sup_llm.get("provider", ""),
+        }
+    ]
+    edges: list[dict[str, Any]] = []
+    tools_out: list[dict[str, Any]] = []
+    for w in raw.get("workers", []):
+        worker_id = f"worker:{w['role']}"
+        nodes.append(
+            {
+                "id": worker_id,
+                "type": "agent",
+                "label": w["role"],
+                "agent_name": w.get("agent_name"),
+                "model": w.get("model", ""),
+                "description": w.get("description", ""),
+                "tool_count": len(w.get("tools", [])),
+            }
+        )
+        edges.append(
+            {
+                "from": sup_id,
+                "to": worker_id,
+                "type": "delegation",
+                "label": "delegate",
+            }
+        )
+        for tool_name in w.get("tools", []):
+            tools_out.append(
+                {
+                    "owner": worker_id,
+                    "name": tool_name,
+                    "type": "function",
+                }
+            )
+
+    return {
+        "name": runner.name,
+        "type": "supervisor",
+        "nodes": nodes,
+        "edges": edges,
+        "entrypoint": sup_id,
+        "tools": tools_out,
+        "knowledge_bases": [],
+        "max_delegation_rounds": raw.get("max_delegation_rounds"),
+    }
+
+
+@router.get("/{runner_type}/{name}/topology")
+def get_topology(
+    request: Request,
+    runner_type: str,
+    name: str,
+    _user: str = Depends(require_session),
+) -> dict[str, Any]:
+    """Return the runtime graph for a registered Chain/Swarm/Supervisor.
+
+    Reads from ``app.state.context.runners`` — runners must be passed to
+    :func:`fastaiagent.ui.server.build_app` via ``runners=[...]``.
+    """
+    if runner_type not in _RUNNER_TYPES:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"runner_type must be one of {list(_RUNNER_TYPES)}",
+        )
+    ctx = get_context(request)
+    runners = getattr(ctx, "runners", {}) or {}
+    runner = runners.get(name)
+    if runner is None or _runner_type_of(runner) != runner_type:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            f"{runner_type} '{name}' is not registered with the local UI server. "
+            "Pass it to build_app(runners=[...]) to enable topology.",
+        )
+    if runner_type == "chain":
+        return _chain_topology(runner)
+    if runner_type == "swarm":
+        return _swarm_topology(runner)
+    return _supervisor_topology(runner)

@@ -7,7 +7,7 @@ import { api, ApiError } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth-store";
 
 export function Header() {
-  const { username, noAuth } = useAuthStore();
+  const { username, noAuth, projectId } = useAuthStore();
   const queryClient = useQueryClient();
 
   const logout = useMutation({
@@ -25,8 +25,16 @@ export function Header() {
 
   return (
     <header className="flex h-14 items-center justify-between border-b bg-card px-6">
-      <div className="text-sm text-muted-foreground">
+      <div className="text-sm text-muted-foreground" data-testid="header-breadcrumb">
         <span className="font-mono">Local UI</span>
+        {projectId ? (
+          <>
+            <span className="mx-2 text-border">//</span>
+            <span className="font-mono text-foreground" data-testid="project-id">
+              {projectId}
+            </span>
+          </>
+        ) : null}
         <span className="mx-2 text-border">//</span>
         <span>{noAuth ? "auth disabled" : `signed in as ${username ?? "…"}`}</span>
       </div>

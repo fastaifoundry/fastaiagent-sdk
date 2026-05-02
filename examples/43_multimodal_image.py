@@ -11,6 +11,12 @@ Usage::
     zsh -lc 'python examples/43_multimodal_image.py'
 
 The fixture image is regenerated on demand via ``tests/fixtures/multimodal/_make_fixtures.py``.
+
+After running, open the trace in ``fastaiagent ui`` — the Input tab on
+the LLM span renders the image inline next to the prompt. See
+``docs/ui/multimodal.md`` and the screenshot at
+``docs/ui/screenshots/sprint1-2-multimodal-input.png`` for a visual
+walkthrough.
 """
 
 from __future__ import annotations

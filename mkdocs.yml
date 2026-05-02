@@ -135,6 +135,12 @@ nav:
   - Local UI:
       - ui/index.md
       - "Knowledge Bases browser": ui/kb.md
+      - "Workflow visualization": ui/workflow-visualization.md
+      - "Multimodal traces": ui/multimodal.md
+      - "Checkpoint inspector": ui/checkpoint-inspector.md
+      - "Cost tracking": ui/cost-tracking.md
+      - "Export trace as JSON": ui/export-trace.md
+      - "Project scoping": ui/projects.md
   - Platform:
       - platform/index.md
   - Deployment:

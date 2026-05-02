@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   ChevronLeft,
@@ -17,6 +18,12 @@ import { useTraces } from "@/hooks/use-traces";
 import { useWorkflow } from "@/hooks/use-workflows";
 import { formatCost, formatDurationMs, formatTimeAgo } from "@/lib/format";
 import type { RunnerType } from "@/lib/types";
+
+const WorkflowTopologyView = lazy(() =>
+  import("@/components/workflows/WorkflowTopologyView").then((m) => ({
+    default: m.WorkflowTopologyView,
+  }))
+);
 
 const ICON: Record<Exclude<RunnerType, "agent">, LucideIcon> = {
   chain: GitBranch,
@@ -99,6 +106,24 @@ export function WorkflowDetailPage() {
         Last run {formatTimeAgo(data.last_run)} · {data.error_count} error
         {data.error_count === 1 ? "" : "s"} tracked.
       </p>
+
+      <div>
+        <h2 className="mb-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+          // TOPOLOGY
+        </h2>
+        <Suspense
+          fallback={
+            <div className="rounded-md border bg-card p-6 text-xs text-muted-foreground">
+              Loading topology view…
+            </div>
+          }
+        >
+          <WorkflowTopologyView
+            runnerType={data.runner_type}
+            name={data.workflow_name}
+          />
+        </Suspense>
+      </div>
 
       {traces.isLoading ? (
         <TableSkeleton rows={6} />

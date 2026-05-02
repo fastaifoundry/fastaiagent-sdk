@@ -11,6 +11,13 @@ Demonstrates the v1.0 durability primitives:
 * :func:`fastaiagent.idempotent` absorbs the side-effect re-execution
   inherent to replay semantics. Wrap any non-idempotent call.
 
+After running, open ``fastaiagent ui`` and visit
+``/executions/<execution_id>`` to see the checkpoint inspector — a
+vertical timeline with state diff and idempotency cache. The expected
+output is captured in
+``docs/ui/screenshots/sprint1-3-checkpoint-timeline.png``; see
+``docs/ui/checkpoint-inspector.md`` for a walkthrough.
+
 Prereqs:
     pip install fastaiagent
 """
@@ -119,6 +126,15 @@ def main() -> None:
         run_sync(chain.aresume(execution_id, resume_value=Resume(approved=True)))
     except AlreadyResumed as exc:
         print(f"\nsecond aresume correctly raised: AlreadyResumed: {exc}")
+
+    print(
+        "\nTo render the topology + checkpoint inspector in the Local UI, "
+        "register the chain with build_app:\n"
+        "    from fastaiagent.ui.server import build_app\n"
+        "    app = build_app(runners=[chain])\n"
+        "Then visit http://127.0.0.1:7843/workflows/chain/refund-flow "
+        "for the topology and /executions/<id> for the checkpoint timeline."
+    )
 
 
 if __name__ == "__main__":

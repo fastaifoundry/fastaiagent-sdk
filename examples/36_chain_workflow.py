@@ -62,6 +62,12 @@ def main() -> None:
     print("      agent.summariser")
     print("        llm.chat")
     print("\nOpen `fastaiagent ui` — the Workflow column shows this as a 'chain'.")
+    print(
+        "\nTo render the topology view, register the chain with the UI server:\n"
+        "    from fastaiagent.ui.server import build_app\n"
+        "    app = build_app(runners=[chain])\n"
+        "Then visit http://127.0.0.1:7843/workflows/chain/research-then-summarise"
+    )
 
 
 if __name__ == "__main__":

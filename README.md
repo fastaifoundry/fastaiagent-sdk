@@ -6,7 +6,7 @@ The only SDK with **Agent Replay** — fork-and-rerun debugging — and a
 
 Works standalone or connected to the [FastAIAgent Platform](https://fastaiagent.net) for visual editing, production monitoring, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.1.1)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.2.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -131,6 +131,70 @@ for every `LocalKB`** you've built. Everything stored in one SQLite file at
 `./.fastaiagent/local.db`. Bcrypt-hashed local auth. Nothing phones home.
 
 ![FastAIAgent Local UI — trace detail](https://raw.githubusercontent.com/fastaifoundry/fastaiagent-sdk/main/docs/ui/screenshots/03-trace-detail.png)
+
+### See your Chain / Swarm / Supervisor topology rendered as a graph
+
+Pass your runners to `build_app(runners=[...])` to enable the **interactive
+React Flow topology view** at `/workflows/{type}/{name}` — agent / HITL /
+function nodes, conditional edges, swarm handoffs, supervisor delegation
+arrows, all with click-to-inspect node detail panels:
+
+```python
+import uvicorn
+from fastaiagent import Agent, Chain
+from fastaiagent.ui.server import build_app
+
+researcher = Agent(name="researcher", llm=llm)
+writer     = Agent(name="writer",     llm=llm)
+
+chain = Chain("research-then-summarise")
+chain.add_node("research",  agent=researcher)
+chain.add_node("summarize", agent=writer)
+chain.connect("research", "summarize")
+
+# Register the chain so the topology endpoint can render it.
+app = build_app(runners=[chain])
+uvicorn.run(app, host="127.0.0.1", port=7843)
+# → open http://127.0.0.1:7843/workflows/chain/research-then-summarise
+```
+
+Without `runners=[...]` the trace list, agent stats, and analytics still
+populate from runtime spans — but `/workflows/chain/<name>` shows a
+"No topology available" callout with the registration recipe above.
+Same pattern works for `Swarm` and `Supervisor`. See
+[examples/47_workflow_topology.py](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/47_workflow_topology.py)
+and [docs/ui/workflow-visualization.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/ui/workflow-visualization.md)
+for the full reference.
+
+### Other Local UI surfaces
+
+- **Multimodal trace rendering** — image thumbnails and PDF cards
+  render inline in the trace input/output tabs, no raw base64.
+  ([docs/ui/multimodal.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/ui/multimodal.md))
+- **Checkpoint inspector** at `/executions/{id}` — vertical timeline of
+  every checkpoint with status, expandable state snapshots, automatic
+  state diff between adjacent rows, and an idempotency-cache panel.
+  ([docs/ui/checkpoint-inspector.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/ui/checkpoint-inspector.md))
+- **Cost tracking** at the bottom of `/analytics` — three tabs (by
+  model / by agent / by chain node) backed by
+  `GET /api/analytics/costs`. Reuses the same pricing table the
+  per-trace cost column uses, so the numbers always agree.
+  ([docs/ui/cost-tracking.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/ui/cost-tracking.md))
+- **Export trace as JSON** — Export button on every trace detail page
+  opens a dialog with `Include image / PDF data` and
+  `Include checkpoint state` toggles. Same payload from the CLI:
+
+  ```bash
+  fastaiagent export-trace --trace-id <id> --output trace.json
+  ```
+
+  ([docs/ui/export-trace.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/ui/export-trace.md))
+- **Project scoping** — every record the SDK writes carries a
+  `project_id` resolved from `./.fastaiagent/config.toml` (created
+  lazily on the first `agent.run()` from a fresh directory). Multiple
+  projects can share one Postgres without cross-contamination; the
+  header breadcrumb reads `Local UI // <project-id> // …`.
+  ([docs/ui/projects.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/ui/projects.md))
 
 See [docs/ui/](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/ui/index.md) for the full tour; the KB browser is documented at [docs/ui/kb.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/ui/kb.md).
 

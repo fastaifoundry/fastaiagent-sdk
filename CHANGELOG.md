@@ -5,6 +5,88 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-05-01
+
+### Added — Sprint 1: Local UI
+
+Six Local UI features land in this release. Each shipped as its own
+commit on `sprint1/local-ui` with backend, frontend, Vitest +
+Playwright browser tests, and screenshot evidence in
+`docs/ui/screenshots/sprint1-*.png`.
+
+- **Workflow visualization** ([docs/ui/workflow-visualization.md](docs/ui/workflow-visualization.md)).
+  React Flow + dagre canvas renders Chain, Swarm, and Supervisor
+  topologies with per-type node visuals and per-type edge labels
+  (sequential / conditional / handoff / delegation). Lazy-loaded into
+  an 88 KB chunk. Read-only — driven by
+  `GET /api/workflows/{type}/{name}/topology` against runners
+  registered with `build_app(runners=[...])`.
+- **Multimodal trace rendering** ([docs/ui/multimodal.md](docs/ui/multimodal.md)).
+  Span input/output tabs render image thumbnails and PDF cards inline
+  next to text content instead of dropping raw base64 into
+  `JsonViewer`. Click an inline image → modal with full-size view.
+  Detection helper `extract_content_parts()` in `fastaiagent.ui.attrs`
+  is single-sourced for tests + frontend.
+- **Checkpoint inspector** ([docs/ui/checkpoint-inspector.md](docs/ui/checkpoint-inspector.md)).
+  Vertical timeline on `/executions/{id}` showing every checkpoint with
+  status / step / node / timestamp; expand any two adjacent rows for an
+  automatic key-level state diff (`Added` / `Changed` / `Removed`); a
+  separate card lists every cached `@idempotent` result. New
+  `GET /api/executions/{id}/idempotency-cache` endpoint.
+- **Cost tracking dashboard** ([docs/ui/cost-tracking.md](docs/ui/cost-tracking.md)).
+  New `// COST BREAKDOWN` section on Analytics with three tabs (by
+  model / by agent / by node) backed by
+  `GET /api/analytics/costs?group_by=…&period=…`. Reuses
+  `compute_cost_usd()` so numbers agree with per-trace cost columns.
+- **Export trace as JSON** ([docs/ui/export-trace.md](docs/ui/export-trace.md)).
+  Trace detail page Export button opens a dialog with `Include image
+  / PDF data` and `Include checkpoint state` toggles; `Content-Disposition`
+  header drives the browser download. New top-level
+  `fastaiagent export-trace --trace-id <id> --output <path>` CLI reads
+  the local DB directly. Both paths share a single `build_export_payload`
+  helper in `fastaiagent.trace.trace_export`. Exports cap at 100 MB.
+- **Project scoping** ([docs/ui/projects.md](docs/ui/projects.md)).
+  Every record the SDK writes is stamped with a `project_id`; every
+  read endpoint filters by it; the header breadcrumb shows the active
+  project. The `project_id` resolves from
+  `./.fastaiagent/config.toml`, created lazily on first execution
+  (never on import). Migration v4 adds `project_id` columns + per-
+  project indexes. Multiple projects can share one Postgres without
+  cross-contamination. New `fastaiagent._internal.project` module
+  (`get_project_id()`, `set_project_id()`, `load_or_create()`).
+
+### Changed
+
+- `Supervisor.to_dict()` added to mirror the existing
+  `Chain.to_dict()` and `Swarm.to_dict()` so the topology endpoint
+  can serialize all three workflow types uniformly.
+- `LocalStorageProcessor._get_db()` now runs the full migration
+  ladder via `init_local_db()` instead of an inline v1 schema
+  snippet, so `save_span` always sees the current schema.
+- `GET /api/auth/status` now includes `project_id`, used by the
+  frontend to render the breadcrumb without a second round-trip.
+
+### Tests
+
+- **41 new pytest e2e tests** across
+  `tests/e2e/test_workflow_topology.py`, `test_multimodal_render.py`,
+  `test_checkpoint_inspector.py`, `test_cost_breakdown.py`,
+  `test_trace_export.py`, `test_project_scoping.py`. Real SQLite,
+  real FastAPI app, no mocking.
+- **14 new Vitest component tests** for `WorkflowTopologyView`,
+  `MixedContentView`, `ExportTraceDialog`.
+- **11 Playwright browser tests** in `ui-frontend/tests/sprint1.spec.ts`
+  drive the live UI and capture screenshots into
+  `docs/ui/screenshots/sprint1-*.png`. The orchestrator
+  `scripts/capture-sprint1-screenshots.sh` boots a server with the
+  Sprint 1 fixtures and a registered chain, then runs the spec.
+
+### Migration
+
+- Run `init_local_db()` once on existing databases — v4 migration
+  adds `project_id` to ten tables and backfills with the active
+  project id. Idempotent; safe to re-run.
+
 ## [1.1.1] - 2026-05-01
 
 ### Fixed

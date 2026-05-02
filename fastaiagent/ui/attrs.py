@@ -58,3 +58,88 @@ def trace_cost_usd(attrs: dict[str, Any] | None) -> float | None:
             except (TypeError, ValueError):
                 return None
     return None
+
+
+# ---------------------------------------------------------------------------
+# Multimodal content-part detection
+# ---------------------------------------------------------------------------
+
+
+def _looks_like_image_part(part: Any) -> bool:
+    if not isinstance(part, dict):
+        return False
+    typ = str(part.get("type", "")).lower()
+    if typ in {"image", "input_image", "image_url"}:
+        return True
+    media = str(part.get("media_type", "") or "").lower()
+    return media.startswith("image/")
+
+
+def _looks_like_pdf_part(part: Any) -> bool:
+    if not isinstance(part, dict):
+        return False
+    typ = str(part.get("type", "")).lower()
+    if typ in {"input_pdf", "pdf", "document"}:
+        return True
+    media = str(part.get("media_type", "") or "").lower()
+    return media == "application/pdf"
+
+
+def _looks_like_text_part(part: Any) -> bool:
+    if isinstance(part, str):
+        return True
+    if not isinstance(part, dict):
+        return False
+    return str(part.get("type", "")).lower() in {"text", "input_text", "output_text"}
+
+
+def extract_content_parts(value: Any) -> list[dict[str, Any]]:
+    """Walk a JSON-decoded message/content payload and return content parts.
+
+    Handles three common shapes the SDK and providers emit:
+
+    * a plain string (returns ``[{"type": "text", "text": <s>}]``)
+    * a list of content parts (returned in original order)
+    * a dict with a ``content`` key (the OpenAI/Anthropic message shape) —
+      recurses into ``content``
+    * a list of messages (each with ``content``) — flattens parts in
+      message order
+
+    Used by tests and any server-side processing that needs to know
+    whether a span carries images/PDFs without loading the full payload.
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [{"type": "text", "text": value}]
+    parts: list[dict[str, Any]] = []
+    if isinstance(value, dict):
+        if "content" in value:
+            return extract_content_parts(value["content"])
+        if "type" in value:
+            parts.append(value)
+            return parts
+        return []
+    if isinstance(value, list):
+        for entry in value:
+            if isinstance(entry, dict) and "content" in entry:
+                parts.extend(extract_content_parts(entry["content"]))
+            elif _looks_like_text_part(entry):
+                if isinstance(entry, str):
+                    parts.append({"type": "text", "text": entry})
+                else:
+                    parts.append(entry)
+            elif _looks_like_image_part(entry) or _looks_like_pdf_part(entry):
+                parts.append(entry)
+            elif isinstance(entry, dict):
+                parts.append(entry)
+        return parts
+    return []
+
+
+def has_multimodal_part(value: Any) -> bool:
+    """True if any image or PDF content part is present in ``value``."""
+    return any(
+        _looks_like_image_part(p) or _looks_like_pdf_part(p)
+        for p in extract_content_parts(value)
+    )

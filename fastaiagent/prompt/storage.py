@@ -47,6 +47,9 @@ class SQLiteStorage:
     # --- Prompts ---------------------------------------------------------
 
     def save_prompt(self, prompt: Prompt) -> None:
+        from fastaiagent._internal.project import safe_get_project_id
+
+        pid = safe_get_project_id()
         now = _now_iso()
         existing = self._db.fetchone(
             "SELECT created_at FROM prompts WHERE slug = ?",
@@ -54,9 +57,9 @@ class SQLiteStorage:
         )
         if existing is None:
             self._db.execute(
-                """INSERT INTO prompts (slug, latest_version, created_at, updated_at)
-                   VALUES (?, ?, ?, ?)""",
-                (prompt.name, str(prompt.version), now, now),
+                """INSERT INTO prompts (slug, latest_version, created_at, updated_at, project_id)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (prompt.name, str(prompt.version), now, now, pid),
             )
         else:
             self._db.execute(
@@ -68,8 +71,8 @@ class SQLiteStorage:
         self._db.execute(
             """INSERT OR REPLACE INTO prompt_versions
                (slug, version, template, variables, fragments, metadata,
-                created_at, created_by)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                created_at, created_by, project_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 prompt.name,
                 str(prompt.version),
@@ -79,6 +82,7 @@ class SQLiteStorage:
                 json.dumps(prompt.metadata),
                 now,
                 "code",
+                pid,
             ),
         )
 

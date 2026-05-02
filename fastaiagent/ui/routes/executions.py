@@ -77,6 +77,18 @@ def get_execution(
 ) -> dict[str, Any]:
     """Return the full checkpoint history for one execution."""
     ctx = get_context(request)
+    # Project-scope guard: 404 cross-project executions before opening the store.
+    if ctx.project_id:
+        probe = ctx.db()
+        try:
+            row = probe.fetchone(
+                "SELECT 1 FROM checkpoints WHERE execution_id = ? AND project_id = ? LIMIT 1",
+                (execution_id, ctx.project_id),
+            )
+        finally:
+            probe.close()
+        if row is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Execution not found")
     store = _open_store(ctx.db_path)
     try:
         rows = store.list(execution_id, limit=500)
@@ -97,6 +109,53 @@ def get_execution(
         store.close()
 
 
+@router.get("/executions/{execution_id}/idempotency-cache")
+def list_idempotency_cache(
+    execution_id: str,
+    request: Request,
+    _user: str = Depends(require_session),
+) -> dict[str, Any]:
+    """Cached ``@idempotent`` results for one execution.
+
+    Helps developers verify their ``@idempotent`` decorator works — these
+    are the calls that would be skipped on resume.
+    """
+    ctx = get_context(request)
+    db = ctx.db()
+    try:
+        if ctx.project_id:
+            rows = db.fetchall(
+                "SELECT function_key, result, created_at "
+                "FROM idempotency_cache "
+                "WHERE execution_id = ? AND project_id = ? "
+                "ORDER BY created_at ASC",
+                (execution_id, ctx.project_id),
+            )
+        else:
+            rows = db.fetchall(
+                "SELECT function_key, result, created_at "
+                "FROM idempotency_cache WHERE execution_id = ? "
+                "ORDER BY created_at ASC",
+                (execution_id,),
+            )
+        items = []
+        for r in rows:
+            try:
+                result = json.loads(r.get("result") or "null")
+            except json.JSONDecodeError:
+                result = r.get("result")
+            items.append(
+                {
+                    "function_key": r.get("function_key"),
+                    "result": result,
+                    "created_at": r.get("created_at"),
+                }
+            )
+        return {"execution_id": execution_id, "count": len(items), "items": items}
+    finally:
+        db.close()
+
+
 @router.get("/pending-interrupts")
 def list_pending_interrupts(
     request: Request,
@@ -105,26 +164,46 @@ def list_pending_interrupts(
 ) -> dict[str, Any]:
     """Rows that ``/approvals`` renders (one per suspended workflow)."""
     ctx = get_context(request)
-    store = _open_store(ctx.db_path)
+    # Direct SQL so we can scope by project_id; the checkpointer's
+    # ``list_pending_interrupts`` doesn't take a filter.
+    db = ctx.db()
     try:
-        rows = store.list_pending_interrupts(limit=limit)
-        return {
-            "count": len(rows),
-            "items": [
-                {
-                    "execution_id": r.execution_id,
-                    "chain_name": r.chain_name,
-                    "node_id": r.node_id,
-                    "reason": r.reason,
-                    "context": r.context,
-                    "agent_path": r.agent_path,
-                    "created_at": r.created_at,
-                }
-                for r in rows
-            ],
-        }
+        if ctx.project_id:
+            rows = db.fetchall(
+                """SELECT execution_id, chain_name, node_id, reason,
+                          context, agent_path, created_at
+                   FROM pending_interrupts
+                   WHERE project_id = ?
+                   ORDER BY created_at DESC
+                   LIMIT ?""",
+                (ctx.project_id, limit),
+            )
+        else:
+            rows = db.fetchall(
+                """SELECT execution_id, chain_name, node_id, reason,
+                          context, agent_path, created_at
+                   FROM pending_interrupts
+                   ORDER BY created_at DESC
+                   LIMIT ?""",
+                (limit,),
+            )
+        items = [
+            {
+                "execution_id": r["execution_id"],
+                "chain_name": r["chain_name"],
+                "node_id": r["node_id"],
+                "reason": r["reason"],
+                "context": json.loads(r["context"] or "{}")
+                if isinstance(r["context"], str)
+                else r["context"],
+                "agent_path": r["agent_path"],
+                "created_at": r["created_at"],
+            }
+            for r in rows
+        ]
+        return {"count": len(items), "items": items}
     finally:
-        store.close()
+        db.close()
 
 
 @router.post("/executions/{execution_id}/resume")
@@ -145,6 +224,20 @@ async def resume_execution(
     ``ChainResult`` / ``AgentResult`` dict plus the original ``execution_id``.
     """
     ctx = get_context(request)
+    # Project-scope guard: 404 cross-project resume attempts before they
+    # bind to a runner. The latest checkpoint for this execution must
+    # belong to the active project.
+    if ctx.project_id:
+        probe = ctx.db()
+        try:
+            row = probe.fetchone(
+                "SELECT 1 FROM checkpoints WHERE execution_id = ? AND project_id = ? LIMIT 1",
+                (execution_id, ctx.project_id),
+            )
+        finally:
+            probe.close()
+        if row is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Execution not found")
     store = _open_store(ctx.db_path)
     try:
         latest = store.get_last(execution_id)
