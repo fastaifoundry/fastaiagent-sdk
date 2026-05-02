@@ -443,12 +443,20 @@ class LLMClient:
             out.append(Message(role=MessageRole.user, content=user_parts))
         return out
 
-    async def _call_openai(
-        self, messages: list[Message], tools: list[dict[str, Any]] | None = None, **kwargs: Any
-    ) -> LLMResponse:
-        """Call OpenAI-compatible endpoint."""
-        import httpx
+    def _build_openai_body(
+        self,
+        messages: list[Message],
+        tools: list[dict[str, Any]] | None = None,
+        *,
+        stream: bool = False,
+        **kwargs: Any,
+    ) -> tuple[dict[str, Any], dict[str, str]]:
+        """Build the OpenAI-compatible API request body and headers.
 
+        Returns (body, headers) tuple. Used by both _call_openai and
+        _stream_openai to avoid duplicating message preparation, parameter
+        building, and header construction logic.
+        """
         prepared = self._split_multimodal_tool_messages_for_openai(messages)
         msg_dicts = [
             m.to_provider_dict("openai", **self._provider_dict_kwargs()) for m in prepared
@@ -457,6 +465,9 @@ class LLMClient:
             "model": self.model,
             "messages": msg_dicts,
         }
+        if stream:
+            body["stream"] = True
+            body["stream_options"] = {"include_usage": True}
         if tools:
             body["tools"] = tools
         if self.temperature is not None:
@@ -505,6 +516,16 @@ class LLMClient:
             "Authorization": f"Bearer {api_key}",
         }
 
+        return body, headers
+
+    async def _call_openai(
+        self, messages: list[Message], tools: list[dict[str, Any]] | None = None, **kwargs: Any
+    ) -> LLMResponse:
+        """Call OpenAI-compatible endpoint."""
+        import httpx
+
+        body, headers = self._build_openai_body(messages, tools, **kwargs)
+
         url = f"{self.base_url.rstrip('/')}/chat/completions"
         async with httpx.AsyncClient(timeout=120) as client:
             resp = await client.post(url, json=body, headers=headers)
@@ -541,12 +562,21 @@ class LLMClient:
             finish_reason=choice.get("finish_reason", ""),
         )
 
-    async def _call_anthropic(
-        self, messages: list[Message], tools: list[dict[str, Any]] | None = None, **kwargs: Any
-    ) -> LLMResponse:
-        """Call Anthropic Messages API."""
-        import httpx
+    def _build_anthropic_body(
+        self,
+        messages: list[Message],
+        tools: list[dict[str, Any]] | None = None,
+        *,
+        stream: bool = False,
+        **kwargs: Any,
+    ) -> tuple[dict[str, Any], dict[str, str]]:
+        """Build the Anthropic API request body and headers.
 
+        Returns (body, headers) tuple. Used by both _call_anthropic and
+        _stream_anthropic to avoid duplicating the message conversion,
+        system prompt extraction, tool format conversion, and parameter
+        building logic.
+        """
         # Extract system messages — Anthropic uses a separate 'system' field
         # Convert OpenAI message format to Anthropic format:
         #   - system messages → separate 'system' field
@@ -558,7 +588,6 @@ class LLMClient:
             if m.role == MessageRole.system:
                 system_parts.append(_coerce_system_content_to_text(m.content))
             elif m.role == MessageRole.assistant and m.tool_calls:
-                # Convert to Anthropic tool_use content blocks
                 content: list[dict[str, Any]] = []
                 if m.content:
                     content.append({"type": "text", "text": m.content})
@@ -573,7 +602,6 @@ class LLMClient:
                     )
                 filtered_msgs.append({"role": "assistant", "content": content})
             elif m.role == MessageRole.tool:
-                # Convert to Anthropic tool_result content block
                 filtered_msgs.append(
                     {
                         "role": "user",
@@ -603,6 +631,8 @@ class LLMClient:
             "messages": filtered_msgs,
             "max_tokens": kwargs.get("max_tokens", self.max_tokens) or 4096,
         }
+        if stream:
+            body["stream"] = True
         if system_text:
             body["system"] = system_text
         if self.temperature is not None:
@@ -644,6 +674,17 @@ class LLMClient:
             "x-api-key": api_key,
             "anthropic-version": "2023-06-01",
         }
+
+        return body, headers
+
+    async def _call_anthropic(
+        self, messages: list[Message], tools: list[dict[str, Any]] | None = None, **kwargs: Any
+    ) -> LLMResponse:
+        """Call Anthropic Messages API."""
+        import httpx
+
+        body, headers = self._build_anthropic_body(messages, tools, **kwargs)
+        response_format = kwargs.get("response_format")
 
         url = f"{self.base_url.rstrip('/')}/messages"
         async with httpx.AsyncClient(timeout=120) as client:
@@ -879,60 +920,7 @@ class LLMClient:
         """Stream from OpenAI-compatible endpoint via SSE."""
         import httpx
 
-        prepared = self._split_multimodal_tool_messages_for_openai(messages)
-        msg_dicts = [
-            m.to_provider_dict("openai", **self._provider_dict_kwargs()) for m in prepared
-        ]
-        body: dict[str, Any] = {
-            "model": self.model,
-            "messages": msg_dicts,
-            "stream": True,
-            "stream_options": {"include_usage": True},
-        }
-        if tools:
-            body["tools"] = tools
-        if self.temperature is not None:
-            body["temperature"] = self.temperature
-        max_tok = kwargs.get("max_tokens", self.max_tokens)
-        if max_tok is not None:
-            if self.provider == "custom":
-                body["max_tokens"] = max_tok
-            else:
-                body["max_completion_tokens"] = max_tok
-        # Structured output
-        response_format = kwargs.get("response_format")
-        if response_format is not None:
-            body["response_format"] = response_format
-        # Additional parameters
-        top_p = kwargs.get("top_p", self.top_p)
-        if top_p is not None:
-            body["top_p"] = top_p
-        stop = kwargs.get("stop", self.stop)
-        if stop is not None:
-            body["stop"] = stop
-        seed = kwargs.get("seed", self.seed)
-        if seed is not None:
-            body["seed"] = seed
-        freq_pen = kwargs.get("frequency_penalty", self.frequency_penalty)
-        if freq_pen is not None:
-            body["frequency_penalty"] = freq_pen
-        pres_pen = kwargs.get("presence_penalty", self.presence_penalty)
-        if pres_pen is not None:
-            body["presence_penalty"] = pres_pen
-        ptc = kwargs.get("parallel_tool_calls", self.parallel_tool_calls)
-        if ptc is not None and tools:
-            body["parallel_tool_calls"] = ptc
-
-        api_key = self.api_key or os.environ.get("OPENAI_API_KEY", "")
-        if not api_key:
-            raise LLMProviderError(
-                f"No API key for provider '{self.provider}'. "
-                f"Set the api_key parameter or the OPENAI_API_KEY environment variable."
-            )
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-        }
+        body, headers = self._build_openai_body(messages, tools, stream=True, **kwargs)
 
         url = f"{self.base_url.rstrip('/')}/chat/completions"
         # Accumulate tool call arguments across chunks
@@ -1010,92 +998,7 @@ class LLMClient:
         """Stream from Anthropic Messages API via SSE."""
         import httpx
 
-        # Build Anthropic request body (same conversion as _call_anthropic)
-        system_parts: list[str] = []
-        filtered_msgs: list[dict[str, Any]] = []
-        for m in messages:
-            if m.role == MessageRole.system:
-                system_parts.append(_coerce_system_content_to_text(m.content))
-            elif m.role == MessageRole.assistant and m.tool_calls:
-                content: list[dict[str, Any]] = []
-                if m.content:
-                    content.append({"type": "text", "text": m.content})
-                for tc in m.tool_calls:
-                    content.append(
-                        {"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.arguments}
-                    )
-                filtered_msgs.append({"role": "assistant", "content": content})
-            elif m.role == MessageRole.tool:
-                filtered_msgs.append(
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": m.tool_call_id,
-                                "content": _anthropic_tool_result_content(m.content),
-                            }
-                        ],
-                    }
-                )
-            else:
-                filtered_msgs.append(
-                    m.to_provider_dict("anthropic", **self._provider_dict_kwargs())
-                )
-
-        stream_system_text = "\n\n".join(system_parts) if system_parts else None
-
-        # Augment system prompt for response_format (Anthropic has no native support)
-        response_format = kwargs.get("response_format")
-        if response_format is not None:
-            stream_system_text = _augment_system_for_response_format(
-                stream_system_text, response_format
-            )
-
-        body: dict[str, Any] = {
-            "model": self.model,
-            "messages": filtered_msgs,
-            "max_tokens": kwargs.get("max_tokens", self.max_tokens) or 4096,
-            "stream": True,
-        }
-        if stream_system_text:
-            body["system"] = stream_system_text
-        if self.temperature is not None:
-            body["temperature"] = self.temperature
-        # Additional parameters (Anthropic supports top_p and stop_sequences)
-        top_p = kwargs.get("top_p", self.top_p)
-        if top_p is not None:
-            body["top_p"] = top_p
-        stop = kwargs.get("stop", self.stop)
-        if stop is not None:
-            body["stop_sequences"] = [stop] if isinstance(stop, str) else stop
-
-        if tools:
-            anthropic_tools = []
-            for t in tools:
-                func = t.get("function", t)
-                anthropic_tools.append(
-                    {
-                        "name": func["name"],
-                        "description": func.get("description", ""),
-                        "input_schema": func.get(
-                            "parameters", {"type": "object", "properties": {}}
-                        ),
-                    }
-                )
-            body["tools"] = anthropic_tools
-
-        api_key = self.api_key or os.environ.get("ANTHROPIC_API_KEY", "")
-        if not api_key:
-            raise LLMProviderError(
-                "No API key for provider 'anthropic'. "
-                "Set the api_key parameter or the ANTHROPIC_API_KEY environment variable."
-            )
-        headers = {
-            "Content-Type": "application/json",
-            "x-api-key": api_key,
-            "anthropic-version": "2023-06-01",
-        }
+        body, headers = self._build_anthropic_body(messages, tools, stream=True, **kwargs)
 
         url = f"{self.base_url.rstrip('/')}/messages"
 
