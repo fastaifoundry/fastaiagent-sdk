@@ -5,6 +5,62 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.1] - 2026-05-03
+
+PATCH bump — fixes the LangChain auto-tracing integration so callback
+spans actually persist, and turns the LangChain example from a
+walkthrough stub into a runnable demo.
+
+### Fixed — LangChain callback spans now persist
+
+`fastaiagent/integrations/langchain.py::FastAIAgentCallbackHandler`
+previously stashed open spans in `**kwargs`, but Python kwargs do not
+round-trip back to the matching `*_end` callback. Spans were created
+on `on_llm_start` / `on_tool_start` and never `.end()`-ed —
+`BatchSpanProcessor` only exports ended spans, so the LangChain
+integration was silently emitting nothing to `.fastaiagent/local.db`.
+
+- Track open spans on the handler instance via one LIFO stack per
+  span kind (LLM, tool). `on_llm_end` / `on_tool_end` now pop the
+  matching open span and call `.end()` on it.
+- New `on_llm_error` / `on_tool_error` hooks close the matching
+  open span on failure paths so failed runs don't leak open spans
+  either.
+- Verified end-to-end: a real `ChatOpenAI.invoke()` through the
+  handler now leaves `langchain.llm.<model>` spans in
+  `.fastaiagent/local.db` (visible via `fastaiagent traces list`).
+
+### Changed — `examples/08_trace_langchain.py` is now runnable
+
+The previous file was a walkthrough stub — every meaningful line
+commented out, just printing instructions. Replaced with a real
+script that drives `ChatOpenAI.invoke()` through the handler and
+reads back recent `langchain.*` spans from `.fastaiagent/local.db`.
+Skips cleanly when `OPENAI_API_KEY` or `langchain-openai` is not
+installed.
+
+### Docs
+
+- `docs/tutorials/trace-langchain.md` — drop the now-stale "preview"
+  caveat (spans persist now), fix the install line (`[langchain]`
+  only pulls `langchain-core`; full agents need `langchain` +
+  `langchain-openai`), note that `create_tool_calling_agent` and
+  `AgentExecutor` were removed in LangChain 1.x.
+- `docs/integrations/index.md` — same LangChain corrections, and
+  reword the CrewAI section as **runtime interop** with auto-tracing
+  not yet implemented (which is what `fastaiagent/integrations/crewai.py`
+  actually does today; the previous wording implied auto-tracing
+  was wired up).
+
+### Verification
+
+- `E2E_SKIP_PLATFORM=1 pytest tests/e2e/test_gate_langchain.py tests/e2e/test_gate_crewai.py -v` → 9 passed
+- `python examples/08_trace_langchain.py` → real LLM round-trip; `langchain.llm.ChatOpenAI` span present in `local.db` afterwards
+- `mkdocs build --strict` → clean
+- `ruff check fastaiagent/integrations/langchain.py examples/08_trace_langchain.py` → All checks passed
+
+(#62)
+
 ## [1.5.0] - 2026-05-03
 
 `Agent.astream()` reaches feature parity with `Agent.run()` /
