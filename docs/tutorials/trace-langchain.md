@@ -1,11 +1,15 @@
 # Trace Your LangChain Agent in 2 Minutes
 
-Already using LangChain? Add full tracing in 2 lines.
+Already using LangChain? Add tracing in 2 lines.
 
 ## Install
 
+The `[langchain]` extra only pulls `langchain-core`. To run a full LangChain
+agent you'll also need `langchain` itself plus a model adapter such as
+`langchain-openai`:
+
 ```bash
-pip install "fastaiagent[langchain]"
+pip install "fastaiagent[langchain]" langchain langchain-openai
 ```
 
 ## Add Tracing to Your Existing Code
@@ -13,19 +17,26 @@ pip install "fastaiagent[langchain]"
 ```python
 # Your existing LangChain code - unchanged
 from langchain_openai import ChatOpenAI
-from langchain.agents import create_tool_calling_agent, AgentExecutor
+from langchain_core.messages import HumanMessage
 
-llm = ChatOpenAI(model="gpt-4o")
-agent = create_tool_calling_agent(llm, tools, prompt)
-executor = AgentExecutor(agent=agent, tools=tools)
+llm = ChatOpenAI(model="gpt-4.1")
 
 # Add these 2 lines
 import fastaiagent
 fastaiagent.integrations.langchain.enable()
+handler = fastaiagent.integrations.langchain.get_callback_handler()
 
-# Run as usual - now with full tracing
-result = executor.invoke({"input": "What's the weather?"})
+# Run as usual — pass the handler via callbacks
+response = llm.invoke(
+    [HumanMessage(content="What's the weather?")],
+    config={"callbacks": [handler]},
+)
 ```
+
+!!! note "LangChain 1.x"
+    Earlier versions of this tutorial used `langchain.agents.create_tool_calling_agent`
+    and `AgentExecutor`. Those symbols were removed in LangChain 1.x —
+    use `langchain.agents.create_agent` (or `langgraph`) instead.
 
 Traces are stored locally in SQLite. View them:
 
@@ -34,14 +45,17 @@ fastaiagent traces list --last 24h
 fastaiagent replay <trace_id>
 ```
 
-## What Gets Traced
+## What the Handler Hooks
 
-When LangChain auto-tracing is enabled, FastAIAgent captures:
+The callback handler subclasses `langchain_core.callbacks.BaseCallbackHandler`
+and instruments:
 
-- **LLM calls** — model, tokens, latency, prompt/completion
-- **Tool calls** — tool name, arguments, output
-- **Chain execution** — start/end, input/output
-- **Retrieval** — queries and results (if using retrievers)
+- `on_llm_start` / `on_llm_end` — `langchain.llm.<model>` span
+- `on_tool_start` / `on_tool_end` — `langchain.tool.<name>` span
+- `on_llm_error` / `on_tool_error` — closes the matching open span on failure
+
+Spans land in `.fastaiagent/local.db` and are visible through
+`fastaiagent traces list` and the replay/export CLI commands.
 
 ## Disable Tracing
 

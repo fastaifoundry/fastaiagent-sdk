@@ -39,7 +39,25 @@ def get_callback_handler() -> Any:
         )
 
     class FastAIAgentCallbackHandler(BaseCallbackHandler):  # type: ignore[misc]
-        """LangChain callback handler that emits OTel spans."""
+        """LangChain callback handler that emits OTel spans.
+
+        Open spans are tracked on the handler instance via a LIFO stack
+        per span kind. Earlier versions stashed spans in ``**kwargs``,
+        which Python does not round-trip to the matching ``*_end`` callback,
+        so spans were created but never ended and never exported.
+        """
+
+        def __init__(self) -> None:
+            super().__init__()
+            self._llm_stack: list[Any] = []
+            self._tool_stack: list[Any] = []
+
+        @staticmethod
+        def _close(span: Any) -> None:
+            try:
+                span.end()
+            except Exception:
+                pass
 
         def on_llm_start(
             self, serialized: dict[str, Any], prompts: list[str], **kwargs: Any
@@ -49,12 +67,15 @@ def get_callback_handler() -> Any:
             tracer = get_tracer("fastaiagent.integrations.langchain")
             model = serialized.get("name", "langchain_llm")
             span = tracer.start_span(f"langchain.llm.{model}")
-            kwargs.setdefault("_fastai_spans", []).append(span)
+            self._llm_stack.append(span)
 
         def on_llm_end(self, response: Any, **kwargs: Any) -> None:
-            spans = kwargs.get("_fastai_spans", [])
-            if spans:
-                spans[-1].end()
+            if self._llm_stack:
+                self._close(self._llm_stack.pop())
+
+        def on_llm_error(self, error: BaseException, **kwargs: Any) -> None:
+            if self._llm_stack:
+                self._close(self._llm_stack.pop())
 
         def on_tool_start(self, serialized: dict[str, Any], input_str: str, **kwargs: Any) -> None:
             from fastaiagent.trace.otel import get_tracer
@@ -62,11 +83,14 @@ def get_callback_handler() -> Any:
             tracer = get_tracer("fastaiagent.integrations.langchain")
             tool_name = serialized.get("name", "tool")
             span = tracer.start_span(f"langchain.tool.{tool_name}")
-            kwargs.setdefault("_fastai_spans", []).append(span)
+            self._tool_stack.append(span)
 
         def on_tool_end(self, output: str, **kwargs: Any) -> None:
-            spans = kwargs.get("_fastai_spans", [])
-            if spans:
-                spans[-1].end()
+            if self._tool_stack:
+                self._close(self._tool_stack.pop())
+
+        def on_tool_error(self, error: BaseException, **kwargs: Any) -> None:
+            if self._tool_stack:
+                self._close(self._tool_stack.pop())
 
     return FastAIAgentCallbackHandler()
