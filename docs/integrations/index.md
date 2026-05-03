@@ -81,7 +81,8 @@ Requires: `pip install fastaiagent[anthropic]`
 
 ## LangChain
 
-Traces LangChain agent executions via a callback handler.
+A `BaseCallbackHandler` subclass that opens spans on LangChain's LLM and
+tool lifecycle hooks.
 
 ```python
 import fastaiagent.integrations.langchain
@@ -92,10 +93,13 @@ fastaiagent.integrations.langchain.enable()
 # Get the callback handler for LangChain
 handler = fastaiagent.integrations.langchain.get_callback_handler()
 
-# Pass to your LangChain agent/chain
-from langchain.agents import create_tool_calling_agent
-result = agent.invoke(
-    {"input": "Hello"},
+# Pass to your LangChain LLM/agent/chain
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage
+
+llm = ChatOpenAI(model="gpt-4.1")
+response = llm.invoke(
+    [HumanMessage(content="Hello")],
     config={"callbacks": [handler]},
 )
 
@@ -103,30 +107,45 @@ result = agent.invoke(
 fastaiagent.integrations.langchain.disable()
 ```
 
-**What's captured:**
-- LLM calls (start/end with model info)
-- Tool calls (start/end with tool name)
-- Chain/agent execution boundaries
+**Hooks instrumented:**
+- `on_llm_start` / `on_llm_end` — `langchain.llm.<model>` span
+- `on_tool_start` / `on_tool_end` — `langchain.tool.<name>` span
+- `on_llm_error` / `on_tool_error` — closes the matching open span on failure
 
-Requires: `pip install fastaiagent[langchain]`
+Spans are stored in `.fastaiagent/local.db` and visible through
+`fastaiagent traces list`.
+
+Requires (full): `pip install "fastaiagent[langchain]" langchain langchain-openai`
+(the `[langchain]` extra only pulls `langchain-core`).
 
 ## CrewAI
 
-Traces CrewAI task and agent executions.
+CrewAI is currently supported as **runtime interop**: a `Crew` can run in
+the same process as fastaiagent agents (and after `enable()`) without
+conflict. The `enable()` / `disable()` calls validate that `crewai` is
+importable; they do not yet install instrumentation that auto-traces
+CrewAI tasks.
 
 ```python
 import fastaiagent.integrations.crewai
 
-# Enable
+# Validate crewai is installed and mark the integration enabled
 fastaiagent.integrations.crewai.enable()
 
-# Use CrewAI as normal
+# Use CrewAI as normal — runs alongside fastaiagent
 from crewai import Agent, Task, Crew
 # ... your CrewAI code ...
 
-# Disable
 fastaiagent.integrations.crewai.disable()
 ```
+
+The interop guarantee is exercised by `tests/e2e/test_gate_crewai.py`,
+which runs a real one-task Crew on `gpt-4.1` and asserts that
+fastaiagent agents and tracing remain functional before and after the
+Crew runs.
+
+Auto-tracing of CrewAI task/agent lifecycle events is **not yet
+implemented**.
 
 Requires: `pip install fastaiagent[crewai]`
 
@@ -196,8 +215,8 @@ Each integration uses monkey-patching or callback handlers to intercept framewor
 |-------------|-----------|---------------|
 | OpenAI | Monkey-patch | `Completions.create` |
 | Anthropic | Monkey-patch | `Messages.create` |
-| LangChain | Callback handler | Registered via `config={"callbacks": [...]}` |
-| CrewAI | Callback handler | Registered globally on enable |
+| LangChain | Callback handler | Pass via `config={"callbacks": [handler]}` — opens/closes spans on LLM and tool lifecycle |
+| CrewAI | Import validation | `enable()` validates `crewai` is importable; no instrumentation hooked yet |
 
 **Important:**
 - `enable()` must be called **before** making framework calls
