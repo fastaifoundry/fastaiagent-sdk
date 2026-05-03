@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ChevronLeft,
   ExternalLink,
   Loader2,
+  Play,
   RefreshCw,
   Save,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -15,8 +17,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { TableSkeleton } from "@/components/shared/LoadingSkeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { RegistryExternalBanner } from "@/components/prompts/RegistryGate";
 import {
+  useDeletePrompt,
   usePrompt,
   usePromptLineage,
   usePromptVersion,
@@ -34,18 +38,21 @@ function extractVars(template: string): string[] {
 
 export function PromptEditorPage() {
   const { slug } = useParams<{ slug: string }>();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const prompt = usePrompt(slug);
   const versions = usePromptVersions(slug);
   const lineage = usePromptLineage(slug);
   const updatePrompt = useUpdatePrompt();
+  const deletePrompt = useDeletePrompt();
 
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
   const selectedDetail = usePromptVersion(slug, selectedVersion);
 
   const [draft, setDraft] = useState("");
   const [dirty, setDirty] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const isLocal = prompt.data?.registry_is_local ?? false;
 
@@ -84,6 +91,28 @@ export function PromptEditorPage() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!slug) return;
+    try {
+      const res = await deletePrompt.mutateAsync({ slug });
+      toast.success(
+        `Deleted '${slug}' (${res.versions_deleted} version${
+          res.versions_deleted === 1 ? "" : "s"
+        })`,
+      );
+      // Drop every cached query for this slug so navigation back to
+      // /prompts shows the post-delete list immediately.
+      queryClient.removeQueries({ queryKey: ["prompt", slug] });
+      queryClient.removeQueries({ queryKey: ["prompt-versions", slug] });
+      queryClient.removeQueries({ queryKey: ["prompt-lineage", slug] });
+      queryClient.invalidateQueries({ queryKey: ["prompts"] });
+      navigate("/prompts");
+    } catch (e) {
+      if (e instanceof ApiError) toast.error(e.message);
+      else toast.error("Delete failed");
+    }
+  };
+
   if (prompt.isLoading) return <TableSkeleton rows={4} />;
   if (prompt.error || !prompt.data) {
     return (
@@ -106,6 +135,18 @@ export function PromptEditorPage() {
             Back
           </Button>
         </Link>
+        {slug && (
+          <Link
+            to={`/playground?prompt=${encodeURIComponent(slug)}${
+              selectedVersion ? `&version=${selectedVersion}` : ""
+            }`}
+          >
+            <Button variant="outline" size="sm">
+              <Play className="mr-1.5 h-3.5 w-3.5" />
+              Test in Playground
+            </Button>
+          </Link>
+        )}
         <Button
           variant="outline"
           size="sm"
@@ -149,7 +190,36 @@ export function PromptEditorPage() {
             </>
           )}
         </Button>
+        <Button
+          size="sm"
+          variant="destructive"
+          onClick={() => setConfirmDelete(true)}
+          disabled={!isLocal || deletePrompt.isPending}
+          title={
+            !isLocal
+              ? "Registry is external — deletion disabled"
+              : "Delete this prompt and every version"
+          }
+          data-testid="delete-prompt-button"
+        >
+          <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+          Delete
+        </Button>
       </PageHeader>
+
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title={`Delete '${slug}'?`}
+        description={
+          `Removes every version and alias of this prompt from local.db. ` +
+          `Trace history is left intact, but the live definition will be ` +
+          `gone — you can re-register a new prompt with the same name.`
+        }
+        confirmLabel="Delete prompt"
+        onConfirm={handleDelete}
+        isPending={deletePrompt.isPending}
+      />
 
       {!isLocal && <RegistryExternalBanner />}
 

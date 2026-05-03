@@ -30,6 +30,7 @@ from fastaiagent.ui.routes import (
     guardrails,
     kb,
     overview,
+    playground,
     prompts,
     replay,
     traces,
@@ -117,6 +118,7 @@ def build_app(
         kb.router,
         workflows.router,
         executions.router,
+        playground.router,
     ):
         app.include_router(r)
 

@@ -385,6 +385,166 @@ class TestPrompts:
         assert r.status_code == 403
         assert "external" in r.json()["detail"].lower()
 
+    def test_delete_removes_all_versions_and_aliases(
+        self, monkeypatch, seeded_db, temp_dir
+    ):
+        """Real DELETE flow: register multiple versions + an alias, then
+        delete the prompt and verify every related row is gone.
+        """
+        # Editor gate requires DB inside cwd.
+        monkeypatch.chdir(temp_dir)
+        app = build_app(db_path=str(seeded_db), no_auth=True)
+        client = TestClient(app)
+
+        # Push a v2 so there's history to clean up.
+        r = client.put(
+            "/api/prompts/greet", json={"template": "Hola {{name}}!"}
+        )
+        assert r.status_code == 200, r.text
+
+        # Pin an alias so the alias-cleanup path is exercised too.
+        with SQLiteHelper(seeded_db) as db:
+            db.execute(
+                "INSERT INTO prompt_aliases (slug, alias, version) VALUES (?, ?, ?)",
+                ("greet", "production", "1"),
+            )
+
+        # Sanity — both versions visible before delete.
+        rv = client.get("/api/prompts/greet/versions").json()
+        assert {v["version"] for v in rv["versions"]} == {"1", "2"}
+
+        # Delete.
+        rd = client.delete("/api/prompts/greet")
+        assert rd.status_code == 200, rd.text
+        body = rd.json()
+        assert body["slug"] == "greet"
+        assert body["versions_deleted"] == 2
+
+        # Now everything is gone — prompt detail 404s, versions list 404s,
+        # and the rows in every related table are removed.
+        assert client.get("/api/prompts/greet").status_code == 404
+        assert client.get("/api/prompts/greet/versions").status_code == 404
+        with SQLiteHelper(seeded_db) as db:
+            assert (
+                db.fetchone(
+                    "SELECT COUNT(*) AS n FROM prompts WHERE slug = 'greet'"
+                )["n"]
+                == 0
+            )
+            assert (
+                db.fetchone(
+                    "SELECT COUNT(*) AS n FROM prompt_versions WHERE slug = 'greet'"
+                )["n"]
+                == 0
+            )
+            assert (
+                db.fetchone(
+                    "SELECT COUNT(*) AS n FROM prompt_aliases WHERE slug = 'greet'"
+                )["n"]
+                == 0
+            )
+
+    def test_delete_404_when_unknown(
+        self, monkeypatch, seeded_db, temp_dir
+    ):
+        monkeypatch.chdir(temp_dir)
+        app = build_app(db_path=str(seeded_db), no_auth=True)
+        client = TestClient(app)
+        r = client.delete("/api/prompts/no-such-prompt")
+        assert r.status_code == 404
+        assert "not found" in r.json()["detail"].lower()
+
+    def test_delete_rejected_when_registry_external(self, client_no_auth):
+        """DB outside cwd → 403, mirrors PUT semantics."""
+        r = client_no_auth.delete("/api/prompts/greet")
+        assert r.status_code == 403
+        assert "external" in r.json()["detail"].lower()
+
+    def test_delete_respects_project_scope(
+        self, monkeypatch, seeded_db, temp_dir
+    ):
+        """A prompt tagged with project_id ``other`` must not be deleted
+        by a request scoped to project_id ``me`` — even though the slug
+        matches. Returns 404 (not found *in this scope*) and leaves the
+        row intact.
+        """
+        # Tag the seeded prompt with a different project than the UI scope.
+        with SQLiteHelper(seeded_db) as db:
+            db.execute(
+                "UPDATE prompts SET project_id = 'other' WHERE slug = 'greet'"
+            )
+            db.execute(
+                "UPDATE prompt_versions SET project_id = 'other' "
+                "WHERE slug = 'greet'"
+            )
+
+        monkeypatch.chdir(temp_dir)
+        app = build_app(
+            db_path=str(seeded_db), no_auth=True, project_id="me"
+        )
+        client = TestClient(app)
+
+        # DELETE under project=me → 404 because the row belongs to
+        # project=other.
+        r = client.delete("/api/prompts/greet")
+        assert r.status_code == 404
+
+        # Row is preserved.
+        with SQLiteHelper(seeded_db) as db:
+            row = db.fetchone(
+                """SELECT template FROM prompt_versions
+                   WHERE slug = 'greet' AND project_id = 'other'"""
+            )
+        assert row is not None
+        assert row["template"] == "Hello {{name}}!"
+
+    def test_update_writes_with_app_context_project_id(
+        self, monkeypatch, seeded_db, temp_dir
+    ):
+        """Regression: PUT must stamp the new version with the
+        AppContext's project_id, not the cwd-derived fallback.
+
+        Without this, ``safe_get_project_id()`` returns the directory name
+        (`temp_dir` here) but the UI is scoped to a different
+        ``project_id``, and the new version becomes invisible to the
+        editor that just saved it.
+        """
+        # Pre-stamp v1 with the demo project's id (mirrors what the
+        # platform / seed scripts produce in real deployments).
+        with SQLiteHelper(seeded_db) as db:
+            db.execute(
+                "UPDATE prompts SET project_id = ? WHERE slug = 'greet'",
+                ("demo-project",),
+            )
+            db.execute(
+                "UPDATE prompt_versions SET project_id = ? WHERE slug = 'greet'",
+                ("demo-project",),
+            )
+        monkeypatch.chdir(temp_dir)
+        app = build_app(
+            db_path=str(seeded_db), no_auth=True, project_id="demo-project"
+        )
+        client = TestClient(app)
+        r = client.put(
+            "/api/prompts/greet", json={"template": "Bonjour {{name}}!"}
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["version"] == 2
+
+        # Read-side: the project-scoped /versions endpoint should now see v2.
+        rv = client.get("/api/prompts/greet/versions")
+        assert rv.status_code == 200
+        versions = rv.json()["versions"]
+        assert {v["version"] for v in versions} == {"1", "2"}
+
+        # And the row in the table carries the right project_id.
+        with SQLiteHelper(seeded_db) as db:
+            rows = db.fetchall(
+                "SELECT version, project_id FROM prompt_versions WHERE slug='greet'"
+            )
+        for row in rows:
+            assert row["project_id"] == "demo-project", row
+
     def test_lineage(self, client_no_auth):
         r = client_no_auth.get("/api/prompts/greet/lineage")
         assert r.status_code == 200

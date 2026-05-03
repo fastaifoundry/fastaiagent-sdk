@@ -6,7 +6,7 @@ The only SDK with **Agent Replay** — fork-and-rerun debugging — and a
 
 Works standalone or connected to the [FastAIAgent Platform](https://fastaiagent.net) for visual editing, production monitoring, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.2.0)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.3.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -165,6 +165,60 @@ Same pattern works for `Swarm` and `Supervisor`. See
 [examples/47_workflow_topology.py](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/47_workflow_topology.py)
 and [docs/ui/workflow-visualization.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/ui/workflow-visualization.md)
 for the full reference.
+
+### Iterate on prompts in the browser — Prompt Playground
+
+The **Prompt Playground** at `/playground` is the inner-loop iteration
+surface for prompts: pick one from the registry, fill in its
+`{{variables}}`, choose a provider/model, click **Run**, watch the
+response stream back token-by-token. Edit the template inline for
+one-off experiments, attach an image for vision models, then click
+**Save as eval case** to append the input/output pair to a JSONL
+dataset that loads directly via `Dataset.from_jsonl()`. Every run emits
+a trace tagged `fastaiagent.source = "playground"` so playground
+experiments share the same observability surface as production runs.
+
+![FastAIAgent Local UI — Prompt Playground](https://raw.githubusercontent.com/fastaifoundry/fastaiagent-sdk/main/docs/ui/screenshots/sprint2-3-playground-streamed-response.png)
+
+See [docs/ui/playground.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/ui/playground.md)
+and [examples/49_prompt_playground.py](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/49_prompt_playground.py)
+for the walkthrough.
+
+### See what your agent is made of — Agent Dependency Graph
+
+The **Dependencies** tab on any `/agents/{name}` page renders a
+structural graph of the agent: every tool, knowledge base, prompt,
+guardrail, and model appears as a node radiating out from the agent
+centre. Tools that the LLM has called but weren't registered show up in
+amber so hallucinated tool names are visible at a glance. For
+**Supervisors** every Worker appears as a sub-agent with its own
+subtree; for **Swarms** peers appear as siblings with handoff edges.
+Click any node to inspect its details and jump to its own page.
+
+![FastAIAgent Local UI — Agent Dependency Graph](https://raw.githubusercontent.com/fastaifoundry/fastaiagent-sdk/main/docs/ui/screenshots/sprint2-4-agent-dependency-graph.png)
+
+See [docs/ui/agent-dependencies.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/ui/agent-dependencies.md)
+and [examples/50_agent_dependencies.py](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/50_agent_dependencies.py)
+for the walkthrough.
+
+### Debug what your guardrails did — Guardrail Event Detail
+
+Every guardrail firing already shows up on `/guardrails`. Click any row
+to open its **detail page** with three panels — *what triggered it*,
+*which rule matched*, *what happened next* — plus an execution-context
+timeline of the surrounding spans and the other guardrails that ran on
+the same content. For `filtered` events the third panel renders a
+before/after diff of the rewritten content; for `llm_judge` rules it
+shows the judge prompt + response inline. A **Mark as false positive**
+button flips a flag stored on the event row so you can curate signal
+vs. noise without ever editing the DB — and a new `FP: yes / FP: no`
+filter on the list page hides the noise once you've marked it.
+
+![FastAIAgent Local UI — Guardrail Event Detail](https://raw.githubusercontent.com/fastaifoundry/fastaiagent-sdk/main/docs/ui/screenshots/sprint2-7-guardrail-detail-blocked.png)
+
+See [docs/ui/guardrail-events.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/ui/guardrail-events.md)
+and [examples/51_guardrail_events.py](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/51_guardrail_events.py)
+for the walkthrough.
 
 ### Other Local UI surfaces
 

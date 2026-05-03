@@ -133,6 +133,77 @@ def _format(bucket: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _classify_workflow_runner(runner: Any) -> str | None:
+    """Map a runner instance to one of ``chain`` / ``swarm`` / ``supervisor``."""
+    cls = type(runner).__name__.lower()
+    if "supervisor" in cls:
+        return "supervisor"
+    if "swarm" in cls:
+        return "swarm"
+    if "chain" in cls:
+        return "chain"
+    return None
+
+
+def _registered_workflow_node_count(runner: Any, runner_type: str) -> int | None:
+    """Best-effort node count for a registered-but-not-run workflow."""
+    try:
+        if runner_type == "chain":
+            return len(getattr(runner, "nodes", []) or [])
+        if runner_type == "swarm":
+            return len(getattr(runner, "agents", {}) or {})
+        if runner_type == "supervisor":
+            return len(getattr(runner, "workers", []) or [])
+    except Exception:  # noqa: BLE001 — defensive, never block listing
+        return None
+    return None
+
+
+def _empty_workflow_summary(
+    runner_type: str, name: str, node_count: int | None
+) -> dict[str, Any]:
+    """Stub summary for a registered-but-not-run workflow.
+
+    Mirrors ``_format()`` so the directory page can render the same card
+    shape without a separate code path.
+    """
+    return {
+        "runner_type": runner_type,
+        "workflow_name": name,
+        "run_count": 0,
+        "success_rate": 0.0,
+        "error_count": 0,
+        "avg_latency_ms": 0.0,
+        "avg_cost_usd": 0.0,
+        "last_run": "",
+        "node_count": node_count,
+    }
+
+
+def _registered_workflows_for_listing(
+    runners: dict[str, Any], runner_type: str | None
+) -> list[dict[str, Any]]:
+    """Workflow summaries for runners registered via ``build_app(runners=…)``.
+
+    Filters to ``runner_type`` when given. Used to surface workflows on
+    the directory page before they've produced any spans.
+    """
+    out: list[dict[str, Any]] = []
+    for r in runners.values():
+        rtype = _classify_workflow_runner(r)
+        if rtype is None:
+            continue
+        if runner_type and rtype != runner_type:
+            continue
+        n = getattr(r, "name", None)
+        if not n:
+            continue
+        out.append(
+            _empty_workflow_summary(rtype, n, _registered_workflow_node_count(r, rtype))
+        )
+    return out
+
+
 @router.get("")
 def list_workflows(
     request: Request,
@@ -172,8 +243,19 @@ def list_workflows(
             params = (ctx.project_id,) if ctx.project_id else ()
             rows = db.fetchall(sql, params)
         by_wf = _aggregate(rows)
+        workflows = [_format(b) for b in by_wf.values()]
+
+        # Surface runners registered via ``build_app(runners=[...])`` that
+        # haven't produced spans yet. Span-derived rows (with real stats)
+        # take precedence; registered-only rows show zeros so the directory
+        # page is discoverable before the first run.
+        seen = {(w["runner_type"], w["workflow_name"]) for w in workflows}
+        for stub in _registered_workflows_for_listing(ctx.runners, runner_type):
+            key = (stub["runner_type"], stub["workflow_name"])
+            if key not in seen:
+                workflows.append(stub)
         return {
-            "workflows": [_format(b) for b in by_wf.values()],
+            "workflows": workflows,
             "registered": bool(getattr(ctx, "runners", {})),
         }
     finally:

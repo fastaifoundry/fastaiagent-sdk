@@ -38,8 +38,16 @@ const PromptsPage = lazy(() =>
 const PromptEditorPage = lazy(() =>
   import("@/pages/PromptEditorPage").then((m) => ({ default: m.PromptEditorPage }))
 );
+const PlaygroundPage = lazy(() =>
+  import("@/pages/PlaygroundPage").then((m) => ({ default: m.PlaygroundPage }))
+);
 const GuardrailsPage = lazy(() =>
   import("@/pages/GuardrailsPage").then((m) => ({ default: m.GuardrailsPage }))
+);
+const GuardrailEventDetailPage = lazy(() =>
+  import("@/pages/GuardrailEventDetailPage").then((m) => ({
+    default: m.GuardrailEventDetailPage,
+  }))
 );
 const AgentsPage = lazy(() =>
   import("@/pages/AgentsPage").then((m) => ({ default: m.AgentsPage }))
@@ -228,10 +236,26 @@ export default function App() {
                 }
               />
               <Route
+                path="/playground"
+                element={
+                  <Suspense fallback={<PageFallback />}>
+                    <PlaygroundPage />
+                  </Suspense>
+                }
+              />
+              <Route
                 path="/guardrails"
                 element={
                   <Suspense fallback={<PageFallback />}>
                     <GuardrailsPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/guardrail-events/:eventId"
+                element={
+                  <Suspense fallback={<PageFallback />}>
+                    <GuardrailEventDetailPage />
                   </Suspense>
                 }
               />

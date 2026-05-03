@@ -37,6 +37,8 @@ SKIP: dict[str, str] = {
     # Local UI server example — boots a server too.
     "35_local_ui.py": "long-running uvicorn server (smoke-tested separately)",
     "37_kb_ui.py": "long-running uvicorn server (smoke-tested separately)",
+    # Sprint 2 demos that boot uvicorn — smoke-tested via /tmp/smoke_50.py.
+    "50_agent_dependencies.py": "long-running uvicorn server (smoke-tested separately)",
 }
 
 TIMEOUT = 90

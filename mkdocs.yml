@@ -141,6 +141,9 @@ nav:
       - "Cost tracking": ui/cost-tracking.md
       - "Export trace as JSON": ui/export-trace.md
       - "Project scoping": ui/projects.md
+      - "Prompt Playground": ui/playground.md
+      - "Agent Dependency Graph": ui/agent-dependencies.md
+      - "Guardrail Event Detail": ui/guardrail-events.md
   - Platform:
       - platform/index.md
   - Deployment:

@@ -176,6 +176,7 @@ def update_prompt(
     body: EditRequest,
     _user: str = Depends(require_session),
 ) -> dict[str, Any]:
+    ctx = get_context(request)
     reg = _registry(request)
     if not reg.is_local():
         raise HTTPException(
@@ -183,10 +184,16 @@ def update_prompt(
             "This registry is external. Edit prompts via code or from the "
             "environment that owns this path.",
         )
+    # Stamp the new version with the *active* project so the UI's
+    # project-scoped reads see it. Without this, ``safe_get_project_id()``
+    # fallback inside the storage layer can write a different project id
+    # than the AppContext is filtering on, and the new version becomes
+    # invisible to the editor that just saved it.
     prompt = reg.register(
         name=slug,
         template=body.template,
         metadata=body.metadata or {},
+        project_id=ctx.project_id or None,
     )
     return {
         "slug": prompt.name,
@@ -194,6 +201,38 @@ def update_prompt(
         "template": prompt.template,
         "variables": prompt.variables,
     }
+
+
+@router.delete("/{slug}")
+def delete_prompt(
+    request: Request,
+    slug: str,
+    _user: str = Depends(require_session),
+) -> dict[str, Any]:
+    """Delete a prompt (all versions + aliases) from local storage.
+
+    Project-scoped: when the UI is bound to a ``project_id``, only rows in
+    that project are removed. Other projects' copies of the same slug are
+    left intact.
+
+    Returns ``404`` when the prompt doesn't exist in this project, ``403``
+    when the registry is external (matches the PUT semantics — UI mutates
+    only what's clearly local and personal).
+    """
+    ctx = get_context(request)
+    reg = _registry(request)
+    if not reg.is_local():
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "This registry is external. Delete prompts via code or from the "
+            "environment that owns this path.",
+        )
+    deleted = reg.delete(slug, project_id=ctx.project_id or None)
+    if deleted == 0:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, f"Prompt '{slug}' not found"
+        )
+    return {"slug": slug, "versions_deleted": deleted}
 
 
 @router.get("/{slug}/lineage")

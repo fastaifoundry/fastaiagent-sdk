@@ -246,6 +246,45 @@ environment).
 
 ![Prompt editor](screenshots/09-prompt-editor.png)
 
+### Playground
+
+`// PROMPT REGISTRY → Playground`. Pick a prompt, fill its variables,
+choose a model, click **Run**, watch the response stream back. Edit the
+template inline for one-off experiments, attach an image for vision
+models, or click **Save as eval case** to append the input/output pair
+to a JSONL dataset. Every run emits a trace tagged
+`fastaiagent.source = "playground"` so playground experiments share the
+same observability surface as production runs. See
+[Prompt Playground](playground.md).
+
+![Prompt Playground](screenshots/sprint2-3-playground-streamed-response.png)
+
+### Agent dependency graph
+
+The **Dependencies** tab on any `/agents/{name}` page shows a structural
+"what is this agent made of" view: tools, knowledge bases, prompts,
+guardrails, model — all clickable, with click-through to the
+dependency's own detail page. For Supervisors, workers appear as
+sub-agent subtrees; for Swarms, peers appear as siblings with handoff
+edges. See [Agent Dependency Graph](agent-dependencies.md).
+
+![Agent dependency graph](screenshots/sprint2-4-agent-dependency-graph.png)
+
+### Guardrail event detail
+
+Click any row on `/guardrails` (or any guardrail badge in the *Scores*
+card on a Trace Detail) to open the event's detail page. Three panels
+break down *what triggered it*, *which rule matched*, and *what
+happened next* — with a before/after diff for filtered events and an
+LLM judge prompt+response for `llm_judge` rules. The execution-context
+section below shows the surrounding span timeline plus other
+guardrails that ran on the same content. **Mark as false positive**
+flips a flag stored on the event row that persists across refreshes
+and feeds the new `FP: yes / FP: no` filter on the list page. See
+[Guardrail Event Detail](guardrail-events.md).
+
+![Guardrail event detail](screenshots/sprint2-7-guardrail-detail-blocked.png)
+
 ### Guardrail events
 
 Every guardrail firing — name, type, position, outcome pill (passed /

@@ -110,8 +110,15 @@ class PromptRegistry:
         fragments: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
         version: int | None = None,
+        project_id: str | None = None,
     ) -> Prompt:
-        """Register a new prompt (creates a new version)."""
+        """Register a new prompt (creates a new version).
+
+        ``project_id`` is forwarded to the storage layer so callers like
+        the Local UI can stamp rows with the *active* project rather than
+        the cwd-derived default. Defaults to the auto-detected project id
+        for backwards compatibility.
+        """
         try:
             existing = self._storage.load_prompt(name)
             new_version = existing.version + 1
@@ -127,8 +134,23 @@ class PromptRegistry:
             version=new_version,
             metadata=metadata or {},
         )
-        self._storage.save_prompt(prompt)
+        self._storage.save_prompt(prompt, project_id=project_id)
         return prompt
+
+    def delete(
+        self, name: str, *, project_id: str | None = None
+    ) -> int:
+        """Delete a prompt (every version + every alias) from local storage.
+
+        Returns the number of versions removed. ``0`` means the prompt
+        didn't exist in the requested scope — the UI route turns that into
+        a ``404`` so callers can distinguish "wasn't there" from "deleted
+        successfully."
+        """
+        # Drop any cached platform copies so re-registering immediately
+        # reads fresh data instead of a stale TTL hit.
+        self.refresh(name)
+        return self._storage.delete_prompt(name, project_id=project_id)
 
     def register_fragment(self, name: str, content: str) -> Fragment:
         """Register a reusable prompt fragment."""

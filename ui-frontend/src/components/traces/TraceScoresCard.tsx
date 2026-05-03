@@ -44,30 +44,35 @@ export function TraceScoresCard({ traceId }: Props) {
                 const outcome = (g.outcome ?? "").toLowerCase();
                 const cls = OUTCOME_CLASS[outcome] ?? "bg-muted text-muted-foreground";
                 return (
-                  <li
-                    key={g.event_id}
-                    className="flex items-center justify-between rounded-md border px-2 py-1.5"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={cn(
-                          "inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-mono uppercase",
-                          cls
-                        )}
-                      >
-                        <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                        {outcome || "unknown"}
-                      </span>
-                      <span className="font-mono text-xs">{g.guardrail_name}</span>
-                      {g.message && (
-                        <span className="truncate text-xs text-muted-foreground">
-                          {g.message}
+                  <li key={g.event_id}>
+                    <Link
+                      to={`/guardrail-events/${g.event_id}`}
+                      className="flex items-center justify-between rounded-md border px-2 py-1.5 transition-colors hover:border-primary/40"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={cn(
+                            "inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-mono uppercase",
+                            cls
+                          )}
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                          {outcome || "unknown"}
                         </span>
-                      )}
-                    </div>
-                    <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                      {g.score != null ? g.score.toFixed(2) : ""}
-                    </span>
+                        <span className="font-mono text-xs">{g.guardrail_name}</span>
+                        {g.message && (
+                          <span className="truncate text-xs text-muted-foreground">
+                            {g.message}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                          {g.score != null ? g.score.toFixed(2) : ""}
+                        </span>
+                        <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                      </div>
+                    </Link>
                   </li>
                 );
               })}
