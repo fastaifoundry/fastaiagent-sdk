@@ -722,7 +722,12 @@ class Agent:
             )
 
     def stream(
-        self, input: str, *, context: RunContext[Any] | None = None, trace: bool = True, **kwargs: Any
+        self,
+        input: str,
+        *,
+        context: RunContext[Any] | None = None,
+        trace: bool = True,
+        **kwargs: Any,
     ) -> AgentResult:
         """Synchronous streaming — collects stream into AgentResult.
 
