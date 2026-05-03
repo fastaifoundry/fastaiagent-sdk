@@ -211,7 +211,8 @@ def _read_dataset(path: Path) -> list[CaseRow]:
             if not isinstance(raw, dict) or "input" not in raw:
                 raise HTTPException(
                     status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    f"dataset {path.name} line {i + 1}: each line must be a JSON object with an 'input' field",
+                    f"dataset {path.name} line {i + 1}: each line must be a JSON "
+                    "object with an 'input' field",
                 )
             rows.append(_normalise_case(raw, len(rows)))
     return rows
@@ -514,7 +515,11 @@ class ImageUploadResult(BaseModel):
     size_bytes: int
 
 
-@router.post("/{name}/images", response_model=ImageUploadResult, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{name}/images",
+    response_model=ImageUploadResult,
+    status_code=status.HTTP_201_CREATED,
+)
 async def upload_image(
     request: Request,
     name: str,

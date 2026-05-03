@@ -44,7 +44,7 @@ def overview(request: Request, _user: str = Depends(require_session)) -> dict[st
         # GROUP BY trace_id queries can't take a WHERE on project_id without
         # a clause — inject it via the same helper at the outermost WHERE.
         where_for_recent = (
-            f"WHERE project_id = ?" if ctx.project_id else ""
+            "WHERE project_id = ?" if ctx.project_id else ""
         )
         recent_traces = db.fetchall(
             f"""SELECT trace_id, MIN(name) AS name, MIN(start_time) AS start_time,

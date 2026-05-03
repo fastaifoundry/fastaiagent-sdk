@@ -6,7 +6,7 @@ The only SDK with **Agent Replay** — fork-and-rerun debugging — and a
 
 Works standalone or connected to the [FastAIAgent Platform](https://fastaiagent.net) for visual editing, production monitoring, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.4.1)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.4.2)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)

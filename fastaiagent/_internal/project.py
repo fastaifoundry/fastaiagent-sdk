@@ -24,7 +24,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Any
 
 from fastaiagent._version import __version__
 
@@ -49,7 +48,7 @@ class ProjectConfig:
         )
 
     @classmethod
-    def from_toml(cls, text: str) -> "ProjectConfig":
+    def from_toml(cls, text: str) -> ProjectConfig:
         # Tiny TOML reader — we only emit three string keys, so keep the
         # dependency surface small. tomllib (3.11+) would also work.
         out: dict[str, str] = {}

@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.2] - 2026-05-03
+
+Lint + typecheck cleanup release. No runtime behavior change; the
+codebase now passes `ruff check fastaiagent/` cleanly and resolves
+22 of the 43 mypy strict-mode errors.
+
+### Changed
+
+- `ruff check fastaiagent/` is now clean. The contributor PR (#48)
+  fixed the 17 violations that existed when it was opened; this
+  release also fixes the 5 violations that 1.4.0 + 1.4.1 had
+  introduced since:
+  - `_internal/project.py`: drop unused `from typing import Any`,
+    unquote forward reference `"ProjectConfig"` (PEP 563 isn't
+    needed under `from __future__ import annotations`).
+  - `ui/routes/datasets.py`: line-wrap two long lines under 100
+    chars (multipart endpoint decorator + JSONL-import error
+    message).
+  - `ui/routes/overview.py`: drop empty `f"…"` prefix on a literal
+    SQL `WHERE` clause.
+
+### Fixed
+
+- ruff violations in 10 source files across `agent/`, `eval/`,
+  `kb/`, `llm/`, and `trace/` (#48, thanks @rsangers): import
+  sorting, unused imports, line-length wrapping, deprecated
+  `typing.Sequence`, empty f-strings, and one unused variable.
+  10 files changed, +44/-16 — purely cosmetic.
+- mypy strict-mode: 22 of 43 type errors resolved across
+  `agent/agent.py`, `agent/swarm.py`, `agent/team.py`, and
+  `cli/auth.py` (#49, thanks @rsangers). Generic `RunContext` →
+  `RunContext[Any]` in 21 method signatures, plus full type
+  annotations on `_ExitAfterHandoff.wrap_tool` matching the parent
+  class. Type annotations only — stripped at runtime, no behavior
+  change. Remaining 21 errors are in `kb/search.py`, `llm/client.py`,
+  and `integrations/` and can be addressed in a follow-up.
+
 ## [1.4.1] - 2026-05-03
 
 Patch release with three small contributor PRs — two bug fixes and
