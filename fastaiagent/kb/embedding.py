@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import math
 from typing import Protocol
+
+logger = logging.getLogger(__name__)
 
 
 class Embedder(Protocol):
@@ -70,9 +73,9 @@ def get_default_embedder() -> Embedder:
     try:
         return FastEmbedEmbedder()
     except ImportError:
-        pass
+        logger.debug("FastEmbed not available, trying next embedder", exc_info=True)
     try:
         return OpenAIEmbedder()
     except (ImportError, Exception):
-        pass
+        logger.debug("OpenAI embedder not available, falling back to SimpleEmbedder", exc_info=True)
     return SimpleEmbedder()

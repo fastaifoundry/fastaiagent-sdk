@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import functools
 import json
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 _original_create = None
 _enabled = False
@@ -16,6 +19,7 @@ def _serialize_json(value: Any) -> str | None:
     try:
         return json.dumps(value, default=str)
     except Exception:
+        logger.debug("Failed to serialize Anthropic payload for trace", exc_info=True)
         return None
 
 
@@ -37,7 +41,7 @@ def _extract_response_payload(result: Any) -> tuple[str | None, str | None, str 
                     }
                 )
     except Exception:
-        pass
+        logger.debug("Failed to extract Anthropic response payload for trace", exc_info=True)
     content = "".join(text_parts) if text_parts else None
     tool_calls_json = json.dumps(tool_calls, default=str) if tool_calls else None
     stop_reason = getattr(result, "stop_reason", None)
@@ -108,6 +112,6 @@ def disable() -> None:
         if _original_create:
             anthropic.resources.messages.Messages.create = _original_create
     except ImportError:
-        pass
+        logger.debug("Anthropic SDK not available during disable", exc_info=True)
     _enabled = False
     _original_create = None

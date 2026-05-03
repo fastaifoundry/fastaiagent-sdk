@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json as _json
+import logging
 import os
 import re
 import time
@@ -24,6 +25,8 @@ from fastaiagent.llm.stream import (
     Usage,
 )
 
+logger = logging.getLogger(__name__)
+
 # --- Structured output helpers (aligned with platform) ---
 
 _CODE_FENCE_RE = re.compile(r"^\s*```(?:json)?\s*\n?(.*?)\n?\s*```\s*$", re.DOTALL)
@@ -42,6 +45,7 @@ def _serialize_for_span(value: Any) -> str | None:
     try:
         return _json.dumps(value, default=str)
     except Exception:
+        logger.debug("Failed to serialize value for span attribute", exc_info=True)
         return None
 
 

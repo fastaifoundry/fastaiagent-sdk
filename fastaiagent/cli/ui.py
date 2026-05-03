@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import getpass
+import logging
 import sys
 from pathlib import Path
 
 import typer
 from rich.console import Console
+
+logger = logging.getLogger(__name__)
 
 ui_app = typer.Typer(
     help="Local web UI for traces, prompts, evals, and guardrails."
@@ -107,7 +110,7 @@ def _start_server(
 
             webbrowser.open_new_tab(url)
         except Exception:  # noqa: BLE001
-            pass
+            logger.debug("Failed to open browser", exc_info=True)
     uvicorn.run(app, host=host, port=port, log_level="warning")
 
 

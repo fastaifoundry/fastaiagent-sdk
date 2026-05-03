@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 import uuid
 from collections.abc import AsyncGenerator, Callable, Sequence
@@ -38,6 +39,8 @@ from fastaiagent.multimodal.image import Image as MultimodalImage
 from fastaiagent.multimodal.pdf import PDF as MultimodalPDF  # noqa: N811
 from fastaiagent.multimodal.types import ContentPart, normalize_input
 from fastaiagent.tool.base import Tool
+
+logger = logging.getLogger(__name__)
 
 AgentInput = str | MultimodalImage | MultimodalPDF | list[ContentPart]
 
@@ -158,6 +161,7 @@ class Agent:
             data = json.loads(clean)
             return self.output_type.model_validate(data)
         except Exception:
+            logger.debug("Failed to parse LLM output into output_type", exc_info=True)
             return None
 
     def run(
@@ -264,7 +268,7 @@ class Agent:
                         )
             except Exception:
                 # Trace persistence must never fail the agent run.
-                pass
+                logger.debug("Failed to persist input attachments", exc_info=True)
 
             # Reconstruction metadata for ForkedReplay.arerun (always captured —
             # structural, not payload).
@@ -285,7 +289,7 @@ class Agent:
                         span.set_attribute("agent.system_prompt", resolved_prompt)
                 except Exception:
                     # Callable system_prompt that needs context — best-effort only.
-                    pass
+                    logger.debug("Failed to resolve system prompt for trace", exc_info=True)
 
             result = await self._arun_core(
                 input, context=context, execution_id=execution_id, **kwargs

@@ -13,9 +13,12 @@ Supports three client modes:
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastaiagent.kb.chunking import Chunk
+
+logger = logging.getLogger(__name__)
 
 
 class ChromaVectorStore:
@@ -95,6 +98,9 @@ class ChromaVectorStore:
                     try:
                         meta[key] = _json.loads(v)
                     except Exception:
+                        logger.debug(
+                            "Failed to parse Chroma metadata JSON for key %r", key, exc_info=True,
+                        )
                         meta[key] = v
                 else:
                     meta[key] = v
@@ -155,7 +161,10 @@ class ChromaVectorStore:
         try:
             self._client.delete_collection(name=self._collection_name)
         except Exception:
-            pass
+            logger.debug(
+                "Failed to delete Chroma collection %r during reset",
+                self._collection_name, exc_info=True,
+            )
         self._collection = self._client.get_or_create_collection(name=self._collection_name)
 
     def count(self) -> int:

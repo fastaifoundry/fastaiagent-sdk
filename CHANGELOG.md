@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.4] - 2026-05-03
+
+Observability cleanup — replace ~40 silent `except: pass` blocks
+across 32 files with `logger.debug(..., exc_info=True)` or
+`logger.warning(..., exc_info=True)` calls. **No control flow change**:
+every handler still catches and continues exactly as before.
+
+### Fixed
+
+- ~40 silent exception handlers across the SDK now log before
+  continuing, so failures in side concerns (trace persistence, JSON
+  parsing of optional span attributes, thumbnail generation, KB stats
+  queries, eval run persistence, platform processor flush, type hint
+  resolution, etc.) are diagnosable via standard Python logging
+  instead of producing zero output. (#54, thanks @rsangers)
+
+### Severity choices
+
+- `logger.warning(..., exc_info=True)` for failures where data is
+  silently lost: eval run persistence (`eval/evaluate.py`) and KB
+  stats query (`ui/routes/kb.py`).
+- `logger.debug(..., exc_info=True)` for ~38 routine/expected
+  failures: optional JSON parsing in span attributes, multimodal
+  attachment persistence, thumbnail generation, system prompt
+  resolution from callables, tool args serialization, platform
+  processor flush on disconnect, and similar best-effort paths.
+
+### Behaviour change
+
+Users at the default `INFO` log level see no change. Users with
+`logging.basicConfig(level=logging.DEBUG)` (typical for local
+debugging) will see roughly 0–40 new log messages per agent run
+depending on which side concerns failed silently before. This is
+the intended outcome — that's what `DEBUG` is for.
+
+### Files touched
+
+`agent/{agent,executor,memory}.py`, `chain/{chain,executor}.py`,
+`client.py`, `_platform/api.py`, `cli/ui.py`,
+`llm/client.py`, `integrations/{openai,anthropic}.py`,
+`kb/{local,embedding,_tracing}.py`, `kb/backends/chroma.py`,
+`tool/{function,mcp_server,rest}.py`, `multimodal/image.py`,
+`trace/{otel,attachments}.py`, `eval/{evaluate,rag}.py`,
+`prompt/registry.py`,
+`ui/routes/{agents,analytics,evals,kb,overview,traces,workflows}.py`,
+`ui/server.py`. 32 files total, +170 / -34.
+
 ## [1.4.3] - 2026-05-03
 
 LLM client refactor — pure deduplication, no runtime behavior change.

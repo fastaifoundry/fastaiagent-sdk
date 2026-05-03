@@ -9,11 +9,14 @@ without any extra bookkeeping at write time.
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from fastaiagent.ui.deps import get_context, project_filter, require_session
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/evals", tags=["evals"])
 
@@ -32,7 +35,7 @@ def _unpack(row: dict[str, Any]) -> dict[str, Any]:
             try:
                 out[key] = json.loads(out[key])
             except json.JSONDecodeError:
-                pass
+                logger.debug("Failed to parse JSON for eval field %r", key, exc_info=True)
     return out
 
 
@@ -88,7 +91,7 @@ def _trace_cost_and_latency(
             total_latency_ms += (b - a).total_seconds() * 1000
             latency_count += 1
         except (ValueError, TypeError):
-            pass
+            logger.debug("Failed to parse eval trace latency timestamps", exc_info=True)
     avg_latency = total_latency_ms / latency_count if latency_count else 0.0
     return total_cost, avg_latency
 
@@ -271,7 +274,9 @@ def compare(
             try:
                 by_input[json.dumps(c.get("input"), sort_keys=True)] = c
             except (TypeError, ValueError):
-                pass
+                logger.debug(
+                    "Failed to serialize eval case input for comparison index", exc_info=True,
+                )
 
         regressed: list[dict[str, Any]] = []
         improved: list[dict[str, Any]] = []
@@ -284,6 +289,9 @@ def compare(
                 try:
                     cb = by_input.get(json.dumps(ca.get("input"), sort_keys=True))
                 except (TypeError, ValueError):
+                    logger.debug(
+                        "Failed to serialize eval case input for comparison lookup", exc_info=True,
+                    )
                     cb = None
             if cb is None:
                 continue

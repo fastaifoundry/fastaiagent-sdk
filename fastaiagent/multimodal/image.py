@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import io
+import logging
 import mimetypes
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +14,8 @@ from urllib.parse import urlparse
 import httpx
 
 from fastaiagent._internal.errors import MultimodalError, UnsupportedFormatError
+
+logger = logging.getLogger(__name__)
 
 SUPPORTED_IMAGE_TYPES: frozenset[str] = frozenset(
     {"image/jpeg", "image/png", "image/gif", "image/webp"}
@@ -147,6 +150,7 @@ def _sniff_media_type(data: bytes) -> str | None:
         with PILImage.open(io.BytesIO(data)) as img:
             fmt = img.format
     except Exception:
+        logger.debug("Failed to sniff image media type from raw bytes", exc_info=True)
         return None
     if fmt is None:
         return None

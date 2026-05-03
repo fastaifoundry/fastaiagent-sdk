@@ -48,8 +48,11 @@ tracked as follow-ups.
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from fastaiagent.agent.agent import Agent
@@ -359,6 +362,7 @@ def _resolve_system_prompt(target: Any) -> str:
         try:
             return str(sp(None))
         except Exception:
+            logger.debug("Failed to resolve callable system prompt for MCP server", exc_info=True)
             return ""
     return str(sp)
 

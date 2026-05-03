@@ -14,11 +14,14 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import time
 from collections.abc import Iterator
 from typing import Any
 
 from fastaiagent.trace.span import trace_payloads_enabled
+
+logger = logging.getLogger(__name__)
 
 
 @contextlib.contextmanager
@@ -59,7 +62,7 @@ def retrieval_span(
                         json.dumps(handle.doc_ids[:20]),
                     )
                 except (TypeError, ValueError):
-                    pass
+                    logger.debug("Failed to serialize retrieval doc_ids for trace", exc_info=True)
 
 
 class _SpanHandle:

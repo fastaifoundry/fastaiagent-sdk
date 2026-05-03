@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 
 from fastaiagent.ui.deps import get_context, project_filter, require_session
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["overview"])
 

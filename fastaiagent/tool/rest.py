@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastaiagent._internal.errors import ToolExecutionError
 from fastaiagent.tool.base import Tool, ToolResult
+
+logger = logging.getLogger(__name__)
 
 
 class RESTTool(Tool):
@@ -63,6 +66,7 @@ class RESTTool(Tool):
                 try:
                     output = resp.json()
                 except Exception:
+                    logger.debug("REST tool response is not JSON, using text", exc_info=True)
                     output = resp.text
 
                 return ToolResult(

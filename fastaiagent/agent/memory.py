@@ -190,7 +190,13 @@ class ComposableMemory:
                 try:
                     fn()
                 except Exception:
-                    pass
+                    import logging
+
+                    logging.getLogger(__name__).debug(
+                        "Memory block %r raised in reset; skipping.",
+                        getattr(block, "name", type(block).__name__),
+                        exc_info=True,
+                    )
 
     def save(self, path: str | Path) -> None:
         """Persist the primary window and every block under ``path/``.
