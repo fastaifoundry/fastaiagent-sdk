@@ -90,6 +90,138 @@ export interface ComparisonResult {
   diverged_at: number | null;
 }
 
+// ---------------------------------------------------------------------------
+// Trace Comparison (Sprint 3)
+// ---------------------------------------------------------------------------
+
+export type CompareMatchKind =
+  | "same"
+  | "slower"
+  | "faster"
+  | "different_output"
+  | "new_in_a"
+  | "new_in_b";
+
+export interface CompareSpanSummary {
+  span_id: string;
+  name: string;
+  status: string;
+  start_time: string;
+  end_time: string;
+  duration_ms: number | null;
+}
+
+export interface CompareAlignmentRow {
+  index: number;
+  span_a: CompareSpanSummary | null;
+  span_b: CompareSpanSummary | null;
+  match: CompareMatchKind;
+  delta_ms: number | null;
+}
+
+export interface CompareTraceHalf {
+  trace_id: string;
+  name: string;
+  status: string;
+  start_time: string;
+  end_time: string | null;
+  agent_name: string | null;
+  thread_id: string | null;
+  total_cost_usd: number | null;
+  total_tokens: number | null;
+  span_count: number;
+  duration_ms: number | null;
+  runner_type: RunnerType;
+  runner_name: string | null;
+  spans: SpanRow[];
+}
+
+export interface CompareSummary {
+  duration_delta_ms: number | null;
+  tokens_delta: number | null;
+  cost_delta_usd: number | null;
+  spans_delta: number;
+  time_apart_seconds: number | null;
+}
+
+export interface CompareTracesResponse {
+  trace_a: CompareTraceHalf;
+  trace_b: CompareTraceHalf;
+  alignment: CompareAlignmentRow[];
+  summary: CompareSummary;
+}
+
+// ---------------------------------------------------------------------------
+// Eval Dataset Editor (Sprint 3)
+// ---------------------------------------------------------------------------
+
+export interface DatasetSummary {
+  name: string;
+  case_count: number;
+  modified_at: string;
+  created_at: string;
+  has_multimodal: boolean;
+}
+
+export interface DatasetCaseInputPart {
+  type: "text" | "image" | "pdf";
+  text?: string;
+  path?: string;
+  url?: string;
+}
+
+export type DatasetCaseInput = string | DatasetCaseInputPart[];
+
+export interface DatasetCase {
+  index: number;
+  input: DatasetCaseInput;
+  expected_output: unknown | null;
+  tags: string[];
+  metadata: Record<string, unknown>;
+}
+
+export interface DatasetDetail {
+  name: string;
+  cases: DatasetCase[];
+}
+
+export interface CaseBody {
+  input: DatasetCaseInput;
+  expected_output?: unknown;
+  tags?: string[];
+  metadata?: Record<string, unknown>;
+}
+
+export interface DatasetImageUploadResult {
+  path: string;
+  filename: string;
+  size_bytes: number;
+}
+
+export interface DatasetImportResult {
+  name: string;
+  imported: number;
+  total: number;
+}
+
+export interface DatasetRunEvalResult {
+  run_id: string;
+  pass_rate: number | null;
+  pass_count: number;
+  fail_count: number;
+}
+
+// ---------------------------------------------------------------------------
+// Filter presets (Sprint 3)
+// ---------------------------------------------------------------------------
+
+export interface FilterPreset {
+  id: string;
+  name: string;
+  filters: TraceFilters;
+  created_at: string;
+}
+
 export interface EvalRunRow {
   run_id: string;
   run_name: string | null;
@@ -383,6 +515,7 @@ export interface TraceFilters {
   min_duration_ms?: number;
   max_duration_ms?: number;
   min_cost?: number;
+  max_cost?: number;
   min_tokens?: number;
   page?: number;
   page_size?: number;

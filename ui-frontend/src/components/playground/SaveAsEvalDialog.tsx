@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useDatasets } from "@/hooks/use-datasets";
 import { useSaveAsEval } from "@/hooks/use-playground";
 import { ApiError } from "@/lib/api";
 
@@ -37,15 +38,30 @@ export function SaveAsEvalDialog({
   const [open, setOpen] = useState(false);
   const [datasetName, setDatasetName] = useState("playground");
   const [expected, setExpected] = useState("");
+  const [creatingNew, setCreatingNew] = useState(false);
   const save = useSaveAsEval();
+  const datasets = useDatasets();
 
   // Pre-fill expected output with the actual output the first time the
   // dialog opens — devs can tweak before saving. Reset on close so a new
-  // run starts clean.
+  // run starts clean. Also default the dataset to the first existing one
+  // (rather than a literal "playground" string) so the combo lands on a
+  // sensible value the user can either accept or override.
   const handleOpenChange = (next: boolean) => {
     setOpen(next);
     if (next) setExpected(actualOutput);
   };
+
+  useEffect(() => {
+    if (!open) return;
+    const list = datasets.data ?? [];
+    if (list.length > 0 && !creatingNew) {
+      // Prefer "playground" if it already exists; otherwise the first.
+      const has = list.find((d) => d.name === "playground");
+      setDatasetName(has ? has.name : list[0]!.name);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, datasets.data]);
 
   const handleSave = async () => {
     if (!datasetName.trim()) {
@@ -98,13 +114,54 @@ export function SaveAsEvalDialog({
 
         <div className="space-y-3">
           <div className="space-y-1">
-            <Label htmlFor="dataset-name">Dataset name</Label>
-            <Input
-              id="dataset-name"
-              value={datasetName}
-              onChange={(e) => setDatasetName(e.target.value)}
-              placeholder="playground"
-            />
+            <Label htmlFor="dataset-name">Dataset</Label>
+            {!creatingNew && (datasets.data?.length ?? 0) > 0 ? (
+              <div className="flex items-center gap-2">
+                <select
+                  id="dataset-name"
+                  value={datasetName}
+                  onChange={(e) => setDatasetName(e.target.value)}
+                  className="h-9 flex-1 rounded-md border border-input bg-background px-2 text-sm"
+                >
+                  {(datasets.data ?? []).map((d) => (
+                    <option key={d.name} value={d.name}>
+                      {d.name} ({d.case_count})
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setCreatingNew(true);
+                    setDatasetName("");
+                  }}
+                >
+                  + New
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Input
+                  id="dataset-name"
+                  value={datasetName}
+                  onChange={(e) => setDatasetName(e.target.value)}
+                  placeholder="playground"
+                  autoFocus={creatingNew}
+                />
+                {creatingNew && (datasets.data?.length ?? 0) > 0 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setCreatingNew(false)}
+                  >
+                    Use existing
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
           <div className="space-y-1">
             <Label>Input (auto-captured)</Label>

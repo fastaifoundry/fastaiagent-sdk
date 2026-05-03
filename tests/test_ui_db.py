@@ -136,3 +136,121 @@ class TestInitLocalDB:
             )
         finally:
             db.close()
+
+
+class TestV6Migration:
+    """Sprint 3 — span_fts virtual table + sync triggers + saved_filters
+    project_id. Each test exercises the migration on a fresh DB so the
+    assertions reflect what the route layer can rely on."""
+
+    def test_span_fts_table_and_triggers_exist(self, temp_dir):
+        db = init_local_db(temp_dir / "local.db")
+        try:
+            tables = {
+                r["name"]
+                for r in db.fetchall(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            }
+            assert "span_fts" in tables
+            triggers = {
+                r["name"]
+                for r in db.fetchall(
+                    "SELECT name FROM sqlite_master WHERE type='trigger'"
+                )
+            }
+            assert {"spans_fts_ai", "spans_fts_au", "spans_fts_ad"}.issubset(triggers)
+        finally:
+            db.close()
+
+    def test_saved_filters_has_project_id(self, temp_dir):
+        db = init_local_db(temp_dir / "local.db")
+        try:
+            cols = {r["name"] for r in db.fetchall("PRAGMA table_info(saved_filters)")}
+            assert "project_id" in cols
+        finally:
+            db.close()
+
+    def test_v6_is_idempotent_no_double_index(self, temp_dir):
+        path = temp_dir / "local.db"
+        # First run lands the v6 schema.
+        db = init_local_db(path)
+        db.close()
+        # Second run must be a no-op (no errors, no duplicate FTS rows
+        # for any spans we wrote between).
+        db = init_local_db(path)
+        try:
+            import json
+
+            db.execute(
+                """INSERT INTO spans
+                   (span_id, trace_id, name, attributes, events)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (
+                    "s-once",
+                    "t-once",
+                    "llm.gpt",
+                    json.dumps({"gen_ai.prompt": "uniqueterm"}),
+                    "[]",
+                ),
+            )
+        finally:
+            db.close()
+        db = init_local_db(path)
+        try:
+            row = db.fetchone(
+                "SELECT COUNT(*) AS n FROM span_fts WHERE span_id = ?",
+                ("s-once",),
+            )
+            assert row is not None
+            assert row["n"] == 1, "second init_local_db call duplicated FTS rows"
+        finally:
+            db.close()
+
+    def test_backfill_picks_up_pre_v6_spans(self, temp_dir):
+        """Spans inserted before v6 still need to land in span_fts via
+        the bulk backfill the migration runs."""
+        import sqlite3
+        import json
+
+        path = temp_dir / "legacy.db"
+        # Seed a v5-shaped DB by hand so the v6 backfill has work to do.
+        # Use raw sqlite3 so we don't trigger init_local_db's migration
+        # path before we want it.
+        with sqlite3.connect(path) as conn:
+            conn.execute(
+                """CREATE TABLE spans (
+                    span_id TEXT PRIMARY KEY,
+                    trace_id TEXT NOT NULL,
+                    parent_span_id TEXT,
+                    name TEXT,
+                    start_time TEXT,
+                    end_time TEXT,
+                    status TEXT DEFAULT 'OK',
+                    attributes TEXT DEFAULT '{}',
+                    events TEXT DEFAULT '[]',
+                    project_id TEXT NOT NULL DEFAULT ''
+                )"""
+            )
+            for i in range(20):
+                conn.execute(
+                    "INSERT INTO spans (span_id, trace_id, name, attributes) "
+                    "VALUES (?, ?, ?, ?)",
+                    (
+                        f"legacy-{i}",
+                        f"trace-{i}",
+                        "llm.gpt",
+                        json.dumps({"gen_ai.prompt": f"phrase {i}"}),
+                    ),
+                )
+            conn.execute("PRAGMA user_version = 5")
+            conn.commit()
+
+        # Now run the migration — v6 should backfill all 20.
+        db = init_local_db(path)
+        try:
+            row = db.fetchone("SELECT COUNT(*) AS n FROM span_fts")
+            assert row is not None
+            assert row["n"] == 20
+        finally:
+            db.close()

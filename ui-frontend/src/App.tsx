@@ -55,8 +55,16 @@ const AgentsPage = lazy(() =>
 const AgentDetailPage = lazy(() =>
   import("@/pages/AgentDetailPage").then((m) => ({ default: m.AgentDetailPage }))
 );
-const CompareTracesPage = lazy(() =>
-  import("@/pages/stubs").then((m) => ({ default: m.CompareTracesPage }))
+const TraceComparePage = lazy(() =>
+  import("@/pages/TraceComparePage").then((m) => ({ default: m.TraceComparePage }))
+);
+const DatasetsPage = lazy(() =>
+  import("@/pages/DatasetsPage").then((m) => ({ default: m.DatasetsPage }))
+);
+const DatasetDetailPage = lazy(() =>
+  import("@/pages/DatasetDetailPage").then((m) => ({
+    default: m.DatasetDetailPage,
+  }))
 );
 const AnalyticsPage = lazy(() =>
   import("@/pages/AnalyticsPage").then((m) => ({ default: m.AnalyticsPage }))
@@ -175,7 +183,7 @@ export default function App() {
                 path="/traces/compare"
                 element={
                   <Suspense fallback={<PageFallback />}>
-                    <CompareTracesPage />
+                    <TraceComparePage />
                   </Suspense>
                 }
               />
@@ -216,6 +224,22 @@ export default function App() {
                 element={
                   <Suspense fallback={<PageFallback />}>
                     <EvalRunDetailPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/datasets"
+                element={
+                  <Suspense fallback={<PageFallback />}>
+                    <DatasetsPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/datasets/:name"
+                element={
+                  <Suspense fallback={<PageFallback />}>
+                    <DatasetDetailPage />
                   </Suspense>
                 }
               />

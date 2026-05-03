@@ -5,6 +5,89 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-05-03
+
+### Added — Sprint 3: Trace investigation + dataset curation
+
+Three independent features that close the trace-investigation and
+eval-curation loops inside the Local UI. All three ship with real
+backend integration tests (no mocking — real FastAPI TestClient,
+real SQLite + FTS5, real `Dataset.from_jsonl()` round-trips, real
+eval framework runs), 11 Playwright screenshot evidence shots under
+`docs/ui/screenshots/sprint3-*.png`, and a runnable example each.
+
+- **Trace Comparison view** ([docs/ui/trace-comparison.md](docs/ui/trace-comparison.md))
+  at `/traces/compare?a={id}&b={id}`. Generalises Replay's "original
+  vs forked" diff to any two traces — useful for prompt A/B testing,
+  regression detection, and "why does Monday differ from Friday"
+  debugging. Server-side span alignment (name-first, position-fallback,
+  with `same` / `slower` / `faster` / `different_output` / `new_in_a` /
+  `new_in_b` row classification), summary delta cards (duration,
+  tokens, cost, span count) computed via real `_summarize_trace`,
+  expandable per-span input/output/attributes diff via
+  `react-diff-viewer-continued`. Entry points: multi-select two rows
+  on `/traces` → "Compare" in the action bar; "Compare with…" picker
+  on `/traces/{id}`. New endpoint:
+  `GET /api/traces/compare?a={id}&b={id}`. See
+  [`examples/52_trace_compare.py`](examples/52_trace_compare.py).
+- **Eval Dataset Editor** ([docs/ui/datasets.md](docs/ui/datasets.md))
+  at `/datasets` and `/datasets/{name}`. Full CRUD over the same
+  `*.jsonl` files `Dataset.from_jsonl()` already loads — list, create,
+  delete dataset; add, edit, duplicate, delete case; inline-editable
+  cells; per-dataset image upload with multimodal typed-parts shape
+  preserved on disk; JSONL import (append/replace, line-numbered
+  errors) and export; **Run eval** kicks off the existing eval
+  framework against the dataset and surfaces in `/evals`. Sidebar
+  gains a `Datasets` row under `// EVALUATION`. The Playground's
+  "Save as eval case" dialog now combos over existing datasets with
+  a `+ New` escape hatch. New endpoints under `/api/datasets/...`
+  (list, create, delete, case CRUD, import, export, image upload,
+  run-eval). See [`examples/53_dataset_editor.py`](examples/53_dataset_editor.py).
+- **Richer Trace Filtering** ([docs/ui/trace-filters.md](docs/ui/trace-filters.md))
+  on `/traces`. **FTS5-backed full-text search** across LLM prompts
+  and responses (`gen_ai.prompt`, `gen_ai.response.text`, with
+  `fastaiagent.*` namespaced fallbacks) — sub-second on 1k spans
+  (regression-tested), with LIKE fallback for legacy DBs and
+  SQLite builds without FTS5. Custom date-range picker
+  (`react-day-picker`) alongside quick ranges (15m, 1h, 24h, 7d,
+  **30d**, All). Collapsible **More filters** disclosure with
+  duration and cost ranges. Saved **filter presets** dropdown +
+  Save preset + Manage dialog (project-scoped, persisted in the
+  reused v1 `saved_filters` table). 300 ms debounced search. **URL
+  state** — every active filter mirrors into `?key=value` query
+  params, so refresh / back-forward / bookmark / share preserve
+  filter state. New `max_cost` query parameter on `/api/traces`.
+  New endpoints under `/api/filter-presets`. See
+  [`examples/54_trace_filters.py`](examples/54_trace_filters.py).
+
+### Schema — v6 migration
+
+Bumped `CURRENT_SCHEMA_VERSION` 5 → 6. Idempotent migration adds:
+
+- `span_fts` FTS5 virtual table mirroring extracted prompt/response
+  text per span, with INSERT/UPDATE/DELETE triggers on `spans` to
+  keep it in sync as the SDK writes new spans, plus a one-shot
+  bulk backfill for existing rows.
+- `project_id` column + index on the previously-unused v1
+  `saved_filters` table (now wired up by `/api/filter-presets`).
+
+Migration is gated on the SQLite build supporting FTS5 — if not,
+the migration silently no-ops the FTS table and search degrades to
+the LIKE-on-JSON path. Tested against fresh v6 DBs and against
+v5 DBs with pre-existing rows that need backfilling.
+
+### Fixed
+
+- `fastaiagent.eval.similarity.SemanticSimilarity` no longer imports
+  the missing `cosine_similarity` from `fastaiagent.kb.search`. The
+  cosine similarity is now inlined in
+  [fastaiagent/eval/similarity.py](fastaiagent/eval/similarity.py)
+  as a pure-Python helper, removing the cross-module dependency
+  that broke after the kb/search lazy-import refactor.
+- Sprint-2 `TestSchemaV5` schema-version assertion now compares
+  against `CURRENT_SCHEMA_VERSION` instead of a hard-coded `5`,
+  so future schema bumps don't break the test.
+
 ## [1.3.0] - 2026-05-03
 
 ### Added — Sprint 2: Local UI iteration loop

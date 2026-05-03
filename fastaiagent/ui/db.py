@@ -17,7 +17,7 @@ from pathlib import Path
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
 
-CURRENT_SCHEMA_VERSION = 5
+CURRENT_SCHEMA_VERSION = 6
 
 # A migration step is either a SQL string or a callable that takes the
 # ``SQLiteHelper`` and runs whatever logic it needs (e.g., gated
@@ -103,6 +103,142 @@ def _v4_backfill_project_id(db: SQLiteHelper) -> None:
             f"UPDATE {table} SET project_id = ? WHERE project_id = ''",
             (pid,),
         )
+
+
+def _v6_add_span_fts(db: SQLiteHelper) -> None:
+    """Sprint 3 — full-text search across span LLM prompts/responses.
+
+    Creates a FTS5 virtual table mirroring two extracted JSON fields per
+    span (``gen_ai.prompt`` and ``gen_ai.response.text``), plus three
+    triggers that keep the FTS table in sync as spans are
+    inserted/updated/deleted. Existing rows are backfilled in a single
+    ``INSERT … SELECT`` so the migration is fast even on million-span
+    DBs.
+
+    Skipped when:
+      * The ``spans`` table doesn't exist (legacy checkpoint-only DBs).
+      * The SQLite build was compiled without FTS5 — ``CREATE VIRTUAL
+        TABLE … USING fts5`` raises ``OperationalError`` and we treat
+        that as "search degrades to LIKE" rather than failing the whole
+        migration.
+
+    Postgres parity: the UI's read tables (spans/eval_runs/etc.) are
+    SQLite-only in this repo. The Postgres deployment is currently
+    checkpointer-only (see ``checkpointers/migrations/postgres_v1.sql``).
+    When the read side moves to Postgres, the equivalent index is::
+
+        CREATE INDEX idx_spans_attributes_fts
+            ON fastaiagent.spans
+            USING gin (to_tsvector('english', attributes::text));
+
+    Add it to the Postgres migration sibling at that point.
+    """
+    rows = db.fetchall(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='spans'"
+    )
+    if not rows:
+        return
+
+    try:
+        db.execute(
+            """CREATE VIRTUAL TABLE IF NOT EXISTS span_fts USING fts5(
+                trace_id,
+                span_id UNINDEXED,
+                name,
+                input_text,
+                output_text,
+                tokenize = 'unicode61'
+            )"""
+        )
+    except Exception:
+        # SQLite without FTS5 — leave the LIKE-fallback path in
+        # ``list_traces`` doing its job.
+        return
+
+    db.execute(
+        """CREATE TRIGGER IF NOT EXISTS spans_fts_ai
+           AFTER INSERT ON spans BEGIN
+               INSERT INTO span_fts(trace_id, span_id, name, input_text, output_text)
+               VALUES (
+                   new.trace_id,
+                   new.span_id,
+                   new.name,
+                   COALESCE(json_extract(new.attributes, '$."gen_ai.prompt"'),
+                            json_extract(new.attributes, '$."fastaiagent.gen_ai.prompt"'),
+                            ''),
+                   COALESCE(json_extract(new.attributes, '$."gen_ai.response.text"'),
+                            json_extract(new.attributes, '$."gen_ai.completion"'),
+                            json_extract(new.attributes, '$."fastaiagent.gen_ai.response.text"'),
+                            '')
+               );
+           END"""
+    )
+    db.execute(
+        """CREATE TRIGGER IF NOT EXISTS spans_fts_ad
+           AFTER DELETE ON spans BEGIN
+               DELETE FROM span_fts WHERE span_id = old.span_id;
+           END"""
+    )
+    db.execute(
+        """CREATE TRIGGER IF NOT EXISTS spans_fts_au
+           AFTER UPDATE ON spans BEGIN
+               DELETE FROM span_fts WHERE span_id = old.span_id;
+               INSERT INTO span_fts(trace_id, span_id, name, input_text, output_text)
+               VALUES (
+                   new.trace_id,
+                   new.span_id,
+                   new.name,
+                   COALESCE(json_extract(new.attributes, '$."gen_ai.prompt"'),
+                            json_extract(new.attributes, '$."fastaiagent.gen_ai.prompt"'),
+                            ''),
+                   COALESCE(json_extract(new.attributes, '$."gen_ai.response.text"'),
+                            json_extract(new.attributes, '$."gen_ai.completion"'),
+                            json_extract(new.attributes, '$."fastaiagent.gen_ai.response.text"'),
+                            '')
+               );
+           END"""
+    )
+
+    # Bulk backfill of any pre-existing rows. Safe to re-run because we
+    # first wipe span_fts — the rebuild is cheap and avoids duplicates
+    # when an admin re-runs init_local_db on a populated DB after an
+    # external schema reset.
+    existing = db.fetchone("SELECT COUNT(*) AS n FROM span_fts")
+    if existing and (existing.get("n") or 0) == 0:
+        db.execute(
+            """INSERT INTO span_fts(trace_id, span_id, name, input_text, output_text)
+               SELECT
+                   trace_id,
+                   span_id,
+                   name,
+                   COALESCE(json_extract(attributes, '$."gen_ai.prompt"'),
+                            json_extract(attributes, '$."fastaiagent.gen_ai.prompt"'),
+                            ''),
+                   COALESCE(json_extract(attributes, '$."gen_ai.response.text"'),
+                            json_extract(attributes, '$."gen_ai.completion"'),
+                            json_extract(attributes, '$."fastaiagent.gen_ai.response.text"'),
+                            '')
+               FROM spans"""
+        )
+
+
+def _v6_add_saved_filters_project(db: SQLiteHelper) -> None:
+    """Sprint 3 — make the v1 saved_filters table project-scoped.
+
+    The table existed since v1 but was never used by any code path.
+    Sprint 3 wires it up via ``/api/filter-presets``; reusing the
+    existing schema avoids a parallel ``filter_presets`` table.
+    """
+    rows = db.fetchall(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='saved_filters'"
+    )
+    if not rows:
+        return
+    _add_column_if_missing(db, "saved_filters", "project_id", "TEXT NOT NULL DEFAULT ''")
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_saved_filters_project "
+        "ON saved_filters(project_id)"
+    )
 
 
 def _v5_add_false_positive_columns(db: SQLiteHelper) -> None:
@@ -356,6 +492,18 @@ _MIGRATIONS: dict[int, list[_Step]] = {
         # editable in place and so the list endpoint can filter on
         # ``false_positive`` without a join.
         _v5_add_false_positive_columns,
+    ],
+    6: [
+        # Sprint 3 — Richer Trace Filtering.
+        #
+        # 1. ``span_fts`` (FTS5 virtual table) + sync triggers + bulk
+        #    backfill so ``/api/traces?q=...`` matches against extracted
+        #    LLM prompt/response text instead of LIKE on JSON blobs.
+        # 2. Project-scope the v1 ``saved_filters`` table so the new
+        #    ``/api/filter-presets`` endpoints can be project-isolated
+        #    without a parallel table.
+        _v6_add_span_fts,
+        _v6_add_saved_filters_project,
     ],
 }
 

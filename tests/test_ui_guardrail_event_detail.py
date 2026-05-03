@@ -23,7 +23,7 @@ pytest.importorskip("itsdangerous")
 from fastapi.testclient import TestClient  # noqa: E402
 
 from fastaiagent._internal.storage import SQLiteHelper  # noqa: E402
-from fastaiagent.ui.db import init_local_db  # noqa: E402
+from fastaiagent.ui.db import CURRENT_SCHEMA_VERSION, init_local_db  # noqa: E402
 from fastaiagent.ui.server import build_app  # noqa: E402
 
 
@@ -194,6 +194,12 @@ def client(seeded_db: Path) -> TestClient:
 
 
 class TestSchemaV5:
+    """Sprint 2 introduced the false_positive columns at v5; later
+    sprints bumped the schema_version while leaving these columns in
+    place. The class name is preserved for git-blame continuity; the
+    actual assertion compares against ``CURRENT_SCHEMA_VERSION``.
+    """
+
     def test_fresh_db_has_columns(self, temp_dir: Path) -> None:
         db_path = temp_dir / "fresh.db"
         init_local_db(db_path).close()
@@ -202,7 +208,7 @@ class TestSchemaV5:
             v = db.fetchone("PRAGMA user_version")
         assert "false_positive" in cols
         assert "false_positive_at" in cols
-        assert int(next(iter(v.values()))) == 5
+        assert int(next(iter(v.values()))) == CURRENT_SCHEMA_VERSION
 
     def test_migration_idempotent(self, temp_dir: Path) -> None:
         db_path = temp_dir / "twice.db"
@@ -211,7 +217,7 @@ class TestSchemaV5:
         init_local_db(db_path).close()
         with SQLiteHelper(db_path) as db:
             v = db.fetchone("PRAGMA user_version")
-        assert int(next(iter(v.values()))) == 5
+        assert int(next(iter(v.values()))) == CURRENT_SCHEMA_VERSION
 
 
 # ---------------------------------------------------------------------------

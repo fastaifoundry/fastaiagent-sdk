@@ -7,6 +7,7 @@ import { TableSkeleton } from "@/components/shared/LoadingSkeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { SpanInspector } from "@/components/traces/SpanInspector";
 import { SpanTree } from "@/components/traces/SpanTree";
+import { TraceComparePicker } from "@/components/traces/TraceComparePicker";
 import { TraceScoresCard } from "@/components/traces/TraceScoresCard";
 import { TraceSummaryBar } from "@/components/traces/TraceSummaryBar";
 import { ExportTraceDialog } from "@/components/traces/ExportTraceDialog";
@@ -81,6 +82,7 @@ export function TraceDetailPage() {
           Refresh
         </Button>
         <ExportTraceDialog traceId={trace.data.trace_id} />
+        <TraceComparePicker pinnedTraceId={trace.data.trace_id} />
         <Link to={`/traces/${trace.data.trace_id}/replay`}>
           <Button size="sm">
             <Play className="mr-1.5 h-3.5 w-3.5" />

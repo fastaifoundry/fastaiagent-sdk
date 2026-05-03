@@ -3,9 +3,33 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from typing import Any
 
 from fastaiagent.eval.scorer import Scorer, ScorerResult
+
+
+def _cosine_similarity(a: Sequence[float], b: Sequence[float]) -> float:
+    """Pure-Python cosine similarity between two equal-length vectors.
+
+    Inlined here so the scorer doesn't depend on the optional ``[kb]``
+    extra (numpy/faiss). Returns 0.0 when either vector is zero-length
+    or zero-magnitude rather than raising.
+    """
+    if len(a) != len(b):
+        raise ValueError(f"vector length mismatch: {len(a)} vs {len(b)}")
+    if not a:
+        return 0.0
+    dot = 0.0
+    norm_a = 0.0
+    norm_b = 0.0
+    for x, y in zip(a, b):
+        dot += x * y
+        norm_a += x * x
+        norm_b += y * y
+    if norm_a == 0.0 or norm_b == 0.0:
+        return 0.0
+    return dot / (math.sqrt(norm_a) * math.sqrt(norm_b))
 
 
 class SemanticSimilarity(Scorer):
@@ -38,11 +62,9 @@ class SemanticSimilarity(Scorer):
         if expected is None:
             return ScorerResult(score=0.0, passed=False, reason="No expected output")
 
-        from fastaiagent.kb.search import cosine_similarity
-
         embedder = self._get_embedder()
         vecs = embedder.embed([output, expected])
-        similarity = cosine_similarity(vecs[0], vecs[1])
+        similarity = _cosine_similarity(vecs[0], vecs[1])
         similarity = max(0.0, min(1.0, similarity))
 
         return ScorerResult(
