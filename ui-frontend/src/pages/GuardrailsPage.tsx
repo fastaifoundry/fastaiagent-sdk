@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { ExternalLink, RefreshCw, X } from "lucide-react";
+import { ChevronRight, ExternalLink, Flag, RefreshCw, X } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,28 +22,47 @@ interface Filters {
   rule: string | null;
   outcome: string | null;
   agent: string | null;
+  type: string | null;
+  position: string | null;
+  false_positive: boolean | null;
 }
 
 const OUTCOME_META: Record<string, { label: string; className: string }> = {
   passed: { label: "passed", className: "bg-fa-success/10 text-fa-success" },
   blocked: { label: "blocked", className: "bg-destructive/10 text-destructive" },
   warned: { label: "warned", className: "bg-fa-warning/10 text-fa-warning" },
+  filtered: { label: "filtered", className: "bg-fa-warning/10 text-fa-warning" },
 };
+
+const TYPE_OPTIONS = ["code", "regex", "llm_judge", "schema", "classifier"];
+const POSITION_OPTIONS = ["input", "output", "tool_call", "tool_result"];
 
 export function GuardrailsPage() {
   const [filters, setFilters] = useState<Filters>({
     rule: null,
     outcome: null,
     agent: null,
+    type: null,
+    position: null,
+    false_positive: null,
   });
   const events = useGuardrailEvents({
     rule: filters.rule ?? undefined,
     outcome: filters.outcome ?? undefined,
     agent: filters.agent ?? undefined,
+    type: filters.type ?? undefined,
+    position: filters.position ?? undefined,
+    false_positive: filters.false_positive,
   });
 
   const rows = events.data?.rows ?? [];
-  const anyFilter = filters.rule || filters.outcome || filters.agent;
+  const anyFilter =
+    filters.rule ||
+    filters.outcome ||
+    filters.agent ||
+    filters.type ||
+    filters.position ||
+    filters.false_positive != null;
 
   return (
     <div className="space-y-5">
@@ -86,6 +105,31 @@ export function GuardrailsPage() {
           <option value="passed">Passed</option>
           <option value="blocked">Blocked</option>
           <option value="warned">Warned</option>
+          <option value="filtered">Filtered</option>
+        </select>
+        <select
+          value={filters.type ?? ""}
+          onChange={(e) => setFilters({ ...filters, type: e.target.value || null })}
+          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+        >
+          <option value="">All types</option>
+          {TYPE_OPTIONS.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+        <select
+          value={filters.position ?? ""}
+          onChange={(e) => setFilters({ ...filters, position: e.target.value || null })}
+          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+        >
+          <option value="">All positions</option>
+          {POSITION_OPTIONS.map((p) => (
+            <option key={p} value={p}>
+              {p}
+            </option>
+          ))}
         </select>
         <Input
           className="w-48"
@@ -93,11 +137,41 @@ export function GuardrailsPage() {
           value={filters.agent ?? ""}
           onChange={(e) => setFilters({ ...filters, agent: e.target.value || null })}
         />
+        <select
+          value={
+            filters.false_positive == null
+              ? ""
+              : filters.false_positive
+                ? "yes"
+                : "no"
+          }
+          onChange={(e) => {
+            const v = e.target.value;
+            setFilters({
+              ...filters,
+              false_positive: v === "yes" ? true : v === "no" ? false : null,
+            });
+          }}
+          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+        >
+          <option value="">FP: any</option>
+          <option value="yes">FP: yes</option>
+          <option value="no">FP: no</option>
+        </select>
         {anyFilter && (
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setFilters({ rule: null, outcome: null, agent: null })}
+            onClick={() =>
+              setFilters({
+                rule: null,
+                outcome: null,
+                agent: null,
+                type: null,
+                position: null,
+                false_positive: null,
+              })
+            }
           >
             <X className="mr-1 h-3.5 w-3.5" />
             Clear
@@ -136,9 +210,31 @@ export function GuardrailsPage() {
                     className: "bg-muted text-muted-foreground",
                   };
                 return (
-                  <TableRow key={row.event_id}>
+                  <TableRow
+                    key={row.event_id}
+                    className="cursor-pointer"
+                    onClick={(e) => {
+                      // Let inner links / icons handle their own clicks.
+                      if ((e.target as HTMLElement).closest("a")) return;
+                      window.location.assign(
+                        `/guardrail-events/${row.event_id}`,
+                      );
+                    }}
+                    data-testid={`guardrail-row-${row.event_id}`}
+                  >
                     <TableCell className="font-medium font-mono text-xs">
-                      {row.guardrail_name}
+                      <Link
+                        to={`/guardrail-events/${row.event_id}`}
+                        className="hover:text-primary"
+                      >
+                        {row.guardrail_name}
+                      </Link>
+                      {row.false_positive && (
+                        <span className="ml-1 inline-flex items-center gap-0.5 rounded-sm bg-primary/10 px-1 py-px text-[9px] uppercase text-primary">
+                          <Flag className="h-2.5 w-2.5" />
+                          FP
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {row.guardrail_type ?? "—"}
@@ -150,7 +246,7 @@ export function GuardrailsPage() {
                       <span
                         className={cn(
                           "inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-mono uppercase",
-                          meta.className
+                          meta.className,
                         )}
                       >
                         <span className="h-1.5 w-1.5 rounded-full bg-current" />
@@ -173,15 +269,19 @@ export function GuardrailsPage() {
                       {formatTimeAgo(row.timestamp)}
                     </TableCell>
                     <TableCell>
-                      {row.trace_id && (
-                        <Link
-                          to={`/traces/${row.trace_id}`}
-                          title="Open trace"
-                          className="inline-flex items-center text-muted-foreground hover:text-primary"
-                        >
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </Link>
-                      )}
+                      <div className="flex items-center gap-1">
+                        {row.trace_id && (
+                          <Link
+                            to={`/traces/${row.trace_id}`}
+                            title="Open trace"
+                            className="inline-flex items-center text-muted-foreground hover:text-primary"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </Link>
+                        )}
+                        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                      </div>
                     </TableCell>
                   </TableRow>
                 );

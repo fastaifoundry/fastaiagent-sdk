@@ -119,6 +119,76 @@ def test_list_rejects_bad_runner_type(app_env):
     assert r.status_code == 400
 
 
+def test_list_includes_registered_runners_without_spans(tmp_path):
+    """Regression: a runner registered via build_app(runners=[...]) must
+    appear in /api/workflows even before it has produced any spans —
+    otherwise the topology view for it is undiscoverable.
+    """
+    from fastaiagent import Agent, LLMClient
+    from fastaiagent.agent.swarm import Swarm
+    from fastaiagent.agent.team import Supervisor, Worker
+
+    db_path = tmp_path / "local.db"
+    init_local_db(db_path).close()
+
+    llm = LLMClient(provider="openai", model="gpt-4o-mini")
+    researcher = Agent(name="researcher", llm=llm)
+    writer = Agent(name="writer", llm=llm)
+    supervisor = Supervisor(
+        name="planner-2",
+        llm=llm,
+        workers=[
+            Worker(agent=researcher, role="researcher"),
+            Worker(agent=writer, role="writer"),
+        ],
+    )
+    swarm = Swarm(
+        name="customer-router",
+        agents=[Agent(name="triage", llm=llm), Agent(name="billing", llm=llm)],
+        entrypoint="triage",
+    )
+    app = build_app(db_path=str(db_path), no_auth=True, runners=[supervisor, swarm])
+    with TestClient(app) as client:
+        r = client.get("/api/workflows")
+    assert r.status_code == 200
+    body = r.json()
+    pairs = {(w["runner_type"], w["workflow_name"]) for w in body["workflows"]}
+    assert ("supervisor", "planner-2") in pairs
+    assert ("swarm", "customer-router") in pairs
+    # Stub stats are zero (no spans yet) — verify the supervisor's
+    # node_count was discovered from the runner.
+    sup = next(
+        w for w in body["workflows"] if w["workflow_name"] == "planner-2"
+    )
+    assert sup["run_count"] == 0
+    assert sup["node_count"] == 2  # 2 workers
+
+
+def test_list_filter_includes_registered(tmp_path):
+    """The runner_type query param should also apply to registered stubs."""
+    from fastaiagent import Agent, LLMClient
+    from fastaiagent.agent.swarm import Swarm
+
+    db_path = tmp_path / "local.db"
+    init_local_db(db_path).close()
+
+    llm = LLMClient(provider="openai", model="gpt-4o-mini")
+    swarm = Swarm(
+        name="only-swarm",
+        agents=[Agent(name="a", llm=llm), Agent(name="b", llm=llm)],
+        entrypoint="a",
+    )
+    app = build_app(db_path=str(db_path), no_auth=True, runners=[swarm])
+    with TestClient(app) as client:
+        # Filtered to chain → swarm-registered runner should NOT appear.
+        r_chain = client.get("/api/workflows?runner_type=chain")
+        # Filtered to swarm → it should appear.
+        r_swarm = client.get("/api/workflows?runner_type=swarm")
+    assert r_chain.json()["workflows"] == []
+    swarm_names = {w["workflow_name"] for w in r_swarm.json()["workflows"]}
+    assert "only-swarm" in swarm_names
+
+
 def test_detail_computes_success_rate(app_env):
     app, _ = app_env
     with TestClient(app) as client:

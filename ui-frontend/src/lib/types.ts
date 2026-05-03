@@ -307,6 +307,8 @@ export interface GuardrailEvent {
   agent_name: string | null;
   timestamp: string | null;
   metadata: Record<string, unknown>;
+  false_positive: boolean;
+  false_positive_at: string | null;
 }
 
 export interface GuardrailEventsPage {
@@ -314,6 +316,40 @@ export interface GuardrailEventsPage {
   total: number;
   page: number;
   page_size: number;
+}
+
+// Sprint 2 — Guardrail Event Detail
+export interface GuardrailTrigger {
+  kind: "agent_input" | "agent_output" | "tool_call" | "tool_result" | "unknown";
+  text: string | null;
+  content_type: string;
+  span_name?: string;
+  status?: string;
+}
+
+export interface GuardrailContextSpan {
+  span_id: string;
+  name: string;
+  start_time: string | null;
+  end_time: string | null;
+  status: string | null;
+  input: string | null;
+  output: string | null;
+}
+
+export interface GuardrailEventDetail {
+  event: GuardrailEvent;
+  trigger: GuardrailTrigger;
+  context: {
+    spans: GuardrailContextSpan[];
+    sibling_events: GuardrailEvent[];
+  };
+}
+
+export interface FalsePositiveResponse {
+  event_id: string;
+  false_positive: boolean;
+  false_positive_at: string;
 }
 
 export interface AgentSummary {
@@ -584,4 +620,137 @@ export interface KbLineageResponse {
   retrieval_count: number;
   agents: KbLineageAgent[];
   recent_traces: KbLineageTrace[];
+}
+
+// ---------------------------------------------------------------------------
+// Prompt Playground
+// ---------------------------------------------------------------------------
+
+export interface PlaygroundProviderInfo {
+  provider: string;
+  models: string[];
+  has_key: boolean;
+  env_var: string | null;
+}
+
+export interface PlaygroundModelsResponse {
+  providers: PlaygroundProviderInfo[];
+}
+
+export interface PlaygroundParameters {
+  temperature: number;
+  max_tokens: number;
+  top_p: number;
+}
+
+export interface PlaygroundRunRequest {
+  provider: string;
+  model: string;
+  prompt_template: string;
+  variables: Record<string, string>;
+  system_prompt?: string;
+  parameters: PlaygroundParameters;
+  image_b64?: string;
+  image_media_type?: string;
+}
+
+export interface PlaygroundRunResponse {
+  response: string;
+  model: string;
+  provider: string;
+  latency_ms: number;
+  tokens: { input: number; output: number };
+  cost_usd: number | null;
+  trace_id: string | null;
+  finish_reason: string | null;
+}
+
+export interface PlaygroundDoneMetadata {
+  model: string;
+  provider: string;
+  latency_ms: number;
+  tokens: { input: number; output: number };
+  cost_usd: number | null;
+  trace_id: string | null;
+}
+
+export type PlaygroundStreamEvent =
+  | { event: "token"; text: string }
+  | { event: "done"; metadata: PlaygroundDoneMetadata }
+  | { event: "error"; message: string };
+
+export interface SaveAsEvalRequest {
+  dataset_name: string;
+  input: unknown;
+  expected_output: unknown;
+  system_prompt?: string;
+  model?: string;
+  provider?: string;
+}
+
+export interface SaveAsEvalResponse {
+  dataset_name: string;
+  path: string;
+  line_count: number;
+}
+
+// ---------------------------------------------------------------------------
+// Agent Dependency Graph
+// ---------------------------------------------------------------------------
+
+export interface AgentDepNode {
+  name: string;
+  type: "agent" | "supervisor" | "worker";
+  model: string | null;
+  provider: string | null;
+}
+
+export interface AgentDepTool {
+  name: string;
+  origin: string;
+  registered: boolean;
+  calls: number;
+  success_rate: number;
+  avg_latency_ms: number;
+}
+
+export interface AgentDepKB {
+  name: string;
+  backend: string;
+  documents: number | null;
+  chunks: number | null;
+  unresolved?: boolean;
+}
+
+export interface AgentDepPrompt {
+  name: string;
+  version: string | null;
+  variables: string[];
+  preview?: string;
+}
+
+export interface AgentDepGuardrail {
+  name: string | null;
+  guardrail_type: string | null;
+  position: string | null;
+}
+
+export interface AgentDepHandoff {
+  from: string;
+  to: string;
+}
+
+export interface AgentDependencies {
+  agent: AgentDepNode;
+  tools: AgentDepTool[];
+  knowledge_bases: AgentDepKB[];
+  prompts: AgentDepPrompt[];
+  guardrails: AgentDepGuardrail[];
+  model: { provider: string | null; model: string | null };
+  sub_agents?: AgentDependencies[];
+  peers?: AgentDepNode[];
+  handoffs?: AgentDepHandoff[];
+  parent?: { name: string | null; type: "supervisor" | "swarm" };
+  role?: string;
+  unresolved?: boolean;
 }

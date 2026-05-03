@@ -1,6 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import type { AgentSummary, AgentToolsResponse } from "@/lib/types";
+import type {
+  AgentDependencies,
+  AgentSummary,
+  AgentToolsResponse,
+} from "@/lib/types";
 
 export function useAgents() {
   return useQuery({
@@ -23,6 +27,17 @@ export function useAgentTools(name: string | undefined) {
     queryFn: () =>
       api.get<AgentToolsResponse>(
         `/agents/${encodeURIComponent(name!)}/tools`
+      ),
+    enabled: !!name,
+  });
+}
+
+export function useAgentDependencies(name: string | undefined) {
+  return useQuery({
+    queryKey: ["agent-dependencies", name],
+    queryFn: () =>
+      api.get<AgentDependencies>(
+        `/agents/${encodeURIComponent(name!)}/dependencies`
       ),
     enabled: !!name,
   });

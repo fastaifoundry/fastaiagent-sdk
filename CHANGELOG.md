@@ -5,6 +5,86 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-05-03
+
+### Added — Sprint 2: Local UI iteration loop
+
+Three interactive surfaces plus the discoverability and CRUD work that
+came up while validating them. All three features ship with backend
+integration tests (no mocking — real `Agent` / `Supervisor` / `Swarm` /
+`LocalKB` / OpenAI streams), Playwright screenshot evidence under
+`docs/ui/screenshots/sprint2-*.png`, and a runnable example.
+
+- **Prompt Playground** ([docs/ui/playground.md](docs/ui/playground.md))
+  at `/playground`. Pick a registered prompt, fill its `{{variables}}`,
+  choose a provider/model, click Run, watch the response stream back
+  via SSE. Inline template edits, vision-model image attachments,
+  in-memory run history, and **Save as eval case** writes a JSONL line
+  under `./.fastaiagent/datasets/` that loads via
+  `Dataset.from_jsonl()`. Every run emits a span tagged
+  `fastaiagent.source = "playground"` so playground experiments share
+  the same observability surface as production runs. New endpoints:
+  `GET /api/playground/models`, `POST /api/playground/run`,
+  `POST /api/playground/stream` (SSE), `POST /api/playground/save-as-eval`.
+  See [`examples/49_prompt_playground.py`](examples/49_prompt_playground.py).
+- **Agent Dependency Graph** ([docs/ui/agent-dependencies.md](docs/ui/agent-dependencies.md))
+  on `/agents/{name}` under a new **Dependencies** tab. React Flow +
+  dagre canvas of the agent's static structure: tools, knowledge bases,
+  prompts, guardrails, model — all clickable with detail panels and
+  click-through to the dependency's own page. Tools the LLM has called
+  but weren't registered render in amber so hallucinated tool names are
+  visible at a glance. **Supervisors** render workers as sub-agent
+  subtrees; **Swarms** render peers as siblings with handoff edges.
+  Backed by a new `GET /api/agents/{name}/dependencies` endpoint that
+  walks `ctx.runners` (with span-derived fallback for unregistered
+  agents). See [`examples/50_agent_dependencies.py`](examples/50_agent_dependencies.py).
+- **Guardrail Event Detail** ([docs/ui/guardrail-events.md](docs/ui/guardrail-events.md))
+  at `/guardrail-events/{event_id}`. Three-panel view: *what triggered
+  it*, *which rule matched*, *what happened next* — with
+  before/after diff for filtered events, judge prompt + response inline
+  for `llm_judge` rules, and an execution-context section showing the
+  surrounding span timeline plus other guardrails that ran on the same
+  content. **Mark as false positive** flips a flag stored on the event
+  row that persists across refreshes and feeds the new
+  `FP: yes / FP: no` filter. The list page gains `type` and `position`
+  filters too. Schema bumped to **v5** (adds `false_positive` +
+  `false_positive_at` columns to `guardrail_events`, idempotent on
+  existing v4 DBs). New endpoints:
+  `GET /api/guardrail-events/{event_id}`,
+  `PATCH /api/guardrail-events/{event_id}/false-positive`. The Trace
+  Detail page's *Scores* card now links straight to the new detail
+  page. See [`examples/51_guardrail_events.py`](examples/51_guardrail_events.py).
+
+### Added — discoverability of registered runners
+
+`/api/agents` and `/api/workflows` now also list runners registered via
+`build_app(runners=[...])` even before they have produced any spans.
+This means a Supervisor or Swarm registered for the topology view shows
+up on the Agents directory + Workflows list immediately, not only after
+the first run. The existing Agent detail page also renders for
+registered-but-unrun agents so the new Dependencies tab is reachable
+from a fresh registration.
+
+### Added — Prompt CRUD: delete
+
+`DELETE /api/prompts/{slug}` removes a prompt, every version, and every
+alias from `local.db`. Project-scoped (only the active project's row is
+touched), 403 when the registry is external (matches PUT semantics),
+404 on miss. Frontend gets a destructive **Delete** button on the
+prompt detail page with a `<ConfirmDialog>` and post-delete navigation
+back to the list. Trace history that referenced the prompt is left
+intact — historical traces keep showing the slug they ran with.
+
+### Fixed
+
+- Prompt save (`PUT /api/prompts/{slug}`) now stamps new versions with
+  the AppContext's `project_id` instead of the cwd-derived
+  `safe_get_project_id()` fallback. Previously a save under one project
+  could land in another, becoming invisible to the editor that just
+  saved it. `SQLiteStorage.save_prompt(prompt, project_id=...)` and
+  `PromptRegistry.register(..., project_id=...)` accept an explicit
+  override; the UI route forwards `ctx.project_id`.
+
 ## [1.2.0] - 2026-05-01
 
 ### Added — Sprint 1: Local UI

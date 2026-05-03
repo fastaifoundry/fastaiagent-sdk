@@ -8,6 +8,7 @@ import {
   FileText,
   GitBranch,
   LayoutDashboard,
+  Play,
   Shield,
   TrendingUp,
 } from "lucide-react";
@@ -48,7 +49,10 @@ const SECTIONS: NavSection[] = [
   },
   {
     label: "// PROMPT REGISTRY",
-    items: [{ to: "/prompts", label: "Prompts", icon: FileText }],
+    items: [
+      { to: "/prompts", label: "Prompts", icon: FileText },
+      { to: "/playground", label: "Playground", icon: Play },
+    ],
   },
   {
     label: "// KNOWLEDGE",

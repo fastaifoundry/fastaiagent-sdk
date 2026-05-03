@@ -46,10 +46,21 @@ class SQLiteStorage:
 
     # --- Prompts ---------------------------------------------------------
 
-    def save_prompt(self, prompt: Prompt) -> None:
+    def save_prompt(
+        self, prompt: Prompt, *, project_id: str | None = None
+    ) -> None:
+        """Persist a prompt + its version row.
+
+        ``project_id`` overrides the auto-detected project id when given.
+        Pass this from contexts (like the Local UI) where the *active*
+        project is known explicitly — falling back to
+        ``safe_get_project_id()`` would stamp the row with the cwd-derived
+        name, which can diverge from the UI's scope when the same DB is
+        served under a different project.
+        """
         from fastaiagent._internal.project import safe_get_project_id
 
-        pid = safe_get_project_id()
+        pid = project_id if project_id is not None else safe_get_project_id()
         now = _now_iso()
         existing = self._db.fetchone(
             "SELECT created_at FROM prompts WHERE slug = ?",
@@ -128,6 +139,55 @@ class SQLiteStorage:
         if latest_row is None:
             raise PromptNotFoundError(f"Prompt '{name}' has no versions")
         return self._row_to_prompt(latest_row)
+
+    def delete_prompt(
+        self, name: str, *, project_id: str | None = None
+    ) -> int:
+        """Delete a prompt and every row that references it.
+
+        Removes ``prompts``, ``prompt_versions``, and ``prompt_aliases`` rows
+        for ``name``. When ``project_id`` is given, only rows in that project
+        are deleted — multi-project DBs stay intact for siblings.
+
+        Returns the number of version rows that were removed (0 means the
+        prompt didn't exist in this scope). Trace rows that referenced the
+        prompt are left alone — historical traces should keep showing the
+        prompt name they ran with even after the live definition is gone.
+        """
+        params: tuple
+        if project_id is None:
+            params = (name,)
+            scope_extra = ""
+        else:
+            params = (name, project_id)
+            scope_extra = " AND project_id = ?"
+
+        # Capture the version count first so the caller can tell whether
+        # anything was actually deleted.
+        count_row = self._db.fetchone(
+            f"SELECT COUNT(*) AS n FROM prompt_versions "
+            f"WHERE slug = ?{scope_extra}",
+            params,
+        )
+        deleted = int((count_row or {}).get("n") or 0)
+        if deleted == 0:
+            # Nothing here under this scope. Caller turns this into a 404.
+            return 0
+
+        # ``prompt_aliases`` doesn't carry a ``project_id`` column (it
+        # joins on slug+alias, which is already globally unique). Drop the
+        # scope filter for it but keep it for the project-scoped tables.
+        for table, t_params in (
+            ("prompt_versions", params),
+            ("prompts", params),
+            ("prompt_aliases", (name,)),
+        ):
+            scope = scope_extra if table != "prompt_aliases" else ""
+            self._db.execute(
+                f"DELETE FROM {table} WHERE slug = ?{scope}",
+                t_params,
+            )
+        return deleted
 
     def set_alias(self, name: str, version: int, alias: str) -> None:
         prompt_row = self._db.fetchone(

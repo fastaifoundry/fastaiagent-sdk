@@ -71,3 +71,12 @@ export function useUpdatePrompt() {
       ),
   });
 }
+
+export function useDeletePrompt() {
+  return useMutation({
+    mutationFn: ({ slug }: { slug: string }) =>
+      api.delete<{ slug: string; versions_deleted: number }>(
+        `/prompts/${encodeURIComponent(slug)}`
+      ),
+  });
+}

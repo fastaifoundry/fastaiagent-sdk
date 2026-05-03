@@ -17,7 +17,7 @@ from pathlib import Path
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
 
-CURRENT_SCHEMA_VERSION = 4
+CURRENT_SCHEMA_VERSION = 5
 
 # A migration step is either a SQL string or a callable that takes the
 # ``SQLiteHelper`` and runs whatever logic it needs (e.g., gated
@@ -103,6 +103,30 @@ def _v4_backfill_project_id(db: SQLiteHelper) -> None:
             f"UPDATE {table} SET project_id = ? WHERE project_id = ''",
             (pid,),
         )
+
+
+def _v5_add_false_positive_columns(db: SQLiteHelper) -> None:
+    """Annotate guardrail events as false positives.
+
+    Two columns:
+      * ``false_positive`` — 0/1 flag set by the developer via the UI's
+        "Mark as false positive" button.
+      * ``false_positive_at`` — ISO timestamp of the most recent toggle.
+
+    The columns are nullable / default 0 so historical events stay valid
+    without a backfill. Toggling and untoggling both flow through the
+    same PATCH endpoint, which keeps the timestamp current.
+    """
+    rows = db.fetchall(
+        "SELECT name FROM sqlite_master WHERE type='table' "
+        "AND name='guardrail_events'"
+    )
+    if not rows:
+        return
+    _add_column_if_missing(
+        db, "guardrail_events", "false_positive", "INTEGER DEFAULT 0"
+    )
+    _add_column_if_missing(db, "guardrail_events", "false_positive_at", "TEXT")
 
 
 def _v4_create_project_indexes(db: SQLiteHelper) -> None:
@@ -324,6 +348,14 @@ _MIGRATIONS: dict[int, list[_Step]] = {
         # not have a ``spans`` table at all, and ``IF NOT EXISTS`` on
         # the index doesn't protect against the table being missing.
         _v4_create_project_indexes,
+    ],
+    5: [
+        # Sprint 2 — Guardrail Event Detail. The "Mark as false positive"
+        # button records its annotation directly on the existing event
+        # row (rather than a side table) so historical data remains
+        # editable in place and so the list endpoint can filter on
+        # ``false_positive`` without a join.
+        _v5_add_false_positive_columns,
     ],
 }
 
