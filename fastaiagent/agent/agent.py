@@ -436,6 +436,7 @@ class Agent:
         *,
         context: RunContext[Any] | None = None,
         trace: bool = True,
+        execution_id: str | None = None,
         **kwargs: Any,
     ) -> AsyncGenerator[StreamEvent, None]:
         """Async streaming execution — yields StreamEvent objects as tokens arrive.
@@ -446,11 +447,18 @@ class Agent:
         Runs input guardrails before streaming begins. Output guardrails
         run after streaming completes. Memory is updated at the end.
 
+        When the agent has middleware or a checkpointer configured, those
+        are forwarded to :func:`stream_tool_loop` so middleware hooks fire
+        and checkpoints are written during streaming — matching the behavior
+        of :meth:`arun`.
+
         Example:
             async for event in agent.astream("Hello"):
                 if isinstance(event, TextDelta):
                     print(event.text, end="", flush=True)
         """
+        exec_id = execution_id or str(uuid.uuid4())
+
         input_text = (
             input
             if isinstance(input, str)
@@ -468,34 +476,62 @@ class Agent:
         if response_format is not None:
             kwargs["response_format"] = response_format
 
-        # Stream tool loop — yields events to caller
-        accumulated_text = ""
-        async for event in stream_tool_loop(
-            llm=self.llm,
-            messages=messages,
-            tools=self.tools,
-            max_iterations=self.config.max_iterations,
-            tool_choice=self.config.tool_choice,
-            context=context,
-            guardrails=self.guardrails or None,
-            **kwargs,
-        ):
-            if isinstance(event, TextDelta):
-                accumulated_text += event.text
-            yield event
+        # Middleware context shared across the whole run.
+        mw_ctx: MiddlewareContext | None = None
+        if self._mw_pipeline:
+            mw_ctx = MiddlewareContext(run_context=context, agent_name=self.name)
 
-        output = accumulated_text
+        # Set up execution-scoped ContextVars so interrupt() / @idempotent
+        # can find the active execution + checkpointer.
+        exec_token = _execution_id.set(exec_id)
+        parent_path = _agent_path.get()
+        new_path = (
+            f"{parent_path}/{self._agent_path_label}" if parent_path else self._agent_path_label
+        )
+        ap_token = _agent_path.set(new_path)
+        cp_token = _current_checkpointer.set(self._checkpointer)
 
-        # Execute output guardrails
-        if self.guardrails:
-            await execute_guardrails(self.guardrails, output, GuardrailPosition.output)
+        if self._checkpointer is not None:
+            self._checkpointer.setup()
 
-        # Store in memory (text summary for multimodal inputs).
-        if self.memory:
-            self.memory.add(UserMessage(input_text))
-            from fastaiagent.llm.message import AssistantMessage
+        try:
+            # Stream tool loop — yields events to caller
+            accumulated_text = ""
+            async for event in stream_tool_loop(
+                llm=self.llm,
+                messages=messages,
+                tools=self.tools,
+                max_iterations=self.config.max_iterations,
+                tool_choice=self.config.tool_choice,
+                context=context,
+                guardrails=self.guardrails or None,
+                mw_pipeline=self._mw_pipeline if self._mw_pipeline else None,
+                mw_ctx=mw_ctx,
+                checkpointer=self._checkpointer,
+                execution_id=exec_id,
+                agent_name=self.name,
+                **kwargs,
+            ):
+                if isinstance(event, TextDelta):
+                    accumulated_text += event.text
+                yield event
 
-            self.memory.add(AssistantMessage(output))
+            output = accumulated_text
+
+            # Execute output guardrails
+            if self.guardrails:
+                await execute_guardrails(self.guardrails, output, GuardrailPosition.output)
+
+            # Store in memory (text summary for multimodal inputs).
+            if self.memory:
+                self.memory.add(UserMessage(input_text))
+                from fastaiagent.llm.message import AssistantMessage
+
+                self.memory.add(AssistantMessage(output))
+        finally:
+            _current_checkpointer.reset(cp_token)
+            _agent_path.reset(ap_token)
+            _execution_id.reset(exec_token)
 
     def resume(
         self,
