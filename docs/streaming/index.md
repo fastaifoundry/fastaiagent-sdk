@@ -244,6 +244,16 @@ except LLMProviderError as e:
 
 The SDK's `StreamEvent` types (`TextDelta`, `ToolCallStart`, `ToolCallEnd`, `Usage`, `StreamDone`) align with the FastAIAgent Platform's streaming protocol. The same event types work in both local SDK streaming and platform streaming, making it straightforward to build clients that work with both.
 
+## Middleware, Durability, and HITL Parity (1.5.0+)
+
+As of 1.5.0, `Agent.astream()` is at full feature parity with `Agent.run()` / `arun()`:
+
+- **Middleware hooks fire during streaming.** `before_model`, `after_model`, and `wrap_tool` are invoked at the same logical points they're invoked during a non-streaming run. A configured `ToolBudget`, `TrimLongMessages`, or custom `AgentMiddleware` works identically for both modes.
+- **Checkpoints are written during streaming.** When the agent has a `Checkpointer` configured, turn-boundary and pre-tool checkpoints are persisted as the loop runs — so a process crash mid-stream can resume from the last checkpoint with `chain.aresume(...)`.
+- **`InterruptSignal` works inside streamed tool calls.** Calling `interrupt(...)` from within a tool that runs during `astream()` pauses the run identically to `arun()` — the streaming generator surfaces the interrupt and the execution resumes via the standard `aresume` flow.
+
+Before 1.5.0, all three were silently bypassed during streaming — middleware was ignored, no checkpoints were written, and `interrupt()` raised an unhandled exception. If you upgrade and your existing streaming code starts seeing middleware applied for the first time, that is the intended behavior.
+
 ---
 
 ## Next Steps

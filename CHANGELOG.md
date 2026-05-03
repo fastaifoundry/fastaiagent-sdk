@@ -5,6 +5,78 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-05-03
+
+`Agent.astream()` reaches feature parity with `Agent.run()` /
+`arun()`. Middleware hooks fire, checkpoints get written, and
+`InterruptSignal` works during streaming. **MINOR bump per SemVer
+because this adds capability to a public surface** — see "Breaking
+behavior" below for the one place existing code may visibly change.
+
+### Added — middleware, durability, and HITL during streaming
+
+`fastaiagent/agent/executor.py::stream_tool_loop` and
+`fastaiagent/agent/agent.py::Agent.astream` now plumb middleware,
+checkpointing, and interrupts through the streaming path:
+
+- **Middleware hooks**: `before_model`, `after_model`, and
+  `wrap_tool` are invoked at the same logical points as in
+  `execute_tool_loop`. A configured `ToolBudget` /
+  `TrimLongMessages` / custom `AgentMiddleware` works identically
+  for streaming and non-streaming runs.
+- **Checkpoint writes**: turn-boundary and pre-tool checkpoints are
+  persisted as the loop runs when a `Checkpointer` is configured —
+  so a process crash mid-stream can resume from the last checkpoint
+  via `chain.aresume(...)`.
+- **`InterruptSignal` handling**: `interrupt(...)` raised from
+  inside a streamed tool now pauses the run identically to
+  `arun()` and surfaces through the standard `aresume` flow.
+- New `execution_id` parameter on `Agent.astream(...)` (matches
+  `arun`).
+
+(#51, thanks @rsangers)
+
+### Fixed
+
+- `total_usage` was undefined in the `after_model` middleware path
+  added by #51, so any agent with middleware configured would crash
+  with `NameError: name 'total_usage' is not defined` on the first
+  streamed turn. Fixed by initialising `Usage()` and accumulating
+  from streamed `Usage` events as they arrive. The 4 failing
+  middleware-during-streaming tests in `test_streaming_middleware.py`
+  caught this; all 6 now pass.
+
+### Breaking behavior
+
+Strictly an additive feature, but: existing streaming code that
+configured middleware and didn't notice that it was being silently
+bypassed will start seeing the middleware applied. This is the
+intended outcome — that gap was the bug — but if your `astream()`
+runs were relying on the bypass (e.g., a `ToolBudget` that you
+expected to be enforced for `run()` but skipped for streaming), your
+behavior changes here. Most users will see correct behavior for the
+first time.
+
+### Docs
+
+- `docs/streaming/index.md` gains a "Middleware, Durability, and
+  HITL Parity (1.5.0+)" section documenting the new capability and
+  the upgrade-path note.
+
+### Verification (real, just ran on the cherry-picked + bug-fixed merge)
+
+- `ruff check fastaiagent/` → All checks passed
+- `pytest -q` (full sweep) → 1561 passed, 32 skipped, 0 failed in 228s
+  (+6 from baseline = the 6 new streaming-middleware tests in
+  `tests/test_streaming_middleware.py`)
+- `pytest tests/e2e/ -m e2e` → 200 passed, 8 skipped, 0 failed in 122s
+  (real OpenAI + Anthropic, sync + streaming, tool calls, multimodal)
+- `tsc -b` → clean
+- `vitest` → 86 passed across 20 files
+- `mkdocs build --strict` → clean
+- Examples: `12_streaming.py`, `27_middleware_tool_budget.py`,
+  `42_durability_hitl.py` all run cleanly end-to-end
+
 ## [1.4.4] - 2026-05-03
 
 Observability cleanup — replace ~40 silent `except: pass` blocks
