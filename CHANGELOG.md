@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-05-03
+
+Patch release with three small contributor PRs — two bug fixes and
+one tool-DX improvement. No schema changes; drop-in upgrade from
+1.4.0.
+
+### Fixed
+
+- `LocalKB.as_tool()` no longer truncates search results at 200
+  characters. With the default `chunk_size=512`, up to 60% of each
+  chunk's content was previously invisible to the LLM, causing
+  agents to report "I couldn't find information" for queries whose
+  answers started past character 200 of the matching chunk. The
+  full chunk content is now passed through unchanged. Added
+  regression test `test_as_tool_returns_full_chunk_content`.
+  (#47, thanks @rsangers)
+- `ForkedReplay.with_tools()` lets you pass live `Tool` instances
+  when forking a trace for rerun, fixing the case where
+  dynamically-generated tools (e.g. `kb.as_tool()`) lost their
+  callables during replay reconstruction. (#53, thanks @rsangers)
+
+### Added
+
+- `FunctionTool` now extracts parameter descriptions from
+  Google-style docstring `Args:` sections instead of falling back
+  to the parameter name. Improves the quality of tool schemas sent
+  to the LLM and downstream tool-calling behavior. Backwards-
+  compatible: tools without docstrings keep their existing
+  behavior. (#52, thanks @rsangers)
+
 ## [1.4.0] - 2026-05-03
 
 ### Added — Sprint 3: Trace investigation + dataset curation
