@@ -51,7 +51,7 @@ from fastaiagent._internal.async_utils import run_sync
 from fastaiagent._internal.errors import AgentError, StopAgent
 from fastaiagent.agent.agent import Agent, AgentResult
 from fastaiagent.agent.context import RunContext
-from fastaiagent.agent.middleware import AgentMiddleware
+from fastaiagent.agent.middleware import AgentMiddleware, MiddlewareContext, ToolCallNext
 from fastaiagent.chain.checkpoint import Checkpoint
 from fastaiagent.chain.idempotent import _current_checkpointer
 from fastaiagent.chain.interrupt import (
@@ -68,7 +68,7 @@ from fastaiagent.llm.stream import (
     TextDelta,
     ToolCallEnd,
 )
-from fastaiagent.tool.base import Tool
+from fastaiagent.tool.base import Tool, ToolResult
 from fastaiagent.tool.function import FunctionTool
 
 __all__ = ["Swarm", "SwarmError", "SwarmState"]
@@ -86,7 +86,13 @@ class _ExitAfterHandoff(AgentMiddleware):
 
     name = "_exit_after_handoff"
 
-    async def wrap_tool(self, ctx, tool, args, call_next):
+    async def wrap_tool(
+        self,
+        ctx: MiddlewareContext,
+        tool: Tool,
+        args: dict[str, Any],
+        call_next: ToolCallNext,
+    ) -> ToolResult:
         result = await call_next(tool, args)
         if tool.name.startswith("handoff_to_"):
             # StopAgent short-circuits the remaining tool calls in this
@@ -289,7 +295,7 @@ class Swarm:
         self,
         input: Any,
         *,
-        context: RunContext | None = None,
+        context: RunContext[Any] | None = None,
         execution_id: str | None = None,
     ) -> AgentResult:
         """Synchronous execution. ``input`` may be a string or any of the
@@ -301,7 +307,7 @@ class Swarm:
         self,
         input: Any,
         *,
-        context: RunContext | None = None,
+        context: RunContext[Any] | None = None,
         execution_id: str | None = None,
         **kwargs: Any,
     ) -> AgentResult:
@@ -347,7 +353,7 @@ class Swarm:
         self,
         input: Any,
         *,
-        context: RunContext | None = None,
+        context: RunContext[Any] | None = None,
         execution_id: str | None = None,
         **kwargs: Any,
     ) -> AgentResult:
@@ -642,7 +648,7 @@ class Swarm:
             _execution_id.reset(exec_token)
 
     async def astream(
-        self, input: Any, *, context: RunContext | None = None, **kwargs: Any
+        self, input: Any, *, context: RunContext[Any] | None = None, **kwargs: Any
     ) -> AsyncGenerator[StreamEvent, None]:
         """Stream events from the currently active agent. Handoffs emit a
         :class:`HandoffEvent` before the target agent starts streaming.
@@ -699,7 +705,7 @@ class Swarm:
             )
             current = target
 
-    def stream(self, input: Any, *, context: RunContext | None = None) -> AgentResult:
+    def stream(self, input: Any, *, context: RunContext[Any] | None = None) -> AgentResult:
         """Synchronous streaming — collects into an :class:`AgentResult`."""
 
         async def _collect() -> AgentResult:
@@ -721,7 +727,7 @@ class Swarm:
         self,
         name: str,
         state: SwarmState,
-        context: RunContext | None = None,
+        context: RunContext[Any] | None = None,
     ) -> Agent:
         """Return a clone of ``agents[name]`` with handoff tools injected.
 

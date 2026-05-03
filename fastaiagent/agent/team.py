@@ -123,7 +123,7 @@ class Supervisor:
                 return True
         return False
 
-    def _build_worker_tools(self, context: RunContext | None = None) -> Sequence[Tool]:
+    def _build_worker_tools(self, context: RunContext[Any] | None = None) -> Sequence[Tool]:
         """Create durability-aware ``delegate_to_<role>`` tools.
 
         Each tool, when fired:
@@ -144,7 +144,7 @@ class Supervisor:
             async def delegate(
                 task: str,
                 _worker: Worker = worker,
-                _ctx: RunContext | None = context,
+                _ctx: RunContext[Any] | None = context,
                 _supervisor: Supervisor = self,
             ) -> str:
                 clone = _supervisor._build_worker_clone(_worker)
@@ -210,7 +210,7 @@ class Supervisor:
         self,
         input: str,
         *,
-        context: RunContext | None = None,
+        context: RunContext[Any] | None = None,
         execution_id: str | None = None,
         **kwargs: Any,
     ) -> AgentResult:
@@ -221,7 +221,7 @@ class Supervisor:
         self,
         input: str,
         *,
-        context: RunContext | None = None,
+        context: RunContext[Any] | None = None,
         execution_id: str | None = None,
         **kwargs: Any,
     ) -> AgentResult:
@@ -340,7 +340,7 @@ class Supervisor:
         return None
 
     async def astream(
-        self, input: str, *, context: RunContext | None = None, **kwargs: Any
+        self, input: str, *, context: RunContext[Any] | None = None, **kwargs: Any
     ) -> AsyncGenerator[StreamEvent, None]:
         """Stream the supervisor — yields events as tokens arrive.
 
@@ -359,7 +359,7 @@ class Supervisor:
             yield event
 
     def stream(
-        self, input: str, *, context: RunContext | None = None, **kwargs: Any
+        self, input: str, *, context: RunContext[Any] | None = None, **kwargs: Any
     ) -> AgentResult:
         """Synchronous streaming — collects stream into AgentResult."""
 
