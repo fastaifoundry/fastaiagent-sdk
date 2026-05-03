@@ -1,0 +1,5 @@
+# This file keeps the directory in version control even when there's no
+# bundled frontend build to ship. The hatchling build's force-include
+# requires this directory to exist at install time
+# (see pyproject.toml [tool.hatch.build.targets.wheel.force-include]).
+# Do not delete unless you also remove the force-include.
