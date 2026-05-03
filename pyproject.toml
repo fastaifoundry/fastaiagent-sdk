@@ -1,6 +1,6 @@
 [project]
 name = "fastaiagent"
-version = "1.3.0"
+version = "1.4.0"
 description = "Build, debug, evaluate, and operate AI agents. The only SDK with fork-and-rerun Agent Replay."
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -52,6 +52,9 @@ ui = [
     "aiosqlite>=0.19",
     "bcrypt>=4.0",
     "itsdangerous>=2.1",
+    # Required by FastAPI's UploadFile + Form on the new dataset CRUD
+    # endpoints (Sprint 3) — image upload + JSONL import are multipart.
+    "python-multipart>=0.0.9",
 ]
 all = ["fastaiagent[openai,anthropic,langchain,crewai,kb,qdrant,chroma,mcp-server,otel-export,postgres,ui]"]
 docs = [

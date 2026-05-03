@@ -144,6 +144,9 @@ nav:
       - "Prompt Playground": ui/playground.md
       - "Agent Dependency Graph": ui/agent-dependencies.md
       - "Guardrail Event Detail": ui/guardrail-events.md
+      - "Trace Comparison": ui/trace-comparison.md
+      - "Eval Datasets": ui/datasets.md
+      - "Trace Filters": ui/trace-filters.md
   - Platform:
       - platform/index.md
   - Deployment:

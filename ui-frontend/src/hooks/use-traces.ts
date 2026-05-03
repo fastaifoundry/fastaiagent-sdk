@@ -1,6 +1,12 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import type { TraceDetail, TraceFilters, TracesPage, SpanTreeNode } from "@/lib/types";
+import type {
+  CompareTracesResponse,
+  TraceDetail,
+  TraceFilters,
+  TracesPage,
+  SpanTreeNode,
+} from "@/lib/types";
 
 function buildQuery(filters: TraceFilters): string {
   const params = new URLSearchParams();
@@ -14,6 +20,7 @@ function buildQuery(filters: TraceFilters): string {
   if (filters.min_duration_ms != null) params.set("min_duration_ms", String(filters.min_duration_ms));
   if (filters.max_duration_ms != null) params.set("max_duration_ms", String(filters.max_duration_ms));
   if (filters.min_cost != null) params.set("min_cost", String(filters.min_cost));
+  if (filters.max_cost != null) params.set("max_cost", String(filters.max_cost));
   if (filters.min_tokens != null) params.set("min_tokens", String(filters.min_tokens));
   params.set("page", String(filters.page ?? 1));
   params.set("page_size", String(filters.page_size ?? 100));
@@ -58,5 +65,19 @@ export function useBulkDeleteTraces() {
         "/traces/bulk-delete",
         { trace_ids: traceIds }
       ),
+  });
+}
+
+export function useCompareTraces(
+  a: string | null | undefined,
+  b: string | null | undefined
+) {
+  return useQuery({
+    queryKey: ["traces-compare", a, b],
+    queryFn: () =>
+      api.get<CompareTracesResponse>(
+        `/traces/compare?a=${encodeURIComponent(a!)}&b=${encodeURIComponent(b!)}`
+      ),
+    enabled: !!a && !!b,
   });
 }

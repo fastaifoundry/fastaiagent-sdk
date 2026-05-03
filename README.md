@@ -6,7 +6,7 @@ The only SDK with **Agent Replay** — fork-and-rerun debugging — and a
 
 Works standalone or connected to the [FastAIAgent Platform](https://fastaiagent.net) for visual editing, production monitoring, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.3.0)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.4.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -218,6 +218,67 @@ filter on the list page hides the noise once you've marked it.
 
 See [docs/ui/guardrail-events.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/ui/guardrail-events.md)
 and [examples/51_guardrail_events.py](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/51_guardrail_events.py)
+for the walkthrough.
+
+### Compare any two traces — Trace Comparison
+
+Generalises Replay's "original vs forked" diff to *any* two traces, so
+you can answer "why did Monday's run differ from Friday's?", A/B-test
+two prompts on the same input, or spot a regression after a model
+change. Multi-select two rows on `/traces` → **Compare** in the action
+bar; or use **Compare with…** on any trace detail page. The view
+shows summary delta cards (duration, tokens, cost, span count) over a
+span-aligned table — server-side alignment matches by name first then
+position, classifying each row as `same` / `slower` / `faster` /
+`different output` / `new in A` / `new in B`. Click any row to expand
+side-by-side input / output / attributes diffs powered by
+`react-diff-viewer-continued`. URL is bookmarkable:
+`/traces/compare?a=<id>&b=<id>`.
+
+![FastAIAgent Local UI — Trace Comparison](https://raw.githubusercontent.com/fastaifoundry/fastaiagent-sdk/main/docs/ui/screenshots/sprint3-2-trace-compare-summary.png)
+
+See [docs/ui/trace-comparison.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/ui/trace-comparison.md)
+and [examples/52_trace_compare.py](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/52_trace_compare.py)
+for the walkthrough.
+
+### Curate eval cases inline — Eval Dataset Editor
+
+Datasets stay JSONL on disk (same files `Dataset.from_jsonl()` already
+loads) — but the editor at `/datasets` replaces the script-edit-rerun
+loop with point-and-click CRUD. Add, edit, duplicate, delete cases;
+upload images for multimodal cases (the typed-parts shape is preserved
+on disk so cases stay framework-runnable); import / export JSONL with
+line-numbered errors on bad input; and **Run eval** kicks off the
+existing eval framework against the dataset and surfaces the resulting
+`run_id` in `/evals`. The Playground's *Save as eval case* button now
+combos over existing datasets with a `+ New` escape hatch so the
+inner-loop iteration feeds outer-loop curation without copy-paste.
+
+![FastAIAgent Local UI — Eval Dataset Editor](https://raw.githubusercontent.com/fastaifoundry/fastaiagent-sdk/main/docs/ui/screenshots/sprint3-6-dataset-detail.png)
+
+See [docs/ui/datasets.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/ui/datasets.md)
+and [examples/53_dataset_editor.py](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/53_dataset_editor.py)
+for the walkthrough.
+
+### Find any trace — Richer Trace Filtering
+
+The Traces filter bar is now production-grade. **FTS5-backed
+full-text search** across LLM prompts and responses
+(`gen_ai.prompt`, `gen_ai.response.text`, with `fastaiagent.*`
+namespaced fallbacks) — sub-second on 1k spans, regression-tested,
+with LIKE fallback for legacy DBs. **Custom date-range picker**
+(`react-day-picker`) alongside the quick ranges (15m, 1h, 24h, 7d,
+**30d**, All). **More filters** disclosure with duration and cost
+ranges. **Saved filter presets** (project-scoped) — capture every
+active filter, name it, one-click reapply. **300 ms debounced**
+search. And **URL state**: every active filter mirrors into
+`?key=value` query params, so refresh, bookmark, share, and
+back/forward all preserve filter state.
+
+![FastAIAgent Local UI — Richer Trace Filtering](https://raw.githubusercontent.com/fastaifoundry/fastaiagent-sdk/main/docs/ui/screenshots/sprint3-9-filters-expanded.png)
+
+See [docs/ui/trace-filters.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/ui/trace-filters.md)
+and [examples/54_trace_filters.py](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/54_trace_filters.py)
 for the walkthrough.
 
 ### Other Local UI surfaces

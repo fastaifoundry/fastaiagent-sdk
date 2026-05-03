@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Copy, MessagesSquare, Star, Trash2 } from "lucide-react";
+import { Copy, GitCompareArrows, MessagesSquare, Star, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -130,6 +130,21 @@ export function TracesTable({ rows, hideBulkSelect }: Props) {
             >
               Clear
             </Button>
+            {selected.size === 2 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const [a, b] = Array.from(selected);
+                  navigate(
+                    `/traces/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`
+                  );
+                }}
+              >
+                <GitCompareArrows className="mr-1.5 h-3.5 w-3.5" />
+                Compare
+              </Button>
+            )}
             <Button
               variant="destructive"
               size="sm"

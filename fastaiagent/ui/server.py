@@ -25,8 +25,10 @@ from fastaiagent.ui.routes import (
     agents,
     analytics,
     auth,
+    datasets,
     evals,
     executions,
+    filter_presets,
     guardrails,
     kb,
     overview,
@@ -119,6 +121,8 @@ def build_app(
         workflows.router,
         executions.router,
         playground.router,
+        datasets.router,
+        filter_presets.router,
     ):
         app.include_router(r)
 

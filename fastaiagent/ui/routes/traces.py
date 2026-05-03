@@ -155,6 +155,33 @@ def _summarize_trace(spans: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _fts_available(db: Any) -> bool:
+    """Has the v6 ``span_fts`` virtual table been created on this DB?
+
+    Returns False on legacy DBs (pre-v6) and on builds of SQLite that
+    didn't have FTS5 compiled in. The route falls back to LIKE-on-JSON
+    in that case.
+    """
+    rows = db.fetchall(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='span_fts'"
+    )
+    return bool(rows)
+
+
+def _fts_query(q: str) -> str:
+    """Translate a free-text search box into a safe FTS5 MATCH query.
+
+    Tokens are quoted to neutralise FTS metacharacters (``*``, ``"``,
+    ``NEAR``, ``-``, ``^``) so user input can't break the parser.
+    Multiple tokens are AND-ed (FTS5 default), which matches the
+    "search box" mental model the UI users expect.
+    """
+    tokens = [t for t in q.split() if t]
+    if not tokens:
+        return ""
+    return " ".join('"' + t.replace('"', '""') + '"' for t in tokens)
+
+
 @router.get("/traces", response_model=TracesPage)
 def list_traces(
     request: Request,
@@ -175,6 +202,7 @@ def list_traces(
     min_duration_ms: int | None = Query(default=None),
     max_duration_ms: int | None = Query(default=None),
     min_cost: float | None = Query(default=None),
+    max_cost: float | None = Query(default=None),
     min_tokens: int | None = Query(default=None),
     since: str | None = Query(default=None, description="ISO timestamp lower bound"),
     until: str | None = Query(default=None, description="ISO timestamp upper bound"),
@@ -187,28 +215,42 @@ def list_traces(
         clauses: list[str] = []
         params: list[Any] = []
         if ctx.project_id:
-            clauses.append("project_id = ?")
+            clauses.append("spans.project_id = ?")
             params.append(ctx.project_id)
         if since:
-            clauses.append("start_time >= ?")
+            clauses.append("spans.start_time >= ?")
             params.append(since)
         if until:
-            clauses.append("start_time <= ?")
+            clauses.append("spans.start_time <= ?")
             params.append(until)
         if trace_status:
-            clauses.append("status = ?")
+            clauses.append("spans.status = ?")
             params.append(trace_status)
+
+        # Search path. Prefer FTS5 (v6+) — it's an index lookup, scales
+        # to millions of spans. Fall back to LIKE on the JSON blob for
+        # legacy DBs or SQLite builds without FTS5 compiled in.
+        join_sql = ""
         if q:
-            clauses.append("(name LIKE ? OR attributes LIKE ? OR events LIKE ?)")
-            like = f"%{q}%"
-            params.extend([like, like, like])
+            fts_query = _fts_query(q)
+            if fts_query and _fts_available(db):
+                join_sql = "JOIN span_fts ON span_fts.span_id = spans.span_id"
+                clauses.append("span_fts MATCH ?")
+                params.append(fts_query)
+            else:
+                clauses.append(
+                    "(spans.name LIKE ? OR spans.attributes LIKE ? OR spans.events LIKE ?)"
+                )
+                like = f"%{q}%"
+                params.extend([like, like, like])
 
         where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         trace_rows = db.fetchall(
-            f"""SELECT trace_id, MAX(start_time) AS latest
+            f"""SELECT spans.trace_id AS trace_id, MAX(spans.start_time) AS latest
                FROM spans
+               {join_sql}
                {where_sql}
-               GROUP BY trace_id
+               GROUP BY spans.trace_id
                ORDER BY latest DESC""",
             tuple(params),
         )
@@ -244,6 +286,10 @@ def list_traces(
                 continue
             if min_cost is not None and (
                 summary["total_cost_usd"] is None or summary["total_cost_usd"] < min_cost
+            ):
+                continue
+            if max_cost is not None and (
+                summary["total_cost_usd"] is None or summary["total_cost_usd"] > max_cost
             ):
                 continue
             if min_tokens is not None and (
@@ -297,6 +343,170 @@ def list_threads(request: Request, _user: str = Depends(require_session)) -> dic
         db.close()
 
 
+def _span_duration_ms(span: SpanRow) -> int | None:
+    return _ms(span.start_time, span.end_time)
+
+
+def _span_output_signature(span: SpanRow) -> str:
+    """Stable hashable representation of a span's "output" for diffing.
+
+    The SDK doesn't have a single canonical output column — different span
+    types stash their output under different attribute keys. Combine the
+    most common ones plus the span's events so we catch tool-call diffs
+    too.
+    """
+    from fastaiagent.ui.attrs import attr
+
+    pieces: list[str] = []
+    for key in ("gen_ai.response.text", "gen_ai.completion", "tool.output", "output"):
+        v = attr(span.attributes, key)
+        if v is not None:
+            pieces.append(f"{key}={json.dumps(v, sort_keys=True, default=str)}")
+    pieces.append(f"events={json.dumps(span.events, sort_keys=True, default=str)}")
+    pieces.append(f"status={span.status}")
+    return "|".join(pieces)
+
+
+def _classify_match(
+    span_a: SpanRow,
+    span_b: SpanRow,
+    duration_a: int | None,
+    duration_b: int | None,
+) -> tuple[str, int | None]:
+    """Return ``(match, delta_ms)`` for two same-named spans.
+
+    ``match`` is one of ``same``, ``slower``, ``faster``, ``different_output``.
+    A duration delta beats an output diff when both apply because latency
+    regressions usually want eyeballs first.
+    """
+    delta: int | None = None
+    if duration_a is not None and duration_b is not None:
+        delta = duration_b - duration_a
+        larger = max(abs(duration_a), abs(duration_b), 1)
+        significant = abs(delta) > 500 or abs(delta) / larger > 0.20
+        if significant:
+            return ("slower" if delta > 0 else "faster"), delta
+    if _span_output_signature(span_a) != _span_output_signature(span_b):
+        return "different_output", delta
+    return "same", delta
+
+
+def _span_summary_dict(span: SpanRow, duration_ms: int | None) -> dict[str, Any]:
+    return {
+        "span_id": span.span_id,
+        "name": span.name,
+        "status": span.status,
+        "start_time": span.start_time,
+        "end_time": span.end_time,
+        "duration_ms": duration_ms,
+    }
+
+
+def _align_spans(
+    spans_a: list[SpanRow], spans_b: list[SpanRow]
+) -> list[dict[str, Any]]:
+    """Pair spans across two traces by name, then surface unmatched extras.
+
+    Algorithm (per the Sprint 3 spec):
+      1. Match by ``span.name`` first — same name in both traces lines up
+         regardless of position.
+      2. When a name appears multiple times on one side, pair occurrences in
+         order (1st-A with 1st-B, 2nd-A with 2nd-B, etc).
+      3. Spans only in A → ``new_in_a``; spans only in B → ``new_in_b``.
+
+    The ordinal ``index`` reflects the row's position in the alignment
+    table, not the original span position in either trace.
+    """
+    from collections import defaultdict
+
+    by_name_a: dict[str, list[SpanRow]] = defaultdict(list)
+    by_name_b: dict[str, list[SpanRow]] = defaultdict(list)
+    for s in spans_a:
+        by_name_a[s.name].append(s)
+    for s in spans_b:
+        by_name_b[s.name].append(s)
+
+    rows: list[dict[str, Any]] = []
+    consumed_b: set[str] = set()
+    # Walk trace A's spans in order so the row order matches the user's
+    # mental model of "what happened in A, in order."
+    for span_a in spans_a:
+        bucket = by_name_b.get(span_a.name) or []
+        # Consume the next unmatched B span with the same name.
+        match_b: SpanRow | None = None
+        for cand in bucket:
+            if cand.span_id not in consumed_b:
+                match_b = cand
+                consumed_b.add(cand.span_id)
+                break
+        duration_a = _span_duration_ms(span_a)
+        if match_b is None:
+            rows.append(
+                {
+                    "index": len(rows),
+                    "span_a": _span_summary_dict(span_a, duration_a),
+                    "span_b": None,
+                    "match": "new_in_a",
+                    "delta_ms": None,
+                }
+            )
+            continue
+        duration_b = _span_duration_ms(match_b)
+        match_kind, delta_ms = _classify_match(
+            span_a, match_b, duration_a, duration_b
+        )
+        rows.append(
+            {
+                "index": len(rows),
+                "span_a": _span_summary_dict(span_a, duration_a),
+                "span_b": _span_summary_dict(match_b, duration_b),
+                "match": match_kind,
+                "delta_ms": delta_ms,
+            }
+        )
+    # Trail B-only spans in original B order so a "new tool call appended at
+    # the end" reads naturally.
+    for span_b in spans_b:
+        if span_b.span_id in consumed_b:
+            continue
+        duration_b = _span_duration_ms(span_b)
+        rows.append(
+            {
+                "index": len(rows),
+                "span_a": None,
+                "span_b": _span_summary_dict(span_b, duration_b),
+                "match": "new_in_b",
+                "delta_ms": None,
+            }
+        )
+    return rows
+
+
+def _trace_payload(
+    trace_id: str, span_rows: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Shared shape for the ``trace_a`` / ``trace_b`` halves of the response."""
+    spans = [_row_to_span(r) for r in span_rows]
+    summary = _summarize_trace(span_rows)
+    duration = _ms(summary["start_time"], summary["end_time"])
+    return {
+        "trace_id": trace_id,
+        "name": summary["root_name"] or trace_id,
+        "status": summary["status"],
+        "start_time": summary["start_time"],
+        "end_time": summary["end_time"] or None,
+        "agent_name": summary["agent_name"],
+        "thread_id": summary["thread_id"],
+        "total_cost_usd": summary["total_cost_usd"],
+        "total_tokens": summary["total_tokens"],
+        "span_count": len(spans),
+        "duration_ms": duration,
+        "runner_type": summary["runner_type"],
+        "runner_name": summary["runner_name"],
+        "spans": [s.model_dump() for s in spans],
+    }
+
+
 @router.get("/traces/compare")
 def compare_traces(
     request: Request,
@@ -304,22 +514,73 @@ def compare_traces(
     b: str,
     _user: str = Depends(require_session),
 ) -> dict[str, Any]:
+    """Side-by-side comparison of two traces.
+
+    Returns the full payload for each trace (so the page renders without
+    extra round-trips), the alignment table, and summary deltas. Both
+    traces are project-scoped — querying for a trace from another
+    project returns 404.
+    """
     ctx = get_context(request)
     db = ctx.db()
     pid_clause, pid_params = project_filter(ctx)
     try:
-
-        def spans_for(trace_id: str) -> list[SpanRow]:
+        def fetch(trace_id: str) -> list[dict[str, Any]]:
             rows = db.fetchall(
                 f"SELECT * FROM spans WHERE trace_id = ? {pid_clause} "
                 "ORDER BY start_time",
                 (trace_id, *pid_params),
             )
-            return [_row_to_span(r) for r in rows]
+            return rows
+
+        rows_a = fetch(a)
+        rows_b = fetch(b)
+        if not rows_a:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"Trace '{a}' not found")
+        if not rows_b:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"Trace '{b}' not found")
+
+        trace_a = _trace_payload(a, rows_a)
+        trace_b = _trace_payload(b, rows_b)
+        spans_a = [_row_to_span(r) for r in rows_a]
+        spans_b = [_row_to_span(r) for r in rows_b]
+        alignment = _align_spans(spans_a, spans_b)
+
+        # Deltas — ``b - a`` so positive means "B grew." None on either
+        # side propagates to None so the UI can render "—" rather than 0.
+        def maybe_diff(x: float | None, y: float | None) -> float | None:
+            if x is None or y is None:
+                return None
+            return y - x
+
+        time_apart_seconds: float | None = None
+        if trace_a["start_time"] and trace_b["start_time"]:
+            try:
+                ta = datetime.fromisoformat(trace_a["start_time"])
+                tb = datetime.fromisoformat(trace_b["start_time"])
+                time_apart_seconds = abs((tb - ta).total_seconds())
+            except (TypeError, ValueError):
+                time_apart_seconds = None
+
+        summary = {
+            "duration_delta_ms": maybe_diff(
+                trace_a["duration_ms"], trace_b["duration_ms"]
+            ),
+            "tokens_delta": maybe_diff(
+                trace_a["total_tokens"], trace_b["total_tokens"]
+            ),
+            "cost_delta_usd": maybe_diff(
+                trace_a["total_cost_usd"], trace_b["total_cost_usd"]
+            ),
+            "spans_delta": trace_b["span_count"] - trace_a["span_count"],
+            "time_apart_seconds": time_apart_seconds,
+        }
 
         return {
-            "a": [s.model_dump() for s in spans_for(a)],
-            "b": [s.model_dump() for s in spans_for(b)],
+            "trace_a": trace_a,
+            "trace_b": trace_b,
+            "alignment": alignment,
+            "summary": summary,
         }
     finally:
         db.close()

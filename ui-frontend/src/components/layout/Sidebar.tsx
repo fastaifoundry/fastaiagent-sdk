@@ -8,6 +8,7 @@ import {
   FileText,
   GitBranch,
   LayoutDashboard,
+  ListChecks,
   Play,
   Shield,
   TrendingUp,
@@ -45,7 +46,10 @@ const SECTIONS: NavSection[] = [
   },
   {
     label: "// EVALUATION",
-    items: [{ to: "/evals", label: "Eval Runs", icon: TrendingUp }],
+    items: [
+      { to: "/evals", label: "Eval Runs", icon: TrendingUp },
+      { to: "/datasets", label: "Datasets", icon: ListChecks },
+    ],
   },
   {
     label: "// PROMPT REGISTRY",
