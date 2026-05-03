@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.3] - 2026-05-03
+
+LLM client refactor — pure deduplication, no runtime behavior change.
+
+### Changed
+
+- `LLMClient._call_openai` and `LLMClient._stream_openai` now share a
+  new `_build_openai_body()` helper for message preparation, parameter
+  building, and header construction. Same pattern for the Anthropic
+  pair via `_build_anthropic_body()`. The "same conversion as
+  `_call_anthropic`" comment that pointed at duplicated code is gone,
+  along with ~97 lines of copy-pasted logic. Bug fixes to message
+  conversion now only need to be made in one place.
+  (#50, thanks @rsangers)
+
+### Important: Anthropic and OpenAI separation preserved
+
+The refactor only deduplicates **within** each provider (sync ↔
+stream of the same provider). Anthropic and OpenAI remain in separate
+builder methods, each preserving:
+
+- Distinct auth headers (`Authorization: Bearer` vs `x-api-key` +
+  `anthropic-version`).
+- Distinct tool formats (OpenAI's array vs Anthropic's
+  `tool_use`/`tool_result` block conversion).
+- Distinct system-prompt handling (OpenAI keeps it inline, Anthropic
+  extracts to a separate `system` field).
+- Distinct stop-sequence keys (`stop` vs `stop_sequences`).
+- Distinct `response_format` strategies (OpenAI native field vs
+  Anthropic system-prompt augmentation).
+- All other provider-specific kwargs (`max_completion_tokens`,
+  `frequency_penalty`, `seed`, `stream_options`, etc.).
+
+Verified end-to-end against real OpenAI + Anthropic APIs through the
+`tests/e2e/` quality gate (200 passed) plus the full pytest sweep
+(1554 passed).
+
 ## [1.4.2] - 2026-05-03
 
 Lint + typecheck cleanup release. No runtime behavior change; the
