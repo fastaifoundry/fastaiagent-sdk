@@ -424,7 +424,7 @@ class LocalKB:
                 return "No results found."
             parts = []
             for r in results:
-                parts.append(f"[Score: {r.score:.3f}] {r.chunk.content[:200]}")
+                parts.append(f"[Score: {r.score:.3f}] {r.chunk.content}")
             return "\n\n".join(parts)
 
         tool = FunctionTool(

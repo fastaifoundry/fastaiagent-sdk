@@ -277,6 +277,21 @@ class TestLocalKB:
         result = tool.execute({"query": "Python"})
         assert result.success
 
+    def test_as_tool_returns_full_chunk_content(self, temp_dir):
+        """Verify KB tool output includes full chunk content, not truncated."""
+        kb = LocalKB(
+            name="full", path=str(temp_dir),
+            embedder=SimpleEmbedder(), persist=False,
+        )
+        long_content = "A" * 250 + " CRITICAL_ANSWER_HERE"
+        kb.add(long_content)
+        tool = kb.as_tool()
+        result = tool.execute({"query": "critical answer"})
+        assert "CRITICAL_ANSWER_HERE" in str(result.output), (
+            f"Tool output should contain the full chunk content, not truncate "
+            f"at 200 chars. Got: {str(result.output)[:100]}..."
+        )
+
     def test_empty_search(self, temp_dir):
         kb = LocalKB(
             name="empty", path=str(temp_dir),
