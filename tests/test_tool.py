@@ -96,6 +96,54 @@ class TestFunctionTool:
         assert fmt["function"]["name"] == "greet"
         assert fmt["function"]["description"] == "Greet someone"
 
+    def test_parses_google_docstring_params(self):
+        def search(query: str, top_k: int = 5) -> str:
+            """Search the knowledge base.
+
+            Args:
+                query: The search query to find relevant documents.
+                top_k: Number of results to return.
+            """
+            return "results"
+
+        t = FunctionTool(name="search", fn=search)
+        props = t.parameters["properties"]
+        assert props["query"]["description"] == "The search query to find relevant documents."
+        assert props["top_k"]["description"] == "Number of results to return."
+
+    def test_falls_back_to_param_name(self):
+        def greet(name: str) -> str:
+            """Say hello."""
+            return f"Hello, {name}!"
+
+        t = FunctionTool(name="greet", fn=greet)
+        assert t.parameters["properties"]["name"]["description"] == "name"
+
+    def test_handles_no_docstring(self):
+        def add(a: int, b: int) -> int:
+            return a + b
+
+        t = FunctionTool(name="add", fn=add)
+        assert t.parameters["properties"]["a"]["description"] == "a"
+
+    def test_parses_typed_google_docstring(self):
+        def process(data: str, verbose: bool = False) -> str:
+            """Process data.
+
+            Args:
+                data (str): The input data to process.
+                verbose (bool): Enable verbose output.
+
+            Returns:
+                Processed result.
+            """
+            return data
+
+        t = FunctionTool(name="process", fn=process)
+        props = t.parameters["properties"]
+        assert props["data"]["description"] == "The input data to process."
+        assert props["verbose"]["description"] == "Enable verbose output."
+
 
 # --- tool decorator tests ---
 

@@ -3,12 +3,68 @@
 from __future__ import annotations
 
 import inspect
+import re
 from collections.abc import Callable
 from typing import Any, get_origin, get_type_hints
 
 from fastaiagent._internal.errors import ToolExecutionError
 from fastaiagent.agent.context import RunContext
 from fastaiagent.tool.base import Tool, ToolResult
+
+_ARGS_SECTION_RE = re.compile(r"^\s*(Args|Arguments|Parameters)\s*:\s*$", re.IGNORECASE)
+_SECTION_HEADER_RE = re.compile(r"^\s*\w[\w\s]*:\s*$")
+_PARAM_LINE_RE = re.compile(
+    r"^\s{2,}(\w+)"  # indented param name
+    r"(?:\s*\([^)]*\))?"  # optional (type)
+    r"\s*:\s*"  # colon separator
+    r"(.+)",  # description start
+)
+
+
+def _parse_param_descriptions(fn: Callable[..., Any]) -> dict[str, str]:
+    """Extract parameter descriptions from Google-style docstring Args section."""
+    doc = inspect.getdoc(fn)
+    if not doc:
+        return {}
+
+    lines = doc.splitlines()
+    result: dict[str, str] = {}
+    in_args = False
+    current_param: str | None = None
+    current_desc: list[str] = []
+
+    for line in lines:
+        if _ARGS_SECTION_RE.match(line):
+            in_args = True
+            continue
+
+        if not in_args:
+            continue
+
+        # Check if we've hit a new section header (not indented or less indented)
+        stripped = line.strip()
+        if stripped and not line.startswith(" ") and not line.startswith("\t"):
+            # Non-indented non-empty line means new section
+            break
+        if _SECTION_HEADER_RE.match(line) and not _PARAM_LINE_RE.match(line):
+            break
+
+        param_match = _PARAM_LINE_RE.match(line)
+        if param_match:
+            # Save previous param
+            if current_param is not None:
+                result[current_param] = " ".join(current_desc).strip()
+            current_param = param_match.group(1)
+            current_desc = [param_match.group(2).strip()]
+        elif current_param is not None and stripped:
+            # Continuation line for current param
+            current_desc.append(stripped)
+
+    # Save last param
+    if current_param is not None:
+        result[current_param] = " ".join(current_desc).strip()
+
+    return result
 
 
 def _is_context_param(annotation: Any) -> bool:
@@ -47,6 +103,8 @@ def _generate_schema(fn: Callable[..., Any]) -> dict[str, Any]:
     except Exception:
         hints = {}
 
+    param_docs = _parse_param_descriptions(fn)
+
     properties = {}
     required = []
 
@@ -61,8 +119,8 @@ def _generate_schema(fn: Callable[..., Any]) -> dict[str, Any]:
 
         prop = _python_type_to_json_schema(tp)
 
-        # Use docstring or param name as description
-        prop["description"] = param_name
+        # Use docstring description if available, fall back to param name
+        prop["description"] = param_docs.get(param_name, param_name)
 
         properties[param_name] = prop
         if param.default is inspect.Parameter.empty:
