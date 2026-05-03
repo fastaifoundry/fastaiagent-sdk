@@ -146,7 +146,10 @@ class ToolCallCorrectness(Scorer):
         matched = 0
         for exp in expected_calls:
             for i, act in enumerate(remaining):
-                if act.get("name") == exp.get("name") and act.get("arguments") == exp.get("arguments"):
+                if (
+                    act.get("name") == exp.get("name")
+                    and act.get("arguments") == exp.get("arguments")
+                ):
                     matched += 1
                     remaining.pop(i)
                     break

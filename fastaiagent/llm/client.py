@@ -64,7 +64,8 @@ def _augment_system_for_response_format(
             f"\n\nYou must respond with valid JSON matching this schema ('{schema_name}'):\n"
             f"```json\n{schema_body}\n```\n"
             "Respond with the raw JSON object only. Do not wrap it in markdown code fences "
-            "or add any text outside the JSON. Your entire response must be parseable by JSON.parse()."
+            "or add any text outside the JSON. "
+            "Your entire response must be parseable by JSON.parse()."
         )
     return system_text or ""
 
@@ -1087,8 +1088,8 @@ class LLMClient:
         api_key = self.api_key or os.environ.get("ANTHROPIC_API_KEY", "")
         if not api_key:
             raise LLMProviderError(
-                f"No API key for provider 'anthropic'. "
-                f"Set the api_key parameter or the ANTHROPIC_API_KEY environment variable."
+                "No API key for provider 'anthropic'. "
+                "Set the api_key parameter or the ANTHROPIC_API_KEY environment variable."
             )
         headers = {
             "Content-Type": "application/json",

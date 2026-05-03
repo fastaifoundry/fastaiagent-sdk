@@ -40,7 +40,10 @@ class SemanticSimilarity(Scorer):
 
     Example:
         scorer = SemanticSimilarity(threshold=0.8)
-        result = scorer.score(input="q", output="Paris is the capital", expected="Capital of France is Paris")
+        result = scorer.score(
+            input="q", output="Paris is the capital",
+            expected="Capital of France is Paris",
+        )
     """
 
     name = "semantic_similarity"
@@ -81,7 +84,10 @@ class BLEUScore(Scorer):
 
     Example:
         scorer = BLEUScore(max_n=4, threshold=0.3)
-        result = scorer.score(input="q", output="the cat sat on the mat", expected="the cat is on the mat")
+        result = scorer.score(
+            input="q", output="the cat sat on the mat",
+            expected="the cat is on the mat",
+        )
     """
 
     name = "bleu"
@@ -103,7 +109,10 @@ class BLEUScore(Scorer):
             return ScorerResult(score=0.0, passed=False, reason="Empty text")
 
         # Brevity penalty
-        bp = math.exp(1 - len(ref_tokens) / len(out_tokens)) if len(out_tokens) < len(ref_tokens) else 1.0
+        if len(out_tokens) < len(ref_tokens):
+            bp = math.exp(1 - len(ref_tokens) / len(out_tokens))
+        else:
+            bp = 1.0
 
         # N-gram precisions
         log_precisions = []
@@ -158,7 +167,10 @@ class ROUGEScore(Scorer):
 
     Example:
         scorer = ROUGEScore(variant="rouge-1")
-        result = scorer.score(input="q", output="the cat sat on the mat", expected="the cat is on the mat")
+        result = scorer.score(
+            input="q", output="the cat sat on the mat",
+            expected="the cat is on the mat",
+        )
     """
 
     name = "rouge"
