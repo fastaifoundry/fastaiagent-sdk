@@ -43,6 +43,8 @@ _PRICING: dict[str, _Rate] = {
     "claude-3-opus": _Rate(15.00, 75.00),
     "claude-sonnet-4": _Rate(3.00, 15.00),
     "claude-opus-4": _Rate(15.00, 75.00),
+    "claude-haiku-4-5": _Rate(1.00, 5.00),
+    "claude-haiku-4": _Rate(1.00, 5.00),
     # Google
     "gemini-1.5-flash": _Rate(0.075, 0.30),
     "gemini-1.5-pro": _Rate(1.25, 5.00),

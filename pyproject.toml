@@ -1,6 +1,6 @@
 [project]
 name = "fastaiagent"
-version = "1.5.1"
+version = "1.6.0"
 description = "Build, debug, evaluate, and operate AI agents. The only SDK with fork-and-rerun Agent Replay."
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -36,8 +36,9 @@ dependencies = [
 [project.optional-dependencies]
 openai = ["openai>=1.0"]
 anthropic = ["anthropic>=0.20"]
-langchain = ["langchain-core>=0.2"]
+langchain = ["langchain-core>=0.3", "langgraph>=0.2"]
 crewai = ["crewai>=1.0"]
+pydanticai = ["pydantic-ai>=0.1"]
 kb = ["fastembed>=0.3", "pymupdf>=1.23", "faiss-cpu>=1.7"]
 qdrant = ["qdrant-client>=1.8"]
 chroma = ["chromadb>=0.5"]
@@ -56,7 +57,7 @@ ui = [
     # endpoints (Sprint 3) — image upload + JSONL import are multipart.
     "python-multipart>=0.0.9",
 ]
-all = ["fastaiagent[openai,anthropic,langchain,crewai,kb,qdrant,chroma,mcp-server,otel-export,postgres,ui]"]
+all = ["fastaiagent[openai,anthropic,langchain,crewai,pydanticai,kb,qdrant,chroma,mcp-server,otel-export,postgres,ui]"]
 docs = [
     "mkdocs>=1.6",
     "mkdocs-material>=9.5",
@@ -69,6 +70,14 @@ dev = [
     "pytest-cov>=5.0",
     "ruff>=0.3",
     "mypy>=1.8",
+    # Universal-harness test deps. The SDK itself has no runtime
+    # dependency on these — users bring their own LangChain provider
+    # adapters — but the e2e harness suite needs them. Including
+    # ``langchain-openai`` / ``langchain-anthropic`` in ``dev`` keeps
+    # ``pip install -e .[all,dev]`` (the CI install line) sufficient
+    # to run the harness suite without per-test importorskips.
+    "langchain-openai>=0.2",
+    "langchain-anthropic>=0.2",
 ]
 
 [project.scripts]

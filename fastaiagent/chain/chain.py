@@ -154,6 +154,7 @@ class Chain:
             span.set_attribute("chain.node_count", len(self.nodes))
             span.set_attribute("chain.node_ids", ",".join(n.id for n in self.nodes))
             span.set_attribute("fastaiagent.runner.type", "chain")
+            span.set_attribute("fastaiagent.framework", "fastaiagent")
             if initial_state:
                 import json
 

@@ -330,6 +330,7 @@ class Swarm:
             span.set_attribute("swarm.entrypoint", self.entrypoint)
             span.set_attribute("swarm.agent_count", len(getattr(self, "agents", []) or []))
             span.set_attribute("fastaiagent.runner.type", "swarm")
+            span.set_attribute("fastaiagent.framework", "fastaiagent")
             # OTel only accepts primitive attribute values — coerce
             # multimodal lists to a readable text summary the same way
             # ``Agent._arun_traced`` does.

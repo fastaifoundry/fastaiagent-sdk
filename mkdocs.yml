@@ -157,6 +157,10 @@ nav:
       - "Replicate (Cog)": deployment/replicate.md
   - Integrations:
       - integrations/index.md
+      - "Universal harness (overview)": integrations/overview.md
+      - "LangChain / LangGraph": integrations/langchain.md
+      - CrewAI: integrations/crewai.md
+      - PydanticAI: integrations/pydanticai.md
   - CLI Reference:
       - cli/index.md
   - Tutorials:

@@ -5,6 +5,136 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-05-04
+
+MINOR bump — **universal agent harness**. FastAIAgent now wraps
+LangChain / LangGraph, CrewAI, and PydanticAI agents with the full
+Local UI / eval / guardrails / prompt registry / KB surface. Existing
+agents keep working unchanged; one `enable()` call gets them showing
+up in `.fastaiagent/local.db` alongside native traces.
+
+### Added — three framework integrations
+
+- `fastaiagent.integrations.langchain` — full rebuild from the previous
+  callback handler. New `FastAIAgentCallbackHandler` follows the
+  canonical LangChain ABI (`run_id` / `parent_run_id` threaded through
+  every callback), captures full chain / node / LLM / tool / retriever
+  spans, computes cost, and tags `fastaiagent.framework=langchain` on
+  the root.
+- `fastaiagent.integrations.crewai` — full rebuild from the previous
+  import-only stub. Hybrid interception: monkey-patches
+  `Crew.kickoff{,_async}` / `Agent.execute_task` / `Task.execute_*`
+  for structural spans, plus event-bus subscriptions
+  (`crewai.events.crewai_event_bus`) for LLM and tool spans.
+- `fastaiagent.integrations.pydanticai` — new module. Calls
+  `Agent.instrument_all()` (PydanticAI ships its own GenAI-semconv
+  instrumentation) and wraps `run` / `run_sync` / `run_stream` so the
+  root span carries the framework tag and computed cost.
+
+Each integration is idempotent (`enable()` twice is a no-op) and
+exposes the same six-function public API: `enable`, `disable`,
+`as_evaluable`, `with_guardrails`, `prompt_from_registry`,
+`kb_as_retriever` / `kb_as_tool`, `register_agent`.
+
+### Added — harness helpers
+
+- `as_evaluable(agent)` — adapts external agents to `fa.evaluate(...)`.
+  Each adapter opens an outer `eval.case` span so `trace_id` is
+  captured per case and lands on `EvalCaseRecord` for UI deep-linking.
+- `with_guardrails(agent, name=, input_guardrails=, output_guardrails=)`
+  — wraps the agent with FastAIAgent guardrails. **Block-only**: a
+  failing blocking guardrail logs a `guardrail_events` row tagged with
+  the framework *and* raises a new `GuardrailBlocked` exception
+  (defined in `fastaiagent.integrations._registry`). No redaction —
+  documented in the integration overview.
+- `prompt_from_registry(slug, agent=)` — returns a framework-native
+  prompt object (LangChain `ChatPromptTemplate` with mustache syntax,
+  raw string for CrewAI / PydanticAI). Tags the LLM span with
+  `fastaiagent.prompt.slug` / `.version` for lineage.
+- `kb_as_retriever(name, agent=)` (LangChain) / `kb_as_tool(name, agent=)`
+  (CrewAI / PydanticAI) — wraps `LocalKB` in framework-native types.
+- `register_agent(agent, name=)` — extracts model, tools, and (for
+  LangGraph + CrewAI) topology, persists to a new `external_agents`
+  SQLite table.
+
+### Added — external-agent registry (schema v7)
+
+Two new tables in `.fastaiagent/local.db`:
+
+- `external_agents` — agent metadata (name, framework, model, provider,
+  system_prompt, topology JSON, project_id).
+- `external_agent_attachments` — harness layers attached to an agent
+  (kind ∈ `guardrail` / `kb` / `prompt` / `tool`, ref_name, position,
+  version). Unique on `(agent_name, kind, ref_name, position)`.
+
+The `/api/agents/{name}/dependencies` endpoint now merges these rows
+with the in-memory `ctx.runners` lookup so external agents render in
+the Agent Detail page.
+
+### Added — Local UI framework filter
+
+- `TraceRow` gains a `framework` field, populated from
+  `fastaiagent.framework` on the root span (auto-resolved by
+  `attr(attrs, "framework")`).
+- New free-text **Framework** filter input on the Traces page. Filter
+  is pushed into SQL via `EXISTS` + `json_extract` so totals and
+  pagination reflect the filtered set, not the unfiltered total.
+  Open-ended pattern (`^[A-Za-z][A-Za-z0-9_.-]{0,63}$`) — new
+  frameworks (LangSmith, AutoGen, anything we wrap in the future)
+  filter without a UI code change.
+
+### Added — examples 55–59
+
+- `examples/55_trace_crewai.py` — auto-trace a CrewAI run.
+- `examples/56_trace_pydanticai.py` — auto-trace a PydanticAI agent
+  (Anthropic if `ANTHROPIC_API_KEY` set, OpenAI otherwise).
+- `examples/57_eval_langchain.py` — `fa.evaluate()` against a
+  LangGraph agent with `trace_id` linkage.
+- `examples/58_guardrail_pydanticai.py` — `with_guardrails()`
+  block-only demo.
+- `examples/59_register_external_agent.py` — `register_agent()` +
+  attachment helpers + dependency-endpoint round-trip.
+
+### Added — docs
+
+- `docs/integrations/overview.md` — universal harness framing +
+  feature matrix + limitations.
+- `docs/integrations/{langchain,crewai,pydanticai}.md` — full
+  per-framework guides.
+- `docs/integrations/index.md` — rewritten as redirect/index.
+- README — new "Works with LangGraph, CrewAI, PydanticAI" section.
+
+### Changed — optional extras
+
+- `langchain` extra bumped from `langchain-core>=0.2` to
+  `langchain-core>=0.3, langgraph>=0.2`. The 0.2 → 0.3 upgrade was the
+  LCEL renames; the callback ABI stayed stable across the bump. **Breaking
+  for users still on `langchain-core < 0.3`.**
+- `crewai` extra kept at `>=1.0` (spec suggested `>=0.80`; we kept the
+  stricter floor because CrewAI 1.0 is when the events bus and
+  `crewai.tools.BaseTool` stabilized).
+- New `pydanticai = ["pydantic-ai>=0.1"]` extra.
+- `[all]` extra updated to include `pydanticai`.
+
+### Changed — native FastAIAgent root spans
+
+`Agent.run`, `Chain.run`, `Swarm.run`, and `Supervisor.run` now stamp
+`fastaiagent.framework=fastaiagent` on the root span. Existing native
+traces from before 1.6 don't carry the attribute (which is fine — the
+filter treats `null` as "no framework").
+
+### Changed — pricing table
+
+Added `claude-haiku-4-5` and `claude-haiku-4` rate rows. Sonnet 4.6
+and Opus 4.7 are already covered by the existing `claude-sonnet-4` /
+`claude-opus-4` longest-prefix entries.
+
+### Fixed — old gate test updated
+
+`tests/e2e/test_gate_langchain.py::test_03_llm_lifecycle_emits_spans`
+drove the pre-1.6 broken contract (`on_llm_start` without `run_id`).
+Updated to pass `run_id` per the canonical LangChain ABI.
+
 ## [1.5.1] - 2026-05-03
 
 PATCH bump — fixes the LangChain auto-tracing integration so callback

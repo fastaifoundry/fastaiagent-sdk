@@ -86,6 +86,7 @@ export function TraceFiltersBar({ filters, onChange }: Props) {
     !!filters.q ||
     !!filters.thread_id ||
     !!filters.runner_type ||
+    !!filters.framework ||
     !!filters.since ||
     !!filters.until ||
     filters.min_duration_ms != null ||
@@ -180,6 +181,20 @@ export function TraceFiltersBar({ filters, onChange }: Props) {
             </button>
           ))}
         </div>
+
+        <Input
+          value={filters.framework ?? ""}
+          onChange={(e) =>
+            onChange({ ...filters, framework: e.target.value || null, page: 1 })
+          }
+          placeholder="Framework"
+          className="w-44"
+          // Free-text on purpose: new frameworks (LangSmith, AutoGen,
+          // future integrations) work without UI changes — just type
+          // whatever value lands in ``fastaiagent.framework`` on the
+          // root span.
+        />
+
 
         <Input
           value={filters.thread_id ?? ""}

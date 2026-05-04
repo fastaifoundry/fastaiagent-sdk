@@ -39,10 +39,17 @@ FASTAIAGENT_ATTRIBUTES = {
     "fastaiagent.checkpoint.id": str,
     "fastaiagent.guardrail.name": str,
     "fastaiagent.guardrail.passed": bool,
+    "fastaiagent.guardrail.position": str,
     "fastaiagent.prompt.name": str,
     "fastaiagent.prompt.version": int,
+    "fastaiagent.prompt.slug": str,
     "fastaiagent.cost.total_usd": float,
     "fastaiagent.thread.id": str,
+    # Universal-harness attributes — set on the root span of every run so
+    # the Local UI can badge / filter / group by source framework.
+    "fastaiagent.framework": str,
+    "fastaiagent.framework.version": str,
+    "fastaiagent.external_agent.name": str,
 }
 
 # Back-compat alias — remove in 0.9. Existing callers that imported the old

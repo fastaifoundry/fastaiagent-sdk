@@ -31,6 +31,10 @@ const STR_KEYS: (keyof TraceFilters)[] = [
 ];
 
 const VALID_RUNNERS: RunnerType[] = ["agent", "chain", "swarm", "supervisor"];
+// Backend regex for ``framework`` query param: leading letter then
+// letters / digits / [_.-]. Mirroring it on the client lets us reject
+// pathological URL params before they round-trip to the API.
+const FRAMEWORK_PATTERN = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
 
 function paramsToFilters(sp: URLSearchParams): TraceFilters {
   const out: TraceFilters = { page: 1, page_size: 100 };
@@ -55,12 +59,16 @@ function paramsToFilters(sp: URLSearchParams): TraceFilters {
   if (rt && (VALID_RUNNERS as string[]).includes(rt)) {
     out.runner_type = rt as RunnerType;
   }
+  const fw = sp.get("framework");
+  if (fw && FRAMEWORK_PATTERN.test(fw)) {
+    out.framework = fw;
+  }
   return out;
 }
 
 function filtersToParams(filters: TraceFilters): URLSearchParams {
   const sp = new URLSearchParams();
-  for (const key of [...STR_KEYS, "runner_type"] as const) {
+  for (const key of [...STR_KEYS, "runner_type", "framework"] as const) {
     const v = (filters as Record<string, unknown>)[key];
     if (typeof v === "string" && v) sp.set(key, v);
   }
