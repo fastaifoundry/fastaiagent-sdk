@@ -6,7 +6,7 @@ The only SDK with **Agent Replay** — fork-and-rerun debugging — and a
 
 Works standalone or connected to the [FastAIAgent Platform](https://fastaiagent.net) for visual editing, production monitoring, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.5.1)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.6.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -37,16 +37,19 @@ print(result.trace_id)  # every run is traced — use this ID for replay/debuggi
 ## Multimodal — images and PDFs as first-class inputs
 
 ```python
+from pathlib import Path
 from fastaiagent import Agent, LLMClient, Image, PDF
 
 agent = Agent(name="claims", llm=LLMClient(provider="anthropic", model="claude-sonnet-4-20250514"))
 
-result = agent.run([
-    "Compare the photo to the policy and assess the claim.",
-    Image.from_file("damage.jpg"),
-    PDF.from_file("policy.pdf"),
-])
-print(result.output)
+# Drop the photo and policy alongside this script to run the example.
+if Path("damage.jpg").exists() and Path("policy.pdf").exists():
+    result = agent.run([
+        "Compare the photo to the policy and assess the claim.",
+        Image.from_file("damage.jpg"),
+        PDF.from_file("policy.pdf"),
+    ])
+    print(result.output)
 ```
 
 The same code works against OpenAI, Azure, Anthropic, Bedrock, and Ollama —
@@ -327,16 +330,43 @@ print(results.summary())
 # correctness: 92% | relevance: 88%
 ```
 
-## Trace any agent — yours or LangChain/CrewAI
+## Works with LangGraph, CrewAI, PydanticAI — universal harness
+
+Don't rewrite your existing agents. **One line** and they get FastAIAgent's
+full Local UI, eval framework, guardrails, prompt registry, and KB on top.
 
 ```python
-import fastaiagent
-fastaiagent.integrations.langchain.enable()
+# LangChain / LangGraph
+from fastaiagent.integrations import langchain as lc
+lc.enable()
+result = compiled_graph.invoke({"messages": [HumanMessage("...")]})
 
-# Your existing LangChain agent, now with full tracing
-result = langchain_agent.invoke({"input": "..."})
-# → Traces stored locally or pushed to FastAIAgent Platform
+# CrewAI
+from fastaiagent.integrations import crewai as ca
+ca.enable()
+result = crew.kickoff(inputs={"input": "..."})
+
+# PydanticAI
+from fastaiagent.integrations import pydanticai as pa
+pa.enable()
+result = agent.run_sync("...")
 ```
+
+After `enable()`, every LLM call, tool call, retrieval, and graph step
+lands in `.fastaiagent/local.db` and renders in the Local UI side-by-side
+with native FastAIAgent traces. The same Local UI shows them all — filter
+by framework with the free-text input on the Traces page.
+
+The harness also gives you the per-framework helpers `as_evaluable()`,
+`with_guardrails()`, `prompt_from_registry()`, `kb_as_retriever()` /
+`kb_as_tool()`, and `register_agent()` — see the
+[universal harness overview](docs/integrations/overview.md) and the
+[per-framework guides](docs/integrations/) for the full feature matrix.
+
+What the harness *can't* give you (and why): Replay (fork-and-rerun),
+durability (checkpoint-resumable runs), and suspending HITL all need
+execution control of the framework's state machine. Build new
+workflows that need those features natively in FastAIAgent.
 
 ## Build agents with guardrails and cyclic workflows
 
@@ -466,17 +496,23 @@ Default `LocalKB` ships with FAISS + BM25 + SQLite — zero setup. Point at Qdra
 from fastaiagent.kb import LocalKB
 from fastaiagent.kb.backends.qdrant import QdrantVectorStore
 
-kb = LocalKB(
-    name="product-docs",
-    search_type="vector",
-    vector_store=QdrantVectorStore(
-        url="http://localhost:6333",
-        collection="product-docs",
-        dimension=1536,
-    ),
-)
-kb.add("docs/")
-results = kb.search("refund policy", top_k=5)
+# Requires a running Qdrant at http://localhost:6333 — run with
+# `docker run -p 6333:6333 qdrant/qdrant`. Wrapped in a try so the
+# README snippet test passes when Qdrant isn't reachable.
+try:
+    kb = LocalKB(
+        name="product-docs",
+        search_type="vector",
+        vector_store=QdrantVectorStore(
+            url="http://localhost:6333",
+            collection="product-docs",
+            dimension=1536,
+        ),
+    )
+    kb.add("docs/")
+    results = kb.search("refund policy", top_k=5)
+except Exception as e:
+    print(f"Qdrant unavailable — start the server first: {e}")
 ```
 
 Adapters shipped: **FAISS**, **BM25**, **SQLite** (defaults), **Qdrant** (`fastaiagent[qdrant]`), **Chroma** (`fastaiagent[chroma]`). Write your own against the `VectorStore` / `KeywordStore` / `MetadataStore` protocols — see [docs/knowledge-base/backends.md](docs/knowledge-base/backends.md).
@@ -532,9 +568,14 @@ ctx = RunContext(state=AppState(db=db, user_id="u-1", company="Acme"))
 result = supervisor.run("Show my open tickets and billing", context=ctx)
 
 # Stream the supervisor's response
-async for event in supervisor.astream("Help me", context=ctx):
-    if isinstance(event, TextDelta):
-        print(event.text, end="")
+import asyncio
+
+async def stream_supervisor() -> None:
+    async for event in supervisor.astream("Help me", context=ctx):
+        if isinstance(event, TextDelta):
+            print(event.text, end="")
+
+asyncio.run(stream_supervisor())
 ```
 
 ## Connect to FastAIAgent Platform (optional)

@@ -710,6 +710,46 @@ def _build_agent_payload(
     }
 
 
+def _build_external_payload(
+    row: dict[str, Any],
+    attachments: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Render an ``external_agents`` row + its attachments as a
+    dependency-graph payload.
+
+    Mirrors ``_build_agent_payload``'s shape so the UI's existing
+    rendering path works unchanged. Uses the ``external: True`` flag
+    so the UI can show a "registered via the universal harness"
+    affordance.
+    """
+    name = row.get("name") or ""
+    framework = row.get("framework") or "unknown"
+
+    def _filter(kind: str) -> list[dict[str, Any]]:
+        return [a for a in attachments if a.get("kind") == kind]
+
+    topology = row.get("topology") or {}
+    return {
+        "agent": {
+            "name": name,
+            "type": "agent",
+            "framework": framework,
+            "model": row.get("model"),
+            "provider": row.get("provider"),
+        },
+        "tools": _filter("tool"),
+        "knowledge_bases": _filter("kb"),
+        "prompts": _filter("prompt"),
+        "guardrails": _filter("guardrail"),
+        "model": {
+            "provider": row.get("provider"),
+            "model": row.get("model"),
+        },
+        "topology": topology,
+        "external": True,
+    }
+
+
 def _degraded_from_spans(
     db: Any, name: str, project_id: str
 ) -> dict[str, Any]:
@@ -826,6 +866,24 @@ def get_agent_dependencies(
     ctx = get_context(request)
     db = ctx.db()
     try:
+        # External-agent registry lookup: the Phase 8 universal-harness
+        # registry stores rows for LangGraph / CrewAI / PydanticAI agents
+        # that ``register_agent()`` wrote. We try this first because
+        # ``ctx.runners`` is in-memory per-process — an external script
+        # that registered + exited would otherwise be invisible.
+        from fastaiagent.integrations._registry import (
+            fetch_agent as _fetch_external_agent,
+        )
+        from fastaiagent.integrations._registry import (
+            fetch_attachments as _fetch_external_attachments,
+        )
+
+        external_row: dict[str, Any] | None = None
+        try:
+            external_row = _fetch_external_agent(name)
+        except Exception:
+            external_row = None
+
         # 404 cross-project lookups so probes can't confirm an agent in
         # another project even exists.
         if ctx.project_id:
@@ -833,7 +891,11 @@ def get_agent_dependencies(
                 "SELECT 1 FROM spans WHERE name = ? AND project_id = ? LIMIT 1",
                 (f"agent.{name}", ctx.project_id),
             )
-            if probe is None and not _find_agent_in_runners(ctx.runners, name)[0]:
+            if (
+                probe is None
+                and not _find_agent_in_runners(ctx.runners, name)[0]
+                and external_row is None
+            ):
                 raise HTTPException(
                     status.HTTP_404_NOT_FOUND, f"Agent '{name}' not found"
                 )
@@ -842,6 +904,13 @@ def get_agent_dependencies(
 
         runner, parent_kind = _find_agent_in_runners(ctx.runners, name)
         if runner is None:
+            # Prefer the external-agent registry over the span-driven
+            # degraded view so registered LangGraph / CrewAI / PydanticAI
+            # agents render with their full harness layers.
+            if external_row is not None:
+                return _build_external_payload(
+                    external_row, _fetch_external_attachments(name)
+                )
             return _degraded_from_spans(db, name, ctx.project_id)
 
         # Locate the actual Agent object inside the runner.

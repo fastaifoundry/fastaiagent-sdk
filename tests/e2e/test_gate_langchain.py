@@ -51,44 +51,46 @@ class TestLangChainIntegrationGate:
         )
 
     def test_03_llm_lifecycle_emits_spans(self, gate_state: dict[str, Any]) -> None:
-        """Drive the callback lifecycle and verify spans are produced."""
+        """Drive the callback lifecycle and verify spans are produced.
+
+        v1.6 (universal harness rebuild) — the handler now follows the
+        canonical LangChain callback ABI: ``run_id`` (and
+        ``parent_run_id``) are required keyword-only arguments because
+        we use them to thread parent-context between spans. The pre-1.6
+        handler stashed spans in a leaky ``**kwargs`` dict; that bug is
+        gone.
+        """
         require_env()
         require_import("langchain_core")
+
+        from uuid import uuid4
 
         from fastaiagent.integrations.langchain import get_callback_handler
 
         handler = get_callback_handler()
 
-        # The FastAIAgent handler stashes open spans in kwargs under
-        # _fastai_spans. We pass a dict and inspect it afterwards.
-        start_kwargs: dict[str, Any] = {}
+        # LLM lifecycle — pass run_id like real LangChain does.
+        llm_run_id = uuid4()
         handler.on_llm_start(
             serialized={"name": "gate-lc-model"},
             prompts=["Hello, world."],
-            **start_kwargs,
+            run_id=llm_run_id,
         )
-        # Note: the FastAIAgent implementation mutates *the kwargs dict*
-        # directly at on_llm_start (via ``kwargs.setdefault('_fastai_spans', []).append(span)``),
-        # but only the callee's copy is mutated — Python dict kwargs do
-        # not round-trip back to the caller by reference, so this handler
-        # design leaks open spans. We can still verify the call is
-        # tolerated and does not raise — the real integration value is
-        # the span side-effects in the global tracer, not the kwargs dict.
-
         handler.on_llm_end(
             response=type("FakeResp", (), {"generations": []})(),
-            **start_kwargs,
+            run_id=llm_run_id,
         )
-        # Drive the tool lifecycle too.
-        tool_kwargs: dict[str, Any] = {}
+
+        # Tool lifecycle.
+        tool_run_id = uuid4()
         handler.on_tool_start(
             serialized={"name": "gate-lc-tool"},
             input_str="query-input",
-            **tool_kwargs,
+            run_id=tool_run_id,
         )
-        handler.on_tool_end(output="result-output", **tool_kwargs)
+        handler.on_tool_end(output="result-output", run_id=tool_run_id)
 
         # If we got here without exceptions, the basic callback contract
-        # holds. The spans themselves end up in the global OTel provider
-        # and will be visible to anyone querying TraceStore, but the
-        # handler's design does not thread span IDs back out.
+        # holds. ``test_harness_langchain.py`` covers full end-to-end
+        # span verification (parent threading, token capture, cost) via
+        # real LangGraph runs.

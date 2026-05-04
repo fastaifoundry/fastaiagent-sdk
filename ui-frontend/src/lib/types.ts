@@ -18,6 +18,10 @@ export interface TraceRow {
   total_tokens: number | null;
   runner_type: RunnerType;
   runner_name: string | null;
+  // Source framework drawn from ``fastaiagent.framework`` on the root
+  // span. Free-text — any value the harness or a custom instrumentation
+  // has stamped survives a trip through the API as-is.
+  framework?: string | null;
 }
 
 export interface TracesPage {
@@ -510,6 +514,7 @@ export interface TraceFilters {
   thread_id?: string | null;
   runner_type?: RunnerType | null;
   runner_name?: string | null;
+  framework?: string | null;
   since?: string;
   until?: string;
   min_duration_ms?: number;

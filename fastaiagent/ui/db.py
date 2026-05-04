@@ -17,7 +17,7 @@ from pathlib import Path
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
 
-CURRENT_SCHEMA_VERSION = 6
+CURRENT_SCHEMA_VERSION = 7
 
 # A migration step is either a SQL string or a callable that takes the
 # ``SQLiteHelper`` and runs whatever logic it needs (e.g., gated
@@ -59,6 +59,8 @@ _PROJECT_TABLES = (
     "eval_runs",
     "eval_cases",
     "guardrail_events",
+    "external_agents",
+    "external_agent_attachments",
 )
 
 
@@ -504,6 +506,44 @@ _MIGRATIONS: dict[int, list[_Step]] = {
         #    without a parallel table.
         _v6_add_span_fts,
         _v6_add_saved_filters_project,
+    ],
+    7: [
+        # Sprint 4 — Universal harness external-agent registry.
+        #
+        # ``register_agent()`` and the harness auto-attachment helpers
+        # write into these two tables. The ``/api/agents/{name}/dependencies``
+        # endpoint merges them with the in-memory ``ctx.runners`` lookup
+        # so external agents (LangGraph, CrewAI, PydanticAI) show up in
+        # the dependency-graph UI alongside native runners.
+        """CREATE TABLE IF NOT EXISTS external_agents (
+            name           TEXT PRIMARY KEY,
+            framework      TEXT NOT NULL,
+            model          TEXT,
+            provider       TEXT,
+            system_prompt  TEXT,
+            topology_json  TEXT DEFAULT '{}',
+            metadata_json  TEXT DEFAULT '{}',
+            created_at     TEXT NOT NULL,
+            updated_at     TEXT NOT NULL,
+            project_id     TEXT NOT NULL DEFAULT ''
+        )""",
+        """CREATE TABLE IF NOT EXISTS external_agent_attachments (
+            attachment_id  TEXT PRIMARY KEY,
+            agent_name     TEXT NOT NULL,
+            kind           TEXT NOT NULL,
+            ref_name       TEXT NOT NULL,
+            position       TEXT,
+            version        TEXT,
+            metadata_json  TEXT DEFAULT '{}',
+            created_at     TEXT NOT NULL,
+            project_id     TEXT NOT NULL DEFAULT ''
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_ext_agents_framework "
+        "ON external_agents(framework)",
+        "CREATE INDEX IF NOT EXISTS idx_ext_attach_agent "
+        "ON external_agent_attachments(agent_name)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_ext_attach "
+        "ON external_agent_attachments(agent_name, kind, ref_name, position)",
     ],
 }
 

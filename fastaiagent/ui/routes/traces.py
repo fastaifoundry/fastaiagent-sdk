@@ -31,6 +31,10 @@ class TraceRow(BaseModel):
     total_tokens: int | None = None
     runner_type: str = "agent"
     runner_name: str | None = None
+    # Universal-harness: the source framework of the run, drawn from the
+    # ``fastaiagent.framework`` attribute on the root span. Powers the FA /
+    # LC / CA / PA badge in the Traces list and the framework filter.
+    framework: str | None = None
 
 
 class TracesPage(BaseModel):
@@ -92,9 +96,14 @@ def _summarize_trace(spans: list[dict[str, Any]]) -> dict[str, Any]:
 
     runner_type: str | None = None
     runner_name: str | None = None
+    framework: str | None = None
     for sp in spans:
         attrs = _row_attrs(sp)
         span_name = sp.get("name") or ""
+        if framework is None:
+            fw = attr(attrs, "framework")
+            if fw:
+                framework = str(fw)
         if runner_type is None:
             explicit = attr(attrs, "runner.type")
             if explicit:
@@ -157,6 +166,7 @@ def _summarize_trace(spans: list[dict[str, Any]]) -> dict[str, Any]:
         "status": status,
         "runner_type": runner_type or "agent",
         "runner_name": runner_name or agent_name,
+        "framework": framework,
     }
 
 
@@ -204,6 +214,21 @@ def list_traces(
         default=None,
         description="Filter by specific chain/swarm/supervisor name (pairs with runner_type).",
     ),
+    framework: str | None = Query(
+        default=None,
+        # Open-ended slug, not a fixed enum — new frameworks (LangSmith,
+        # AutoGen, anything we wrap in the future) should filter without
+        # a code change. Pattern is just "non-empty plausible identifier"
+        # so we don't open the door to LIKE-injection in callers that
+        # later interpolate this value.
+        pattern=r"^[A-Za-z][A-Za-z0-9_.-]{0,63}$",
+        description=(
+            "Filter by source framework, drawn from the "
+            "``fastaiagent.framework`` attribute on the root span. "
+            "Free-text — any value that the harness or a custom "
+            "instrumentation has stamped on a trace."
+        ),
+    ),
     min_duration_ms: int | None = Query(default=None),
     max_duration_ms: int | None = Query(default=None),
     min_cost: float | None = Query(default=None),
@@ -231,6 +256,28 @@ def list_traces(
         if trace_status:
             clauses.append("spans.status = ?")
             params.append(trace_status)
+        if framework:
+            # Push the framework filter into SQL so pagination / count
+            # reflect the filtered set instead of the unfiltered total.
+            # JSON1 (``json_extract``) is in every modern SQLite build;
+            # fall back to LIKE on the raw JSON blob when it isn't
+            # available (e.g. very old SQLite). The EXISTS sub-query
+            # only checks root spans (``parent_span_id IS NULL``) since
+            # that's where the integration handlers stamp the attribute.
+            clauses.append(
+                """EXISTS (
+                    SELECT 1 FROM spans root
+                    WHERE root.trace_id = spans.trace_id
+                      AND root.parent_span_id IS NULL
+                      AND (
+                          json_extract(root.attributes,
+                                       '$."fastaiagent.framework"') = ?
+                          OR root.attributes LIKE ?
+                      )
+                )"""
+            )
+            params.append(framework)
+            params.append(f'%"fastaiagent.framework": "{framework}"%')
 
         # Search path. Prefer FTS5 (v6+) — it's an index lookup, scales
         # to millions of spans. Fall back to LIKE on the JSON blob for
@@ -284,6 +331,8 @@ def list_traces(
                 continue
             if runner_name and summary["runner_name"] != runner_name:
                 continue
+            if framework and summary["framework"] != framework:
+                continue
             duration = _ms(summary["start_time"], summary["end_time"])
             if min_duration_ms is not None and (duration is None or duration < min_duration_ms):
                 continue
@@ -317,6 +366,7 @@ def list_traces(
                     total_tokens=summary["total_tokens"],
                     runner_type=summary["runner_type"],
                     runner_name=summary["runner_name"],
+                    framework=summary["framework"],
                 )
             )
         return TracesPage(rows=out, total=total, page=page, page_size=page_size)

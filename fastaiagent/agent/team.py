@@ -243,6 +243,7 @@ class Supervisor:
                 len(getattr(self, "workers", []) or []),
             )
             span.set_attribute("fastaiagent.runner.type", "supervisor")
+            span.set_attribute("fastaiagent.framework", "fastaiagent")
             span.set_attribute("supervisor.input", input)
 
             if self._checkpointer is not None:

@@ -225,6 +225,7 @@ class Agent:
         tracer = get_tracer()
         with tracer.start_as_current_span(f"agent.{self.name}") as span:
             span.set_attribute("agent.name", self.name)
+            span.set_attribute("fastaiagent.framework", "fastaiagent")
             # Span attributes must be primitives — coerce multimodal input
             # to a readable text summary.
             normalized_input_parts: list[ContentPart] = (

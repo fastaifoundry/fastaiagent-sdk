@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
-__all__ = ["langchain", "crewai", "anthropic", "openai"]
+__all__ = ["langchain", "crewai", "pydanticai", "anthropic", "openai"]
 
 
 def __getattr__(name: str) -> Any:
