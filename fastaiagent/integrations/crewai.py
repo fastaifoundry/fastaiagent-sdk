@@ -305,12 +305,39 @@ def _install_event_listeners() -> None:
 
     tracer = get_tracer("fastaiagent.integrations.crewai")
 
+    # Shape across CrewAI versions:
+    # * 1.14.x:  ``LLMCallStartedEvent`` carries ``call_id`` and the
+    #   matching completed event also carries ``call_id`` — single key
+    #   correlates them cleanly.
+    # * 1.9.x:   no ``call_id``. ``LLMCallStartedEvent`` has only
+    #   ``event_id``; ``LLMCallCompletedEvent`` has its own different
+    #   ``event_id`` plus cross-reference fields (``triggered_by_event_id``
+    #   / ``previous_event_id`` / ``started_event_id``) pointing back at
+    #   the started event.
+    # We register the span under every plausible key on start and try
+    # every plausible key on completion, so both surfaces work.
+    def _llm_correlation_keys(event: Any, *, completed: bool = False) -> list[str]:
+        keys: list[str] = []
+        for attr in (
+            "call_id",
+            "event_id" if not completed else None,
+            "started_event_id",
+            "triggered_by_event_id",
+            "previous_event_id",
+            "parent_event_id",
+        ):
+            if not attr:
+                continue
+            value = getattr(event, attr, None)
+            if value:
+                keys.append(str(value))
+        return keys
+
     @crewai_event_bus.on(LLMCallStartedEvent)
     def _on_llm_started(_source: Any, event: Any) -> None:
         model = getattr(event, "model", None)
         provider = _provider_from_model(model)
         bare = _bare_model(model)
-        # Nest under the current OTel span (agent / task).
         current = otel_trace.get_current_span()
         ctx = otel_trace.set_span_in_context(current) if current else None
         span = tracer.start_span(f"llm.{provider}.{bare}", context=ctx)
@@ -324,20 +351,25 @@ def _install_event_listeners() -> None:
                 else None
             ),
         )
-        call_id = str(getattr(event, "call_id", "") or getattr(event, "event_id", ""))
-        if call_id:
-            _llm_spans[call_id] = span
-        else:
-            # No correlation id — close immediately so we don't leak.
+        keys = _llm_correlation_keys(event)
+        if not keys:
             try:
-                span.end()
+                span.end()  # no way to correlate — don't leak
             except Exception:
                 pass
+            return
+        for key in keys:
+            _llm_spans[key] = span
 
     @crewai_event_bus.on(LLMCallCompletedEvent)
     def _on_llm_completed(_source: Any, event: Any) -> None:
-        call_id = str(getattr(event, "call_id", "") or getattr(event, "event_id", ""))
-        span = _llm_spans.pop(call_id, None)
+        # Try every key shape — first hit wins. ``event_id`` differs
+        # between Started and Completed on 1.9.x, so we put it last.
+        span = None
+        for key in _llm_correlation_keys(event, completed=True):
+            span = _llm_spans.pop(key, None)
+            if span is not None:
+                break
         if span is None:
             return
         usage = getattr(event, "usage", None) or {}

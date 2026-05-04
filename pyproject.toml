@@ -70,6 +70,14 @@ dev = [
     "pytest-cov>=5.0",
     "ruff>=0.3",
     "mypy>=1.8",
+    # Universal-harness test deps. The SDK itself has no runtime
+    # dependency on these — users bring their own LangChain provider
+    # adapters — but the e2e harness suite needs them. Including
+    # ``langchain-openai`` / ``langchain-anthropic`` in ``dev`` keeps
+    # ``pip install -e .[all,dev]`` (the CI install line) sufficient
+    # to run the harness suite without per-test importorskips.
+    "langchain-openai>=0.2",
+    "langchain-anthropic>=0.2",
 ]
 
 [project.scripts]
