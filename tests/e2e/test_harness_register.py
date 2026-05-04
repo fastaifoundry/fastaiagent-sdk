@@ -16,6 +16,10 @@ import os
 import uuid
 
 import pytest
+
+# ``fastapi`` ships in the SDK's ``[ui]`` extra. CI's base test matrix
+# doesn't install it, so we ``importorskip`` rather than fail collection.
+pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 
 # Real-LLM not required for any test in this module.

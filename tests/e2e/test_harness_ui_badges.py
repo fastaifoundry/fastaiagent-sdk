@@ -13,6 +13,10 @@ from __future__ import annotations
 import os
 
 import pytest
+
+# ``fastapi`` ships in the SDK's ``[ui]`` extra. CI's base test matrix
+# doesn't install it, so we ``importorskip`` rather than fail collection.
+pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 
 HAS_OPENAI = bool(os.environ.get("OPENAI_API_KEY"))

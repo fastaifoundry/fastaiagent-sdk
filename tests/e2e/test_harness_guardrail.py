@@ -14,6 +14,10 @@ import os
 import time
 
 import pytest
+
+# ``fastapi`` ships in the SDK's ``[ui]`` extra. CI's base test matrix
+# doesn't install it, so we ``importorskip`` rather than fail collection.
+pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 
 # Force the SDK to write guardrail events into local.db for the duration
