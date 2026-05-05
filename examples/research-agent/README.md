@@ -126,6 +126,12 @@ def web_search(query: str, ctx: fa.RunContext[ResearchDeps]) -> str:
 
 Three real-backend stubs (`_real_search_tavily`, `_real_search_brave`, `_real_search_serper`) are included with the exact provider URLs and field mappings — fill in the body, set `SEARCH_BACKEND=tavily` in `.env`, and the rest of the example doesn't change.
 
+### Eval shape — per-case context ([eval_suite.py](eval_suite.py))
+
+`fa.evaluate(... context=…)` forwards a single `context` kwarg uniformly to every case. That's wrong here: each topic has its *own* retrieved context (the researcher's snippets), so `Faithfulness` needs to verify each report against the sources actually pulled for *that* case. We score manually in two phases — collect artifacts (run the supervisor once per case, capture `deps.trail`), then call each scorer per case — and roll the results into an `EvalResults` we persist via `EvalResults.persist_local()`. The Local UI's `/evals` page reads exactly that table, so the run shows up like any other.
+
+The simpler uniform-context pattern is shown in [`examples/customer-support-agent/eval_suite.py`](../customer-support-agent/eval_suite.py); use it when retrieval is a single fixed corpus.
+
 ### Custom scorer ([eval_suite.py](eval_suite.py))
 
 ```python
@@ -167,6 +173,9 @@ python replay_demo.py
 # Eval suite: AnswerRelevancy + Faithfulness + RequiredSources
 python eval_suite.py
 python eval_suite.py --publish
+
+# Smoke tests (no live LLM — fast feedback while you iterate on the topology)
+python -m pytest tests/
 ```
 
 ---

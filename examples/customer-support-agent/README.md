@@ -216,6 +216,8 @@ results = fa.evaluate(
 print(results.summary())
 ```
 
+> **Uniform vs per-case context.** `fa.evaluate(... context=…)` forwards the same `context` kwarg to every scorer for every case. That's the right shape when your retrieval surface is a single fixed corpus — like this support agent's KB. When each test case has its own retrieved context (e.g., a research agent that pulls different sources per topic), drop down to manual scoring + `EvalResults.persist_local()`. See [`examples/research-agent/eval_suite.py`](../research-agent/eval_suite.py) for that pattern.
+
 ### Replay — fork and rerun ([replay_demo.py](replay_demo.py))
 
 ```python
@@ -264,6 +266,13 @@ python streaming_demo.py --query "How do I upgrade my plan?"
 
 # Replay debugging
 python replay_demo.py
+
+# Smoke tests (no live LLM — fast feedback while you iterate on prompts/tools)
+python -m pytest tests/
+
+# Production-shape HITL deployment over HTTP (FastAPI)
+pip install fastapi uvicorn
+python server.py                     # serves http://127.0.0.1:8080
 
 # Image + text
 python multimodal_demo.py path/to/screenshot.png "What does this error mean?"

@@ -1,2 +1,6 @@
 fastaiagent>=1.6.0
 python-dotenv>=1.0.0
+
+# Optional — only needed if SEARCH_BACKEND is set to tavily / brave / serper.
+# The mock backend (default) doesn't require httpx. Uncomment to enable real search.
+# httpx>=0.27.0

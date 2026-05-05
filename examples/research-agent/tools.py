@@ -155,27 +155,79 @@ def _mock_search(query: str, top_k: int) -> list[dict]:
 
 
 def _real_search_tavily(query: str, top_k: int) -> list[dict]:
-    raise NotImplementedError(
-        "Implement Tavily search: POST https://api.tavily.com/search with "
-        "{api_key, query, max_results=top_k}, then map response['results'] to "
-        "[{title, url, snippet=content}]."
+    """Live Tavily search. Requires ``TAVILY_API_KEY`` in env and the
+    optional ``httpx`` extra (``pip install httpx``).
+    """
+    import httpx
+
+    api_key = os.getenv("TAVILY_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "SEARCH_BACKEND=tavily but TAVILY_API_KEY is not set. "
+            "Get a free key at https://tavily.com or fall back to "
+            "SEARCH_BACKEND=mock."
+        )
+    response = httpx.post(
+        "https://api.tavily.com/search",
+        json={
+            "api_key": api_key,
+            "query": query,
+            "max_results": top_k,
+            # Search depth "basic" is fast + cheap; "advanced" returns more
+            # but costs more credits. Customize as needed.
+            "search_depth": "basic",
+        },
+        timeout=20.0,
     )
+    response.raise_for_status()
+    payload = response.json()
+    return [
+        {"title": r.get("title", ""), "url": r.get("url", ""), "snippet": r.get("content", "")}
+        for r in payload.get("results", [])
+    ]
 
 
 def _real_search_brave(query: str, top_k: int) -> list[dict]:
-    raise NotImplementedError(
-        "Implement Brave search: GET https://api.search.brave.com/res/v1/web/search "
-        "with header X-Subscription-Token, params {q, count=top_k}, map "
-        "response['web']['results'] to [{title, url, snippet=description}]."
+    """Live Brave Search. Requires ``BRAVE_SEARCH_API_KEY`` and ``httpx``."""
+    import httpx
+
+    api_key = os.getenv("BRAVE_SEARCH_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "SEARCH_BACKEND=brave but BRAVE_SEARCH_API_KEY is not set."
+        )
+    response = httpx.get(
+        "https://api.search.brave.com/res/v1/web/search",
+        params={"q": query, "count": top_k},
+        headers={"X-Subscription-Token": api_key, "Accept": "application/json"},
+        timeout=20.0,
     )
+    response.raise_for_status()
+    web = response.json().get("web", {})
+    return [
+        {"title": r.get("title", ""), "url": r.get("url", ""), "snippet": r.get("description", "")}
+        for r in web.get("results", [])
+    ]
 
 
 def _real_search_serper(query: str, top_k: int) -> list[dict]:
-    raise NotImplementedError(
-        "Implement Serper search: POST https://google.serper.dev/search with "
-        "header X-API-KEY, body {q, num=top_k}, map response['organic'] to "
-        "[{title, url, snippet}]."
+    """Live Serper (Google-results-as-API). Requires ``SERPER_API_KEY`` and ``httpx``."""
+    import httpx
+
+    api_key = os.getenv("SERPER_API_KEY")
+    if not api_key:
+        raise RuntimeError("SEARCH_BACKEND=serper but SERPER_API_KEY is not set.")
+    response = httpx.post(
+        "https://google.serper.dev/search",
+        json={"q": query, "num": top_k},
+        headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
+        timeout=20.0,
     )
+    response.raise_for_status()
+    return [
+        {"title": r.get("title", ""), "url": r.get("link", ""), "snippet": r.get("snippet", "")}
+        for r in response.json().get("organic", [])[:top_k]
+    ]
 
 
 _BACKENDS = {
