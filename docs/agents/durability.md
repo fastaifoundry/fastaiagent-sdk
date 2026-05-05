@@ -172,6 +172,33 @@ the worker fresh if no state exists yet. Subsequent workers run normally.
 > production prompts equivalently deterministic; in production, wrap any
 > side-effectful tool with [`@idempotent`](../chains/idempotency.md).
 
+## Multimodal inputs
+
+Agents that receive `Image` or `PDF` inputs are checkpointable from v1.6.1
+onwards. The turn-boundary serializer detects multimodal parts in the
+message history and stores them as base64 envelopes (`{type, data_base64,
+media_type, ...}`) inside the `state_snapshot` JSON; the resume path
+rebuilds the `Image` / `PDF` dataclass instances before re-issuing the
+LLM call.
+
+```python
+agent = Agent(
+    name="vision",
+    llm=LLMClient(provider="openai", model="gpt-4o"),
+    tools=[needs_human_approval],
+    checkpointer=SQLiteCheckpointer(),
+)
+
+# Pause-and-resume across processes works identically for multimodal:
+result = await agent.arun(["What's wrong here?", Image.from_file("error.png")])
+# result.status == "paused" — checkpoint persisted with the image bytes
+result = await agent.aresume(result.execution_id, resume_value=Resume(approved=True))
+```
+
+There is no separate API to opt in. Text-only messages take the unchanged
+fast path; only messages whose content list contains an `Image` or `PDF`
+go through the base64 envelope.
+
 ## See also
 
 - [Suspending HITL — `interrupt()`](../chains/hitl.md) — the primitive
