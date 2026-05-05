@@ -2,12 +2,26 @@
 Tools — Functions the support agent can invoke.
 
 Each tool receives RunContext[Deps] for dependency injection.
-Tools are pure functions — no global state.
+Tools are pure functions — no global state beyond the module-level KB singleton.
+
+This file demonstrates two newer SDK features:
+
+  * ``interrupt()`` (v1.0) inside ``create_ticket`` for human-in-the-loop
+    approval on high-priority and billing tickets. The Agent's
+    ``SQLiteCheckpointer`` persists the suspension; ``agent.aresume(...)``
+    re-enters the tool with the human's decision.
+  * ``@idempotent`` (v1.0) on a synchronous helper that allocates the
+    ticket id. If the agent loop is replayed (resume after interrupt, crash
+    recovery, ``Replay.fork_at`` rerun), the same id is returned — no duplicate
+    tickets get filed.
 """
 
+import hashlib
 import os
 
 import fastaiagent as fa
+from fastaiagent.chain.idempotent import idempotent
+
 from context import Deps
 
 # ─── Knowledge Base ──────────────────────────────────────────────────────────
@@ -42,7 +56,34 @@ async def search_kb(query: str, ctx: fa.RunContext[Deps]) -> str:
     )
 
 
-# ─── Ticket Creation ────────────────────────────────────────────────────────
+# ─── Ticket Creation (HITL + idempotent) ─────────────────────────────────────
+
+
+def _ticket_idem_key(*, user_email: str, subject: str, priority: str) -> str:
+    """Stable cache key for an idempotent ticket allocation.
+
+    The default key builder JSON-encodes args with ``default=str``, which would
+    embed ``RunContext`` and ``TicketClient`` repr strings — unstable across
+    processes. We pin the key to the human-meaningful tuple instead.
+    """
+    digest = hashlib.sha256(f"{user_email}|{subject}|{priority}".encode()).hexdigest()[:16]
+    return f"ticket:{digest}"
+
+
+@idempotent(key_fn=_ticket_idem_key)
+def _allocate_ticket_id(*, user_email: str, subject: str, priority: str) -> dict:
+    """Allocate a stable ticket id. ``@idempotent`` ensures the agent's
+    checkpointer caches this allocation under ``execution_id`` — so a resume
+    after an ``interrupt()`` (or a ``Replay.fork_at`` rerun) reuses the same
+    ticket id rather than minting a new one."""
+    import time
+    return {
+        "ticket_id": f"TKT-{int(time.time() * 1000)}",
+        "user_email": user_email,
+        "subject": subject,
+        "priority": priority,
+    }
+
 
 @fa.tool()
 async def create_ticket(
@@ -54,14 +95,41 @@ async def create_ticket(
     """Create a support ticket for issues that cannot be resolved directly.
     Priority should be 'low', 'medium', 'high', or 'urgent'.
     Use this for billing disputes, refund requests, or complex technical issues."""
+    user_email = ctx.state.user_email
+
+    # HITL: high-impact tickets require human approval before they're filed.
+    # The Agent's SQLiteCheckpointer persists the suspension; the REPL prompts
+    # the user, then calls ``agent.aresume(...)`` with the decision.
+    if priority in ("high", "urgent") or "billing" in subject.lower() or "refund" in description.lower():
+        decision = fa.interrupt(
+            reason="ticket_approval_required",
+            context={
+                "subject": subject,
+                "priority": priority,
+                "user_email": user_email,
+                "reason_for_review": "high-impact / billing / refund",
+            },
+        )
+        if not decision.approved:
+            return (
+                f"Ticket creation declined by reviewer "
+                f"({decision.metadata.get('approver', 'unknown')}). "
+                "I've logged your request and a human agent will reach out directly."
+            )
+
+    # Allocate ticket id idempotently (survives resume/replay).
+    allocation = _allocate_ticket_id(
+        user_email=user_email, subject=subject, priority=priority
+    )
     ticket = await ctx.state.ticket_client.create(
         subject=subject,
-        description=f"Customer: {ctx.state.user_email}\n\n{description}",
+        description=f"Customer: {user_email}\n\n{description}",
         priority=priority,
     )
     return (
         f"Ticket created successfully.\n"
-        f"  Ticket ID: {ticket['ticket_id']}\n"
+        f"  Ticket ID: {allocation['ticket_id']}\n"
+        f"  Backend ref: {ticket['ticket_id']}\n"
         f"  Subject: {ticket['subject']}\n"
         f"  Priority: {ticket['priority']}\n"
         f"  Status: {ticket['status']}\n\n"
@@ -70,6 +138,7 @@ async def create_ticket(
 
 
 # ─── Account Lookup ─────────────────────────────────────────────────────────
+
 
 @fa.tool()
 async def lookup_account(email: str, ctx: fa.RunContext[Deps]) -> str:
@@ -89,6 +158,7 @@ async def lookup_account(email: str, ctx: fa.RunContext[Deps]) -> str:
 
 
 # ─── Order Status ───────────────────────────────────────────────────────────
+
 
 @fa.tool()
 async def check_order_status(order_id: str, ctx: fa.RunContext[Deps]) -> str:

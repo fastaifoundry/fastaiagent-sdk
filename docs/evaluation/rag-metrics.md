@@ -139,3 +139,4 @@ results = evaluate(
 - [Evaluation](index.md) — Core evaluation documentation
 - [Safety Metrics](safety-metrics.md) — Toxicity, bias, and PII detection
 - [Similarity Metrics](similarity-metrics.md) — Embedding-based and classical NLP metrics
+- `examples/customer-support-agent/eval_suite.py` — `Faithfulness` + `AnswerRelevancy` evaluating a `LocalKB`-backed agent. The KB markdown files are concatenated and passed once via `evaluate(... context=…)`.

@@ -180,3 +180,7 @@ the worker fresh if no state exists yet. Subsequent workers run normally.
   resume re-runs.
 - [Checkpointing](../chains/checkpointing.md) — the underlying storage
   contract shared with Chain.
+- `examples/customer-support-agent/` — end-to-end illustration: `interrupt()`
+  inside a `create_ticket` tool, REPL loop calling `agent.aresume()` with
+  the human's decision, and `@idempotent` on the ticket-id allocator so
+  resume reuses the same id.
