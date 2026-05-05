@@ -1,0 +1,6 @@
+fastaiagent>=1.6.0
+python-dotenv>=1.0.0
+
+# Optional — only needed when ENRICHMENT_BACKEND / EMAIL_BACKEND / CRM_BACKEND
+# are switched off "mock". The defaults run offline.
+# httpx>=0.27.0
