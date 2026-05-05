@@ -174,15 +174,16 @@ python eval_suite.py --publish
 ## Local UI
 
 ```bash
-fastaiagent ui                    # then open http://localhost:8765
+fastaiagent ui start              # opens http://127.0.0.1:7842 in your browser
+fastaiagent ui start --no-auth    # skip the local auth prompt for throwaway use
 ```
 
-In the UI:
+What this example populates (verified end-to-end):
 
-- `/traces` — the supervisor's trace tree shows `research-team` at the root with three nested worker sub-trees per delegation. Tool calls inside the researcher are visible at the leaf level.
-- `/agents` — the dependency graph renders the four-agent topology (supervisor + three workers).
-- `/evals` — `eval_suite.py` runs are persisted with per-case scores.
-- `/playground` — none registered by default; if you want to externalize the supervisor or worker prompts, register them via `fa.PromptRegistry` (see `customer-support-agent/agent.py` for that pattern) and edit them live here.
+- **`/traces`** — every `agent.py` and `eval_suite.py` run writes a trace. Each Supervisor run produces a tall tree: `supervisor.research-team` at the root, then `agent.research-team` (the supervisor's own LLM loop), then nested sub-trees under `agent:researcher` / `agent:writer` / `agent:verifier`. Tool calls inside the researcher (`tool.web_search`) appear at the leaves. Use FTS5 search to filter by tool name or topic.
+- **`/agents`** — the dependency graph renders all four agents (`research-team`, `researcher`, `writer`, `verifier`) with per-agent run counts, success rate, and avg latency.
+- **`/evals`** — `eval_suite.py` persists each run via `EvalResults.persist_local()`, so it shows up in the eval list with per-case scores. Click into a run for the full per-case breakdown (per-scorer pass/fail + reason). The dataset is recorded as `research-topics-golden`.
+- **`/playground`** — none registered by default. To externalize the supervisor or worker prompts, register them via `fa.PromptRegistry` (see `examples/customer-support-agent/agent.py` for that pattern) and edit them live.
 
 ---
 

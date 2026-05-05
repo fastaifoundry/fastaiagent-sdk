@@ -237,8 +237,8 @@ print(f"Diverged at step {diff.diverged_at}")
 Run the Local UI in a second terminal to inspect traces, costs, agent dependencies, and (when the agent suspends) approvals:
 
 ```bash
-fastaiagent ui
-# then open http://localhost:8765
+fastaiagent ui start            # serves http://127.0.0.1:7842 and opens your browser
+fastaiagent ui start --no-auth  # skip the local auth prompt for throwaway use
 ```
 
 Highlights:

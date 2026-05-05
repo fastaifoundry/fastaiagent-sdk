@@ -171,7 +171,14 @@ async def run_eval(publish: bool = False) -> None:
     # ``evaluate()`` is great when context is uniform; here it isn't, so we
     # call the scorers directly and roll our own averages — same shape as
     # what ``EvalResults.summary()`` would print.
+    # We score each case manually so we can pass per-case context, but we
+    # still build an ``EvalResults`` and persist it to the local DB. That's
+    # what makes the run show up in the Local UI's /evals page alongside
+    # ``customer-support-agent``'s eval runs.
+    from fastaiagent.eval.results import EvalCaseRecord, EvalResults
+
     print("\nPhase 2 — scoring...\n")
+    results = EvalResults()
     rows: list[dict] = []
     for case in EVAL_CASES:
         topic = case["input"]
@@ -181,8 +188,8 @@ async def run_eval(publish: bool = False) -> None:
         expected = case.get("expected")
 
         ar = await answer_relevancy.ascore(input=topic, output=output, expected=expected)
-        # Faithfulness wants ``context`` as a single string; use its async path
-        # for cheaper batching.
+        # Faithfulness wants ``context`` as a single string; use its async
+        # path for cheaper batching.
         faith = await Faithfulness().ascore(
             input=topic, output=output, expected=expected, context=context
         )
@@ -196,53 +203,44 @@ async def run_eval(publish: bool = False) -> None:
                 "required_sources": rs.score,
             }
         )
-        print(
-            f"  {topic:<35} "
-            f"ar={ar.score:.2f}  faith={faith.score:.2f}  req={rs.score:.2f}"
+        results.add("answer_relevancy", ar)
+        results.add("faithfulness", faith)
+        results.add("required_sources", rs)
+        results.add_case(
+            EvalCaseRecord(
+                input=topic,
+                expected_output=expected,
+                actual_output=output,
+                per_scorer={
+                    "answer_relevancy": {"score": ar.score, "passed": ar.passed, "reason": ar.reason},
+                    "faithfulness": {"score": faith.score, "passed": faith.passed, "reason": faith.reason},
+                    "required_sources": {"score": rs.score, "passed": rs.passed, "reason": rs.reason},
+                },
+            )
         )
+        print(f"  {topic:<35} ar={ar.score:.2f}  faith={faith.score:.2f}  req={rs.score:.2f}")
 
-    print("\nEvaluation Results")
-    print("=" * 50)
-    for metric in ("answer_relevancy", "faithfulness", "required_sources"):
-        avg = sum(r[metric] for r in rows) / len(rows)
-        passed = sum(1 for r in rows if r[metric] >= 0.5)
-        print(f"  {metric:<18}  avg={avg:.2f}  pass_rate={passed}/{len(rows)}")
+    print()
+    print(results.summary())
+
+    # ── Persist to the unified local.db so the run shows up at /evals ──
+    try:
+        run_id = results.persist_local(
+            run_name="research-agent eval",
+            dataset_name="research-topics-golden",
+            agent_name="research-team",
+        )
+        print(f"\n  ✓ persisted to local.db (run_id={run_id[:12]}...)")
+        print("  ✓ open `fastaiagent ui` and visit /evals/" + run_id[:12] + "...")
+    except Exception as e:
+        print(f"\n  Could not persist eval run locally: {e}")
 
     if publish:
-        # Best-effort: rebuild as an EvalResults and publish.
-        from fastaiagent.eval.results import EvalCaseRecord, EvalResults
-
-        results = EvalResults()
-        for case, row in zip(EVAL_CASES, rows):
-            results.add(
-                "answer_relevancy",
-                ScorerResult(score=row["answer_relevancy"], passed=row["answer_relevancy"] >= 0.7),
-            )
-            results.add(
-                "faithfulness",
-                ScorerResult(score=row["faithfulness"], passed=row["faithfulness"] >= 0.7),
-            )
-            results.add(
-                "required_sources",
-                ScorerResult(score=row["required_sources"], passed=row["required_sources"] >= 1.0),
-            )
-            results.add_case(
-                EvalCaseRecord(
-                    input=case["input"],
-                    expected_output=case.get("expected"),
-                    actual_output=artifacts[case["input"]]["output"],
-                    per_scorer={
-                        "answer_relevancy": {"score": row["answer_relevancy"], "passed": row["answer_relevancy"] >= 0.7},
-                        "faithfulness": {"score": row["faithfulness"], "passed": row["faithfulness"] >= 0.7},
-                        "required_sources": {"score": row["required_sources"], "passed": row["required_sources"] >= 1.0},
-                    },
-                )
-            )
         try:
-            results.publish()
-            print("\nResults published to FastAIAgent Platform")
+            results.publish(run_name="research-agent eval")
+            print("  ✓ published to FastAIAgent Platform")
         except Exception as e:
-            print(f"\nPublish failed: {e}")
+            print(f"  Platform publish failed: {e}")
 
 
 def main() -> None:
