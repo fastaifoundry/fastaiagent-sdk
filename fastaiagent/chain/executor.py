@@ -93,6 +93,7 @@ async def execute_chain(
     resume_from_node: str | None = None,
     hitl_handler: Any = None,
     resume_value: Resume | None = None,
+    run_context: Any | None = None,
 ) -> dict[str, Any]:
     """Execute a chain as a state machine.
 
@@ -108,6 +109,10 @@ async def execute_chain(
     ContextVar for the *first* node executed (the one being resumed). It is
     cleared before subsequent nodes run so a chain that pauses again works
     cleanly.
+
+    ``run_context`` is an optional :class:`RunContext` propagated to every
+    tool and agent node so dependency-injected tools work identically
+    inside a Chain and inside an Agent.
     """
     execution_id = execution_id or str(uuid.uuid4())
     state = ChainState(initial_state)
@@ -173,7 +178,9 @@ async def execute_chain(
             if idx == start_idx and resume_value is not None:
                 resume_token = _resume_value.set(resume_value)
             try:
-                result = await _execute_node(node, context, state, hitl_handler)
+                result = await _execute_node(
+                    node, context, state, hitl_handler, run_context=run_context
+                )
             except InterruptSignal as sig:
                 # Persist the suspension and bubble paused status up.
                 ap = _agent_path.get()
@@ -292,6 +299,7 @@ async def execute_chain(
                     execution_id=execution_id,
                     resume_from_node=edge.target,
                     hitl_handler=hitl_handler,
+                    run_context=run_context,
                 )
                 # If a node inside the cycle interrupted, bubble paused
                 # status up — don't merge state from a partial run.
@@ -323,8 +331,16 @@ async def _execute_node(
     context: dict[str, Any],
     state: ChainState,
     hitl_handler: Any = None,
+    *,
+    run_context: Any | None = None,
 ) -> Any:
-    """Execute a single node based on its type."""
+    """Execute a single node based on its type.
+
+    ``run_context`` is the user-supplied :class:`RunContext` from
+    :meth:`Chain.execute` / :meth:`Chain.aexecute`. Passing it through to
+    ``agent.arun`` and ``tool.aexecute`` lets dependency-injected tools
+    work identically inside a Chain and inside an Agent.
+    """
     if node.type == NodeType.agent:
         if node.agent is None:
             return {"error": f"No agent attached to node '{node.id}'"}
@@ -341,7 +357,7 @@ async def _execute_node(
         else:
             agent_input = str(raw_input)
         # Agent spans nest under the chain root span — see Chain.aexecute.
-        result = await node.agent.arun(agent_input)
+        result = await node.agent.arun(agent_input, context=run_context)
         return {"output": result.output, "tool_calls": result.tool_calls}
 
     elif node.type == NodeType.tool:
@@ -354,7 +370,7 @@ async def _execute_node(
                 args[key] = _render_template(template, context)
             else:
                 args[key] = template
-        result = await node.tool.aexecute(args)
+        result = await node.tool.aexecute(args, context=run_context)
         return {"output": result.output, "error": result.error}
 
     elif node.type == NodeType.condition:
@@ -385,7 +401,7 @@ async def _execute_node(
             parallel_input = str(raw_parallel_input)
         for child in child_agents:
             if hasattr(child, "arun"):
-                tasks.append(child.arun(parallel_input, trace=False))
+                tasks.append(child.arun(parallel_input, context=run_context, trace=False))
         if tasks:
             results = await asyncio.gather(*tasks, return_exceptions=True)
             outputs = []

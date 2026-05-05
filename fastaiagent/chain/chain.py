@@ -124,10 +124,18 @@ class Chain:
         self,
         initial_state: dict[str, Any] | None = None,
         trace: bool = True,
+        *,
+        context: Any | None = None,
         **kwargs: Any,
     ) -> ChainResult:
-        """Synchronous execution."""
-        return run_sync(self.aexecute(initial_state, trace=trace, **kwargs))
+        """Synchronous execution.
+
+        ``context`` is an optional :class:`fastaiagent.agent.context.RunContext`
+        forwarded to every tool and agent node so dependency-injected tools
+        (functions declaring a ``ctx: RunContext[Deps]`` parameter) work
+        identically inside a Chain and inside an Agent.
+        """
+        return run_sync(self.aexecute(initial_state, trace=trace, context=context, **kwargs))
 
     async def aexecute(
         self,
@@ -135,9 +143,15 @@ class Chain:
         trace: bool = True,
         execution_id: str | None = None,
         hitl_handler: Any = None,
+        *,
+        context: Any | None = None,
         **kwargs: Any,
     ) -> ChainResult:
-        """Async execution of the chain."""
+        """Async execution of the chain.
+
+        ``context`` is an optional :class:`fastaiagent.agent.context.RunContext`
+        propagated to every tool and agent node — see :meth:`execute`.
+        """
         store: Checkpointer | None = None
         if self.checkpoint_enabled:
             store = self._checkpointer or SQLiteCheckpointer()
@@ -172,6 +186,7 @@ class Chain:
                 chain_name=self.name,
                 execution_id=execution_id,
                 hitl_handler=hitl_handler,
+                run_context=context,
             )
 
             try:
@@ -197,6 +212,7 @@ class Chain:
         modified_state: dict[str, Any] | None = None,
         *,
         resume_value: Resume | None = None,
+        context: Any | None = None,
     ) -> ChainResult:
         """Resume a failed/paused chain execution from the last checkpoint.
 
@@ -207,6 +223,10 @@ class Chain:
 
         For a *failed* checkpoint, ``modified_state`` lets you patch state
         before the next node runs (the existing v0.x behavior).
+
+        ``context`` is forwarded to every tool/agent node executed during the
+        resume — supply the same :class:`RunContext` you originally passed to
+        :meth:`aexecute` so dependency-injected tools work after a pause.
         """
         store: Checkpointer = self._checkpointer or SQLiteCheckpointer()
         store.setup()
@@ -263,6 +283,7 @@ class Chain:
             execution_id=execution_id,
             resume_from_node=start_node,
             resume_value=resume_value,
+            run_context=context,
         )
 
         return ChainResult(
@@ -283,10 +304,14 @@ class Chain:
         *,
         resume_value: Resume | None = None,
         modified_state: dict[str, Any] | None = None,
+        context: Any | None = None,
     ) -> ChainResult:
         """Async alias for :meth:`resume` (matches the Agent/Swarm/Supervisor surface)."""
         return await self.resume(
-            execution_id, modified_state=modified_state, resume_value=resume_value
+            execution_id,
+            modified_state=modified_state,
+            resume_value=resume_value,
+            context=context,
         )
 
     def as_mcp_server(
