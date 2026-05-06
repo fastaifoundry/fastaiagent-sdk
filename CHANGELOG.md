@@ -5,6 +5,59 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.1] - 2026-05-06
+
+PATCH — two non-breaking SDK bug fixes that surfaced while building the
+v1.6.1 wave of developer templates (`sales-sdr-agent`,
+`meeting-notes-agent`, `personal-assistant`, `harness-migration`). Both
+fixes are signature-additive; existing call sites are byte-identical.
+
+### Fixed
+
+- **`Chain.aexecute(... context=)` propagates `RunContext` through every
+  node.** Previously `Chain` had no `context=` parameter and the chain
+  executor invoked `tool.aexecute(args)` / `agent.arun(input)` without
+  forwarding the user's `RunContext`. Tools / agent nodes that declared
+  `ctx: fa.RunContext[Deps]` raised `TypeError: missing required
+  positional argument` when used inside a Chain — even though the same
+  tools worked inside a plain Agent.
+
+  - `Chain.execute / aexecute / resume / aresume` accept
+    `context: RunContext | None = None` (keyword-only) and forward to
+    `execute_chain(... run_context=context)`.
+  - `_execute_node` passes the context to `agent.arun`, `tool.aexecute`,
+    each parallel child agent, and the recursive `execute_chain` call
+    on cyclic edges. Added: `tests/test_chain_context.py` (5 tests
+    covering tool / agent / parallel / aresume / backward-compat).
+
+- **`SQLiteCheckpointer` + multimodal `Image` / `PDF` round-trip.**
+  Pydantic's `Message.model_dump(mode="json")` cannot serialize raw
+  bytes that aren't valid UTF-8. `Agent.arun([text, image])` with a
+  `SQLiteCheckpointer` therefore crashed at the first turn-boundary
+  checkpoint with `UnicodeDecodeError`.
+
+  - `_serialize_messages` now detects `Image` / `PDF` dataclasses
+    inside content lists and replaces them with their existing
+    `to_dict()` envelope (base64 + typed dict) before `model_dump`.
+    Text-only messages take the unchanged fast path.
+  - New `_deserialize_messages` rebuilds the dataclass instances from
+    the saved envelopes; `Agent.aresume` uses it instead of raw
+    `Message.model_validate` so a resumed multimodal run sees the
+    original bytes. Added: `tests/test_agent_multimodal_checkpoint.py`
+    (5 tests including a full Agent + checkpointer + Image + interrupt
+    + resume integration case).
+
+### Backward compatibility
+
+- New parameters on `Chain.execute/aexecute/resume/aresume` are
+  keyword-only with default `None`; calling without `context=` runs
+  byte-identically to v1.6.0.
+- Text-only checkpoints serialize byte-identically to v1.6.0; the new
+  `{"type": "image", "data_base64": "..."}` envelope only appears in
+  checkpoints that the previous SDK couldn't write at all (it crashed).
+- All 32 existing chain tests + 94 existing agent / chain / checkpointer
+  tests pass unchanged.
+
 ## [1.6.0] - 2026-05-04
 
 MINOR bump — **universal agent harness**. FastAIAgent now wraps
