@@ -18,6 +18,7 @@ from fastaiagent.cli.replay import replay_app
 from fastaiagent.cli.resume import register as register_resume_commands
 from fastaiagent.cli.traces import traces_app
 from fastaiagent.cli.ui import ui_app
+from fastaiagent.learn.cli import learn_app
 
 app = typer.Typer(
     name="fastaiagent",
@@ -34,6 +35,11 @@ app.add_typer(mcp_app, name="mcp", help="Expose an Agent or Chain as an MCP serv
 app.add_typer(agent_app, name="agent", help="Run an Agent or Chain as a service")
 app.add_typer(auth_app, name="auth", help="Inspect saved Platform credentials")
 app.add_typer(ui_app, name="ui", help="Local web UI (traces, prompts, evals, guardrails)")
+app.add_typer(
+    learn_app,
+    name="learn",
+    help="Extract durable facts from past traces (Trace Learning Loop)",
+)
 
 # Top-level connect/disconnect for the common case.
 app.command(name="connect", help="Save Platform credentials and verify the key.")(connect)

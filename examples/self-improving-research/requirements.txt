@@ -1,0 +1,4 @@
+fastaiagent
+python-dotenv
+httpx
+pydantic>=2

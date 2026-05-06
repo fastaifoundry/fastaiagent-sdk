@@ -50,6 +50,21 @@ FASTAIAGENT_ATTRIBUTES = {
     "fastaiagent.framework": str,
     "fastaiagent.framework.version": str,
     "fastaiagent.external_agent.name": str,
+    # Template marker — set on the root span by flagship example templates
+    # (deep-research-agent, customer-support-agent, …) so the UI can render
+    # a per-template badge and trace lists can be filtered by template kind
+    # without parsing span names. Use :func:`set_template_kind` to set it.
+    "fastaiagent.template.kind": str,
+    # Deep Research template attributes (set by examples/deep-research-agent).
+    # JSON-serialized payloads — the local UI / replay tooling can deserialize
+    # them to reconstruct brief, plan, and findings without re-parsing prose.
+    "fastaiagent.research.topic": str,
+    "fastaiagent.research.brief": str,
+    "fastaiagent.research.plan": str,
+    "fastaiagent.research.subtopic": str,
+    "fastaiagent.research.findings": str,
+    "fastaiagent.research.report.chars": int,
+    "fastaiagent.research.report.citations": int,
 }
 
 # Back-compat alias — remove in 0.9. Existing callers that imported the old
@@ -130,3 +145,29 @@ def set_fastaiagent_attributes(span: Any, **kwargs: Any) -> None:
 
 # Back-compat alias — remove in 0.9.
 set_fastai_attributes = set_fastaiagent_attributes
+
+
+def set_template_kind(span: Any, kind: str) -> None:
+    """Stamp a template-kind marker on the root span of a flagship template run.
+
+    Use this in template entrypoints (e.g. ``examples/deep-research-agent``)
+    to make the trace identifiable as belonging to a known template — the
+    UI can then render a per-template badge and filter trace lists by kind
+    without parsing span names.
+
+    ``kind`` is a short, kebab-case identifier (``"deep-research"``,
+    ``"customer-support"``, ``"meeting-notes"``). Conventionally matches the
+    template's directory name under ``examples/``.
+
+    Example::
+
+        from fastaiagent.trace import trace_context
+        from fastaiagent.trace.span import set_template_kind
+
+        with trace_context("deep_research.session") as span:
+            set_template_kind(span, "deep-research")
+            ...
+    """
+    if not kind:
+        return
+    span.set_attribute("fastaiagent.template.kind", kind)
