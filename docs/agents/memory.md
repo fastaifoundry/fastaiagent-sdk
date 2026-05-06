@@ -239,3 +239,4 @@ Async parallel methods (`aon_message`, `arender`) are planned as an additive 0.5
 - [KB Backends](../knowledge-base/backends.md) — `VectorStore` backends used by `VectorBlock`
 - [Middleware](middleware.md) — Transform agent messages and responses (complements memory)
 - [Tracing](../tracing/index.md) — Debug agent execution with traces
+- `examples/customer-support-agent/` — `AgentMemory` wired into a REPL so support sessions retain context across turns.

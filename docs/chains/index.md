@@ -310,6 +310,45 @@ print(result.output)
 
 ---
 
+## Dependency injection — `RunContext`
+
+Pass a `RunContext` to `chain.execute(...)` / `chain.aexecute(...)` to make
+shared dependencies available to every tool and agent node, identical to the
+contract you'd use on a plain Agent:
+
+```python
+from dataclasses import dataclass
+import fastaiagent as fa
+from fastaiagent.chain import Chain, NodeType
+
+@dataclass
+class Deps:
+    db: ...           # connection pool, API clients, tenant id, etc.
+
+@fa.tool()
+def write_record(payload: dict, ctx: fa.RunContext[Deps]) -> dict:
+    return ctx.state.db.insert(payload)
+
+chain = Chain("ingest", checkpoint_enabled=True)
+chain.add_node("persist", type=NodeType.tool, tool=write_record,
+               input_mapping={"payload": "{{state.input}}"})
+
+ctx = fa.RunContext(state=Deps(db=my_pool))
+result = await chain.aexecute({"input": {...}}, context=ctx)
+```
+
+Context flows through:
+
+- every **tool** node — `tool.aexecute(args, context=ctx)`
+- every **agent** node — `agent.arun(input, context=ctx)`
+- every **parallel** child agent
+- recursive cycle re-entries via cyclic edges
+- **resume** runs — pass the same context to `chain.aresume(execution_id, ..., context=ctx)` so a tool re-firing after `interrupt()` still sees `ctx.state`
+
+Context-propagation is opt-in: tools whose `ctx` parameter has a default of `None` continue to run unchanged when no context is supplied.
+
+---
+
 ## Next Steps
 
 - [Cyclic Workflows](cyclic-workflows.md) — Retry loops, max iterations, and exit conditions

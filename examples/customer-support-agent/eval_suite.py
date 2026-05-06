@@ -4,23 +4,38 @@ Evaluation Suite — Automated quality testing for the support agent.
 Run: python eval_suite.py
       python eval_suite.py --publish    # publish results to platform
 
-Tests the agent against golden test cases with three scoring dimensions:
-correctness, helpfulness, and safety.
+Tests the agent against golden test cases with five scoring dimensions:
+
+    LLMJudge scorers
+        - correctness   (binary)        : matches expected behavior
+        - helpfulness   (0-1)           : actionable + complete + empathetic
+        - safety        (binary)        : no PII / no inappropriate content
+
+    RAG scorers (v1.0)
+        - faithfulness     : output is grounded in the knowledge base
+        - answer_relevancy : response addresses the user's question
+
+The KB content is read off disk and passed to ``evaluate(... context=...)``
+so :class:`Faithfulness` can verify the agent's claims against the same docs
+that ``LocalKB`` indexed.
 """
 
-import asyncio
 import argparse
+import asyncio
+from pathlib import Path
+
 from dotenv import load_dotenv
 
 load_dotenv()
 
 import fastaiagent as fa
+from fastaiagent.eval import AnswerRelevancy, Faithfulness
 from fastaiagent.eval.llm_judge import LLMJudge
 
 from agent import agent
 from context import create_deps
 
-# ─── Scorers ─────────────────────────────────────────────────────────────────
+# ─── LLM-Judge Scorers ───────────────────────────────────────────────────────
 
 correctness = LLMJudge(
     criteria="correctness",
@@ -68,6 +83,11 @@ safety = LLMJudge(
 )
 safety.name = "safety"
 
+# ─── RAG Scorers (require KB context) ────────────────────────────────────────
+
+faithfulness = Faithfulness()
+answer_relevancy = AnswerRelevancy()
+
 # ─── Test Cases ──────────────────────────────────────────────────────────────
 
 EVAL_CASES = [
@@ -114,23 +134,35 @@ EVAL_CASES = [
 ]
 
 
+def _load_kb_corpus() -> str:
+    """Concatenate the KB markdown files for use as Faithfulness context."""
+    knowledge_dir = Path(__file__).resolve().parent / "knowledge"
+    return "\n\n".join(p.read_text() for p in sorted(knowledge_dir.glob("*.md")))
+
+
 # ─── Runner ──────────────────────────────────────────────────────────────────
 
-async def run_eval(publish: bool = False):
+
+async def run_eval(publish: bool = False) -> None:
     deps = await create_deps()
     ctx = fa.RunContext(state=deps)
     dataset = fa.Dataset.from_list(EVAL_CASES)
+    kb_context = _load_kb_corpus()
 
     print("\nRunning evaluation suite...\n")
     print(f"   Agent: {agent.name}")
     print(f"   Cases: {len(EVAL_CASES)}")
-    print(f"   Scorers: {', '.join(s.name for s in [correctness, helpfulness, safety])}")
+    print("   Scorers: correctness, helpfulness, safety, faithfulness, answer_relevancy")
     print()
 
+    # ``context=kb_context`` is forwarded to every scorer's score(...) call,
+    # so Faithfulness can verify each response against the same corpus the
+    # KB indexed. AnswerRelevancy ignores it; LLMJudge ignores it.
     results = fa.evaluate(
         agent_fn=lambda q: agent.run(q, context=ctx),
         dataset=dataset,
-        scorers=[correctness, helpfulness, safety],
+        scorers=[correctness, helpfulness, safety, faithfulness, answer_relevancy],
+        context=kb_context,
     )
 
     print(results.summary())
@@ -140,7 +172,7 @@ async def run_eval(publish: bool = False):
         print("\nResults published to FastAIAgent Platform")
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--publish", action="store_true", help="Publish results to platform")
     args = parser.parse_args()

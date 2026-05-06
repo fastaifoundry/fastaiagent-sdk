@@ -1,2 +1,6 @@
-fastaiagent>=0.1.1
+fastaiagent>=1.6.0
+
+# Optional — only needed for the FastAPI HITL deployment in server.py.
+# fastapi>=0.110.0
+# uvicorn>=0.30.0
 python-dotenv>=1.0.0

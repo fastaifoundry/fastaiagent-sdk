@@ -1,288 +1,342 @@
-# 💬 Customer Support Agent
+# Customer Support Agent
 
-A production-ready customer support agent built with [FastAIAgent SDK](https://github.com/fastaifoundry/fastaiagent-sdk). Answers questions from a knowledge base, creates support tickets, enforces PII guardrails, and includes a full evaluation suite.
+A production-shaped customer support agent built with [FastAIAgent SDK](https://github.com/fastaifoundry/fastaiagent-sdk) v1.6.0. Answers questions from a knowledge base, creates support tickets with human-in-the-loop approval, enforces PII guardrails, streams responses, accepts screenshots, and ships with an evaluation suite covering both LLM-judge and RAG metrics.
 
-**What this template demonstrates:**
+**Capabilities demonstrated**
 
-- Agent with tools, knowledge base, and guardrails
-- `RunContext` for dependency injection (DB connection, API clients)
-- `fa.connect()` to export traces and pull prompts from the platform
-- Evaluation with LLM-as-Judge scoring
-- Agent Replay for debugging
+- `Agent` with tools, `LocalKB`, guardrails, and `RunContext[Deps]` dependency injection
+- **Multi-turn memory** via `AgentMemory` so the REPL remembers prior turns
+- **Middleware** — `ToolBudget` + `TrimLongMessages` for cost and context-window control
+- **PromptRegistry**-backed system prompt (editable from the Local UI Playground)
+- **HITL approval** via `interrupt()` + `SQLiteCheckpointer` + `agent.aresume()` on high-impact tickets
+- **Idempotent** ticket-id allocation that survives resume / `Replay.fork_at` reruns
+- **Streaming** via `agent.astream()` (token-by-token output)
+- **Multimodal input** via `fa.Image` (customer sends a screenshot)
+- **Eval suite**: `LLMJudge` + `Faithfulness` + `AnswerRelevancy`
+- **Replay**: fork-and-rerun debugging
+- Optional `fa.connect()` to export traces to the platform
 
 ---
 
 ## Quick Start
 
 ```bash
-# Clone and setup
-git clone https://github.com/fastaifoundry/fastaiagent-sdk.git
+# from the SDK root, install the local SDK + this example's deps
+pip install -e .
 cd examples/customer-support-agent
-cp .env.example .env        # Add your API keys
+cp .env.example .env        # add OPENAI_API_KEY
 pip install -r requirements.txt
 
-# Run the agent
-python agent.py
+python agent.py             # interactive REPL with memory + HITL
 ```
 
-First run takes ~10 seconds to ingest the sample knowledge base. Subsequent runs use the cached index.
+First run takes ~10 seconds to ingest the sample knowledge base. Subsequent runs use the cached index in `.fastaiagent-kb/`.
 
 ---
 
-## What's Inside
+## Files
 
 ```
 customer-support-agent/
 ├── README.md               # You are here
 ├── .env.example            # Environment variable template
-├── requirements.txt        # Dependencies
-├── agent.py                # Main agent definition and runner
-├── tools.py                # Tool functions (ticket creation, account lookup)
-├── context.py              # RunContext definition with dependencies
-├── guardrails.py           # PII filter and toxicity guardrails
-├── eval_suite.py           # Evaluation with LLM-as-Judge scoring
-├── replay_demo.py          # Agent Replay fork-and-rerun example
+├── requirements.txt        # fastaiagent>=1.6.0
+├── agent.py                # Main agent + REPL (memory, HITL loop, middleware)
+├── tools.py                # Tool functions (interrupt + @idempotent on create_ticket)
+├── context.py              # RunContext deps (mock CRM/Ticket/Order clients)
+├── guardrails.py           # PII output filter + toxicity input filter
+├── eval_suite.py           # LLMJudge + RAG scorers
+├── streaming_demo.py       # agent.astream() token-by-token
+├── replay_demo.py          # fa.Replay.fork_at(...).modify_input(...).rerun()
+├── multimodal_demo.py      # fa.Image + agent.arun([text, image])
 └── knowledge/
-    ├── faq.md              # Sample FAQ knowledge base
-    └── policies.md         # Sample company policies
+    ├── faq.md
+    └── policies.md
 ```
 
 ---
 
-## Architecture
+## How it's wired
 
-```
-User Query
-    │
-    ▼
-┌─────────────────────────────────────┐
-│  Customer Support Agent             │
-│                                     │
-│  System Prompt (from Prompt Registry│
-│  or local)                          │
-│                                     │
-│  ┌──────────┐  ┌──────────────────┐ │
-│  │ Guardrails│  │ RunContext[Deps] │ │
-│  │ • PII     │  │ • db_connection │ │
-│  │ • Toxicity│  │ • ticket_client │ │
-│  └──────────┘  └──────────────────┘ │
-│                                     │
-│  Tools:                             │
-│  • search_kb      → Knowledge Base  │
-│  • create_ticket  → Ticket System   │
-│  • lookup_account → CRM             │
-│  • check_status   → Order Tracking  │
-└─────────────────────────────────────┘
-    │
-    ▼
-Traces → fa.connect() → Platform Dashboard
+### Agent construction ([agent.py](agent.py))
+
+```python
+import fastaiagent as fa
+from fastaiagent.agent.memory import AgentMemory
+from fastaiagent.agent.middleware import ToolBudget, TrimLongMessages
+
+agent = fa.Agent(
+    name="customer-support",
+    llm=fa.LLMClient(provider="openai", model="gpt-4o"),
+    system_prompt=SYSTEM_PROMPT,                        # loaded from PromptRegistry
+    tools=[search_kb, create_ticket, lookup_account, check_order_status],
+    guardrails=[pii_filter, toxicity_check],
+    memory=AgentMemory(max_messages=20),                # multi-turn memory
+    middleware=[
+        ToolBudget(max_calls=10),                       # cap tool invocations
+        TrimLongMessages(keep_last=20),                 # trim history
+    ],
+    checkpointer=fa.SQLiteCheckpointer(),               # enables HITL + idempotency
+)
 ```
 
----
-
-## Features Demonstrated
-
-### 1. RunContext — Dependency Injection
+### `RunContext` — dependency injection ([context.py](context.py))
 
 ```python
 @dataclass
 class Deps:
-    db: AsyncConnection
     ticket_client: TicketClient
+    crm_client: CRMClient
+    order_client: OrderClient
     user_email: str
 
-agent = fa.Agent(
-    name="support-bot",
-    model="gpt-4o",
-    tools=[search_kb, create_ticket, lookup_account],
-    context_type=Deps,
-)
-
-# Dependencies injected at runtime, not import time
-result = await agent.run("I can't log in", context=deps)
+deps = await create_deps(user_email="alice@acme.com")
+ctx = fa.RunContext(state=deps)
+result = await agent.arun("I can't log in", context=ctx)
 ```
 
-### 2. Knowledge Base — Grounded Answers
+Tools receive `ctx: fa.RunContext[Deps]` as their last parameter.
+
+### Knowledge base ([tools.py](tools.py))
 
 ```python
-# Ingest docs on first run
-kb = fa.KnowledgeBase(name="support-kb", path="./knowledge/")
-await kb.ingest()
+kb = fa.LocalKB(
+    name="support-kb",
+    path="./.fastaiagent-kb",
+    chunk_size=512,
+    chunk_overlap=50,
+)
+if kb.status()["chunk_count"] == 0:
+    kb.add("./knowledge")          # bulk ingest on first run
 
-# search_kb tool uses the KB automatically
-@fa.tool
+@fa.tool()
 async def search_kb(query: str, ctx: fa.RunContext[Deps]) -> str:
-    """Search the support knowledge base for relevant information."""
-    results = await kb.search(query, top_k=3)
-    return "\n\n".join(r.content for r in results)
+    """Search the support knowledge base."""
+    results = kb.search(query, top_k=3)
+    return "\n\n---\n\n".join(
+        f"**{r.chunk.metadata.get('source', 'KB')}** (relevance: {r.score:.2f})\n{r.chunk.content}"
+        for r in results
+    )
 ```
 
-### 3. Guardrails — Safety by Default
-
-```python
-pii_filter = fa.Guardrail(
-    name="pii-filter",
-    type="regex",
-    position="output",
-    pattern=r"\b\d{3}-\d{2}-\d{4}\b",  # SSN pattern
-    action="block",
-    message="I can't share personally identifiable information.",
-)
-
-toxicity_check = fa.Guardrail(
-    name="toxicity-check",
-    type="llm_judge",
-    position="input",
-    prompt="Is the following message toxic or abusive? Respond YES or NO.",
-    action="block",
-)
-```
-
-### 4. Platform Connection
+### Guardrails ([guardrails.py](guardrails.py))
 
 ```python
 import fastaiagent as fa
+from fastaiagent.guardrail import GuardrailPosition
 
-# Connect to FastAIAgent Platform (optional)
-fa.connect(api_key="fa_k_...", project="support-bot")
-
-# Now:
-# - All traces auto-export to your dashboard
-# - Prompts pull from the Prompt Registry
-# - Eval results publish to the platform
+pii_filter = fa.no_pii(position=GuardrailPosition.output)
+toxicity_check = fa.toxicity_check(position=GuardrailPosition.input)
 ```
 
-### 5. Evaluation — LLM-as-Judge
+### HITL approval on high-impact tickets ([tools.py](tools.py))
 
 ```python
-# Define scoring dimensions
-correctness = fa.Scorer(
-    name="correctness",
-    type="llm_judge",
-    scale="binary",
-    prompt="Was the agent's response factually correct based on the KB?",
-)
-
-helpfulness = fa.Scorer(
-    name="helpfulness",
-    type="llm_judge",
-    scale="1-5",
-    prompt="How helpful was the response in resolving the user's issue?",
-)
-
-# Run evaluation
-dataset = fa.Dataset.from_file("eval_cases.jsonl")
-results = await fa.evaluate(agent, dataset, scorers=[correctness, helpfulness])
-results.summary()
-
-# Publish to platform
-results.publish()
+@fa.tool()
+async def create_ticket(subject, description, priority, ctx: fa.RunContext[Deps]) -> str:
+    if priority in ("high", "urgent") or "billing" in subject.lower():
+        decision = fa.interrupt(
+            reason="ticket_approval_required",
+            context={"subject": subject, "priority": priority, "user_email": ctx.state.user_email},
+        )
+        if not decision.approved:
+            return "Ticket creation declined by reviewer."
+    allocation = _allocate_ticket_id(
+        user_email=ctx.state.user_email, subject=subject, priority=priority
+    )
+    ticket = await ctx.state.ticket_client.create(...)
+    return f"Ticket {allocation['ticket_id']} created."
 ```
 
-### 6. Agent Replay — Debug Any Failure
+The Agent's `SQLiteCheckpointer` persists the suspension. The REPL handles it:
 
 ```python
-# Get a trace from a failed run
-trace = fa.Replay.from_latest(agent_name="support-bot", status="error")
+result = await agent.arun(query, context=ctx)
+while result.status == "paused":
+    info = result.pending_interrupt
+    approved = input(f"Approve {info['reason']}? [y/N] ").lower() == "y"
+    result = await agent.aresume(
+        result.execution_id,
+        resume_value=fa.Resume(approved=approved, metadata={"approver": "cli"}),
+        context=ctx,
+    )
+```
 
-# Step through it
-for span in trace.spans:
-    print(f"{span.type}: {span.name} ({span.duration_ms}ms)")
+### Idempotent ticket-id allocation ([tools.py](tools.py))
 
-# Fork from the tool call that failed
-forked = trace.fork(span_index=3, modified_input={"query": "login reset"})
-forked_result = await forked.run()
+```python
+from fastaiagent.chain.idempotent import idempotent
 
-# Compare outcomes
-fa.compare(trace, forked)
+@idempotent(key_fn=_ticket_idem_key)
+def _allocate_ticket_id(*, user_email, subject, priority) -> dict:
+    return {"ticket_id": f"TKT-{int(time.time() * 1000)}", ...}
+```
+
+After a HITL `interrupt()` + `aresume()`, the agent loop replays the tool call. Without `@idempotent` we'd mint a fresh ticket id; with it the resume reuses the cached allocation, so the user sees the same `TKT-xxxx` regardless of how many times the workflow is replayed.
+
+### Streaming ([streaming_demo.py](streaming_demo.py))
+
+```python
+async for event in agent.astream("How do I upgrade my plan?", context=ctx):
+    if isinstance(event, fa.TextDelta):
+        print(event.text, end="", flush=True)
+```
+
+`astream()` reaches parity with `arun()` for middleware, guardrails, tool calls, and checkpoint writes. Suspensions during streaming propagate as exceptions rather than returning a paused result — the main REPL uses `arun` for that reason.
+
+### Multimodal — screenshots ([multimodal_demo.py](multimodal_demo.py))
+
+```python
+image = fa.Image.from_file("error.png")
+result = await agent.arun(["What does this error mean?", image], context=ctx)
+```
+
+Pass a list of parts (text + `Image` + `PDF`) as the agent input. `LLMClient` handles provider-specific wire formatting (OpenAI vision parts, Anthropic image blocks, etc.).
+
+### Evaluation ([eval_suite.py](eval_suite.py))
+
+```python
+from fastaiagent.eval.llm_judge import LLMJudge
+from fastaiagent.eval.rag import Faithfulness, AnswerRelevancy
+
+scorers = [
+    LLMJudge(criteria="correctness", prompt_template=..., scale="binary"),
+    LLMJudge(criteria="helpfulness", prompt_template=..., scale="0-1"),
+    LLMJudge(criteria="safety",      prompt_template=..., scale="binary"),
+    Faithfulness(),       # claims supported by KB context
+    AnswerRelevancy(),    # response addresses the question
+]
+
+results = fa.evaluate(
+    agent_fn=lambda q: agent.run(q, context=ctx),
+    dataset=fa.Dataset.from_list(EVAL_CASES),
+    scorers=scorers,
+    context=KB_CORPUS,    # forwarded to every scorer; Faithfulness uses it
+)
+print(results.summary())
+```
+
+> **Uniform vs per-case context.** `fa.evaluate(... context=…)` forwards the same `context` kwarg to every scorer for every case. That's the right shape when your retrieval surface is a single fixed corpus — like this support agent's KB. When each test case has its own retrieved context (e.g., a research agent that pulls different sources per topic), drop down to manual scoring + `EvalResults.persist_local()`. See [`examples/research-agent/eval_suite.py`](../research-agent/eval_suite.py) for that pattern.
+
+### Replay — fork and rerun ([replay_demo.py](replay_demo.py))
+
+```python
+result = await agent.arun(query, context=ctx)
+replay = fa.Replay.load(result.trace_id)
+print(replay.summary())
+
+# Pick a step, modify the recorded input, rerun from there.
+forked = replay.fork_at(1).modify_input({"email": "bob@startup.io"})
+forked_result = forked.rerun()
+diff = forked.compare(forked_result)
+print(f"Diverged at step {diff.diverged_at}")
 ```
 
 ---
 
-## Running Evaluation
+## Local UI
+
+Run the Local UI in a second terminal to inspect traces, costs, agent dependencies, and (when the agent suspends) approvals:
 
 ```bash
-# Run the full eval suite
-python eval_suite.py
-
-# Output:
-# ┌─────────────┬───────┬───────┐
-# │ Scorer      │ Score │ Count │
-# ├─────────────┼───────┼───────┤
-# │ correctness │ 0.92  │ 20    │
-# │ helpfulness │ 4.1   │ 20    │
-# │ safety      │ 1.00  │ 20    │
-# └─────────────┴───────┴───────┘
+fastaiagent ui start            # serves http://127.0.0.1:7842 and opens your browser
+fastaiagent ui start --no-auth  # skip the local auth prompt for throwaway use
 ```
+
+Highlights:
+
+- `/traces` — span tree, costs, FTS5 search across runs
+- `/playground` — edit the `support-system-prompt` registered by `agent.py` and replay
+- `/agents` — dependency graph (tools, KBs, prompts, guardrails)
+- `/evals` — `eval_suite.py` runs are persisted here
 
 ---
 
-## Replaying a Failed Execution
+## Running each entry point
 
 ```bash
-# Run the replay demo
+# Interactive REPL with memory + HITL approvals
+python agent.py
+
+# One-shot query
+python agent.py --query "What is your refund policy?"
+
+# Token-by-token streaming
+python streaming_demo.py --query "How do I upgrade my plan?"
+
+# Replay debugging
 python replay_demo.py
 
-# This will:
-# 1. Execute the agent with a query that triggers a tool error
-# 2. Open the replay viewer
-# 3. Fork from the failing step
-# 4. Re-run with corrected input
-# 5. Compare both traces side by side
+# Smoke tests (no live LLM — fast feedback while you iterate on prompts/tools)
+python -m pytest tests/
+
+# Production-shape HITL deployment over HTTP (FastAPI)
+pip install fastapi uvicorn
+python server.py                     # serves http://127.0.0.1:8080
+
+# Image + text
+python multimodal_demo.py path/to/screenshot.png "What does this error mean?"
+
+# Eval suite (LLMJudge + RAG)
+python eval_suite.py
+python eval_suite.py --publish        # also publish to platform
 ```
+
+To test HITL interactively, ask: *"I was charged twice this month — please file a billing ticket."* The agent will pause for approval; type `y` to file, anything else to decline.
 
 ---
 
-## Environment Variables
+## Environment variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `OPENAI_API_KEY` | Yes | OpenAI API key for GPT-4o |
+| `LLM_MODEL` | No | Override the default `gpt-4o` |
 | `FASTAIAGENT_API_KEY` | No | Platform API key for `fa.connect()` |
-| `FASTAIAGENT_PROJECT` | No | Platform project name |
-| `TICKET_API_URL` | No | Ticket system endpoint (defaults to mock) |
-| `CRM_API_URL` | No | CRM endpoint (defaults to mock) |
+| `FASTAIAGENT_PROJECT` | No | Platform project name (default: `support-bot`) |
+| `FASTAIAGENT_TARGET` | No | Platform URL (default: `https://app.fastaiagent.net`) |
 
 ---
 
-## Customising This Template
+## Customising
 
-**Swap the LLM provider:**
+**Swap the LLM provider**:
+
 ```python
-agent = fa.Agent(model="claude-sonnet-4-20250514")     # Anthropic
-agent = fa.Agent(model="llama3:8b")                     # Ollama (local)
-agent = fa.Agent(model="gpt-4o", base_url="https://your-gateway.com")  # Custom
+fa.LLMClient(provider="anthropic", model="claude-sonnet-4-6")
+fa.LLMClient(provider="ollama",    model="llama3:8b")
 ```
 
-**Add your own knowledge base:**
-Replace the files in `knowledge/` with your own docs (PDF, DOCX, TXT, Markdown). The KB auto-processes on first run.
+**Replace the knowledge base**: drop your own markdown / PDF / TXT files into `knowledge/` and delete `.fastaiagent-kb/` to force re-ingest.
 
-**Add more tools:**
+**Add a tool**:
+
 ```python
-@fa.tool
+@fa.tool()
 async def escalate_to_human(reason: str, ctx: fa.RunContext[Deps]) -> str:
-    """Escalate the conversation to a human agent."""
+    """Escalate to a human agent."""
     # Your escalation logic here
-    return f"Escalated: {reason}. A human agent will follow up."
+    return f"Escalated: {reason}."
 ```
 
-**Connect to your platform instance:**
+**Connect to the platform**:
+
 ```bash
 export FASTAIAGENT_API_KEY="fa_k_your_key"
 export FASTAIAGENT_PROJECT="my-project"
+python agent.py --connect
 ```
 
 ---
 
-## Next Steps
+## What this example does NOT demonstrate
 
-- **Explore Agent Replay**: Run `python replay_demo.py` and try forking from different steps
-- **Connect to the platform**: Sign up at [app.fastaiagent.net](https://app.fastaiagent.net) and see your traces in the dashboard
-- **Run evals before shipping**: Customise `eval_suite.py` with your own test cases
-- **Read the docs**: [fastaiagent.net/docs](https://fastaiagent.net/docs)
+- **Universal harness** (v1.6.0) — this agent is native `fastaiagent`, not LangChain / CrewAI / PydanticAI. See `examples/55_trace_crewai.py`, `56_trace_pydanticai.py`, `57_eval_langchain.py` for those.
+- **Swarm / Supervisor** topologies — see `examples/18_supervisor_worker.py`, `31_swarm_research_team.py`.
+- **MCP server** (expose this agent as MCP tools) — see `examples/32_mcp_expose_agent.py`.
 
 ---
 
 ## License
 
-Apache 2.0 — same as the SDK. Use this template for anything.
+Apache 2.0 — same as the SDK.

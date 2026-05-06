@@ -31,9 +31,11 @@ async def demo():
     print("=" * 60)
 
     print("\nStep 1: Running agent with a support query...\n")
+    # Picking a query that does not trip the HITL gate in create_ticket so
+    # the demo runs unattended. For a HITL flow + Replay combo, use
+    # `_drive_until_complete` from agent.py and pass the resulting trace_id.
     result = await agent.arun(
-        "I was charged twice on my last invoice. My email is alice@acme.com. "
-        "Can you look into this and fix it?",
+        "Can you look up the account for alice@acme.com and tell me the plan?",
         context=ctx,
     )
     print(f"   Agent: {result.output[:200]}...")

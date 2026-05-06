@@ -53,8 +53,73 @@ class _AgentInterrupted(Exception):  # noqa: N818  (internal sentinel, mirrors I
         self.agent_path = agent_path
 
 
+def _is_multimodal_part(obj: Any) -> bool:
+    """True iff ``obj`` is a multimodal part (Image / PDF) carrying raw bytes
+    that ``Message.model_dump(mode="json")`` cannot natively serialize.
+
+    The check is import-light because this function runs on every
+    checkpoint write — only the modules' top-level classes are touched.
+    """
+    from fastaiagent.multimodal.image import Image
+    from fastaiagent.multimodal.pdf import PDF
+
+    return isinstance(obj, (Image, PDF))
+
+
 def _serialize_messages(messages: list[Message]) -> list[dict[str, Any]]:
-    return [m.model_dump(mode="json") for m in messages]
+    """Serialize messages to JSON-safe dicts.
+
+    Multimodal parts (``Image``, ``PDF``) carry raw bytes that Pydantic's
+    ``model_dump(mode="json")`` cannot encode — it raises ``UnicodeDecodeError``
+    when the content list contains an Image. We pre-process by replacing
+    each multimodal part with its ``to_dict()`` form (base64-encoded bytes
+    in a typed envelope); the matching :func:`_deserialize_messages`
+    rebuilds the dataclass instances on resume.
+
+    Plain text-only messages take the same fast path as before.
+    """
+    out: list[dict[str, Any]] = []
+    for m in messages:
+        if isinstance(m.content, list) and any(_is_multimodal_part(p) for p in m.content):
+            # Convert Image / PDF parts into their dict form before model_dump.
+            normalized_parts: list[Any] = [
+                p.to_dict() if _is_multimodal_part(p) else p for p in m.content
+            ]
+            m_copy = m.model_copy(update={"content": normalized_parts})
+            out.append(m_copy.model_dump(mode="json"))
+        else:
+            out.append(m.model_dump(mode="json"))
+    return out
+
+
+def _deserialize_messages(raw: list[dict[str, Any]]) -> list[Message]:
+    """Inverse of :func:`_serialize_messages`: rebuild Image / PDF instances
+    from their dict form before ``Message.model_validate``. Used by
+    ``Agent.aresume`` so a resumed run sees the original multimodal
+    content rather than dict stand-ins.
+    """
+    from fastaiagent.multimodal.image import Image
+    from fastaiagent.multimodal.pdf import PDF
+
+    out: list[Message] = []
+    for raw_m in raw:
+        content = raw_m.get("content")
+        if isinstance(content, list) and any(
+            isinstance(p, dict) and p.get("type") in ("image", "pdf") for p in content
+        ):
+            rebuilt: list[Any] = []
+            for part in content:
+                if isinstance(part, dict) and part.get("type") == "image":
+                    rebuilt.append(Image.from_dict(part))
+                elif isinstance(part, dict) and part.get("type") == "pdf":
+                    rebuilt.append(PDF.from_dict(part))
+                else:
+                    rebuilt.append(part)
+            new_raw = {**raw_m, "content": rebuilt}
+            out.append(Message.model_validate(new_raw))
+        else:
+            out.append(Message.model_validate(raw_m))
+    return out
 
 
 def _record_agent_interrupt(

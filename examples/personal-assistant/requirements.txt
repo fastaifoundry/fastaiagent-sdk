@@ -1,0 +1,13 @@
+fastaiagent>=1.6.1
+python-dotenv>=1.0.0
+
+# Optional, BUT highly recommended — installs the FaissVectorStore that
+# VectorBlock recalls past turns from. The example will fall back to a
+# pure-Python in-memory store if faiss-cpu is missing, but search quality
+# drops sharply.
+faiss-cpu>=1.7.4 ; platform_system != "Windows"
+
+# Optional — installs fastembed for high-quality 384-dim sentence embeddings.
+# Without it the example uses the SDK's SimpleEmbedder fallback (also 384-dim
+# but lower-quality hash-based embeddings — fine for offline demos, not prod).
+# fastembed>=0.5.0

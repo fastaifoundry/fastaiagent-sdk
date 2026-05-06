@@ -642,7 +642,12 @@ class Agent:
             latest = latest_opt
 
         raw_msgs = latest.state_snapshot.get("messages", [])
-        messages: list[Message] = [Message.model_validate(m) for m in raw_msgs]
+        # Use the multimodal-aware deserializer so messages whose content
+        # contains base64-encoded Image / PDF parts are rehydrated back into
+        # dataclass instances before the LLM client sees them on resume.
+        from fastaiagent.agent.executor import _deserialize_messages
+
+        messages: list[Message] = _deserialize_messages(raw_msgs)
         start_iteration = int(latest.state_snapshot.get("turn", 0))
         is_tool_boundary = "/tool:" in latest.node_id
 
