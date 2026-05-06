@@ -1,0 +1,19 @@
+fastaiagent>=1.6.1
+python-dotenv>=1.0.0
+
+# All three framework deps are OPTIONAL — uncomment the ones you actually
+# want to wrap with FastAIAgent's harness. Each sub-example
+# (langchain_example.py / crewai_example.py / pydanticai_example.py)
+# imports only its own framework, so missing deps don't break the others.
+
+# LangChain / LangGraph
+# langchain>=1.0
+# langchain-core>=1.0
+# langchain-openai>=1.0
+# langgraph>=1.0
+
+# CrewAI
+# crewai>=0.40
+
+# PydanticAI
+# pydantic-ai>=0.0.13

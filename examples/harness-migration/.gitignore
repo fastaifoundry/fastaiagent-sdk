@@ -1,0 +1,5 @@
+.env
+.fastaiagent/
+.fastaiagent-kb/
+__pycache__/
+*.pyc
