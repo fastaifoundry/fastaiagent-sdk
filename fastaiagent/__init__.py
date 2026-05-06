@@ -12,6 +12,7 @@ from fastaiagent.agent import (
     FactExtractionBlock,
     MemoryBlock,
     MiddlewareContext,
+    PersistentFactBlock,
     RedactPII,
     RunContext,
     StaticBlock,
@@ -100,6 +101,7 @@ __all__ = [
     "SummaryBlock",
     "VectorBlock",
     "FactExtractionBlock",
+    "PersistentFactBlock",
     # Chain
     "Chain",
     "ChainResult",

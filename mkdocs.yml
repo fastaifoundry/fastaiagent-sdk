@@ -163,6 +163,14 @@ nav:
       - PydanticAI: integrations/pydanticai.md
   - CLI Reference:
       - cli/index.md
+      - "fastaiagent learn": cli/learn.md
+  - Templates:
+      - flagships/index.md
+      - "Deep Research Agent": flagships/deep-research-agent.md
+  - Learning from traces:
+      - learning/index.md
+      - "Memory loop": learning/memory-loop.md
+      - "Self-improving agents": concepts/self-improving-agents.md
   - Tutorials:
       - tutorials/index.md
       - "Build Your First Agent in 5 Minutes": tutorials/first-agent.md

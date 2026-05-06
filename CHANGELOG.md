@@ -5,6 +5,55 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-05-06
+
+MINOR — Trace Learning Loop. Adds a new public module (`fastaiagent.learn`), a new public class (`PersistentFactBlock`), a new CLI subcommand (`fastaiagent learn`), a new REST endpoint (`/api/learned_memory`), and schema migration v8 (`learned_memory` table). All additions are backward-compatible — existing call sites are byte-identical and the migration is forward-only with no future-version guard.
+
+### Added — Trace Learning Loop (`fastaiagent.learn`)
+
+- **`fastaiagent/learn/`** — new module exposing `MemoryStore`, `Fact`, `extract_facts_from_trace`, `extract_and_store`, `run_extraction`. Reads completed traces from `local.db`, extracts durable per-user / per-project / per-agent facts via an LLM, persists to the new `learned_memory` table.
+- **`fastaiagent learn` CLI** — registered in `fastaiagent/cli/main.py`. Subcommands: default action (extract over a trace window), `list` (inspect active facts), `supersede` (manual conflict resolution). PII guardrail: `--scope user` and `--scope project` require an explicit `--allow-personal` flag.
+- **`PersistentFactBlock`** — new `MemoryBlock` subclass in `fastaiagent/agent/memory_blocks.py`, exported from `fastaiagent.agent` and the top-level `fastaiagent` package. Loads scoped facts from `MemoryStore` and injects them as a `SystemMessage` on every render. Read-only at runtime — only the offline CLI writes new facts.
+- **Schema migration v8** — adds the `learned_memory` table (`id`, `scope`, `scope_id`, `fact`, `source_trace_id`, `confidence`, `created_at`, `superseded_by`, `project_id`) with a UNIQUE constraint on `(scope, scope_id, fact, project_id)` for idempotent inserts. `CURRENT_SCHEMA_VERSION` bumped to 8.
+- **`/api/learned_memory` REST endpoint** — read-only browse + filter (`scope`, `scope_id`, `include_superseded`) plus `/api/learned_memory/scopes` for distinct-scope listing. Registered in `fastaiagent/ui/server.py` and protected by the existing `require_session` dependency.
+
+### Added — Examples & docs
+
+- **`examples/learning-loop/`** — minimal standalone demo of the loop (seed → extract → re-inject) over a small toy agent.
+- **`examples/self-improving-research/`** — closed-loop demo wrapping the Deep Research template from v1.6.x. Walks Phase 1 (seed) → Phase 2 (learn) → Phase 3 (replay with facts injected). The deep-research template's `memory_setup.py` is now wired to use `PersistentFactBlock`.
+- **`docs/learning/`** — new "Learning from traces" doc section: index, memory-loop walkthrough, plus a new `docs/concepts/self-improving-agents.md` concept page.
+- **`docs/cli/learn.md`** — CLI reference for `fastaiagent learn`.
+- **`mkdocs.yml`** — Templates section now includes Deep Research, plus new "Learning from traces" section and CLI reference for learn.
+
+### Tests (no mocking, real LLM where applicable)
+
+- `tests/test_learn_store.py` — `MemoryStore` CRUD, dedup, scope filtering, supersede chain, migration v8 user_version verification.
+- `tests/test_persistent_fact_block.py` — render/no-render, `max_facts` cap, `refresh_every` caching, validation.
+- `tests/test_learn_extractor.py` — pure-Python trace summarization always runs; real-LLM extraction tests gated on `OPENAI_API_KEY`.
+- `tests/test_ui_learned_memory.py` — FastAPI `TestClient` over `/api/learned_memory` (active vs superseded, scope filters, `/scopes` endpoint).
+- `tests/integration/test_self_improving_closed_loop.py` — full closed loop (gated on `OPENAI_API_KEY`).
+- `examples/learning-loop/tests/test_smoke.py` and `examples/self-improving-research/tests/test_smoke.py` — fast deterministic example smoke tests.
+
+### Breaking changes
+
+None. All additions are net-new public surface; no existing API changed signature; schema migration is forward-only and additive.
+
+## [Unreleased — v1.6.x examples & docs]
+
+### Added — Deep Research Agent template (PR A; no functional change to the published package)
+
+- **Deep Research Agent template** (`examples/deep-research-agent/`). Implements the now-canonical Scope → parallel Research → Write pattern (popularized by Open Deep Research and Anthropic's research agents) natively on fastaiagent-sdk primitives. Parallel sub-researchers are orchestrated explicitly via `asyncio.gather` over plain `Agent` instances. Includes:
+  - `tools.py` — `web_search` (Tavily / Brave / Serper / mock fallback) + `web_fetch` (httpx + stdlib HTML stripper).
+  - `topology.py` — Pydantic `ResearchBrief` / `Subtopic` / `ResearchFindings` / `Citation` schemas, scope / researcher / writer agent factories.
+  - `agent.py` — three-phase pipeline orchestrator with structured trace spans (`deep_research.session`, `deep_research.scope`, `deep_research.research`, `deep_research.write`).
+  - `spans.py` — typed helpers writing `fastaiagent.research.*` JSON payloads to span attributes so the local UI / replay tooling can reconstruct brief / plan / findings.
+  - `streaming_demo.py`, `replay_demo.py`, `eval_suite.py`, `tests/test_smoke.py`.
+  - `memory_setup.py` — placeholder hook for the Trace Learning Loop (activated in v1.7.0).
+- **`docs/flagships/`** — new "Templates" doc section (folder named `flagships/` to avoid a path conflict with mkdocs-material theme internals).
+- **`tests/integration/test_deep_research_e2e.py`** — end-to-end test for the pipeline.
+- **`fastaiagent.trace.span`** — added 7 documentation-only keys (`fastaiagent.research.*`) to `FASTAIAGENT_ATTRIBUTES`. No runtime behavior change.
+- **`fastaiagent.template.kind` marker + `set_template_kind()` helper** — generic root-span marker any flagship template can stamp on its session span (deep-research-agent uses `"deep-research"`). Lets the UI badge / filter trace lists by template without parsing span names. Pure additive; backward-compatible.
+
 ## [1.6.1] - 2026-05-06
 
 PATCH — two non-breaking SDK bug fixes that surfaced while building the

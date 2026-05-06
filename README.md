@@ -6,7 +6,7 @@ The only SDK with **Agent Replay** — fork-and-rerun debugging — and a
 
 Works standalone or connected to the [FastAIAgent Platform](https://fastaiagent.net) for visual editing, production monitoring, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.6.1)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.7.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -33,6 +33,19 @@ result = agent.run("What is the capital of France?")
 print(result.output)
 print(result.trace_id)  # every run is traced — use this ID for replay/debugging
 ```
+
+### Build a Deep Research Agent in one file
+
+Long-horizon research agents (the now-canonical *Scope → parallel Research → Write* pattern popularized by Open Deep Research) are a flagship template:
+
+```sh
+cd examples/deep-research-agent
+pip install -r requirements.txt
+export TAVILY_API_KEY=...   # optional — falls back to a local mock corpus
+python agent.py --topic "Current state of MCP server adoption"
+```
+
+Sub-researchers run in parallel via `asyncio.gather`, each in its own context window; the writer composes one coherent Markdown report. Plan and findings are persisted as structured spans under `fastaiagent.research.*` for replay / inspection. See [`examples/deep-research-agent/`](examples/deep-research-agent/) and the [Templates docs](https://docs.fastaiagent.net/flagships/deep-research-agent/).
 
 ## Multimodal — images and PDFs as first-class inputs
 

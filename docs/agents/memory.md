@@ -157,6 +157,26 @@ FactExtractionBlock(
 
 **When to use**: user-focused assistants where you want stable facts ("user is allergic to peanuts", "user's kids are named Maya and Omar") to persist independently from the conversation log.
 
+### `PersistentFactBlock`
+
+Read-only block that loads facts from the `learned_memory` table — populated offline by [`fastaiagent learn`](../cli/learn.md), the [Trace Learning Loop](../learning/memory-loop.md). Carries durable facts **across runs**, where `FactExtractionBlock` only carries them within a single conversation.
+
+```python
+from fastaiagent.agent.memory_blocks import PersistentFactBlock
+
+PersistentFactBlock(
+    scope="agent",                # 'user' | 'project' | 'agent'
+    scope_id="my-agent",          # identifier within scope
+    project_id="",                # optional project filter
+    max_facts=50,                 # newest-first cap
+    refresh_every=1,              # re-query store every N renders (1 = always)
+)
+```
+
+**When to use**: long-running agents that should accumulate operational knowledge across sessions ("the writer should always cite token-cost claims", "this user prefers reports under 800 words"). Pair with `fastaiagent learn` to populate the underlying table from past traces.
+
+**Pairs with**: `FactExtractionBlock` for the in-conversation extraction; `PersistentFactBlock` for the cross-conversation re-injection. Both can live in the same `ComposableMemory`.
+
 ## Composing blocks
 
 Block order matters — they render in declaration order, and the resulting SystemMessages appear in the prompt in that order. Typical ordering:

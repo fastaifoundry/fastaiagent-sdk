@@ -163,6 +163,30 @@ The SDK follows the OpenTelemetry GenAI semantic conventions for LLM-related att
 | `fastaiagent.guardrail.name` | Guardrail name |
 | `fastaiagent.guardrail.passed` | Whether guardrail passed |
 | `fastaiagent.cost.total_usd` | Accumulated cost |
+| `fastaiagent.template.kind` | Flagship-template marker on root span (e.g. `"deep-research"`) — set via `set_template_kind()`. Lets the UI badge / filter trace lists by template. |
+
+### Marking template traces
+
+Flagship example templates (e.g. `examples/deep-research-agent`) stamp a kebab-case marker on their root span so the UI can identify them without parsing span names:
+
+```python
+from fastaiagent.trace import trace_context
+from fastaiagent.trace.span import set_template_kind
+
+with trace_context("deep_research.session") as span:
+    set_template_kind(span, "deep-research")
+    # ...
+```
+
+Filter via SQL:
+
+```sql
+SELECT trace_id, json_extract(attributes, '$.fastaiagent.research.topic')
+FROM spans
+WHERE json_extract(attributes, '$.fastaiagent.template.kind') = 'deep-research';
+```
+
+Convention: the kind matches the template's directory under `examples/`. Any new template (`customer-support`, `meeting-notes`, …) can adopt the same marker for free.
 
 ### Agent Reconstruction Attributes (used by Replay)
 

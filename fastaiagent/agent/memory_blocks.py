@@ -45,6 +45,7 @@ _log = logging.getLogger(__name__)
 __all__ = [
     "FactExtractionBlock",
     "MemoryBlock",
+    "PersistentFactBlock",
     "StaticBlock",
     "SummaryBlock",
     "VectorBlock",
@@ -404,3 +405,123 @@ class FactExtractionBlock(MemoryBlock):
                 self._facts = [str(x) for x in data]
         except json.JSONDecodeError:
             _log.warning("FactExtractionBlock.load: invalid JSON at %s", path)
+
+
+# ---------------------------------------------------------------------------
+# PersistentFactBlock
+# ---------------------------------------------------------------------------
+
+
+class PersistentFactBlock(MemoryBlock):
+    """Inject durable facts loaded from the ``learned_memory`` table.
+
+    Read-only at runtime — facts are produced offline by ``fastaiagent
+    learn`` (the Trace Learning Loop) and re-injected here. ``on_message``
+    is a no-op; ``render`` returns a single ``SystemMessage`` containing
+    the active (non-superseded) facts for the configured scope.
+
+    Pairs with :class:`FactExtractionBlock`, which extracts facts online
+    during a single conversation. ``PersistentFactBlock`` carries facts
+    *across* runs — the dreaming / continual-learning side of memory.
+
+    Args:
+        scope: ``"user"``, ``"project"``, or ``"agent"``.
+        scope_id: identifier within the scope (agent name, user id, …).
+            Empty string matches every scope_id within ``scope``.
+        project_id: project to scope DB queries to. Defaults to "" which
+            matches the unproject-scoped rows the SDK writes by default.
+        max_facts: cap on facts injected per turn. Newest facts win.
+        store: dependency injection for tests; defaults to a fresh
+            :class:`fastaiagent.learn.MemoryStore` against the configured
+            local.db.
+        refresh_every: re-query the store every N renders. ``1`` (default)
+            re-queries every turn; higher values cache for performance.
+
+    Example::
+
+        from fastaiagent import Agent, AgentMemory, ComposableMemory
+        from fastaiagent.agent.memory_blocks import PersistentFactBlock
+
+        memory = ComposableMemory(
+            primary=AgentMemory(),
+            blocks=[PersistentFactBlock(scope="agent", scope_id="my-agent")],
+        )
+        agent = Agent(name="my-agent", system_prompt="...", llm=llm, memory=memory)
+    """
+
+    name = "persistent_facts"
+
+    def __init__(
+        self,
+        scope: str = "agent",
+        scope_id: str = "",
+        project_id: str = "",
+        max_facts: int = 50,
+        store: object | None = None,
+        refresh_every: int = 1,
+    ):
+        if scope not in ("user", "project", "agent"):
+            raise ValueError(
+                f"scope must be one of user|project|agent, got {scope!r}"
+            )
+        if max_facts < 1:
+            raise ValueError("max_facts must be >= 1")
+        if refresh_every < 1:
+            raise ValueError("refresh_every must be >= 1")
+        self.scope = scope
+        self.scope_id = scope_id
+        self.project_id = project_id
+        self.max_facts = max_facts
+        self.refresh_every = refresh_every
+        self._store = store  # may be None — lazy init in render()
+        self._cached: list[str] | None = None
+        self._renders_since_refresh = 0
+
+    def on_message(self, message: Message) -> None:
+        # Read-only block. The offline ``fastaiagent learn`` CLI is what
+        # writes new facts.
+        return
+
+    def _resolve_store(self):
+        if self._store is None:
+            # Lazy import — avoids a hard dep on the learn module if a user
+            # imports memory_blocks but never instantiates this block.
+            from fastaiagent.learn.store import MemoryStore
+
+            self._store = MemoryStore()
+        return self._store
+
+    def _refresh(self) -> list[str]:
+        store = self._resolve_store()
+        facts = store.list_active(
+            scope=self.scope,  # type: ignore[arg-type]
+            scope_id=self.scope_id,
+            project_id=self.project_id,
+            limit=self.max_facts,
+        )
+        # ``list_active`` returns newest first; preserve that order so the
+        # rendered prompt prioritizes recent learnings.
+        return [f.fact for f in facts]
+
+    def render(self, query: str) -> list[Message]:
+        if self._cached is None or self._renders_since_refresh >= self.refresh_every:
+            try:
+                self._cached = self._refresh()
+            except Exception as err:
+                _log.warning("PersistentFactBlock refresh failed: %s", err)
+                self._cached = self._cached or []
+            # Count this render as the first since the refresh, so the
+            # next refresh fires on render N+refresh_every (not N+refresh_every+1).
+            self._renders_since_refresh = 1
+        else:
+            self._renders_since_refresh += 1
+
+        if not self._cached:
+            return []
+        bullets = "\n".join(f"- {fact}" for fact in self._cached)
+        scope_label = f"{self.scope}:{self.scope_id}" if self.scope_id else self.scope
+        return [
+            SystemMessage(
+                f"Learned facts ({scope_label}):\n{bullets}"
+            )
+        ]

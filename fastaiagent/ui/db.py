@@ -17,7 +17,7 @@ from pathlib import Path
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
 
-CURRENT_SCHEMA_VERSION = 7
+CURRENT_SCHEMA_VERSION = 8
 
 # A migration step is either a SQL string or a callable that takes the
 # ``SQLiteHelper`` and runs whatever logic it needs (e.g., gated
@@ -544,6 +544,30 @@ _MIGRATIONS: dict[int, list[_Step]] = {
         "ON external_agent_attachments(agent_name)",
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_ext_attach "
         "ON external_agent_attachments(agent_name, kind, ref_name, position)",
+    ],
+    8: [
+        # Trace Learning Loop — durable per-user/per-project/per-agent facts
+        # extracted offline from completed traces by ``fastaiagent learn``.
+        # Re-injected into future runs via ``PersistentFactBlock``. The
+        # ``superseded_by`` chain encodes conflict-resolution by recency
+        # (newest fact wins; older row marks itself superseded), so we keep
+        # the audit trail rather than deleting.
+        """CREATE TABLE IF NOT EXISTS learned_memory (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            scope           TEXT NOT NULL,
+            scope_id        TEXT NOT NULL DEFAULT '',
+            fact            TEXT NOT NULL,
+            source_trace_id TEXT,
+            confidence      REAL DEFAULT 1.0,
+            created_at      REAL NOT NULL,
+            superseded_by   INTEGER,
+            project_id      TEXT NOT NULL DEFAULT '',
+            UNIQUE(scope, scope_id, fact, project_id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_learned_memory_scope "
+        "ON learned_memory(scope, scope_id, project_id)",
+        "CREATE INDEX IF NOT EXISTS idx_learned_memory_created "
+        "ON learned_memory(created_at)",
     ],
 }
 

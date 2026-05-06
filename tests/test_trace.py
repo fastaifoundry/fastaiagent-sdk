@@ -5,7 +5,11 @@ from __future__ import annotations
 import pytest
 
 from fastaiagent.trace.otel import get_tracer, get_tracer_provider, reset
-from fastaiagent.trace.span import set_fastai_attributes, set_genai_attributes
+from fastaiagent.trace.span import (
+    set_fastai_attributes,
+    set_genai_attributes,
+    set_template_kind,
+)
 from fastaiagent.trace.storage import LocalStorageProcessor, TraceStore
 from fastaiagent.trace.tracer import trace_context
 
@@ -177,3 +181,26 @@ class TestSpanHelpers:
         # namespace (never ``fastai.`` — that's fast.ai's trademark).
         assert attr_dict["fastaiagent.agent.name"] == "test-agent"
         assert attr_dict["fastaiagent.tool.name"] == "search"
+
+    def test_set_template_kind_writes_namespaced_attribute(self):
+        """Real OTel round-trip — template-kind marker persists to the span."""
+        with trace_context("test.template-marker") as span:
+            captured: dict[str, object] = {}
+            original = span.set_attribute
+
+            def wrapper(key, value):
+                captured[key] = value
+                return original(key, value)
+
+            span.set_attribute = wrapper
+            set_template_kind(span, "deep-research")
+
+        assert captured.get("fastaiagent.template.kind") == "deep-research"
+
+    def test_set_template_kind_skips_empty(self):
+        """Empty kind is a no-op so callers can pass an env-var verbatim."""
+        from unittest.mock import MagicMock
+
+        span = MagicMock()
+        set_template_kind(span, "")
+        assert span.set_attribute.call_count == 0
