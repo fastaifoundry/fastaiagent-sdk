@@ -13,15 +13,24 @@ If you're new, start with the templates, then dip into snippets when you need a 
 
 | Template | Use case | What it teaches | Read-first if you want |
 |---|---|---|---|
-| [`customer-support-agent/`](customer-support-agent/) | Single-agent KB-grounded support chatbot with HITL on ticket creation | `Agent` + tools + `LocalKB` + memory + middleware + guardrails + `interrupt()` / `aresume()` + `@idempotent` + `PromptRegistry` + `Replay` + `LLMJudge`/RAG eval + multimodal | the **single-agent** golden path |
-| [`research-agent/`](research-agent/) | Perplexity-style multi-agent research with verifier-driven revision loop | `Supervisor` + `Worker` + custom `Scorer` + pluggable backend + `Supervisor.astream()` + replay across handoffs + per-case eval context | the **multi-agent** golden path |
+| [`customer-support-agent/`](customer-support-agent/) | Single-agent KB-grounded support chatbot with HITL on ticket creation | `Agent` + tools + `LocalKB` + memory + middleware + guardrails + `interrupt()` / `aresume()` + `@idempotent` + `PromptRegistry` + `Replay` + `LLMJudge`/RAG eval + multimodal + FastAPI HITL deploy | the **single-agent** golden path |
+| [`research-agent/`](research-agent/) | Perplexity / Deep-Research-style multi-agent investigation with verifier-driven revision loop | `Supervisor` + `Worker` + custom `Scorer` + pluggable web-search backends + `Supervisor.astream()` + replay across handoffs + per-case eval context | LLM-driven multi-agent orchestration |
+| [`sales-sdr-agent/`](sales-sdr-agent/) | Clay / HubSpot Breeze-style outbound SDR pipeline with HITL approval before send | `Chain` DAG with conditional edge routing + `chain.aexecute(... context=ctx)` + LLM agents wrapped inside tool nodes + `fa.interrupt()` + `@idempotent` send + 3 pluggable backends (Clearbit / Salesforce / SendGrid) | a **deterministic-flow** workflow with HITL |
+| [`meeting-notes-agent/`](meeting-notes-agent/) | Granola / Otter / Fireflies-style transcript → structured notes generator | `Chain` with **parallel LLM fan-out** via `asyncio.gather` + Pydantic `MeetingNotes` schema enforcement at merge + multimodal `fa.PDF.extract_text` + per-attendee personalization | parallel analyzer fan-out + schema enforcement |
+| [`personal-assistant/`](personal-assistant/) | Long-lived REPL personal assistant with cross-session memory | **Every memory-block type** — `StaticBlock + SummaryBlock + VectorBlock + FactExtractionBlock` — composed via `ComposableMemory` with `FaissVectorStore` + on-disk persistence + `PromptRegistry`-backed system prompt | the canonical **memory** showcase |
+| [`harness-migration/`](harness-migration/) | Wrap an existing **LangGraph / CrewAI / PydanticAI** agent with FastAIAgent's harness | `fastaiagent.integrations.{langchain,crewai,pydanticai}` — `enable()` auto-tracing + `with_guardrails()` + `kb_as_retriever()` / `kb_as_tool()` + `prompt_from_registry()` + `register_agent()` + cross-framework `fa.evaluate()` via `as_evaluable()` | gradual migration **from another framework** |
 
 ### Recommended onboarding path
 
 1. Skim [`customer-support-agent/README.md`](customer-support-agent/README.md) to see how `Agent`, tools, KB, guardrails, memory, HITL, and eval fit together in one place.
 2. Run `python customer-support-agent/agent.py` and `python customer-support-agent/eval_suite.py`.
 3. Open `fastaiagent ui start` in another terminal — visit `/traces`, `/agents`, `/evals`. This is your debug surface from now on.
-4. When you need multi-agent orchestration, jump to [`research-agent/`](research-agent/).
+4. Pick a template that matches your use-case shape:
+   - **LLM-driven multi-agent** with revisions → [`research-agent/`](research-agent/)
+   - **Deterministic workflow with HITL gates** → [`sales-sdr-agent/`](sales-sdr-agent/)
+   - **Parallel LLM analysis with structured output** → [`meeting-notes-agent/`](meeting-notes-agent/)
+   - **Long-running session with rich memory** → [`personal-assistant/`](personal-assistant/)
+   - **Already on LangChain / CrewAI / PydanticAI** → [`harness-migration/`](harness-migration/)
 5. For specific features (RAG, OTel export, MCP, cyclic chains, etc.), grep the snippet table below.
 
 ### How to fork a template
