@@ -1,0 +1,718 @@
+# Apple Inc — Form 10-K (Fiscal Year 2025, filed 2025-10-31)
+# Source: https://www.sec.gov/Archives/edgar/data/320193/000032019325000079/aapl-20250927.htm
+# Excerpts: financial statements + human-capital section. Stripped from XBRL.
+
+======================================================================
+[SECTION: Consolidated Statements of Operations (Income Statement)]
+======================================================================
+CONSOLIDATED STATEMENTS OF OPERATIONS
+(In millions, except number of shares, which are reflected in thousands, and per-share amounts)
+Years ended
+September 27,
+2025
+September 28,
+2024
+September 30,
+2023
+Net sales:
+Products
+$
+307,003
+$
+294,866
+$
+298,085
+Services
+109,158
+96,169
+85,200
+Total net sales
+416,161
+391,035
+383,285
+Cost of sales:
+Products
+194,116
+185,233
+189,282
+Services
+26,844
+25,119
+24,855
+Total cost of sales
+220,960
+210,352
+214,137
+Gross margin
+195,201
+180,683
+169,148
+Operating expenses:
+Research and development
+34,550
+31,370
+29,915
+Selling, general and administrative
+27,601
+26,097
+24,932
+Total operating expenses
+62,151
+57,467
+54,847
+Operating income
+133,050
+123,216
+114,301
+Other income/(expense), net
+(
+321
+)
+269
+(
+565
+)
+Income before provision for income taxes
+132,729
+123,485
+113,736
+Provision for income taxes
+20,719
+29,749
+16,741
+Net income
+$
+112,010
+$
+93,736
+$
+96,995
+Earnings per share:
+Basic
+$
+7.49
+$
+6.11
+$
+6.16
+Diluted
+$
+7.46
+$
+6.08
+$
+6.13
+Shares used in computing earnings per share:
+Basic
+14,948,500
+15,343,783
+15,744,231
+Diluted
+15,004,697
+15,408,095
+15,812,547
+See accompanying Notes to Consolidated Financial Statements.
+Apple Inc. | 2025 Form 10-K | 29
+Apple Inc.
+CONSOLIDATED STATEMENTS OF COMPREHENSIVE INCOME
+(In millions)
+Years ended
+September 27,
+2025
+September 28,
+2024
+September 30,
+2023
+Net income
+$
+112,010
+$
+93,736
+$
+96,995
+Other comprehensive income/(loss):
+Change in foreign currency translation, net of tax
+(
+267
+)
+395
+(
+765
+)
+Change in unrealized gains/losses on derivative instruments, net of tax:
+Change in fair value of derivative instruments
+849
+(
+832
+)
+323
+Adjustment for net (gains)/losses realized and included in net income
+(
+212
+)
+(
+1,337
+)
+(
+1,717
+)
+Total change in unrealized gains/losses on derivative instruments
+637
+(
+2,169
+)
+(
+1,394
+)
+Change in unrealized gains/losses on marketable debt securities, net of tax:
+Change in fair value of marketable debt securities
+817
+5,850
+1,563
+Adjustment for net (gains)/losses realized and included in net income
+414
+204
+253
+Total change in unrealized gains/losses on marketable debt securities
+1,231
+6,054
+1,816
+Total other comprehensive income/(loss)
+1,601
+4,280
+(
+343
+)
+Total comprehensive income
+$
+113,611
+$
+98,016
+$
+96,652
+See accompanying Notes to Consolidated Financial Statements.
+Apple Inc. | 2025 Form 10-K | 30
+Apple Inc.
+CONSOLIDATED BALANCE SHEETS
+(In millions, except number of shares, 
+
+======================================================================
+[SECTION: Consolidated Balance Sheets]
+======================================================================
+CONSOLIDATED BALANCE SHEETS
+(In millions, except number of shares, which are reflected in thousands, and par value)
+September 27,
+2025
+September 28,
+2024
+ASSETS:
+Current assets:
+Cash and cash equivalents
+$
+35,934
+$
+29,943
+Marketable securities
+18,763
+35,228
+Accounts receivable, net
+39,777
+33,410
+Vendor non-trade receivables
+33,180
+32,833
+Inventories
+5,718
+7,286
+Other current assets
+14,585
+14,287
+Total current assets
+147,957
+152,987
+Non-current assets:
+Marketable securities
+77,723
+91,479
+Property, plant and equipment, net
+49,834
+45,680
+Other non-current assets
+83,727
+74,834
+Total non-current assets
+211,284
+211,993
+Total assets
+$
+359,241
+$
+364,980
+LIABILITIES AND SHAREHOLDERS’ EQUITY:
+Current liabilities:
+Accounts payable
+$
+69,860
+$
+68,960
+Other current liabilities
+66,387
+78,304
+Deferred revenue
+9,055
+8,249
+Commercial paper
+7,979
+9,967
+Term debt
+12,350
+10,912
+Total current liabilities
+165,631
+176,392
+Non-current liabilities:
+Term debt
+78,328
+85,750
+Other non-current liabilities
+41,549
+45,888
+Total non-current liabilities
+119,877
+131,638
+Total liabilities
+285,508
+308,030
+Commitments and contingencies
+Shareholders’ equity:
+Common stock and additional paid-in capital, $
+0.00001
+par value:
+50,400,000
+shares authorized;
+14,773,260
+and
+15,116,786
+shares issued and outstanding, respectively
+93,568
+83,276
+Accumulated deficit
+(
+14,264
+)
+(
+19,154
+)
+Accumulated other comprehensive loss
+(
+5,571
+)
+(
+7,172
+)
+Total shareholders’ equity
+73,733
+56,950
+Total liabilities and shareholders’ equity
+$
+359,241
+$
+364,980
+See accompanying Notes to Consolidated Financial Statements.
+Apple Inc. | 2025 Form 10-K | 31
+Apple Inc.
+CONSOLIDATED STATEMENTS OF SHAREHOLDERS’ EQUITY
+(In millions, except per-share amounts)
+Years ended
+September 27,
+2025
+September 28,
+2024
+September 30,
+2023
+Total shareholders’ equity, beginning balances
+$
+56,950
+$
+62,146
+$
+50,672
+Common stock and additional paid-in capital:
+Beginning balances
+83,276
+73,812
+64,849
+Common stock issued
+1,498
+1,423
+1,346
+Common stock withheld related to net share settlement of equity awards
+(
+4,452
+)
+(
+3,993
+)
+(
+3,521
+)
+Share-based compensation
+13,246
+12,034
+11,138
+Ending balances
+93,568
+83,276
+73,812
+Accumulated deficit:
+Beginning balances
+(
+19,154
+)
+(
+214
+)
+(
+3,068
+)
+Net income
+112,010
+93,736
+96,995
+Dividends and dividend equivalents declared
+(
+15,413
+)
+(
+15,218
+)
+(
+14,996
+)
+Common stock withheld related to net share settlement of equity awards
+(
+1,655
+)
+(
+1,612
+)
+(
+2,099
+)
+Common stock repurchased
+(
+90,052
+)
+(
+95,846
+)
+(
+77,046
+)
+Ending balances
+(
+14,264
+)
+(
+19,154
+)
+(
+214
+)
+Accumulated other comprehensive loss:
+Beginning balances
+(
+7,172
+)
+(
+11,452
+)
+(
+11,109
+)
+Other comprehensive income/(loss)
+1,601
+4,280
+(
+343
+)
+Ending balances
+(
+5,571
+)
+(
+7,172
+)
+(
+11,452
+)
+Total shareholders’ equity, ending balances
+$
+73,733
+$
+56,950
+$
+62,146
+Dividends and dividend equivalents declared per share or RSU
+$
+1.02
+$
+0.98
+$
+0.94
+See accomp
+
+======================================================================
+[SECTION: Consolidated Statements of Cash Flows]
+======================================================================
+CONSOLIDATED STATEMENTS OF CASH FLOWS
+(In millions)
+Years ended
+September 27,
+2025
+September 28,
+2024
+September 30,
+2023
+Cash, cash equivalents, and restricted cash and cash equivalents, beginning balances
+$
+29,943
+$
+30,737
+$
+24,977
+Operating activities:
+Net income
+112,010
+93,736
+96,995
+Adjustments to reconcile net income to cash generated by operating activities:
+Depreciation and amortization
+11,698
+11,445
+11,519
+Share-based compensation expense
+12,863
+11,688
+10,833
+Other
+(
+89
+)
+(
+2,266
+)
+(
+2,227
+)
+Changes in operating assets and liabilities:
+Accounts receivable, net
+(
+6,682
+)
+(
+3,788
+)
+(
+1,688
+)
+Vendor non-trade receivables
+(
+347
+)
+(
+1,356
+)
+1,271
+Inventories
+1,400
+(
+1,046
+)
+(
+1,618
+)
+Other current and non-current assets
+(
+9,197
+)
+(
+11,731
+)
+(
+5,684
+)
+Accounts payable
+902
+6,020
+(
+1,889
+)
+Other current and non-current liabilities
+(
+11,076
+)
+15,552
+3,031
+Cash generated by operating activities
+111,482
+118,254
+110,543
+Investing activities:
+Purchases of marketable securities
+(
+24,407
+)
+(
+48,656
+)
+(
+29,513
+)
+Proceeds from maturities of marketable securities
+40,907
+51,211
+39,686
+Proceeds from sales of marketable securities
+12,890
+11,135
+5,828
+Payments for acquisition of property, plant and equipment
+(
+12,715
+)
+(
+9,447
+)
+(
+10,959
+)
+Other
+(
+1,480
+)
+(
+1,308
+)
+(
+1,337
+)
+Cash generated by investing activities
+15,195
+2,935
+3,705
+Financing activities:
+Payments for taxes related to net share settlement of equity awards
+(
+5,960
+)
+(
+5,441
+)
+(
+5,431
+)
+Payments for dividends and dividend equivalents
+(
+15,421
+)
+(
+15,234
+)
+(
+15,025
+)
+Repurchases of common stock
+(
+90,711
+)
+(
+94,949
+)
+(
+77,550
+)
+Proceeds from issuance of term debt, net
+4,481
+—
+5,228
+Repayments of term debt
+(
+10,932
+)
+(
+9,958
+)
+(
+11,151
+)
+Proceeds from/(Repayments of) commercial paper, net
+(
+2,032
+)
+3,960
+(
+3,978
+)
+Other
+(
+111
+)
+(
+361
+)
+(
+581
+)
+Cash used in financing activities
+(
+120,686
+)
+(
+121,983
+)
+(
+108,488
+)
+Increase/(Decrease) in cash, cash equivalents, and restricted cash and cash equivalents
+5,991
+(
+794
+)
+5,760
+Cash, cash equivalents, and restricted cash and cash equivalents, ending balances
+$
+35,934
+$
+29,943
+$
+30,737
+Supplemental cash flow disclosure:
+Cash paid for income taxes, net
+$
+43,369
+$
+26,102
+$
+18,679
+See accompanying Notes to Consolidated Financial Statements.
+Apple Inc. | 2025 Form 10-K | 33
+Apple Inc.
+Notes to Consolidated Financial Statements
+Note 1 –
+Summary of Significant Accounting Policies
+Basis of Presentation and Preparation
+The consolidated financial statements include the accounts of Apple Inc. and its wholly owned subsidiaries. The preparation of these consolidated financial statements and accompanying notes in conformity with GAAP requires the use of management estimates. Certain prior period amounts in the notes to consolidated financial statements have been reclassified to conform to the current period’s presentation.
+The Company’s fiscal year is the 52- or 53-week period that ends on the last Saturday of September. An additional week is included in the first fiscal qu
+
+======================================================================
+[SECTION: Human Capital (employee count + culture)]
+======================================================================
+Human Capital
+The Company believes that its people play an important role in its success, and strives to attract, develop and retain the best talent. The Company works to create a culture of collaboration, one where people with a broad range of backgrounds and perspectives can come together to innovate and do the best work of their lives. The Company is an equal opportunity employer committed to inclusion and to providing a workplace free of harassment or discrimination. As of September 27, 2025, the Company had approximately 166,000 full-time equivalent employees.
+The Company believes that compensation should be competitive and equitable, and offers discretionary cash and equity awards to enable employees to share in the Company’s success. The Company recognizes its people are most likely to thrive when they have the resources to meet their needs and the time and support to succeed in their professional and personal lives. In support of this, the Company offers a wide variety of benefits for employees around the world, including health, wellness and time away.
+The Company invests in resources to help its people develop and achieve their career goals. The Company offers programs through Apple University on leadership, management and influence, as well as Apple culture and values. Team members can also take advantage of online classes for business, technical and personal development.
+The Company believes that open and honest communication among team members, managers and leaders helps create an open, collaborative work environment where everyone can contribute, grow and succeed. Team members are encouraged to come to their managers with questions, feedback or concerns, and the Company conducts surveys that gauge employee sentiment in areas like career development, manager performance and inclusion.
+The Company is committed to the safety and security of its team members everywhere it operates. The Company supports employees with general safety, security and crisis management training, and by putting specific programs in place for those working in potentially high-hazard environments.
+Available Information
+The Company’s Annual Reports on Form 10-K, Quarterly Report
