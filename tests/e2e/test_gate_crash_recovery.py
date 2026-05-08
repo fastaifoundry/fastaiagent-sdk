@@ -100,12 +100,18 @@ def _spawn_worker(ckpt_db: str, execution_id: str) -> subprocess.Popen[bytes]:
     )
 
 
-def _wait_for_step_2_checkpoint(ckpt_db: str, execution_id: str, timeout: float = 10.0) -> None:
+def _wait_for_step_2_checkpoint(ckpt_db: str, execution_id: str, timeout: float = 30.0) -> None:
     """Poll the checkpoint store until step_2 is committed.
 
     We use a fresh ``SQLiteCheckpointer`` per poll so we read the worker's
     latest committed state via SQLite WAL. Returns once ``step_2`` is the
     latest checkpoint, or raises ``TimeoutError``.
+
+    Default timeout is 30s (was 10s) — the worker subprocess does Python
+    interpreter startup + module import + chain construction + first
+    SQLite write before step_2 lands. On loaded GitHub runners that
+    occasionally exceeds 10s. 30s gives headroom while staying fast on
+    healthy machines (typical resolution: <100ms).
     """
     from fastaiagent import SQLiteCheckpointer
 
