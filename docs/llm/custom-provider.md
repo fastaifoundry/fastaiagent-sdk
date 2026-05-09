@@ -73,5 +73,15 @@ import time and leave it in place.
 
 ## Visibility in the local UI
 
-Custom presets show up automatically at `GET /api/providers`, so the
-Playground dropdown picks them up the next time the page is opened.
+Custom presets show up automatically in two places:
+
+- `GET /api/providers` — full registry with capability flags.
+- `GET /api/playground/models` — Playground provider dropdown (as of
+  v1.8.1 this endpoint merges the registry with the built-in catalog,
+  so any `register_provider()` call is reflected on the next page
+  refresh — no UI rebuild needed).
+
+To suggest specific models for your preset in the Playground dropdown,
+register the preset with a useful `default_model`. Users can also type
+any model name into the model field directly — the dropdown is a
+suggestion list, not an exhaustive whitelist.

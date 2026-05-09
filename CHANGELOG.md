@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.1] - 2026-05-10
+
+PATCH — Playground catalog now merges the v1.8.0 preset registry, so the
+local UI's provider dropdown picks up Gemini, Groq, OpenRouter, DeepSeek,
+Together, Fireworks, Perplexity, Mistral, LM Studio, vLLM, SambaNova, and
+Cerebras automatically. Backend-only change — no frontend rebuild.
+
+### Fixed
+
+- **`/api/playground/models`** — previously hardcoded only `openai`,
+  `anthropic`, and `ollama`. Now reads from
+  `fastaiagent.llm.providers.list_presets()` and merges built-ins +
+  presets into a single response. The preset's `default_model` leads each
+  list, followed by curated model suggestions per provider (Groq Llama
+  variants, Gemini Pro/Flash, OpenRouter slugs, etc.). `has_key` / `env_var`
+  honor each preset's declared env var (`GROQ_API_KEY`, `GEMINI_API_KEY`, …).
+- **`_check_api_key_or_400`** — error messages now report the correct
+  per-preset env var instead of always saying `OPENAI_API_KEY`.
+
+### Tests
+
+- `tests/test_ui_playground.py` — four new cases under `TestModelsEndpoint`:
+  preset visibility, `default_model` ordering, per-preset `has_key` / `env_var`,
+  and dedup of the merged model list.
+
+### Breaking changes
+
+None. The endpoint shape is unchanged; the response simply contains more
+rows.
+
 ## [1.8.0] - 2026-05-09
 
 MINOR — Provider expansion + first-class agent testing. Adds 12 LLM

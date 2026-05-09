@@ -42,11 +42,12 @@ router = APIRouter(prefix="/api/playground", tags=["playground"])
 
 
 # ---------------------------------------------------------------------------
-# Provider catalog — kept here intentionally so the UI doesn't need to know
-# the SDK's internal model registry. Add new defaults here as we ship them.
-# Listed providers with prefix-only entries get the prefix as the model name.
+# Provider catalog — built-ins keep their hand-curated model lists; preset
+# providers (added via ``fastaiagent.llm.providers.register_provider``) are
+# merged in dynamically from the registry so the Playground dropdown picks
+# up new providers without a UI rebuild.
 # ---------------------------------------------------------------------------
-_PROVIDER_CATALOG: dict[str, list[str]] = {
+_BUILTIN_CATALOG: dict[str, list[str]] = {
     "openai": [
         "gpt-4o-mini",
         "gpt-4o",
@@ -67,18 +68,88 @@ _PROVIDER_CATALOG: dict[str, list[str]] = {
     ],
 }
 
-_PROVIDER_ENV_KEY: dict[str, str] = {
+_BUILTIN_ENV_KEY: dict[str, str] = {
     "openai": "OPENAI_API_KEY",
     "anthropic": "ANTHROPIC_API_KEY",
     "ollama": "",  # local — no key required
+}
+
+# Curated per-preset model suggestions for the Playground dropdown. The
+# preset's ``default_model`` is always included first; these are common
+# additional choices users typically want. Adding entries here only affects
+# the UI affordance — runtime ``LLMClient(provider=..., model="anything")``
+# accepts any model the upstream API supports.
+_PRESET_MODEL_HINTS: dict[str, list[str]] = {
+    "groq": [
+        "llama-3.3-70b-versatile",
+        "llama-3.1-70b-versatile",
+        "llama-3.1-8b-instant",
+        "mixtral-8x7b-32768",
+    ],
+    "gemini": [
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-flash-latest",
+    ],
+    "openrouter": [
+        "openai/gpt-4o-mini",
+        "openai/gpt-4o",
+        "anthropic/claude-3-5-sonnet",
+        "anthropic/claude-3-5-haiku",
+        "meta-llama/llama-3.1-70b-instruct",
+    ],
+    "deepseek": [
+        "deepseek-chat",
+        "deepseek-reasoner",
+    ],
+    "together": [
+        "meta-llama/Llama-3.1-70B-Instruct-Turbo",
+        "meta-llama/Llama-3.1-8B-Instruct-Turbo",
+    ],
+    "fireworks": [
+        "accounts/fireworks/models/llama-v3p1-70b-instruct",
+        "accounts/fireworks/models/llama-v3p1-8b-instruct",
+    ],
+    "perplexity": [
+        "llama-3.1-sonar-small-128k-online",
+        "llama-3.1-sonar-large-128k-online",
+    ],
+    "mistral": [
+        "mistral-large-latest",
+        "mistral-small-latest",
+        "open-mistral-nemo",
+    ],
+    "lmstudio": ["local-model"],
+    "vllm": ["local-model"],
+    "sambanova": ["Meta-Llama-3.1-70B-Instruct"],
+    "cerebras": ["llama3.1-70b", "llama3.1-8b"],
 }
 
 
 _VARIABLE_RE = re.compile(r"\{\{(\w+)\}\}")
 
 
+def _env_key_for_provider(provider: str) -> str | None:
+    """Return the env-var name for a provider, or ``None`` if unknown.
+
+    Built-ins use ``_BUILTIN_ENV_KEY``; presets read from the registry.
+    A return of ``""`` means "no key required" (local providers).
+    """
+    if provider in _BUILTIN_ENV_KEY:
+        return _BUILTIN_ENV_KEY[provider]
+    from fastaiagent.llm.providers import get_preset
+
+    preset = get_preset(provider)
+    if preset is None:
+        return None
+    # Local-style presets (lmstudio, vllm) ship an env var name but the
+    # server itself doesn't require auth. Treat empty/blank values as
+    # "no key required" the same way the built-in ollama row does.
+    return preset.env_var or ""
+
+
 def _has_api_key(provider: str) -> bool:
-    env_var = _PROVIDER_ENV_KEY.get(provider)
+    env_var = _env_key_for_provider(provider)
     if env_var is None:
         return False
     if env_var == "":
@@ -86,20 +157,55 @@ def _has_api_key(provider: str) -> bool:
     return bool(os.environ.get(env_var))
 
 
-@router.get("/models")
-def list_models(_user: str = Depends(require_session)) -> dict[str, Any]:
-    """Return the provider/model catalog with ``has_key`` flags."""
-    providers: list[dict[str, Any]] = []
-    for provider, models in _PROVIDER_CATALOG.items():
-        providers.append(
+def _build_provider_catalog() -> list[dict[str, Any]]:
+    """Merge built-in catalog + preset registry into a single response shape.
+
+    Order: built-ins first (in their declared order), then presets sorted
+    alphabetically. Each entry includes ``models`` (curated suggestions)
+    and ``has_key`` so the UI can disable rows without a configured key.
+    """
+    from fastaiagent.llm.providers import list_presets
+
+    rows: list[dict[str, Any]] = []
+    for provider, models in _BUILTIN_CATALOG.items():
+        rows.append(
             {
                 "provider": provider,
                 "models": models,
                 "has_key": _has_api_key(provider),
-                "env_var": _PROVIDER_ENV_KEY.get(provider) or None,
+                "env_var": _BUILTIN_ENV_KEY.get(provider) or None,
             }
         )
-    return {"providers": providers}
+    for preset in list_presets():
+        # Default-model first, then curated hints (deduplicated).
+        hints = _PRESET_MODEL_HINTS.get(preset.key, [])
+        seen: set[str] = set()
+        merged_models: list[str] = []
+        for m in [preset.default_model, *hints]:
+            if m and m not in seen:
+                seen.add(m)
+                merged_models.append(m)
+        rows.append(
+            {
+                "provider": preset.key,
+                "models": merged_models,
+                "has_key": _has_api_key(preset.key),
+                "env_var": preset.env_var or None,
+            }
+        )
+    return rows
+
+
+@router.get("/models")
+def list_models(_user: str = Depends(require_session)) -> dict[str, Any]:
+    """Return the provider/model catalog with ``has_key`` flags.
+
+    As of v1.8.1 the catalog includes both built-in providers and any
+    presets registered via :func:`fastaiagent.llm.providers.register_provider`,
+    so the Playground dropdown automatically picks up new providers
+    without a UI rebuild.
+    """
+    return {"providers": _build_provider_catalog()}
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +277,7 @@ def _build_messages(req: PlaygroundRunRequest) -> list[Any]:
 
 def _check_api_key_or_400(provider: str) -> None:
     if not _has_api_key(provider):
-        env_var = _PROVIDER_ENV_KEY.get(provider) or "(provider key)"
+        env_var = _env_key_for_provider(provider) or "(provider key)"
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             (

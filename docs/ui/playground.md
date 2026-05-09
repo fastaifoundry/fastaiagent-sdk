@@ -31,7 +31,13 @@ Two-panel layout. Left: configuration. Right: response.
   prompt the LLM will see.
 - **Provider + model**: populated from the `/api/playground/models`
   endpoint. Providers without an API key in your environment are disabled
-  with a tooltip telling you which env var to set.
+  with a tooltip telling you which env var to set. The dropdown lists
+  every built-in provider (`openai`, `anthropic`, `ollama`) plus every
+  preset registered with `fastaiagent.llm.providers.register_provider`
+  (the v1.8.0 batch ships 12 of these — Gemini, Groq, OpenRouter,
+  DeepSeek, Together, Fireworks, Perplexity, Mistral, LM Studio, vLLM,
+  SambaNova, Cerebras). See [LLM providers](../llm/providers.md) for the
+  full table.
 - **Parameters**: temperature, top_p, max_tokens. These map directly to
   `LLMClient` config.
 - **Attach image**: optional file picker (JPEG/PNG/GIF/WebP). The image is
