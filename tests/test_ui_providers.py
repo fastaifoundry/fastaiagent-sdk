@@ -10,9 +10,14 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
 
-from fastaiagent.ui.server import build_app
+# fastapi ships in the [ui] extra; skip cleanly when running against
+# the base install (matches other UI-dependent test modules).
+pytest.importorskip("fastapi")
+
+from fastapi.testclient import TestClient  # noqa: E402
+
+from fastaiagent.ui.server import build_app  # noqa: E402
 
 
 @pytest.fixture
