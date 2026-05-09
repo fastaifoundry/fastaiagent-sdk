@@ -62,6 +62,52 @@ class TestModelsEndpoint:
         # Ollama doesn't require a key — always reachable from the UI's perspective.
         assert by_name["ollama"]["has_key"] is True
 
+    def test_includes_v1_8_0_presets(self, client: TestClient) -> None:
+        """v1.8.1: catalog merges the preset registry — Groq, Gemini, etc.
+        appear in the dropdown alongside the built-ins, no UI rebuild needed."""
+        body = client.get("/api/playground/models").json()
+        provider_names = {p["provider"] for p in body["providers"]}
+        # A representative subset; full list lives in
+        # fastaiagent.llm.providers._presets.
+        for must in {"groq", "gemini", "openrouter", "deepseek", "mistral"}:
+            assert must in provider_names, f"{must} preset missing from /models"
+
+    def test_preset_default_model_first_in_list(
+        self, client: TestClient
+    ) -> None:
+        """The preset's default_model leads the suggestions list so the
+        dropdown defaults to a known-good choice on first selection."""
+        from fastaiagent.llm.providers import get_preset
+
+        body = client.get("/api/playground/models").json()
+        by_name = {p["provider"]: p for p in body["providers"]}
+        groq_preset = get_preset("groq")
+        gemini_preset = get_preset("gemini")
+        assert groq_preset is not None and gemini_preset is not None
+        assert by_name["groq"]["models"][0] == groq_preset.default_model
+        assert by_name["gemini"]["models"][0] == gemini_preset.default_model
+
+    def test_preset_has_key_reflects_env_var(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("GROQ_API_KEY", "gsk-fixture-key")
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        body = client.get("/api/playground/models").json()
+        by_name = {p["provider"]: p for p in body["providers"]}
+        assert by_name["groq"]["has_key"] is True
+        assert by_name["gemini"]["has_key"] is False
+        assert by_name["groq"]["env_var"] == "GROQ_API_KEY"
+        assert by_name["gemini"]["env_var"] == "GEMINI_API_KEY"
+
+    def test_models_list_no_duplicates(self, client: TestClient) -> None:
+        """Default-model + curated hints are deduplicated (the default
+        already appears in some hint lists)."""
+        body = client.get("/api/playground/models").json()
+        for entry in body["providers"]:
+            assert len(entry["models"]) == len(set(entry["models"])), (
+                f"{entry['provider']} has duplicate models: {entry['models']}"
+            )
+
 
 class TestRunValidation:
     def test_no_api_key_returns_400(

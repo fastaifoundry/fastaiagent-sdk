@@ -76,6 +76,15 @@ for p in list_presets():
 The same data is exposed at `GET /api/providers` in the local UI for
 dropdowns and analytics.
 
+## Local UI integration
+
+Every registered provider — built-in or preset — appears in the
+[Prompt Playground](../ui/playground.md) provider dropdown automatically
+(via `GET /api/playground/models`). No UI rebuild is required when you
+register a new preset; refresh the page and the dropdown picks it up.
+Providers whose API-key env var is not set show up disabled with a
+tooltip pointing to the right variable.
+
 ## Need a provider that isn't listed?
 
 See [Custom providers](custom-provider.md) for `register_provider()` —
