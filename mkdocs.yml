@@ -113,9 +113,15 @@ nav:
       - "Platform KB": knowledge-base/platform-kb.md
       - Backends: knowledge-base/backends.md
       - "Custom Backend": knowledge-base/custom-backend.md
+  - LLM:
+      - "Providers": llm/providers.md
+      - "Custom Providers": llm/custom-provider.md
+  - Testing:
+      - testing/index.md
   - Evaluation:
       - evaluation/index.md
       - "LLM-as-Judge": evaluation/llm-judge.md
+      - "Pytest plugin": evaluation/pytest.md
       - "RAG Metrics": evaluation/rag-metrics.md
       - "Safety Metrics": evaluation/safety-metrics.md
       - "Similarity & NLP Metrics": evaluation/similarity-metrics.md

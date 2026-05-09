@@ -119,6 +119,31 @@ def _ollama_format_from_response_format(
     return None
 
 
+def _inject_system_text(body: dict[str, Any], extra_text: str) -> None:
+    """Append ``extra_text`` to the first system message in ``body['messages']``.
+
+    Used by the structured-output fallback for preset providers that don't
+    natively support ``response_format``: instead of erroring, we augment
+    the system prompt with JSON instructions. Inserts a new system message
+    at index 0 if none exists.
+    """
+    if not extra_text:
+        return
+    messages = body.get("messages")
+    if not isinstance(messages, list) or not messages:
+        body["messages"] = [{"role": "system", "content": extra_text.lstrip()}]
+        return
+    for m in messages:
+        if isinstance(m, dict) and m.get("role") == "system":
+            existing = m.get("content")
+            if isinstance(existing, str):
+                m["content"] = (existing + extra_text).strip()
+            else:
+                m["content"] = extra_text.lstrip()
+            return
+    messages.insert(0, {"role": "system", "content": extra_text.lstrip()})
+
+
 class LLMResponse(BaseModel):
     """Normalized response from any LLM provider."""
 
@@ -130,14 +155,35 @@ class LLMResponse(BaseModel):
     latency_ms: int = 0
 
 
+# Built-in providers — these have first-class code paths in this module.
+# Anything else is resolved via ``fastaiagent.llm.providers.get_preset``.
+_BUILTIN_PROVIDERS: frozenset[str] = frozenset(
+    {"openai", "anthropic", "ollama", "azure", "bedrock", "custom"}
+)
+
+
 class LLMClient:
     """Unified LLM client supporting multiple providers.
 
-    Providers: openai, anthropic, ollama, azure, bedrock, custom.
+    Built-in providers: ``openai``, ``anthropic``, ``ollama``, ``azure``,
+    ``bedrock``, ``custom``.
+
+    Additional providers shipped via the registry (``fastaiagent.llm.providers``):
+    ``gemini`` (native wire), ``groq``, ``openrouter``, ``deepseek``,
+    ``together``, ``fireworks``, ``perplexity``, ``mistral``, ``lmstudio``,
+    ``vllm``, ``sambanova``, ``cerebras``. These pick up sensible defaults
+    for ``base_url`` and resolve API keys from their canonical env vars
+    (``GROQ_API_KEY``, ``GEMINI_API_KEY``, ``OPENROUTER_API_KEY``, …).
 
     Example:
         llm = LLMClient(provider="openai", model="gpt-4o", api_key="sk-...")
         response = llm.complete([UserMessage("Hello")])
+
+        # Preset providers — base_url + API key inferred from env var:
+        llm = LLMClient(provider="groq", model="llama-3.1-70b-versatile")
+
+    Custom providers can be registered via
+    :func:`fastaiagent.llm.providers.register_provider`.
     """
 
     def __init__(
@@ -160,10 +206,26 @@ class LLMClient:
         max_image_size_mb: float | None = None,
         **kwargs: Any,
     ):
+        # Preset lookup is opt-in: built-in providers (openai/anthropic/
+        # ollama/azure/bedrock/custom) bypass the registry entirely.
+        from fastaiagent.llm.providers import get_preset
+
+        preset = (
+            None
+            if provider in _BUILTIN_PROVIDERS
+            else get_preset(provider)
+        )
+
         self.provider = provider
         self.model = model
         self.api_key = api_key
         self.base_url = base_url or self._default_base_url(provider)
+        # Fill api_key from the preset's env var if neither was passed
+        # explicitly nor previously set by the caller.
+        if self.api_key is None and preset is not None:
+            env_value = os.environ.get(preset.env_var)
+            if env_value:
+                self.api_key = env_value
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.max_retries = max_retries
@@ -177,6 +239,13 @@ class LLMClient:
         self.max_pdf_pages = max_pdf_pages
         self.max_image_size_mb = max_image_size_mb
         self._extra = kwargs
+        self._preset = preset
+
+    def _capability(self, name: str, default: object = None) -> object:
+        """Look up a capability flag from the registered preset, if any."""
+        if self._preset is None:
+            return default
+        return self._preset.cap(name, default)
 
     def _provider_dict_kwargs(self) -> dict[str, Any]:
         """Build the kwargs passed to ``Message.to_provider_dict`` from this client's config."""
@@ -212,7 +281,15 @@ class LLMClient:
             "bedrock": "",
             "custom": "",
         }
-        return defaults.get(provider, "")
+        if provider in defaults:
+            return defaults[provider]
+        # Preset registry covers the rest. Returns "" if unknown — keeps the
+        # historical behaviour of leaving base_url blank for unknown keys
+        # (the dispatcher will then raise a friendly error).
+        from fastaiagent.llm.providers import get_preset
+
+        preset = get_preset(provider)
+        return preset.base_url if preset is not None else ""
 
     def complete(
         self,
@@ -309,7 +386,7 @@ class LLMClient:
                 if isinstance(event, TextDelta):
                     print(event.text, end="", flush=True)
         """
-        stream_providers = {
+        stream_providers: dict[str, Any] = {
             "openai": self._stream_openai,
             "anthropic": self._stream_anthropic,
             "ollama": self._stream_ollama,
@@ -318,10 +395,27 @@ class LLMClient:
             "custom": self._stream_openai,
         }
         fn = stream_providers.get(self.provider)
+        if fn is None and self._preset is not None:
+            if self._preset.wire == "openai_compat" and self._preset.cap("streaming", True):
+                fn = self._stream_openai
+            elif self._preset.wire == "native_gemini":
+                from fastaiagent.llm.providers.gemini import astream_gemini
+
+                async def _gemini_stream(
+                    messages: list[Message],
+                    tools: list[dict[str, Any]] | None = None,
+                    **kwargs: Any,
+                ) -> AsyncGenerator[StreamEvent, None]:
+                    async for event in astream_gemini(self, messages, tools, **kwargs):
+                        yield event
+
+                fn = _gemini_stream
         if fn is None:
             raise LLMError(
                 f"Streaming not supported for provider '{self.provider}'. "
-                f"Supported streaming providers: openai, anthropic, ollama, azure, custom."
+                f"Supported streaming providers: openai, anthropic, ollama, azure, custom, "
+                f"gemini, groq, openrouter, deepseek, together, fireworks, mistral, "
+                f"lmstudio, vllm, sambanova, cerebras."
             )
 
         for attempt in range(self.max_retries + 1):
@@ -396,14 +490,37 @@ class LLMClient:
             "custom": self._call_openai,  # Custom endpoints are OpenAI-compatible
         }
         fn = providers.get(self.provider)
-        if fn is None:
-            supported = ", ".join(sorted(providers.keys()))
-            raise LLMError(
-                f"Unsupported provider '{self.provider}'. "
-                f"Supported providers: {supported}.\n"
-                f"Example: LLMClient(provider='openai', model='gpt-4o')"
-            )
-        return fn
+        if fn is not None:
+            return fn
+
+        # Preset registry — Gemini takes the native wire, everything else
+        # rides the OpenAI-compatible body builder with the preset's
+        # base_url + api_key already resolved on this client.
+        if self._preset is not None:
+            if self._preset.wire == "openai_compat":
+                return self._call_openai
+            if self._preset.wire == "native_gemini":
+                from fastaiagent.llm.providers.gemini import acomplete_gemini
+
+                async def _gemini_call(
+                    messages: list[Message],
+                    tools: list[dict[str, Any]] | None = None,
+                    **kwargs: Any,
+                ) -> LLMResponse:
+                    return await acomplete_gemini(self, messages, tools, **kwargs)
+
+                return _gemini_call
+
+        from fastaiagent.llm.providers import list_provider_keys
+
+        supported = ", ".join(list_provider_keys())
+        raise LLMError(
+            f"Unsupported provider '{self.provider}'. "
+            f"Supported providers: {supported}.\n"
+            f"Example: LLMClient(provider='openai', model='gpt-4o')\n"
+            f"Or register a custom preset via "
+            f"fastaiagent.llm.providers.register_provider()."
+        )
 
     def _split_multimodal_tool_messages_for_openai(
         self, messages: list[Message]
@@ -476,17 +593,30 @@ class LLMClient:
             body["tools"] = tools
         if self.temperature is not None:
             body["temperature"] = self.temperature
-        # OpenAI uses max_completion_tokens for newer models
+        # OpenAI proper uses max_completion_tokens for newer models. The
+        # ``custom`` path and any third-party preset (Groq, OpenRouter,
+        # DeepSeek, Mistral, ...) sit behind classic Chat Completions APIs
+        # that still accept ``max_tokens`` — using the new field there
+        # would 400.
         max_tok = kwargs.get("max_tokens", self.max_tokens)
         if max_tok is not None:
-            if self.provider == "custom":
+            if self.provider == "custom" or self._preset is not None:
                 body["max_tokens"] = max_tok
             else:
                 body["max_completion_tokens"] = max_tok
-        # Structured output
+        # Structured output — fall back to system-prompt augmentation when
+        # the preset declares no native ``response_format`` support.
         response_format = kwargs.get("response_format")
         if response_format is not None:
-            body["response_format"] = response_format
+            rf_caps = self._capability("response_format", "native")
+            if rf_caps in (False, "none"):
+                # Augment the system message instead. The body builder has
+                # already rendered messages, so we patch the first system
+                # entry in-place (or insert one) with the augmented text.
+                augmented = _augment_system_for_response_format("", response_format)
+                _inject_system_text(body, augmented)
+            else:
+                body["response_format"] = response_format
         # Additional parameters
         top_p = kwargs.get("top_p", self.top_p)
         if top_p is not None:
@@ -505,15 +635,19 @@ class LLMClient:
             body["presence_penalty"] = pres_pen
         ptc = kwargs.get("parallel_tool_calls", self.parallel_tool_calls)
         if ptc is not None and tools:
-            body["parallel_tool_calls"] = ptc
+            # Drop silently when the preset declares no parallel-tool-call
+            # support — including the field would 400 on those providers.
+            if not (self._preset is not None and not self._preset.cap("parallel_tool_calls", False)):
+                body["parallel_tool_calls"] = ptc
 
-        api_key = self.api_key or os.environ.get("OPENAI_API_KEY", "")
+        env_var, env_label = self._api_key_env()
+        api_key = self.api_key or os.environ.get(env_var, "")
         if not api_key:
             raise LLMProviderError(
                 f"No API key for provider '{self.provider}'. "
-                f"Set the api_key parameter or the OPENAI_API_KEY environment variable.\n"
+                f"Set the api_key parameter or the {env_label} environment variable.\n"
                 f"Example: LLMClient(provider='{self.provider}', "
-                f"model='{self.model}', api_key='sk-...')"
+                f"model='{self.model}', api_key='...')"
             )
         headers = {
             "Content-Type": "application/json",
@@ -521,6 +655,18 @@ class LLMClient:
         }
 
         return body, headers
+
+    def _api_key_env(self) -> tuple[str, str]:
+        """Return (env_var, label) for API key resolution.
+
+        Built-in OpenAI/Azure/Custom share ``OPENAI_API_KEY``. Preset
+        providers each declare their own env var (``GROQ_API_KEY``,
+        ``OPENROUTER_API_KEY``, ...). The label is what we surface in
+        error messages.
+        """
+        if self._preset is not None:
+            return self._preset.env_var, self._preset.env_var
+        return "OPENAI_API_KEY", "OPENAI_API_KEY"
 
     async def _call_openai(
         self, messages: list[Message], tools: list[dict[str, Any]] | None = None, **kwargs: Any

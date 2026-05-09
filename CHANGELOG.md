@@ -5,6 +5,64 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-05-09
+
+MINOR — Provider expansion + first-class agent testing. Adds 12 LLM
+providers via a public preset registry, a native Gemini wire, two
+deterministic LLM stand-ins (`TestModel`, `FunctionModel`), and a
+pytest plugin for first-class evals. All additions are backward-
+compatible; existing call sites are byte-identical.
+
+### Added — Provider preset registry (`fastaiagent.llm.providers`)
+
+- **`fastaiagent/llm/providers/registry.py`** — `ProviderPreset` dataclass plus `register_provider`, `get_preset`, `list_presets`, `list_provider_keys`, `unregister_provider`, `reserved_keys`. Public API; user code can register internal LLM gateways or new vendors without forking `client.py`.
+- **`fastaiagent/llm/providers/_presets.py`** — 12 seed presets: **gemini, groq, openrouter, deepseek, together, fireworks, perplexity, mistral, lmstudio, vllm, sambanova, cerebras**. Each ships with `base_url`, `env_var`, `default_model`, `wire`, and a capability map (`tools`, `streaming`, `response_format`, `parallel_tool_calls`).
+- **`fastaiagent/llm/providers/gemini.py`** — native Google Gemini wire (`acomplete_gemini`, `astream_gemini`). Uses only `httpx` — no `google-generativeai` runtime dependency. Honors `responseSchema` for native structured output.
+- **`LLMClient` dispatcher refactor** — preset-aware `__init__`, `_default_base_url`, `_get_provider_fn`, `astream`. Built-in providers (`openai`, `anthropic`, `ollama`, `azure`, `bedrock`, `custom`) keep their existing code paths byte-for-byte; new providers route through the registry.
+- **Capability fallbacks** in `_build_openai_body` — when a preset declares no native `response_format`, fastaiagent injects JSON-only guidance into the system prompt instead of erroring; when `parallel_tool_calls` is unsupported, the field is dropped silently.
+- **Per-preset env var resolution** — preset providers fall back to their canonical env var (`GROQ_API_KEY`, `GEMINI_API_KEY`, …) instead of `OPENAI_API_KEY`.
+- **`max_tokens` field shape** — preset providers (Groq, OpenRouter, …) now use the classic `max_tokens` Chat-Completions field rather than `max_completion_tokens` (which would 400 on those endpoints).
+- **`fastaiagent/ui/pricing.py`** — pricing rows for Gemini 2.5, Groq Llama variants, DeepSeek, Mistral families, Together, Fireworks, Perplexity, OpenRouter aliases. Cost computation continues to be best-effort and prefix-matched.
+- **`/api/providers` REST endpoint** — `fastaiagent/ui/routes/providers.py`. Returns built-ins + registered presets with capability flags, for the local UI's playground dropdown and analytics. Registered in `fastaiagent/ui/server.py`.
+
+### Added — Deterministic agent testing (`fastaiagent.testing`)
+
+- **`fastaiagent/testing/models.py`** — `TestModel` (canned text + tool-call responses, round-robin, configurable usage / latency) and `FunctionModel` (wraps a sync-or-async responder callable). Both implement the full `LLMClient` API (`complete`, `acomplete`, `stream`, `astream`), emit the same `StreamEvent` types as real providers, and record OTel spans tagged `gen_ai.system="test"` so tracing / replay / the local UI work end-to-end against fake runs.
+
+### Added — Pytest plugin (`fastaiagent.eval.pytest_plugin`)
+
+- **`@case(input=..., expected=...)`** decorator — turn a pytest function into a single eval case.
+- **`@pytest_dataset("path.jsonl")`** decorator — parametrise a test over every row of a JSONL/CSV dataset (uses the existing `Dataset.from_jsonl` / `Dataset.from_csv`).
+- **`evaluate_one`** fixture — runs the agent against the case input, scores it via configurable scorers (`exact_match` default), persists one `eval_runs` row per test invocation tagged `pytest::<test-id>` so CI eval results show up at the local UI's `/evals` page.
+- Registered automatically via `pyproject.toml`'s `[project.entry-points.pytest11]`. Tests that don't import the helpers are unaffected.
+
+### Added — Examples & docs
+
+- **`examples/15_providers_gemini.py`**, **`16_providers_groq.py`**, **`17_providers_openrouter.py`** — runnable single-file demos.
+- **`examples/60_test_model.py`**, **`61_eval_pytest.py`** — TestModel + pytest plugin demos.
+- **`docs/llm/providers.md`** — full table of supported providers with env vars, default models, capability flags.
+- **`docs/llm/custom-provider.md`** — `register_provider()` recipe for internal LLM gateways.
+- **`docs/testing/index.md`** — TestModel / FunctionModel reference.
+- **`docs/evaluation/pytest.md`** — pytest plugin reference.
+- **`mkdocs.yml`** — new `LLM` and `Testing` top-level sections; `Pytest plugin` page added under `Evaluation`.
+- **README** — new `Providers` and `Testing your agents` sections after the quickstart.
+
+### Tests (no mocking)
+
+- `tests/test_provider_registry.py` — registry round-trip, duplicate, reserved-key guard, capability default.
+- `tests/test_provider_dispatch.py` — preset-aware `__init__`, base_url + api_key resolution, dispatch routing for openai_compat vs native_gemini wires, `response_format` system-prompt fallback, `parallel_tool_calls` drop, `max_tokens` field shape.
+- `tests/test_testing_models.py` — TestModel canned text + round-robin + tool calls + streaming events; FunctionModel sync + async responders + state machine + invalid-return guard; end-to-end via `Agent.run()`.
+- `tests/test_pytest_plugin.py` — meta-test using `pytester`: `@case` happy path, mismatch failure, `@pytest_dataset` parametrisation, explicit input override, `assert_pass=False` introspection, persistence to local DB.
+- `tests/test_ui_providers.py` — FastAPI `TestClient` over `/api/providers`, asserts shape and that built-ins + presets both appear.
+- `tests/integration/test_providers_live.py` — live tests against Groq + Gemini (gated on `GROQ_API_KEY` / `GEMINI_API_KEY`), exercising sync completion, streaming, tool calling, structured output, and span attribution.
+
+### Breaking changes
+
+None. The provider preset registry is purely additive; built-in
+providers retain their existing code paths. The pytest plugin is opt-in
+(tests that don't import the helpers see no change). `TestModel` /
+`FunctionModel` are new classes in a new package.
+
 ## [1.7.0] - 2026-05-06
 
 MINOR — Trace Learning Loop. Adds a new public module (`fastaiagent.learn`), a new public class (`PersistentFactBlock`), a new CLI subcommand (`fastaiagent learn`), a new REST endpoint (`/api/learned_memory`), and schema migration v8 (`learned_memory` table). All additions are backward-compatible — existing call sites are byte-identical and the migration is forward-only with no future-version guard.

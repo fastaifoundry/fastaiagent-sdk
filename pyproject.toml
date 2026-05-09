@@ -1,6 +1,6 @@
 [project]
 name = "fastaiagent"
-version = "1.7.0"
+version = "1.8.0"
 description = "Build, debug, evaluate, and operate AI agents. The only SDK with fork-and-rerun Agent Replay."
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -82,6 +82,9 @@ dev = [
 
 [project.scripts]
 fastaiagent = "fastaiagent.cli.main:app"
+
+[project.entry-points.pytest11]
+fastaiagent = "fastaiagent.eval.pytest_plugin"
 
 [project.urls]
 Homepage = "https://github.com/fastaifoundry/fastaiagent-sdk"

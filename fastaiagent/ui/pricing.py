@@ -49,10 +49,40 @@ _PRICING: dict[str, _Rate] = {
     "gemini-1.5-flash": _Rate(0.075, 0.30),
     "gemini-1.5-pro": _Rate(1.25, 5.00),
     "gemini-2.0-flash": _Rate(0.10, 0.40),
+    "gemini-2.5-flash": _Rate(0.30, 2.50),
+    "gemini-2.5-pro": _Rate(1.25, 10.00),
     # Local / Mistral / Groq
     "mixtral-8x7b": _Rate(0.24, 0.24),
     "llama-3.1-70b": _Rate(0.59, 0.79),
     "llama-3.1-8b": _Rate(0.05, 0.08),
+    "llama-3.3-70b": _Rate(0.59, 0.79),
+    # Groq (often free / cheap; rates from groq.com/pricing)
+    "llama-3.1-70b-versatile": _Rate(0.59, 0.79),
+    "llama-3.1-8b-instant": _Rate(0.05, 0.08),
+    "mixtral-8x7b-32768": _Rate(0.24, 0.24),
+    # DeepSeek
+    "deepseek-chat": _Rate(0.27, 1.10),
+    "deepseek-reasoner": _Rate(0.55, 2.19),
+    # Mistral
+    "mistral-large": _Rate(2.00, 6.00),
+    "mistral-small": _Rate(0.20, 0.60),
+    "mistral-medium": _Rate(0.40, 2.00),
+    "open-mistral-nemo": _Rate(0.15, 0.15),
+    # Together AI
+    "meta-llama/llama-3.1-70b-instruct-turbo": _Rate(0.88, 0.88),
+    "meta-llama/llama-3.1-8b-instruct-turbo": _Rate(0.18, 0.18),
+    # Fireworks
+    "accounts/fireworks/models/llama-v3p1-70b-instruct": _Rate(0.90, 0.90),
+    "accounts/fireworks/models/llama-v3p1-8b-instruct": _Rate(0.20, 0.20),
+    # Perplexity (sonar online)
+    "llama-3.1-sonar-small-128k-online": _Rate(0.20, 0.20),
+    "llama-3.1-sonar-large-128k-online": _Rate(1.00, 1.00),
+    # OpenRouter — let downstream model name match the underlying provider's
+    # entry; it carries the prefix ``openai/``, ``anthropic/``, etc.
+    "openai/gpt-4o-mini": _Rate(0.15, 0.60),
+    "openai/gpt-4o": _Rate(2.50, 10.00),
+    "anthropic/claude-3-5-sonnet": _Rate(3.00, 15.00),
+    "anthropic/claude-3-5-haiku": _Rate(0.80, 4.00),
 }
 
 

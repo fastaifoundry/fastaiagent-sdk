@@ -3,6 +3,7 @@
 from fastaiagent.eval.dataset import Dataset
 from fastaiagent.eval.evaluate import evaluate
 from fastaiagent.eval.llm_judge import LLMJudge
+from fastaiagent.eval.pytest_plugin import case, dataset as pytest_dataset
 from fastaiagent.eval.rag import AnswerRelevancy, ContextPrecision, ContextRecall, Faithfulness
 from fastaiagent.eval.results import EvalResults
 from fastaiagent.eval.safety import Bias, PIILeakage, Toxicity
@@ -22,6 +23,9 @@ __all__ = [
     "ScorerResult",
     "EvalResults",
     "LLMJudge",
+    # Pytest plugin decorators
+    "case",
+    "pytest_dataset",
     # RAG
     "Faithfulness",
     "AnswerRelevancy",
