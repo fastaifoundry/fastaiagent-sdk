@@ -10,6 +10,14 @@ from fastaiagent.llm.message import (
     ToolMessage,
     UserMessage,
 )
+from fastaiagent.llm.providers import (
+    ProviderPreset,
+    get_preset,
+    list_provider_keys,
+    list_presets,
+    register_provider,
+    unregister_provider,
+)
 from fastaiagent.llm.stream import (
     StreamDone,
     StreamEvent,
@@ -36,4 +44,11 @@ __all__ = [
     "ToolCallEnd",
     "Usage",
     "StreamDone",
+    # Provider registry
+    "ProviderPreset",
+    "register_provider",
+    "unregister_provider",
+    "get_preset",
+    "list_presets",
+    "list_provider_keys",
 ]

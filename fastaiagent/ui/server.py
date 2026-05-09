@@ -36,6 +36,7 @@ from fastaiagent.ui.routes import (
     overview,
     playground,
     prompts,
+    providers,
     replay,
     traces,
     workflows,
@@ -128,6 +129,7 @@ def build_app(
         datasets.router,
         filter_presets.router,
         learned_memory.router,
+        providers.router,
     ):
         app.include_router(r)
 

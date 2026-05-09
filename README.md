@@ -6,7 +6,7 @@ The only SDK with **Agent Replay** — fork-and-rerun debugging — and a
 
 Works standalone or connected to the [FastAIAgent Platform](https://fastaiagent.net) for visual editing, production monitoring, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.7.0)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.8.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -33,6 +33,43 @@ result = agent.run("What is the capital of France?")
 print(result.output)
 print(result.trace_id)  # every run is traced — use this ID for replay/debugging
 ```
+
+## Providers
+
+`LLMClient` ships with first-class presets for OpenAI, Anthropic, Azure,
+Bedrock, Ollama — plus Gemini, Groq, OpenRouter, DeepSeek, Together,
+Fireworks, Perplexity, Mistral, LM Studio, vLLM, SambaNova, and Cerebras.
+Each preset resolves the right `base_url` and reads the API key from the
+canonical environment variable, so this is the entire configuration:
+
+```python
+LLMClient(provider="groq",   model="llama-3.1-70b-versatile")  # GROQ_API_KEY
+LLMClient(provider="gemini", model="gemini-2.0-flash")          # GEMINI_API_KEY
+LLMClient(provider="openrouter", model="openai/gpt-4o-mini")    # OPENROUTER_API_KEY
+```
+
+Custom internal LLM gateways register in five lines via
+`fastaiagent.llm.providers.register_provider`.
+See [docs/llm/providers](docs/llm/providers.md).
+
+## Testing your agents — deterministic, no network
+
+Swap `LLMClient` for `TestModel` or `FunctionModel` (in
+`fastaiagent.testing`) and your tests run offline with no flake:
+
+```python
+from fastaiagent.testing import TestModel
+from fastaiagent.eval import case
+
+@case(input="hello", expected="hi")
+def test_greet(evaluate_one):
+    agent = Agent(name="g", llm=TestModel(response="hi"))
+    evaluate_one(agent.run, scorers=["exact_match"])
+```
+
+The pytest plugin auto-persists each tagged case to the local UI's
+`/evals` page. See [docs/testing](docs/testing/index.md) and
+[docs/evaluation/pytest](docs/evaluation/pytest.md).
 
 ### Build a Deep Research Agent in one file
 
