@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sqlite3
 import time
 from pathlib import Path
@@ -26,14 +27,40 @@ router = APIRouter(prefix="/api/kb", tags=["kb"])
 
 _DEFAULT_KB_DIR = ".fastaiagent/kb"
 _LOCALKB_CACHE: dict[tuple[str, str], Any] = {}
+# Collection names are user-visible directory names. Restrict to a portable
+# slug so a path-traversal segment (``../``) or a NUL byte cannot reach
+# ``_collection_db`` and walk outside the KB root. Real KB names in the
+# SDK and docs are short alphanumeric slugs (``my-kb``, ``docs``, …) so
+# this regex is non-breaking for documented usage.
+_COLLECTION_NAME_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 
 
 def _kb_root() -> Path:
     return Path(os.environ.get("FASTAIAGENT_KB_DIR", _DEFAULT_KB_DIR)).expanduser()
 
 
+def _validate_collection_name(name: str) -> None:
+    """Reject any KB name that could escape the KB root via traversal."""
+    if not _COLLECTION_NAME_RE.fullmatch(name):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Invalid KB name: must match [A-Za-z0-9_-]{1,64}",
+        )
+
+
 def _collection_db(root: Path, name: str) -> Path:
-    return root / name / "kb.sqlite"
+    """Resolve ``<root>/<name>/kb.sqlite`` and refuse anything outside ``root``.
+
+    Belt-and-braces: the name regex above already prevents traversal, but a
+    second ``is_relative_to`` check after path resolution defends against
+    symlink shenanigans (a ``<root>/foo`` symlink pointing to ``/etc``).
+    """
+    _validate_collection_name(name)
+    candidate = (root / name / "kb.sqlite").resolve()
+    root_resolved = root.resolve()
+    if not candidate.is_relative_to(root_resolved):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"KB '{name}' not found")
+    return candidate
 
 
 def _is_collection(entry: Path) -> bool:

@@ -113,8 +113,36 @@ def _serializer(session_secret: str) -> Any:
     return URLSafeTimedSerializer(session_secret, salt="fastaiagent.ui.session")
 
 
-def issue_session_cookie(response: Response, auth: AuthFile) -> None:
-    """Sign a cookie that lives for ``SESSION_MAX_AGE_SECONDS`` days."""
+def _request_is_secure(request: Request | None) -> bool:
+    """True if the inbound request reached us over HTTPS.
+
+    Honors the standard ``X-Forwarded-Proto`` hop header so the cookie
+    is correctly marked Secure when the UI sits behind a TLS-terminating
+    proxy. Falls back to the request's own scheme.
+    """
+    if request is None:
+        return False
+    fwd = request.headers.get("x-forwarded-proto", "").split(",")[0].strip().lower()
+    if fwd:
+        return fwd == "https"
+    try:
+        return request.url.scheme == "https"
+    except Exception:
+        return False
+
+
+def issue_session_cookie(
+    response: Response,
+    auth: AuthFile,
+    request: Request | None = None,
+) -> None:
+    """Sign a cookie that lives for ``SESSION_MAX_AGE_SECONDS`` days.
+
+    Marks the cookie ``Secure`` when the request arrived over HTTPS (or a
+    TLS-terminating proxy advertised ``X-Forwarded-Proto: https``). On
+    plain-HTTP loopback the flag stays off, otherwise the browser would
+    drop the cookie and login would silently fail.
+    """
     token = _serializer(auth.session_secret).dumps({"username": auth.username})
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
@@ -122,7 +150,7 @@ def issue_session_cookie(response: Response, auth: AuthFile) -> None:
         max_age=SESSION_MAX_AGE_SECONDS,
         httponly=True,
         samesite="strict",
-        secure=False,
+        secure=_request_is_secure(request),
         path="/",
     )
 

@@ -229,3 +229,43 @@ class TestSQLiteHelper:
         db.execute("CREATE TABLE t (id TEXT)")
         db.close()
         assert db._conn is None
+
+    @pytest.mark.skipif(
+        os.name == "nt", reason="POSIX file modes do not apply on Windows"
+    )
+    def test_chmod_owner_only_on_creation(self, temp_dir):
+        """Regression for security_review_1.md H8.
+
+        New ``local.db`` files (and the parent dir, when we created it)
+        must land at owner-only perms — traces and bcrypt hashes are
+        otherwise world-readable on shared hosts.
+        """
+        # Create a fresh directory ourselves and then a brand-new db inside
+        # a brand-new subdirectory so SQLiteHelper's ``parent_was_new``
+        # branch fires on the *grandchild* directory.
+        new_root = temp_dir / "fresh-root"
+        db_path = new_root / "data" / "test.db"
+        with SQLiteHelper(db_path) as db:
+            db.execute("CREATE TABLE t (id TEXT)")
+        assert db_path.exists()
+        # File: owner-only (0o600).
+        assert (db_path.stat().st_mode & 0o777) == 0o600
+        # Parent dir: owner-only (0o700).
+        assert (db_path.parent.stat().st_mode & 0o777) == 0o700
+
+    @pytest.mark.skipif(
+        os.name == "nt", reason="POSIX file modes do not apply on Windows"
+    )
+    def test_chmod_does_not_downgrade_existing_files(self, temp_dir):
+        """If a user pre-created the parent dir with their own perms, we
+        must not silently rewrite them.
+        """
+        existing_parent = temp_dir / "user-managed"
+        existing_parent.mkdir(mode=0o755)
+        db_path = existing_parent / "test.db"
+        # Open helper but only the file is new; the parent already existed.
+        with SQLiteHelper(db_path) as db:
+            db.execute("CREATE TABLE t (id TEXT)")
+        # New file gets tightened, existing parent stays as the user wrote it.
+        assert (db_path.stat().st_mode & 0o777) == 0o600
+        assert (existing_parent.stat().st_mode & 0o777) == 0o755

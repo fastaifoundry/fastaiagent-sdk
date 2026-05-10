@@ -85,3 +85,15 @@ def test_empty_data_raises() -> None:
 def test_from_url_rejects_file_scheme() -> None:
     with pytest.raises(UnsupportedFormatError):
         PDF.from_url("file:///tmp/nope.pdf")
+
+
+def test_from_url_rejects_loopback_literal() -> None:
+    """Regression for security_review_1.md C4: SSRF to 127.0.0.1."""
+    with pytest.raises(MultimodalError, match="non-public|public address"):
+        PDF.from_url("http://127.0.0.1:7842/secret.pdf")
+
+
+def test_from_url_rejects_link_local_metadata_literal() -> None:
+    """Regression for security_review_1.md C4: cloud-metadata SSRF."""
+    with pytest.raises(MultimodalError, match="non-public|public address"):
+        PDF.from_url("http://169.254.169.254/latest/meta-data/")

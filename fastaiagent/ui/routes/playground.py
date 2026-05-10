@@ -26,11 +26,15 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import logging
 import os
 import re
 import time
+import uuid
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
@@ -219,6 +223,13 @@ class PlaygroundParameters(BaseModel):
     top_p: float | None = Field(default=1.0, ge=0.0, le=1.0)
 
 
+# ~25 MiB raw → ~33.4M base64 chars (4/3 expansion). Cap at 35M to leave a
+# safety margin for whitespace/padding without letting an attacker post a
+# multi-GB string and OOM the worker before we ever decode it.
+_MAX_IMAGE_B64_CHARS: int = 35_000_000
+_MAX_IMAGE_DECODED_BYTES: int = 25 * 1024 * 1024  # 25 MiB
+
+
 class PlaygroundRunRequest(BaseModel):
     provider: str
     model: str
@@ -226,7 +237,7 @@ class PlaygroundRunRequest(BaseModel):
     variables: dict[str, Any] = Field(default_factory=dict)
     system_prompt: str | None = None
     parameters: PlaygroundParameters = Field(default_factory=PlaygroundParameters)
-    image_b64: str | None = None
+    image_b64: str | None = Field(default=None, max_length=_MAX_IMAGE_B64_CHARS)
     image_media_type: str | None = None
 
 
@@ -268,6 +279,11 @@ def _build_messages(req: PlaygroundRunRequest) -> list[Any]:
                 status.HTTP_400_BAD_REQUEST,
                 f"Invalid base64 image data: {e}",
             ) from e
+        if len(data) > _MAX_IMAGE_DECODED_BYTES:
+            raise HTTPException(
+                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                f"Decoded image exceeds {_MAX_IMAGE_DECODED_BYTES} bytes.",
+            )
         img = Image.from_bytes(data, req.image_media_type)
         messages.append(UserMessage([resolved, img]))
     else:
@@ -328,9 +344,25 @@ async def run(
         try:
             resp = await client.acomplete(messages)
         except Exception as e:
+            # Avoid leaking provider-side error details (which can include
+            # request-id, account-id, region, or partial key prefixes) to
+            # the client. Log the full exception server-side under a fresh
+            # correlation id, then return only the id.
+            correlation_id = uuid.uuid4().hex
+            logger.warning(
+                "Playground /run LLM call failed (correlation_id=%s, "
+                "provider=%s, model=%s)",
+                correlation_id,
+                body.provider,
+                body.model,
+                exc_info=True,
+            )
             raise HTTPException(
                 status.HTTP_502_BAD_GATEWAY,
-                f"LLM call failed: {type(e).__name__}: {e}",
+                {
+                    "error": "LLM call failed.",
+                    "correlation_id": correlation_id,
+                },
             ) from e
         latency_ms = int((time.monotonic() - start) * 1000)
 
@@ -418,9 +450,23 @@ async def stream(
                         output_tokens = ev.completion_tokens
             except asyncio.CancelledError:  # client disconnected
                 raise
-            except Exception as e:
+            except Exception:
+                # Same redaction policy as /run: log server-side under a
+                # correlation id, return only the id over SSE.
+                correlation_id = uuid.uuid4().hex
+                logger.warning(
+                    "Playground /stream LLM call failed (correlation_id=%s, "
+                    "provider=%s, model=%s)",
+                    correlation_id,
+                    body.provider,
+                    body.model,
+                    exc_info=True,
+                )
                 err = json.dumps(
-                    {"message": f"{type(e).__name__}: {e}"}
+                    {
+                        "message": "LLM call failed.",
+                        "correlation_id": correlation_id,
+                    }
                 )
                 yield f"event: error\ndata: {err}\n\n"
                 return

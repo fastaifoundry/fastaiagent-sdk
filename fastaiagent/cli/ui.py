@@ -23,6 +23,47 @@ _EXTRAS_HINT = (
     "    pip install 'fastaiagent[ui]'\n"
 )
 
+# Hosts that bind to the local machine only. Anything else exposes the
+# UI to the network, where plain-HTTP session cookies become sniffable.
+# ``0.0.0.0`` and ``::`` are wildcard binds — *not* loopback.
+_LOOPBACK_HOSTS: frozenset[str] = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+def _is_loopback_host(host: str) -> bool:
+    return host.lower() in _LOOPBACK_HOSTS
+
+
+def _check_bind_safety(host: str, insecure_bind: bool) -> None:
+    """Refuse non-loopback bind unless ``--insecure-bind`` is set.
+
+    Closes security_review_1.md H4: the original CLI would bind to
+    ``0.0.0.0`` (or any host) silently, which combined with the
+    plaintext-HTTP session cookie default leaks credentials over LAN.
+    The opt-in flag forces the operator to acknowledge the risk before
+    we start the server.
+    """
+    if _is_loopback_host(host):
+        return
+    if not insecure_bind:
+        console.print(
+            f"\n[red]Refusing to bind to {host!r}: not a loopback address.[/red]\n"
+            "[red]The Local UI is designed for single-user localhost use only.[/red]\n"
+            "[red]Plain HTTP on a non-loopback address exposes your session[/red]\n"
+            "[red]cookie to anyone on the network.[/red]\n\n"
+            "If you understand and accept the risk (e.g., you're behind a\n"
+            "TLS-terminating reverse proxy that sets ``X-Forwarded-Proto: https``),\n"
+            "rerun with [bold]--insecure-bind[/bold].\n"
+        )
+        raise typer.Exit(code=2)
+    console.print(
+        f"\n[yellow]⚠️  Binding to non-loopback host {host!r} via "
+        "[bold]--insecure-bind[/bold].[/yellow]\n"
+        "[yellow]Anyone on this network can now reach the UI. Use HTTPS[/yellow]\n"
+        "[yellow]termination (reverse proxy advertising[/yellow]\n"
+        "[yellow]``X-Forwarded-Proto: https``) so session cookies are not[/yellow]\n"
+        "[yellow]sent in plaintext.[/yellow]\n"
+    )
+
 
 def _ensure_ui_extra() -> None:
     """Import-check the web framework; raise a friendly error if missing."""
@@ -121,6 +162,16 @@ def default(
     port: int = typer.Option(7842, "--port"),
     no_auth: bool = typer.Option(False, "--no-auth", help="Skip local auth (throwaway use)."),
     no_open: bool = typer.Option(False, "--no-open"),
+    insecure_bind: bool = typer.Option(
+        False,
+        "--insecure-bind",
+        help=(
+            "Acknowledge that binding to a non-loopback host (e.g. 0.0.0.0) "
+            "exposes the UI and its session cookie over plain HTTP. Required "
+            "to start with --host pointing anywhere other than 127.0.0.1, "
+            "::1, or localhost."
+        ),
+    ),
     db: Path | None = typer.Option(
         None,
         "--db",
@@ -140,6 +191,7 @@ def default(
         port=port,
         no_auth=no_auth,
         no_open=no_open,
+        insecure_bind=insecure_bind,
         db=db,
         auth=auth,
     )
@@ -151,6 +203,14 @@ def start(
     port: int = typer.Option(7842, "--port"),
     no_auth: bool = typer.Option(False, "--no-auth"),
     no_open: bool = typer.Option(False, "--no-open"),
+    insecure_bind: bool = typer.Option(
+        False,
+        "--insecure-bind",
+        help=(
+            "Acknowledge that binding to a non-loopback host (e.g. 0.0.0.0) "
+            "exposes the UI and its session cookie over plain HTTP."
+        ),
+    ),
     db: Path | None = typer.Option(None, "--db"),
     auth: Path | None = typer.Option(None, "--auth-file"),
 ) -> None:
@@ -160,6 +220,7 @@ def start(
         port=port,
         no_auth=no_auth,
         no_open=no_open,
+        insecure_bind=insecure_bind,
         db=db,
         auth=auth,
     )
@@ -171,10 +232,12 @@ def _run_start(
     port: int,
     no_auth: bool,
     no_open: bool,
+    insecure_bind: bool,
     db: Path | None,
     auth: Path | None,
 ) -> None:
     _ensure_ui_extra()
+    _check_bind_safety(host, insecure_bind)
     from fastaiagent.ui.auth import auth_file_exists
 
     db_path, auth_path = _resolve_paths(db, auth)

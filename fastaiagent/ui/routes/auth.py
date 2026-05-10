@@ -11,6 +11,7 @@ from fastaiagent.ui.auth import (
     verify_password,
 )
 from fastaiagent.ui.deps import get_context
+from fastaiagent.ui.throttle import get_default_throttler
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -27,16 +28,49 @@ class StatusResponse(BaseModel):
     project_id: str = ""
 
 
+def _client_key(request: Request, username: str) -> str:
+    """Build a throttle key from the client IP and submitted username.
+
+    Honors ``X-Forwarded-For`` (first hop) so a proxy doesn't collapse
+    every client into one bucket. Falls back to ``request.client.host``.
+    """
+    fwd = request.headers.get("x-forwarded-for", "")
+    ip = fwd.split(",")[0].strip() if fwd else (
+        request.client.host if request.client else "unknown"
+    )
+    return f"{ip}|{username}"
+
+
 @router.post("/login")
 def login(body: LoginRequest, request: Request, response: Response) -> dict[str, str]:
     ctx = get_context(request)
     if ctx.no_auth:
         return {"status": "ok", "username": "anonymous"}
 
+    throttler = get_default_throttler()
+    key = _client_key(request, body.username)
+    remaining = throttler.check(key)
+    if remaining > 0:
+        retry = max(int(remaining) + 1, 1)
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            f"Too many failed login attempts. Try again in {retry}s.",
+            headers={"Retry-After": str(retry)},
+        )
+
     auth = ctx.auth()
     if auth is None or auth.username != body.username or not verify_password(body.password, auth):
+        cooldown = throttler.record_failure(key)
+        if cooldown > 0:
+            retry = max(int(cooldown) + 1, 1)
+            raise HTTPException(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                f"Too many failed login attempts. Locked for {retry}s.",
+                headers={"Retry-After": str(retry)},
+            )
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid username or password")
-    issue_session_cookie(response, auth)
+    throttler.record_success(key)
+    issue_session_cookie(response, auth, request)
     return {"status": "ok", "username": auth.username}
 
 

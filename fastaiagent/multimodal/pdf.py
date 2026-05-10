@@ -18,16 +18,15 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
-
-import httpx
 
 from fastaiagent._internal.errors import MultimodalError, UnsupportedFormatError
+from fastaiagent.multimodal._http import safe_http_fetch
 from fastaiagent.multimodal.image import Image
 
 _PDF_MEDIA_TYPE = "application/pdf"
 _FROM_URL_TIMEOUT_SECONDS: float = 30.0
 _FROM_URL_MAX_REDIRECTS: int = 5
+_FROM_URL_MAX_BYTES: int = 100 * 1024 * 1024  # 100 MiB
 _DEFAULT_RENDER_DPI: int = 150
 
 logger = logging.getLogger(__name__)
@@ -65,18 +64,19 @@ class PDF:
 
     @classmethod
     def from_url(cls, url: str) -> PDF:
-        parsed = urlparse(url)
-        if parsed.scheme not in ("http", "https"):
-            raise UnsupportedFormatError(
-                f"unsupported URL scheme {parsed.scheme!r}; only http(s) allowed"
-            )
-        with httpx.Client(
-            follow_redirects=True,
-            max_redirects=_FROM_URL_MAX_REDIRECTS,
+        """Fetch a PDF from an HTTP(S) URL. Times out at 30s, max 5 redirects.
+
+        Rejects non-HTTP(S) schemes and refuses any host that resolves to a
+        private/loopback/link-local address (SSRF hardening). Set
+        ``FASTAIAGENT_ALLOW_PRIVATE_NETWORKS=1`` to opt in for intranet use.
+        Body is capped at 100 MiB.
+        """
+        resp = safe_http_fetch(
+            url,
             timeout=_FROM_URL_TIMEOUT_SECONDS,
-        ) as client:
-            resp = client.get(url)
-            resp.raise_for_status()
+            max_redirects=_FROM_URL_MAX_REDIRECTS,
+            max_bytes=_FROM_URL_MAX_BYTES,
+        )
         return cls(data=resp.content, source_url=url)
 
     # --- processing ---

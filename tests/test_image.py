@@ -85,6 +85,71 @@ def test_from_url_rejects_data_scheme() -> None:
         Image.from_url("data:image/png;base64,iVBORw0KGgo=")
 
 
+def test_from_url_rejects_loopback_literal() -> None:
+    """Regression for security_review_1.md C4: SSRF to 127.0.0.1."""
+    with pytest.raises(MultimodalError, match="non-public|public address"):
+        Image.from_url("http://127.0.0.1:7842/api/auth/status")
+
+
+def test_from_url_rejects_private_rfc1918_literal() -> None:
+    """Regression for security_review_1.md C4: SSRF to RFC 1918."""
+    with pytest.raises(MultimodalError, match="non-public|public address"):
+        Image.from_url("http://192.168.1.1/scan.png")
+
+
+def test_from_url_rejects_link_local_metadata_literal() -> None:
+    """Regression for security_review_1.md C4: cloud-metadata SSRF."""
+    with pytest.raises(MultimodalError, match="non-public|public address"):
+        Image.from_url("http://169.254.169.254/latest/meta-data/")
+
+
+def test_from_url_allows_private_when_env_set(monkeypatch) -> None:
+    """The opt-out env var lets intranet users keep working.
+
+    We don't actually serve anything on 127.0.0.1 in the test, so the
+    request will fail with a connection / HTTP error rather than the SSRF
+    guard — which is the point: the guard no longer trips.
+    """
+    from fastaiagent.multimodal._http import ALLOW_PRIVATE_NETWORKS_ENV
+
+    monkeypatch.setenv(ALLOW_PRIVATE_NETWORKS_ENV, "1")
+    with pytest.raises(Exception) as excinfo:  # noqa: PT011 - any non-SSRF error is fine
+        Image.from_url("http://127.0.0.1:1/does-not-exist.png")
+    msg = str(excinfo.value).lower()
+    assert "non-public" not in msg and "public address" not in msg
+
+
+# ---------------------------------------------------------------------------
+# security_review_1.md H9 — PIL decompression-bomb cap
+# ---------------------------------------------------------------------------
+
+
+def test_pil_pixel_cap_is_lowered() -> None:
+    """A small attacker PNG that decodes to >64 megapixels must raise.
+
+    ``Pillow.Image.MAX_IMAGE_PIXELS`` defaults to ~89 MP and only emits a
+    warning by default. We lower it and turn it into an error so a
+    1-MB attacker PNG cannot OOM the worker.
+    """
+    from PIL import Image as PILImage
+
+    # Build a real 9000x9000 PNG (81 MP) — slightly above our 64 MP cap.
+    big = PILImage.new("RGB", (9000, 9000), color="red")
+    buf = io.BytesIO()
+    big.save(buf, format="PNG")
+    buf.seek(0)
+
+    # Either: raises during decode (DecompressionBombError) OR returns
+    # ``None`` from sniff. Both outcomes mean the cap is active. We accept
+    # either to stay decoupled from Pillow's internal exception class
+    # changes across versions.
+    img = Image.from_bytes(buf.getvalue(), media_type="image/png")
+    with pytest.raises(Exception) as excinfo:  # noqa: PT011
+        img.dimensions()
+    msg = str(excinfo.value).lower()
+    assert "pixel" in msg or "decompression" in msg or "bomb" in msg
+
+
 def test_dataclass_equality_by_value() -> None:
     a = Image.from_file(FIXTURES / "cat.jpg")
     b = Image.from_file(FIXTURES / "cat.jpg")

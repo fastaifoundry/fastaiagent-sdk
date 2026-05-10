@@ -9,11 +9,9 @@ import mimetypes
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
-
-import httpx
 
 from fastaiagent._internal.errors import MultimodalError, UnsupportedFormatError
+from fastaiagent.multimodal._http import safe_http_fetch
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +27,31 @@ _PIL_FORMAT_TO_MEDIA_TYPE: dict[str, str] = {
 _VALID_DETAIL: frozenset[str] = frozenset({"auto", "low", "high"})
 _FROM_URL_TIMEOUT_SECONDS: float = 30.0
 _FROM_URL_MAX_REDIRECTS: int = 5
+_FROM_URL_MAX_BYTES: int = 25 * 1024 * 1024  # 25 MiB
+# Decompression-bomb defence: a small attacker PNG can decode to many GB of
+# raw pixels and OOM the worker. Pillow has a built-in ceiling
+# (``Image.MAX_IMAGE_PIXELS``) but its default is 89 megapixels and only
+# triggers a warning; we lower it and turn it into an error. 64 MP covers
+# 8K × 8K which is well above any realistic input.
+_MAX_IMAGE_PIXELS: int = 64_000_000
+
+
+def _enforce_pixel_cap() -> None:
+    """Lower Pillow's pixel ceiling and promote its warning to an error.
+
+    Idempotent. Pillow's default behaviour is to *warn* once an image
+    exceeds ``MAX_IMAGE_PIXELS`` and only raise once it exceeds 2× — too
+    permissive for our threat model. We register a filter that turns
+    ``DecompressionBombWarning`` into a real exception so anything past
+    the cap fails closed.
+    """
+    import warnings
+
+    from PIL import Image as PILImage
+
+    if PILImage.MAX_IMAGE_PIXELS is None or PILImage.MAX_IMAGE_PIXELS > _MAX_IMAGE_PIXELS:
+        PILImage.MAX_IMAGE_PIXELS = _MAX_IMAGE_PIXELS
+    warnings.filterwarnings("error", category=PILImage.DecompressionBombWarning)
 
 
 @dataclass
@@ -73,20 +96,17 @@ class Image:
     def from_url(cls, url: str, *, detail: str = "auto") -> Image:
         """Fetch an image from an HTTP(S) URL. Times out at 30s, max 5 redirects.
 
-        Other schemes (``file://``, ``data:``) are rejected.
+        Rejects non-HTTP(S) schemes (``file://``, ``data:``) and refuses any
+        host that resolves to a private/loopback/link-local address (SSRF
+        hardening). Set ``FASTAIAGENT_ALLOW_PRIVATE_NETWORKS=1`` to opt in
+        for intranet use. Body is capped at 25 MiB.
         """
-        parsed = urlparse(url)
-        if parsed.scheme not in ("http", "https"):
-            raise UnsupportedFormatError(
-                f"unsupported URL scheme {parsed.scheme!r}; only http(s) allowed"
-            )
-        with httpx.Client(
-            follow_redirects=True,
-            max_redirects=_FROM_URL_MAX_REDIRECTS,
+        resp = safe_http_fetch(
+            url,
             timeout=_FROM_URL_TIMEOUT_SECONDS,
-        ) as client:
-            resp = client.get(url)
-            resp.raise_for_status()
+            max_redirects=_FROM_URL_MAX_REDIRECTS,
+            max_bytes=_FROM_URL_MAX_BYTES,
+        )
         data = resp.content
         header_ct = resp.headers.get("content-type", "").split(";")[0].strip().lower()
         media_type = header_ct or _sniff_media_type(data)
@@ -135,6 +155,7 @@ class Image:
         """Return (width, height) by decoding via Pillow. Raises on undecodable input."""
         from PIL import Image as PILImage
 
+        _enforce_pixel_cap()
         with PILImage.open(io.BytesIO(self.data)) as img:
             return img.size
 
@@ -147,6 +168,7 @@ def _sniff_media_type(data: bytes) -> str | None:
     try:
         from PIL import Image as PILImage
 
+        _enforce_pixel_cap()
         with PILImage.open(io.BytesIO(data)) as img:
             fmt = img.format
     except Exception:
