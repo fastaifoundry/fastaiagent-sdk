@@ -25,13 +25,19 @@ class _Rate:
 # Prefix-matched. Longer prefixes win.
 _PRICING: dict[str, _Rate] = {
     # OpenAI
+    "gpt-5-nano": _Rate(0.05, 0.40),
+    "gpt-5-mini": _Rate(0.25, 2.00),
+    "gpt-5": _Rate(1.25, 10.00),
     "gpt-4o-mini": _Rate(0.15, 0.60),
     "gpt-4o": _Rate(2.50, 10.00),
     "gpt-4-turbo": _Rate(10.00, 30.00),
+    "gpt-4.1-nano": _Rate(0.10, 0.40),
     "gpt-4.1-mini": _Rate(0.40, 1.60),
     "gpt-4.1": _Rate(2.00, 8.00),
     "gpt-3.5-turbo": _Rate(0.50, 1.50),
+    "o4-mini": _Rate(1.10, 4.40),
     "o3-mini": _Rate(1.10, 4.40),
+    "o3": _Rate(2.00, 8.00),
     "o1-mini": _Rate(1.10, 4.40),
     "o1-preview": _Rate(15.00, 60.00),
     "o1": _Rate(15.00, 60.00),
@@ -79,8 +85,12 @@ _PRICING: dict[str, _Rate] = {
     "llama-3.1-sonar-large-128k-online": _Rate(1.00, 1.00),
     # OpenRouter — let downstream model name match the underlying provider's
     # entry; it carries the prefix ``openai/``, ``anthropic/``, etc.
+    "openai/gpt-5": _Rate(1.25, 10.00),
     "openai/gpt-4o-mini": _Rate(0.15, 0.60),
     "openai/gpt-4o": _Rate(2.50, 10.00),
+    "anthropic/claude-sonnet-4": _Rate(3.00, 15.00),
+    "anthropic/claude-haiku-4": _Rate(1.00, 5.00),
+    "anthropic/claude-opus-4": _Rate(15.00, 75.00),
     "anthropic/claude-3-5-sonnet": _Rate(3.00, 15.00),
     "anthropic/claude-3-5-haiku": _Rate(0.80, 4.00),
 }

@@ -138,6 +138,13 @@ Returns a `crewai.tools.BaseTool` subclass. `_run(query)` searches
 the named LocalKB and returns a Markdown-ish string with chunk
 content + similarity scores so the LLM has something useful to read.
 
+**Tool-name normalization:** the returned tool's `name` is
+`f"search_{kb_name}"`. CrewAI (via pydantic) normalizes `BaseTool.name`
+by replacing hyphens with underscores, so a KB called `"support-kb"`
+will produce a span named `tool.search_support_kb` — not
+`tool.search_support-kb`. Match on the underscored form when asserting
+against trace contents.
+
 ## 6. Register the crew
 
 ```python
@@ -149,6 +156,27 @@ hierarchical manager-to-worker / agent-owns-task) into the
 `external_agents` table. The Local UI's `/agents/research-crew` page
 renders the dependency graph + a sequential or tree workflow
 visualization depending on the process.
+
+## Model notes
+
+* **gpt-5 family** (`openai/gpt-5`, `openai/gpt-5-mini`, `openai/gpt-5-nano`)
+  rejects `temperature` values other than the default (`1`). Constructing
+  the LLM as `LLM(model="openai/gpt-5-mini", temperature=0)` will raise
+  `BadRequestError 400 — unsupported value`. Omit the parameter and let
+  the model use its default, or set `temperature=1` explicitly. The
+  integration captures spans/tokens/cost identically; this is a model-
+  side API constraint, not a CrewAI or SDK quirk.
+* **Token + cost capture on crewai 1.9.x**: `LLMCallCompletedEvent` on
+  the 1.9 line does not carry a `usage` payload. The integration patches
+  litellm's `TokenCalcHandler.log_success_event` to stash usage and
+  reads it back in `_on_llm_completed`. Both `gen_ai.usage.*_tokens`
+  and `fastaiagent.cost.total_usd` populate on 1.9.x as a result.
+* **Cost is stored as `fastaiagent.cost.total_usd`** on the LLM span
+  (note the namespace prefix). Cost is computed via
+  `fastaiagent.ui.pricing.compute_cost_usd` — a prefix-matched lookup
+  table covering `gpt-5*`, `gpt-4o*`, `gpt-4.1*`, `o1`/`o3`/`o4-mini`,
+  `claude-3-*`, `claude-sonnet-4`, `claude-haiku-4`, `claude-opus-4`,
+  `gemini-1.5/2.x`, and others. Unknown models leave cost unset.
 
 ## Version compatibility
 
