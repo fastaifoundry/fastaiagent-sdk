@@ -24,6 +24,28 @@ from fastaiagent.ui.db import init_local_db  # noqa: E402
 from fastaiagent.ui.server import build_app  # noqa: E402
 
 
+class _CSRFAwareTestClient(TestClient):
+    """TestClient that auto-injects ``X-CSRF-Token`` from the cookie jar
+    on every state-changing request — mirrors what the bundled React UI
+    does in production. Without this, every POST/PUT/PATCH/DELETE made
+    after login would 403 because of the M4 CSRF middleware.
+    """
+
+    _UNSAFE = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+    def request(self, method, url, *args, **kwargs):  # type: ignore[override]
+        if method.upper() in self._UNSAFE:
+            csrf = self.cookies.get("fastaiagent_csrf")
+            if csrf:
+                headers = kwargs.get("headers")
+                if headers is None:
+                    headers = {}
+                    kwargs["headers"] = headers
+                if isinstance(headers, dict):
+                    headers.setdefault("X-CSRF-Token", csrf)
+        return super().request(method, url, *args, **kwargs)
+
+
 @pytest.fixture
 def seeded_db(temp_dir: Path) -> Path:
     """Create local.db with one trace, one eval run, one guardrail event, one prompt."""
@@ -191,7 +213,7 @@ def app_with_auth(seeded_db: Path, temp_dir: Path):
 @pytest.fixture
 def client_with_auth(app_with_auth):
     app, _, _ = app_with_auth
-    return TestClient(app)
+    return _CSRFAwareTestClient(app)
 
 
 class TestAuth:
@@ -333,6 +355,131 @@ class TestAuth:
         assert r.status_code == 200
         set_cookie = r.headers.get("set-cookie", "")
         assert "Secure" in set_cookie
+
+
+# -------------------------------------------------------------------------
+# v1.11.0 Medium-batch regression tests
+# -------------------------------------------------------------------------
+
+
+class TestMediumBatch:
+    """Regression coverage for the Medium-severity findings shipping in
+    1.11.0. Each test maps to a single security_review_1.md ID.
+    """
+
+    # ----- M3 — security headers on every response -----
+
+    def test_m3_security_headers_set_on_every_response(self, client_no_auth):
+        r = client_no_auth.get("/api/auth/status")
+        assert r.status_code == 200
+        for h in (
+            "Content-Security-Policy",
+            "X-Content-Type-Options",
+            "X-Frame-Options",
+            "Referrer-Policy",
+            "Permissions-Policy",
+        ):
+            assert r.headers.get(h), f"missing header: {h}"
+        assert r.headers["X-Frame-Options"] == "DENY"
+        assert r.headers["X-Content-Type-Options"] == "nosniff"
+        assert "frame-ancestors 'none'" in r.headers["Content-Security-Policy"]
+
+    # ----- M4 — CSRF double-submit token -----
+
+    def test_m4_csrf_required_for_authed_post(self, app_with_auth):
+        """A vanilla TestClient (no CSRF auto-injection) hits 403 on a
+        POST after login. The CSRF-aware client we use elsewhere keeps
+        working.
+        """
+        from fastaiagent.ui.throttle import get_default_throttler
+
+        get_default_throttler().reset()
+        app, _, _ = app_with_auth
+        plain = TestClient(app)
+        # Authenticate.
+        r = plain.post(
+            "/api/auth/login",
+            json={"username": "upendra", "password": "correct-horse"},
+        )
+        assert r.status_code == 200
+        # Now POST without echoing the CSRF cookie back as a header → 403.
+        r = plain.post("/api/auth/logout")
+        assert r.status_code == 403
+        body = r.json()
+        assert "csrf" in str(body).lower()
+
+    def test_m4_csrf_cookie_issued_on_first_response(self, client_no_auth):
+        """The cookie is set even in no_auth mode so the React client
+        always has a value to echo back if/when auth is re-enabled.
+        """
+        # Some httpx versions don't surface set-cookie via .headers for
+        # raw access; check the cookie jar.
+        client_no_auth.get("/api/auth/status")
+        assert client_no_auth.cookies.get("fastaiagent_csrf"), (
+            "fastaiagent_csrf cookie should be issued on safe responses"
+        )
+
+    # ----- M5 — LLM rate limit on the playground -----
+
+    def test_m5_llm_rate_limit_returns_429_after_burst(
+        self, client_no_auth, monkeypatch
+    ):
+        """30 calls / minute is the default. Reduce to 2 for the test so
+        we can verify the 429 fires without making 30 LLM requests.
+
+        The rate-limit check runs before the API-key check; whether the
+        first two requests succeed or 400-on-missing-key depends on the
+        local environment. The contract under test is that the 3rd
+        request — past the limit — must return 429.
+        """
+        from fastaiagent.ui import throttle as throttle_module
+
+        monkeypatch.setattr(
+            throttle_module, "_default_llm_limiter",
+            throttle_module.RateLimiter(limit=2, window_seconds=60.0),
+        )
+        # Force the route to short-circuit at the API-key check by
+        # clearing OPENAI_API_KEY for this test only — this keeps the
+        # rate-limit assertion independent of network state.
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        body = {
+            "provider": "openai",
+            "model": "gpt-4o-mini",
+            "prompt_template": "x",
+            "variables": {},
+            "parameters": {"temperature": 1.0, "max_tokens": 4, "top_p": 1.0},
+        }
+        # First two pass the limiter and 400 on missing API key.
+        for _ in range(2):
+            r = client_no_auth.post("/api/playground/run", json=body)
+            assert r.status_code == 400, (r.status_code, r.text)
+        # Third hits the rate limit before the key check.
+        r = client_no_auth.post("/api/playground/run", json=body)
+        assert r.status_code == 429, r.text
+        assert r.headers.get("retry-after"), "Retry-After header missing"
+
+    # ----- M6 — file-upload size caps -----
+
+    def test_m6_jsonl_upload_capped(self, client_no_auth):
+        """A multi-MB JSONL upload above 5 MiB gets 413 — and is refused
+        WITHOUT being read fully into memory (the streaming reader stops
+        as soon as the cap is exceeded).
+        """
+        # 6 MiB of valid JSONL — well above the 5 MiB cap.
+        line = '{"input": "hello", "expected_output": "hi"}\n'
+        payload = (line * (6 * 1024 * 1024 // len(line))).encode()
+        # Create the dataset first so the path validation passes.
+        r = client_no_auth.post(
+            "/api/datasets",
+            json={"name": "huge", "description": "for size cap test"},
+        )
+        assert r.status_code in (200, 201, 409), r.text
+        r = client_no_auth.post(
+            "/api/datasets/huge/import",
+            files={"file": ("big.jsonl", payload, "application/x-ndjson")},
+            data={"mode": "replace"},
+        )
+        assert r.status_code == 413, r.text
 
 
 class TestTraces:

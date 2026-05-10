@@ -224,11 +224,21 @@ class TestSQLiteHelper:
             assert db_path.parent.exists()
 
     def test_context_manager_closes(self, temp_dir):
+        """Closed helpers must reject any further operation.
+
+        Pre-1.11.0 the helper held a single shared connection accessible
+        as ``db._conn``; M7 reworked that to per-thread connections, so
+        the right invariant is "closed helpers raise" rather than
+        "_conn is None".
+        """
+        import sqlite3
+
         db_path = temp_dir / "test.db"
         db = SQLiteHelper(db_path)
         db.execute("CREATE TABLE t (id TEXT)")
         db.close()
-        assert db._conn is None
+        with pytest.raises(sqlite3.ProgrammingError):
+            db.execute("SELECT 1")
 
     @pytest.mark.skipif(
         os.name == "nt", reason="POSIX file modes do not apply on Windows"
@@ -252,6 +262,70 @@ class TestSQLiteHelper:
         assert (db_path.stat().st_mode & 0o777) == 0o600
         # Parent dir: owner-only (0o700).
         assert (db_path.parent.stat().st_mode & 0o777) == 0o700
+
+    def test_m7_per_thread_connections_isolated(self, temp_dir):
+        """M7 — each thread gets its own ``sqlite3.Connection``.
+
+        The pre-1.11.0 helper shared a single connection across every
+        thread under a Python lock. The hardened path uses ``threading.local``
+        so thread A's cursor state can never collide with thread B's.
+        """
+        import threading
+
+        db_path = temp_dir / "perthread.db"
+        with SQLiteHelper(db_path) as db:
+            db.execute("CREATE TABLE t (id TEXT, val INTEGER)")
+            db.execute("INSERT INTO t VALUES (?, ?)", ("a", 1))
+
+            seen_conn_ids: list[int] = []
+            done = threading.Event()
+
+            def worker() -> None:
+                conn = db._get_conn()
+                seen_conn_ids.append(id(conn))
+                done.set()
+
+            t = threading.Thread(target=worker)
+            t.start()
+            t.join(timeout=5)
+            assert done.is_set(), "worker thread did not finish"
+
+            main_conn = db._get_conn()
+            assert id(main_conn) not in seen_conn_ids, (
+                "main and worker should hold distinct sqlite3.Connection objects"
+            )
+
+    def test_m7_concurrent_reads_do_not_crash(self, temp_dir):
+        """Twenty parallel readers hammering ``fetchall`` must all succeed.
+
+        Pre-1.11.0 this worked, but only because of the broad lock — any
+        future code path that bypassed the lock would corrupt cursor
+        state. Per-thread connections make the property structural.
+        """
+        import threading
+
+        db_path = temp_dir / "concurrent.db"
+        with SQLiteHelper(db_path) as db:
+            db.execute("CREATE TABLE t (id INTEGER)")
+            for i in range(50):
+                db.execute("INSERT INTO t VALUES (?)", (i,))
+
+            errors: list[BaseException] = []
+
+            def reader() -> None:
+                try:
+                    for _ in range(10):
+                        rows = db.fetchall("SELECT id FROM t ORDER BY id")
+                        assert len(rows) == 50
+                except BaseException as e:  # noqa: BLE001
+                    errors.append(e)
+
+            threads = [threading.Thread(target=reader) for _ in range(20)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=10)
+            assert not errors, f"concurrent readers crashed: {errors}"
 
     @pytest.mark.skipif(
         os.name == "nt", reason="POSIX file modes do not apply on Windows"

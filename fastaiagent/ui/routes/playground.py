@@ -41,6 +41,33 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from fastaiagent.ui.deps import get_context, require_session
+from fastaiagent.ui.throttle import get_llm_rate_limiter
+
+
+def _llm_rate_key(request: Request, user: str) -> str:
+    """Per-(IP, user) bucket for the LLM rate limiter (M5)."""
+    fwd = request.headers.get("x-forwarded-for", "")
+    ip = fwd.split(",")[0].strip() if fwd else (
+        request.client.host if request.client else "unknown"
+    )
+    return f"{ip}|{user}"
+
+
+def _enforce_llm_rate_limit(request: Request, user: str) -> None:
+    """Refuse the call with HTTP 429 if the user has burned through the
+    minute-window budget. Same primitive as login throttling, but tracks
+    *every* call rather than just failures (M5).
+    """
+    allowed, retry_after = get_llm_rate_limiter().try_acquire(
+        _llm_rate_key(request, user)
+    )
+    if not allowed:
+        retry = max(int(retry_after) + 1, 1)
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            f"LLM rate limit reached. Retry in {retry}s.",
+            headers={"Retry-After": str(retry)},
+        )
 
 router = APIRouter(prefix="/api/playground", tags=["playground"])
 
@@ -315,6 +342,7 @@ async def run(
     from fastaiagent.trace.span import set_fastaiagent_attributes
     from fastaiagent.ui.pricing import compute_cost_usd
 
+    _enforce_llm_rate_limit(request, _user)
     _check_api_key_or_400(body.provider)
     messages = _build_messages(body)
 
@@ -410,6 +438,7 @@ async def stream(
     from fastaiagent.trace.span import set_fastaiagent_attributes
     from fastaiagent.ui.pricing import compute_cost_usd
 
+    _enforce_llm_rate_limit(request, _user)
     _check_api_key_or_400(body.provider)
     messages = _build_messages(body)
 

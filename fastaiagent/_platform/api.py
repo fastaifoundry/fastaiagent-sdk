@@ -43,6 +43,18 @@ class PlatformAPI:
             "User-Agent": f"fastaiagent-sdk/{__version__}",
         }
 
+    def __repr__(self) -> str:
+        # security_review_1.md M8 — never spill the API key into logs,
+        # tracebacks, REPLs, or pytest assertion diffs. Show just enough
+        # to confirm the object is wired up (last 4 chars + length).
+        key = self._api_key or ""
+        suffix = key[-4:] if len(key) >= 4 else ""
+        redacted = f"***{suffix} (len={len(key)})" if key else "<unset>"
+        return (
+            f"PlatformAPI(base_url={self._base_url!r}, "
+            f"api_key={redacted}, timeout={self._timeout})"
+        )
+
     def _handle_response(self, response: httpx.Response) -> dict[str, Any]:
         """Handle HTTP response, raising appropriate SDK errors."""
         if response.status_code == 401:
@@ -86,7 +98,7 @@ class PlatformAPI:
     def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         """Synchronous GET request."""
         try:
-            with httpx.Client(timeout=self._timeout) as client:
+            with httpx.Client(timeout=self._timeout, verify=True) as client:
                 response = client.get(
                     f"{self._base_url}{path}",
                     params=params,
@@ -102,7 +114,7 @@ class PlatformAPI:
     async def aget(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         """Async GET request."""
         try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
+            async with httpx.AsyncClient(timeout=self._timeout, verify=True) as client:
                 response = await client.get(
                     f"{self._base_url}{path}",
                     params=params,
@@ -118,7 +130,7 @@ class PlatformAPI:
     def post(self, path: str, data: dict[str, Any]) -> dict[str, Any]:
         """Synchronous POST request."""
         try:
-            with httpx.Client(timeout=self._timeout) as client:
+            with httpx.Client(timeout=self._timeout, verify=True) as client:
                 response = client.post(
                     f"{self._base_url}{path}",
                     json=data,
@@ -134,7 +146,7 @@ class PlatformAPI:
     async def apost(self, path: str, data: dict[str, Any]) -> dict[str, Any]:
         """Async POST request."""
         try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
+            async with httpx.AsyncClient(timeout=self._timeout, verify=True) as client:
                 response = await client.post(
                     f"{self._base_url}{path}",
                     json=data,

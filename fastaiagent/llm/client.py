@@ -677,7 +677,7 @@ class LLMClient:
         body, headers = self._build_openai_body(messages, tools, **kwargs)
 
         url = f"{self.base_url.rstrip('/')}/chat/completions"
-        async with httpx.AsyncClient(timeout=120) as client:
+        async with httpx.AsyncClient(timeout=120, verify=True) as client:
             resp = await client.post(url, json=body, headers=headers)
             if resp.status_code != 200:
                 raise LLMProviderError(
@@ -837,7 +837,7 @@ class LLMClient:
         response_format = kwargs.get("response_format")
 
         url = f"{self.base_url.rstrip('/')}/messages"
-        async with httpx.AsyncClient(timeout=120) as client:
+        async with httpx.AsyncClient(timeout=120, verify=True) as client:
             resp = await client.post(url, json=body, headers=headers)
             if resp.status_code != 200:
                 raise LLMProviderError(
@@ -939,7 +939,7 @@ class LLMClient:
                 body["format"] = fmt
 
         url = f"{self.base_url.rstrip('/')}/api/chat"
-        async with httpx.AsyncClient(timeout=120) as client:
+        async with httpx.AsyncClient(timeout=120, verify=True) as client:
             resp = await client.post(url, json=body)
             if resp.status_code != 200:
                 raise LLMProviderError(
@@ -1076,7 +1076,7 @@ class LLMClient:
         # Accumulate tool call arguments across chunks
         tool_calls_acc: dict[int, dict[str, Any]] = {}
 
-        async with httpx.AsyncClient(timeout=120) as client:
+        async with httpx.AsyncClient(timeout=120, verify=True) as client:
             async with client.stream("POST", url, json=body, headers=headers) as resp:
                 if resp.status_code != 200:
                     body_text = await resp.aread()
@@ -1159,7 +1159,7 @@ class LLMClient:
         prompt_tokens = 0
         completion_tokens = 0
 
-        async with httpx.AsyncClient(timeout=120) as client:
+        async with httpx.AsyncClient(timeout=120, verify=True) as client:
             async with client.stream("POST", url, json=body, headers=headers) as resp:
                 if resp.status_code != 200:
                     body_text = await resp.aread()
@@ -1276,7 +1276,7 @@ class LLMClient:
         prompt_tokens = 0
         completion_tokens = 0
 
-        async with httpx.AsyncClient(timeout=120) as client:
+        async with httpx.AsyncClient(timeout=120, verify=True) as client:
             async with client.stream("POST", url, json=body) as resp:
                 if resp.status_code != 200:
                     body_text = await resp.aread()

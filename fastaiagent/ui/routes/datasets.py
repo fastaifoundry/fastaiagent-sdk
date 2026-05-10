@@ -433,6 +433,37 @@ def delete_case(
 # ---------------------------------------------------------------------------
 
 
+# Explicit per-upload caps (security_review_1.md M6). Without these, an
+# attacker (or accident) can post a multi-GB file and the worker tries
+# to ``await file.read()`` it all into memory before realising the size.
+# JSONL is small text → 5 MiB is plenty (≈25K rows of 200B each).
+# Images are bigger but still bounded.
+_MAX_JSONL_BYTES: int = 5 * 1024 * 1024
+_MAX_IMAGE_UPLOAD_BYTES: int = 20 * 1024 * 1024
+
+
+async def _read_capped(file: UploadFile, max_bytes: int) -> bytes:
+    """Read ``file`` into memory in 1 MiB chunks, refusing past ``max_bytes``.
+
+    Raises HTTPException 413 if the cap is exceeded — does NOT load the
+    rest of the body. Cheap defence against multi-GB uploads.
+    """
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(1024 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(
+                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                f"Upload exceeds {max_bytes} bytes.",
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 class ImportResult(BaseModel):
     name: str
     imported: int
@@ -451,6 +482,7 @@ async def import_jsonl(
 
     Validates each line has an ``input`` field; rejects with a 400 +
     line number on the first bad line so the user knows where to look.
+    Body is capped at 5 MiB (HTTP 413) — see ``_MAX_JSONL_BYTES``.
     """
     if mode not in {"append", "replace"}:
         raise HTTPException(
@@ -459,7 +491,7 @@ async def import_jsonl(
     ctx = get_context(request)
     path = _dataset_path(ctx.db_path, name)
     path.parent.mkdir(parents=True, exist_ok=True)
-    raw = (await file.read()).decode("utf-8", errors="replace")
+    raw = (await _read_capped(file, _MAX_JSONL_BYTES)).decode("utf-8", errors="replace")
     new_cases: list[CaseRow] = []
     for i, line in enumerate(raw.splitlines()):
         line = line.strip()
@@ -546,7 +578,7 @@ async def upload_image(
             stem, ext = safe, ""
         safe = f"{stem}-{uuid.uuid4().hex[:8]}" + (f".{ext}" if ext else "")
         target = out_dir / safe
-    contents = await file.read()
+    contents = await _read_capped(file, _MAX_IMAGE_UPLOAD_BYTES)
     target.write_bytes(contents)
     return ImageUploadResult(
         path=f"images/{name}/{safe}",

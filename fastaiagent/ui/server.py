@@ -13,13 +13,22 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+import hmac
+import secrets
+
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
+from starlette.responses import Response
 
 from fastaiagent._internal.config import get_config
-from fastaiagent.ui.auth import default_auth_path
+from fastaiagent.ui.auth import (
+    SESSION_COOKIE_NAME,
+    _request_is_secure,
+    default_auth_path,
+)
 from fastaiagent.ui.db import init_local_db
 from fastaiagent.ui.deps import AppContext
 from fastaiagent.ui.routes import (
@@ -43,6 +52,115 @@ from fastaiagent.ui.routes import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# security_review_1.md M3 — Content-Security-Policy for the Local UI.
+#
+# Single-user same-origin app, so the policy is tight:
+#   default-src   'self'    — everything must come from us
+#   script-src    'self'    — no inline JS, no eval
+#   style-src     allows inline because Tailwind utility classes ship
+#                 small data: backgrounds and React injects ``style=""``
+#                 attrs in places (these are static, not from user input)
+#   img-src       'self' data: blob: — base64 thumbnails + Object URLs
+#                 from upload previews
+#   connect-src   'self'    — every API call goes to /api on the same
+#                 origin; no cross-origin XHR
+#   frame-src     'self'    — only the inline attachment iframe
+#   frame-ancestors 'none'  — refuse to be embedded anywhere (clickjack
+#                 defence; X-Frame-Options is the legacy mirror)
+#   base-uri      'self'    — protect against ``<base>`` injection
+#   form-action   'self'    — refuse to post forms to other origins
+_CSP = (
+    "default-src 'self'; "
+    "script-src 'self'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: blob:; "
+    "font-src 'self' data:; "
+    "connect-src 'self'; "
+    "frame-src 'self'; "
+    "frame-ancestors 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'"
+)
+
+
+class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Inject defence-in-depth security headers on every response."""
+
+    async def dispatch(self, request: Request, call_next: Any) -> Response:  # type: ignore[override]
+        response: Response = await call_next(request)
+        # Don't overwrite a header the route deliberately set (e.g.
+        # ``Cache-Control: no-store`` on the SSE stream).
+        response.headers.setdefault("Content-Security-Policy", _CSP)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault(
+            "Permissions-Policy",
+            "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+        )
+        return response
+
+
+# security_review_1.md M4 — Double-submit-token CSRF defence.
+#
+# SameSite=Strict on the session cookie already prevents the classic
+# cross-origin form-post attack in modern browsers. This middleware adds a
+# belt: a per-session ``fastaiagent_csrf`` cookie (NOT httpOnly, so the
+# bundled React UI can read it) plus an ``X-CSRF-Token`` request-header
+# requirement on POST/PUT/PATCH/DELETE. Validation is constant-time.
+#
+# Skipped when:
+# * The app was built with ``no_auth=True`` (developer "throwaway" mode).
+# * The request method is safe (GET/HEAD/OPTIONS).
+# * There is no session cookie — the request is anonymous, so there's
+#   nothing to "ride".
+# * The path is ``/api/auth/login`` (login itself replaces the session;
+#   SameSite=Strict already blocks cross-origin login submission).
+_CSRF_COOKIE_NAME = "fastaiagent_csrf"
+_CSRF_HEADER_NAME = "x-csrf-token"
+_CSRF_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+class _CSRFMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next: Any) -> Response:  # type: ignore[override]
+        ctx = getattr(request.app.state, "context", None)
+        no_auth = getattr(ctx, "no_auth", False) if ctx is not None else False
+        method = request.method.upper()
+        path = request.url.path
+        has_session = SESSION_COOKIE_NAME in request.cookies
+
+        # Decide whether to enforce.
+        enforce = (
+            not no_auth
+            and method not in _CSRF_SAFE_METHODS
+            and has_session
+            and path != "/api/auth/login"
+        )
+        if enforce:
+            cookie = request.cookies.get(_CSRF_COOKIE_NAME, "")
+            header = request.headers.get(_CSRF_HEADER_NAME, "")
+            if not cookie or not header or not hmac.compare_digest(cookie, header):
+                return JSONResponse(
+                    {"detail": "CSRF token missing or invalid."},
+                    status_code=403,
+                )
+
+        response: Response = await call_next(request)
+        # Issue the cookie if missing so the React client has a value to
+        # echo back. We set it on every response that doesn't already
+        # carry it — this is harmless and self-healing.
+        if _CSRF_COOKIE_NAME not in request.cookies:
+            response.set_cookie(
+                _CSRF_COOKIE_NAME,
+                secrets.token_urlsafe(32),
+                httponly=False,  # the React client MUST read it
+                samesite="strict",
+                secure=_request_is_secure(request),
+                path="/",
+            )
+        return response
 
 
 def _static_dir() -> Path | None:
@@ -111,6 +229,16 @@ def build_app(
         runners=runner_map,
         project_id=resolved_project_id,
     )
+    # security_review_1.md M3 — defence-in-depth security headers.
+    # The Local UI is single-user same-origin, so the policy is tight:
+    # no cross-origin frames, no MIME sniffing, no referrer leakage,
+    # no permissions for camera/mic/geolocation.
+    app.add_middleware(_SecurityHeadersMiddleware)
+    # security_review_1.md M4 — CSRF double-submit token on top of the
+    # existing SameSite=Strict cookie. Issues ``fastaiagent_csrf`` on
+    # safe responses and validates the matching ``X-CSRF-Token`` header
+    # on every state-changing call from an authenticated session.
+    app.add_middleware(_CSRFMiddleware)
 
     for r in (
         auth.router,

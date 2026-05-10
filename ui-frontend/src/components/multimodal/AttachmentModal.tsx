@@ -51,6 +51,12 @@ export function AttachmentModal({
               src={url}
               title={altText ?? mediaType}
               className="h-[70vh] w-full"
+              // Sandbox the inline-rendered attachment so a malicious or
+              // misconfigured attachment endpoint cannot run scripts in the
+              // UI's origin. Same-origin is required so a PDF viewer (which
+              // commonly uses ``window.parent`` postMessage) keeps working.
+              sandbox="allow-same-origin"
+              referrerPolicy="no-referrer"
             />
           )}
         </div>

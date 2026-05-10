@@ -27,6 +27,21 @@ interface RequestOptions {
   signal?: AbortSignal;
 }
 
+const SAFE_METHODS = new Set<Method>(["GET"]);
+
+/**
+ * security_review_1.md M4 — read the double-submit CSRF cookie.
+ *
+ * The backend issues ``fastaiagent_csrf`` (NOT httpOnly) on safe
+ * responses; we echo it back as ``X-CSRF-Token`` on every state-changing
+ * call. Returns null if the cookie isn't set yet — the very first
+ * mutating call after a fresh page load may need a no-op GET first.
+ */
+function readCsrfCookie(): string | null {
+  const match = document.cookie.match(/(?:^|; )fastaiagent_csrf=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
 async function request<T>(
   method: Method,
   path: string,
@@ -37,9 +52,19 @@ async function request<T>(
     credentials: "include",
     signal,
   };
+  const headers: Record<string, string> = {};
   if (body !== undefined) {
-    init.headers = { "Content-Type": "application/json" };
+    headers["Content-Type"] = "application/json";
     init.body = JSON.stringify(body);
+  }
+  if (!SAFE_METHODS.has(method)) {
+    const csrf = readCsrfCookie();
+    if (csrf) {
+      headers["X-CSRF-Token"] = csrf;
+    }
+  }
+  if (Object.keys(headers).length > 0) {
+    init.headers = headers;
   }
 
   const res = await fetch(`${BASE}${path}`, init);

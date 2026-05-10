@@ -100,7 +100,7 @@ function AttachmentTile({ traceId, spanId, item }: TileProps) {
     <a
       href={item.has_full_data ? fullUrl : thumbUrl}
       target="_blank"
-      rel="noreferrer"
+      rel="noopener noreferrer"
       className="group relative block overflow-hidden rounded-md border bg-muted hover:border-primary"
       title={`${item.media_type} · ${sizeKb} KB`}
     >
