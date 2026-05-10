@@ -15,9 +15,35 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from fastaiagent.ui.deps import get_context, project_filter, require_session
+
+
+# security_review_1.md L3 — saved filter JSON used to flow through the
+# API as an opaque ``dict[str, Any]``. Backend SQL was already
+# parameterised, so server-side was safe, but the frontend was free to
+# render whatever shape happened to be there. We now run reads through
+# a *permissive* Pydantic model:
+#
+# * Documented top-level keys (``agent``, ``model``, …) are typed so
+#   IDE / docs / future strictening have something to lean on.
+# * ``extra="allow"`` keeps any extra keys in older saved presets
+#   round-tripping unchanged — no migration, no break.
+# * On any validation failure we fall back to the raw dict (still
+#   safe — frontend treats it as untrusted), so a malformed historical
+#   row never breaks the list endpoint.
+class FilterValues(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    agent: str | None = None
+    model: str | None = None
+    status: str | None = None
+    project: str | None = None
+    date_from: str | None = None
+    date_to: str | None = None
+    q: str | None = None
+    has_error: bool | None = None
 
 router = APIRouter(prefix="/api/filter-presets", tags=["filter-presets"])
 
@@ -55,10 +81,19 @@ def _row_to_preset(row: dict[str, Any]) -> FilterPreset:
             filters = {}
     except json.JSONDecodeError:
         filters = {}
+    # L3 — validate against the permissive schema. On any failure we
+    # fall through to the raw dict (forward-compat for filter shapes
+    # added by future releases or hand-edited DB rows).
+    try:
+        validated = FilterValues.model_validate(filters).model_dump(
+            exclude_none=False,
+        )
+    except Exception:
+        validated = filters
     return FilterPreset(
         id=row["id"],
         name=row.get("name") or "",
-        filters=filters,
+        filters=validated if isinstance(validated, dict) else {},
         created_at=row.get("created_at") or "",
     )
 

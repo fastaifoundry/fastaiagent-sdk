@@ -66,6 +66,33 @@ parent-operation
 
 All traces are stored automatically in a local SQLite database at `.fastaiagent/local.db`. No configuration needed.
 
+!!! warning "Sensitive data in `local.db`"
+    Traces capture **prompts, tool inputs/outputs, and LLM responses
+    verbatim**, plus image / PDF attachment bytes when
+    `trace_full_images=True`. Anything a user types — names, emails,
+    tickets, screenshots — lands in `local.db` as written. Treat the
+    file as you would any database backing your app:
+
+    * The SDK creates `.fastaiagent/local.db` with mode `0o600` and
+      the parent directory with `0o700` (POSIX) so other users on the
+      same machine can't read it. Don't widen those permissions
+      without a reason.
+    * Before sharing a project directory or cutting a backup, scrub
+      historical traces with the CLI:
+
+      ```bash
+      # Delete everything older than 30 days, including attachments.
+      fastaiagent traces purge --older-than-days 30 --attachments
+
+      # Wipe the whole trace store (interactive prompt).
+      fastaiagent traces purge
+      ```
+
+    * Set `FASTAIAGENT_TRACE_PAYLOADS=0` (see [Payload
+      Gating](#payload-gating-fastaiagent_trace_payloads)) to record
+      only span structure — names, timing, model, tokens, cost — and
+      leave prompt text and outputs out of the DB entirely.
+
 ### Querying Traces
 
 ```python

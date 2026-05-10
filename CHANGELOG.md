@@ -5,6 +5,63 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.1] - 2026-05-10
+
+PATCH — security review #1 Low batch (`claude_files/security_review_1.md`).
+**5 Low-severity findings** closed (L4 already shipped in 1.10.0 via
+H8). All fixes are non-breaking and additive.
+
+### Security
+
+- **L1 — Prompt-name LIKE pattern now escaped.** The Traces-linked
+  count for each saved prompt was built with an unescaped LIKE
+  pattern, so a prompt named `my_prompt` would over-match every
+  span where another prompt's name happened to share the same
+  prefix-and-trailer (the literal `_` matched the SQL wildcard).
+  Now `%`/`_`/`\` are escaped before interpolation and every clause
+  carries `ESCAPE '\'`. A correctness fix as much as a security
+  fix.
+- **L2 — `GuardrailsPage` row click uses React Router `useNavigate`.**
+  The previous `window.location.assign(...)` forced a full page
+  reload AND would have become an open-redirect risk if `event_id`
+  ever started accepting external input. The refactor matches every
+  other page in the SPA.
+- **L3 — Filter-preset JSON validated through a permissive Pydantic
+  schema.** New `FilterValues` model documents the known top-level
+  keys (`agent`, `model`, `status`, `project`, `date_from`, `date_to`,
+  `q`, `has_error`) with `extra="allow"` so older or hand-edited
+  presets round-trip unchanged. On any validation failure the read
+  path falls back to the raw dict — forward-compat for shapes added
+  in future releases.
+- **L5 — Root `.gitignore` now covers `.env` everywhere.** Pattern
+  added so any new example directory is safe by default; existing
+  `.env.example` templates are explicitly whitelisted.
+- **L6 — `fastaiagent traces purge` CLI + PII doc warning.** New
+  subcommand deletes scoped trace data so an operator can scrub
+  history before sharing a project directory or cutting a backup:
+  ```
+  fastaiagent traces purge --older-than-days 30 --attachments
+  fastaiagent traces purge          # interactive
+  fastaiagent traces purge -y       # scriptable
+  ```
+  The Tracing docs page now opens with a prominent callout that
+  `local.db` carries prompts/outputs/attachments verbatim and
+  points operators at the purge command + the existing
+  `FASTAIAGENT_TRACE_PAYLOADS=0` knob.
+
+### Tests
+
+- `tests/test_lows_v1110.py`: 6 regression tests covering the
+  LIKE-escape fix, the FilterValues schema (typed + extra-allow +
+  full create-then-read round-trip via TestClient), and the purge
+  CLI (older-than scope + abort-on-no-confirm).
+- Full unit suite: 1560 passed, 3 skipped, 2 pre-existing flakes
+  deselected.
+- UI vitest: 93 passed (existing structural tests for M1+M2 still
+  green — L2 nav refactor is covered by tsc + the existing
+  GuardrailsPage tests).
+- README quickstart against real OpenAI — green.
+
 ## [1.11.0] - 2026-05-10
 
 MINOR — security review #1 Medium batch (`claude_files/security_review_1.md`).

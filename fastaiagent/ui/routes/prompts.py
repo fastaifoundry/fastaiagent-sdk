@@ -41,18 +41,30 @@ def list_prompts(request: Request, _user: str = Depends(require_session)) -> dic
     try:
         enriched: list[dict[str, Any]] = []
         for p in prompts:
+            # security_review_1.md L1: prompt names are user-supplied
+            # and may legitimately contain ``%`` / ``_`` / ``\`` — the
+            # LIKE wildcards. Without escaping, ``my_prompt`` would
+            # over-match every name with the same prefix-and-trailer.
+            # Escape those three chars and tell SQLite about our escape
+            # character via ``ESCAPE '\\'`` on every clause.
+            esc = (
+                p["name"]
+                .replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_")
+            )
             # Accept every prefix variant so this count works across traces
             # from older SDK releases too.
             trace_count = db.fetchone(
                 f"""SELECT COUNT(DISTINCT trace_id) AS n
                    FROM spans
-                   WHERE (attributes LIKE ?
-                      OR attributes LIKE ?
-                      OR attributes LIKE ?) {pid_clause}""",
+                   WHERE (attributes LIKE ? ESCAPE '\\'
+                      OR attributes LIKE ? ESCAPE '\\'
+                      OR attributes LIKE ? ESCAPE '\\') {pid_clause}""",
                 (
-                    f'%"fastaiagent.prompt.name": "{p["name"]}"%',
-                    f'%"prompt.name": "{p["name"]}"%',
-                    f'%"fastai.prompt.name": "{p["name"]}"%',
+                    f'%"fastaiagent.prompt.name": "{esc}"%',
+                    f'%"prompt.name": "{esc}"%',
+                    f'%"fastai.prompt.name": "{esc}"%',
                     *pid_params,
                 ),
             )
