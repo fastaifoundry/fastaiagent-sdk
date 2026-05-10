@@ -86,8 +86,12 @@ def create_auth_file(username: str, password: str, *, path: Path | None = None) 
     return file
 
 
-def load_auth_file(path: Path | None = None) -> AuthFile:
-    target = path or default_auth_path()
+def load_auth_file(path: Path | str | None = None) -> AuthFile:
+    # Accept ``str`` for the (mostly internal) callers that build up the
+    # path from string concatenation. Without this, ``build_app(auth_path="...")``
+    # crashes with ``AttributeError: 'str' object has no attribute 'exists'``
+    # on the first ``/api/auth/status`` call.
+    target = Path(path) if path is not None else default_auth_path()
     if not target.exists():
         raise FileNotFoundError(f"{target} not found — run `fastaiagent ui` to set up.")
     return AuthFile.from_dict(json.loads(target.read_text()))
