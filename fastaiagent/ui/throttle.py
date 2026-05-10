@@ -108,4 +108,74 @@ def get_default_throttler() -> LoginThrottler:
     return _default
 
 
-__all__ = ["LoginThrottler", "get_default_throttler"]
+# ---------------------------------------------------------------------------
+# Generic per-key rate limiter (security_review_1.md M5).
+#
+# Uses the same sliding-window primitive as ``LoginThrottler`` but tracks
+# *every* request (not just failures) so we can cap how many LLM calls a
+# session may make per minute. The Local UI is single-user, but the LLM
+# spend matters (a runaway agent or a debugging fat-finger can burn dollars
+# in seconds), so a polite ceiling is cheap insurance.
+# ---------------------------------------------------------------------------
+
+
+class RateLimiter:
+    """Thread-safe sliding-window rate limiter."""
+
+    def __init__(self, *, limit: int, window_seconds: float):
+        if limit <= 0:
+            raise ValueError("limit must be > 0")
+        if window_seconds <= 0:
+            raise ValueError("window_seconds must be > 0")
+        self._limit = limit
+        self._window = window_seconds
+        self._lock = threading.Lock()
+        self._hits: dict[str, deque[float]] = {}
+
+    def _now(self) -> float:
+        return time.monotonic()
+
+    def try_acquire(self, key: str) -> tuple[bool, float]:
+        """Record a hit if the key is under the limit.
+
+        Returns ``(allowed, retry_after_seconds)``. When ``allowed`` is
+        ``True`` the caller proceeds with the request. When ``False`` the
+        caller should return HTTP 429 with the ``retry_after_seconds``
+        suggested in a ``Retry-After`` header.
+        """
+        with self._lock:
+            now = self._now()
+            window_start = now - self._window
+            hits = self._hits.setdefault(key, deque())
+            while hits and hits[0] < window_start:
+                hits.popleft()
+            if len(hits) >= self._limit:
+                # Oldest hit will roll out at hits[0] + window.
+                retry_after = hits[0] + self._window - now
+                return False, max(retry_after, 0.0)
+            hits.append(now)
+            return True, 0.0
+
+    def reset(self) -> None:
+        """Test helper — clear every key."""
+        with self._lock:
+            self._hits.clear()
+
+
+# 30 LLM calls / minute per session. Tuned for a human iterating in the
+# playground (way more than enough) but tight enough that a runaway loop
+# is bounded to ≤ $a-few before the user notices.
+_default_llm_limiter = RateLimiter(limit=30, window_seconds=60.0)
+
+
+def get_llm_rate_limiter() -> RateLimiter:
+    """Module-level singleton used by the playground LLM endpoints."""
+    return _default_llm_limiter
+
+
+__all__ = [
+    "LoginThrottler",
+    "RateLimiter",
+    "get_default_throttler",
+    "get_llm_rate_limiter",
+]

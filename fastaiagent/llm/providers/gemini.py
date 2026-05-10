@@ -307,7 +307,7 @@ async def acomplete_gemini(
     import httpx
 
     url, body = _build_request(client, messages, tools, stream=False, **kwargs)
-    async with httpx.AsyncClient(timeout=120) as h:
+    async with httpx.AsyncClient(timeout=120, verify=True) as h:
         resp = await h.post(url, json=body, headers={"Content-Type": "application/json"})
         if resp.status_code != 200:
             raise LLMProviderError(
@@ -340,7 +340,7 @@ async def astream_gemini(
     completion_tokens = 0
     seen_tool_index = 0
 
-    async with httpx.AsyncClient(timeout=120) as h:
+    async with httpx.AsyncClient(timeout=120, verify=True) as h:
         async with h.stream(
             "POST", url, json=body, headers={"Content-Type": "application/json"}
         ) as resp:

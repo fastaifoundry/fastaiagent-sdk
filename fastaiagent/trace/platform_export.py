@@ -40,7 +40,7 @@ class PlatformSpanExporter(SpanExporter):
                 "project": _connection.project_id or _connection.project,
                 "spans": trace_spans,
             }
-            with httpx.Client(timeout=10) as client:
+            with httpx.Client(timeout=10, verify=True) as client:
                 client.post(url, json=payload, headers=_connection.headers)
         except Exception:
             logger.debug("Failed to export spans to platform", exc_info=True)

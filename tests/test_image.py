@@ -120,6 +120,33 @@ def test_from_url_allows_private_when_env_set(monkeypatch) -> None:
 
 
 # ---------------------------------------------------------------------------
+# v1.11.0 M9 — verify=True against real TLS endpoint
+# ---------------------------------------------------------------------------
+
+
+def test_from_url_real_public_https_image() -> None:
+    """Live end-to-end fetch of a public HTTPS image — exercises the
+    explicit ``verify=True`` path in ``safe_http_fetch`` against a real
+    TLS endpoint, not a mock.
+
+    Uses ``httpbin.org/image/png`` (stable public test endpoint).
+    Skips if the host isn't reachable so the suite stays usable offline.
+    """
+    import socket as _socket
+
+    try:
+        _socket.gethostbyname("httpbin.org")
+    except OSError:
+        pytest.skip("httpbin.org not reachable (offline?)")
+
+    img = Image.from_url("https://httpbin.org/image/png")
+    assert img.media_type == "image/png"
+    assert img.size_bytes() > 0
+    width, height = img.dimensions()
+    assert width > 0 and height > 0
+
+
+# ---------------------------------------------------------------------------
 # security_review_1.md H9 — PIL decompression-bomb cap
 # ---------------------------------------------------------------------------
 

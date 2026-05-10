@@ -5,6 +5,122 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.0] - 2026-05-10
+
+MINOR — security review #1 Medium batch (`claude_files/security_review_1.md`).
+**13 Medium-severity findings** closed in one release. Most are
+defence-in-depth and non-breaking; four ship narrow breaking changes
+listed under *Breaking* below.
+
+### Security
+
+- **M1 — Sandboxed attachment iframe.** `AttachmentModal` renders the
+  inline-attachment iframe with `sandbox="allow-same-origin"` and
+  `referrerPolicy="no-referrer"`. Any malicious or misconfigured
+  attachment bytes can no longer execute scripts in the UI's origin.
+- **M2 — `rel="noopener noreferrer"` on every `target="_blank"` link.**
+  Closes the reverse-tabnabbing window.
+- **M3 — Security-headers middleware on the FastAPI server.** Every
+  response now carries `Content-Security-Policy` (tight `'self'`-only
+  policy with `frame-ancestors 'none'`), `X-Content-Type-Options:
+  nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy:
+  strict-origin-when-cross-origin`, and `Permissions-Policy:
+  camera=(), microphone=(), geolocation=(), payment=(), usb=()`.
+- **M4 — CSRF double-submit token.** New `_CSRFMiddleware` issues a
+  non-httpOnly `fastaiagent_csrf` cookie on safe responses and
+  validates a matching `X-CSRF-Token` header on every POST/PUT/PATCH/
+  DELETE made from an authenticated session. Bypassed for the login
+  endpoint (no session yet) and `no_auth=True` mode (developer
+  throwaway). The bundled React API client reads the cookie and echoes
+  it on every mutating fetch automatically.
+- **M5 — LLM rate limit on the playground.** New `RateLimiter`
+  primitive (sliding window, 30 requests / 60 s default) gates
+  `/api/playground/run` and `/api/playground/stream` per
+  `(client_ip, user)`. A runaway loop or fat-finger no longer turns
+  into an unbounded LLM bill — bursts past the limit return HTTP 429
+  with a `Retry-After` header.
+- **M6 — Explicit upload size caps with streaming reader.** JSONL
+  imports cap at 5 MiB, image uploads at 20 MiB. The reader processes
+  in 1-MiB chunks and returns 413 the moment the cap is exceeded —
+  the rest of the body is never loaded into memory. Closes the
+  `await file.read()`-the-whole-thing footgun.
+- **M7 — Per-thread SQLite connections.** `SQLiteHelper` now uses
+  `threading.local()` so each thread holds its own
+  `sqlite3.Connection`, with a small write lock to keep `SQLITE_BUSY`
+  churn down. The single shared connection guarded by a lock was a
+  correctness footgun; the per-thread split makes thread isolation
+  structural. The legacy `db._lock` attribute is preserved as an
+  alias for the write lock so checkpointer transactions keep working
+  unchanged.
+- **M8 — Platform API key redacted in `__repr__`.** Both `_Connection`
+  and `PlatformAPI` now render as `***<last4> (len=N)` so the key
+  cannot leak into tracebacks, REPL output, debug prints, or pytest
+  assertion diffs. Unset values render as `<unset>`.
+- **M9 — Explicit `verify=True` on every `httpx.Client` /
+  `AsyncClient`.** 18 call sites now pass the flag explicitly. The
+  default was already `True`, but the explicit pass blocks anyone
+  from quietly flipping it via env variable or library monkey-patch.
+  Real-endpoint validated against OpenAI, Anthropic, Groq, Gemini,
+  and a public HTTPS image fetch.
+- **M10 — `_normalize_target` requires an explicit scheme.** The
+  legacy code auto-promoted bare hostnames to `http://` for anything
+  that *looked* local (which mishandled typos like
+  `localhost.attacker.com`) and to `https://` otherwise. We now raise
+  `ValueError` if the target is missing a scheme — the operator picks
+  it deliberately.
+- **M11 — Upper-bound pins on every dependency.** Every `>=X` in
+  `pyproject.toml` (runtime, optional-extras, docs, dev) now also
+  carries an `<` upper bound. A future major version of any
+  dependency cannot silently break installations until we bump and
+  smoke-test.
+- **M12 — `authenticated` flag dropped from Zustand `localStorage`.**
+  The only authoritative source for "is this user logged in" is the
+  httpOnly session cookie validated by `/api/auth/status`. Persisting
+  the flag made it forgeable by any XSS payload or browser-extension
+  content script. The store still caches harmless display fields
+  (`username`, `projectId`) across reloads so the chrome doesn't
+  flicker.
+- **M13 — Vite dev-proxy host loopback validation.** `vite.config.ts`
+  now refuses to start if `VITE_API_PROXY` points anywhere other than
+  `127.0.0.1`, `::1`, `localhost`, or `*.localhost`. Catches
+  `.env.local` typos that would otherwise route session cookies and
+  dev creds to the wrong host.
+
+### Breaking
+
+- `fastaiagent.connect(target=...)` requires an explicit `http://` or
+  `https://` scheme. Raises `ValueError` for bare hostnames. Migrate:
+  `target="localhost:7842"` → `target="http://localhost:7842"`.
+- Authenticated UI clients hitting the FastAPI server with their own
+  HTTP code must add an `X-CSRF-Token` header on every state-changing
+  request, echoing back the value of the `fastaiagent_csrf` cookie set
+  by the server. The bundled React UI does this automatically. The
+  test fixture `_CSRFAwareTestClient` is a one-line example.
+- Per-session burst above 30 LLM calls / minute returns HTTP 429.
+  Override by setting up a custom `RateLimiter` if 30 isn't right.
+- File uploads: JSONL >5 MiB and images >20 MiB now return HTTP 413.
+- `repr(_Connection)` / `repr(PlatformAPI)` no longer contain the
+  raw API key. If you were parsing the repr to extract it (don't),
+  use the `api_key` attribute directly.
+
+### Tests
+
+Real-endpoint validation matrix:
+- 4 live LLM judges (OpenAI, Anthropic, Groq, Gemini) — `verify=True`
+  end-to-end against real TLS providers.
+- Live HTTPS multimodal URL fetch via `httpbin.org/image/png`.
+- UI end-to-end: real FastAPI server + real OpenAI playground call
+  through the patched `LLMClient`.
+- README quickstart + `examples/01_simple_agent.py` +
+  `examples/03_guardrails.py` + `examples/12_streaming.py` all run
+  green against real LLMs.
+- Full unit suite: 1553 passed, 3 skipped, 2 pre-existing flakes
+  deselected. UI vitest: 93 passed including 4 new structural tests
+  for M1+M2.
+- Playwright screenshot suite: same baseline as `main` (the one
+  pre-existing failure on test 07 — Eval run detail — was confirmed
+  on `main` before this PR and is unaffected by these changes).
+
 ## [1.10.1] - 2026-05-10
 
 PATCH — fixes a long-standing top-level import bug discovered while

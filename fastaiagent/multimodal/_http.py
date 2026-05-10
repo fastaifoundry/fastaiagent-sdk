@@ -25,6 +25,7 @@ import ipaddress
 import logging
 import os
 import socket
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx
@@ -115,7 +116,7 @@ def safe_http_fetch(
     """
     validate_url(url)
     current = url
-    with httpx.Client(follow_redirects=False, timeout=timeout) as client:
+    with httpx.Client(follow_redirects=False, timeout=timeout, verify=True) as client:
         for _hop in range(max_redirects + 1):
             resp = client.get(current)
             if 300 <= resp.status_code < 400 and "location" in resp.headers:
@@ -160,7 +161,7 @@ async def asafe_http_request(
     current = url
     current_method = method.upper()
     current_json = json
-    async with httpx.AsyncClient(follow_redirects=False, timeout=timeout) as client:
+    async with httpx.AsyncClient(follow_redirects=False, timeout=timeout, verify=True) as client:
         for _hop in range(max_redirects + 1):
             resp = await client.request(
                 current_method,

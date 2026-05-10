@@ -34,6 +34,18 @@ class _Connection:
             "User-Agent": f"fastaiagent-sdk/{__version__}",
         }
 
+    def __repr__(self) -> str:
+        # security_review_1.md M8 — never let ``repr(_connection)`` leak
+        # the live API key (which lands in tracebacks, REPL output,
+        # debug prints, etc.). Show just enough to confirm wiring.
+        key = self.api_key or ""
+        suffix = key[-4:] if len(key) >= 4 else ""
+        redacted = f"***{suffix} (len={len(key)})" if key else "<unset>"
+        return (
+            f"_Connection(target={self.target!r}, project={self.project!r}, "
+            f"api_key={redacted})"
+        )
+
 
 _connection = _Connection()
 
@@ -41,21 +53,37 @@ _connection = _Connection()
 def _normalize_target(target: str) -> str:
     """Normalize a platform target URL.
 
-    Ensures a scheme is present (defaults to ``http://`` for localhost/
-    private hosts, ``https://`` otherwise) and strips trailing slashes.
-    httpx rejects URLs without a scheme with an opaque error, so we
-    do this upfront to give users a clear, tolerant experience.
+    Strips trailing slashes and validates that the caller supplied an
+    explicit ``http://`` or ``https://`` scheme. We used to silently
+    add a scheme (``http`` for hosts that *looked* local, ``https``
+    otherwise), but that hid two real risks (security_review_1.md M10):
+
+    * A typo like ``localhost.attacker.com`` matched
+      ``host.endswith(".localhost")`` and got an unencrypted ``http://``
+      URL — a network attacker could intercept the API key.
+    * Auto-promoting bare hostnames to ``https`` looked safe but masked
+      configuration mistakes (the user *thought* they pointed at a
+      private gateway and we silently rewrote it).
+
+    Now we refuse silently-rewriting and require the caller to be
+    explicit. ``connect()`` callers that only pass ``"localhost:7842"``
+    will get a clear ValueError pointing at the fix.
     """
     t = (target or "").strip().rstrip("/")
     if not t:
         return t
-    if "://" in t:
-        return t
-    host = t.split("/", 1)[0].split(":", 1)[0].lower()
-    is_local = host in {"localhost", "127.0.0.1", "0.0.0.0", "::1"} or host.endswith(
-        ".localhost"
-    )
-    return f"{'http' if is_local else 'https'}://{t}"
+    if "://" not in t:
+        raise ValueError(
+            f"target must include an explicit scheme (got {t!r}). "
+            "Use 'http://...' for plain HTTP loopback dev or 'https://...' "
+            "for the production platform."
+        )
+    scheme = t.split("://", 1)[0].lower()
+    if scheme not in ("http", "https"):
+        raise ValueError(
+            f"target scheme must be 'http' or 'https' (got {scheme!r})."
+        )
+    return t
 
 
 def connect(
@@ -83,7 +111,7 @@ def connect(
 
     # Lightweight auth check — also captures domain/project from the key
     try:
-        with httpx.Client(timeout=10) as client:
+        with httpx.Client(timeout=10, verify=True) as client:
             resp = client.get(
                 f"{_connection.target}/public/v1/auth/check",
                 headers=_connection.headers,

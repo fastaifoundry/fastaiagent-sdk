@@ -54,7 +54,7 @@ class MCPTool(Tool):
             "params": params or {},
         }
 
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=30, verify=True) as client:
             resp = await client.post(self.server_url, json=payload, headers=headers)
             resp.raise_for_status()
             data = resp.json()
