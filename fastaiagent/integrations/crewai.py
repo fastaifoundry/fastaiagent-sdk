@@ -34,6 +34,18 @@ _enabled = False
 # Open spans, keyed by event call_id / event_id. Cleared on completion.
 _llm_spans: dict[str, Any] = {}
 _tool_spans: dict[str, Any] = {}
+# LIFO of (tool_name, span) for cases where the finished event has no
+# correlation key back to its started event. Seen on crewai 1.9.x for
+# hierarchical-delegation tools (``delegate_work_to_coworker``,
+# ``ask_question_to_coworker``), whose finished event has
+# ``started_event_id=None`` and a ``previous_event_id`` pointing at an
+# unrelated upstream LLM event.
+_tool_span_lifo: list[tuple[str, Any]] = []
+# Token usage stashed by the TokenCalcHandler patch on crewai 1.9.x —
+# where LLMCallCompletedEvent has no `usage` field. _on_llm_completed
+# pops the most recent entry when the event itself yields no tokens.
+_pending_token_usage: list[tuple[Any, Any]] = []
+_token_handler_patched: bool = False
 
 
 def _require() -> None:
@@ -281,6 +293,138 @@ def _install_method_patches() -> None:
         Task.execute_async = _mark_patched(task_async_wrapper, original_task_async)  # type: ignore[method-assign]
 
 
+def _install_token_handler_patch() -> None:
+    """On crewai 1.9.x ``LLMCallCompletedEvent`` carries no ``usage``
+    field — tokens are surfaced via two different internal paths
+    depending on the provider:
+
+    * **Native-SDK path** (``openai``/``anthropic``/``azure``/``gemini``
+      /``bedrock``): handled in
+      :meth:`crewai.llms.base_llm.BaseLLM._track_token_usage_internal`,
+      called immediately before the LLMCallCompletedEvent is emitted.
+    * **LiteLLM fallback**: handled in
+      :meth:`crewai.utilities.token_counter_callback.TokenCalcHandler.log_success_event`.
+
+    We wrap both so that on 1.9.x token usage is pushed onto a small
+    in-flight stack which :func:`_on_llm_completed` reads when the event
+    itself yields no tokens.
+
+    Idempotent. On 1.14.x both wrappers are harmless: the completed
+    event already carries usage and the fallback pop is skipped.
+    """
+    global _token_handler_patched
+    if _token_handler_patched:
+        return
+
+    def _stash_usage(usage_data: Any) -> None:
+        try:
+            if usage_data is None:
+                return
+            if isinstance(usage_data, dict):
+                in_toks = (
+                    usage_data.get("prompt_tokens")
+                    or usage_data.get("prompt_token_count")
+                    or usage_data.get("input_tokens")
+                )
+                out_toks = (
+                    usage_data.get("completion_tokens")
+                    or usage_data.get("candidates_token_count")
+                    or usage_data.get("output_tokens")
+                )
+            else:
+                in_toks = getattr(usage_data, "prompt_tokens", None) or getattr(
+                    usage_data, "input_tokens", None
+                )
+                out_toks = getattr(usage_data, "completion_tokens", None) or getattr(
+                    usage_data, "output_tokens", None
+                )
+            if in_toks or out_toks:
+                _pending_token_usage.append((in_toks, out_toks))
+        except Exception:
+            pass
+
+    # 1.9.x native-SDK path — BaseLLM._track_token_usage_internal.
+    try:
+        from crewai.llms.base_llm import BaseLLM
+
+        original_track = getattr(BaseLLM, "_track_token_usage_internal", None)
+        if original_track is not None and not getattr(
+            original_track, "_fastaiagent_patched", False
+        ):
+
+            @functools.wraps(original_track)
+            def track_wrapper(self: Any, usage_data: Any) -> Any:
+                _stash_usage(usage_data)
+                return original_track(self, usage_data)
+
+            track_wrapper._fastaiagent_patched = True  # type: ignore[attr-defined]
+            track_wrapper._fastaiagent_original = original_track  # type: ignore[attr-defined]
+            BaseLLM._track_token_usage_internal = track_wrapper  # type: ignore[method-assign]
+    except Exception:
+        pass
+
+    # LiteLLM fallback path — TokenCalcHandler.log_success_event.
+    try:
+        from crewai.utilities.token_counter_callback import TokenCalcHandler
+
+        original_log = TokenCalcHandler.log_success_event
+        if not getattr(original_log, "_fastaiagent_patched", False):
+
+            @functools.wraps(original_log)
+            def log_wrapper(
+                self: Any,
+                kwargs: Any,
+                response_obj: Any,
+                start_time: Any,
+                end_time: Any,
+            ) -> Any:
+                usage = None
+                try:
+                    if isinstance(response_obj, dict):
+                        usage = response_obj.get("usage")
+                    elif hasattr(response_obj, "usage"):
+                        usage = response_obj.usage
+                except Exception:
+                    usage = None
+                _stash_usage(usage)
+                return original_log(self, kwargs, response_obj, start_time, end_time)
+
+            log_wrapper._fastaiagent_patched = True  # type: ignore[attr-defined]
+            log_wrapper._fastaiagent_original = original_log  # type: ignore[attr-defined]
+            TokenCalcHandler.log_success_event = log_wrapper  # type: ignore[method-assign]
+    except Exception:
+        pass
+
+    _token_handler_patched = True
+
+
+def _uninstall_token_handler_patch() -> None:
+    global _token_handler_patched
+    if not _token_handler_patched:
+        return
+    try:
+        from crewai.llms.base_llm import BaseLLM
+
+        current = getattr(BaseLLM, "_track_token_usage_internal", None)
+        if current is not None:
+            original = getattr(current, "_fastaiagent_original", None)
+            if original is not None:
+                BaseLLM._track_token_usage_internal = original  # type: ignore[method-assign]
+    except Exception:
+        pass
+    try:
+        from crewai.utilities.token_counter_callback import TokenCalcHandler
+
+        current = TokenCalcHandler.log_success_event
+        original = getattr(current, "_fastaiagent_original", None)
+        if original is not None:
+            TokenCalcHandler.log_success_event = original  # type: ignore[method-assign]
+    except Exception:
+        pass
+    _token_handler_patched = False
+    _pending_token_usage.clear()
+
+
 def _install_event_listeners() -> None:
     """Subscribe to CrewAI's event bus for LLM + tool spans."""
     from crewai.events import crewai_event_bus
@@ -389,6 +533,10 @@ def _install_event_listeners() -> None:
             else getattr(usage, "completion_tokens", None)
             or getattr(usage, "output_tokens", None)
         )
+        # 1.9.x fallback: event has no ``usage``. The TokenCalcHandler
+        # patch stashed the most recent call's usage — pop it.
+        if not in_toks and not out_toks and _pending_token_usage:
+            in_toks, out_toks = _pending_token_usage.pop()
         bare = _bare_model(getattr(event, "model", None))
         response = getattr(event, "response", None)
         set_genai_attributes(
@@ -421,20 +569,73 @@ def _install_event_listeners() -> None:
                 "tool.input", _safe_json(getattr(event, "tool_args", None))
             )
         event_id = str(getattr(event, "event_id", "") or "")
+        tool_name = str(tool_name) if tool_name else ""
         if event_id:
             _tool_spans[event_id] = span
+            _tool_span_lifo.append((tool_name, span))
         else:
-            try:
-                span.end()
-            except Exception:
-                pass
+            # No event_id — keep in LIFO so a finished event correlating
+            # by tool_name can still pair with us (seen on 1.9.x
+            # hierarchical-delegation tools).
+            _tool_span_lifo.append((tool_name, span))
+
+    def _tool_finished_keys(event: Any) -> list[str]:
+        """Return all plausible keys linking a finished/error event back to
+        the started event's span.
+
+        * 1.14.x:  ``started_event_id`` is the canonical link.
+        * 1.9.x:   no ``started_event_id``; ``previous_event_id`` of the
+          finished event matches the started event's ``event_id`` for
+          *user-defined* tools.
+        """
+        keys: list[str] = []
+        for attr in (
+            "started_event_id",
+            "previous_event_id",
+            "parent_event_id",
+            "triggered_by_event_id",
+        ):
+            value = getattr(event, attr, None)
+            if value:
+                keys.append(str(value))
+        return keys
+
+    def _claim_tool_span(event: Any) -> Any:
+        """Find the open tool span matching this finished/error event.
+
+        First tries every correlation key. If none hit (seen on 1.9.x
+        for ``delegate_work_to_coworker`` / ``ask_question_to_coworker``
+        where the finished event has ``started_event_id=None`` and
+        ``previous_event_id`` points at an unrelated upstream event),
+        falls back to a LIFO pop of the most recently opened span with
+        a matching ``tool_name``.
+        """
+        for key in _tool_finished_keys(event):
+            span = _tool_spans.pop(key, None)
+            if span is not None:
+                # Also clean it out of the LIFO so a later fallback
+                # doesn't double-claim it.
+                for idx in range(len(_tool_span_lifo) - 1, -1, -1):
+                    if _tool_span_lifo[idx][1] is span:
+                        _tool_span_lifo.pop(idx)
+                        break
+                return span
+        tool_name = str(getattr(event, "tool_name", "") or "")
+        for idx in range(len(_tool_span_lifo) - 1, -1, -1):
+            name, span = _tool_span_lifo[idx]
+            if not tool_name or name == tool_name:
+                _tool_span_lifo.pop(idx)
+                # Best-effort dict cleanup — strip any entries still
+                # pointing at this span.
+                for k in list(_tool_spans.keys()):
+                    if _tool_spans[k] is span:
+                        del _tool_spans[k]
+                return span
+        return None
 
     @crewai_event_bus.on(ToolUsageFinishedEvent)
     def _on_tool_finished(_source: Any, event: Any) -> None:
-        # Match by ``started_event_id`` (the started event's id) rather than the
-        # finished event's own id.
-        event_id = str(getattr(event, "started_event_id", "") or "")
-        span = _tool_spans.pop(event_id, None)
+        span = _claim_tool_span(event)
         if span is None:
             return
         if trace_payloads_enabled():
@@ -446,8 +647,7 @@ def _install_event_listeners() -> None:
 
     @crewai_event_bus.on(ToolUsageErrorEvent)
     def _on_tool_error(_source: Any, event: Any) -> None:
-        event_id = str(getattr(event, "started_event_id", "") or "")
-        span = _tool_spans.pop(event_id, None)
+        span = _claim_tool_span(event)
         if span is None:
             return
         err = getattr(event, "error", None) or getattr(event, "message", None)
@@ -529,6 +729,7 @@ def enable() -> None:
     _require()
     _install_method_patches()
     _install_event_listeners()
+    _install_token_handler_patch()
     _enabled = True
 
 
@@ -541,6 +742,7 @@ def disable() -> None:
     """
     global _enabled
     _enabled = False
+    _uninstall_token_handler_patch()
     try:
         from crewai.agent import Agent
         from crewai.crew import Crew

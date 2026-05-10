@@ -5,6 +5,78 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.2] - 2026-05-10
+
+PATCH — CrewAI integration compatibility fixes surfaced by an off-tree
+audit (`.crewai-compat/`, gitignored) that ran 5 + 2 escalating probes
+against `crewai==1.14.4` (current) and `crewai==1.9.0` (older 1.x floor)
+with real-LLM calls on OpenAI (`gpt-4o-mini`, `gpt-5-mini`) and
+Anthropic (`claude-sonnet-4-6`). All changes additive — no breaking
+behaviour for users on `crewai>=1.10`.
+
+### Fixed
+
+- **Tool spans now fire on crewai 1.9.x.** `ToolUsageFinishedEvent` on
+  the 1.9 line has `started_event_id=None`, and `previous_event_id`
+  points at an unrelated upstream event (the prior LLM completion) for
+  hierarchical-delegation tools (`delegate_work_to_coworker`,
+  `ask_question_to_coworker`). The integration now keeps an additional
+  LIFO of `(tool_name, span)` and falls back to a tool-name match when
+  no correlation key hits — recovering both user-defined tools and
+  CrewAI's built-in hierarchical delegation tools. The 1.14.x
+  `started_event_id` path remains the first attempt and is unchanged.
+- **LLM token + cost capture now works on crewai 1.9.x.**
+  `LLMCallCompletedEvent` on 1.9.x carries no `usage` field — tokens
+  flow through two internal paths depending on whether the LLM uses
+  the provider-native SDK (`BaseLLM._track_token_usage_internal`) or
+  litellm fallback (`TokenCalcHandler.log_success_event`). The
+  integration now wraps both, stashing usage on an in-flight stack
+  that `_on_llm_completed` pops when the event yields no tokens. Once
+  tokens are populated, `compute_cost_usd` resolves and the
+  `fastaiagent.cost.total_usd` attribute lands on the LLM span.
+- **Pricing table extended for current OpenAI + Anthropic models.**
+  Added prefix entries for `gpt-5`, `gpt-5-mini`, `gpt-5-nano`,
+  `gpt-4.1-nano`, `o3`, `o4-mini`, and OpenRouter-prefixed forms
+  (`openai/gpt-5`, `anthropic/claude-sonnet-4`, `claude-haiku-4`,
+  `claude-opus-4`). Cost capture is provider-agnostic — unknown
+  models continue to leave cost unset.
+
+### Documentation
+
+- `docs/integrations/crewai.md`: new **Model notes** section
+  documenting (a) the `kb_as_tool` BaseTool name normalization
+  (hyphens → underscores in span names), (b) the gpt-5 family
+  `temperature` constraint (only the default value `1` is accepted),
+  and (c) the 1.9.x token-capture mechanism + the
+  `fastaiagent.cost.total_usd` attribute namespace.
+
+### Internal
+
+- `.gitignore`: added `.crewai-compat/` (mirrors the existing
+  `.langgraph-compat/` exclusion) so off-tree compatibility audits
+  stay local.
+
+### Verified
+
+End-to-end on real APIs (no mocking) before merge:
+
+- 5 + 2 `.crewai-compat/` probes on Env A (crewai 1.14.4) — all
+  `ok=True`, tokens + cost on every LLM span across `gpt-4o-mini`,
+  `gpt-5-mini`, `claude-sonnet-4-6`.
+- 5 `.crewai-compat/` probes on Env B (pinned crewai 1.9.0) — all
+  `ok=True`, span counts now match Env A including hierarchical
+  delegation tool spans (was `tool=0` before, now `tool=2`).
+- `pytest tests/e2e/test_gate_crewai.py tests/e2e/test_harness_crewai.py`
+  — 11/11 passed (real OpenAI + Anthropic calls).
+- `mkdocs build --strict` — clean.
+- `.langgraph-compat/` probe 01 smoke — matrix unchanged
+  (no pricing-table regression).
+- `examples/55_trace_crewai.py` and
+  `examples/harness-migration/crewai_example.py` — both run green.
+- Playwright UI smoke against `fastaiagent ui` — `/traces` list and
+  detail page render the new spans + cost figures; 6 LLM spans on a
+  probe-04 trace carry `fastaiagent.cost.total_usd` end-to-end.
+
 ## [1.11.1] - 2026-05-10
 
 PATCH — security review #1 Low batch (`claude_files/security_review_1.md`).

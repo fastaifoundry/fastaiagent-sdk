@@ -39,6 +39,12 @@ coverage.xml
 .fastaiagent/
 .prompts/
 
+# LangGraph compatibility test workspace (off-tree probes, not part of the SDK)
+.langgraph-compat/
+
+# CrewAI compatibility test workspace (off-tree probes, not part of the SDK)
+.crewai-compat/
+
 # security_review_1.md L5 — never commit a real ``.env`` from any
 # example directory. The committed template is always ``.env.example``;
 # anyone copying it to ``.env`` to fill in real keys must keep their
