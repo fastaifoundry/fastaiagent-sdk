@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json as _json
+import logging
 import time
 from collections.abc import AsyncGenerator, Callable, Sequence
 from typing import Any
@@ -17,9 +19,32 @@ from fastaiagent.chain.interrupt import (
 )
 from fastaiagent.checkpointers import Checkpointer, SQLiteCheckpointer
 from fastaiagent.llm.client import LLMClient
+from fastaiagent.llm.message import SystemMessage, UserMessage
 from fastaiagent.llm.stream import StreamEvent, TextDelta
 from fastaiagent.tool.base import Tool
 from fastaiagent.tool.function import FunctionTool
+
+_log = logging.getLogger(__name__)
+
+
+# Default validation prompt — kept minimal so it's cheap and reliable across
+# providers. Users can override via ``Supervisor(validation_prompt=...)``.
+_DEFAULT_VALIDATION_PROMPT = """You review a worker's answer for a delegated task.
+
+Original task: {task}
+
+Worker output:
+{output}
+
+Is the worker's output a complete, correct, and well-formed answer to the
+task? Respond with strict JSON only, no prose:
+
+  {{"approved": true}}                         — accept the answer
+  {{"approved": false, "feedback": "..."}}     — reject; feedback tells the
+                                                 worker how to improve
+
+Use approved=false sparingly — only when the answer is clearly incomplete,
+incorrect, or off-topic."""
 
 
 class Worker:
@@ -72,6 +97,9 @@ class Supervisor:
         system_prompt: str | Callable[..., str] = "",
         max_delegation_rounds: int = 3,
         checkpointer: Checkpointer | None = None,
+        validate_outputs: bool = False,
+        validation_prompt: str | None = None,
+        max_validation_retries_per_worker: int = 1,
     ):
         self.name = name
         self.llm = llm or LLMClient()
@@ -79,6 +107,18 @@ class Supervisor:
         self.max_delegation_rounds = max_delegation_rounds
         self.system_prompt = system_prompt if system_prompt else self._build_supervisor_prompt()
         self._checkpointer: Checkpointer | None = checkpointer
+        # Hierarchical-process additions (v1.9.0): when ``validate_outputs``
+        # is True, the supervisor LLM checks each worker's output before
+        # accepting it. On rejection, the worker is re-invoked once with the
+        # manager's feedback. After ``max_validation_retries_per_worker``
+        # rejections the supervisor proceeds with the last output and logs
+        # a guardrail_events row tagged ``supervisor.validate`` /
+        # outcome=warned so the failure is auditable in the local UI.
+        self.validate_outputs = validate_outputs
+        self.validation_prompt = validation_prompt or _DEFAULT_VALIDATION_PROMPT
+        if max_validation_retries_per_worker < 0:
+            raise ValueError("max_validation_retries_per_worker must be >= 0")
+        self.max_validation_retries_per_worker = max_validation_retries_per_worker
 
     def _build_supervisor_prompt(self) -> str:
         worker_desc = "\n".join(f"- {w.role}: {w.description}" for w in self.workers)
@@ -123,6 +163,101 @@ class Supervisor:
                 return True
         return False
 
+    async def _validate_worker_output(
+        self, *, worker_role: str, task: str, output: str
+    ) -> tuple[bool, str]:
+        """Ask the supervisor LLM to vet a worker's output.
+
+        Returns ``(approved, feedback)``. On any LLM/parse failure the
+        output is approved (fail-open) — the manager loop should not crash
+        a working agent because the validator misbehaved.
+        """
+        prompt = self.validation_prompt.format(task=task, output=output)
+        try:
+            resp = await self.llm.acomplete(
+                [
+                    SystemMessage(
+                        "You are an output reviewer. Reply with strict JSON only."
+                    ),
+                    UserMessage(prompt),
+                ]
+            )
+        except Exception as err:  # network, provider, etc.
+            _log.warning(
+                "supervisor.validate (%s): LLM call failed, accepting output: %s",
+                worker_role,
+                err,
+            )
+            return True, ""
+
+        text = (resp.content or "").strip()
+        # Strip markdown fences the validator may add despite the prompt.
+        if text.startswith("```"):
+            text = text.strip("`")
+            if text.lower().startswith("json"):
+                text = text[4:].lstrip()
+        try:
+            data = _json.loads(text)
+        except _json.JSONDecodeError:
+            _log.warning(
+                "supervisor.validate (%s): unparseable JSON, accepting: %r",
+                worker_role,
+                text[:200],
+            )
+            return True, ""
+
+        approved = bool(data.get("approved", True))
+        feedback = str(data.get("feedback") or "").strip()
+        return approved, feedback
+
+    def _log_validation_warning(
+        self, *, worker_role: str, task: str, output: str, feedback: str
+    ) -> None:
+        """Emit a ``guardrail_events`` row for an exhausted-retry validation.
+
+        The supervisor proceeded with the worker's last output despite
+        repeated rejection. We surface that as an auditable event in the
+        local UI's Guardrails page (``guardrail_name = supervisor.validate``,
+        ``outcome = warned``).
+        """
+        try:
+            from fastaiagent.guardrail.guardrail import (
+                Guardrail,
+                GuardrailPosition,
+                GuardrailResult,
+                GuardrailType,
+            )
+            from fastaiagent.ui.events import log_guardrail_event
+
+            guard = Guardrail(
+                name="supervisor.validate",
+                guardrail_type=GuardrailType.llm_judge,
+                position=GuardrailPosition.output,
+                blocking=False,
+                description=(
+                    f"Supervisor '{self.name}' validation rejected worker "
+                    f"'{worker_role}' output beyond max retries; proceeding."
+                ),
+            )
+            result = GuardrailResult(
+                passed=False,
+                score=0.0,
+                message=feedback or "rejected after max retries",
+                metadata={
+                    "supervisor": self.name,
+                    "worker_role": worker_role,
+                    "task": task,
+                    "last_output": output[:2000],
+                    "feedback": feedback,
+                },
+            )
+            log_guardrail_event(guard, result, agent_name=self.name)
+        except Exception:  # pragma: no cover — observability is best-effort
+            _log.debug(
+                "supervisor.validate: failed to log guardrail event",
+                exc_info=True,
+            )
+
     def _build_worker_tools(self, context: RunContext[Any] | None = None) -> Sequence[Tool]:
         """Create durability-aware ``delegate_to_<role>`` tools.
 
@@ -147,33 +282,81 @@ class Supervisor:
                 _ctx: RunContext[Any] | None = context,
                 _supervisor: Supervisor = self,
             ) -> str:
-                clone = _supervisor._build_worker_clone(_worker)
-                exec_id = _execution_id.get()
-                rv = _resume_value.get()
-                # Branch: resume vs. fresh run.
-                if exec_id is not None and _supervisor._has_worker_state(exec_id, _worker.role):
-                    # Scope the resume to the worker's subtree so it doesn't
-                    # accidentally pick up the supervisor's own pre-tool
-                    # checkpoint as "latest".
-                    worker_prefix = f"supervisor:{_supervisor.name}/worker:{_worker.role}"
-                    result = await clone.aresume(
-                        exec_id,
-                        resume_value=rv,
-                        context=_ctx,
-                        agent_path_prefix=worker_prefix,
+                async def _invoke_worker(current_task: str) -> AgentResult:
+                    clone = _supervisor._build_worker_clone(_worker)
+                    exec_id = _execution_id.get()
+                    rv = _resume_value.get()
+                    # Branch: resume vs. fresh run.
+                    if exec_id is not None and _supervisor._has_worker_state(
+                        exec_id, _worker.role
+                    ):
+                        # Scope the resume to the worker's subtree so it
+                        # doesn't accidentally pick up the supervisor's own
+                        # pre-tool checkpoint as "latest".
+                        worker_prefix = (
+                            f"supervisor:{_supervisor.name}/worker:{_worker.role}"
+                        )
+                        return await clone.aresume(
+                            exec_id,
+                            resume_value=rv,
+                            context=_ctx,
+                            agent_path_prefix=worker_prefix,
+                        )
+                    return await clone.arun(
+                        current_task, context=_ctx, execution_id=exec_id
                     )
-                else:
-                    result = await clone.arun(task, context=_ctx, execution_id=exec_id)
 
-                if result.status == "paused":
-                    pi = result.pending_interrupt or {}
-                    raise _AgentInterrupted(
-                        reason=str(pi.get("reason", "")),
-                        context=dict(pi.get("context", {})),
-                        node_id=str(pi.get("node_id", "")),
-                        agent_path=pi.get("agent_path"),
+                current_task = task
+                last_output = ""
+                last_feedback = ""
+
+                # First attempt + up to N validation-driven retries. With
+                # ``validate_outputs=False`` the loop runs exactly once.
+                attempts = (
+                    1 + _supervisor.max_validation_retries_per_worker
+                    if _supervisor.validate_outputs
+                    else 1
+                )
+                for attempt in range(attempts):
+                    result = await _invoke_worker(current_task)
+                    if result.status == "paused":
+                        pi = result.pending_interrupt or {}
+                        raise _AgentInterrupted(
+                            reason=str(pi.get("reason", "")),
+                            context=dict(pi.get("context", {})),
+                            node_id=str(pi.get("node_id", "")),
+                            agent_path=pi.get("agent_path"),
+                        )
+                    last_output = result.output
+
+                    if not _supervisor.validate_outputs:
+                        return last_output
+
+                    approved, feedback = await _supervisor._validate_worker_output(
+                        worker_role=_worker.role,
+                        task=task,
+                        output=last_output,
                     )
-                return result.output
+                    if approved:
+                        return last_output
+
+                    last_feedback = feedback
+                    # Retry: append the manager's feedback to the task so
+                    # the worker has explicit guidance for the next pass.
+                    current_task = (
+                        f"{task}\n\n[Supervisor feedback]: {feedback or 'please revise.'}"
+                    )
+
+                # Retries exhausted. Log a guardrail_events warning and
+                # proceed with the last output so the supervisor's run
+                # doesn't deadlock on a stubborn validator.
+                _supervisor._log_validation_warning(
+                    worker_role=_worker.role,
+                    task=task,
+                    output=last_output,
+                    feedback=last_feedback,
+                )
+                return last_output
 
             tools.append(
                 FunctionTool(
@@ -398,4 +581,6 @@ class Supervisor:
                 for w in self.workers
             ],
             "max_delegation_rounds": self.max_delegation_rounds,
+            "validate_outputs": self.validate_outputs,
+            "max_validation_retries_per_worker": self.max_validation_retries_per_worker,
         }

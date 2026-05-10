@@ -177,6 +177,52 @@ ctx = RunContext(state=TeamState(company="Acme", user_id="u-1", plan="enterprise
 result = supervisor.run("I need help with billing", context=ctx)
 ```
 
+## Hierarchical process — manager validates worker outputs
+
+By default the supervisor delegates to workers and synthesizes their
+returns into a final answer, but it never re-checks the worker's output.
+For tasks where worker quality varies — vague answers, missing details,
+off-topic drift — pass `validate_outputs=True` and the supervisor LLM
+will inspect each worker's output before accepting it. On rejection the
+worker is re-invoked once with the manager's feedback appended to the
+original task.
+
+```python
+supervisor = Supervisor(
+    name="manager",
+    llm=LLMClient(provider="openai", model="gpt-4o-mini"),
+    workers=[researcher, writer],
+    validate_outputs=True,                  # opt in
+    max_validation_retries_per_worker=1,    # default
+    # validation_prompt=...                  # optional custom template
+)
+```
+
+How it works:
+
+1. Worker runs as normal and returns its output.
+2. Supervisor LLM is asked to review (cheap call — small JSON output):
+   approve, or reject with feedback.
+3. If approved, the worker's output is fed back into the supervisor's
+   tool loop as today.
+4. If rejected and a retry is available, the worker re-runs with the
+   feedback appended to its task. Capped at
+   `max_validation_retries_per_worker` retries (default `1`).
+5. If still rejected after retries are exhausted, the supervisor proceeds
+   with the worker's last output and writes a `guardrail_events` row
+   tagged `supervisor.validate` / `outcome=warned` so the failure is
+   auditable in the local UI's Guardrails page.
+
+**Failure modes are fail-open**: a malformed validator response (unparseable
+JSON), a network error, or any exception in the validation step is treated
+as approval. The manager loop should not crash a working agent because the
+validator misbehaved.
+
+**Customizing the prompt**: the default validation prompt is suitable for
+most tasks. To override, pass `validation_prompt` with two named
+placeholders — `{task}` and `{output}`. The validator must return strict
+JSON: `{"approved": true}` or `{"approved": false, "feedback": "..."}`.
+
 ## API Reference
 
 ### `Supervisor`
@@ -188,6 +234,10 @@ Supervisor(
     workers: list[Worker] | None = None,
     system_prompt: str | Callable[[RunContext | None], str] = "",
     max_delegation_rounds: int = 3,
+    checkpointer: Checkpointer | None = None,
+    validate_outputs: bool = False,
+    validation_prompt: str | None = None,
+    max_validation_retries_per_worker: int = 1,
 )
 ```
 
@@ -198,6 +248,9 @@ Supervisor(
 | `workers` | `list[Worker] \| None` | No | Workers available for delegation |
 | `system_prompt` | `str \| Callable` | No | Custom instructions. If omitted, auto-generates from worker descriptions |
 | `max_delegation_rounds` | `int` | No | Max delegation rounds (default: 3, translates to `max_iterations * 2`) |
+| `validate_outputs` | `bool` | No | (v1.9.0) When `True`, supervisor LLM reviews each worker output |
+| `validation_prompt` | `str \| None` | No | (v1.9.0) Override the default validator prompt; must include `{task}` and `{output}` placeholders |
+| `max_validation_retries_per_worker` | `int` | No | (v1.9.0) Max retries per delegate after rejection (default `1`) |
 
 **Methods:**
 

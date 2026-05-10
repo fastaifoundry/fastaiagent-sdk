@@ -80,6 +80,48 @@ The SDK inspects type hints to generate JSON Schema:
 
 Parameters without defaults are marked as `required`.
 
+### Parameter descriptions from docstrings
+
+As of v1.9.0, parameter descriptions are auto-extracted from any of three
+docstring conventions. Detection order is **Google → NumPy → Sphinx**;
+the first style with a `param: description` mapping wins.
+
+```python
+# Google style
+def search(query: str, limit: int = 10) -> str:
+    """Search the corpus.
+
+    Args:
+        query: The search query string.
+        limit: Maximum number of results.
+    """
+
+# NumPy style
+def search(query: str, limit: int = 10) -> str:
+    """Search the corpus.
+
+    Parameters
+    ----------
+    query : str
+        The search query string.
+    limit : int, optional
+        Maximum number of results.
+    """
+
+# Sphinx / reST style
+def search(query: str, limit: int = 10) -> str:
+    """Search the corpus.
+
+    :param query: The search query string.
+    :type query: str
+    :param limit: Maximum number of results.
+    """
+```
+
+All three produce the same `description` field on the generated JSON
+schema for `query` and `limit`. If no docstring or no recognised section
+is present, descriptions default to the parameter name.
+
 ## Custom Schema
 
 Override auto-generation when you need precise control:
