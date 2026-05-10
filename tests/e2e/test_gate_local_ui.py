@@ -416,7 +416,26 @@ class TestUIAuthPath:
         app = build_app(
             db_path=str(seeded_db), auth_path=auth_path, no_auth=False
         )
-        client = TestClient(app)
+
+        # security_review_1.md M4: state-changing requests (incl. logout)
+        # need ``X-CSRF-Token`` to match the cookie. The bundled React UI
+        # injects the header automatically; in tests we use a small
+        # subclass of TestClient that does the same so we don't have to
+        # thread the header through every assertion.
+        class _CSRFAwareClient(TestClient):
+            _UNSAFE = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+            def request(self, method, url, *args, **kwargs):  # type: ignore[override]
+                if method.upper() in self._UNSAFE:
+                    csrf = self.cookies.get("fastaiagent_csrf")
+                    if csrf:
+                        headers = kwargs.get("headers") or {}
+                        if isinstance(headers, dict):
+                            headers.setdefault("X-CSRF-Token", csrf)
+                        kwargs["headers"] = headers
+                return super().request(method, url, *args, **kwargs)
+
+        client = _CSRFAwareClient(app)
 
         unauth = client.get("/api/traces")
         assert unauth.status_code == 401
@@ -429,5 +448,6 @@ class TestUIAuthPath:
         authed = client.get("/api/traces")
         assert authed.status_code == 200
 
-        client.post("/api/auth/logout")
+        logout = client.post("/api/auth/logout")
+        assert logout.status_code == 200, logout.text
         assert client.get("/api/traces").status_code == 401
