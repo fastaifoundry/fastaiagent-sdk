@@ -66,9 +66,20 @@ LLMClient(provider="openai", model="gpt-4o", max_image_size_mb=8.0)
 
 ## URL safety
 
-`Image.from_url` rejects non-HTTP(S) schemes (`file://`, `data:`, etc.) and
-caps redirects at 5 with a 30-second timeout. Pass `Image.from_bytes`
-directly when the bytes are already in memory.
+`Image.from_url` is SSRF-hardened:
+
+* Only `http(s)` schemes are accepted (`file://`, `data:`, etc. are rejected).
+* The host must resolve to a **public** address. Private RFC 1918
+  (`10/8`, `172.16/12`, `192.168/16`), loopback (`127/8`, `::1`),
+  link-local (`169.254/16` — cloud metadata service),
+  reserved/multicast/unspecified ranges are refused.
+* Each redirect hop is re-validated against the same rules — an attacker
+  cannot 302-bounce a public URL into the internal network.
+* Body is capped at 25 MiB; redirects at 5; timeout at 30s.
+
+Set `FASTAIAGENT_ALLOW_PRIVATE_NETWORKS=1` in the environment to opt into
+intranet fetching (e.g. an internal image server). When the bytes are
+already in memory, prefer `Image.from_bytes`.
 
 ## Serialization
 

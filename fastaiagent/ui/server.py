@@ -141,12 +141,24 @@ def build_app(
 
         index_file = static / "index.html"
 
+        static_resolved = static.resolve()
+
         @app.get("/{path:path}", include_in_schema=False, response_model=None)
         async def spa_fallback(request: Request, path: str) -> FileResponse | JSONResponse:
             if path.startswith("api/"):
                 return JSONResponse({"detail": "Not found"}, status_code=404)
-            candidate = static / path
-            if candidate.is_file():
+            # Reject path-traversal attempts: the resolved candidate must stay
+            # inside the static dir. Without this check, ``static / "../../etc/passwd"``
+            # resolves outside the bundle and FileResponse would happily serve it.
+            try:
+                candidate = (static / path).resolve()
+            except (OSError, RuntimeError):
+                candidate = None
+            if (
+                candidate is not None
+                and candidate.is_relative_to(static_resolved)
+                and candidate.is_file()
+            ):
                 return FileResponse(candidate)
             if index_file.exists():
                 return FileResponse(index_file)

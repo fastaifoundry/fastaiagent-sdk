@@ -11,6 +11,11 @@ pdf = PDF.from_bytes(raw)
 pdf = PDF.from_url("https://example.com/report.pdf")
 ```
 
+`PDF.from_url` is SSRF-hardened: only public `http(s)` hosts are
+accepted, every redirect hop is re-validated, and the body is capped at
+100 MiB. Set `FASTAIAGENT_ALLOW_PRIVATE_NETWORKS=1` to opt into intranet
+fetching. See [Image URL safety](images.md#url-safety) for the full ruleset.
+
 ## Processing modes
 
 `pdf_mode` controls how the PDF reaches the LLM:

@@ -93,4 +93,42 @@ describe("MixedContentView", () => {
     const textNodes = screen.getAllByText(/first|second/);
     expect(textNodes.map((n) => n.textContent)).toEqual(["first", "second"]);
   });
+
+  // ---------------------------------------------------------------------
+  // security_review_1.md H6 — XSS sanitization in trace markdown
+  // ---------------------------------------------------------------------
+
+  it("strips javascript: protocol on links", () => {
+    // A malicious LLM output could try to ship a clickable
+    // ``javascript:`` link in trace text. ``rehype-sanitize`` must rewrite
+    // or drop the dangerous href so the rendered anchor is harmless.
+    const value = "[click me](javascript:alert('xss'))";
+    const { container } = render(<MixedContentView value={value} />);
+    const anchors = container.querySelectorAll("a");
+    for (const a of anchors) {
+      const href = a.getAttribute("href") ?? "";
+      expect(href.toLowerCase()).not.toMatch(/^javascript:/);
+    }
+  });
+
+  it("does not execute inline scripts from raw HTML", () => {
+    // ``react-markdown`` already escapes raw HTML by default; this test
+    // confirms our sanitizer keeps doing the right thing if a future
+    // refactor adds ``rehype-raw`` or similar.
+    const value = "Hello<script>window.__pwned = true</script>World";
+    const { container } = render(<MixedContentView value={value} />);
+    expect(container.querySelector("script")).toBeNull();
+    // ``window.__pwned`` should never have been set.
+    expect((window as unknown as { __pwned?: boolean }).__pwned).toBeUndefined();
+  });
+
+  it("strips dangerous event-handler attributes from img tags", () => {
+    const value = '<img src="x" onerror="window.__xss=1">';
+    const { container } = render(<MixedContentView value={value} />);
+    const imgs = container.querySelectorAll("img");
+    for (const img of imgs) {
+      expect(img.getAttribute("onerror")).toBeNull();
+    }
+    expect((window as unknown as { __xss?: number }).__xss).toBeUndefined();
+  });
 });

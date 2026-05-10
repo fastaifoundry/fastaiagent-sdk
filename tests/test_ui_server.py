@@ -238,6 +238,102 @@ class TestAuth:
         r = client_no_auth.get("/api/traces")
         assert r.status_code == 200
 
+    # -----------------------------------------------------------------
+    # security_review_1.md H5 — login throttling
+    # -----------------------------------------------------------------
+
+    def test_login_throttles_after_repeated_failures(self, client_with_auth):
+        """Five wrong-password attempts must arm the per-IP+user lockout.
+
+        The throttler treats the 5th failure itself as the trigger — so
+        the first four attempts return 401 and the fifth onwards returns
+        429 with a ``Retry-After`` header.
+        """
+        from fastaiagent.ui.throttle import get_default_throttler
+
+        # Reset so this test is independent of any earlier cases.
+        get_default_throttler().reset()
+        for _ in range(4):
+            r = client_with_auth.post(
+                "/api/auth/login",
+                json={"username": "upendra", "password": "wrong"},
+            )
+            assert r.status_code == 401, r.text
+        # Fifth wrong attempt arms the lockout.
+        r = client_with_auth.post(
+            "/api/auth/login",
+            json={"username": "upendra", "password": "wrong"},
+        )
+        assert r.status_code == 429, r.text
+        assert "retry-after" in {h.lower() for h in r.headers.keys()}
+        # While locked, even the correct password is rejected.
+        r = client_with_auth.post(
+            "/api/auth/login",
+            json={"username": "upendra", "password": "correct-horse"},
+        )
+        assert r.status_code == 429
+
+    def test_login_success_resets_throttle(self, client_with_auth):
+        """A successful login clears the failure counter for that key."""
+        from fastaiagent.ui.throttle import get_default_throttler
+
+        get_default_throttler().reset()
+        for _ in range(3):
+            client_with_auth.post(
+                "/api/auth/login",
+                json={"username": "upendra", "password": "wrong"},
+            )
+        # Correct password — counter should reset.
+        ok = client_with_auth.post(
+            "/api/auth/login",
+            json={"username": "upendra", "password": "correct-horse"},
+        )
+        assert ok.status_code == 200
+        # Now another 4 wrong attempts must NOT trigger lockout (counter
+        # was reset by the success above).
+        for _ in range(4):
+            r = client_with_auth.post(
+                "/api/auth/login",
+                json={"username": "upendra", "password": "wrong"},
+            )
+            assert r.status_code == 401, r.text
+
+    # -----------------------------------------------------------------
+    # security_review_1.md H3 — derive cookie ``Secure`` from request scheme
+    # -----------------------------------------------------------------
+
+    def test_session_cookie_secure_off_on_plain_http(self, client_with_auth):
+        """Loopback HTTP keeps ``Secure=False`` so the browser doesn't drop it."""
+        from fastaiagent.ui.throttle import get_default_throttler
+
+        get_default_throttler().reset()
+        r = client_with_auth.post(
+            "/api/auth/login",
+            json={"username": "upendra", "password": "correct-horse"},
+        )
+        assert r.status_code == 200
+        set_cookie = r.headers.get("set-cookie", "")
+        assert "fastaiagent_session=" in set_cookie
+        assert "Secure" not in set_cookie
+
+    def test_session_cookie_secure_on_when_forwarded_https(
+        self, client_with_auth
+    ):
+        """A TLS-terminating proxy advertising ``X-Forwarded-Proto: https``
+        flips the cookie to ``Secure``.
+        """
+        from fastaiagent.ui.throttle import get_default_throttler
+
+        get_default_throttler().reset()
+        r = client_with_auth.post(
+            "/api/auth/login",
+            json={"username": "upendra", "password": "correct-horse"},
+            headers={"X-Forwarded-Proto": "https"},
+        )
+        assert r.status_code == 200
+        set_cookie = r.headers.get("set-cookie", "")
+        assert "Secure" in set_cookie
+
 
 class TestTraces:
     def test_list_traces(self, client_no_auth):
@@ -588,3 +684,52 @@ class TestStaticFallback:
     def test_api_catch_all_returns_json_not_html(self, client_no_auth):
         r = client_no_auth.get("/api/doesnotexist")
         assert r.status_code in (404, 503)
+
+    def test_path_traversal_does_not_serve_files_outside_static(
+        self, temp_dir, seeded_db
+    ):
+        """Path-traversal sequences must not escape the static dir.
+
+        Regression for security_review_1.md C2: ``static / "../foo"`` used
+        to resolve outside the bundle and FileResponse would serve any
+        file the process could read.
+        """
+        # Drop a fake static bundle next to a "secret" file we don't want served.
+        # The server only mounts /assets and the SPA fallback when a static dir
+        # is present, so we build one with a known file and a sibling secret.
+        static_dir = temp_dir / "static"
+        static_dir.mkdir()
+        (static_dir / "index.html").write_text("<html>ok</html>")
+        (static_dir / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\nfake")
+        secret = temp_dir / "secret.txt"
+        secret.write_text("super-secret-token")
+
+        # Build an app with an explicit static dir by monkey-patching the
+        # locator (build_app picks up package-resource static, but in tests
+        # we override _static_dir).
+        from fastaiagent.ui import server as server_module
+
+        original = server_module._static_dir
+        server_module._static_dir = lambda: static_dir
+        try:
+            app = build_app(db_path=str(seeded_db), no_auth=True)
+            client = TestClient(app)
+
+            # Legitimate asset still works.
+            r = client.get("/logo.png")
+            assert r.status_code == 200
+            assert r.content.startswith(b"\x89PNG")
+
+            # Traversal MUST NOT serve the sibling secret. The fallback either
+            # 404s or serves the SPA index — never the out-of-bundle file.
+            for path in (
+                "../secret.txt",
+                "..%2Fsecret.txt",
+                "subdir/../../secret.txt",
+            ):
+                r = client.get(f"/{path}")
+                # The route is a catch-all, so we just need to confirm we
+                # never see the secret content.
+                assert b"super-secret-token" not in r.content
+        finally:
+            server_module._static_dir = original

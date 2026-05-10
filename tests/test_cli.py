@@ -124,3 +124,59 @@ class TestCLI:
         monkeypatch.delenv("FASTAIAGENT_API_KEY", raising=False)
         result = runner.invoke(app, ["auth", "env"])
         assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# security_review_1.md H4 — strict --insecure-bind gate on non-loopback host
+# ---------------------------------------------------------------------------
+
+
+class TestUIBindSafety:
+    """`fastaiagent ui --host <non-loopback>` must refuse without
+    ``--insecure-bind``. The check happens in ``_check_bind_safety`` and
+    is exercised via a direct call so the test does not actually start
+    the FastAPI server.
+    """
+
+    def test_loopback_default_is_allowed(self):
+        """``127.0.0.1`` is the documented default — no flag needed."""
+        from fastaiagent.cli.ui import _check_bind_safety
+
+        # Returns ``None`` and does not raise.
+        assert _check_bind_safety("127.0.0.1", insecure_bind=False) is None
+
+    def test_localhost_alias_is_allowed(self):
+        from fastaiagent.cli.ui import _check_bind_safety
+
+        assert _check_bind_safety("localhost", insecure_bind=False) is None
+
+    def test_ipv6_loopback_is_allowed(self):
+        from fastaiagent.cli.ui import _check_bind_safety
+
+        assert _check_bind_safety("::1", insecure_bind=False) is None
+
+    def test_wildcard_bind_refused_without_flag(self):
+        """``0.0.0.0`` must exit non-zero when --insecure-bind is missing."""
+        import typer
+
+        from fastaiagent.cli.ui import _check_bind_safety
+
+        with __import__("pytest").raises(typer.Exit) as excinfo:
+            _check_bind_safety("0.0.0.0", insecure_bind=False)
+        assert excinfo.value.exit_code == 2
+
+    def test_lan_ip_refused_without_flag(self):
+        import typer
+
+        from fastaiagent.cli.ui import _check_bind_safety
+
+        with __import__("pytest").raises(typer.Exit) as excinfo:
+            _check_bind_safety("192.168.1.10", insecure_bind=False)
+        assert excinfo.value.exit_code == 2
+
+    def test_wildcard_bind_allowed_with_flag(self):
+        """The flag is the operator's explicit acknowledgment."""
+        from fastaiagent.cli.ui import _check_bind_safety
+
+        # No exception — just prints the warning banner.
+        assert _check_bind_safety("0.0.0.0", insecure_bind=True) is None

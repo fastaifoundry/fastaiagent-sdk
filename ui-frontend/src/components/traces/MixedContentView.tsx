@@ -11,9 +11,29 @@
 import { Fragment } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { JsonViewer } from "@/components/shared/JsonViewer";
 import { ImageThumb } from "@/components/multimodal/ImageThumb";
 import { PdfCard } from "@/components/multimodal/PdfCard";
+
+// Defence-in-depth XSS sanitization for trace content. ``react-markdown``
+// already disables raw HTML by default, but a malicious ``[click](javascript:...)``
+// link or a future plugin enabling ``rehype-raw`` would otherwise render an
+// active script vector. We layer ``rehype-sanitize`` on top using the
+// GitHub default schema so links/images/tables/code keep working but
+// dangerous protocols (``javascript:``, ``data:`` for HTML, etc.) and
+// dangerous attrs are stripped.
+const SANITIZE_SCHEMA = {
+  ...defaultSchema,
+  // Restrict ``href`` / ``src`` to safe protocols. ``defaultSchema`` already
+  // does this for most cases — listing explicitly so a future schema change
+  // upstream doesn't silently relax our policy.
+  protocols: {
+    ...(defaultSchema.protocols ?? {}),
+    href: ["http", "https", "mailto"],
+    src: ["http", "https", "data"],
+  },
+};
 
 interface Props {
   value: unknown;
@@ -187,7 +207,10 @@ export function MixedContentView({ value, traceId, spanId, emptyLabel }: Props) 
     if (typeof value === "string") {
       return (
         <div className="prose prose-sm dark:prose-invert max-w-none text-sm">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{value}</ReactMarkdown>
+          <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          rehypePlugins={[[rehypeSanitize, SANITIZE_SCHEMA]]}
+        >{value}</ReactMarkdown>
         </div>
       );
     }
@@ -221,7 +244,10 @@ function renderPart(part: Part, traceId?: string, spanId?: string) {
   if (part.kind === "text") {
     return (
       <div className="prose prose-sm dark:prose-invert max-w-none text-sm">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{part.text}</ReactMarkdown>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          rehypePlugins={[[rehypeSanitize, SANITIZE_SCHEMA]]}
+        >{part.text}</ReactMarkdown>
       </div>
     );
   }

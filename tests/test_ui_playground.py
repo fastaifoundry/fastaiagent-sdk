@@ -145,6 +145,167 @@ class TestRunValidation:
         assert r.status_code == 400
         assert "image_media_type" in r.json()["detail"]
 
+    # -----------------------------------------------------------------
+    # security_review_1.md H10 — base64 image size cap
+    # -----------------------------------------------------------------
+
+    def test_image_b64_too_large_string_rejected(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A multi-million-char ``image_b64`` field is refused by Pydantic
+        validation before the worker ever decodes it.
+        """
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-fake-test")
+        r = client.post(
+            "/api/playground/run",
+            json={
+                "provider": "openai",
+                "model": "gpt-4o",
+                "prompt_template": "x",
+                "variables": {},
+                "parameters": {"temperature": 1.0, "max_tokens": 16, "top_p": 1.0},
+                # 36M chars — over the 35M cap.
+                "image_b64": "A" * 36_000_000,
+                "image_media_type": "image/jpeg",
+            },
+        )
+        # Pydantic returns 422 for max_length violations.
+        assert r.status_code == 422
+
+    def test_image_b64_decoded_oversize_rejected(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Even within the 35M-char cap, anything that decodes above
+        25 MiB must hit a 413 — defence in depth against base64 padding.
+        """
+        import base64 as _b64
+
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-fake-test")
+        # Build raw bytes just above 25 MiB, then base64 it. The encoded
+        # string is ~33.5M chars — under the field cap — so Pydantic
+        # passes it through and the route enforces the size check.
+        raw = b"A" * (25 * 1024 * 1024 + 16)
+        encoded = _b64.b64encode(raw).decode("ascii")
+        r = client.post(
+            "/api/playground/run",
+            json={
+                "provider": "openai",
+                "model": "gpt-4o",
+                "prompt_template": "x",
+                "variables": {},
+                "parameters": {"temperature": 1.0, "max_tokens": 16, "top_p": 1.0},
+                "image_b64": encoded,
+                "image_media_type": "image/jpeg",
+            },
+        )
+        assert r.status_code == 413
+
+    # -----------------------------------------------------------------
+    # security_review_1.md H7 — LLM error correlation-id redaction
+    # -----------------------------------------------------------------
+
+    def test_run_redacts_llm_provider_error(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A provider-side exception must not leak into the response.
+
+        The route used to return ``f"LLM call failed: {type(e).__name__}: {e}"``,
+        which echoes provider-side error text — frequently containing
+        request-id, org-id, and partial key prefixes. The fixed route
+        returns an opaque ``correlation_id`` and logs the full error
+        server-side.
+
+        This test stubs ``LLMClient.acomplete`` to inject a fake error;
+        we are testing the *redaction*, not provider integration, so a
+        narrow stub is the correct level of isolation.
+        """
+        from fastaiagent import llm as _llm_mod
+
+        secret_marker = "sk-secret-prefix-12345 / org-OPENAI-XXXX / req_abc123"
+
+        class _BoomLLMClient:
+            def __init__(self, **kwargs: object) -> None:
+                pass
+
+            async def acomplete(self, messages: object) -> object:
+                raise RuntimeError(secret_marker)
+
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-fake-test")
+        monkeypatch.setattr(_llm_mod, "LLMClient", _BoomLLMClient)
+
+        r = client.post(
+            "/api/playground/run",
+            json={
+                "provider": "openai",
+                "model": "gpt-4o",
+                "prompt_template": "hi",
+                "variables": {},
+                "parameters": {"temperature": 1.0, "max_tokens": 16, "top_p": 1.0},
+            },
+        )
+        assert r.status_code == 502
+        body_text = r.text
+        # Negative: provider error must not appear in the response body.
+        assert secret_marker not in body_text
+        assert "RuntimeError" not in body_text
+        # Positive: correlation_id present so a user can grep server logs.
+        body = r.json()
+        detail = body.get("detail", {})
+        if isinstance(detail, dict):
+            assert "correlation_id" in detail
+            assert detail.get("error", "").lower().startswith("llm call failed")
+
+    @pytest.mark.skipif(
+        not os.environ.get("OPENAI_API_KEY"),
+        reason="Live test — requires OPENAI_API_KEY in the environment.",
+    )
+    def test_run_redacts_real_openai_auth_error(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Live end-to-end check that the H7 redaction handles a real
+        provider error, not just our stubbed one.
+
+        We deliberately point the route at an invalid OPENAI_API_KEY so
+        the real OpenAI endpoint returns 401. The route's exception
+        handler runs, and we assert the response surface is the
+        opaque ``{"error": "...", "correlation_id": "..."}`` shape —
+        no OpenAI request-id or key prefix leaks through.
+        """
+        # Override the env-resident real key with a clearly-invalid one
+        # for this single request. The ``has_key`` check passes (env is
+        # non-empty), but the actual call fails at OpenAI's edge.
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-deliberately-invalid-for-h7-test")
+        r = client.post(
+            "/api/playground/run",
+            json={
+                "provider": "openai",
+                "model": "gpt-4o-mini",
+                "prompt_template": "say hi",
+                "variables": {},
+                "parameters": {"temperature": 1.0, "max_tokens": 16, "top_p": 1.0},
+            },
+        )
+        assert r.status_code == 502, r.text
+        body_lower = r.text.lower()
+        # Negative: nothing OpenAI-internal must appear in the response.
+        for leak in (
+            "request id",
+            "req_",
+            "org-",
+            "openaierror",
+            "authenticationerror",
+            "invalid_api_key",
+            "sk-deliberately",
+        ):
+            assert leak not in body_lower, (
+                f"H7 regression: provider leak {leak!r} present: {r.text}"
+            )
+        body = r.json()
+        detail = body.get("detail", {})
+        assert isinstance(detail, dict)
+        assert "correlation_id" in detail
+        assert detail.get("error", "").lower().startswith("llm call failed")
+
 
 class TestTemplateResolution:
     def test_substitutes_variables(self) -> None:

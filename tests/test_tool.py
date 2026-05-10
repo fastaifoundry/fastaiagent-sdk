@@ -274,3 +274,77 @@ class TestSchemaValidation:
         report = detect_drift("test_tool", schema, [{"x": 1}, {"x": "oops"}])
         assert report.drift_detected
         assert len(report.violations) == 1
+
+
+# ---------------------------------------------------------------------------
+# security_review_1.md H1 — RESTTool SSRF hardening
+# ---------------------------------------------------------------------------
+
+
+class TestRESTToolSSRF:
+    """Regression tests for security_review_1.md H1.
+
+    The previous RESTTool used ``httpx.AsyncClient(follow_redirects=True)``
+    with no host validation. Two SSRF shapes are now blocked:
+
+    * The configured ``url`` is rejected if the host is private, loopback,
+      link-local (incl. cloud metadata), reserved or multicast.
+    * For ``body_mapping == "path_params"`` the post-substitution URL must
+      keep the same host as the template.
+    """
+
+    @pytest.mark.asyncio
+    async def test_loopback_url_blocked(self):
+        from fastaiagent._internal.errors import ToolExecutionError
+
+        t = RESTTool(name="local", url="http://127.0.0.1:7842/api/auth/status")
+        with pytest.raises(ToolExecutionError, match="non-public|public address"):
+            await t.aexecute({})
+
+    @pytest.mark.asyncio
+    async def test_link_local_metadata_blocked(self):
+        from fastaiagent._internal.errors import ToolExecutionError
+
+        t = RESTTool(
+            name="metadata",
+            url="http://169.254.169.254/latest/meta-data/",
+        )
+        with pytest.raises(ToolExecutionError, match="non-public|public address"):
+            await t.aexecute({})
+
+    @pytest.mark.asyncio
+    async def test_path_param_pivot_via_developer_bug_template_blocked(self):
+        """If a developer puts a placeholder in the host segment by mistake,
+        the netloc-equality check refuses the request before issuing it.
+
+        ``url.replace("{key}", value)`` is a string substitution — if the
+        template happens to put ``{var}`` inside the authority (a developer
+        bug) the LLM controls the host. Even though the SSRF guard would
+        also catch a private-IP target, we surface a clearer error here.
+        """
+        from fastaiagent._internal.errors import ToolExecutionError
+
+        t = RESTTool(
+            name="lookup",
+            # Placeholder in the host — a developer bug we still defend.
+            url="https://{host}/api",
+            body_mapping="path_params",
+        )
+        with pytest.raises(
+            ToolExecutionError, match="changed the host|non-public|public address"
+        ):
+            await t.aexecute({"host": "evil.attacker"})
+
+    @pytest.mark.asyncio
+    async def test_private_allowed_with_env_opt_in(self, monkeypatch):
+        """Intranet users opt in; the SSRF guard no longer trips."""
+        from fastaiagent._internal.errors import ToolExecutionError
+        from fastaiagent.multimodal._http import ALLOW_PRIVATE_NETWORKS_ENV
+
+        monkeypatch.setenv(ALLOW_PRIVATE_NETWORKS_ENV, "1")
+        t = RESTTool(name="dev", url="http://127.0.0.1:1/no-listener")
+        with pytest.raises(ToolExecutionError) as excinfo:
+            await t.aexecute({})
+        # Some non-SSRF error (connection refused etc.) — not the guard.
+        assert "non-public" not in str(excinfo.value).lower()
+        assert "public address" not in str(excinfo.value).lower()

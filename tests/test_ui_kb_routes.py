@@ -233,3 +233,75 @@ def test_lineage_aggregates_retrieval_spans(app_env):
     assert body["agents"] == [{"agent_name": "support-bot", "retrieval_count": 1}]
     assert len(body["recent_traces"]) == 1
     assert body["recent_traces"][0]["agent_name"] == "support-bot"
+
+
+# ---------------------------------------------------------------------------
+# C3 — Path-traversal regression tests
+# ---------------------------------------------------------------------------
+
+
+def test_collection_name_rejects_invalid_chars(app_env):
+    """Regression for security_review_1.md C3.
+
+    KB names that don't match the slug whitelist must 400. Slash-bearing
+    traversal patterns are already normalized by the router (they 404 because
+    they don't match ``/api/kb/{name}``), so we focus on the inputs that
+    *do* arrive at the handler as a single segment — these are the ones the
+    whitelist needs to catch.
+    """
+    app, kb_root, _ = app_env
+    # Plant a sibling sqlite file the attacker would love to oracle/open.
+    sibling = kb_root.parent / "secret.sqlite"
+    sibling.write_bytes(b"SQLite format 3\x00secret-token")
+    with TestClient(app) as client:
+        for evil in (
+            "with space",
+            "name.with.dots",
+            "name!bang",
+            "$(whoami)",
+            "name'quote",
+            "x" * 65,  # over the 64-char cap
+        ):
+            r = client.get(f"/api/kb/{evil}")
+            assert r.status_code == 400, (evil, r.status_code, r.text)
+            assert b"secret-token" not in r.content
+            assert b"SQLite format" not in r.content
+
+
+def test_collection_traversal_via_slash_does_not_leak(app_env):
+    """Slash-bearing traversal must not reveal sibling SQLite content.
+
+    The router rejects these (404) before the handler runs, so this is a
+    belt-and-braces check that no future routing change accidentally lets
+    traversal through.
+    """
+    app, kb_root, _ = app_env
+    sibling = kb_root.parent / "secret.sqlite"
+    sibling.write_bytes(b"SQLite format 3\x00secret-token")
+    with TestClient(app) as client:
+        for evil in (
+            "../secret",
+            "..%2Fsecret",
+            "docs/../../secret",
+            "abs/path/secret",
+        ):
+            r = client.get(f"/api/kb/{evil}")
+            assert r.status_code in (400, 404, 405), (evil, r.status_code)
+            assert b"secret-token" not in r.content
+
+
+def test_collection_documents_rejects_invalid_name(app_env):
+    app, _, _ = app_env
+    with TestClient(app) as client:
+        r = client.get("/api/kb/.%2E/documents")
+    assert r.status_code in (400, 404)
+
+
+def test_collection_search_rejects_invalid_name(app_env):
+    app, _, _ = app_env
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/kb/with space/search",
+            json={"query": "anything", "top_k": 3},
+        )
+    assert r.status_code == 400

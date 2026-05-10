@@ -155,13 +155,84 @@ Beyond inline functions, guardrails support four more implementation types for c
 
 ### Code (default)
 
-Python function execution, as shown above.
+Python function execution, as shown above. **Always** pass the callable
+via `fn=`. The legacy `config={"code": "..."}` string-execution path was
+removed in 1.10.0 because its sandbox was bypassable; supplying a `code`
+string now fails closed without executing anything.
 
 ```python
 Guardrail(
     name="custom_check",
     guardrail_type=GuardrailType.code,
     fn=lambda text: "confidential" not in text.lower(),
+)
+```
+
+#### Migrating from `config={"code": "..."}` (1.9.0 → 1.10.0)
+
+If you previously wrote a guardrail by passing a Python *string* through
+config — e.g. loading guardrail definitions from a YAML/JSON file — move
+the logic into a real function and pass it via `fn=`. Three common shapes:
+
+```python
+from fastaiagent.guardrail import Guardrail, GuardrailType, GuardrailResult
+
+# 1. One-liner: lambda is enough.
+#
+#    BEFORE (no longer executes — fails closed):
+#      Guardrail(
+#          name="no_secret",
+#          guardrail_type=GuardrailType.code,
+#          config={"code": "result = 'secret' not in data"},
+#      )
+#
+#    AFTER:
+no_secret = Guardrail(
+    name="no_secret",
+    fn=lambda text: "secret" not in text.lower(),
+)
+
+
+# 2. Multiple checks + custom message: use a named function.
+#
+#    BEFORE:
+#      Guardrail(
+#          name="length_band",
+#          guardrail_type=GuardrailType.code,
+#          config={"code": "result = 10 <= len(data) <= 500"},
+#      )
+#
+#    AFTER:
+def length_band(text: str) -> GuardrailResult:
+    n = len(text)
+    if n < 10:
+        return GuardrailResult(passed=False, message=f"Too short ({n} chars)")
+    if n > 500:
+        return GuardrailResult(passed=False, message=f"Too long ({n} chars)")
+    return GuardrailResult(passed=True, score=1.0)
+
+length_guard = Guardrail(name="length_band", fn=length_band)
+
+
+# 3. Loading guardrails from config files: import the callable by name
+#    instead of embedding source code in YAML/JSON.
+#
+#    Recommended: ship a small registry module the loader can resolve,
+#    e.g. ``my_app.guardrails:no_secret``. The loader looks up the
+#    callable and passes it via ``fn=``.
+```
+
+If you cannot move the logic into Python (e.g. the rules genuinely live
+in user-supplied configuration), reach for a non-code guardrail type
+instead — `GuardrailType.regex`, `.schema`, or `.classifier` cover the
+same cases declaratively without executing arbitrary code:
+
+```python
+# Pattern check expressed declaratively — no code execution at all.
+no_secret = Guardrail(
+    name="no_secret",
+    guardrail_type=GuardrailType.regex,
+    config={"pattern": r"\bsecret\b", "should_match": False, "case_insensitive": True},
 )
 ```
 
