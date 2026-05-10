@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.1] - 2026-05-10
+
+PATCH — fixes a long-standing top-level import bug discovered while
+verifying the 1.10.0 PyPI release.
+
+### Fixed
+
+- **`import fastaiagent` no longer requires `pytest`.**
+  `fastaiagent/eval/__init__.py` used to eagerly import
+  `fastaiagent.eval.pytest_plugin`, which has `import pytest` at module
+  level. Any production install without `pytest` (the typical runtime
+  server) hit `ModuleNotFoundError: No module named 'pytest'` on the
+  very first `import fastaiagent` line. The plugin import is now
+  guarded with try/except: when `pytest` is missing, `fastaiagent.eval.case`
+  and `fastaiagent.eval.pytest_dataset` become stubs that raise a
+  clear `ImportError` only if the decorators are actually called.
+  Pre-existed in every prior release; verified via a subprocess
+  regression test that simulates a no-pytest environment.
+
 ## [1.10.0] - 2026-05-10
 
 MINOR — security review #1 fixes (`claude_files/security_review_1.md`).
