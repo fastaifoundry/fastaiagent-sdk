@@ -23,14 +23,37 @@ _PARAM_LINE_RE = re.compile(
     r"(.+)",  # description start
 )
 
+# NumPy style:
+#
+#     Parameters
+#     ----------
+#     x : int
+#         Description of x.
+#         Continues here.
+#     y : str, optional
+#         Description of y.
+#
+_NUMPY_HEADER_RE = re.compile(r"^\s*(Parameters|Args|Arguments)\s*$", re.IGNORECASE)
+_NUMPY_UNDERLINE_RE = re.compile(r"^\s*-{3,}\s*$")
+_NUMPY_PARAM_RE = re.compile(
+    r"^\s*(\w+)"  # param name (no leading indent required)
+    r"(?:\s*:\s*[^$]+)?"  # optional " : type"
+    r"\s*$"
+)
 
-def _parse_param_descriptions(fn: Callable[..., Any]) -> dict[str, str]:
-    """Extract parameter descriptions from Google-style docstring Args section."""
-    doc = inspect.getdoc(fn)
-    if not doc:
-        return {}
+# Sphinx / reStructuredText style:
+#
+#     :param x: Description of x.
+#     :type x: int
+#     :param y: Description of y, may
+#         continue on the next line.
+#
+_SPHINX_PARAM_RE = re.compile(r"^\s*:param\s+(\w+)\s*:\s*(.*)$")
+_SPHINX_OTHER_FIELD_RE = re.compile(r"^\s*:\w+(?:\s+\w+)?\s*:")
 
-    lines = doc.splitlines()
+
+def _parse_google_style(lines: list[str]) -> dict[str, str]:
+    """Google-style ``Args:`` block. Returns ``{}`` if no section found."""
     result: dict[str, str] = {}
     in_args = False
     current_param: str | None = None
@@ -40,34 +63,133 @@ def _parse_param_descriptions(fn: Callable[..., Any]) -> dict[str, str]:
         if _ARGS_SECTION_RE.match(line):
             in_args = True
             continue
-
         if not in_args:
             continue
 
-        # Check if we've hit a new section header (not indented or less indented)
         stripped = line.strip()
         if stripped and not line.startswith(" ") and not line.startswith("\t"):
-            # Non-indented non-empty line means new section
             break
         if _SECTION_HEADER_RE.match(line) and not _PARAM_LINE_RE.match(line):
             break
 
         param_match = _PARAM_LINE_RE.match(line)
         if param_match:
-            # Save previous param
             if current_param is not None:
                 result[current_param] = " ".join(current_desc).strip()
             current_param = param_match.group(1)
             current_desc = [param_match.group(2).strip()]
         elif current_param is not None and stripped:
-            # Continuation line for current param
             current_desc.append(stripped)
 
-    # Save last param
     if current_param is not None:
         result[current_param] = " ".join(current_desc).strip()
-
     return result
+
+
+def _parse_numpy_style(lines: list[str]) -> dict[str, str]:
+    """NumPy-style ``Parameters\\n----------`` block. Returns ``{}`` if no
+    section found."""
+    result: dict[str, str] = {}
+    n = len(lines)
+    i = 0
+    while i < n - 1:
+        if _NUMPY_HEADER_RE.match(lines[i]) and _NUMPY_UNDERLINE_RE.match(lines[i + 1]):
+            i += 2
+            current_param: str | None = None
+            current_desc: list[str] = []
+            current_indent = -1
+            while i < n:
+                line = lines[i]
+                stripped = line.strip()
+                if not stripped:
+                    i += 1
+                    continue
+                # End of section: another header underline pattern means a
+                # new top-level section. Detect ``Returns\n-------`` etc.
+                if (
+                    i + 1 < n
+                    and _NUMPY_UNDERLINE_RE.match(lines[i + 1])
+                    and not lines[i].startswith(" ")
+                    and stripped.lower() not in {"parameters", "args", "arguments"}
+                ):
+                    break
+                # Param line: name (or name : type), no leading indent.
+                if not line.startswith((" ", "\t")) and _NUMPY_PARAM_RE.match(line):
+                    if current_param is not None:
+                        result[current_param] = " ".join(current_desc).strip()
+                    name_match = _NUMPY_PARAM_RE.match(line)
+                    assert name_match is not None
+                    current_param = name_match.group(1)
+                    current_desc = []
+                    current_indent = -1
+                    i += 1
+                    continue
+                # Continuation line (indented).
+                if current_param is not None and (line.startswith(" ") or line.startswith("\t")):
+                    indent = len(line) - len(line.lstrip())
+                    if current_indent < 0:
+                        current_indent = indent
+                    if indent >= current_indent:
+                        current_desc.append(stripped)
+                        i += 1
+                        continue
+                break
+            if current_param is not None:
+                result[current_param] = " ".join(current_desc).strip()
+            return result
+        i += 1
+    return result
+
+
+def _parse_sphinx_style(lines: list[str]) -> dict[str, str]:
+    """Sphinx/reST ``:param name: description`` fields. Returns ``{}`` if no
+    fields found."""
+    result: dict[str, str] = {}
+    current_param: str | None = None
+    current_desc: list[str] = []
+
+    for line in lines:
+        param_match = _SPHINX_PARAM_RE.match(line)
+        if param_match:
+            if current_param is not None:
+                result[current_param] = " ".join(current_desc).strip()
+            current_param = param_match.group(1)
+            current_desc = [param_match.group(2).strip()]
+            continue
+        # Another :something: field ends the current :param: block.
+        if _SPHINX_OTHER_FIELD_RE.match(line):
+            if current_param is not None:
+                result[current_param] = " ".join(current_desc).strip()
+                current_param = None
+                current_desc = []
+            continue
+        if current_param is not None:
+            stripped = line.strip()
+            if stripped:
+                current_desc.append(stripped)
+
+    if current_param is not None:
+        result[current_param] = " ".join(current_desc).strip()
+    return result
+
+
+def _parse_param_descriptions(fn: Callable[..., Any]) -> dict[str, str]:
+    """Extract parameter descriptions from a function's docstring.
+
+    Tries Google → NumPy → Sphinx in order; returns the first non-empty
+    result. Behaviour for Google-style docstrings is unchanged from
+    earlier versions; NumPy and Sphinx are added in v1.9.0.
+    """
+    doc = inspect.getdoc(fn)
+    if not doc:
+        return {}
+
+    lines = doc.splitlines()
+    for parser in (_parse_google_style, _parse_numpy_style, _parse_sphinx_style):
+        result = parser(lines)
+        if result:
+            return result
+    return {}
 
 
 def _is_context_param(annotation: Any) -> bool:

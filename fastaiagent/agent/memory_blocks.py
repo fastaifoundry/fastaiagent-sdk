@@ -26,10 +26,12 @@ from __future__ import annotations
 
 import json
 import logging
+import math
+import time
 import uuid
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastaiagent.llm.message import Message, MessageRole, SystemMessage
 
@@ -218,8 +220,21 @@ class VectorBlock(MemoryBlock):
     """Semantic recall over past messages via a :class:`VectorStore`.
 
     Every incoming message with text content is embedded and stored. On
-    :meth:`render`, the query is embedded and the top-``top_k`` most similar
-    past messages are returned as SystemMessage fragments.
+    :meth:`render`, the query is embedded and the top-``top_k`` past
+    messages are returned as SystemMessage fragments.
+
+    By default retrieval is ranked by cosine similarity alone. Long-running
+    agents often want recent or important messages to outrank stale
+    high-similarity messages — set ``recency_weight`` and/or
+    ``importance_weight`` to enable the weighted-sum scorer:
+
+        final_score = (1 - recency_weight - importance_weight) * cos_sim
+                    + recency_weight    * exp(-age_seconds / half_life)
+                    + importance_weight * importance
+
+    The ``importance`` field is read from each chunk's metadata
+    (``metadata['importance']``); messages without it default to ``1.0``.
+    The two weights default to ``0.0`` so existing callers see no change.
 
     Args:
         store: Any object implementing the
@@ -231,6 +246,13 @@ class VectorBlock(MemoryBlock):
             stores don't collide. Stored on each chunk's metadata.
         min_content_chars: Messages shorter than this are not indexed
             (skip trivial "ok" / "yes" messages).
+        recency_weight: Boost for recent chunks, in ``[0.0, 1.0]``. Default
+            ``0.0`` (similarity-only — historical behaviour).
+        importance_weight: Boost for high-importance chunks, in ``[0.0, 1.0]``.
+            Default ``0.0``.
+        recency_half_life_seconds: Time after which a chunk's recency
+            contribution halves. Default ``3600`` (one hour). Lower values
+            decay faster.
     """
 
     name = "vector"
@@ -242,14 +264,30 @@ class VectorBlock(MemoryBlock):
         top_k: int = 5,
         namespace: str = "default",
         min_content_chars: int = 10,
+        recency_weight: float = 0.0,
+        importance_weight: float = 0.0,
+        recency_half_life_seconds: float = 3600.0,
     ):
         from fastaiagent.kb.embedding import get_default_embedder
+
+        if recency_weight < 0.0 or importance_weight < 0.0:
+            raise ValueError("recency_weight and importance_weight must be >= 0")
+        if recency_weight + importance_weight > 1.0:
+            raise ValueError(
+                "recency_weight + importance_weight must not exceed 1.0; "
+                f"got {recency_weight + importance_weight:.3f}"
+            )
+        if recency_half_life_seconds <= 0.0:
+            raise ValueError("recency_half_life_seconds must be > 0")
 
         self.store = store
         self.embedder: Embedder = embedder or get_default_embedder()
         self.top_k = top_k
         self.namespace = namespace
         self.min_content_chars = min_content_chars
+        self.recency_weight = recency_weight
+        self.importance_weight = importance_weight
+        self.recency_half_life_seconds = recency_half_life_seconds
 
     def _make_chunk(self, message: Message) -> Chunk | None:
         from fastaiagent.kb.chunking import Chunk
@@ -258,10 +296,22 @@ class VectorBlock(MemoryBlock):
         if len(content) < self.min_content_chars:
             return None
         text = f"[{message.role.value}] {content}"
+        # Stamp ``created_at`` (and optional ``importance`` if the message
+        # carries one) so the recency/importance scorer has signal to work
+        # with on retrieval. Existing chunks without these keys keep
+        # working — ``_score_hits`` falls back to neutral defaults.
+        metadata: dict[str, Any] = {
+            "namespace": self.namespace,
+            "role": message.role.value,
+            "created_at": time.time(),
+        }
+        msg_importance = getattr(message, "importance", None)
+        if isinstance(msg_importance, (int, float)):
+            metadata["importance"] = float(msg_importance)
         return Chunk(
             id=str(uuid.uuid4()),
             content=text,
-            metadata={"namespace": self.namespace, "role": message.role.value},
+            metadata=metadata,
             index=0,
             start_char=0,
             end_char=len(text),
@@ -277,6 +327,42 @@ class VectorBlock(MemoryBlock):
         except Exception as err:
             _log.warning("VectorBlock failed to index message: %s", err)
 
+    def _score_hits(
+        self, hits: list[tuple[Chunk, float]]
+    ) -> list[tuple[Chunk, float]]:
+        """Apply optional recency + importance weights on top of similarity.
+
+        Returns ``(chunk, final_score)`` sorted by ``final_score`` descending.
+        With both weights at zero this preserves the input order — keeping
+        identical behaviour for callers who don't opt in.
+        """
+        if self.recency_weight == 0.0 and self.importance_weight == 0.0:
+            return hits
+
+        sim_w = max(0.0, 1.0 - self.recency_weight - self.importance_weight)
+        now = time.time()
+        scored: list[tuple[Chunk, float]] = []
+        for chunk, similarity in hits:
+            created_at = chunk.metadata.get("created_at")
+            if isinstance(created_at, (int, float)):
+                age = max(0.0, now - float(created_at))
+                recency = math.exp(-age / self.recency_half_life_seconds)
+            else:
+                recency = 0.0  # unknown age — no boost
+            importance_raw = chunk.metadata.get("importance", 1.0)
+            try:
+                importance = float(importance_raw)
+            except (TypeError, ValueError):
+                importance = 1.0
+            final = (
+                sim_w * float(similarity)
+                + self.recency_weight * recency
+                + self.importance_weight * importance
+            )
+            scored.append((chunk, final))
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return scored
+
     def render(self, query: str) -> list[Message]:
         if not query or not query.strip():
             return []
@@ -290,8 +376,9 @@ class VectorBlock(MemoryBlock):
         except Exception as err:
             _log.warning("VectorBlock search failed: %s", err)
             return []
+        scored = self._score_hits(list(hits))
         relevant = [
-            c for c, _ in hits
+            c for c, _ in scored
             if c.metadata.get("namespace", self.namespace) == self.namespace
         ]
         if not relevant:
@@ -436,6 +523,17 @@ class PersistentFactBlock(MemoryBlock):
             local.db.
         refresh_every: re-query the store every N renders. ``1`` (default)
             re-queries every turn; higher values cache for performance.
+        recency_weight: in ``[0.0, 1.0]``. With ``recency_weight > 0`` the
+            facts list is reordered so newer rows (by ``learned_memory.
+            created_at``) outrank older ones. Default ``0.0`` preserves the
+            existing newest-first behaviour from ``list_active``.
+        importance_weight: in ``[0.0, 1.0]``. With ``importance_weight > 0``
+            facts with higher ``confidence`` (the existing column on
+            ``learned_memory``) outrank lower-confidence ones. Default
+            ``0.0``.
+        recency_half_life_seconds: time after which a fact's recency
+            contribution halves. Default ``86400`` (one day) — facts decay
+            slower than chat messages because they're meant to be durable.
 
     Example::
 
@@ -459,6 +557,9 @@ class PersistentFactBlock(MemoryBlock):
         max_facts: int = 50,
         store: object | None = None,
         refresh_every: int = 1,
+        recency_weight: float = 0.0,
+        importance_weight: float = 0.0,
+        recency_half_life_seconds: float = 86400.0,
     ):
         if scope not in ("user", "project", "agent"):
             raise ValueError(
@@ -468,11 +569,23 @@ class PersistentFactBlock(MemoryBlock):
             raise ValueError("max_facts must be >= 1")
         if refresh_every < 1:
             raise ValueError("refresh_every must be >= 1")
+        if recency_weight < 0.0 or importance_weight < 0.0:
+            raise ValueError("recency_weight and importance_weight must be >= 0")
+        if recency_weight + importance_weight > 1.0:
+            raise ValueError(
+                "recency_weight + importance_weight must not exceed 1.0; "
+                f"got {recency_weight + importance_weight:.3f}"
+            )
+        if recency_half_life_seconds <= 0.0:
+            raise ValueError("recency_half_life_seconds must be > 0")
         self.scope = scope
         self.scope_id = scope_id
         self.project_id = project_id
         self.max_facts = max_facts
         self.refresh_every = refresh_every
+        self.recency_weight = recency_weight
+        self.importance_weight = importance_weight
+        self.recency_half_life_seconds = recency_half_life_seconds
         self._store = store  # may be None — lazy init in render()
         self._cached: list[str] | None = None
         self._renders_since_refresh = 0
@@ -499,9 +612,32 @@ class PersistentFactBlock(MemoryBlock):
             project_id=self.project_id,
             limit=self.max_facts,
         )
-        # ``list_active`` returns newest first; preserve that order so the
-        # rendered prompt prioritizes recent learnings.
-        return [f.fact for f in facts]
+        # ``list_active`` returns newest first. With both scoring weights at
+        # zero we preserve that order so existing callers see no change.
+        if self.recency_weight == 0.0 and self.importance_weight == 0.0:
+            return [f.fact for f in facts]
+
+        # Otherwise rank by a weighted blend of recency (decayed against
+        # ``created_at``) and importance (sourced from ``confidence``).
+        # ``list_active``'s newest-first order is the implicit "similarity"
+        # signal here — we treat it as 1.0 for all rows and let the two
+        # explicit weights add the polish.
+        sim_w = max(0.0, 1.0 - self.recency_weight - self.importance_weight)
+        now = time.time()
+        scored: list[tuple[float, str]] = []
+        for f in facts:
+            created = float(f.created_at) if f.created_at is not None else now
+            age = max(0.0, now - created)
+            recency = math.exp(-age / self.recency_half_life_seconds)
+            importance = float(f.confidence) if f.confidence is not None else 1.0
+            score = (
+                sim_w * 1.0
+                + self.recency_weight * recency
+                + self.importance_weight * importance
+            )
+            scored.append((score, f.fact))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [fact for _, fact in scored]
 
     def render(self, query: str) -> list[Message]:
         if self._cached is None or self._renders_since_refresh >= self.refresh_every:

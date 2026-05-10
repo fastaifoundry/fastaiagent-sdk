@@ -143,6 +143,103 @@ Any backend implementing the `VectorStore` protocol works — `FaissVectorStore`
 
 **When to use**: conversations that span days or sessions, where long-ago facts should be retrievable by meaning, not just recency.
 
+#### Memory scoring (recency + importance) — v1.9.0 { #memory-scoring }
+
+By default `VectorBlock` ranks retrieval results by cosine similarity
+alone. That works fine for short sessions but breaks in two recurring
+ways for long-running agents:
+
+1. **Old correct answer drowns out new correct answer.** The user said
+   in turn 5 *"my email is alice@old.com"*. In turn 50 they corrected
+   themselves: *"actually, alice@new.com"*. Both messages are about
+   email — both score high on similarity to *"what's my email?"*. The
+   older one wins half the time because there's nothing differentiating
+   them.
+2. **Trivial chatter outranks load-bearing facts.** The user said *"I'm
+   a vegetarian"* once. They've then said *"ok"*, *"thanks"*, *"yes"*
+   twenty times. A query like *"what should I order for dinner?"* has
+   higher similarity to the *"ok"* / *"thanks"* cluster than to that one
+   important fact, and the agent forgets the constraint.
+
+Three optional knobs fix both. Defaults are zero, so existing
+`VectorBlock(store=...)` calls keep their current behaviour byte-for-byte:
+
+```python
+VectorBlock(
+    store=...,
+    top_k=5,
+    recency_weight=0.3,                 # 0.0–1.0
+    importance_weight=0.2,              # 0.0–1.0
+    recency_half_life_seconds=3600.0,   # 1 hour, exponential decay
+)
+```
+
+Retrieval becomes a weighted sum of three signals:
+
+```
+final_score = (1 - recency_weight - importance_weight) * cosine_similarity
+            + recency_weight    * exp(-age_seconds / half_life)
+            + importance_weight * importance
+```
+
+- **`cosine_similarity`** — what's there today. Range ~0–1.
+- **`recency`** — exponential decay from the chunk's `created_at`. With
+  `half_life=3600s`, a message 1 hour old contributes 0.5; 2 hours old,
+  0.25; a week old, ~0.
+- **`importance`** — read from the chunk's `metadata['importance']`
+  (default `1.0` if not set). For `PersistentFactBlock`, this is sourced
+  from the `confidence` column on `learned_memory`, so facts the LLM
+  extracted with high confidence outrank uncertain ones.
+
+##### Worked example
+
+Three stored messages, all matching *"what's my email?"*:
+
+| Message | similarity | age | importance |
+|---|---|---|---|
+| A: "my email is alice@old.com" | 0.85 | 7 days | 0.5 (likely superseded) |
+| B: "actually it's alice@new.com" | 0.80 | 1 hour | 1.0 |
+| C: "thanks!" | 0.30 | 5 min | 1.0 |
+
+**Today** (similarity-only, both new weights = 0): A wins (0.85 > 0.80 > 0.30). Wrong answer.
+
+**With `recency_weight=0.3, importance_weight=0.2`** and a 1-hour
+half-life:
+
+```
+A:  0.5*0.85 + 0.3*exp(-604800/3600) + 0.2*0.5  ≈ 0.425 + ~0.000 + 0.10 = 0.525
+B:  0.5*0.80 + 0.3*exp(-3600/3600)   + 0.2*1.0  ≈ 0.400 + 0.110  + 0.20 = 0.710
+C:  0.5*0.30 + 0.3*exp(-300/3600)    + 0.2*1.0  ≈ 0.150 + 0.276  + 0.20 = 0.626
+```
+
+B wins — the right answer surfaces. C ranks high on recency but its low
+similarity prevents it from outranking B.
+
+##### Tuning
+
+- **Customer-support bot, current state matters most**: `recency_weight=0.4`,
+  `recency_half_life_seconds=1800` (30 min). The most recent user message
+  almost always reflects current intent.
+- **Research assistant, old facts still relevant**: `recency_weight=0`,
+  `importance_weight=0.3`. Don't decay; let importance differentiate.
+- **Long-running personal assistant**: `recency_weight=0.2`,
+  `importance_weight=0.3`, `recency_half_life_seconds=86400` (1 day).
+  Slow decay, importance-aware.
+
+##### Where `importance` comes from
+
+- `VectorBlock` reads `chunk.metadata['importance']` if set, defaults to
+  `1.0`. To stamp it, attach `importance` to your `Message` before
+  feeding it through memory (the block reads `getattr(message,
+  "importance", None)` in `_make_chunk`).
+- `PersistentFactBlock` reads the existing `confidence` column on
+  `learned_memory` rows. Facts produced by `fastaiagent learn` carry an
+  LLM-judged confidence; high-confidence facts naturally rank higher.
+
+**Backward compatibility**: with both weights at zero (the default),
+behaviour is byte-identical to v1.8.x — the scorer short-circuits and
+returns the input order unchanged.
+
 ### `FactExtractionBlock`
 
 Uses a cheap LLM to extract durable facts from each user/assistant message and stores them as a dedup'd list. Renders as a bullet-point `Known facts: …` SystemMessage.
@@ -170,8 +267,18 @@ PersistentFactBlock(
     project_id="",                # optional project filter
     max_facts=50,                 # newest-first cap
     refresh_every=1,              # re-query store every N renders (1 = always)
+    # v1.9.0: optional scoring on top of `list_active`'s newest-first order.
+    # Defaults are 0.0 — historical behaviour preserved.
+    recency_weight=0.0,           # 0.0–1.0
+    importance_weight=0.0,        # 0.0–1.0; importance ← learned_memory.confidence
+    recency_half_life_seconds=86400.0,  # 1 day; facts decay slower than messages
 )
 ```
+
+`PersistentFactBlock` honours the same `recency_weight` /
+`importance_weight` model documented under [`VectorBlock` →
+Memory scoring](#memory-scoring). Importance is sourced from the
+existing `confidence` column on `learned_memory`.
 
 **When to use**: long-running agents that should accumulate operational knowledge across sessions ("the writer should always cite token-cost claims", "this user prefers reports under 800 words"). Pair with `fastaiagent learn` to populate the underlying table from past traces.
 

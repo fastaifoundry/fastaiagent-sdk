@@ -5,6 +5,110 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2026-05-10
+
+MINOR — three small, additive polish items: hierarchical Supervisor
+validation, NumPy / Sphinx docstring parsing for tool schemas, and
+recency / importance scoring for `VectorBlock` and `PersistentFactBlock`.
+All non-breaking; existing call sites are byte-identical.
+
+### Added — Hierarchical Supervisor (`Supervisor.validate_outputs`)
+
+- **`Supervisor(validate_outputs=True, ...)`** — opt-in flag (default
+  `False`). When enabled, after each worker returns the supervisor LLM
+  reviews the output. On rejection the worker is re-invoked once with
+  the manager's feedback appended to the original task.
+- **`max_validation_retries_per_worker`** (default `1`) — retry budget
+  per delegate after a rejection. After retries are exhausted the
+  supervisor proceeds with the worker's last output and writes a
+  `guardrail_events` row tagged `supervisor.validate` /
+  `outcome=warned` so the failure is auditable in the local UI.
+- **`validation_prompt`** (default `None`) — override the default
+  validator prompt; must include `{task}` and `{output}` placeholders.
+  Validator must return strict JSON: `{"approved": bool, "feedback": str}`.
+- **Fail-open** on malformed JSON, network errors, or any exception in
+  the validation step — a misbehaving validator must not crash a working
+  agent.
+- `Supervisor.to_dict()` now surfaces `validate_outputs` and
+  `max_validation_retries_per_worker` so the local UI workflow topology
+  view can render the badge.
+
+### Added — Tool docstring parsing (NumPy + Sphinx)
+
+- **`_parse_param_descriptions`** ([fastaiagent/tool/function.py](fastaiagent/tool/function.py))
+  now reads NumPy and Sphinx (reST) docstring conventions in addition to
+  the existing Google style. Detection order is **Google → NumPy →
+  Sphinx**; first style with a `param: description` mapping wins.
+- Affects every `FunctionTool` / `@tool`-decorated callable
+  automatically. `description` fields on the generated JSON schema are
+  populated from whichever style the docstring uses, with no caller
+  change required.
+
+### Added — Memory scoring (recency + importance)
+
+- **`VectorBlock(recency_weight, importance_weight,
+  recency_half_life_seconds, ...)`** — three optional kwargs, all
+  defaulting to `0.0` so existing callers see no change. Retrieval
+  becomes a weighted sum:
+
+  ```
+  final_score = (1 - recency_weight - importance_weight) * cosine_similarity
+              + recency_weight    * exp(-age_seconds / half_life)
+              + importance_weight * importance
+  ```
+
+  Recency reads `chunk.metadata['created_at']` (auto-stamped on
+  index); importance reads `chunk.metadata['importance']` (default
+  `1.0`).
+- **`PersistentFactBlock`** picks up the same three kwargs.
+  Importance is sourced from the existing `confidence` column on
+  `learned_memory`, so high-confidence facts outrank uncertain ones.
+  Recency uses the existing `created_at` column with a 1-day default
+  half-life (facts decay slower than chat messages).
+- Validation guards reject negative weights, weights summing > 1.0, and
+  non-positive half-lives.
+
+### Tests (no mocking)
+
+- `tests/test_supervisor_validate.py` — 7 cases covering the off-default
+  path, first-try accept, reject-then-accept, exhausted-retry warning
+  (with real DB write), unparseable validator (fail-open), `to_dict()`,
+  and constructor guards.
+- `tests/test_tool_docstring_styles.py` — 11 cases: Google preserved,
+  NumPy basic + minimal + alias, Sphinx basic + minimal, detection
+  order, no-docstring, no-section, end-to-end through `FunctionTool`.
+- `tests/test_memory_scoring.py` — 13 cases for `VectorBlock` and
+  `PersistentFactBlock` covering default-preserves-order, recency
+  promotion, importance promotion, the canonical "old correct vs new
+  correct" scenario, chunk-metadata stamping, and all guards.
+
+### Examples
+
+- `examples/65_supervisor_validate.py` — end-to-end pytest demo of
+  manager-validates-worker, no API keys required.
+- `examples/66_memory_scoring.py` — the canonical "old vs new email"
+  scenario, runnable as pytest.
+- `examples/67_tool_docstrings.py` — pytest demos for all three
+  docstring styles.
+
+### Docs
+
+- [docs/agents/teams.md](docs/agents/teams.md) — new "Hierarchical
+  process" section documenting `validate_outputs`, the validation flow,
+  fail-open behaviour, and the prompt-customization contract.
+- [docs/tools/function-tools.md](docs/tools/function-tools.md) — new
+  "Parameter descriptions from docstrings" subsection with side-by-side
+  Google/NumPy/Sphinx examples.
+- [docs/agents/memory.md](docs/agents/memory.md) — new "Memory scoring
+  (recency + importance)" subsection with the conceptual walk-through,
+  the formula, a worked example, tuning recipes, and where importance
+  comes from for each block type.
+
+### Breaking changes
+
+None. All three additions are opt-in; defaults preserve historical
+behaviour byte-for-byte.
+
 ## [1.8.1] - 2026-05-10
 
 PATCH — Playground catalog now merges the v1.8.0 preset registry, so the
