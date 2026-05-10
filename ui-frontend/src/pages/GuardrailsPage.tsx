@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { ChevronRight, ExternalLink, Flag, RefreshCw, X } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,11 @@ const TYPE_OPTIONS = ["code", "regex", "llm_judge", "schema", "classifier"];
 const POSITION_OPTIONS = ["input", "output", "tool_call", "tool_result"];
 
 export function GuardrailsPage() {
+  // security_review_1.md L2 — SPA navigation via React Router instead
+  // of ``window.location.assign`` (which forces a full reload AND would
+  // become an open-redirect risk if ``row.event_id`` ever started
+  // accepting external input).
+  const navigate = useNavigate();
   const [filters, setFilters] = useState<Filters>({
     rule: null,
     outcome: null,
@@ -216,9 +221,7 @@ export function GuardrailsPage() {
                     onClick={(e) => {
                       // Let inner links / icons handle their own clicks.
                       if ((e.target as HTMLElement).closest("a")) return;
-                      window.location.assign(
-                        `/guardrail-events/${row.event_id}`,
-                      );
+                      navigate(`/guardrail-events/${row.event_id}`);
                     }}
                     data-testid={`guardrail-row-${row.event_id}`}
                   >

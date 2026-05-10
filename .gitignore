@@ -39,6 +39,15 @@ coverage.xml
 .fastaiagent/
 .prompts/
 
+# security_review_1.md L5 — never commit a real ``.env`` from any
+# example directory. The committed template is always ``.env.example``;
+# anyone copying it to ``.env`` to fill in real keys must keep their
+# copy local. This belt-and-braces pattern protects new examples that
+# forget to ship their own per-dir ``.gitignore``.
+.env
+**/.env
+!**/.env.example
+
 # MkDocs build output
 site/
 
