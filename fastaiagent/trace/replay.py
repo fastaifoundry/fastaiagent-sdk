@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -33,6 +35,51 @@ class ReplayResult(BaseModel):
     new_output: Any = None
     steps_executed: int = 0
     trace_id: str | None = None
+
+    def save_as_test(
+        self,
+        dataset_path: str | Path,
+        input: str,
+        expected_output: str,
+        source_trace_id: str | None = None,
+    ) -> Path:
+        """Append this rerun as a regression-test case to a JSONL dataset.
+
+        The written record uses the same field names ``evaluate()`` reads
+        (``input``, ``expected_output``), so the dataset is immediately
+        consumable as a regression suite::
+
+            replay = Replay.load(failed.trace_id)
+            forked = replay.fork_at(step=3).modify_prompt("Be specific.")
+            rerun = forked.rerun()
+            rerun.save_as_test(
+                "regression_tests.jsonl",
+                input="What is our refund policy?",
+                expected_output=rerun.new_output,
+            )
+
+        Args:
+            dataset_path: JSONL file to append to. Parent dirs are created.
+            input: The agent input that should be replayed in future eval runs.
+            expected_output: The known-good output to compare against.
+            source_trace_id: Origin trace for provenance. Defaults to the
+                rerun's own ``trace_id``; pass the *original failure's*
+                trace_id to keep the link back to the bug.
+
+        Returns:
+            The path written to.
+        """
+        path = Path(dataset_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        record = {
+            "input": input,
+            "expected_output": expected_output,
+            "trace_id": source_trace_id or self.trace_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        with path.open("a") as f:
+            f.write(json.dumps(record) + "\n")
+        return path
 
 
 class ComparisonResult(BaseModel):

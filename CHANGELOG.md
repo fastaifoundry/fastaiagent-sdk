@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.0] - 2026-05-21
+
+MINOR — closes the **failure trace → regression test → eval suite**
+loop with a programmatic Python API, brings the UI endpoint into
+schema parity, and ships an end-to-end real-LLM example covering both
+`exact_match` and `LLMJudge` scorers.
+
+### Added
+
+- **`ReplayResult.save_as_test(dataset_path, input, expected_output,
+  source_trace_id=None)`** — append a regression case to a JSONL
+  dataset directly from Python. The JSONL schema is identical to what
+  the Local UI's "Save as regression test" button writes, so cases
+  captured from either surface are interchangeable and immediately
+  consumable by `evaluate()`. Provenance fields (`trace_id`,
+  `created_at`) are written automatically so each regression case
+  links back to its originating failure.
+- **`examples/62_replay_to_regression.py`** — the full loop end to
+  end with a real OpenAI agent: reproduce a failure, fork-and-fix
+  the prompt, save the rerun as a regression case, then re-evaluate
+  with both `exact_match` and `LLMJudge(criteria="correctness")`.
+
+### Changed
+
+- **`POST /api/replay/forks/{fork_id}/save-as-test`** now writes
+  `trace_id` and `created_at` alongside `input`/`expected_output`.
+  Adds an optional `trace_id` request field; when omitted the
+  endpoint records the originating trace bound to the fork. Existing
+  callers continue to work — the saved records gain two new fields
+  that `evaluate()` safely ignores.
+- **`docs/replay/index.md`**, **`docs/evaluation/index.md`**, and
+  **`README.md`** now document the regression-test workflow and call
+  out that the dataset is shared with LLM-as-Judge and every other
+  scorer (`exact_match`, `contains`, `LLMJudge`, custom `@scorer`,
+  trajectory, safety, RAG).
+
 ## [1.11.2] - 2026-05-10
 
 PATCH — CrewAI integration compatibility fixes surfaced by an off-tree

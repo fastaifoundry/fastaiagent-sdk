@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import threading
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -170,6 +171,7 @@ class SaveTestRequest(BaseModel):
     dataset_path: str | None = None
     input: str
     expected_output: str
+    trace_id: str | None = None
 
 
 @router.post("/forks/{fork_id}/save-as-test")
@@ -179,15 +181,23 @@ def save_as_test(
     request: Request,
     _user: str = Depends(require_session),
 ) -> dict[str, Any]:
-    # Ensure the fork exists (404 otherwise).
-    _get_fork(fork_id)
+    forked = _get_fork(fork_id)
     ctx = get_context(request)
     db_dir = Path(ctx.db_path).parent
     path = Path(body.dataset_path) if body.dataset_path else (db_dir / "regression_tests.jsonl")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.touch(exist_ok=True)
+    # Provenance: prefer the trace_id passed in (e.g. the rerun's new trace_id),
+    # else fall back to the original failure trace tied to this fork.
+    source_trace_id = body.trace_id or getattr(getattr(forked, "_trace", None), "trace_id", None)
+    record = {
+        "input": body.input,
+        "expected_output": body.expected_output,
+        "trace_id": source_trace_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
     with path.open("a") as f:
-        f.write(json.dumps({"input": body.input, "expected_output": body.expected_output}) + "\n")
+        f.write(json.dumps(record) + "\n")
     return {"path": str(path)}
 
 
