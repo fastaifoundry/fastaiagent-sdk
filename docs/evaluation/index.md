@@ -79,6 +79,35 @@ dataset = Dataset.from_list([
 dataset = Dataset.from_jsonl("test_cases.jsonl")
 ```
 
+#### From a failing trace (Replay → regression test)
+
+Failed production traces are the most valuable test cases — they're
+the bugs your users actually hit. Once you've debugged one with
+[Replay](../replay/index.md), `ReplayResult.save_as_test()` appends
+the corrected case directly to the JSONL dataset `evaluate()` reads:
+
+```python
+rerun = replay.fork_at(step=3).modify_prompt("...").rerun()
+rerun.save_as_test(
+    "regression_tests.jsonl",
+    input="...",
+    expected_output=str(rerun.new_output),
+    source_trace_id=failure.trace_id,  # provenance back to the bug
+)
+# Same file, now ready for evaluate()
+results = evaluate(
+    agent_fn=agent.run,
+    dataset="regression_tests.jsonl",
+    scorers=["exact_match"],  # or LLMJudge for semantic checks
+)
+```
+
+The Local UI's **Save as regression test** button calls the same
+underlying endpoint and writes an identical record — UI-saved and
+code-saved cases are interchangeable. See
+[Replay → From a Rerun to a Regression Test](../replay/index.md#from-a-rerun-to-a-regression-test)
+for the full walkthrough.
+
 ### From CSV
 
 ```csv

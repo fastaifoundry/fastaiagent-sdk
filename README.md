@@ -6,7 +6,7 @@ The only SDK with **Agent Replay** — fork-and-rerun debugging — and a
 
 Works standalone or connected to the [FastAIAgent Platform](https://fastaiagent.net) for visual editing, production monitoring, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.11.2)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.12.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -122,6 +122,15 @@ replay.step_through()
 forked = replay.fork_at(step=3)
 forked.modify_prompt("Always cite the exact policy section...")
 result = forked.rerun()
+
+# Save the corrected behavior as a regression case — every production
+# failure becomes a permanent test that future eval runs will catch.
+result.save_as_test(
+    "regression_tests.jsonl",
+    input="What is our refund policy?",
+    expected_output=str(result.new_output),
+    source_trace_id="trace_abc123",
+)
 ```
 
 **No other SDK can do this.**

@@ -202,6 +202,93 @@ print(f"Diverged at step: {comparison.diverged_at}")
 | `steps_executed` | `int` | Number of steps executed in the rerun |
 | `trace_id` | `str \| None` | Trace ID of the original execution |
 
+`ReplayResult` also exposes [`save_as_test()`](#from-a-rerun-to-a-regression-test) for turning a verified fix into a regression case.
+
+## From a Rerun to a Regression Test
+
+Once a `forked.rerun()` confirms the fix, append the case to a JSONL
+dataset that the eval suite will replay on every future run. This
+closes the loop: **every production failure becomes a permanent test
+case**, captured at the exact step where it broke.
+
+### Code path: `ReplayResult.save_as_test()`
+
+```python
+from fastaiagent.eval import evaluate
+from fastaiagent.trace.replay import Replay
+
+# 1. Reproduce the failure
+failure = agent.run("What is our refund policy?")
+
+# 2. Fork, fix, rerun
+replay = Replay.load(failure.trace_id)
+rerun = (
+    replay.fork_at(step=0)
+    .modify_prompt("Answer in exactly one sentence. Refund policy: 30 days.")
+    .rerun()
+)
+
+# 3. Save the corrected behavior as a regression case
+rerun.save_as_test(
+    "regression_tests.jsonl",
+    input="What is our refund policy?",
+    expected_output=str(rerun.new_output),
+    source_trace_id=failure.trace_id,  # provenance back to the original bug
+)
+
+# 4. Re-run the suite — string scorer or LLM-as-judge, your choice
+results = evaluate(
+    agent_fn=lambda text: agent.run(text).output,
+    dataset="regression_tests.jsonl",
+    scorers=["exact_match"],  # or [LLMJudge(criteria="correctness")]
+)
+```
+
+### Saved JSONL schema
+
+Each line is a self-contained record consumable by `evaluate()`:
+
+```json
+{
+  "input": "What is our refund policy?",
+  "expected_output": "Refund policy: 30 days, full refund.",
+  "trace_id": "0aad0d1ef2ca859a0f1cc1a6aebb2bc7",
+  "created_at": "2026-05-21T17:07:26.708546+00:00"
+}
+```
+
+| Field | Source | Used by `evaluate()` |
+|-------|--------|----------------------|
+| `input` | Argument you pass to `save_as_test()` | Yes — fed to `agent_fn` |
+| `expected_output` | Argument you pass | Yes — fed to the scorer |
+| `trace_id` | `source_trace_id` arg, else `self.trace_id` | No — pure provenance |
+| `created_at` | UTC ISO-8601 when saved | No — pure provenance |
+
+The provenance fields are written for *humans* — both the Local UI and
+the eval results page link them back to the originating failure trace.
+
+### Works with any scorer (including LLM-as-Judge)
+
+Because the JSONL schema is just `input`/`expected_output`, the same
+dataset works with **any** scorer in the eval framework:
+
+* `"exact_match"`, `"contains"` — fast deterministic string checks
+* `LLMJudge(criteria="correctness")` — semantic equivalence via LLM
+* Custom `@scorer` functions, trajectory scorers, safety scorers, RAG metrics
+
+Pick the scorer that matches the kind of regression you're guarding
+against. A worked example covering both string match and LLM-judge:
+[`examples/62_replay_to_regression.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/62_replay_to_regression.py).
+
+### UI path: "Save as regression test" button
+
+The same workflow is available from the Local UI's Replay page — after
+a rerun, the **Save as regression test** button calls
+`POST /api/replay/forks/{fork_id}/save-as-test`, which appends an
+**identical JSONL record** (same four fields) to
+`./.fastaiagent/regression_tests.jsonl`. UI-saved and code-saved
+records are interchangeable.
+
 ### Side-by-side comparison in the Local UI
 
 Everything above is also available as a visual diff in the Local UI.
