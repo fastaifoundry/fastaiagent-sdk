@@ -15,6 +15,9 @@ import pytest
 fastapi = pytest.importorskip("fastapi")
 pytest.importorskip("bcrypt")
 pytest.importorskip("itsdangerous")
+# Large-JSONL test below uses multipart upload — see test_datasets_api
+# for the same reasoning.
+pytest.importorskip("multipart")
 
 from fastapi.testclient import TestClient  # noqa: E402
 

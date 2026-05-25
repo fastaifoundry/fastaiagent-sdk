@@ -60,15 +60,34 @@ chain.connect("b", "c")  # b → c
 
 ### Conditional Edges
 
-Route flow based on state values:
+Route flow based on chain state, the initial input, or the output of an earlier node:
 
 ```python
-chain.connect("classify", "billing_agent", condition="category == billing")
-chain.connect("classify", "tech_agent", condition="category == technical")
+chain.connect(
+    "classify",
+    "billing_agent",
+    condition="{{node_results.classify.output}} == billing",
+)
+chain.connect(
+    "classify",
+    "tech_agent",
+    condition="{{node_results.classify.output}} == technical",
+)
 chain.connect("classify", "general_agent")  # default fallback
 ```
 
-Condition expressions support: `==`, `!=`, `>`, `<`, `>=`, `<=`, `contains`, `startswith`. Values are resolved from chain state using `{{path.to.value}}` templates.
+Condition expressions support: `==`, `!=`, `>`, `<`, `>=`, `<=`, `contains`, `startswith`. Values must be resolved via `{{path.to.value}}` templates against the chain context (`input`, `state`, `node_results`); bare identifiers like `category` are treated as literal text, not state lookups.
+
+### Routing semantics
+
+The executor walks edges in declaration order, applying these rules at each source node:
+
+1. **All-unconditional fan-out** — if every outgoing edge from a source has `condition=None`, every target runs (the original chain behavior).
+2. **Mixed conditional + default** — if any outgoing edge has `condition=` set, the first matching condition in declaration order wins. A single unconditional sibling acts as the default fallback when no condition matches.
+3. **`NodeType.condition` nodes** — the node returns `{"matched": handle}`; the outgoing edge whose `label` equals that `handle` wins, with the unlabeled or `"default"`-labeled edge as fallback.
+4. **Dead branches** — a node that no upstream branch routes to is silently skipped (it does not appear in `result.node_results`).
+
+`chain.validate()` enforces two structural rules at design time: a source mixing conditional and unconditional edges may have **at most one** default, and a condition node's outgoing edges must label every `handle` it can return (or provide a default).
 
 ## Typed State
 

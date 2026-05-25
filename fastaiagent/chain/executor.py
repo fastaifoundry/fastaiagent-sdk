@@ -57,8 +57,32 @@ def _render_template(template: str, context: dict[str, Any]) -> str:
 
 
 def _evaluate_condition(expression: str, context: dict[str, Any]) -> bool:
-    """Evaluate a condition expression against context."""
+    """Evaluate a condition expression against context.
+
+    Supports comparison operators (``==``, ``!=``, ``>``, ``<``, ``>=``,
+    ``<=``) plus the string helpers ``contains`` and ``startswith``
+    documented in ``docs/chains/index.md``. Values may be ``{{state.x}}``
+    templates resolved against the chain context.
+    """
     rendered = _render_template(expression, context)
+
+    # Two-word string operators take precedence — split on the keyword and
+    # compare the trimmed, unquoted sides. Quotes are tolerated so users
+    # can write ``state.msg contains "late"``.
+    def _unquote(s: str) -> str:
+        s = s.strip()
+        if len(s) >= 2 and s[0] == s[-1] and s[0] in ("'", '"'):
+            return s[1:-1]
+        return s
+
+    for keyword, op in ((" contains ", "contains"), (" startswith ", "startswith")):
+        if keyword in rendered:
+            left, right = rendered.split(keyword, 1)
+            haystack = _unquote(left)
+            needle = _unquote(right)
+            if op == "contains":
+                return needle in haystack
+            return haystack.startswith(needle)
 
     # Try simple comparisons: "value >= 0.8", "status == done"
     comparisons: list[tuple[str, Callable[[str, str], bool]]] = [
@@ -80,6 +104,66 @@ def _evaluate_condition(expression: str, context: dict[str, Any]) -> bool:
 
     # Fallback: truthy check
     return bool(rendered and rendered.lower() not in ("false", "0", "none", ""))
+
+
+def _select_outgoing_edges(
+    node: NodeConfig,
+    result: Any,
+    context: dict[str, Any],
+    outgoing: list[Edge],
+) -> list[Edge]:
+    """Pick which non-cyclic outgoing edges to activate after a node runs.
+
+    Selection rules (see ``docs/chains/index.md`` Routing semantics):
+
+    * ``NodeType.condition`` nodes return ``{"matched": handle}``. The
+      edge whose ``label == handle`` wins; otherwise an unconditional
+      edge (or one labeled ``"default"``) is the fallback.
+    * For every other node type:
+
+      - If **all** outgoing edges have ``condition=None``, every edge
+        fires. This preserves the existing fan-out behavior — chains
+        without ``condition=`` keywords behave exactly as before.
+      - If **any** outgoing edge has a ``condition`` set, the first
+        conditional edge whose expression evaluates true (in declaration
+        order) wins. Unconditional siblings act as the default fallback;
+        the first one is taken if no condition matched.
+
+    Returns the list of edges to follow (possibly empty, which terminates
+    that branch of the chain).
+    """
+    if not outgoing:
+        return []
+
+    if node.type == NodeType.condition:
+        handle = ""
+        if isinstance(result, dict):
+            handle = str(result.get("matched", ""))
+        for e in outgoing:
+            if e.label and e.label == handle:
+                return [e]
+        # Fallback: explicit "default" label, then unlabeled edge.
+        for e in outgoing:
+            if e.label == "default":
+                return [e]
+        for e in outgoing:
+            if not e.label:
+                return [e]
+        return []
+
+    conditional = [e for e in outgoing if e.condition]
+    if not conditional:
+        # Pure fan-out — backwards-compatible with pre-routing chains.
+        return list(outgoing)
+
+    for e in conditional:
+        if e.condition and _evaluate_condition(e.condition, context):
+            return [e]
+
+    unconditional = [e for e in outgoing if not e.condition]
+    if unconditional:
+        return [unconditional[0]]
+    return []
 
 
 async def execute_chain(
@@ -130,16 +214,41 @@ async def execute_chain(
         if state_schema:
             state.validate(state_schema)
 
-        # Determine execution order via topological sort (non-cyclic edges)
+        # Determine execution order via topological sort (non-cyclic edges).
+        # The order itself doesn't decide *which* nodes run — that is driven
+        # by the ``activated`` set below, so conditional routing can skip
+        # branches — but it still gives us a deterministic dependency-safe
+        # walk: a node only runs after every predecessor that fed it has run.
         exec_order = _topological_sort(nodes, edges)
 
-        # If resuming, skip to the resume point
+        # Outgoing non-cyclic edges per source, preserving declaration order
+        # so routing tiebreaks ("first match wins") are deterministic.
+        outgoing_by_source: dict[str, list[Edge]] = {n.id: [] for n in nodes}
+        for e in edges:
+            if not e.is_cyclic and e.source in outgoing_by_source:
+                outgoing_by_source[e.source].append(e)
+
+        # Nodes with no non-cyclic incoming edges are auto-activated entry
+        # points — same set the previous topological loop implicitly started
+        # from. Explicit ``NodeType.start`` nodes are entry points too.
+        non_cyclic_in_degree: dict[str, int] = {n.id: 0 for n in nodes}
+        for e in edges:
+            if not e.is_cyclic and e.target in non_cyclic_in_degree:
+                non_cyclic_in_degree[e.target] += 1
+        activated: set[str] = {nid for nid, deg in non_cyclic_in_degree.items() if deg == 0}
+        for n in nodes:
+            if n.type == NodeType.start:
+                activated.add(n.id)
+
+        # If resuming, only the resume target is activated initially —
+        # everything before it in ``exec_order`` is skipped.
         start_idx = 0
         if resume_from_node:
             for i, nid in enumerate(exec_order):
                 if nid == resume_from_node:
                     start_idx = i
                     break
+            activated = {resume_from_node}
 
         max_total_steps = 500
         step_count = 0
@@ -148,6 +257,10 @@ async def execute_chain(
             node_id = exec_order[idx]
             node = node_map.get(node_id)
             if node is None:
+                continue
+
+            # Skip nodes that no upstream branch routed to.
+            if node_id not in activated:
                 continue
 
             step_count += 1
@@ -254,6 +367,15 @@ async def execute_chain(
                     )
                 )
 
+            # Activate the targets of every non-cyclic edge the routing
+            # rules picked. Edges with no match are silently skipped so
+            # the chain prunes dead branches instead of running them.
+            selected = _select_outgoing_edges(
+                node, result, context, outgoing_by_source.get(node_id, [])
+            )
+            for sel in selected:
+                activated.add(sel.target)
+
             # Handle cyclic edges from this node
             for edge in edges:
                 if edge.source != node_id or not edge.is_cyclic:
@@ -310,8 +432,14 @@ async def execute_chain(
                 node_results.update(cycle_result["node_results"])
                 break  # only follow one cyclic edge
 
-        # Determine final output
-        output = node_results.get(exec_order[-1]) if exec_order else state.data
+        # Determine final output — pick the last node in topo order that
+        # actually ran (conditional routing can prune the tail), falling
+        # back to chain state when nothing executed.
+        output: Any = state.data
+        for nid in reversed(exec_order):
+            if nid in node_results:
+                output = node_results[nid]
+                break
 
         return {
             "output": output,
