@@ -125,7 +125,13 @@ class TestQualityGateAnthropic:
         assert rerun_result.trace_id, "Anthropic rerun emitted no new trace_id"
 
         cmp = forked.compare(rerun_result)
-        assert cmp.diverged_at == fork_point
+        # v1.14: ``diverged_at`` is now computed by walking both step
+        # lists (was hardcoded to ``fork_point`` in v1.13). The
+        # modified-prompt rerun against Anthropic produces a different
+        # output, so assert "diverged somewhere" rather than the exact
+        # index. ``compare_status`` confirms the comparison succeeded.
+        assert cmp.compare_status == "ok"
+        assert cmp.diverged_at is not None
         assert len(cmp.new_steps) >= 1, (
             "compare() produced no new_steps for Anthropic rerun"
         )
