@@ -86,3 +86,22 @@ jobs:
         run: pytest tests/e2e/ -v -m e2e --tb=short
       - name: Run Postgres durability integration tests
         run: pytest tests/integration/test_postgres_checkpointer.py tests/integration/test_postgres_concurrent_resume.py -v --tb=short
+      - name: Regression-from-trace template smoke (no LLM)
+        # Always-on guard against template drift — runs in ~30ms.
+        # cd'ing isolates pytest's rootdir from the repo's top-level
+        # tests/ (the module names ``test_template_smoke`` and ``test_*``
+        # collide if both trees are collected together).
+        working-directory: examples/regression-from-trace
+        run: pytest tests/ -v --tb=short
+      - name: Regression-from-trace template — full loop (real LLM)
+        # Runs capture → fix → save_test → verify against real OpenAI to
+        # catch regressions of any failure mode captured in the dataset.
+        # Skipped when OPENAI_API_KEY isn't set (forked PRs from external
+        # contributors); kept hard-required for internal PRs via E2E_REQUIRED.
+        if: env.OPENAI_API_KEY != ''
+        working-directory: examples/regression-from-trace
+        run: |
+          python capture.py
+          python fix.py
+          python save_test.py
+          python verify.py

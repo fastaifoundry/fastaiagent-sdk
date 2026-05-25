@@ -9,6 +9,7 @@ Shows the complete replay workflow:
 6. Rerun with the modification
 7. Compare original vs rerun (computed diverged_at, not hardcoded)
 8. Replay with determinism="recorded" — no LLM call, byte-identical output
+9. Install a RedactionPolicy and observe the mask at the storage boundary
 
 Usage::
 
@@ -130,6 +131,32 @@ if __name__ == "__main__":
         "  (No HTTP call was made to the provider — the response came from "
         "the original trace's gen_ai.response.content attribute.)"
     )
+    print()
+
+    # ── Step 9: opt-in redaction at the storage boundary ────────────────
+    # v1.14: install a ``RedactionPolicy(mode="capture")`` and every span
+    # written after this point gets sensitive substrings masked **before**
+    # they hit SQLite (and before any downstream OTel exporter sees them).
+    # Defaults are OFF; you opt in. See docs/security.md.
+    print("Step 9: Installing a capture-mode RedactionPolicy and running once more...")
+    from fastaiagent.trace import RedactionPolicy, TraceStore, set_redaction_policy
+
+    set_redaction_policy(
+        RedactionPolicy(
+            patterns=(r"ORD-\d{3}",),  # demo: pretend order IDs are sensitive
+            replacement="[REDACTED]",
+            mode="capture",
+        )
+    )
+    redacted_result = agent.run("Look up ORD-001 please.")
+    # Inspect what landed in storage — sensitive substrings are masked.
+    redacted_trace = TraceStore.default().get_trace(redacted_result.trace_id or "")
+    root_attrs = next(
+        (s.attributes for s in redacted_trace.spans if s.name.startswith("agent.")), {}
+    )
+    print(f"  agent.output stored as: {root_attrs.get('agent.output', '')[:120]}...")
+    print("  (ORD-001 is masked at the storage boundary.)")
+    set_redaction_policy(None)  # clean up — back to default OFF.
     print()
 
     print("Done! You can also replay this trace later:")

@@ -12,6 +12,13 @@ The full "every production failure becomes a test" loop:
 The same JSONL works with both string matchers (``exact_match``) and
 LLM-as-judge scorers (``LLMJudge``). This example demonstrates both.
 
+> **Looking for the full template?** ``examples/regression-from-trace/``
+> ships a 5-script template (capture / analyze / fix / save_test /
+> verify), seeded dataset, smoke tests, browser screenshots, and docs.
+> This file (``examples/62_*``) remains as the single-file quick
+> reference; reach for the template when you want CI integration and
+> a real-world tool-fix walkthrough.
+
 Usage::
 
     # API keys are loaded from ~/.zshrc, so run via a login shell:
