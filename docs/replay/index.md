@@ -16,14 +16,33 @@ Agent Replay lets you load any past execution trace, step through it, inspect ea
 
 ## Why Replay?
 
-When an agent fails in production — hallucinates, calls the wrong tool, gives a bad answer — you need to understand **why** and test a fix **without re-running the entire pipeline**. Replay lets you:
+When an agent fails in production — hallucinates, calls the wrong tool, gives a bad answer — you need to understand **why** and test a fix **without burning new production traffic**. Replay lets you:
 
 1. Load the exact trace of the failure
 2. Step through to find the problematic step
-3. Fork at that step
-4. Change the prompt, input, or state
-5. Rerun from that point only
-6. Compare the original vs fixed result
+3. Fork at that step (records *where* the divergence will be measured)
+4. Change the prompt, input, tools, or state
+5. Rerun the agent end-to-end with your modifications applied
+6. Compare the original vs fixed result, scored by `LLMJudge` or `exact_match`
+
+!!! note "v1 limitation — full rerun, not mid-trace resume"
+    The v1 `arerun()` re-executes the agent **from the top** with the
+    modifications applied. The fork step records the divergence anchor
+    used by `compare()`, not a resume point. True mid-trace resume
+    (replaying messages up to a step, then continuing) is a v2
+    concern that requires a stable on-span message-history shape
+    across providers. For most debug workflows the full rerun is what
+    you want anyway — the modified prompt / tool override applies for
+    the whole run, not just the suffix.
+
+The Local UI surfaces this in the **Fork and rerun with
+modifications** dialog (renamed in v1.14.1 from "Rerun from this
+step", which overpromised partial replay). The Tool tab now requires
+a **tool name** alongside the JSON response so the override is wired
+through `with_tool_override` for real — pre-v1.14.1 it was silently
+dropped for agent reruns.
+
+![Fork-and-rerun dialog with tool-name + JSON response fields and the corrected "Rerun with modifications" button](../ui/screenshots/0_3_audit-rerun-dialog.png)
 
 ## Where Do Trace IDs Come From?
 

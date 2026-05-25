@@ -69,9 +69,15 @@ class TestSaveAsTestMethod:
         result.save_as_test(path, input="x", expected_output="X")
         assert path.exists()
 
-    def test_source_trace_id_overrides_self(self, tmp_path: Path) -> None:
-        """The developer should be able to record the *original failure*
-        trace_id (not the rerun's new trace_id) for provenance."""
+    def test_source_trace_id_lands_in_its_own_field_v1_14_1(self, tmp_path: Path) -> None:
+        """v1.14.1: ``source_trace_id`` no longer overwrites ``trace_id``.
+
+        The original failure id and the rerun id live in distinct fields
+        (``source_trace_id`` and ``fixed_trace_id`` respectively), and
+        ``trace_id`` consistently means "the rerun's id" so any code
+        that grew to read it during v1.13/v1.14.0 keeps seeing the same
+        value when no ``source_trace_id`` is passed.
+        """
         result = ReplayResult(trace_id="rerun_trace")
         path = tmp_path / "r.jsonl"
         result.save_as_test(
@@ -81,7 +87,11 @@ class TestSaveAsTestMethod:
             source_trace_id="original_failure_trace",
         )
         record = json.loads(path.read_text().splitlines()[0])
-        assert record["trace_id"] == "original_failure_trace"
+        # Pre-v1.14.1 behavior was record["trace_id"] == "original_failure_trace"
+        # which conflated the two ids — fixed in v1.14.1.
+        assert record["trace_id"] == "rerun_trace"
+        assert record["fixed_trace_id"] == "rerun_trace"
+        assert record["source_trace_id"] == "original_failure_trace"
 
     def test_accepts_string_path(self, tmp_path: Path) -> None:
         result = ReplayResult(trace_id="t1")
@@ -98,9 +108,7 @@ class TestRoundTripWithEvaluate:
     evaluate() with no schema massaging. This is the contract the article's
     'every failure becomes a test' workflow depends on."""
 
-    def test_saved_case_runs_through_evaluate_and_passes_on_fix(
-        self, tmp_path: Path
-    ) -> None:
+    def test_saved_case_runs_through_evaluate_and_passes_on_fix(self, tmp_path: Path) -> None:
         from fastaiagent.eval import evaluate
 
         # 1. Simulate the fix-and-save step: a rerun result captured as
@@ -133,18 +141,14 @@ class TestRoundTripWithEvaluate:
         assert len(scored) == 1
         assert scored[0].passed is True
 
-    def test_saved_case_fails_eval_when_regression_returns(
-        self, tmp_path: Path
-    ) -> None:
+    def test_saved_case_fails_eval_when_regression_returns(self, tmp_path: Path) -> None:
         """The point of the regression suite: if the fix regresses, eval
         catches it. Same dataset, broken agent_fn -> failure."""
         from fastaiagent.eval import evaluate
 
         rerun = ReplayResult(new_output="REFUND_OK", trace_id="trace_fix_1")
         dataset_path = tmp_path / "regression_tests.jsonl"
-        rerun.save_as_test(
-            dataset_path, input="refund?", expected_output="REFUND_OK"
-        )
+        rerun.save_as_test(dataset_path, input="refund?", expected_output="REFUND_OK")
 
         def regressed_agent(_text: str) -> str:
             return "WRONG"  # the bug is back
@@ -193,9 +197,7 @@ def ui_env(tmp_path: Path):
             "agent.config": json.dumps({}),
             "agent.tools": json.dumps([]),
             "agent.guardrails": json.dumps([]),
-            "agent.llm.config": json.dumps(
-                {"provider": "openai", "model": "gpt-4o-mini"}
-            ),
+            "agent.llm.config": json.dumps({"provider": "openai", "model": "gpt-4o-mini"}),
         }
         db.execute(
             """INSERT INTO spans (span_id, trace_id, parent_span_id, name,
@@ -240,9 +242,12 @@ class TestSaveAsTestEndpoint:
         record = json.loads(out_path.read_text().splitlines()[-1])
         assert record["input"] == "refund?"
         assert record["expected_output"] == "REFUND_OK"
-        # Provenance: when the caller doesn't pass trace_id, the endpoint
-        # falls back to the fork's source trace.
-        assert record["trace_id"] == trace_id
+        # v1.14.1: ``source_trace_id`` carries the original failure trace
+        # (auto-derived from the fork). ``trace_id`` is the rerun id —
+        # None here because the UI didn't pass one (it hadn't run yet).
+        assert record["source_trace_id"] == trace_id
+        assert record["trace_id"] is None
+        assert record["fixed_trace_id"] is None
         datetime.fromisoformat(record["created_at"])
 
     def test_endpoint_honors_explicit_trace_id_and_dataset_path(
@@ -258,13 +263,22 @@ class TestSaveAsTestEndpoint:
             json={
                 "input": "refund?",
                 "expected_output": "REFUND_OK",
-                "trace_id": "explicit_provenance_trace",
+                "trace_id": "rerun_trace_id",
+                "fork_step": 0,
+                "modifications": {"prompt": "Be specific."},
                 "dataset_path": str(explicit_path),
             },
         )
         assert r.status_code == 200, r.text
         record = json.loads(explicit_path.read_text().splitlines()[-1])
-        assert record["trace_id"] == "explicit_provenance_trace"
+        # v1.14.1: the body's ``trace_id`` is the rerun id; source comes
+        # from the fork automatically; modifications are recorded for
+        # human inspection.
+        assert record["trace_id"] == "rerun_trace_id"
+        assert record["fixed_trace_id"] == "rerun_trace_id"
+        assert record["source_trace_id"] == trace_id
+        assert record["fork_step"] == 0
+        assert record["modifications"] == {"prompt": "Be specific."}
 
     def test_endpoint_404s_for_unknown_fork(self, ui_env) -> None:
         client, _ = ui_env

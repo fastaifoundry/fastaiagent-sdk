@@ -46,30 +46,41 @@ def main() -> int:
 
     expected = FIXED_OUTPUT_FILE.read_text().strip()
     source_trace_id = TRACE_ID_FILE.read_text().strip()
+    fixed_trace_id_file = DEMO_DIR / "fixed_trace_id.txt"
+    fixed_trace_id = (
+        fixed_trace_id_file.read_text().strip() if fixed_trace_id_file.exists() else None
+    )
     print(f"Step 4: Saving regression case to {DATASET.name}…")
 
-    # ``save_as_test`` is a method on ReplayResult so we wrap the staged
-    # values in one. This lets the template walk through the loop step
-    # by step without keeping a Python object across processes.
+    # v1.14.1 schema: trace_id = the rerun's id (the fixed run);
+    # source_trace_id = the original failure that motivated this case;
+    # fork_step + modifications give the audit trail of the fix.
     result = ReplayResult(
         original_output="(captured separately — see last_trace_id.txt)",
         new_output=expected,
         steps_executed=1,
-        trace_id=source_trace_id,
+        trace_id=fixed_trace_id,
     )
     result.save_as_test(
         DATASET,
         input=DEMO_INPUT,
         expected_output=expected,
         source_trace_id=source_trace_id,
+        fork_step=0,
+        modifications={
+            "tool_overrides": ["lookup_order"],
+            "determinism": "live",
+        },
     )
 
     line_count = sum(1 for _ in DATASET.open())
     print(f"  Dataset now has {line_count} case(s) at: {DATASET}")
     print()
     print(
-        "  Each line is a JSON record with ``input`` and ``expected_output`` "
-        "fields — that's what ``evaluate()`` consumes in verify.py."
+        "  Each line is a JSON record with ``input``, ``expected_output``, "
+        "``source_trace_id``, ``fixed_trace_id``, ``fork_step``, and "
+        "``modifications`` — evaluate() reads input/expected_output; the "
+        "provenance fields are the audit trail back to the failure."
     )
     return 0
 

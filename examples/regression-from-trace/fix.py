@@ -73,6 +73,11 @@ def main() -> int:
     print(f"  Rerun trace ID:          {rerun.trace_id}")
 
     FIXED_OUTPUT_FILE.write_text(str(rerun.new_output))
+    # v1.14.1: stash the rerun's trace_id too so save_test.py can write
+    # it into the dataset's ``fixed_trace_id`` field separately from the
+    # source failure id.
+    if rerun.trace_id:
+        (DEMO_DIR / "fixed_trace_id.txt").write_text(rerun.trace_id)
     print()
     print(f"  Fixed output stashed at: {FIXED_OUTPUT_FILE}")
     print("  (save_test.py picks this up as the expected_output for the regression case.)")

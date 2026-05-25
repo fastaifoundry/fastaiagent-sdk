@@ -44,6 +44,24 @@ of these attributes are present and `recorded` mode raises
 `ReplayError`. The fix is to enable payloads on the runs you intend
 to replay later.
 
+### Multi-turn replay (v1.14.1+)
+
+For a multi-turn tool-loop trace with N captured `llm.*` spans,
+`recorded` mode installs the **full ordered sequence** of responses
+(sorted by `start_time`) and pops the front entry for each
+`LLMClient.acomplete` call during rerun. So:
+
+* Turn 1 of the rerun gets the trace's first captured response.
+* Turn 2 gets the second, etc.
+* If the rerun makes **more** LLM calls than the original captured
+  (e.g. a tool override that triggers an extra reasoning turn), the
+  queue drains and subsequent calls fall through to a **live**
+  provider call — the agent doesn't deadlock.
+
+Pre-v1.14.1 the same first response was returned for every LLM call
+in the rerun, which made tool-loop replays nonsensical (every turn
+parroted turn 1).
+
 ## Known fidelity gaps
 
 These are documented limitations to set expectations. Each is tracked

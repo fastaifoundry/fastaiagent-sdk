@@ -77,6 +77,11 @@ export function ReplayForkDialog({
 }: Props) {
   const [prompt, setPrompt] = useState("");
   const [inputJson, setInputJson] = useState("");
+  // v1.14.1+: ``toolName`` + ``toolJson`` together build a single entry
+  // in ``mods.tool_overrides`` posted to the route. The previous shape
+  // (just a JSON blob sent as ``tool_response``) was silently dropped
+  // for agent reruns — see PR #80 / docs/replay/index.md.
+  const [toolName, setToolName] = useState("");
   const [toolJson, setToolJson] = useState("");
   const [temperature, setTemperature] = useState<string>("");
   const [maxTokens, setMaxTokens] = useState<string>("");
@@ -90,6 +95,7 @@ export function ReplayForkDialog({
   const reset = () => {
     setPrompt("");
     setInputJson("");
+    setToolName("");
     setToolJson("");
     setTemperature("");
     setMaxTokens("");
@@ -109,6 +115,11 @@ export function ReplayForkDialog({
     const parsedTool = toolJson ? tryParse(toolJson) : null;
     if (toolJson && parsedTool === null) {
       toast.error("Tool response must be valid JSON object");
+      return;
+    }
+    if (toolJson && !toolName.trim()) {
+      // v1.14.1+: backend needs a name to call with_tool_override(name, …)
+      toast.error("Tool name is required when providing a tool response override");
       return;
     }
 
@@ -131,7 +142,13 @@ export function ReplayForkDialog({
           mods.input = parsedInput;
         }
       }
-      if (parsedTool && Object.keys(parsedTool).length > 0) mods.tool_response = parsedTool;
+      // v1.14.1: send as tool_overrides so the route wires it through
+      // ForkedReplay.with_tool_override (the v1.13 tool_response field
+      // was silently dropped for agent reruns — backend keeps accepting
+      // it with a deprecation warning).
+      if (parsedTool && toolName.trim()) {
+        mods.tool_overrides = { [toolName.trim()]: parsedTool };
+      }
 
       const config: Record<string, unknown> = {};
       if (temperature !== "") config.temperature = Number(temperature);
@@ -163,12 +180,16 @@ export function ReplayForkDialog({
     >
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Fork and rerun</DialogTitle>
+          <DialogTitle>Fork and rerun with modifications</DialogTitle>
           <DialogDescription>
             {step ? (
               <>
-                Forking at step <span className="font-mono">{step.step}</span>:{" "}
-                <span className="font-mono text-foreground">{step.span_name}</span>
+                Re-runs the whole agent from the top with your changes
+                applied — see step <span className="font-mono">{step.step}</span>{" "}
+                <span className="font-mono text-foreground">{step.span_name}</span>{" "}
+                as the divergence reference. True mid-trace resume is a
+                v2 concern; the agent re-executes end-to-end so the LLM
+                sees the modified prompt / input / tool overrides.
               </>
             ) : (
               "Select a span first."
@@ -258,15 +279,32 @@ export function ReplayForkDialog({
           </TabsContent>
 
           <TabsContent value="tool" className="space-y-2">
-            <Label htmlFor="fork-tool">Tool response override (JSON object)</Label>
-            <Textarea
-              id="fork-tool"
-              value={toolJson}
-              onChange={(e) => setToolJson(e.target.value)}
-              placeholder='{"result": "canned value"}'
-              rows={6}
-              className="font-mono text-xs"
-            />
+            <div className="space-y-1.5">
+              <Label htmlFor="fork-tool-name">Tool name</Label>
+              <Input
+                id="fork-tool-name"
+                value={toolName}
+                onChange={(e) => setToolName(e.target.value)}
+                placeholder="lookup_order"
+              />
+              <p className="text-[10px] text-muted-foreground">
+                Must match a tool name in the captured trace's{" "}
+                <code>agent.tools</code> list. The rerun installs a stub
+                <code>FunctionTool</code> with this name; the LLM receives
+                the JSON below in place of calling the original tool.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="fork-tool">Tool response override (JSON)</Label>
+              <Textarea
+                id="fork-tool"
+                value={toolJson}
+                onChange={(e) => setToolJson(e.target.value)}
+                placeholder='{"result": "canned value"}'
+                rows={6}
+                className="font-mono text-xs"
+              />
+            </div>
           </TabsContent>
 
           <TabsContent value="params" className="grid grid-cols-2 gap-4">
@@ -298,7 +336,11 @@ export function ReplayForkDialog({
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>
             Cancel
           </Button>
-          <Button onClick={handleRerun} disabled={pending || !step}>
+          <Button
+            onClick={handleRerun}
+            disabled={pending || !step}
+            title="Re-runs the agent from the top with your modifications applied. v2 will support true mid-trace resume."
+          >
             {pending ? (
               <>
                 <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
@@ -307,7 +349,7 @@ export function ReplayForkDialog({
             ) : (
               <>
                 <Play className="mr-1.5 h-3.5 w-3.5" />
-                Rerun from this step
+                Rerun with modifications
               </>
             )}
           </Button>

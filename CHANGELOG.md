@@ -5,6 +5,84 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.1] - 2026-05-25
+
+PATCH — closes five trust-impact gaps an external audit of v1.14.0
+flagged immediately after release. All changes are additive or
+opt-in; existing v1.14.0 code keeps working except for the documented
+``save_as_test`` schema clarification (`trace_id` field semantics —
+see Changed).
+
+### Fixed
+
+- **`ReplayStep.input` / `ReplayStep.output` are now populated.**
+  Pre-v1.14.1 these fields were always empty dicts, so the UI's
+  side-by-side step diff (`ReplayDiffView`) rendered two blank cards
+  per step. v1.14.1 partitions span attributes by key (mirroring the
+  TS `SpanInspector` constants) so the diff actually shows content.
+  New helper `_partition_span_io` centralizes the input/output key
+  sets.
+- **UI "Fork and rerun" dialog: tool overrides now wired correctly.**
+  Pre-v1.14.1 the dialog's "Tool response override (JSON)" textarea
+  sent `ModifyRequest.tool_response` which was routed to
+  `modify_state` and silently dropped during agent rerun. v1.14.1
+  introduces `ModifyRequest.tool_overrides: dict[str, value]` that
+  the route wires through `ForkedReplay.with_tool_override` with a
+  stub `FunctionTool`. The Tool tab now requires a tool name
+  alongside the JSON response. The deprecated `tool_response` field
+  is still accepted but logs a deprecation warning and installs no
+  override (it was a no-op in v1.14.0 anyway).
+- **`determinism="recorded"` replays the full ordered LLM-response
+  sequence, not just the first one.** Pre-v1.14.1 every LLM call in
+  a multi-turn rerun received the same captured response — tool-loop
+  traces replayed turn-1 forever. v1.14.1 installs the whole queue
+  in capture-time order and pops the front entry per `acomplete()`.
+  If the rerun makes more calls than the original captured, the
+  queue drains and subsequent calls fall through to a live provider
+  call (no deadlock). New helper `ForkedReplay._all_llm_responses`;
+  the v1.14.0 `_first_llm_response` is kept as a deprecated alias.
+- **Replay UX copy no longer overpromises "from this step."** The
+  dialog title is now "Fork and rerun with modifications", the
+  submit button reads "Rerun with modifications", and the
+  description honestly says the agent re-runs end-to-end. The
+  v1-limitation note is now an `info` callout at the top of
+  `docs/replay/index.md`.
+
+### Changed
+
+- **`ReplayResult.save_as_test` schema gains provenance fields.**
+  Old fields (`input`, `expected_output`, `trace_id`, `created_at`)
+  preserved; added: `source_trace_id`, `fixed_trace_id`,
+  `fork_step`, `modifications`. **Behavior change:** `trace_id` now
+  consistently means "the rerun's id" (`fixed_trace_id` is an alias
+  for clarity). Pre-v1.14.1, passing `source_trace_id=...` would
+  *overwrite* `trace_id` with the source id, conflating two distinct
+  identifiers. Existing readers that only consume
+  `input` / `expected_output` (the `evaluate()` contract) are
+  unaffected.
+
+  **Migration for callers reading `trace_id`:** if you read
+  `record["trace_id"]` expecting the original failure id, switch to
+  `record["source_trace_id"]`. If you read it expecting the rerun
+  id, no change.
+
+### Added
+
+- **`tests/test_replay_audit_fixes.py`** — 10 unit tests covering
+  partitioned step input/output, the new save_as_test schema, and
+  the multi-turn recorded queue.
+- **`tests/test_ui_replay_tool_overrides.py`** — 4 HTTP-level tests
+  proving `tool_overrides` reach the fork via the FastAPI route,
+  that the deprecated `tool_response` field warns + does nothing,
+  and that other modifications still compose.
+- **`ui-frontend/tests/replay-fork-dialog.spec.ts`** +
+  **`scripts/capture-replay-fork-dialog-screenshot.sh`** — Playwright
+  capture of the corrected dialog state, embedded as
+  `docs/ui/screenshots/0_3_audit-rerun-dialog.png` in the replay
+  docs.
+- **`docs/replay/guarantees.md`** §"Multi-turn replay" documents the
+  new queue semantics + the queue-drained fall-through behavior.
+
 ## [1.14.0] - 2026-05-25
 
 Combined release of the *top 3 recommendation* workstreams

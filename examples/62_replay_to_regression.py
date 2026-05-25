@@ -93,14 +93,18 @@ if __name__ == "__main__":
     print()
 
     # ── 5. Save the rerun as a regression test ──────────────────────────
-    # The JSONL line uses field names ``evaluate()`` reads directly.
-    # ``source_trace_id`` keeps the link back to the original failure.
+    # v1.14.1 schema: trace_id = the rerun's id; source_trace_id = the
+    # original failure; fork_step + modifications give the audit trail.
+    # ``evaluate()`` only reads input/expected_output — the rest is the
+    # paper trail back to the production bug.
     print(f"Step 5: Saving as regression test → {dataset_path}")
     rerun.save_as_test(
         dataset_path,
         input="What is our refund policy?",
         expected_output=str(rerun.new_output),
         source_trace_id=bad_result.trace_id,
+        fork_step=0,
+        modifications={"prompt": "one-sentence refund policy"},
     )
     print()
 

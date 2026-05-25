@@ -17,6 +17,88 @@ _log = logging.getLogger(__name__)
 
 DeterminismMode = Literal["live", "recorded", "deterministic"]
 
+# Attribute keys whose values represent the *input* side of a span (the
+# question that was asked / the prompt / the tool args). Used by
+# ``ReplayStep`` to partition a span's attributes into the input panel
+# the UI's diff view reads from. Mirrors INPUT_KEYS in
+# ``ui-frontend/src/components/traces/SpanInspector.tsx`` — keep in sync
+# when adding new attribute conventions.
+_INPUT_ATTR_KEYS: frozenset[str] = frozenset(
+    {
+        "gen_ai.request.messages",
+        "gen_ai.request.prompt",
+        "agent.input",
+        "chain.input",
+        "swarm.input",
+        "supervisor.input",
+        "tool.input",
+        "tool.args",
+        "retrieval.query",
+        "input",
+    }
+)
+
+# Attribute keys whose values represent the *output* side of a span (the
+# response / the tool result / the agent's reply). Mirrors OUTPUT_KEYS in
+# SpanInspector.tsx.
+_OUTPUT_ATTR_KEYS: frozenset[str] = frozenset(
+    {
+        "gen_ai.response.content",
+        "gen_ai.response.tool_calls",
+        "agent.output",
+        "chain.output",
+        "swarm.output",
+        "supervisor.output",
+        "tool.output",
+        "tool.result",
+        "retrieval.doc_ids",
+        "retrieval.result_count",
+        "output",
+    }
+)
+
+
+def _partition_span_io(attrs: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Split a span's flat ``attributes`` dict into ``(input, output)``.
+
+    The router's UI diff view (``ReplayDiffView.tsx``) compares each step's
+    ``input`` and ``output`` fields side by side; before v1.14.1 those
+    fields were always empty because ``ReplayStep`` never populated them.
+    This helper centralizes the partition so the Python ``ReplayStep`` and
+    the TypeScript ``SpanInspector`` agree on what belongs where.
+
+    JSON-string values are pretty-decoded so the UI's diff renders the
+    structured payload, not an escaped string.
+    """
+    input_part: dict[str, Any] = {}
+    output_part: dict[str, Any] = {}
+    for key, raw_value in attrs.items():
+        value = _maybe_parse_json(raw_value)
+        if key in _INPUT_ATTR_KEYS:
+            input_part[key] = value
+        elif key in _OUTPUT_ATTR_KEYS:
+            output_part[key] = value
+    return input_part, output_part
+
+
+def _maybe_parse_json(value: Any) -> Any:
+    """Decode JSON-string payloads so the UI sees structured data.
+
+    Several capture sites JSON-stringify list/dict attributes before
+    setting them on a span (OTel attributes can't hold nested
+    structures). Parse those back into native types so the diff view
+    can render keys, not escaped quotes.
+    """
+    if not isinstance(value, str):
+        return value
+    trimmed = value.strip()
+    if not (trimmed.startswith("{") or trimmed.startswith("[")):
+        return value
+    try:
+        return json.loads(trimmed)
+    except json.JSONDecodeError:
+        return value
+
 
 def _recorded_response_from_span(span: SpanData) -> Any | None:
     """Reconstruct an :class:`LLMResponse` from a captured ``llm.*`` span.
@@ -126,12 +208,18 @@ class ReplayResult(BaseModel):
         input: str,
         expected_output: str,
         source_trace_id: str | None = None,
+        *,
+        fork_step: int | None = None,
+        modifications: dict[str, Any] | None = None,
     ) -> Path:
         """Append this rerun as a regression-test case to a JSONL dataset.
 
         The written record uses the same field names ``evaluate()`` reads
         (``input``, ``expected_output``), so the dataset is immediately
-        consumable as a regression suite::
+        consumable as a regression suite. v1.14.1 added provenance fields
+        (``source_trace_id``, ``fixed_trace_id``, ``fork_step``,
+        ``modifications``) so the audit trail back to the production
+        failure and the fix that was applied is recoverable::
 
             replay = Replay.load(failed.trace_id)
             forked = replay.fork_at(step=3).modify_prompt("Be specific.")
@@ -140,25 +228,50 @@ class ReplayResult(BaseModel):
                 "regression_tests.jsonl",
                 input="What is our refund policy?",
                 expected_output=rerun.new_output,
+                source_trace_id=failed.trace_id,
+                fork_step=3,
+                modifications={"prompt": "Be specific."},
             )
 
         Args:
             dataset_path: JSONL file to append to. Parent dirs are created.
             input: The agent input that should be replayed in future eval runs.
             expected_output: The known-good output to compare against.
-            source_trace_id: Origin trace for provenance. Defaults to the
-                rerun's own ``trace_id``; pass the *original failure's*
-                trace_id to keep the link back to the bug.
+            source_trace_id: The *original failure's* trace id. Kept in
+                its own field (no longer overwriting ``trace_id``) so
+                the link back to the bug doesn't bury the rerun's id.
+            fork_step: The step in the source trace where the fork
+                happened. Useful when a future debugger wants to
+                re-fork to the same point.
+            modifications: Provenance for the fix that was applied —
+                e.g. ``{"prompt": "Be specific.", "tool_overrides": ["search"]}``.
+                Free-form dict; intended for human inspection.
 
         Returns:
             The path written to.
+
+        Schema (v1.14.1, JSONL line):
+            ``input``, ``expected_output``, ``trace_id`` (the rerun's id),
+            ``source_trace_id``, ``fixed_trace_id`` (alias of trace_id for
+            clarity), ``fork_step``, ``modifications``, ``created_at``.
+
+        Backwards-compat: existing v1.14.0 readers that only consume
+        ``input`` + ``expected_output`` keep working. ``trace_id`` retains
+        its v1.13/v1.14.0 meaning of "the rerun's id" (which is also what
+        ``fixed_trace_id`` carries) so any code that grew to read it
+        keeps seeing the same value.
         """
         path = Path(dataset_path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        record = {
+        fixed_trace_id = self.trace_id
+        record: dict[str, Any] = {
             "input": input,
             "expected_output": expected_output,
-            "trace_id": source_trace_id or self.trace_id,
+            "trace_id": fixed_trace_id,
+            "source_trace_id": source_trace_id,
+            "fixed_trace_id": fixed_trace_id,
+            "fork_step": fork_step,
+            "modifications": modifications or {},
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
         with path.open("a") as f:
@@ -367,14 +480,18 @@ class ForkedReplay:
                     pass
 
         if self._determinism == "recorded":
-            recorded = self._first_llm_response()
-            if recorded is None:
+            # v1.14.1: install the *full sequence* of captured LLM
+            # responses (ordered by start_time) so multi-turn tool-loop
+            # reruns replay each turn in order. The LLM client pops the
+            # front entry per acomplete() call.
+            recorded_queue = self._all_llm_responses()
+            if not recorded_queue:
                 raise ReplayError(
                     f"Trace {self._trace.trace_id} has no captured LLM response "
                     f"(gen_ai.response.content). determinism='recorded' requires "
                     f"FASTAIAGENT_TRACE_PAYLOADS=1 (the default) on the original run."
                 )
-            token = _replay_recorded_response.set(recorded)
+            token = _replay_recorded_response.set(list(recorded_queue))
             try:
                 new_result = await agent.arun(new_input)
             finally:
@@ -413,16 +530,32 @@ class ForkedReplay:
                 out.append(tool)
         return out
 
-    def _first_llm_response(self) -> Any | None:
-        """Return the first :class:`LLMResponse` recoverable from any
-        span carrying GenAI response attributes. Walks every span (not
-        just those named ``llm.*``) so traces captured under older span
-        naming conventions still work for ``determinism="recorded"``."""
-        for span in self._trace.spans:
+    def _all_llm_responses(self) -> list[Any]:
+        """Return every :class:`LLMResponse` recoverable from the trace,
+        in capture order (by ``start_time``). Walks every span — not just
+        those named ``llm.*`` — so traces captured under older span
+        naming conventions still work for ``determinism="recorded"``.
+
+        v1.14.1: replaced the v1.14.0 ``_first_llm_response`` which
+        returned only the *first* response. Multi-turn tool-loop traces
+        replay each turn in the order they were captured; ``acomplete``
+        pops the front entry per call.
+        """
+        ordered = sorted(self._trace.spans, key=lambda s: s.start_time or "")
+        out: list[Any] = []
+        for span in ordered:
             recovered = _recorded_response_from_span(span)
             if recovered is not None:
-                return recovered
-        return None
+                out.append(recovered)
+        return out
+
+    def _first_llm_response(self) -> Any | None:
+        """Deprecated v1.14.0 alias. Kept so anyone monkey-patching this
+        for tests keeps working; new code should use
+        :py:meth:`_all_llm_responses`.
+        """
+        responses = self._all_llm_responses()
+        return responses[0] if responses else None
 
     def rerun(self) -> ReplayResult:
         from fastaiagent._internal.async_utils import run_sync
@@ -626,14 +759,23 @@ class Replay:
         return cls(trace_data)
 
     def _build_steps(self) -> list[ReplayStep]:
+        # Populates ``input`` / ``output`` from the span's attributes via
+        # :func:`_partition_span_io` so the UI's diff view (which reads
+        # ``step.input`` / ``step.output``) has real content to render.
+        # Before v1.14.1 these fields were always empty dicts and the UI
+        # showed two blank cards per step.
         steps = []
         for i, span in enumerate(self._trace.spans):
+            attrs = span.attributes or {}
+            input_part, output_part = _partition_span_io(attrs)
             steps.append(
                 ReplayStep(
                     step=i,
                     span_name=span.name,
                     span_id=span.span_id,
-                    attributes=span.attributes,
+                    input=input_part,
+                    output=output_part,
+                    attributes=attrs,
                     timestamp=span.start_time,
                 )
             )
