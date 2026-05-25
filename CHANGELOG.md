@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.0] - 2026-05-25
+
+MINOR — fixes a silent correctness bug in `Chain` conditional routing
+that Codex 5.5 flagged in an external review, plus three smaller
+behavior/packaging gaps from the same review.
+
+### Fixed
+
+- **Conditional chain routing is now honored.** Previously
+  `chain.connect(..., condition="...")` stored the condition on the
+  edge but the executor ignored it — it walked every node in
+  topological order, so all "branches" ran. After this release the
+  executor selects edges per the rules documented in
+  `docs/chains/index.md` (Routing semantics):
+  - All-unconditional outgoing edges still fan out (existing chains
+    keep working).
+  - Mixed conditional + unconditional: first matching condition wins
+    in declaration order; the unconditional edge is the default
+    fallback.
+  - `NodeType.condition` nodes return `{"matched": handle}`; the
+    edge whose `label` equals that handle wins, with the unlabeled /
+    `"default"`-labeled edge as fallback.
+  Chains that relied on every branch executing should either drop
+  the `condition=` keyword (becomes pure fan-out) or split into
+  sub-chains.
+- **`Chain.execute(trace=False)` is now honored.** The kwarg was
+  accepted but `aexecute` always opened a `chain.<name>` span. The
+  span is now gated behind the flag, matching `Agent` behavior.
+- **`py.typed` ships inside the package.** The marker moved from the
+  repo root to `fastaiagent/py.typed` so PEP 561 type-checkers
+  actually see it after `pip install fastaiagent` (editable installs
+  worked by accident).
+- **UI test collection no longer depends on `python-multipart`.**
+  Tests that POST multipart bodies now `pytest.importorskip("multipart")`
+  alongside the existing `fastapi` / `itsdangerous` skips.
+
+### Added
+
+- **`chain.validate()` enforces routing structure.** A source mixing
+  conditional and unconditional edges may have at most one default;
+  a `NodeType.condition` node's outgoing edges must cover every
+  declared `handle` or expose a default. Errors surface at
+  `validate()` time instead of during execution.
+- **`tests/test_chain_routing.py`** — covers every documented
+  operator (`==`, `!=`, `>=`, `<=`, `contains`, `startswith`), the
+  fan-out backwards-compatibility path, condition-node handles, and
+  the new validator rules.
+
 ## [1.12.0] - 2026-05-21
 
 MINOR — closes the **failure trace → regression test → eval suite**

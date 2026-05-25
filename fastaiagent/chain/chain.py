@@ -151,6 +151,11 @@ class Chain:
 
         ``context`` is an optional :class:`fastaiagent.agent.context.RunContext`
         propagated to every tool and agent node — see :meth:`execute`.
+
+        ``trace=False`` skips the ``chain.<name>`` OTel root span (and the
+        per-chain attributes). Child agent/tool spans are still created;
+        they just don't nest under a chain-level parent. Matches the
+        ``Agent.run(trace=False)`` contract.
         """
         store: Checkpointer | None = None
         if self.checkpoint_enabled:
@@ -159,23 +164,33 @@ class Chain:
 
         # Wrap the whole chain in a root span so every child agent span is a
         # descendant of it — the UI can then render a chain as one trace with
-        # a tree of agents, rather than N orphan agent traces.
+        # a tree of agents, rather than N orphan agent traces. When the
+        # caller passes ``trace=False`` we skip the span entirely (e.g. when
+        # a Chain is invoked as a sub-step from inside another traced
+        # workflow that already owns the root span).
+        from contextlib import nullcontext
+
         from fastaiagent.trace.otel import get_tracer
 
-        tracer = get_tracer()
-        with tracer.start_as_current_span(f"chain.{self.name}") as span:
-            span.set_attribute("chain.name", self.name)
-            span.set_attribute("chain.node_count", len(self.nodes))
-            span.set_attribute("chain.node_ids", ",".join(n.id for n in self.nodes))
-            span.set_attribute("fastaiagent.runner.type", "chain")
-            span.set_attribute("fastaiagent.framework", "fastaiagent")
-            if initial_state:
-                import json
+        if trace:
+            span_ctx = get_tracer().start_as_current_span(f"chain.{self.name}")
+        else:
+            span_ctx = nullcontext(None)
 
-                try:
-                    span.set_attribute("chain.input", json.dumps(initial_state, default=str))
-                except (TypeError, ValueError):
-                    logger.debug("Failed to serialize chain input for trace", exc_info=True)
+        with span_ctx as span:
+            if span is not None:
+                span.set_attribute("chain.name", self.name)
+                span.set_attribute("chain.node_count", len(self.nodes))
+                span.set_attribute("chain.node_ids", ",".join(n.id for n in self.nodes))
+                span.set_attribute("fastaiagent.runner.type", "chain")
+                span.set_attribute("fastaiagent.framework", "fastaiagent")
+                if initial_state:
+                    import json
+
+                    try:
+                        span.set_attribute("chain.input", json.dumps(initial_state, default=str))
+                    except (TypeError, ValueError):
+                        logger.debug("Failed to serialize chain input for trace", exc_info=True)
 
             raw = await execute_chain(
                 nodes=self.nodes,
@@ -189,13 +204,16 @@ class Chain:
                 run_context=context,
             )
 
-            try:
-                import json as _json
+            if span is not None:
+                try:
+                    import json as _json
 
-                span.set_attribute("chain.output", _json.dumps(raw.get("output"), default=str))
-            except (TypeError, ValueError):
-                logger.debug("Failed to serialize chain output for trace", exc_info=True)
-            span.set_attribute("chain.execution_id", raw.get("execution_id") or "")
+                    span.set_attribute(
+                        "chain.output", _json.dumps(raw.get("output"), default=str)
+                    )
+                except (TypeError, ValueError):
+                    logger.debug("Failed to serialize chain output for trace", exc_info=True)
+                span.set_attribute("chain.execution_id", raw.get("execution_id") or "")
 
         return ChainResult(
             output=raw["output"],

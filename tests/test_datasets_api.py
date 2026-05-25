@@ -15,6 +15,11 @@ import pytest
 
 fastapi = pytest.importorskip("fastapi")
 pytest.importorskip("itsdangerous")
+# Dataset endpoints accept multipart/form-data (image upload + JSONL
+# import). FastAPI lazy-checks ``python-multipart`` at request time, so
+# without this guard a partial install (fastapi present, multipart not)
+# surfaces as a runtime 500 instead of a clean skip.
+pytest.importorskip("multipart")
 
 from fastapi.testclient import TestClient  # noqa: E402
 
