@@ -9,6 +9,7 @@ import os
 import re
 import time
 from collections.abc import AsyncGenerator
+from contextvars import ContextVar
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -26,6 +27,15 @@ from fastaiagent.llm.stream import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Replay determinism: when a Replay rerun installs a recorded response in
+# this ContextVar, ``acomplete`` short-circuits and returns it instead of
+# making a real HTTP call. Set by ``fastaiagent.trace.replay.ForkedReplay``
+# under ``determinism="recorded"``. Default ``None`` means "live mode" —
+# every other code path is unaffected.
+_replay_recorded_response: ContextVar[Any] = ContextVar(
+    "_fastaiagent_replay_recorded_response", default=None
+)
 
 # --- Structured output helpers (aligned with platform) ---
 
@@ -314,6 +324,13 @@ class LLMClient:
         the bare provider SDKs directly; LLMClient hits provider HTTP APIs
         with httpx, so this wrapper is what produces spans for the agent
         flow.
+
+        Replay determinism: if a ``Replay`` rerun has installed a recorded
+        response in :data:`_replay_recorded_response` (via
+        ``ForkedReplay.arerun(determinism="recorded")``), the HTTP call is
+        skipped and the recorded response is returned instead. The OTel span
+        is still emitted with ``replay.mode="recorded"`` so the rerun trace
+        remains observable.
         """
         from fastaiagent.trace.otel import get_tracer
         from fastaiagent.trace.span import set_genai_attributes
@@ -329,6 +346,22 @@ class LLMClient:
                 request_messages=_serialize_for_span([m.to_openai_format() for m in messages]),
                 request_tools=_serialize_for_span(tools),
             )
+
+            recorded = _replay_recorded_response.get()
+            if recorded is not None:
+                # Short-circuit: replay-recorded mode skips the HTTP call.
+                span.set_attribute("replay.mode", "recorded")
+                set_genai_attributes(
+                    span,
+                    input_tokens=recorded.usage.get("prompt_tokens")
+                    or recorded.usage.get("input_tokens"),
+                    output_tokens=recorded.usage.get("completion_tokens")
+                    or recorded.usage.get("output_tokens"),
+                    response_content=recorded.content,
+                    finish_reason=recorded.finish_reason or None,
+                )
+                return recorded
+
             return await self._acomplete_with_retries(span, messages, tools, **kwargs)
 
     async def _acomplete_with_retries(

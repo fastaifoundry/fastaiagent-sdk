@@ -44,9 +44,7 @@ class TraceData(BaseModel):
         from fastaiagent.client import _connection
 
         if not _connection.is_connected:
-            raise PlatformNotConnectedError(
-                "Not connected to platform. Call fa.connect() first."
-            )
+            raise PlatformNotConnectedError("Not connected to platform. Call fa.connect() first.")
         api = get_platform_api()
         api.post(
             "/public/v1/traces/ingest",
@@ -130,7 +128,14 @@ class LocalStorageProcessor:
         pass
 
     def on_end(self, span: Any) -> None:
-        """Called when a span completes — write to SQLite."""
+        """Called when a span completes — write to SQLite.
+
+        If an opt-in :class:`RedactionPolicy` is installed (via
+        ``set_redaction_policy``) with ``mode in {"capture", "both"}``,
+        sensitive attribute values are masked here — *before* the JSON
+        blob hits SQLite *and* before any downstream OTel exporter
+        attached via :func:`add_exporter` sees the span.
+        """
         ctx = span.get_span_context()
         trace_id = format(ctx.trace_id, "032x")
         span_id = format(ctx.span_id, "016x")
@@ -144,6 +149,11 @@ class LocalStorageProcessor:
         if hasattr(span, "attributes") and span.attributes:
             attrs = dict(span.attributes)
 
+        # Apply capture-mode redaction (no-op when no policy is installed).
+        from fastaiagent.trace.redaction import _capture_redact
+
+        attrs = _capture_redact(attrs)
+
         events = []
         if hasattr(span, "events") and span.events:
             for e in span.events:
@@ -152,9 +162,7 @@ class LocalStorageProcessor:
                 # the event, which lets the UI render a useful traceback panel
                 # instead of just "exception @ <ts>".
                 raw_attrs = getattr(e, "attributes", None)
-                event_attrs = (
-                    {str(k): v for k, v in raw_attrs.items()} if raw_attrs else {}
-                )
+                event_attrs = {str(k): v for k, v in raw_attrs.items()} if raw_attrs else {}
                 events.append(
                     {
                         "name": e.name,

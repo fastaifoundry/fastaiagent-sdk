@@ -120,9 +120,7 @@ def build_export_payload(
                 or attr(attrs, "supervisor.name")
             )
             execution_id = (
-                attr(attrs, "chain.execution_id")
-                or attr(attrs, "agent.execution_id")
-                or None
+                attr(attrs, "chain.execution_id") or attr(attrs, "agent.execution_id") or None
             )
             durable = execution_id is not None
 
@@ -174,9 +172,7 @@ def build_export_payload(
                 payload["state_snapshot"] = _maybe_load(cp.get("state_snapshot"))
                 payload["node_input"] = _maybe_load(cp.get("node_input"))
                 payload["node_output"] = _maybe_load(cp.get("node_output"))
-                payload["interrupt_context"] = _maybe_load(
-                    cp.get("interrupt_context")
-                )
+                payload["interrupt_context"] = _maybe_load(cp.get("interrupt_context"))
             checkpoints.append(payload)
 
     # Multimodal attachment metadata (always) + bytes (opt-in).

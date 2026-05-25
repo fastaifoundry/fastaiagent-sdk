@@ -2,6 +2,11 @@
 
 Agent Replay lets you load any past execution trace, step through it, inspect each step's input/output/attributes, fork at any point, modify the prompt or input, and rerun from that point. This is the SDK's unique debugging feature — no other framework offers fork-and-rerun.
 
+!!! info "Fidelity guarantees"
+    For per-mode behavior (live vs recorded vs deterministic), what's
+    captured, what isn't, and per-provider seed support, see
+    [Fidelity Guarantees](guarantees.md).
+
 ## Why Replay?
 
 When an agent fails in production — hallucinates, calls the wrong tool, gives a bad answer — you need to understand **why** and test a fix **without re-running the entire pipeline**. Replay lets you:

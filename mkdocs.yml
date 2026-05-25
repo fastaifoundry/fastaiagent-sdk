@@ -139,6 +139,8 @@ nav:
       - tracing/index.md
   - Agent Replay:
       - replay/index.md
+      - "Fidelity Guarantees": replay/guarantees.md
+  - Security: security.md
   - Local UI:
       - ui/index.md
       - "Knowledge Bases browser": ui/kb.md

@@ -8,11 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 Targeting v1.14.0 — combined release of the *top 3 recommendation*
-workstreams. Items below are staged from the **0.1 Chain Spec Lockdown**
-workstream (`claude_files/top3recommendation.md`). 0.2 (Replay Fidelity)
-and 0.3 (Regression-from-Trace Template) ship in the same release.
+workstreams (`claude_files/top3recommendation.md`). Items below are
+staged from **0.1 Chain Spec Lockdown** and **0.2 Replay Fidelity
+Hardening**. 0.3 (Regression-from-Trace Template) ships in the same
+release.
 
 ### Added
+
+#### 0.1 Chain Spec Lockdown
 
 - **`Chain(..., strict_routing=True)`** — opt-in flag that raises
   `ChainRoutingError` when no outgoing edge matches a node's result,
@@ -30,10 +33,34 @@ and 0.3 (Regression-from-Trace Template) ship in the same release.
   `fastaiagent._internal.errors`. `ChainResumeError` subclasses
   `ChainCheckpointError` so existing `except ChainCheckpointError:`
   handlers keep catching the new resume contract violations.
-- **`docs/chains/spec.md`** — authoritative execution contract
-  (routing rules, parallel modes, cycle/interrupt interaction, resume
-  contract, validator coverage), each rule backed by a test in
-  `tests/test_chain_routing.py` or `tests/test_chain_resume.py`.
+- **`docs/chains/spec.md`** — authoritative execution contract,
+  each rule backed by a test.
+
+#### 0.2 Replay Fidelity Hardening
+
+- **`RedactionPolicy`** — opt-in regex-based redaction for trace
+  span attributes. Three modes: `"capture"` (mask at SQLite write +
+  in downstream OTel exporters), `"read"` (mask only when the UI is
+  called with `?redact=true`), `"both"`, plus `"off"` to temporarily
+  disable an installed policy. **Defaults to OFF** — call
+  `fastaiagent.trace.set_redaction_policy(...)` to enable.
+- **UI `?redact=true` query parameter** on
+  `/api/traces/{trace_id}` and `/api/traces/{trace_id}/spans`. Honored
+  only when a policy with `mode in {"read", "both"}` is installed.
+- **`ForkedReplay.with_determinism(mode)`** — control LLM invocation
+  during rerun: `"live"` (default), `"recorded"` (skip the HTTP call,
+  replay captured `gen_ai.response.content`), `"deterministic"` (force
+  `temperature=0` + `seed=42` where the provider supports it). See
+  [`docs/replay/guarantees.md`](docs/replay/guarantees.md).
+- **`ForkedReplay.with_tool_override(name, tool)`** — partial tool
+  replacement; other reconstructed tools stay intact. Compose multiple
+  overrides. `with_tools(...)` (full replacement) takes precedence.
+- **`fastaiagent.trace.SENSITIVE_ATTR_KEYS`** — public constant
+  listing the span attribute keys redaction walks by default.
+- **`docs/security.md`** + **`docs/replay/guarantees.md`** — security
+  posture and per-provider fidelity matrix in one place.
+- **`examples/68_trace_redaction.py`** — end-to-end demo of capture
+  vs read mode against real SQLite.
 
 ### Changed
 
@@ -47,13 +74,31 @@ and 0.3 (Regression-from-Trace Template) ship in the same release.
 - **`ChainState.data` docstring** now documents the (stable) copy
   guarantee — `data` returns a shallow copy, mutating it never affects
   chain state.
+- **`ComparisonResult.diverged_at`** is now **computed** by walking
+  both step lists in parallel and finding the first mismatch.
+  Previously it was hardcoded to the fork point — misleading because
+  divergence often happens later than where the user asked to fork.
+  New field `compare_status: "ok" | "rerun_failed"` distinguishes
+  successful comparisons from cases where the rerun trace couldn't be
+  loaded.
+
+  **Migration:** if you asserted `comparison.diverged_at == fork_point`
+  in v1.13 tests, update them to assert against the actual divergence
+  step (or `None` for clean matches). See the change in
+  `tests/test_replay.py::TestForkedReplay::test_compare` for the
+  expected new shape.
 
 ### Tests
 
-- 15 new tests across `tests/test_chain_routing.py` and
+- 0.1: 15 new tests across `tests/test_chain_routing.py` and
   `tests/test_chain_resume.py` covering strict routing, parallel
   failure modes, validator reachable override, ChainState copy
   semantics, and the resume contract.
+- 0.2: 36 new tests across `tests/test_trace_redaction.py`,
+  `tests/test_ui_traces_redaction.py`, and
+  `tests/test_replay_determinism.py` covering capture/read redaction,
+  three determinism modes, partial tool overrides, and computed
+  `diverged_at`.
 
 ## [1.13.1] - 2026-05-25
 

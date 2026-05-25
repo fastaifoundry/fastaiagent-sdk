@@ -44,7 +44,13 @@ from fastaiagent.llm.stream import HandoffEvent
 from fastaiagent.multimodal import PDF, ContentPart, Image, normalize_input
 from fastaiagent.prompt import Prompt, PromptRegistry
 from fastaiagent.tool import FunctionTool, MCPTool, RESTTool, Tool, ToolRegistry, tool
-from fastaiagent.trace import TraceStore, trace_context
+from fastaiagent.trace import (
+    RedactionPolicy,
+    TraceStore,
+    get_redaction_policy,
+    set_redaction_policy,
+    trace_context,
+)
 from fastaiagent.trace.replay import Replay
 
 
@@ -157,4 +163,7 @@ __all__ = [
     "TraceStore",
     "trace_context",
     "Replay",
+    "RedactionPolicy",
+    "set_redaction_policy",
+    "get_redaction_policy",
 ]

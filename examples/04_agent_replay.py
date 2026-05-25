@@ -7,11 +7,16 @@ Shows the complete replay workflow:
 4. Fork at a specific step
 5. Modify the prompt
 6. Rerun with the modification
-7. Compare original vs rerun
+7. Compare original vs rerun (computed diverged_at, not hardcoded)
+8. Replay with determinism="recorded" — no LLM call, byte-identical output
 
-Usage:
-    export OPENAI_API_KEY=sk-...
-    python examples/04_agent_replay.py
+Usage::
+
+    # API keys are loaded from ~/.zshrc, so run via a login shell:
+    zsh -lc 'python examples/04_agent_replay.py'
+
+    # Or set inline:
+    OPENAI_API_KEY=sk-... python examples/04_agent_replay.py
 """
 
 import os
@@ -101,11 +106,30 @@ if __name__ == "__main__":
     print()
 
     # ── Step 7: Compare ──────────────────────────────────────────────────
+    # v1.14: ``diverged_at`` is now computed by walking both step lists
+    # (was hardcoded to fork_point in v1.13). ``compare_status`` tells
+    # you whether the comparison itself succeeded.
     print("Step 7: Comparing original vs rerun...")
     comparison = forked.compare(rerun_result)
+    print(f"  Compare status:   {comparison.compare_status}")
     print(f"  Diverged at step: {comparison.diverged_at}")
     print(f"  Original steps:   {len(comparison.original_steps)}")
     print(f"  Rerun steps:      {len(comparison.new_steps)}")
+    print()
+
+    # ── Step 8: determinism="recorded" — no LLM call, byte-identical ─────
+    # v1.14: ``with_determinism("recorded")`` skips the provider HTTP
+    # call entirely and returns the captured response. Use this for
+    # regression tests where you need byte-identical output across runs.
+    # See docs/replay/guarantees.md for the per-provider matrix.
+    print("Step 8: Replaying with determinism='recorded' (no LLM call)...")
+    recorded_fork = replay.fork_at(step=0).with_determinism("recorded")
+    recorded = recorded_fork.rerun()
+    print(f"  Recorded rerun output: {str(recorded.new_output)[:120]}...")
+    print(
+        "  (No HTTP call was made to the provider — the response came from "
+        "the original trace's gen_ai.response.content attribute.)"
+    )
     print()
 
     print("Done! You can also replay this trace later:")
