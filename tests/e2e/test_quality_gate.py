@@ -382,9 +382,16 @@ class TestQualityGate:
         """Closes the "every failure becomes a test" loop in code.
 
         Exercises ``ReplayResult.save_as_test()`` against a real ``tmp_path``
-        and asserts the JSONL record carries the four-field schema
-        (``input``, ``expected_output``, ``trace_id``, ``created_at``) that
-        ``evaluate()`` and the Local UI's Eval Dataset Editor both consume.
+        and asserts the v1.14.1 schema:
+
+        * ``input``, ``expected_output`` — the eval contract
+        * ``trace_id`` / ``fixed_trace_id`` — the *rerun's* id (the fix)
+        * ``source_trace_id`` — the *original failure* id (provenance)
+        * ``fork_step``, ``modifications`` — the audit trail
+        * ``created_at`` — ISO-8601 timestamp
+
+        Pre-v1.14.1 ``trace_id`` was overwritten with ``source_trace_id``,
+        losing the link to the actual rerun — fixed in v1.14.1.
         """
         require_env()
         rerun_result = gate_state["rerun_result"]
@@ -400,6 +407,8 @@ class TestQualityGate:
             input=regression_input,
             expected_output=expected_output,
             source_trace_id=trace_id,
+            fork_step=2,
+            modifications={"prompt": "modified-by-quality-gate"},
         )
         assert returned_path == dataset_path
         assert dataset_path.exists(), "save_as_test did not create the JSONL file"
@@ -409,11 +418,16 @@ class TestQualityGate:
         record = json.loads(lines[0])
         assert record["input"] == regression_input
         assert record["expected_output"] == expected_output
-        # Provenance back to the *original* failure trace, not the rerun's.
-        assert record["trace_id"] == trace_id, (
-            f"save_as_test dropped source_trace_id: {record['trace_id']!r} "
+        # v1.14.1: trace_id is the rerun's id; source_trace_id carries
+        # the failure id in its own field.
+        assert record["trace_id"] == rerun_result.trace_id
+        assert record["fixed_trace_id"] == rerun_result.trace_id
+        assert record["source_trace_id"] == trace_id, (
+            f"save_as_test lost source_trace_id: {record['source_trace_id']!r} "
             f"!= {trace_id!r}"
         )
+        assert record["fork_step"] == 2
+        assert record["modifications"] == {"prompt": "modified-by-quality-gate"}
         # ISO-8601 timestamp parses cleanly.
         from datetime import datetime
 

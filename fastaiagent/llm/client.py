@@ -28,11 +28,18 @@ from fastaiagent.llm.stream import (
 
 logger = logging.getLogger(__name__)
 
-# Replay determinism: when a Replay rerun installs a recorded response in
-# this ContextVar, ``acomplete`` short-circuits and returns it instead of
-# making a real HTTP call. Set by ``fastaiagent.trace.replay.ForkedReplay``
-# under ``determinism="recorded"``. Default ``None`` means "live mode" —
-# every other code path is unaffected.
+# Replay determinism: when a Replay rerun installs a *list* of recorded
+# responses in this ContextVar (one per captured ``llm.*`` span on the
+# original trace, in capture order), ``acomplete`` pops the front entry
+# each time it's called and returns it instead of making a real HTTP
+# call. Set by ``fastaiagent.trace.replay.ForkedReplay`` under
+# ``determinism="recorded"``. Default ``None`` means "live mode" — every
+# other code path is unaffected.
+#
+# v1.14.1 widened this from a single LLMResponse to an ordered list so
+# multi-turn tool-loop traces replay correctly. Pre-v1.14.1 the same
+# recorded response was returned for every LLM call in the rerun, which
+# made tool-loop replays nonsensical.
 _replay_recorded_response: ContextVar[Any] = ContextVar(
     "_fastaiagent_replay_recorded_response", default=None
 )
@@ -220,11 +227,7 @@ class LLMClient:
         # ollama/azure/bedrock/custom) bypass the registry entirely.
         from fastaiagent.llm.providers import get_preset
 
-        preset = (
-            None
-            if provider in _BUILTIN_PROVIDERS
-            else get_preset(provider)
-        )
+        preset = None if provider in _BUILTIN_PROVIDERS else get_preset(provider)
 
         self.provider = provider
         self.model = model
@@ -347,9 +350,18 @@ class LLMClient:
                 request_tools=_serialize_for_span(tools),
             )
 
-            recorded = _replay_recorded_response.get()
-            if recorded is not None:
-                # Short-circuit: replay-recorded mode skips the HTTP call.
+            recorded_queue = _replay_recorded_response.get()
+            if recorded_queue:
+                # v1.14.1: queue is a list of LLMResponses, one per captured
+                # ``llm.*`` span in capture order. We pop the front so a
+                # multi-turn tool-loop rerun replays turn-1 then turn-2…
+                # matching the original trace's call sequence. When the
+                # queue drains, fall through to a live call so the agent
+                # doesn't deadlock if the rerun makes more LLM calls than
+                # the original (e.g. a tool override that triggers an
+                # extra reasoning turn).
+                recorded = recorded_queue[0]
+                del recorded_queue[0]
                 span.set_attribute("replay.mode", "recorded")
                 set_genai_attributes(
                     span,
@@ -555,9 +567,7 @@ class LLMClient:
             f"fastaiagent.llm.providers.register_provider()."
         )
 
-    def _split_multimodal_tool_messages_for_openai(
-        self, messages: list[Message]
-    ) -> list[Message]:
+    def _split_multimodal_tool_messages_for_openai(self, messages: list[Message]) -> list[Message]:
         """Split tool messages with multimodal content into (tool, user) pairs.
 
         OpenAI's chat-completions API rejects ``image_url`` blocks inside
@@ -612,9 +622,7 @@ class LLMClient:
         building, and header construction logic.
         """
         prepared = self._split_multimodal_tool_messages_for_openai(messages)
-        msg_dicts = [
-            m.to_provider_dict("openai", **self._provider_dict_kwargs()) for m in prepared
-        ]
+        msg_dicts = [m.to_provider_dict("openai", **self._provider_dict_kwargs()) for m in prepared]
         body: dict[str, Any] = {
             "model": self.model,
             "messages": msg_dicts,
@@ -670,7 +678,9 @@ class LLMClient:
         if ptc is not None and tools:
             # Drop silently when the preset declares no parallel-tool-call
             # support — including the field would 400 on those providers.
-            if not (self._preset is not None and not self._preset.cap("parallel_tool_calls", False)):
+            if not (
+                self._preset is not None and not self._preset.cap("parallel_tool_calls", False)
+            ):
                 body["parallel_tool_calls"] = ptc
 
         env_var, env_label = self._api_key_env()

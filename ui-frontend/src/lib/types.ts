@@ -519,7 +519,19 @@ export interface AgentSummary {
 
 export interface ForkModifications {
   prompt?: string;
-  input?: Record<string, unknown>;
+  input?: Record<string, unknown> | Array<Record<string, unknown>>;
+  /**
+   * v1.14.1+: map of tool name → canned response. Each entry installs
+   * a stub FunctionTool via ForkedReplay.with_tool_override on the
+   * backend so the rerun's LLM receives the canned value in place of
+   * calling the original tool.
+   */
+  tool_overrides?: Record<string, unknown>;
+  /**
+   * @deprecated since v1.14.1 — was a no-op for agent reruns
+   * (silently routed to modify_state which the agent path ignored).
+   * Use ``tool_overrides`` instead.
+   */
   tool_response?: Record<string, unknown>;
   config?: Record<string, unknown>;
   state?: Record<string, unknown>;
