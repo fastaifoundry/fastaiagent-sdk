@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.1] - 2026-05-25
+
+PATCH — completes the 1.13.0 conditional-routing fix. The 1.13.0
+executor selected outgoing edges against a context snapshot taken
+*before* the node ran, so condition expressions like
+`{{state.score}} >= 0.7` couldn't see what the node just wrote into
+chain state. This silently broke the most natural "route on this
+node's output" pattern (including the sales-SDR example at
+`examples/sales-sdr-agent/workflow.py:198`).
+
+### Fixed
+
+- **`Chain` routing now reads state written by the node that just
+  ran.** `_select_outgoing_edges` is called with a freshly built
+  context after `state.update(result)`, so `{{state.<key>}}`
+  references resolve to the post-execution snapshot. `ChainState.data`
+  intentionally returns a copy for safety; the executor now takes a
+  new copy at the routing boundary instead of reusing the pre-execution
+  one. Added regression test
+  `test_condition_reads_state_written_by_just_executed_node` mirroring
+  the failure Codex 5.5 reproduced.
+
 ## [1.13.0] - 2026-05-25
 
 MINOR — fixes a silent correctness bug in `Chain` conditional routing

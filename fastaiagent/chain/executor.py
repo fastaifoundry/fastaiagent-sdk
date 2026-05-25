@@ -370,8 +370,20 @@ async def execute_chain(
             # Activate the targets of every non-cyclic edge the routing
             # rules picked. Edges with no match are silently skipped so
             # the chain prunes dead branches instead of running them.
+            #
+            # ``context`` above was built *before* the node ran, and
+            # ``ChainState.data`` returns a fresh copy — so condition
+            # expressions like ``{{state.score}}`` would otherwise see
+            # stale state. Refresh ``state`` (and ``node_results`` for
+            # symmetry, even though it mutates in place) before edge
+            # selection so a node can route on what it just wrote.
+            routing_context = {
+                "input": initial_state,
+                "state": state.data,
+                "node_results": node_results,
+            }
             selected = _select_outgoing_edges(
-                node, result, context, outgoing_by_source.get(node_id, [])
+                node, result, routing_context, outgoing_by_source.get(node_id, [])
             )
             for sel in selected:
                 activated.add(sel.target)

@@ -215,6 +215,42 @@ class TestEdgeConditionRouting:
         assert "billing" in result.node_results
         assert "general" not in result.node_results
 
+    @pytest.mark.asyncio
+    async def test_condition_reads_state_written_by_just_executed_node(self):
+        """A node writes to state, the very next edge routes on that state.
+
+        Regression for a Codex finding: ``context["state"]`` was a copy
+        taken before the node ran, so ``_select_outgoing_edges`` saw
+        stale state and missed the just-written key. Reproducer mirrors
+        the docs example: a score tool returning ``{"score": 0.9}`` and
+        an edge with ``condition="{{state.output.score}} >= 0.7"`` —
+        the high-score branch must activate.
+        """
+        from fastaiagent.tool.base import Tool, ToolResult
+
+        class _ScoreTool(Tool):
+            def __init__(self) -> None:
+                super().__init__(name="score", description="Returns a static score dict.")
+
+            async def aexecute(self, args, context=None):  # type: ignore[override]
+                return ToolResult(output={"score": 0.9}, error=None)
+
+        chain = Chain("state-after-write", checkpoint_enabled=False)
+        chain.add_node("scorer", tool=_ScoreTool(), type=NodeType.tool)
+        chain.add_node("ship", agent=_agent("ship", "shipped"))
+        chain.add_node("review", agent=_agent("review", "needs review"))
+        chain.connect("scorer", "ship", condition="{{state.output.score}} >= 0.7")
+        chain.connect("scorer", "review")
+
+        result = await chain.aexecute({"input": "evaluate me"})
+        assert "ship" in result.node_results
+        assert "review" not in result.node_results
+        # The scorer wrote ``{"output": {"score": 0.9}}`` into state, and
+        # the high-score branch ran because the edge condition read it
+        # back — verified above. (``state["output"]`` is then overwritten
+        # by ``ship``'s own output, so don't assert on final_state.)
+        assert result.node_results["scorer"]["output"] == {"score": 0.9}
+
 
 # -- NodeType.condition routing ---------------------------------------------
 
