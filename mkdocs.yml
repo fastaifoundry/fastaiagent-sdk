@@ -85,6 +85,7 @@ nav:
       - Durability: agents/durability.md
   - Chains:
       - chains/index.md
+      - "Execution Spec": chains/spec.md
       - "Cyclic Workflows": chains/cyclic-workflows.md
       - Checkpointing: chains/checkpointing.md
       - "Human-in-the-Loop": chains/hitl.md

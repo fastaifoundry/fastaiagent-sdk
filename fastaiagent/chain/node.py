@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+
+ParallelFailureMode = Literal["continue", "fail_fast", "any_success"]
 
 
 class NodeType(str, Enum):
@@ -33,6 +35,17 @@ class NodeConfig(BaseModel):
     tool_name: str | None = None
     config: dict[str, Any] = Field(default_factory=dict)
     position: dict[str, float] = Field(default_factory=lambda: {"x": 0.0, "y": 0.0})
+    parallel_failure_mode: ParallelFailureMode = "continue"
+    """Failure semantics for ``NodeType.parallel`` nodes.
+
+    * ``"continue"`` (default, backwards-compatible): collect all results.
+      Exceptions become ``{"error": str(e)}`` entries in ``outputs``.
+    * ``"fail_fast"``: cancel siblings on first exception; raise to the chain.
+    * ``"any_success"``: return only the successful outputs; raise
+      ``ChainError`` if every child failed.
+
+    Ignored on non-parallel node types.
+    """
 
     model_config = {"arbitrary_types_allowed": True}
 

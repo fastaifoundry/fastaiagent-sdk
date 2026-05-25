@@ -5,6 +5,56 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Targeting v1.14.0 — combined release of the *top 3 recommendation*
+workstreams. Items below are staged from the **0.1 Chain Spec Lockdown**
+workstream (`claude_files/top3recommendation.md`). 0.2 (Replay Fidelity)
+and 0.3 (Regression-from-Trace Template) ship in the same release.
+
+### Added
+
+- **`Chain(..., strict_routing=True)`** — opt-in flag that raises
+  `ChainRoutingError` when no outgoing edge matches a node's result,
+  instead of silently terminating the branch. Defaults to `False`;
+  legacy chains keep their silent-prune behavior. See
+  [`docs/chains/spec.md`](docs/chains/spec.md) §Strict routing.
+- **`NodeConfig.parallel_failure_mode`** — per-parallel-node failure
+  semantics: `"continue"` (default, current behavior), `"fail_fast"`
+  (cancel siblings on first error), `"any_success"` (raise only when
+  every child failed). See `docs/chains/spec.md` §Parallel.
+- **`NodeConfig.config["reachable"] = False`** — explicit opt-out of
+  the validator's "orphan node" error, for diagnostic nodes that are
+  intentionally disconnected.
+- **`ChainRoutingError`** and **`ChainResumeError`** in
+  `fastaiagent._internal.errors`. `ChainResumeError` subclasses
+  `ChainCheckpointError` so existing `except ChainCheckpointError:`
+  handlers keep catching the new resume contract violations.
+- **`docs/chains/spec.md`** — authoritative execution contract
+  (routing rules, parallel modes, cycle/interrupt interaction, resume
+  contract, validator coverage), each rule backed by a test in
+  `tests/test_chain_routing.py` or `tests/test_chain_resume.py`.
+
+### Changed
+
+- **`Chain.resume()` clearer error on interrupted-without-resume_value.**
+  Forgetting `resume_value` on an interrupted checkpoint now raises
+  `ChainResumeError` (previously `ChainCheckpointError`) with a clearer
+  message. `ChainResumeError` subclasses `ChainCheckpointError` so existing
+  `except ChainCheckpointError:` handlers keep working. The
+  "already resumed" path (status conflicts, no pending interrupt) still
+  raises `AlreadyResumed` — UI/CLI return 409 unchanged.
+- **`ChainState.data` docstring** now documents the (stable) copy
+  guarantee — `data` returns a shallow copy, mutating it never affects
+  chain state.
+
+### Tests
+
+- 15 new tests across `tests/test_chain_routing.py` and
+  `tests/test_chain_resume.py` covering strict routing, parallel
+  failure modes, validator reachable override, ChainState copy
+  semantics, and the resume contract.
+
 ## [1.13.1] - 2026-05-25
 
 PATCH — completes the 1.13.0 conditional-routing fix. The 1.13.0

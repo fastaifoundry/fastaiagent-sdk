@@ -96,6 +96,16 @@ class ChainState:
 
     @property
     def data(self) -> dict[str, Any]:
+        """Return a shallow copy of the state dict.
+
+        **Contract (stable):** ``ChainState.data`` always returns a *copy*, not
+        a live reference. Mutating the returned dict does not affect chain
+        state. The router and tools depend on this guarantee — see
+        ``docs/chains/spec.md`` §"State semantics".
+
+        For read-heavy hot paths needing a live view, use ``__getitem__`` /
+        ``__contains__`` on the ``ChainState`` instance directly.
+        """
         return dict(self._data)
 
     def __getitem__(self, key: str) -> Any:

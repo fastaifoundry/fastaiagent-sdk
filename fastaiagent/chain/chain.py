@@ -54,13 +54,25 @@ class Chain:
         state_schema: dict[str, Any] | None = None,
         checkpoint_enabled: bool = True,
         checkpointer: Checkpointer | None = None,
+        *,
+        strict_routing: bool = False,
     ):
+        """Construct a chain.
+
+        ``strict_routing`` (default ``False``) controls fall-through behavior
+        when no outgoing edge matches a node's result:
+
+        * ``False`` (legacy / default): the branch silently terminates.
+        * ``True``: raise :class:`fastaiagent._internal.errors.ChainRoutingError`
+          so misconfigured chains fail loudly. See ``docs/chains/spec.md``.
+        """
         self.name = name
         self.state_schema = state_schema
         self.nodes: list[NodeConfig] = []
         self.edges: list[Edge] = []
         self.checkpoint_enabled = checkpoint_enabled
         self._checkpointer = checkpointer
+        self.strict_routing = strict_routing
 
     def add_node(
         self,
@@ -202,15 +214,14 @@ class Chain:
                 execution_id=execution_id,
                 hitl_handler=hitl_handler,
                 run_context=context,
+                strict_routing=self.strict_routing,
             )
 
             if span is not None:
                 try:
                     import json as _json
 
-                    span.set_attribute(
-                        "chain.output", _json.dumps(raw.get("output"), default=str)
-                    )
+                    span.set_attribute("chain.output", _json.dumps(raw.get("output"), default=str))
                 except (TypeError, ValueError):
                     logger.debug("Failed to serialize chain output for trace", exc_info=True)
                 span.set_attribute("chain.execution_id", raw.get("execution_id") or "")
@@ -265,7 +276,11 @@ class Chain:
         start_node: str | None
         if resume_value is not None:
             # Caller is resuming an interrupted workflow. Atomically claim
-            # the pending row — concurrent resumers see AlreadyResumed.
+            # the pending row — concurrent resumers and resumes-after-success
+            # both see :class:`AlreadyResumed`, which is the long-standing
+            # signal that "there is no pending interrupt to claim" (whether
+            # because it was already claimed by a prior resume call, or
+            # because the chain was never interrupted in the first place).
             claimed = store.delete_pending_interrupt_atomic(execution_id)
             if claimed is None:
                 raise AlreadyResumed(
@@ -276,9 +291,9 @@ class Chain:
             # return the resume_value.
             start_node = claimed.node_id
         elif latest.status == "interrupted":
-            from fastaiagent._internal.errors import ChainCheckpointError
+            from fastaiagent._internal.errors import ChainResumeError
 
-            raise ChainCheckpointError(
+            raise ChainResumeError(
                 f"Execution '{execution_id}' is suspended on interrupt(); "
                 "pass resume_value=Resume(...) to chain.resume()."
             )
@@ -302,6 +317,7 @@ class Chain:
             resume_from_node=start_node,
             resume_value=resume_value,
             run_context=context,
+            strict_routing=self.strict_routing,
         )
 
         return ChainResult(
