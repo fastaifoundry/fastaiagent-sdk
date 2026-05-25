@@ -9,7 +9,7 @@ import pytest
 from fastaiagent._internal.errors import ReplayError
 from fastaiagent.agent.agent import AgentResult
 from fastaiagent.tool.function import FunctionTool
-from fastaiagent.trace.replay import ForkedReplay, Replay, ReplayStep
+from fastaiagent.trace.replay import ForkedReplay, Replay
 from fastaiagent.trace.storage import SpanData, TraceData
 
 
@@ -52,9 +52,7 @@ def _make_agent_trace(num_child_spans: int = 2) -> TraceData:
             "agent.guardrails": json.dumps([]),
             "agent.llm.provider": "openai",
             "agent.llm.model": "gpt-4o-mini",
-            "agent.llm.config": json.dumps(
-                {"provider": "openai", "model": "gpt-4o-mini"}
-            ),
+            "agent.llm.config": json.dumps({"provider": "openai", "model": "gpt-4o-mini"}),
         },
     )
     children = [
@@ -62,7 +60,7 @@ def _make_agent_trace(num_child_spans: int = 2) -> TraceData:
             span_id=f"span_child_{i}",
             trace_id="trace_002",
             parent_span_id="span_root",
-            name=f"openai.chat.gpt-4o-mini",
+            name="openai.chat.gpt-4o-mini",
             start_time=f"2025-01-01T00:00:0{i + 1}Z",
             end_time=f"2025-01-01T00:00:0{i + 2}Z",
             attributes={"gen_ai.system": "openai"},
@@ -215,12 +213,18 @@ class TestForkedReplay:
             forked.rerun()
 
     def test_compare(self, stub_agent_arun):
+        # v1.14: ``diverged_at`` is now computed (was hardcoded to fork_point
+        # in v1.13). The stub_agent_arun fixture returns a fake trace_id
+        # ("new_trace_id") that doesn't exist in the trace store, so the
+        # rerun trace fails to load → compare_status="rerun_failed" and
+        # diverged_at stays None.
         trace = _make_agent_trace()
         replay = Replay(trace)
         forked = replay.fork_at(step=1)
         result = forked.rerun()
         comparison = forked.compare(result)
-        assert comparison.diverged_at == 1
+        assert comparison.compare_status == "rerun_failed"
+        assert comparison.diverged_at is None
         assert len(comparison.original_steps) == len(trace.spans)
 
     def test_with_tools_override(self):

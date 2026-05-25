@@ -134,7 +134,9 @@ def _summarize_trace(spans: list[dict[str, Any]]) -> dict[str, Any]:
                 total_tokens += int(agent_total)
             except (TypeError, ValueError):
                 logger.debug(
-                    "Failed to parse agent.tokens_used: %r", agent_total, exc_info=True,
+                    "Failed to parse agent.tokens_used: %r",
+                    agent_total,
+                    exc_info=True,
                 )
         else:
             total_tokens += input_tokens + output_tokens
@@ -177,9 +179,7 @@ def _fts_available(db: Any) -> bool:
     didn't have FTS5 compiled in. The route falls back to LIKE-on-JSON
     in that case.
     """
-    rows = db.fetchall(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='span_fts'"
-    )
+    rows = db.fetchall("SELECT name FROM sqlite_master WHERE type='table' AND name='span_fts'")
     return bool(rows)
 
 
@@ -317,8 +317,7 @@ def list_traces(
         inner_pid_clause, inner_pid_params = project_filter(ctx)
         for row in paginated:
             spans = db.fetchall(
-                f"SELECT * FROM spans WHERE trace_id = ? {inner_pid_clause} "
-                "ORDER BY start_time",
+                f"SELECT * FROM spans WHERE trace_id = ? {inner_pid_clause} ORDER BY start_time",
                 (row["trace_id"], *inner_pid_params),
             )
             summary = _summarize_trace(spans)
@@ -457,9 +456,7 @@ def _span_summary_dict(span: SpanRow, duration_ms: int | None) -> dict[str, Any]
     }
 
 
-def _align_spans(
-    spans_a: list[SpanRow], spans_b: list[SpanRow]
-) -> list[dict[str, Any]]:
+def _align_spans(spans_a: list[SpanRow], spans_b: list[SpanRow]) -> list[dict[str, Any]]:
     """Pair spans across two traces by name, then surface unmatched extras.
 
     Algorithm (per the Sprint 3 spec):
@@ -507,9 +504,7 @@ def _align_spans(
             )
             continue
         duration_b = _span_duration_ms(match_b)
-        match_kind, delta_ms = _classify_match(
-            span_a, match_b, duration_a, duration_b
-        )
+        match_kind, delta_ms = _classify_match(span_a, match_b, duration_a, duration_b)
         rows.append(
             {
                 "index": len(rows),
@@ -537,9 +532,7 @@ def _align_spans(
     return rows
 
 
-def _trace_payload(
-    trace_id: str, span_rows: list[dict[str, Any]]
-) -> dict[str, Any]:
+def _trace_payload(trace_id: str, span_rows: list[dict[str, Any]]) -> dict[str, Any]:
     """Shared shape for the ``trace_a`` / ``trace_b`` halves of the response."""
     spans = [_row_to_span(r) for r in span_rows]
     summary = _summarize_trace(span_rows)
@@ -580,10 +573,10 @@ def compare_traces(
     db = ctx.db()
     pid_clause, pid_params = project_filter(ctx)
     try:
+
         def fetch(trace_id: str) -> list[dict[str, Any]]:
             rows = db.fetchall(
-                f"SELECT * FROM spans WHERE trace_id = ? {pid_clause} "
-                "ORDER BY start_time",
+                f"SELECT * FROM spans WHERE trace_id = ? {pid_clause} ORDER BY start_time",
                 (trace_id, *pid_params),
             )
             return rows
@@ -618,15 +611,9 @@ def compare_traces(
                 time_apart_seconds = None
 
         summary = {
-            "duration_delta_ms": maybe_diff(
-                trace_a["duration_ms"], trace_b["duration_ms"]
-            ),
-            "tokens_delta": maybe_diff(
-                trace_a["total_tokens"], trace_b["total_tokens"]
-            ),
-            "cost_delta_usd": maybe_diff(
-                trace_a["total_cost_usd"], trace_b["total_cost_usd"]
-            ),
+            "duration_delta_ms": maybe_diff(trace_a["duration_ms"], trace_b["duration_ms"]),
+            "tokens_delta": maybe_diff(trace_a["total_tokens"], trace_b["total_tokens"]),
+            "cost_delta_usd": maybe_diff(trace_a["total_cost_usd"], trace_b["total_cost_usd"]),
             "spans_delta": trace_b["span_count"] - trace_a["span_count"],
             "time_apart_seconds": time_apart_seconds,
         }
@@ -683,7 +670,9 @@ def get_trace_scores(
                         row[key] = json.loads(row[key])
                     except json.JSONDecodeError:
                         logger.debug(
-                            "Failed to parse JSON for eval case field %r", key, exc_info=True,
+                            "Failed to parse JSON for eval case field %r",
+                            key,
+                            exc_info=True,
                         )
         return {
             "trace_id": trace_id,
@@ -724,8 +713,7 @@ def get_thread(
         out: list[dict[str, Any]] = []
         for row in trace_rows:
             spans = db.fetchall(
-                f"SELECT * FROM spans WHERE trace_id = ? {pid_clause} "
-                "ORDER BY start_time",
+                f"SELECT * FROM spans WHERE trace_id = ? {pid_clause} ORDER BY start_time",
                 (row["trace_id"], *pid_params),
             )
             summary = _summarize_trace(spans)
@@ -753,10 +741,34 @@ def get_thread(
         db.close()
 
 
+def _maybe_redact_span(span: SpanRow, redact: bool) -> SpanRow:
+    """Apply read-mode redaction to a span's attributes if requested.
+
+    No-op when ``redact=False`` or no policy is installed. When the
+    installed policy's ``mode`` is ``"capture"`` (only), this call still
+    no-ops at read time per the policy's contract — see
+    :func:`fastaiagent.trace.redaction._read_redact`.
+    """
+    if not redact:
+        return span
+    from fastaiagent.trace.redaction import _read_redact
+
+    span.attributes = _read_redact(span.attributes)
+    return span
+
+
 @router.get("/traces/{trace_id}")
 def get_trace(
     request: Request,
     trace_id: str,
+    redact: bool = Query(
+        False,
+        description=(
+            "When true, apply read-mode redaction to span attributes. "
+            "Honored only if a policy with mode in {'read', 'both'} is installed "
+            "via fastaiagent.trace.set_redaction_policy()."
+        ),
+    ),
     _user: str = Depends(require_session),
 ) -> dict[str, Any]:
     ctx = get_context(request)
@@ -764,8 +776,7 @@ def get_trace(
     try:
         if ctx.project_id:
             rows = db.fetchall(
-                "SELECT * FROM spans WHERE trace_id = ? AND project_id = ? "
-                "ORDER BY start_time",
+                "SELECT * FROM spans WHERE trace_id = ? AND project_id = ? ORDER BY start_time",
                 (trace_id, ctx.project_id),
             )
         else:
@@ -775,7 +786,7 @@ def get_trace(
             )
         if not rows:
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"Trace '{trace_id}' not found")
-        spans = [_row_to_span(r) for r in rows]
+        spans = [_maybe_redact_span(_row_to_span(r), redact) for r in rows]
         summary = _summarize_trace(rows)
         return {
             "trace_id": trace_id,
@@ -800,6 +811,7 @@ def get_trace(
 def get_spans(
     request: Request,
     trace_id: str,
+    redact: bool = Query(False, description="Apply read-mode redaction (see /traces/{id})."),
     _user: str = Depends(require_session),
 ) -> dict[str, Any]:
     ctx = get_context(request)
@@ -812,6 +824,21 @@ def get_spans(
         )
         if not rows:
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"Trace '{trace_id}' not found")
+        if redact:
+            # Apply read-mode redaction by walking the parsed rows once
+            # before the tree builder sees them.
+            from fastaiagent.trace.redaction import _read_redact
+
+            for r in rows:
+                raw = r.get("attributes")
+                if not raw:
+                    continue
+                try:
+                    parsed = json.loads(raw) if isinstance(raw, str) else dict(raw)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+                redacted = _read_redact(parsed)
+                r["attributes"] = json.dumps(redacted, default=str)
         return {"tree": _build_tree(rows).model_dump()}
     finally:
         db.close()
@@ -941,9 +968,7 @@ def export_trace(
                 include_checkpoint_state=include_checkpoint_state,
             )
         except KeyError as exc:
-            raise HTTPException(
-                status.HTTP_404_NOT_FOUND, f"Trace '{trace_id}' not found"
-            ) from exc
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"Trace '{trace_id}' not found") from exc
     finally:
         db.close()
 
@@ -959,9 +984,7 @@ def export_trace(
     return Response(
         content=body,
         media_type="application/json",
-        headers={
-            "Content-Disposition": f'attachment; filename="trace-{trace_id}.json"'
-        },
+        headers={"Content-Disposition": f'attachment; filename="trace-{trace_id}.json"'},
     )
 
 

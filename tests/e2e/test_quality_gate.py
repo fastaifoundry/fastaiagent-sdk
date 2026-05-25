@@ -357,11 +357,17 @@ class TestQualityGate:
         require_env()
         forked = gate_state["forked"]
         rerun_result = gate_state["rerun_result"]
-        fork_point = gate_state["fork_point"]
 
         cmp = forked.compare(rerun_result)
-        assert cmp.diverged_at == fork_point, (
-            f"diverged_at={cmp.diverged_at} != fork_point={fork_point}"
+        # v1.14: ``diverged_at`` is now computed by walking both step
+        # lists (was hardcoded to ``fork_point`` in v1.13). For a rerun
+        # with a modified prompt against the same input, the very first
+        # step's output usually differs — assert "there is divergence
+        # somewhere" rather than pinning the exact index. ``compare_status``
+        # also confirms the comparison itself succeeded.
+        assert cmp.compare_status == "ok"
+        assert cmp.diverged_at is not None, (
+            "expected the modified-prompt rerun to diverge somewhere"
         )
         assert len(cmp.original_steps) >= 3
         assert len(cmp.new_steps) >= 1, (

@@ -70,9 +70,7 @@ def _convert_spans(spans: Sequence[ReadableSpan]) -> list[dict[str, Any]]:
         if span.events:
             for e in span.events:
                 raw_attrs = getattr(e, "attributes", None)
-                event_attrs = (
-                    {str(k): v for k, v in raw_attrs.items()} if raw_attrs else {}
-                )
+                event_attrs = {str(k): v for k, v in raw_attrs.items()} if raw_attrs else {}
                 events.append(
                     {
                         "name": e.name,

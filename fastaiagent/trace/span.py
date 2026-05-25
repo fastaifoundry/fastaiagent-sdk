@@ -16,6 +16,7 @@ def trace_payloads_enabled() -> bool:
     """
     return os.environ.get("FASTAIAGENT_TRACE_PAYLOADS", "1") != "0"
 
+
 # GenAI semantic conventions (OTel standard)
 GENAI_ATTRIBUTES = {
     "gen_ai.system": str,

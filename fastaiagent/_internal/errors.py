@@ -55,6 +55,29 @@ class ChainStateValidationError(ChainError):
     """Chain state failed schema validation."""
 
 
+class ChainRoutingError(ChainError):
+    """Conditional routing produced no matching edge under ``strict_routing=True``.
+
+    Raised by :func:`fastaiagent.chain.executor._select_outgoing_edges` when a
+    chain is built with ``Chain(..., strict_routing=True)`` and a node finishes
+    with no edge whose condition matches and no unconditional fallback.
+    """
+
+
+class ChainResumeError(ChainCheckpointError):
+    """Resume contract violated — ``resume_value`` does not match checkpoint status.
+
+    Raised by :meth:`Chain.resume` when the caller passes a
+    :class:`Resume` value but the latest checkpoint is not in
+    ``status="interrupted"``, or when an interrupted checkpoint is resumed
+    without a ``resume_value``.
+
+    Subclasses :class:`ChainCheckpointError` so existing
+    ``except ChainCheckpointError:`` handlers continue to catch this
+    (backwards-compatible with v1.13.x).
+    """
+
+
 # --- Tool errors ---
 
 

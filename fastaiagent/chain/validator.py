@@ -52,11 +52,15 @@ def validate_chain(nodes: list[NodeConfig], edges: list[Edge]) -> list[str]:
         if edge.target not in node_ids:
             errors.append(f"Edge target '{edge.target}' not found in nodes")
 
-    # Check orphan nodes (no incoming or outgoing edges)
+    # Check orphan nodes (no incoming or outgoing edges).
+    # A node may explicitly opt out via ``config={"reachable": False}`` —
+    # used for diagnostic nodes that are intentionally disconnected.
     sources = {e.source for e in edges}
     targets = {e.target for e in edges}
     connected = sources | targets
     for node in nodes:
+        if node.config.get("reachable") is False:
+            continue
         if len(nodes) > 1 and node.id not in connected:
             errors.append(f"Node '{node.id}' is orphaned (no edges)")
 

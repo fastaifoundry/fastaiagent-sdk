@@ -75,6 +75,14 @@ scripts/
 # Ad-hoc source dirs created by examples that seed a KB (e.g. 37, 41).
 .fastaiagent-source-docs/
 
+# Per-run artifacts from the regression-from-trace template
+# (trace IDs, intermediate outputs). Re-created each run.
+examples/regression-from-trace/.fastaiagent-demo/
+
+# Article companion folders — prose + screenshots + per-run artifacts are
+# published externally (LinkedIn, blog, PDF), not tracked in the repo.
+examples/articles/
+
 # OS
 .DS_Store
 Thumbs.db

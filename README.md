@@ -6,7 +6,7 @@ The only SDK with **Agent Replay** — fork-and-rerun debugging — and a
 
 Works standalone or connected to the [FastAIAgent Platform](https://fastaiagent.net) for visual editing, production monitoring, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.13.1)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.14.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -83,6 +83,18 @@ python agent.py --topic "Current state of MCP server adoption"
 ```
 
 Sub-researchers run in parallel via `asyncio.gather`, each in its own context window; the writer composes one coherent Markdown report. Plan and findings are persisted as structured spans under `fastaiagent.research.*` for replay / inspection. See [`examples/deep-research-agent/`](examples/deep-research-agent/) and the [Templates docs](https://docs.fastaiagent.net/flagships/deep-research-agent/).
+
+### Turn every production failure into a regression test
+
+When a customer reports the agent did something wrong, capture the failing trace, fork it, swap the broken tool or prompt, replay, and save the fixed output as a regression case — all in five small scripts:
+
+```sh
+cd examples/regression-from-trace
+pip install -r requirements.txt
+zsh -lc 'python capture.py && python analyze.py && python fix.py && python save_test.py && python verify.py'
+```
+
+The template ships with a deliberately broken `lookup_order` tool whose silent failure mode (returns a fallback record stamped with the requested ID) is exactly the class of bug only the trace-replay loop can catch. After `fix.py` swaps in the fixed tool and `save_test.py` appends to `regression_dataset.jsonl`, `verify.py` runs `evaluate(...)` with `LLMJudge` and the same case stays caught forever. See [`examples/regression-from-trace/`](examples/regression-from-trace/) and the [Templates docs](https://docs.fastaiagent.net/flagships/regression-from-trace/) — includes before/after browser screenshots.
 
 ## Multimodal — images and PDFs as first-class inputs
 

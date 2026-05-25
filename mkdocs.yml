@@ -85,6 +85,7 @@ nav:
       - Durability: agents/durability.md
   - Chains:
       - chains/index.md
+      - "Execution Spec": chains/spec.md
       - "Cyclic Workflows": chains/cyclic-workflows.md
       - Checkpointing: chains/checkpointing.md
       - "Human-in-the-Loop": chains/hitl.md
@@ -138,6 +139,8 @@ nav:
       - tracing/index.md
   - Agent Replay:
       - replay/index.md
+      - "Fidelity Guarantees": replay/guarantees.md
+  - Security: security.md
   - Local UI:
       - ui/index.md
       - "Knowledge Bases browser": ui/kb.md
@@ -174,6 +177,7 @@ nav:
       - flagships/index.md
       - "Deep Research Agent": flagships/deep-research-agent.md
       - "Financial Extraction (worked example)": flagships/deep-research-financial-extraction.md
+      - "Regression from Trace": flagships/regression-from-trace.md
   - Learning from traces:
       - learning/index.md
       - "Memory loop": learning/memory-loop.md

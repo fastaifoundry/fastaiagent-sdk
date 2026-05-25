@@ -36,18 +36,25 @@ export function useTraces(filters: TraceFilters) {
   });
 }
 
-export function useTrace(traceId: string | undefined) {
+export function useTrace(traceId: string | undefined, redact: boolean = false) {
+  // ``?redact=true`` is honored by the backend only when an opt-in
+  // ``RedactionPolicy(mode in {"read", "both"})`` is installed via
+  // ``fastaiagent.trace.set_redaction_policy(...)``. When no policy
+  // is installed, the flag is a no-op — see ``docs/security.md``.
+  const suffix = redact ? "?redact=true" : "";
   return useQuery({
-    queryKey: ["trace", traceId],
-    queryFn: () => api.get<TraceDetail>(`/traces/${traceId}`),
+    queryKey: ["trace", traceId, redact],
+    queryFn: () => api.get<TraceDetail>(`/traces/${traceId}${suffix}`),
     enabled: !!traceId,
   });
 }
 
-export function useTraceSpans(traceId: string | undefined) {
+export function useTraceSpans(traceId: string | undefined, redact: boolean = false) {
+  const suffix = redact ? "?redact=true" : "";
   return useQuery({
-    queryKey: ["trace-spans", traceId],
-    queryFn: () => api.get<{ tree: SpanTreeNode }>(`/traces/${traceId}/spans`),
+    queryKey: ["trace-spans", traceId, redact],
+    queryFn: () =>
+      api.get<{ tree: SpanTreeNode }>(`/traces/${traceId}/spans${suffix}`),
     enabled: !!traceId,
   });
 }

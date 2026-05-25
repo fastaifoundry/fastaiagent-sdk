@@ -80,6 +80,11 @@ Condition expressions support: `==`, `!=`, `>`, `<`, `>=`, `<=`, `contains`, `st
 
 ### Routing semantics
 
+!!! info "Full contract"
+    For the authoritative spec (including strict routing, parallel
+    failure modes, validator rules, and the resume contract) see
+    [Execution Spec](spec.md). The section below is a summary.
+
 The executor walks edges in declaration order, applying these rules at each source node:
 
 1. **All-unconditional fan-out** — if every outgoing edge from a source has `condition=None`, every target runs (the original chain behavior).

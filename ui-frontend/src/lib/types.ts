@@ -91,7 +91,25 @@ export interface RerunResult {
 export interface ComparisonResult {
   original_steps: ReplayStep[];
   new_steps: ReplayStep[];
+  /**
+   * First step index where original and rerun diverge. ``null`` means
+   * the two traces matched step-for-step (or — when ``compare_status``
+   * is ``"rerun_failed"`` — that the rerun trace couldn't be loaded
+   * so divergence couldn't be computed).
+   *
+   * v1.14: was hardcoded to ``fork_point`` in v1.13; now computed from
+   * span-by-span comparison.
+   */
   diverged_at: number | null;
+  /**
+   * Distinguishes "rerun loaded fine, this is the real divergence" from
+   * "rerun trace couldn't be loaded — divergence is unknown".
+   *
+   * Added in v1.14. Backwards-compatible: callers that don't read this
+   * field still get the correct ``diverged_at`` value for the ``"ok"``
+   * case.
+   */
+  compare_status?: "ok" | "rerun_failed";
 }
 
 // ---------------------------------------------------------------------------

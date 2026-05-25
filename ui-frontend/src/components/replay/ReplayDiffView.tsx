@@ -77,11 +77,15 @@ export function ReplayDiffView({
           <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
             Step-by-step comparison
           </span>
-          {diverged != null && (
+          {comparison.compare_status === "rerun_failed" ? (
+            <span className="rounded-md bg-destructive/10 px-2 py-0.5 text-xs font-mono font-medium text-destructive">
+              rerun trace failed to load
+            </span>
+          ) : diverged != null ? (
             <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xs font-mono font-medium text-primary">
               diverged at step {diverged}
             </span>
-          )}
+          ) : null}
         </div>
         <div className="divide-y">
           {Array.from({ length: maxSteps }, (_, idx) => (

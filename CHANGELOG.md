@@ -5,6 +5,123 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.0] - 2026-05-25
+
+Combined release of the *top 3 recommendation* workstreams
+(`claude_files/top3recommendation.md`): **0.1 Chain Spec Lockdown**,
+**0.2 Replay Fidelity Hardening**, and **0.3 Regression-from-Trace
+Template**. Aimed at making the trace → replay → fix →
+regression-test loop production-ready and visible to users.
+
+### Added
+
+#### 0.1 Chain Spec Lockdown
+
+- **`Chain(..., strict_routing=True)`** — opt-in flag that raises
+  `ChainRoutingError` when no outgoing edge matches a node's result,
+  instead of silently terminating the branch. Defaults to `False`;
+  legacy chains keep their silent-prune behavior. See
+  [`docs/chains/spec.md`](docs/chains/spec.md) §Strict routing.
+- **`NodeConfig.parallel_failure_mode`** — per-parallel-node failure
+  semantics: `"continue"` (default, current behavior), `"fail_fast"`
+  (cancel siblings on first error), `"any_success"` (raise only when
+  every child failed). See `docs/chains/spec.md` §Parallel.
+- **`NodeConfig.config["reachable"] = False`** — explicit opt-out of
+  the validator's "orphan node" error, for diagnostic nodes that are
+  intentionally disconnected.
+- **`ChainRoutingError`** and **`ChainResumeError`** in
+  `fastaiagent._internal.errors`. `ChainResumeError` subclasses
+  `ChainCheckpointError` so existing `except ChainCheckpointError:`
+  handlers keep catching the new resume contract violations.
+- **`docs/chains/spec.md`** — authoritative execution contract,
+  each rule backed by a test.
+
+#### 0.2 Replay Fidelity Hardening
+
+- **`RedactionPolicy`** — opt-in regex-based redaction for trace
+  span attributes. Three modes: `"capture"` (mask at SQLite write +
+  in downstream OTel exporters), `"read"` (mask only when the UI is
+  called with `?redact=true`), `"both"`, plus `"off"` to temporarily
+  disable an installed policy. **Defaults to OFF** — call
+  `fastaiagent.trace.set_redaction_policy(...)` to enable.
+- **UI `?redact=true` query parameter** on
+  `/api/traces/{trace_id}` and `/api/traces/{trace_id}/spans`. Honored
+  only when a policy with `mode in {"read", "both"}` is installed.
+- **`ForkedReplay.with_determinism(mode)`** — control LLM invocation
+  during rerun: `"live"` (default), `"recorded"` (skip the HTTP call,
+  replay captured `gen_ai.response.content`), `"deterministic"` (force
+  `temperature=0` + `seed=42` where the provider supports it). See
+  [`docs/replay/guarantees.md`](docs/replay/guarantees.md).
+- **`ForkedReplay.with_tool_override(name, tool)`** — partial tool
+  replacement; other reconstructed tools stay intact. Compose multiple
+  overrides. `with_tools(...)` (full replacement) takes precedence.
+- **`fastaiagent.trace.SENSITIVE_ATTR_KEYS`** — public constant
+  listing the span attribute keys redaction walks by default.
+- **`docs/security.md`** + **`docs/replay/guarantees.md`** — security
+  posture and per-provider fidelity matrix in one place.
+- **`examples/68_trace_redaction.py`** — end-to-end demo of capture
+  vs read mode against real SQLite.
+
+### Changed
+
+- **`Chain.resume()` clearer error on interrupted-without-resume_value.**
+  Forgetting `resume_value` on an interrupted checkpoint now raises
+  `ChainResumeError` (previously `ChainCheckpointError`) with a clearer
+  message. `ChainResumeError` subclasses `ChainCheckpointError` so existing
+  `except ChainCheckpointError:` handlers keep working. The
+  "already resumed" path (status conflicts, no pending interrupt) still
+  raises `AlreadyResumed` — UI/CLI return 409 unchanged.
+- **`ChainState.data` docstring** now documents the (stable) copy
+  guarantee — `data` returns a shallow copy, mutating it never affects
+  chain state.
+- **`ComparisonResult.diverged_at`** is now **computed** by walking
+  both step lists in parallel and finding the first mismatch.
+  Previously it was hardcoded to the fork point — misleading because
+  divergence often happens later than where the user asked to fork.
+  New field `compare_status: "ok" | "rerun_failed"` distinguishes
+  successful comparisons from cases where the rerun trace couldn't be
+  loaded.
+
+  **Migration:** if you asserted `comparison.diverged_at == fork_point`
+  in v1.13 tests, update them to assert against the actual divergence
+  step (or `None` for clean matches). See the change in
+  `tests/test_replay.py::TestForkedReplay::test_compare` for the
+  expected new shape.
+
+#### 0.3 Regression-from-Trace Template
+
+- **`examples/regression-from-trace/`** — flagship template (matching
+  the customer-support-agent shape) demonstrating the full
+  capture → analyze → fix → save → verify loop. Ships with a
+  deliberately broken `lookup_order` tool whose silent failure mode
+  (returns a fallback record stamped with the requested ID, so the
+  LLM has nothing to cross-check) is exactly the kind of bug only a
+  trace-replay loop can catch.
+- **`docs/flagships/regression-from-trace.md`** — docs page with
+  before/after UI screenshots showing the failing trace and the
+  fixed rerun side by side.
+- **`scripts/capture-regression-from-trace-screenshots.sh`** +
+  **`ui-frontend/tests/regression-from-trace.spec.ts`** — Playwright
+  capture that regenerates the screenshots from a fresh tmpdir DB.
+
+### Tests
+
+- 0.1: 15 new tests across `tests/test_chain_routing.py` and
+  `tests/test_chain_resume.py` covering strict routing, parallel
+  failure modes, validator reachable override, ChainState copy
+  semantics, and the resume contract.
+- 0.2: 36 new tests across `tests/test_trace_redaction.py`,
+  `tests/test_ui_traces_redaction.py`, and
+  `tests/test_replay_determinism.py` covering capture/read redaction,
+  three determinism modes, partial tool overrides, and computed
+  `diverged_at`.
+- 0.3: 14 new no-LLM smoke tests in
+  `examples/regression-from-trace/tests/test_template_smoke.py`
+  covering buggy/fixed tool behavior, agent construction, dataset
+  shape, and the `with_tool_override` integration. Full template
+  loop (capture → fix → save → verify) verified end-to-end against
+  real OpenAI gpt-4.1-mini.
+
 ## [1.13.1] - 2026-05-25
 
 PATCH — completes the 1.13.0 conditional-routing fix. The 1.13.0

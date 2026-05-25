@@ -368,3 +368,233 @@ class TestRoutingValidator:
         ]
         errors = validate_chain(nodes, edges)
         assert not any("default" in e for e in errors)
+
+
+# -- Strict routing (v1.14) -------------------------------------------------
+
+
+class TestStrictRouting:
+    """``Chain(..., strict_routing=True)`` raises ``ChainRoutingError`` when
+    no outgoing edge matches, instead of silently terminating the branch.
+    The default (``False``) preserves the pre-v1.14 silent-termination
+    behavior — see ``docs/chains/spec.md`` §Routing.
+    """
+
+    @pytest.mark.asyncio
+    async def test_all_conditions_fail_default_terminates_silently(self):
+        chain = Chain("loose", checkpoint_enabled=False)
+        chain.add_node("src", agent=_agent("src", "x"))
+        chain.add_node("a", agent=_agent("a", "a_out"))
+        chain.add_node("b", agent=_agent("b", "b_out"))
+        chain.connect("src", "a", condition="{{node_results.src.output}} == foo")
+        chain.connect("src", "b", condition="{{node_results.src.output}} == bar")
+
+        # Legacy behavior: no condition matches, no default → silent prune.
+        result = await chain.aexecute({"input": "hi"})
+        assert "src" in result.node_results
+        assert "a" not in result.node_results
+        assert "b" not in result.node_results
+
+    @pytest.mark.asyncio
+    async def test_all_conditions_fail_strict_raises(self):
+        from fastaiagent._internal.errors import ChainRoutingError
+
+        chain = Chain("strict", checkpoint_enabled=False, strict_routing=True)
+        chain.add_node("src", agent=_agent("src", "x"))
+        chain.add_node("a", agent=_agent("a", "a_out"))
+        chain.add_node("b", agent=_agent("b", "b_out"))
+        chain.connect("src", "a", condition="{{node_results.src.output}} == foo")
+        chain.connect("src", "b", condition="{{node_results.src.output}} == bar")
+
+        with pytest.raises(ChainRoutingError, match="no default"):
+            await chain.aexecute({"input": "hi"})
+
+    @pytest.mark.asyncio
+    async def test_strict_passes_when_default_edge_present(self):
+        chain = Chain("strict-ok", checkpoint_enabled=False, strict_routing=True)
+        chain.add_node("src", agent=_agent("src", "x"))
+        chain.add_node("a", agent=_agent("a", "a_out"))
+        chain.add_node("fallback", agent=_agent("fallback", "f_out"))
+        chain.connect("src", "a", condition="{{node_results.src.output}} == foo")
+        chain.connect("src", "fallback")  # unconditional fallback
+
+        result = await chain.aexecute({"input": "hi"})
+        assert "fallback" in result.node_results
+        assert "a" not in result.node_results
+
+    @pytest.mark.asyncio
+    async def test_strict_condition_node_with_no_matching_handle_raises(self):
+        from fastaiagent._internal.errors import ChainRoutingError
+
+        chain = Chain("strict-cond", checkpoint_enabled=False, strict_routing=True)
+        chain.add_node(
+            "router",
+            type=NodeType.condition,
+            conditions=[{"expression": "{{input.category}} == billing", "handle": "billing"}],
+        )
+        chain.add_node("billing", agent=_agent("billing", "b"))
+        chain.connect("router", "billing", label="billing")
+        # No default edge — strict should raise when input doesn't match.
+
+        with pytest.raises(ChainRoutingError):
+            await chain.aexecute({"input": "hi", "category": "weather"})
+
+
+# -- Parallel failure modes (v1.14) -----------------------------------------
+
+
+class _BoomAgent:
+    """Minimal Agent stand-in that raises on ``arun`` — used to test
+    parallel failure modes without needing real LLM calls."""
+
+    def __init__(self, name: str, message: str = "boom"):
+        self.name = name
+        self.message = message
+
+    async def arun(self, _input, **_kwargs):
+        raise RuntimeError(self.message)
+
+
+class _OkAgent:
+    """Minimal Agent stand-in that returns a deterministic output."""
+
+    def __init__(self, name: str, output: str = "ok"):
+        self.name = name
+        self.output = output
+
+    async def arun(self, _input, **_kwargs):
+        class _R:
+            pass
+
+        r = _R()
+        r.output = self.output
+        r.tool_calls = []
+        return r
+
+
+class TestParallelFailureModes:
+    """``NodeConfig.parallel_failure_mode`` controls how a ``parallel``
+    node handles child exceptions. See ``docs/chains/spec.md`` §Parallel.
+    """
+
+    @pytest.mark.asyncio
+    async def test_continue_default_collects_errors_as_outputs(self):
+        # Default mode: every result lands in ``outputs``; exceptions
+        # become ``{"error": ...}`` entries. Backwards-compatible.
+        chain = Chain("par-continue", checkpoint_enabled=False)
+        chain.add_node(
+            "fan",
+            type=NodeType.parallel,
+            agents=[_OkAgent("a", "good"), _BoomAgent("b", "kaboom")],
+        )
+
+        result = await chain.aexecute({"input": "x"})
+        outputs = result.node_results["fan"]["outputs"]
+        assert len(outputs) == 2
+        assert any("good" in str(o.get("output", "")) for o in outputs)
+        assert any("kaboom" in str(o.get("error", "")) for o in outputs)
+
+    @pytest.mark.asyncio
+    async def test_fail_fast_raises_on_first_child_error(self):
+        from fastaiagent._internal.errors import ChainError
+
+        chain = Chain("par-failfast", checkpoint_enabled=False)
+        node = NodeConfig(
+            id="fan",
+            type=NodeType.parallel,
+            config={"agents": [_BoomAgent("a", "first"), _OkAgent("b", "good")]},
+            parallel_failure_mode="fail_fast",
+        )
+        chain.nodes.append(node)
+
+        with pytest.raises(ChainError, match="fail_fast"):
+            await chain.aexecute({"input": "x"})
+
+    @pytest.mark.asyncio
+    async def test_any_success_returns_only_successful_children(self):
+        chain = Chain("par-any", checkpoint_enabled=False)
+        node = NodeConfig(
+            id="fan",
+            type=NodeType.parallel,
+            config={"agents": [_BoomAgent("a"), _OkAgent("b", "winner"), _BoomAgent("c")]},
+            parallel_failure_mode="any_success",
+        )
+        chain.nodes.append(node)
+
+        result = await chain.aexecute({"input": "x"})
+        outputs = result.node_results["fan"]["outputs"]
+        assert len(outputs) == 1
+        assert "winner" in str(outputs[0].get("output", ""))
+
+    @pytest.mark.asyncio
+    async def test_any_success_raises_when_all_children_fail(self):
+        from fastaiagent._internal.errors import ChainError
+
+        chain = Chain("par-any-fail", checkpoint_enabled=False)
+        node = NodeConfig(
+            id="fan",
+            type=NodeType.parallel,
+            config={"agents": [_BoomAgent("a"), _BoomAgent("b")]},
+            parallel_failure_mode="any_success",
+        )
+        chain.nodes.append(node)
+
+        with pytest.raises(ChainError, match="any_success"):
+            await chain.aexecute({"input": "x"})
+
+
+# -- Isolated nodes (v1.14) -------------------------------------------------
+
+
+class TestIsolatedNodes:
+    """``NodeConfig.config["reachable"]=False`` opts a node out of the
+    validator's "orphan (no edges)" error. Use for diagnostic-only nodes
+    that are intentionally disconnected. See ``docs/chains/spec.md`` §Validation.
+    """
+
+    def test_orphan_node_is_rejected_by_default(self):
+        nodes = [
+            NodeConfig(id="a"),
+            NodeConfig(id="b"),
+            NodeConfig(id="orphan"),
+        ]
+        edges = [Edge(source="a", target="b")]
+        errors = validate_chain(nodes, edges)
+        assert any("orphan" in e.lower() for e in errors)
+
+    def test_orphan_node_with_reachable_false_passes(self):
+        nodes = [
+            NodeConfig(id="a"),
+            NodeConfig(id="b"),
+            NodeConfig(id="diag", config={"reachable": False}),
+        ]
+        edges = [Edge(source="a", target="b")]
+        errors = validate_chain(nodes, edges)
+        assert not any("orphan" in e.lower() and "diag" in e for e in errors)
+
+
+# -- ChainState copy semantics (v1.14) --------------------------------------
+
+
+class TestChainStateSemantics:
+    """``ChainState.data`` returns a copy — mutating the returned dict
+    never affects chain state. Documented stable contract.
+    """
+
+    def test_data_returns_copy(self):
+        from fastaiagent.chain.state import ChainState
+
+        st = ChainState({"k": 1})
+        d = st.data
+        d["k"] = 999
+        d["new"] = "x"
+        assert st.data == {"k": 1}  # original unchanged
+        assert "new" not in st.data
+
+    def test_snapshot_is_deep_and_json_safe(self):
+        from fastaiagent.chain.state import ChainState
+
+        st = ChainState({"nested": {"list": [1, 2, 3]}})
+        snap = st.snapshot()
+        snap["nested"]["list"].append(999)
+        assert st.data["nested"]["list"] == [1, 2, 3]  # original unchanged

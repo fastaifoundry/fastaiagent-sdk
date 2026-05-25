@@ -12,6 +12,7 @@ from typing import Any
 from fastaiagent._internal.errors import (
     ChainCycleError,
     ChainError,
+    ChainRoutingError,
 )
 from fastaiagent.chain.checkpoint import Checkpoint
 from fastaiagent.chain.idempotent import _current_checkpointer
@@ -111,10 +112,12 @@ def _select_outgoing_edges(
     result: Any,
     context: dict[str, Any],
     outgoing: list[Edge],
+    *,
+    strict: bool = False,
 ) -> list[Edge]:
     """Pick which non-cyclic outgoing edges to activate after a node runs.
 
-    Selection rules (see ``docs/chains/index.md`` Routing semantics):
+    Selection rules (see ``docs/chains/spec.md``):
 
     * ``NodeType.condition`` nodes return ``{"matched": handle}``. The
       edge whose ``label == handle`` wins; otherwise an unconditional
@@ -128,6 +131,10 @@ def _select_outgoing_edges(
         conditional edge whose expression evaluates true (in declaration
         order) wins. Unconditional siblings act as the default fallback;
         the first one is taken if no condition matched.
+
+    When ``strict=True`` (``Chain(..., strict_routing=True)``), the
+    fall-through "no edge matched" case raises ``ChainRoutingError``
+    instead of silently terminating the branch.
 
     Returns the list of edges to follow (possibly empty, which terminates
     that branch of the chain).
@@ -149,6 +156,12 @@ def _select_outgoing_edges(
         for e in outgoing:
             if not e.label:
                 return [e]
+        if strict:
+            raise ChainRoutingError(
+                f"Condition node '{node.id}' returned handle {handle!r} but no "
+                f"outgoing edge labels it and no default edge exists. "
+                f"Available labels: {[e.label for e in outgoing if e.label] or '(none)'}."
+            )
         return []
 
     conditional = [e for e in outgoing if e.condition]
@@ -163,6 +176,13 @@ def _select_outgoing_edges(
     unconditional = [e for e in outgoing if not e.condition]
     if unconditional:
         return [unconditional[0]]
+    if strict:
+        raise ChainRoutingError(
+            f"Node '{node.id}' has {len(conditional)} conditional outgoing edge(s) "
+            f"and no default — none matched. Add an unlabeled "
+            f"chain.connect('{node.id}', '<fallback>') to silence this error, "
+            f"or disable strict_routing."
+        )
     return []
 
 
@@ -178,6 +198,7 @@ async def execute_chain(
     hitl_handler: Any = None,
     resume_value: Resume | None = None,
     run_context: Any | None = None,
+    strict_routing: bool = False,
 ) -> dict[str, Any]:
     """Execute a chain as a state machine.
 
@@ -383,7 +404,11 @@ async def execute_chain(
                 "node_results": node_results,
             }
             selected = _select_outgoing_edges(
-                node, result, routing_context, outgoing_by_source.get(node_id, [])
+                node,
+                result,
+                routing_context,
+                outgoing_by_source.get(node_id, []),
+                strict=strict_routing,
             )
             for sel in selected:
                 activated.add(sel.target)
@@ -434,6 +459,7 @@ async def execute_chain(
                     resume_from_node=edge.target,
                     hitl_handler=hitl_handler,
                     run_context=run_context,
+                    strict_routing=strict_routing,
                 )
                 # If a node inside the cycle interrupted, bubble paused
                 # status up — don't merge state from a partial run.
@@ -542,16 +568,45 @@ async def _execute_node(
         for child in child_agents:
             if hasattr(child, "arun"):
                 tasks.append(child.arun(parallel_input, context=run_context, trace=False))
-        if tasks:
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            outputs = []
-            for r in results:
-                if isinstance(r, Exception):
-                    outputs.append({"error": str(r)})
-                else:
-                    outputs.append({"output": getattr(r, "output", str(r))})
-            return {"outputs": outputs}
-        return {"outputs": []}
+        if not tasks:
+            return {"outputs": []}
+
+        mode = node.parallel_failure_mode
+
+        if mode == "fail_fast":
+            # asyncio.gather without return_exceptions raises the first
+            # exception immediately and cancels in-flight siblings.
+            try:
+                results = await asyncio.gather(*tasks)
+            except Exception as e:
+                raise ChainError(
+                    f"Parallel node '{node.id}' (fail_fast): child raised {type(e).__name__}: {e}"
+                ) from e
+            return {
+                "outputs": [{"output": getattr(r, "output", str(r))} for r in results],
+            }
+
+        # ``continue`` (default) and ``any_success`` both collect every
+        # result, then differ in how they react to all-failures.
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        outputs: list[dict[str, Any]] = []
+        for r in results:
+            if isinstance(r, Exception):
+                outputs.append({"error": str(r)})
+            else:
+                outputs.append({"output": getattr(r, "output", str(r))})
+
+        if mode == "any_success":
+            successes = [o for o in outputs if "error" not in o]
+            if not successes:
+                raise ChainError(
+                    f"Parallel node '{node.id}' (any_success): every child failed "
+                    f"({len(outputs)} children). Errors: "
+                    f"{[o.get('error') for o in outputs]}"
+                )
+            return {"outputs": successes}
+
+        return {"outputs": outputs}
 
     elif node.type == NodeType.hitl:
         if hitl_handler:
