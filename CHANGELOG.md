@@ -5,13 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.14.0] - 2026-05-25
 
-Targeting v1.14.0 — combined release of the *top 3 recommendation*
-workstreams (`claude_files/top3recommendation.md`). Items below are
-staged from **0.1 Chain Spec Lockdown** and **0.2 Replay Fidelity
-Hardening**. 0.3 (Regression-from-Trace Template) ships in the same
-release.
+Combined release of the *top 3 recommendation* workstreams
+(`claude_files/top3recommendation.md`): **0.1 Chain Spec Lockdown**,
+**0.2 Replay Fidelity Hardening**, and **0.3 Regression-from-Trace
+Template**. Aimed at making the trace → replay → fix →
+regression-test loop production-ready and visible to users.
 
 ### Added
 
@@ -88,6 +88,22 @@ release.
   `tests/test_replay.py::TestForkedReplay::test_compare` for the
   expected new shape.
 
+#### 0.3 Regression-from-Trace Template
+
+- **`examples/regression-from-trace/`** — flagship template (matching
+  the customer-support-agent shape) demonstrating the full
+  capture → analyze → fix → save → verify loop. Ships with a
+  deliberately broken `lookup_order` tool whose silent failure mode
+  (returns a fallback record stamped with the requested ID, so the
+  LLM has nothing to cross-check) is exactly the kind of bug only a
+  trace-replay loop can catch.
+- **`docs/flagships/regression-from-trace.md`** — docs page with
+  before/after UI screenshots showing the failing trace and the
+  fixed rerun side by side.
+- **`scripts/capture-regression-from-trace-screenshots.sh`** +
+  **`ui-frontend/tests/regression-from-trace.spec.ts`** — Playwright
+  capture that regenerates the screenshots from a fresh tmpdir DB.
+
 ### Tests
 
 - 0.1: 15 new tests across `tests/test_chain_routing.py` and
@@ -99,6 +115,12 @@ release.
   `tests/test_replay_determinism.py` covering capture/read redaction,
   three determinism modes, partial tool overrides, and computed
   `diverged_at`.
+- 0.3: 14 new no-LLM smoke tests in
+  `examples/regression-from-trace/tests/test_template_smoke.py`
+  covering buggy/fixed tool behavior, agent construction, dataset
+  shape, and the `with_tool_override` integration. Full template
+  loop (capture → fix → save → verify) verified end-to-end against
+  real OpenAI gpt-4.1-mini.
 
 ## [1.13.1] - 2026-05-25
 

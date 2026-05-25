@@ -177,6 +177,7 @@ nav:
       - flagships/index.md
       - "Deep Research Agent": flagships/deep-research-agent.md
       - "Financial Extraction (worked example)": flagships/deep-research-financial-extraction.md
+      - "Regression from Trace": flagships/regression-from-trace.md
   - Learning from traces:
       - learning/index.md
       - "Memory loop": learning/memory-loop.md

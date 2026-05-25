@@ -5,6 +5,7 @@ Production-ready, end-to-end examples shipped with the SDK. Each template lives 
 | Template | Pattern | What it shows |
 |---|---|---|
 | [Deep Research Agent](deep-research-agent.md) | Scope → parallel Research → Write | Long-horizon research with structured trace spans, real web search/fetch, parallel sub-researchers via `asyncio.gather`. Pairs with the trace-learning loop for self-improving agents. |
+| [Regression from Trace](regression-from-trace.md) | capture → analyze → fix → save → verify | The full trace → replay → fix → regression-test loop. Five small scripts demonstrating `fork_at`, `with_tool_override`, and `save_as_test` against a deliberately broken tool. |
 | Customer Support Agent | Single Agent + HITL | Multi-turn support with checkpointer, memory, tool budget, KB retrieval, eval suite. |
 | Research Agent | Supervisor + 3 workers | Researcher → Writer → Verifier with revision loop and citation auditing. |
 | Sales SDR Agent | Multi-step workflow | Lead qualification chain with structured outputs. |
