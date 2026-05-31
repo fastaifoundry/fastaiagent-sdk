@@ -452,6 +452,7 @@ For contributors who need to modify the tracing layer, add new span attributes, 
 
 - [Replay](../replay/index.md) — Debug agent execution with fork-and-rerun
 - [Integrations](../integrations/index.md) — Auto-trace OpenAI, Anthropic, LangChain, CrewAI
+- [Capture any OTel / OpenInference framework](third-party-otel.md) — `enable_otel_capture()` for third-party instrumentors
 - [Agents](../agents/index.md) — Build agents with automatic tracing
 
 ## Examples

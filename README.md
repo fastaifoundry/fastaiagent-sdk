@@ -6,7 +6,7 @@ The only SDK with **Agent Replay** — fork-and-rerun debugging — and a
 
 Works standalone or connected to the [FastAIAgent Platform](https://fastaiagent.net) for visual editing, production monitoring, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.15.0)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.16.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -487,6 +487,20 @@ What the harness *can't* give you (and why): Replay (fork-and-rerun),
 durability (checkpoint-resumable runs), and suspending HITL all need
 execution control of the framework's state machine. Build new
 workflows that need those features natively in FastAIAgent.
+
+### …and any other OpenTelemetry / OpenInference instrumentor
+
+Not on the list above? If your stack emits OpenTelemetry spans through **any**
+in-process instrumentor (OpenInference, OpenLLMetry / Traceloop, or your own),
+one opt-in call captures and richly renders them in the same Local UI:
+
+```python
+import fastaiagent as fa
+fa.enable_otel_capture()   # foreign spans now show model, tokens, cost, I/O
+```
+
+See [Capture any OTel / OpenInference framework](docs/tracing/third-party-otel.md)
+for the convention-mapping table and a runnable OpenInference example.
 
 ## Build agents with guardrails and cyclic workflows
 

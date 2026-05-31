@@ -139,6 +139,7 @@ nav:
       - "Multimodal Eval": multimodal/eval.md
   - Tracing:
       - tracing/index.md
+      - "Capture any OTel / OpenInference framework": tracing/third-party-otel.md
   - Agent Replay:
       - replay/index.md
       - "Fidelity Guarantees": replay/guarantees.md

@@ -65,6 +65,8 @@ from fastaiagent.tool import FunctionTool, MCPTool, RESTTool, Tool, ToolRegistry
 from fastaiagent.trace import (
     RedactionPolicy,
     TraceStore,
+    disable_otel_capture,
+    enable_otel_capture,
     get_redaction_policy,
     set_redaction_policy,
     trace_context,
@@ -188,6 +190,8 @@ __all__ = [
     # Trace
     "TraceStore",
     "trace_context",
+    "enable_otel_capture",
+    "disable_otel_capture",
     "Replay",
     "RedactionPolicy",
     "set_redaction_policy",

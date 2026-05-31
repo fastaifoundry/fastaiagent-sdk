@@ -1,6 +1,6 @@
 [project]
 name = "fastaiagent"
-version = "1.15.0"
+version = "1.16.0"
 description = "Build, debug, evaluate, and operate AI agents. The only SDK with fork-and-rerun Agent Replay."
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -91,6 +91,10 @@ dev = [
     # to run the harness suite without per-test importorskips.
     "langchain-openai>=0.2,<1",
     "langchain-anthropic>=0.2,<1",
+    # Test-only: drives the live ``tests/e2e/test_openinference_capture_e2e.py``
+    # drift check for ``enable_otel_capture()`` against a real OpenInference
+    # instrumentor. Not a runtime dependency of the SDK.
+    "openinference-instrumentation-openai>=0.1,<1",
 ]
 
 [project.scripts]
