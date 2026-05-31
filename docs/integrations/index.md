@@ -13,6 +13,11 @@ FastAIAgent ships **two** flavours of integration:
    your agent is built in one of those frameworks and you want the
    same Local UI surface without rewriting.
 
+Beyond these, **any in-process OpenTelemetry / OpenInference / OpenLLMetry
+instrumentor** can be captured and rendered richly with a single opt-in call —
+`fastaiagent.enable_otel_capture()`. See
+[Capture any OTel / OpenInference framework](../tracing/third-party-otel.md).
+
 ## Pick your starting point
 
 - I have an existing **LangGraph** / **CrewAI** / **PydanticAI** agent →

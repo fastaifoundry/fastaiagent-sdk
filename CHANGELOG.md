@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.0] - 2026-05-31
+
+MINOR — one additive, opt-in feature area (G7: broader framework coverage).
+Fully backward compatible: no removals, no renames, no signature breaks. The
+default code path is **byte-identical** until you call the new function.
+
+### Added
+
+- **`enable_otel_capture()` / `disable_otel_capture()`** (exported from
+  `fastaiagent` and `fastaiagent.trace`). Capture and **richly render** spans
+  from any in-process OpenTelemetry / OpenInference / OpenLLMetry instrumentor —
+  not just the first-party LangChain / CrewAI / PydanticAI harness. One opt-in
+  call (a) adaptively attaches the local storage processor to whatever global
+  `TracerProvider` is active, so foreign spans are captured regardless of import
+  order, and (b) turns on a write-time normalizer that maps foreign attribute
+  conventions onto the canonical `gen_ai.*` / `runner.type` / `framework` keys
+  the Local UI, full-text search, and cost table read.
+- **Foreign-span attribute normalizer** (`fastaiagent.trace.normalize`). Maps
+  OpenInference (`llm.model_name`, `llm.token_count.*`, `input.value` /
+  `output.value`, `openinference.span.kind`, …) and OpenLLMetry / Traceloop
+  (legacy `llm.request.model`, indexed `gen_ai.prompt.N.*` message arrays)
+  conventions to canonical keys. Prompt/completion text is written to both the
+  search keys and the UI Input/Output keys, so captured spans are both
+  searchable and rendered. Cost is computed by the existing pricing table once
+  the model + token counts exist.
+- New docs: [Capture any OTel / OpenInference framework](docs/tracing/third-party-otel.md)
+  and the `examples/otel-openinference/` example.
+
+### Changed
+
+- **Opt-in enrichment of foreign-span attributes.** When `enable_otel_capture()`
+  is active, stored spans gain canonical `gen_ai.*` keys **alongside** their
+  original foreign keys (originals are preserved, never removed; canonical keys
+  are filled only when absent). This is additive and only happens under the
+  opt-in flag — native FastAIAgent spans are unaffected.
+- The `GET /api/traces/{id}` detail response now also includes the `framework`
+  field (already present on the Traces list response). Additive JSON key;
+  existing clients ignore it.
+
 ## [1.15.0] - 2026-05-31
 
 MINOR — two additive feature areas, fully backward compatible. No removals,

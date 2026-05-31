@@ -11,6 +11,25 @@ from pydantic import BaseModel, Field
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
 
+# Opt-in foreign-span normalization. Flipped on by
+# ``fastaiagent.enable_otel_capture()``; default ``False`` keeps the write path
+# byte-identical. When on, ``on_end`` maps foreign OTel/OpenInference/
+# OpenLLMetry attribute conventions onto canonical ``gen_ai.*`` keys before the
+# attributes are serialized to SQLite. See :mod:`fastaiagent.trace.normalize`.
+_normalize_enabled = False
+_framework_override: str | None = None
+
+
+def set_normalize_enabled(value: bool, *, framework: str | None = None) -> None:
+    """Toggle write-time foreign-span normalization (see module docstring).
+
+    ``framework`` is an optional override for the root-span framework badge;
+    when omitted it is derived per-span from the instrumentation scope name.
+    """
+    global _normalize_enabled, _framework_override
+    _normalize_enabled = value
+    _framework_override = framework if value else None
+
 
 class SpanData(BaseModel):
     """Stored span data."""
@@ -148,6 +167,22 @@ class LocalStorageProcessor:
         attrs = {}
         if hasattr(span, "attributes") and span.attributes:
             attrs = dict(span.attributes)
+
+        # Opt-in: map foreign OTel/OpenInference/OpenLLMetry conventions onto
+        # the canonical gen_ai.* keys the UI/FTS read. No-op unless
+        # ``enable_otel_capture()`` flipped the flag. Runs *before* redaction so
+        # the added canonical keys are themselves redaction-eligible. Only fills
+        # absent keys, so native fastaiagent spans are unaffected.
+        if _normalize_enabled:
+            from fastaiagent.trace.normalize import normalize_attributes
+
+            scope = getattr(getattr(span, "instrumentation_scope", None), "name", None)
+            attrs = normalize_attributes(
+                attrs,
+                scope_name=scope,
+                is_root=(parent_id is None),
+                framework_override=_framework_override,
+            )
 
         # Apply capture-mode redaction (no-op when no policy is installed).
         from fastaiagent.trace.redaction import _capture_redact

@@ -801,6 +801,11 @@ def get_trace(
             "span_count": len(spans),
             "runner_type": summary["runner_type"],
             "runner_name": summary["runner_name"],
+            # Additive: surface the framework slug (already computed by
+            # ``_summarize_trace`` from the root span's ``fastaiagent.framework``)
+            # on the detail payload too, so the FA/LC/CA badge can show on the
+            # trace page — not just the Traces list. Harmless extra JSON key.
+            "framework": summary["framework"],
             "spans": [s.model_dump() for s in spans],
         }
     finally:

@@ -1,6 +1,7 @@
 """OTel-native tracing with local storage and Agent Replay."""
 
 from fastaiagent.trace.otel import add_exporter, get_tracer, reset
+from fastaiagent.trace.otel_capture import disable_otel_capture, enable_otel_capture
 from fastaiagent.trace.redaction import (
     SENSITIVE_ATTR_KEYS,
     RedactionPolicy,
@@ -16,6 +17,8 @@ __all__ = [
     "get_tracer",
     "add_exporter",
     "reset",
+    "enable_otel_capture",
+    "disable_otel_capture",
     "TraceStore",
     "TraceData",
     "TraceSummary",
