@@ -312,6 +312,64 @@ export interface EvalCompareResponse {
   cost_delta_usd: number;
 }
 
+// --- Agent simulation (sim_runs / sim_cases) ---
+
+export interface SimulationRunRow {
+  run_id: string;
+  run_name: string | null;
+  agent_name: string | null;
+  scenario_count: number | null;
+  pass_count: number | null;
+  fail_count: number | null;
+  pass_rate: number | null;
+  started_at: string | null;
+  finished_at: string | null;
+  metadata: Record<string, unknown> | null;
+}
+
+export interface TranscriptTurn {
+  turn_index: number;
+  role: "user" | "assistant";
+  content: string;
+  trace_id: string | null;
+}
+
+export interface CriterionVerdict {
+  criterion: string;
+  kind: "success" | "failure";
+  passed: boolean;
+  reason: string | null;
+}
+
+export interface SimulationCase {
+  case_id: string;
+  run_id: string;
+  ordinal: number;
+  scenario_name: string | null;
+  passed: number; // 0 | 1
+  criteria: { success: string[]; failure: string[] };
+  per_criterion: CriterionVerdict[];
+  transcript: TranscriptTurn[];
+  trace_id: string | null;
+}
+
+export interface SimulationRunDetail {
+  run: SimulationRunRow;
+  cases: SimulationCase[];
+  total_cases: number;
+}
+
+export interface SimulationRunsPage {
+  rows: SimulationRunRow[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface SimulationCaseFilters {
+  outcome?: "passed" | "failed" | null;
+}
+
 export interface PromptListItem {
   name: string;
   latest_version: number | string;

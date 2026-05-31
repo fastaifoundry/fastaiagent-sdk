@@ -241,6 +241,30 @@ result = agent.stream("Hello")
 
 The sync `run()` and `stream()` safely handle being called from within an async context (e.g., Jupyter notebooks, async frameworks).
 
+## Multi-turn with `messages=`
+
+`run`, `arun`, and `astream` accept an optional keyword-only `messages=` — a
+list of prior conversation turns inserted **after** the system prompt + memory
+context and **before** the current `input`. Default `None` reproduces the
+single-input behavior exactly.
+
+```python
+from fastaiagent import Agent
+from fastaiagent.llm.message import AssistantMessage, UserMessage
+
+history = [
+    UserMessage("My name is Alice."),
+    AssistantMessage("Nice to meet you, Alice!"),
+]
+result = agent.run("What's my name?", messages=history)
+# The model sees the prior turns and can answer "Alice".
+```
+
+This is the building block for [Agent Simulation](../simulation/index.md), which
+drives multi-turn conversations against an agent and judges the transcript. For
+durable, server-side conversation history across requests, see
+[Memory](memory.md).
+
 ## Dynamic Instructions
 
 System prompts can be a callable that receives the `RunContext`, enabling per-request personalization:

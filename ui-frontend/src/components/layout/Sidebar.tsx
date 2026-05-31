@@ -9,6 +9,7 @@ import {
   GitBranch,
   LayoutDashboard,
   ListChecks,
+  MessagesSquare,
   Play,
   Shield,
   TrendingUp,
@@ -48,6 +49,7 @@ const SECTIONS: NavSection[] = [
     label: "// EVALUATION",
     items: [
       { to: "/evals", label: "Eval Runs", icon: TrendingUp },
+      { to: "/simulations", label: "Simulations", icon: MessagesSquare },
       { to: "/datasets", label: "Datasets", icon: ListChecks },
     ],
   },

@@ -17,7 +17,9 @@ Works standalone or connected to the [FastAIAgent Platform](https://fastaiagent.
 | **`@idempotent` side-effect protection** | Yes | No | No |
 | **Build agents in code** | Yes | No | No |
 | **Cyclic chain workflows** | Yes | LangGraph | No |
+| **Multi-turn agent simulation** | Yes | No | No |
 | **Built-in guardrails** | Yes | No | No |
+| **Safety library (PII, prompt-injection, moderation)** | Yes | No | No |
 | **OTel-native tracing** | Yes | Proprietary | Proprietary |
 | **Fragment prompt composition** | Yes | No | No |
 | **Visual editor sync** | Yes | No | No |

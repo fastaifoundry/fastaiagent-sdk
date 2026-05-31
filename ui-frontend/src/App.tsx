@@ -32,6 +32,16 @@ const EvalComparePage = lazy(() =>
     default: m.EvalComparePage,
   }))
 );
+const SimulationsPage = lazy(() =>
+  import("@/pages/SimulationsPage").then((m) => ({
+    default: m.SimulationsPage,
+  }))
+);
+const SimulationDetailPage = lazy(() =>
+  import("@/pages/SimulationDetailPage").then((m) => ({
+    default: m.SimulationDetailPage,
+  }))
+);
 const PromptsPage = lazy(() =>
   import("@/pages/PromptsPage").then((m) => ({ default: m.PromptsPage }))
 );
@@ -224,6 +234,22 @@ export default function App() {
                 element={
                   <Suspense fallback={<PageFallback />}>
                     <EvalRunDetailPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/simulations"
+                element={
+                  <Suspense fallback={<PageFallback />}>
+                    <SimulationsPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/simulations/:runId"
+                element={
+                  <Suspense fallback={<PageFallback />}>
+                    <SimulationDetailPage />
                   </Suspense>
                 }
               />

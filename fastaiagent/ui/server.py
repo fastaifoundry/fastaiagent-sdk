@@ -47,6 +47,7 @@ from fastaiagent.ui.routes import (
     prompts,
     providers,
     replay,
+    simulations,
     traces,
     workflows,
 )
@@ -246,6 +247,7 @@ def build_app(
         traces.router,
         replay.router,
         evals.router,
+        simulations.router,
         prompts.router,
         guardrails.router,
         agents.router,

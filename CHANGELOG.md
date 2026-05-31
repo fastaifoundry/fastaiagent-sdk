@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.0] - 2026-05-31
+
+MINOR — two additive feature areas, fully backward compatible. No removals,
+no renames, no signature breaks; default code paths are unchanged.
+
+### Added
+
+- **Agent simulation (`simulate` / `asimulate`).** Multi-turn scenario testing:
+  a `Scenario` drives a conversation between a `SimulatedUser` (an LLM persona
+  *or* a fixed script) and the agent under test, then a criteria-based judge
+  (a thin reuse of `LLMJudge`) scores the full transcript against
+  `success_criteria` / `failure_criteria`. Works with a native `Agent` or any
+  `(messages) -> str | AgentResult` callable adapter. New public symbols:
+  `simulate`, `asimulate`, `Scenario`, `SimulatedUser`, `SimulationResults`
+  (exported from `fastaiagent` and `fastaiagent.eval`). Runs persist to the new
+  **Simulations** UI surface (list + per-scenario transcript with per-criterion
+  chips and "view trace" deep-links).
+- **`Agent.run` / `arun` / `astream` gain a keyword-only `messages=` param.**
+  Prior conversation turns are inserted after the system prompt + memory and
+  before the current input. Default `None` reproduces the previous behavior
+  byte-for-byte. This is what lets `simulate()` drive multi-turn conversations.
+- **Stronger safety library.** New shared detectors in
+  `fastaiagent._internal.safety_detectors` power both eval scorers and runtime
+  guardrails (one detector, two surfaces):
+  - `PIILeakage` / `no_pii` now apply a **Luhn checksum** to credit-card
+    candidates (fewer false positives) and accept opt-in entity types
+    (`ip`, `iban`) via `entities=`. The default 4-entity behavior is unchanged.
+  - New **prompt-injection / jailbreak** detection: `PromptInjection` scorer
+    (`prompt_injection`) + `no_prompt_injection` guardrail. Zero-dependency
+    heuristic mode by default; opt-in `mode="llm"` classifier reuses `LLMClient`.
+  - New **OpenAI moderation** wrapper: `OpenAIModeration` scorer (`moderation`)
+    + `openai_moderation` guardrail.
+- **`[safety]` optional extra** (`presidio-analyzer`, `presidio-anonymizer`,
+  `spacy`) enabling `detect_pii(..., backend="presidio")`. Folded into the `all`
+  extra. The default detectors need no extra; install hint:
+  `pip install fastaiagent[safety]` then
+  `python -m spacy download en_core_web_lg`.
+- **DB schema v9** — additive `sim_runs` / `sim_cases` tables (forward-only
+  `CREATE TABLE IF NOT EXISTS`); existing DBs auto-upgrade from v8 on next open.
+- **New read-only API** `GET /api/simulations` and `/api/simulations/{run_id}`.
+
+### Notes
+
+- The `tool_call` / `tool_result` guardrail positions are now **documented as
+  supported**. They were already wired in the agent tool-execution loop in a
+  prior release — guardrails configured at these positions execute before/after
+  each tool call. This release adds regression tests and docs; no behavior change.
+
 ## [1.14.1] - 2026-05-25
 
 PATCH — closes five trust-impact gaps an external audit of v1.14.0
