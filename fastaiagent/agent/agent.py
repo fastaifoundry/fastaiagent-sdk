@@ -171,12 +171,16 @@ class Agent:
         context: RunContext[Any] | None = None,
         trace: bool = True,
         execution_id: str | None = None,
+        messages: list[Message] | None = None,
         **kwargs: Any,
     ) -> AgentResult:
         """Synchronous execution.
 
         ``input`` is a string, an :class:`Image`, a :class:`PDF`, or a list
         of those parts. The list form sends multimodal content to the LLM.
+
+        ``messages`` (optional) are prior conversation turns prepended before
+        ``input`` — used for multi-turn flows such as :func:`fastaiagent.simulate`.
         """
         return run_sync(
             self.arun(
@@ -184,6 +188,7 @@ class Agent:
                 context=context,
                 trace=trace,
                 execution_id=execution_id,
+                messages=messages,
                 **kwargs,
             )
         )
@@ -195,6 +200,7 @@ class Agent:
         context: RunContext[Any] | None = None,
         trace: bool = True,
         execution_id: str | None = None,
+        messages: list[Message] | None = None,
         **kwargs: Any,
     ) -> AgentResult:
         """Async execution with tool-calling loop.
@@ -203,12 +209,22 @@ class Agent:
         ``execution_id`` (optional) names this run for resume. If omitted,
         a UUID is generated. Pair with a ``checkpointer`` on the Agent to
         get crash- and interrupt-recovery via :meth:`resume`.
+
+        ``messages`` (optional) are prior conversation turns prepended before
+        ``input`` — used for multi-turn flows such as :func:`fastaiagent.simulate`.
+        Default ``None`` reproduces the single-input behavior exactly.
         """
         if trace:
             return await self._arun_traced(
-                input, context=context, execution_id=execution_id, **kwargs
+                input,
+                context=context,
+                execution_id=execution_id,
+                messages=messages,
+                **kwargs,
             )
-        return await self._arun_core(input, context=context, execution_id=execution_id, **kwargs)
+        return await self._arun_core(
+            input, context=context, execution_id=execution_id, messages=messages, **kwargs
+        )
 
     async def _arun_traced(
         self,
@@ -216,6 +232,7 @@ class Agent:
         *,
         context: RunContext[Any] | None = None,
         execution_id: str | None = None,
+        messages: list[Message] | None = None,
         **kwargs: Any,
     ) -> AgentResult:
         """Execute with OTel tracing."""
@@ -293,7 +310,11 @@ class Agent:
                     logger.debug("Failed to resolve system prompt for trace", exc_info=True)
 
             result = await self._arun_core(
-                input, context=context, execution_id=execution_id, **kwargs
+                input,
+                context=context,
+                execution_id=execution_id,
+                messages=messages,
+                **kwargs,
             )
 
             span.set_attribute("agent.output", result.output)
@@ -311,6 +332,7 @@ class Agent:
         *,
         context: RunContext[Any] | None = None,
         execution_id: str | None = None,
+        messages: list[Message] | None = None,
         _resumed_messages: list[Message] | None = None,
         _start_iteration: int = 0,
         **kwargs: Any,
@@ -351,10 +373,10 @@ class Agent:
                 await execute_guardrails(self.guardrails, input_text, GuardrailPosition.input)
 
             # Build messages — when resuming, restore the saved history.
-            messages = (
+            llm_messages = (
                 _resumed_messages
                 if _resumed_messages is not None
-                else self._build_messages(input, context=context)
+                else self._build_messages(input, context=context, history=messages)
             )
 
             # Inject response_format for structured output.
@@ -370,7 +392,7 @@ class Agent:
             try:
                 response, tool_calls = await execute_tool_loop(
                     llm=self.llm,
-                    messages=messages,
+                    messages=llm_messages,
                     tools=self.tools,
                     max_iterations=self.config.max_iterations,
                     tool_choice=self.config.tool_choice,
@@ -438,6 +460,7 @@ class Agent:
         context: RunContext[Any] | None = None,
         trace: bool = True,
         execution_id: str | None = None,
+        messages: list[Message] | None = None,
         **kwargs: Any,
     ) -> AsyncGenerator[StreamEvent, None]:
         """Async streaming execution — yields StreamEvent objects as tokens arrive.
@@ -470,7 +493,7 @@ class Agent:
         if self.guardrails:
             await execute_guardrails(self.guardrails, input_text, GuardrailPosition.input)
 
-        messages = self._build_messages(input, context=context)
+        llm_messages = self._build_messages(input, context=context, history=messages)
 
         # Inject response_format for structured output
         response_format = self._build_response_format()
@@ -500,7 +523,7 @@ class Agent:
             accumulated_text = ""
             async for event in stream_tool_loop(
                 llm=self.llm,
-                messages=messages,
+                messages=llm_messages,
                 tools=self.tools,
                 max_iterations=self.config.max_iterations,
                 tool_choice=self.config.tool_choice,
@@ -804,13 +827,22 @@ class Agent:
         return self.system_prompt
 
     def _build_messages(
-        self, input: AgentInput, context: RunContext[Any] | None = None
+        self,
+        input: AgentInput,
+        context: RunContext[Any] | None = None,
+        history: list[Message] | None = None,
     ) -> list[Message]:
         """Build the message array for the LLM.
 
         Accepts string, ``Image``, ``PDF``, or a list of those parts. When
         the input is multimodal, the trailing user message carries a
         ``list[ContentPart]`` that ``LLMClient`` later renders per provider.
+
+        ``history`` (optional) is a list of prior-turn messages — e.g. a
+        multi-turn conversation from :func:`fastaiagent.simulate`. When given,
+        the turns are inserted after the system prompt + memory context and
+        before the current user input. Default ``None`` reproduces the
+        single-input behavior exactly.
         """
         messages: list[Message] = []
 
@@ -837,6 +869,10 @@ class Agent:
         # it. Multimodal queries fall back to their text summary.
         if self.memory:
             messages.extend(self.memory.get_context(query=query_text))
+
+        # Prior conversation turns (multi-turn simulation / chat history).
+        if history:
+            messages.extend(history)
 
         messages.append(UserMessage(user_content))
         return messages

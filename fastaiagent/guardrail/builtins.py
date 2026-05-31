@@ -1,10 +1,22 @@
-"""Built-in guardrail factories."""
+"""Built-in guardrail factories.
+
+PII / prompt-injection / moderation guardrails share their detection logic with
+the eval scorers via :mod:`fastaiagent._internal.safety_detectors` — one core
+detector, two surfaces.
+"""
 
 from __future__ import annotations
 
 import json
-import re
+from collections import Counter
+from typing import Any
 
+from fastaiagent._internal.safety_detectors import (
+    DEFAULT_PII_ENTITIES,
+    detect_pii,
+    detect_prompt_injection,
+    moderate_text,
+)
 from fastaiagent.guardrail.guardrail import (
     Guardrail,
     GuardrailPosition,
@@ -12,28 +24,29 @@ from fastaiagent.guardrail.guardrail import (
     GuardrailType,
 )
 
-# PII patterns
-_PII_PATTERNS = [
-    (r"\b\d{3}-\d{2}-\d{4}\b", "SSN"),
-    (r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", "email"),
-    (r"\b\d{3}[-.]?\d{3}[-.]?\d{4}\b", "phone"),
-    (r"\b(?:\d{4}[-\s]?){3}\d{4}\b", "credit_card"),
-]
 
+def no_pii(
+    position: GuardrailPosition = GuardrailPosition.output,
+    *,
+    entities: tuple[str, ...] = DEFAULT_PII_ENTITIES,
+    backend: str = "regex",
+) -> Guardrail:
+    """Create a guardrail that blocks PII (email, phone, SSN, credit card).
 
-def no_pii(position: GuardrailPosition = GuardrailPosition.output) -> Guardrail:
-    """Create a guardrail that blocks PII (SSN, email, phone, credit card)."""
+    Delegates to :func:`fastaiagent._internal.safety_detectors.detect_pii`:
+    credit cards are Luhn-validated to suppress false positives, and extra
+    entity types (``ip``, ``iban``) are available via ``entities=``.
+    """
 
     def check_pii(text: str) -> GuardrailResult:
-        found = []
-        for pattern, pii_type in _PII_PATTERNS:
-            if re.search(pattern, text):
-                found.append(pii_type)
-        if found:
+        matches = detect_pii(text, entities=entities, backend=backend)
+        if matches:
+            counts = Counter(m.entity for m in matches)
+            found = sorted(counts)
             return GuardrailResult(
                 passed=False,
                 message=f"PII detected: {', '.join(found)}",
-                metadata={"pii_types": found},
+                metadata={"pii_types": found, "counts": dict(counts)},
             )
         return GuardrailResult(passed=True)
 
@@ -42,8 +55,76 @@ def no_pii(position: GuardrailPosition = GuardrailPosition.output) -> Guardrail:
         guardrail_type=GuardrailType.code,
         position=position,
         blocking=True,
-        description="Blocks output containing PII (SSN, email, phone, credit card)",
+        description="Blocks text containing PII (email, phone, SSN, credit card)",
         fn=check_pii,
+    )
+
+
+def no_prompt_injection(
+    position: GuardrailPosition = GuardrailPosition.input,
+    *,
+    mode: str = "heuristic",
+    llm: Any = None,
+) -> Guardrail:
+    """Create a guardrail that blocks prompt-injection / jailbreak attempts.
+
+    Delegates to
+    :func:`fastaiagent._internal.safety_detectors.detect_prompt_injection`.
+    Defaults to the ``input`` position (the usual attack surface) and the
+    zero-dependency heuristic mode; ``mode="llm"`` opts into a classifier call.
+    """
+
+    def check_injection(text: str) -> GuardrailResult:
+        res = detect_prompt_injection(text, mode=mode, llm=llm)
+        if res.detected:
+            return GuardrailResult(
+                passed=False,
+                score=res.score,
+                message=res.reason,
+                metadata={"matched_patterns": res.matched_patterns},
+            )
+        return GuardrailResult(passed=True)
+
+    return Guardrail(
+        name="no_prompt_injection",
+        guardrail_type=GuardrailType.code,
+        position=position,
+        blocking=True,
+        description="Blocks prompt-injection / jailbreak attempts",
+        fn=check_injection,
+    )
+
+
+def openai_moderation(
+    position: GuardrailPosition = GuardrailPosition.output,
+    *,
+    client: Any = None,
+    model: str = "omni-moderation-latest",
+) -> Guardrail:
+    """Create a guardrail that blocks content flagged by OpenAI moderation.
+
+    Delegates to :func:`fastaiagent._internal.safety_detectors.moderate_text`.
+    Requires the ``openai`` package and an API key.
+    """
+
+    def check_moderation(text: str) -> GuardrailResult:
+        res = moderate_text(text, client=client, model=model)
+        if res.flagged:
+            flagged = [k for k, v in res.categories.items() if v]
+            return GuardrailResult(
+                passed=False,
+                message=res.reason,
+                metadata={"flagged_categories": flagged},
+            )
+        return GuardrailResult(passed=True)
+
+    return Guardrail(
+        name="openai_moderation",
+        guardrail_type=GuardrailType.code,
+        position=position,
+        blocking=True,
+        description="Blocks content flagged by the OpenAI moderation endpoint",
+        fn=check_moderation,
     )
 
 

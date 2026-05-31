@@ -30,8 +30,22 @@ except ImportError:  # pragma: no cover — exercised by subprocess test
 
 from fastaiagent.eval.rag import AnswerRelevancy, ContextPrecision, ContextRecall, Faithfulness
 from fastaiagent.eval.results import EvalResults
-from fastaiagent.eval.safety import Bias, PIILeakage, Toxicity
+from fastaiagent.eval.safety import (
+    Bias,
+    OpenAIModeration,
+    PIILeakage,
+    PromptInjection,
+    Toxicity,
+)
 from fastaiagent.eval.scorer import Scorer, ScorerResult
+from fastaiagent.eval.simulate import (
+    Scenario,
+    SimulatedUser,
+    SimulationResult,
+    SimulationResults,
+    asimulate,
+    simulate,
+)
 from fastaiagent.eval.similarity import (
     BLEUScore,
     LevenshteinDistance,
@@ -47,6 +61,13 @@ __all__ = [
     "ScorerResult",
     "EvalResults",
     "LLMJudge",
+    # Simulation
+    "simulate",
+    "asimulate",
+    "Scenario",
+    "SimulatedUser",
+    "SimulationResult",
+    "SimulationResults",
     # Pytest plugin decorators
     "case",
     "pytest_dataset",
@@ -59,6 +80,8 @@ __all__ = [
     "Toxicity",
     "Bias",
     "PIILeakage",
+    "PromptInjection",
+    "OpenAIModeration",
     # Similarity & NLP
     "SemanticSimilarity",
     "BLEUScore",

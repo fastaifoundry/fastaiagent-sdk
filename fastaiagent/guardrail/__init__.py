@@ -5,6 +5,8 @@ from fastaiagent.guardrail.builtins import (
     cost_limit,
     json_valid,
     no_pii,
+    no_prompt_injection,
+    openai_moderation,
     toxicity_check,
 )
 from fastaiagent.guardrail.executor import execute_guardrails
@@ -22,6 +24,8 @@ __all__ = [
     "GuardrailType",
     "execute_guardrails",
     "no_pii",
+    "no_prompt_injection",
+    "openai_moderation",
     "json_valid",
     "toxicity_check",
     "cost_limit",

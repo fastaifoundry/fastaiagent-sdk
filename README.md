@@ -6,7 +6,7 @@ The only SDK with **Agent Replay** — fork-and-rerun debugging — and a
 
 Works standalone or connected to the [FastAIAgent Platform](https://fastaiagent.net) for visual editing, production monitoring, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.14.1)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.15.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -400,6 +400,55 @@ results = evaluate(
 print(results.summary())
 # correctness: 92% | relevance: 88%
 ```
+
+## Simulate multi-turn conversations
+
+`evaluate()` scores fixed input→output pairs. `simulate()` stress-tests
+**multi-turn** behavior: a `Scenario` drives a conversation between a simulated
+user (an LLM persona or a fixed script) and your agent, then a judge scores the
+whole transcript against natural-language criteria.
+
+```python
+from fastaiagent import Agent, LLMClient, Scenario, SimulatedUser, simulate
+
+agent = Agent(name="support", system_prompt="You are a support agent.",
+              llm=LLMClient(provider="openai", model="gpt-4o-mini"))
+
+scenario = Scenario(
+    name="refund-request",
+    user=SimulatedUser(persona="A frustrated customer who wants a refund."),
+    success_criteria=["The agent explains the refund policy clearly and politely."],
+    failure_criteria=["The agent is rude or refuses to help."],
+)
+
+results = simulate(scenario, agent)   # persists to the Local UI Simulations page
+print(results.summary())
+```
+
+Runs land on the new **Simulations** UI surface — transcript bubbles,
+per-criterion verdicts, and a deep-link from each turn into its trace. See
+[docs/simulation](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/simulation/index.md).
+
+## Stronger safety library
+
+Zero-dependency by default; shared detectors back both eval scorers and runtime
+guardrails:
+
+```python
+from fastaiagent import Agent, no_pii, no_prompt_injection
+
+agent = Agent(
+    name="safe",
+    guardrails=[
+        no_prompt_injection(),  # blocks jailbreak attempts on input
+        no_pii(),               # blocks PII on output (credit cards Luhn-validated)
+    ],
+)
+```
+
+Also available as eval scorers (`prompt_injection`, `pii_leakage`, `moderation`)
+and an optional Presidio PII backend via `pip install fastaiagent[safety]`. See
+[docs/evaluation/safety-metrics.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/evaluation/safety-metrics.md).
 
 ## Works with LangGraph, CrewAI, PydanticAI — universal harness
 

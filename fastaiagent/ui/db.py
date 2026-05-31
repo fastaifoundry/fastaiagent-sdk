@@ -17,7 +17,7 @@ from pathlib import Path
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
 
-CURRENT_SCHEMA_VERSION = 8
+CURRENT_SCHEMA_VERSION = 9
 
 # A migration step is either a SQL string or a callable that takes the
 # ``SQLiteHelper`` and runs whatever logic it needs (e.g., gated
@@ -61,6 +61,8 @@ _PROJECT_TABLES = (
     "guardrail_events",
     "external_agents",
     "external_agent_attachments",
+    "sim_runs",
+    "sim_cases",
 )
 
 
@@ -568,6 +570,40 @@ _MIGRATIONS: dict[int, list[_Step]] = {
         "ON learned_memory(scope, scope_id, project_id)",
         "CREATE INDEX IF NOT EXISTS idx_learned_memory_created "
         "ON learned_memory(created_at)",
+    ],
+    9: [
+        # Agent simulation runs + per-scenario cases. Mirrors the eval_runs /
+        # eval_cases pair: ``simulate()`` writes one ``sim_runs`` row and one
+        # ``sim_cases`` row per scenario. The transcript + per-criterion
+        # verdicts are stored as JSON on the case row (like eval_cases.per_scorer)
+        # so the surface stays two tables and reuses the evals rendering pattern.
+        """CREATE TABLE IF NOT EXISTS sim_runs (
+            run_id         TEXT PRIMARY KEY,
+            run_name       TEXT,
+            agent_name     TEXT,
+            scenario_count INTEGER,
+            pass_count     INTEGER,
+            fail_count     INTEGER,
+            pass_rate      REAL,
+            started_at     TEXT,
+            finished_at    TEXT,
+            metadata       TEXT,
+            project_id     TEXT NOT NULL DEFAULT ''
+        )""",
+        """CREATE TABLE IF NOT EXISTS sim_cases (
+            case_id       TEXT PRIMARY KEY,
+            run_id        TEXT NOT NULL,
+            ordinal       INTEGER,
+            scenario_name TEXT,
+            passed        INTEGER,
+            criteria      TEXT,          -- JSON: {"success": [...], "failure": [...]}
+            per_criterion TEXT,          -- JSON: [{"criterion","kind","passed","reason"}]
+            transcript    TEXT,          -- JSON: [{"turn_index","role","content","trace_id"}]
+            trace_id      TEXT,          -- root simulation trace
+            project_id    TEXT NOT NULL DEFAULT '',
+            FOREIGN KEY (run_id) REFERENCES sim_runs(run_id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_sim_cases_run ON sim_cases(run_id, project_id)",
     ],
 }
 

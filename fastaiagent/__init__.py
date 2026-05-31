@@ -36,8 +36,26 @@ from fastaiagent.chain.interrupt import (
 )
 from fastaiagent.checkpointers import Checkpointer, PendingInterrupt, SQLiteCheckpointer
 from fastaiagent.client import connect, disconnect
-from fastaiagent.eval import Dataset, EvalResults, Scorer, evaluate
-from fastaiagent.guardrail import Guardrail, GuardrailResult, json_valid, no_pii, toxicity_check
+from fastaiagent.eval import (
+    Dataset,
+    EvalResults,
+    Scenario,
+    Scorer,
+    SimulatedUser,
+    SimulationResults,
+    asimulate,
+    evaluate,
+    simulate,
+)
+from fastaiagent.guardrail import (
+    Guardrail,
+    GuardrailResult,
+    json_valid,
+    no_pii,
+    no_prompt_injection,
+    openai_moderation,
+    toxicity_check,
+)
 from fastaiagent.kb import KeywordStore, LocalKB, MetadataStore, PlatformKB, VectorStore
 from fastaiagent.llm import LLMClient, Message, StreamEvent, TextDelta
 from fastaiagent.llm.stream import HandoffEvent
@@ -143,6 +161,8 @@ __all__ = [
     "Guardrail",
     "GuardrailResult",
     "no_pii",
+    "no_prompt_injection",
+    "openai_moderation",
     "json_valid",
     "toxicity_check",
     # Prompt
@@ -159,6 +179,12 @@ __all__ = [
     "Dataset",
     "Scorer",
     "EvalResults",
+    # Simulation
+    "simulate",
+    "asimulate",
+    "Scenario",
+    "SimulatedUser",
+    "SimulationResults",
     # Trace
     "TraceStore",
     "trace_context",

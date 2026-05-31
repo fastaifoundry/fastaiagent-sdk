@@ -128,6 +128,8 @@ nav:
       - "Similarity & NLP Metrics": evaluation/similarity-metrics.md
       - "Trajectory Scoring": evaluation/trajectory-scoring.md
       - "Session Scoring": evaluation/session-scoring.md
+  - Simulation:
+      - simulation/index.md
   - Multimodal:
       - multimodal/index.md
       - "When to Use It": multimodal/when-to-use.md
@@ -155,6 +157,7 @@ nav:
       - "Guardrail Event Detail": ui/guardrail-events.md
       - "Trace Comparison": ui/trace-comparison.md
       - "Eval Datasets": ui/datasets.md
+      - "Simulations": ui/simulations.md
       - "Trace Filters": ui/trace-filters.md
   - Platform:
       - platform/index.md

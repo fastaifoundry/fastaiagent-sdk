@@ -23,11 +23,14 @@ If a **blocking** guardrail fails, execution stops immediately with `GuardrailBl
 
 ## Built-in Guardrails
 
-Five ready-to-use factories cover common safety needs:
+Ready-to-use factories cover common safety needs:
 
 ### no_pii()
 
-Detects SSNs, email addresses, phone numbers, and credit card numbers using regex patterns.
+Detects SSNs, email addresses, phone numbers, and credit card numbers. Credit
+cards are **validated with the Luhn checksum** so random 16-digit strings don't
+trip a false positive. Shares its detector with the
+[`PIILeakage`](../evaluation/safety-metrics.md#piileakage) scorer.
 
 ```python
 from fastaiagent.guardrail import no_pii, GuardrailPosition
@@ -38,11 +41,8 @@ agent = Agent(guardrails=[no_pii()])
 # On input — blocks users from sending PII to the LLM
 agent = Agent(guardrails=[no_pii(position=GuardrailPosition.input)])
 
-# Both directions
-agent = Agent(guardrails=[
-    no_pii(position=GuardrailPosition.input),
-    no_pii(position=GuardrailPosition.output),
-])
+# Opt into extra entity types, or the Presidio backend (needs [safety] extra)
+agent = Agent(guardrails=[no_pii(entities=("email", "phone", "ssn", "credit_card", "ip"))])
 ```
 
 **Detected patterns:**
@@ -51,7 +51,38 @@ agent = Agent(guardrails=[
 | SSN | `123-45-6789` |
 | Email | `user@example.com` |
 | Phone | `555-123-4567` |
-| Credit Card | `4111 1111 1111 1111` |
+| Credit Card | `4111 1111 1111 1111` (Luhn-validated) |
+| `ip` / `iban` | opt-in via `entities=` |
+
+### no_prompt_injection()
+
+Blocks prompt-injection / jailbreak attempts — input that tries to override,
+ignore, or extract the system instructions ("ignore all previous instructions",
+"reveal your system prompt", DAN, role-overrides, delimiter attacks). Defaults
+to the `input` position. Zero-dependency heuristic mode by default; opt into an
+LLM classifier with `mode="llm"`. Shares its detector with the
+[`PromptInjection`](../evaluation/safety-metrics.md#promptinjection) scorer.
+
+```python
+from fastaiagent.guardrail import no_prompt_injection
+
+# Blocks malicious user input before the LLM ever sees it
+agent = Agent(guardrails=[no_prompt_injection()])
+
+# Opt into the LLM-classifier mode (costs a call, catches more)
+agent = Agent(guardrails=[no_prompt_injection(mode="llm")])
+```
+
+### openai_moderation()
+
+Blocks content flagged by the OpenAI moderation endpoint. Defaults to the
+`output` position. Requires the `openai` package and an API key.
+
+```python
+from fastaiagent.guardrail import openai_moderation
+
+agent = Agent(guardrails=[openai_moderation()])
+```
 
 ### json_valid()
 
