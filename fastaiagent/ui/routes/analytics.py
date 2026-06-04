@@ -157,7 +157,11 @@ def analytics(
                 if dur_ms is not None:
                     series[bucket]["durations_ms"].append(dur_ms)
                 series[bucket]["total"] += 1
-                if (row.get("status") or "OK") != "OK":
+                # Only OTel ERROR is an error. UNSET (the default for a
+                # successful span that never set a status) and OK are both
+                # non-errors — matching the trace-detail page, which renders
+                # UNSET as OK. ``!= "OK"`` previously flagged every clean run.
+                if row.get("status") == "ERROR":
                     series[bucket]["errors"] += 1
 
                 agent = attr(attrs, "agent.name")
@@ -165,7 +169,7 @@ def analytics(
                     agent_totals[agent]["run_count"] += 1
                     if dur_ms is not None:
                         agent_totals[agent]["total_duration_ms"] += dur_ms
-                    if (row.get("status") or "OK") != "OK":
+                    if row.get("status") == "ERROR":
                         agent_totals[agent]["errors"] += 1
 
             # Per-agent cost still picks up from every span.
@@ -228,9 +232,10 @@ def analytics(
             reverse=True,
         )[:5]
 
-        # Global summary numbers.
+        # Global summary numbers. Only ERROR counts — UNSET is a successful
+        # span with no explicit status, not a failure (see note above).
         total_traces = len(trace_stats)
-        total_errors = sum(1 for t in trace_stats.values() if t["status"] != "OK")
+        total_errors = sum(1 for t in trace_stats.values() if t["status"] == "ERROR")
         durations = [t["duration_ms"] for t in trace_stats.values() if t["duration_ms"] is not None]
         total_cost = sum(s["cost_usd"] for s in series.values())
 

@@ -173,6 +173,63 @@ class TestAnalyticsEndpoint:
         assert r.json()["granularity"] == "day"
 
 
+def _seed_status_mix(db_path: Path) -> None:
+    """OK + UNSET + ERROR root spans, one trace each."""
+    db = init_local_db(db_path)
+    now = datetime.now(tz=timezone.utc)
+    try:
+        for trace_id, status in [
+            ("t-ok", "OK"),
+            ("t-unset", "UNSET"),
+            ("t-err", "ERROR"),
+        ]:
+            start = now - timedelta(minutes=10)
+            end = start + timedelta(milliseconds=500)
+            db.execute(
+                """INSERT INTO spans (span_id, trace_id, parent_span_id, name,
+                                       start_time, end_time, status, attributes, events)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, '[]')""",
+                (
+                    f"s-root-{trace_id}",
+                    trace_id,
+                    None,
+                    "agent.root",
+                    start.isoformat(),
+                    end.isoformat(),
+                    status,
+                    json.dumps({"agent.name": "probe"}),
+                ),
+            )
+    finally:
+        db.close()
+
+
+class TestUnsetStatusNotError:
+    """A successful span persists with OTel status UNSET (the default when no
+    status is set). UNSET must NOT count as an error — only ERROR does. This
+    mirrors the trace-detail page, which renders UNSET as OK.
+    """
+
+    def _client(self, temp_dir: Path) -> TestClient:
+        db = temp_dir / "local.db"
+        _seed_status_mix(db)
+        return TestClient(build_app(db_path=str(db), no_auth=True))
+
+    def test_unset_excluded_from_error_count(self, temp_dir: Path):
+        client = self._client(temp_dir)
+        body = client.get("/api/analytics?hours=24").json()
+        assert body["summary"]["trace_count"] == 3
+        # Only the ERROR trace counts — not UNSET, not OK.
+        assert body["summary"]["error_count"] == 1
+        assert body["summary"]["error_rate"] == pytest.approx(1 / 3)
+
+    def test_overview_failing_excludes_unset(self, temp_dir: Path):
+        client = self._client(temp_dir)
+        body = client.get("/api/overview").json()
+        # 1 ERROR trace in the last 24h — UNSET and OK are not failures.
+        assert body["failing_traces_last_24h"] == 1
+
+
 class TestScoresEndpoint:
     def test_returns_guardrail_events_for_trace(self, client: TestClient):
         r = client.get("/api/traces/t-error/scores")

@@ -24,18 +24,31 @@ links survive refresh and sharing.
 
 The search box used to LIKE-match the trace name and the raw span JSON
 blob. Sprint 3 routes it through a dedicated `span_fts` virtual table
-that indexes two extracted fields per span:
+that indexes an extracted **input** and **output** field per span.
 
-- `gen_ai.prompt` — the LLM input text.
-- `gen_ai.response.text` (with `gen_ai.completion` and the
-  `fastaiagent.*` namespaced variants as fallbacks) — the LLM output.
+The keys it pulls from cover what native `Agent.run()` spans actually
+write *and* the canonical keys foreign-OTel normalization produces
+(`COALESCE` picks the first present, per span):
+
+- **Input** — `gen_ai.prompt`, `agent.input`, `gen_ai.request.messages`,
+  `tool.args` (and the `fastaiagent.*` namespaced variant).
+- **Output** — `gen_ai.response.text`, `agent.output`,
+  `gen_ai.response.tool_calls`, `tool.result` (with `gen_ai.completion`
+  and the `fastaiagent.*` variant as fallbacks).
+
+> **Schema v10 widened this.** v6 indexed only `gen_ai.prompt` /
+> `gen_ai.response.text` — keys native spans never populate — so the box
+> effectively matched span names only. v10 rebuilds the triggers and the
+> index content over the wider key set, so a search matches the agent and
+> tool inputs/outputs a run actually recorded. Existing DBs pick it up on
+> the next `init_local_db` (i.e. next `fastaiagent ui` start).
 
 The migration creates the table, three triggers (insert / update /
 delete) keep it in sync as new spans land, and a one-shot
 `INSERT … SELECT` backfills any pre-existing rows. Result: a search for
 *"refund policy"* on a 1k-span DB returns in well under a second; the
-Sprint 3 test suite enforces a < 1.5 s budget at that scale as a
-regression guard.
+test suite enforces a < 1.5 s budget at that scale as a regression
+guard.
 
 Multiple tokens AND together (FTS5 default). Apostrophes, asterisks,
 and quote characters are escaped so user input can't break the query
@@ -155,6 +168,23 @@ INSERT INTO span_fts(...) SELECT ... FROM spans;  -- bulk backfill
 
 ALTER TABLE saved_filters ADD COLUMN project_id TEXT NOT NULL DEFAULT '';
 CREATE INDEX idx_saved_filters_project ON saved_filters(project_id);
+```
+
+v10 migration drops and recreates those three triggers (and rebuilds the
+index content) over a wider `COALESCE` so the input/output columns also
+pull from `agent.input` / `agent.output`, `gen_ai.request.messages`, and
+`tool.args` / `tool.result` — the keys native spans actually write:
+
+```sql
+-- spans_fts_ai / _au input_text COALESCE (output_text is analogous):
+COALESCE(
+    json_extract(new.attributes, '$."gen_ai.prompt"'),
+    json_extract(new.attributes, '$."fastaiagent.gen_ai.prompt"'),
+    json_extract(new.attributes, '$."agent.input"'),
+    json_extract(new.attributes, '$."gen_ai.request.messages"'),
+    json_extract(new.attributes, '$."tool.args"'),
+    ''
+)
 ```
 
 Postgres parity: the UI's read tables are SQLite-only in this repo.
