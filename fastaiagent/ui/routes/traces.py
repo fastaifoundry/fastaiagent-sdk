@@ -35,6 +35,10 @@ class TraceRow(BaseModel):
     # ``fastaiagent.framework`` attribute on the root span. Powers the FA /
     # LC / CA / PA badge in the Traces list and the framework filter.
     framework: str | None = None
+    # Whether this trace is starred (present in ``trace_favorites``). Drives the
+    # filled star in the Traces list — without it the toggle is write-only and
+    # the UI shows no state.
+    favorited: bool = False
 
 
 class TracesPage(BaseModel):
@@ -297,13 +301,20 @@ def list_traces(
                 params.extend([like, like, like])
 
         where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        # ``is_fav`` (0/1) lets favorited traces float to the top across all
+        # pages — a starred old trace still lands on page 1 — and doubles as
+        # the per-row ``favorited`` flag so no second query is needed.
         trace_rows = db.fetchall(
-            f"""SELECT spans.trace_id AS trace_id, MAX(spans.start_time) AS latest
+            f"""SELECT spans.trace_id AS trace_id, MAX(spans.start_time) AS latest,
+                   EXISTS(
+                       SELECT 1 FROM trace_favorites tf
+                       WHERE tf.trace_id = spans.trace_id
+                   ) AS is_fav
                FROM spans
                {join_sql}
                {where_sql}
                GROUP BY spans.trace_id
-               ORDER BY latest DESC""",
+               ORDER BY is_fav DESC, latest DESC""",
             tuple(params),
         )
         total = len(trace_rows)
@@ -366,6 +377,7 @@ def list_traces(
                     runner_type=summary["runner_type"],
                     runner_name=summary["runner_name"],
                     framework=summary["framework"],
+                    favorited=bool(row["is_fav"]),
                 )
             )
         return TracesPage(rows=out, total=total, page=page, page_size=page_size)

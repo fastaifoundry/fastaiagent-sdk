@@ -26,8 +26,9 @@ import { TraceStatusBadge } from "./TraceStatusBadge";
 import { WorkflowBadge } from "./WorkflowBadge";
 import { api, ApiError } from "@/lib/api";
 import { copyToClipboard, formatCost, formatDurationMs, formatTimeAgo, formatTokens, shortTraceId } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { useBulkDeleteTraces, useDeleteTrace } from "@/hooks/use-traces";
-import type { TraceRow } from "@/lib/types";
+import type { TraceRow, TracesPage } from "@/lib/types";
 
 interface Props {
   rows: TraceRow[];
@@ -46,7 +47,25 @@ export function TracesTable({ rows, hideBulkSelect }: Props) {
   const favorite = useMutation({
     mutationFn: (traceId: string) =>
       api.post<{ favorited: boolean }>(`/traces/${traceId}/favorite`),
-    onSuccess: () => {
+    // Optimistically flip the star so it responds instantly; reconcile on settle.
+    onMutate: async (traceId: string) => {
+      await queryClient.cancelQueries({ queryKey: ["traces"] });
+      queryClient.setQueriesData<TracesPage>({ queryKey: ["traces"] }, (old) =>
+        old
+          ? {
+              ...old,
+              rows: old.rows.map((r) =>
+                r.trace_id === traceId ? { ...r, favorited: !r.favorited } : r,
+              ),
+            }
+          : old,
+      );
+    },
+    onError: () => {
+      toast.error("Could not update favorite");
+      queryClient.invalidateQueries({ queryKey: ["traces"] });
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["traces"] });
     },
   });
@@ -266,9 +285,15 @@ export function TracesTable({ rows, hideBulkSelect }: Props) {
                     size="icon"
                     className="h-7 w-7"
                     onClick={() => favorite.mutate(row.trace_id)}
-                    title="Toggle favorite"
+                    title={row.favorited ? "Remove favorite" : "Add favorite"}
+                    aria-pressed={row.favorited ?? false}
                   >
-                    <Star className="h-3.5 w-3.5" />
+                    <Star
+                      className={cn(
+                        "h-3.5 w-3.5",
+                        row.favorited && "fill-yellow-400 text-yellow-400",
+                      )}
+                    />
                   </Button>
                   <Button
                     variant="ghost"
