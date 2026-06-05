@@ -7,8 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.16.1] - 2026-06-05
 
-PATCH — two backward-compatible Local UI read-layer fixes. The schema v10
-migration is additive and auto-applies; no API or behavior breaks.
+PATCH — backward-compatible fixes: two Local UI read-layer fixes (additive
+schema v10 migration, auto-applies) plus a dependency/CI compatibility fix. No
+API or behavior breaks.
 
 ### Fixed
 
@@ -30,6 +31,14 @@ migration is additive and auto-applies; no API or behavior breaks.
   run showed as "100% errors" in the aggregates even though its trace-detail
   page rendered `OK`. They now count only `ERROR`, matching the trace-detail
   page. Read-layer only — no change to what spans store.
+- **`[pydanticai]` install compatibility with current `anthropic`.** Bumped
+  the `pydanticai` extra to `pydantic-ai>=1.105`: earlier `1.x` imports
+  anthropic's pre-rename `UserLocation`, which current `anthropic` ships as
+  `BetaUserLocationParam` (`ImportError` otherwise). The full `[all]` graph is
+  too deep for pip's backtracking resolver (`resolution-too-deep`), so the
+  e2e/optional-deps CI jobs now install with `uv`, which resolves it in <1s
+  (picking a `crewai` that co-exists with modern `pydantic-ai`). No SDK runtime
+  change.
 
 ## [1.16.0] - 2026-05-31
 

@@ -30,11 +30,35 @@ _HTTPBIN = "https://httpbin.org"
 
 
 def _httpbin_reachable() -> bool:
+    # Require a real 200 — httpbin is a shared public service that frequently
+    # returns 503 under load. httpx doesn't raise on 5xx, so an earlier
+    # "any response = reachable" check let a degraded httpbin through and the
+    # actual tool call then failed the gate.
     try:
-        httpx.get(f"{_HTTPBIN}/status/200", timeout=5.0)
-        return True
+        return httpx.get(f"{_HTTPBIN}/status/200", timeout=5.0).status_code == 200
     except Exception:
         return False
+
+
+def _skip_on_httpbin_outage(call: Any) -> Any:
+    """Run ``call()``; if it fails because httpbin was unreachable or returned
+    a 5xx mid-test (flaky third party), skip rather than red the gate. These
+    tests call only httpbin, so a transport error or server 5xx is the endpoint
+    misbehaving, not our bug — a 4xx (which could be a malformed request we
+    built) still fails.
+    """
+    try:
+        return call()
+    except Exception as exc:  # noqa: BLE001 — re-raised unless it's an outage
+        # RESTTool raises ToolExecutionError(...) ``from`` the underlying httpx
+        # error, so inspect the cause.
+        cause = exc.__cause__ if isinstance(exc.__cause__, Exception) else exc
+        if isinstance(cause, httpx.HTTPStatusError):
+            if cause.response.status_code >= 500:
+                pytest.skip(f"httpbin.org server error {cause.response.status_code}")
+        elif isinstance(cause, httpx.RequestError):  # connect/read/timeout/etc.
+            pytest.skip(f"httpbin.org request error: {cause!r}")
+        raise
 
 
 class TestRESTToolGate:
@@ -64,7 +88,9 @@ class TestRESTToolGate:
             },
         )
 
-        result = tool.execute({"foo": "hello", "bar": "world"})
+        result = _skip_on_httpbin_outage(
+            lambda: tool.execute({"foo": "hello", "bar": "world"})
+        )
         assert result.success, f"REST tool failed: {result.error}"
         assert isinstance(result.output, dict), (
             "Expected JSON dict from httpbin /get"
@@ -96,7 +122,9 @@ class TestRESTToolGate:
                 "required": ["message"],
             },
         )
-        result = tool.execute({"message": "quality gate post"})
+        result = _skip_on_httpbin_outage(
+            lambda: tool.execute({"message": "quality gate post"})
+        )
         assert result.success, f"REST POST failed: {result.error}"
         assert isinstance(result.output, dict)
         json_body = result.output.get("json") or {}
@@ -128,7 +156,9 @@ class TestRESTToolGate:
             llm=LLMClient(provider="openai", model="gpt-4.1"),
             tools=[tool],
         )
-        result = agent.run("What is the origin IP from the get_ip tool?")
+        result = _skip_on_httpbin_outage(
+            lambda: agent.run("What is the origin IP from the get_ip tool?")
+        )
         assert result.output, "agent run returned empty output"
         assert result.tool_calls, "agent did not invoke get_ip REST tool"
         assert result.tool_calls[0]["tool_name"] == "get_ip"

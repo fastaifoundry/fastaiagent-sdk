@@ -42,7 +42,12 @@ openai = ["openai>=1.0,<3"]
 anthropic = ["anthropic>=0.20,<1"]
 langchain = ["langchain-core>=0.3,<1", "langgraph>=0.2,<1"]
 crewai = ["crewai>=1.0,<2"]
-pydanticai = ["pydantic-ai>=0.1,<2"]
+# pydantic-ai >=1.105 is required: earlier 1.x imports anthropic's pre-rename
+# `UserLocation`, which current `anthropic` ships as `BetaUserLocationParam`
+# (ImportError otherwise). 1.105+ uses the new name. The full `[all]` resolution
+# is too deep for pip's backtracker, so the e2e/optional-deps CI jobs install
+# with `uv` (which resolves it, picking a crewai that co-exists with this).
+pydanticai = ["pydantic-ai>=1.105,<2"]
 kb = ["fastembed>=0.3,<1", "pymupdf>=1.23,<2", "faiss-cpu>=1.7,<2"]
 qdrant = ["qdrant-client>=1.8,<2"]
 chroma = ["chromadb>=0.5,<2"]
