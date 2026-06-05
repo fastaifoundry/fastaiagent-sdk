@@ -307,6 +307,146 @@ class TestPerformance:
 # ---------------------------------------------------------------------------
 
 
+class TestWidenedFts:
+    """v10 — search matches native agent/tool inputs & outputs, not just the
+    ``gen_ai.prompt``/``gen_ai.response.text`` keys foreign-OTel normalization
+    produces. These are the keys real ``Agent.run()`` spans actually write.
+    """
+
+    def test_user_version_at_least_10(self, app_db) -> None:
+        _, db_path = app_db
+        db = _open(db_path)
+        try:
+            v = db.fetchone("PRAGMA user_version")
+            assert v["user_version"] >= 10
+        finally:
+            db.close()
+
+    def test_search_matches_agent_input(
+        self, client: TestClient, app_db
+    ) -> None:
+        # The article scenario: the phrase lives in agent.input, which the v6
+        # triggers never indexed.
+        _, db_path = app_db
+        db = _open(db_path)
+        try:
+            _insert_span(
+                db,
+                trace_id="t-agent-in",
+                span_id="ai-1",
+                name="agent.support-bot",
+                attributes={
+                    "agent.name": "support-bot",
+                    "agent.input": "Hi — what is your refund policy?",
+                },
+            )
+            _insert_span(
+                db,
+                trace_id="t-other",
+                span_id="ai-2",
+                name="agent.support-bot",
+                attributes={"agent.input": "When does my order ship?"},
+            )
+        finally:
+            db.close()
+
+        r = client.get("/api/traces", params={"q": "refund policy"})
+        assert r.status_code == 200, r.text
+        ids = [row["trace_id"] for row in r.json()["rows"]]
+        assert ids == ["t-agent-in"]
+
+    def test_search_matches_agent_output(
+        self, client: TestClient, app_db
+    ) -> None:
+        _, db_path = app_db
+        db = _open(db_path)
+        try:
+            _insert_span(
+                db,
+                trace_id="t-agent-out",
+                span_id="ao-1",
+                name="agent.support-bot",
+                attributes={
+                    "agent.output": "Refunds are available within 14 days.",
+                },
+            )
+        finally:
+            db.close()
+
+        r = client.get("/api/traces", params={"q": "Refunds available"})
+        ids = [row["trace_id"] for row in r.json()["rows"]]
+        assert ids == ["t-agent-out"]
+
+    def test_search_matches_llm_request_messages(
+        self, client: TestClient, app_db
+    ) -> None:
+        # Native LLM spans store the exchange under gen_ai.request.messages.
+        _, db_path = app_db
+        db = _open(db_path)
+        try:
+            _insert_span(
+                db,
+                trace_id="t-msgs",
+                span_id="m-1",
+                name="llm.openai.gpt-4o-mini",
+                attributes={
+                    "gen_ai.request.messages": json.dumps(
+                        [{"role": "user", "content": "Explain quantum entanglement"}]
+                    ),
+                },
+            )
+        finally:
+            db.close()
+
+        r = client.get("/api/traces", params={"q": "quantum entanglement"})
+        ids = [row["trace_id"] for row in r.json()["rows"]]
+        assert ids == ["t-msgs"]
+
+    def test_search_matches_tool_result(
+        self, client: TestClient, app_db
+    ) -> None:
+        _, db_path = app_db
+        db = _open(db_path)
+        try:
+            _insert_span(
+                db,
+                trace_id="t-tool",
+                span_id="tl-1",
+                name="tool.search_policy",
+                attributes={
+                    "tool.name": "search_policy",
+                    "tool.result": "refund_policy_v2.md: full refund within 14 days",
+                },
+            )
+        finally:
+            db.close()
+
+        r = client.get("/api/traces", params={"q": "refund_policy_v2"})
+        ids = [row["trace_id"] for row in r.json()["rows"]]
+        assert ids == ["t-tool"]
+
+    def test_legacy_gen_ai_prompt_still_matches(
+        self, client: TestClient, app_db
+    ) -> None:
+        # Widening must not regress the original normalized-key path.
+        _, db_path = app_db
+        db = _open(db_path)
+        try:
+            _insert_span(
+                db,
+                trace_id="t-legacy",
+                span_id="lg-1",
+                name="llm.gpt",
+                attributes={"gen_ai.prompt": "legacypromptword"},
+            )
+        finally:
+            db.close()
+
+        r = client.get("/api/traces", params={"q": "legacypromptword"})
+        ids = [row["trace_id"] for row in r.json()["rows"]]
+        assert ids == ["t-legacy"]
+
+
 class TestMaxCost:
     def test_max_cost_filters_out_expensive_traces(
         self, client: TestClient, app_db

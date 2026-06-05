@@ -31,9 +31,13 @@ def overview(request: Request, _user: str = Depends(require_session)) -> dict[st
             f"WHERE start_time >= ? {pid_clause}",
             (day_ago, *pid_params),
         )
+        # Only OTel ERROR status counts as failing. UNSET (the default when a
+        # successful span never sets a status) is *not* a failure — this mirrors
+        # how the trace-detail page renders UNSET as OK. Treating ``!= 'OK'`` as
+        # failing previously flagged every clean run as failed.
         failing_day = db.fetchone(
             f"""SELECT COUNT(DISTINCT trace_id) AS n FROM spans
-               WHERE status != 'OK' AND start_time >= ? {pid_clause}""",
+               WHERE status = 'ERROR' AND start_time >= ? {pid_clause}""",
             (day_ago, *pid_params),
         )
         runs_week = db.fetchone(
@@ -78,7 +82,7 @@ def overview(request: Request, _user: str = Depends(require_session)) -> dict[st
         recent_errors = db.fetchall(
             f"""SELECT trace_id, name, start_time, status, attributes
                FROM spans
-               WHERE status != 'OK' AND start_time >= ? {pid_clause}
+               WHERE status = 'ERROR' AND start_time >= ? {pid_clause}
                ORDER BY start_time DESC
                LIMIT 10""",
             (day_ago, *pid_params),

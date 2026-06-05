@@ -35,8 +35,15 @@ coverage.xml
 # Linting
 .ruff_cache/
 
-# SDK local data
+# SDK local data — the SQLite instance (and its WAL/SHM/journal sidecars) is
+# per-developer state, never committed. Article DBs already live under the
+# ignored examples/articles/ tree; these catch every other location too.
 .fastaiagent/
+.fastaiagent-demo/
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
 .prompts/
 
 # LangGraph compatibility test workspace (off-tree probes, not part of the SDK)

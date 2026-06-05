@@ -5,11 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.16.1] - 2026-06-05
+
+PATCH — backward-compatible fixes: two Local UI read-layer fixes (additive
+schema v10 migration, auto-applies) plus a dependency/CI compatibility fix. No
+API or behavior breaks.
 
 ### Fixed
 
-- **CI / `[pydanticai]` install compatibility with current `anthropic`.** Bumped
+- **Local UI full-text search now matches inputs & outputs, not just span
+  names.** The `span_fts` index (schema v6) only extracted `gen_ai.prompt` /
+  `gen_ai.response.text` — keys native `Agent.run()` spans never populate — so
+  the Traces search box silently matched span names only (the foreign-OTel
+  capture path, which normalizes to those keys, was unaffected). A new **schema
+  v10** migration rebuilds the FTS triggers and index content over the wider key
+  set (`agent.input` / `agent.output`, `gen_ai.request.messages`,
+  `tool.args` / `tool.result`, plus the original normalized keys). Existing DBs
+  pick this up automatically on the next `fastaiagent ui` start; no data loss,
+  and the `gen_ai.prompt` path still matches. See
+  [`docs/ui/trace-filters.md`](docs/ui/trace-filters.md).
+- **Successful runs no longer count as errors on Overview & Analytics.** A span
+  that completes without setting a status carries OTel `UNSET` (the default, and
+  "not an error" in OTel). The Overview "failing (24h)" tile and the Analytics
+  error-rate / error-count treated anything `!= 'OK'` as a failure, so a clean
+  run showed as "100% errors" in the aggregates even though its trace-detail
+  page rendered `OK`. They now count only `ERROR`, matching the trace-detail
+  page. Read-layer only — no change to what spans store.
+- **`[pydanticai]` install compatibility with current `anthropic`.** Bumped
   the `pydanticai` extra to `pydantic-ai>=1.105`: earlier `1.x` imports
   anthropic's pre-rename `UserLocation`, which current `anthropic` ships as
   `BetaUserLocationParam` (`ImportError` otherwise). The full `[all]` graph is

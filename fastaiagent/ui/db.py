@@ -17,7 +17,7 @@ from pathlib import Path
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
 
-CURRENT_SCHEMA_VERSION = 9
+CURRENT_SCHEMA_VERSION = 10
 
 # A migration step is either a SQL string or a callable that takes the
 # ``SQLiteHelper`` and runs whatever logic it needs (e.g., gated
@@ -224,6 +224,96 @@ def _v6_add_span_fts(db: SQLiteHelper) -> None:
                             '')
                FROM spans"""
         )
+
+
+# Full-text search content extraction. These are the attribute keys whose
+# values hold the text a user actually searches for — "what the agent sent and
+# received". Ordered by preference; ``COALESCE`` picks the first present per
+# span. Native fastaiagent spans store the agent turn under
+# ``agent.input``/``agent.output`` and the raw LLM exchange under
+# ``gen_ai.request.messages``; ``gen_ai.prompt``/``gen_ai.response.text`` are the
+# canonical keys produced by foreign-OTel normalization; tool spans expose
+# ``tool.args``/``tool.result``. Indexing all of them makes the search box match
+# inputs and outputs, not just span names (see ``_v10_widen_span_fts``).
+_FTS_INPUT_KEYS = (
+    "gen_ai.prompt",
+    "fastaiagent.gen_ai.prompt",
+    "agent.input",
+    "gen_ai.request.messages",
+    "tool.args",
+)
+_FTS_OUTPUT_KEYS = (
+    "gen_ai.response.text",
+    "gen_ai.completion",
+    "fastaiagent.gen_ai.response.text",
+    "agent.output",
+    "gen_ai.response.tool_calls",
+    "tool.result",
+)
+
+
+def _coalesce_json(attrs_col: str, keys: tuple[str, ...]) -> str:
+    """SQL expression pulling the first present attribute value from ``keys``
+    out of the JSON column ``attrs_col``, falling back to ``''``."""
+    extracts = ", ".join(f"json_extract({attrs_col}, '$.\"{key}\"')" for key in keys)
+    return f"COALESCE({extracts}, '')"
+
+
+def _v10_widen_span_fts(db: SQLiteHelper) -> None:
+    """Broaden full-text search to cover agent/tool inputs & outputs.
+
+    The v6 FTS triggers indexed only ``gen_ai.prompt`` / ``gen_ai.response.text``
+    — keys native fastaiagent spans never populate — so ``/api/traces?q=...``
+    matched span names only. This rebuilds the three sync triggers *and* the
+    existing index content over the wider key set in ``_FTS_INPUT_KEYS`` /
+    ``_FTS_OUTPUT_KEYS`` so a search like "refund policy" matches the trace whose
+    agent input/output or LLM messages contained the phrase.
+
+    No-op when ``span_fts`` is absent (FTS5 not compiled in, or v6 skipped) — the
+    ``list_traces`` LIKE-on-JSON fallback already covers that build.
+    """
+    rows = db.fetchall(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='span_fts'"
+    )
+    if not rows:
+        return
+
+    in_new = _coalesce_json("new.attributes", _FTS_INPUT_KEYS)
+    out_new = _coalesce_json("new.attributes", _FTS_OUTPUT_KEYS)
+
+    for trig in ("spans_fts_ai", "spans_fts_au", "spans_fts_ad"):
+        db.execute(f"DROP TRIGGER IF EXISTS {trig}")
+
+    db.execute(
+        f"""CREATE TRIGGER spans_fts_ai
+           AFTER INSERT ON spans BEGIN
+               INSERT INTO span_fts(trace_id, span_id, name, input_text, output_text)
+               VALUES (new.trace_id, new.span_id, new.name, {in_new}, {out_new});
+           END"""
+    )
+    db.execute(
+        """CREATE TRIGGER spans_fts_ad
+           AFTER DELETE ON spans BEGIN
+               DELETE FROM span_fts WHERE span_id = old.span_id;
+           END"""
+    )
+    db.execute(
+        f"""CREATE TRIGGER spans_fts_au
+           AFTER UPDATE ON spans BEGIN
+               DELETE FROM span_fts WHERE span_id = old.span_id;
+               INSERT INTO span_fts(trace_id, span_id, name, input_text, output_text)
+               VALUES (new.trace_id, new.span_id, new.name, {in_new}, {out_new});
+           END"""
+    )
+
+    # Rebuild content for all existing rows under the wider key set.
+    in_col = _coalesce_json("attributes", _FTS_INPUT_KEYS)
+    out_col = _coalesce_json("attributes", _FTS_OUTPUT_KEYS)
+    db.execute("DELETE FROM span_fts")
+    db.execute(
+        f"""INSERT INTO span_fts(trace_id, span_id, name, input_text, output_text)
+           SELECT trace_id, span_id, name, {in_col}, {out_col} FROM spans"""
+    )
 
 
 def _v6_add_saved_filters_project(db: SQLiteHelper) -> None:
@@ -604,6 +694,14 @@ _MIGRATIONS: dict[int, list[_Step]] = {
             FOREIGN KEY (run_id) REFERENCES sim_runs(run_id)
         )""",
         "CREATE INDEX IF NOT EXISTS idx_sim_cases_run ON sim_cases(run_id, project_id)",
+    ],
+    10: [
+        # Widen full-text search. The v6 triggers indexed only
+        # gen_ai.prompt/response.text — keys native spans don't populate — so the
+        # search box matched span names only. Rebuild the FTS triggers + content
+        # over agent.input/output, gen_ai.request.messages, and tool.args/result
+        # so /api/traces?q=... matches real inputs and outputs.
+        _v10_widen_span_fts,
     ],
 }
 
