@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.2] - 2026-06-05
+
+PATCH — backward-compatible Local UI fixes. No API or behavior breaks.
+
+### Fixed
+
+- **Trace favorites now work end to end.** The star toggle was write-only — the
+  trace-list API never returned favorite state and the icon had no filled
+  variant — so clicking it appeared to do nothing. `GET /traces` now returns
+  `favorited` per row and floats starred traces to the top (across pagination),
+  and the star renders filled with an optimistic toggle.
+- **Local UI no longer trips its own Content-Security-Policy.** Fonts are now
+  self-hosted via `@fontsource` (DM Sans, JetBrains Mono) instead of the Google
+  Fonts CDN, and the inline theme-flash script moved to a served `theme-init.js`
+  — eliminating the `script-src` / `style-src` console errors on every page
+  while keeping the strict CSP (`security_review_1.md` M3) intact.
+
 ## [1.16.1] - 2026-06-05
 
 PATCH — backward-compatible fixes: two Local UI read-layer fixes (additive
