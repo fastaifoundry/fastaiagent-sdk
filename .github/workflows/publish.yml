@@ -19,3 +19,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
+          # Releases are published manually via twine; this tag-triggered job is
+          # a backstop. skip-existing makes it a no-op (green) when the version
+          # is already on PyPI, instead of failing on the duplicate upload.
+          skip-existing: true
