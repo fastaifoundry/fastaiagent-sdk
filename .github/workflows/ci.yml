@@ -37,12 +37,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      # uv resolves the heavy ``[all]`` graph that pip's backtracker can't
+      # (``resolution-too-deep``): pydantic-ai 1.105+ pulls newer transitive
+      # deps that pip can't reconcile with crewai/langchain/chroma in finite
+      # backtracking. uv finds the valid set in <1s.
+      - name: Install uv
+        run: pip install uv
       - name: Install with extras
         run: |
           if [ -z "${{ matrix.extras }}" ]; then
-            pip install -e ".[dev]"
+            uv pip install --system -e ".[dev]"
           else
-            pip install -e ".[${{ matrix.extras }},dev]"
+            uv pip install --system -e ".[${{ matrix.extras }},dev]"
           fi
       - name: Run tests
         run: pytest tests/ -v -m "not e2e" --tb=short
@@ -80,8 +86,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      # uv resolves the full ``[all,dev]`` graph (pip hits resolution-too-deep);
+      # see the optional-deps job note.
+      - name: Install uv
+        run: pip install uv
       - name: Install with all extras
-        run: pip install -e ".[all,dev]"
+        run: uv pip install --system -e ".[all,dev]"
       - name: Run end-to-end quality gate
         run: pytest tests/e2e/ -v -m e2e --tb=short
       - name: Run Postgres durability integration tests

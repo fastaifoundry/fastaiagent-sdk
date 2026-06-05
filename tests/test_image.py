@@ -134,12 +134,21 @@ def test_from_url_real_public_https_image() -> None:
     """
     import socket as _socket
 
+    import httpx
+
     try:
         _socket.gethostbyname("httpbin.org")
     except OSError:
         pytest.skip("httpbin.org not reachable (offline?)")
 
-    img = Image.from_url("https://httpbin.org/image/png")
+    try:
+        img = Image.from_url("https://httpbin.org/image/png")
+    except httpx.HTTPError as exc:
+        # httpbin.org is a shared public endpoint that intermittently returns
+        # 503 / times out. The fetch path itself is covered by mocked tests
+        # elsewhere — skip rather than red the matrix on a flaky third party.
+        pytest.skip(f"httpbin.org fetch failed ({exc!r}) — flaky third party")
+
     assert img.media_type == "image/png"
     assert img.size_bytes() > 0
     width, height = img.dimensions()

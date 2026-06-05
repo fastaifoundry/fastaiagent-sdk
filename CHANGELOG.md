@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **CI / `[pydanticai]` install compatibility with current `anthropic`.** Bumped
+  the `pydanticai` extra to `pydantic-ai>=1.105`: earlier `1.x` imports
+  anthropic's pre-rename `UserLocation`, which current `anthropic` ships as
+  `BetaUserLocationParam` (`ImportError` otherwise). The full `[all]` graph is
+  too deep for pip's backtracking resolver (`resolution-too-deep`), so the
+  e2e/optional-deps CI jobs now install with `uv`, which resolves it in <1s
+  (picking a `crewai` that co-exists with modern `pydantic-ai`). No SDK runtime
+  change.
+
 ## [1.16.0] - 2026-05-31
 
 MINOR — one additive, opt-in feature area (G7: broader framework coverage).
