@@ -22,6 +22,9 @@ export interface TraceRow {
   // span. Free-text — any value the harness or a custom instrumentation
   // has stamped survives a trip through the API as-is.
   framework?: string | null;
+  // Whether this trace is starred (present in trace_favorites). Drives the
+  // filled star in the Traces list.
+  favorited?: boolean;
 }
 
 export interface TracesPage {
