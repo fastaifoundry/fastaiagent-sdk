@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -95,10 +95,12 @@ CREATE TABLE IF NOT EXISTS spans (
     end_time TEXT,
     status TEXT DEFAULT 'OK',
     attributes TEXT DEFAULT '{}',
-    events TEXT DEFAULT '[]'
+    events TEXT DEFAULT '[]',
+    synced INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_spans_trace_id ON spans (trace_id);
 CREATE INDEX IF NOT EXISTS idx_spans_start_time ON spans (start_time);
+CREATE INDEX IF NOT EXISTS idx_spans_synced ON spans (synced, start_time);
 CREATE TABLE IF NOT EXISTS trace_attachments (
     attachment_id  TEXT PRIMARY KEY,
     trace_id       TEXT NOT NULL,
@@ -281,6 +283,28 @@ class TraceStore:
     def default(cls) -> TraceStore:
         return cls()
 
+    @staticmethod
+    def _row_to_span(row: dict[str, Any]) -> SpanData:
+        """Deserialize a ``spans`` row (dict) into a :class:`SpanData`.
+
+        Shared by :meth:`get_trace` and :meth:`fetch_unsynced` so the buffered
+        re-send path reconstructs spans identically to the read path.
+        """
+        # Coerce NULLs to the field defaults. ``on_end`` always writes these, but
+        # the drain path processes arbitrary buffered rows in the bg thread — one
+        # partial row must not fail validation and abort the whole export.
+        return SpanData(
+            span_id=row["span_id"],
+            trace_id=row["trace_id"],
+            parent_span_id=row["parent_span_id"],
+            name=row["name"] or "",
+            start_time=row["start_time"] or "",
+            end_time=row["end_time"] or "",
+            status=row["status"] or "OK",
+            attributes=json.loads(row["attributes"]) if row["attributes"] else {},
+            events=json.loads(row["events"]) if row["events"] else [],
+        )
+
     def get_trace(self, trace_id: str) -> TraceData:
         """Get a complete trace with all its spans."""
         rows = self._db.fetchall(
@@ -296,21 +320,7 @@ class TraceStore:
                 f"tracing was enabled when the agent ran (trace=True)."
             )
 
-        spans = []
-        for row in rows:
-            spans.append(
-                SpanData(
-                    span_id=row["span_id"],
-                    trace_id=row["trace_id"],
-                    parent_span_id=row["parent_span_id"],
-                    name=row["name"],
-                    start_time=row["start_time"],
-                    end_time=row["end_time"],
-                    status=row["status"],
-                    attributes=json.loads(row["attributes"]) if row["attributes"] else {},
-                    events=json.loads(row["events"]) if row["events"] else [],
-                )
-            )
+        spans = [self._row_to_span(row) for row in rows]
 
         root = spans[0] if spans else SpanData(span_id="", trace_id=trace_id)
         return TraceData(
@@ -379,6 +389,99 @@ class TraceStore:
         """Export a trace as JSON."""
         trace = self.get_trace(trace_id)
         return trace.model_dump_json(indent=2)
+
+    # --- Platform-export buffer ------------------------------------------
+    # ``LocalStorageProcessor`` writes every span with ``synced=0``;
+    # ``PlatformSpanExporter`` (bg thread) drains synced=0 rows, pushes them,
+    # then marks ``synced=1`` only after a confirmed 2xx. See platform_export.py.
+
+    def fetch_unsynced(self, limit: int, project_id: str | None = None) -> list[SpanData]:
+        """Return up to ``limit`` un-acked spans (``synced=0``), oldest first.
+
+        Scoped to ``project_id`` when given — rows are stamped with the *local*
+        project id (``safe_get_project_id``), not the platform UUID. Oldest-first
+        so a backlog drains in production order.
+        """
+        if project_id is not None:
+            rows = self._db.fetchall(
+                "SELECT * FROM spans WHERE synced = 0 AND project_id = ? "
+                "ORDER BY start_time LIMIT ?",
+                (project_id, limit),
+            )
+        else:
+            rows = self._db.fetchall(
+                "SELECT * FROM spans WHERE synced = 0 ORDER BY start_time LIMIT ?",
+                (limit,),
+            )
+        return [self._row_to_span(r) for r in rows]
+
+    def mark_synced(self, span_ids: list[str]) -> None:
+        """Mark spans as no longer re-send candidates (acked *or* abandoned).
+
+        Chunked to stay under SQLite's bound-variable limit (999).
+        """
+        for start in range(0, len(span_ids), 500):
+            chunk = span_ids[start : start + 500]
+            if not chunk:
+                continue
+            placeholders = ",".join("?" * len(chunk))
+            self._db.execute(
+                f"UPDATE spans SET synced = 1 WHERE span_id IN ({placeholders})",
+                tuple(chunk),
+            )
+
+    def count_unsynced(self, project_id: str | None = None) -> int:
+        """Count un-acked (``synced=0``) spans, optionally scoped to a project."""
+        if project_id is not None:
+            row = self._db.fetchone(
+                "SELECT COUNT(*) AS n FROM spans WHERE synced = 0 AND project_id = ?",
+                (project_id,),
+            )
+        else:
+            row = self._db.fetchone("SELECT COUNT(*) AS n FROM spans WHERE synced = 0")
+        return int(row["n"]) if row else 0
+
+    def enforce_buffer_bound(
+        self, max_unsynced: int, max_age_days: int, project_id: str | None = None
+    ) -> int:
+        """Bound the platform re-send queue *without deleting local history*.
+
+        Abandons (marks ``synced=1`` — rows stay in ``local.db`` so the Local UI
+        still shows them) un-acked spans that are either older than
+        ``max_age_days`` or beyond the ``max_unsynced`` cap (oldest first).
+        Returns the count abandoned so the caller can log the drop. Each branch
+        is gated on a cheap read so a healthy steady-state export does no write.
+        """
+        if project_id is None:
+            from fastaiagent._internal.project import safe_get_project_id
+
+            project_id = safe_get_project_id()
+        abandoned = 0
+
+        # (a) Age bound — abandon spans older than the cutoff.
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).isoformat()
+        old = self._db.fetchall(
+            "SELECT span_id FROM spans WHERE synced = 0 AND project_id = ? AND start_time < ?",
+            (project_id, cutoff),
+        )
+        if old:
+            self.mark_synced([r["span_id"] for r in old])
+            abandoned += len(old)
+
+        # (b) Count bound — abandon the oldest excess beyond the cap.
+        remaining = self.count_unsynced(project_id)
+        if remaining > max_unsynced:
+            excess = remaining - max_unsynced
+            rows = self._db.fetchall(
+                "SELECT span_id FROM spans WHERE synced = 0 AND project_id = ? "
+                "ORDER BY start_time ASC LIMIT ?",
+                (project_id, excess),
+            )
+            if rows:
+                self.mark_synced([r["span_id"] for r in rows])
+                abandoned += len(rows)
+
+        return abandoned
 
     def close(self) -> None:
         self._db.close()

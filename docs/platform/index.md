@@ -206,13 +206,46 @@ Every service degrades gracefully when the platform is unreachable:
 
 | Service | Connected | Disconnected |
 |---------|-----------|-------------|
-| Traces | Send to platform + local SQLite | Local SQLite only |
+| Traces | Send to platform + local SQLite | Local SQLite only, **buffered for re-send** |
 | Prompts | Fetch from platform (cached locally) | Use local cache or local files |
 | Eval datasets | Pull from platform | Use local JSONL/CSV |
 | Eval results | Publish to platform | Store locally, publish later |
 | Replay | Pull platform traces | Local traces only |
 
 No operation fails because the platform is down.
+
+### Durable trace buffering & retry
+
+Trace export is **local-first, then drained to the platform**, so a platform
+outage never loses spans:
+
+1. Every span is written to local SQLite first (the durable source of truth),
+   marked un-acked (`synced=0`).
+2. The exporter drains un-acked spans and POSTs them to
+   `/public/v1/traces/ingest`. Transient failures (connection errors, timeouts,
+   HTTP 5xx) are **retried** with bounded exponential backoff (~3 attempts). A
+   4xx (e.g. a bad key) is **not** retried.
+3. Spans are marked acked (`synced=1`) only after a confirmed `2xx`. Anything
+   still un-acked stays buffered and **re-drains on the next export** — when the
+   platform comes back, the backlog flushes automatically. No reconnect hook is
+   needed.
+
+Re-sending is safe: `/traces/ingest` is **idempotent by `span_id`** (a span
+already stored returns `{"ingested": 0}`), so an outage that overlaps a partial
+send never double-counts.
+
+All of this runs on a background thread — **agent execution is never blocked**
+by the network.
+
+**Bounded buffer.** The re-send queue is capped (~10,000 un-acked spans or
+~7 days). Beyond that, the oldest spans are dropped from the *re-send queue* but
+**kept in `local.db`** (they still appear in the Local UI); the dropped count is
+logged. Local trace history is never deleted to bound the buffer.
+
+> Upgrade note: the `synced` flag is added by an automatic, additive migration.
+> Existing local traces are marked acked on upgrade, so connecting an existing
+> project does **not** retroactively back-push your whole history. Use the manual
+> backfill below to push historical traces on demand.
 
 ## Disconnecting
 

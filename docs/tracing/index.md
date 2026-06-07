@@ -430,6 +430,16 @@ result = agent.run("Help me")
 # View in platform dashboard: execution traces, token costs, latency
 ```
 
+Export is **local-first and durable**: every span is written to local SQLite,
+then drained to the platform on a background thread. Transient failures
+(connection errors, timeouts, HTTP 5xx) are retried with bounded backoff, and any
+spans not yet acknowledged are buffered and re-sent on the next export — so a
+platform outage never loses traces and never blocks `agent.run()`. Re-sends are
+idempotent (`/traces/ingest` dedups by `span_id`). The re-send queue is bounded
+(~10k spans / ~7 days); spans beyond the bound are dropped from the queue but
+kept in local SQLite. See
+[Offline / Disconnected Behavior](../platform/index.md#offline-disconnected-behavior).
+
 **Manual backfill** — publish existing local traces to the platform:
 
 ```python

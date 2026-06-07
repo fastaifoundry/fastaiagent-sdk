@@ -17,7 +17,7 @@ from pathlib import Path
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
 
-CURRENT_SCHEMA_VERSION = 10
+CURRENT_SCHEMA_VERSION = 11
 
 # A migration step is either a SQL string or a callable that takes the
 # ``SQLiteHelper`` and runs whatever logic it needs (e.g., gated
@@ -80,9 +80,7 @@ def _v4_add_project_id_columns(db: SQLiteHelper) -> None:
         )
         if not rows:
             continue
-        _add_column_if_missing(
-            db, table, "project_id", "TEXT NOT NULL DEFAULT ''"
-        )
+        _add_column_if_missing(db, table, "project_id", "TEXT NOT NULL DEFAULT ''")
 
 
 def _v4_backfill_project_id(db: SQLiteHelper) -> None:
@@ -137,9 +135,7 @@ def _v6_add_span_fts(db: SQLiteHelper) -> None:
 
     Add it to the Postgres migration sibling at that point.
     """
-    rows = db.fetchall(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='spans'"
-    )
+    rows = db.fetchall("SELECT name FROM sqlite_master WHERE type='table' AND name='spans'")
     if not rows:
         return
 
@@ -272,9 +268,7 @@ def _v10_widen_span_fts(db: SQLiteHelper) -> None:
     No-op when ``span_fts`` is absent (FTS5 not compiled in, or v6 skipped) — the
     ``list_traces`` LIKE-on-JSON fallback already covers that build.
     """
-    rows = db.fetchall(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='span_fts'"
-    )
+    rows = db.fetchall("SELECT name FROM sqlite_master WHERE type='table' AND name='span_fts'")
     if not rows:
         return
 
@@ -323,16 +317,11 @@ def _v6_add_saved_filters_project(db: SQLiteHelper) -> None:
     Sprint 3 wires it up via ``/api/filter-presets``; reusing the
     existing schema avoids a parallel ``filter_presets`` table.
     """
-    rows = db.fetchall(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='saved_filters'"
-    )
+    rows = db.fetchall("SELECT name FROM sqlite_master WHERE type='table' AND name='saved_filters'")
     if not rows:
         return
     _add_column_if_missing(db, "saved_filters", "project_id", "TEXT NOT NULL DEFAULT ''")
-    db.execute(
-        "CREATE INDEX IF NOT EXISTS idx_saved_filters_project "
-        "ON saved_filters(project_id)"
-    )
+    db.execute("CREATE INDEX IF NOT EXISTS idx_saved_filters_project ON saved_filters(project_id)")
 
 
 def _v5_add_false_positive_columns(db: SQLiteHelper) -> None:
@@ -348,14 +337,11 @@ def _v5_add_false_positive_columns(db: SQLiteHelper) -> None:
     same PATCH endpoint, which keeps the timestamp current.
     """
     rows = db.fetchall(
-        "SELECT name FROM sqlite_master WHERE type='table' "
-        "AND name='guardrail_events'"
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='guardrail_events'"
     )
     if not rows:
         return
-    _add_column_if_missing(
-        db, "guardrail_events", "false_positive", "INTEGER DEFAULT 0"
-    )
+    _add_column_if_missing(db, "guardrail_events", "false_positive", "INTEGER DEFAULT 0")
     _add_column_if_missing(db, "guardrail_events", "false_positive_at", "TEXT")
 
 
@@ -370,8 +356,7 @@ def _v4_create_project_indexes(db: SQLiteHelper) -> None:
     for table, sql in [
         (
             "spans",
-            "CREATE INDEX IF NOT EXISTS idx_spans_project "
-            "ON spans(project_id, start_time DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_spans_project ON spans(project_id, start_time DESC)",
         ),
         (
             "checkpoints",
@@ -385,6 +370,32 @@ def _v4_create_project_indexes(db: SQLiteHelper) -> None:
         )
         if rows:
             db.execute(sql)
+
+
+def _v11_add_span_synced(db: SQLiteHelper) -> None:
+    """Durable platform-export buffer flag on ``spans``.
+
+    ``PlatformSpanExporter`` marks a span ``synced=1`` only after a confirmed
+    2xx push to ``/public/v1/traces/ingest``; until then the row is a buffered
+    re-send candidate, drained at the top of each ``export()``.
+
+    Existing rows are backfilled to ``synced=1`` so upgrading does NOT
+    retroactively back-push a user's entire local trace history on the first
+    ``export()`` after the upgrade — only spans created afterwards become push
+    candidates. Manual backfill of historical traces stays available via
+    :meth:`fastaiagent.trace.storage.TraceData.publish`.
+
+    Gated on the ``spans`` table existing (legacy checkpoint-only DBs don't have
+    it). SQLite has no native boolean; ``INTEGER`` 0/1 matches the existing
+    ``false_positive`` convention.
+    """
+    rows = db.fetchall("SELECT name FROM sqlite_master WHERE type='table' AND name='spans'")
+    if not rows:
+        return
+    _add_column_if_missing(db, "spans", "synced", "INTEGER NOT NULL DEFAULT 0")
+    # Backfill pre-existing rows as already-handled so the upgrade is silent.
+    db.execute("UPDATE spans SET synced = 1 WHERE synced = 0")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_spans_synced ON spans(synced, start_time)")
 
 
 _MIGRATIONS: dict[int, list[_Step]] = {
@@ -630,10 +641,8 @@ _MIGRATIONS: dict[int, list[_Step]] = {
             created_at     TEXT NOT NULL,
             project_id     TEXT NOT NULL DEFAULT ''
         )""",
-        "CREATE INDEX IF NOT EXISTS idx_ext_agents_framework "
-        "ON external_agents(framework)",
-        "CREATE INDEX IF NOT EXISTS idx_ext_attach_agent "
-        "ON external_agent_attachments(agent_name)",
+        "CREATE INDEX IF NOT EXISTS idx_ext_agents_framework ON external_agents(framework)",
+        "CREATE INDEX IF NOT EXISTS idx_ext_attach_agent ON external_agent_attachments(agent_name)",
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_ext_attach "
         "ON external_agent_attachments(agent_name, kind, ref_name, position)",
     ],
@@ -658,8 +667,7 @@ _MIGRATIONS: dict[int, list[_Step]] = {
         )""",
         "CREATE INDEX IF NOT EXISTS idx_learned_memory_scope "
         "ON learned_memory(scope, scope_id, project_id)",
-        "CREATE INDEX IF NOT EXISTS idx_learned_memory_created "
-        "ON learned_memory(created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_learned_memory_created ON learned_memory(created_at)",
     ],
     9: [
         # Agent simulation runs + per-scenario cases. Mirrors the eval_runs /
@@ -702,6 +710,13 @@ _MIGRATIONS: dict[int, list[_Step]] = {
         # over agent.input/output, gen_ai.request.messages, and tool.args/result
         # so /api/traces?q=... matches real inputs and outputs.
         _v10_widen_span_fts,
+    ],
+    11: [
+        # Durable platform-export buffer. Add a ``synced`` flag to ``spans`` so
+        # PlatformSpanExporter can buffer un-acked spans across an outage and
+        # re-drain them on the next successful export. Existing rows are
+        # backfilled to synced=1 so the upgrade doesn't back-push history.
+        _v11_add_span_synced,
     ],
 }
 

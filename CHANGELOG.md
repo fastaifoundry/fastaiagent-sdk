@@ -5,6 +5,46 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.17.0] - 2026-06-07
+
+MINOR — durable, at-least-once telemetry delivery to the platform.
+Backward-compatible: the `/public/v1/traces/ingest` wire shape is unchanged, no
+protocol version bump, and the schema change auto-applies (additive migration
+v11). No API breaks.
+
+### Added
+
+- **Durable offline buffering + retry for platform trace export.** When the
+  platform is unreachable or returns a transient error, spans are now buffered
+  locally and re-sent instead of being silently dropped. The exporter retries
+  transient failures (connection errors, timeouts, HTTP 5xx) with bounded
+  exponential backoff (~3 attempts) and **does not** retry 4xx (auth/bad
+  request). Buffered spans re-drain on the next successful `export()` — re-send
+  is safe because `/traces/ingest` is idempotent by `span_id` (no
+  double-counting). All work stays on the `BatchSpanProcessor` background thread,
+  so agent execution is never blocked.
+- **Bounded buffer.** The platform re-send queue is capped (~10,000 un-acked
+  spans or ~7 days). Excess/old spans are *abandoned from the re-send queue but
+  kept in `local.db`* (the Local UI still shows them); the count is logged. A
+  long outage can't grow the re-send work without limit, and no local trace
+  history is deleted.
+- **`spans.synced` column (schema v11).** Tracks per-span platform
+  acknowledgement; marked `1` only after a confirmed 2xx push. Existing rows are
+  backfilled to `synced=1` on upgrade so the first export does not retroactively
+  back-push your whole local history (use `TraceData.publish()` for manual
+  backfill).
+
+### Changed
+
+- **Platform trace export now drains from the local SQLite store.** Spans are
+  written locally first (the durable source of truth), then drained and pushed
+  to the platform. The platform now receives exactly what the local store holds,
+  including capture-mode redaction/normalization. For the default configuration
+  (no redaction policy) the pushed bytes are identical to before.
+- **SQLite connections set `busy_timeout=5000`.** A competing writer now waits
+  briefly instead of failing immediately with "database is locked" — strictly
+  safer under concurrent access (e.g. the Local UI process and the exporter).
+
 ## [1.16.2] - 2026-06-05
 
 PATCH — backward-compatible Local UI fixes. No API or behavior breaks.
