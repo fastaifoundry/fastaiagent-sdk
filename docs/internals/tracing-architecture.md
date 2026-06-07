@@ -60,6 +60,29 @@ _connection._platform_processor = processor
 
 Now every span goes to both sinks. The `_platform_processor` reference is stored so `fa.disconnect()` can call `force_flush()` and `shutdown()` on it later.
 
+#### Platform export is drain-based and durable
+
+The two sinks are ordered: `LocalStorageProcessor` is attached first, so it
+writes each span to SQLite (`synced=0`) *before* `BatchSpanProcessor` enqueues
+it. `PlatformSpanExporter.export()` therefore doesn't push the live span batch —
+it **drains the `synced=0` rows from SQLite**, POSTs them, and marks them
+`synced=1` only after a confirmed `2xx`. Consequences:
+
+- **Durable buffer.** Un-acked spans persist in SQLite across a platform outage
+  and re-drain on the next `export()` (no reconnect hook). Transient failures
+  (connection/timeout/5xx) are retried with bounded backoff on the bg thread;
+  4xx is not retried. `export()` always returns `SUCCESS` — the buffer, not the
+  OTel processor, owns retry.
+- **Single representation.** The platform receives exactly what SQLite holds
+  (same capture-mode redaction/normalization), since both sinks read the same
+  stored row.
+- **Idempotent re-send.** `/traces/ingest` dedups by `span_id`, so overlapping
+  re-sends never double-count.
+- **Bounded.** The re-send queue is capped (`_MAX_UNSYNCED` / `_MAX_AGE_DAYS` in
+  `platform_export.py`); excess is abandoned from the queue (`synced=1`) but kept
+  in SQLite. See `TraceStore.fetch_unsynced` / `mark_synced` /
+  `enforce_buffer_bound` and migration v11 (`spans.synced`).
+
 ### When `add_exporter()` is called
 
 **File:** `fastaiagent/trace/otel.py` (lines 35–39)

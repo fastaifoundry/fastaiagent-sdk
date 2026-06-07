@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import httpx
 import pytest
 
 from fastaiagent._internal.errors import PlatformNotConnectedError, PromptNotFoundError
@@ -20,15 +19,19 @@ from fastaiagent.trace.storage import SpanData, TraceData
 @pytest.fixture(autouse=True)
 def _reset_connection():
     """Reset connection state before and after each test."""
-    _connection.api_key = None
-    _connection.target = "https://app.fastaiagent.net"
-    _connection.project = None
-    _connection._platform_processor = None
+
+    def _clear() -> None:
+        _connection.api_key = None
+        _connection.target = "https://app.fastaiagent.net"
+        _connection.project = None
+        _connection.domain_id = None
+        _connection.project_id = None
+        _connection.scopes = []
+        _connection._platform_processor = None
+
+    _clear()
     yield
-    _connection.api_key = None
-    _connection.target = "https://app.fastaiagent.net"
-    _connection.project = None
-    _connection._platform_processor = None
+    _clear()
 
 
 def _set_connected():
@@ -302,72 +305,69 @@ class TestScorerFromPlatform:
 
 class TestPlatformSpanExporter:
     def test_export_returns_success_when_not_connected(self):
-        from fastaiagent.trace.platform_export import PlatformSpanExporter
-
         from opentelemetry.sdk.trace.export import SpanExportResult
+
+        from fastaiagent.trace.platform_export import PlatformSpanExporter
 
         exporter = PlatformSpanExporter()
         result = exporter.export([])
         assert result == SpanExportResult.SUCCESS
 
-    def test_export_posts_spans(self):
-        _set_connected()
+    def _seed_unsynced(self, store, span_id: str = "sp1") -> None:
+        store._db.execute(
+            "INSERT INTO spans (span_id, trace_id, name, start_time, end_time, "
+            "status, attributes, events, project_id, synced) "
+            "VALUES (?, 'tr1', 'agent.run', '2026-06-07T00:00:00+00:00', "
+            "'2026-06-07T00:00:00+00:00', 'OK', '{}', '[]', 'test-proj', 0)",
+            (span_id,),
+        )
+
+    def test_export_drains_buffer_and_marks_synced(self, isolated_local_db, capture_server):
+        """Connected + reachable platform: export drains the synced=0 buffer,
+        POSTs it, and marks the spans synced=1. Real HTTP, no mocks."""
+        from opentelemetry.sdk.trace.export import SpanExportResult
+
         from fastaiagent.trace.platform_export import PlatformSpanExporter
+        from fastaiagent.trace.storage import TraceStore
+
+        store = TraceStore()
+        self._seed_unsynced(store)
+        _connection.api_key = "fa_k_test"
+        _connection.target = capture_server.url
+        _connection.project = "test-project"
+
+        result = PlatformSpanExporter().export([])
+
+        assert result == SpanExportResult.SUCCESS
+        assert len(capture_server.ingest_requests) == 1
+        assert capture_server.ingest_requests[0]["body"]["spans"][0]["span_id"] == "sp1"
+        assert store.count_unsynced("test-proj") == 0
+        store.close()
+
+    def test_export_buffers_and_returns_success_on_outage(self, isolated_local_db, monkeypatch):
+        """Unreachable platform: export never raises, returns SUCCESS, and the
+        span stays buffered (synced=0) for re-send. Real socket, no mocks."""
+        import socket
 
         from opentelemetry.sdk.trace.export import SpanExportResult
 
-        exporter = PlatformSpanExporter()
-
-        # Create a mock span
-        mock_span = MagicMock()
-        mock_ctx = MagicMock()
-        mock_ctx.trace_id = 0x1234
-        mock_ctx.span_id = 0x5678
-        mock_span.get_span_context.return_value = mock_ctx
-        mock_span.parent = None
-        mock_span.name = "test-span"
-        mock_span.start_time = 1000000000
-        mock_span.end_time = 2000000000
-        mock_span.attributes = {"key": "value"}
-        mock_span.events = []
-        mock_span.status = MagicMock()
-        mock_span.status.status_code = MagicMock()
-        mock_span.status.status_code.name = "OK"
-
-        with patch("httpx.Client") as mock_client_cls:
-            mock_client = MagicMock()
-            mock_client.__enter__ = MagicMock(return_value=mock_client)
-            mock_client.__exit__ = MagicMock(return_value=False)
-            mock_client_cls.return_value = mock_client
-
-            result = exporter.export([mock_span])
-            assert result == SpanExportResult.SUCCESS
-            mock_client.post.assert_called_once()
-
-    def test_export_swallows_errors(self):
-        _set_connected()
         from fastaiagent.trace.platform_export import PlatformSpanExporter
+        from fastaiagent.trace.storage import TraceStore
 
-        from opentelemetry.sdk.trace.export import SpanExportResult
+        monkeypatch.setattr(PlatformSpanExporter, "_BACKOFF_BASE", 0.0)
+        store = TraceStore()
+        self._seed_unsynced(store)
+        # A port with nothing listening → connection refused.
+        sock = socket.socket()
+        sock.bind(("127.0.0.1", 0))
+        dead_port = sock.getsockname()[1]
+        sock.close()
+        _connection.api_key = "fa_k_test"
+        _connection.target = f"http://127.0.0.1:{dead_port}"
+        _connection.project = "test-project"
 
-        exporter = PlatformSpanExporter()
+        result = PlatformSpanExporter().export([])
 
-        mock_span = MagicMock()
-        mock_ctx = MagicMock()
-        mock_ctx.trace_id = 0x1234
-        mock_ctx.span_id = 0x5678
-        mock_span.get_span_context.return_value = mock_ctx
-        mock_span.parent = None
-        mock_span.name = "test"
-        mock_span.start_time = 1000000000
-        mock_span.end_time = 2000000000
-        mock_span.attributes = {}
-        mock_span.events = []
-        mock_span.status = MagicMock()
-        mock_span.status.status_code = MagicMock()
-        mock_span.status.status_code.name = "OK"
-
-        with patch("httpx.Client", side_effect=Exception("network error")):
-            result = exporter.export([mock_span])
-            # Should still return SUCCESS — local SQLite has the data
-            assert result == SpanExportResult.SUCCESS
+        assert result == SpanExportResult.SUCCESS  # local SQLite still has the data
+        assert store.count_unsynced("test-proj") == 1  # buffered for next export
+        store.close()

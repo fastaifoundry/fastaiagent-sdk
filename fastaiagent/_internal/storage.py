@@ -69,9 +69,7 @@ class SQLiteHelper:
 
     def _get_conn(self) -> sqlite3.Connection:
         if self._closed:
-            raise sqlite3.ProgrammingError(
-                "Cannot operate on a closed SQLiteHelper"
-            )
+            raise sqlite3.ProgrammingError("Cannot operate on a closed SQLiteHelper")
         conn = getattr(self._tls, "conn", None)
         if conn is not None:
             return conn
@@ -83,6 +81,14 @@ class SQLiteHelper:
         conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
+        # Wait briefly for a competing writer instead of failing immediately with
+        # "database is locked". Each SQLiteHelper instance has its own
+        # ``_write_lock``, but separate instances (e.g. LocalStorageProcessor vs
+        # PlatformSpanExporter's TraceStore) and separate processes (the Local UI
+        # server) share only SQLite's file lock — WAL serializes writers, and this
+        # timeout absorbs the brief overlap. Strictly safer: it can only turn an
+        # immediate error into a short wait.
+        conn.execute("PRAGMA busy_timeout=5000")
         if file_was_new:
             # SQLite creates the file with the process umask (typically
             # 0o644). Tighten it so trace payloads & bcrypt hashes are

@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import json
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -14,6 +18,118 @@ from fastaiagent.llm.message import ToolCall
 def temp_dir(tmp_path: Path) -> Path:
     """Provide a temporary directory for test data."""
     return tmp_path
+
+
+class CaptureServer:
+    """A real localhost HTTP server that records requests and returns
+    programmable status codes.
+
+    Used to exercise :class:`fastaiagent.trace.platform_export.PlatformSpanExporter`
+    against a real socket with real ``httpx`` — **no mocking**. Status codes are
+    served from a queue (one per request); when the queue drains it returns 200,
+    so a default server is a happy-path platform. ``set_status_sequence([...])``
+    scripts transient failures (e.g. ``[500, 500, 200]`` to drive a retry).
+    """
+
+    def __init__(self) -> None:
+        self.requests: list[dict[str, Any]] = []
+        self._status_codes: list[int] = []
+        self._lock = threading.Lock()
+        self._server: HTTPServer | None = None
+        self._thread: threading.Thread | None = None
+
+    def set_status_sequence(self, codes: list[int]) -> None:
+        with self._lock:
+            self._status_codes = list(codes)
+
+    def _next_status(self) -> int:
+        with self._lock:
+            return self._status_codes.pop(0) if self._status_codes else 200
+
+    @property
+    def ingest_requests(self) -> list[dict[str, Any]]:
+        return [r for r in self.requests if r["path"].endswith("/traces/ingest")]
+
+    @property
+    def url(self) -> str:
+        assert self._server is not None
+        return f"http://127.0.0.1:{self._server.server_address[1]}"
+
+    def start(self) -> CaptureServer:
+        capture = self
+
+        class _Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args: Any) -> None:  # silence stderr noise
+                pass
+
+            def _handle(self) -> None:
+                length = int(self.headers.get("Content-Length", 0) or 0)
+                raw = self.rfile.read(length) if length else b""
+                try:
+                    body = json.loads(raw) if raw else None
+                except Exception:
+                    body = None
+                with capture._lock:
+                    capture.requests.append(
+                        {"path": self.path, "headers": dict(self.headers), "body": body}
+                    )
+                code = capture._next_status()
+                payload = (
+                    b'{"ingested": 0}' if 200 <= code < 300 else b'{"error": "scripted failure"}'
+                )
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
+            # BaseHTTPRequestHandler dispatches by exact method name — these
+            # must stay do_POST/do_GET (N815 mixedCase is unavoidable here).
+            do_POST = _handle  # noqa: N815
+            do_GET = _handle  # noqa: N815 — also answers /auth/check if a test connects
+
+        self._server = HTTPServer(("127.0.0.1", 0), _Handler)
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._thread.start()
+        return self
+
+    def stop(self) -> None:
+        if self._server is not None:
+            self._server.shutdown()
+            self._server.server_close()
+        if self._thread is not None:
+            self._thread.join(timeout=5)
+
+
+@pytest.fixture
+def capture_server() -> Any:
+    """A started :class:`CaptureServer`, stopped on teardown."""
+    server = CaptureServer().start()
+    try:
+        yield server
+    finally:
+        server.stop()
+
+
+@pytest.fixture
+def isolated_local_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
+    """Point all local storage at a fresh per-test SQLite file + a fixed project.
+
+    Sets ``FASTAIAGENT_LOCAL_DB`` to a temp file, clears the cached config, and
+    pins ``project_id`` so seeded rows and the exporter's drain filter agree.
+    """
+    from fastaiagent._internal import project as _project
+    from fastaiagent._internal.config import reset_config
+
+    db_path = tmp_path / "local.db"
+    monkeypatch.setenv("FASTAIAGENT_LOCAL_DB", str(db_path))
+    reset_config()
+    _project.set_project_id("test-proj")
+    try:
+        yield db_path
+    finally:
+        _project.reset_for_testing()
+        reset_config()
 
 
 class MockLLMClient(LLMClient):
@@ -64,9 +180,7 @@ class MockLLMClient(LLMClient):
             yield TextDelta(text=response.content)
         for tc in response.tool_calls:
             yield ToolCallStart(call_id=tc.id, tool_name=tc.name)
-            yield ToolCallEnd(
-                call_id=tc.id, tool_name=tc.name, arguments=dict(tc.arguments)
-            )
+            yield ToolCallEnd(call_id=tc.id, tool_name=tc.name, arguments=dict(tc.arguments))
         usage = response.usage or {}
         yield Usage(
             prompt_tokens=int(usage.get("prompt_tokens", 0)),
