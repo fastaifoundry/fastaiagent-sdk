@@ -106,7 +106,7 @@ Everything the SDK does is traced as a span in that tree:
 | `chain.<name>` / `swarm.<name>` / `supervisor.<name>` | `Chain.execute()` / `Swarm.arun()` / `Supervisor.arun()` | `fastaiagent.runner.type`, `chain.node_count`, `swarm.entrypoint`, etc. |
 | `llm.<provider>.<model>` | `LLMClient.complete()` | `gen_ai.request.*`, `gen_ai.usage.*`, `gen_ai.response.*` |
 | `tool.<name>` | every `@tool` / `FunctionTool.aexecute` | `tool.name`, `tool.args`, `tool.status`, `tool.result`, `tool.error` |
-| `retrieval.<kb_name>` | `LocalKB.search()` / `PlatformKB.search()` | `retrieval.backend`, `retrieval.search_type`, `retrieval.query`, `retrieval.top_k`, `retrieval.result_count`, `retrieval.latency_ms`, `retrieval.doc_ids` |
+| `retrieval.<kb_name>` | `LocalKB.search()` / `PlatformKB.search()` | `retrieval.kb_name`, `retrieval.kb_id` (PlatformKB only; ungated), `retrieval.backend`, `retrieval.search_type`, `retrieval.query`, `retrieval.top_k`, `retrieval.result_count`, `retrieval.latency_ms`, `retrieval.doc_ids` |
 
 The Inspector's **Input** tab surfaces whichever of `*.input` / `tool.args` /
 `retrieval.query` is present on the selected span; **Output** surfaces

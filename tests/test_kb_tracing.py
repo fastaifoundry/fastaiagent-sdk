@@ -113,6 +113,9 @@ class TestLocalKBRetrievalSpan:
         # Payload-gated but default-on: query + doc ids recorded.
         assert attrs["retrieval.query"] == "alpha"
         assert "doc-a" in json.loads(attrs["retrieval.doc_ids"])
+        # Local KBs have no registered id → retrieval.kb_id is omitted, the
+        # honest "central harness cannot re-execute this" signal.
+        assert "retrieval.kb_id" not in attrs
 
     def test_empty_kb_does_not_emit_span(self, tmp_path, _isolated_db):
         """No hits yet → no retrieval span either."""
@@ -176,6 +179,112 @@ class TestPayloadGating:
         # Structural attrs still captured.
         assert attrs["retrieval.result_count"] == 1
         assert attrs["retrieval.top_k"] == 1
+
+
+class TestRetrievalKbIdEmission:
+    """retrieval.kb_id is emitted UNGATED when present, omitted when absent.
+
+    Drives ``retrieval_span`` directly (real OTel pipeline, no network) — the
+    helper is the single emission point both PlatformKB and LocalKB funnel
+    through.
+    """
+
+    def _emit(self, kb_id: str | None) -> None:
+        from fastaiagent.kb._tracing import retrieval_span
+
+        with retrieval_span(
+            kb_name="probe",
+            kb_id=kb_id,
+            backend="platform",
+            search_type=None,
+            query="some query",
+            top_k=3,
+        ) as handle:
+            handle.record([])
+
+    def _span_attrs(self, db_path: Path) -> dict:
+        span = [r for r in _read_spans(db_path) if r["name"].startswith("retrieval.")][0]
+        return _attrs(span)
+
+    def test_kb_id_emitted_when_present(self, tmp_path, _isolated_db):
+        self._emit("kb_abc123")
+        assert self._span_attrs(_isolated_db)["retrieval.kb_id"] == "kb_abc123"
+
+    def test_kb_id_omitted_when_none(self, tmp_path, _isolated_db):
+        self._emit(None)
+        assert "retrieval.kb_id" not in self._span_attrs(_isolated_db)
+
+    def test_kb_id_is_ungated_by_payloads(self, monkeypatch, tmp_path, _isolated_db):
+        # kb_id is a routing/index key, not payload: it survives payloads OFF,
+        # while retrieval.query (payload) is stripped.
+        monkeypatch.setenv("FASTAIAGENT_TRACE_PAYLOADS", "0")
+        self._emit("kb_xyz")
+        attrs = self._span_attrs(_isolated_db)
+        assert attrs["retrieval.kb_id"] == "kb_xyz"
+        assert "retrieval.query" not in attrs
+
+
+class TestPlatformKBRetrievalKbId:
+    """Real PlatformKB.search against a local stand-in server emits retrieval.kb_id.
+
+    No mocks: a real stdlib HTTP server stands in for the platform's KB-search
+    endpoint, and the SDK connection is pointed at it.
+    """
+
+    def test_platform_kb_search_emits_kb_id(self, tmp_path, _isolated_db):
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        from fastaiagent.client import _connection
+
+        kb_id = "kb_platform_123"
+        captured: dict[str, str] = {}
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:  # noqa: N802
+                captured["path"] = self.path
+                self.rfile.read(int(self.headers.get("Content-Length", 0)))
+                body = (
+                    b'{"results": [{"chunk_id": "c1", "content": "hello",'
+                    b' "score": 0.9, "metadata": {"doc_id": "d1"}}]}'
+                )
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *a, **k) -> None:  # silence per-request logs
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        host, port = server.server_address[:2]
+
+        prev_key, prev_target = _connection.api_key, _connection.target
+        _connection.api_key = "test-key"
+        _connection.target = f"http://{host}:{port}"
+        try:
+            from fastaiagent.kb.platform import PlatformKB
+
+            results = PlatformKB(kb_id=kb_id).search("hello", top_k=1)
+            assert len(results) == 1
+        finally:
+            _connection.api_key, _connection.target = prev_key, prev_target
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+        assert captured["path"] == f"/public/v1/knowledge-bases/{kb_id}/search"
+        span = [
+            r for r in _read_spans(_isolated_db) if r["name"].startswith("retrieval.")
+        ][0]
+        attrs = _attrs(span)
+        assert attrs["retrieval.kb_id"] == kb_id
+        # PlatformKB.name == kb_id, so kb_name happens to match — but kb_id is
+        # the explicit, separate routing key the central harness keys off.
+        assert attrs["retrieval.kb_name"] == kb_id
 
 
 def test_asynchronous_kb_search_nests_under_agent(tmp_path, _isolated_db):

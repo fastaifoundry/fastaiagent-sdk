@@ -28,6 +28,8 @@ weather_api = RESTTool(
 result = await weather_api.aexecute({"city": "Paris", "days": 3})
 ```
 
+> **Replay safety.** Pass `replay_class="read_only" | "idempotent" | "side_effecting"` to mark how [Agent Replay](../replay/index.md) treats this tool — default `side_effecting`. A `GET` is **not** auto-classified `read_only`; mark it explicitly. See [Replay safety](index.md#replay-safety-replay_class).
+
 ## Body Mapping Options
 
 | Mode | Behavior | Use Case |

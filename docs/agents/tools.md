@@ -55,6 +55,8 @@ result = calculate.execute({"expression": "2 + 2"})
 | `RESTTool` | Call an HTTP API | `RESTTool(name="weather", url="https://api.weather.com/v1", method="GET")` |
 | `MCPTool` | Connect to MCP server | `MCPTool(name="search", server_url="http://localhost:3000")` |
 
+All three (and `@tool`) accept an optional `replay_class` (`read_only` / `idempotent` / `side_effecting`, default `side_effecting`) that controls inject-vs-execute during [Agent Replay](../replay/index.md). See [Tools → Replay safety](../tools/index.md#replay-safety-replay_class).
+
 ## ToolResult
 
 Every tool execution returns a `ToolResult`:

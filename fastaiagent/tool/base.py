@@ -8,6 +8,14 @@ from pydantic import BaseModel, Field
 
 from fastaiagent._internal.async_utils import run_sync
 
+# Replay-safety classes drive the central Replay engine's inject-vs-execute
+# decision per tool call. ``side_effecting`` is the safe default: an unmarked
+# tool is never re-executed during replay (its recorded output is injected).
+# Marks are explicit only — a "GET" REST tool is NOT auto-classified read_only;
+# auto-inferring a re-executable class would violate the replay-safety invariant.
+_ALLOWED_REPLAY_CLASSES = ("read_only", "idempotent", "side_effecting")
+_DEFAULT_REPLAY_CLASS = "side_effecting"
+
 
 class ToolResult(BaseModel):
     """Result of a tool execution."""
@@ -40,10 +48,22 @@ class Tool:
         name: str,
         description: str = "",
         parameters: dict[str, Any] | None = None,
+        replay_class: str | None = None,
     ):
         self.name = name
         self.description = description
         self.parameters = parameters or {"type": "object", "properties": {}}
+        # Resolve the safe default *before* validating, so unset always passes.
+        # Strict: an explicit out-of-set value is a developer error and raises
+        # loudly here (the authoring boundary). The wire/replay layer stays
+        # lenient and coerces unknown values to ``side_effecting`` at read time.
+        resolved = _DEFAULT_REPLAY_CLASS if replay_class is None else replay_class
+        if resolved not in _ALLOWED_REPLAY_CLASSES:
+            raise ValueError(
+                f"replay_class must be one of {_ALLOWED_REPLAY_CLASSES}, "
+                f"got {replay_class!r}"
+            )
+        self.replay_class = resolved
 
     def execute(self, arguments: dict[str, Any], context: Any | None = None) -> ToolResult:
         """Execute the tool synchronously."""
@@ -91,6 +111,7 @@ class Tool:
             "tool_type": self._tool_type(),
             "origin": self.origin,
             "parameters": self.parameters,
+            "replay_class": self.replay_class,
             "config": self._config_dict(),
         }
 
@@ -119,6 +140,7 @@ class Tool:
                 name=data["name"],
                 description=data.get("description", ""),
                 parameters=data.get("parameters"),
+                replay_class=data.get("replay_class", _DEFAULT_REPLAY_CLASS),
             )
         result: Tool = target_cls._from_dict(data)  # type: ignore[attr-defined]
         return result

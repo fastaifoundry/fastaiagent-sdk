@@ -28,12 +28,20 @@ logger = logging.getLogger(__name__)
 def retrieval_span(
     *,
     kb_name: str,
+    kb_id: str | None = None,
     backend: str,
     search_type: str | None,
     query: str,
     top_k: int,
 ) -> Iterator[_SpanHandle]:
-    """Open a retrieval span and yield a handle the caller closes with results."""
+    """Open a retrieval span and yield a handle the caller closes with results.
+
+    ``kb_id`` is the *registered* KB id (only a ``PlatformKB`` has one). When
+    present it is emitted **ungated** as ``retrieval.kb_id`` — it's a routing/
+    index key, not payload, so it must survive ``FASTAIAGENT_TRACE_PAYLOADS=0``.
+    Its absence (local/in-code KBs) is the honest signal that a central harness
+    cannot re-execute this retrieval and must fall back to the recorded result.
+    """
     from fastaiagent.trace.otel import get_tracer
 
     tracer = get_tracer("fastaiagent.kb")
@@ -42,6 +50,10 @@ def retrieval_span(
     with tracer.start_as_current_span(f"retrieval.{kb_name}") as span:
         span.set_attribute("fastaiagent.runner.type", "retrieval")
         span.set_attribute("retrieval.kb_name", kb_name)
+        # Ungated: a kb_id is a routing key, not payload (BYOK — ids stay clear
+        # while payloads are gated). Omitted for local KBs (no registered id).
+        if kb_id is not None:
+            span.set_attribute("retrieval.kb_id", kb_id)
         span.set_attribute("retrieval.backend", backend)
         span.set_attribute("retrieval.top_k", top_k)
         if search_type:

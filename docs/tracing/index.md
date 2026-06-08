@@ -238,10 +238,17 @@ Tool invocations emit their own `tool.{name}` span with:
 | Attribute | Description |
 |-----------|-------------|
 | `tool.name` | Tool name |
+| `tool.origin` | `function` / `rest` / `mcp` / `kb` / `custom` / `unknown` |
 | `tool.status` | `ok` / `error` / `unknown` |
 | `tool.args` | JSON-encoded arguments (payload-gated — see below) |
 | `tool.result` | JSON-encoded return value (payload-gated) |
 | `tool.error` | Error string when status is `error` |
+| `fastaiagent.runner.type` | Always `tool` — classifies the span as a tool call |
+| `fastaiagent.tool.replay_class` | `read_only` / `idempotent` / `side_effecting` — the tool's [replay-safety class](../tools/index.md#replay-safety-replay_class) (default `side_effecting`) |
+
+The last two are **always** captured (structural, not payload-gated) so the
+Replay engine can classify the span and pick inject-vs-execute even with
+payloads disabled. An unmarked tool resolves to `side_effecting`.
 
 LLM calls emit `llm.{provider}.{model}` spans with standard GenAI attributes plus payload-gated `gen_ai.request.messages`, `gen_ai.request.tools`, `gen_ai.response.content`, `gen_ai.response.tool_calls`, and `gen_ai.response.finish_reason`.
 

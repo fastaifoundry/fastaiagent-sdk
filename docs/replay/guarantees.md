@@ -95,6 +95,35 @@ forked.with_tool_override("search_kb", deterministic_stub)
 forked.with_tool_override("create_ticket", another_stub)
 ```
 
+#### Marking tools with `replay_class`
+
+Rather than override tools by hand on every rerun, declare each tool's
+replay-safety class once at definition time. The central Replay engine reads it
+(off the `fastaiagent.tool.replay_class` span attribute) to decide, per call,
+whether to re-execute or inject the recorded output:
+
+| `replay_class` | Replay behavior |
+|----------------|-----------------|
+| `"read_only"` | May be **re-executed** (no side effects — a GET, a pure lookup). |
+| `"idempotent"` | Recorded output is **injected** (re-running is safe but unnecessary). |
+| `"side_effecting"` | Recorded output is **injected**; never re-executed. |
+
+```python
+from fastaiagent.tool import tool
+
+@tool(name="search_kb", replay_class="read_only")
+def search_kb(query: str) -> str:
+    ...
+
+@tool(name="create_ticket")           # unmarked → "side_effecting" (safe default)
+def create_ticket(summary: str) -> str:
+    ...
+```
+
+The default is `"side_effecting"`, and a value is **never auto-inferred** — a
+`GET` `RESTTool` is not automatically `read_only`. See
+[Tools → Replay safety](../tools/index.md#replay-safety-replay_class).
+
 ### Provider-specific determinism support
 
 | Provider | `temperature=0` | Seed support |

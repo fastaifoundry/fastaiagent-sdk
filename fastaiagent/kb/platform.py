@@ -46,6 +46,7 @@ class PlatformKB:
 
         with retrieval_span(
             kb_name=self.name,
+            kb_id=self.kb_id,
             backend="platform",
             search_type=None,
             query=query,
@@ -65,6 +66,7 @@ class PlatformKB:
 
         with retrieval_span(
             kb_name=self.name,
+            kb_id=self.kb_id,
             backend="platform",
             search_type=None,
             query=query,

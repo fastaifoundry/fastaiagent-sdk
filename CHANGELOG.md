@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.18.0] - 2026-06-08
+
+MINOR — additive and backward-compatible. No wire-protocol bump: a new optional
+span attribute plus an optional tool-def field, both within `/public/v1`.
+
+### Added
+
+- **Tool replay-safety class (`replay_class`).** `FunctionTool`, `RESTTool`,
+  `MCPTool`, and the `@tool` decorator now accept an optional `replay_class` ∈
+  `{"read_only", "idempotent", "side_effecting"}` (default `"side_effecting"`).
+  The resolved value is emitted on every tool-call span as
+  `fastaiagent.tool.replay_class`, and tool-call spans now also carry
+  `fastaiagent.runner.type="tool"` — so the central Replay engine can classify
+  the span and decide inject-vs-execute per call. The class is **never
+  auto-inferred** (a `GET` `RESTTool` is not automatically `read_only`) and is
+  validated strictly: an out-of-set value raises `ValueError` at construction.
+  Unmarked and unknown/hallucinated tools resolve to the safe `side_effecting`
+  default. See [Tools → Replay safety](docs/tools/index.md) and
+  `examples/70_tool_replay_class.py`.
+- **`retrieval.kb_id` on KB-search spans.** A `PlatformKB` retrieval span now
+  also carries `retrieval.kb_id` (the registered KB id) so central replay can do
+  exact-id KB lookup instead of fragile name-matching. Emitted **ungated** (it's
+  a routing key, not payload — survives `FASTAIAGENT_TRACE_PAYLOADS=0`); a local
+  `LocalKB` omits it, which is the honest "not centrally re-executable" signal.
+
 ## [1.17.0] - 2026-06-07
 
 MINOR — durable, at-least-once telemetry delivery to the platform.

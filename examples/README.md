@@ -70,6 +70,7 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 - [`30_memory_blocks.py`](30_memory_blocks.py) — `ComposableMemory` block API
 - [`32_mcp_expose_agent.py`](32_mcp_expose_agent.py) — expose Agent as MCP server
 - [`41_agent_tools.py`](41_agent_tools.py) — tool decoration patterns
+- [`70_tool_replay_class.py`](70_tool_replay_class.py) — mark tools `read_only` / `idempotent` / `side_effecting` for replay
 
 ### Knowledge bases
 - [`06_rag_agent.py`](06_rag_agent.py) — basic RAG with `LocalKB`
