@@ -53,12 +53,20 @@ class RESTTool(Tool):
         body_mapping: str = "json_body",
         description: str = "",
         parameters: dict[str, Any] | None = None,
+        replay_class: str | None = None,
     ):
         self.url = url
         self.method = method.upper()
         self.headers = headers or {}
         self.body_mapping = body_mapping  # json_body, query_params, path_params
-        super().__init__(name=name, description=description, parameters=parameters)
+        # NOTE: a GET method is NOT auto-classified read_only — the developer
+        # must mark replay_class explicitly (replay-safety invariant).
+        super().__init__(
+            name=name,
+            description=description,
+            parameters=parameters,
+            replay_class=replay_class,
+        )
 
     async def aexecute(self, arguments: dict[str, Any], context: Any | None = None) -> ToolResult:
         """Execute the REST API call."""
@@ -131,6 +139,7 @@ class RESTTool(Tool):
             name=data["name"],
             description=data.get("description", ""),
             parameters=data.get("parameters"),
+            replay_class=data.get("replay_class", "side_effecting"),
             url=config.get("url", ""),
             method=config.get("method", "GET"),
             headers=config.get("headers"),

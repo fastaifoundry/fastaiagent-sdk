@@ -229,6 +229,116 @@ class TestToolSerialization:
         assert t.server_url == "http://localhost:3000"
 
 
+# --- Replay-safety class tests ---
+
+
+class TestReplayClass:
+    """The ``replay_class`` field: strict validation + serialization round-trip.
+
+    Default is the safe ``side_effecting``; values are never auto-inferred, and
+    an out-of-set value raises ``ValueError`` loudly at construction.
+    """
+
+    def test_default_is_side_effecting(self):
+        def fn() -> int:
+            return 1
+
+        assert FunctionTool(name="f", fn=fn).replay_class == "side_effecting"
+        assert RESTTool(name="r", url="https://example.com").replay_class == "side_effecting"
+        assert (
+            MCPTool(name="m", server_url="http://localhost:3000").replay_class
+            == "side_effecting"
+        )
+
+    def test_explicit_values_accepted(self):
+        def fn() -> int:
+            return 1
+
+        assert (
+            FunctionTool(name="f", fn=fn, replay_class="read_only").replay_class
+            == "read_only"
+        )
+        assert (
+            RESTTool(
+                name="r", url="https://example.com", method="GET", replay_class="read_only"
+            ).replay_class
+            == "read_only"
+        )
+        assert (
+            MCPTool(
+                name="m", server_url="http://localhost:3000", replay_class="idempotent"
+            ).replay_class
+            == "idempotent"
+        )
+
+    @pytest.mark.parametrize("bad", ["readonly", "read-only", "SIDE_EFFECTING", "", "none"])
+    def test_invalid_value_raises_value_error(self, bad):
+        def fn() -> int:
+            return 1
+
+        with pytest.raises(ValueError):
+            FunctionTool(name="f", fn=fn, replay_class=bad)
+        with pytest.raises(ValueError):
+            RESTTool(name="r", url="https://example.com", replay_class=bad)
+        with pytest.raises(ValueError):
+            MCPTool(name="m", server_url="http://localhost:3000", replay_class=bad)
+
+    def test_decorator_accepts_and_validates(self):
+        @tool(name="lookup", replay_class="read_only")
+        def lookup(q: str) -> str:
+            """Look something up."""
+            return q
+
+        assert lookup.replay_class == "read_only"
+
+        with pytest.raises(ValueError):
+
+            @tool(name="bad_tool", replay_class="nope")
+            def bad_tool(q: str) -> str:
+                return q
+
+    def test_to_dict_includes_replay_class(self):
+        def fn() -> int:
+            return 1
+
+        assert FunctionTool(name="f", fn=fn).to_dict()["replay_class"] == "side_effecting"
+        assert (
+            RESTTool(name="r", url="https://example.com", replay_class="read_only").to_dict()[
+                "replay_class"
+            ]
+            == "read_only"
+        )
+
+    def test_rest_roundtrip_preserves_replay_class(self):
+        rt = RESTTool(
+            name="r", url="https://example.com", method="GET", replay_class="read_only"
+        )
+        rebuilt = Tool.from_dict(rt.to_dict())
+        assert isinstance(rebuilt, RESTTool)
+        assert rebuilt.replay_class == "read_only"
+
+    def test_mcp_roundtrip_preserves_replay_class(self):
+        m = MCPTool(name="m", server_url="http://localhost:3000", replay_class="idempotent")
+        rebuilt = Tool.from_dict(m.to_dict())
+        assert isinstance(rebuilt, MCPTool)
+        assert rebuilt.replay_class == "idempotent"
+
+    def test_function_roundtrip_preserves_replay_class(self):
+        def fn() -> int:
+            return 1
+
+        ft = FunctionTool(name="f_rt", fn=fn, replay_class="read_only")
+        rebuilt = Tool.from_dict(ft.to_dict())
+        assert rebuilt.replay_class == "read_only"
+
+    def test_from_dict_missing_replay_class_defaults_safe(self):
+        # An older serialized tool without the key resolves to the safe default.
+        rebuilt = Tool.from_dict(
+            {"name": "r", "tool_type": "rest_api", "config": {"url": "https://example.com"}}
+        )
+        assert rebuilt.replay_class == "side_effecting"
+
+
 # --- Schema validation tests ---
 
 

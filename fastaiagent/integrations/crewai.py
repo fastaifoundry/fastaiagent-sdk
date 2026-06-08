@@ -564,6 +564,11 @@ def _install_event_listeners() -> None:
         ctx = otel_trace.set_span_in_context(current) if current else None
         span = tracer.start_span(f"tool.{tool_name}", context=ctx)
         set_fastaiagent_attributes(span, **{"tool.name": tool_name})
+        # Classify as a tool span (fastaiagent.runner.type="tool") so the central
+        # Replay engine consumes it, parity with the native executor path.
+        # replay_class is N/A here: there is no FastAIAgent Tool object on the
+        # CrewAI event, so it would always be the side_effecting default.
+        set_fastaiagent_attributes(span, **{"runner.type": "tool"})
         if trace_payloads_enabled():
             span.set_attribute(
                 "tool.input", _safe_json(getattr(event, "tool_args", None))

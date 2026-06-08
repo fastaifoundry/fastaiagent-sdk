@@ -28,6 +28,8 @@ file_search = MCPTool(
 result = await file_search.aexecute({"query": "authentication", "file_pattern": "*.py"})
 ```
 
+> **Replay safety.** Pass `replay_class="read_only" | "idempotent" | "side_effecting"` to mark how [Agent Replay](../replay/index.md) treats this tool — default `side_effecting`, never auto-inferred. See [Replay safety](index.md#replay-safety-replay_class).
+
 ## Discovering MCP Tools
 
 List available tools on an MCP server:

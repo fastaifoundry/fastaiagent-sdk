@@ -31,11 +31,17 @@ class MCPTool(Tool):
         auth_token: str | None = None,
         description: str = "",
         parameters: dict[str, Any] | None = None,
+        replay_class: str | None = None,
     ):
         self.server_url = server_url
         self.tool_name = tool_name or name
         self.auth_token = auth_token
-        super().__init__(name=name, description=description, parameters=parameters)
+        super().__init__(
+            name=name,
+            description=description,
+            parameters=parameters,
+            replay_class=replay_class,
+        )
 
     async def _send_jsonrpc(
         self, method: str, params: dict[str, Any] | None = None
@@ -113,6 +119,7 @@ class MCPTool(Tool):
             name=data["name"],
             description=data.get("description", ""),
             parameters=data.get("parameters"),
+            replay_class=data.get("replay_class", "side_effecting"),
             server_url=config.get("server_url", ""),
             tool_name=config.get("tool_name", ""),
         )

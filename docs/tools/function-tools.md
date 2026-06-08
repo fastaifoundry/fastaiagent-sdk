@@ -30,6 +30,8 @@ print(result.output)   # "Sunny, 22°C in Paris"
 print(result.success)  # True
 ```
 
+> **Replay safety.** Pass `replay_class="read_only" | "idempotent" | "side_effecting"` (also accepted by the `@tool` decorator) to mark how [Agent Replay](../replay/index.md) treats this tool — default `side_effecting`, never auto-inferred. See [Replay safety](index.md#replay-safety-replay_class).
+
 ## The @tool Decorator
 
 Shorthand for creating a `FunctionTool`:

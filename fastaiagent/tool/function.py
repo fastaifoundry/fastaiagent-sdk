@@ -282,6 +282,7 @@ class FunctionTool(Tool):
         fn: Callable[..., Any] | None = None,
         description: str = "",
         parameters: dict[str, Any] | None = None,
+        replay_class: str | None = None,
     ):
         self.fn = fn
         self._context_param_name: str | None = None
@@ -294,7 +295,12 @@ class FunctionTool(Tool):
             # Detect context parameter at init time (not per-call)
             self._context_param_name = self._detect_context_param(fn)
 
-        super().__init__(name=name, description=description, parameters=parameters)
+        super().__init__(
+            name=name,
+            description=description,
+            parameters=parameters,
+            replay_class=replay_class,
+        )
 
         # Auto-register callable-backed tools so ForkedReplay.arerun can rebind
         # them by name after reconstruction from span attributes.
@@ -375,11 +381,21 @@ class FunctionTool(Tool):
             name=name,
             description=data.get("description", ""),
             parameters=data.get("parameters"),
+            replay_class=data.get("replay_class", "side_effecting"),
         )
 
 
-def tool(name: str | None = None, description: str = "") -> Callable[..., Any]:
+def tool(
+    name: str | None = None,
+    description: str = "",
+    replay_class: str | None = None,
+) -> Callable[..., Any]:
     """Decorator to create a FunctionTool from a function.
+
+    ``replay_class`` marks the tool's replay-safety class
+    (``read_only`` / ``idempotent`` / ``side_effecting``); unset resolves to the
+    safe ``side_effecting`` default. It is never auto-inferred — only an explicit
+    mark makes a tool re-executable in replay.
 
     Example:
         @tool(name="greet", description="Greet someone")
@@ -390,6 +406,8 @@ def tool(name: str | None = None, description: str = "") -> Callable[..., Any]:
     def decorator(fn: Callable[..., Any]) -> FunctionTool:
         tool_name = name or fn.__name__
         tool_desc = description or inspect.getdoc(fn) or ""
-        return FunctionTool(name=tool_name, fn=fn, description=tool_desc)
+        return FunctionTool(
+            name=tool_name, fn=fn, description=tool_desc, replay_class=replay_class
+        )
 
     return decorator

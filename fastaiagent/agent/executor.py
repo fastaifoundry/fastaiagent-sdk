@@ -322,6 +322,18 @@ async def _invoke_tool_with_span(
         # without having to cross-reference agent.tools. "unknown" when the
         # LLM hallucinates a tool that isn't registered.
         span.set_attribute("tool.origin", getattr(tool, "origin", "unknown") if tool else "unknown")
+        # Classify this as a tool span for the central Replay engine, which reads
+        # attributes["fastaiagent.runner.type"] (∈ {tool, tool_call, worker_call})
+        # to decide inject-vs-execute. Set explicitly rather than relying on the
+        # normalize.py inference, which is off by default and is NOT run on the
+        # connect() push path. Both attributes are unconditional (not payload-
+        # gated) and set before the ``tool is None`` branch, so even an unknown/
+        # hallucinated tool's span is classified and carries the safe default.
+        span.set_attribute("fastaiagent.runner.type", "tool")
+        span.set_attribute(
+            "fastaiagent.tool.replay_class",
+            getattr(tool, "replay_class", "side_effecting") if tool else "side_effecting",
+        )
         if trace_payloads_enabled():
             try:
                 span.set_attribute("tool.args", json.dumps(arguments, default=str))

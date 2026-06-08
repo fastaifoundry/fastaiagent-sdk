@@ -69,6 +69,48 @@ fmt = tool.to_openai_format()
 
 This format is automatically converted to Anthropic's `input_schema` format when using the Anthropic provider.
 
+## Replay safety (`replay_class`)
+
+Every tool type and the `@tool` decorator accept an optional `replay_class` that
+tells [Agent Replay](../replay/index.md) (and the central Replay engine) whether
+a recorded tool call may be **re-executed** during a rerun or must have its
+**recorded output injected** instead:
+
+| `replay_class` | Meaning | Replay behavior |
+|----------------|---------|-----------------|
+| `"read_only"` | No side effects; safe to call again (e.g. a GET, a pure lookup). | May be re-executed during replay. |
+| `"idempotent"` | Repeating the call with the same args is safe / converges. | Recorded output is injected (not re-executed). |
+| `"side_effecting"` | Has observable side effects (writes, payments, emails). | Recorded output is injected; never re-executed. |
+
+```python
+from fastaiagent import RESTTool
+from fastaiagent.tool import tool
+
+# Marked explicitly by the developer — a GET is NOT auto-classified read_only.
+weather = RESTTool(
+    name="weather", url="https://api.weather.com/v1", method="GET",
+    replay_class="read_only",
+)
+
+@tool(name="upsert_user", replay_class="idempotent")
+def upsert_user(user_id: str, name: str) -> str:
+    ...
+
+@tool(name="charge_card")   # unmarked → resolves to "side_effecting"
+def charge_card(amount: int) -> str:
+    ...
+```
+
+- **Default is `"side_effecting"`** — the safe choice. An unmarked tool is never
+  re-executed during replay.
+- **Never auto-inferred.** A `GET` `RESTTool` is *not* automatically `read_only`;
+  only an explicit mark makes a tool re-executable. Auto-inferring would violate
+  the replay-safety invariant.
+- **Validated strictly.** A value outside `read_only` / `idempotent` /
+  `side_effecting` raises `ValueError` at construction.
+- The resolved value is emitted on every tool-call span as
+  `fastaiagent.tool.replay_class` (see [Tracing](../tracing/index.md)).
+
 ## Serialization
 
 All tool types support roundtrip serialization:
