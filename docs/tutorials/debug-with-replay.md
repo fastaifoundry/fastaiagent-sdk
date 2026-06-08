@@ -73,7 +73,9 @@ forked.modify_prompt(
 ```
 
 ``fork_at`` returns a ``ForkedReplay`` you can chain modifications on:
-``modify_prompt``, ``modify_input``, ``modify_config``, ``modify_state``.
+``modify_prompt``, ``modify_input``, ``modify_config``. (To fork from a saved
+checkpoint with a modified *state*, use ``Chain.afork`` / ``Agent.afork`` — see
+[Durability](../durability/index.md).)
 
 ## 5. Rerun and compare
 

@@ -122,6 +122,33 @@ For a failed checkpoint (no `interrupt()`, just a regular exception):
 pass `modified_state` to patch chain state before the next node runs.
 This is the v0.x behavior, preserved.
 
+## `Chain.afork`
+
+```python
+async def afork(
+    self,
+    execution_id: str,
+    *,
+    checkpoint_id: str | None = None,
+    input: Any | None = None,
+    modified_state: dict[str, Any] | None = None,
+    context: Any | None = None,
+) -> ChainResult: ...
+```
+
+Fork a run from a saved checkpoint into a **new, independent** execution.
+Unlike `resume` (which continues the *same* `execution_id`), `afork` branches
+under a **fresh** id, so the original run is left completely intact.
+`checkpoint_id` selects the step to branch from (omit for the last checkpoint;
+`checkpointer.list(execution_id)` lists ids). `input` / `modified_state` patch
+the restored state so the branch diverges; the chain runs forward from the node
+*after* the fork point. The result's `execution_id` is the new forked id, linked
+to the source via `parent_checkpoint_id`. A sync `fork(...)` wrapper exists.
+
+This is the SDK's checkpoint-fork primitive. Trace-based counterfactual replay
+(re-deriving a run from ingested spans) is the Enterprise plane's job, not the
+SDK's.
+
 ## `Agent.aresume`
 
 ```python
@@ -149,6 +176,28 @@ Three resume shapes are auto-detected from the latest checkpoint:
 delegate tools to scope the resume to a worker's subtree (so the
 worker doesn't accidentally pick up a sibling supervisor pre-tool
 checkpoint as "latest").
+
+## `Agent.afork`
+
+```python
+async def afork(
+    self,
+    execution_id: str,
+    *,
+    checkpoint_id: str | None = None,
+    input: AgentInput | None = None,
+    context: RunContext[Any] | None = None,
+    **kwargs: Any,
+) -> AgentResult: ...
+```
+
+Fork an agent run from a checkpoint into a **new** execution (sibling of
+`aresume`). Pass `input` to re-ask the run with a different request — the
+counterfactual "what if the user had asked X"; the branch runs as a fresh,
+traced conversation under the new id. Omit `input` to re-run the restored
+conversation forward (e.g. with a modified `context`). The new run links back to
+the source via `parent_checkpoint_id`. A sync `fork(...)` wrapper exists.
+`Swarm` / `Supervisor` forking is a planned fast-follow.
 
 ## `Swarm.aresume`
 

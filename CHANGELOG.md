@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Checkpoint-based fork: `Chain.afork` / `Agent.afork`** (with sync `fork`
+  wrappers). Branch a run from a saved checkpoint into a **new, independent**
+  execution — the original run is left intact.
+  `Chain.afork(execution_id, checkpoint_id=…, modified_state=…)` restores the
+  step's state, applies the patch, and runs forward from the node *after* the
+  fork point under a fresh `execution_id` (linked to the source via
+  `parent_checkpoint_id`). `Agent.afork(execution_id, input=…)` re-asks a run
+  with a different request (a counterfactual branch). This is the SDK's fork +
+  resume engine primitive; trace-based counterfactual replay (over ingested
+  traces) remains the Enterprise plane's job. Chain + Agent first; Swarm /
+  Supervisor fork is a planned fast-follow.
+
+### Changed
+
+- `ForkedReplay.modify_state()` now raises `NotImplementedError` pointing to
+  `Chain.afork` / `Agent.afork`. It was never wired into the rerun path (so this
+  is not a behavior regression); `trace/replay.py` stays a read-only
+  inspect/diff surface rather than a state-counterfactual engine.
+
 ## [1.18.0] - 2026-06-08
 
 MINOR — additive and backward-compatible. No wire-protocol bump: a new optional

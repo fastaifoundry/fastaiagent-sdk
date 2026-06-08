@@ -790,6 +790,115 @@ class Agent:
                 },
             )
 
+    async def afork(
+        self,
+        execution_id: str,
+        *,
+        checkpoint_id: str | None = None,
+        input: AgentInput | None = None,
+        context: RunContext[Any] | None = None,
+        **kwargs: Any,
+    ) -> AgentResult:
+        """Fork an agent run from a saved checkpoint into a NEW execution.
+
+        The sibling of :meth:`aresume`: instead of continuing the *same*
+        ``execution_id``, ``afork`` branches under a **fresh** id so the
+        original run is left intact.
+
+        * Pass ``input`` to re-ask the run with a different request — the
+          counterfactual "what if the user had asked X". The branch runs as a
+          fresh, traced conversation under the new id.
+        * Omit ``input`` to faithfully re-run the checkpoint's restored
+          conversation *forward* under the new id (e.g. with a modified
+          ``context``).
+
+        ``checkpoint_id`` selects the step to branch from
+        (``checkpointer.list(execution_id)`` lists ids); omit it for the last
+        checkpoint. Returns an :class:`AgentResult` whose ``execution_id`` is
+        the new forked id, linked to the source via ``parent_checkpoint_id``.
+
+        Checkpoint-fork is the SDK primitive; trace-based counterfactual replay
+        is the Enterprise plane's job (see :mod:`fastaiagent.trace.replay`).
+        """
+        from fastaiagent._internal.errors import ChainCheckpointError
+        from fastaiagent.chain.checkpoint import Checkpoint
+
+        store: Checkpointer = self._checkpointer or SQLiteCheckpointer()
+        store.setup()
+        base = (
+            store.get_by_id(execution_id, checkpoint_id)
+            if checkpoint_id is not None
+            else store.get_last(execution_id)
+        )
+        if base is None:
+            raise ChainCheckpointError(
+                f"No checkpoint found to fork for agent execution '{execution_id}'"
+                + (f" / checkpoint '{checkpoint_id}'" if checkpoint_id else "")
+            )
+
+        fork_id = str(uuid.uuid4())
+        # Lineage marker linking the branch back to the source checkpoint.
+        store.put(
+            Checkpoint(
+                checkpoint_id=str(uuid.uuid4()),
+                parent_checkpoint_id=base.checkpoint_id or None,
+                chain_name=self.name,
+                execution_id=fork_id,
+                node_id="__fork_origin__",
+                node_index=base.node_index,
+                status="completed",
+                state_snapshot=dict(base.state_snapshot),
+                agent_path=base.agent_path,
+            )
+        )
+
+        if input is not None:
+            # Counterfactual input: re-run with the new request under the fork id.
+            return await self.arun(input, context=context, execution_id=fork_id, **kwargs)
+
+        # No input change: re-run the restored conversation forward.
+        from fastaiagent.agent.executor import _deserialize_messages
+
+        messages = _deserialize_messages(base.state_snapshot.get("messages", []))
+        start_iteration = int(base.state_snapshot.get("turn", 0))
+        original_input = ""
+        for m in messages:
+            if m.role.value == "user" and m.content:
+                original_input = (
+                    m.content
+                    if isinstance(m.content, str)
+                    else _input_summary_text(list(m.content))
+                )
+                break
+        return await self._arun_core(
+            original_input,
+            context=context,
+            execution_id=fork_id,
+            _resumed_messages=messages,
+            _start_iteration=start_iteration,
+            **kwargs,
+        )
+
+    def fork(
+        self,
+        execution_id: str,
+        *,
+        checkpoint_id: str | None = None,
+        input: AgentInput | None = None,
+        context: RunContext[Any] | None = None,
+        **kwargs: Any,
+    ) -> AgentResult:
+        """Sync wrapper for :meth:`afork`."""
+        return run_sync(
+            self.afork(
+                execution_id,
+                checkpoint_id=checkpoint_id,
+                input=input,
+                context=context,
+                **kwargs,
+            )
+        )
+
     def stream(
         self,
         input: str,

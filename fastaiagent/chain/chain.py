@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -346,6 +347,136 @@ class Chain:
             modified_state=modified_state,
             resume_value=resume_value,
             context=context,
+        )
+
+    async def afork(
+        self,
+        execution_id: str,
+        *,
+        checkpoint_id: str | None = None,
+        input: Any | None = None,
+        modified_state: dict[str, Any] | None = None,
+        context: Any | None = None,
+    ) -> ChainResult:
+        """Fork a run from a saved checkpoint into a NEW, independent execution.
+
+        Unlike :meth:`resume` (which continues the *same* ``execution_id``),
+        ``afork`` branches from the chosen checkpoint's state under a **fresh**
+        ``execution_id`` — the original run is left completely intact. Pass
+        ``checkpoint_id`` to branch from a specific step (use
+        ``checkpointer.list(execution_id)`` to find ids); omit it to branch from
+        the last checkpoint. ``input`` / ``modified_state`` patch the restored
+        state so the branch diverges; the chain then runs forward from the node
+        *after* the fork point.
+
+        Returns a :class:`ChainResult` whose ``execution_id`` is the new forked
+        id. The fork's lineage links back to the source via
+        ``parent_checkpoint_id``.
+
+        This is the SDK's checkpoint-fork primitive. Trace-based counterfactual
+        replay (re-deriving a run from ingested spans) is the Enterprise plane's
+        job, not the SDK's — see :mod:`fastaiagent.trace.replay` for the local
+        read-only inspect/diff surface.
+        """
+        from fastaiagent.chain.checkpoint import Checkpoint
+        from fastaiagent.chain.executor import _topological_sort
+
+        store: Checkpointer = self._checkpointer or SQLiteCheckpointer()
+        store.setup()
+        base = (
+            store.get_by_id(execution_id, checkpoint_id)
+            if checkpoint_id is not None
+            else store.get_last(execution_id)
+        )
+        if base is None:
+            from fastaiagent._internal.errors import ChainCheckpointError
+
+            raise ChainCheckpointError(
+                f"No checkpoint found to fork for execution '{execution_id}'"
+                + (f" / checkpoint '{checkpoint_id}'" if checkpoint_id else "")
+            )
+
+        # Restore the checkpoint's state, then apply the fork's modifications so
+        # the branch diverges.
+        state = dict(base.state_snapshot)
+        if input is not None:
+            state["input"] = input
+        if modified_state:
+            state.update(modified_state)
+
+        # Run forward from the node AFTER the fork point — exactly like a
+        # failed/completed resume, but under a fresh execution_id.
+        order = _topological_sort(self.nodes, self.edges)
+        start_node: str | None = None
+        for i, nid in enumerate(order):
+            if nid == base.node_id:
+                start_node = order[i + 1] if i + 1 < len(order) else None
+                break
+        if start_node is None:
+            from fastaiagent._internal.errors import ChainResumeError
+
+            raise ChainResumeError(
+                f"Cannot fork execution '{execution_id}' from node "
+                f"'{base.node_id}': it is the final node, so nothing downstream "
+                "would run. Fork from an earlier checkpoint."
+            )
+
+        fork_id = str(uuid.uuid4())
+        # Lineage marker: one origin checkpoint under the new id pointing back at
+        # the source. Its distinct node_id never collides with a real node or
+        # confuses get_last()/resume of the fork.
+        store.put(
+            Checkpoint(
+                checkpoint_id=str(uuid.uuid4()),
+                parent_checkpoint_id=base.checkpoint_id or None,
+                chain_name=self.name,
+                execution_id=fork_id,
+                node_id="__fork_origin__",
+                node_index=base.node_index,
+                status="completed",
+                state_snapshot=dict(state),
+            )
+        )
+
+        raw = await execute_chain(
+            nodes=self.nodes,
+            edges=self.edges,
+            initial_state=state,
+            state_schema=self.state_schema,
+            checkpointer=store,
+            chain_name=self.name,
+            execution_id=fork_id,
+            resume_from_node=start_node,
+            run_context=context,
+            strict_routing=self.strict_routing,
+        )
+        return ChainResult(
+            output=raw["output"],
+            final_state=raw["final_state"],
+            execution_id=raw["execution_id"],
+            node_results=raw["node_results"],
+            status=raw.get("status", "completed"),
+            pending_interrupt=raw.get("pending_interrupt"),
+        )
+
+    def fork(
+        self,
+        execution_id: str,
+        *,
+        checkpoint_id: str | None = None,
+        input: Any | None = None,
+        modified_state: dict[str, Any] | None = None,
+        context: Any | None = None,
+    ) -> ChainResult:
+        """Sync wrapper for :meth:`afork`."""
+        return run_sync(
+            self.afork(
+                execution_id,
+                checkpoint_id=checkpoint_id,
+                input=input,
+                modified_state=modified_state,
+                context=context,
+            )
         )
 
     def as_mcp_server(
