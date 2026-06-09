@@ -32,19 +32,45 @@ class ToolRegistry:
 
     @classmethod
     def register(cls, tool: Tool) -> Tool:
-        """Register a tool. Returns the tool for decorator-friendly chaining."""
-        cls._tools[tool.name] = tool
+        """Register a tool. Returns the tool for decorator-friendly chaining.
+
+        Inside a :func:`fastaiagent.runtime.job_scope` the tool is registered
+        **job-locally** so it can't clobber a sibling job's same-named tool in
+        the shared global registry.
+        """
+        from fastaiagent._internal.scope import scoped_tools
+
+        scoped = scoped_tools.get()
+        if scoped is not None:
+            scoped[tool.name] = tool
+        else:
+            cls._tools[tool.name] = tool
         return tool
 
     @classmethod
     def get(cls, name: str) -> Tool | None:
-        """Look up a tool by name. Returns None if not registered."""
+        """Look up a tool by name. Returns None if not registered.
+
+        Inside a ``job_scope`` the per-job tools are consulted first, then the
+        global registry (overlay — a job's tool wins on a name collision).
+        """
+        from fastaiagent._internal.scope import scoped_tools
+
+        scoped = scoped_tools.get()
+        if scoped is not None and name in scoped:
+            return scoped[name]
         return cls._tools.get(name)
 
     @classmethod
     def all(cls) -> dict[str, Tool]:
-        """Return a copy of the registry contents."""
-        return dict(cls._tools)
+        """Return a copy of the registry contents (global registry overlaid by
+        any active job scope)."""
+        from fastaiagent._internal.scope import scoped_tools
+
+        scoped = scoped_tools.get()
+        if scoped is None:
+            return dict(cls._tools)
+        return {**cls._tools, **scoped}
 
     @classmethod
     def clear(cls) -> None:

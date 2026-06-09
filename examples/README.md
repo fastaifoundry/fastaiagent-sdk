@@ -89,6 +89,7 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 
 ### Durability, HITL, idempotency
 - [`42_durability_hitl.py`](42_durability_hitl.py) — `interrupt()` + `Resume` + `@idempotent` (also see `customer-support-agent/`)
+- [`71_job_scope.py`](71_job_scope.py) — `job_scope()` request-scopes connection / tools / project per concurrent job
 
 ### Evaluation
 - [`07_eval_pipeline.py`](07_eval_pipeline.py) — basic `evaluate()`

@@ -96,6 +96,7 @@ nav:
       - "Side effects & idempotency": durability/side-effects.md
       - Patterns: durability/patterns.md
       - "Multi-agent": durability/multi-agent.md
+      - "Concurrency & job scoping": durability/concurrency.md
       - Checkpointers: durability/checkpointers.md
       - "API reference": durability/api-reference.md
   - Guardrails:

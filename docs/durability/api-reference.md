@@ -37,6 +37,32 @@ from fastaiagent.checkpointers.postgres import PostgresCheckpointer
 # requires `pip install 'fastaiagent[postgres]'`
 ```
 
+## `job_scope`
+
+```python
+@contextmanager
+def job_scope(
+    *,
+    api_key: str | None = None,
+    target: str | None = None,
+    project: str | None = None,
+    tools: Sequence[Any] | None = None,
+    normalize: bool | None = None,
+    framework: str | None = None,
+) -> Iterator[None]: ...
+```
+
+Request-scopes the SDK's process-global state to the current job so a runner can
+run concurrent jobs for one tenant in one process without cross-job clobbering —
+the `connect()` connection, the tool registry, the local `project_id`, and the
+trace-normalize flags. Omitted connection fields inherit the global `connect()`;
+tools are overlaid on the global registry (job wins on a name collision) and
+tools created inside the scope stay job-local. **Outside** a `job_scope` every
+accessor uses the process global, so the single-agent path is unchanged.
+
+ContextVar-based and async-task-local: launch each job as its own
+`asyncio.create_task`. See [Concurrency & job scoping](concurrency.md).
+
 ## `interrupt`
 
 ```python

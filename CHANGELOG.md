@@ -20,6 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resume engine primitive; trace-based counterfactual replay (over ingested
   traces) remains the Enterprise plane's job. Chain + Agent first; Swarm /
   Supervisor fork is a planned fast-follow.
+- **`fastaiagent.job_scope(...)` — per-job request-scoping.** A context manager
+  that scopes the SDK's process-global state to one job (the `connect()`
+  connection, the tool registry, the local `project_id`, and the trace-normalize
+  flags), so a runner can run **concurrent jobs for one tenant** in a single
+  process without cross-job clobbering. Built on `ContextVar`s (async-task-local
+  — run each job in its own `asyncio.create_task`); **outside** a `job_scope` the
+  single-agent path is byte-for-byte unchanged. See
+  [Durability → Concurrency & job scoping](docs/durability/concurrency.md) and
+  `examples/71_job_scope.py`.
 
 ### Changed
 
