@@ -62,6 +62,7 @@ from fastaiagent.llm import LLMClient, Message, StreamEvent, TextDelta
 from fastaiagent.llm.stream import HandoffEvent
 from fastaiagent.multimodal import PDF, ContentPart, Image, normalize_input
 from fastaiagent.prompt import Prompt, PromptRegistry
+from fastaiagent.chain.node import node
 from fastaiagent.tool import FunctionTool, MCPTool, RESTTool, Tool, ToolRegistry, tool
 from fastaiagent.trace import (
     RedactionPolicy,
@@ -161,6 +162,7 @@ __all__ = [
     "MCPTool",
     "ToolRegistry",
     "tool",
+    "node",
     # Guardrail
     "Guardrail",
     "GuardrailResult",

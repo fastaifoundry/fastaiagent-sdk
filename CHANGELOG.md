@@ -29,6 +29,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   single-agent path is byte-for-byte unchanged. See
   [Durability → Concurrency & job scoping](docs/durability/concurrency.md) and
   `examples/71_job_scope.py`.
+- **Registered-runner daemon — `fastaiagent runner`.** A long-lived daemon that
+  runs inside your boundary, connects out to the platform's runner channel
+  (register → heartbeat → long-poll commands → execute → report), and runs the
+  real agent locally for **`live_playground`** jobs with your own tools/keys
+  (request-scoped per job via `job_scope`). `Authorization: Bearer` runner-token
+  auth (in-memory only), bounded concurrency (`--max-concurrency`, one asyncio
+  task per job), backoff + auto re-register, and graceful drain + `stopping`
+  shutdown. New `fastaiagent/runner/` package + `fastaiagent runner --connect
+  <url> --key <api-key>` CLI. See [Deployment → Registered runner](docs/deployment/runner.md).
+  (`eval_run` / `guarded_live_rerun` / `tool_exec` job types are fast-follows.)
+- **Code-first chain nodes — `@node`, typed I/O, `output_key`.** Write a chain
+  node as a plain function with `fastaiagent.node`: its type hints become an
+  `input_schema` validated at the node boundary, `output_key` stores the node's
+  output under a named state key (instead of the legacy `_<id>_output` wrap), and
+  an optional `output_schema` validates the return (a violation raises
+  `ChainError`). `Chain.add_node(...)` gained `node=` / `output_key=` /
+  `input_schema=` / `output_schema=`. All additive — chains that use none of
+  these are unchanged; sub-DAGs / unified Chain-Swarm-Supervisor API / multi-node
+  transactions are intentionally out of scope. See
+  [Chains → Code-first nodes](docs/chains/typed-nodes.md) and
+  `examples/72_node_framework.py`.
 
 ### Changed
 

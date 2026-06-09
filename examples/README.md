@@ -81,6 +81,7 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 
 ### Workflows & multi-agent
 - [`02_chain_with_cycles.py`](02_chain_with_cycles.py) — `Chain` DAG with cycles
+- [`72_node_framework.py`](72_node_framework.py) — code-first `@node`, typed I/O, `output_key`
 - [`18_supervisor_worker.py`](18_supervisor_worker.py) — `Supervisor` + `Worker` (also see `research-agent/`)
 - [`31_swarm_research_team.py`](31_swarm_research_team.py) — `Swarm` peer-to-peer handoffs
 - [`36_chain_workflow.py`](36_chain_workflow.py) — Chain end-to-end

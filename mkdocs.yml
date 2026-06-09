@@ -86,6 +86,7 @@ nav:
   - Chains:
       - chains/index.md
       - "Execution Spec": chains/spec.md
+      - "Code-first nodes (@node, typed I/O)": chains/typed-nodes.md
       - "Cyclic Workflows": chains/cyclic-workflows.md
       - Checkpointing: chains/checkpointing.md
       - "Human-in-the-Loop": chains/hitl.md
@@ -165,6 +166,7 @@ nav:
       - platform/index.md
   - Deployment:
       - deployment/index.md
+      - "Registered runner": deployment/runner.md
       - "FastAPI + Uvicorn": deployment/fastapi.md
       - "Docker → Cloud Run / Fly / Render": deployment/docker.md
       - Modal: deployment/modal.md

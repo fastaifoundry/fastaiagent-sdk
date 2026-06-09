@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from fastaiagent._internal.async_utils import run_sync
 from fastaiagent.chain.executor import execute_chain
 from fastaiagent.chain.interrupt import AlreadyResumed, Resume
-from fastaiagent.chain.node import Edge, NodeConfig, NodeType
+from fastaiagent.chain.node import Edge, Node, NodeConfig, NodeType
 from fastaiagent.chain.validator import validate_chain
 from fastaiagent.checkpointers import Checkpointer, SQLiteCheckpointer
 
@@ -82,10 +82,41 @@ class Chain:
         tool: Any = None,
         type: NodeType = NodeType.agent,
         name: str = "",
+        *,
+        node: Node | None = None,
+        output_key: str | None = None,
+        input_schema: dict[str, Any] | None = None,
+        output_schema: dict[str, Any] | None = None,
         **config: Any,
     ) -> Chain:
-        """Add a node to the chain."""
-        node = NodeConfig(
+        """Add a node to the chain.
+
+        Pass ``node=`` a :func:`fastaiagent.node`-decorated function to add a
+        typed, code-first node. ``output_key`` stores the node's output under a
+        named state key (instead of the legacy ``_<id>_output`` wrap), and
+        ``input_schema`` / ``output_schema`` (optional JSON schemas) validate the
+        node's resolved inputs / output at its boundary. All additive — a node
+        without any of these behaves exactly as before.
+        """
+        if node is not None:
+            tool = node.tool
+            type = NodeType.tool
+            name = name or node.name
+            if output_key is None:
+                output_key = node.output_key
+            if input_schema is None:
+                input_schema = node.input_schema
+            if output_schema is None:
+                output_schema = node.output_schema
+        # Stash the 2.4b extras into ``config`` so they ride the existing
+        # NodeConfig serialization and the executor can read them per node.
+        if output_key is not None:
+            config["output_key"] = output_key
+        if input_schema is not None:
+            config["input_schema"] = input_schema
+        if output_schema is not None:
+            config["output_schema"] = output_schema
+        node_config = NodeConfig(
             id=id,
             type=type,
             name=name or id,
@@ -95,7 +126,7 @@ class Chain:
             tool_name=tool.name if tool and hasattr(tool, "name") else None,
             config=config,
         )
-        self.nodes.append(node)
+        self.nodes.append(node_config)
         return self
 
     def connect(
