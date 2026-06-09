@@ -16,6 +16,7 @@ from fastaiagent.cli.migrate import migrate_command
 from fastaiagent.cli.prompts import prompts_app
 from fastaiagent.cli.replay import replay_app
 from fastaiagent.cli.resume import register as register_resume_commands
+from fastaiagent.cli.runner import runner_app
 from fastaiagent.cli.traces import traces_app
 from fastaiagent.cli.ui import ui_app
 from fastaiagent.learn.cli import learn_app
@@ -33,6 +34,7 @@ app.add_typer(prompts_app, name="prompts", help="Manage prompts")
 app.add_typer(kb_app, name="kb", help="Manage knowledge bases")
 app.add_typer(mcp_app, name="mcp", help="Expose an Agent or Chain as an MCP server")
 app.add_typer(agent_app, name="agent", help="Run an Agent or Chain as a service")
+app.add_typer(runner_app, name="runner", help="Run a registered runner daemon (pulls live jobs)")
 app.add_typer(auth_app, name="auth", help="Inspect saved Platform credentials")
 app.add_typer(ui_app, name="ui", help="Local web UI (traces, prompts, evals, guardrails)")
 app.add_typer(
