@@ -86,6 +86,7 @@ nav:
   - Chains:
       - chains/index.md
       - "Execution Spec": chains/spec.md
+      - "Code-first nodes (@node, typed I/O)": chains/typed-nodes.md
       - "Cyclic Workflows": chains/cyclic-workflows.md
       - Checkpointing: chains/checkpointing.md
       - "Human-in-the-Loop": chains/hitl.md
@@ -96,6 +97,7 @@ nav:
       - "Side effects & idempotency": durability/side-effects.md
       - Patterns: durability/patterns.md
       - "Multi-agent": durability/multi-agent.md
+      - "Concurrency & job scoping": durability/concurrency.md
       - Checkpointers: durability/checkpointers.md
       - "API reference": durability/api-reference.md
   - Guardrails:
@@ -164,6 +166,7 @@ nav:
       - platform/index.md
   - Deployment:
       - deployment/index.md
+      - "Registered runner": deployment/runner.md
       - "FastAPI + Uvicorn": deployment/fastapi.md
       - "Docker → Cloud Run / Fly / Render": deployment/docker.md
       - Modal: deployment/modal.md

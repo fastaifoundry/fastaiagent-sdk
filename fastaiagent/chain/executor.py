@@ -360,8 +360,28 @@ async def execute_chain(
 
             node_results[node_id] = result
 
-            # Update state with result
-            if isinstance(result, dict):
+            # 2.4b (additive): the node's real output value is what an
+            # output_schema validates and an output_key stores — unwrap the
+            # ``{"output": ...}`` envelope tool/agent nodes return.
+            out_value = result.get("output", result) if isinstance(result, dict) else result
+            output_schema = node.config.get("output_schema")
+            if output_schema:
+                from fastaiagent.tool.schema import validate_schema
+
+                violations = validate_schema(output_schema, out_value)
+                if violations:
+                    raise ChainError(
+                        f"Node '{node_id}' output failed output_schema: "
+                        + "; ".join(v.message for v in violations)
+                    )
+
+            # Update state with result. An explicit output_key stores the node's
+            # output under that key; otherwise the legacy dict-merge /
+            # ``_<node_id>_output`` auto-wrap is preserved unchanged.
+            output_key = node.config.get("output_key")
+            if output_key:
+                state.set(output_key, out_value)
+            elif isinstance(result, dict):
                 state.update(result)
             elif result is not None:
                 state.set(f"_{node_id}_output", result)
@@ -536,6 +556,17 @@ async def _execute_node(
                 args[key] = _render_template(template, context)
             else:
                 args[key] = template
+        # 2.4b: optional input-schema validation at the node boundary (additive).
+        input_schema = node.config.get("input_schema")
+        if input_schema:
+            from fastaiagent.tool.schema import validate_schema
+
+            violations = validate_schema(input_schema, args)
+            if violations:
+                raise ChainError(
+                    f"Node '{node.id}' input failed input_schema: "
+                    + "; ".join(v.message for v in violations)
+                )
         result = await node.tool.aexecute(args, context=run_context)
         return {"output": result.output, "error": result.error}
 

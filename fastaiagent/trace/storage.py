@@ -175,15 +175,23 @@ class LocalStorageProcessor:
         # ``enable_otel_capture()`` flipped the flag. Runs *before* redaction so
         # the added canonical keys are themselves redaction-eligible. Only fills
         # absent keys, so native fastaiagent spans are unaffected.
-        if _normalize_enabled:
+        # Effective flags: a job_scope() override (ContextVar) wins over the
+        # module globals so concurrent runner jobs don't clobber each other.
+        from fastaiagent._internal.scope import UNSET, scoped_framework, scoped_normalize
+
+        _sn = scoped_normalize.get()
+        normalize_on = _normalize_enabled if _sn is UNSET else _sn
+        if normalize_on:
             from fastaiagent.trace.normalize import normalize_attributes
 
-            scope = getattr(getattr(span, "instrumentation_scope", None), "name", None)
+            _sf = scoped_framework.get()
+            framework_override = _framework_override if _sf is UNSET else _sf
+            scope_name = getattr(getattr(span, "instrumentation_scope", None), "name", None)
             attrs = normalize_attributes(
                 attrs,
-                scope_name=scope,
+                scope_name=scope_name,
                 is_root=(parent_id is None),
-                framework_override=_framework_override,
+                framework_override=framework_override,
             )
 
         # Apply capture-mode redaction (no-op when no policy is installed).

@@ -118,6 +118,11 @@ def get_project_id() -> str:
       3. ``.fastaiagent/config.toml`` (loaded; creates the file on first
          call from a fresh directory).
     """
+    from fastaiagent._internal.scope import scoped_project_id
+
+    scoped = scoped_project_id.get()
+    if scoped is not None:
+        return scoped
     if _OVERRIDE is not None:
         return _OVERRIDE
     global _INSTANCE
@@ -166,6 +171,11 @@ def safe_get_project_id() -> str:
     """
     global _INSTANCE
     try:
+        from fastaiagent._internal.scope import scoped_project_id
+
+        scoped = scoped_project_id.get()
+        if scoped is not None:
+            return scoped
         if _OVERRIDE is not None:
             return _OVERRIDE
         if _INSTANCE is not None:

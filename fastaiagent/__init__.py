@@ -36,6 +36,7 @@ from fastaiagent.chain.interrupt import (
 )
 from fastaiagent.checkpointers import Checkpointer, PendingInterrupt, SQLiteCheckpointer
 from fastaiagent.client import connect, disconnect
+from fastaiagent.runtime import job_scope
 from fastaiagent.eval import (
     Dataset,
     EvalResults,
@@ -61,6 +62,7 @@ from fastaiagent.llm import LLMClient, Message, StreamEvent, TextDelta
 from fastaiagent.llm.stream import HandoffEvent
 from fastaiagent.multimodal import PDF, ContentPart, Image, normalize_input
 from fastaiagent.prompt import Prompt, PromptRegistry
+from fastaiagent.chain.node import node
 from fastaiagent.tool import FunctionTool, MCPTool, RESTTool, Tool, ToolRegistry, tool
 from fastaiagent.trace import (
     RedactionPolicy,
@@ -99,6 +101,7 @@ __all__ = [
     "__version__",
     "connect",
     "disconnect",
+    "job_scope",
     "is_connected",
     # Agent
     "Agent",
@@ -159,6 +162,7 @@ __all__ = [
     "MCPTool",
     "ToolRegistry",
     "tool",
+    "node",
     # Guardrail
     "Guardrail",
     "GuardrailResult",

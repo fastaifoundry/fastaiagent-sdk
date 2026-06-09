@@ -81,6 +81,7 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 
 ### Workflows & multi-agent
 - [`02_chain_with_cycles.py`](02_chain_with_cycles.py) — `Chain` DAG with cycles
+- [`72_node_framework.py`](72_node_framework.py) — code-first `@node`, typed I/O, `output_key`
 - [`18_supervisor_worker.py`](18_supervisor_worker.py) — `Supervisor` + `Worker` (also see `research-agent/`)
 - [`31_swarm_research_team.py`](31_swarm_research_team.py) — `Swarm` peer-to-peer handoffs
 - [`36_chain_workflow.py`](36_chain_workflow.py) — Chain end-to-end
@@ -89,6 +90,7 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 
 ### Durability, HITL, idempotency
 - [`42_durability_hitl.py`](42_durability_hitl.py) — `interrupt()` + `Resume` + `@idempotent` (also see `customer-support-agent/`)
+- [`71_job_scope.py`](71_job_scope.py) — `job_scope()` request-scopes connection / tools / project per concurrent job
 
 ### Evaluation
 - [`07_eval_pipeline.py`](07_eval_pipeline.py) — basic `evaluate()`

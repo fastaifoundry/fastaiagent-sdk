@@ -164,12 +164,18 @@ class TestForkedReplay:
         forked.modify_prompt("New prompt")
         assert forked._modifications["prompt"] == "New prompt"
 
-    def test_modify_state(self):
+    def test_modify_state_raises_pointing_to_afork(self):
+        # modify_state was never wired into the rerun path; wiring it would
+        # grow trace/replay.py into a state-counterfactual engine (the
+        # Enterprise plane's job). It now raises honestly and points callers at
+        # the SDK checkpoint-fork primitive instead.
+        import pytest
+
         trace = _make_trace()
         replay = Replay(trace)
         forked = replay.fork_at(step=0)
-        forked.modify_state({"key": "value"})
-        assert forked._modifications["state"] == {"key": "value"}
+        with pytest.raises(NotImplementedError, match="afork"):
+            forked.modify_state({"key": "value"})
 
     def test_rerun(self, stub_agent_arun):
         trace = _make_agent_trace()

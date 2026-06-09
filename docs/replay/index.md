@@ -188,7 +188,8 @@ print(f"Steps executed: {result.steps_executed}")
 | `modify_prompt(new_prompt)` | System prompt for the LLM call at the fork point |
 | `modify_input(new_input)` | Input data passed to the step |
 | `modify_config(**kwargs)` | Agent/LLM configuration (temperature, max_tokens, etc.) |
-| `modify_state(new_state)` | Chain state (for chain replays) |
+
+> **Forking with modified *state*** is not done here. `trace/replay.py` is a read-only inspect/diff surface; trace-based state counterfactuals are the Enterprise Replay engine's job. To branch a run from a saved step with a modified state, use the SDK's checkpoint-fork primitive — [`Chain.afork(...)` / `Agent.afork(...)`](../durability/index.md). (`ForkedReplay.modify_state()` raises `NotImplementedError` pointing there.)
 
 Methods return `self` for chaining:
 

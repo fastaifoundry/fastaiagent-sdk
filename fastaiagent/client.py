@@ -47,7 +47,51 @@ class _Connection:
         )
 
 
-_connection = _Connection()
+_global_connection = _Connection()
+
+
+class _ConnectionProxy:
+    """Scope-aware stand-in for the process-global connection.
+
+    Reads resolve to the active :func:`fastaiagent.runtime.job_scope`
+    connection (when one is set via ContextVar), else the process-global.
+    Writes ALWAYS target the process-global — ``connect()`` / ``disconnect()``
+    set the tenant; per-job overrides are installed by ``job_scope()`` through
+    the ContextVar, not attribute writes.
+
+    This makes every existing ``_connection.<attr>`` read job-scope-aware with
+    no read-site changes (so no site can leak). In a background exporter thread
+    (no active scope) reads resolve to the global — correct for one tenant per
+    runner.
+    """
+
+    def _resolve(self) -> _Connection:
+        from fastaiagent._internal.scope import scoped_connection
+
+        active = scoped_connection.get()
+        return active if active is not None else _global_connection
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._resolve(), name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        setattr(_global_connection, name, value)
+
+    def __repr__(self) -> str:
+        return repr(self._resolve())
+
+
+_connection: Any = _ConnectionProxy()
+
+
+def get_connection() -> _Connection:
+    """Return the active connection: the ``job_scope()`` override if set, else
+    the process-global. Equivalent to reading ``_connection``; provided as an
+    explicit accessor for new code."""
+    from fastaiagent._internal.scope import scoped_connection
+
+    active = scoped_connection.get()
+    return active if active is not None else _global_connection
 
 
 def _normalize_target(target: str) -> str:

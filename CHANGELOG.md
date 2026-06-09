@@ -5,6 +5,59 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Checkpoint-based fork: `Chain.afork` / `Agent.afork`** (with sync `fork`
+  wrappers). Branch a run from a saved checkpoint into a **new, independent**
+  execution — the original run is left intact.
+  `Chain.afork(execution_id, checkpoint_id=…, modified_state=…)` restores the
+  step's state, applies the patch, and runs forward from the node *after* the
+  fork point under a fresh `execution_id` (linked to the source via
+  `parent_checkpoint_id`). `Agent.afork(execution_id, input=…)` re-asks a run
+  with a different request (a counterfactual branch). This is the SDK's fork +
+  resume engine primitive; trace-based counterfactual replay (over ingested
+  traces) remains the Enterprise plane's job. Chain + Agent first; Swarm /
+  Supervisor fork is a planned fast-follow.
+- **`fastaiagent.job_scope(...)` — per-job request-scoping.** A context manager
+  that scopes the SDK's process-global state to one job (the `connect()`
+  connection, the tool registry, the local `project_id`, and the trace-normalize
+  flags), so a runner can run **concurrent jobs for one tenant** in a single
+  process without cross-job clobbering. Built on `ContextVar`s (async-task-local
+  — run each job in its own `asyncio.create_task`); **outside** a `job_scope` the
+  single-agent path is byte-for-byte unchanged. See
+  [Durability → Concurrency & job scoping](docs/durability/concurrency.md) and
+  `examples/71_job_scope.py`.
+- **Registered-runner daemon — `fastaiagent runner`.** A long-lived daemon that
+  runs inside your boundary, connects out to the platform's runner channel
+  (register → heartbeat → long-poll commands → execute → report), and runs the
+  real agent locally for **`live_playground`** jobs with your own tools/keys
+  (request-scoped per job via `job_scope`). `Authorization: Bearer` runner-token
+  auth (in-memory only), bounded concurrency (`--max-concurrency`, one asyncio
+  task per job), backoff + auto re-register, and graceful drain + `stopping`
+  shutdown. New `fastaiagent/runner/` package + `fastaiagent runner --connect
+  <url> --key <api-key>` CLI. See [Deployment → Registered runner](docs/deployment/runner.md).
+  (`eval_run` / `guarded_live_rerun` / `tool_exec` job types are fast-follows.)
+- **Code-first chain nodes — `@node`, typed I/O, `output_key`.** Write a chain
+  node as a plain function with `fastaiagent.node`: its type hints become an
+  `input_schema` validated at the node boundary, `output_key` stores the node's
+  output under a named state key (instead of the legacy `_<id>_output` wrap), and
+  an optional `output_schema` validates the return (a violation raises
+  `ChainError`). `Chain.add_node(...)` gained `node=` / `output_key=` /
+  `input_schema=` / `output_schema=`. All additive — chains that use none of
+  these are unchanged; sub-DAGs / unified Chain-Swarm-Supervisor API / multi-node
+  transactions are intentionally out of scope. See
+  [Chains → Code-first nodes](docs/chains/typed-nodes.md) and
+  `examples/72_node_framework.py`.
+
+### Changed
+
+- `ForkedReplay.modify_state()` now raises `NotImplementedError` pointing to
+  `Chain.afork` / `Agent.afork`. It was never wired into the rerun path (so this
+  is not a behavior regression); `trace/replay.py` stays a read-only
+  inspect/diff surface rather than a state-counterfactual engine.
+
 ## [1.18.0] - 2026-06-08
 
 MINOR — additive and backward-compatible. No wire-protocol bump: a new optional

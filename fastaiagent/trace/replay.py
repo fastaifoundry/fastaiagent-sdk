@@ -339,8 +339,18 @@ class ForkedReplay:
         return self
 
     def modify_state(self, new_state: dict[str, Any]) -> ForkedReplay:
-        self._modifications["state"] = new_state
-        return self
+        # Honest surface: this was never wired into the agent rerun path, and
+        # wiring it would grow trace/replay.py into a state-counterfactual
+        # engine — which is deliberately the Enterprise plane's job, not the
+        # SDK's. For checkpoint-state forking, use the SDK primitive
+        # ``Chain.afork(..., modified_state=...)`` / ``Agent.afork(...)``.
+        raise NotImplementedError(
+            "ForkedReplay.modify_state() is not supported. trace/replay.py is a "
+            "read-only inspect/diff surface; trace-based state counterfactuals "
+            "live in the Enterprise Replay engine. To fork a run from a saved "
+            "step with modified state, use Chain.afork(execution_id, "
+            "modified_state=...) or Agent.afork(execution_id, input=...)."
+        )
 
     def with_tools(self, tools: list[Any]) -> ForkedReplay:
         """Override the tools used during rerun (full replacement).
