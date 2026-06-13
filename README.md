@@ -1,12 +1,20 @@
 # FastAIAgent SDK
 
-**Build, debug, evaluate, and operate AI agents.**
-The only SDK with **Agent Replay** — fork-and-rerun debugging — and a
-**zero-ceremony Local UI** that ships inside the Python wheel.
+**The open-source Python SDK to build, debug, evaluate, and ship production AI agents — in code you own.**
 
-Works standalone or connected to the [FastAIAgent Platform](https://fastaiagent.net) for visual editing, production monitoring, and team collaboration.
+- 🔁 **Agent Replay** — fork a failing production trace, fix the prompt or tool, rerun, and save it as a regression test. *No other SDK can do this.*
+- 🛡️ **Responsible AI Trust Layer** — groundedness, reflection, secrets, PII, toxicity, and topic controls as runtime guardrails — the things an enterprise review actually asks for, in one call.
+- 🖥️ **Zero-ceremony Local UI** — ships inside the wheel. Span-tree traces, evals, prompt playground, cost, and workflow topology. No Docker, no signup, nothing phones home.
+- ⏸️ **Durable & resumable** — crash-proof agents that pause for human approval *for days* and resume after a real `SIGKILL`.
+- 🔌 **Universal & model-agnostic** — 20+ LLM providers; one-line instrumentation for LangGraph, CrewAI, PydanticAI, and any OpenTelemetry stack.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.19.0)](https://pypi.org/project/fastaiagent/)
+```bash
+pip install fastaiagent
+```
+
+Runs fully standalone, or connect to the [FastAIAgent Platform](https://fastaiagent.net) for hosted observability, prompt management, and team collaboration.
+
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.20.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -429,26 +437,44 @@ Runs land on the new **Simulations** UI surface — transcript bubbles,
 per-criterion verdicts, and a deep-link from each turn into its trace. See
 [docs/simulation](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/simulation/index.md).
 
-## Stronger safety library
+## Responsible AI — the Trust Layer
 
-Zero-dependency by default; shared detectors back both eval scorers and runtime
-guardrails:
+The one question every enterprise review asks: *can you stop it hallucinating,
+leaking, or going off-policy?* `responsible_ai()` composes that answer as runtime
+guardrails — block hallucinations against your sources, leaked secrets, PII,
+toxicity, and off-limits topics. The zero-dependency checks are on by default;
+LLM-backed checks are opt-in, so the default bundle adds **no** extra LLM calls.
 
 ```python
-from fastaiagent import Agent, no_pii, no_prompt_injection
+from fastaiagent import Agent, LLMClient, responsible_ai
+
+llm = LLMClient(provider="openai", model="gpt-4o-mini")
+latest_context = ""  # set from your retrieval each turn
 
 agent = Agent(
-    name="safe",
-    guardrails=[
-        no_prompt_injection(),  # blocks jailbreak attempts on input
-        no_pii(),               # blocks PII on output (credit cards Luhn-validated)
-    ],
+    name="support",
+    llm=llm,
+    guardrails=responsible_ai(
+        # defaults: prompt_injection (input), pii + secrets (output)
+        grounded_to=lambda: latest_context,   # block claims not in your sources
+        banned=["politics", "legal advice"],  # semantic topic blocklist
+        toxicity=True,                         # LLM toxicity scoring (0–1)
+        llm=llm,
+    ),
 )
 ```
 
-Also available as eval scorers (`prompt_injection`, `pii_leakage`, `moderation`)
-and an optional Presidio PII backend via `pip install fastaiagent[safety]`. See
-[docs/evaluation/safety-metrics.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/evaluation/safety-metrics.md).
+Every piece is also usable on its own — `grounded()` / `no_hallucination()`,
+`no_secrets()` (masks the secret so it's never re-leaked), `banned_topics()` /
+`allowed_topics()`, and `toxicity_check(mode="llm")`. Plus the `Reflect`
+middleware, which self-critiques the final answer against non-negotiable `facts`
+and revises it. Detection logic is shared with the eval scorers
+(`faithfulness`, `pii_leakage`, `toxicity`, `prompt_injection`, `moderation`) —
+one core detector, two surfaces — with an optional Presidio PII backend via
+`pip install fastaiagent[safety]`.
+
+See [docs/guardrails/responsible-ai.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/guardrails/responsible-ai.md)
+and the runnable [examples/73_responsible_ai.py](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/73_responsible_ai.py).
 
 ## Works with LangGraph, CrewAI, PydanticAI — universal harness
 

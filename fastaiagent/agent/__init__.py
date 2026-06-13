@@ -15,6 +15,7 @@ from fastaiagent.agent.middleware import (
     AgentMiddleware,
     MiddlewareContext,
     RedactPII,
+    Reflect,
     ToolBudget,
     TrimLongMessages,
 )
@@ -33,6 +34,7 @@ __all__ = [
     "MiddlewareContext",
     "PersistentFactBlock",
     "RedactPII",
+    "Reflect",
     "RunContext",
     "StaticBlock",
     "SummaryBlock",

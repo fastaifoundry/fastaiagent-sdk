@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.20.0] - 2026-06-13
+
+### Added
+
+- **Responsible AI "Trust Layer"** — a coherent set of runtime guardrails (plus
+  one middleware) for truthful, safe, on-policy agents, composable in one call
+  via `responsible_ai(...)`:
+  - `grounded()` / `no_hallucination()` — block output not grounded in a
+    reference; reuses the `Faithfulness` engine (claim-extract + verify).
+  - `no_secrets()` — block leaked credentials (AWS / GitHub / Slack / Google /
+    OpenAI / Stripe tokens, JWTs, private keys, `api_key=` assignments); detected
+    values are **masked** so the secret is never re-leaked.
+  - `banned_topics()` / `allowed_topics()` — semantic (LLM) or zero-dependency
+    keyword topic blocklist / whitelist.
+  - `toxicity_check(mode="llm")` — opt-in LLM toxicity scoring (0–1) alongside
+    the existing keyword default.
+  - `Reflect` middleware — self-critique the final answer against `facts` /
+    `criteria` and revise; skips tool-call turns; fails open.
+  - Shared detectors `detect_secrets`, `detect_toxicity`, and the
+    `score_groundedness` helper in `_internal.safety_detectors` — one core
+    detector, two surfaces (runtime guardrails + eval scorers).
+- Docs: `docs/guardrails/responsible-ai.md`; runnable `examples/73_responsible_ai.py`.
+
+### Changed
+
+- `toxicity_check()` gains opt-in `mode` / `llm` / `threshold` kwargs. **Default
+  behaviour is unchanged** (zero-dependency keyword check).
+- `eval.rag.Faithfulness` now delegates to the shared `score_groundedness`
+  helper. Behaviour-identical (covered by existing eval tests); no public API change.
+
 ## [1.19.0] - 2026-06-09
 
 ### Added
