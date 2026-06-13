@@ -321,7 +321,8 @@ class ContextRecall(Scorer):
                     found += 1
             except Exception:
                 logger.debug(
-                    "Failed to check claim presence in context recall scorer", exc_info=True,
+                    "Failed to check claim presence in context recall scorer",
+                    exc_info=True,
                 )
                 continue
 

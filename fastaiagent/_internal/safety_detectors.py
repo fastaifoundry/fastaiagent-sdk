@@ -103,9 +103,7 @@ def detect_pii(
     for entity in entities:
         pattern = _PII_REGEXES.get(entity)
         if pattern is None:
-            raise ValueError(
-                f"Unknown PII entity {entity!r}. Known: {sorted(_PII_REGEXES)}"
-            )
+            raise ValueError(f"Unknown PII entity {entity!r}. Known: {sorted(_PII_REGEXES)}")
         for m in pattern.finditer(text):
             value = m.group(0)
             # Credit cards: only count Luhn-valid candidates (kills the many
@@ -157,22 +155,45 @@ def _detect_pii_presidio(text: str, *, entities: tuple[str, ...]) -> list[PIIMat
 # Curated heuristic patterns. This is a living config — extend from real
 # examples as they surface. Each entry is (compiled regex, short label).
 _INJECTION_PATTERNS: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"ignore\s+(?:all\s+|any\s+)?(?:the\s+)?(?:previous|prior|above|earlier)\s+"
-                r"(?:instructions?|prompts?|messages?|context)", re.I), "ignore_previous"),
-    (re.compile(r"disregard\s+(?:all\s+|the\s+|your\s+)?(?:previous|prior|above|earlier|"
-                r"system)?\s*(?:instructions?|prompts?|rules?)", re.I), "disregard_instructions"),
+    (
+        re.compile(
+            r"ignore\s+(?:all\s+|any\s+)?(?:the\s+)?(?:previous|prior|above|earlier)\s+"
+            r"(?:instructions?|prompts?|messages?|context)",
+            re.I,
+        ),
+        "ignore_previous",
+    ),
+    (
+        re.compile(
+            r"disregard\s+(?:all\s+|the\s+|your\s+)?(?:previous|prior|above|earlier|"
+            r"system)?\s*(?:instructions?|prompts?|rules?)",
+            re.I,
+        ),
+        "disregard_instructions",
+    ),
     (re.compile(r"forget\s+(?:everything|all|what)\b", re.I), "forget_everything"),
     (re.compile(r"you\s+are\s+now\b", re.I), "you_are_now"),
     (re.compile(r"\bDAN\b|do\s+anything\s+now", re.I), "dan_jailbreak"),
-    (re.compile(r"(?:reveal|print|show|repeat|tell\s+me)\s+(?:me\s+)?(?:your\s+)?"
-                r"(?:the\s+)?(?:system\s+)?(?:prompt|instructions?)", re.I),
-     "reveal_system_prompt"),
+    (
+        re.compile(
+            r"(?:reveal|print|show|repeat|tell\s+me)\s+(?:me\s+)?(?:your\s+)?"
+            r"(?:the\s+)?(?:system\s+)?(?:prompt|instructions?)",
+            re.I,
+        ),
+        "reveal_system_prompt",
+    ),
     (re.compile(r"(?:pretend|act)\s+(?:to\s+be|as(?:\s+if)?)\b", re.I), "role_override"),
     (re.compile(r"new\s+(?:instructions?|rules?|task)\s*:", re.I), "new_instructions"),
-    (re.compile(r"</?(?:system|s|inst)>|\[/?INST\]|<\|im_(?:start|end)\|>", re.I),
-     "delimiter_injection"),
-    (re.compile(r"override\s+(?:your\s+|the\s+)?(?:instructions?|programming|rules?|guardrails?)",
-                re.I), "override_instructions"),
+    (
+        re.compile(r"</?(?:system|s|inst)>|\[/?INST\]|<\|im_(?:start|end)\|>", re.I),
+        "delimiter_injection",
+    ),
+    (
+        re.compile(
+            r"override\s+(?:your\s+|the\s+)?(?:instructions?|programming|rules?|guardrails?)", re.I
+        ),
+        "override_instructions",
+    ),
 ]
 
 
@@ -317,8 +338,7 @@ def moderate_text(
             from openai import OpenAI
         except ImportError as e:
             raise ImportError(
-                "moderate_text requires the openai package. "
-                "Install with: pip install openai"
+                "moderate_text requires the openai package. Install with: pip install openai"
             ) from e
         client = OpenAI()
 
@@ -550,9 +570,7 @@ class GroundednessResult:
         }
 
 
-async def score_groundedness(
-    output: str, context: str, *, llm: Any = None
-) -> GroundednessResult:
+async def score_groundedness(output: str, context: str, *, llm: Any = None) -> GroundednessResult:
     """Measure factual consistency of ``output`` against ``context``.
 
     Two LLM steps: extract claims from the output, then verify each against the

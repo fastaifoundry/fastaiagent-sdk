@@ -106,9 +106,7 @@ class AgentMiddleware:
 
     name: str = ""
 
-    async def before_model(
-        self, ctx: MiddlewareContext, messages: list[Message]
-    ) -> list[Message]:
+    async def before_model(self, ctx: MiddlewareContext, messages: list[Message]) -> list[Message]:
         """Transform messages before the LLM call.
 
         Return the (possibly modified) messages. May return a new list or
@@ -116,9 +114,7 @@ class AgentMiddleware:
         """
         return messages
 
-    async def after_model(
-        self, ctx: MiddlewareContext, response: LLMResponse
-    ) -> LLMResponse:
+    async def after_model(self, ctx: MiddlewareContext, response: LLMResponse) -> LLMResponse:
         """Inspect or rewrite the LLM response before tool dispatch.
 
         Return the (possibly modified) response. Raising propagates; use
@@ -172,9 +168,7 @@ class _MiddlewarePipeline:
             messages = await mw.before_model(ctx, messages)
         return messages
 
-    async def apply_after_model(
-        self, ctx: MiddlewareContext, response: LLMResponse
-    ) -> LLMResponse:
+    async def apply_after_model(self, ctx: MiddlewareContext, response: LLMResponse) -> LLMResponse:
         for mw in reversed(self._middleware):
             response = await mw.after_model(ctx, response)
         return response
@@ -230,9 +224,7 @@ class TrimLongMessages(AgentMiddleware):
             raise ValueError("keep_last must be >= 1")
         self.keep_last = keep_last
 
-    async def before_model(
-        self, ctx: MiddlewareContext, messages: list[Message]
-    ) -> list[Message]:
+    async def before_model(self, ctx: MiddlewareContext, messages: list[Message]) -> list[Message]:
         if len(messages) <= self.keep_last:
             return messages
 
@@ -280,10 +272,10 @@ class ToolBudget(AgentMiddleware):
 # Default PII patterns: US-style email, phone, SSN, and credit-card-ish
 # digit runs. Not exhaustive — users should supply domain-specific patterns.
 _DEFAULT_PII_PATTERNS = [
-    r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}",          # email
+    r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}",  # email
     r"\b(?:\+?1[\-.\s]?)?\(?\d{3}\)?[\-.\s]?\d{3}[\-.\s]?\d{4}\b",  # US phone
-    r"\b\d{3}-\d{2}-\d{4}\b",                                      # SSN
-    r"\b(?:\d[ \-]?){13,19}\b",                                    # card-ish
+    r"\b\d{3}-\d{2}-\d{4}\b",  # SSN
+    r"\b(?:\d[ \-]?){13,19}\b",  # card-ish
 ]
 
 
@@ -316,9 +308,7 @@ class RedactPII(AgentMiddleware):
             result = pat.sub(self.placeholder, result)
         return result
 
-    async def before_model(
-        self, ctx: MiddlewareContext, messages: list[Message]
-    ) -> list[Message]:
+    async def before_model(self, ctx: MiddlewareContext, messages: list[Message]) -> list[Message]:
         # Redact in-place on message content. Messages are Pydantic BaseModels
         # with mutable fields — safe to mutate.
         for msg in messages:
@@ -326,9 +316,7 @@ class RedactPII(AgentMiddleware):
                 msg.content = self._redact(msg.content)
         return messages
 
-    async def after_model(
-        self, ctx: MiddlewareContext, response: LLMResponse
-    ) -> LLMResponse:
+    async def after_model(self, ctx: MiddlewareContext, response: LLMResponse) -> LLMResponse:
         if content := response.content:
             response.content = self._redact(content)
         return response
@@ -370,9 +358,7 @@ class Reflect(AgentMiddleware):
         self.criteria = criteria
         self.max_revisions = max_revisions
 
-    async def after_model(
-        self, ctx: MiddlewareContext, response: LLMResponse
-    ) -> LLMResponse:
+    async def after_model(self, ctx: MiddlewareContext, response: LLMResponse) -> LLMResponse:
         # Only reflect on terminal text answers — skip tool-call turns.
         if response.tool_calls or not (response.content and response.content.strip()):
             return response
@@ -384,9 +370,7 @@ class Reflect(AgentMiddleware):
         facts_block = ""
         if self.facts:
             joined = "\n".join(f"- {f}" for f in self.facts)
-            facts_block = (
-                "Non-negotiable facts/policies the answer MUST respect:\n" f"{joined}\n\n"
-            )
+            facts_block = f"Non-negotiable facts/policies the answer MUST respect:\n{joined}\n\n"
         criteria_block = f"Quality criteria: {self.criteria}\n\n" if self.criteria else ""
 
         answer = response.content
