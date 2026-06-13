@@ -21,7 +21,7 @@ fastaiagent --help
 | `fastaiagent auth` | Inspect saved credentials (`status`, `env`) |
 | `fastaiagent traces` | List, export, and search local traces |
 | `fastaiagent replay` | Show, inspect, and fork traces for debugging |
-| `fastaiagent eval` | Run evaluations from the command line |
+| `fastaiagent eval` | Curate eval datasets from traces; run evaluations |
 | `fastaiagent prompts` | Browse the prompt registry |
 | `fastaiagent kb` | Manage local knowledge bases |
 | `fastaiagent agent` | Run an Agent or Chain as an HTTP service |
@@ -105,12 +105,14 @@ fastaiagent replay fork <trace_id> --input "Try a different question"
 ## `fastaiagent eval`
 
 ```bash
-# Run an evaluation
-fastaiagent eval run --dataset test_cases.jsonl --scorer contains
-
-# Compare two eval runs
-fastaiagent eval compare <run_id_a> <run_id_b>
+# Curate an eval dataset from captured agent traces
+fastaiagent eval curate --filter favorites --out cases.jsonl
+fastaiagent eval curate --filter guardrail --agent support --since 24 --out fixme.jsonl
 ```
+
+Each `agent.<name>` span (root, or nested inside a chain/supervisor/swarm) becomes
+one case. See [Trace Curation](../evaluation/curation.md). The `eval run` /
+`eval compare` subcommands are placeholders today — use the Python `evaluate()` API.
 
 ## `fastaiagent prompts`
 

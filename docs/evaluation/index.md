@@ -122,6 +122,12 @@ code-saved cases are interchangeable. See
 [Replay → From a Rerun to a Regression Test](../replay/index.md#from-a-rerun-to-a-regression-test)
 for the full walkthrough.
 
+#### From captured traces in bulk (curation)
+
+To turn many captured traces into a dataset at once — by favorites, notes,
+guardrail-fired, or all — use `Dataset.from_traces(...)` or
+`fastaiagent eval curate`. See [Trace Curation](curation.md).
+
 ### From CSV
 
 ```csv
@@ -464,4 +470,5 @@ For contributors who need to understand the evaluation loop, scorer resolution p
 - [Similarity Metrics](similarity-metrics.md) — Embedding-based and classical NLP metrics
 - [Trajectory Scoring](trajectory-scoring.md) — Evaluate the path an agent took
 - [Session Scoring](session-scoring.md) — Evaluate multi-turn conversations
+- [Trace Curation](curation.md) — Build datasets from captured agent traces
 - [Agents](../agents/index.md) — Build agents to evaluate

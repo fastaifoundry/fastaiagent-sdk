@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.22.0] - 2026-06-13
+
+### Added
+
+- **Trace → eval-dataset curation** — turn captured agent traces into eval datasets:
+  - **`Dataset.from_traces(...)`** / **`curate_from_traces(...)`** — select traces by
+    filter (`all`/`favorites`/`noted`/`guardrail`/`failed`, plus `agent`/`since_hours`/
+    `limit`/`dedup_by`) and emit one item per `agent.<name>` span — root **or** nested
+    inside a chain/supervisor/swarm — via `agent.input`/`agent.output`. Good filters use
+    the captured output as `expected_output`; failure filters mark cases `needs_review`
+    (bad output preserved as `actual_output`).
+  - **`Dataset.to_jsonl(path, append=...)`** — JSONL writer (same line format as
+    `ReplayResult.save_as_test`, so curated and replay-saved cases interleave).
+  - **`fastaiagent eval curate --filter … --out cases.jsonl`** — CLI command (the first
+    functional `eval` subcommand).
+  - Docs: `docs/evaluation/curation.md`; runnable `examples/80_curate_from_traces.py`.
+
 ## [1.21.0] - 2026-06-13
 
 ### Added
