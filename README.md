@@ -14,7 +14,7 @@ pip install fastaiagent
 
 Runs fully standalone, or connect to the [FastAIAgent Platform](https://fastaiagent.net) for hosted observability, prompt management, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.21.0)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.22.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -341,6 +341,14 @@ inner-loop iteration feeds outer-loop curation without copy-paste.
 See [docs/ui/datasets.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/ui/datasets.md)
 and [examples/53_dataset_editor.py](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/53_dataset_editor.py)
 for the walkthrough.
+
+**Or curate in bulk from traces.** `Dataset.from_traces(filter="favorites")` and
+`fastaiagent eval curate --filter guardrail --out fixme.jsonl` turn captured agent
+traces into dataset cases — every `agent.<name>` span (even nested inside a
+chain/supervisor/swarm) becomes one case. Good traces become gold cases; guardrail
+or failed traces come back marked `needs_review` for a human to fill in. See
+[docs/evaluation/curation.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/evaluation/curation.md)
+and [examples/80_curate_from_traces.py](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/80_curate_from_traces.py).
 
 ### Find any trace — Richer Trace Filtering
 

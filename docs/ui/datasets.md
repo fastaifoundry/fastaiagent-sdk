@@ -76,6 +76,13 @@ the Playground feeds the outer-loop curation in the editor without
 copy-pasting a name. The same dialog is used by Replay's *Save as
 regression test*.
 
+## From captured traces (bulk, SDK / CLI)
+
+Beyond the in-UI editor, build datasets programmatically from captured traces —
+`Dataset.from_traces(filter="favorites")` or `fastaiagent eval curate --filter
+guardrail --out fixme.jsonl`. Each `agent.<name>` span becomes one case. See
+[Trace Curation](../evaluation/curation.md).
+
 ## JSONL format
 
 Plain text case:

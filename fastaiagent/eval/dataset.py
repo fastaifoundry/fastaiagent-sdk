@@ -109,6 +109,24 @@ class Dataset:
     def from_dict(cls, data: dict[str, Any]) -> Dataset:
         return cls(data.get("items", []))
 
+    @classmethod
+    def from_traces(cls, **kwargs: Any) -> Dataset:
+        """Build a Dataset from captured agent traces in the local DB.
+
+        Thin wrapper over :func:`fastaiagent.eval.curate.curate_from_traces`. Each
+        ``agent.<name>`` span (root or nested in a chain/supervisor/swarm) becomes
+        one item. See ``curate_from_traces`` for the keyword arguments
+        (``filter``, ``agent``, ``since_hours``, ``limit``, ``trace_ids``,
+        ``mark_output_as_expected``, ``db_path``, ``dedup_by``).
+
+        Example:
+            ds = Dataset.from_traces(filter="favorites")
+            ds.to_jsonl("cases.jsonl")
+        """
+        from fastaiagent.eval.curate import curate_from_traces
+
+        return cls(curate_from_traces(**kwargs))
+
     def __iter__(self) -> Iterator[dict[str, Any]]:
         return iter(self._items)
 
@@ -118,6 +136,20 @@ class Dataset:
     def __getitem__(self, idx: int) -> dict[str, Any]:
         return self._items[idx]
 
+    def to_jsonl(self, path: str | Path, *, append: bool = False) -> Path:
+        """Write items as JSONL (one compact JSON object per line).
+
+        Uses the same line format as ``ReplayResult.save_as_test`` so curated and
+        replay-saved cases interleave in one file and round-trip through
+        :meth:`from_jsonl`. Pass ``append=True`` to add to an existing file.
+        """
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with p.open("a" if append else "w", encoding="utf-8") as f:
+            for item in self._items:
+                f.write(json.dumps(item, default=str) + "\n")
+        return p
+
     @classmethod
     def from_platform(cls, name: str) -> Dataset:
         """Pull dataset from platform."""
@@ -126,9 +158,7 @@ class Dataset:
         from fastaiagent.client import _connection
 
         if not _connection.is_connected:
-            raise PlatformNotConnectedError(
-                "Not connected to platform. Call fa.connect() first."
-            )
+            raise PlatformNotConnectedError("Not connected to platform. Call fa.connect() first.")
         api = get_platform_api()
         data = api.get(f"/public/v1/eval/datasets/{name}")
         return cls(data.get("items", []))
@@ -140,9 +170,7 @@ class Dataset:
         from fastaiagent.client import _connection
 
         if not _connection.is_connected:
-            raise PlatformNotConnectedError(
-                "Not connected to platform. Call fa.connect() first."
-            )
+            raise PlatformNotConnectedError("Not connected to platform. Call fa.connect() first.")
         api = get_platform_api()
         api.post(
             "/public/v1/eval/datasets",

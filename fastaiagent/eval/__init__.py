@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from fastaiagent.eval.curate import curate_from_traces
 from fastaiagent.eval.dataset import Dataset
 from fastaiagent.eval.evaluate import evaluate
 from fastaiagent.eval.llm_judge import LLMJudge
@@ -70,6 +71,7 @@ __all__ = [
     # Core
     "evaluate",
     "Dataset",
+    "curate_from_traces",
     "Scorer",
     "ScorerResult",
     "EvalResults",

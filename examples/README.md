@@ -106,6 +106,7 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 - [`61_eval_pytest.py`](61_eval_pytest.py) — `@case` / `@pytest_dataset` pytest plugin
 - [`62_replay_to_regression.py`](62_replay_to_regression.py) — turn a failing trace into a regression test
 - [`74_agent_hardening.py`](74_agent_hardening.py) — `generate_scenarios → simulate → Scorecard → harden`
+- [`80_curate_from_traces.py`](80_curate_from_traces.py) — curate an eval dataset from captured agent traces
 
 ### Tracing & replay
 - [`04_agent_replay.py`](04_agent_replay.py) — `Replay.fork_at(...).rerun()`
