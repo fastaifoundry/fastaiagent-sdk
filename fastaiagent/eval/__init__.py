@@ -5,7 +5,7 @@ from typing import Any
 from fastaiagent.eval.curate import curate_from_traces
 from fastaiagent.eval.dataset import Dataset
 from fastaiagent.eval.evaluate import evaluate
-from fastaiagent.eval.llm_judge import LLMJudge
+from fastaiagent.eval.llm_judge import GEval, LLMJudge
 
 # Pytest plugin decorators are an *optional* surface — the eval
 # framework itself works without pytest, but the ``@case`` / ``@dataset``
@@ -42,7 +42,13 @@ from fastaiagent.eval.safety import (
     Toxicity,
 )
 from fastaiagent.eval.scorer import Scorer, ScorerResult
-from fastaiagent.eval.session import ConversationCoherence, GoalCompletion
+from fastaiagent.eval.session import (
+    ConversationCoherence,
+    ConversationRelevancy,
+    GoalCompletion,
+    KnowledgeRetention,
+    RoleAdherence,
+)
 from fastaiagent.eval.similarity import (
     BLEUScore,
     LevenshteinDistance,
@@ -76,6 +82,7 @@ __all__ = [
     "ScorerResult",
     "EvalResults",
     "LLMJudge",
+    "GEval",
     "Scorecard",
     "MetricSummary",
     # Simulation
@@ -124,4 +131,7 @@ __all__ = [
     # Session / multi-turn (instantiate + call .score(...) directly)
     "ConversationCoherence",
     "GoalCompletion",
+    "KnowledgeRetention",
+    "RoleAdherence",
+    "ConversationRelevancy",
 ]
