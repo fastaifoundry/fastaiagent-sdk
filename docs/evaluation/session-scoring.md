@@ -62,29 +62,32 @@ result = scorer.score(
 # Detects checklist items and scores each separately
 ```
 
-## Using in Evaluation
+## Using these scorers
 
-Pass session scorers to `evaluate()`. Your dataset items should include `conversation` or `goal` fields as appropriate:
+Session scorers operate on conversation data passed through keyword arguments —
+`turns` for `ConversationCoherence`, `goal` for `GoalCompletion`. Because
+`evaluate()`'s dataset loop only forwards `input`/`expected` per case (not
+`conversation`/`goal`), call `.score(...)` directly with the conversation you
+captured:
 
 ```python
-from fastaiagent.eval import evaluate
-from fastaiagent.eval.session import ConversationCoherence, GoalCompletion
+from fastaiagent.eval import ConversationCoherence, GoalCompletion
 
-results = evaluate(
-    agent_fn=my_agent.run,
-    dataset=[
-        {
-            "input": "Where is my order?",
-            "goal": "Provide shipping information",
-            "conversation": [
-                {"role": "user", "content": "Where is my order?"},
-                {"role": "assistant", "content": "Let me look that up..."},
-            ],
-        },
-    ],
-    scorers=[GoalCompletion()],
+turns = [
+    {"role": "user", "content": "Where is my order?"},
+    {"role": "assistant", "content": "Your order ships tomorrow via FedEx."},
+]
+
+coherence = ConversationCoherence().score(input="", output="", turns=turns)
+goal = GoalCompletion().score(
+    input="",
+    output=turns[-1]["content"],
+    goal="Provide shipping information for the customer's order",
 )
+print("coherence:", coherence.score, "| goal:", goal.score)
 ```
+
+See `examples/77_session_eval.py` for a runnable end-to-end script.
 
 ---
 

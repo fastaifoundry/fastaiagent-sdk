@@ -98,26 +98,34 @@ result = scorer.score(
 # score = 0/1 = 0.0 (wrong arguments)
 ```
 
-## Using in Evaluation
+## Using these scorers
 
-Pass trajectory scorers to `evaluate()` like any other scorer. Your dataset items should include `expected_trajectory` fields:
+Trajectory scorers compare the agent's **actual** tool calls against an
+**expected** sequence — both arrive through keyword arguments. Note that
+`evaluate()`'s dataset loop does **not** capture an agent's tool calls or
+forward a per-row `expected_trajectory`, so call `.score(...)` directly with the
+trajectory you collected from the run (e.g. from `AgentResult` or the tool-call
+span names in the trace):
 
 ```python
-from fastaiagent.eval import evaluate
-from fastaiagent.eval.trajectory import ToolUsageAccuracy, PathCorrectness
+from fastaiagent.eval import ToolUsageAccuracy, PathCorrectness
 
-results = evaluate(
-    agent_fn=my_agent.run,
-    dataset=[
-        {
-            "input": "Calculate 15% of 200",
-            "expected": "30",
-            "expected_trajectory": ["calculate"],
-        },
-    ],
-    scorers=[ToolUsageAccuracy(), PathCorrectness()],
-)
+# Read the real tool sequence off the run. Each AgentResult.tool_calls entry is
+# a dict like {"tool_name": ..., "arguments": {...}, "tool_call_id": ...}.
+run = agent.run("...")
+actual = [tc["tool_name"] for tc in run.tool_calls]
+expected = ["search", "calculate", "respond"]
+
+for scorer in (ToolUsageAccuracy(), PathCorrectness()):
+    result = scorer.score(
+        input="", output="",
+        actual_trajectory=actual,
+        expected_trajectory=expected,
+    )
+    print(scorer.name, result.score, result.passed)
 ```
+
+See `examples/76_trajectory_eval.py` for a runnable end-to-end script.
 
 ---
 

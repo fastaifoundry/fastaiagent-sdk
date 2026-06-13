@@ -55,6 +55,20 @@ def run_pipeline(input_text):
 evaluate(agent_fn=run_pipeline, ...)
 ```
 
+## Async
+
+Every entry point has an `a`-prefixed coroutine — `aevaluate`, `asimulate`,
+`agenerate_scenarios`, `aharden` — for use inside async apps (FastAPI, etc.); the
+sync versions just wrap them. `aevaluate` lives in `fastaiagent.eval.evaluate`:
+
+```python
+from fastaiagent.eval.evaluate import aevaluate
+
+results = await aevaluate(agent.run, dataset, scorers=["contains"])
+```
+
+See `examples/79_async_eval.py` for the full async loop.
+
 ## Datasets
 
 ### From a List
@@ -131,6 +145,13 @@ Each item is a dict. The only required field is `input`. Other common fields:
 | `conversation` | Session scorers | Multi-turn chat history |
 | `expected_trajectory` | Trajectory scorers | Expected tool call sequence |
 | `tags` | Filtering | Labels for grouping test cases |
+
+> **What `evaluate()` forwards to scorers:** per case, the eval loop passes only
+> `input` and `expected`/`expected_output`. Fields like `conversation`,
+> `expected_trajectory`, and `context` are consumed by specific scorers — pass
+> them as keyword arguments to `evaluate()` (applied to every case) or call the
+> scorer's `.score(...)` directly per case. See the
+> [trajectory](trajectory-scoring.md) and [session](session-scoring.md) docs.
 
 ## Built-in Scorers
 
@@ -228,7 +249,19 @@ results = evaluate(
 )
 ```
 
-Available names: `exact_match`, `contains`, `json_valid`, `regex_match`, `length_between`, `latency`, `cost_under`, `faithfulness`, `answer_relevancy`, `context_precision`, `context_recall`, `toxicity`, `bias`, `pii_leakage`, `semantic_similarity`, `bleu`, `rouge`, `levenshtein`
+Available names (resolved by `evaluate()` automatically):
+
+- **Core:** `exact_match`, `contains`, `json_valid`, `regex_match`, `length_between`, `latency`, `cost_under`
+- **RAG:** `faithfulness`, `answer_relevancy`, `context_precision`, `context_recall`
+- **Safety:** `toxicity`, `bias`, `pii_leakage`, `prompt_injection`, `moderation`
+- **Agent metrics:** `task_completion`, `hallucination`, `reflection_quality`
+- **Similarity:** `semantic_similarity`, `bleu`, `rouge`, `levenshtein`
+
+> **Trajectory and session scorers are not string-resolvable.** They need
+> per-call trajectory/turn data that `evaluate()`'s dataset loop does not
+> forward automatically, so instantiate them directly (e.g. `ToolUsageAccuracy()`)
+> and call `.score(...)`. See [Trajectory Scoring](trajectory-scoring.md) and
+> [Session Scoring](session-scoring.md).
 
 ## Custom Code Scorers
 
@@ -353,18 +386,22 @@ results = evaluate(
 
 ## CLI Commands
 
-```bash
-# Run evaluation
-fastaiagent eval run \
-    --dataset test_cases.jsonl \
-    --agent myapp:agent \
-    --scorers exact_match,contains
+> **Status — not yet implemented.** The `fastaiagent eval run` and
+> `fastaiagent eval compare` subcommands are currently placeholders: they echo
+> their arguments and exit without running anything. Use the Python
+> `evaluate()` API for all evaluation today. A functional CLI (with CI
+> regression gates) is on the roadmap.
 
-# Compare two runs
-fastaiagent eval compare results_v1.json results_v2.json
+```python
+from fastaiagent.eval import evaluate
+
+results = evaluate(
+    agent_fn=my_agent.run,
+    dataset="test_cases.jsonl",
+    scorers=["exact_match", "contains"],
+)
+print(results.summary())
 ```
-
-> **Note:** The CLI provides basic eval invocation. For full features (custom scorers, LLM judge, trajectory scoring), use the Python API.
 
 ## Error Handling
 

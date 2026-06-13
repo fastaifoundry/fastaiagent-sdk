@@ -1,21 +1,27 @@
-"""Example 24: Evaluate a RAG pipeline with faithfulness, relevancy, and context metrics.
+"""Example 24: Evaluate a REAL RAG agent — faithfulness, relevancy, context metrics.
 
-Demonstrates:
-- Faithfulness: Is the response grounded in the context?
-- AnswerRelevancy: Is the response relevant to the question?
-- ContextPrecision: Are relevant context chunks ranked higher?
-- ContextRecall: Does the context cover the expected answer?
+Demonstrates (real Agent + real LLM scorers — needs OPENAI_API_KEY):
+- Faithfulness    : is the response grounded in the context?
+- AnswerRelevancy : is the response relevant to the question?
+- ContextPrecision: are relevant context chunks ranked higher?
+- ContextRecall   : does the context cover the expected answer's claims?
 
-Requires: OPENAI_API_KEY environment variable.
+The agent is grounded on a small knowledge base via its system prompt and runs
+real completions; the scorers then make real LLM judgements about its answers.
+
+Run:
+    zsh -lc 'python examples/24_rag_eval.py'
 """
+
+from __future__ import annotations
 
 import os
 import sys
 
+from fastaiagent import Agent, LLMClient
 from fastaiagent.eval import Dataset, evaluate
 from fastaiagent.eval.rag import AnswerRelevancy, ContextPrecision, ContextRecall, Faithfulness
 
-# Simulated knowledge base
 KNOWLEDGE = {
     "python": (
         "Python is a high-level, general-purpose programming language. "
@@ -28,22 +34,23 @@ KNOWLEDGE = {
         "Rust prevents data races at compile time."
     ),
 }
+CONTEXT = KNOWLEDGE["python"] + "\n\n" + KNOWLEDGE["rust"]
 
 
-def rag_agent(query: str) -> str:
-    """Simple RAG agent that retrieves context and generates a response."""
-    query_lower = query.lower()
-    if "python" in query_lower:
-        return "Python is a high-level programming language created by Guido van Rossum in 1991."
-    if "rust" in query_lower:
-        return "Rust is a systems programming language focused on safety, created by Graydon Hoare."
-    return "I don't have information about that topic."
-
-
-if __name__ == "__main__":
+def main() -> None:
     if not os.environ.get("OPENAI_API_KEY"):
         print("Set OPENAI_API_KEY to run this example.")
         sys.exit(0)
+
+    # A real agent grounded on the knowledge base.
+    agent = Agent(
+        name="rag-bot",
+        system_prompt=(
+            "Answer the user's question using ONLY the context below. Be concise.\n\n"
+            f"CONTEXT:\n{CONTEXT}"
+        ),
+        llm=LLMClient(provider="openai", model="gpt-4o-mini"),
+    )
 
     dataset = Dataset.from_list(
         [
@@ -52,38 +59,50 @@ if __name__ == "__main__":
                 "expected": "Python is a programming language created by Guido van Rossum in 1991.",
             },
             {
-                "input": "Tell me about Rust programming language.",
+                "input": "Tell me about the Rust programming language.",
                 "expected": "Rust is a systems programming language created by Graydon Hoare.",
             },
         ]
     )
 
-    # Run evaluation with RAG scorers
+    # Response-quality metrics through evaluate(). `agent.run` is passed directly;
+    # evaluate() unwraps AgentResult.output. Context is a global kwarg here.
+    print("== Response-quality metrics (evaluate) ==")
     results = evaluate(
-        agent_fn=rag_agent,
+        agent_fn=agent.run,
         dataset=dataset,
-        scorers=[
-            Faithfulness(),
-            AnswerRelevancy(),
-            ContextRecall(),
-        ],
-        # Context passed as kwargs to all scorers
-        context=KNOWLEDGE["python"] + "\n\n" + KNOWLEDGE["rust"],
+        scorers=[Faithfulness(), AnswerRelevancy()],
+        context=CONTEXT,
+        persist=False,
     )
-
     print(results.summary())
 
-    # Context precision with ranked chunks
-    from fastaiagent.eval.rag import ContextPrecision
+    # Retrieval-quality metrics, scored directly with ranked chunks:
+    #   ContextPrecision — are relevant chunks ranked above irrelevant ones?
+    #   ContextRecall    — do the chunks cover the expected answer's claims?
+    print("\n== Retrieval-quality metrics (direct) ==")
+    chunks = [
+        KNOWLEDGE["python"],  # relevant — rank 1
+        "Unrelated text about cooking recipes.",  # irrelevant — rank 2
+        "Python also has a large third-party package ecosystem.",  # relevant — rank 3
+    ]
+    question = "What is Python and who created it?"
 
-    precision = ContextPrecision()
-    result = precision.score(
-        input="What is Python?",
-        output="Python is a programming language.",
-        contexts=[
-            KNOWLEDGE["python"],  # Relevant — rank 1
-            "Unrelated text about cooking recipes.",  # Irrelevant — rank 2
-            "More info about Python's ecosystem.",  # Relevant — rank 3
-        ],
+    precision = ContextPrecision().score(
+        input=question,
+        output="Python is a programming language created by Guido van Rossum.",
+        contexts=chunks,
     )
-    print(f"\nContext Precision: score={result.score:.2f} — {result.reason}")
+    print(f"  context_precision: score={precision.score:.2f} — {precision.reason}")
+
+    recall = ContextRecall().score(
+        input=question,
+        output="",  # recall scores the context against `expected`, not the output
+        expected="Python is a programming language created by Guido van Rossum in 1991.",
+        contexts=chunks,
+    )
+    print(f"  context_recall:    score={recall.score:.2f} — {recall.reason}")
+
+
+if __name__ == "__main__":
+    main()
