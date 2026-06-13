@@ -128,7 +128,8 @@ BUILTIN_SCORERS: dict[str, type[Scorer]] = {
 
 
 def _register_extended_scorers() -> None:
-    """Lazily register RAG, safety, and similarity scorers on first access."""
+    """Lazily register RAG, safety, similarity, and agent-eval scorers."""
+    from fastaiagent.eval.agent_metrics import Hallucination, ReflectionQuality, TaskCompletion
     from fastaiagent.eval.rag import AnswerRelevancy, ContextPrecision, ContextRecall, Faithfulness
     from fastaiagent.eval.safety import (
         Bias,
@@ -157,6 +158,10 @@ def _register_extended_scorers() -> None:
             "pii_leakage": PIILeakage,
             "prompt_injection": PromptInjection,
             "moderation": OpenAIModeration,
+            # Agent-eval metrics
+            "task_completion": TaskCompletion,
+            "hallucination": Hallucination,
+            "reflection_quality": ReflectionQuality,
             # Similarity & NLP
             "semantic_similarity": SemanticSimilarity,
             "bleu": BLEUScore,

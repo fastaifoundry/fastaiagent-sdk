@@ -41,12 +41,18 @@ from fastaiagent.client import connect, disconnect
 from fastaiagent.eval import (
     Dataset,
     EvalResults,
+    HardeningReport,
     Scenario,
+    Scorecard,
     Scorer,
     SimulatedUser,
     SimulationResults,
+    agenerate_scenarios,
+    aharden,
     asimulate,
     evaluate,
+    generate_scenarios,
+    harden,
     simulate,
 )
 from fastaiagent.guardrail import (
@@ -200,12 +206,19 @@ __all__ = [
     "Dataset",
     "Scorer",
     "EvalResults",
+    "Scorecard",
     # Simulation
     "simulate",
     "asimulate",
     "Scenario",
     "SimulatedUser",
     "SimulationResults",
+    "generate_scenarios",
+    "agenerate_scenarios",
+    # Agent hardening
+    "harden",
+    "aharden",
+    "HardeningReport",
     # Trace
     "TraceStore",
     "trace_context",

@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **AgentEval slice — close-the-loop evaluation** (parity with the AgentEval/A-Sim
+  competitive surface; builds on `simulate()`):
+  - **`generate_scenarios(agent, *, n, llm, focus)`** (+ async `agenerate_scenarios`) —
+    introspects the agent's name/system-prompt/tools and LLM-generates ready-to-run
+    `Scenario`s (persona + success/failure criteria).
+  - **`harden(agent, results)`** (+ async `aharden`) → **`HardeningReport`** — reads the
+    failures from a `SimulationResults`/`EvalResults` run and recommends concrete fixes
+    (target ∈ instructions/model/tools/guardrails/memory). **Recommend-only** — never
+    mutates the agent.
+  - **`Scorecard`** (`from_eval_results` / `from_simulation`) — per-metric avg + pass-rate
+    roll-up with `.summary()`/`.to_dict()`.
+  - Three named scorers — **`task_completion`**, **`hallucination`** (reuses the
+    `score_groundedness` engine), **`reflection_quality`** — registered in `BUILTIN_SCORERS`.
+- Docs: `docs/evaluation/agent-hardening.md`; runnable `examples/74_agent_hardening.py`.
+
 ## [1.20.0] - 2026-06-13
 
 ### Added

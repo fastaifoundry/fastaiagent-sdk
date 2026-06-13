@@ -131,6 +131,7 @@ nav:
       - "Similarity & NLP Metrics": evaluation/similarity-metrics.md
       - "Trajectory Scoring": evaluation/trajectory-scoring.md
       - "Session Scoring": evaluation/session-scoring.md
+      - "Agent Hardening & Scorecard": evaluation/agent-hardening.md
   - Simulation:
       - simulation/index.md
   - Multimodal:

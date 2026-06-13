@@ -437,6 +437,27 @@ Runs land on the new **Simulations** UI surface — transcript bubbles,
 per-criterion verdicts, and a deep-link from each turn into its trace. See
 [docs/simulation](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/simulation/index.md).
 
+### Close the loop — generate, score, and harden
+
+Don't hand-write every test. **`generate_scenarios()`** introspects your agent and
+proposes scenarios; **`Scorecard`** rolls any eval/sim run into a per-metric panel;
+and **`harden()`** reads the *failures* and hands back concrete fixes — to the
+instructions, tools, or guardrails — so each failed run tells you what to change.
+
+```python
+from fastaiagent import generate_scenarios, simulate, Scorecard, harden
+
+scenarios = generate_scenarios(agent, n=8, llm=llm)   # auto-author tests
+results   = simulate(scenarios, agent)
+print(Scorecard.from_simulation(results).summary())   # per-metric roll-up
+print(harden(agent, results, llm=llm).summary())      # recommended fixes
+```
+
+New named metrics `task_completion`, `hallucination`, and `reflection_quality` join
+the existing scorer set. `harden()` is recommend-only — it never mutates your agent.
+See [docs/evaluation/agent-hardening.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/evaluation/agent-hardening.md)
+and [examples/74_agent_hardening.py](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/74_agent_hardening.py).
+
 ## Responsible AI — the Trust Layer
 
 The one question every enterprise review asks: *can you stop it hallucinating,
