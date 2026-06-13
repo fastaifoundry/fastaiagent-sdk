@@ -17,7 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Auto-CoT** — `GEval(criteria=…)` with no steps derives them from the criteria
     on first use (cached). Per-instance **`name`** so multiple judges don't collide.
   - **Backward-compatible:** with no `evaluation_steps`/`rubric`, `LLMJudge` runs the
-    exact legacy single-call path (`passed = score >= 0.5`). Purely additive.
+    legacy single-call path (`passed = score >= 0.5`); it now also tolerates Markdown
+    code fences in the judge response (a no-op for raw JSON), matching the other LLM
+    scorers. Purely additive.
 - **LLM-judged turn metrics** —
   - **`ConversationCoherence`** / **`GoalCompletion`** gain `mode="llm"` (heuristic
     stays the default — no behaviour change).

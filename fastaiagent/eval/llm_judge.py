@@ -183,6 +183,7 @@ class LLMJudge(Scorer):
         self, input: str, output: str, expected: str | None = None, **kwargs: Any
     ) -> ScorerResult:
         """Single-call judge — verbatim legacy behaviour (``passed = score >= 0.5``)."""
+        from fastaiagent.eval.agent_metrics import _strip_fences
         from fastaiagent.llm import LLMClient, SystemMessage, UserMessage
 
         llm = self._llm or LLMClient()
@@ -200,8 +201,8 @@ class LLMJudge(Scorer):
             )
             content = response.content or ""
 
-            # Parse JSON response
-            data = json.loads(content)
+            # Parse JSON response (tolerate ```json code fences some models add)
+            data = json.loads(_strip_fences(content))
             score_val = float(data.get("score", 0))
             reasoning = data.get("reasoning", "")
             passed = score_val >= 0.5
