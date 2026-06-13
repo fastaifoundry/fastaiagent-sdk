@@ -36,16 +36,18 @@ agent = Agent(name="vision-eval", llm=LLMClient(provider="openai", model="gpt-4o
 
 ds = Dataset.from_jsonl("eval/multimodal_cases.jsonl")
 results = evaluate(
-    agent_fn=lambda item: agent.run(item["input"]).output,
+    agent_fn=lambda mm_input: agent.run(mm_input).output,
     dataset=ds,
     scorers=["exact_match", "contains"],
 )
 print(results.summary())
 ```
 
-The `agent_fn` receives each item exactly as it was loaded — the `input`
-field is already a list of `str | Image | PDF`, so `agent.run(item["input"])`
-works without any transformation.
+`evaluate()` calls `agent_fn` with each item's `input` **value** (not the whole
+item dict) — already a list of `str | Image | PDF` once the dataset is loaded —
+so `agent.run(mm_input)` works without any transformation. You can also pass
+`agent_fn=agent.run` directly. See `examples/78_multimodal_eval.py` for a
+runnable script.
 
 ## Vision-quality scoring
 

@@ -41,6 +41,7 @@ from fastaiagent.eval.safety import (
     Toxicity,
 )
 from fastaiagent.eval.scorer import Scorer, ScorerResult
+from fastaiagent.eval.session import ConversationCoherence, GoalCompletion
 from fastaiagent.eval.similarity import (
     BLEUScore,
     LevenshteinDistance,
@@ -56,6 +57,13 @@ from fastaiagent.eval.simulate import (
     asimulate,
     generate_scenarios,
     simulate,
+)
+from fastaiagent.eval.trajectory import (
+    CycleEfficiency,
+    PathCorrectness,
+    StepEfficiency,
+    ToolCallCorrectness,
+    ToolUsageAccuracy,
 )
 
 __all__ = [
@@ -105,4 +113,13 @@ __all__ = [
     "BLEUScore",
     "ROUGEScore",
     "LevenshteinDistance",
+    # Trajectory (instantiate + call .score(...) directly; not string-resolvable)
+    "ToolUsageAccuracy",
+    "StepEfficiency",
+    "PathCorrectness",
+    "CycleEfficiency",
+    "ToolCallCorrectness",
+    # Session / multi-turn (instantiate + call .score(...) directly)
+    "ConversationCoherence",
+    "GoalCompletion",
 ]

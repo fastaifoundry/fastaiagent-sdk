@@ -93,11 +93,19 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 - [`71_job_scope.py`](71_job_scope.py) — `job_scope()` request-scopes connection / tools / project per concurrent job
 
 ### Evaluation
-- [`07_eval_pipeline.py`](07_eval_pipeline.py) — basic `evaluate()`
-- [`24_rag_eval.py`](24_rag_eval.py) — `Faithfulness` / `AnswerRelevancy` / `ContextPrecision`
-- [`25_safety_eval.py`](25_safety_eval.py) — `Toxicity` / `Bias` / `PIILeakage`
+- [`07_eval_pipeline.py`](07_eval_pipeline.py) — basic `evaluate()` + custom `@Scorer.code`
+- [`75_core_scorers.py`](75_core_scorers.py) — the 7 core scorers on a real run + dataset loading (list/jsonl/csv)
+- [`24_rag_eval.py`](24_rag_eval.py) — `Faithfulness` / `AnswerRelevancy` / `ContextPrecision` / `ContextRecall`
+- [`25_safety_eval.py`](25_safety_eval.py) — `PIILeakage` / `PromptInjection` / `Toxicity` / `Bias` / `OpenAIModeration`
 - [`26_similarity_eval.py`](26_similarity_eval.py) — `SemanticSimilarity` / BLEU / ROUGE / Levenshtein
+- [`76_trajectory_eval.py`](76_trajectory_eval.py) — tool-call trajectory scorers on a real agent run
+- [`77_session_eval.py`](77_session_eval.py) — multi-turn `ConversationCoherence` / `GoalCompletion`
+- [`78_multimodal_eval.py`](78_multimodal_eval.py) — evaluate a vision agent over an image dataset
+- [`79_async_eval.py`](79_async_eval.py) — async `aevaluate` / `asimulate` / `aharden`
 - [`40_evals_compare.py`](40_evals_compare.py) — A/B compare two runs
+- [`61_eval_pytest.py`](61_eval_pytest.py) — `@case` / `@pytest_dataset` pytest plugin
+- [`62_replay_to_regression.py`](62_replay_to_regression.py) — turn a failing trace into a regression test
+- [`74_agent_hardening.py`](74_agent_hardening.py) — `generate_scenarios → simulate → Scorecard → harden`
 
 ### Tracing & replay
 - [`04_agent_replay.py`](04_agent_replay.py) — `Replay.fork_at(...).rerun()`
