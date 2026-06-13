@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.23.0] - 2026-06-14
+
+### Added
+
+- **Richer LLM-judge (G-Eval)** — `LLMJudge` gains an opt-in **G-Eval** mode and a
+  DeepEval-familiar **`GEval`** wrapper:
+  - **`evaluation_steps`** (chain-of-thought) + a score-band **`rubric`**
+    (`[(score, description), …]`); the raw score is normalized from `scale`
+    (`"binary"`/`"0-1"`/`"1-5"`/…) to 0–1 with a configurable **`threshold`**.
+  - **Auto-CoT** — `GEval(criteria=…)` with no steps derives them from the criteria
+    on first use (cached). Per-instance **`name`** so multiple judges don't collide.
+  - **Backward-compatible:** with no `evaluation_steps`/`rubric`, `LLMJudge` runs the
+    legacy single-call path (`passed = score >= 0.5`); it now also tolerates Markdown
+    code fences in the judge response (a no-op for raw JSON), matching the other LLM
+    scorers. Purely additive.
+- **LLM-judged turn metrics** —
+  - **`ConversationCoherence`** / **`GoalCompletion`** gain `mode="llm"` (heuristic
+    stays the default — no behaviour change).
+  - New **`KnowledgeRetention`**, **`RoleAdherence`**, **`ConversationRelevancy`**
+    LLM-judged session scorers.
+- Docs: `docs/evaluation/llm-judge.md` (G-Eval) + `docs/evaluation/session-scoring.md`
+  (LLM-judged mode); runnable `examples/81_g_eval.py` and
+  `examples/82_llm_session_metrics.py`.
+
 ## [1.22.1] - 2026-06-13
 
 ### Fixed

@@ -1,6 +1,6 @@
 # Session Scoring
 
-Evaluate multi-turn conversations as a whole. Session scorers assess coherence across turns and whether the conversation achieved its goal.
+Evaluate multi-turn conversations as a whole. Session scorers assess coherence across turns and whether the conversation achieved its goal. Coherence and goal scoring run as fast heuristics by default, or as LLM judges with `mode="llm"`; three more metrics — knowledge retention, role adherence, and conversation relevancy — are LLM-judged.
 
 ## ConversationCoherence
 
@@ -62,6 +62,41 @@ result = scorer.score(
 # Detects checklist items and scores each separately
 ```
 
+## LLM-judged mode
+
+`ConversationCoherence` and `GoalCompletion` default to fast, zero-dependency heuristics (`mode="heuristic"`). Pass `mode="llm"` to judge with an LLM instead — useful when nuance matters more than speed. The heuristic default is unchanged, and `threshold` governs pass/fail on the LLM's 0–1 score (default `0.5`).
+
+```python
+from fastaiagent.eval import ConversationCoherence, GoalCompletion
+from fastaiagent import LLMClient
+
+llm = LLMClient(provider="openai", model="gpt-4o-mini")
+
+coherence = ConversationCoherence(mode="llm", llm=llm).score(input="", output="", turns=turns)
+goal = GoalCompletion(mode="llm", llm=llm).score(
+    input="", output="", goal="Provide the carrier and arrival day", turns=turns
+)
+```
+
+## LLM-judged turn metrics
+
+Three additional metrics judge specific conversational qualities with an LLM. Each takes `turns` and is always LLM-judged (`threshold` default `0.7`).
+
+```python
+from fastaiagent.eval import KnowledgeRetention, RoleAdherence, ConversationRelevancy
+
+# Does the agent reuse info the user gave earlier (no re-asking / contradiction)?
+KnowledgeRetention(llm=llm).score(input="", output="", turns=turns)
+
+# Does the agent stay in its assigned role? (role via constructor or a `role` kwarg)
+RoleAdherence(role="a formal banking assistant", llm=llm).score(input="", output="", turns=turns)
+
+# Are the agent's replies relevant to each user turn?
+ConversationRelevancy(llm=llm).score(input="", output="", turns=turns)
+```
+
+`RoleAdherence` returns `score=0.0` with reason `"No role specified"` when no role is given.
+
 ## Using these scorers
 
 Session scorers operate on conversation data passed through keyword arguments —
@@ -87,7 +122,8 @@ goal = GoalCompletion().score(
 print("coherence:", coherence.score, "| goal:", goal.score)
 ```
 
-See `examples/77_session_eval.py` for a runnable end-to-end script.
+See `examples/77_session_eval.py` (heuristic) and `examples/82_llm_session_metrics.py`
+(LLM-judged mode + the new turn metrics) for runnable end-to-end scripts.
 
 ---
 
