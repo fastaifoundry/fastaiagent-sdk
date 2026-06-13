@@ -2,11 +2,17 @@
 
 from fastaiagent.guardrail.builtins import (
     allowed_domains,
+    allowed_topics,
+    banned_topics,
     cost_limit,
+    grounded,
     json_valid,
+    no_hallucination,
     no_pii,
     no_prompt_injection,
+    no_secrets,
     openai_moderation,
+    responsible_ai,
     toxicity_check,
 )
 from fastaiagent.guardrail.executor import execute_guardrails
@@ -30,4 +36,11 @@ __all__ = [
     "toxicity_check",
     "cost_limit",
     "allowed_domains",
+    # Responsible-AI "Trust Layer"
+    "no_secrets",
+    "grounded",
+    "no_hallucination",
+    "banned_topics",
+    "allowed_topics",
+    "responsible_ai",
 ]

@@ -30,6 +30,7 @@ Middleware is orthogonal to ``Guardrail``. Middleware *transforms*; guardrails
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -44,6 +45,7 @@ from fastaiagent.tool.base import Tool, ToolResult
 __all__ = [
     "AgentMiddleware",
     "MiddlewareContext",
+    "Reflect",
     "RedactPII",
     "StopAgent",
     "ToolBudget",
@@ -329,4 +331,97 @@ class RedactPII(AgentMiddleware):
     ) -> LLMResponse:
         if content := response.content:
             response.content = self._redact(content)
+        return response
+
+
+class Reflect(AgentMiddleware):
+    """Self-critique the agent's final answer and revise it.
+
+    On each **terminal** text response (one carrying no tool calls), the model is
+    asked to critique its own answer against optional ``facts`` (non-negotiable
+    truths / policies) and ``criteria``, then return a corrected answer.
+    Responses that carry tool calls are passed through untouched — only the final
+    answer is reflected.
+
+    Opt-in via ``Agent(middleware=[Reflect(facts=[...])])``. Costs one extra LLM
+    call per final answer (more if ``max_revisions > 1`` and the reviewer is not
+    yet satisfied). Fails open: any reviewer error keeps the original answer.
+
+    Example:
+        agent = Agent(
+            name="grounded-writer",
+            llm=llm,
+            middleware=[Reflect(facts=["Refunds are only valid within 30 days."])],
+        )
+    """
+
+    name = "reflect"
+
+    def __init__(
+        self,
+        *,
+        llm: Any = None,
+        facts: list[str] | None = None,
+        criteria: str | None = None,
+        max_revisions: int = 1,
+    ):
+        self._llm = llm
+        self.facts = facts or []
+        self.criteria = criteria
+        self.max_revisions = max_revisions
+
+    async def after_model(
+        self, ctx: MiddlewareContext, response: LLMResponse
+    ) -> LLMResponse:
+        # Only reflect on terminal text answers — skip tool-call turns.
+        if response.tool_calls or not (response.content and response.content.strip()):
+            return response
+
+        from fastaiagent.llm import LLMClient, SystemMessage, UserMessage
+
+        llm = self._llm or LLMClient()
+
+        facts_block = ""
+        if self.facts:
+            joined = "\n".join(f"- {f}" for f in self.facts)
+            facts_block = (
+                "Non-negotiable facts/policies the answer MUST respect:\n" f"{joined}\n\n"
+            )
+        criteria_block = f"Quality criteria: {self.criteria}\n\n" if self.criteria else ""
+
+        answer = response.content
+        revisions = 0
+        for _ in range(max(1, self.max_revisions)):
+            prompt = (
+                "Critique the draft answer below, then return an improved version.\n\n"
+                f"{facts_block}{criteria_block}"
+                f"Draft answer:\n{answer}\n\n"
+                "If the draft is already correct and compliant, return it unchanged.\n"
+                'Respond with JSON only: {"ok": <true|false>, "revised": "<final answer>"}'
+            )
+            try:
+                resp = await llm.acomplete(
+                    [
+                        SystemMessage(
+                            "You are a meticulous self-reviewer. Respond with JSON only."
+                        ),
+                        UserMessage(prompt),
+                    ]
+                )
+                raw = (resp.content or "").strip()
+                raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw).strip()
+                data = json.loads(raw)
+            except Exception:
+                # Fail open — keep the latest good answer if reflection errors.
+                break
+
+            revised = str(data.get("revised") or answer)
+            if revised.strip() and revised.strip() != answer.strip():
+                answer = revised
+                revisions += 1
+            if bool(data.get("ok", True)):
+                break
+
+        response.content = answer
+        ctx.scratch["reflect_revisions"] = ctx.scratch.get("reflect_revisions", 0) + revisions
         return response

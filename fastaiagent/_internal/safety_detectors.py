@@ -355,12 +355,281 @@ def _to_plain_dict(obj: Any) -> dict[str, Any]:
     return {k: v for k, v in vars(obj).items() if not k.startswith("_")}
 
 
+# --------------------------------------------------------------------------- #
+# Secrets / credential detection
+# --------------------------------------------------------------------------- #
+
+# Curated high-signal credential patterns. Each entry is (compiled regex, label).
+# Kept deliberately specific to minimise false positives; the generic assignment
+# pattern at the end catches ``api_key = "..."``-style leaks.
+_SECRET_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----"), "private_key"),
+    (re.compile(r"\bAKIA[0-9A-Z]{16}\b"), "aws_access_key_id"),
+    (re.compile(r"\bgh[pousr]_[A-Za-z0-9]{36,}\b"), "github_token"),
+    (re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b"), "slack_token"),
+    (re.compile(r"\bAIza[0-9A-Za-z_\-]{35}\b"), "google_api_key"),
+    (re.compile(r"\bsk-(?:proj-)?[A-Za-z0-9_\-]{20,}\b"), "openai_api_key"),
+    (re.compile(r"\b(?:sk|pk|rk)_(?:live|test)_[0-9A-Za-z]{16,}\b"), "stripe_key"),
+    (re.compile(r"\beyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\b"), "jwt"),
+    (
+        re.compile(
+            r"(?i)(?:api[_-]?key|secret|token|password|passwd|access[_-]?token)"
+            r"\s*[:=]\s*['\"]?([A-Za-z0-9_\-]{16,})['\"]?"
+        ),
+        "generic_secret",
+    ),
+]
+
+
+@dataclass
+class SecretMatch:
+    """One detected secret/credential span.
+
+    The raw value is **masked** so it is never re-leaked through guardrail
+    metadata, logs, or the local UI — callers get the kind and location only.
+    """
+
+    kind: str
+    masked: str
+    start: int
+    end: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"kind": self.kind, "masked": self.masked, "start": self.start, "end": self.end}
+
+
+def _mask_secret(value: str) -> str:
+    """Mask a secret for safe display — keep a short prefix/suffix only."""
+    if len(value) <= 8:
+        return "*" * len(value)
+    return f"{value[:4]}…{value[-2:]} ({len(value)} chars)"
+
+
+def detect_secrets(text: str) -> list[SecretMatch]:
+    """Detect leaked credentials/secrets in ``text``.
+
+    Zero-dependency, regex-based. Covers private keys, AWS/GitHub/Slack/Google/
+    OpenAI/Stripe tokens, JWTs, and generic ``api_key = "..."`` assignments. The
+    returned values are masked — callers get the kind and location, never the
+    raw secret.
+    """
+    matches: list[SecretMatch] = []
+    for pattern, label in _SECRET_PATTERNS:
+        for m in pattern.finditer(text):
+            # Prefer the captured group (generic_secret) over the full match.
+            value = m.group(1) if pattern.groups else m.group(0)
+            matches.append(
+                SecretMatch(kind=label, masked=_mask_secret(value), start=m.start(), end=m.end())
+            )
+    return matches
+
+
+# --------------------------------------------------------------------------- #
+# Toxicity detection
+# --------------------------------------------------------------------------- #
+
+# Zero-dependency keyword list (the original ``toxicity_check`` default). Kept
+# intentionally small; the ``mode="llm"`` path is far stronger.
+_TOXIC_KEYWORDS = ("hate", "kill", "attack", "destroy", "threat", "racist", "sexist", "slur")
+
+
+@dataclass
+class ToxicityResult:
+    """Outcome of a toxicity check. ``score`` is 0.0 (clean) .. 1.0 (toxic)."""
+
+    toxic: bool
+    score: float
+    matched: list[str] = field(default_factory=list)
+    reason: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "toxic": self.toxic,
+            "score": self.score,
+            "matched": self.matched,
+            "reason": self.reason,
+        }
+
+
+def detect_toxicity(
+    text: str,
+    *,
+    mode: str = "keyword",
+    llm: Any = None,
+    threshold: float = 0.5,
+) -> ToxicityResult:
+    """Detect toxic / harmful content in ``text``.
+
+    Args:
+        text: Text to scan.
+        mode: ``"keyword"`` (default, zero-dependency curated word list) or
+            ``"llm"`` (scores 0..1 with an ``LLMClient`` classifier — opt-in,
+            costs an LLM call).
+        llm: The ``LLMClient`` to use when ``mode="llm"`` (default constructed
+            if omitted).
+        threshold: In ``"llm"`` mode, flag when the score meets this value
+            (lower = stricter). Ignored in keyword mode.
+
+    Returns:
+        A :class:`ToxicityResult`.
+    """
+    if mode == "llm":
+        from fastaiagent._internal.async_utils import run_sync
+
+        return run_sync(_detect_toxicity_llm(text, llm=llm, threshold=threshold))
+    if mode != "keyword":
+        raise ValueError(f"Unknown toxicity mode {mode!r}. Use 'keyword' or 'llm'.")
+
+    lower = text.lower()
+    matched = [w for w in _TOXIC_KEYWORDS if w in lower]
+    if matched:
+        return ToxicityResult(
+            toxic=True,
+            score=1.0,
+            matched=matched,
+            reason=f"Potentially toxic content detected: {', '.join(matched)}",
+        )
+    return ToxicityResult(toxic=False, score=0.0, reason="No toxic keywords matched")
+
+
+async def _detect_toxicity_llm(
+    text: str, *, llm: Any = None, threshold: float = 0.5
+) -> ToxicityResult:
+    """LLM-classifier path for :func:`detect_toxicity`."""
+    import json
+
+    from fastaiagent.llm import LLMClient, SystemMessage, UserMessage
+
+    client = llm or LLMClient()
+    prompt = (
+        "Rate the toxicity of the following text — insults, hate speech, threats, "
+        "harassment, or harmful content.\n\n"
+        f"Text:\n{text}\n\n"
+        'Respond with JSON only: {"toxicity": <0.0-1.0>, "reasoning": "<short>"}'
+    )
+    try:
+        response = await client.acomplete(
+            [
+                SystemMessage("You are a content-safety classifier. Respond with JSON only."),
+                UserMessage(prompt),
+            ]
+        )
+        data = json.loads(_strip_fences(response.content or "{}"))
+        score = float(data.get("toxicity", 0.0))
+        return ToxicityResult(
+            toxic=score >= threshold,
+            score=round(score, 4),
+            matched=["llm"] if score >= threshold else [],
+            reason=str(data.get("reasoning", "")),
+        )
+    except Exception as e:
+        # Fail open with a clear reason — never crash the caller on a judge error.
+        return ToxicityResult(toxic=False, score=0.0, reason=f"LLM classifier error: {e}")
+
+
+# --------------------------------------------------------------------------- #
+# Groundedness (claim extraction + verification against context)
+# --------------------------------------------------------------------------- #
+
+
+@dataclass
+class GroundednessResult:
+    """Outcome of a groundedness check. ``score`` = supported / total claims."""
+
+    score: float
+    supported: int
+    total: int
+    reason: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "score": self.score,
+            "supported": self.supported,
+            "total": self.total,
+            "reason": self.reason,
+        }
+
+
+async def score_groundedness(
+    output: str, context: str, *, llm: Any = None
+) -> GroundednessResult:
+    """Measure factual consistency of ``output`` against ``context``.
+
+    Two LLM steps: extract claims from the output, then verify each against the
+    context. Shared by the eval ``Faithfulness`` scorer and the runtime
+    ``grounded()`` guardrail — one core detector, two surfaces.
+    """
+    import json
+
+    from fastaiagent.llm import LLMClient, SystemMessage, UserMessage
+
+    client = llm or LLMClient()
+
+    # Step 1: Extract claims from the output.
+    try:
+        extract_resp = await client.acomplete(
+            [
+                SystemMessage("You are a claim extraction assistant. Respond with JSON only."),
+                UserMessage(
+                    "Break the following response into individual factual claims.\n"
+                    "Return a JSON object with a 'claims' key containing a list of strings.\n\n"
+                    f"Response: {output}\n\n"
+                    'Example: {{"claims": ["claim 1", "claim 2"]}}'
+                ),
+            ]
+        )
+        raw = _strip_fences(extract_resp.content or "")
+        claims = json.loads(raw).get("claims", [])
+        if not claims:
+            return GroundednessResult(score=1.0, supported=0, total=0, reason="No claims extracted")
+    except Exception as e:
+        return GroundednessResult(
+            score=0.0, supported=0, total=0, reason=f"Claim extraction error: {e}"
+        )
+
+    # Step 2: Verify each claim against the context.
+    supported = 0
+    for claim in claims:
+        try:
+            verify_resp = await client.acomplete(
+                [
+                    SystemMessage("You are a fact-checking assistant. Respond with JSON only."),
+                    UserMessage(
+                        "Determine if the following claim is supported by "
+                        "the given context.\n\n"
+                        f"Context: {context}\n\n"
+                        f"Claim: {claim}\n\n"
+                        'Respond with JSON: {{"supported": true/false, "reasoning": "..."}}'
+                    ),
+                ]
+            )
+            raw = _strip_fences(verify_resp.content or "")
+            if json.loads(raw).get("supported", False):
+                supported += 1
+        except Exception:
+            continue
+
+    score_val = supported / len(claims)
+    return GroundednessResult(
+        score=round(score_val, 4),
+        supported=supported,
+        total=len(claims),
+        reason=f"Supported claims: {supported}/{len(claims)}",
+    )
+
+
 __all__ = [
     "PIIMatch",
     "InjectionResult",
     "ModerationResult",
+    "SecretMatch",
+    "ToxicityResult",
+    "GroundednessResult",
     "detect_pii",
     "detect_prompt_injection",
+    "detect_secrets",
+    "detect_toxicity",
+    "score_groundedness",
     "moderate_text",
     "DEFAULT_PII_ENTITIES",
 ]

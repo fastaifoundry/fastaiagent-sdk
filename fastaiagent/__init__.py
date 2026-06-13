@@ -14,6 +14,7 @@ from fastaiagent.agent import (
     MiddlewareContext,
     PersistentFactBlock,
     RedactPII,
+    Reflect,
     RunContext,
     StaticBlock,
     SummaryBlock,
@@ -34,9 +35,9 @@ from fastaiagent.chain.interrupt import (
     Resume,
     interrupt,
 )
+from fastaiagent.chain.node import node
 from fastaiagent.checkpointers import Checkpointer, PendingInterrupt, SQLiteCheckpointer
 from fastaiagent.client import connect, disconnect
-from fastaiagent.runtime import job_scope
 from fastaiagent.eval import (
     Dataset,
     EvalResults,
@@ -51,10 +52,16 @@ from fastaiagent.eval import (
 from fastaiagent.guardrail import (
     Guardrail,
     GuardrailResult,
+    allowed_topics,
+    banned_topics,
+    grounded,
     json_valid,
+    no_hallucination,
     no_pii,
     no_prompt_injection,
+    no_secrets,
     openai_moderation,
+    responsible_ai,
     toxicity_check,
 )
 from fastaiagent.kb import KeywordStore, LocalKB, MetadataStore, PlatformKB, VectorStore
@@ -62,7 +69,7 @@ from fastaiagent.llm import LLMClient, Message, StreamEvent, TextDelta
 from fastaiagent.llm.stream import HandoffEvent
 from fastaiagent.multimodal import PDF, ContentPart, Image, normalize_input
 from fastaiagent.prompt import Prompt, PromptRegistry
-from fastaiagent.chain.node import node
+from fastaiagent.runtime import job_scope
 from fastaiagent.tool import FunctionTool, MCPTool, RESTTool, Tool, ToolRegistry, tool
 from fastaiagent.trace import (
     RedactionPolicy,
@@ -122,6 +129,7 @@ __all__ = [
     "TrimLongMessages",
     "ToolBudget",
     "RedactPII",
+    "Reflect",
     # Memory
     "AgentMemory",
     "ComposableMemory",
@@ -171,6 +179,13 @@ __all__ = [
     "openai_moderation",
     "json_valid",
     "toxicity_check",
+    # Responsible-AI "Trust Layer"
+    "no_secrets",
+    "grounded",
+    "no_hallucination",
+    "banned_topics",
+    "allowed_topics",
+    "responsible_ai",
     # Prompt
     "PromptRegistry",
     "Prompt",

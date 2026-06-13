@@ -76,64 +76,20 @@ class Faithfulness(Scorer):
     async def ascore(
         self, input: str, output: str, expected: str | None = None, **kw: Any
     ) -> ScorerResult:
-        from fastaiagent.llm import LLMClient, SystemMessage, UserMessage
+        # Shares its claim-extract + verify implementation with the runtime
+        # ``grounded()`` guardrail via ``score_groundedness`` — one core
+        # detector, two surfaces.
+        from fastaiagent._internal.safety_detectors import score_groundedness
 
         context = _resolve_context(kw)
         if not context:
             return ScorerResult(score=0.0, passed=False, reason="No context provided")
 
-        llm = self._llm or LLMClient()
-
-        # Step 1: Extract claims
-        try:
-            extract_resp = await llm.acomplete(
-                [
-                    SystemMessage("You are a claim extraction assistant. Respond with JSON only."),
-                    UserMessage(
-                        "Break the following response into individual factual claims.\n"
-                        "Return a JSON object with a 'claims' key containing a list of strings.\n\n"
-                        f"Response: {output}\n\n"
-                        'Example: {{"claims": ["claim 1", "claim 2"]}}'
-                    ),
-                ]
-            )
-            raw = _strip_code_fences(extract_resp.content or "")
-            claims_data = json.loads(raw)
-            claims = claims_data.get("claims", [])
-            if not claims:
-                return ScorerResult(score=1.0, passed=True, reason="No claims extracted")
-        except Exception as e:
-            return ScorerResult(score=0.0, passed=False, reason=f"Claim extraction error: {e}")
-
-        # Step 2: Verify each claim against context
-        supported = 0
-        for claim in claims:
-            try:
-                verify_resp = await llm.acomplete(
-                    [
-                        SystemMessage("You are a fact-checking assistant. Respond with JSON only."),
-                        UserMessage(
-                            "Determine if the following claim is supported by "
-                            "the given context.\n\n"
-                            f"Context: {context}\n\n"
-                            f"Claim: {claim}\n\n"
-                            'Respond with JSON: {{"supported": true/false, "reasoning": "..."}}'
-                        ),
-                    ]
-                )
-                raw = _strip_code_fences(verify_resp.content or "")
-                verdict = json.loads(raw)
-                if verdict.get("supported", False):
-                    supported += 1
-            except Exception:
-                logger.debug("Failed to verify claim in faithfulness scorer", exc_info=True)
-                continue
-
-        score_val = supported / len(claims)
+        res = await score_groundedness(output, context, llm=self._llm)
         return ScorerResult(
-            score=round(score_val, 4),
-            passed=score_val >= self.threshold,
-            reason=f"Supported claims: {supported}/{len(claims)}",
+            score=res.score,
+            passed=res.score >= self.threshold,
+            reason=res.reason,
         )
 
 

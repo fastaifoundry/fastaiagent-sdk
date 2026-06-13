@@ -9,12 +9,15 @@ from __future__ import annotations
 
 import json
 from collections import Counter
+from collections.abc import Callable
 from typing import Any
 
 from fastaiagent._internal.safety_detectors import (
     DEFAULT_PII_ENTITIES,
     detect_pii,
     detect_prompt_injection,
+    detect_secrets,
+    detect_toxicity,
     moderate_text,
 )
 from fastaiagent.guardrail.guardrail import (
@@ -150,27 +153,27 @@ def json_valid(position: GuardrailPosition = GuardrailPosition.output) -> Guardr
 
 def toxicity_check(
     position: GuardrailPosition = GuardrailPosition.output,
+    *,
+    mode: str = "keyword",
+    llm: Any = None,
+    threshold: float = 0.5,
 ) -> Guardrail:
-    """Create a keyword-based toxicity guardrail."""
-    toxic_words = [
-        "hate",
-        "kill",
-        "attack",
-        "destroy",
-        "threat",
-        "racist",
-        "sexist",
-        "slur",
-    ]
+    """Create a toxicity guardrail.
+
+    Defaults to the zero-dependency keyword check (unchanged behaviour). Opt
+    into a much stronger LLM classifier with ``mode="llm"`` — it scores 0..1 and
+    blocks when the score meets ``threshold`` (lower = stricter). Delegates to
+    :func:`fastaiagent._internal.safety_detectors.detect_toxicity`.
+    """
 
     def check_toxicity(text: str) -> GuardrailResult:
-        text_lower = text.lower()
-        found = [w for w in toxic_words if w in text_lower]
-        if found:
+        res = detect_toxicity(text, mode=mode, llm=llm, threshold=threshold)
+        if res.toxic:
             return GuardrailResult(
                 passed=False,
-                message=f"Potentially toxic content detected: {', '.join(found)}",
-                metadata={"toxic_words": found},
+                score=res.score,
+                message=res.reason or "Potentially toxic content detected",
+                metadata={"toxic_words": res.matched, "toxicity_score": res.score},
             )
         return GuardrailResult(passed=True)
 
@@ -240,3 +243,250 @@ def allowed_domains(
         config={"domains": domains},
         fn=check_domains,
     )
+
+
+# --------------------------------------------------------------------------- #
+# Responsible-AI "Trust Layer" guardrails
+# --------------------------------------------------------------------------- #
+
+
+def no_secrets(position: GuardrailPosition = GuardrailPosition.output) -> Guardrail:
+    """Block leaked secrets / credentials.
+
+    Delegates to :func:`fastaiagent._internal.safety_detectors.detect_secrets`:
+    private keys, AWS / GitHub / Slack / Google / OpenAI / Stripe tokens, JWTs,
+    and generic ``api_key = "..."`` assignments. Detected values are masked in
+    the guardrail metadata so the secret is never re-leaked.
+    """
+
+    def check_secrets(text: str) -> GuardrailResult:
+        matches = detect_secrets(text)
+        if matches:
+            kinds = sorted({m.kind for m in matches})
+            return GuardrailResult(
+                passed=False,
+                message=f"Secrets detected: {', '.join(kinds)}",
+                metadata={"secret_kinds": kinds, "matches": [m.to_dict() for m in matches]},
+            )
+        return GuardrailResult(passed=True)
+
+    return Guardrail(
+        name="no_secrets",
+        guardrail_type=GuardrailType.code,
+        position=position,
+        blocking=True,
+        description="Blocks leaked secrets / credentials (keys, tokens, private keys)",
+        fn=check_secrets,
+    )
+
+
+def grounded(
+    reference: str | Callable[[], str],
+    *,
+    llm: Any = None,
+    threshold: float = 0.7,
+    position: GuardrailPosition = GuardrailPosition.output,
+) -> Guardrail:
+    """Block ungrounded / hallucinated output.
+
+    Verifies the output's factual claims against a ``reference`` (your source
+    text). ``reference`` is a string or a zero-arg callable returning the current
+    reference — e.g. ``lambda: latest_retrieved_context`` — evaluated at check
+    time so it can track per-run retrieval. Shares its engine with the eval
+    ``Faithfulness`` scorer via
+    :func:`fastaiagent._internal.safety_detectors.score_groundedness`.
+
+    Note: output guardrails receive only the output text, so the reference must
+    be supplied here rather than auto-wired from the agent's retrieval.
+    """
+    from fastaiagent._internal.async_utils import run_sync
+    from fastaiagent._internal.safety_detectors import score_groundedness
+
+    def check_grounded(text: str) -> GuardrailResult:
+        ref = reference() if callable(reference) else reference
+        if not ref:
+            return GuardrailResult(
+                passed=True, message="No reference available; groundedness skipped"
+            )
+        res = run_sync(score_groundedness(text, str(ref), llm=llm))
+        return GuardrailResult(
+            passed=res.score >= threshold,
+            score=res.score,
+            message=res.reason,
+            metadata=res.to_dict(),
+        )
+
+    return Guardrail(
+        name="grounded",
+        guardrail_type=GuardrailType.code,
+        position=position,
+        blocking=True,
+        description="Blocks output not grounded in the provided reference",
+        fn=check_grounded,
+    )
+
+
+# Alias — same guardrail, framed as hallucination prevention.
+no_hallucination = grounded
+
+
+def _classify_topics(
+    text: str, topics: list[str], *, llm: Any = None, mode: str = "llm"
+) -> list[str]:
+    """Return the subset of ``topics`` the text relates to."""
+    if mode == "keyword":
+        low = text.lower()
+        return [t for t in topics if t.lower() in low]
+    if mode != "llm":
+        raise ValueError(f"Unknown topic mode {mode!r}. Use 'llm' or 'keyword'.")
+
+    from fastaiagent._internal.async_utils import run_sync
+
+    return run_sync(_classify_topics_llm(text, topics, llm=llm))
+
+
+async def _classify_topics_llm(text: str, topics: list[str], *, llm: Any = None) -> list[str]:
+    import re
+
+    from fastaiagent.llm import LLMClient, SystemMessage, UserMessage
+
+    client = llm or LLMClient()
+    prompt = (
+        "Which of the following topics does the text relate to? "
+        "Choose only from the list; return an empty list if none apply.\n\n"
+        f"Topics: {', '.join(topics)}\n\n"
+        f"Text:\n{text}\n\n"
+        'Respond with JSON only: {"topics": ["..."]}'
+    )
+    try:
+        resp = await client.acomplete(
+            [
+                SystemMessage("You are a topic classifier. Respond with JSON only."),
+                UserMessage(prompt),
+            ]
+        )
+        raw = (resp.content or "").strip()
+        raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw).strip()
+        chosen = json.loads(raw).get("topics", [])
+        return [t for t in topics if t in chosen]
+    except Exception:
+        # Fail open — never crash the agent on a classifier error.
+        return []
+
+
+def banned_topics(
+    topics: list[str],
+    *,
+    llm: Any = None,
+    mode: str = "llm",
+    position: GuardrailPosition = GuardrailPosition.output,
+) -> Guardrail:
+    """Block content that falls under any banned topic (blacklist).
+
+    ``mode="llm"`` (default) classifies semantically; ``mode="keyword"`` does a
+    zero-dependency literal match.
+    """
+
+    def check(text: str) -> GuardrailResult:
+        hits = _classify_topics(text, topics, llm=llm, mode=mode)
+        if hits:
+            return GuardrailResult(
+                passed=False,
+                message=f"Banned topic(s): {', '.join(hits)}",
+                metadata={"banned_topics": hits},
+            )
+        return GuardrailResult(passed=True)
+
+    return Guardrail(
+        name="banned_topics",
+        guardrail_type=GuardrailType.code,
+        position=position,
+        blocking=True,
+        description=f"Blocks banned topics: {', '.join(topics)}",
+        config={"topics": topics},
+        fn=check,
+    )
+
+
+def allowed_topics(
+    topics: list[str],
+    *,
+    llm: Any = None,
+    mode: str = "llm",
+    position: GuardrailPosition = GuardrailPosition.output,
+) -> Guardrail:
+    """Allow only content within the given topics (whitelist).
+
+    ``mode="llm"`` (default) classifies semantically; ``mode="keyword"`` does a
+    zero-dependency literal match.
+    """
+
+    def check(text: str) -> GuardrailResult:
+        on = _classify_topics(text, topics, llm=llm, mode=mode)
+        if on:
+            return GuardrailResult(passed=True, metadata={"matched_topics": on})
+        return GuardrailResult(
+            passed=False,
+            message=f"Off-topic — allowed topics: {', '.join(topics)}",
+            metadata={"allowed_topics": topics},
+        )
+
+    return Guardrail(
+        name="allowed_topics",
+        guardrail_type=GuardrailType.code,
+        position=position,
+        blocking=True,
+        description=f"Restricts content to topics: {', '.join(topics)}",
+        config={"topics": topics},
+        fn=check,
+    )
+
+
+def responsible_ai(
+    *,
+    pii: bool = True,
+    prompt_injection: bool = True,
+    secrets: bool = True,
+    toxicity: bool = False,
+    moderation: bool = False,
+    grounded_to: str | Callable[[], str] | None = None,
+    banned: list[str] | None = None,
+    allowed: list[str] | None = None,
+    llm: Any = None,
+    threshold: float = 0.7,
+) -> list[Guardrail]:
+    """Compose a Responsible-AI "Trust Layer" as a list of guardrails.
+
+    Spread the result into ``Agent(guardrails=responsible_ai(...))``. The
+    zero-dependency checks (prompt-injection on input, PII + secrets on output)
+    are on by default; the LLM-backed checks (groundedness, topic controls, LLM
+    toxicity, OpenAI moderation) are opt-in, so the default bundle adds **no**
+    extra LLM calls.
+
+    Example::
+
+        agent = Agent(name="safe", llm=llm, guardrails=responsible_ai(
+            grounded_to=lambda: latest_context,
+            banned=["politics", "legal advice"],
+            toxicity=True,
+            llm=llm,
+        ))
+    """
+    rails: list[Guardrail] = []
+    if prompt_injection:
+        rails.append(no_prompt_injection())
+    if pii:
+        rails.append(no_pii())
+    if secrets:
+        rails.append(no_secrets())
+    if toxicity:
+        rails.append(toxicity_check(mode="llm" if llm is not None else "keyword", llm=llm))
+    if moderation:
+        rails.append(openai_moderation())
+    if grounded_to is not None:
+        rails.append(grounded(grounded_to, llm=llm, threshold=threshold))
+    if banned:
+        rails.append(banned_topics(banned, llm=llm))
+    if allowed:
+        rails.append(allowed_topics(allowed, llm=llm))
+    return rails

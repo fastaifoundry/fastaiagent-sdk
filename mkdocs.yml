@@ -102,6 +102,7 @@ nav:
       - "API reference": durability/api-reference.md
   - Guardrails:
       - guardrails/index.md
+      - "Responsible AI (Trust Layer)": guardrails/responsible-ai.md
   - Tools:
       - tools/index.md
       - "Function Tools": tools/function-tools.md
