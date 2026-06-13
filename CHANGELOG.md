@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.22.1] - 2026-06-13
+
+### Fixed
+
+- **Packaging:** the 1.22.0 wheel was published without the Local UI bundle
+  (`fastaiagent/ui/static`) because it was built from the sdist (which excludes
+  the gitignored UI build artifact). 1.22.1 ships the wheel built **from source**,
+  so `fastaiagent ui` works from a `pip install`. No code changes vs 1.22.0;
+  1.22.0 is yanked.
+
 ## [1.22.0] - 2026-06-13
 
 ### Added
