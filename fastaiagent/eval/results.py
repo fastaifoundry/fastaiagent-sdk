@@ -67,9 +67,7 @@ class EvalResults:
         from fastaiagent.client import _connection
 
         if not _connection.is_connected:
-            raise PlatformNotConnectedError(
-                "Not connected to platform. Call fa.connect() first."
-            )
+            raise PlatformNotConnectedError("Not connected to platform. Call fa.connect() first.")
         api = get_platform_api()
         data = {name: [r.model_dump() for r in results] for name, results in self.scores.items()}
         api.post(
@@ -175,3 +173,91 @@ class EvalResults:
             sign = "+" if diff > 0 else ""
             lines.append(f"{name}: {avg_a:.2f} → {avg_b:.2f} ({sign}{diff:.2f})")
         return "\n".join(lines)
+
+
+@dataclass
+class MetricSummary:
+    """One metric's roll-up in a :class:`Scorecard`."""
+
+    name: str
+    avg_score: float
+    pass_rate: float
+    n: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "avg_score": self.avg_score,
+            "pass_rate": self.pass_rate,
+            "n": self.n,
+        }
+
+
+@dataclass
+class Scorecard:
+    """A compact, named roll-up of an eval or simulation run.
+
+    Per-metric average score + pass-rate, plus an overall pass-rate. Build it
+    from an :class:`EvalResults` (per-scorer) or a ``SimulationResults``
+    (per-scenario). Aggregation only — no LLM calls.
+
+    Example::
+
+        results = evaluate(agent.run, dataset, scorers=["task_completion", "faithfulness"])
+        print(Scorecard.from_eval_results(results).summary())
+    """
+
+    metrics: list[MetricSummary] = field(default_factory=list)
+    overall_pass_rate: float = 0.0
+    label: str | None = None
+
+    @classmethod
+    def from_eval_results(cls, results: EvalResults, *, label: str | None = None) -> Scorecard:
+        metrics: list[MetricSummary] = []
+        total = 0
+        passed = 0
+        for name, rlist in results.scores.items():
+            if not rlist:
+                continue
+            n = len(rlist)
+            avg = sum(r.score for r in rlist) / n
+            pr = sum(1 for r in rlist if r.passed) / n
+            metrics.append(
+                MetricSummary(name=name, avg_score=round(avg, 4), pass_rate=round(pr, 4), n=n)
+            )
+            total += n
+            passed += sum(1 for r in rlist if r.passed)
+        overall = (passed / total) if total else 0.0
+        return cls(metrics=metrics, overall_pass_rate=round(overall, 4), label=label)
+
+    @classmethod
+    def from_simulation(cls, results: Any, *, label: str | None = None) -> Scorecard:
+        """Build from a ``SimulationResults`` (duck-typed: ``.results`` of pass/fail)."""
+        sims = getattr(results, "results", []) or []
+        n = len(sims)
+        passed = sum(1 for r in sims if getattr(r, "passed", False))
+        pr = round((passed / n) if n else 0.0, 4)
+        metrics = [MetricSummary(name="scenarios", avg_score=pr, pass_rate=pr, n=n)]
+        return cls(
+            metrics=metrics,
+            overall_pass_rate=pr,
+            label=label or getattr(results, "agent_name", None),
+        )
+
+    def summary(self) -> str:
+        head = f"Scorecard — {self.label}" if self.label else "Scorecard"
+        lines = [head, "=" * 50]
+        for m in self.metrics:
+            lines.append(
+                f"{m.name:<22} avg={m.avg_score:.2f}  pass_rate={m.pass_rate:.0%}  (n={m.n})"
+            )
+        lines.append("-" * 50)
+        lines.append(f"overall pass_rate={self.overall_pass_rate:.0%}")
+        return "\n".join(lines)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "label": self.label,
+            "overall_pass_rate": self.overall_pass_rate,
+            "metrics": [m.to_dict() for m in self.metrics],
+        }

@@ -15,7 +15,8 @@ from fastaiagent.eval.llm_judge import LLMJudge
 # We now expose stubs that raise a helpful ImportError only if the
 # decorator is actually called.
 try:
-    from fastaiagent.eval.pytest_plugin import case, dataset as pytest_dataset
+    from fastaiagent.eval.pytest_plugin import case
+    from fastaiagent.eval.pytest_plugin import dataset as pytest_dataset
 except ImportError:  # pragma: no cover — exercised by subprocess test
 
     def _missing_pytest(*_args: Any, **_kwargs: Any) -> Any:
@@ -28,8 +29,10 @@ except ImportError:  # pragma: no cover — exercised by subprocess test
     case = _missing_pytest  # type: ignore[assignment]
     pytest_dataset = _missing_pytest  # type: ignore[assignment]
 
+from fastaiagent.eval.agent_metrics import Hallucination, ReflectionQuality, TaskCompletion
+from fastaiagent.eval.harden import HardeningReport, Recommendation, aharden, harden
 from fastaiagent.eval.rag import AnswerRelevancy, ContextPrecision, ContextRecall, Faithfulness
-from fastaiagent.eval.results import EvalResults
+from fastaiagent.eval.results import EvalResults, MetricSummary, Scorecard
 from fastaiagent.eval.safety import (
     Bias,
     OpenAIModeration,
@@ -38,19 +41,21 @@ from fastaiagent.eval.safety import (
     Toxicity,
 )
 from fastaiagent.eval.scorer import Scorer, ScorerResult
-from fastaiagent.eval.simulate import (
-    Scenario,
-    SimulatedUser,
-    SimulationResult,
-    SimulationResults,
-    asimulate,
-    simulate,
-)
 from fastaiagent.eval.similarity import (
     BLEUScore,
     LevenshteinDistance,
     ROUGEScore,
     SemanticSimilarity,
+)
+from fastaiagent.eval.simulate import (
+    Scenario,
+    SimulatedUser,
+    SimulationResult,
+    SimulationResults,
+    agenerate_scenarios,
+    asimulate,
+    generate_scenarios,
+    simulate,
 )
 
 __all__ = [
@@ -61,6 +66,8 @@ __all__ = [
     "ScorerResult",
     "EvalResults",
     "LLMJudge",
+    "Scorecard",
+    "MetricSummary",
     # Simulation
     "simulate",
     "asimulate",
@@ -68,6 +75,17 @@ __all__ = [
     "SimulatedUser",
     "SimulationResult",
     "SimulationResults",
+    "generate_scenarios",
+    "agenerate_scenarios",
+    # Agent hardening
+    "harden",
+    "aharden",
+    "HardeningReport",
+    "Recommendation",
+    # Agent-eval metrics
+    "TaskCompletion",
+    "Hallucination",
+    "ReflectionQuality",
     # Pytest plugin decorators
     "case",
     "pytest_dataset",

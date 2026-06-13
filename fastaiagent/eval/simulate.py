@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -144,9 +145,7 @@ class SimulatedUser:
             "satisfied, reply with exactly END."
         )
         convo = _format_transcript(transcript) or "(no messages yet — open the conversation)"
-        response = await llm.acomplete(
-            [SystemMessage(system), _UserMessage(convo)]
-        )
+        response = await llm.acomplete([SystemMessage(system), _UserMessage(convo)])
         text = (response.content or "").strip()
         if not text or text.upper() == "END":
             return None
@@ -219,8 +218,7 @@ class SimulationResults:
                 lines.append(f"    {mark} ({v.kind}) {v.criterion}")
         lines.append("-" * 50)
         lines.append(
-            f"{self.pass_count}/{len(self.results)} passed "
-            f"(pass_rate={self.pass_rate:.0%})"
+            f"{self.pass_count}/{len(self.results)} passed (pass_rate={self.pass_rate:.0%})"
         )
         return "\n".join(lines)
 
@@ -465,9 +463,7 @@ async def _run_scenario(
             nxt = await scenario.user.anext(transcript)
             if nxt is None:
                 break
-            transcript.append(
-                TranscriptTurn(turn_index=len(transcript), role="user", content=nxt)
-            )
+            transcript.append(TranscriptTurn(turn_index=len(transcript), role="user", content=nxt))
 
         # 3. Judge once over the full transcript.
         passed, verdicts = await _judge_transcript(scenario, transcript, judge)
@@ -585,6 +581,103 @@ def simulate(
     )
 
 
+# --------------------------------------------------------------------------- #
+# Scenario generation
+# --------------------------------------------------------------------------- #
+
+
+async def agenerate_scenarios(
+    agent: Agent | AgentAdapter,
+    *,
+    n: int = 5,
+    llm: LLMClient | None = None,
+    focus: str | None = None,
+) -> list[Scenario]:
+    """Auto-generate test :class:`Scenario`s for ``agent`` using an LLM.
+
+    Introspects the agent's name, system prompt, and tools to propose ``n``
+    diverse multi-turn scenarios — each with a simulated-user persona and
+    success / failure criteria — ready to pass straight to :func:`simulate`. The
+    simulated user for every generated scenario uses ``llm``. ``focus`` optionally
+    steers generation (e.g. ``"adversarial users"``, ``"edge cases"``).
+
+    Returns an empty list if the model response can't be parsed (fails soft).
+    """
+    from fastaiagent.llm import LLMClient, SystemMessage
+    from fastaiagent.llm import UserMessage as _UserMessage
+
+    client = llm or LLMClient()
+    name = getattr(agent, "name", "agent")
+    sp = getattr(agent, "system_prompt", None)
+    sp_text = sp if isinstance(sp, str) and sp else "(dynamic or no system prompt)"
+    tools = getattr(agent, "tools", []) or []
+    tool_lines: list[str] = []
+    for t in tools:
+        try:
+            d = t.to_dict()
+            tool_lines.append(f"- {d.get('name')}: {d.get('description', '')}")
+        except Exception:
+            tool_lines.append(f"- {getattr(t, 'name', 'tool')}")
+    tools_block = "\n".join(tool_lines) if tool_lines else "(no tools)"
+    focus_block = f"\nFocus especially on: {focus}\n" if focus else ""
+
+    prompt = (
+        f"You are designing tests for an AI agent named '{name}'.\n\n"
+        f"System prompt:\n{sp_text}\n\n"
+        f"Tools:\n{tools_block}\n"
+        f"{focus_block}\n"
+        f"Propose {n} diverse, realistic multi-turn test scenarios. For each give a short "
+        "name, a simulated-user persona (one sentence), 1-3 success_criteria (things the "
+        "agent SHOULD do), and 0-2 failure_criteria (things the agent must NOT do).\n"
+        'Respond with JSON only: {"scenarios": [{"name": "...", "persona": "...", '
+        '"success_criteria": ["..."], "failure_criteria": ["..."]}]}'
+    )
+    try:
+        resp = await client.acomplete(
+            [
+                SystemMessage(
+                    "You are a meticulous QA engineer for AI agents. Respond with JSON only."
+                ),
+                _UserMessage(prompt),
+            ]
+        )
+        raw = (resp.content or "").strip()
+        raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw).strip()
+        data = json.loads(raw)
+    except Exception:
+        return []
+
+    scenarios: list[Scenario] = []
+    for item in data.get("scenarios", [])[:n]:
+        persona = str(item.get("persona", "")).strip()
+        if not persona:
+            continue
+        scenarios.append(
+            Scenario(
+                name=str(item.get("name") or f"scenario-{len(scenarios) + 1}"),
+                user=SimulatedUser(persona=persona, llm=client),
+                success_criteria=[
+                    str(c) for c in item.get("success_criteria", []) if str(c).strip()
+                ],
+                failure_criteria=[
+                    str(c) for c in item.get("failure_criteria", []) if str(c).strip()
+                ],
+            )
+        )
+    return scenarios
+
+
+def generate_scenarios(
+    agent: Agent | AgentAdapter,
+    *,
+    n: int = 5,
+    llm: LLMClient | None = None,
+    focus: str | None = None,
+) -> list[Scenario]:
+    """Sync wrapper for :func:`agenerate_scenarios`."""
+    return run_sync(agenerate_scenarios(agent, n=n, llm=llm, focus=focus))
+
+
 __all__ = [
     "Scenario",
     "SimulatedUser",
@@ -594,4 +687,6 @@ __all__ = [
     "CriterionVerdict",
     "simulate",
     "asimulate",
+    "generate_scenarios",
+    "agenerate_scenarios",
 ]
