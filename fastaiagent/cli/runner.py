@@ -37,8 +37,21 @@ def runner(
     """
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
+    from fastaiagent import connect as platform_connect
+    from fastaiagent._internal.errors import PlatformAuthError
     from fastaiagent.runner.channel import RunnerChannel
     from fastaiagent.runner.daemon import RunnerDaemon
+
+    # Connect to the platform with the SAME key used to register the runner. This
+    # wires the PlatformSpanExporter so the traces of jobs this runner executes
+    # are pushed to the plane (and routed by the key). A bad key fails fast (the
+    # register call would reject it anyway); an unreachable plane is tolerated by
+    # connect() — traces buffer locally and drain when it's reachable.
+    try:
+        platform_connect(api_key=key, target=connect)
+    except PlatformAuthError as e:
+        console.print(f"[red]runner: platform auth failed[/red] — {e}")
+        raise typer.Exit(code=1) from e
 
     channel = RunnerChannel(base_url=connect, api_key=key)
     daemon = RunnerDaemon(

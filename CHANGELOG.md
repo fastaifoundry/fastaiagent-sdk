@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Runner traces now reach the platform.** The bare `fastaiagent runner` daemon
+  never pushed the traces of the jobs it executed: the CLI never established a
+  platform connection (so the span exporter was never wired), and a per-job
+  `project` override stamped spans with a value the exporter's background-thread
+  drain couldn't see (ContextVars are task-local, not thread-local) — so the drain
+  filtered them out. The runner now calls `connect()` on startup with its `--key`
+  (wiring the exporter) and keeps the span project consistent with the drain, so a
+  `live_playground` / `eval_run` job's trace is ingested and linked by the
+  `trace_id` the runner reports. Traces route by the API key (one runner = one
+  tenant). A rejected key now **fails fast**; an unreachable platform is tolerated
+  (traces buffer locally and drain on reconnect).
+
+### Added
+
+- **Runner executes `eval_run`.** The runner now advertises and accepts `eval_run`
+  commands, running the agent once per case and reporting
+  `{"outputs":[{case_id, output, trace_id}, …]}` — the platform scores centrally
+  from each case's criteria.
+
 ## [1.23.0] - 2026-06-14
 
 ### Added

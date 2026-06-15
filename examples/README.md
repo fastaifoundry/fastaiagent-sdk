@@ -117,6 +117,7 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 - [`48_export_trace.py`](48_export_trace.py) — export trace as JSON
 - [`52_trace_compare.py`](52_trace_compare.py) — Local UI trace comparison
 - [`54_trace_filters.py`](54_trace_filters.py) — saved filter presets
+- [`83_runner_trace_to_platform.py`](83_runner_trace_to_platform.py) — a runner job's trace flows SDK → platform, self-verified (Task A)
 
 ### Multimodal
 - [`43_multimodal_image.py`](43_multimodal_image.py) — `fa.Image` input
