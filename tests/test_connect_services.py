@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
@@ -314,12 +315,14 @@ class TestPlatformSpanExporter:
         assert result == SpanExportResult.SUCCESS
 
     def _seed_unsynced(self, store, span_id: str = "sp1") -> None:
+        # Recent timestamp so the row stays inside the exporter's age-based buffer
+        # bound (_MAX_AGE_DAYS) regardless of the calendar date the test runs.
+        recent = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
         store._db.execute(
             "INSERT INTO spans (span_id, trace_id, name, start_time, end_time, "
             "status, attributes, events, project_id, synced) "
-            "VALUES (?, 'tr1', 'agent.run', '2026-06-07T00:00:00+00:00', "
-            "'2026-06-07T00:00:00+00:00', 'OK', '{}', '[]', 'test-proj', 0)",
-            (span_id,),
+            "VALUES (?, 'tr1', 'agent.run', ?, ?, 'OK', '{}', '[]', 'test-proj', 0)",
+            (span_id, recent, recent),
         )
 
     def test_export_drains_buffer_and_marks_synced(self, isolated_local_db, capture_server):
