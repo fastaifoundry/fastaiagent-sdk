@@ -8,7 +8,10 @@ boundary. That is the runner's whole reason to exist.
 
 ``eval_run`` runs the agent once per case and returns the per-case outputs +
 trace ids; the plane scores centrally from each case's ``criteria`` (the runner
-does NOT score). A ``guarded_live_rerun`` / ``tool_exec`` is not handled here.
+does NOT score). ``tool_exec`` runs one LOCAL connector/tool the plane dispatches
+(the SaaS + ``customer_private`` case): it resolves the tool by ``exposed_name``
+in the ToolRegistry and runs it with the operator's own creds. A
+``guarded_live_rerun`` is not handled here.
 """
 
 from __future__ import annotations
@@ -37,6 +40,8 @@ async def execute_command(cmd: dict[str, Any]) -> CommandResult:
         return await _run_live_playground(cmd)
     if ctype == "eval_run":
         return await _run_eval_run(cmd)
+    if ctype == "tool_exec":
+        return await _run_tool_exec(cmd)
     return CommandResult("failed", None, None, f"unsupported command type: {ctype!r}")
 
 
@@ -112,3 +117,87 @@ async def _run_eval_run(cmd: dict[str, Any]) -> CommandResult:
             first_trace_id = trace_id
 
     return CommandResult("completed", {"outputs": outputs}, first_trace_id, None)
+
+
+async def _run_tool_exec(cmd: dict[str, Any]) -> CommandResult:
+    """Run one LOCAL connector/tool the plane dispatched.
+
+    Payload: ``{"tool_exec": {"tool_type", "connector": {"instance_id", "action",
+    "fixed_params"}, "exposed_name", "arguments"}, "hosted_server_id"}``. We
+    resolve the tool by ``exposed_name`` in the runner's ToolRegistry (the
+    operator registered it locally with its own creds), run it inside a traced
+    ``tool.<name>`` span, and report ``{"success", "result"}`` (the plane reads
+    ``result["success"]``). ``status`` is ``completed`` whenever the tool ran —
+    even if it returned an error (``success=false``) — and ``failed`` only when
+    the runner can't resolve/process the command. The span is pushed like any
+    other job's trace and linked by the reported ``trace_id``.
+    """
+    import json
+
+    payload = cmd.get("payload") or {}
+    spec = payload.get("tool_exec") or {}
+    tool_type = spec.get("tool_type")
+    if tool_type != "connector":
+        return CommandResult(
+            "failed", None, None, f"unsupported tool_exec tool_type: {tool_type!r}"
+        )
+
+    exposed_name = spec.get("exposed_name")
+    if not exposed_name:
+        return CommandResult("failed", None, None, "tool_exec payload missing 'exposed_name'")
+    arguments = spec.get("arguments") or {}
+    fixed_params = (spec.get("connector") or {}).get("fixed_params") or {}
+    # Operator-fixed params win over the LLM-supplied arguments on a key collision.
+    call_args = {**arguments, **fixed_params}
+
+    from fastaiagent import job_scope
+    from fastaiagent.tool.registry import ToolRegistry
+    from fastaiagent.trace.otel import get_tracer
+    from fastaiagent.trace.span import trace_payloads_enabled
+
+    tool = ToolRegistry.get(exposed_name)
+    if tool is None:
+        return CommandResult(
+            "failed", None, None,
+            f"no local tool registered for exposed_name {exposed_name!r} "
+            "(register it before starting the runner, e.g. via --tools)",
+        )
+
+    tracer = get_tracer("fastaiagent.runner.tool_exec")
+    try:
+        # job_scope() keeps the span's project consistent with the exporter's
+        # background-thread drain (same rationale as _run_live_playground).
+        with job_scope(), tracer.start_as_current_span(f"tool.{exposed_name}") as span:
+            span.set_attribute("tool.name", exposed_name)
+            span.set_attribute("tool.origin", getattr(tool, "origin", "unknown"))
+            span.set_attribute("fastaiagent.runner.type", "tool")
+            span.set_attribute(
+                "fastaiagent.tool.replay_class", getattr(tool, "replay_class", "side_effecting")
+            )
+            if trace_payloads_enabled():
+                span.set_attribute("tool.args", json.dumps(call_args, default=str))
+            try:
+                tool_result = await tool.aexecute(call_args, context=None)
+                success = bool(tool_result.success)
+                output: Any = tool_result.output if success else (tool_result.error or "tool error")
+                span.set_attribute("tool.status", "ok" if success else "error")
+                if not success:
+                    span.set_attribute("tool.error", str(tool_result.error))
+            except Exception as e:  # noqa: BLE001 — a connector failure → success=false, not a crash
+                logger.exception("tool_exec command %s tool raised", cmd.get("command_id"))
+                success, output = False, f"{type(e).__name__}: {e}"
+                span.set_attribute("tool.status", "error")
+                span.set_attribute("tool.error", str(e))
+            if trace_payloads_enabled():
+                span.set_attribute("tool.result", str(output))
+            trace_id = format(span.get_span_context().trace_id, "032x")
+
+        # Keep the reported result JSON-serializable for the results channel.
+        try:
+            json.dumps(output)
+        except (TypeError, ValueError):
+            output = str(output)
+        return CommandResult("completed", {"success": success, "result": output}, trace_id, None)
+    except Exception as e:  # noqa: BLE001 — runner-level failure (never crash the daemon)
+        logger.exception("tool_exec command %s failed", cmd.get("command_id"))
+        return CommandResult("failed", None, None, str(e))

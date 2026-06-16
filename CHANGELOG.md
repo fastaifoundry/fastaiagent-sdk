@@ -27,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   commands, running the agent once per case and reporting
   `{"outputs":[{case_id, output, trace_id}, …]}` — the platform scores centrally
   from each case's criteria.
+- **Runner executes `tool_exec` (connectors).** Opt-in via `--tools
+  module:callable`, which registers your local tools and advertises the `tool_exec`
+  capability. The plane dispatches `tool_exec` for the SaaS + customer-private
+  connector case; the runner resolves the dispatched connector by its
+  `exposed_name` in the ToolRegistry, runs it locally with your own creds, and
+  reports `{"success", "result"}`. The call is traced and linked by `trace_id`.
 
 ## [1.23.0] - 2026-06-14
 
