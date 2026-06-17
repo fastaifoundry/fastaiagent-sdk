@@ -66,6 +66,7 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 ### Tools & guardrails
 - [`03_guardrails.py`](03_guardrails.py) — built-in PII / toxicity / JSON guardrails
 - [`23_tool_guardrails.py`](23_tool_guardrails.py) — guardrails on tool calls / results
+- [`84_governed_agent.py`](84_governed_agent.py) — connected agent honors a managed approval policy: pause → console approve → resume (Task C)
 - [`27_middleware_tool_budget.py`](27_middleware_tool_budget.py) — `ToolBudget` middleware
 - [`30_memory_blocks.py`](30_memory_blocks.py) — `ComposableMemory` block API
 - [`32_mcp_expose_agent.py`](32_mcp_expose_agent.py) — expose Agent as MCP server

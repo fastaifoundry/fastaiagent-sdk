@@ -33,6 +33,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   connector case; the runner resolves the dispatched connector by its
   `exposed_name` in the ToolRegistry, runs it locally with your own creds, and
   reports `{"success", "result"}`. The call is traced and linked by `trace_id`.
+- **Managed governance over the wire.** A connected agent honors approval policies
+  the platform defines: `connect()` caches `GET /policy`; before a tool call that
+  matches a cached approval policy the SDK calls `POST /policy/decide`; on
+  `require_approval` it registers a pending run (`POST /runs/{id}/pending`) and
+  **pauses** (checkpoint), then **resumes** once the console approves (polling
+  `GET /runs/{id}/pending`). `deny` refuses the call. Enroll an agent with
+  `Agent(agent_id=<platform uuid>)` + a checkpointer; `arun()` blocks for approval
+  by default (`wait_for_approval=False` to drive resume yourself). See
+  `docs/guardrails/managed-governance.md` and `examples/84_governed_agent.py`.
 
 ## [1.23.0] - 2026-06-14
 

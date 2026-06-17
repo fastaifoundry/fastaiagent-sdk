@@ -103,6 +103,7 @@ nav:
   - Guardrails:
       - guardrails/index.md
       - "Responsible AI (Trust Layer)": guardrails/responsible-ai.md
+      - "Managed governance (approvals)": guardrails/managed-governance.md
   - Tools:
       - tools/index.md
       - "Function Tools": tools/function-tools.md

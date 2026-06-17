@@ -20,6 +20,7 @@ class _Connection:
         self.domain_id: str | None = None
         self.project_id: str | None = None
         self.scopes: list[str] = []
+        self.policy_cache: dict[str, Any] | None = None
         self._platform_processor: Any = None
 
     @property
@@ -193,6 +194,25 @@ def connect(
     except (PlatformAuthError, PlatformConnectionError):
         raise
 
+    # Pull + cache the governance policy (best-effort). Tool calls gate against
+    # this cache (see fastaiagent.governance); on a pull failure we keep the
+    # last-known cache rather than clearing it.
+    try:
+        with httpx.Client(timeout=10, verify=True) as client:
+            presp = client.get(
+                f"{_connection.target}/public/v1/policy", headers=_connection.headers
+            )
+        if presp.status_code == 200:
+            _connection.policy_cache = presp.json()
+            logger.info(
+                "Cached governance policy: version=%s approval_policies=%d guardrail_rules=%d",
+                _connection.policy_cache.get("version"),
+                len(_connection.policy_cache.get("approval_policies", []) or []),
+                len(_connection.policy_cache.get("guardrail_rules", []) or []),
+            )
+    except Exception:
+        logger.debug("Could not pull governance policy (keeping last-known)", exc_info=True)
+
     # Register platform trace exporter
     try:
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -225,3 +245,4 @@ def disconnect() -> None:
     _connection.domain_id = None
     _connection.project_id = None
     _connection.scopes = []
+    _connection.policy_cache = None
