@@ -13,6 +13,7 @@ Run with::
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -46,6 +47,20 @@ def _claude_agent(name: str = "vision-test") -> Agent:
     )
 
 
+def _reports_cat(output: str) -> bool:
+    """True if Claude's vision answer identifies the letters C-A-T.
+
+    Robust to phrasing: Claude may answer "CAT", "C A T", or spell it out with
+    connectors/markdown ("C, A, and T", "**C**, **A**, **T**"). We accept either
+    the contiguous word or the three letters surfaced as standalone tokens, so
+    the test checks comprehension rather than exact wording.
+    """
+    upper = output.upper()
+    contiguous = "".join(c for c in upper if c.isalpha())
+    spelled = "".join(re.findall(r"\b[A-Z]\b", upper))  # "C, A, and T" -> "CAT"
+    return "CAT" in contiguous or "CAT" in spelled
+
+
 class TestAnthropicVisionGate:
     """Spec test #1, #5, native-PDF — real Claude vision."""
 
@@ -58,11 +73,10 @@ class TestAnthropicVisionGate:
             ["What letters appear in this image?", Image.from_file(FIXTURES / "cat.jpg")]
         )
         assert result.output, "expected non-empty output from Claude"
-        # Claude may return "CAT" or "C, A, T" — both indicate it read the
-        # image correctly. Strip non-letters before checking.
-        letters = "".join(c for c in result.output.upper() if c.isalpha())
-        assert "CAT" in letters, (
-            f"Claude vision must report CAT (any spacing); got: {result.output[:200]}"
+        # Claude may return "CAT", "C A T", or spell it out ("C, A, and T") —
+        # all indicate it read the image correctly.
+        assert _reports_cat(result.output), (
+            f"Claude vision must report CAT (any phrasing); got: {result.output[:200]}"
         )
 
     def test_native_pdf_block_contract_q_and_a(self) -> None:
@@ -95,6 +109,5 @@ class TestAnthropicVisionGate:
                 PDF.from_file(FIXTURES / "contract.pdf"),
             ]
         )
-        letters = "".join(c for c in result.output.upper() if c.isalpha())
-        assert "CAT" in letters
+        assert _reports_cat(result.output)
         assert "two years" in result.output.lower() or "2 years" in result.output.lower()
