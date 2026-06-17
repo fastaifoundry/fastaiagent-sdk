@@ -817,8 +817,9 @@ pip install "fastaiagent[all]"          # Everything
 
 ## Contributing
 
-We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+FastAIAgent is open source (Apache-2.0) but **does not accept external pull
+requests** — please **file issues**, not PRs. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE).
+Apache 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
