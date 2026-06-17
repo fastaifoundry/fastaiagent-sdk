@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.24.0] - 2026-06-17
 
 ### Fixed
 
@@ -42,6 +42,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Agent(agent_id=<platform uuid>)` + a checkpointer; `arun()` blocks for approval
   by default (`wait_for_approval=False` to drive resume yourself). See
   `docs/guardrails/managed-governance.md` and `examples/84_governed_agent.py`.
+
+### Changed
+
+- **Contribution policy.** The project remains Apache-2.0 (`LICENSE` unchanged) and
+  adds a `NOTICE` attribution file. `CONTRIBUTING.md` now states that external pull
+  requests are not accepted (issues and discussions are welcome); no CLA.
 
 ## [1.23.0] - 2026-06-14
 
