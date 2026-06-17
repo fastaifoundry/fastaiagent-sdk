@@ -287,7 +287,7 @@ class TestAgentSerialization:
         data = {
             "name": "restored",
             "system_prompt": "Test prompt",
-            "llm_endpoint": {"provider": "anthropic", "model": "claude-sonnet-4-20250514"},
+            "llm_endpoint": {"provider": "anthropic", "model": "claude-sonnet-4-6"},
             "tools": [
                 {
                     "name": "search",

@@ -142,8 +142,8 @@ if __name__ == "__main__":
     print("  Created: OpenAI gpt-4.1")
 
     if anthropic_key:
-        anthropic_llm = LLMClient(provider="anthropic", model="claude-sonnet-4-20250514")
-        print("  Created: Anthropic claude-sonnet-4-20250514")
+        anthropic_llm = LLMClient(provider="anthropic", model="claude-sonnet-4-6")
+        print("  Created: Anthropic claude-sonnet-4-6")
     else:
         anthropic_llm = None
         print("  Skipped: Anthropic (ANTHROPIC_API_KEY not set)")

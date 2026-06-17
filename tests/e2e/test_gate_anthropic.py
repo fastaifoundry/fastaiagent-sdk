@@ -47,7 +47,7 @@ class TestQualityGateAnthropic:
                 "Use the lookup_order tool to check order status when asked. "
                 "Be concise."
             ),
-            llm=LLMClient(provider="anthropic", model="claude-sonnet-4-20250514"),
+            llm=LLMClient(provider="anthropic", model="claude-sonnet-4-6"),
             tools=[FunctionTool(name="lookup_order", fn=_lookup_order)],
         )
         assert agent.name == "anthropic-gate-support"

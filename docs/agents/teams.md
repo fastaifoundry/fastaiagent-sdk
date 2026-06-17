@@ -25,7 +25,7 @@ researcher = Agent(
 writer = Agent(
     name="writer",
     system_prompt="Write clear, concise content from research.",
-    llm=LLMClient(provider="anthropic", model="claude-sonnet-4-20250514"),
+    llm=LLMClient(provider="anthropic", model="claude-sonnet-4-6"),
 )
 
 supervisor = Supervisor(
@@ -73,7 +73,7 @@ supervisor = Supervisor(
             description="Handles simple, fast questions",
         ),
         Worker(
-            agent=Agent(name="deep-agent", llm=LLMClient(provider="anthropic", model="claude-sonnet-4-20250514"), system_prompt="Thorough analysis."),
+            agent=Agent(name="deep-agent", llm=LLMClient(provider="anthropic", model="claude-sonnet-4-6"), system_prompt="Thorough analysis."),
             role="analyst",
             description="Handles complex analysis tasks",
         ),

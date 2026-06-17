@@ -162,7 +162,7 @@ class TestAnthropicParams:
     @pytest.mark.asyncio
     async def test_top_p_in_body(self):
         llm = LLMClient(
-            provider="anthropic", model="claude-sonnet-4-20250514", api_key="k", top_p=0.9
+            provider="anthropic", model="claude-sonnet-4-6", api_key="k", top_p=0.9
         )
         captured, mock_fn = _capture_body()
 
@@ -170,7 +170,7 @@ class TestAnthropicParams:
         anthropic_response = {
             "content": [{"type": "text", "text": "Hello"}],
             "usage": {"input_tokens": 5, "output_tokens": 3},
-            "model": "claude-sonnet-4-20250514",
+            "model": "claude-sonnet-4-6",
             "stop_reason": "end_turn",
         }
 
@@ -187,14 +187,14 @@ class TestAnthropicParams:
     async def test_stop_as_stop_sequences(self):
         """Anthropic uses stop_sequences (list)."""
         llm = LLMClient(
-            provider="anthropic", model="claude-sonnet-4-20250514", api_key="k", stop="END"
+            provider="anthropic", model="claude-sonnet-4-6", api_key="k", stop="END"
         )
         captured, mock_fn = _capture_body()
 
         anthropic_response = {
             "content": [{"type": "text", "text": "Hello"}],
             "usage": {"input_tokens": 5, "output_tokens": 3},
-            "model": "claude-sonnet-4-20250514",
+            "model": "claude-sonnet-4-6",
             "stop_reason": "end_turn",
         }
 
@@ -214,7 +214,7 @@ class TestAnthropicParams:
         """Anthropic doesn't support seed, frequency_penalty, etc."""
         llm = LLMClient(
             provider="anthropic",
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             api_key="k",
             seed=42,
             frequency_penalty=0.5,
@@ -225,7 +225,7 @@ class TestAnthropicParams:
         anthropic_response = {
             "content": [{"type": "text", "text": "Hello"}],
             "usage": {"input_tokens": 5, "output_tokens": 3},
-            "model": "claude-sonnet-4-20250514",
+            "model": "claude-sonnet-4-6",
             "stop_reason": "end_turn",
         }
 

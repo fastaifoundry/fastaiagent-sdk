@@ -25,7 +25,7 @@ pytestmark = pytest.mark.e2e
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures" / "multimodal"
 
 # Pinned to a current Sonnet model that supports vision and native PDF.
-ANTHROPIC_MODEL = "claude-sonnet-4-20250514"
+ANTHROPIC_MODEL = "claude-sonnet-4-6"
 
 
 def _ensure_fixtures() -> None:

@@ -15,7 +15,7 @@ summarizer = Agent(
 translator = Agent(
     name="translator",
     system_prompt="Translate the input to French. Output only the French text.",
-    llm=LLMClient(provider="anthropic", model="claude-sonnet-4-20250514"),
+    llm=LLMClient(provider="anthropic", model="claude-sonnet-4-6"),
 )
 
 chain = Chain("summarize-and-translate")

@@ -133,7 +133,7 @@ def example_anthropic_json_object():
     """Force Anthropic to respond with valid JSON."""
     print("=== Example 4: Anthropic json_object mode ===\n")
 
-    llm = LLMClient(provider="anthropic", model="claude-sonnet-4-20250514")
+    llm = LLMClient(provider="anthropic", model="claude-sonnet-4-6")
     response = llm.complete(
         [UserMessage("List 3 programming languages with their year of creation. Respond as JSON.")],
         response_format={"type": "json_object"},
@@ -151,7 +151,7 @@ def example_anthropic_json_schema():
     """Force Anthropic to respond with JSON matching a schema."""
     print("=== Example 5: Anthropic json_schema mode ===\n")
 
-    llm = LLMClient(provider="anthropic", model="claude-sonnet-4-20250514")
+    llm = LLMClient(provider="anthropic", model="claude-sonnet-4-6")
     response = llm.complete(
         [UserMessage("Describe the city of Tokyo")],
         response_format={

@@ -110,7 +110,7 @@ The template ships with a deliberately broken `lookup_order` tool whose silent f
 from pathlib import Path
 from fastaiagent import Agent, LLMClient, Image, PDF
 
-agent = Agent(name="claims", llm=LLMClient(provider="anthropic", model="claude-sonnet-4-20250514"))
+agent = Agent(name="claims", llm=LLMClient(provider="anthropic", model="claude-sonnet-4-6"))
 
 # Drop the photo and policy alongside this script to run the example.
 if Path("damage.jpg").exists() and Path("policy.pdf").exists():

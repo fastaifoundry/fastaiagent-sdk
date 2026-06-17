@@ -66,4 +66,4 @@ def run_with(provider: str, model: str, env_var: str) -> None:
 
 if __name__ == "__main__":
     run_with("openai", "gpt-4o", "OPENAI_API_KEY")
-    run_with("anthropic", "claude-sonnet-4-20250514", "ANTHROPIC_API_KEY")
+    run_with("anthropic", "claude-sonnet-4-6", "ANTHROPIC_API_KEY")
