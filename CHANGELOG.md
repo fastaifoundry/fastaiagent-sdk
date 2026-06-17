@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Runner traces now reach the platform.** The bare `fastaiagent runner` daemon
+  never pushed the traces of the jobs it executed: the CLI never established a
+  platform connection (so the span exporter was never wired), and a per-job
+  `project` override stamped spans with a value the exporter's background-thread
+  drain couldn't see (ContextVars are task-local, not thread-local) — so the drain
+  filtered them out. The runner now calls `connect()` on startup with its `--key`
+  (wiring the exporter) and keeps the span project consistent with the drain, so a
+  `live_playground` / `eval_run` job's trace is ingested and linked by the
+  `trace_id` the runner reports. Traces route by the API key (one runner = one
+  tenant). A rejected key now **fails fast**; an unreachable platform is tolerated
+  (traces buffer locally and drain on reconnect).
+
+### Added
+
+- **Runner executes `eval_run`.** The runner now advertises and accepts `eval_run`
+  commands, running the agent once per case and reporting
+  `{"outputs":[{case_id, output, trace_id}, …]}` — the platform scores centrally
+  from each case's criteria.
+- **Runner executes `tool_exec` (connectors).** Opt-in via `--tools
+  module:callable`, which registers your local tools and advertises the `tool_exec`
+  capability. The plane dispatches `tool_exec` for the SaaS + customer-private
+  connector case; the runner resolves the dispatched connector by its
+  `exposed_name` in the ToolRegistry, runs it locally with your own creds, and
+  reports `{"success", "result"}`. The call is traced and linked by `trace_id`.
+- **Managed governance over the wire.** A connected agent honors approval policies
+  the platform defines: `connect()` caches `GET /policy`; before a tool call that
+  matches a cached approval policy the SDK calls `POST /policy/decide`; on
+  `require_approval` it registers a pending run (`POST /runs/{id}/pending`) and
+  **pauses** (checkpoint), then **resumes** once the console approves (polling
+  `GET /runs/{id}/pending`). `deny` refuses the call. Enroll an agent with
+  `Agent(agent_id=<platform uuid>)` + a checkpointer; `arun()` blocks for approval
+  by default (`wait_for_approval=False` to drive resume yourself). See
+  `docs/guardrails/managed-governance.md` and `examples/84_governed_agent.py`.
+
 ## [1.23.0] - 2026-06-14
 
 ### Added

@@ -26,9 +26,11 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def test_seed_then_learn_then_replay(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("FASTAIAGENT_LOCAL_DB", str(tmp_path / "local.db"))
-
+def test_seed_then_learn_then_replay(isolated_local_db, tmp_path: Path) -> None:
+    # ``isolated_local_db`` points FASTAIAGENT_LOCAL_DB at ``tmp_path/local.db`` AND
+    # clears the cached config (setup + teardown), so MemoryStore() reads the temp
+    # store regardless of whether an earlier test already cached get_config() — the
+    # facts no longer accumulate across runs in the real local.db.
     import fastaiagent as fa
     from fastaiagent.learn import MemoryStore, run_extraction
 

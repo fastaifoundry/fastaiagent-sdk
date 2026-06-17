@@ -35,7 +35,7 @@ judge = LLMJudge(
         "Actual response: {output}\n\n"
         'Respond with JSON: {{"score": <0.0-1.0>, "reasoning": "<explanation>"}}'
     ),
-    llm=LLMClient(provider="anthropic", model="claude-sonnet-4-20250514"),
+    llm=LLMClient(provider="anthropic", model="claude-sonnet-4-6"),
 )
 ```
 

@@ -9,7 +9,7 @@ from fastaiagent import Agent, LLMClient, Image, PDF
 
 agent = Agent(
     name="claims",
-    llm=LLMClient(provider="anthropic", model="claude-sonnet-4-20250514"),
+    llm=LLMClient(provider="anthropic", model="claude-sonnet-4-6"),
 )
 
 result = agent.run(

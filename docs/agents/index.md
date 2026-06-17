@@ -22,7 +22,7 @@ print(result.output)
 | Provider | Example |
 |----------|---------|
 | OpenAI | `LLMClient(provider="openai", model="gpt-4.1")` |
-| Anthropic | `LLMClient(provider="anthropic", model="claude-sonnet-4-20250514")` |
+| Anthropic | `LLMClient(provider="anthropic", model="claude-sonnet-4-6")` |
 | Ollama | `LLMClient(provider="ollama", model="llama3")` |
 | Azure | `LLMClient(provider="azure", model="gpt-4", base_url="https://myendpoint.openai.azure.com/openai/deployments/gpt-4/")` |
 | AWS Bedrock | `LLMClient(provider="bedrock", model="anthropic.claude-3-sonnet-20240229-v1:0")` |
@@ -102,7 +102,7 @@ from fastaiagent.guardrail import no_pii, toxicity_check, json_valid
 agent = Agent(
     name="safe-bot",
     system_prompt="You are a helpful assistant.",
-    llm=LLMClient(provider="anthropic", model="claude-sonnet-4-20250514"),
+    llm=LLMClient(provider="anthropic", model="claude-sonnet-4-6"),
     guardrails=[
         no_pii(),           # Blocks SSN, email, phone, credit cards in output
         toxicity_check(),   # Blocks toxic language

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import socket
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -49,17 +50,31 @@ def _dead_url() -> str:
     return f"http://127.0.0.1:{port}"
 
 
+def _recent(seconds_ago: float = 3600.0) -> str:
+    """An ISO timestamp ``seconds_ago`` in the past — recent enough to stay inside
+    the exporter's age-based buffer bound (``_MAX_AGE_DAYS``) on any run date, so
+    these tests don't rot as the calendar advances past a hard-coded seed date."""
+    return (datetime.now(timezone.utc) - timedelta(seconds=seconds_ago)).isoformat()
+
+
 def _seed_span(
     store: TraceStore,
     span_id: str,
     *,
     trace_id: str = "t1",
-    start: str = "2026-06-07T00:00:00+00:00",
+    start: str | None = None,
     project_id: str = "test-proj",
     synced: int = 0,
     attrs: dict | None = None,
 ) -> None:
-    """Insert one span row directly (still real SQLite — just deterministic)."""
+    """Insert one span row directly (still real SQLite — just deterministic).
+
+    ``start`` defaults to a recent timestamp so the row survives the exporter's
+    age bound regardless of when the test runs; pass an explicit old value to
+    exercise age-out.
+    """
+    if start is None:
+        start = _recent()
     store._db.execute(
         "INSERT INTO spans (span_id, trace_id, parent_span_id, name, start_time, "
         "end_time, status, attributes, events, project_id, synced) "
@@ -237,7 +252,7 @@ def test_buffer_bound_count_abandons_oldest_keeps_local(
     monkeypatch.setattr(PlatformSpanExporter, "_MAX_UNSYNCED", 2)
     store = TraceStore()
     for i in range(5):
-        _seed_span(store, f"s{i}", start=f"2026-06-07T00:00:0{i}+00:00")
+        _seed_span(store, f"s{i}", start=_recent(3600 - i))  # s0 oldest … s4 newest, all recent
     _connect(_dead_url())
 
     PlatformSpanExporter().export([])
@@ -254,8 +269,8 @@ def test_buffer_bound_age_abandons_old_keeps_local(
     monkeypatch.setattr(PlatformSpanExporter, "_BACKOFF_BASE", 0.0)
     monkeypatch.setattr(PlatformSpanExporter, "_MAX_AGE_DAYS", 7)
     store = TraceStore()
-    _seed_span(store, "recent", start="2026-06-07T00:00:00+00:00")
-    _seed_span(store, "ancient", start="2020-01-01T00:00:00+00:00")
+    _seed_span(store, "recent", start=_recent())  # ~1h ago → inside the 7-day window
+    _seed_span(store, "ancient", start="2020-01-01T00:00:00+00:00")  # far outside → abandoned
     _connect(_dead_url())
 
     PlatformSpanExporter().export([])

@@ -28,7 +28,7 @@ print(response.latency_ms)     # 450
 | Provider | Setup | API Key Env Var |
 |----------|-------|-----------------|
 | **OpenAI** | `LLMClient(provider="openai", model="gpt-4.1")` | `OPENAI_API_KEY` |
-| **Anthropic** | `LLMClient(provider="anthropic", model="claude-sonnet-4-20250514")` | `ANTHROPIC_API_KEY` |
+| **Anthropic** | `LLMClient(provider="anthropic", model="claude-sonnet-4-6")` | `ANTHROPIC_API_KEY` |
 | **Ollama** | `LLMClient(provider="ollama", model="llama3")` | None (local) |
 | **Azure OpenAI** | `LLMClient(provider="azure", model="gpt-4", base_url="https://<endpoint>.openai.azure.com/openai/deployments/gpt-4/")` | `OPENAI_API_KEY` |
 | **AWS Bedrock** | `LLMClient(provider="bedrock", model="anthropic.claude-3-sonnet-20240229-v1:0", region="us-east-1")` | AWS credentials |

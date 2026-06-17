@@ -123,8 +123,14 @@ class Agent:
         middleware: Sequence[AgentMiddleware] | None = None,
         checkpointer: Checkpointer | None = None,
         agent_path_label: str | None = None,
+        agent_id: str | None = None,
     ):
         self.name = name
+        # The platform agent UUID this agent represents. Set it to enroll a
+        # connected agent in managed governance — it's sent to POST /policy/decide
+        # so the plane can match approval policies (Task C). Without it the
+        # governance gate is a no-op (the agent isn't enrolled).
+        self.agent_id = agent_id
         self.system_prompt = system_prompt
         self.llm = llm or LLMClient()
         self.tools: list[Tool] = list(tools) if tools else []
@@ -201,6 +207,7 @@ class Agent:
         trace: bool = True,
         execution_id: str | None = None,
         messages: list[Message] | None = None,
+        wait_for_approval: bool = True,
         **kwargs: Any,
     ) -> AgentResult:
         """Async execution with tool-calling loop.
@@ -213,18 +220,57 @@ class Agent:
         ``messages`` (optional) are prior conversation turns prepended before
         ``input`` — used for multi-turn flows such as :func:`fastaiagent.simulate`.
         Default ``None`` reproduces the single-input behavior exactly.
+
+        ``wait_for_approval`` (default True): when a managed governance policy
+        pauses a tool call for approval, block and resume automatically once the
+        console approves (see :meth:`_await_governance_approval`). Set False to
+        instead receive the paused :class:`AgentResult` and drive resume yourself.
         """
         if trace:
-            return await self._arun_traced(
+            result = await self._arun_traced(
                 input,
                 context=context,
                 execution_id=execution_id,
                 messages=messages,
                 **kwargs,
             )
-        return await self._arun_core(
-            input, context=context, execution_id=execution_id, messages=messages, **kwargs
-        )
+        else:
+            result = await self._arun_core(
+                input, context=context, execution_id=execution_id, messages=messages, **kwargs
+            )
+        if wait_for_approval:
+            result = await self._await_governance_approval(result, context=context)
+        return result
+
+    async def _await_governance_approval(
+        self, result: AgentResult, *, context: RunContext[Any] | None = None
+    ) -> AgentResult:
+        """Block on console approval of a policy-gated tool call, then resume (Task C).
+
+        When a managed policy paused this run (``reason="policy_approval_required"``),
+        poll the platform for the console's decision and resume via the agent's
+        own checkpointer — so a connected agent transparently flows through
+        human-in-the-loop approval. Scoped to governance pauses; any other pause
+        is returned unchanged.
+        """
+        from fastaiagent.client import _connection
+
+        while (
+            result.status == "paused"
+            and isinstance(result.pending_interrupt, dict)
+            and result.pending_interrupt.get("reason") == "policy_approval_required"
+            and _connection.is_connected
+        ):
+            from fastaiagent import governance
+            from fastaiagent.chain.interrupt import Resume
+
+            run_id = result.execution_id
+            status = await governance.await_resolution(run_id)
+            logger.info("governance: run %s resolved=%s", run_id, status)
+            result = await self.aresume(
+                run_id, resume_value=Resume(approved=(status == "approved")), context=context
+            )
+        return result
 
     async def _arun_traced(
         self,
@@ -403,6 +449,7 @@ class Agent:
                     checkpointer=self._checkpointer,
                     execution_id=exec_id,
                     agent_name=self.name,
+                    agent_id=self.agent_id,
                     start_iteration=_start_iteration,
                     **kwargs,
                 )
@@ -534,6 +581,7 @@ class Agent:
                 checkpointer=self._checkpointer,
                 execution_id=exec_id,
                 agent_name=self.name,
+                agent_id=self.agent_id,
                 **kwargs,
             ):
                 if isinstance(event, TextDelta):

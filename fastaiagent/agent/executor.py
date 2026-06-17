@@ -397,6 +397,7 @@ async def execute_tool_loop(
     checkpointer: Checkpointer | None = None,
     execution_id: str | None = None,
     agent_name: str = "",
+    agent_id: str | None = None,
     start_iteration: int = 0,
     **kwargs: Any,
 ) -> tuple[LLMResponse, list[dict[str, Any]]]:
@@ -486,7 +487,22 @@ async def execute_tool_loop(
                 )
 
             try:
-                if mw_pipeline and mw_ctx is not None:
+                # Managed governance (Task C): gate this tool call against the
+                # platform policy cached on connect(). A ``deny`` is fed back to
+                # the model as the tool result; a ``require_approval`` calls
+                # interrupt() which pauses the agent (caught + checkpointed below).
+                gov_refusal: str | None = None
+                if tool is not None:
+                    from fastaiagent import governance
+
+                    gov_refusal = await governance.gate_tool_call(
+                        tc.name, dict(tc.arguments), agent_id or "", execution_id or ""
+                    )
+
+                if gov_refusal is not None:
+                    tool_message_content = gov_refusal
+                    tool_call_record["error"] = gov_refusal
+                elif mw_pipeline and mw_ctx is not None:
                     mw_ctx.tool_call_index = idx
 
                     async def _terminal(
@@ -586,6 +602,7 @@ async def stream_tool_loop(
     checkpointer: Checkpointer | None = None,
     execution_id: str | None = None,
     agent_name: str = "",
+    agent_id: str | None = None,
     start_iteration: int = 0,
     **kwargs: Any,
 ) -> AsyncGenerator[StreamEvent, None]:
@@ -705,7 +722,20 @@ async def stream_tool_loop(
                 )
 
             try:
-                if mw_pipeline and mw_ctx is not None:
+                # Managed governance (Task C) — gate the tool call (see
+                # execute_tool_loop). deny -> refusal to the model; require_approval
+                # -> interrupt() pauses for console approval.
+                gov_refusal: str | None = None
+                if tool is not None:
+                    from fastaiagent import governance
+
+                    gov_refusal = await governance.gate_tool_call(
+                        tc.name, dict(tc.arguments), agent_id or "", execution_id or ""
+                    )
+
+                if gov_refusal is not None:
+                    tool_message_content = gov_refusal
+                elif mw_pipeline and mw_ctx is not None:
                     mw_ctx.tool_call_index = idx
 
                     async def _terminal(

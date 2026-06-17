@@ -30,7 +30,7 @@ class RunnerDaemon:
         *,
         max_concurrency: int = 4,
         labels: list[str] | None = None,
-        capabilities: tuple[str, ...] = ("live_playground",),
+        capabilities: tuple[str, ...] = ("live_playground", "eval_run"),
         executor: Callable[[dict], Awaitable[CommandResult]] = execute_command,
     ) -> None:
         self._channel = channel
@@ -133,6 +133,9 @@ class RunnerDaemon:
         cid = cmd.get("command_id", "")
         try:
             res = await self._executor(cmd)
+            # Push this job's trace before reporting the result that references
+            # its trace_id, so the console links them promptly. Best-effort.
+            await self._flush_traces()
             await self._channel.report_result(
                 command_id=cid,
                 status=res.status,
@@ -150,6 +153,21 @@ class RunnerDaemon:
                 logger.debug("could not report failure for %s", cid, exc_info=True)
         finally:
             self._active -= 1
+
+    async def _flush_traces(self) -> None:
+        """Best-effort flush of the platform span exporter so a job's trace lands
+        promptly. No-op when the runner isn't connected to a platform (e.g. the
+        e2e channel stand-in). Offloaded to a thread and never raised so it can't
+        stall or break the command loop."""
+        from fastaiagent.client import _connection
+
+        processor = getattr(_connection, "_platform_processor", None)
+        if processor is None:
+            return
+        try:
+            await asyncio.to_thread(processor.force_flush, 5000)
+        except Exception:
+            logger.debug("trace force_flush failed", exc_info=True)
 
     async def _drain(self, timeout: float) -> None:
         if not self._inflight:

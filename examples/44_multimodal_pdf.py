@@ -80,7 +80,7 @@ if __name__ == "__main__":
             Agent(
                 name="pdf-native",
                 system_prompt="Answer concisely from the document.",
-                llm=LLMClient(provider="anthropic", model="claude-sonnet-4-20250514"),
+                llm=LLMClient(provider="anthropic", model="claude-sonnet-4-6"),
             ),
             pdf,
         )

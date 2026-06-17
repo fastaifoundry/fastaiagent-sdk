@@ -218,13 +218,13 @@ class TestAnthropicStructuredOutput:
             json={
                 "content": [{"type": "text", "text": '{"answer": 42}'}],
                 "usage": {"input_tokens": 12, "output_tokens": 6},
-                "model": "claude-sonnet-4-20250514",
+                "model": "claude-sonnet-4-6",
                 "stop_reason": "end_turn",
             },
             request=httpx.Request("POST", "https://api.anthropic.com/v1/messages"),
         )
 
-        llm = LLMClient(provider="anthropic", model="claude-sonnet-4-20250514", api_key="sk-ant")
+        llm = LLMClient(provider="anthropic", model="claude-sonnet-4-6", api_key="sk-ant")
         with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_response) as mock_post:
             result = await llm.acomplete(
                 [SystemMessage("Be helpful"), UserMessage("What is 2+2?")],
@@ -246,13 +246,13 @@ class TestAnthropicStructuredOutput:
             json={
                 "content": [{"type": "text", "text": '```json\n{"answer": 42}\n```'}],
                 "usage": {"input_tokens": 10, "output_tokens": 8},
-                "model": "claude-sonnet-4-20250514",
+                "model": "claude-sonnet-4-6",
                 "stop_reason": "end_turn",
             },
             request=httpx.Request("POST", "https://api.anthropic.com/v1/messages"),
         )
 
-        llm = LLMClient(provider="anthropic", model="claude-sonnet-4-20250514", api_key="sk-ant")
+        llm = LLMClient(provider="anthropic", model="claude-sonnet-4-6", api_key="sk-ant")
         with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_response):
             result = await llm.acomplete(
                 [UserMessage("Give me JSON")],
@@ -281,13 +281,13 @@ class TestAnthropicStructuredOutput:
             json={
                 "content": [{"type": "text", "text": '{"name": "Alice", "age": 30}'}],
                 "usage": {"input_tokens": 15, "output_tokens": 10},
-                "model": "claude-sonnet-4-20250514",
+                "model": "claude-sonnet-4-6",
                 "stop_reason": "end_turn",
             },
             request=httpx.Request("POST", "https://api.anthropic.com/v1/messages"),
         )
 
-        llm = LLMClient(provider="anthropic", model="claude-sonnet-4-20250514", api_key="sk-ant")
+        llm = LLMClient(provider="anthropic", model="claude-sonnet-4-6", api_key="sk-ant")
         with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_response) as mock_post:
             result = await llm.acomplete([UserMessage("Describe Alice")], response_format=rf)
 
