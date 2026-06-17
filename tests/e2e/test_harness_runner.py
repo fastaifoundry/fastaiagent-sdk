@@ -45,7 +45,11 @@ def _clean_platform():
 
 
 def test_runner_live_playground_pushes_to_live_plane(isolated_local_db, _clean_platform) -> None:
-    require_env()  # OPENAI_API_KEY + FASTAIAGENT_API_KEY + FASTAIAGENT_TARGET (skips if absent)
+    # Needs a real Enterprise harness — skip cleanly when one isn't configured
+    # (e.g. CI, which sets E2E_SKIP_PLATFORM=1 so require_env() wouldn't demand these).
+    if not (os.environ.get("FASTAIAGENT_API_KEY") and os.environ.get("FASTAIAGENT_TARGET")):
+        pytest.skip("no live harness (set FASTAIAGENT_API_KEY + FASTAIAGENT_TARGET)")
+    require_env()  # OPENAI_API_KEY
 
     import fastaiagent
     from fastaiagent import Agent, LLMClient

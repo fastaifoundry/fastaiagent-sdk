@@ -58,7 +58,8 @@ async def _post(path: str, body: dict[str, Any]) -> dict[str, Any]:
             f"{_connection.target}/public/v1{path}", json=body, headers=_connection.headers
         )
     resp.raise_for_status()
-    return resp.json()
+    data: dict[str, Any] = resp.json()
+    return data
 
 
 async def _get(path: str) -> dict[str, Any]:
@@ -71,7 +72,8 @@ async def _get(path: str) -> dict[str, Any]:
             f"{_connection.target}/public/v1{path}", headers=_connection.headers
         )
     resp.raise_for_status()
-    return resp.json()
+    data: dict[str, Any] = resp.json()
+    return data
 
 
 async def decide(tool_name: str, tool_input: dict[str, Any], agent_id: str) -> dict[str, Any]:
