@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.26.0] - 2026-06-25
+
+### Added
+
+- **Connected checkpoint durability (Enterprise control plane).** When the SDK is
+  connected (`connect()`), checkpoints written by `SQLiteCheckpointer` /
+  `PostgresCheckpointer` are replicated to the plane as a **managed durable copy**
+  via `POST /public/v1/checkpoints/ingest` (idempotent by `checkpoint_id`). A run
+  can then be **restored from the plane** with
+  `fastaiagent.checkpointers.platform_replica.restore_from_plane(checkpointer, execution_id)`,
+  which fetches the latest checkpoint (`GET /public/v1/checkpoints/{execution_id}/latest`)
+  and writes it back locally so a normal `chain.resume()` / `agent.aresume()`
+  proceeds — the plane **serves**, the SDK **resumes** (no execution on the plane).
+  Delivery reuses the proven outbox: local-first write with a `synced` flag (local
+  schema v13), a best-effort **non-blocking, write-kicked** background drain, and
+  `mark_synced` only after a confirmed 2xx. The checkpoint outbox is **non-lossy** —
+  un-acked rows for active/paused runs are never abandoned (unlike traces).
+  `state_snapshot` is replicated **clear** in this release (the encryption envelope
+  is documented as a future seam). **Fully additive / non-breaking**: a no-op unless
+  connected; the connected-durability surface (`fetch_unsynced`/`mark_synced`) is a
+  *new optional* `ReplicatedCheckpointer` protocol — the required `Checkpointer`
+  protocol is unchanged — so existing custom checkpointers keep working; the new
+  local column migrates transparently.
+
 ## [1.25.0] - 2026-06-24
 
 ### Added

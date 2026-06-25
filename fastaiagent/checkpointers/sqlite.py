@@ -44,6 +44,26 @@ class SQLiteCheckpointer:
         helper = init_local_db(self.db_path)
         helper.close()
         self._setup_done = True
+        # Register for connected-plane checkpoint replication (WS2). Lazy +
+        # best-effort: the import happens at runtime (never at module load, so no
+        # import cycle), and a failure must never break checkpointing.
+        try:
+            from fastaiagent.checkpointers import platform_replica
+
+            platform_replica.register_checkpointer(self)
+        except Exception:
+            pass
+
+    def _maybe_replicate(self) -> None:
+        """Kick a best-effort background drain of this checkpointer's outbox to
+        the plane. No-op when not connected; never blocks or raises (the drain
+        owns retry on a daemon thread)."""
+        try:
+            from fastaiagent.checkpointers import platform_replica
+
+            platform_replica.kick(self)
+        except Exception:
+            pass
 
     def close(self) -> None:
         if self._db is not None:
@@ -100,6 +120,7 @@ class SQLiteCheckpointer:
                 safe_get_project_id(),
             ),
         )
+        self._maybe_replicate()
 
     def put_writes(self, execution_id: str, checkpoint_id: str, writes: list[Any]) -> None:
         """No-op in Phase 1 — Phase 2/3 will wire this up."""
@@ -238,6 +259,7 @@ class SQLiteCheckpointer:
             except Exception:
                 conn.rollback()
                 raise
+        self._maybe_replicate()
 
     def delete_pending_interrupt_atomic(self, execution_id: str) -> PendingInterrupt | None:
         """Claim a pending interrupt by SELECT-then-DELETE in one txn."""
@@ -273,6 +295,48 @@ class SQLiteCheckpointer:
             agent_path=row["agent_path"],
             created_at=row["created_at"],
         )
+
+    # --- platform replication outbox (WS2 connected durability) -------
+    # Implements the optional ``ReplicatedCheckpointer`` surface. The
+    # ``synced`` column (ui/db.py v13) flags un-acked rows; the drain in
+    # ``platform_replica`` marks them synced only after a 2xx ingest.
+
+    def fetch_unsynced(
+        self, limit: int, project_id: str | None = None
+    ) -> builtins.list[dict[str, Any]]:
+        """Return up to ``limit`` un-acked checkpoint rows (oldest first).
+
+        ``rowid`` is exposed as ``_seq`` — SQLite's strictly-monotonic insertion
+        order — which the replicator forwards as the plane's ``sequence`` so the
+        "latest checkpoint" restore is unambiguous. Scoped to ``project_id`` (the
+        local stamp) when given, mirroring the trace outbox.
+        """
+        if project_id is not None:
+            rows = self._conn().fetchall(
+                "SELECT rowid AS _seq, * FROM checkpoints "
+                "WHERE synced = 0 AND project_id = ? ORDER BY rowid ASC LIMIT ?",
+                (project_id, int(limit)),
+            )
+        else:
+            rows = self._conn().fetchall(
+                "SELECT rowid AS _seq, * FROM checkpoints WHERE synced = 0 "
+                "ORDER BY rowid ASC LIMIT ?",
+                (int(limit),),
+            )
+        return rows
+
+    def mark_synced(self, checkpoint_ids: builtins.list[str]) -> None:
+        """Mark checkpoints as acked (no longer re-send candidates). Chunked to
+        stay under SQLite's bound-variable limit."""
+        for start in range(0, len(checkpoint_ids), 500):
+            chunk = checkpoint_ids[start : start + 500]
+            if not chunk:
+                continue
+            placeholders = ",".join("?" * len(chunk))
+            self._conn().execute(
+                f"UPDATE checkpoints SET synced = 1 WHERE checkpoint_id IN ({placeholders})",
+                tuple(chunk),
+            )
 
     # --- deletes / prune ---------------------------------------------
 

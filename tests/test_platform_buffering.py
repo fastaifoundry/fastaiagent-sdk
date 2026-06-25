@@ -349,10 +349,10 @@ def test_migration_v11_adds_synced_backfills_and_is_idempotent(tmp_path: Path) -
     )
     assert db.fetchone("SELECT synced FROM spans WHERE span_id='new'")["synced"] == 0
     # init_local_db always migrates to the current head (now 12: + hitl_events).
-    assert ui_db._get_user_version(db) == 12
+    assert ui_db._get_user_version(db) == ui_db.CURRENT_SCHEMA_VERSION
 
     ui_db._run_migrations(db)  # idempotent re-run
-    assert ui_db._get_user_version(db) == 12
+    assert ui_db._get_user_version(db) == ui_db.CURRENT_SCHEMA_VERSION
     db.close()
 
 
@@ -393,10 +393,53 @@ def test_migration_v12_adds_hitl_events_table_and_is_idempotent(tmp_path: Path) 
         "synced",
         "created_at",
     } <= cols
-    assert ui_db._get_user_version(db) == 12
+    assert ui_db._get_user_version(db) == ui_db.CURRENT_SCHEMA_VERSION
 
     ui_db._run_migrations(db)  # idempotent re-run
-    assert ui_db._get_user_version(db) == 12
+    assert ui_db._get_user_version(db) == ui_db.CURRENT_SCHEMA_VERSION
+    db.close()
+
+
+# --- Migration v13 -----------------------------------------------------------
+
+
+def test_migration_v13_adds_checkpoint_synced_and_is_idempotent(tmp_path: Path) -> None:
+    from fastaiagent._internal.storage import SQLiteHelper
+    from fastaiagent.ui import db as ui_db
+
+    # Pre-v13 DB: a ``checkpoints`` table without the ``synced`` column.
+    p = tmp_path / "v12.db"
+    h = SQLiteHelper(str(p))
+    h.execute(
+        "CREATE TABLE checkpoints (id TEXT PRIMARY KEY, checkpoint_id TEXT, "
+        "chain_name TEXT NOT NULL, execution_id TEXT NOT NULL, node_id TEXT NOT NULL, "
+        "node_index INTEGER, status TEXT DEFAULT 'completed', state_snapshot TEXT DEFAULT '{}', "
+        "created_at TEXT, project_id TEXT NOT NULL DEFAULT '')"
+    )
+    h.execute(
+        "INSERT INTO checkpoints (id, checkpoint_id, chain_name, execution_id, node_id, "
+        "created_at, project_id) "
+        "VALUES ('c-old','c-old','flow','e1','n1','2026-06-01T00:00:00+00:00','p')"
+    )
+    h.execute("PRAGMA user_version = 12")
+    h.close()
+
+    db = ui_db.init_local_db(str(p))
+    cols = {r["name"] for r in db.fetchall("PRAGMA table_info(checkpoints)")}
+    assert "synced" in cols
+    # Existing rows backfilled to synced=1 → upgrade does NOT back-push history.
+    assert db.fetchone("SELECT synced FROM checkpoints WHERE checkpoint_id='c-old'")["synced"] == 1
+    # New checkpoints still default to synced=0 → they become push candidates.
+    db.execute(
+        "INSERT INTO checkpoints (id, checkpoint_id, chain_name, execution_id, node_id, "
+        "created_at, project_id) "
+        "VALUES ('c-new','c-new','flow','e1','n2','2026-06-07T00:00:00+00:00','p')"
+    )
+    assert db.fetchone("SELECT synced FROM checkpoints WHERE checkpoint_id='c-new'")["synced"] == 0
+    assert ui_db._get_user_version(db) == ui_db.CURRENT_SCHEMA_VERSION
+
+    ui_db._run_migrations(db)  # idempotent re-run
+    assert ui_db._get_user_version(db) == ui_db.CURRENT_SCHEMA_VERSION
     db.close()
 
 

@@ -246,6 +246,17 @@ def connect(
     except Exception:
         logger.debug("Could not register HITL event exporter", exc_info=True)
 
+    # Flush any checkpoint backlog written while disconnected (WS2 durability).
+    # Checkpoints aren't span-driven, so replication is write-kicked by the
+    # checkpointers; this one-shot drain catches a backlog from before connect().
+    # Best-effort, on a daemon thread — connect() never blocks on the plane.
+    try:
+        from fastaiagent.checkpointers import platform_replica
+
+        platform_replica.drain_all_async()
+    except Exception:
+        logger.debug("Could not kick checkpoint drain on connect", exc_info=True)
+
 
 def disconnect() -> None:
     """Disconnect from platform. Revert to local-only mode.
@@ -266,6 +277,14 @@ def disconnect() -> None:
         except Exception:
             logger.debug("Failed to flush/shutdown HITL processor on disconnect", exc_info=True)
         _connection._hitl_processor = None
+    # Flush any pending checkpoint replications before tearing the connection
+    # down (WS2 durability — non-lossy). Runs while still connected.
+    try:
+        from fastaiagent.checkpointers import platform_replica
+
+        platform_replica.drain_all_sync()
+    except Exception:
+        logger.debug("Could not flush checkpoint outbox on disconnect", exc_info=True)
     _connection.api_key = None
     _connection.project = None
     _connection.domain_id = None

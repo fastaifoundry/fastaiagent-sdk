@@ -104,3 +104,31 @@ class Checkpointer(Protocol):
         of rows deleted across both tables.
         """
         ...
+
+
+@runtime_checkable
+class ReplicatedCheckpointer(Protocol):
+    """**Optional** replication surface for the connected-plane checkpoint outbox.
+
+    Deliberately a *separate* protocol — **not** part of :class:`Checkpointer` —
+    so adding the connected-durability surface stays additive and never breaks a
+    third-party custom checkpointer that doesn't implement it. The SDK's own
+    ``SQLiteCheckpointer`` / ``PostgresCheckpointer`` implement it;
+    ``fastaiagent.checkpointers.platform_replica`` probes for it and only
+    replicates checkpointers that satisfy it. A checkpointer without these methods
+    simply does not replicate to the plane (a no-op, never an error).
+    """
+
+    def fetch_unsynced(
+        self, limit: int, project_id: str | None = None
+    ) -> builtins.list[dict[str, Any]]:
+        """Return up to ``limit`` un-acked checkpoint rows (oldest first), as
+        column dicts. The replicator maps them onto the ``/checkpoints/ingest``
+        wire shape, so the exact row keys are an implementation detail shared with
+        :mod:`fastaiagent.checkpointers.platform_replica`."""
+        ...
+
+    def mark_synced(self, checkpoint_ids: builtins.list[str]) -> None:
+        """Mark checkpoints as acked (no longer re-send candidates) after a
+        confirmed 2xx ingest. Idempotent."""
+        ...
