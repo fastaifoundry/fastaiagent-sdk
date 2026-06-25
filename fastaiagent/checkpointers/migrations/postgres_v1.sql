@@ -34,6 +34,17 @@ CREATE TABLE IF NOT EXISTS {schema}.checkpoints (
 CREATE INDEX IF NOT EXISTS idx_cp_exec
     ON {schema}.checkpoints (execution_id);
 
+-- WS2 connected-durability outbox flag. DEFAULT TRUE so pre-existing rows are
+-- treated as already-synced (connecting does NOT back-push checkpoint history);
+-- every new INSERT (put / record_interrupt) sets ``synced = FALSE`` explicitly to
+-- become a push candidate. ADD COLUMN IF NOT EXISTS keeps setup() idempotent — a
+-- re-run never clobbers un-acked rows.
+ALTER TABLE {schema}.checkpoints
+    ADD COLUMN IF NOT EXISTS synced BOOLEAN NOT NULL DEFAULT TRUE;
+
+CREATE INDEX IF NOT EXISTS idx_cp_synced
+    ON {schema}.checkpoints (synced, created_at);
+
 -- Partial index for the /approvals + Failed Executions pages — most rows
 -- are 'completed' and don't need to be scanned.
 CREATE INDEX IF NOT EXISTS idx_cp_status_problem

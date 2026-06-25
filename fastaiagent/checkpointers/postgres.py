@@ -122,6 +122,24 @@ class PostgresCheckpointer:
                 cur.execute(sql)
             conn.commit()
         self._setup_done = True
+        # Register for connected-plane checkpoint replication (WS2). Lazy +
+        # best-effort — never break checkpointing if replication wiring fails.
+        try:
+            from fastaiagent.checkpointers import platform_replica
+
+            platform_replica.register_checkpointer(self)
+        except Exception:
+            pass
+
+    def _maybe_replicate(self) -> None:
+        """Kick a best-effort background drain of this checkpointer's outbox to
+        the plane (WS2). No-op when not connected; never blocks or raises."""
+        try:
+            from fastaiagent.checkpointers import platform_replica
+
+            platform_replica.kick(self)
+        except Exception:
+            pass
 
     def close(self) -> None:
         if self._pool is not None:
@@ -161,14 +179,15 @@ class PostgresCheckpointer:
                         state_snapshot, node_input, node_output,
                         iteration, iteration_counters,
                         interrupt_reason, interrupt_context, agent_path,
-                        created_at
+                        created_at, synced
                     )
                     VALUES (
                         %s, %s, %s, %s, %s, %s, %s,
                         %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s
+                        %s, %s, %s, %s, FALSE
                     )
                     ON CONFLICT (checkpoint_id) DO UPDATE SET
+                        synced = FALSE,
                         status = EXCLUDED.status,
                         state_snapshot = EXCLUDED.state_snapshot,
                         node_output = EXCLUDED.node_output,
@@ -196,6 +215,7 @@ class PostgresCheckpointer:
                     ),
                 )
             conn.commit()
+        self._maybe_replicate()
 
     def put_writes(self, execution_id: str, checkpoint_id: str, writes: list[Any]) -> None:
         """No-op in Phase 1 — Phase 2/3 will wire this up."""
@@ -317,12 +337,12 @@ class PostgresCheckpointer:
                         state_snapshot, node_input, node_output,
                         iteration, iteration_counters,
                         interrupt_reason, interrupt_context, agent_path,
-                        created_at
+                        created_at, synced
                     )
                     VALUES (
                         %s, %s, %s, %s, %s, %s, %s,
                         %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s
+                        %s, %s, %s, %s, FALSE
                     )
                     """,
                     (
@@ -364,6 +384,7 @@ class PostgresCheckpointer:
                     ),
                 )
             conn.commit()
+        self._maybe_replicate()
 
     def delete_pending_interrupt_atomic(self, execution_id: str) -> PendingInterrupt | None:
         """Claim a pending interrupt via ``DELETE … RETURNING *``.
@@ -397,6 +418,52 @@ class PostgresCheckpointer:
             agent_path=row[5],
             created_at=_isoformat(row[6]),
         )
+
+    # --- platform replication outbox (WS2 connected durability) -------
+    # Implements the optional ``ReplicatedCheckpointer`` surface. The ``synced``
+    # column (postgres_v1.sql) flags un-acked rows; ``platform_replica`` marks
+    # them synced only after a 2xx ingest.
+
+    def fetch_unsynced(
+        self, limit: int, project_id: str | None = None
+    ) -> builtins.list[dict[str, Any]]:
+        """Return up to ``limit`` un-acked checkpoint rows (oldest first).
+
+        ``project_id`` is accepted for protocol parity but ignored — the Postgres
+        schema is not project-scoped. No ``_seq`` is emitted (Postgres has no
+        rowid); the plane tie-breaks "latest" by receive order and the drain
+        always sends oldest-first.
+        """
+        self._ensure_setup()
+        pool = self._get_pool()
+        with pool.connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT * FROM {self._t_checkpoints}
+                WHERE synced = FALSE
+                ORDER BY created_at ASC
+                LIMIT %s
+                """,
+                (int(limit),),
+            )
+            rows = cur.fetchall()
+            cols = [d.name for d in cur.description] if cur.description else []
+        return [_row_dict(cols, r) for r in rows]
+
+    def mark_synced(self, checkpoint_ids: builtins.list[str]) -> None:
+        """Mark checkpoints as acked (no longer re-send candidates)."""
+        if not checkpoint_ids:
+            return
+        self._ensure_setup()
+        pool = self._get_pool()
+        with pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"UPDATE {self._t_checkpoints} SET synced = TRUE "
+                    f"WHERE checkpoint_id = ANY(%s)",
+                    (list(checkpoint_ids),),
+                )
+            conn.commit()
 
     # --- deletes / prune ---------------------------------------------
 

@@ -17,7 +17,7 @@ from pathlib import Path
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
 
-CURRENT_SCHEMA_VERSION = 12
+CURRENT_SCHEMA_VERSION = 13
 
 # A migration step is either a SQL string or a callable that takes the
 # ``SQLiteHelper`` and runs whatever logic it needs (e.g., gated
@@ -436,6 +436,32 @@ def _v12_add_hitl_events(db: SQLiteHelper) -> None:
     )
 
 
+def _v13_add_checkpoint_synced(db: SQLiteHelper) -> None:
+    """Durable platform-export buffer flag on ``checkpoints`` (WS2 durability).
+
+    ``CheckpointExporter`` (the SDK-side outbox) replicates checkpoints to the
+    plane's ``sdk_checkpoints`` and marks a row ``synced=1`` only after a confirmed
+    2xx push to ``/public/v1/checkpoints/ingest``; until then it is a re-send
+    candidate. Unlike traces, the checkpoint outbox is **non-lossy** — un-acked
+    rows are never abandoned (an active/paused run's durability must not be lost).
+
+    Mirrors the v11 ``spans.synced`` migration: existing rows are backfilled to
+    ``synced=1`` so connecting an existing project does NOT retroactively back-push
+    the whole checkpoint history — only checkpoints created afterwards become push
+    candidates. Gated on the ``checkpoints`` table existing.
+    """
+    rows = db.fetchall("SELECT name FROM sqlite_master WHERE type='table' AND name='checkpoints'")
+    if not rows:
+        return
+    _add_column_if_missing(db, "checkpoints", "synced", "INTEGER NOT NULL DEFAULT 0")
+    # Backfill pre-existing rows as already-handled so the upgrade is silent.
+    db.execute("UPDATE checkpoints SET synced = 1 WHERE synced = 0")
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_checkpoints_synced "
+        "ON checkpoints(synced, created_at)"
+    )
+
+
 _MIGRATIONS: dict[int, list[_Step]] = {
     1: [
         # Trace spans (moved from traces.db).
@@ -761,6 +787,13 @@ _MIGRATIONS: dict[int, list[_Step]] = {
         # HitlEventExporter can buffer pause/resolution events and re-drain them
         # to /public/v1/hitl/events across an outage. New table — no backfill.
         _v12_add_hitl_events,
+    ],
+    13: [
+        # Durable checkpoint-replication buffer (WS2). Add a ``synced`` flag to
+        # ``checkpoints`` so CheckpointExporter can buffer un-acked checkpoints and
+        # re-drain them to /public/v1/checkpoints/ingest. Non-lossy: never abandoned.
+        # Existing rows backfilled to synced=1 so the upgrade doesn't back-push.
+        _v13_add_checkpoint_synced,
     ],
 }
 

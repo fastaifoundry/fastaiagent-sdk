@@ -99,6 +99,7 @@ nav:
       - "Multi-agent": durability/multi-agent.md
       - "Concurrency & job scoping": durability/concurrency.md
       - Checkpointers: durability/checkpointers.md
+      - "Connected checkpoints (platform)": durability/connected-checkpoints.md
       - "API reference": durability/api-reference.md
   - Guardrails:
       - guardrails/index.md
