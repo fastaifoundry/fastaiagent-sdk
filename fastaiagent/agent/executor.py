@@ -170,6 +170,20 @@ def _record_agent_interrupt(
         agent_path=full_path,
     )
     checkpointer.record_interrupt(interrupted_ckpt, pending)
+    # Best-effort: report the pause to a connected plane (no-op when not
+    # connected; never blocks/raises into the agent hot path).
+    try:
+        from fastaiagent.trace.hitl_export import record_pause_event
+
+        record_pause_event(
+            run_id=execution_id,
+            node=node_id,
+            reason=sig.reason,
+            agent_id=agent_name,
+            kind="interrupt",
+        )
+    except Exception:
+        logger.debug("HITL pause emit failed", exc_info=True)
     return _AgentInterrupted(
         reason=sig.reason,
         context=sig.context,

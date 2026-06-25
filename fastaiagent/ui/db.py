@@ -17,7 +17,7 @@ from pathlib import Path
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
 
-CURRENT_SCHEMA_VERSION = 11
+CURRENT_SCHEMA_VERSION = 12
 
 # A migration step is either a SQL string or a callable that takes the
 # ``SQLiteHelper`` and runs whatever logic it needs (e.g., gated
@@ -398,6 +398,44 @@ def _v11_add_span_synced(db: SQLiteHelper) -> None:
     db.execute("CREATE INDEX IF NOT EXISTS idx_spans_synced ON spans(synced, start_time)")
 
 
+def _v12_add_hitl_events(db: SQLiteHelper) -> None:
+    """Connected-HITL event outbox (observer reporting to the Enterprise plane).
+
+    A brand-new append-only table for pause/resolution events. The
+    ``HitlEventExporter`` marks a row ``synced=1`` only after a confirmed 2xx push
+    to ``/public/v1/hitl/events``; until then it is a buffered re-send candidate.
+
+    Unlike the v11 ``spans.synced`` migration there is no backfill concern — the
+    table is new, so every row starts ``synced=0`` and there is no history to
+    back-push. The ``project_id`` column is created inline (this table never
+    participated in the v4 ALTER/backfill). See
+    :mod:`fastaiagent.trace.hitl_export`.
+    """
+    db.execute(
+        """CREATE TABLE IF NOT EXISTS hitl_events (
+            event_id    TEXT PRIMARY KEY,
+            run_id      TEXT NOT NULL,
+            event_type  TEXT NOT NULL,
+            kind        TEXT,
+            agent_id    TEXT,
+            chain_id    TEXT,
+            node        TEXT,
+            reason_code TEXT,
+            reason      TEXT,
+            status      TEXT,
+            resolver    TEXT,
+            occurred_at TEXT,
+            context     TEXT,
+            project_id  TEXT NOT NULL DEFAULT '',
+            synced      INTEGER NOT NULL DEFAULT 0,
+            created_at  TEXT NOT NULL
+        )"""
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_hitl_events_synced ON hitl_events(synced, created_at)"
+    )
+
+
 _MIGRATIONS: dict[int, list[_Step]] = {
     1: [
         # Trace spans (moved from traces.db).
@@ -717,6 +755,12 @@ _MIGRATIONS: dict[int, list[_Step]] = {
         # re-drain them on the next successful export. Existing rows are
         # backfilled to synced=1 so the upgrade doesn't back-push history.
         _v11_add_span_synced,
+    ],
+    12: [
+        # Connected-HITL event outbox. New append-only ``hitl_events`` table so
+        # HitlEventExporter can buffer pause/resolution events and re-drain them
+        # to /public/v1/hitl/events across an outage. New table — no backfill.
+        _v12_add_hitl_events,
     ],
 }
 

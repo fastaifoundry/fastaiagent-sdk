@@ -168,6 +168,7 @@ nav:
       - "Trace Filters": ui/trace-filters.md
   - Platform:
       - platform/index.md
+      - "Connected HITL (observer)": platform/connected-hitl.md
   - Deployment:
       - deployment/index.md
       - "Registered runner": deployment/runner.md

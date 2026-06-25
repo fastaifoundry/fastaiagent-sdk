@@ -322,6 +322,23 @@ class Chain:
             # Re-execute the interrupted node from the top so interrupt() can
             # return the resume_value.
             start_node = claimed.node_id
+            # Best-effort: report the resolution to a connected plane (no-op when
+            # not connected; never blocks/raises). Emitted only on the winning
+            # claim, so a losing AlreadyResumed race reports no phantom resolution.
+            try:
+                from fastaiagent.trace.hitl_export import record_resolution_event
+
+                record_resolution_event(
+                    run_id=execution_id,
+                    node=claimed.node_id,
+                    approved=resume_value.approved,
+                    resolver=resume_value.metadata.get("resolver"),
+                    reason=claimed.reason,
+                    chain_id=self.name,
+                    kind="interrupt",
+                )
+            except Exception:
+                logger.debug("HITL resolution emit failed", exc_info=True)
         elif latest.status == "interrupted":
             from fastaiagent._internal.errors import ChainResumeError
 

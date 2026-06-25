@@ -22,6 +22,7 @@ class _Connection:
         self.scopes: list[str] = []
         self.policy_cache: dict[str, Any] | None = None
         self._platform_processor: Any = None
+        self._hitl_processor: Any = None
 
     @property
     def is_connected(self) -> bool:
@@ -227,6 +228,24 @@ def connect(
     except Exception:
         logger.debug("Could not register platform trace exporter", exc_info=True)
 
+    # Register the connected-HITL event exporter. This is secondary/opportunistic
+    # insurance — the primary drain trigger is a per-emit daemon thread (see
+    # trace/hitl_export.py), because tracing is trace=-gated and a trace=False
+    # paused run produces no spans for the processor to flush on. Registering it
+    # here still gives a backlog flush on the next traced span + a clean drain on
+    # disconnect()'s force_flush.
+    try:
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+        from fastaiagent.trace.hitl_export import get_hitl_exporter
+        from fastaiagent.trace.otel import get_tracer_provider
+
+        hitl_processor = BatchSpanProcessor(get_hitl_exporter())
+        get_tracer_provider().add_span_processor(hitl_processor)
+        _connection._hitl_processor = hitl_processor
+    except Exception:
+        logger.debug("Could not register HITL event exporter", exc_info=True)
+
 
 def disconnect() -> None:
     """Disconnect from platform. Revert to local-only mode.
@@ -240,6 +259,13 @@ def disconnect() -> None:
         except Exception:
             logger.debug("Failed to flush/shutdown platform processor on disconnect", exc_info=True)
         _connection._platform_processor = None
+    if _connection._hitl_processor is not None:
+        try:
+            _connection._hitl_processor.force_flush(timeout_millis=5000)
+            _connection._hitl_processor.shutdown()
+        except Exception:
+            logger.debug("Failed to flush/shutdown HITL processor on disconnect", exc_info=True)
+        _connection._hitl_processor = None
     _connection.api_key = None
     _connection.project = None
     _connection.domain_id = None

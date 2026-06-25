@@ -348,10 +348,55 @@ def test_migration_v11_adds_synced_backfills_and_is_idempotent(tmp_path: Path) -
         "VALUES ('new', 't1', 'new', '2026-06-07T00:00:00+00:00', 'p')"
     )
     assert db.fetchone("SELECT synced FROM spans WHERE span_id='new'")["synced"] == 0
-    assert ui_db._get_user_version(db) == 11
+    # init_local_db always migrates to the current head (now 12: + hitl_events).
+    assert ui_db._get_user_version(db) == 12
 
     ui_db._run_migrations(db)  # idempotent re-run
-    assert ui_db._get_user_version(db) == 11
+    assert ui_db._get_user_version(db) == 12
+    db.close()
+
+
+# --- Migration v12 -----------------------------------------------------------
+
+
+def test_migration_v12_adds_hitl_events_table_and_is_idempotent(tmp_path: Path) -> None:
+    from fastaiagent._internal.storage import SQLiteHelper
+    from fastaiagent.ui import db as ui_db
+
+    # Start from a v11 DB (spans + synced, no hitl_events yet).
+    p = tmp_path / "v11.db"
+    h = SQLiteHelper(str(p))
+    h.execute(
+        "CREATE TABLE spans (span_id TEXT PRIMARY KEY, trace_id TEXT NOT NULL, "
+        "synced INTEGER NOT NULL DEFAULT 0, project_id TEXT NOT NULL DEFAULT '')"
+    )
+    h.execute("PRAGMA user_version = 11")
+    h.close()
+
+    db = ui_db.init_local_db(str(p))
+    # New append-only table exists with the wire-mirroring columns + outbox flag.
+    tbls = {
+        r["name"]
+        for r in db.fetchall(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='hitl_events'"
+        )
+    }
+    assert "hitl_events" in tbls
+    cols = {r["name"] for r in db.fetchall("PRAGMA table_info(hitl_events)")}
+    assert {
+        "event_id",
+        "run_id",
+        "event_type",
+        "status",
+        "resolver",
+        "project_id",
+        "synced",
+        "created_at",
+    } <= cols
+    assert ui_db._get_user_version(db) == 12
+
+    ui_db._run_migrations(db)  # idempotent re-run
+    assert ui_db._get_user_version(db) == 12
     db.close()
 
 
