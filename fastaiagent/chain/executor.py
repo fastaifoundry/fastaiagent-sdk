@@ -341,6 +341,20 @@ async def execute_chain(
                 )
                 if checkpointer is not None:
                     checkpointer.record_interrupt(interrupt_ckpt, pending)
+                    # Best-effort: report the pause to a connected plane (no-op
+                    # when not connected; never blocks/raises into the hot path).
+                    try:
+                        from fastaiagent.trace.hitl_export import record_pause_event
+
+                        record_pause_event(
+                            run_id=execution_id,
+                            node=node_id,
+                            reason=sig.reason,
+                            chain_id=chain_name,
+                            kind="interrupt",
+                        )
+                    except Exception:
+                        logger.debug("HITL pause emit failed", exc_info=True)
                 return {
                     "output": None,
                     "final_state": state.snapshot(),

@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.25.0] - 2026-06-24
+
+### Added
+
+- **Connected HITL reporting (Enterprise control plane).** When the SDK is
+  connected (`connect()`) to an Enterprise plane, a run that pauses on
+  `interrupt()` now reports a **pause** event, and `chain.resume()` /
+  `agent.aresume()` report a **resolution** event (approved/rejected + resolver),
+  to `POST /public/v1/hitl/events`. This gives the plane an org-wide
+  pending/paused status view + a compliance ledger. The plane is an **observer
+  only** — it is never the approval surface; the customer's own app still resolves
+  the pause. Events are **metadata only** (run id, node, reason, kind, status,
+  resolver) — no interrupt payloads or PII leave the process. Delivery reuses the
+  proven trace outbox: local-first write to a new `hitl_events` table, a
+  best-effort non-blocking background drain, `mark_synced` only after a confirmed
+  2xx, and at-least-once re-send that is idempotent by SDK-generated `event_id`.
+  **Fully additive**: a no-op unless connected, no public signature / `Checkpointer`
+  Protocol / default-behavior changes, and the new local-DB table migrates
+  transparently (local schema v12).
+
 ## [1.24.0] - 2026-06-17
 
 ### Fixed
