@@ -212,12 +212,16 @@ Every service degrades gracefully when the platform is unreachable:
 | Eval results | Publish to platform | Store locally, publish later |
 | Replay | Pull platform traces | Local traces only |
 | HITL events | Report pause/resolution to platform | Local SQLite only, **buffered for re-send** |
+| Central memory | Read curated facts via `PlaneFactBlock` | Block injects nothing; agent runs normally |
 
 No operation fails because the platform is down.
 
 For the connected human-in-the-loop observer (pause/resolution reporting, the
 compliance ledger, and the `connected_state_plane` gate), see
 [Connected HITL](connected-hitl.md).
+
+For connected central memory — reading curated, human-approved facts back into an
+agent via `PlaneFactBlock` — see [Memory → PlaneFactBlock](../agents/memory.md#planefactblock-connected-central-memory).
 
 ### Durable trace buffering & retry
 
