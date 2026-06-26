@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.27.0] - 2026-06-26
+
+### Added
+
+- **Connected central memory read (Enterprise control plane).** New
+  `PlaneFactBlock` (a `MemoryBlock`) reads **curated, human-approved** durable
+  facts for an agent from a connected plane via `GET /public/v1/memory/facts` and
+  injects them at the start of each turn — the read side of central governed
+  memory. The plane's central learning loop extracts facts from already-ingested
+  traces and a human curates them; the SDK only **reads** (there is no SDK
+  fact-push path). Compose it alongside the local `PersistentFactBlock` to merge
+  local + central knowledge:
+
+  ```python
+  from fastaiagent.agent.memory_blocks import PlaneFactBlock
+  memory = ComposableMemory(primary=AgentMemory(), blocks=[PlaneFactBlock(agent_id="...")])
+  ```
+
+  Read-only and **degradable**: when not connected, the plane is unreachable, or
+  the domain isn't entitled (403), it injects nothing and the agent runs normally —
+  central facts are an enhancement, never a dependency. The plane runs no agent
+  code: it serves facts; recall + injection happen locally. **Fully additive /
+  non-breaking**: a new block class — existing memory blocks, `connect()`, and the
+  `MemoryBlock` interface are unchanged.
+
 ## [1.26.0] - 2026-06-25
 
 ### Added

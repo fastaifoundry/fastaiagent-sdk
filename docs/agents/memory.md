@@ -284,6 +284,40 @@ existing `confidence` column on `learned_memory`.
 
 **Pairs with**: `FactExtractionBlock` for the in-conversation extraction; `PersistentFactBlock` for the cross-conversation re-injection. Both can live in the same `ComposableMemory`.
 
+### `PlaneFactBlock` (connected central memory)
+
+Read-only block that reads **curated, human-approved** facts from a connected [Enterprise plane](../platform/index.md) via `GET /public/v1/memory/facts`, and injects them at the start of each turn. Where `PersistentFactBlock` reads facts from the **local** `learned_memory` table, `PlaneFactBlock` reads the **governed/curated** facts the plane serves — the read side of central governed memory. The plane extracts durable facts from already-ingested traces and a human curates them; the SDK only **reads** (there is no SDK fact-push path).
+
+```python
+import fastaiagent as fa
+from fastaiagent import Agent, AgentMemory, ComposableMemory
+from fastaiagent.agent.memory_blocks import PlaneFactBlock, PersistentFactBlock
+
+fa.connect(api_key="fa-...", target="https://your-plane.example.com")
+
+memory = ComposableMemory(
+    primary=AgentMemory(),
+    blocks=[
+        PlaneFactBlock(
+            agent_id="my-agent-id",   # the agent's id on the plane (required)
+            category=None,            # optional category filter
+            max_facts=50,             # cap per turn (1..200)
+            query_conditioned=True,   # pass the user input for semantic recall
+            score_threshold=0.0,      # min similarity for query-conditioned recall
+            refresh_every=1,          # re-read the plane every N renders (raise to cache)
+        ),
+        PersistentFactBlock(scope="agent", scope_id="my-agent"),  # local facts too (optional)
+    ],
+)
+agent = Agent(name="support", system_prompt="...", llm=llm, memory=memory)
+```
+
+**Read-only and degradable.** When the SDK is not connected, the plane is unreachable, or the domain isn't entitled (`403`), `PlaneFactBlock` injects nothing and the agent runs normally — central facts are an enhancement, never a dependency. The read is a bounded start-of-run network GET (like `VectorBlock`'s search), cached per `refresh_every`; it never pushes anything. The plane runs no agent code — it serves facts; recall and injection happen locally.
+
+**When to use**: connected (Enterprise) deployments that want a single governed, curated knowledge base shared across a fleet of agents, with central redaction / right-to-be-forgotten. See [Connected central memory](../platform/index.md) and the [memory loop](../learning/memory-loop.md).
+
+**Pairs with**: `PersistentFactBlock` (local facts) — compose both to merge local + central knowledge in one `ComposableMemory`.
+
 ## Composing blocks
 
 Block order matters — they render in declaration order, and the resulting SystemMessages appear in the prompt in that order. Typical ordering:

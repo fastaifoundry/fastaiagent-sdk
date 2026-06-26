@@ -48,6 +48,7 @@ __all__ = [
     "FactExtractionBlock",
     "MemoryBlock",
     "PersistentFactBlock",
+    "PlaneFactBlock",
     "StaticBlock",
     "SummaryBlock",
     "VectorBlock",
@@ -661,3 +662,148 @@ class PersistentFactBlock(MemoryBlock):
                 f"Learned facts ({scope_label}):\n{bullets}"
             )
         ]
+
+
+# ---------------------------------------------------------------------------
+# PlaneFactBlock (connected Enterprise plane — WS3 central governed memory)
+# ---------------------------------------------------------------------------
+
+
+class PlaneFactBlock(MemoryBlock):
+    """Inject curated, human-approved facts read from a connected Enterprise plane.
+
+    The plane's central learning loop extracts durable facts from already-ingested
+    traces; a human curates/approves them; this block reads the approved facts back
+    at the start of each turn via ``GET /public/v1/memory/facts`` and renders them
+    as a system message. This is the read side of central governed memory (WS3).
+
+    The sibling :class:`PersistentFactBlock` reads facts from the **local**
+    ``learned_memory`` table; ``PlaneFactBlock`` reads the **governed/curated**
+    facts the plane serves. Compose both to merge local + central knowledge.
+
+    **Read-only and degradable.** ``on_message`` is a no-op. When the SDK is not
+    connected, the plane is unreachable, the domain is not entitled (403), or any
+    error occurs, ``render`` returns ``[]`` and the agent runs normally — central
+    facts are an enhancement, never a dependency. The plane never runs agent code:
+    it serves facts; recall + injection happen locally (CLAUDE §1). The read is a
+    bounded start-of-run network GET (like :class:`VectorBlock`'s search), cached
+    per ``refresh_every``; it never pushes anything (D5: central-extraction-only —
+    there is no SDK fact-push path).
+
+    Args:
+        agent_id: the agent's id on the plane whose curated facts to read
+            (required by the plane endpoint).
+        category: optional category filter.
+        max_facts: cap on facts injected per turn (1..200).
+        query_conditioned: when True (default) pass the current user input as the
+            plane's ``query`` for semantic recall; the plane falls back to a flat
+            approved-facts list if its embedder is unavailable.
+        score_threshold: minimum similarity for query-conditioned recall (0..1).
+        refresh_every: re-read the plane every N renders. ``1`` (default) re-reads
+            each turn; raise it to cache (the read is a bounded network GET, so
+            higher values cut per-turn latency).
+        timeout: per-request timeout (seconds) for the bounded read.
+
+    Example::
+
+        import fastaiagent as fa
+        from fastaiagent import Agent, AgentMemory, ComposableMemory
+        from fastaiagent.agent.memory_blocks import PlaneFactBlock
+
+        fa.connect(api_key="fa-...", target="https://your-plane.example.com")
+        memory = ComposableMemory(
+            primary=AgentMemory(),
+            blocks=[PlaneFactBlock(agent_id="my-agent-id")],
+        )
+        agent = Agent(name="support", system_prompt="...", llm=llm, memory=memory)
+    """
+
+    name = "plane_facts"
+
+    def __init__(
+        self,
+        agent_id: str,
+        *,
+        category: str | None = None,
+        max_facts: int = 50,
+        query_conditioned: bool = True,
+        score_threshold: float = 0.0,
+        refresh_every: int = 1,
+        timeout: float = 10.0,
+    ):
+        if not agent_id:
+            raise ValueError("agent_id is required")
+        if not 1 <= max_facts <= 200:
+            raise ValueError("max_facts must be in 1..200")
+        if refresh_every < 1:
+            raise ValueError("refresh_every must be >= 1")
+        if not 0.0 <= score_threshold <= 1.0:
+            raise ValueError("score_threshold must be in 0.0..1.0")
+        self.agent_id = agent_id
+        self.category = category
+        self.max_facts = max_facts
+        self.query_conditioned = query_conditioned
+        self.score_threshold = score_threshold
+        self.refresh_every = refresh_every
+        self.timeout = timeout
+        self._cached: list[str] | None = None
+        self._renders_since_refresh = 0
+
+    def on_message(self, message: Message) -> None:
+        # Read-only block — facts are produced + curated centrally on the plane.
+        return
+
+    def _fetch_from_plane(self, query: str) -> list[str]:
+        """GET the agent's approved facts from the plane; return their contents.
+
+        A no-op (``[]``) when not connected; degradable on any non-2xx or error.
+        """
+        from fastaiagent.client import _connection
+
+        if not _connection.is_connected:
+            return []
+
+        import httpx
+
+        params: dict[str, Any] = {
+            "agent_id": self.agent_id,
+            "limit": self.max_facts,
+            "score_threshold": self.score_threshold,
+        }
+        if self.category:
+            params["category"] = self.category
+        if self.query_conditioned and query:
+            params["query"] = query
+
+        url = f"{_connection.target}/public/v1/memory/facts"
+        with httpx.Client(timeout=self.timeout, verify=True) as client:
+            resp = client.get(url, params=params, headers=_connection.headers)
+        if resp.status_code != 200:
+            # 403 (domain not entitled) / 404 (unknown agent) / 5xx → degrade to
+            # no facts. The agent still runs; central memory is an enhancement.
+            if resp.status_code not in (403, 404):
+                _log.warning("PlaneFactBlock read got HTTP %d", resp.status_code)
+            return []
+        data = resp.json()
+        return [
+            f["content"]
+            for f in data.get("facts", [])
+            if isinstance(f, dict) and f.get("content")
+        ]
+
+    def render(self, query: str) -> list[Message]:
+        if self._cached is None or self._renders_since_refresh >= self.refresh_every:
+            try:
+                self._cached = self._fetch_from_plane(query)
+            except Exception as err:
+                # Never let a plane read break the run — degrade to last-known / empty.
+                _log.warning("PlaneFactBlock refresh failed: %s", err)
+                self._cached = self._cached or []
+            self._renders_since_refresh = 1
+        else:
+            self._renders_since_refresh += 1
+
+        if not self._cached:
+            return []
+        bullets = "\n".join(f"- {fact}" for fact in self._cached)
+        return [SystemMessage(f"Curated facts (agent:{self.agent_id}):\n{bullets}")]
