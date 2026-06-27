@@ -72,11 +72,17 @@ The script walks all three phases: seed runs → extract → replay. Inspect the
 
 The substrate was the prerequisite — without rich, queryable traces, none of this would work. The learning loop is the simplest thing that can show value on top.
 
+*Update:* the **harness-improvement** layer now ships — eval-driven [prompt & few-shot optimization](../evaluation/optimization.md) (`fastaiagent.optimize`). The diagram's "future" there now refers specifically to **replay-grounded** scoring and the learned-memory lever below.
+
+## What ships now (harness layer)
+
+Eval-driven [optimization](../evaluation/optimization.md) (`fastaiagent.optimize`) closes the loop `harden()` opens — propose a change, re-evaluate, keep the best, holdout-guard the winner. It tunes two levers by greedy coordinate ascent: the **system prompt** and **few-shot examples** (bootstrapped from the train split, injected via `FewShotBlock`), with per-candidate memory isolation (`MemoryBlock.isolated_copy()`). The cold-eval slice of harness improvement, built on the existing `evaluate()`.
+
 ## Future work
 
 Tracked in the planning file:
 
+- **Learned-memory lever** — extend the optimize loop to also tune *which subset* of `learned_memory` facts to inject (selection/ablation), completing the three-lever search.
+- **Replay-grounded scoring** — score candidates by forking a production trace at the decision node instead of cold dataset eval. Drops into the optimize loop's `score_candidate` seam with no driver change.
 - **Skills** — extract reusable mini-procedures from successful traces; expose as callable tools.
-- **Meta-Harness** — coding agent rewrites template prompts based on trace failure patterns.
-- **Replay-eval** — A/B compare runs with and without a candidate change. Prerequisite for both above.
 - **Online learning** — agents that update their own context mid-run.

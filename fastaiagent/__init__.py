@@ -10,6 +10,7 @@ from fastaiagent.agent import (
     AgentResult,
     ComposableMemory,
     FactExtractionBlock,
+    FewShotBlock,
     MemoryBlock,
     MiddlewareContext,
     PersistentFactBlock,
@@ -74,6 +75,12 @@ from fastaiagent.kb import KeywordStore, LocalKB, MetadataStore, PlatformKB, Vec
 from fastaiagent.llm import LLMClient, Message, StreamEvent, TextDelta
 from fastaiagent.llm.stream import HandoffEvent
 from fastaiagent.multimodal import PDF, ContentPart, Image, normalize_input
+from fastaiagent.optimize import (
+    OptimizationReport,
+    OptimizeConfig,
+    aoptimize,
+    optimize,
+)
 from fastaiagent.prompt import Prompt, PromptRegistry
 from fastaiagent.runtime import job_scope
 from fastaiagent.tool import FunctionTool, MCPTool, RESTTool, Tool, ToolRegistry, tool
@@ -141,6 +148,7 @@ __all__ = [
     "ComposableMemory",
     "MemoryBlock",
     "StaticBlock",
+    "FewShotBlock",
     "SummaryBlock",
     "VectorBlock",
     "FactExtractionBlock",
@@ -219,6 +227,11 @@ __all__ = [
     "harden",
     "aharden",
     "HardeningReport",
+    # Optimization (eval-driven self-improvement loop)
+    "optimize",
+    "aoptimize",
+    "OptimizeConfig",
+    "OptimizationReport",
     # Trace
     "TraceStore",
     "trace_context",

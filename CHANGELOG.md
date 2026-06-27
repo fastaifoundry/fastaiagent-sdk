@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.29.0] - 2026-06-27
+
+### Added
+
+- **Eval-driven optimization loop — `fastaiagent.optimize`.** A closed
+  optimize-until-converged loop that *closes the loop `harden()` opens*: instead
+  of only recommending fixes, it proposes a change, applies it to a fresh agent,
+  re-evaluates, keeps the best, and repeats — gated by a held-out split so the
+  winner can't overfit. The SDK's answer to LangSmith *Promptim* / DSPy
+  `BootstrapFewShot` + metaprompt optimization, built on the existing `evaluate()`.
+  - Public API: `optimize()` / `aoptimize()` (async-first; sync wrapper for
+    CLI/notebooks) returning an `OptimizationReport` with the full score
+    `trajectory`, an applyable `best_candidate` (`report.apply_to(agent)`), and a
+    `baseline → steps → holdout-guarded winner` `summary()` print. Plus
+    `OptimizeConfig`, `Candidate`, `CandidateScore` — all exported at top level.
+  - **Three levers, greedy coordinate ascent.** `instructions` rewrites the system
+    prompt (proposer reuses `harden()`'s failure analysis, in `optimize/`).
+    `fewshot` bootstraps few-shot examples (`bootstrap_demos()`: gold pairs from
+    train + `curate_from_traces(filter="favorites")`, teacher-filling the gap)
+    injected via a new `FewShotBlock`. `memory` tunes *which subset* of learned
+    facts (`MemoryStore.list_active`) to inject — a confidence/recency ablation via
+    an `_AllowlistStore`-backed `PersistentFactBlock`; **pure selection** that never
+    mutates the fact store (audit chain intact), and skipped with a distinct
+    trajectory marker when the agent's scope has no facts. All extra levers are
+    **opt-in** — default `levers=("instructions",)` (cheapest, prompt-only); pass
+    e.g. `("instructions", "fewshot", "memory")` to enable them.
+  - **Per-candidate memory isolation.** Each candidate eval gets an isolated copy
+    of the agent's memory via a new concrete `MemoryBlock.isolated_copy()` (shares
+    external handles like the `llm`, resets in-process state) — `StaticBlock` /
+    `PersistentFactBlock` / `PlaneFactBlock` / `SummaryBlock` / `FactExtractionBlock`
+    supported. `VectorBlock` is refused (it writes to an external store mid-run)
+    unless `OptimizeConfig(allow_writable_memory=True)`.
+  - Two-judge guard (`selection_judge` / `audit_judge`) so reference-free agents
+    don't optimize against their own reported metric; cost governors
+    (`max_eval_runs` / `max_judge_calls`).
+  - New CLI: `fastaiagent optimize --agent module:attr --dataset cases.jsonl ...`.
+  - **Additive / non-breaking.** `harden()` and the entire `eval` public API are
+    unchanged — the prompt-rewrite proposer lives in `fastaiagent.optimize` and
+    reuses harden's internal failure-rendering via a documented private import.
+    The agent package gains three additive pieces — a concrete
+    `MemoryBlock.isolated_copy()` (warn-and-share default, so existing/third-party
+    blocks keep working), `FewShotBlock`, and `MemoryIsolationError`. No DB
+    migration (uses the existing `eval_runs`/`eval_cases` tables). Docs:
+    `docs/evaluation/optimization.md`; the `examples/self-improving-research`
+    flagship now wires the optimizer in as `phase_optimize` (seed → learn →
+    optimize → replay), tuning a single fact-bearing agent (not the whole pipeline).
+
 ## [1.28.0] - 2026-06-27
 
 ### Added
