@@ -141,7 +141,8 @@ def _clean_platform():
     otel.reset()
     for attr, val in (("api_key", None), ("target", "https://app.fastaiagent.net"),
                       ("project", None), ("project_id", None), ("domain_id", None),
-                      ("policy_cache", None), ("_platform_processor", None)):
+                      ("policy_cache", None), ("governance_fail_mode", "open"),
+                      ("_platform_processor", None)):
         setattr(_connection, attr, val)
 
 

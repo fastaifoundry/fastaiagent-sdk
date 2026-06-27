@@ -118,6 +118,7 @@ def isolated_local_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     Sets ``FASTAIAGENT_LOCAL_DB`` to a temp file, clears the cached config, and
     pins ``project_id`` so seeded rows and the exporter's drain filter agree.
     """
+    from fastaiagent._internal import instance as _instance
     from fastaiagent._internal import project as _project
     from fastaiagent._internal.config import reset_config
 
@@ -125,9 +126,11 @@ def isolated_local_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     monkeypatch.setenv("FASTAIAGENT_LOCAL_DB", str(db_path))
     reset_config()
     _project.set_project_id("test-proj")
+    _instance.reset_for_testing()  # drop any cached instance_id from a prior temp DB
     try:
         yield db_path
     finally:
+        _instance.reset_for_testing()
         _project.reset_for_testing()
         reset_config()
 
