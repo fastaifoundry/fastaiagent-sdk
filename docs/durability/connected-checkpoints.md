@@ -83,6 +83,17 @@ checkpoints buffered (a terminal 4xx is not retried), and the run is unaffected.
 > already-synced on upgrade, so connecting an existing project does not
 > retroactively back-push history — only checkpoints written afterwards replicate.
 
+## In the console
+
+The plane is the managed durable copy of each run's checkpoints. Its
+**Durability** view shows fleet run-health — status, step / node, and checkpoint
+count per run — and serves the latest checkpoint back on restore (the SDK resumes
+locally; the plane runs no agent code):
+
+![Durability run-health on the plane](../platform/img/ws2-durability-run-health.png)
+
+A runnable end-to-end example is in `examples/86_connected_durability.py`.
+
 ## Custom checkpointers
 
 Replication uses an **optional** `ReplicatedCheckpointer` surface

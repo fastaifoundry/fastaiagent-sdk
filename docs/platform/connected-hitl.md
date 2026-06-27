@@ -86,6 +86,16 @@ events buffered (a terminal 4xx is not retried), and the agent runs unaffected.
 > additive migration (local schema v12). Existing projects are unaffected; only
 > pauses/resolutions that occur while connected are reported.
 
+## In the console
+
+The plane records every pause and resolution the SDK reports and serves an
+org-wide HITL status view across connected agents — paused / resolved, the node,
+the outcome, and the resolver (the approval surface stays your own app):
+
+![Connected HITL status on the plane](img/ws1-connected-hitl-status.png)
+
+A runnable end-to-end example is in `examples/85_connected_hitl.py`.
+
 ## Next steps
 
 - [Human-in-the-Loop](../chains/hitl.md) — the core `interrupt()` / `resume()` flow

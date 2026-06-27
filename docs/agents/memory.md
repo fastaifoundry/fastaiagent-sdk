@@ -318,6 +318,12 @@ agent = Agent(name="support", system_prompt="...", llm=llm, memory=memory)
 
 **Pairs with**: `PersistentFactBlock` (local facts) — compose both to merge local + central knowledge in one `ComposableMemory`.
 
+The curated facts the block reads are managed on the plane's **Agent Memories** page — created or approved by a human (or extracted from traces), with redaction / right-to-be-forgotten:
+
+![Curated agent memories on the plane](../platform/img/ws3-memory-facts.png)
+
+A runnable end-to-end example is in `examples/87_connected_memory.py`.
+
 ## Composing blocks
 
 Block order matters — they render in declaration order, and the resulting SystemMessages appear in the prompt in that order. Typical ordering:

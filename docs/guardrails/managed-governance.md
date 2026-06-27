@@ -7,6 +7,9 @@ flagged, the SDK asks the platform whether it may proceed; a high-stakes call
 
 This builds on [guardrails](index.md) (local, in-process checks) by adding the
 **managed policy + pause/resume over the wire**. It needs [`fa.connect()`](../platform/index.md).
+For connect-time enrollment and the opt-in **fail-closed** posture (refuse rather
+than run ungoverned when the plane is unreachable), see
+[Connected governance](../platform/connected-governance.md).
 
 ## How it works
 

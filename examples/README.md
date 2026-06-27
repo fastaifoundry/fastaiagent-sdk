@@ -144,6 +144,13 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 - [`58_guardrail_pydanticai.py`](58_guardrail_pydanticai.py) — `with_guardrails()` on PydanticAI
 - [`59_register_external_agent.py`](59_register_external_agent.py) — register a non-fastaiagent agent
 
+### Connected control plane (Enterprise)
+The connected-state-plane bundle — run against a plane with `connected_state_plane` enabled (set `FASTAIAGENT_API_KEY` + `FASTAIAGENT_TARGET`). Each prints an expected-output snapshot; the plane-console views they produce are shown in the linked docs.
+- [`85_connected_hitl.py`](85_connected_hitl.py) — HITL pauses/resolutions reported to the plane (WS1 observer) → [docs](../docs/platform/connected-hitl.md)
+- [`86_connected_durability.py`](86_connected_durability.py) — checkpoints replicate → restore + resume from the plane (WS2) → [docs](../docs/durability/connected-checkpoints.md)
+- [`87_connected_memory.py`](87_connected_memory.py) — `PlaneFactBlock` reads curated governed facts (WS3) → [docs](../docs/agents/memory.md)
+- [`88_connected_governance.py`](88_connected_governance.py) — governance enrollment + opt-in fail-closed (WS4) → [docs](../docs/platform/connected-governance.md)
+
 ### Misc
 - [`11_cli_usage.sh`](11_cli_usage.sh) — `fastaiagent` CLI commands
 - [`13_structured_output.py`](13_structured_output.py) — JSON-schema constrained output

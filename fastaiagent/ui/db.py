@@ -17,7 +17,7 @@ from pathlib import Path
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
 
-CURRENT_SCHEMA_VERSION = 13
+CURRENT_SCHEMA_VERSION = 14
 
 # A migration step is either a SQL string or a callable that takes the
 # ``SQLiteHelper`` and runs whatever logic it needs (e.g., gated
@@ -462,6 +462,30 @@ def _v13_add_checkpoint_synced(db: SQLiteHelper) -> None:
     )
 
 
+def _v14_add_sdk_instance(db: SQLiteHelper) -> None:
+    """Stable per-install SDK instance identity (WS4 governance enrollment).
+
+    A single-row key/value table holding a stable ``instance_id`` — a UUID minted
+    once and reused across runs/processes. The connect-time governance enroll push
+    (``POST /public/v1/governance/enroll``) sends this id; the plane upserts on
+    ``(domain_id, project_id, instance_id)``, so it MUST be stable per install.
+
+    Brand-new table — no backfill (the v11/v13 ``synced`` backfill concern does not
+    apply). Deliberately NOT project-scoped: the *instance* is the install, which
+    spans projects (the plane composes the full idempotency key from the API key's
+    domain/project plus this id). One row enforced by a fixed ``id = 1`` PK so a
+    re-run reads the same value rather than appending. See
+    :mod:`fastaiagent._internal.instance`.
+    """
+    db.execute(
+        """CREATE TABLE IF NOT EXISTS sdk_instance (
+            id          INTEGER PRIMARY KEY CHECK (id = 1),
+            instance_id TEXT NOT NULL,
+            created_at  TEXT NOT NULL
+        )"""
+    )
+
+
 _MIGRATIONS: dict[int, list[_Step]] = {
     1: [
         # Trace spans (moved from traces.db).
@@ -794,6 +818,12 @@ _MIGRATIONS: dict[int, list[_Step]] = {
         # re-drain them to /public/v1/checkpoints/ingest. Non-lossy: never abandoned.
         # Existing rows backfilled to synced=1 so the upgrade doesn't back-push.
         _v13_add_checkpoint_synced,
+    ],
+    14: [
+        # Stable per-install SDK instance id for WS4 governance enrollment. New
+        # single-row ``sdk_instance`` table — no backfill. The connect-time enroll
+        # push sends this id so the plane upserts coverage idempotently.
+        _v14_add_sdk_instance,
     ],
 }
 

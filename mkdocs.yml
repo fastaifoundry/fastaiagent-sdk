@@ -170,6 +170,7 @@ nav:
   - Platform:
       - platform/index.md
       - "Connected HITL (observer)": platform/connected-hitl.md
+      - "Connected governance (enrollment)": platform/connected-governance.md
   - Deployment:
       - deployment/index.md
       - "Registered runner": deployment/runner.md

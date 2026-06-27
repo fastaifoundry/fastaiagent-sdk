@@ -21,6 +21,10 @@ class _Connection:
         self.project_id: str | None = None
         self.scopes: list[str] = []
         self.policy_cache: dict[str, Any] | None = None
+        # WS4 governance: client fail mode. Default "open" preserves today's
+        # behavior (a missing policy cache => the tool gate is a no-op). "closed"
+        # opts in to fail-closed at the gate when governance can't be confirmed.
+        self.governance_fail_mode: str = "open"
         self._platform_processor: Any = None
         self._hitl_processor: Any = None
 
@@ -136,6 +140,8 @@ def connect(
     api_key: str,
     target: str = "https://app.fastaiagent.net",
     project: str | None = None,
+    *,
+    governance_fail_mode: str | None = None,
 ) -> None:
     """Connect the SDK to FastAIAgent Platform for observability,
     prompt management, and evaluation services.
@@ -146,7 +152,16 @@ def connect(
     The API key carries its own domain and project scope from the
     platform. The ``project`` parameter is an optional override
     for the trace export payload.
+
+    ``governance_fail_mode`` (WS4) is an opt-in posture: ``"closed"`` makes a
+    governed agent refuse tool calls when governance can't be confirmed (the
+    plane was unreachable at connect, so no policy is cached); the default
+    ``"open"`` preserves today's fail-open behavior. The resolved mode is
+    attested to the plane on enrollment. Falls back to the
+    ``FASTAIAGENT_GOVERNANCE_FAIL_MODE`` env var when the argument is omitted.
     """
+    import os
+
     import httpx
 
     from fastaiagent._internal.errors import PlatformAuthError, PlatformConnectionError
@@ -154,6 +169,15 @@ def connect(
     _connection.api_key = api_key
     _connection.target = _normalize_target(target)
     _connection.project = project
+    # WS4 governance fail mode: explicit kwarg > env var > "open" (non-breaking
+    # default = today's fail-open behavior). Only the literal "closed" hardens the
+    # gate, so a typo can never silently fail-close.
+    _mode = (
+        governance_fail_mode
+        if governance_fail_mode is not None
+        else os.environ.get("FASTAIAGENT_GOVERNANCE_FAIL_MODE")
+    )
+    _connection.governance_fail_mode = "closed" if (_mode or "").lower() == "closed" else "open"
 
     # Lightweight auth check — also captures domain/project from the key
     try:
@@ -257,6 +281,21 @@ def connect(
     except Exception:
         logger.debug("Could not kick checkpoint drain on connect", exc_info=True)
 
+    # WS4 governance enrollment (fire-and-forget attestation). One-shot best-effort
+    # POST to /public/v1/governance/enroll on a daemon thread so connect() never
+    # blocks on or raises from the plane — same non-blocking model as the checkpoint
+    # drain above. NOT a durable outbox (enrollment is ephemeral attestation): a 4xx
+    # is terminal, transient failures are dropped. Runs after the auth-check +
+    # policy-pull so domain/project/policy_cache/governance_fail_mode are populated.
+    try:
+        import threading
+
+        from fastaiagent import governance
+
+        threading.Thread(target=governance.enroll, daemon=True).start()
+    except Exception:
+        logger.debug("Could not kick governance enroll on connect", exc_info=True)
+
 
 def disconnect() -> None:
     """Disconnect from platform. Revert to local-only mode.
@@ -291,3 +330,4 @@ def disconnect() -> None:
     _connection.project_id = None
     _connection.scopes = []
     _connection.policy_cache = None
+    _connection.governance_fail_mode = "open"  # WS4: revert to non-breaking default

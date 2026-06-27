@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.28.0] - 2026-06-27
+
+### Added
+
+- **Connected governance enrollment + opt-in fail-closed (Enterprise control
+  plane).** On `connect()`, the SDK now best-effort attests its presence and
+  posture to the plane via `POST /public/v1/governance/enroll` (fire-and-forget
+  on a daemon thread — never blocks or raises into `connect()`), sending a stable
+  per-install `instance_id` so the plane upserts coverage idempotently. Separately,
+  a new opt-in **fail-closed** client mode (`connect(...,
+  governance_fail_mode="closed")` or `FASTAIAGENT_GOVERNANCE_FAIL_MODE=closed`)
+  closes the fail-open hole at the tool gate: when connected to a governed agent
+  but the policy cache is unavailable (the plane was unreachable at connect),
+  governed tool calls are refused instead of running ungoverned. **The default
+  stays fail-open — fully additive / non-breaking**: `connect()`, the `_Connection`
+  surface, and the existing decide-error fail-closed guarantee are unchanged. A new
+  additive local migration (schema v14) adds the `sdk_instance` table that holds
+  the stable id.
+
 ## [1.27.0] - 2026-06-26
 
 ### Added

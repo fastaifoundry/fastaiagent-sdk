@@ -76,6 +76,82 @@ async def _get(path: str) -> dict[str, Any]:
     return data
 
 
+def enroll() -> dict[str, Any] | None:
+    """Fire-and-forget governance enrollment (WS4). SYNC + best-effort.
+
+    POSTs a stable ``instance_id`` (+ posture metadata) to
+    ``/public/v1/governance/enroll``. The plane UPSERTs on
+    ``(domain_id, project_id, instance_id)`` — keeping ``first_seen_at``,
+    refreshing ``last_seen_at`` + posture — so this is safe to re-POST on every
+    connect.
+
+    Designed to run on a daemon thread from :func:`fastaiagent.client.connect`:
+    it never raises, a short timeout caps latency, a 4xx is terminal (drop &
+    continue — incl. 403 unentitled and an older/mock plane's 404), and a
+    transient error is ignored. NOT a durable outbox — enrollment is ephemeral
+    attestation, so a dropped POST just means the plane refreshes posture on the
+    next connect. Returns the parsed 200 body (so callers/tests can assert the
+    round-trip) or ``None``.
+    """
+    import socket
+
+    import httpx
+
+    from fastaiagent._internal.instance import get_instance_id
+    from fastaiagent._version import __version__
+    from fastaiagent.client import _connection
+
+    if not _connection.is_connected:
+        return None
+
+    body: dict[str, Any] = {
+        "instance_id": get_instance_id(),
+        "sdk_version": __version__,
+        "fail_mode": getattr(_connection, "governance_fail_mode", "open"),
+        # Protocol version travels in the BODY, not a header: _connection.headers
+        # has no X-FAA-Protocol today (prior workstreams shipped without it) and the
+        # enroll schema accepts protocol_version, so this stays additive/minimal.
+        "protocol_version": "1",
+    }
+    try:
+        body["hostname"] = socket.gethostname()
+    except Exception:
+        pass
+    # governed_agent_ids / deployment_type / attributes: the SDK has no cheap
+    # source for these today, so they are omitted (all optional in the schema).
+
+    try:
+        with httpx.Client(timeout=5, verify=True) as client:
+            resp = client.post(
+                f"{_connection.target}/public/v1/governance/enroll",
+                json=body,
+                headers=_connection.headers,
+            )
+    except Exception:
+        logger.debug("governance enroll transient error (ignored)", exc_info=True)
+        return None
+
+    code = resp.status_code
+    if 200 <= code < 300:
+        try:
+            data: dict[str, Any] = resp.json()
+        except Exception:
+            return None
+        logger.info(
+            "Governance enroll OK: instance_id=%s fail_mode=%s",
+            data.get("instance_id"),
+            data.get("fail_mode"),
+        )
+        return data
+    if 400 <= code < 500:
+        # Terminal (incl. 403 = domain not entitled to connected_state_plane, and
+        # 404 = mock/older plane without the endpoint). Drop & continue silently.
+        logger.debug("governance enroll rejected HTTP %d (terminal, ignored)", code)
+        return None
+    logger.debug("governance enroll HTTP %d (ignored)", code)
+    return None
+
+
 async def decide(tool_name: str, tool_input: dict[str, Any], agent_id: str) -> dict[str, Any]:
     """POST /policy/decide → ``{decision, approval_request_id?, reason?}``."""
     return await _post(
@@ -136,6 +212,25 @@ async def gate_tool_call(
     """
     from fastaiagent.chain.interrupt import _resume_value, interrupt
     from fastaiagent.client import _connection
+
+    # WS4 opt-in fail-closed: when the operator has opted in (fail_mode="closed")
+    # AND this agent is governed (agent_id set) AND we're connected but the policy
+    # cache is missing (the plane was unreachable at connect, so governance can't
+    # be evaluated), refuse rather than run ungoverned. Default fail_mode="open"
+    # skips this entirely => the existing fail-open early-return below is unchanged.
+    # This does NOT weaken the decide()-error fail-closed path further down (that
+    # stays as shipped). When the cache IS present, this is skipped and normal
+    # policy_matches -> decide() gating runs.
+    if (
+        getattr(_connection, "governance_fail_mode", "open") == "closed"
+        and agent_id
+        and _connection.is_connected
+        and getattr(_connection, "policy_cache", None) is None
+    ):
+        logger.warning(
+            "fail-closed: governance unavailable (no cached policy); refusing %r", tool_name
+        )
+        return "Refused: fail-closed mode — governance unavailable for this run"
 
     # Governance is opt-in per agent: without a platform ``agent_id`` we can't make
     # a ``/policy/decide`` call the plane will accept (it FK-validates the agent),
