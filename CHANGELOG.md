@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.31.0] - 2026-06-28
+
+### Changed
+
+- **Separate infrastructure failures from agent-quality failures in the
+  trace→eval→optimize path.** "Optimize on your traces" (AutoLLM) now acts only on
+  agent-attributable failures, not infra failures (endpoint 500, timeout, network/
+  DB/auth error) the agent can't fix.
+  - `curate_from_traces` no longer curates a *gold* case from an
+    infrastructure-errored run. New `exclude_infra_errors` arg: `"agent"` (default)
+    drops a run only when the agent produced no usable output — the reliable signal,
+    keeping runs where a tool errored but the agent recovered cleanly; `"trace"`
+    additionally drops any run whose trace carries an error-status span. The
+    `guardrail`/`failed` filters are unaffected.
+  - `curate_from_traces` returns a `CuratedDataset` (a `list` subclass — drop-in)
+    that surfaces coverage: `.infra_excluded`, `.emitted`, `.coverage_summary()`, so
+    a high drop rate ("20 clean, 200 dropped as errored") is visible, not silent.
+  - Eval scoring guard: when an agent run infra-fails *during* scoring, the case is
+    recorded as **errored** (new `EvalCaseRecord.error`) instead of scored as a
+    spurious `passed=False`, and the hardening/optimize proposer view skips errored
+    cases — so infra noise can't masquerade as a prompt fault. A `None` output is
+    coerced to `""` rather than crashing the scorers.
+  - Non-breaking: hand-authored datasets and clean traces behave as before; no new
+    scoring path, `score_candidate`/CONTRACT 1 untouched.
+
 ## [1.30.0] - 2026-06-28
 
 ### Added

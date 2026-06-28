@@ -24,6 +24,15 @@ data, end to end in one SDK. A runnable, real-LLM walkthrough lives in
     is the Enterprise complete-loop capability — the `score_candidate` seam is its
     drop-in point.
 
+!!! note "Optimizing on your traces = agent-attributable cases only"
+    When you build the eval set from traces
+    ([curation](curation.md)), AutoLLM optimizes only on **agent-quality** failures,
+    not infrastructure failures: a run that infra-errored (endpoint 500, timeout)
+    and produced no usable output is dropped, not curated as a gold target, and a
+    candidate run that infra-fails *during* scoring is recorded as errored rather
+    than scored as a spurious miss. So the optimizer never chases a fault the agent
+    can't fix.
+
 ## Quickstart
 
 ```python

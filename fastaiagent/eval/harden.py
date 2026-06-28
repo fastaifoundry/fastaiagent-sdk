@@ -98,6 +98,10 @@ def _failures_text(results: Any) -> tuple[str, int]:
         blocks = []
         count = 0
         for c in cases:
+            # An infrastructure-errored case is not an agent-quality failure — never
+            # feed it to the proposer (it would chase a fault the agent can't fix).
+            if getattr(c, "error", None):
+                continue
             failed = [n for n, d in (c.per_scorer or {}).items() if not d.get("passed", True)]
             if not failed:
                 continue

@@ -120,12 +120,29 @@ async def aevaluate(
                 if asyncio.iscoroutine(output):
                     output = await output
                 if hasattr(output, "output"):
-                    output_text = output.output
+                    out_val = output.output
                 else:
-                    output_text = str(output)
+                    out_val = output
+                # Coerce a missing output to "" so scorers don't crash on None;
+                # preserve any real (possibly non-str) output unchanged.
+                output_text = "" if out_val is None else out_val
                 trace_id = getattr(output, "trace_id", None)
             except Exception as e:
-                output_text = f"Error: {e}"
+                # Infrastructure failure DURING scoring (provider 500, timeout,
+                # network/auth error) is NOT an agent-quality miss. Record the case
+                # as errored (non-signal) and do not score it — so it can't count as
+                # a failure the optimizer would try to "fix".
+                results.add_case(
+                    EvalCaseRecord(
+                        input=input_text,
+                        expected_output=expected,
+                        actual_output=None,
+                        trace_id=None,
+                        per_scorer={},
+                        error=str(e)[:500],
+                    )
+                )
+                return
 
             # Score
             per_scorer: dict[str, dict[str, Any]] = {}

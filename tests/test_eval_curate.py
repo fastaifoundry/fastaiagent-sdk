@@ -244,6 +244,55 @@ def test_invalid_args_raise(isolated_local_db: Any) -> None:
         curate_from_traces(filter="bogus")
     with pytest.raises(ValueError):
         curate_from_traces(dedup_by="bogus")
+    with pytest.raises(ValueError):
+        curate_from_traces(exclude_infra_errors="bogus")
+
+
+# --------------------------------------------------------------------------- #
+# Infrastructure-error exclusion (don't curate gold from a crashed run)
+# --------------------------------------------------------------------------- #
+
+
+def test_all_excludes_infra_errored_run(isolated_local_db: Any) -> None:
+    """A run that produced no usable output is dropped from the gold set; a clean
+    run is kept, and the drop count is surfaced on the returned dataset."""
+    db = _open_db()
+    clean = uuid.uuid4().hex
+    errored = uuid.uuid4().hex
+    _span(db, clean, "agent.a", _agent_attrs("a", "good q", "good answer"))
+    # Infra-errored: agent captured input but produced NO output, and a span
+    # carries an error status (corroborating the infra failure).
+    _span(db, errored, "agent.a", {"agent.name": "a", "agent.input": "boom"})  # no agent.output
+    _span(db, errored, "llm.call", {"k": "v"}, parent="r", status="ERROR")
+    db.close()
+
+    items = curate_from_traces(filter="all")
+    assert [it["input"] for it in items] == ["good q"]  # errored run dropped
+    assert items.infra_excluded == 1
+    assert items.emitted == 1
+    assert "1 dropped as infra-errored" in items.coverage_summary()
+
+
+def test_tool_errored_but_agent_recovered_is_kept_under_agent_mode(isolated_local_db: Any) -> None:
+    """The 'recovered = good signal' guarantee: a trace where a tool errored but
+    the agent still produced a clean answer is KEPT under the default ("agent")
+    mode, and only dropped under the strict ("trace") mode. This test exists to
+    stop a future refactor from quietly turning A into B."""
+    db = _open_db()
+    tid = uuid.uuid4().hex
+    _span(db, tid, "agent.a", _agent_attrs("a", "q", "clean recovered answer"))
+    _span(db, tid, "tool.x", {"k": "v"}, parent="r", status="ERROR")  # tool failed; agent recovered
+    db.close()
+
+    # Default A — keyed on agent-output presence → the clean answer is kept.
+    kept = curate_from_traces(filter="all")
+    assert [it["input"] for it in kept] == ["q"]
+    assert kept.infra_excluded == 0
+
+    # Strict B — any error-status span drops the run.
+    strict = curate_from_traces(filter="all", exclude_infra_errors="trace")
+    assert list(strict) == []
+    assert strict.infra_excluded == 1
 
 
 # --------------------------------------------------------------------------- #
