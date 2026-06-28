@@ -6,7 +6,14 @@ Real SQLite, real FastAPI, no mocks. Covers:
 * ``OptimizationReport.persist_local`` round-trips a run + iteration rows,
 * the optimize-level ``persist`` flag gates writes (False writes nothing),
 * the ``/api/optimizes`` list + detail endpoints return a persisted run whose
-  iterations link to the real ``eval_runs`` rows each candidate produced.
+  iterations link to the real ``eval_runs`` rows each candidate produced,
+* the 14 -> 15 migration is **non-breaking** on a populated DB (existing
+  ``eval_runs`` data survives the upgrade).
+
+No mocks: a real SQLite file and real FastAPI; the ``evaluate`` calls drive a
+plain Python ``agent_fn`` (not an LLM) so these stay deterministic and hermetic.
+The **real-LLM** loop→persistence path is covered by
+``tests/e2e/test_optimize_e2e.py::test_optimize_persists_run_to_local_db``.
 """
 
 from __future__ import annotations
@@ -15,6 +22,7 @@ from pathlib import Path
 
 import pytest
 
+from fastaiagent._internal.storage import SQLiteHelper
 from fastaiagent.eval.evaluate import evaluate
 from fastaiagent.eval.results import EvalResults
 from fastaiagent.optimize.candidate import Candidate, CandidateScore
@@ -246,3 +254,49 @@ def test_list_filters_by_agent(temp_dir: Path) -> None:
     only_kyc = client.get("/api/optimizes", params={"agent": "kyc"}).json()
     assert only_kyc["total"] == 1
     assert {r["agent_name"] for r in only_kyc["rows"]} == {"kyc"}
+
+
+# ── Non-breaking upgrade: populated v14 DB → v15 ─────────────────────────────
+
+
+def test_migration_v15_is_non_breaking_on_populated_db(temp_dir: Path) -> None:
+    """Upgrading an existing v14 database to v15 only ADDS the optimize_* tables —
+    pre-existing data (an ``eval_runs`` row) survives untouched. Proves the
+    migration is additive, not breaking."""
+    db_path = temp_dir / "legacy.db"
+
+    # Simulate a populated pre-v15 install: an eval_runs row at user_version=14.
+    db = SQLiteHelper(str(db_path))
+    db.execute(
+        """CREATE TABLE eval_runs (
+            run_id TEXT PRIMARY KEY, run_name TEXT, dataset_name TEXT,
+            agent_name TEXT, pass_rate REAL, project_id TEXT NOT NULL DEFAULT ''
+        )"""
+    )
+    db.execute(
+        "INSERT INTO eval_runs (run_id, run_name, agent_name, pass_rate) "
+        "VALUES ('keep-me', 'pre-existing', 'old-agent', 0.9)"
+    )
+    db.execute("PRAGMA user_version = 14")
+    db.close()
+
+    # Open via the migrator → applies v15 only.
+    db = init_local_db(db_path)
+    try:
+        assert int(next(iter(db.fetchone("PRAGMA user_version").values()))) == 15
+        # New tables exist...
+        tables = {
+            r["name"]
+            for r in db.fetchall(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name IN ('optimize_runs','optimize_iterations')"
+            )
+        }
+        assert tables == {"optimize_runs", "optimize_iterations"}
+        # ...and the pre-existing eval data is untouched.
+        row = db.fetchone("SELECT * FROM eval_runs WHERE run_id = 'keep-me'")
+        assert row is not None
+        assert row["run_name"] == "pre-existing"
+        assert row["pass_rate"] == 0.9
+    finally:
+        db.close()

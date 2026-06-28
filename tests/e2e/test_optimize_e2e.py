@@ -139,3 +139,65 @@ def test_optimize_memory_lever_preserves_fact_store(tmp_path, monkeypatch):
     assert before == after  # optimize never mutates the learned-fact store (audit chain intact)
     assert any(p.lever == "memory" and not p.skipped for p in report.trajectory)  # lever ran
     assert report.best.score >= report.baseline.score - 1e-9
+
+
+def test_optimize_persists_run_to_local_db(tmp_path, monkeypatch):
+    """Real-LLM loop with persist=True lands in local.db and links each iteration
+    to the eval_runs row it produced — the AutoLLM persistence + UI data path.
+
+    Guards the full aoptimize → persist_local → eval_run_id chain on a *live*
+    run (no mocking), which the hand-built round-trip unit test can't reach.
+    """
+    from fastaiagent._internal.config import reset_config
+    from fastaiagent.ui.db import init_local_db
+
+    db_path = tmp_path / ".fastaiagent" / "local.db"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("FASTAIAGENT_LOCAL_DB", str(db_path))
+    reset_config()
+    try:
+        init_local_db(db_path).close()
+        report = optimize(
+            _agent(),
+            _CASES,
+            [ContainsCI()],
+            config=OptimizeConfig(
+                levers=("instructions",),
+                max_iterations=2,
+                patience=2,
+                candidates_per_iteration=2,
+                seed=0,
+            ),
+            run_name="autollm-e2e",
+            persist=True,
+        )
+        assert report.run_id, "a persisted run must stash its run_id"
+
+        db = init_local_db(db_path)
+        try:
+            run = db.fetchone(
+                "SELECT * FROM optimize_runs WHERE run_id = ?", (report.run_id,)
+            )
+            assert run is not None
+            assert run["agent_name"] == "capitals"
+            assert run["run_name"] == "autollm-e2e"
+
+            iters = db.fetchall(
+                "SELECT * FROM optimize_iterations WHERE run_id = ? ORDER BY ordinal",
+                (report.run_id,),
+            )
+            assert len(iters) == len(report.trajectory) >= 1
+            # Every scored (non-skipped) iteration links to a REAL eval_runs row —
+            # the eval the live loop actually ran for that candidate.
+            linked = [it for it in iters if it["eval_run_id"]]
+            assert linked, "scored iterations must carry an eval_run_id"
+            for it in linked:
+                ev = db.fetchone(
+                    "SELECT run_id FROM eval_runs WHERE run_id = ?", (it["eval_run_id"],)
+                )
+                assert ev is not None, "iteration eval_run_id must resolve to a real eval_runs row"
+        finally:
+            db.close()
+    finally:
+        monkeypatch.delenv("FASTAIAGENT_LOCAL_DB", raising=False)
+        reset_config()
