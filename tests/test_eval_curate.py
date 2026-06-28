@@ -295,6 +295,25 @@ def test_tool_errored_but_agent_recovered_is_kept_under_agent_mode(isolated_loca
     assert strict.infra_excluded == 1
 
 
+def test_dataset_from_traces_surfaces_coverage(isolated_local_db: Any) -> None:
+    """The Dataset wrapper exposes curation coverage via ``ds.curation`` so the
+    drop count is visible on the headline API, not just curate_from_traces."""
+    db = _open_db()
+    clean = uuid.uuid4().hex
+    errored = uuid.uuid4().hex
+    _span(db, clean, "agent.a", _agent_attrs("a", "good q", "good answer"))
+    _span(db, errored, "agent.a", {"agent.name": "a", "agent.input": "boom"})  # no output
+    db.close()
+
+    ds = Dataset.from_traces(filter="all")
+    assert len(ds) == 1
+    assert ds.curation is not None
+    assert ds.curation.infra_excluded == 1
+    assert ds.curation.emitted == 1
+    # A Dataset from a plain list has no curation metadata.
+    assert Dataset.from_list([{"input": "x", "expected_output": "y"}]).curation is None
+
+
 # --------------------------------------------------------------------------- #
 # Round-trip + real-Agent contract
 # --------------------------------------------------------------------------- #

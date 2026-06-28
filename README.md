@@ -346,7 +346,11 @@ for the walkthrough.
 `fastaiagent eval curate --filter guardrail --out fixme.jsonl` turn captured agent
 traces into dataset cases — every `agent.<name>` span (even nested inside a
 chain/supervisor/swarm) becomes one case. Good traces become gold cases; guardrail
-or failed traces come back marked `needs_review` for a human to fill in. See
+or failed traces come back marked `needs_review` for a human to fill in.
+**Infrastructure-errored runs** (endpoint 500, timeout — the agent produced no
+usable output) are dropped rather than curated as gold, so AutoLLM optimizes only
+on agent-attributable failures; the curated set reports how many were dropped
+(`ds.curation.coverage_summary()`). See
 [docs/evaluation/curation.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/evaluation/curation.md)
 and [examples/80_curate_from_traces.py](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/80_curate_from_traces.py).
 

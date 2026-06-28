@@ -76,6 +76,11 @@ class Dataset:
 
     def __init__(self, items: list[dict[str, Any]]):
         self._items = items
+        # Set by :meth:`from_traces` to the ``CuratedDataset`` it built, so callers
+        # can read curation coverage (e.g. ``ds.curation.infra_excluded`` /
+        # ``ds.curation.coverage_summary()``). ``None`` for datasets from other
+        # sources (jsonl/csv/list).
+        self.curation: Any = None
 
     @classmethod
     def from_jsonl(cls, path: str | Path) -> Dataset:
@@ -125,7 +130,10 @@ class Dataset:
         """
         from fastaiagent.eval.curate import curate_from_traces
 
-        return cls(curate_from_traces(**kwargs))
+        curated = curate_from_traces(**kwargs)
+        ds = cls(curated)
+        ds.curation = curated  # coverage: .infra_excluded / .emitted / .coverage_summary()
+        return ds
 
     def __iter__(self) -> Iterator[dict[str, Any]]:
         return iter(self._items)
