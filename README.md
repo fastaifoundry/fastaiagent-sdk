@@ -466,6 +466,27 @@ the existing scorer set. `harden()` is recommend-only — it never mutates your 
 See [docs/evaluation/agent-hardening.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/evaluation/agent-hardening.md)
 and [examples/74_agent_hardening.py](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/74_agent_hardening.py).
 
+### AutoLLM — actually close the loop
+
+Where `harden()` *recommends*, **`optimize()` (AutoLLM)** *applies and keeps the best*:
+it proposes a prompt rewrite, re-evaluates on a held-out split, keeps the winner, and
+holdout-guards it against overfitting — eval-driven prompt optimization grounded in
+your own data. Greedy coordinate ascent + a metaprompt proposer (the Promptim/DSPy
+family; MIPRO-style joint search is a documented `strategy="mipro"` upgrade path).
+
+```python
+from fastaiagent import optimize, OptimizeConfig
+
+report = optimize(agent, dataset, ["exact_match"], persist=True)
+print(report.summary())                 # baseline → accepted steps → holdout-guarded winner
+tuned = report.apply_to(agent)          # a fresh agent with the winning prompt
+```
+
+Opt in to the **few-shot** and **learned-memory** levers via `OptimizeConfig(levers=…)`.
+Runs persist to the Local UI under **AutoLLM** (trajectory + drill-down into each
+candidate's eval run). See [docs/evaluation/optimization.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/evaluation/optimization.md)
+and [examples/autollm/](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/autollm/).
+
 ## Responsible AI — the Trust Layer
 
 The one question every enterprise review asks: *can you stop it hallucinating,
