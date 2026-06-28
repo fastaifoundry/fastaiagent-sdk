@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.32.0] - 2026-06-29
+
+### Added
+
+- **Configurable TLS verification on `LLMClient`.** New `verify` parameter
+  (`bool | str | ssl.SSLContext`, default `True`) controls certificate
+  verification for all provider HTTP calls — pass a CA-bundle path to trust a
+  corporate gateway certificate, or `verify=False` to disable verification
+  (development only; emits a security warning). Unblocks providers behind a
+  corporate gateway/proxy such as Azure OpenAI on Azure ML. Also honors the
+  `FASTAIAGENT_LLM_VERIFY` environment variable (`false`/`true`/path) for
+  code-free configuration (e.g. an Azure ML `score.py` deployment).
+
 ## [1.31.0] - 2026-06-28
 
 ### Changed

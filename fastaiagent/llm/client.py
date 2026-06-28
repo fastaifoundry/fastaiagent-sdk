@@ -7,7 +7,9 @@ import json as _json
 import logging
 import os
 import re
+import ssl
 import time
+import warnings
 from collections.abc import AsyncGenerator
 from contextvars import ContextVar
 from typing import Any
@@ -221,6 +223,7 @@ class LLMClient:
         pdf_mode: str = "auto",
         max_pdf_pages: int = 20,
         max_image_size_mb: float | None = None,
+        verify: bool | str | ssl.SSLContext = True,
         **kwargs: Any,
     ):
         # Preset lookup is opt-in: built-in providers (openai/anthropic/
@@ -251,8 +254,63 @@ class LLMClient:
         self.pdf_mode = pdf_mode
         self.max_pdf_pages = max_pdf_pages
         self.max_image_size_mb = max_image_size_mb
+        self._verify = self._resolve_verify(verify)
         self._extra = kwargs
         self._preset = preset
+
+    @staticmethod
+    def _resolve_verify(
+        verify: bool | str | ssl.SSLContext,
+    ) -> bool | ssl.SSLContext:
+        """Normalise the ``verify`` argument into an httpx-compatible value.
+
+        Accepts the same shapes a user would expect from httpx, plus a CA-bundle
+        path string for convenience:
+
+        - ``True`` / ``False`` — enable / disable TLS verification.
+        - ``ssl.SSLContext`` — a fully custom context (advanced).
+        - ``str`` — path to a PEM CA bundle; converted to an ``SSLContext`` via
+          :func:`ssl.create_default_context` because httpx 0.28 deprecated
+          passing a path string directly to ``verify``.
+
+        When ``verify`` is left at its default (``True``), the
+        ``FASTAIAGENT_LLM_VERIFY`` environment variable is consulted so the
+        setting can be configured without code (e.g. via an Azure ML deployment's
+        ``environment_variables``). It accepts ``"false"``/``"0"``/``"true"``/
+        ``"1"`` or a CA-bundle path.
+        """
+        if verify is True:
+            env = os.environ.get("FASTAIAGENT_LLM_VERIFY")
+            if env:
+                lowered = env.strip().lower()
+                if lowered in ("false", "0", "no"):
+                    verify = False
+                elif lowered in ("true", "1", "yes"):
+                    verify = True
+                else:
+                    verify = env  # treat as a CA-bundle path
+
+        if isinstance(verify, str):
+            return ssl.create_default_context(cafile=verify)
+        if verify is False:
+            warnings.warn(
+                "LLMClient TLS verification is disabled (verify=False); LLM "
+                "traffic is vulnerable to interception. Prefer verify='<path to "
+                "CA bundle>' to trust a corporate gateway certificate instead.",
+                stacklevel=3,
+            )
+        return verify
+
+    def _new_async_client(self, **kw: Any) -> Any:
+        """Create an ``httpx.AsyncClient`` honoring this client's TLS ``verify``.
+
+        Centralises client construction so every provider HTTP path shares the
+        same timeout and verification settings.
+        """
+        import httpx
+
+        kw.setdefault("timeout", 120)
+        return httpx.AsyncClient(verify=self._verify, **kw)
 
     def _capability(self, name: str, default: object = None) -> object:
         """Look up a capability flag from the registered preset, if any."""
@@ -715,12 +773,10 @@ class LLMClient:
         self, messages: list[Message], tools: list[dict[str, Any]] | None = None, **kwargs: Any
     ) -> LLMResponse:
         """Call OpenAI-compatible endpoint."""
-        import httpx
-
         body, headers = self._build_openai_body(messages, tools, **kwargs)
 
         url = f"{self.base_url.rstrip('/')}/chat/completions"
-        async with httpx.AsyncClient(timeout=120, verify=True) as client:
+        async with self._new_async_client() as client:
             resp = await client.post(url, json=body, headers=headers)
             if resp.status_code != 200:
                 raise LLMProviderError(
@@ -874,13 +930,11 @@ class LLMClient:
         self, messages: list[Message], tools: list[dict[str, Any]] | None = None, **kwargs: Any
     ) -> LLMResponse:
         """Call Anthropic Messages API."""
-        import httpx
-
         body, headers = self._build_anthropic_body(messages, tools, **kwargs)
         response_format = kwargs.get("response_format")
 
         url = f"{self.base_url.rstrip('/')}/messages"
-        async with httpx.AsyncClient(timeout=120, verify=True) as client:
+        async with self._new_async_client() as client:
             resp = await client.post(url, json=body, headers=headers)
             if resp.status_code != 200:
                 raise LLMProviderError(
@@ -939,8 +993,6 @@ class LLMClient:
         self, messages: list[Message], tools: list[dict[str, Any]] | None = None, **kwargs: Any
     ) -> LLMResponse:
         """Call Ollama API."""
-        import httpx
-
         msg_dicts = [m.to_provider_dict("ollama", **self._provider_dict_kwargs()) for m in messages]
         body: dict[str, Any] = {
             "model": self.model,
@@ -982,7 +1034,7 @@ class LLMClient:
                 body["format"] = fmt
 
         url = f"{self.base_url.rstrip('/')}/api/chat"
-        async with httpx.AsyncClient(timeout=120, verify=True) as client:
+        async with self._new_async_client() as client:
             resp = await client.post(url, json=body)
             if resp.status_code != 200:
                 raise LLMProviderError(
@@ -1111,15 +1163,13 @@ class LLMClient:
         self, messages: list[Message], tools: list[dict[str, Any]] | None = None, **kwargs: Any
     ) -> AsyncGenerator[StreamEvent, None]:
         """Stream from OpenAI-compatible endpoint via SSE."""
-        import httpx
-
         body, headers = self._build_openai_body(messages, tools, stream=True, **kwargs)
 
         url = f"{self.base_url.rstrip('/')}/chat/completions"
         # Accumulate tool call arguments across chunks
         tool_calls_acc: dict[int, dict[str, Any]] = {}
 
-        async with httpx.AsyncClient(timeout=120, verify=True) as client:
+        async with self._new_async_client() as client:
             async with client.stream("POST", url, json=body, headers=headers) as resp:
                 if resp.status_code != 200:
                     body_text = await resp.aread()
@@ -1189,8 +1239,6 @@ class LLMClient:
         self, messages: list[Message], tools: list[dict[str, Any]] | None = None, **kwargs: Any
     ) -> AsyncGenerator[StreamEvent, None]:
         """Stream from Anthropic Messages API via SSE."""
-        import httpx
-
         body, headers = self._build_anthropic_body(messages, tools, stream=True, **kwargs)
 
         url = f"{self.base_url.rstrip('/')}/messages"
@@ -1202,7 +1250,7 @@ class LLMClient:
         prompt_tokens = 0
         completion_tokens = 0
 
-        async with httpx.AsyncClient(timeout=120, verify=True) as client:
+        async with self._new_async_client() as client:
             async with client.stream("POST", url, json=body, headers=headers) as resp:
                 if resp.status_code != 200:
                     body_text = await resp.aread()
@@ -1273,8 +1321,6 @@ class LLMClient:
         self, messages: list[Message], tools: list[dict[str, Any]] | None = None, **kwargs: Any
     ) -> AsyncGenerator[StreamEvent, None]:
         """Stream from Ollama API via newline-delimited JSON."""
-        import httpx
-
         msg_dicts = [m.to_provider_dict("ollama", **self._provider_dict_kwargs()) for m in messages]
         body: dict[str, Any] = {
             "model": self.model,
@@ -1319,7 +1365,7 @@ class LLMClient:
         prompt_tokens = 0
         completion_tokens = 0
 
-        async with httpx.AsyncClient(timeout=120, verify=True) as client:
+        async with self._new_async_client() as client:
             async with client.stream("POST", url, json=body) as resp:
                 if resp.status_code != 200:
                     body_text = await resp.aread()
