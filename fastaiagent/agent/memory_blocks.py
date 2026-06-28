@@ -7,9 +7,10 @@ A ``MemoryBlock`` observes every message passing through an agent
 sliding-window history with persistent facts, summaries, and semantic
 recall over past conversations.
 
-Four block types ship:
+Block types that ship:
 
 - :class:`StaticBlock`          — a fixed system-level fact, injected every turn
+- :class:`FewShotBlock`         — few-shot input/output exemplars (optimize's KB lever)
 - :class:`SummaryBlock`         — rolling LLM-generated summary of older turns
 - :class:`VectorBlock`          — semantic recall over past messages via a VectorStore
 - :class:`FactExtractionBlock`  — structured-output LLM extracts facts from each turn
@@ -29,6 +30,7 @@ import logging
 import math
 import time
 import uuid
+import warnings
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -44,9 +46,20 @@ if TYPE_CHECKING:
 _log = logging.getLogger(__name__)
 
 
+class MemoryIsolationError(RuntimeError):
+    """Raised by :meth:`MemoryBlock.isolated_copy` for blocks that can't be
+    isolated per candidate — currently :class:`VectorBlock`, which upserts to an
+    external ``VectorStore`` during a run, so sharing the handle would bleed one
+    candidate's turns into another's retrieval. Callers (e.g.
+    ``fastaiagent.optimize``) catch this to refuse, or opt in to sharing.
+    """
+
+
 __all__ = [
     "FactExtractionBlock",
+    "FewShotBlock",
     "MemoryBlock",
+    "MemoryIsolationError",
     "PersistentFactBlock",
     "PlaneFactBlock",
     "StaticBlock",
@@ -80,6 +93,29 @@ class MemoryBlock(ABC):
         blocks (e.g. :class:`VectorBlock`).
         """
 
+    def isolated_copy(self) -> MemoryBlock:
+        """Return a copy safe to use in a single isolated evaluation.
+
+        Used by ``fastaiagent.optimize`` to give every candidate its own memory
+        so one candidate's turns never bleed into another's. The contract is
+        **share the external handle, reset in-process state**: a block holding an
+        ``llm`` / store handle passes it through (deepcopy would duplicate live
+        handles) but starts with empty per-conversation state.
+
+        This concrete default **warns and shares ``self``** so existing and
+        third-party subclasses keep working without edits — but stateful blocks
+        should override it (the shipped blocks do). A block that writes to an
+        *external* store during a run should raise :class:`MemoryIsolationError`
+        instead (see :class:`VectorBlock`).
+        """
+        warnings.warn(
+            f"{type(self).__name__} has no isolated_copy() override; it is shared "
+            "across candidate evaluations, which may bleed state. Override "
+            "isolated_copy() to share external handles but reset in-process state.",
+            stacklevel=2,
+        )
+        return self
+
     def save(self, path: Path) -> None:
         """Persist block state. Default: no-op."""
 
@@ -111,6 +147,54 @@ class StaticBlock(MemoryBlock):
         if not self.text:
             return []
         return [SystemMessage(self.text)]
+
+    def isolated_copy(self) -> MemoryBlock:
+        # Stateless — a fresh instance with the same text is fully isolated.
+        return StaticBlock(self.text, self.name)
+
+
+# ---------------------------------------------------------------------------
+# FewShotBlock
+# ---------------------------------------------------------------------------
+
+
+class FewShotBlock(MemoryBlock):
+    """Inject few-shot input/output exemplars as a single SystemMessage.
+
+    Mirrors :class:`StaticBlock` (read-only, stateless) but renders a list of
+    ``{"input", "output"}`` demos as worked examples ahead of the conversation —
+    a shape :class:`PersistentFactBlock` (bullet-list of facts) can't express.
+    Produced by ``fastaiagent.optimize``'s few-shot lever (``bootstrap_demos``).
+
+    Example::
+
+        FewShotBlock([{"input": "Capital of France?", "output": "Paris"}])
+    """
+
+    def __init__(
+        self,
+        demos: list[dict[str, Any]],
+        name: str = "fewshot",
+        header: str = "Here are examples of good responses:",
+    ):
+        self.demos = list(demos)
+        self.name = name
+        self.header = header
+
+    def on_message(self, message: Message) -> None:
+        return
+
+    def render(self, query: str) -> list[Message]:
+        if not self.demos:
+            return []
+        body = "\n\n".join(
+            f"Input: {d.get('input', '')}\nResponse: {d.get('output', '')}" for d in self.demos
+        )
+        return [SystemMessage(f"{self.header}\n\n{body}")]
+
+    def isolated_copy(self) -> MemoryBlock:
+        # Read-only demos — a fresh instance is fully isolated.
+        return FewShotBlock(self.demos, name=self.name, header=self.header)
 
 
 # ---------------------------------------------------------------------------
@@ -153,6 +237,15 @@ class SummaryBlock(MemoryBlock):
         self._messages_seen: int = 0
         self._summary: str = ""
         self._archive: list[Message] = []
+
+    def isolated_copy(self) -> MemoryBlock:
+        # Share the llm handle; reset in-process summary state per candidate.
+        return SummaryBlock(
+            llm=self.llm,
+            keep_last=self.keep_last,
+            summarize_every=self.summarize_every,
+            max_chars=self.max_chars,
+        )
 
     def on_message(self, message: Message) -> None:
         self._archive.append(message)
@@ -290,6 +383,18 @@ class VectorBlock(MemoryBlock):
         self.importance_weight = importance_weight
         self.recency_half_life_seconds = recency_half_life_seconds
 
+    def isolated_copy(self) -> MemoryBlock:
+        # VectorBlock upserts to its external store in on_message, so neither
+        # sharing the handle (candidates bleed) nor deep-copying the store
+        # (cost / un-clonable remote stores) is safe. Refuse — the optimize
+        # layer turns this into a clear error or an explicit opt-in.
+        raise MemoryIsolationError(
+            "VectorBlock writes to an external VectorStore during a run, so it "
+            "can't be isolated per candidate. Remove it to optimize, or pass "
+            "allow_writable_memory=True to share the store (accepting that "
+            "candidate runs write to it)."
+        )
+
     def _make_chunk(self, message: Message) -> Chunk | None:
         from fastaiagent.kb.chunking import Chunk
 
@@ -328,9 +433,7 @@ class VectorBlock(MemoryBlock):
         except Exception as err:
             _log.warning("VectorBlock failed to index message: %s", err)
 
-    def _score_hits(
-        self, hits: list[tuple[Chunk, float]]
-    ) -> list[tuple[Chunk, float]]:
+    def _score_hits(self, hits: list[tuple[Chunk, float]]) -> list[tuple[Chunk, float]]:
         """Apply optional recency + importance weights on top of similarity.
 
         Returns ``(chunk, final_score)`` sorted by ``final_score`` descending.
@@ -379,8 +482,7 @@ class VectorBlock(MemoryBlock):
             return []
         scored = self._score_hits(list(hits))
         relevant = [
-            c for c, _ in scored
-            if c.metadata.get("namespace", self.namespace) == self.namespace
+            c for c, _ in scored if c.metadata.get("namespace", self.namespace) == self.namespace
         ]
         if not relevant:
             return []
@@ -424,6 +526,12 @@ class FactExtractionBlock(MemoryBlock):
         self.extract_every = extract_every
         self._messages_seen = 0
         self._facts: list[str] = []
+
+    def isolated_copy(self) -> MemoryBlock:
+        # Share the llm handle; reset extracted-facts state per candidate.
+        return FactExtractionBlock(
+            llm=self.llm, max_facts=self.max_facts, extract_every=self.extract_every
+        )
 
     def on_message(self, message: Message) -> None:
         if message.role not in (MessageRole.user, MessageRole.assistant):
@@ -563,9 +671,7 @@ class PersistentFactBlock(MemoryBlock):
         recency_half_life_seconds: float = 86400.0,
     ):
         if scope not in ("user", "project", "agent"):
-            raise ValueError(
-                f"scope must be one of user|project|agent, got {scope!r}"
-            )
+            raise ValueError(f"scope must be one of user|project|agent, got {scope!r}")
         if max_facts < 1:
             raise ValueError("max_facts must be >= 1")
         if refresh_every < 1:
@@ -590,6 +696,21 @@ class PersistentFactBlock(MemoryBlock):
         self._store = store  # may be None — lazy init in render()
         self._cached: list[str] | None = None
         self._renders_since_refresh = 0
+
+    def isolated_copy(self) -> MemoryBlock:
+        # Read-only at run time (render() only calls list_active). Share the
+        # store handle; reset the per-instance cache.
+        return PersistentFactBlock(
+            scope=self.scope,
+            scope_id=self.scope_id,
+            project_id=self.project_id,
+            max_facts=self.max_facts,
+            store=self._store,
+            refresh_every=self.refresh_every,
+            recency_weight=self.recency_weight,
+            importance_weight=self.importance_weight,
+            recency_half_life_seconds=self.recency_half_life_seconds,
+        )
 
     def on_message(self, message: Message) -> None:
         # Read-only block. The offline ``fastaiagent learn`` CLI is what
@@ -632,9 +753,7 @@ class PersistentFactBlock(MemoryBlock):
             recency = math.exp(-age / self.recency_half_life_seconds)
             importance = float(f.confidence) if f.confidence is not None else 1.0
             score = (
-                sim_w * 1.0
-                + self.recency_weight * recency
-                + self.importance_weight * importance
+                sim_w * 1.0 + self.recency_weight * recency + self.importance_weight * importance
             )
             scored.append((score, f.fact))
         scored.sort(key=lambda x: x[0], reverse=True)
@@ -657,11 +776,7 @@ class PersistentFactBlock(MemoryBlock):
             return []
         bullets = "\n".join(f"- {fact}" for fact in self._cached)
         scope_label = f"{self.scope}:{self.scope_id}" if self.scope_id else self.scope
-        return [
-            SystemMessage(
-                f"Learned facts ({scope_label}):\n{bullets}"
-            )
-        ]
+        return [SystemMessage(f"Learned facts ({scope_label}):\n{bullets}")]
 
 
 # ---------------------------------------------------------------------------
@@ -749,6 +864,19 @@ class PlaneFactBlock(MemoryBlock):
         self._cached: list[str] | None = None
         self._renders_since_refresh = 0
 
+    def isolated_copy(self) -> MemoryBlock:
+        # Read-only at run time (render() only GETs from the plane). Share
+        # config; reset the per-instance cache.
+        return PlaneFactBlock(
+            self.agent_id,
+            category=self.category,
+            max_facts=self.max_facts,
+            query_conditioned=self.query_conditioned,
+            score_threshold=self.score_threshold,
+            refresh_every=self.refresh_every,
+            timeout=self.timeout,
+        )
+
     def on_message(self, message: Message) -> None:
         # Read-only block — facts are produced + curated centrally on the plane.
         return
@@ -786,9 +914,7 @@ class PlaneFactBlock(MemoryBlock):
             return []
         data = resp.json()
         return [
-            f["content"]
-            for f in data.get("facts", [])
-            if isinstance(f, dict) and f.get("content")
+            f["content"] for f in data.get("facts", []) if isinstance(f, dict) and f.get("content")
         ]
 
     def render(self, query: str) -> list[Message]:

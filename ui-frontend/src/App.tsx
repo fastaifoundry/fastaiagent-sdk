@@ -42,6 +42,16 @@ const SimulationDetailPage = lazy(() =>
     default: m.SimulationDetailPage,
   }))
 );
+const OptimizeRunsPage = lazy(() =>
+  import("@/pages/OptimizeRunsPage").then((m) => ({
+    default: m.OptimizeRunsPage,
+  }))
+);
+const OptimizeRunDetailPage = lazy(() =>
+  import("@/pages/OptimizeRunDetailPage").then((m) => ({
+    default: m.OptimizeRunDetailPage,
+  }))
+);
 const PromptsPage = lazy(() =>
   import("@/pages/PromptsPage").then((m) => ({ default: m.PromptsPage }))
 );
@@ -250,6 +260,22 @@ export default function App() {
                 element={
                   <Suspense fallback={<PageFallback />}>
                     <SimulationDetailPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/optimizes"
+                element={
+                  <Suspense fallback={<PageFallback />}>
+                    <OptimizeRunsPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/optimizes/:runId"
+                element={
+                  <Suspense fallback={<PageFallback />}>
+                    <OptimizeRunDetailPage />
                   </Suspense>
                 }
               />

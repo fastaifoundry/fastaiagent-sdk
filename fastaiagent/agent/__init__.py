@@ -5,6 +5,7 @@ from fastaiagent.agent.context import RunContext
 from fastaiagent.agent.memory import AgentMemory, ComposableMemory
 from fastaiagent.agent.memory_blocks import (
     FactExtractionBlock,
+    FewShotBlock,
     MemoryBlock,
     PersistentFactBlock,
     StaticBlock,
@@ -30,6 +31,7 @@ __all__ = [
     "AgentResult",
     "ComposableMemory",
     "FactExtractionBlock",
+    "FewShotBlock",
     "MemoryBlock",
     "MiddlewareContext",
     "PersistentFactBlock",

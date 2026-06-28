@@ -14,7 +14,7 @@ pip install fastaiagent
 
 Runs fully standalone, or connect to the [FastAIAgent Platform](https://fastaiagent.net) for hosted observability, prompt management, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.28.0)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.30.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -465,6 +465,27 @@ New named metrics `task_completion`, `hallucination`, and `reflection_quality` j
 the existing scorer set. `harden()` is recommend-only — it never mutates your agent.
 See [docs/evaluation/agent-hardening.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/evaluation/agent-hardening.md)
 and [examples/74_agent_hardening.py](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/74_agent_hardening.py).
+
+### AutoLLM — actually close the loop
+
+Where `harden()` *recommends*, **`optimize()` (AutoLLM)** *applies and keeps the best*:
+it proposes a prompt rewrite, re-evaluates on a held-out split, keeps the winner, and
+holdout-guards it against overfitting — eval-driven prompt optimization grounded in
+your own data. Greedy coordinate ascent + a metaprompt proposer (the Promptim/DSPy
+family; MIPRO-style joint search is a documented `strategy="mipro"` upgrade path).
+
+```python
+from fastaiagent import optimize, OptimizeConfig
+
+report = optimize(agent, dataset, ["exact_match"], persist=True)
+print(report.summary())                 # baseline → accepted steps → holdout-guarded winner
+tuned = report.apply_to(agent)          # a fresh agent with the winning prompt
+```
+
+Opt in to the **few-shot** and **learned-memory** levers via `OptimizeConfig(levers=…)`.
+Runs persist to the Local UI under **AutoLLM** (trajectory + drill-down into each
+candidate's eval run). See [docs/evaluation/optimization.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/evaluation/optimization.md)
+and [examples/autollm/](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/autollm/).
 
 ## Responsible AI — the Trust Layer
 

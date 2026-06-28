@@ -106,6 +106,11 @@ report.to_dict()
     to apply, then re-run `simulate()` / `evaluate()` to confirm the fixes. Auto-apply
     is a deliberate future step (keeps the agent immutable and the changes reviewable).
 
+!!! tip "Want to close the loop automatically?"
+    [`optimize()`](optimization.md) turns these recommendations into a search: it
+    proposes prompt rewrites, re-evaluates, and keeps the best — gated by a held-out
+    split. `harden()` is the one-shot proposer; `optimize()` is the loop around it.
+
 ## The full loop
 
 ```python

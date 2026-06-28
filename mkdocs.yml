@@ -134,6 +134,7 @@ nav:
       - "Trajectory Scoring": evaluation/trajectory-scoring.md
       - "Session Scoring": evaluation/session-scoring.md
       - "Agent Hardening & Scorecard": evaluation/agent-hardening.md
+      - "AutoLLM": evaluation/optimization.md
       - "Trace Curation": evaluation/curation.md
   - Simulation:
       - simulation/index.md

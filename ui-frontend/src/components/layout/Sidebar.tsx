@@ -12,6 +12,7 @@ import {
   MessagesSquare,
   Play,
   Shield,
+  Sparkles,
   TrendingUp,
 } from "lucide-react";
 import { FastAIAgentLogo } from "@/components/brand/FastAIAgentLogo";
@@ -50,6 +51,7 @@ const SECTIONS: NavSection[] = [
     items: [
       { to: "/evals", label: "Eval Runs", icon: TrendingUp },
       { to: "/simulations", label: "Simulations", icon: MessagesSquare },
+      { to: "/optimizes", label: "AutoLLM", icon: Sparkles },
       { to: "/datasets", label: "Datasets", icon: ListChecks },
     ],
   },

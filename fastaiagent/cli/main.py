@@ -20,6 +20,7 @@ from fastaiagent.cli.runner import runner_app
 from fastaiagent.cli.traces import traces_app
 from fastaiagent.cli.ui import ui_app
 from fastaiagent.learn.cli import learn_app
+from fastaiagent.optimize.cli import optimize_app
 
 app = typer.Typer(
     name="fastaiagent",
@@ -41,6 +42,11 @@ app.add_typer(
     learn_app,
     name="learn",
     help="Extract durable facts from past traces (Trace Learning Loop)",
+)
+app.add_typer(
+    optimize_app,
+    name="optimize",
+    help="Eval-driven prompt optimization (closes the loop harden opens)",
 )
 
 # Top-level connect/disconnect for the common case.

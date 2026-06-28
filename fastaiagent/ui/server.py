@@ -7,14 +7,13 @@ auth file, and ``--no-auth`` flag. ``uvicorn`` then serves it.
 
 from __future__ import annotations
 
+import hmac
 import importlib.resources as resources
 import logging
+import secrets
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
-
-import hmac
-import secrets
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
@@ -42,6 +41,7 @@ from fastaiagent.ui.routes import (
     guardrails,
     kb,
     learned_memory,
+    optimizes,
     overview,
     playground,
     prompts,
@@ -248,6 +248,7 @@ def build_app(
         replay.router,
         evals.router,
         simulations.router,
+        optimizes.router,
         prompts.router,
         guardrails.router,
         agents.router,

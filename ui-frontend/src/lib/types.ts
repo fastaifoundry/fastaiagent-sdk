@@ -315,6 +315,57 @@ export interface EvalCompareResponse {
   cost_delta_usd: number;
 }
 
+// --- Optimize runs (optimize_runs / optimize_iterations) ---
+
+export interface OptimizeRunRow {
+  run_id: string;
+  run_name: string | null;
+  agent_name: string | null;
+  baseline_score: number | null;
+  best_score: number | null;
+  holdout_baseline_score: number | null;
+  holdout_best_score: number | null;
+  reverted: number | null;
+  stopped_reason: string | null;
+  seed: number | null;
+  levers: string[] | null;
+  config: Record<string, unknown> | null;
+  best_candidate: Record<string, unknown> | null;
+  baseline_eval_run_id: string | null;
+  best_eval_run_id: string | null;
+  iteration_count: number | null;
+  started_at: string | null;
+  finished_at: string | null;
+  metadata: Record<string, unknown> | null;
+}
+
+export interface OptimizeIterationRow {
+  iteration_id: string;
+  run_id: string;
+  ordinal: number;
+  iteration: number;
+  lever: string;
+  candidate_id: string;
+  dev_score: number | null;
+  accepted: number | null;
+  skipped: number | null;
+  rationale: string | null;
+  eval_run_id: string | null;
+}
+
+export interface OptimizeRunsPage {
+  rows: OptimizeRunRow[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface OptimizeRunDetail {
+  run: OptimizeRunRow;
+  iterations: OptimizeIterationRow[];
+  total_iterations: number;
+}
+
 // --- Agent simulation (sim_runs / sim_cases) ---
 
 export interface SimulationRunRow {
