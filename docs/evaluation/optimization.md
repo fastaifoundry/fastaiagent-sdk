@@ -31,7 +31,7 @@ data, end to end in one SDK. A runnable, real-LLM walkthrough lives in
     and produced no usable output is dropped, not curated as a gold target, and a
     candidate run that infra-fails *during* scoring is recorded as errored rather
     than scored as a spurious miss. So the optimizer never chases a fault the agent
-    can't fix.
+    can't fix. Runnable walkthrough: `examples/80_curate_from_traces.py`.
 
 ## Quickstart
 
