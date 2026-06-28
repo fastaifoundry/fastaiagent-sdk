@@ -53,6 +53,54 @@ Set the matching env var (e.g. `export GROQ_API_KEY=…`) and you're done.
   without native enforcement.
 - **✗** — not supported; the field is dropped silently.
 
+## TLS verification (corporate gateways, self-signed certs)
+
+By default `LLMClient` verifies the provider's TLS certificate against the
+public CA roots (certifi). When the provider sits behind a corporate gateway or
+proxy that presents a private/self-signed certificate — common with **Azure
+OpenAI on Azure ML** — pass `verify`:
+
+```python
+from fastaiagent import Agent, LLMClient
+
+# Trust a corporate CA bundle (the issuing chain — root + intermediates, PEM):
+llm = LLMClient(
+    provider="azure",
+    model="<deployment>",
+    base_url="https://<gateway>/openai/v1",
+    api_key="<key>",
+    verify="/path/to/corporate-ca.pem",
+)
+
+# Or disable verification entirely (development only — see warning below):
+llm = LLMClient(provider="azure", model="<deployment>",
+                base_url="https://<gateway>/openai/v1", verify=False)
+
+agent = Agent(name="bot", llm=llm)
+```
+
+`verify` accepts the same shapes as httpx:
+
+| Value | Meaning |
+|---|---|
+| `True` *(default)* | Verify against the public CA roots. |
+| `False` | **Disable** verification. Emits a security warning; LLM traffic can be intercepted. Use only in development. |
+| `"/path/to/ca.pem"` | Trust this PEM CA bundle. Must contain the **issuing CA chain**, not the server's leaf certificate. |
+| `ssl.SSLContext` | A fully custom context (advanced). |
+
+!!! warning
+    `verify=False` turns off certificate checking for all LLM calls on that
+    client. Prefer supplying the gateway's CA bundle via `verify="<path>"`.
+
+**Without code (e.g. an Azure ML `score.py` deployment):** set the
+`FASTAIAGENT_LLM_VERIFY` environment variable — `false`/`true` or a CA-bundle
+path. It applies when `verify` is left at its default, so you can configure it
+via the deployment's `environment_variables`.
+
+`SSL_CERT_FILE` is also honored (it sets the process-wide trust store), but it
+must point at the issuing CA chain — pointing it at the server's leaf
+certificate yields "unable to get local issuer certificate".
+
 ## Capability fallbacks
 
 When a preset declares a capability as missing, `LLMClient` does the safe

@@ -304,10 +304,8 @@ async def acomplete_gemini(
     **kwargs: Any,
 ) -> LLMResponse:
     """Non-streaming Gemini call. Returns a normalised :class:`LLMResponse`."""
-    import httpx
-
     url, body = _build_request(client, messages, tools, stream=False, **kwargs)
-    async with httpx.AsyncClient(timeout=120, verify=True) as h:
+    async with client._new_async_client() as h:
         resp = await h.post(url, json=body, headers={"Content-Type": "application/json"})
         if resp.status_code != 200:
             raise LLMProviderError(
@@ -332,15 +330,13 @@ async def astream_gemini(
     fire ``ToolCallStart`` / ``ToolCallEnd`` whole-shot for ``functionCall``
     blocks (Gemini doesn't stream function-call args incrementally).
     """
-    import httpx
-
     url, body = _build_request(client, messages, tools, stream=True, **kwargs)
 
     prompt_tokens = 0
     completion_tokens = 0
     seen_tool_index = 0
 
-    async with httpx.AsyncClient(timeout=120, verify=True) as h:
+    async with client._new_async_client() as h:
         async with h.stream(
             "POST", url, json=body, headers={"Content-Type": "application/json"}
         ) as resp:
