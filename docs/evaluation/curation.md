@@ -30,6 +30,34 @@ branches by intent:
 Override per run with `mark_output_as_expected` / `--output-as-expected` /
 `--needs-review`.
 
+## Infrastructure errors are not gold
+
+A trace can fail for reasons the agent can't fix — endpoint 500, timeout,
+network/DB/auth error. Curating such a run as a *gold* case would optimize the
+agent against a target it never legitimately produced. So on the good filters,
+**a run that produced no usable agent output is dropped, not curated** — the
+reliable, agent-attributable signal. A run where a *tool* errored but the agent
+recovered and still produced a clean answer is **kept** (that's good signal).
+
+This is controlled by `exclude_infra_errors`:
+
+- `"agent"` *(default)* — drop only when the agent produced no usable output.
+- `"trace"` — additionally drop any run whose trace carries an error-status span
+  (stricter; also drops tool-errored-but-recovered runs).
+
+The returned dataset reports coverage so a high drop rate doesn't hide silently —
+it usually signals an unhealthy agent or a trace-capture problem worth a look,
+independent of any optimization built on top:
+
+```python
+ds = curate_from_traces(filter="all")
+print(ds.coverage_summary())   # "18 case(s) from 220 trace(s); 202 dropped as infra-errored, 0 need review."
+ds.infra_excluded              # 202
+```
+
+(The `guardrail` / `failed` filters are unaffected — they intentionally surface
+bad runs as `needs_review`.)
+
 ## Filters
 
 | Filter | Selects traces… | Default expected |
@@ -64,8 +92,8 @@ print(results.summary())
 ```
 
 `Dataset.from_traces(**kwargs)` accepts `filter`, `agent`, `since_hours`,
-`limit`, `trace_ids`, `mark_output_as_expected`, `db_path`, `dedup_by` (see
-`curate_from_traces`). `Dataset.to_jsonl(path, append=False)` writes the items in
+`limit`, `trace_ids`, `mark_output_as_expected`, `db_path`, `dedup_by`,
+`exclude_infra_errors` (see `curate_from_traces`). `Dataset.to_jsonl(path, append=False)` writes the items in
 the same line format as `ReplayResult.save_as_test`, so curated and
 replay-saved cases interleave in one file.
 

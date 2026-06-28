@@ -29,6 +29,48 @@ _GOOD_FILTERS = {"all", "favorites", "noted"}
 _FAILURE_FILTERS = {"guardrail", "failed"}
 _VALID_FILTERS = _GOOD_FILTERS | _FAILURE_FILTERS
 _VALID_DEDUP = {"none", "input"}
+# How aggressively to drop infrastructure-errored runs from the gold set:
+#   "agent" — drop only when the agent produced no usable output (the reliable,
+#             agent-attributable signal); keep a run where a tool errored but the
+#             agent recovered and still produced a clean answer.
+#   "trace" — additionally drop any run whose trace carries an error-status span.
+_VALID_INFRA_MODES = {"agent", "trace"}
+# Span statuses that indicate a clean (non-error) span.
+_OK_STATUSES = {"OK", "UNSET"}
+
+
+class CuratedDataset(list):
+    """A list of curated eval items that also reports curation **coverage**.
+
+    Behaves exactly like ``list`` — a drop-in anywhere a dataset list is used —
+    but additionally reports how many captured runs were dropped as
+    infrastructure-errored. That lets a caller tell "20 clean cases" from
+    "20 clean cases, 200 dropped as errored": the latter signals an unhealthy
+    agent or a trace-capture problem worth investigating, independent of any
+    optimization run built on top of it.
+    """
+
+    def __init__(
+        self,
+        items: Any = (),
+        *,
+        emitted: int = 0,
+        infra_excluded: int = 0,
+        needs_review: int = 0,
+        traces: int = 0,
+    ) -> None:
+        super().__init__(items)
+        self.emitted = emitted
+        self.infra_excluded = infra_excluded
+        self.needs_review = needs_review
+        self.traces = traces
+
+    def coverage_summary(self) -> str:
+        return (
+            f"{self.emitted} case(s) from {self.traces} trace(s); "
+            f"{self.infra_excluded} dropped as infra-errored, "
+            f"{self.needs_review} need review."
+        )
 
 
 def curate_from_traces(
@@ -41,7 +83,8 @@ def curate_from_traces(
     mark_output_as_expected: bool | None = None,
     db_path: str | Path | None = None,
     dedup_by: str = "none",
-) -> list[dict[str, Any]]:
+    exclude_infra_errors: str = "agent",
+) -> CuratedDataset:
     """Build eval dataset item dicts from captured agent traces.
 
     Args:
@@ -55,6 +98,14 @@ def curate_from_traces(
             ``None`` (default) auto-picks by filter (good filters → True).
         db_path: local.db path; defaults to ``get_config().local_db_path``.
         dedup_by: ``none`` (one case per agent span) or ``input`` (drop dup inputs).
+        exclude_infra_errors: how to drop infrastructure-errored runs from the
+            gold set (only applies when the captured output is treated as gold).
+            ``agent`` (default) drops a run only when the agent produced no usable
+            output — the reliable, agent-attributable signal — keeping a run where
+            a tool errored but the agent recovered with a clean answer. ``trace``
+            additionally drops any run whose trace carries an error-status span.
+            The ``guardrail`` / ``failed`` filters are unaffected (they
+            intentionally surface bad runs as ``needs_review``).
 
     Returns:
         A list of item dicts ready for :class:`~fastaiagent.eval.Dataset`.
@@ -63,6 +114,10 @@ def curate_from_traces(
         raise ValueError(f"Unknown filter '{filter}'. Choose from {sorted(_VALID_FILTERS)}.")
     if dedup_by not in _VALID_DEDUP:
         raise ValueError(f"dedup_by must be one of {sorted(_VALID_DEDUP)}.")
+    if exclude_infra_errors not in _VALID_INFRA_MODES:
+        raise ValueError(
+            f"exclude_infra_errors must be one of {sorted(_VALID_INFRA_MODES)}."
+        )
 
     from fastaiagent._internal.config import get_config
     from fastaiagent.trace import TraceStore
@@ -94,6 +149,7 @@ def curate_from_traces(
     n_traces = 0
     n_spans = 0
     n_skipped = 0
+    n_infra_excluded = 0
 
     for tid in selected:
         try:
@@ -107,6 +163,10 @@ def curate_from_traces(
             n_skipped += 1
             continue
         n_traces += 1
+        # Trace-level infra signal (used only by exclude_infra_errors="trace").
+        # The agent root span isn't always stamped ERROR on a downstream failure,
+        # so "any span carries an error status" is the reliable trace-level cue.
+        trace_has_error = any((s.status or "OK") not in _OK_STATUSES for s in trace.spans)
         for span in agent_spans:
             n_spans += 1
             attrs = span.attributes or {}
@@ -118,9 +178,29 @@ def curate_from_traces(
             if input_val is None or str(input_val).strip() == "":
                 n_skipped += 1
                 continue
+            output_text = str(attrs.get("agent.output", "") or "")
+            # Part 1 — don't curate gold from an infrastructure-errored run. Keyed
+            # on agent-output presence (the reliable signal); span status only
+            # corroborates the drop reason. Skipped on the failure filters, which
+            # deliberately surface bad runs for review.
+            if mark_output_as_expected:
+                no_output = not output_text.strip()
+                drop = no_output or (exclude_infra_errors == "trace" and trace_has_error)
+                if drop:
+                    n_infra_excluded += 1
+                    reason = "no agent output" if no_output else "trace had an error-status span"
+                    if no_output and trace_has_error:
+                        reason += " (error status on the run)"
+                    logger.debug(
+                        "curate: dropped infra-errored run trace=%s span=%s — %s",
+                        tid,
+                        span.span_id,
+                        reason,
+                    )
+                    continue
             item = _build_item(
                 input_text=str(input_val),
-                output_text=str(attrs.get("agent.output", "") or ""),
+                output_text=output_text,
                 trace_id=tid,
                 span_id=span.span_id,
                 agent_name=name,
@@ -145,15 +225,33 @@ def curate_from_traces(
         )
     logger.info(
         "curate(filter=%s): %s trace(s) -> %s agent span(s) -> %s case(s) "
-        "(%s need review, %s skipped)",
+        "(%s need review, %s skipped, %s dropped as infra-errored)",
         filter,
         n_traces,
         n_spans,
         len(items),
         needs_review,
         n_skipped,
+        n_infra_excluded,
     )
-    return items
+    if n_infra_excluded:
+        logger.warning(
+            "curate(filter=%s): dropped %s run(s) as infrastructure-errored "
+            "(no usable agent output%s). Emitted %s clean case(s) — check "
+            "`.infra_excluded` on the result; a high drop rate signals an "
+            "unhealthy agent or a trace-capture issue.",
+            filter,
+            n_infra_excluded,
+            "/error status" if exclude_infra_errors == "trace" else "",
+            len(items),
+        )
+    return CuratedDataset(
+        items,
+        emitted=len(items),
+        infra_excluded=n_infra_excluded,
+        needs_review=needs_review,
+        traces=n_traces,
+    )
 
 
 def _select_trace_ids(

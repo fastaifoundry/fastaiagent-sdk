@@ -9,6 +9,10 @@ Demonstrates (real Agent + real LLM — needs OPENAI_API_KEY):
 Good filters (all/favorites/noted) use the captured output as the gold
 expected_output; failure filters (guardrail/failed) mark cases needs_review.
 
+Infrastructure-errored runs (endpoint 500, timeout — the agent produced no usable
+output) are NOT curated as gold cases; the curated dataset reports how many were
+dropped via ``ds.curation`` so coverage isn't lost silently.
+
 Run:
     zsh -lc 'python examples/80_curate_from_traces.py'
 """
@@ -49,6 +53,9 @@ def main() -> None:
     print("\n== Dataset.from_traces ==")
     ds = Dataset.from_traces(filter="all", agent="curate-demo", since_hours=1)
     print(f"  curated {len(ds)} case(s)")
+    # Coverage: infra-errored runs are dropped, not curated as gold. A high
+    # infra_excluded count would flag an unhealthy agent / trace-capture issue.
+    print(f"  coverage: {ds.curation.coverage_summary()}")
     for item in ds:
         print(f"   - input={item['input']!r}  expected={item['expected_output']!r}")
 

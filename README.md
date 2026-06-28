@@ -14,7 +14,7 @@ pip install fastaiagent
 
 Runs fully standalone, or connect to the [FastAIAgent Platform](https://fastaiagent.net) for hosted observability, prompt management, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.30.0)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.31.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -346,7 +346,11 @@ for the walkthrough.
 `fastaiagent eval curate --filter guardrail --out fixme.jsonl` turn captured agent
 traces into dataset cases — every `agent.<name>` span (even nested inside a
 chain/supervisor/swarm) becomes one case. Good traces become gold cases; guardrail
-or failed traces come back marked `needs_review` for a human to fill in. See
+or failed traces come back marked `needs_review` for a human to fill in.
+**Infrastructure-errored runs** (endpoint 500, timeout — the agent produced no
+usable output) are dropped rather than curated as gold, so AutoLLM optimizes only
+on agent-attributable failures; the curated set reports how many were dropped
+(`ds.curation.coverage_summary()`). See
 [docs/evaluation/curation.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/evaluation/curation.md)
 and [examples/80_curate_from_traces.py](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/80_curate_from_traces.py).
 

@@ -21,6 +21,11 @@ class EvalCaseRecord:
     actual_output: Any = None
     trace_id: str | None = None
     per_scorer: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # Set when the run itself infrastructure-failed during scoring (provider 500,
+    # timeout, …). Such a case is NOT scored — it carries no per-scorer verdict and
+    # is excluded from failure analysis — so an infra failure can't masquerade as
+    # an agent-quality miss the optimizer would try to "fix".
+    error: str | None = None
 
 
 class EvalResults:
