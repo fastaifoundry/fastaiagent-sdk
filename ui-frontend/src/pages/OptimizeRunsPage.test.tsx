@@ -47,7 +47,7 @@ describe("OptimizeRunsPage", () => {
     mockApi([]);
     renderWithProviders(<OptimizeRunsPage />);
     await waitFor(() =>
-      expect(screen.getByText(/No optimize runs yet/i)).toBeInTheDocument()
+      expect(screen.getByText(/No AutoLLM runs yet/i)).toBeInTheDocument()
     );
   });
 

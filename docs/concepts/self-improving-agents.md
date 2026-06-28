@@ -72,7 +72,7 @@ The script walks all three phases: seed runs → extract → replay. Inspect the
 
 The substrate was the prerequisite — without rich, queryable traces, none of this would work. The learning loop is the simplest thing that can show value on top.
 
-*Update:* the **harness-improvement** layer now ships in full — eval-driven [prompt, few-shot & learned-memory optimization](../evaluation/optimization.md) (`fastaiagent.optimize`), with runs persisted and viewable in the Local UI. This is the OSS scope: standard prompt optimization grounded in your own traces, closing the loop end-to-end in one SDK. The deeper **replay-grounded** scoring is the Enterprise capability — see below.
+*Update:* the **harness-improvement** layer now ships in full — **[AutoLLM](../evaluation/optimization.md)**, eval-driven prompt, few-shot & learned-memory optimization (`fastaiagent.optimize`), with runs persisted and viewable in the Local UI under **AutoLLM**. This is the OSS scope: standard prompt optimization grounded in your own traces, closing the loop end-to-end in one SDK. The deeper **replay-grounded** scoring is the Enterprise capability — see below.
 
 ## What ships now (harness layer)
 

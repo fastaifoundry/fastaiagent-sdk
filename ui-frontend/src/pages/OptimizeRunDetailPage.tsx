@@ -50,7 +50,7 @@ export function OptimizeRunDetailPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title={run?.run_name || run?.run_id || "Optimize run"}
+        title={run?.run_name || run?.run_id || "AutoLLM run"}
         description={run?.agent_name ? `agent: ${run.agent_name}` : undefined}
       >
         <Button

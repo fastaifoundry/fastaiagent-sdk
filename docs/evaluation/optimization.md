@@ -1,20 +1,28 @@
-# Prompt & Few-shot Optimization
+# AutoLLM
 
-`harden()` *recommends* prompt fixes. **`optimize()` closes the loop**: it
-proposes a change, applies it to a fresh agent, re-evaluates, keeps the best, and
-repeats — until the score stops improving or a budget runs out. A held-out split
-guards the winner against overfitting.
+**AutoLLM** (`fastaiagent.optimize`) is eval-driven prompt optimization. Where
+`harden()` *recommends* prompt fixes, **AutoLLM closes the loop**: it proposes a
+change, applies it to a fresh agent, re-evaluates, keeps the best, and repeats —
+until the score stops improving or a budget runs out. A held-out split guards the
+winner against overfitting.
 
 It tunes the **system prompt** by default, and can also tune **few-shot
-examples** when you opt in — greedy coordinate ascent, cycling the active levers
-one per round. The SDK's answer to LangSmith's *Promptim* / DSPy's
-`BootstrapFewShot` + metaprompt optimizers, built on the `evaluate()` you already
-use.
+examples** and **which learned-memory facts to inject** when you opt in — greedy
+coordinate ascent, cycling the active levers one per round. The SDK's answer to
+LangSmith's *Promptim* / DSPy's `BootstrapFewShot` + metaprompt optimizers, built
+on the `evaluate()` you already use.
+
+This is the OSS on-ramp: standard prompt optimization grounded in your own eval
+data, end to end in one SDK. A runnable, real-LLM walkthrough lives in
+`examples/autollm/`.
 
 !!! note "Scope"
-    Tunes the system prompt (default) plus, opt-in, few-shot examples and which
-    learned facts to inject — all on the cold-eval path. Persisted runs in the
-    Local UI build on the same data model (a later phase) without reshaping it.
+    AutoLLM tunes the system prompt (default) plus, opt-in, few-shot examples and
+    which learned facts to inject — all on the **cold-eval** path. Runs are
+    persisted and viewable in the Local UI under **AutoLLM**. Replay-grounded
+    scoring (forking a production trace and rerunning from real operational state)
+    is the Enterprise complete-loop capability — the `score_candidate` seam is its
+    drop-in point.
 
 ## Quickstart
 
@@ -56,6 +64,16 @@ same operational definition Promptim and DSPy use. The **holdout guard**, not th
 search, is what makes the result trustworthy rather than overfit: the holdout
 split never influences selection, so the reported lift is on data no candidate
 was tuned against. By construction the winner is **never worse than baseline**.
+
+!!! info "Algorithm"
+    AutoLLM uses **greedy coordinate ascent** (Promptim-style keep/revert, one
+    lever per round) with a **metaprompt / reflective proposer** — the optimizer
+    reads the dev failures and writes a revised prompt. This is the same algorithm
+    family as **LangSmith Promptim** and **DSPy** (`BootstrapFewShot` + metaprompt
+    optimization). The joint-Bayesian-search variant — DSPy's **MIPRO** — searches
+    instructions and demos together; it's a documented upgrade path
+    (`strategy="mipro"`) rather than the default, since coordinate ascent gives a
+    single-lever cause for every accepted step and avoids MIPRO's cost multiplier.
 
 ## The levers
 

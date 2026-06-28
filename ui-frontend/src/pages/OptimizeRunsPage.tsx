@@ -52,7 +52,7 @@ export function OptimizeRunsPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Optimize runs"
+        title="AutoLLM"
         description={
           runs.data
             ? `${runs.data.total.toLocaleString()} run${runs.data.total === 1 ? "" : "s"}`
@@ -94,7 +94,7 @@ export function OptimizeRunsPage() {
         <TableSkeleton rows={6} />
       ) : rows.length === 0 ? (
         <EmptyState
-          title="No optimize runs yet"
+          title="No AutoLLM runs yet"
           description="Call optimize(..., persist=True) — runs appear here automatically."
         />
       ) : (

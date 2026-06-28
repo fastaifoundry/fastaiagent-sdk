@@ -51,7 +51,7 @@ const SECTIONS: NavSection[] = [
     items: [
       { to: "/evals", label: "Eval Runs", icon: TrendingUp },
       { to: "/simulations", label: "Simulations", icon: MessagesSquare },
-      { to: "/optimizes", label: "Optimize Runs", icon: Sparkles },
+      { to: "/optimizes", label: "AutoLLM", icon: Sparkles },
       { to: "/datasets", label: "Datasets", icon: ListChecks },
     ],
   },
