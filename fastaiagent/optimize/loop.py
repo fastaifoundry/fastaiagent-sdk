@@ -286,7 +286,15 @@ async def aoptimize(
     best = base_candidate
     best_dev = baseline_dev
     trajectory = [
-        TrajectoryPoint(0, "baseline", base_candidate.id, baseline_dev.score, True, "baseline")
+        TrajectoryPoint(
+            0,
+            "baseline",
+            base_candidate.id,
+            baseline_dev.score,
+            True,
+            "baseline",
+            eval_run_id=baseline_dev.eval_run_id,
+        )
     ]
     accepted: list[str] = []
 
@@ -355,7 +363,15 @@ async def aoptimize(
             cs = await score_candidate(cand, "dev", judge=selection_judge)
             scored.append((cand, cs))
             trajectory.append(
-                TrajectoryPoint(iteration, lever, cand.id, cs.score, False, cand.rationale)
+                TrajectoryPoint(
+                    iteration,
+                    lever,
+                    cand.id,
+                    cs.score,
+                    False,
+                    cand.rationale,
+                    eval_run_id=cs.eval_run_id,
+                )
             )
 
         if not scored:
@@ -396,7 +412,7 @@ async def aoptimize(
     else:
         holdout_best = holdout_baseline
 
-    return OptimizationReport(
+    report = OptimizationReport(
         agent_name=agent.name,
         baseline=baseline_dev,
         best=best_dev,
@@ -407,7 +423,21 @@ async def aoptimize(
         holdout_baseline=holdout_baseline,
         holdout_best=holdout_best,
         reverted=reverted,
+        seed=cfg.seed,
+        levers=tuple(cfg.levers),
+        run_name=run_name,
     )
+
+    # Persist the run record (gated by the same flag that gates per-candidate
+    # eval persistence). Each iteration links to the eval_runs row its candidate
+    # already produced — no duplicate eval storage.
+    if persist:
+        try:
+            report.persist_local(run_name=run_name, agent_name=agent.name)
+        except Exception as exc:  # persistence is best-effort, never fail a run
+            logger.warning("optimize: failed to persist run record: %s", exc)
+
+    return report
 
 
 def optimize(

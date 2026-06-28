@@ -47,6 +47,8 @@ python agent.py --skip-seed --topic "..."        # reuse seed traces already in 
 
 [`fastaiagent.optimize`](../../docs/evaluation/optimization.md) closes the loop on the cold-eval path: it proposes prompt rewrites and learned-fact subsets, scores each on a held-out split, and keeps the best. **It targets a single `Agent`.** The deep-research flagship is a *multi-agent pipeline* (scope + writer), so Phase 2.5 optimizes a **single fact-bearing research agent** sharing the pipeline's memory scope (`agent`/`deep-research`) — it demonstrates the closed loop but does **not** optimize the whole pipeline. Threading a per-sub-agent result back into the full pipeline (or joint/Replay-grounded optimization) is a later-phase extension. The optimizer is **read-only on the fact store**: it selects *which* learned facts to inject, never creating, editing, or deleting them.
 
+This phase runs with `persist=True`, so the optimize run is recorded to `local.db`. Launch `fastaiagent ui` and open **Optimize Runs** to see the `baseline → accepted/skipped steps → holdout-guarded winner` trajectory with per-iteration lever attribution; each row drills into the eval run (and its traces) that scored that candidate. See [Persistence & the UI](../../docs/evaluation/optimization.md#persistence--the-ui).
+
 ## How it works
 
 The `deep-research-agent` template's [`memory_setup.py`](../deep-research-agent/memory_setup.py) returns a `ComposableMemory` wrapping a `PersistentFactBlock` with `scope="agent", scope_id="deep-research"`. PR A shipped this as a placeholder; PR B activates it.

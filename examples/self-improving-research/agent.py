@@ -197,12 +197,17 @@ async def phase_optimize() -> None:
             candidates_per_iteration=2,
             seed=0,
         ),
-        persist=False,
+        persist=True,
     )
     print(report.summary())
     kept = report.best_candidate.fact_ids
     kept_desc = kept if kept is not None else "inherited (all active)"
     print(f"\n[optimize] memory lever kept facts: {kept_desc}")
+    if report.run_id:
+        print(
+            f"[optimize] run persisted as {report.run_id[:8]} — view the trajectory "
+            "in `fastaiagent ui` → Optimize Runs (drill each step into its eval run)."
+        )
 
 
 async def run_closed_loop(

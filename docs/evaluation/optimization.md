@@ -154,6 +154,40 @@ holdout     best=0.750 (baseline=0.600, Δ+0.150) → winner kept
 - `report.trajectory` — every candidate scored, with lever attribution.
 - `report.improved` — did the winner beat baseline and survive the holdout guard?
 
+## Persistence & the UI
+
+When `optimize(..., persist=True)` (the default), the run is recorded to the
+local `local.db` and surfaces in `fastaiagent ui` under **Optimize Runs** — no
+extra wiring. Two tables hold the record:
+
+- **`optimize_runs`** — one parent row per run: baseline/best dev scores, the
+  holdout-guard scores, `stopped_reason`, `reverted`, the `seed`, the active
+  `levers`, and the winning `Candidate` as JSON (for reproducibility).
+- **`optimize_iterations`** — one row per trajectory point: `iteration`, `lever`,
+  `dev_score`, `accepted`/`skipped`, `rationale`, and an `eval_run_id`.
+
+The `eval_run_id` is the key to the **drill-down**. Every candidate is scored by
+a real `aevaluate(persist=…)` call, so it already lands in `eval_runs` /
+`eval_cases` with traced runs. The iteration row just *links* to that existing
+eval run — optimize stores **no duplicate eval data**. In the UI you can follow:
+
+```
+Optimize Runs → a run → trajectory row → its eval run → the per-case traces
+```
+
+The view is read-only and refresh-based (REST, no live streaming): open a run to
+see the `baseline → accepted/skipped steps → holdout-guarded winner` trajectory
+with per-iteration lever attribution, then click any row through to the eval that
+produced its score.
+
+Each run targets a single agent, so with several agents the list shows one row
+per run tagged by `agent_name`; an **agent filter** appears once more than one
+agent has runs (backed by `GET /api/optimizes?agent=…`).
+
+Persistence is gated by the same `persist` flag that gates per-candidate evals,
+so `optimize(..., persist=False)` writes nothing to `optimize_runs` /
+`optimize_iterations` (and skips the per-candidate `eval_runs` writes too).
+
 ## CLI
 
 ```sh

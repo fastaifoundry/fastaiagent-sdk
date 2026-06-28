@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.30.0] - 2026-06-28
+
+### Added
+
+- **Optimize-run persistence + UI (P4 persistence slice).** `optimize()` runs are
+  now durable and viewable in `fastaiagent ui`. With `persist=True` (the default),
+  `OptimizationReport.persist_local()` writes one `optimize_runs` row (baseline/best
+  + holdout scores, `stopped_reason`, `reverted`, `seed`, `levers`, and the winning
+  `Candidate` JSON for reproducibility) and one `optimize_iterations` row per
+  trajectory point (lever, dev score, accepted/skipped, rationale).
+  - **No duplicate eval storage.** Each candidate is already scored by a real
+    `aevaluate(persist=)` call, so every iteration row carries an `eval_run_id`
+    *linking* to the existing `eval_runs` / `eval_cases` row — the UI drills from a
+    trajectory step straight into that eval and its traces.
+  - New **Optimize Runs** view (list + detail) renders the
+    `baseline → accepted/skipped steps → holdout-guarded winner` trajectory with
+    per-iteration lever attribution. Read-only, refresh-based, REST-only.
+  - Schema migration **v15** adds `optimize_runs` + `optimize_iterations` (mirrors
+    the `sim_runs` / `sim_cases` pattern); forward-only and idempotent.
+  - Gated by the existing optimize-level `persist` flag — `persist=False` writes
+    nothing. No public API signatures changed; `CONTRACT 1` (the loop calls
+    `score_candidate` only) is untouched and no new scoring path is added.
+
 ## [1.29.0] - 2026-06-27
 
 ### Added

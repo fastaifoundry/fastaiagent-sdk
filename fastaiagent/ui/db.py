@@ -17,7 +17,7 @@ from pathlib import Path
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
 
-CURRENT_SCHEMA_VERSION = 14
+CURRENT_SCHEMA_VERSION = 15
 
 # A migration step is either a SQL string or a callable that takes the
 # ``SQLiteHelper`` and runs whatever logic it needs (e.g., gated
@@ -63,6 +63,8 @@ _PROJECT_TABLES = (
     "external_agent_attachments",
     "sim_runs",
     "sim_cases",
+    "optimize_runs",
+    "optimize_iterations",
 )
 
 
@@ -824,6 +826,53 @@ _MIGRATIONS: dict[int, list[_Step]] = {
         # single-row ``sdk_instance`` table — no backfill. The connect-time enroll
         # push sends this id so the plane upserts coverage idempotently.
         _v14_add_sdk_instance,
+    ],
+    15: [
+        # Optimize-loop persistence (P4). Mirrors the eval_runs / eval_cases and
+        # sim_runs / sim_cases pairs: ``OptimizationReport.persist_local()`` writes
+        # one ``optimize_runs`` row and one ``optimize_iterations`` row per
+        # trajectory point. Iterations carry ``eval_run_id`` — a link into the
+        # ``eval_runs`` row each candidate already produced via aevaluate(persist=),
+        # so the UI drills down into existing eval data with no duplicate storage.
+        """CREATE TABLE IF NOT EXISTS optimize_runs (
+            run_id                 TEXT PRIMARY KEY,
+            run_name               TEXT,
+            agent_name             TEXT,
+            baseline_score         REAL,
+            best_score             REAL,
+            holdout_baseline_score REAL,
+            holdout_best_score     REAL,
+            reverted               INTEGER,
+            stopped_reason         TEXT,
+            seed                   INTEGER,
+            levers                 TEXT,    -- JSON: ["instructions", ...]
+            config                 TEXT,    -- JSON: serialized OptimizeConfig
+            best_candidate         TEXT,    -- JSON: winning Candidate (reproducibility)
+            baseline_eval_run_id   TEXT,    -- link into eval_runs
+            best_eval_run_id       TEXT,    -- link into eval_runs
+            iteration_count        INTEGER,
+            started_at             TEXT,
+            finished_at            TEXT,
+            metadata               TEXT,
+            project_id             TEXT NOT NULL DEFAULT ''
+        )""",
+        """CREATE TABLE IF NOT EXISTS optimize_iterations (
+            iteration_id  TEXT PRIMARY KEY,
+            run_id        TEXT NOT NULL,
+            ordinal       INTEGER,
+            iteration     INTEGER,
+            lever         TEXT,
+            candidate_id  TEXT,
+            dev_score     REAL,
+            accepted      INTEGER,
+            skipped       INTEGER,
+            rationale     TEXT,
+            eval_run_id   TEXT,    -- link into eval_runs (the candidate's eval)
+            project_id    TEXT NOT NULL DEFAULT '',
+            FOREIGN KEY (run_id) REFERENCES optimize_runs(run_id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_optimize_iter_run "
+        "ON optimize_iterations(run_id, project_id)",
     ],
 }
 

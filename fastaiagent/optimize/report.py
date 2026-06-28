@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from fastaiagent.optimize.candidate import Candidate, CandidateScore, apply_candidate
@@ -25,6 +26,9 @@ class TrajectoryPoint:
     # when there are no learned facts at the resolved scope). Distinct from a
     # reject (a candidate was scored but didn't beat the current best).
     skipped: bool = False
+    # The eval_runs.run_id this candidate's dev eval produced (when persisted),
+    # so the UI can drill from a trajectory row into the existing eval rows.
+    eval_run_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -35,6 +39,7 @@ class TrajectoryPoint:
             "accepted": self.accepted,
             "rationale": self.rationale,
             "skipped": self.skipped,
+            "eval_run_id": self.eval_run_id,
         }
 
 
@@ -57,6 +62,10 @@ class OptimizationReport:
     holdout_best: CandidateScore | None = None
     reverted: bool = False
     run_id: str | None = None
+    # Reproducibility metadata, set at construction in the loop driver.
+    seed: int = 0
+    levers: tuple[str, ...] = ()
+    run_name: str | None = None
 
     @property
     def improved(self) -> bool:
@@ -121,3 +130,97 @@ class OptimizationReport:
             "holdout_best": self.holdout_best.score if self.holdout_best else None,
             "run_id": self.run_id,
         }
+
+    def persist_local(
+        self,
+        *,
+        db_path: str | Path | None = None,
+        run_name: str | None = None,
+        agent_name: str | None = None,
+    ) -> str:
+        """Persist this optimization run to the unified local.db.
+
+        Writes one row to ``optimize_runs`` and one per trajectory point to
+        ``optimize_iterations``. Iteration rows carry ``eval_run_id`` — a link
+        into the ``eval_runs`` row each candidate already produced via
+        ``aevaluate(persist=)`` — so the UI drills into existing eval data
+        without duplicating it. Returns the generated ``run_id`` (also stashed
+        on ``self.run_id``) so callers can correlate / deep-link.
+
+        Mirrors :meth:`fastaiagent.eval.results.EvalResults.persist_local`.
+        """
+        import json
+        import uuid
+        from datetime import datetime, timezone
+
+        from fastaiagent._internal.config import get_config
+        from fastaiagent._internal.project import safe_get_project_id
+        from fastaiagent.ui.db import init_local_db
+
+        resolved = (
+            Path(db_path) if db_path is not None else Path(get_config().local_db_path)
+        )
+        run_id = uuid.uuid4().hex
+        timestamp = datetime.now(tz=timezone.utc).isoformat()
+        pid = safe_get_project_id()
+        agent = agent_name or self.agent_name
+
+        db = init_local_db(resolved)
+        try:
+            db.execute(
+                """INSERT INTO optimize_runs
+                   (run_id, run_name, agent_name, baseline_score, best_score,
+                    holdout_baseline_score, holdout_best_score, reverted,
+                    stopped_reason, seed, levers, config, best_candidate,
+                    baseline_eval_run_id, best_eval_run_id, iteration_count,
+                    started_at, finished_at, metadata, project_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    run_id,
+                    run_name or self.run_name,
+                    agent,
+                    self.baseline.score,
+                    self.best.score,
+                    self.holdout_baseline.score if self.holdout_baseline else None,
+                    self.holdout_best.score if self.holdout_best else None,
+                    1 if self.reverted else 0,
+                    self.stopped_reason,
+                    self.seed,
+                    json.dumps(list(self.levers)),
+                    json.dumps({"improved": self.improved}),
+                    json.dumps(self.best_candidate.to_dict(), default=str),
+                    self.baseline.eval_run_id,
+                    self.best.eval_run_id,
+                    len(self.trajectory),
+                    timestamp,
+                    timestamp,
+                    json.dumps({}),
+                    pid,
+                ),
+            )
+            for ordinal, p in enumerate(self.trajectory):
+                db.execute(
+                    """INSERT INTO optimize_iterations
+                       (iteration_id, run_id, ordinal, iteration, lever,
+                        candidate_id, dev_score, accepted, skipped, rationale,
+                        eval_run_id, project_id)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        uuid.uuid4().hex,
+                        run_id,
+                        ordinal,
+                        p.iteration,
+                        p.lever,
+                        p.candidate_id,
+                        p.dev_score,
+                        1 if p.accepted else 0,
+                        1 if p.skipped else 0,
+                        p.rationale,
+                        p.eval_run_id,
+                        pid,
+                    ),
+                )
+        finally:
+            db.close()
+        self.run_id = run_id
+        return run_id
