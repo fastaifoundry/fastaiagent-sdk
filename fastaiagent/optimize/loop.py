@@ -4,8 +4,9 @@ P1 moves the system prompt; P2 adds the few-shot lever and cycles
 ``instructions → fewshot`` one lever per round.
 
 CONTRACT 1: the loop body calls ``score_candidate(...)`` only — never
-``aevaluate`` directly — so Replay-grounded scoring drops in later as a second
-implementation of the same seam with no driver changes. (``bootstrap_demos`` is a
+``aevaluate`` directly. OSS ships cold-eval scoring; the seam stays a single
+swappable interface so the Enterprise plane's replay-grounded scoring can drop
+in as a second implementation with no driver changes. (``bootstrap_demos`` is a
 proposal-time teacher step, not the selection seam.)
 """
 

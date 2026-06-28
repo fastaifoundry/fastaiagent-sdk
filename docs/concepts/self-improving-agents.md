@@ -72,17 +72,21 @@ The script walks all three phases: seed runs → extract → replay. Inspect the
 
 The substrate was the prerequisite — without rich, queryable traces, none of this would work. The learning loop is the simplest thing that can show value on top.
 
-*Update:* the **harness-improvement** layer now ships — eval-driven [prompt & few-shot optimization](../evaluation/optimization.md) (`fastaiagent.optimize`). The diagram's "future" there now refers specifically to **replay-grounded** scoring and the learned-memory lever below.
+*Update:* the **harness-improvement** layer now ships in full — eval-driven [prompt, few-shot & learned-memory optimization](../evaluation/optimization.md) (`fastaiagent.optimize`), with runs persisted and viewable in the Local UI. This is the OSS scope: standard prompt optimization grounded in your own traces, closing the loop end-to-end in one SDK. The deeper **replay-grounded** scoring is the Enterprise capability — see below.
 
 ## What ships now (harness layer)
 
-Eval-driven [optimization](../evaluation/optimization.md) (`fastaiagent.optimize`) closes the loop `harden()` opens — propose a change, re-evaluate, keep the best, holdout-guard the winner. It tunes two levers by greedy coordinate ascent: the **system prompt** and **few-shot examples** (bootstrapped from the train split, injected via `FewShotBlock`), with per-candidate memory isolation (`MemoryBlock.isolated_copy()`). The cold-eval slice of harness improvement, built on the existing `evaluate()`.
+Eval-driven [optimization](../evaluation/optimization.md) (`fastaiagent.optimize`) closes the loop `harden()` opens — propose a change, re-evaluate, keep the best, holdout-guard the winner. It tunes **three levers** by greedy coordinate ascent: the **system prompt**, **few-shot examples** (bootstrapped from the train split, injected via `FewShotBlock`), and **which subset of `learned_memory` facts to inject** (selection/ablation, read-only on the fact store) — with per-candidate memory isolation (`MemoryBlock.isolated_copy()`). Every run persists to `local.db` and surfaces in the **Optimize Runs** view (trajectory + per-iteration lever attribution, drilling into each candidate's eval run). The cold-eval slice of harness improvement, built on the existing `evaluate()`.
+
+## The Enterprise boundary
+
+The OSS SDK owns the *on-ramp*: prompt/few-shot/memory optimization scored by **cold eval on your dataset**, end-to-end and free. The **complete, governed loop** — where candidates are scored by **replay-grounded** evaluation — is the Enterprise plane's job:
+
+- **Replay-grounded scoring** — score a candidate by forking a production trace at the decision node and rerunning from real operational state, instead of cold dataset eval. The OSS optimize loop already exposes the extension point for it: the `score_candidate` seam is a single swappable interface (the loop never calls `aevaluate()` directly), so the Enterprise implementation drops in with no driver change. Trace-based state counterfactuals live in the Enterprise Replay engine, not the SDK's read-only `trace/replay.py` — see [Agent Replay](../replay/index.md).
 
 ## Future work
 
 Tracked in the planning file:
 
-- **Learned-memory lever** — extend the optimize loop to also tune *which subset* of `learned_memory` facts to inject (selection/ablation), completing the three-lever search.
-- **Replay-grounded scoring** — score candidates by forking a production trace at the decision node instead of cold dataset eval. Drops into the optimize loop's `score_candidate` seam with no driver change.
 - **Skills** — extract reusable mini-procedures from successful traces; expose as callable tools.
 - **Online learning** — agents that update their own context mid-run.
