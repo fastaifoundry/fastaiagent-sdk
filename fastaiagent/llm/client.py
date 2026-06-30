@@ -828,6 +828,14 @@ class LLMClient:
             ):
                 body["parallel_tool_calls"] = ptc
 
+        # When delegating to an injected OpenAI-SDK client, auth (and headers)
+        # are owned by that client — fastaiagent neither needs nor sends its own
+        # API key. This is what makes keyless flows (Azure AD / managed identity
+        # via ``azure_ad_token_provider``) work. Only ``body`` is used on that
+        # path; the returned headers are ignored.
+        if self._openai_client is not None:
+            return body, {"Content-Type": "application/json"}
+
         env_var, env_label = self._api_key_env()
         api_key = self.api_key or os.environ.get(env_var, "")
         if not api_key:
