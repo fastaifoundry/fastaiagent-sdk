@@ -101,6 +101,48 @@ via the deployment's `environment_variables`.
 must point at the issuing CA chain — pointing it at the server's leaf
 certificate yields "unable to get local issuer certificate".
 
+## Bring your own client (Azure OpenAI, classic API, managed identity)
+
+The built-in `azure` provider targets the v1 endpoint
+(`https://<resource>.openai.azure.com/openai/v1`) and Bearer auth. For the
+**classic** Azure surface — the `/openai/deployments/<deployment>/chat/completions?api-version=...`
+URL, or **Entra ID / managed-identity** auth via `azure_ad_token_provider`
+— pass a pre-built `openai` SDK client and let `LLMClient` delegate the HTTP
+call to it. The client's `base_url`, `api_version`, auth (including
+**token refresh**), and `http_client` (e.g. `verify=False`) are all reused;
+`LLMClient` still builds the request, applies tools/structured output, emits
+`llm.azure.*` spans, and parses the response.
+
+```python
+import httpx
+from openai import AzureOpenAI
+from fastaiagent import Agent, LLMClient
+
+azure = AzureOpenAI(
+    azure_endpoint="https://<gateway-or-resource>",
+    api_version="2024-10-21",
+    azure_ad_token_provider=get_token,        # managed identity — refreshes automatically
+    http_client=httpx.Client(verify=False),   # gateway TLS handled by the openai client
+)
+
+llm = LLMClient(provider="azure", model="<deployment-name>", openai_client=azure)
+agent = Agent(name="bot", llm=llm)
+```
+
+Notes:
+
+- `model` is the **Azure deployment name** (what the openai client uses as the
+  deployment in the URL).
+- When `openai_client` is set, `LLMClient`'s own `base_url` / `api_key` /
+  `verify` are **ignored** on that path — the injected client owns transport,
+  auth, and TLS.
+- Works with sync (`OpenAI`/`AzureOpenAI`) and async
+  (`AsyncOpenAI`/`AsyncAzureOpenAI`) clients; a sync client is run off the event
+  loop so it never blocks. Streaming is supported too.
+- Because token refresh is delegated to the openai SDK, the **same code runs in
+  a notebook and an Azure ML `score.py` deployment** without per-request token
+  management.
+
 ## Capability fallbacks
 
 When a preset declares a capability as missing, `LLMClient` does the safe

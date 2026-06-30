@@ -224,6 +224,7 @@ class LLMClient:
         max_pdf_pages: int = 20,
         max_image_size_mb: float | None = None,
         verify: bool | str | ssl.SSLContext = True,
+        openai_client: Any = None,
         **kwargs: Any,
     ):
         # Preset lookup is opt-in: built-in providers (openai/anthropic/
@@ -255,6 +256,16 @@ class LLMClient:
         self.max_pdf_pages = max_pdf_pages
         self.max_image_size_mb = max_image_size_mb
         self._verify = self._resolve_verify(verify)
+        # Optional pre-constructed OpenAI-SDK client (openai.OpenAI /
+        # openai.AzureOpenAI / their Async variants). When supplied, the
+        # OpenAI-compatible code paths delegate the actual HTTP call to it
+        # instead of fastaiagent's own httpx transport — so the client's
+        # base_url, auth (incl. Azure AD / managed-identity token refresh via
+        # ``azure_ad_token_provider``), ``api_version``, and ``http_client``
+        # (e.g. ``verify=False``) are reused as-is. ``base_url``/``api_key``/
+        # ``verify`` on this LLMClient are ignored on that path.
+        self._openai_client = openai_client
+        self._openai_client_is_async = self._detect_async_client(openai_client)
         self._extra = kwargs
         self._preset = preset
 
@@ -311,6 +322,82 @@ class LLMClient:
 
         kw.setdefault("timeout", 120)
         return httpx.AsyncClient(verify=self._verify, **kw)
+
+    @staticmethod
+    def _detect_async_client(openai_client: Any) -> bool:
+        """Return True if ``openai_client`` is an async OpenAI-SDK client."""
+        if openai_client is None:
+            return False
+        try:
+            from openai import AsyncOpenAI
+
+            return isinstance(openai_client, AsyncOpenAI)
+        except Exception:
+            import inspect
+
+            create = getattr(
+                getattr(getattr(openai_client, "chat", None), "completions", None),
+                "create",
+                None,
+            )
+            return inspect.iscoroutinefunction(create)
+
+    async def _create_via_openai_client(self, body: dict[str, Any]) -> Any:
+        """Call ``chat.completions.create`` on the injected OpenAI-SDK client.
+
+        A sync client is run in a worker thread so the event loop is not
+        blocked; an async client is awaited directly. Returns the raw
+        ``ChatCompletion`` (non-streaming) or stream object the SDK yields.
+        """
+        client = self._openai_client
+        if self._openai_client_is_async:
+            return await client.chat.completions.create(**body)
+        return await asyncio.to_thread(lambda: client.chat.completions.create(**body))
+
+    async def _aiter_openai_client_chunks(
+        self, body: dict[str, Any]
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Yield streaming chunks (as dicts) from the injected OpenAI-SDK client.
+
+        Normalises the sync ``Stream`` / async ``AsyncStream`` the SDK returns
+        into the same ``dict`` chunk shape the SSE path produces, so the
+        downstream delta-handling logic is shared.
+        """
+        stream = await self._create_via_openai_client(body)
+        if self._openai_client_is_async:
+            async for chunk in stream:
+                yield chunk.model_dump()
+            return
+
+        # Sync Stream: pull each item off the event loop's thread pool.
+        sentinel = object()
+        iterator = iter(stream)
+        while True:
+            chunk = await asyncio.to_thread(next, iterator, sentinel)
+            if chunk is sentinel:
+                break
+            yield chunk.model_dump()
+
+    async def _aiter_openai_sse_chunks(
+        self, body: dict[str, Any], headers: dict[str, str]
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Yield streaming chunks (as dicts) from the OpenAI-compatible SSE endpoint."""
+        url = f"{self.base_url.rstrip('/')}/chat/completions"
+        async with self._new_async_client() as client:
+            async with client.stream("POST", url, json=body, headers=headers) as resp:
+                if resp.status_code != 200:
+                    body_text = await resp.aread()
+                    raise LLMProviderError(
+                        f"OpenAI API error {resp.status_code}: {body_text.decode()}",
+                        status_code=resp.status_code,
+                    )
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    payload = line[6:]
+                    if payload.strip() == "[DONE]":
+                        break
+                    yield _json.loads(payload)
 
     def _capability(self, name: str, default: object = None) -> object:
         """Look up a capability flag from the registered preset, if any."""
@@ -741,6 +828,14 @@ class LLMClient:
             ):
                 body["parallel_tool_calls"] = ptc
 
+        # When delegating to an injected OpenAI-SDK client, auth (and headers)
+        # are owned by that client — fastaiagent neither needs nor sends its own
+        # API key. This is what makes keyless flows (Azure AD / managed identity
+        # via ``azure_ad_token_provider``) work. Only ``body`` is used on that
+        # path; the returned headers are ignored.
+        if self._openai_client is not None:
+            return body, {"Content-Type": "application/json"}
+
         env_var, env_label = self._api_key_env()
         api_key = self.api_key or os.environ.get(env_var, "")
         if not api_key:
@@ -774,6 +869,13 @@ class LLMClient:
     ) -> LLMResponse:
         """Call OpenAI-compatible endpoint."""
         body, headers = self._build_openai_body(messages, tools, **kwargs)
+
+        # Delegate to an injected OpenAI-SDK client when provided (e.g. a
+        # pre-built ``AzureOpenAI`` that already handles the classic deployments
+        # URL, ``api_version``, and Azure AD token refresh).
+        if self._openai_client is not None:
+            resp = await self._create_via_openai_client(body)
+            return self._parse_openai_response(resp.model_dump())
 
         url = f"{self.base_url.rstrip('/')}/chat/completions"
         async with self._new_async_client() as client:
@@ -1162,63 +1264,54 @@ class LLMClient:
     async def _stream_openai(
         self, messages: list[Message], tools: list[dict[str, Any]] | None = None, **kwargs: Any
     ) -> AsyncGenerator[StreamEvent, None]:
-        """Stream from OpenAI-compatible endpoint via SSE."""
+        """Stream from an OpenAI-compatible endpoint (SSE) or an injected client."""
         body, headers = self._build_openai_body(messages, tools, stream=True, **kwargs)
 
-        url = f"{self.base_url.rstrip('/')}/chat/completions"
         # Accumulate tool call arguments across chunks
         tool_calls_acc: dict[int, dict[str, Any]] = {}
 
-        async with self._new_async_client() as client:
-            async with client.stream("POST", url, json=body, headers=headers) as resp:
-                if resp.status_code != 200:
-                    body_text = await resp.aread()
-                    raise LLMProviderError(
-                        f"OpenAI API error {resp.status_code}: {body_text.decode()}",
-                        status_code=resp.status_code,
-                    )
+        # Source chunks (as dicts) from the injected OpenAI-SDK client when one
+        # is supplied, else from our own SSE transport. The delta-handling below
+        # is identical for both.
+        if self._openai_client is not None:
+            chunk_source = self._aiter_openai_client_chunks(body)
+        else:
+            chunk_source = self._aiter_openai_sse_chunks(body, headers)
 
-                async for line in resp.aiter_lines():
-                    if not line.startswith("data: "):
-                        continue
-                    payload = line[6:]
-                    if payload.strip() == "[DONE]":
-                        break
+        async for chunk in chunk_source:
+            choices = chunk.get("choices", [])
+            delta = choices[0].get("delta", {}) if choices else {}
 
-                    chunk = _json.loads(payload)
-                    choices = chunk.get("choices", [])
-                    delta = choices[0].get("delta", {}) if choices else {}
+            # Text content
+            if text := delta.get("content"):
+                yield TextDelta(text=text)
 
-                    # Text content
-                    if text := delta.get("content"):
-                        yield TextDelta(text=text)
+            # Tool calls (streamed incrementally)
+            if raw_tcs := delta.get("tool_calls"):
+                for tc_delta in raw_tcs:
+                    idx = tc_delta.get("index", 0)
+                    if idx not in tool_calls_acc:
+                        tool_calls_acc[idx] = {
+                            "id": tc_delta.get("id", ""),
+                            "name": tc_delta.get("function", {}).get("name", ""),
+                            "arguments_str": "",
+                        }
+                        if tool_calls_acc[idx]["name"]:
+                            yield ToolCallStart(
+                                call_id=tool_calls_acc[idx]["id"],
+                                tool_name=tool_calls_acc[idx]["name"],
+                            )
+                    # Accumulate argument chunks
+                    arg_chunk = tc_delta.get("function", {}).get("arguments", "")
+                    if arg_chunk:
+                        tool_calls_acc[idx]["arguments_str"] += arg_chunk
 
-                    # Tool calls (streamed incrementally)
-                    if raw_tcs := delta.get("tool_calls"):
-                        for tc_delta in raw_tcs:
-                            idx = tc_delta.get("index", 0)
-                            if idx not in tool_calls_acc:
-                                tool_calls_acc[idx] = {
-                                    "id": tc_delta.get("id", ""),
-                                    "name": tc_delta.get("function", {}).get("name", ""),
-                                    "arguments_str": "",
-                                }
-                                if tool_calls_acc[idx]["name"]:
-                                    yield ToolCallStart(
-                                        call_id=tool_calls_acc[idx]["id"],
-                                        tool_name=tool_calls_acc[idx]["name"],
-                                    )
-                            # Accumulate argument chunks
-                            arg_chunk = tc_delta.get("function", {}).get("arguments", "")
-                            if arg_chunk:
-                                tool_calls_acc[idx]["arguments_str"] += arg_chunk
-
-                    # Usage (typically in the final chunk)
-                    if usage := chunk.get("usage"):
-                        yield Usage(
-                            prompt_tokens=usage.get("prompt_tokens", 0),
-                            completion_tokens=usage.get("completion_tokens", 0),
-                        )
+            # Usage (typically in the final chunk)
+            if usage := chunk.get("usage"):
+                yield Usage(
+                    prompt_tokens=usage.get("prompt_tokens", 0),
+                    completion_tokens=usage.get("completion_tokens", 0),
+                )
 
         # Emit ToolCallEnd for each accumulated tool call
         for _idx, tc_acc in sorted(tool_calls_acc.items()):
