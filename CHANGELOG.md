@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.33.0] - 2026-06-30
+
+### Added
+
+- **Bring-your-own OpenAI client on `LLMClient`.** New `openai_client` parameter
+  accepts a pre-built `openai` SDK client (`OpenAI`/`AzureOpenAI` or their async
+  variants). When supplied, the OpenAI-compatible code paths delegate the HTTP
+  call to that client, so its `base_url`, `api_version`, auth — including
+  **Entra ID / managed-identity token refresh** via `azure_ad_token_provider` —
+  and `http_client` (e.g. `verify=False`) are reused as-is. `LLMClient` still
+  builds the request body, applies tools/structured output, emits `llm.azure.*`
+  spans, and parses the response. This unblocks the **classic Azure OpenAI API**
+  (deployments URL + `api-version`) and managed-identity auth behind a corporate
+  gateway, with the same code working in a notebook and an Azure ML `score.py`
+  deployment. Sync and async clients are both supported (sync runs off the event
+  loop); streaming included.
+
 ## [1.32.0] - 2026-06-29
 
 ### Added
