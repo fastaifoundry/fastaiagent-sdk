@@ -1,6 +1,6 @@
 [project]
 name = "fastaiagent"
-version = "1.36.0"
+version = "1.37.0"
 description = "Build, debug, evaluate, and operate AI agents. The only SDK with fork-and-rerun Agent Replay."
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -56,6 +56,7 @@ otel-export = [
     "opentelemetry-exporter-otlp>=1.20,<2",
 ]
 postgres = ["psycopg[binary,pool]>=3.2,<4"]
+redis = ["redis>=5.0,<9"]
 # Heavier PII backend for the safety library. The default detectors
 # (regex + Luhn PII, heuristic prompt-injection) are zero-dependency; this
 # extra only adds the optional Presidio NER backend. After installing it,
@@ -75,7 +76,7 @@ ui = [
     # endpoints (Sprint 3) — image upload + JSONL import are multipart.
     "python-multipart>=0.0.9,<1",
 ]
-all = ["fastaiagent[openai,anthropic,langchain,crewai,pydanticai,kb,qdrant,chroma,mcp-server,otel-export,postgres,safety,ui]"]
+all = ["fastaiagent[openai,anthropic,langchain,crewai,pydanticai,kb,qdrant,chroma,mcp-server,otel-export,postgres,redis,safety,ui]"]
 docs = [
     "mkdocs>=1.6,<2",
     "mkdocs-material>=9.5,<10",

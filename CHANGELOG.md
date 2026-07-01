@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.37.0] - 2026-07-01
+
+### Added
+
+- **Pluggable memory backends (`FactStore`).** `Memory(location=...)` now accepts external stores behind one protocol, verified by a shared conformance suite so behaviour never drifts:
+  - `location="postgres://…"` → `PostgresFactStore` (psycopg; `fastaiagent[postgres]`).
+  - `location="redis://…"` → `RedisFactStore` (`fastaiagent[redis]`).
+  - `location="sqlite"` (default `MemoryStore`) or any object implementing `FactStore`.
+  All backends share idempotent add, safe-by-default scoping, `supersede`, and guarded `delete` (removes superseded history too).
+- **Semantic fact recall.** `Memory(semantic="auto" | VectorStore, embedder=...)` mirrors facts into a vector index (`SemanticFactStore`), enabling `retrieve(query, tier=, id=)` to return facts **by meaning**. Facts written by `learn=` are indexed automatically; results honor scope isolation, skip superseded facts, and record match scores on the `memory.retrieve` span. `"auto"` builds an in-process FAISS index sized to the embedder (pass a shared `VectorStore` for production).
+- New exports: `FactStore`, `PostgresFactStore`, `RedisFactStore`, `SemanticFactStore`, `make_fact_store` (from `fastaiagent.learn`). New `fastaiagent[redis]` extra.
+
 ## [1.36.0] - 2026-07-01
 
 ### Added

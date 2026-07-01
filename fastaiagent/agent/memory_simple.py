@@ -75,10 +75,10 @@ def _make_store(location: Any):
     if hasattr(location, "add") and hasattr(location, "list_active"):
         return location
     if isinstance(location, str):
-        raise NotImplementedError(
-            f"external memory location {location!r} is Phase 2 — pass 'sqlite' "
-            "or a MemoryStore instance for now"
-        )
+        # e.g. "postgres://…" or "redis://…" → external FactStore backend.
+        from fastaiagent.learn import make_fact_store
+
+        return make_fact_store(location)
     raise TypeError("location must be 'sqlite', a store instance, or a connection string")
 
 
@@ -90,6 +90,24 @@ def _make_recall_store(recall: Any):
         # a shared VectorStore instance instead of "auto".
         return FaissVectorStore(dimension=384, index_type="flat")
     return recall  # assume a VectorStore instance
+
+
+def _wrap_semantic(store: Any, semantic: Any, embedder: Any):
+    """Wrap a fact store so facts are vector-indexed for semantic retrieve()."""
+    from fastaiagent.learn.faststore import SemanticFactStore
+
+    if embedder is None:
+        from fastaiagent.kb.embedding import get_default_embedder
+
+        embedder = get_default_embedder()
+    if semantic == "auto":
+        from fastaiagent.kb.backends.faiss import FaissVectorStore
+
+        dim = len(embedder.embed(["probe"])[0])  # match the embedder's dimension
+        index = FaissVectorStore(dimension=dim, index_type="flat")
+    else:
+        index = semantic  # assume a VectorStore instance
+    return SemanticFactStore(store, index, embedder)
 
 
 class Memory:
@@ -124,8 +142,16 @@ class Memory:
         summarize: LLMClient | None = None,
         recall: Any = None,
         dedupe: bool = False,
+        semantic: Any = None,
+        embedder: Any = None,
     ):
         self._store = _make_store(location)
+        # Semantic layer: mirror facts into a vector index so retrieve(query=...)
+        # works by meaning. Wraps the base store, so facts written by learn= are
+        # indexed too (they share this handle).
+        self._semantic = semantic is not None
+        if self._semantic:
+            self._store = _wrap_semantic(self._store, semantic, embedder)
         self._project_id = project_id
         self._agent_id = agent_id
         self._user_id = user_id
@@ -296,12 +322,25 @@ class Memory:
 
         Safe-by-default: ``tier="user"`` with no ``id`` returns ``[]``.
         """
-        if query is not None:
-            raise NotImplementedError(
-                "semantic retrieve(query=...) is Phase 2; use retrieve(tier=, id=) "
-                "for scope-based recall"
-            )
         scope, scope_id = self._scope_and_id(tier, id)
+        if query is not None:
+            if not self._semantic:
+                raise NotImplementedError(
+                    "semantic retrieve(query=...) needs semantic= on Memory; "
+                    "use retrieve(tier=, id=) for scope-based recall"
+                )
+            with memory_store_span(
+                "retrieve", tier=tier, scope=scope, scope_id=scope_id, project_id=self._project_id
+            ) as h:
+                hits = self._store.search(
+                    query,
+                    scope=scope,  # type: ignore[arg-type]
+                    scope_id=scope_id,
+                    project_id=self._project_id,
+                    top_k=limit or 10,
+                )
+                h.count = len(hits)
+            return [f for f, _score in hits]
         with memory_store_span(
             "retrieve", tier=tier, scope=scope, scope_id=scope_id, project_id=self._project_id
         ) as h:

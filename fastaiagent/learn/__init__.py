@@ -24,14 +24,26 @@ from fastaiagent.learn.extractor import (
     extract_facts_from_trace,
     run_extraction,
 )
+from fastaiagent.learn.faststore import (
+    FactStore,
+    PostgresFactStore,
+    RedisFactStore,
+    SemanticFactStore,
+    make_fact_store,
+)
 from fastaiagent.learn.store import Fact, MemoryStore, Scope
 
 __all__ = [
     "ExtractionResult",
     "Fact",
+    "FactStore",
     "MemoryStore",
+    "PostgresFactStore",
+    "RedisFactStore",
     "Scope",
+    "SemanticFactStore",
     "extract_and_store",
     "extract_facts_from_trace",
+    "make_fact_store",
     "run_extraction",
 ]

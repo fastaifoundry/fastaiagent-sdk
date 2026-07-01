@@ -56,6 +56,31 @@ mem.forget(tier="user", id="alice")                      # hard-delete; returns 
 - Per-user working windows are held **in-process**. Great for dev / single-node; for large-scale or horizontally-scaled multi-user, an external session/fact backend is the Phase-2 path.
 - `recall="auto"` builds a per-user in-process vector store. For a shared, production recall store, pass your own `VectorStore` (and note it isn't user-partitioned unless you namespace it).
 
+### Storage backends (`location`)
+
+Durable facts live wherever `location` points — the same `Memory` API, a different backend:
+
+```python
+Memory(location="sqlite")                                  # default local.db (single-node)
+Memory(location="postgres://user:pw@host:5432/db")         # needs fastaiagent[postgres]
+Memory(location="redis://host:6379/0")                     # needs fastaiagent[redis]
+Memory(location=my_store)                                  # any object implementing FactStore
+```
+
+All backends implement the same `FactStore` contract (idempotent add, safe scoping, supersede, delete) and are verified against one shared conformance suite, so behaviour doesn't drift. Use Postgres/Redis for multi-node or many-user deployments; SQLite for dev/single-node.
+
+### Semantic recall of facts (`semantic`)
+
+By default `retrieve(tier=, id=)` returns a scope's facts as a list. Turn on `semantic=` to retrieve **by meaning** with `retrieve(query, tier=, id=)`:
+
+```python
+mem = Memory(location="sqlite", semantic="auto")   # in-process FAISS + default embedder
+mem.persist("The user is allergic to peanuts", tier="user", id="alice")
+mem.retrieve("what foods should we avoid?", tier="user", id="alice")   # → the peanut fact
+```
+
+`semantic="auto"` builds an in-process vector index sized to the embedder; pass a `VectorStore` for a shared/production index and `embedder=` to override. Facts written by `learn=` are indexed automatically (they share the store). Semantic results honor the same scope isolation and skip superseded facts; the `memory.retrieve` span records match scores.
+
 ### Safe-by-default scoping
 
 At `user`/`project` scope an **empty id returns nothing** — one user's facts can never leak into another's context. Use `scope_id="*"` (on the low-level store) to deliberately read across all subjects. The `agent`/global tier stays permissive (shared truth). *(This corrects prior behaviour where an empty user id matched everyone — see the CHANGELOG.)*
