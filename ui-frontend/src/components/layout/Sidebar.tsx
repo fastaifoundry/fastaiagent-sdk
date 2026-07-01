@@ -3,6 +3,7 @@ import {
   Activity,
   BarChart3,
   Bot,
+  Brain,
   CheckSquare,
   Database,
   FileText,
@@ -64,7 +65,10 @@ const SECTIONS: NavSection[] = [
   },
   {
     label: "// KNOWLEDGE",
-    items: [{ to: "/kb", label: "Knowledge Bases", icon: Database }],
+    items: [
+      { to: "/kb", label: "Knowledge Bases", icon: Database },
+      { to: "/memory", label: "Memory", icon: Brain },
+    ],
   },
   {
     label: "// WORKFLOWS & AGENTS",

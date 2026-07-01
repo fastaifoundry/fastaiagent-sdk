@@ -98,6 +98,9 @@ const KbListPage = lazy(() =>
 const KbDetailPage = lazy(() =>
   import("@/pages/KbDetailPage").then((m) => ({ default: m.KbDetailPage }))
 );
+const MemoryPage = lazy(() =>
+  import("@/pages/MemoryPage").then((m) => ({ default: m.MemoryPage }))
+);
 const WorkflowsPage = lazy(() =>
   import("@/pages/WorkflowsPage").then((m) => ({ default: m.WorkflowsPage }))
 );
@@ -364,6 +367,14 @@ export default function App() {
                 element={
                   <Suspense fallback={<PageFallback />}>
                     <KbDetailPage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/memory"
+                element={
+                  <Suspense fallback={<PageFallback />}>
+                    <MemoryPage />
                   </Suspense>
                 }
               />

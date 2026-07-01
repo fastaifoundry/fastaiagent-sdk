@@ -156,11 +156,20 @@ class ComposableMemory:
 
         Block output comes first — the SystemMessage fragments act as pinned
         context the LLM sees before the literal conversation history.
+
+        Blocks render in declaration order and each is handed a
+        :class:`~fastaiagent.agent.memory_blocks.SharedMemoryContext` carrying
+        what earlier blocks produced this turn, so a later block can dedupe
+        against or condition on upstream output. The default
+        ``render_with_context`` just delegates to ``render`` — sharing is opt-in.
         """
+        from fastaiagent.agent.memory_blocks import SharedMemoryContext
+
         out: list[Message] = []
+        shared = SharedMemoryContext(query=query)
         for block in self.blocks:
             try:
-                out.extend(block.render(query))
+                rendered = block.render_with_context(query, shared)
             except Exception:
                 import logging
 
@@ -169,6 +178,11 @@ class ComposableMemory:
                     getattr(block, "name", type(block).__name__),
                     exc_info=True,
                 )
+                continue
+            out.extend(rendered)
+            shared.rendered.append(
+                (getattr(block, "name", type(block).__name__), list(rendered))
+            )
         out.extend(self.primary.get_context(max_messages=max_messages))
         return out
 

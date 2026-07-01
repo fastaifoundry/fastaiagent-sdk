@@ -33,6 +33,13 @@ def list_learned_memory(
         False, description="Include rows that have been replaced by newer facts."
     ),
     limit: int = Query(200, ge=1, le=2000),
+    redact: bool = Query(
+        False,
+        description=(
+            "Mask fact text using the installed read-mode RedactionPolicy. "
+            "No-op when no policy is installed (mirrors the trace endpoints)."
+        ),
+    ),
     _user: str = Depends(require_session),
 ) -> dict[str, Any]:
     """Return rows from ``learned_memory`` filtered by the active project.
@@ -80,8 +87,20 @@ def list_learned_memory(
     finally:
         db.close()
 
+    out_rows = [dict(r) for r in rows]
+    if redact:
+        # Read-mode masking: only fires when a RedactionPolicy(mode in
+        # {"read","both"}) is installed; otherwise leaves facts unchanged.
+        from fastaiagent.trace.redaction import get_redaction_policy
+
+        policy = get_redaction_policy()
+        if policy is not None and policy.mode in ("read", "both"):
+            for row in out_rows:
+                if isinstance(row.get("fact"), str):
+                    row["fact"] = policy.redact_string(row["fact"])
+
     return {
-        "rows": [dict(r) for r in rows],
+        "rows": out_rows,
         "total": total,
         "filters": {
             "scope": scope,

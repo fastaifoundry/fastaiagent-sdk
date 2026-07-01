@@ -477,11 +477,13 @@ class Agent:
 
             # Store in memory. Memory backends are text-only; record the
             # text summary so multimodal calls don't break the memory store.
+            # Wrapped in a ``memory.write`` span (+ per-block children).
             if self.memory:
-                self.memory.add(UserMessage(input_text))
+                from fastaiagent.agent._memory_tracing import traced_add
                 from fastaiagent.llm.message import AssistantMessage
 
-                self.memory.add(AssistantMessage(output))
+                traced_add(self.memory, UserMessage(input_text))
+                traced_add(self.memory, AssistantMessage(output))
 
             latency = int((time.monotonic() - start) * 1000)
             tokens = response.usage.get("total_tokens", 0)
@@ -595,11 +597,13 @@ class Agent:
                 await execute_guardrails(self.guardrails, output, GuardrailPosition.output)
 
             # Store in memory (text summary for multimodal inputs).
+            # Wrapped in a ``memory.write`` span (+ per-block children).
             if self.memory:
-                self.memory.add(UserMessage(input_text))
+                from fastaiagent.agent._memory_tracing import traced_add
                 from fastaiagent.llm.message import AssistantMessage
 
-                self.memory.add(AssistantMessage(output))
+                traced_add(self.memory, UserMessage(input_text))
+                traced_add(self.memory, AssistantMessage(output))
         finally:
             _current_checkpointer.reset(cp_token)
             _agent_path.reset(ap_token)
@@ -1040,9 +1044,12 @@ class Agent:
 
         # Add memory context. ComposableMemory uses the query text to run
         # query-conditioned blocks (e.g. VectorBlock); AgentMemory ignores
-        # it. Multimodal queries fall back to their text summary.
+        # it. Multimodal queries fall back to their text summary. The read is
+        # wrapped in a ``memory.read`` span (+ per-block children) for observability.
         if self.memory:
-            messages.extend(self.memory.get_context(query=query_text))
+            from fastaiagent.agent._memory_tracing import traced_get_context
+
+            messages.extend(traced_get_context(self.memory, query_text))
 
         # Prior conversation turns (multi-turn simulation / chat history).
         if history:
