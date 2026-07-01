@@ -28,10 +28,12 @@ from __future__ import annotations
 import json
 import logging
 import math
+import re
 import time
 import uuid
 import warnings
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -56,16 +58,107 @@ class MemoryIsolationError(RuntimeError):
 
 
 __all__ = [
+    "BlockRenderReport",
+    "BlockWriteReport",
     "FactExtractionBlock",
     "FewShotBlock",
     "MemoryBlock",
     "MemoryIsolationError",
     "PersistentFactBlock",
     "PlaneFactBlock",
+    "SharedMemoryContext",
     "StaticBlock",
     "SummaryBlock",
     "VectorBlock",
 ]
+
+# Bounded length for recalled-content snippets captured in trace spans. Mirrors
+# the KB span's "reference, not full content" discipline — memory has no backing
+# store to rehydrate from, so we keep a short, payload-gated, maskable preview.
+_SNIPPET_MAX_CHARS = 200
+
+
+def _snippet(text: str) -> str:
+    """Return a length-capped single-line preview of ``text`` for tracing."""
+    flat = " ".join((text or "").split())
+    return flat[:_SNIPPET_MAX_CHARS]
+
+
+def _strip_role_tag(text: str) -> str:
+    """Drop a leading ``[role] `` tag VectorBlock stamps on stored messages."""
+    return re.sub(r"^\[[^\]]*\]\s*", "", text or "")
+
+
+def _norm_for_dedupe(text: str) -> str:
+    """Lowercase + collapse whitespace so upstream-dedupe matching is stable."""
+    return " ".join((text or "").lower().split())
+
+
+@dataclass
+class BlockRenderReport:
+    """What a block contributed to a single ``render()`` — captured for tracing.
+
+    Blocks populate this during ``render()`` and expose it via
+    :meth:`MemoryBlock.last_render_report`. The tracing layer reads it without
+    reflecting on a block's private state. All content fields are bounded
+    snippets, gated + masked downstream.
+    """
+
+    block_name: str
+    block_type: str
+    rendered_count: int = 0
+    # VectorBlock-only: per-item final scores, rank order (highest first).
+    scores: list[float] | None = None
+    # Bounded, length-capped previews of the recalled/injected items.
+    snippets: list[str] | None = None
+    # Number of items dropped because an upstream block already surfaced them
+    # (VectorBlock with ``dedupe_against_upstream=True``). ``None`` = not applicable.
+    deduped_count: int | None = None
+
+
+@dataclass
+class BlockWriteReport:
+    """What a block did on a single ``on_message()`` — captured for tracing."""
+
+    block_name: str
+    block_type: str
+    action: str = "noop"  # "stored" | "summarized" | "extracted_facts" | "embedded" | "noop"
+    detail: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class SharedMemoryContext:
+    """One-directional pipe passed to :meth:`MemoryBlock.render_with_context`.
+
+    ``ComposableMemory`` renders blocks in declaration order and, before each
+    block, hands it what the *earlier* blocks already produced this turn — so a
+    later block can avoid repeating content or condition on it. Only block
+    output flows through here; the raw primary window is appended afterwards and
+    is not shared.
+    """
+
+    query: str
+    # (block_name, rendered messages) in render order, populated as we go.
+    rendered: list[tuple[str, list[Message]]] = field(default_factory=list)
+
+    def upstream_messages(self) -> list[Message]:
+        """All messages produced by earlier blocks this turn, in order."""
+        out: list[Message] = []
+        for _name, msgs in self.rendered:
+            out.extend(msgs)
+        return out
+
+    def upstream_text(self) -> str:
+        """Concatenated text content of all earlier blocks' output."""
+        return "\n".join(m.content or "" for m in self.upstream_messages())
+
+    def by_block(self, name: str) -> list[Message]:
+        """Messages produced by a specific earlier block (by ``name``)."""
+        out: list[Message] = []
+        for n, msgs in self.rendered:
+            if n == name:
+                out.extend(msgs)
+        return out
 
 
 class MemoryBlock(ABC):
@@ -92,6 +185,19 @@ class MemoryBlock(ABC):
         ``query`` is the current user input, useful for query-conditioned
         blocks (e.g. :class:`VectorBlock`).
         """
+
+    def render_with_context(
+        self, query: str, shared: SharedMemoryContext
+    ) -> list[Message]:
+        """Render, optionally reading what earlier blocks produced this turn.
+
+        ``ComposableMemory`` calls this (not :meth:`render`) and passes a
+        :class:`SharedMemoryContext` holding the output of blocks that ran
+        earlier in the same read pass. The default **ignores** ``shared`` and
+        delegates to :meth:`render`, so existing and third-party blocks need no
+        changes. Override to condition on / dedupe against upstream output.
+        """
+        return self.render(query)
 
     def isolated_copy(self) -> MemoryBlock:
         """Return a copy safe to use in a single isolated evaluation.
@@ -122,6 +228,22 @@ class MemoryBlock(ABC):
     def load(self, path: Path) -> None:
         """Load block state. Default: no-op."""
 
+    def last_render_report(self) -> BlockRenderReport | None:
+        """Describe what the most recent :meth:`render` contributed, for tracing.
+
+        Optional. The default returns ``None`` so custom/third-party blocks need
+        no changes and the tracing layer never reflects on private state. Shipped
+        blocks override this to surface counts, scores, and bounded snippets.
+        """
+        return None
+
+    def last_write_report(self) -> BlockWriteReport | None:
+        """Describe what the most recent :meth:`on_message` did, for tracing.
+
+        Optional — defaults to ``None`` (see :meth:`last_render_report`).
+        """
+        return None
+
 
 # ---------------------------------------------------------------------------
 # StaticBlock
@@ -151,6 +273,16 @@ class StaticBlock(MemoryBlock):
     def isolated_copy(self) -> MemoryBlock:
         # Stateless — a fresh instance with the same text is fully isolated.
         return StaticBlock(self.text, self.name)
+
+    def last_render_report(self) -> BlockRenderReport | None:
+        if not self.text:
+            return BlockRenderReport(self.name, type(self).__name__, rendered_count=0)
+        return BlockRenderReport(
+            self.name, type(self).__name__, rendered_count=1, snippets=[_snippet(self.text)]
+        )
+
+    def last_write_report(self) -> BlockWriteReport | None:
+        return BlockWriteReport(self.name, type(self).__name__, action="noop")
 
 
 # ---------------------------------------------------------------------------
@@ -196,6 +328,21 @@ class FewShotBlock(MemoryBlock):
         # Read-only demos — a fresh instance is fully isolated.
         return FewShotBlock(self.demos, name=self.name, header=self.header)
 
+    def last_render_report(self) -> BlockRenderReport | None:
+        if not self.demos:
+            return BlockRenderReport(self.name, type(self).__name__, rendered_count=0)
+        return BlockRenderReport(
+            self.name,
+            type(self).__name__,
+            rendered_count=len(self.demos),
+            snippets=[
+                _snippet(f"{d.get('input', '')} -> {d.get('output', '')}") for d in self.demos
+            ],
+        )
+
+    def last_write_report(self) -> BlockWriteReport | None:
+        return BlockWriteReport(self.name, type(self).__name__, action="noop")
+
 
 # ---------------------------------------------------------------------------
 # SummaryBlock
@@ -237,6 +384,7 @@ class SummaryBlock(MemoryBlock):
         self._messages_seen: int = 0
         self._summary: str = ""
         self._archive: list[Message] = []
+        self._last_write: BlockWriteReport | None = None
 
     def isolated_copy(self) -> MemoryBlock:
         # Share the llm handle; reset in-process summary state per candidate.
@@ -250,6 +398,7 @@ class SummaryBlock(MemoryBlock):
     def on_message(self, message: Message) -> None:
         self._archive.append(message)
         self._messages_seen += 1
+        self._last_write = BlockWriteReport(self.name, type(self).__name__, action="stored")
         # Refresh summary when we cross a threshold AND there is something
         # older than keep_last to summarize.
         if self._messages_seen < self.summarize_every:
@@ -259,6 +408,25 @@ class SummaryBlock(MemoryBlock):
         if len(self._archive) <= self.keep_last:
             return
         self._refresh_summary()
+        self._last_write = BlockWriteReport(
+            self.name,
+            type(self).__name__,
+            action="summarized",
+            detail={"summary_triggered": True, "summary_chars": len(self._summary)},
+        )
+
+    def last_write_report(self) -> BlockWriteReport | None:
+        return self._last_write
+
+    def last_render_report(self) -> BlockRenderReport | None:
+        if not self._summary:
+            return BlockRenderReport(self.name, type(self).__name__, rendered_count=0)
+        return BlockRenderReport(
+            self.name,
+            type(self).__name__,
+            rendered_count=1,
+            snippets=[_snippet(self._summary)],
+        )
 
     def _refresh_summary(self) -> None:
         to_summarize = self._archive[: -self.keep_last]
@@ -347,6 +515,12 @@ class VectorBlock(MemoryBlock):
         recency_half_life_seconds: Time after which a chunk's recency
             contribution halves. Default ``3600`` (one hour). Lower values
             decay faster.
+        dedupe_against_upstream: When ``True`` and this block runs inside a
+            :class:`ComposableMemory` after other blocks, drop any recalled
+            message whose content is already present in an earlier block's
+            output this turn (via :class:`SharedMemoryContext`). Saves prompt
+            tokens by not re-recalling what a ``StaticBlock`` / fact block
+            already injected. Default ``False`` (no change).
     """
 
     name = "vector"
@@ -361,6 +535,7 @@ class VectorBlock(MemoryBlock):
         recency_weight: float = 0.0,
         importance_weight: float = 0.0,
         recency_half_life_seconds: float = 3600.0,
+        dedupe_against_upstream: bool = False,
     ):
         from fastaiagent.kb.embedding import get_default_embedder
 
@@ -382,6 +557,9 @@ class VectorBlock(MemoryBlock):
         self.recency_weight = recency_weight
         self.importance_weight = importance_weight
         self.recency_half_life_seconds = recency_half_life_seconds
+        self.dedupe_against_upstream = dedupe_against_upstream
+        self._last_render: BlockRenderReport | None = None
+        self._last_write: BlockWriteReport | None = None
 
     def isolated_copy(self) -> MemoryBlock:
         # VectorBlock upserts to its external store in on_message, so neither
@@ -426,12 +604,17 @@ class VectorBlock(MemoryBlock):
     def on_message(self, message: Message) -> None:
         chunk = self._make_chunk(message)
         if chunk is None:
+            self._last_write = BlockWriteReport(self.name, type(self).__name__, action="noop")
             return
         try:
             embedding = self.embedder.embed([chunk.content])[0]
             self.store.add([chunk], [embedding])
+            self._last_write = BlockWriteReport(
+                self.name, type(self).__name__, action="embedded"
+            )
         except Exception as err:
             _log.warning("VectorBlock failed to index message: %s", err)
+            self._last_write = BlockWriteReport(self.name, type(self).__name__, action="noop")
 
     def _score_hits(self, hits: list[tuple[Chunk, float]]) -> list[tuple[Chunk, float]]:
         """Apply optional recency + importance weights on top of similarity.
@@ -467,7 +650,12 @@ class VectorBlock(MemoryBlock):
         scored.sort(key=lambda x: x[1], reverse=True)
         return scored
 
-    def render(self, query: str) -> list[Message]:
+    def _retrieve(self, query: str) -> list[tuple[Chunk, float]]:
+        """Embed the query, search, score, and namespace-filter — no rendering.
+
+        Returns ``(chunk, final_score)`` pairs in rank order. Degrades to ``[]``
+        on any embed/search error (the agent runs without recall).
+        """
         if not query or not query.strip():
             return []
         try:
@@ -481,13 +669,56 @@ class VectorBlock(MemoryBlock):
             _log.warning("VectorBlock search failed: %s", err)
             return []
         scored = self._score_hits(list(hits))
-        relevant = [
-            c for c, _ in scored if c.metadata.get("namespace", self.namespace) == self.namespace
+        # Keep the (chunk, score) pairs through the namespace filter so the
+        # render report can surface per-item scores without recomputation.
+        return [
+            (c, s)
+            for c, s in scored
+            if c.metadata.get("namespace", self.namespace) == self.namespace
         ]
+
+    def _build(
+        self, relevant: list[tuple[Chunk, float]], deduped_count: int | None = None
+    ) -> list[Message]:
+        """Turn scored chunks into a SystemMessage + record the render report."""
+        self._last_render = BlockRenderReport(
+            self.name,
+            type(self).__name__,
+            rendered_count=len(relevant),
+            scores=[round(float(s), 6) for _, s in relevant] or None,
+            snippets=[_snippet(c.content) for c, _ in relevant] or None,
+            deduped_count=deduped_count,
+        )
         if not relevant:
             return []
-        body = "\n".join(f"- {c.content}" for c in relevant)
+        body = "\n".join(f"- {c.content}" for c, _ in relevant)
         return [SystemMessage(f"Relevant prior exchanges:\n{body}")]
+
+    def render(self, query: str) -> list[Message]:
+        return self._build(self._retrieve(query))
+
+    def render_with_context(
+        self, query: str, shared: SharedMemoryContext
+    ) -> list[Message]:
+        relevant = self._retrieve(query)
+        if not self.dedupe_against_upstream or not relevant:
+            return self._build(relevant)
+        upstream = _norm_for_dedupe(shared.upstream_text())
+        kept: list[tuple[Chunk, float]] = []
+        dropped = 0
+        for chunk, score in relevant:
+            needle = _norm_for_dedupe(_strip_role_tag(chunk.content))
+            if needle and needle in upstream:
+                dropped += 1
+                continue
+            kept.append((chunk, score))
+        return self._build(kept, deduped_count=dropped)
+
+    def last_render_report(self) -> BlockRenderReport | None:
+        return self._last_render
+
+    def last_write_report(self) -> BlockWriteReport | None:
+        return self._last_write
 
 
 # ---------------------------------------------------------------------------
@@ -507,6 +738,21 @@ class FactExtractionBlock(MemoryBlock):
             (e.g. ``gpt-4o-mini``, ``claude-haiku-4-5``).
         max_facts: Cap the running fact list; oldest facts drop when exceeded.
         extract_every: Run extraction every N messages (1 = every message).
+        persist: When ``True``, newly extracted facts are also written to the
+            durable ``learned_memory`` table during the run — so they survive
+            across runs and can be read back by :class:`PersistentFactBlock`.
+            Each persisted fact is stamped with the current trace id as
+            ``source_trace_id`` (lineage). Default ``False`` (in-conversation
+            only — today's behaviour, unchanged).
+        scope: scope for persisted facts (``user`` / ``project`` / ``agent``).
+        scope_id: identifier within the scope. **Required when ``persist=True``**
+            — an empty scope_id write is ambiguous.
+        project_id: project partition for persisted facts (default ``""``).
+        confidence: confidence stamped on auto-persisted facts. Default ``0.6``
+            (below curated ``1.0``) so machine-extracted facts sort below and
+            are visibly distinguishable from human-approved ones.
+        store: dependency injection for tests; defaults to a
+            :class:`fastaiagent.learn.MemoryStore` against the configured local.db.
     """
 
     name = "facts"
@@ -516,24 +762,55 @@ class FactExtractionBlock(MemoryBlock):
         llm: LLMClient,
         max_facts: int = 200,
         extract_every: int = 1,
+        persist: bool = False,
+        scope: str = "agent",
+        scope_id: str = "",
+        project_id: str = "",
+        confidence: float = 0.6,
+        store: object | None = None,
     ):
         if max_facts < 1:
             raise ValueError("max_facts must be >= 1")
         if extract_every < 1:
             raise ValueError("extract_every must be >= 1")
+        if persist:
+            if scope not in ("user", "project", "agent"):
+                raise ValueError(f"scope must be one of user|project|agent, got {scope!r}")
+            if not scope_id:
+                raise ValueError("scope_id is required when persist=True")
+            if not 0.0 <= confidence <= 1.0:
+                raise ValueError("confidence must be in 0.0..1.0")
         self.llm = llm
         self.max_facts = max_facts
         self.extract_every = extract_every
+        self.persist = persist
+        self.scope = scope
+        self.scope_id = scope_id
+        self.project_id = project_id
+        self.confidence = confidence
+        self._store = store  # may be None — lazy init in _persist_facts
         self._messages_seen = 0
         self._facts: list[str] = []
+        self._last_write: BlockWriteReport | None = None
 
     def isolated_copy(self) -> MemoryBlock:
+        # With persist on, this writes an external store during a run — like
+        # VectorBlock, that can't be isolated per candidate without bleeding
+        # writes across candidates. Refuse (optimize turns this into a clear
+        # error or an explicit opt-in).
+        if self.persist:
+            raise MemoryIsolationError(
+                "FactExtractionBlock(persist=True) writes to the learned_memory "
+                "store during a run, so it can't be isolated per candidate. Set "
+                "persist=False to optimize, or pass allow_writable_memory=True."
+            )
         # Share the llm handle; reset extracted-facts state per candidate.
         return FactExtractionBlock(
             llm=self.llm, max_facts=self.max_facts, extract_every=self.extract_every
         )
 
     def on_message(self, message: Message) -> None:
+        self._last_write = BlockWriteReport(self.name, type(self).__name__, action="noop")
         if message.role not in (MessageRole.user, MessageRole.assistant):
             return
         content = (message.content or "").strip()
@@ -543,12 +820,87 @@ class FactExtractionBlock(MemoryBlock):
         if self._messages_seen % self.extract_every != 0:
             return
         new_facts = self._extract(content)
+        added_facts: list[str] = []
         for fact in new_facts:
             if fact and fact not in self._facts:
                 self._facts.append(fact)
+                added_facts.append(fact)
         # Enforce cap — drop the oldest facts first.
         if len(self._facts) > self.max_facts:
             self._facts = self._facts[-self.max_facts :]
+        detail: dict[str, Any] = {
+            "facts_extracted": len(added_facts),
+            "total_facts": len(self._facts),
+        }
+        if self.persist and added_facts:
+            detail["persisted"] = self._persist_facts(added_facts)
+        self._last_write = BlockWriteReport(
+            self.name,
+            type(self).__name__,
+            action="extracted_facts",
+            detail=detail,
+        )
+
+    def _resolve_store(self):
+        if self._store is None:
+            from fastaiagent.learn.store import MemoryStore
+
+            self._store = MemoryStore()
+        return self._store
+
+    @staticmethod
+    def _current_trace_id() -> str | None:
+        """Hex trace id of the active span, so persisted facts link to the run."""
+        try:
+            from opentelemetry import trace as _otel_trace
+
+            ctx = _otel_trace.get_current_span().get_span_context()
+            if ctx and ctx.trace_id:
+                return format(ctx.trace_id, "032x")
+        except Exception:
+            return None
+        return None
+
+    def _persist_facts(self, facts: list[str]) -> int:
+        """Write newly-extracted facts to ``learned_memory``. Returns count added.
+
+        Idempotent (the store's UNIQUE constraint dedupes). Never raises — a
+        persist failure logs and the run continues, matching block isolation.
+        """
+        from fastaiagent.learn import Fact
+
+        trace_id = self._current_trace_id()
+        written = 0
+        try:
+            store = self._resolve_store()
+            for fact in facts:
+                store.add(
+                    Fact(
+                        scope=self.scope,  # type: ignore[arg-type]
+                        scope_id=self.scope_id,
+                        fact=fact,
+                        source_trace_id=trace_id,
+                        confidence=self.confidence,
+                        project_id=self.project_id,
+                    )
+                )
+                written += 1
+        except Exception as err:
+            _log.warning("FactExtractionBlock persist failed: %s", err)
+        return written
+
+    def last_write_report(self) -> BlockWriteReport | None:
+        return self._last_write
+
+    def last_render_report(self) -> BlockRenderReport | None:
+        if not self._facts:
+            return BlockRenderReport(self.name, type(self).__name__, rendered_count=0)
+        return BlockRenderReport(
+            self.name,
+            type(self).__name__,
+            rendered_count=len(self._facts),
+            snippets=[_snippet(f) for f in self._facts],
+        )
 
     def _extract(self, content: str) -> list[str]:
         from fastaiagent.llm.message import UserMessage
@@ -778,6 +1130,18 @@ class PersistentFactBlock(MemoryBlock):
         scope_label = f"{self.scope}:{self.scope_id}" if self.scope_id else self.scope
         return [SystemMessage(f"Learned facts ({scope_label}):\n{bullets}")]
 
+    def last_render_report(self) -> BlockRenderReport | None:
+        cached = self._cached or []
+        return BlockRenderReport(
+            self.name,
+            type(self).__name__,
+            rendered_count=len(cached),
+            snippets=[_snippet(f) for f in cached] or None,
+        )
+
+    def last_write_report(self) -> BlockWriteReport | None:
+        return BlockWriteReport(self.name, type(self).__name__, action="noop")
+
 
 # ---------------------------------------------------------------------------
 # PlaneFactBlock (connected Enterprise plane — WS3 central governed memory)
@@ -933,3 +1297,15 @@ class PlaneFactBlock(MemoryBlock):
             return []
         bullets = "\n".join(f"- {fact}" for fact in self._cached)
         return [SystemMessage(f"Curated facts (agent:{self.agent_id}):\n{bullets}")]
+
+    def last_render_report(self) -> BlockRenderReport | None:
+        cached = self._cached or []
+        return BlockRenderReport(
+            self.name,
+            type(self).__name__,
+            rendered_count=len(cached),
+            snippets=[_snippet(f) for f in cached] or None,
+        )
+
+    def last_write_report(self) -> BlockWriteReport | None:
+        return BlockWriteReport(self.name, type(self).__name__, action="noop")

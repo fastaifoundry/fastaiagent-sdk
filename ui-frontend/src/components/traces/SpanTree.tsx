@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Activity, Bot, ChevronRight, Database, Shield, Sparkles, Wrench } from "lucide-react";
+import { Activity, Bot, Brain, ChevronRight, Database, Shield, Sparkles, Wrench } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDurationMs } from "@/lib/format";
 import type { SpanRow, SpanTreeNode } from "@/lib/types";
@@ -41,6 +41,7 @@ function iconFor(name: string) {
   if (name.startsWith("llm.") || name.startsWith("gen_ai.")) return Sparkles;
   if (name.startsWith("tool.")) return Wrench;
   if (name.startsWith("retrieval.") || name.startsWith("kb.")) return Database;
+  if (name.startsWith("memory.")) return Brain;
   if (name.startsWith("guardrail.")) return Shield;
   return Activity;
 }
@@ -50,6 +51,7 @@ function barColor(name: string): string {
   if (name.startsWith("llm.") || name.startsWith("gen_ai.")) return "bg-accent/70";
   if (name.startsWith("tool.")) return "bg-fa-info/70";
   if (name.startsWith("retrieval.") || name.startsWith("kb.")) return "bg-fa-warning/70";
+  if (name.startsWith("memory.")) return "bg-violet-500/70";
   if (name.startsWith("guardrail.")) return "bg-fa-success/70";
   return "bg-muted-foreground/40";
 }

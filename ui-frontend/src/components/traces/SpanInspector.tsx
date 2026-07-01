@@ -22,6 +22,7 @@ const INPUT_KEYS = new Set([
   "tool.input",
   "tool.args",
   "retrieval.query",
+  "memory.query",
   "input",
 ]);
 
@@ -36,6 +37,13 @@ const OUTPUT_KEYS = new Set([
   "tool.result",
   "retrieval.doc_ids",
   "retrieval.result_count",
+  "memory.snippets",
+  "memory.scores",
+  "memory.rendered_count",
+  "memory.deduped_count",
+  "memory.message_count",
+  "memory.action",
+  "memory.detail",
   "output",
 ]);
 

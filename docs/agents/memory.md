@@ -143,6 +143,8 @@ Any backend implementing the `VectorStore` protocol works — `FaissVectorStore`
 
 **When to use**: conversations that span days or sessions, where long-ago facts should be retrievable by meaning, not just recency.
 
+`VectorBlock` also accepts `dedupe_against_upstream=True` — see [Shared memory context](#shared-memory-context) — to skip recalling anything an earlier block already put in the prompt.
+
 #### Memory scoring (recency + importance) — v1.9.0 { #memory-scoring }
 
 By default `VectorBlock` ranks retrieval results by cosine similarity
@@ -254,6 +256,24 @@ FactExtractionBlock(
 
 **When to use**: user-focused assistants where you want stable facts ("user is allergic to peanuts", "user's kids are named Maya and Omar") to persist independently from the conversation log.
 
+#### Persisting facts across runs (`persist=True`)
+
+By default `FactExtractionBlock` holds facts only for the current conversation. Set `persist=True` to also write each **newly extracted** fact to the durable `learned_memory` table *during the run* — so it survives restarts and can be read back later by [`PersistentFactBlock`](#persistentfactblock). This closes the loop without needing the offline [`fastaiagent learn`](../cli/learn.md) job.
+
+```python
+FactExtractionBlock(
+    llm=llm,
+    persist=True,           # write new facts to learned_memory during the run
+    scope="user",           # 'user' | 'project' | 'agent'
+    scope_id="upendra",     # REQUIRED when persist=True
+    confidence=0.6,         # stamped on auto-facts; below curated 1.0 so they sort lower
+)
+```
+
+Each persisted fact is stamped with the **current trace id** as `source_trace_id`, so the [Memory page](#the-memory-page) shows a clickable link back to the run that produced it. Writes are idempotent (the store's uniqueness constraint dedupes) and failure-isolated (a store error logs and the run continues). Because it now writes an external store mid-run, `isolated_copy()` raises `MemoryIsolationError` when `persist=True` — the same guard as `VectorBlock` — so `fastaiagent.optimize` candidates don't bleed writes.
+
+This is the runtime-write counterpart to the read-only `PersistentFactBlock`: extract-and-persist on the way in, read-back on future runs. You can still write facts directly with `MemoryStore.add(Fact(...))` (source stays `NULL` / "manual").
+
 ### `PersistentFactBlock`
 
 Read-only block that loads facts from the `learned_memory` table — populated offline by [`fastaiagent learn`](../cli/learn.md), the [Trace Learning Loop](../learning/memory-loop.md). Carries durable facts **across runs**, where `FactExtractionBlock` only carries them within a single conversation.
@@ -335,6 +355,30 @@ Block order matters — they render in declaration order, and the resulting Syst
 
 Followed by the primary sliding window's recent messages.
 
+## Shared memory context
+
+Blocks render in declaration order, and each block can optionally read **what the earlier blocks already produced this turn**. `ComposableMemory` passes a `SharedMemoryContext` down the chain — a minimal one-directional pipe (not a full graph): block N sees the output of blocks 1..N-1, never the reverse.
+
+Sharing is **opt-in and backward-compatible**. The base method delegates to `render`, so blocks that only implement `render(query)` — including custom and third-party blocks — are unaffected:
+
+```python
+class MemoryBlock:
+    def render_with_context(self, query, shared):
+        return self.render(query)          # default: ignore upstream
+```
+
+A block that wants upstream output overrides `render_with_context` and reads from `shared`:
+
+```python
+shared.upstream_text()          # concatenated content of all earlier blocks
+shared.by_block("static")       # messages from a specific earlier block
+shared.upstream_messages()      # everything upstream, in order
+```
+
+**Shipped consumer — `VectorBlock(dedupe_against_upstream=True)`.** When enabled, `VectorBlock` drops any recalled message whose content an earlier block already injected (e.g. a `StaticBlock` pin or an extracted fact), so you don't spend tokens saying the same thing twice. Matching is a conservative normalized substring test — it only drops clear duplicates. The `memory.read.vector` span reports `deduped_count` so you can see how many were skipped. Off by default; `VectorBlock` behaviour is unchanged unless you set the flag.
+
+Only block output flows through the pipe — the raw primary window is appended afterwards and is not shared.
+
 ## Persistence
 
 `ComposableMemory.save(path)` writes to a directory:
@@ -389,6 +433,49 @@ class MoodBlock(MemoryBlock):
 Then just drop it into `ComposableMemory(blocks=[MoodBlock(), ...])`.
 
 If your block holds persistent state worth saving, override `save(path)` and `load(path)`. See [`fastaiagent/agent/memory_blocks.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/agent/memory_blocks.py) for the shipped implementations.
+
+## Observability — seeing what the agent remembered
+
+Memory is no longer a black box at runtime. Every turn, the read and write are wrapped in trace spans with a **child span per block**, so you can open a trace and see *which block recalled what, and why* — the same way you already read KB `retrieval.*` spans.
+
+- **`memory.read`** (one per turn) — `memory.block_count`, `memory.message_count`, and the `memory.query`. One **`memory.read.<block>`** child per rendering block carries `memory.rendered_count`, bounded `memory.snippets` of what it injected, and — for `VectorBlock` — `memory.scores` (per-item similarity in rank order) plus `memory.deduped_count` when [upstream dedupe](#shared-memory-context) is on. This is the difference between "memory recalled something" and "memory recalled the *wrong* thing, score 0.71".
+- **`memory.write`** (one per stored message) — one **`memory.write.<block>`** child per block with a `memory.action` (`embedded`, `summarized`, `extracted_facts`, `stored`, `noop`) and a `memory.detail` count (e.g. `facts_extracted`, and `persisted` when [`persist=True`](#persisting-facts-across-runs-persisttrue)).
+
+![Memory spans in a trace](img/memory-01-trace-memory-spans.png)
+
+Click the `memory.read.vector` child to see the recalled items and their scores:
+
+![VectorBlock scores and snippets](img/memory-02-vectorblock-scores.png)
+
+These spans nest under the agent span automatically and are **no-ops when tracing is off** — memory behaves exactly as before, with no extra embedding or LLM calls. Snippets and query text honor `FASTAIAGENT_TRACE_PAYLOADS=0` and any installed [`RedactionPolicy`](../security.md) (the "Mask secrets" toggle), since memory content can contain PII.
+
+### The Memory page
+
+The Local UI (`fastaiagent ui`) has a **Memory** page (sidebar → Knowledge → Memory) that browses the `learned_memory` table — the durable facts [`PersistentFactBlock`](#persistentfactblock) reads back across runs. Filter by scope, trace a fact's source, and toggle masking:
+
+![Memory page](img/memory-03-memory-page.png)
+
+Each row is one durable fact:
+
+| Column | Meaning |
+|---|---|
+| **Fact** | The stored statement, e.g. *"Has a beagle named Biscuit; allergic to cats."* This is the `fact` text a `PersistentFactBlock` injects into a matching agent's prompt. |
+| **Scope** | Rendered as `scope:scope_id` (e.g. `user:upendra`). `scope` is one of `user` / `project` / `agent`; `scope_id` is the identifier within it (a user id, a project key, or an agent name). A block reading `PersistentFactBlock(scope="user", scope_id="upendra")` will pick up exactly the `user:upendra` rows. |
+| **Source** | Where the fact came from. A **`trace`** link jumps to the run that produced it (facts persisted by `FactExtractionBlock(persist=True)` carry the run's trace id as `source_trace_id`). **`manual`** = inserted directly via `MemoryStore.add`. |
+| **Confidence** | The `confidence` column (0–1); also drives `importance_weight` ranking. Auto-extracted facts default to `0.6`, curated/manual to `1.0`, so provenance is visible at a glance. |
+| **Created** | When the fact was written. |
+
+**Scope filter** — the dropdown lists every `scope:scope_id` partition (users, projects, and agents — memory is not agent-only) with counts, plus "All scopes".
+
+**History** — toggle **Show superseded** to include facts that a newer version replaced. Superseded rows render muted with a `superseded → #id` marker pointing at the row that replaced them (facts are versioned by append + `supersede(old, new)`, never overwritten).
+
+![Memory page — superseded history](img/memory-04-superseded.png)
+
+**Where do these rows come from?** Three ways: (1) `FactExtractionBlock(persist=True)` writes them **during a run** (with a source trace); (2) the offline [`fastaiagent learn`](../cli/learn.md) [Trace Learning Loop](../learning/memory-loop.md) mines them from past traces; (3) you insert them directly with `MemoryStore.add(Fact(...))` (source = `manual`). The `scope`/`scope_id` values are whatever the producer assigned — they are not auto-detected from conversation.
+
+Per-turn live memory (what a block recalled *this turn*, with scores) lives in the trace's `memory.read` spans above; the Memory page shows the durable facts that persist between runs.
+
+Reproduce all three views with `examples/memory_observability/` (`companion.py` seeds a trace, `snapshot.py` captures the UI).
 
 ## Safety
 

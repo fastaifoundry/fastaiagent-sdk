@@ -69,6 +69,12 @@ SENSITIVE_ATTR_KEYS: frozenset[str] = frozenset(
         # Research template free-form payloads.
         "fastaiagent.research.brief",
         "fastaiagent.research.findings",
+        # Memory observability payloads — recalled snippets / extracted-fact
+        # detail can contain PII (FactExtractionBlock extracts facts about the
+        # user). Numeric ``memory.scores`` is structural and stays clear.
+        "memory.query",
+        "memory.snippets",
+        "memory.detail",
     }
 )
 

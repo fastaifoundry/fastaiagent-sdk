@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.35.0] - 2026-07-01
+
+### Added
+
+- **Memory lineage in the Local UI.** The Memory page now shows a **Source** column — a clickable `trace` link (facts persisted from a run) vs `manual` (inserted via `MemoryStore.add`) — a **scope dropdown** listing every `scope:scope_id` partition (user/project/agent) with counts, and a **Show superseded** toggle that reveals the audit history with a `superseded → #id` marker.
+- **Persist-during-run for `FactExtractionBlock`.** New opt-in `persist=True` (+ `scope`, `scope_id` [required], `project_id`, `confidence=0.6`, `store`) writes newly extracted facts to the durable `learned_memory` table *during the run*, each stamped with the current trace id as `source_trace_id` — closing the extract → persist → read-back loop without the offline `learn` job. Idempotent, failure-isolated, and `isolated_copy()` raises `MemoryIsolationError` when `persist=True` (optimize-safe, like `VectorBlock`). The `memory.write.facts` span reports a `persisted` count.
+- **Shared memory context (opt-in pipe).** `ComposableMemory` now passes a `SharedMemoryContext` to each block via a new `MemoryBlock.render_with_context(query, shared)` (default delegates to `render` — fully backward-compatible), so a later block can read what earlier blocks produced this turn. Shipped consumer: `VectorBlock(dedupe_against_upstream=True)` skips recalling content an earlier block already injected; the `memory.read.vector` span reports `deduped_count`.
+
+  All additive and opt-in — default behavior is unchanged.
+
+## [1.34.0] - 2026-07-01
+
+### Added
+
+- **Memory observability — see what the agent remembered.** Agent memory now emits trace spans, bringing it to parity with KB `retrieval.*` spans:
+  - **`memory.read`** (per turn) and **`memory.write`** (per stored message) parent spans, each with a **child span per block** (`memory.read.<block>` / `memory.write.<block>`). Reads carry `memory.block_count`, `memory.message_count`, `memory.query`; per-block children carry `memory.rendered_count`, bounded `memory.snippets`, and — for `VectorBlock` — `memory.scores` (per-item similarity in rank order). Writes carry a `memory.action` (`embedded`/`summarized`/`extracted_facts`/`stored`/`noop`) and a `memory.detail` count.
+  - **Local UI Memory page** (`/memory`, sidebar → Knowledge → Memory) browsing the `learned_memory` facts `PersistentFactBlock` reads across runs, with scope filtering and a "Mask secrets" toggle. Memory spans render in the trace detail with a dedicated icon, consistent with retrieval spans.
+  - **Clean block reporting interface** — `MemoryBlock.last_render_report()` / `last_write_report()` (optional, default `None`) so the tracer never reflects on block internals; custom blocks work unchanged.
+  - Snippets/query/detail are payload-gated (`FASTAIAGENT_TRACE_PAYLOADS=0`) and flow through the `RedactionPolicy` masking path. Spans are **no-ops when tracing is off** and add no extra embedding/LLM calls.
+  - New example `examples/memory_observability/` (companion + Playwright snapshot) and docs in `docs/agents/memory.md`.
+
+  Fully additive — no behavioral or API changes to existing memory code.
+
 ## [1.33.0] - 2026-06-30
 
 ### Added

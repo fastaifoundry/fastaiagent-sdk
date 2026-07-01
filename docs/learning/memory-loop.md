@@ -37,6 +37,9 @@ store.supersede(old_id=12, new_id=34)
 
 Inserts are idempotent: re-adding the same `(scope, scope_id, fact, project_id)` returns the existing row id. To replace a fact rather than duplicate it, call `supersede` — the old row is preserved with `superseded_by` pointing at the new row, so the audit chain stays intact.
 
+!!! tip "Runtime alternative to this offline loop"
+    You don't have to run the offline `fastaiagent learn` job to populate `learned_memory`. [`FactExtractionBlock(persist=True)`](../agents/memory.md#persisting-facts-across-runs-persisttrue) writes facts to the same table **during a run** — stamped with the run's trace id — and `MemoryStore.add(...)` writes them directly from your own code. All three producers feed the same store and the same [Memory page](../agents/memory.md#the-memory-page).
+
 ### 2. `extract_facts_from_trace` — the LLM call
 
 ```python
