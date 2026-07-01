@@ -127,15 +127,23 @@ class MemoryStore:
     ) -> list[Fact]:
         """Return non-superseded facts for the given scope.
 
-        ``scope_id=""`` matches all scope_ids within the scope (useful when
-        you want every agent-scoped fact, not just one agent's).
+        **Safe-by-default:** at ``user`` / ``project`` scope an empty
+        ``scope_id`` returns ``[]`` — never every subject's facts — so one
+        user's personal facts can't leak into another's context. Pass
+        ``scope_id="*"`` to explicitly match *all* scope_ids within the scope.
+
+        ``agent`` scope stays permissive (empty ``scope_id`` = all): that is the
+        global / universal tier, where a shared truth is the intent.
         """
+        # Personal / tenant scopes require an explicit subject (or "*").
+        if scope in ("user", "project") and scope_id == "":
+            return []
         sql = (
             "SELECT * FROM learned_memory "
             "WHERE scope = ? AND project_id = ? AND superseded_by IS NULL"
         )
         params: list = [scope, project_id]
-        if scope_id:
+        if scope_id and scope_id != "*":
             sql += " AND scope_id = ?"
             params.append(scope_id)
         sql += " ORDER BY created_at DESC"
@@ -189,6 +197,40 @@ class MemoryStore:
                 "UPDATE learned_memory SET superseded_by = ? WHERE id = ?",
                 (new_id, old_id),
             )
+        finally:
+            db.close()
+
+    def delete(
+        self,
+        scope: Scope,
+        scope_id: str = "",
+        project_id: str = "",
+        fact: str | None = None,
+    ) -> int:
+        """Hard-delete facts for a scope. Returns the number of rows removed.
+
+        Safety: at ``user`` / ``project`` scope an empty ``scope_id`` is refused
+        (a missing subject must not mass-delete everyone's facts). Pass
+        ``scope_id="*"`` to delete all subjects within the scope on purpose.
+        With ``fact`` given, only that exact fact text is removed.
+        """
+        if scope in ("user", "project") and scope_id == "":
+            raise ValueError(
+                "delete at user/project scope needs an explicit scope_id "
+                '(or scope_id="*" to delete all subjects on purpose)'
+            )
+        sql = "DELETE FROM learned_memory WHERE scope = ? AND project_id = ?"
+        params: list = [scope, project_id]
+        if scope_id and scope_id != "*":
+            sql += " AND scope_id = ?"
+            params.append(scope_id)
+        if fact is not None:
+            sql += " AND fact = ?"
+            params.append(fact)
+        db = self._open()
+        try:
+            cursor = db.execute(sql, tuple(params))
+            return int(cursor.rowcount or 0)
         finally:
             db.close()
 

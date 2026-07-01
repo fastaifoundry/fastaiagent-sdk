@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.36.0] - 2026-07-01
+
+### Added
+
+- **`Memory` — a simple, front-door memory API.** One object with progressive-disclosure keywords replaces hand-wiring block types for the common case; the composable blocks remain the advanced/custom layer underneath (and still power `Memory`).
+  - `Memory(location="sqlite", user_id=..., agent_id=..., project_id="", window=20, learn=llm, summarize=llm, recall="auto", dedupe=False)` — drop-in `Agent(memory=Memory(...))`.
+  - Tiers: **global** (`agent` scope), **user** (`user` scope), **session** (ephemeral window). `project_id` is an orthogonal tenant partition.
+  - Direct store verbs: `persist(content, tier=, id=)` (verbatim; returns id), `retrieve(tier=, id=)` (→ `list[Fact]`; semantic `query=` is a later phase), `forget(tier=, id=, fact=)`.
+  - **Multi-user by design:** `user_id` accepts a `(RunContext) -> str` resolver evaluated per run, so one agent serves many users. `Memory` routes to a **per-user working memory**, isolating both durable facts *and* the live conversation window — no cross-session contamination. (Per-user windows are in-process; external session stores are a later phase.)
+  - New direct-op trace spans `memory.persist` / `memory.retrieve`; the existing `memory.read`/`memory.write` spans and Memory UI are unchanged.
+
+### Changed
+
+- **Security / safe-by-default scoping (behavioral).** `MemoryStore.list_active` and `PersistentFactBlock` at `user`/`project` scope with an **empty `scope_id` now return nothing** instead of *every* subject's facts — closing a cross-user leak. Pass `scope_id="*"` to deliberately read across all subjects. The `agent`/global scope stays permissive (shared truth). `PersistentFactBlock` / `FactExtractionBlock` now accept a callable `scope_id` resolver; `FactExtractionBlock` skips persisting when the id resolves empty. Added `MemoryStore.delete(...)` (refuses mass-delete at user/project without an explicit id).
+
+  Migration: if you relied on an empty user/project `scope_id` returning all facts, pass `scope_id="*"`.
+
 ## [1.35.0] - 2026-07-01
 
 ### Added
