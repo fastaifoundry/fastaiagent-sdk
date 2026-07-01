@@ -202,6 +202,7 @@ nav:
       - "Build Your First Agent in 5 Minutes": tutorials/first-agent.md
       - "Trace a LangChain Agent in 2 Minutes": tutorials/trace-langchain.md
       - "Debug with Agent Replay": tutorials/debug-with-replay.md
+      - "Memory, End to End": tutorials/memory-guide.md
   - Migration Guides:
       - migration-guides/index.md
       - "From LangGraph": migration-guides/from-langgraph.md

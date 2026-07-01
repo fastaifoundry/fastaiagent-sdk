@@ -353,6 +353,57 @@ class Memory:
             h.count = len(facts)
         return facts
 
+    def update(
+        self,
+        new_content: str,
+        *,
+        old: str | int,
+        tier: str = "user",
+        id: str = "",
+        confidence: float = 1.0,
+    ) -> int:
+        """Replace a fact: persist ``new_content`` and supersede the ``old`` one.
+
+        ``old`` is the exact old fact text or its id. The old row is preserved
+        (marked superseded — it stays in the audit history), and the new fact's
+        id is returned. Versioning by append + supersede, never overwrite.
+        """
+        from fastaiagent.learn import Fact
+
+        scope, scope_id = self._scope_and_id(tier, id)
+        if tier == "user" and not scope_id:
+            raise ValueError("update(tier='user') requires id=<user id>")
+        with memory_store_span(
+            "update", tier=tier, scope=scope, scope_id=scope_id, project_id=self._project_id
+        ) as h:
+            if isinstance(old, int):
+                old_id = old
+            else:
+                matches = [
+                    f
+                    for f in self._store.list_active(
+                        scope=scope,  # type: ignore[arg-type]
+                        scope_id=scope_id,
+                        project_id=self._project_id,
+                    )
+                    if f.fact == old
+                ]
+                if not matches:
+                    raise ValueError(f"update: no active fact matching {old!r} to supersede")
+                old_id = matches[0].id  # type: ignore[assignment]
+            new_id = self._store.add(
+                Fact(
+                    scope=scope,  # type: ignore[arg-type]
+                    scope_id=scope_id,
+                    fact=new_content,
+                    confidence=confidence,
+                    project_id=self._project_id,
+                )
+            )
+            self._store.supersede(old_id, new_id)
+            h.count = 1
+        return new_id
+
     def forget(self, *, tier: str, id: str = "", fact: str | None = None) -> int:
         """Hard-delete durable facts for a tier/id. Returns rows removed.
 

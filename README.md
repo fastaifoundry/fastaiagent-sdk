@@ -674,9 +674,34 @@ result = swarm.run("How do I reverse a list in Python?")
 
 The currently active agent decides when to transfer control — no central LLM. See [docs/agents/swarm.md](docs/agents/swarm.md) for the full guide, and [Swarm vs Supervisor](docs/agents/swarm.md#swarm-vs-supervisor--when-to-use-which) for when to pick which.
 
-## Long-term memory with composable blocks
+## Memory — one object, multi-user, observable
 
-Beyond a sliding window, layer static facts, a rolling summary, semantic recall, and fact extraction into one memory object:
+`Memory` is the front door: tiered (global / user / session), multi-user safe, and pluggable — with progressive-disclosure keywords instead of hand-wiring blocks.
+
+```python
+from fastaiagent import Agent, LLMClient, Memory
+
+llm = LLMClient(provider="openai", model="gpt-4o-mini")
+
+agent = Agent(name="support", llm=llm, memory=Memory(
+    user_id=lambda ctx: ctx.state.user_id,   # one agent, many users — resolved per run
+    learn=llm,                               # extract + persist durable user facts
+    summarize=llm,                           # compress old turns
+    recall="auto",                           # semantic recall of past exchanges
+))
+```
+
+- **Multi-user safe** — `user_id` routes to a per-user working memory, isolating both durable facts *and* the live window (no cross-session bleed). A missing id yields no personal facts (safe-by-default).
+- **Tiers** — `Memory.persist("...", tier="global")` for shared truth; `tier="user", id=...` for personalization; the conversation window is the session tier.
+- **Pluggable + semantic** — `Memory(location="postgres://…" | "redis://…")` for external backends; `Memory(semantic="auto")` enables `retrieve("query", tier=, id=)` by meaning.
+- **Observable** — every read/write and persist/retrieve is a trace span (scores included), browsable in the Local UI's Memory page.
+
+See [docs/agents/memory.md](docs/agents/memory.md) and [`examples/memory_simple/`](examples/memory_simple/).
+
+<details>
+<summary><b>Advanced: composable blocks</b> (the engine under <code>Memory</code>, for custom behaviours)</summary>
+
+`Memory` composes these; reach for them directly to control ordering or write your own `MemoryBlock`:
 
 ```python
 from fastaiagent import Agent, LLMClient, ComposableMemory, AgentMemory
@@ -685,22 +710,19 @@ from fastaiagent.kb.backends.faiss import FaissVectorStore
 
 llm = LLMClient(provider="openai", model="gpt-4o-mini")
 
-agent = Agent(
-    name="assistant",
-    llm=llm,
-    memory=ComposableMemory(
-        blocks=[
-            StaticBlock("User is Upendra. Prefers terse answers."),
-            SummaryBlock(llm=llm, keep_last=10, summarize_every=5),
-            VectorBlock(store=FaissVectorStore(dimension=384)),
-            FactExtractionBlock(llm=llm, max_facts=100),
-        ],
-        primary=AgentMemory(max_messages=20),
-    ),
-)
+agent = Agent(name="assistant", llm=llm, memory=ComposableMemory(
+    blocks=[
+        StaticBlock("User is Upendra. Prefers terse answers."),
+        SummaryBlock(llm=llm, keep_last=10, summarize_every=5),
+        VectorBlock(store=FaissVectorStore(dimension=384)),
+        FactExtractionBlock(llm=llm, max_facts=100),
+    ],
+    primary=AgentMemory(max_messages=20),
+))
 ```
 
-`VectorBlock` works with any `VectorStore` (Qdrant / Chroma / custom). Write your own block by subclassing `MemoryBlock` with two methods. See [docs/agents/memory.md](docs/agents/memory.md).
+`VectorBlock` works with any `VectorStore` (Qdrant / Chroma / custom). Write your own block by subclassing `MemoryBlock` with two methods.
+</details>
 
 ## Swap the KB storage layer
 

@@ -43,11 +43,14 @@ The whole surface is keywords on one object:
 
 ```python
 mem = Memory(location="sqlite")
-mem.persist("Return policy is 30 days", tier="global")   # verbatim; returns fact id
+mem.persist("Return policy is 30 days", tier="global")   # create; returns fact id
 mem.persist("Prefers email", tier="user", id="alice")
-mem.retrieve(tier="user", id="alice")                    # → list[Fact]
-mem.forget(tier="user", id="alice")                      # hard-delete; returns count
+mem.retrieve(tier="user", id="alice")                    # read → list[Fact]
+mem.update("Prefers Slack", old="Prefers email", tier="user", id="alice")  # supersede old, keep history
+mem.forget(tier="user", id="alice")                      # delete; returns count
 ```
+
+Facts are **versioned by supersede, never overwritten** — `update` marks the old row superseded (kept in the audit history, visible under the Memory page's "Show superseded" toggle) and activates the new one. `forget` hard-deletes (including superseded history for that subject).
 
 ### Multi-user safety (important)
 
@@ -67,7 +70,10 @@ Memory(location="redis://host:6379/0")                     # needs fastaiagent[r
 Memory(location=my_store)                                  # any object implementing FactStore
 ```
 
-All backends implement the same `FactStore` contract (idempotent add, safe scoping, supersede, delete) and are verified against one shared conformance suite, so behaviour doesn't drift. Use Postgres/Redis for multi-node or many-user deployments; SQLite for dev/single-node.
+All backends implement the same `FactStore` contract (idempotent add, safe scoping, supersede, delete) and are verified against one shared conformance suite, so behaviour doesn't drift. Use Postgres/Redis for multi-node or many-user deployments; SQLite for dev/single-node. Runnable demo: [`examples/memory_backends/`](https://github.com/fastaifoundry/fastaiagent-sdk/tree/main/examples/memory_backends).
+
+!!! note "Observability with external backends"
+    Agent runs against any backend emit `memory.read` / `memory.write` / `memory.persist` / `memory.retrieve` trace spans (browsable in `fastaiagent ui`). The UI **Memory page** browses the local SQLite store; facts written to an external backend are observed via those trace spans (a shared UI over external backends is future work).
 
 ### Semantic recall of facts (`semantic`)
 

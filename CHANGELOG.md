@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   All backends share idempotent add, safe-by-default scoping, `supersede`, and guarded `delete` (removes superseded history too).
 - **Semantic fact recall.** `Memory(semantic="auto" | VectorStore, embedder=...)` mirrors facts into a vector index (`SemanticFactStore`), enabling `retrieve(query, tier=, id=)` to return facts **by meaning**. Facts written by `learn=` are indexed automatically; results honor scope isolation, skip superseded facts, and record match scores on the `memory.retrieve` span. `"auto"` builds an in-process FAISS index sized to the embedder (pass a shared `VectorStore` for production).
 - New exports: `FactStore`, `PostgresFactStore`, `RedisFactStore`, `SemanticFactStore`, `make_fact_store` (from `fastaiagent.learn`). New `fastaiagent[redis]` extra.
+- **`Memory.update(new, old=…, tier=, id=)`** completes the fact CRUD surface — supersedes the old fact (kept in audit history) and activates the new one; emits a `memory.update` span. Runnable `examples/memory_backends/` (SQLite/Postgres/Redis) and an end-to-end tutorial (`docs/tutorials/memory-guide.md`).
 
 ## [1.36.0] - 2026-07-01
 
