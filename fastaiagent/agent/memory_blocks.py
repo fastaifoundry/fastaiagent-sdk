@@ -33,9 +33,15 @@ import time
 import uuid
 import warnings
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Union
+
+# A scope_id is either a fixed string or a resolver called per-run with the
+# active RunContext (e.g. ``lambda ctx: ctx.state.user_id``) — the latter lets
+# one agent serve many users safely (unresolved → "" → no personal facts).
+ScopeId = Union[str, Callable[[Any], str]]
 
 from fastaiagent.llm.message import Message, MessageRole, SystemMessage
 
@@ -92,6 +98,28 @@ def _strip_role_tag(text: str) -> str:
 def _norm_for_dedupe(text: str) -> str:
     """Lowercase + collapse whitespace so upstream-dedupe matching is stable."""
     return " ".join((text or "").lower().split())
+
+
+def _resolve_scope_id(scope_id: ScopeId) -> str:
+    """Resolve a static or callable ``scope_id`` to a string for this run.
+
+    A callable is invoked with the active :class:`RunContext` (per-run dynamic
+    scoping, e.g. per user). With no active context — or if the resolver raises
+    — this returns ``""``, which the store treats as the safe default (no
+    personal facts), so nothing leaks outside a run.
+    """
+    if callable(scope_id):
+        from fastaiagent.agent.context import get_active_run_context
+
+        ctx = get_active_run_context()
+        if ctx is None:
+            return ""
+        try:
+            return str(scope_id(ctx))
+        except Exception:
+            _log.warning("scope_id resolver raised; treating as empty (safe)", exc_info=True)
+            return ""
+    return scope_id or ""
 
 
 @dataclass
@@ -764,7 +792,7 @@ class FactExtractionBlock(MemoryBlock):
         extract_every: int = 1,
         persist: bool = False,
         scope: str = "agent",
-        scope_id: str = "",
+        scope_id: ScopeId = "",
         project_id: str = "",
         confidence: float = 0.6,
         store: object | None = None,
@@ -776,7 +804,9 @@ class FactExtractionBlock(MemoryBlock):
         if persist:
             if scope not in ("user", "project", "agent"):
                 raise ValueError(f"scope must be one of user|project|agent, got {scope!r}")
-            if not scope_id:
+            # A fixed empty scope_id is a footgun; a callable resolver is allowed
+            # (resolved per-run; an empty resolution just skips the write safely).
+            if not callable(scope_id) and not scope_id:
                 raise ValueError("scope_id is required when persist=True")
             if not 0.0 <= confidence <= 1.0:
                 raise ValueError("confidence must be in 0.0..1.0")
@@ -869,6 +899,13 @@ class FactExtractionBlock(MemoryBlock):
         """
         from fastaiagent.learn import Fact
 
+        # Resolve a dynamic scope_id (e.g. per-user) for this run. An empty
+        # resolution (no active context / no user) skips the write safely rather
+        # than persisting under an ambiguous empty subject.
+        resolved_scope_id = _resolve_scope_id(self.scope_id)
+        if not resolved_scope_id:
+            return 0
+
         trace_id = self._current_trace_id()
         written = 0
         try:
@@ -877,7 +914,7 @@ class FactExtractionBlock(MemoryBlock):
                 store.add(
                     Fact(
                         scope=self.scope,  # type: ignore[arg-type]
-                        scope_id=self.scope_id,
+                        scope_id=resolved_scope_id,
                         fact=fact,
                         source_trace_id=trace_id,
                         confidence=self.confidence,
@@ -1013,7 +1050,7 @@ class PersistentFactBlock(MemoryBlock):
     def __init__(
         self,
         scope: str = "agent",
-        scope_id: str = "",
+        scope_id: ScopeId = "",
         project_id: str = "",
         max_facts: int = 50,
         store: object | None = None,
@@ -1047,6 +1084,7 @@ class PersistentFactBlock(MemoryBlock):
         self.recency_half_life_seconds = recency_half_life_seconds
         self._store = store  # may be None — lazy init in render()
         self._cached: list[str] | None = None
+        self._cached_scope_id: str | None = None  # invalidate cache on dynamic id change
         self._renders_since_refresh = 0
 
     def isolated_copy(self) -> MemoryBlock:
@@ -1078,11 +1116,11 @@ class PersistentFactBlock(MemoryBlock):
             self._store = MemoryStore()
         return self._store
 
-    def _refresh(self) -> list[str]:
+    def _refresh(self, resolved_scope_id: str) -> list[str]:
         store = self._resolve_store()
         facts = store.list_active(
             scope=self.scope,  # type: ignore[arg-type]
-            scope_id=self.scope_id,
+            scope_id=resolved_scope_id,
             project_id=self.project_id,
             limit=self.max_facts,
         )
@@ -1112,9 +1150,16 @@ class PersistentFactBlock(MemoryBlock):
         return [fact for _, fact in scored]
 
     def render(self, query: str) -> list[Message]:
+        resolved = _resolve_scope_id(self.scope_id)
+        # Dynamic scope_id (e.g. per-user): if the resolved subject changed since
+        # last render, drop the cache so we never serve one user's facts to
+        # another.
+        if resolved != self._cached_scope_id:
+            self._cached = None
+            self._cached_scope_id = resolved
         if self._cached is None or self._renders_since_refresh >= self.refresh_every:
             try:
-                self._cached = self._refresh()
+                self._cached = self._refresh(resolved)
             except Exception as err:
                 _log.warning("PersistentFactBlock refresh failed: %s", err)
                 self._cached = self._cached or []
@@ -1127,7 +1172,7 @@ class PersistentFactBlock(MemoryBlock):
         if not self._cached:
             return []
         bullets = "\n".join(f"- {fact}" for fact in self._cached)
-        scope_label = f"{self.scope}:{self.scope_id}" if self.scope_id else self.scope
+        scope_label = f"{self.scope}:{resolved}" if resolved else self.scope
         return [SystemMessage(f"Learned facts ({scope_label}):\n{bullets}")]
 
     def last_render_report(self) -> BlockRenderReport | None:

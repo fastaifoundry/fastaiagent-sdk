@@ -12,7 +12,11 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from fastaiagent._internal.async_utils import run_sync
-from fastaiagent.agent.context import RunContext
+from fastaiagent.agent.context import (
+    RunContext,
+    reset_active_run_context,
+    set_active_run_context,
+)
 from fastaiagent.agent.executor import _AgentInterrupted, execute_tool_loop, stream_tool_loop
 from fastaiagent.agent.memory import AgentMemory, ComposableMemory
 from fastaiagent.agent.middleware import (
@@ -398,6 +402,10 @@ class Agent:
         )
         ap_token = _agent_path.set(new_path)
         cp_token = _current_checkpointer.set(self._checkpointer)
+        # Expose the RunContext so memory blocks can resolve a dynamic scope_id
+        # (e.g. per-user) for this turn. Absent context → callable ids resolve
+        # to "" → safe (no personal facts).
+        rc_token = set_active_run_context(context)
 
         # Run the agent's checkpointer setup once — cheap on subsequent calls.
         if self._checkpointer is not None:
@@ -501,6 +509,7 @@ class Agent:
             _current_checkpointer.reset(cp_token)
             _agent_path.reset(ap_token)
             _execution_id.reset(exec_token)
+            reset_active_run_context(rc_token)
 
     async def astream(
         self,
@@ -563,6 +572,7 @@ class Agent:
         )
         ap_token = _agent_path.set(new_path)
         cp_token = _current_checkpointer.set(self._checkpointer)
+        rc_token = set_active_run_context(context)
 
         if self._checkpointer is not None:
             self._checkpointer.setup()
@@ -608,6 +618,7 @@ class Agent:
             _current_checkpointer.reset(cp_token)
             _agent_path.reset(ap_token)
             _execution_id.reset(exec_token)
+            reset_active_run_context(rc_token)
 
     def resume(
         self,

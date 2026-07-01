@@ -1,6 +1,107 @@
 # Agent Memory
 
-Memory lets agents remember previous conversations across multiple `run()` calls. Two flavors ship in the SDK:
+Memory lets agents remember — within a conversation and across sessions. The recommended API is a single object, **`Memory`**, with progressive-disclosure keywords. The composable blocks it's built on remain available for advanced/custom behaviours (see [Advanced](#advanced-composable-blocks)).
+
+## `Memory` — the recommended API
+
+```python
+from fastaiagent import Agent, LLMClient, Memory
+
+llm = LLMClient(provider="openai", model="gpt-4.1")
+
+# Just remember the conversation:
+agent = Agent(name="assistant", llm=llm, memory=Memory())
+
+# Personalize per user, multi-user safe, and learn durable facts:
+agent = Agent(name="support", llm=llm, memory=Memory(
+    user_id=lambda ctx: ctx.state.user_id,   # resolved per run — one agent, many users
+    learn=llm,                               # extract + persist durable user facts
+))
+```
+
+The whole surface is keywords on one object:
+
+| Keyword | What it does |
+|---|---|
+| `location` | where durable facts live — `"sqlite"` (default) or a `MemoryStore` (external backends are Phase 2) |
+| `user_id` | personalization key — a string or `(ctx)->str` resolver (per-run, multi-user) |
+| `agent_id` | global tier: facts true for everyone using the agent |
+| `project_id` | tenant partition applied across tiers |
+| `window` | recent turns kept (session/working memory) |
+| `learn` | an LLM → extract + persist durable user facts each turn |
+| `summarize` | an LLM → compress older turns into a running summary |
+| `recall` | `"auto"` (in-process FAISS) or a `VectorStore` → semantic recall of past exchanges |
+| `dedupe` | drop recalled content an earlier tier already injected |
+
+### Tiers — who a fact is true for
+
+- **`global`** → true for everyone using the agent (store scope `agent`).
+- **`user`** → per-user personalization (store scope `user`; needs an id).
+- **`session`** → the ephemeral conversation window (`window`) — not a durable store.
+
+### Direct store use
+
+```python
+mem = Memory(location="sqlite")
+mem.persist("Return policy is 30 days", tier="global")   # create; returns fact id
+mem.persist("Prefers email", tier="user", id="alice")
+mem.retrieve(tier="user", id="alice")                    # read → list[Fact]
+mem.update("Prefers Slack", old="Prefers email", tier="user", id="alice")  # supersede old, keep history
+mem.forget(tier="user", id="alice")                      # delete; returns count
+```
+
+Facts are **versioned by supersede, never overwritten** — `update` marks the old row superseded (kept in the audit history, visible under the Memory page's "Show superseded" toggle) and activates the new one. `forget` hard-deletes (including superseded history for that subject).
+
+### Multi-user safety (important)
+
+`Memory(user_id=<resolver>)` isolates each user **completely** — durable facts *and* the live session window — by routing to a per-user working memory keyed on the resolved id. One agent definition safely serves many users; a missing/unresolved id yields **no** personal facts (safe-by-default). Two caveats:
+
+- Per-user working windows are held **in-process**. Great for dev / single-node; for large-scale or horizontally-scaled multi-user, an external session/fact backend is the Phase-2 path.
+- `recall="auto"` builds a per-user in-process vector store. For a shared, production recall store, pass your own `VectorStore` (and note it isn't user-partitioned unless you namespace it).
+
+### Storage backends (`location`)
+
+Durable facts live wherever `location` points — the same `Memory` API, a different backend:
+
+```python
+Memory(location="sqlite")                                  # default local.db (single-node)
+Memory(location="postgres://user:pw@host:5432/db")         # needs fastaiagent[postgres]
+Memory(location="redis://host:6379/0")                     # needs fastaiagent[redis]
+Memory(location=my_store)                                  # any object implementing FactStore
+```
+
+All backends implement the same `FactStore` contract (idempotent add, safe scoping, supersede, delete) and are verified against one shared conformance suite, so behaviour doesn't drift. Use Postgres/Redis for multi-node or many-user deployments; SQLite for dev/single-node. Runnable demo: [`examples/memory_backends/`](https://github.com/fastaifoundry/fastaiagent-sdk/tree/main/examples/memory_backends).
+
+!!! note "Observability with external backends"
+    Agent runs against any backend emit `memory.read` / `memory.write` / `memory.persist` / `memory.retrieve` trace spans (browsable in `fastaiagent ui`). The UI **Memory page** browses the local SQLite store; facts written to an external backend are observed via those trace spans (a shared UI over external backends is future work).
+
+### Semantic recall of facts (`semantic`)
+
+By default `retrieve(tier=, id=)` returns a scope's facts as a list. Turn on `semantic=` to retrieve **by meaning** with `retrieve(query, tier=, id=)`:
+
+```python
+mem = Memory(location="sqlite", semantic="auto")   # in-process FAISS + default embedder
+mem.persist("The user is allergic to peanuts", tier="user", id="alice")
+mem.retrieve("what foods should we avoid?", tier="user", id="alice")   # → the peanut fact
+```
+
+`semantic="auto"` builds an in-process vector index sized to the embedder; pass a `VectorStore` for a shared/production index and `embedder=` to override. Facts written by `learn=` are indexed automatically (they share the store). Semantic results honor the same scope isolation and skip superseded facts; the `memory.retrieve` span records match scores.
+
+### Safe-by-default scoping
+
+At `user`/`project` scope an **empty id returns nothing** — one user's facts can never leak into another's context. Use `scope_id="*"` (on the low-level store) to deliberately read across all subjects. The `agent`/global tier stays permissive (shared truth). *(This corrects prior behaviour where an empty user id matched everyone — see the CHANGELOG.)*
+
+The Memory page (`fastaiagent ui` → Knowledge → Memory) shows the tiers side by side — `user:alice` / `user:bob` (learned, source `trace`) and a shared `agent:*` global fact (source `manual`):
+
+![Memory page — tiers](img/memory-simple-page.png)
+
+Reproduce with `examples/memory_simple/` (`companion.py` runs one agent for two users; `snapshot.py` captures the UI).
+
+---
+
+## Advanced: composable blocks
+
+> The block API below powers `Memory` under the hood and remains fully supported for custom behaviours (write your own `MemoryBlock`, control ordering, etc.). Most apps only need `Memory` above.
 
 | | `AgentMemory` | `ComposableMemory` |
 |---|---|---|
@@ -8,8 +109,6 @@ Memory lets agents remember previous conversations across multiple `run()` calls
 | Stores | Sliding window of raw messages | Sliding window **plus** any number of long-term blocks |
 | Best for | Chatbots, short sessions | Long-running assistants, personal memory, fact tracking |
 | Drop-in replacement | — | Yes — `Agent(memory=...)` accepts either |
-
-If you were using `AgentMemory` before, no code changes are needed. Swap to `ComposableMemory` when a sliding window is no longer enough.
 
 ## Sliding-window memory: `AgentMemory`
 

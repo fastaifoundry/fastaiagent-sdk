@@ -29,6 +29,7 @@ Design notes:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import time
@@ -142,6 +143,48 @@ def _emit_render_child(
                 child.set_attribute("memory.snippets", json.dumps(report.snippets[:50]))
             except (TypeError, ValueError):
                 logger.debug("Failed to serialize memory.snippets", exc_info=True)
+
+
+class _StoreHandle:
+    """Caller sets ``.count`` so the span records how many rows were touched."""
+
+    def __init__(self) -> None:
+        self.count: int = 0
+
+
+@contextlib.contextmanager
+def memory_store_span(
+    operation: str,
+    *,
+    tier: str,
+    scope: str,
+    scope_id: str,
+    project_id: str,
+):
+    """Trace a direct ``Memory.persist`` / ``retrieve`` / ``forget`` store call.
+
+    ``scope``/``scope_id`` are routing keys (not payload), so they're emitted
+    ungated — like ``retrieval.kb_id``. Fact *content* is never put on the span.
+    """
+    from fastaiagent.trace.otel import get_tracer
+
+    tracer = get_tracer("fastaiagent.memory")
+    start = time.monotonic()
+    handle = _StoreHandle()
+    with tracer.start_as_current_span(f"memory.{operation}") as span:
+        span.set_attribute("fastaiagent.runner.type", "memory")
+        span.set_attribute("memory.operation", operation)
+        span.set_attribute("memory.tier", tier)
+        span.set_attribute("memory.scope", scope)
+        if scope_id:
+            span.set_attribute("memory.scope_id", scope_id)
+        if project_id:
+            span.set_attribute("memory.project_id", project_id)
+        try:
+            yield handle
+        finally:
+            span.set_attribute("memory.count", handle.count)
+            span.set_attribute("memory.latency_ms", int((time.monotonic() - start) * 1000))
 
 
 def traced_add(

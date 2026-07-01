@@ -11,6 +11,7 @@ from fastaiagent.agent import (
     ComposableMemory,
     FactExtractionBlock,
     FewShotBlock,
+    Memory,
     MemoryBlock,
     MiddlewareContext,
     PersistentFactBlock,
@@ -146,6 +147,7 @@ __all__ = [
     # Memory
     "AgentMemory",
     "ComposableMemory",
+    "Memory",
     "MemoryBlock",
     "StaticBlock",
     "FewShotBlock",
