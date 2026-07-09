@@ -5,7 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.37.0] - 2026-07-01
+## [1.38.0] - 2026-07-09
+
+### Changed
+
+- **AutoLLM/`harden` now show the prompt proposer what "correct" looks like.** The internal failure view fed to the prompt proposer (`fastaiagent.optimize`) and to `harden()` now includes, for each failing case, the **expected output** and the **scorer's own reason** (e.g. `"got 1120, expected 1120000"`), and raises the per-case input cap (200 → 600 chars). Previously the proposer saw only the input and the (wrong) output. Classification hid this gap — the label space is small enough to guess the target — but **extraction and structured-output tasks could not be optimized at all**: with no view of the expected value, the proposer can't recover an output *convention* (scale, sign, formatting) that's only visible by contrast. With this change, `optimize()` reliably recovers such conventions — e.g. pulling scaled values out of financial-statement tables (`"(in thousands)"` → ×1,000, parentheses → negative) goes from a 0% baseline to a holdout-confirmed win on a strong model (`gpt-4o`: 0% → 86% dev, 100% holdout). Additive and non-breaking; no public API change. New runnable example: [`examples/autollm/financials.py`](examples/autollm/financials.py).
 
 ### Added
 

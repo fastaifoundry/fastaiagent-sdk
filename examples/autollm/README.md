@@ -6,9 +6,17 @@ re-evaluates on a held-out split, keeps the best, and holdout-guards the winner 
 it can't overfit. This is the OSS on-ramp: **standard prompt optimization grounded
 in your own eval data, end to end in one SDK.**
 
-This example is fully runnable with a real OpenAI model — **no mocks**.
+These examples are fully runnable with a real OpenAI model — **no mocks**:
 
-## What it does
+- **`agent.py`** — the minimal on-ramp: a weak sentiment prompt fails strict
+  `exact_match`; AutoLLM recovers a one-word-output format fix (`gpt-4o-mini`).
+- **`financials.py`** — a real extraction task: `gpt-4o` pulls values from financial
+  tables but scores **0%** because it never applies the `"(in thousands)/(in millions)"`
+  scale; AutoLLM recovers the convention (**0% → 86% dev, 100% holdout**), graded by a
+  custom `NumericMatch` scorer. Shows AutoLLM works on more than classification, and
+  that even a strong model needs a convention your data encodes. *(Requires ≥ 1.38.0.)*
+
+## What `agent.py` does
 
 1. Builds a sentiment classifier with a deliberately **weak** prompt
    (`"You classify the sentiment of a customer review."`) — it sets the task but

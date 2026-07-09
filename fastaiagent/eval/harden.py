@@ -106,10 +106,25 @@ def _failures_text(results: Any) -> tuple[str, int]:
             if not failed:
                 continue
             count += 1
-            blocks.append(
-                f"Case input={str(c.input)[:200]!r} output={str(c.actual_output)[:200]!r}; "
-                f"failed scorers: {failed}"
-            )
+            # Show the proposer/harden LLM what "correct" looks like, not just that
+            # the case failed. Without the expected output — and the scorer's own
+            # reason (e.g. "got 1120, expected 1120000") — a proposer can't recover
+            # an output convention (scale, sign, format) it can only see by contrast.
+            # Classification hides this gap (the label space is tiny); extraction and
+            # structured-output tasks depend on it.
+            parts = [f"Case input={str(c.input)[:600]!r}"]
+            if getattr(c, "expected_output", None) is not None:
+                parts.append(f"expected={str(c.expected_output)[:300]!r}")
+            parts.append(f"output={str(c.actual_output)[:300]!r}")
+            reasons = [
+                d["reason"]
+                for n, d in (c.per_scorer or {}).items()
+                if not d.get("passed", True) and d.get("reason")
+            ]
+            tail = f"; failed scorers: {failed}"
+            if reasons:
+                tail += f"; reasons: {reasons}"
+            blocks.append("; ".join(parts) + tail)
         if blocks:
             return "\n".join(blocks), count
 
