@@ -15,6 +15,16 @@ These examples are fully runnable with a real OpenAI model — **no mocks**:
   scale; AutoLLM recovers the convention (**0% → 86% dev, 100% holdout**), graded by a
   custom `NumericMatch` scorer. Shows AutoLLM works on more than classification, and
   that even a strong model needs a convention your data encodes. *(Requires ≥ 1.38.0.)*
+- **`jaarrekening.py`** — the realistic one: bank-compliance extraction of ~15
+  attributes (figures + covenant ratios) from **three real Dutch annual reports**
+  (Newtone, NS, Enexis — source URLs in the file). A large, professional baseline
+  prompt on `gpt-5.4-mini` scores **~0.30**; AutoLLM recovers the *transferable*
+  conventions — unit scaling (`in miljoenen` → ×1,000,000), Dutch number format,
+  sign, and each covenant formula/rounding — reaching **1.00 dev / 1.00 holdout**.
+  Uses **three companies on purpose**: a single doc lets the optimizer *memorise*
+  that company's answers (a held-out split from the same doc can't catch it); across
+  companies the only way to win is a prompt that generalises. Excerpts are compact
+  (TPM-friendly — never the whole report). *(Requires ≥ 1.38.0; needs a gpt-5* model.)*
 
 ## What `agent.py` does
 
