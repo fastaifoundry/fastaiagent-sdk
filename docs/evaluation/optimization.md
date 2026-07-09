@@ -84,6 +84,16 @@ was tuned against. By construction the winner is **never worse than baseline**.
     (`strategy="mipro"`) rather than the default, since coordinate ascent gives a
     single-lever cause for every accepted step and avoids MIPRO's cost multiplier.
 
+    Each failing case shown to the proposer includes its **expected output** and the
+    **scorer's reason** (e.g. `"got 1120, expected 1120000"`), not just the input and
+    the wrong answer. This is what lets AutoLLM optimize **extraction and
+    structured-output** tasks, where the fix is an output *convention* (scale, sign,
+    formatting) the proposer can only infer by seeing what correct looks like — for
+    example recovering *"values are in thousands → multiply by 1,000; parentheses are
+    negative; answer with the number alone"* when pulling figures from financial
+    tables. (Added in 1.38.0; classification never needed it because the label space
+    is small enough to guess.)
+
 ## The levers
 
 - **`instructions`** — rewrites the system prompt. The proposer reuses the
