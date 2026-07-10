@@ -98,6 +98,35 @@ COMPANIES: list[dict[str, Any]] = [
             vaste_activa=9916, vlottende_activa=544, liquide_middelen=127,
         ),
     },
+    {
+        "id": "Liander",
+        "entity": "Liander N.V. — Geconsolideerde jaarrekening 2023",
+        "url": "https://www.liander.nl/-/media/files/financiele-communicatie/jaarverslagen/liander_jaarbericht_2023.pdf",
+        "unit": "miljoenen euro's",
+        "factor": 1_000_000,
+        # Liander holds no material own cash — it settles via a rekening-courant with
+        # its parent Alliander, so there is no separate 'liquide middelen' balance-sheet
+        # line (liquide_middelen = 0).
+        "f": dict(
+            netto_omzet=2510, bedrijfsresultaat=456, resultaat_na_belastingen=273,
+            afschrijvingen=444, betaalde_interest=-93, balanstotaal=10307,
+            eigen_vermogen=3036, langlopende_schulden=4555, kortlopende_schulden=2716,
+            vaste_activa=9703, vlottende_activa=604, liquide_middelen=0,
+        ),
+    },
+    {
+        "id": "Stedin",
+        "entity": "Stedin Netbeheer B.V. — Geconsolideerde jaarrekening 2023",
+        "url": "https://www.stedin.net/-/media/project/online/files/jaarverslagen-en-publicaties/jaarbericht-2023-stedin-netbeheer-bv.pdf",
+        "unit": "miljoenen euro's",
+        "factor": 1_000_000,
+        "f": dict(
+            netto_omzet=1716, bedrijfsresultaat=280, resultaat_na_belastingen=195,
+            afschrijvingen=305, betaalde_interest=-16, balanstotaal=8959,
+            eigen_vermogen=4493, langlopende_schulden=2541, kortlopende_schulden=1925,
+            vaste_activa=8327, vlottende_activa=632, liquide_middelen=59,
+        ),
+    },
 ]
 
 
@@ -206,9 +235,12 @@ def build_dataset() -> list[dict[str, str]]:
             lev.append("rentedekkingsgraad")
         case(lev)
         case(["roe_pct", "roa_pct", "activa_omloopsnelheid", "kapitaalintensiteit_pct"])
-        # a direct-figure case (scale + label mapping, no ratios)
-        case(["balanstotaal", "eigen_vermogen", "langlopende_schulden",
-              "kortlopende_schulden", "liquide_middelen"])
+        # a comprehensive ~15-attribute credit profile (figures + covenant ratios)
+        case(["netto_omzet", "ebitda", "resultaat_na_belastingen", "balanstotaal",
+              "eigen_vermogen", "langlopende_schulden", "kortlopende_schulden",
+              "liquide_middelen", "nettoschuld", "werkkapitaal", "solvabiliteit_pct",
+              "current_ratio", "debt_to_equity", "nettoschuld_ebitda", "gearing",
+              "roe_pct"])
     return cases
 
 
@@ -281,18 +313,39 @@ class ComplianceFields(Scorer):
         )
 
 
-# A deliberately LARGE, professional baseline prompt — but generic: it never pins
-# the unit scaling, Dutch label synonyms, sign handling, subtotal-vs-line, or the
-# bank's exact ratio formulas/rounding. That's what AutoLLM recovers, transferably.
+# A deliberately LARGE, professional baseline prompt — a realistic credit-analysis
+# SOP. It reads thoroughly, but it never pins the things that actually bite on Dutch
+# statements: the unit scaling ("report in euros … exactly as presented" is
+# self-contradictory for an "in miljoenen" statement), the label synonyms, the sign
+# convention, subtotal-vs-line, the bank's *exact* ratio formulas, and the rounding.
+# Those gaps are the headroom AutoLLM recovers — transferably, across companies.
 BASELINE_PROMPT = (
-    "You are a financial-analysis assistant supporting a bank's credit and "
-    "compliance team. You read excerpts from company annual accounts "
-    "(jaarrekeningen) and extract the financial figures requested for a credit "
-    "assessment. Work carefully and professionally: locate each requested item in "
-    "the provided excerpt, read the corresponding amount, and where an attribute is "
-    "a standard financial ratio, compute it from the figures in the excerpt. Return "
-    "your answer as a single JSON object whose keys are exactly the requested "
-    "attribute names. Do not add commentary. If something cannot be found, use null."
+    "You are a senior financial-analysis assistant embedded in a bank's credit-risk "
+    "and compliance function. Your job is to read excerpts from the annual accounts "
+    "(jaarrekeningen) of corporate borrowers and produce a clean, structured set of "
+    "the financial data points the credit team needs to assess the obligor. You will "
+    "receive a compact excerpt from a company's consolidated financial statements "
+    "(winst-en-verliesrekening, balans, and/or kerncijfers) together with a list of "
+    "requested attributes.\n\n"
+    "Work methodically and conservatively, as a careful analyst would:\n"
+    "1. Read the entire excerpt before answering, and identify where each requested "
+    "attribute appears or from which figures it must be derived.\n"
+    "2. Match each requested attribute to the correct line item. Be precise: do not "
+    "confuse similarly named lines (for example operating result versus result after "
+    "tax, or a subtotal versus one of its components).\n"
+    "3. For monetary line items, report the amount for the requested reporting year "
+    "exactly as presented in the statement, in euros.\n"
+    "4. Where a requested attribute is a standard financial ratio or KPI rather than a "
+    "reported line, compute it from the figures available in the excerpt using "
+    "generally accepted definitions.\n"
+    "5. Present results in a single JSON object whose keys are exactly the requested "
+    "attribute names, with numeric values. If a value is genuinely not present and "
+    "cannot be derived, use null rather than guessing.\n\n"
+    "Be professional and consistent. Do not include explanations, units, currency "
+    "symbols, or commentary — only the JSON object. Double-check that every requested "
+    "key is present and that you have not added extra keys. Accuracy and consistency "
+    "across companies matter more than speed: the same attribute must be computed the "
+    "same way for every borrower."
 )
 
 
