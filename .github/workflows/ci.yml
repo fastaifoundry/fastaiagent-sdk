@@ -26,6 +26,39 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && matrix.python == '3.12'
         uses: codecov/codecov-action@v4
 
+  # Build the Local UI + wheel from source and confirm the UI bundle is in the
+  # wheel. The UI ships inside the wheel (force-include of fastaiagent/ui/static)
+  # but is gitignored and built from ui-frontend/ (Vite outputs to ui/static),
+  # and the sdist excludes it — so the wheel must be built from source *after*
+  # the frontend build. This reproduces the release packaging on every PR so a
+  # UI-less wheel can't slip through to ``git tag`` / publish time.
+  build-wheel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: ui-frontend/package-lock.json
+      - name: Build Local UI (Vite → fastaiagent/ui/static)
+        working-directory: ui-frontend
+        run: |
+          npm ci
+          npm run build
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install build tools
+        run: pip install build
+      - name: Build wheel from source
+        run: python -m build --wheel
+      - name: Verify wheel bundles the Local UI
+        run: |
+          n=$(python -c "import glob, zipfile; w=glob.glob('dist/*.whl')[0]; print(sum(1 for f in zipfile.ZipFile(w).namelist() if f.startswith('fastaiagent/ui/static/assets/')))")
+          echo "ui/static/assets files in wheel: $n"
+          if [ "$n" -lt 50 ]; then echo "::error::wheel is missing the Local UI bundle (fastaiagent/ui/static) — was the frontend built first?"; exit 1; fi
+
   optional-deps:
     runs-on: ubuntu-latest
     strategy:

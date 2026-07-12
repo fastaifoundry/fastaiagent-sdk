@@ -8,13 +8,40 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: ui-frontend/package-lock.json
+      - name: Build Local UI (Vite → fastaiagent/ui/static)
+        # The Local UI ships inside the wheel but is gitignored and built from
+        # ui-frontend/. It must be built before packaging or the wheel is
+        # UI-less.
+        working-directory: ui-frontend
+        run: |
+          npm ci
+          npm run build
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Install build tools
         run: pip install build
       - name: Build package
-        run: python -m build
+        # Build the wheel FROM SOURCE (--wheel), not from the sdist. The sdist
+        # excludes fastaiagent/ui/static (the Local UI bundle), so the default
+        # ``python -m build`` — which builds the wheel from the sdist — ships a
+        # UI-less wheel. Building --sdist and --wheel separately keeps the
+        # wheel's ``force-include`` of ui/static intact.
+        run: |
+          python -m build --sdist
+          python -m build --wheel
+      - name: Verify wheel bundles the Local UI
+        # Fail loudly rather than publish a broken wheel: the UI ships inside
+        # the wheel, so a missing ui/static bundle means the Local UI is gone.
+        run: |
+          n=$(python -c "import glob, zipfile; w=glob.glob('dist/*.whl')[0]; print(sum(1 for f in zipfile.ZipFile(w).namelist() if f.startswith('fastaiagent/ui/static/assets/')))")
+          echo "ui/static/assets files in wheel: $n"
+          if [ "$n" -lt 50 ]; then echo "::error::wheel is missing the Local UI bundle (fastaiagent/ui/static) — did the wheel get built from the sdist?"; exit 1; fi
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
