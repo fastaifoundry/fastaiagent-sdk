@@ -75,7 +75,7 @@ from fastaiagent.guardrail import (
 from fastaiagent.kb import KeywordStore, LocalKB, MetadataStore, PlatformKB, VectorStore
 from fastaiagent.llm import LLMClient, Message, StreamEvent, TextDelta
 from fastaiagent.llm.stream import HandoffEvent
-from fastaiagent.multimodal import PDF, ContentPart, Image, normalize_input
+from fastaiagent.multimodal import PDF, ContentPart, File, Image, normalize_input
 from fastaiagent.optimize import (
     OptimizationReport,
     OptimizeConfig,
@@ -177,6 +177,7 @@ __all__ = [
     # Multimodal
     "Image",
     "PDF",
+    "File",
     "ContentPart",
     "normalize_input",
     # Tool

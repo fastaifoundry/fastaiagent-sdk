@@ -47,9 +47,22 @@ def test_returns_a_copy_of_list_not_alias() -> None:
     assert result is not parts
 
 
-def test_bare_bytes_rejected() -> None:
-    with pytest.raises(TypeError):
-        normalize_input(b"raw bytes")  # type: ignore[arg-type]
+def test_bare_bytes_auto_wrapped_in_file() -> None:
+    # Bare bytes are auto-detected (mime sniffed) and wrapped in a File.
+    from fastaiagent import File
+
+    pdf = (Path(__file__).parent / "fixtures" / "multimodal" / "contract.pdf").read_bytes()
+    parts = normalize_input(pdf)
+    assert isinstance(parts[0], File)
+    assert parts[0].category == "pdf"
+
+
+def test_path_auto_wrapped_in_file() -> None:
+    from fastaiagent import File
+
+    p = Path(__file__).parent / "fixtures" / "multimodal" / "contract.pdf"
+    parts = normalize_input(p)
+    assert isinstance(parts[0], File)
 
 
 def test_dict_rejected() -> None:

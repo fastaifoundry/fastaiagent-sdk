@@ -66,6 +66,7 @@ def _user_parts(content: Any) -> list[dict[str, Any]]:
     doesn't apply. Inline data is best for smaller payloads; very large PDFs
     would need the Gemini File API (not yet wired here).
     """
+    from fastaiagent.multimodal.file import File
     from fastaiagent.multimodal.image import Image
     from fastaiagent.multimodal.pdf import PDF
 
@@ -86,6 +87,10 @@ def _user_parts(content: Any) -> list[dict[str, Any]]:
             parts.append(
                 {"inlineData": {"mimeType": "application/pdf", "data": p.to_base64()}}
             )
+        elif isinstance(p, File):
+            # Gemini reads any of these natively (images, audio, video, pdf,
+            # text/csv/html…) — no local processing, just the raw bytes + mime.
+            parts.append({"inlineData": {"mimeType": p.mime_type, "data": p.to_base64()}})
     return parts or [{"text": ""}]
 
 

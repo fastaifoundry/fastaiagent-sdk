@@ -104,11 +104,11 @@ zsh -lc 'python capture.py && python analyze.py && python fix.py && python save_
 
 The template ships with a deliberately broken `lookup_order` tool whose silent failure mode (returns a fallback record stamped with the requested ID) is exactly the class of bug only the trace-replay loop can catch. After `fix.py` swaps in the fixed tool and `save_test.py` appends to `regression_dataset.jsonl`, `verify.py` runs `evaluate(...)` with `LLMJudge` and the same case stays caught forever. See [`examples/regression-from-trace/`](examples/regression-from-trace/) and the [Templates docs](https://docs.fastaiagent.net/flagships/regression-from-trace/) — includes before/after browser screenshots.
 
-## Multimodal — images and PDFs as first-class inputs
+## Multimodal — images, PDFs, and any file as first-class inputs
 
 ```python
 from pathlib import Path
-from fastaiagent import Agent, LLMClient, Image, PDF
+from fastaiagent import Agent, LLMClient, Image, PDF, File
 
 agent = Agent(name="claims", llm=LLMClient(provider="anthropic", model="claude-sonnet-4-6"))
 
@@ -120,11 +120,17 @@ if Path("damage.jpg").exists() and Path("policy.pdf").exists():
         PDF.from_file("policy.pdf"),
     ])
     print(result.output)
+
+# Or just hand it bytes / a path — the type is sniffed and forwarded natively:
+agent.run(file_bytes)                              # e.g. a PDF, image, or audio clip
+agent.run(["Summarize this.", File.from_path("q3.csv")])
 ```
 
-The same code works against OpenAI, Azure, Anthropic, Bedrock, and Ollama —
-provider-specific wire formatting (and OpenAI's tool-message workaround) is
-handled inside `LLMClient`. See [docs/multimodal/](docs/multimodal/index.md).
+The same code works against OpenAI, Azure, Anthropic, Gemini, Bedrock, and
+Ollama — files are forwarded **natively** (OpenAI `file`/`image_url`/`input_audio`,
+Anthropic/Bedrock `document`, Gemini `inlineData`); provider-specific wire
+formatting is handled inside `LLMClient`. See
+[docs/multimodal/](docs/multimodal/index.md).
 
 ## Debug a failing agent in 30 seconds
 

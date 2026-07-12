@@ -1,10 +1,13 @@
-"""Multimodal input types — Image and PDF.
+"""Multimodal input types — Image, PDF, and generic File.
 
 These are first-class inputs to ``Agent.run``, ``Chain.execute``, ``Swarm.run``
-and friends. Provider-specific wire formatting happens later, inside
-``LLMClient`` (see ``fastaiagent.multimodal.format``).
+and friends. ``File`` carries any bytes + mime type (sniffed) and is routed to
+each provider's native file mechanism; bare ``bytes`` / ``Path`` inputs are
+auto-detected and wrapped in ``File``. Provider-specific wire formatting happens
+later, inside ``LLMClient`` (see ``fastaiagent.multimodal.format``).
 """
 
+from fastaiagent.multimodal.file import File, sniff_mime
 from fastaiagent.multimodal.format import format_multimodal_message
 from fastaiagent.multimodal.image import Image
 from fastaiagent.multimodal.pdf import PDF
@@ -15,6 +18,8 @@ from fastaiagent.multimodal.types import ContentPart, normalize_input
 __all__ = [
     "Image",
     "PDF",
+    "File",
+    "sniff_mime",
     "ContentPart",
     "normalize_input",
     "format_multimodal_message",

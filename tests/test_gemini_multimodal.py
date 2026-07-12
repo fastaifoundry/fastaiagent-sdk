@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastaiagent import PDF, Image
+from fastaiagent import PDF, File, Image
 from fastaiagent.llm.message import UserMessage
 from fastaiagent.llm.providers.gemini import _convert_messages, _user_parts
 
@@ -34,6 +34,13 @@ def test_user_parts_image_becomes_inline_data() -> None:
 
 def test_user_parts_plain_string_passthrough() -> None:
     assert _user_parts("hello") == [{"text": "hello"}]
+
+
+def test_user_parts_generic_file_uses_its_mime() -> None:
+    # Gemini takes any File natively via inlineData (here a CSV document).
+    f = File.from_bytes(b"a,b\n1,2\n", filename="d.csv")
+    parts = _user_parts([f])
+    assert parts[0]["inlineData"]["mimeType"] == "text/csv"
 
 
 def test_convert_messages_carries_pdf_into_contents() -> None:

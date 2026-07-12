@@ -156,11 +156,17 @@ def test_tool_returns_list_with_image_preserves_list() -> None:
 # --- Type acceptance: rejection paths ---
 
 
-def test_build_messages_rejects_bare_bytes_input() -> None:
+def test_build_messages_accepts_bare_bytes_as_file() -> None:
+    # Bare bytes are now auto-detected (mime sniffed) and wrapped in a File,
+    # so agent.run(file_bytes) works without an explicit wrapper.
+    from fastaiagent import File
+
     agent = _make_agent()
-    bad: object = b"raw bytes"
-    with pytest.raises(TypeError):
-        agent._build_messages(bad)  # type: ignore[arg-type]
+    pdf_bytes = (FIXTURES / "contract.pdf").read_bytes()
+    msgs = agent._build_messages(pdf_bytes)
+    part = msgs[-1].content[0]
+    assert isinstance(part, File)
+    assert part.category == "pdf"
 
 
 def test_build_messages_rejects_dict_input() -> None:

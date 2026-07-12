@@ -18,6 +18,7 @@ def _summarize_parts(parts: list[Any]) -> list[dict[str, Any]]:
     never their bytes. Deliberately avoids ``pymupdf`` so serializing a message
     for a span can't fail on an unparseable PDF or bloat the span with base64.
     """
+    from fastaiagent.multimodal.file import File
     from fastaiagent.multimodal.image import Image
     from fastaiagent.multimodal.pdf import PDF
 
@@ -41,6 +42,16 @@ def _summarize_parts(parts: list[Any]) -> list[dict[str, Any]]:
                     "size_bytes": len(part.data),
                     "source_path": part.source_path,
                     "source_url": part.source_url,
+                }
+            )
+        elif isinstance(part, File):
+            summary.append(
+                {
+                    "type": "file",
+                    "mime_type": part.mime_type,
+                    "size_bytes": len(part.data),
+                    "filename": part.filename,
+                    "file_id": part.file_id,
                 }
             )
         else:

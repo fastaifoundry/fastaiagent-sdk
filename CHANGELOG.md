@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Generic `File` input + auto-detect (any file type, natively).** New
+  `fastaiagent.File` carries any bytes plus a mime type (sniffed from the
+  bytes/filename) and the formatter routes it to each provider's native file
+  mechanism — OpenAI `file`/`image_url`/`input_audio` parts, Anthropic
+  `document`/`image` blocks, Gemini `inlineData`, Bedrock `document`/`image`
+  blocks. Bare `bytes` and `Path`/`os.PathLike` inputs are now auto-detected and
+  wrapped, so `agent.run(file_bytes)` and `agent.run(Path("x.pdf"))` just work.
+  `File.from_bytes/from_path/from_url/from_file_id` (the last references a
+  provider-uploaded file). Where a provider has no native path for a type, a
+  clear `MultimodalError` names the fallback (upload for a `file_id`, or extract
+  text) instead of silently degrading. Purely additive — `str`/`Image`/`PDF`
+  inputs are unchanged.
 - **Native PDF passthrough for OpenAI & Azure.** `pdf_mode="native"` (and, for
   the vision models that support it, `pdf_mode="auto"`) now forwards the raw PDF
   to OpenAI/Azure as a Chat Completions `file` content part

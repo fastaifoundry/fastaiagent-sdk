@@ -18,6 +18,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from fastaiagent._internal.errors import MultimodalError, NonVisionModelError
+from fastaiagent.multimodal.file import File
 from fastaiagent.multimodal.image import Image
 from fastaiagent.multimodal.pdf import PDF
 from fastaiagent.multimodal.registry import supports_native_pdf
@@ -45,6 +46,42 @@ _BEDROCK_IMAGE_FORMAT_FROM_MEDIA_TYPE: dict[str, str] = {
     "image/gif": "gif",
     "image/webp": "webp",
 }
+
+# OpenAI ``input_audio`` accepts only these two container formats.
+_OPENAI_AUDIO_FORMAT_FROM_MIME: dict[str, str] = {
+    "audio/wav": "wav",
+    "audio/x-wav": "wav",
+    "audio/wave": "wav",
+    "audio/mpeg": "mp3",
+    "audio/mp3": "mp3",
+}
+
+# Bedrock Converse ``document`` block formats, keyed by mime type.
+_BEDROCK_DOC_FORMAT_FROM_MIME: dict[str, str] = {
+    "application/pdf": "pdf",
+    "text/csv": "csv",
+    "application/msword": "doc",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+    "application/vnd.ms-excel": "xls",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+    "text/html": "html",
+    "text/plain": "txt",
+    "text/markdown": "md",
+}
+
+
+def _file_as_image(f: File) -> Image:
+    """View an image-category ``File`` as an :class:`Image` (reuses resize +
+    per-provider image emission). Raises if the mime isn't a supported image."""
+    return Image(data=f.data, media_type=f.mime_type)
+
+
+def _unsupported_file(provider: str, f: File) -> MultimodalError:
+    return MultimodalError(
+        f"{provider} has no native input for {f.mime_type!r} "
+        f"({f.category}). Extract text and pass it as a string, or use a "
+        f"provider that supports this type (e.g. Gemini/Bedrock for documents)."
+    )
 
 
 def resolve_wire_markers(value: Any) -> Any:
@@ -93,6 +130,8 @@ def resolve_wire_markers(value: Any) -> Any:
             )
         elif kind == "pdf" and "data_base64" in part:
             resolved.append(PDF.from_dict({"data_base64": part["data_base64"]}))
+        elif kind == "file" and ("data_base64" in part or "file_id" in part):
+            resolved.append(File.from_dict(part))
         else:
             resolved.append(part)
     return resolved
@@ -140,6 +179,7 @@ def format_multimodal_message(
     needs_vision = any(
         isinstance(p, Image)
         or (isinstance(p, PDF) and resolved_pdf_mode not in ("text", "native"))
+        or (isinstance(p, File) and p.category == "image")
         for p in parts
     )
     if needs_vision and not is_vision_capable:
@@ -219,7 +259,48 @@ def _openai_blocks(
             )
         elif isinstance(part, PDF):
             blocks.extend(_pdf_blocks_openai(part, pdf_mode, max_pdf_pages, image_cap_mb))
+        elif isinstance(part, File):
+            blocks.extend(_file_blocks_openai(part, image_cap_mb))
     return blocks
+
+
+def _file_blocks_openai(f: File, image_cap_mb: float) -> list[dict[str, Any]]:
+    if f.category == "image":
+        img = maybe_resize(_file_as_image(f), max_mb=image_cap_mb)
+        return [
+            {
+                "type": "image_url",
+                "image_url": {"url": f"data:{img.media_type};base64,{img.to_base64()}"},
+            }
+        ]
+    if f.category == "audio":
+        fmt = _OPENAI_AUDIO_FORMAT_FROM_MIME.get(f.mime_type)
+        if fmt is None:
+            raise MultimodalError(
+                f"OpenAI input_audio accepts only wav/mp3; got {f.mime_type!r}"
+            )
+        return [{"type": "input_audio", "input_audio": {"data": f.to_base64(), "format": fmt}}]
+    # An uploaded file works for any type.
+    if f.file_id:
+        return [{"type": "file", "file": {"file_id": f.file_id}}]
+    # Inline `file_data` on Chat Completions is PDF-only; other documents must
+    # be uploaded first (Files API) and referenced by file_id.
+    if f.category == "pdf":
+        return [
+            {
+                "type": "file",
+                "file": {
+                    "filename": f.filename or "document.pdf",
+                    "file_data": f"data:{f.mime_type};base64,{f.to_base64()}",
+                },
+            }
+        ]
+    if f.category == "document":
+        raise MultimodalError(
+            f"OpenAI Chat Completions only takes PDF inline; upload {f.mime_type!r} "
+            "via the Files API and pass File.from_file_id(<id>), or extract its text."
+        )
+    raise _unsupported_file("OpenAI", f)
 
 
 def _pdf_filename(pdf: PDF) -> str:
@@ -296,7 +377,50 @@ def _anthropic_blocks(
             )
         elif isinstance(part, PDF):
             blocks.extend(_pdf_blocks_anthropic(part, pdf_mode, max_pdf_pages, image_cap_mb))
+        elif isinstance(part, File):
+            blocks.extend(_file_blocks_anthropic(part, image_cap_mb))
     return blocks
+
+
+def _file_blocks_anthropic(f: File, image_cap_mb: float) -> list[dict[str, Any]]:
+    if f.category == "image":
+        img = maybe_resize(_file_as_image(f), max_mb=image_cap_mb)
+        return [
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": img.media_type,
+                    "data": img.to_base64(),
+                },
+            }
+        ]
+    if f.file_id:
+        return [{"type": "document", "source": {"type": "file", "file_id": f.file_id}}]
+    if f.category == "pdf":
+        return [
+            {
+                "type": "document",
+                "source": {
+                    "type": "base64",
+                    "media_type": "application/pdf",
+                    "data": f.to_base64(),
+                },
+            }
+        ]
+    # Anthropic takes plain-text documents inline as a text source.
+    if f.mime_type in ("text/plain", "text/markdown", "text/csv", "text/html"):
+        return [
+            {
+                "type": "document",
+                "source": {
+                    "type": "text",
+                    "media_type": "text/plain",
+                    "data": f.data.decode("utf-8", errors="replace"),
+                },
+            }
+        ]
+    raise _unsupported_file("Anthropic", f)
 
 
 def _pdf_blocks_anthropic(
@@ -349,6 +473,10 @@ def _ollama_dict(
             else:
                 for page in part.to_page_images(max_pages=max_pdf_pages):
                     image_b64.append(maybe_resize(page, max_mb=image_cap_mb).to_base64())
+        elif isinstance(part, File):
+            if part.category != "image":
+                raise _unsupported_file("Ollama", part)
+            image_b64.append(maybe_resize(_file_as_image(part), max_mb=image_cap_mb).to_base64())
     return {"content": "\n\n".join(text_chunks), "images": image_b64}
 
 
@@ -372,17 +500,36 @@ def _bedrock_blocks(
             blocks.append({"image": {"format": fmt, "source": {"bytes": img.data}}})
         elif isinstance(part, PDF):
             blocks.extend(_pdf_blocks_bedrock(part, pdf_mode, max_pdf_pages, image_cap_mb))
+        elif isinstance(part, File):
+            blocks.extend(_file_blocks_bedrock(part, image_cap_mb))
     return blocks
+
+
+def _file_blocks_bedrock(f: File, image_cap_mb: float) -> list[dict[str, Any]]:
+    if f.category == "image":
+        img = maybe_resize(_file_as_image(f), max_mb=image_cap_mb)
+        fmt = _BEDROCK_IMAGE_FORMAT_FROM_MEDIA_TYPE.get(img.media_type)
+        if fmt is None:
+            raise MultimodalError(f"Bedrock does not accept image media_type {img.media_type!r}")
+        return [{"image": {"format": fmt, "source": {"bytes": img.data}}}]
+    doc_fmt = _BEDROCK_DOC_FORMAT_FROM_MIME.get(f.mime_type)
+    if doc_fmt is not None:
+        name = _bedrock_name_from(f.filename)
+        return [{"document": {"format": doc_fmt, "name": name, "source": {"bytes": f.data}}}]
+    raise _unsupported_file("Bedrock", f)
+
+
+def _bedrock_name_from(filename: str | None) -> str:
+    base = os.path.splitext(os.path.basename(filename or ""))[0] or "document"
+    name = re.sub(r"[^A-Za-z0-9\s\-()\[\]]", " ", base)
+    return re.sub(r"\s+", " ", name).strip() or "document"
 
 
 def _bedrock_doc_name(pdf: PDF) -> str:
     """Bedrock Converse requires a document ``name`` (alphanumerics, spaces,
     hyphens, parens, brackets; no consecutive spaces). Derive from the source
     filename, else a generic name."""
-    base = os.path.splitext(os.path.basename(pdf.source_path or ""))[0] or "document"
-    name = re.sub(r"[^A-Za-z0-9\s\-()\[\]]", " ", base)
-    name = re.sub(r"\s+", " ", name).strip()
-    return name or "document"
+    return _bedrock_name_from(pdf.source_path)
 
 
 def _pdf_blocks_bedrock(
