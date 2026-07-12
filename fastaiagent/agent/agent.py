@@ -128,6 +128,7 @@ class Agent:
         checkpointer: Checkpointer | None = None,
         agent_path_label: str | None = None,
         agent_id: str | None = None,
+        prompt_slug: str | None = None,
     ):
         self.name = name
         # The platform agent UUID this agent represents. Set it to enroll a
@@ -136,6 +137,11 @@ class Agent:
         # governance gate is a no-op (the agent isn't enrolled).
         self.agent_id = agent_id
         self.system_prompt = system_prompt
+        # A control-plane prompt-registry reference. When set, to_dict() emits
+        # this slug and sends system_prompt="" so a pushed agent links to the
+        # governed prompt (console shows the slug, not "Inline") instead of
+        # inlining the resolved text and dropping the linkage.
+        self.prompt_slug = prompt_slug
         if llm is not None and not isinstance(llm, LLMClient):
             # A raw openai/AzureOpenAI SDK client can't be used as ``llm``
             # directly — it has no ``model``/``provider`` and no ``acomplete``.
@@ -1121,20 +1127,33 @@ class Agent:
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to canonical format for platform push."""
-        if callable(self.system_prompt):
-            raise ValueError(
-                f"Agent '{self.name}' has a callable system_prompt which cannot be "
-                f"serialized. Use a static string for agents pushed to the platform."
-            )
+        if self.prompt_slug:
+            # A registry reference is the source of truth: send an empty inline
+            # prompt so the plane links the agent to the governed slug (a runtime
+            # callable system_prompt is fine here since it isn't serialized).
+            system_prompt = ""
+        else:
+            if callable(self.system_prompt):
+                raise ValueError(
+                    f"Agent '{self.name}' has a callable system_prompt which cannot be "
+                    f"serialized. Use a static string for agents pushed to the platform."
+                )
+            system_prompt = self.system_prompt
         d: dict[str, Any] = {
             "name": self.name,
             "agent_type": "single",
-            "system_prompt": self.system_prompt,
+            "system_prompt": system_prompt,
             "llm_endpoint": self.llm.to_dict(),
             "tools": [t.to_dict() for t in self.tools],
             "guardrails": [g.to_dict() for g in self.guardrails],
             "config": self.config.model_dump(),
         }
+        # Governed-input fields — emitted only when configured so an agent with
+        # neither is byte-identical to earlier versions (regression-safe).
+        if self.prompt_slug:
+            d["prompt_slug"] = self.prompt_slug
+        if self.memory is not None:
+            d["memory_enabled"] = True
         # Include response_format schema if output_type is set.
         # Note: output_type (a Python class) cannot be restored from JSON.
         response_format = self._build_response_format()
@@ -1153,6 +1172,7 @@ class Agent:
         return cls(
             name=data["name"],
             system_prompt=data.get("system_prompt", ""),
+            prompt_slug=data.get("prompt_slug"),
             llm=LLMClient.from_dict(data.get("llm_endpoint", {})),
             tools=[Tool.from_dict(t) for t in data.get("tools", [])],
             guardrails=[Guardrail.from_dict(g) for g in data.get("guardrails", [])],

@@ -443,6 +443,16 @@ The curated facts the block reads are managed on the plane's **Agent Memories** 
 
 A runnable end-to-end example is in `examples/87_connected_memory.py`.
 
+### Memory on a pushed agent
+
+When you push an agent definition to a connected control plane
+(`Agent.to_dict()` → `POST /public/v1/sdk/agents`, see
+[Platform](../platform/index.md#pushing-agent-definitions)), a configured `memory=`
+surfaces as `memory_enabled: true` in the payload, so the console shows memory **Enabled**
+for that agent. The flag reflects only *that* memory is configured — the block-level tuning
+(what facts, retrieval count, thresholds) stays in your SDK code. An agent with no `memory=`
+omits the field entirely.
+
 ## Composing blocks
 
 Block order matters — they render in declaration order, and the resulting SystemMessages appear in the prompt in that order. Typical ordering:

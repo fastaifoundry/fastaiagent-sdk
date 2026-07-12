@@ -210,6 +210,7 @@ def build_scope_agent() -> fa.Agent:
 
 
 def build_researcher(subtopic: str, rationale: str) -> fa.Agent:
+    tool_budget = int(os.getenv("RESEARCH_TOOL_BUDGET", "6"))
     return fa.Agent(
         name=f"researcher:{subtopic[:40]}",
         system_prompt=researcher_prompt(subtopic, rationale),
@@ -219,10 +220,16 @@ def build_researcher(subtopic: str, rationale: str) -> fa.Agent:
         # Protects against a misbehaving model spamming the search backend.
         middleware=[
             ToolBudget(
-                max_calls=int(os.getenv("RESEARCH_TOOL_BUDGET", "6")),
+                max_calls=tool_budget,
                 message="Research budget exhausted for this subtopic.",
             )
         ],
+        # Give the loop room for one LLM turn per tool call plus the final
+        # structured-output turn, so ``ToolBudget`` is the *graceful* limiter
+        # rather than a hard ``MaxIterationsError`` when a model spreads its
+        # calls one-per-turn (the default max_iterations of 10 could bind first
+        # and abort the branch before it emits ``ResearchFindings``).
+        config=fa.AgentConfig(max_iterations=tool_budget + 4),
         output_type=ResearchFindings,
     )
 
