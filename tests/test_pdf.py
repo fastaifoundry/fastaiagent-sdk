@@ -82,6 +82,29 @@ def test_empty_data_raises() -> None:
         PDF.from_bytes(b"")
 
 
+# A payload with a valid ``%PDF-`` header (so ``__post_init__`` accepts it) but
+# a body PyMuPDF can't parse — stands in for the customer's flat-compressed PDF.
+_UNPARSEABLE_PDF = b"%PDF-1.4 not really a pdf at all"
+
+
+def test_page_count_wraps_pymupdf_failure() -> None:
+    pdf = PDF.from_bytes(_UNPARSEABLE_PDF)
+    with pytest.raises(MultimodalError, match="pdf_mode='native'"):
+        pdf.page_count()
+
+
+def test_extract_text_wraps_pymupdf_failure() -> None:
+    pdf = PDF.from_bytes(_UNPARSEABLE_PDF)
+    with pytest.raises(MultimodalError, match="pdf_mode='native'"):
+        pdf.extract_text()
+
+
+def test_to_page_images_wraps_pymupdf_failure() -> None:
+    pdf = PDF.from_bytes(_UNPARSEABLE_PDF)
+    with pytest.raises(MultimodalError, match="pdf_mode='native'"):
+        pdf.to_page_images()
+
+
 def test_from_url_rejects_file_scheme() -> None:
     with pytest.raises(UnsupportedFormatError):
         PDF.from_url("file:///tmp/nope.pdf")

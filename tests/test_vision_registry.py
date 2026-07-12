@@ -45,9 +45,33 @@ def test_unknown_provider_is_not_vision() -> None:
     assert is_vision_capable("madeup", "model") is False
 
 
-def test_native_pdf_anthropic_only() -> None:
+def test_native_pdf_anthropic() -> None:
     assert supports_native_pdf("anthropic", "claude-sonnet-4-6") is True
     assert supports_native_pdf("anthropic", "claude-3-5-sonnet-20241022") is True
     assert supports_native_pdf("anthropic", "claude-2.1") is False
-    assert supports_native_pdf("openai", "gpt-4o") is False
+
+
+def test_native_pdf_openai_vision_models() -> None:
+    # OpenAI/Azure vision models accept the ``file`` PDF content part.
+    assert supports_native_pdf("openai", "gpt-4o") is True
+    assert supports_native_pdf("openai", "gpt-4o-mini") is True
+    assert supports_native_pdf("openai", "gpt-4.1") is True
+    assert supports_native_pdf("openai", "o3") is True
+    assert supports_native_pdf("azure", "gpt-4o") is True
+    # Image-only / legacy models don't accept PDF file input.
+    assert supports_native_pdf("openai", "gpt-4-turbo") is False
+    assert supports_native_pdf("openai", "gpt-3.5-turbo") is False
     assert supports_native_pdf("ollama", "llava:13b") is False
+    # Custom endpoints are never auto-native (they opt in explicitly).
+    assert supports_native_pdf("custom", "my-model") is False
+
+
+def test_native_pdf_gemini() -> None:
+    # Gemini reads PDFs natively (handled in the gemini wire via inlineData).
+    assert supports_native_pdf("gemini", "gemini-2.5-flash") is True
+    assert supports_native_pdf("gemini", "gemini-2.0-flash") is True
+
+
+def test_gemini_is_vision() -> None:
+    assert is_vision_capable("gemini", "gemini-2.5-flash") is True
+    assert is_vision_capable("gemini", "gemini-1.5-pro") is True

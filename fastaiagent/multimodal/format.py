@@ -12,9 +12,13 @@ Test #4 a fast, real-library unit test rather than an HTTP-mocked one.
 from __future__ import annotations
 
 import logging
+import os
+import re
 from typing import Any
+from urllib.parse import urlparse
 
 from fastaiagent._internal.errors import MultimodalError, NonVisionModelError
+from fastaiagent.multimodal.file import File
 from fastaiagent.multimodal.image import Image
 from fastaiagent.multimodal.pdf import PDF
 from fastaiagent.multimodal.registry import supports_native_pdf
@@ -42,6 +46,42 @@ _BEDROCK_IMAGE_FORMAT_FROM_MEDIA_TYPE: dict[str, str] = {
     "image/gif": "gif",
     "image/webp": "webp",
 }
+
+# OpenAI ``input_audio`` accepts only these two container formats.
+_OPENAI_AUDIO_FORMAT_FROM_MIME: dict[str, str] = {
+    "audio/wav": "wav",
+    "audio/x-wav": "wav",
+    "audio/wave": "wav",
+    "audio/mpeg": "mp3",
+    "audio/mp3": "mp3",
+}
+
+# Bedrock Converse ``document`` block formats, keyed by mime type.
+_BEDROCK_DOC_FORMAT_FROM_MIME: dict[str, str] = {
+    "application/pdf": "pdf",
+    "text/csv": "csv",
+    "application/msword": "doc",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+    "application/vnd.ms-excel": "xls",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+    "text/html": "html",
+    "text/plain": "txt",
+    "text/markdown": "md",
+}
+
+
+def _file_as_image(f: File) -> Image:
+    """View an image-category ``File`` as an :class:`Image` (reuses resize +
+    per-provider image emission). Raises if the mime isn't a supported image."""
+    return Image(data=f.data, media_type=f.mime_type)
+
+
+def _unsupported_file(provider: str, f: File) -> MultimodalError:
+    return MultimodalError(
+        f"{provider} has no native input for {f.mime_type!r} "
+        f"({f.category}). Extract text and pass it as a string, or use a "
+        f"provider that supports this type (e.g. Gemini/Bedrock for documents)."
+    )
 
 
 def resolve_wire_markers(value: Any) -> Any:
@@ -90,6 +130,8 @@ def resolve_wire_markers(value: Any) -> Any:
             )
         elif kind == "pdf" and "data_base64" in part:
             resolved.append(PDF.from_dict({"data_base64": part["data_base64"]}))
+        elif kind == "file" and ("data_base64" in part or "file_id" in part):
+            resolved.append(File.from_dict(part))
         else:
             resolved.append(part)
     return resolved
@@ -120,7 +162,8 @@ def format_multimodal_message(
             Used to decide whether to emit Anthropic-native PDF blocks.
         pdf_mode: ``"auto"`` (resolve from capability), ``"text"`` (extract
             and inline), ``"vision"`` (render pages as images), or
-            ``"native"`` (emit a single ``document`` block, Anthropic only).
+            ``"native"`` (forward the raw PDF to the provider — an Anthropic
+            ``document`` block or an OpenAI/Azure ``file`` content part).
         is_vision_capable: caller-supplied capability flag. When ``False``
             and any non-text part is present, raises
             :class:`NonVisionModelError`.
@@ -131,9 +174,13 @@ def format_multimodal_message(
     """
     resolved_pdf_mode = _resolve_pdf_mode(pdf_mode, is_vision_capable, provider, model)
     # Vision is required only when the resolved plan would actually emit
-    # image bytes to the model. PDFs in text mode don't need vision.
+    # image bytes to the model. Neither text mode (extracts text) nor native
+    # mode (forwards raw PDF bytes for the provider to parse) needs vision.
     needs_vision = any(
-        isinstance(p, Image) or (isinstance(p, PDF) and resolved_pdf_mode != "text") for p in parts
+        isinstance(p, Image)
+        or (isinstance(p, PDF) and resolved_pdf_mode not in ("text", "native"))
+        or (isinstance(p, File) and p.category == "image")
+        for p in parts
     )
     if needs_vision and not is_vision_capable:
         raise NonVisionModelError(provider=provider, model=model)
@@ -170,6 +217,13 @@ def _resolve_pdf_mode(mode: str, is_vision_capable: bool, provider: str, model: 
             return "native"
         return "vision" if is_vision_capable else "text"
     if mode == "native" and not supports_native_pdf(provider, model):
+        # Escape hatch: ``azure`` deployments carry user-chosen names and
+        # ``custom`` points at arbitrary OpenAI-compatible endpoints, so the
+        # prefix registry can't vouch for them. Trust an explicit request there
+        # rather than silently downgrading to vision — the integrator knows
+        # their endpoint. All emit the OpenAI ``file`` part.
+        if provider in ("azure", "custom"):
+            return "native"
         logger.warning(
             "pdf_mode='native' requested but %s/%s does not support it; falling back to vision",
             provider,
@@ -205,12 +259,84 @@ def _openai_blocks(
             )
         elif isinstance(part, PDF):
             blocks.extend(_pdf_blocks_openai(part, pdf_mode, max_pdf_pages, image_cap_mb))
+        elif isinstance(part, File):
+            blocks.extend(_file_blocks_openai(part, image_cap_mb))
     return blocks
+
+
+def _file_blocks_openai(f: File, image_cap_mb: float) -> list[dict[str, Any]]:
+    if f.category == "image":
+        img = maybe_resize(_file_as_image(f), max_mb=image_cap_mb)
+        return [
+            {
+                "type": "image_url",
+                "image_url": {"url": f"data:{img.media_type};base64,{img.to_base64()}"},
+            }
+        ]
+    if f.category == "audio":
+        fmt = _OPENAI_AUDIO_FORMAT_FROM_MIME.get(f.mime_type)
+        if fmt is None:
+            raise MultimodalError(
+                f"OpenAI input_audio accepts only wav/mp3; got {f.mime_type!r}"
+            )
+        return [{"type": "input_audio", "input_audio": {"data": f.to_base64(), "format": fmt}}]
+    # An uploaded file works for any type.
+    if f.file_id:
+        return [{"type": "file", "file": {"file_id": f.file_id}}]
+    # Inline `file_data` on Chat Completions is PDF-only; other documents must
+    # be uploaded first (Files API) and referenced by file_id.
+    if f.category == "pdf":
+        return [
+            {
+                "type": "file",
+                "file": {
+                    "filename": f.filename or "document.pdf",
+                    "file_data": f"data:{f.mime_type};base64,{f.to_base64()}",
+                },
+            }
+        ]
+    if f.category == "document":
+        raise MultimodalError(
+            f"OpenAI Chat Completions only takes PDF inline; upload {f.mime_type!r} "
+            "via the Files API and pass File.from_file_id(<id>), or extract its text."
+        )
+    raise _unsupported_file("OpenAI", f)
+
+
+def _pdf_filename(pdf: PDF) -> str:
+    """Best-effort filename for the OpenAI ``file`` part.
+
+    OpenAI requires a ``filename``; derive it from the PDF's origin, falling
+    back to a generic name for ``PDF.from_bytes`` inputs that carry neither a
+    path nor a URL.
+    """
+    if pdf.source_path:
+        name = os.path.basename(pdf.source_path)
+        if name:
+            return name
+    if pdf.source_url:
+        name = os.path.basename(urlparse(pdf.source_url).path)
+        if name:
+            return name
+    return "document.pdf"
 
 
 def _pdf_blocks_openai(
     pdf: PDF, pdf_mode: str, max_pdf_pages: int, image_cap_mb: float
 ) -> list[dict[str, Any]]:
+    if pdf_mode == "native":
+        # Forward the raw PDF; OpenAI/Azure parse it server-side (text + page
+        # images) — no local PyMuPDF rendering, so PDFs that PyMuPDF can't
+        # decompress still work, matching the raw OpenAI SDK.
+        return [
+            {
+                "type": "file",
+                "file": {
+                    "filename": _pdf_filename(pdf),
+                    "file_data": f"data:application/pdf;base64,{pdf.to_base64()}",
+                },
+            }
+        ]
     if pdf_mode == "text":
         return [{"type": "text", "text": pdf.extract_text()}]
     pages = pdf.to_page_images(max_pages=max_pdf_pages)
@@ -251,7 +377,50 @@ def _anthropic_blocks(
             )
         elif isinstance(part, PDF):
             blocks.extend(_pdf_blocks_anthropic(part, pdf_mode, max_pdf_pages, image_cap_mb))
+        elif isinstance(part, File):
+            blocks.extend(_file_blocks_anthropic(part, image_cap_mb))
     return blocks
+
+
+def _file_blocks_anthropic(f: File, image_cap_mb: float) -> list[dict[str, Any]]:
+    if f.category == "image":
+        img = maybe_resize(_file_as_image(f), max_mb=image_cap_mb)
+        return [
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": img.media_type,
+                    "data": img.to_base64(),
+                },
+            }
+        ]
+    if f.file_id:
+        return [{"type": "document", "source": {"type": "file", "file_id": f.file_id}}]
+    if f.category == "pdf":
+        return [
+            {
+                "type": "document",
+                "source": {
+                    "type": "base64",
+                    "media_type": "application/pdf",
+                    "data": f.to_base64(),
+                },
+            }
+        ]
+    # Anthropic takes plain-text documents inline as a text source.
+    if f.mime_type in ("text/plain", "text/markdown", "text/csv", "text/html"):
+        return [
+            {
+                "type": "document",
+                "source": {
+                    "type": "text",
+                    "media_type": "text/plain",
+                    "data": f.data.decode("utf-8", errors="replace"),
+                },
+            }
+        ]
+    raise _unsupported_file("Anthropic", f)
 
 
 def _pdf_blocks_anthropic(
@@ -304,6 +473,10 @@ def _ollama_dict(
             else:
                 for page in part.to_page_images(max_pages=max_pdf_pages):
                     image_b64.append(maybe_resize(page, max_mb=image_cap_mb).to_base64())
+        elif isinstance(part, File):
+            if part.category != "image":
+                raise _unsupported_file("Ollama", part)
+            image_b64.append(maybe_resize(_file_as_image(part), max_mb=image_cap_mb).to_base64())
     return {"content": "\n\n".join(text_chunks), "images": image_b64}
 
 
@@ -327,12 +500,53 @@ def _bedrock_blocks(
             blocks.append({"image": {"format": fmt, "source": {"bytes": img.data}}})
         elif isinstance(part, PDF):
             blocks.extend(_pdf_blocks_bedrock(part, pdf_mode, max_pdf_pages, image_cap_mb))
+        elif isinstance(part, File):
+            blocks.extend(_file_blocks_bedrock(part, image_cap_mb))
     return blocks
+
+
+def _file_blocks_bedrock(f: File, image_cap_mb: float) -> list[dict[str, Any]]:
+    if f.category == "image":
+        img = maybe_resize(_file_as_image(f), max_mb=image_cap_mb)
+        fmt = _BEDROCK_IMAGE_FORMAT_FROM_MEDIA_TYPE.get(img.media_type)
+        if fmt is None:
+            raise MultimodalError(f"Bedrock does not accept image media_type {img.media_type!r}")
+        return [{"image": {"format": fmt, "source": {"bytes": img.data}}}]
+    doc_fmt = _BEDROCK_DOC_FORMAT_FROM_MIME.get(f.mime_type)
+    if doc_fmt is not None:
+        name = _bedrock_name_from(f.filename)
+        return [{"document": {"format": doc_fmt, "name": name, "source": {"bytes": f.data}}}]
+    raise _unsupported_file("Bedrock", f)
+
+
+def _bedrock_name_from(filename: str | None) -> str:
+    base = os.path.splitext(os.path.basename(filename or ""))[0] or "document"
+    name = re.sub(r"[^A-Za-z0-9\s\-()\[\]]", " ", base)
+    return re.sub(r"\s+", " ", name).strip() or "document"
+
+
+def _bedrock_doc_name(pdf: PDF) -> str:
+    """Bedrock Converse requires a document ``name`` (alphanumerics, spaces,
+    hyphens, parens, brackets; no consecutive spaces). Derive from the source
+    filename, else a generic name."""
+    return _bedrock_name_from(pdf.source_path)
 
 
 def _pdf_blocks_bedrock(
     pdf: PDF, pdf_mode: str, max_pdf_pages: int, image_cap_mb: float
 ) -> list[dict[str, Any]]:
+    if pdf_mode == "native":
+        # Bedrock Converse accepts a native document block (raw bytes) — the
+        # model (Claude on Bedrock) parses the PDF server-side, no local render.
+        return [
+            {
+                "document": {
+                    "format": "pdf",
+                    "name": _bedrock_doc_name(pdf),
+                    "source": {"bytes": pdf.data},
+                }
+            }
+        ]
     if pdf_mode == "text":
         return [{"text": pdf.extract_text()}]
     pages = pdf.to_page_images(max_pages=max_pdf_pages)

@@ -24,14 +24,24 @@ fetching. See [Image URL safety](images.md#url-safety) for the full ruleset.
 |-----------|-----------------------------------------------|-------|-----------------|
 | `text`    | `pymupdf` extracts text → single text block   | Low   | None — bare text |
 | `vision`  | Pages rendered to PNG → image blocks per page | High  | High — preserves tables, signatures |
-| `native`  | Anthropic-only `document` block (PDF inline)  | Med   | Highest — Claude reads the PDF directly |
+| `native`  | Raw PDF forwarded to the provider (Anthropic `document` block / OpenAI `file` part) | Med | Highest — the model reads the PDF directly |
 | `auto`    | Default — picks the best mode for the model   | Mixed | Mixed |
 
 ### auto resolution
 
 * Anthropic Sonnet/Opus 3.5+ → `native` (one document block; lowest cost)
-* Any other vision-capable model → `vision`
+* OpenAI/Azure vision models (gpt-4o, gpt-4.1, gpt-5, o-series) → `native`
+  (raw PDF forwarded as a `file` part; the provider parses it server-side)
+* Bedrock-hosted Claude → `native` (Converse `document` block)
+* Gemini → always native (`inlineData`); `pdf_mode` does not apply
+* Any other vision-capable model (Ollama, Mistral, custom) → `vision`
 * Non-vision model (gpt-3.5-turbo, claude-2.1, …) → `text`
+
+`native` mode forwards the **whole** PDF — it does not render or extract
+locally, so `max_pdf_pages` does not apply and PDFs that `pymupdf` cannot
+decompress (e.g. some flate-compressed streams) still work. Custom
+OpenAI-compatible endpoints stay on `vision` under `auto`; pass
+`pdf_mode="native"` explicitly if your endpoint accepts the `file` part.
 
 Configure globally or per-LLMClient:
 

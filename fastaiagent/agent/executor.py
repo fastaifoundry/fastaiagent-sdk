@@ -60,10 +60,11 @@ def _is_multimodal_part(obj: Any) -> bool:
     The check is import-light because this function runs on every
     checkpoint write — only the modules' top-level classes are touched.
     """
+    from fastaiagent.multimodal.file import File
     from fastaiagent.multimodal.image import Image
     from fastaiagent.multimodal.pdf import PDF
 
-    return isinstance(obj, (Image, PDF))
+    return isinstance(obj, (Image, PDF, File))
 
 
 def _serialize_messages(messages: list[Message]) -> list[dict[str, Any]]:
@@ -98,6 +99,7 @@ def _deserialize_messages(raw: list[dict[str, Any]]) -> list[Message]:
     ``Agent.aresume`` so a resumed run sees the original multimodal
     content rather than dict stand-ins.
     """
+    from fastaiagent.multimodal.file import File
     from fastaiagent.multimodal.image import Image
     from fastaiagent.multimodal.pdf import PDF
 
@@ -105,7 +107,7 @@ def _deserialize_messages(raw: list[dict[str, Any]]) -> list[Message]:
     for raw_m in raw:
         content = raw_m.get("content")
         if isinstance(content, list) and any(
-            isinstance(p, dict) and p.get("type") in ("image", "pdf") for p in content
+            isinstance(p, dict) and p.get("type") in ("image", "pdf", "file") for p in content
         ):
             rebuilt: list[Any] = []
             for part in content:
@@ -113,6 +115,8 @@ def _deserialize_messages(raw: list[dict[str, Any]]) -> list[Message]:
                     rebuilt.append(Image.from_dict(part))
                 elif isinstance(part, dict) and part.get("type") == "pdf":
                     rebuilt.append(PDF.from_dict(part))
+                elif isinstance(part, dict) and part.get("type") == "file":
+                    rebuilt.append(File.from_dict(part))
                 else:
                     rebuilt.append(part)
             new_raw = {**raw_m, "content": rebuilt}

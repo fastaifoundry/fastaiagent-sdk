@@ -43,6 +43,8 @@ _VISION_PREFIXES: tuple[tuple[str, str], ...] = (
     ("bedrock", "anthropic.claude-sonnet-4"),
     ("bedrock", "anthropic.claude-opus-4"),
     ("bedrock", "anthropic.claude-haiku-4"),
+    # Gemini — 1.5/2.x flash & pro are all natively multimodal
+    ("gemini", "gemini"),
     # Ollama vision tags — the user opts in by tagging their pull
     ("ollama", "llava"),
     ("ollama", "bakllava"),
@@ -63,8 +65,16 @@ _NON_VISION_EXACT: frozenset[tuple[str, str]] = frozenset(
     }
 )
 
-# Anthropic models that natively accept ``application/pdf`` document blocks
-# (no client-side rendering required). Maintained as prefixes too.
+# Provider+model pairs that natively accept raw PDF bytes — no client-side
+# rendering required. Anthropic takes an ``application/pdf`` ``document`` block;
+# OpenAI/Azure take a ``file`` content part with base64 ``file_data`` (both the
+# Chat Completions and Responses APIs). Maintained as prefixes.
+#
+# For OpenAI the set is the vision-capable models that OpenAI documents as
+# accepting PDF file input: gpt-4o (and -mini), gpt-4.1, gpt-5, and the o-series
+# reasoning models. Deliberately NOT gpt-4-turbo / gpt-4-vision (image-only —
+# they 4xx on a ``file`` part) and NOT ``custom`` (arbitrary endpoints may not
+# implement it; those opt in explicitly via ``pdf_mode="native"``).
 _NATIVE_PDF_PREFIXES: tuple[tuple[str, str], ...] = (
     ("anthropic", "claude-3-5"),
     ("anthropic", "claude-3-7"),
@@ -75,6 +85,20 @@ _NATIVE_PDF_PREFIXES: tuple[tuple[str, str], ...] = (
     ("bedrock", "anthropic.claude-sonnet-4"),
     ("bedrock", "anthropic.claude-opus-4"),
     ("bedrock", "anthropic.claude-haiku-4"),
+    # OpenAI — vision-capable models that accept the ``file`` PDF content part.
+    ("openai", "gpt-4o"),
+    ("openai", "gpt-4.1"),
+    ("openai", "gpt-5"),
+    ("openai", "o1"),
+    ("openai", "o3"),
+    ("openai", "o4"),
+    # Azure OpenAI deployments follow upstream naming.
+    ("azure", "gpt-4o"),
+    ("azure", "gpt-4.1"),
+    ("azure", "gpt-5"),
+    # Gemini reads PDFs natively via inlineData (handled in the gemini wire,
+    # not the OpenAI formatter).
+    ("gemini", "gemini"),
 )
 
 

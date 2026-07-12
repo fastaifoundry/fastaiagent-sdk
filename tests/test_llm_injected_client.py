@@ -158,6 +158,53 @@ def test_azure_ad_token_provider_is_used(stub_url: str) -> None:
     assert calls["n"] >= 1  # the provider was invoked to mint the token
 
 
+def test_azure_native_pdf_emits_file_block_with_deployment_name(stub_url: str) -> None:
+    # The customer's exact setup: a native AzureOpenAI client, a deployment
+    # name the native-PDF prefix registry can't match, and an explicit
+    # pdf_mode="native". The request body must carry the raw PDF as a `file`
+    # part (server-side parsing) — NOT locally-rendered image_url blocks, which
+    # would require PyMuPDF and crash on flate-compressed PDFs.
+    from fastaiagent import PDF
+
+    client = openai.AzureOpenAI(
+        azure_endpoint=stub_url, api_version="2024-10-21", api_key="x"
+    )
+    llm = LLMClient(
+        provider="azure",
+        model="my-gpt4o-deployment",
+        openai_client=client,
+        pdf_mode="native",
+    )
+    # PyMuPDF can't parse this; if the SDK tried to render it, the call would
+    # raise before ever reaching the stub.
+    pdf = PDF.from_bytes(b"%PDF-1.4 flate-broken not-really-a-pdf")
+
+    resp = llm.complete([UserMessage(["summarize this", pdf])])
+    assert resp.content == "hello from stub"
+
+    content = _LAST["body"]["messages"][-1]["content"]
+    kinds = [part["type"] for part in content]
+    assert kinds == ["text", "file"]
+    file_part = content[1]["file"]
+    assert file_part["filename"] == "document.pdf"
+    assert file_part["file_data"].startswith("data:application/pdf;base64,")
+
+
+def test_openai_client_rejects_llmclient_double_wrap(stub_url: str) -> None:
+    # Passing an LLMClient where the raw openai SDK client is expected used to
+    # surface as a cryptic "'LLMClient' object has no attribute 'chat'" deep in
+    # a request. Now it fails fast at construction with an actionable message.
+    raw = openai.OpenAI(base_url=stub_url, api_key="x")
+    inner = LLMClient(provider="azure", model="dep", openai_client=raw)
+    with pytest.raises(TypeError, match="openai SDK client"):
+        LLMClient(provider="azure", model="dep", openai_client=inner)
+
+
+def test_openai_client_rejects_arbitrary_object() -> None:
+    with pytest.raises(TypeError, match="openai SDK client"):
+        LLMClient(provider="openai", model="gpt-4o", openai_client=object())
+
+
 async def test_async_openai_client_delegation(stub_url: str) -> None:
     client = openai.AsyncOpenAI(base_url=stub_url, api_key="x")
     llm = LLMClient(provider="azure", model="dep", openai_client=client)

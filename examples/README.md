@@ -126,6 +126,7 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 - [`44_multimodal_pdf.py`](44_multimodal_pdf.py) — `fa.PDF` input
 - [`45_multimodal_chain.py`](45_multimodal_chain.py) — multimodal in Chain
 - [`46_multimodal_swarm.py`](46_multimodal_swarm.py) — multimodal in Swarm
+- [`47_multimodal_file.py`](47_multimodal_file.py) — generic `fa.File` / bare-bytes auto-detect (native across providers)
 
 ### Local UI features (sprint demos)
 - [`35_local_ui.py`](35_local_ui.py) — start the UI from Python
