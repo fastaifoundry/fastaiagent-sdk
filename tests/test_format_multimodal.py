@@ -151,6 +151,24 @@ def test_bedrock_png_format_label() -> None:
     assert out["content"][0]["image"]["format"] == "png"
 
 
+def test_bedrock_pdf_native_document_block() -> None:
+    pdf = PDF.from_file(FIXTURES / "contract.pdf")
+    out = format_multimodal_message(
+        [pdf], "bedrock", model="anthropic.claude-sonnet-4", pdf_mode="native"
+    )
+    doc = out["content"][0]["document"]
+    assert doc["format"] == "pdf"
+    assert doc["name"] == "contract"
+    assert doc["source"]["bytes"] == pdf.data  # raw bytes, not base64
+
+
+def test_bedrock_pdf_auto_uses_native_for_claude() -> None:
+    # Bedrock-hosted Claude is native-PDF capable; auto must not render locally.
+    pdf = PDF.from_file(FIXTURES / "contract.pdf")
+    out = format_multimodal_message([pdf], "bedrock", model="anthropic.claude-sonnet-4")
+    assert "document" in out["content"][0]
+
+
 # --- Mixed / order ---
 
 
@@ -220,10 +238,67 @@ def test_auto_mode_uses_native_for_anthropic_vision_model() -> None:
     assert out["content"][0]["type"] == "document"
 
 
-def test_auto_mode_uses_vision_for_openai_gpt4o() -> None:
+def test_auto_mode_uses_native_for_openai_gpt4o() -> None:
+    # gpt-4o accepts native PDF file input, so auto forwards the raw PDF
+    # instead of rendering pages locally with PyMuPDF (matches raw OpenAI SDK).
     pdf = PDF.from_file(FIXTURES / "contract.pdf")
     out = format_multimodal_message([pdf], "openai", model="gpt-4o", pdf_mode="auto")
+    assert out["content"][0]["type"] == "file"
+
+
+# --- OpenAI native PDF ---
+
+
+def test_openai_pdf_native_block_shape() -> None:
+    pdf = PDF.from_file(FIXTURES / "contract.pdf")
+    out = format_multimodal_message([pdf], "openai", model="gpt-4o", pdf_mode="native")
+    block = out["content"][0]
+    assert block["type"] == "file"
+    assert block["file"]["filename"] == "contract.pdf"
+    file_data = block["file"]["file_data"]
+    assert file_data.startswith("data:application/pdf;base64,")
+    assert file_data.endswith(pdf.to_base64())
+
+
+def test_openai_pdf_native_filename_defaults_to_document_pdf() -> None:
+    # PDF.from_bytes carries no source_path/source_url → generic filename.
+    pdf = PDF.from_bytes((FIXTURES / "contract.pdf").read_bytes())
+    out = format_multimodal_message([pdf], "openai", model="gpt-4o", pdf_mode="native")
+    assert out["content"][0]["file"]["filename"] == "document.pdf"
+
+
+def test_azure_pdf_native_matches_openai() -> None:
+    pdf = PDF.from_file(FIXTURES / "contract.pdf")
+    out_openai = format_multimodal_message([pdf], "openai", model="gpt-4o", pdf_mode="native")
+    out_azure = format_multimodal_message([pdf], "azure", model="gpt-4o", pdf_mode="native")
+    assert out_openai == out_azure
+
+
+def test_openai_pdf_native_coexists_with_text_and_image() -> None:
+    img = Image.from_file(FIXTURES / "cat.jpg")
+    pdf = PDF.from_file(FIXTURES / "contract.pdf")
+    out = format_multimodal_message(
+        ["question", pdf, img], "openai", model="gpt-4o", pdf_mode="native"
+    )
+    blocks = out["content"]
+    assert blocks[0] == {"type": "text", "text": "question"}
+    assert blocks[1]["type"] == "file"
+    assert blocks[2]["type"] == "image_url"
+
+
+def test_custom_pdf_auto_stays_vision() -> None:
+    # Custom endpoints aren't in the native registry; auto must keep rendering
+    # pages so arbitrary OpenAI-compatible servers keep working.
+    pdf = PDF.from_file(FIXTURES / "contract.pdf")
+    out = format_multimodal_message([pdf], "custom", model="my-model", pdf_mode="auto")
     assert out["content"][0]["type"] == "image_url"
+
+
+def test_custom_pdf_explicit_native_opt_in() -> None:
+    # Explicit native is honored for custom (integrator vouches for the endpoint).
+    pdf = PDF.from_file(FIXTURES / "contract.pdf")
+    out = format_multimodal_message([pdf], "custom", model="my-model", pdf_mode="native")
+    assert out["content"][0]["type"] == "file"
 
 
 # --- max_pdf_pages truncation ---

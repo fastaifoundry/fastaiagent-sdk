@@ -12,7 +12,10 @@ Test #4 a fast, real-library unit test rather than an HTTP-mocked one.
 from __future__ import annotations
 
 import logging
+import os
+import re
 from typing import Any
+from urllib.parse import urlparse
 
 from fastaiagent._internal.errors import MultimodalError, NonVisionModelError
 from fastaiagent.multimodal.image import Image
@@ -120,7 +123,8 @@ def format_multimodal_message(
             Used to decide whether to emit Anthropic-native PDF blocks.
         pdf_mode: ``"auto"`` (resolve from capability), ``"text"`` (extract
             and inline), ``"vision"`` (render pages as images), or
-            ``"native"`` (emit a single ``document`` block, Anthropic only).
+            ``"native"`` (forward the raw PDF to the provider — an Anthropic
+            ``document`` block or an OpenAI/Azure ``file`` content part).
         is_vision_capable: caller-supplied capability flag. When ``False``
             and any non-text part is present, raises
             :class:`NonVisionModelError`.
@@ -131,9 +135,12 @@ def format_multimodal_message(
     """
     resolved_pdf_mode = _resolve_pdf_mode(pdf_mode, is_vision_capable, provider, model)
     # Vision is required only when the resolved plan would actually emit
-    # image bytes to the model. PDFs in text mode don't need vision.
+    # image bytes to the model. Neither text mode (extracts text) nor native
+    # mode (forwards raw PDF bytes for the provider to parse) needs vision.
     needs_vision = any(
-        isinstance(p, Image) or (isinstance(p, PDF) and resolved_pdf_mode != "text") for p in parts
+        isinstance(p, Image)
+        or (isinstance(p, PDF) and resolved_pdf_mode not in ("text", "native"))
+        for p in parts
     )
     if needs_vision and not is_vision_capable:
         raise NonVisionModelError(provider=provider, model=model)
@@ -170,6 +177,13 @@ def _resolve_pdf_mode(mode: str, is_vision_capable: bool, provider: str, model: 
             return "native"
         return "vision" if is_vision_capable else "text"
     if mode == "native" and not supports_native_pdf(provider, model):
+        # Escape hatch: ``azure`` deployments carry user-chosen names and
+        # ``custom`` points at arbitrary OpenAI-compatible endpoints, so the
+        # prefix registry can't vouch for them. Trust an explicit request there
+        # rather than silently downgrading to vision — the integrator knows
+        # their endpoint. All emit the OpenAI ``file`` part.
+        if provider in ("azure", "custom"):
+            return "native"
         logger.warning(
             "pdf_mode='native' requested but %s/%s does not support it; falling back to vision",
             provider,
@@ -208,9 +222,40 @@ def _openai_blocks(
     return blocks
 
 
+def _pdf_filename(pdf: PDF) -> str:
+    """Best-effort filename for the OpenAI ``file`` part.
+
+    OpenAI requires a ``filename``; derive it from the PDF's origin, falling
+    back to a generic name for ``PDF.from_bytes`` inputs that carry neither a
+    path nor a URL.
+    """
+    if pdf.source_path:
+        name = os.path.basename(pdf.source_path)
+        if name:
+            return name
+    if pdf.source_url:
+        name = os.path.basename(urlparse(pdf.source_url).path)
+        if name:
+            return name
+    return "document.pdf"
+
+
 def _pdf_blocks_openai(
     pdf: PDF, pdf_mode: str, max_pdf_pages: int, image_cap_mb: float
 ) -> list[dict[str, Any]]:
+    if pdf_mode == "native":
+        # Forward the raw PDF; OpenAI/Azure parse it server-side (text + page
+        # images) — no local PyMuPDF rendering, so PDFs that PyMuPDF can't
+        # decompress still work, matching the raw OpenAI SDK.
+        return [
+            {
+                "type": "file",
+                "file": {
+                    "filename": _pdf_filename(pdf),
+                    "file_data": f"data:application/pdf;base64,{pdf.to_base64()}",
+                },
+            }
+        ]
     if pdf_mode == "text":
         return [{"type": "text", "text": pdf.extract_text()}]
     pages = pdf.to_page_images(max_pages=max_pdf_pages)
@@ -330,9 +375,31 @@ def _bedrock_blocks(
     return blocks
 
 
+def _bedrock_doc_name(pdf: PDF) -> str:
+    """Bedrock Converse requires a document ``name`` (alphanumerics, spaces,
+    hyphens, parens, brackets; no consecutive spaces). Derive from the source
+    filename, else a generic name."""
+    base = os.path.splitext(os.path.basename(pdf.source_path or ""))[0] or "document"
+    name = re.sub(r"[^A-Za-z0-9\s\-()\[\]]", " ", base)
+    name = re.sub(r"\s+", " ", name).strip()
+    return name or "document"
+
+
 def _pdf_blocks_bedrock(
     pdf: PDF, pdf_mode: str, max_pdf_pages: int, image_cap_mb: float
 ) -> list[dict[str, Any]]:
+    if pdf_mode == "native":
+        # Bedrock Converse accepts a native document block (raw bytes) — the
+        # model (Claude on Bedrock) parses the PDF server-side, no local render.
+        return [
+            {
+                "document": {
+                    "format": "pdf",
+                    "name": _bedrock_doc_name(pdf),
+                    "source": {"bytes": pdf.data},
+                }
+            }
+        ]
     if pdf_mode == "text":
         return [{"text": pdf.extract_text()}]
     pages = pdf.to_page_images(max_pages=max_pdf_pages)

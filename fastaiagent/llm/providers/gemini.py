@@ -51,11 +51,42 @@ def _coerce_text(content: Any) -> str:
     if isinstance(content, str):
         return content
     if isinstance(content, list):
-        # Multimodal: take the text parts only for now. Image/PDF support is
-        # tracked separately; raising would break tool-result flows that
-        # round-trip multimodal content.
+        # System/assistant/tool roles are text-only; keep just the strings.
+        # User-role media is handled by _user_parts (Gemini inlineData).
         return "\n".join(p for p in content if isinstance(p, str))
     return str(content)
+
+
+def _user_parts(content: Any) -> list[dict[str, Any]]:
+    """Convert a user message's content into Gemini ``parts``.
+
+    Text stays text; ``Image`` and ``PDF`` become native ``inlineData`` blobs
+    (base64) — Gemini reads both directly (it even extracts a PDF's embedded
+    text for free), so no local PyMuPDF rendering is involved and ``pdf_mode``
+    doesn't apply. Inline data is best for smaller payloads; very large PDFs
+    would need the Gemini File API (not yet wired here).
+    """
+    from fastaiagent.multimodal.image import Image
+    from fastaiagent.multimodal.pdf import PDF
+
+    if content is None:
+        return [{"text": ""}]
+    if isinstance(content, str):
+        return [{"text": content}]
+    if not isinstance(content, list):
+        return [{"text": str(content)}]
+
+    parts: list[dict[str, Any]] = []
+    for p in content:
+        if isinstance(p, str):
+            parts.append({"text": p})
+        elif isinstance(p, Image):
+            parts.append({"inlineData": {"mimeType": p.media_type, "data": p.to_base64()}})
+        elif isinstance(p, PDF):
+            parts.append(
+                {"inlineData": {"mimeType": "application/pdf", "data": p.to_base64()}}
+            )
+    return parts or [{"text": ""}]
 
 
 def _convert_messages(messages: list[Message]) -> tuple[str, list[dict[str, Any]]]:
@@ -129,9 +160,8 @@ def _convert_messages(messages: list[Message]) -> tuple[str, list[dict[str, Any]
             )
             continue
 
-        # user role — text content
-        text = _coerce_text(m.content)
-        contents.append({"role": "user", "parts": [{"text": text}]})
+        # user role — text plus any native inline media (images, PDFs)
+        contents.append({"role": "user", "parts": _user_parts(m.content)})
 
     system_text = "\n\n".join(system_parts) if system_parts else ""
     return system_text, contents

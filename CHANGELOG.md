@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.39.0] - 2026-07-12
+
+### Added
+
+- **Native PDF passthrough for OpenAI & Azure.** `pdf_mode="native"` (and, for
+  the vision models that support it, `pdf_mode="auto"`) now forwards the raw PDF
+  to OpenAI/Azure as a Chat Completions `file` content part
+  (`{"type":"file","file":{"filename","file_data":"data:application/pdf;base64,…"}}`)
+  instead of rendering pages locally with PyMuPDF. This matches the raw OpenAI
+  SDK, is cheaper, and — crucially — reads PDFs whose FlateDecode streams PyMuPDF
+  can't decompress (previously these raised `unable to flat-compressed content`).
+  Applies to gpt-4o/4.1/5 and the o-series; Anthropic keeps its `document` block.
+  Custom OpenAI-compatible endpoints stay on `vision` under `auto` and can opt in
+  with an explicit `pdf_mode="native"`.
+- **Gemini native multimodal (images *and* PDFs).** The Gemini wire previously
+  dropped every non-text part — images and PDFs never reached the model. User
+  content now becomes native `inlineData` blobs, so Gemini reads images and
+  parses PDFs directly (it even extracts embedded PDF text for free). No local
+  PyMuPDF rendering; `pdf_mode` doesn't apply to Gemini.
+- **Bedrock native PDF.** Bedrock-hosted Claude was flagged native-PDF-capable
+  but the formatter still rendered pages to images. `pdf_mode="native"` (and
+  `auto`) now emits a Converse `document` block with the raw PDF bytes.
+
+### Fixed
+
+- **Injected Azure/OpenAI client + `pdf_mode="native"` now works.** `LLMClient`'s
+  OpenAI-compatible body builder passed a hardcoded `"openai"` to the multimodal
+  formatter, so an explicit `native` request on `provider="azure"`/`"custom"` with
+  a deployment-name model was silently downgraded to `vision` (then crashed on
+  flate-compressed PDFs). The real provider is now threaded through, so the
+  native `file` part reaches your pre-built `AzureOpenAI` client.
+- **Telemetry no longer renders PDFs.** Serializing a multimodal message onto an
+  OTel span went through the provider formatter, which base64'd every image and
+  ran PyMuPDF page-rendering just to build a log line — raising on unparseable
+  PDFs. `Message.to_openai_format()` now emits a compact, render-free summary
+  (type + size) for telemetry; real requests still use the provider formatter.
+
+### Changed
+
+- **Clearer errors for client mix-ups.** Passing a non-OpenAI-SDK object (e.g. an
+  `LLMClient`) to `LLMClient(openai_client=…)`, or a raw `openai`/`AzureOpenAI`
+  client to `Agent(llm=…)`, now raises a `TypeError` at construction that points
+  at the correct wrapper — instead of a cryptic `'LLMClient' object has no
+  attribute 'chat'` deep inside a request.
+
 ## [1.38.0] - 2026-07-09
 
 ### Changed

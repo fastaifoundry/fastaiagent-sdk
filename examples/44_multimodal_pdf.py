@@ -6,8 +6,13 @@ Demonstrates the three ``pdf_mode`` settings against a 2-page contract:
                 vision LLM required (gpt-3.5-turbo / claude-2.x work).
 * ``vision``  — pages rendered to PNG, sent as image blocks to a vision
                 LLM. Preserves layout (tables, signatures).
-* ``native``  — Anthropic-only ``document`` block. Lowest cost while
-                preserving layout — Claude reads the PDF directly.
+* ``native``  — raw PDF forwarded to the provider, which parses it
+                server-side. Supported by Anthropic (Claude 3.5+) and
+                OpenAI/Azure vision models (gpt-4o/4.1/5, o-series). Lowest
+                cost while preserving layout, and — because there is no local
+                pymupdf rendering — it reads PDFs whose compression pymupdf
+                can't decode. This is what ``pdf_mode="auto"`` now picks for
+                gpt-4o.
 
 Token counts are printed so the cost difference is concrete.
 
@@ -68,6 +73,17 @@ if __name__ == "__main__":
                 name="pdf-vision",
                 system_prompt="Answer concisely from the document.",
                 llm=LLMClient(provider="openai", model="gpt-4o", pdf_mode="vision"),
+            ),
+            pdf,
+        )
+        ask(
+            "openai/gpt-4o + pdf_mode='native' (auto)",
+            Agent(
+                name="pdf-native-openai",
+                system_prompt="Answer concisely from the document.",
+                # pdf_mode defaults to "auto" → "native" for gpt-4o: the raw
+                # PDF is forwarded as a `file` part, no local rendering.
+                llm=LLMClient(provider="openai", model="gpt-4o"),
             ),
             pdf,
         )

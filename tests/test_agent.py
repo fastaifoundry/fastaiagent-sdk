@@ -50,6 +50,22 @@ class TestAgentConstruction:
         assert agent.config.max_iterations == 5
         assert agent.config.temperature == 0.7
 
+    def test_raw_openai_client_as_llm_raises_with_wrap_hint(self):
+        # A raw openai/AzureOpenAI SDK client can't be an Agent's llm directly;
+        # the error must point at the LLMClient(openai_client=...) wrapper.
+        class _FakeCompletions:
+            def create(self, **kwargs):  # noqa: D401
+                return None
+
+        class _FakeChat:
+            completions = _FakeCompletions()
+
+        class _FakeAzureOpenAI:
+            chat = _FakeChat()
+
+        with pytest.raises(TypeError, match="openai_client=|LLMClient"):
+            Agent(name="test", llm=_FakeAzureOpenAI())
+
 
 # --- Agent execution tests ---
 

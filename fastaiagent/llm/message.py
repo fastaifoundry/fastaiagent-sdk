@@ -11,6 +11,43 @@ if TYPE_CHECKING:
     from fastaiagent.multimodal.types import ContentPart
 
 
+def _summarize_parts(parts: list[Any]) -> list[dict[str, Any]]:
+    """Compact, render-free summary of multimodal parts for telemetry/logs.
+
+    Keeps text verbatim; represents ``Image``/``PDF`` by type and size only —
+    never their bytes. Deliberately avoids ``pymupdf`` so serializing a message
+    for a span can't fail on an unparseable PDF or bloat the span with base64.
+    """
+    from fastaiagent.multimodal.image import Image
+    from fastaiagent.multimodal.pdf import PDF
+
+    summary: list[dict[str, Any]] = []
+    for part in parts:
+        if isinstance(part, str):
+            summary.append({"type": "text", "text": part})
+        elif isinstance(part, Image):
+            summary.append(
+                {
+                    "type": "image",
+                    "media_type": part.media_type,
+                    "size_bytes": len(part.data),
+                    "source_url": part.source_url,
+                }
+            )
+        elif isinstance(part, PDF):
+            summary.append(
+                {
+                    "type": "pdf",
+                    "size_bytes": len(part.data),
+                    "source_path": part.source_path,
+                    "source_url": part.source_url,
+                }
+            )
+        else:
+            summary.append({"type": "text", "text": str(part)})
+    return summary
+
+
 class MessageRole(str, Enum):
     """Role of a message in a conversation."""
 
@@ -70,14 +107,20 @@ class Message(BaseModel):
         return isinstance(self.content, list)
 
     def to_openai_format(self) -> dict[str, Any]:
-        """Convert to OpenAI-compatible message dict.
+        """Convert to a compact dict for logging / telemetry / test assertions.
 
-        For string content this produces the legacy shape. For list content
-        this delegates to :py:meth:`to_provider_dict` with ``provider="openai"``,
-        which is the same shape OpenAI/Azure/Custom expect for multimodal.
+        For string content this produces the legacy OpenAI shape. For list
+        (multimodal) content it emits a lightweight **summary** of each part —
+        NOT the provider wire format. This path must never render or base64
+        media: it is called to serialize request messages onto OTel spans, and
+        going through :py:meth:`to_provider_dict` there would base64 every image
+        and run PyMuPDF page-rendering for PDFs (expensive, and it raises on
+        PDFs PyMuPDF can't decompress) purely to build a log line. Actual
+        provider requests are built by :py:meth:`to_provider_dict` with the real
+        provider and ``pdf_mode``.
         """
         if self.has_multimodal_content():
-            return self.to_provider_dict("openai")
+            return {"role": self.role.value, "content": _summarize_parts(self.content or [])}
         msg: dict[str, Any] = {"role": self.role.value}
         if self.content is not None:
             msg["content"] = self.content

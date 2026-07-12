@@ -136,6 +136,26 @@ class Agent:
         # governance gate is a no-op (the agent isn't enrolled).
         self.agent_id = agent_id
         self.system_prompt = system_prompt
+        if llm is not None and not isinstance(llm, LLMClient):
+            # A raw openai/AzureOpenAI SDK client can't be used as ``llm``
+            # directly — it has no ``model``/``provider`` and no ``acomplete``.
+            # Point users at the supported wrapper, which delegates the HTTP
+            # call (auth, gateway, api-version, Entra token refresh) to their
+            # client while supplying the deployment id and building the body.
+            looks_like_openai = callable(
+                getattr(getattr(getattr(llm, "chat", None), "completions", None), "create", None)
+            )
+            hint = (
+                " To use an Azure OpenAI client behind a gateway, wrap it: "
+                "Agent(llm=LLMClient(provider='azure', model='<deployment>', "
+                "openai_client=<your AzureOpenAI client>))."
+                if looks_like_openai
+                else ""
+            )
+            raise TypeError(
+                f"Agent(llm=...) expects a fastaiagent LLMClient, got "
+                f"{type(llm).__name__}.{hint}"
+            )
         self.llm = llm or LLMClient()
         self.tools: list[Tool] = list(tools) if tools else []
         self.guardrails: list[Guardrail] = list(guardrails) if guardrails else []

@@ -68,6 +68,32 @@ def _serialize_for_span(value: Any) -> str | None:
         return None
 
 
+def _validate_openai_client(client: Any) -> None:
+    """Fail fast when ``openai_client`` isn't a usable OpenAI-SDK client.
+
+    The delegation path calls ``client.chat.completions.create(...)``. A common
+    mix-up is passing a fastaiagent ``LLMClient`` (or some other object) here
+    instead of a pre-built ``openai.OpenAI`` / ``openai.AzureOpenAI`` client,
+    which otherwise surfaces as a cryptic ``'LLMClient' object has no attribute
+    'chat'`` deep inside a request. Duck-type the one method we rely on and
+    raise an actionable error at construction time instead.
+    """
+    create = getattr(getattr(getattr(client, "chat", None), "completions", None), "create", None)
+    if callable(create):
+        return
+    hint = ""
+    if type(client).__name__ == "LLMClient":
+        hint = (
+            " It looks like you passed an LLMClient — give that to Agent(llm=...) "
+            "and pass only the raw openai SDK client to openai_client=."
+        )
+    raise TypeError(
+        "openai_client must be a pre-built openai SDK client "
+        "(openai.OpenAI / openai.AzureOpenAI or their Async variants); got "
+        f"{type(client).__name__}." + hint
+    )
+
+
 def _augment_system_for_response_format(
     system_text: str | None, response_format: dict[str, Any]
 ) -> str:
@@ -264,6 +290,8 @@ class LLMClient:
         # ``azure_ad_token_provider``), ``api_version``, and ``http_client``
         # (e.g. ``verify=False``) are reused as-is. ``base_url``/``api_key``/
         # ``verify`` on this LLMClient are ignored on that path.
+        if openai_client is not None:
+            _validate_openai_client(openai_client)
         self._openai_client = openai_client
         self._openai_client_is_async = self._detect_async_client(openai_client)
         self._extra = kwargs
@@ -767,7 +795,18 @@ class LLMClient:
         building, and header construction logic.
         """
         prepared = self._split_multimodal_tool_messages_for_openai(messages)
-        msg_dicts = [m.to_provider_dict("openai", **self._provider_dict_kwargs()) for m in prepared]
+        # All OpenAI-compatible providers share this wire format, but the
+        # multimodal formatter needs the *real* provider to resolve pdf_mode:
+        # ``azure``/``custom`` deployments carry arbitrary model names that the
+        # native-PDF prefix registry can't match, so an explicit
+        # ``pdf_mode="native"`` must be honored via the formatter's escape hatch
+        # rather than silently downgraded to vision. Third-party presets (groq,
+        # openrouter, ...) aren't known to the formatter, so normalize those to
+        # ``openai``.
+        fmt_provider = self.provider if self.provider in ("openai", "azure", "custom") else "openai"
+        msg_dicts = [
+            m.to_provider_dict(fmt_provider, **self._provider_dict_kwargs()) for m in prepared
+        ]
         body: dict[str, Any] = {
             "model": self.model,
             "messages": msg_dicts,

@@ -1,14 +1,18 @@
 """``PDF`` — a first-class PDF input for multimodal LLM calls.
 
-The SDK supports two processing modes:
+The SDK supports three processing modes:
 
+* **native** — forward the raw PDF to the provider, which parses it server-side.
+  Supported by Anthropic (Claude 3.5+) and OpenAI/Azure vision models
+  (gpt-4o/4.1/5, o-series). No local rendering, so it handles PDFs that
+  ``pymupdf`` can't decompress.
 * **text** — extract text via ``pymupdf`` and send as plain text. Cheap, fast,
   loses visual layout.
 * **vision** — render each page as an image and send those to a vision LLM.
   More expensive, preserves layout (tables, charts, signatures).
 
 Mode selection happens at the ``LLMClient`` boundary based on the configured
-``pdf_mode`` and the model's vision capability.
+``pdf_mode`` and the model's capabilities (``pdf_mode="auto"`` prefers native).
 """
 
 from __future__ import annotations
@@ -30,6 +34,22 @@ _FROM_URL_MAX_BYTES: int = 100 * 1024 * 1024  # 100 MiB
 _DEFAULT_RENDER_DPI: int = 150
 
 logger = logging.getLogger(__name__)
+
+
+def _pdf_parse_error(exc: Exception) -> MultimodalError:
+    """Wrap a raw ``pymupdf`` failure in an actionable :class:`MultimodalError`.
+
+    PyMuPDF raises bare ``RuntimeError``/``ValueError`` (e.g. "unable to
+    flat-compressed content") that don't tell the caller what to do. Point them
+    at ``pdf_mode="native"``, which forwards the raw PDF to the provider and
+    skips local rendering entirely.
+    """
+    return MultimodalError(
+        f"failed to parse/render PDF with PyMuPDF ({exc}); the PDF may use "
+        "unsupported or malformed compression. For OpenAI/Anthropic "
+        "vision-capable models use pdf_mode='native' to let the provider parse "
+        "the PDF server-side, or pdf_mode='text' to extract text only."
+    )
 
 
 @dataclass
@@ -88,8 +108,11 @@ class PDF:
     def page_count(self) -> int:
         import pymupdf
 
-        with pymupdf.open(stream=self.data, filetype="pdf") as doc:  # type: ignore[no-untyped-call]
-            return int(doc.page_count)
+        try:
+            with pymupdf.open(stream=self.data, filetype="pdf") as doc:  # type: ignore[no-untyped-call]
+                return int(doc.page_count)
+        except Exception as e:
+            raise _pdf_parse_error(e) from e
 
     def extract_text(self) -> str:
         """Extract text from all pages, joined with double newlines.
@@ -99,9 +122,12 @@ class PDF:
         import pymupdf
 
         parts: list[str] = []
-        with pymupdf.open(stream=self.data, filetype="pdf") as doc:  # type: ignore[no-untyped-call]
-            for page in doc:
-                parts.append(page.get_text())
+        try:
+            with pymupdf.open(stream=self.data, filetype="pdf") as doc:  # type: ignore[no-untyped-call]
+                for page in doc:
+                    parts.append(page.get_text())
+        except Exception as e:
+            raise _pdf_parse_error(e) from e
         return "\n\n".join(parts)
 
     def to_page_images(
@@ -118,20 +144,23 @@ class PDF:
         import pymupdf
 
         images: list[Image] = []
-        with pymupdf.open(stream=self.data, filetype="pdf") as doc:  # type: ignore[no-untyped-call]
-            total = doc.page_count
-            limit = total if max_pages is None else min(total, max_pages)
-            if max_pages is not None and total > max_pages:
-                logger.warning(
-                    "PDF has %d pages; truncating to %d for vision-mode rendering",
-                    total,
-                    max_pages,
-                )
-            for i in range(limit):
-                page = doc[i]
-                pix = page.get_pixmap(dpi=dpi)
-                png_bytes = pix.tobytes("png")
-                images.append(Image.from_bytes(png_bytes, media_type="image/png"))
+        try:
+            with pymupdf.open(stream=self.data, filetype="pdf") as doc:  # type: ignore[no-untyped-call]
+                total = doc.page_count
+                limit = total if max_pages is None else min(total, max_pages)
+                if max_pages is not None and total > max_pages:
+                    logger.warning(
+                        "PDF has %d pages; truncating to %d for vision-mode rendering",
+                        total,
+                        max_pages,
+                    )
+                for i in range(limit):
+                    page = doc[i]
+                    pix = page.get_pixmap(dpi=dpi)
+                    png_bytes = pix.tobytes("png")
+                    images.append(Image.from_bytes(png_bytes, media_type="image/png"))
+        except Exception as e:
+            raise _pdf_parse_error(e) from e
         return images
 
     # --- serialization ---
