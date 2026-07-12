@@ -298,7 +298,16 @@ data = agent.to_dict()
 restored = Agent.from_dict(data)
 ```
 
-This is the format used when pushing to the platform with `fa.push(agent)`.
+`to_dict()` emits `{name, agent_type, system_prompt, llm_endpoint, tools, guardrails,
+config}`, plus two governed fields **only when configured** (so an agent with neither is
+byte-identical to earlier versions):
+
+- `prompt_slug` — set via `Agent(prompt_slug=...)`; references a control-plane registry
+  prompt. When set, `system_prompt` is emitted as `""` (the slug is the source of truth).
+- `memory_enabled` — `true` when `memory=` is configured.
+
+This is the canonical payload for pushing an agent to a connected control plane — `POST` it
+to `/public/v1/sdk/agents`. See [Pushing agent definitions](../platform/index.md#pushing-agent-definitions).
 
 ## AgentResult
 

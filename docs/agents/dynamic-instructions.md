@@ -194,6 +194,7 @@ async def chat(message: str, user_id: str = Depends(get_current_user)):
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `system_prompt` | `str \| Callable[[RunContext \| None], str]` | No | Static string or callable that receives `RunContext` and returns a string |
+| `prompt_slug` | `str \| None` | No | References a control-plane registry prompt by slug. When set, `to_dict()` emits the slug and sends `system_prompt=""` so a pushed agent links to the governed prompt (see [Pushing agent definitions](../platform/index.md#pushing-agent-definitions)). Does not affect local runtime, where `system_prompt` still drives the prompt. |
 
 The callable signature is:
 

@@ -203,6 +203,11 @@ agent = Agent(
 result = agent.run("My order hasn't arrived yet")
 ```
 
+`prompt.format(...)` inlines the resolved text — good for local runs. If you also **push**
+the agent to a connected control plane and want it linked to the governed prompt (not stored
+as "Inline"), set `Agent(prompt_slug="support-agent")` instead. See
+[Referencing a governed prompt from a pushed agent](#referencing-a-governed-prompt-from-a-pushed-agent).
+
 ## Storage
 
 Prompts are stored as JSON files in the `.prompts/` directory by default:
@@ -355,6 +360,29 @@ registry.refresh("support-prompt")
 - If not connected: local only
 
 **Caching**: Platform prompts are cached locally after first fetch (TTL: 5 minutes by default). Use `registry.refresh(slug)` to invalidate manually.
+
+### Referencing a governed prompt from a pushed agent
+
+Passing `system_prompt=prompt.format(...)` **inlines** the resolved text — a pushed
+agent then stores the prompt as inline and the console shows it as **"Inline"**, with no
+link back to the registry. To keep the linkage, set `prompt_slug=` on the agent instead.
+`Agent.to_dict()` then emits the slug and sends `system_prompt=""`, so the plane
+references the governed prompt (the console shows the slug, and the model resolves):
+
+```python
+agent = Agent(
+    name="support-bot",
+    prompt_slug="support-prompt",   # references the governed registry prompt
+    llm=LLMClient(provider="openai", model="gpt-4.1"),
+)
+
+payload = agent.to_dict()
+# payload["prompt_slug"]   == "support-prompt"
+# payload["system_prompt"] == ""   (empty — the slug is the source of truth)
+```
+
+`prompt_slug` is optional and additive: an agent without it serializes exactly as before.
+See `examples/89_connected_agent_push.py` and [Platform](../platform/index.md#pushing-agent-definitions).
 
 ---
 

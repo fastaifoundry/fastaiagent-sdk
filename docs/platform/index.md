@@ -189,11 +189,43 @@ forked.modify_prompt("Updated system prompt")
 result = forked.rerun()
 ```
 
+### Pushing agent definitions
+
+Agent definitions are **not** auto-synced by `fa.connect()` (agents are code, not config).
+When you *do* want a connected control plane to know about an agent — so it appears in the
+console with its prompt, model, tools, and memory — serialize it with `Agent.to_dict()` and
+`POST` the payload to `/public/v1/sdk/agents` (scope `agent:write`, upsert by `name`):
+
+```python
+from fastaiagent._platform.api import get_platform_api
+
+agent = Agent(
+    name="support-bot",
+    prompt_slug="support-prompt",   # references a governed registry prompt (optional)
+    llm=LLMClient(provider="openai", model="gpt-4o"),
+    memory=AgentMemory(),           # → memory_enabled: true (optional)
+    tools=[...],
+)
+get_platform_api().post("/public/v1/sdk/agents", agent.to_dict())
+```
+
+`to_dict()` emits `{name, agent_type, system_prompt, llm_endpoint, tools, guardrails,
+config}` plus two governed fields **only when configured** (an agent with neither is
+serialized exactly as before):
+
+| Field | Emitted when | Effect |
+|-------|--------------|--------|
+| `prompt_slug` | `Agent(prompt_slug=...)` is set | References a governed registry prompt. `system_prompt` is sent as `""` (the slug wins) so the console shows the **slug**, not "Inline". |
+| `memory_enabled` | `memory=` is configured | Console shows memory **Enabled**. |
+
+A runnable end-to-end demo (publish prompt → push agent → read back governance) is in
+`examples/89_connected_agent_push.py`.
+
 ## What Does NOT Flow Through `fa.connect()`
 
 | Capability | Reason |
 |-----------|--------|
-| Agent definitions | Agents are code, not config to push |
+| Agent definitions (automatically) | Agents are code; push explicitly via `to_dict()` + `POST /public/v1/sdk/agents` (see above) |
 | Tool implementations | Tools are Python functions in SDK |
 | Guardrail definitions | Guardrails are code-configured in SDK |
 | Chain definitions | Chains are code in SDK |

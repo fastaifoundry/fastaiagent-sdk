@@ -332,3 +332,81 @@ class TestAgentSerialization:
         assert restored.name == original.name
         assert restored.system_prompt == original.system_prompt
         assert restored.config.max_iterations == original.config.max_iterations
+
+    def test_to_dict_prompt_slug(self):
+        agent = Agent(
+            name="X",
+            prompt_slug="acme-support-system",
+            llm=LLMClient(provider="openai", model="gpt-4o"),
+        )
+        d = agent.to_dict()
+        assert d["prompt_slug"] == "acme-support-system"
+        assert d["system_prompt"] == ""
+
+    def test_to_dict_prompt_slug_overrides_inline(self):
+        # A registry reference wins over any inline text.
+        agent = Agent(
+            name="X",
+            system_prompt="inline text that should be dropped",
+            prompt_slug="acme-support-system",
+            llm=LLMClient(provider="openai", model="gpt-4o"),
+        )
+        d = agent.to_dict()
+        assert d["system_prompt"] == ""
+        assert d["prompt_slug"] == "acme-support-system"
+
+    def test_to_dict_prompt_slug_allows_callable(self):
+        # With a slug, a runtime callable system_prompt is legitimate and does
+        # not raise (it isn't serialized — the slug is the source of truth).
+        agent = Agent(
+            name="X",
+            system_prompt=lambda ctx: "dynamic",
+            prompt_slug="acme-support-system",
+            llm=LLMClient(provider="openai", model="gpt-4o"),
+        )
+        d = agent.to_dict()
+        assert d["system_prompt"] == ""
+        assert d["prompt_slug"] == "acme-support-system"
+
+    def test_to_dict_memory_enabled(self):
+        agent = Agent(
+            name="X",
+            system_prompt="Be helpful",
+            memory=AgentMemory(),
+            llm=LLMClient(provider="openai", model="gpt-4o"),
+        )
+        d = agent.to_dict()
+        assert d["memory_enabled"] is True
+
+    def test_to_dict_regression_no_new_keys(self):
+        # No prompt_slug and no memory ⇒ neither governed key is emitted.
+        agent = Agent(
+            name="X",
+            system_prompt="Be helpful",
+            llm=LLMClient(provider="openai", model="gpt-4o"),
+        )
+        d = agent.to_dict()
+        assert "prompt_slug" not in d
+        assert "memory_enabled" not in d
+
+    def test_to_dict_callable_still_raises(self):
+        # Without a slug, a callable system_prompt is still unserializable.
+        agent = Agent(
+            name="X",
+            system_prompt=lambda ctx: "dynamic",
+            llm=LLMClient(provider="openai", model="gpt-4o"),
+        )
+        with pytest.raises(ValueError, match="callable system_prompt"):
+            agent.to_dict()
+
+    def test_from_dict_prompt_slug(self):
+        data = {
+            "name": "restored",
+            "system_prompt": "",
+            "prompt_slug": "acme-support-system",
+            "llm_endpoint": {"provider": "openai", "model": "gpt-4o"},
+            "config": {},
+        }
+        agent = Agent.from_dict(data)
+        assert agent.prompt_slug == "acme-support-system"
+        assert agent.to_dict()["prompt_slug"] == "acme-support-system"

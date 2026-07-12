@@ -152,6 +152,7 @@ The connected-state-plane bundle — run against a plane with `connected_state_p
 - [`86_connected_durability.py`](86_connected_durability.py) — checkpoints replicate → restore + resume from the plane (WS2) → [docs](../docs/durability/connected-checkpoints.md)
 - [`87_connected_memory.py`](87_connected_memory.py) — `PlaneFactBlock` reads curated governed facts (WS3) → [docs](../docs/agents/memory.md)
 - [`88_connected_governance.py`](88_connected_governance.py) — governance enrollment + opt-in fail-closed (WS4) → [docs](../docs/platform/connected-governance.md)
+- [`89_connected_agent_push.py`](89_connected_agent_push.py) — push an agent that references a registry prompt by slug + `memory_enabled` (console shows the slug, not "Inline") → [docs](../docs/platform/index.md)
 
 ### Misc
 - [`11_cli_usage.sh`](11_cli_usage.sh) — `fastaiagent` CLI commands

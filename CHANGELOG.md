@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.40.0] - 2026-07-12
+
+### Added
+
+- **Governed-input fields on agent push (`prompt_slug`, `memory_enabled`).** New optional
+  `Agent(prompt_slug=...)` param lets a pushed agent **reference** a control-plane registry
+  prompt by slug instead of inlining the resolved text. When set, `Agent.to_dict()` emits
+  `prompt_slug` and sends `system_prompt=""` (the slug is the source of truth), so a
+  connected control plane links the agent to the governed prompt — the console shows the
+  **slug**, not "Inline", with the model and memory resolved. `to_dict()` also emits
+  `memory_enabled: true` whenever `memory=` is configured. Both fields are emitted **only
+  when configured**: an agent with neither serializes byte-identically to earlier versions
+  (fully backward-compatible, additive). `from_dict()` round-trips `prompt_slug`. New
+  end-to-end example `examples/89_connected_agent_push.py`.
+
+### Notes
+
+- The `Prompt` template variable syntax is double-brace `{{var}}` in both `format()` and
+  variable extraction, matching the control plane's extractor — no reconciliation needed.
+
 ## [1.39.0] - 2026-07-12
 
 ### Added
