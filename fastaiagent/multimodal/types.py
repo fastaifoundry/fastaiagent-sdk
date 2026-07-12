@@ -13,7 +13,7 @@ ContentPart = str | Image | PDF | File
 
 # What a caller may hand a single part as (before normalization). ``bytes`` and
 # ``os.PathLike`` are auto-detected and wrapped in ``File`` (mime sniffed).
-RawPart = str | Image | PDF | File | bytes | os.PathLike
+RawPart = str | Image | PDF | File | bytes | os.PathLike[str]
 
 
 def _coerce_part(part: object, idx: int) -> ContentPart:

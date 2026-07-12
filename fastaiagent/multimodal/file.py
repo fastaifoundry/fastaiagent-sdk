@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import base64
 import mimetypes
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -46,6 +47,21 @@ _DOCUMENT_MIMES: frozenset[str] = frozenset(
 )
 
 
+# ``mimetypes.guess_type`` is platform/version dependent for some text types
+# (e.g. ``.md`` maps to ``text/markdown`` on Linux/py3.12+ but ``None`` on
+# macOS py3.10/3.11). Pin the document extensions we care about so sniffing is
+# deterministic everywhere.
+_EXT_MIME_FALLBACK: dict[str, str] = {
+    ".md": "text/markdown",
+    ".markdown": "text/markdown",
+    ".csv": "text/csv",
+    ".txt": "text/plain",
+    ".json": "application/json",
+    ".html": "text/html",
+    ".htm": "text/html",
+}
+
+
 def sniff_mime(data: bytes | None, filename: str | None = None) -> str:
     """Best-effort mime type from magic bytes, then filename extension.
 
@@ -60,6 +76,9 @@ def sniff_mime(data: bytes | None, filename: str | None = None) -> str:
         guessed, _ = mimetypes.guess_type(filename)
         if guessed:
             return guessed
+        ext = os.path.splitext(filename)[1].lower()
+        if ext in _EXT_MIME_FALLBACK:
+            return _EXT_MIME_FALLBACK[ext]
     return _DEFAULT_MIME
 
 
