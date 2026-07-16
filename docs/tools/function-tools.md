@@ -82,6 +82,68 @@ The SDK inspects type hints to generate JSON Schema:
 
 Parameters without defaults are marked as `required`.
 
+### Rich types: Pydantic models, Enum, Literal, Optional
+
+As of v1.41.0, parameters typed with anything richer than the primitives above
+get a full, self-contained JSON Schema generated via Pydantic — so the model can
+fill **structured** arguments, not just flat strings. This covers Pydantic
+`BaseModel` subclasses (including nested ones), `Enum`, `Literal[...]`,
+`Optional[...]` / `X | None`, and typed collections like `dict[str, Model]`.
+
+```python
+import enum
+from pydantic import BaseModel
+
+class Priority(str, enum.Enum):
+    low = "low"
+    high = "high"
+
+class Ticket(BaseModel):
+    title: str
+    body: str
+    priority: Priority
+
+def create_ticket(ticket: Ticket) -> str:
+    """File a support ticket.
+
+    Args:
+        ticket: the ticket to create
+    """
+    ...
+
+tool = FunctionTool(name="create_ticket", fn=create_ticket)
+# tool.parameters is now:
+# {
+#   "type": "object",
+#   "properties": {
+#     "ticket": {"$ref": "#/$defs/Ticket", "description": "the ticket to create"}
+#   },
+#   "required": ["ticket"],
+#   "$defs": {
+#     "Priority": {"type": "string", "enum": ["low", "high"]},
+#     "Ticket": {
+#       "type": "object",
+#       "properties": {
+#         "title": {"type": "string"},
+#         "body": {"type": "string"},
+#         "priority": {"$ref": "#/$defs/Priority"}
+#       },
+#       "required": ["title", "body", "priority"]
+#     }
+#   }
+# }
+```
+
+The generated schema (with `$defs`/`$ref`) is passed through verbatim to both
+OpenAI (strict function calling) and Anthropic (`input_schema`).
+
+!!! note "Non-breaking"
+    Signatures whose parameters are **all** primitives (the table above) still
+    produce byte-identical schemas — this path only engages when a rich type is
+    present. The tool receives the model's JSON arguments as a plain `dict`;
+    validate/coerce inside your function if you want a `Ticket` instance
+    (e.g. `Ticket(**ticket)`).
+
 ### Parameter descriptions from docstrings
 
 As of v1.9.0, parameter descriptions are auto-extracted from any of three
@@ -149,6 +211,51 @@ tool = FunctionTool(
     },
 )
 ```
+
+## Argument Validation & Coercion
+
+As of v1.41.0, `FunctionTool` **validates and coerces** the model's arguments
+against your function's type hints before calling it — on by default, no config.
+So a parameter typed `n: int` receives a real `int` (not the string `"5"` the
+wire may carry), and a Pydantic-model parameter arrives as a validated instance:
+
+```python
+def file_ticket(ticket: Ticket) -> str:
+    # `ticket` is already a validated Ticket — no `Ticket(**ticket)` boilerplate.
+    return f"Filed {ticket.title!r} at {ticket.priority.value} priority"
+```
+
+If the model sends malformed arguments (wrong type, bad enum value, missing
+required field), the tool returns a clear error **back to the model** instead of
+raising — so the agent can correct itself and retry. Opt out with
+`FunctionTool(..., validate_args=False)` (or `@tool(validate_args=False)`) to
+receive the raw JSON `dict`.
+
+## Timeout, Retry & Output Validation
+
+Every tool (any type) accepts an optional execution policy — plain keyword args,
+all off by default:
+
+```python
+@tool(
+    name="fx_rate",
+    timeout=2.0,        # per-call wall-clock timeout (seconds)
+    max_retries=2,      # retry on failure, exponential backoff (retry_delay * 2**n)
+    retry_delay=0.5,    # base backoff in seconds
+    output_type=float,  # validate/coerce the return value
+)
+def fx_rate(base: str, quote: str) -> str:
+    ...  # a "0.92" string is coerced to 0.92; a non-number returns an error
+```
+
+- **`timeout`** — the call is cancelled and reported as an error after N seconds.
+- **`max_retries` / `retry_delay`** — transient failures (exceptions or timeouts)
+  are retried with exponential backoff before the error surfaces.
+- **`output_type`** — the return value is validated/coerced against this type
+  (any Pydantic-compatible type: `int`, `list[str]`, a `BaseModel`, …). A
+  mismatch is returned to the model as an error rather than passed downstream.
+
+These also work on `RESTTool(...)` and `MCPTool(...)` via the same keyword args.
 
 ## Context & Dependency Injection
 

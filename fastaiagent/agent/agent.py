@@ -74,6 +74,13 @@ class AgentConfig(BaseModel):
     tool_choice: str = "auto"  # "auto", "required", "none"
     temperature: float | None = None
     max_tokens: int | None = None
+    # Opt-in concurrent execution of the tool calls the LLM emits within a
+    # single turn. Default off preserves the sequential behavior exactly. The
+    # parallel path is used only when no checkpointer, middleware, or managed
+    # governance is engaged (those stay sequential for correct ordering / HITL);
+    # otherwise it transparently falls back to sequential.
+    parallel_tools: bool = False
+    max_parallel_tools: int = Field(default=4, ge=1, le=64)
 
 
 class AgentResult(BaseModel):
@@ -485,6 +492,8 @@ class Agent:
                     agent_name=self.name,
                     agent_id=self.agent_id,
                     start_iteration=_start_iteration,
+                    parallel_tools=self.config.parallel_tools,
+                    max_parallel_tools=self.config.max_parallel_tools,
                     **kwargs,
                 )
             except _AgentInterrupted as susp:
@@ -620,6 +629,8 @@ class Agent:
                 execution_id=exec_id,
                 agent_name=self.name,
                 agent_id=self.agent_id,
+                parallel_tools=self.config.parallel_tools,
+                max_parallel_tools=self.config.max_parallel_tools,
                 **kwargs,
             ):
                 if isinstance(event, TextDelta):

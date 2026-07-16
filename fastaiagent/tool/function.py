@@ -6,7 +6,9 @@ import inspect
 import logging
 import re
 from collections.abc import Callable
-from typing import Any, get_origin, get_type_hints
+from typing import Any, get_args, get_origin, get_type_hints
+
+from pydantic import BaseModel, Field, ValidationError, create_model
 
 from fastaiagent._internal.errors import ToolExecutionError
 from fastaiagent.agent.context import RunContext
@@ -202,6 +204,9 @@ def _is_context_param(annotation: Any) -> bool:
     return False
 
 
+_SIMPLE_TYPES = (str, int, float, bool, dict)
+
+
 def _python_type_to_json_schema(tp: type) -> dict[str, Any]:
     """Convert a Python type annotation to JSON Schema type."""
     mapping = {
@@ -220,8 +225,118 @@ def _python_type_to_json_schema(tp: type) -> dict[str, Any]:
     return mapping.get(tp, {"type": "string"})
 
 
+def _is_simple_annotation(tp: Any) -> bool:
+    """True for the primitive annotations the hand-rolled schema path handles
+    exactly — ``str/int/float/bool/dict``, bare ``list``, and ``list[<simple>]``.
+
+    Everything else (Pydantic models, ``Enum``, ``Literal``, ``Union``/
+    ``Optional``, typed ``dict[str, ...]``, nested generics, ``datetime``, …) is
+    "rich" and routes through :func:`_build_pydantic_schema`. Keeping the simple
+    set narrow guarantees existing primitive-only tools emit byte-identical
+    schemas (no drift), while rich types gain a proper self-contained schema.
+    """
+    if tp in _SIMPLE_TYPES:
+        return True
+    if tp is list:
+        return True
+    if get_origin(tp) is list:
+        args = get_args(tp)
+        return not args or _is_simple_annotation(args[0])
+    return False
+
+
+def _strip_schema_titles(node: Any) -> None:
+    """Recursively drop Pydantic's auto-generated ``title`` keys in place.
+
+    Function-calling schemas don't need titles; removing them keeps the emitted
+    JSON Schema compact and closer to the hand-rolled shape. ``$ref`` targets in
+    ``$defs`` are keyed by model name, not ``title``, so this is ref-safe.
+    """
+    if isinstance(node, dict):
+        # Only drop the schema ``title`` *annotation* (always a string). A
+        # parameter literally named "title" appears as a properties key whose
+        # value is a sub-schema (a dict), so it must be preserved.
+        if isinstance(node.get("title"), str):
+            node.pop("title")
+        for value in node.values():
+            _strip_schema_titles(value)
+    elif isinstance(node, list):
+        for item in node:
+            _strip_schema_titles(item)
+
+
+def _build_pydantic_schema(
+    llm_params: list[tuple[str, inspect.Parameter, Any]],
+    param_docs: dict[str, str],
+) -> dict[str, Any]:
+    """Build a self-contained JSON Schema for a signature via Pydantic.
+
+    Constructs one model from the LLM-facing parameters and emits
+    ``{type, properties, required, $defs}`` — with ``$ref`` for nested models,
+    ``enum`` for ``Enum``/``Literal``, and ``anyOf`` for ``Optional``/``Union``.
+    Both OpenAI (strict tools) and Anthropic (``input_schema``) accept this shape.
+    """
+    fields: dict[str, Any] = {}
+    for param_name, param, tp in llm_params:
+        desc = param_docs.get(param_name, param_name)
+        if param.default is inspect.Parameter.empty:
+            fields[param_name] = (tp, Field(description=desc))
+        else:
+            fields[param_name] = (tp, Field(default=param.default, description=desc))
+
+    model = create_model("ToolArgs", **fields)
+    schema: dict[str, Any] = model.model_json_schema(ref_template="#/$defs/{model}")
+    _strip_schema_titles(schema)
+    return schema
+
+
+def _build_arg_validator(
+    fn: Callable[..., Any], context_param: str | None
+) -> type[BaseModel] | None:
+    """Build a Pydantic model that validates/coerces this tool's LLM arguments.
+
+    One field per typed, LLM-facing parameter (``self``/``cls`` and the injected
+    ``RunContext`` param are excluded; untyped params are skipped so they pass
+    through unchanged). Returns ``None`` when there's nothing to validate or the
+    model can't be built — in which case arguments are passed through raw.
+    """
+    try:
+        hints = get_type_hints(fn)
+    except Exception:
+        logger.debug("Failed to get type hints for arg validator on %r", fn, exc_info=True)
+        return None
+
+    sig = inspect.signature(fn)
+    fields: dict[str, Any] = {}
+    for param_name, param in sig.parameters.items():
+        if param_name in ("self", "cls") or param_name == context_param:
+            continue
+        tp = hints.get(param_name)
+        if tp is None or _is_context_param(tp):
+            continue  # untyped → no coercion, pass through as-is
+        default = ... if param.default is inspect.Parameter.empty else param.default
+        fields[param_name] = (tp, default)
+
+    if not fields:
+        return None
+    try:
+        model: type[BaseModel] = create_model(f"{fn.__name__}_ArgValidator", **fields)
+        return model
+    except Exception:
+        logger.debug("Failed to build arg validator for %r", fn, exc_info=True)
+        return None
+
+
 def _generate_schema(fn: Callable[..., Any]) -> dict[str, Any]:
-    """Generate JSON Schema parameters from function type hints."""
+    """Generate JSON Schema parameters from function type hints.
+
+    Hybrid strategy: signatures whose LLM-facing parameters are all *simple*
+    (see :func:`_is_simple_annotation`) use the original hand-rolled path and
+    emit byte-identical schemas. If any parameter is a rich type (Pydantic
+    model, ``Enum``, ``Literal``, ``Optional``/``Union``, nested generics, …)
+    the whole signature is generated via Pydantic for a proper schema. Pydantic
+    generation failures fall back to the simple path so this never raises.
+    """
     sig = inspect.signature(fn)
     try:
         hints = get_type_hints(fn)
@@ -231,23 +346,34 @@ def _generate_schema(fn: Callable[..., Any]) -> dict[str, Any]:
 
     param_docs = _parse_param_descriptions(fn)
 
-    properties = {}
-    required = []
-
+    # LLM-facing params only: drop self/cls and injected RunContext params.
+    llm_params: list[tuple[str, inspect.Parameter, Any]] = []
     for param_name, param in sig.parameters.items():
         if param_name in ("self", "cls"):
             continue
         tp = hints.get(param_name, str)
-
-        # Skip context parameters — these are injected, not from LLM
         if _is_context_param(tp):
             continue
+        llm_params.append((param_name, param, tp))
 
+    # Any rich type → Pydantic-quality schema for the whole signature.
+    if any(not _is_simple_annotation(tp) for _, _, tp in llm_params):
+        try:
+            return _build_pydantic_schema(llm_params, param_docs)
+        except Exception:
+            logger.debug(
+                "Pydantic schema generation failed for %r; falling back to simple path",
+                fn,
+                exc_info=True,
+            )
+
+    # Simple path — unchanged output for primitive-only signatures.
+    properties = {}
+    required = []
+    for param_name, param, tp in llm_params:
         prop = _python_type_to_json_schema(tp)
-
         # Use docstring description if available, fall back to param name
         prop["description"] = param_docs.get(param_name, param_name)
-
         properties[param_name] = prop
         if param.default is inspect.Parameter.empty:
             required.append(param_name)
@@ -283,9 +409,17 @@ class FunctionTool(Tool):
         description: str = "",
         parameters: dict[str, Any] | None = None,
         replay_class: str | None = None,
+        *,
+        validate_args: bool = True,
+        timeout: float | None = None,
+        max_retries: int = 0,
+        retry_delay: float = 0.5,
+        output_type: Any | None = None,
     ):
         self.fn = fn
         self._context_param_name: str | None = None
+        self.validate_args = validate_args
+        self._arg_validator: type[BaseModel] | None = None
 
         if fn:
             if not description:
@@ -294,12 +428,18 @@ class FunctionTool(Tool):
                 parameters = _generate_schema(fn)
             # Detect context parameter at init time (not per-call)
             self._context_param_name = self._detect_context_param(fn)
+            if validate_args:
+                self._arg_validator = _build_arg_validator(fn, self._context_param_name)
 
         super().__init__(
             name=name,
             description=description,
             parameters=parameters,
             replay_class=replay_class,
+            timeout=timeout,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
+            output_type=output_type,
         )
 
         # Auto-register callable-backed tools so ForkedReplay.arerun can rebind
@@ -332,6 +472,27 @@ class FunctionTool(Tool):
             return ToolResult(error="No function attached to this tool")
         try:
             call_args = dict(arguments)
+
+            # Validate + coerce LLM arguments against the function's type hints.
+            # Only keys the model provided are coerced (so omitted optionals keep
+            # the function's own defaults); a mismatch is fed back to the model
+            # as an error instead of blowing up inside the function.
+            if self._arg_validator is not None:
+                validate_keys = [
+                    k for k in call_args if k in self._arg_validator.model_fields
+                ]
+                try:
+                    # Validate the provided keys; Pydantic also flags any
+                    # required (no-default) field the model left out.
+                    validated = self._arg_validator(
+                        **{k: call_args[k] for k in validate_keys}
+                    )
+                except ValidationError as e:
+                    return ToolResult(
+                        error=f"Invalid arguments for tool '{self.name}': {e}"
+                    )
+                for k in validate_keys:
+                    call_args[k] = getattr(validated, k)
 
             # Inject context if the function declares a context parameter
             if self._context_param_name is not None and context is not None:
@@ -389,6 +550,12 @@ def tool(
     name: str | None = None,
     description: str = "",
     replay_class: str | None = None,
+    *,
+    validate_args: bool = True,
+    timeout: float | None = None,
+    max_retries: int = 0,
+    retry_delay: float = 0.5,
+    output_type: Any | None = None,
 ) -> Callable[..., Any]:
     """Decorator to create a FunctionTool from a function.
 
@@ -396,6 +563,14 @@ def tool(
     (``read_only`` / ``idempotent`` / ``side_effecting``); unset resolves to the
     safe ``side_effecting`` default. It is never auto-inferred — only an explicit
     mark makes a tool re-executable in replay.
+
+    Execution policy (all optional):
+      - ``validate_args`` — validate/coerce the LLM's arguments against the
+        function's type hints before calling it (default ``True``).
+      - ``timeout`` — per-call wall-clock timeout in seconds.
+      - ``max_retries`` / ``retry_delay`` — retry the call on failure, with
+        exponential backoff (``retry_delay * 2**attempt``).
+      - ``output_type`` — validate/coerce the return value against this type.
 
     Example:
         @tool(name="greet", description="Greet someone")
@@ -407,7 +582,15 @@ def tool(
         tool_name = name or fn.__name__
         tool_desc = description or inspect.getdoc(fn) or ""
         return FunctionTool(
-            name=tool_name, fn=fn, description=tool_desc, replay_class=replay_class
+            name=tool_name,
+            fn=fn,
+            description=tool_desc,
+            replay_class=replay_class,
+            validate_args=validate_args,
+            timeout=timeout,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
+            output_type=output_type,
         )
 
     return decorator

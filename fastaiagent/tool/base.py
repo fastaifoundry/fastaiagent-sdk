@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
 from fastaiagent._internal.async_utils import run_sync
+from fastaiagent._internal.errors import ToolExecutionError
+
+logger = logging.getLogger(__name__)
 
 # Replay-safety classes drive the central Replay engine's inject-vs-execute
 # decision per tool call. ``side_effecting`` is the safe default: an unmarked
@@ -49,6 +54,11 @@ class Tool:
         description: str = "",
         parameters: dict[str, Any] | None = None,
         replay_class: str | None = None,
+        *,
+        timeout: float | None = None,
+        max_retries: int = 0,
+        retry_delay: float = 0.5,
+        output_type: Any | None = None,
     ):
         self.name = name
         self.description = description
@@ -65,17 +75,116 @@ class Tool:
             )
         self.replay_class = resolved
 
+        # Execution policy — applied by :meth:`ainvoke` (the agent-loop entry
+        # point). All-unset is a no-op: ``ainvoke`` reduces to ``aexecute``.
+        if timeout is not None and timeout <= 0:
+            raise ValueError(f"timeout must be > 0 or None, got {timeout!r}")
+        if max_retries < 0:
+            raise ValueError(f"max_retries must be >= 0, got {max_retries!r}")
+        self.timeout = timeout
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+        self.output_type = output_type
+        self._output_adapter: TypeAdapter[Any] | None = None
+
     def execute(self, arguments: dict[str, Any], context: Any | None = None) -> ToolResult:
-        """Execute the tool synchronously."""
-        return run_sync(self.aexecute(arguments, context=context))
+        """Execute the tool synchronously (applies the tool's execution policy)."""
+        return run_sync(self.ainvoke(arguments, context=context))
 
     async def aexecute(
         self,
         arguments: dict[str, Any],
         context: Any | None = None,
     ) -> ToolResult:
-        """Execute the tool asynchronously. Override in subclasses."""
+        """Execute the tool asynchronously. Override in subclasses.
+
+        This is the *raw* execution — it does not apply the timeout / retry /
+        output-validation policy. The agent loop calls :meth:`ainvoke`, which
+        wraps this; call ``aexecute`` directly only to deliberately bypass the
+        policy.
+        """
         raise NotImplementedError("Subclasses must implement aexecute()")
+
+    async def ainvoke(
+        self,
+        arguments: dict[str, Any],
+        context: Any | None = None,
+    ) -> ToolResult:
+        """Execute with the tool's timeout / retry / output-validation policy.
+
+        Wraps :meth:`aexecute`. With ``timeout``/``max_retries``/``output_type``
+        all unset this is exactly ``await self.aexecute(...)``. Control-flow
+        signals (``interrupt()`` etc.) always propagate and are never retried.
+
+        A call that exhausts its retries re-raises the last error (so the agent
+        loop's existing ``ToolExecutionError`` handling is preserved) or returns
+        the last error :class:`ToolResult` if the tool signalled failure that
+        way. On success, the output is validated/coerced against ``output_type``
+        when set.
+        """
+        # Imported lazily to avoid a circular import at module load.
+        from fastaiagent._internal.errors import StopAgent
+        from fastaiagent.agent.executor import _AgentInterrupted
+        from fastaiagent.chain.interrupt import AlreadyResumed, InterruptSignal
+
+        control_flow = (InterruptSignal, _AgentInterrupted, AlreadyResumed, StopAgent)
+
+        attempts = self.max_retries + 1
+        last_exc: BaseException | None = None
+        last_error_result: ToolResult | None = None
+
+        for attempt in range(attempts):
+            last_exc = None
+            last_error_result = None
+            try:
+                coro = self.aexecute(arguments, context=context)
+                if self.timeout is not None:
+                    result = await asyncio.wait_for(coro, self.timeout)
+                else:
+                    result = await coro
+            except control_flow:
+                raise
+            except TimeoutError:
+                last_exc = ToolExecutionError(
+                    f"Tool '{self.name}' timed out after {self.timeout}s"
+                )
+            except Exception as e:  # noqa: BLE001 — retried/re-raised below
+                last_exc = e
+            else:
+                if result.success:
+                    return self._validate_output(result)
+                last_error_result = result
+
+            # Reached only on failure — back off and retry if attempts remain.
+            if attempt < attempts - 1:
+                await asyncio.sleep(self.retry_delay * (2**attempt))
+                continue
+
+        if last_error_result is not None:
+            return last_error_result
+        assert last_exc is not None
+        raise last_exc
+
+    def _validate_output(self, result: ToolResult) -> ToolResult:
+        """Validate/coerce a successful result's output against ``output_type``.
+
+        No-op when ``output_type`` is unset. On mismatch, returns an error
+        ``ToolResult`` so the model sees the problem and can react — the tool's
+        raw output never silently violates the declared schema.
+        """
+        if self.output_type is None:
+            return result
+        if self._output_adapter is None:
+            self._output_adapter = TypeAdapter(self.output_type)
+        try:
+            coerced = self._output_adapter.validate_python(result.output)
+        except ValidationError as e:
+            logger.debug("Tool %r output failed validation", self.name, exc_info=True)
+            return ToolResult(
+                error=f"Tool '{self.name}' output failed schema validation: {e}",
+                metadata=result.metadata,
+            )
+        return ToolResult(output=coerced, metadata=result.metadata)
 
     def to_openai_format(self) -> dict[str, Any]:
         """Convert to OpenAI function-calling tool format."""

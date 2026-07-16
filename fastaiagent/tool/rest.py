@@ -54,6 +54,11 @@ class RESTTool(Tool):
         description: str = "",
         parameters: dict[str, Any] | None = None,
         replay_class: str | None = None,
+        *,
+        timeout: float | None = None,
+        max_retries: int = 0,
+        retry_delay: float = 0.5,
+        output_type: Any | None = None,
     ):
         self.url = url
         self.method = method.upper()
@@ -66,6 +71,10 @@ class RESTTool(Tool):
             description=description,
             parameters=parameters,
             replay_class=replay_class,
+            timeout=timeout,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
+            output_type=output_type,
         )
 
     async def aexecute(self, arguments: dict[str, Any], context: Any | None = None) -> ToolResult:

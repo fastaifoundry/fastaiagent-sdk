@@ -5,6 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.41.0] - 2026-07-17
+
+### Added
+
+- **Parallel tool execution (opt-in).** When the LLM emits multiple tool calls in one turn,
+  they can now run concurrently instead of sequentially. Enable per agent via
+  `AgentConfig(parallel_tools=True, max_parallel_tools=4)` — a turn's wall-clock becomes the
+  slowest tool instead of the sum of all of them. Results are re-ordered by call index, so
+  message history and `result.tool_calls` stay deterministic regardless of completion order.
+  Concurrency is bounded by an `asyncio.Semaphore` (`max_parallel_tools`, default 4). For
+  correctness the parallel path is used **only** when no checkpointer, middleware, or managed
+  governance (`agent_id`) is engaged — those are order/identity-sensitive (per-tool
+  checkpoints, HITL suspension, `wrap_tool` ordering, approval gating) and transparently fall
+  back to sequential. Applies to both `agent.run()` and `agent.stream()`.
+- **Pydantic-model / Enum / Literal / Optional tool arguments.** `FunctionTool` schema
+  generation now produces a full, self-contained JSON Schema (`$defs`/`$ref`/`enum`/`anyOf`)
+  for rich parameter types via Pydantic — so a tool typed `def create_ticket(ticket: Ticket)`
+  (nested `BaseModel` + `Enum`) lets the model fill structured arguments instead of degrading
+  to `{"type": "string"}`. Passed through verbatim to OpenAI (strict tools) and Anthropic
+  (`input_schema`).
+- **Argument validation & coercion for `FunctionTool` (on by default).** The model's JSON
+  arguments are now validated and coerced against the function's type hints before it runs —
+  so `n: int` receives an `int`, and a Pydantic-model parameter arrives as a validated
+  instance (no `Ticket(**ticket)` boilerplate). Malformed arguments (wrong type, bad enum,
+  missing required field) are returned to the model as a clear error instead of raising, so
+  the agent can self-correct. Opt out with `FunctionTool(..., validate_args=False)` /
+  `@tool(validate_args=False)` for raw `dict` passthrough.
+- **Per-tool timeout, retry, and output validation (all tool types).** New optional keyword
+  args on `Tool`/`FunctionTool`/`RESTTool`/`MCPTool` and the `@tool` decorator: `timeout`
+  (per-call wall-clock seconds), `max_retries` + `retry_delay` (retry transient failures with
+  exponential backoff), and `output_type` (validate/coerce the return value against a
+  Pydantic-compatible type; a mismatch is reported to the model). Applied by a new
+  `Tool.ainvoke()` wrapper — with all fields unset it is exactly `await tool.aexecute(...)`.
+- New example `examples/90_parallel_and_pydantic_tools.py` demonstrating all of the above.
+
+### Notes
+
+- **All changes are non-breaking / additive.** `parallel_tools` defaults to `False`, so
+  existing agents keep exact sequential behavior. Schema generation is a **hybrid**: signatures
+  whose parameters are all primitives (`str/int/float/bool/list/dict`, `list[<primitive>]`)
+  still emit byte-identical schemas — the Pydantic path engages only when a rich type is
+  present, where it is purely additive (those types were previously unsupported). Timeout /
+  retry / output-validation are opt-in (unset = no-op). Argument coercion is on by default but
+  only affects tools that declared type hints (previously model-typed params were unusable),
+  and matches the declared contract; `validate_args=False` restores raw-dict passthrough.
+
 ## [1.40.0] - 2026-07-12
 
 ### Added

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import uuid
@@ -306,6 +307,13 @@ def _coerce_tool_output_to_message_content(
         return list(output), summary
     if isinstance(output, str):
         return output, output
+    from pydantic import BaseModel
+
+    if isinstance(output, BaseModel):
+        # Covers tools that return a Pydantic model (e.g. via ``output_type``
+        # validation) — emit clean JSON rather than a Python repr.
+        text = output.model_dump_json()
+        return text, text
     text = json.dumps(output, default=str)
     return text, text
 
@@ -371,7 +379,7 @@ async def _invoke_tool_with_span(
                 tc_data = json.dumps({"tool": tool_name, "arguments": arguments}, default=str)
                 await execute_guardrails(guardrails, tc_data, GuardrailPosition.tool_call)
 
-            result = await tool.aexecute(arguments, context=context)
+            result = await tool.ainvoke(arguments, context=context)
             if result.success:
                 message_content, result_text = _coerce_tool_output_to_message_content(
                     result.output
@@ -417,6 +425,8 @@ async def execute_tool_loop(
     agent_name: str = "",
     agent_id: str | None = None,
     start_iteration: int = 0,
+    parallel_tools: bool = False,
+    max_parallel_tools: int = 4,
     **kwargs: Any,
 ) -> tuple[LLMResponse, list[dict[str, Any]]]:
     """Execute the agent's tool-calling loop.
@@ -443,6 +453,32 @@ async def execute_tool_loop(
     tool_defs = [t.to_openai_format() for t in tools] if tools else None
     tools_by_name = {t.name: t for t in tools}
     all_tool_calls: list[dict[str, Any]] = []
+
+    async def _run_plain_tool_call(
+        idx: int, tc: ToolCall, iteration: int
+    ) -> tuple[int, Message, dict[str, Any]]:
+        """Execute one tool call via the plain (no checkpoint/middleware/
+        governance) path and return its ordered index, message, and record.
+
+        Used only by the parallel branch, which is gated on exactly those
+        features being absent — so this mirrors the sequential ``else`` path
+        below without the control-flow machinery.
+        """
+        record: dict[str, Any] = {
+            "iteration": iteration,
+            "tool_name": tc.name,
+            "arguments": tc.arguments,
+            "tool_call_id": tc.id,
+        }
+        content, _ = await _invoke_tool_with_span(
+            tool=tools_by_name.get(tc.name),
+            tool_name=tc.name,
+            arguments=tc.arguments,
+            context=context,
+            guardrails=guardrails,
+            tool_call_record=record,
+        )
+        return idx, ToolMessage(content=content, tool_call_id=tc.id), record
 
     for iteration in range(start_iteration, max_iterations):
         # Turn-boundary checkpoint — the resume point for crashes mid-LLM.
@@ -478,6 +514,33 @@ async def execute_tool_loop(
 
         # Build assistant message with tool calls
         messages.append(AssistantMessage(content=response.content, tool_calls=response.tool_calls))
+
+        # Execute the turn's tool calls concurrently when it's provably safe —
+        # no per-tool checkpointing, middleware, or managed governance in play
+        # (those are order/identity sensitive and stay sequential). Results are
+        # re-ordered by index so message history stays deterministic.
+        if (
+            parallel_tools
+            and len(response.tool_calls) > 1
+            and checkpointer is None
+            and mw_pipeline is None
+            and not agent_id
+        ):
+            sem = asyncio.Semaphore(max_parallel_tools)
+
+            async def _guarded(
+                idx: int, tc: ToolCall, _it: int = iteration
+            ) -> tuple[int, Message, dict[str, Any]]:
+                async with sem:
+                    return await _run_plain_tool_call(idx, tc, _it)
+
+            results = await asyncio.gather(
+                *[_guarded(i, tc) for i, tc in enumerate(response.tool_calls)]
+            )
+            for _, tool_msg, record in sorted(results, key=lambda r: r[0]):
+                messages.append(tool_msg)
+                all_tool_calls.append(record)
+            continue
 
         # Execute each tool call
         for idx, tc in enumerate(response.tool_calls):
@@ -622,6 +685,8 @@ async def stream_tool_loop(
     agent_name: str = "",
     agent_id: str | None = None,
     start_iteration: int = 0,
+    parallel_tools: bool = False,
+    max_parallel_tools: int = 4,
     **kwargs: Any,
 ) -> AsyncGenerator[StreamEvent, None]:
     """Streaming version of execute_tool_loop.
@@ -645,6 +710,19 @@ async def stream_tool_loop(
     """
     tool_defs = [t.to_openai_format() for t in tools] if tools else None
     tools_by_name = {t.name: t for t in tools}
+
+    async def _run_plain_tool_call(idx: int, tc: ToolCall) -> tuple[int, Message]:
+        """Execute one tool call via the plain path (see the ``execute_tool_loop``
+        counterpart). Used only by the parallel branch, which is gated on the
+        absence of checkpointer/middleware/governance."""
+        content, _ = await _invoke_tool_with_span(
+            tool=tools_by_name.get(tc.name),
+            tool_name=tc.name,
+            arguments=tc.arguments,
+            context=context,
+            guardrails=guardrails,
+        )
+        return idx, ToolMessage(content=content, tool_call_id=tc.id)
 
     for iteration in range(start_iteration, max_iterations):
         # Turn-boundary checkpoint — the resume point for crashes mid-LLM.
@@ -720,6 +798,29 @@ async def stream_tool_loop(
                 tool_calls=pending_tool_calls,
             )
         )
+
+        # Concurrent execution when it's provably safe (see execute_tool_loop).
+        # ToolCallStart/End events were already yielded during streaming, so
+        # parallel execution doesn't reorder anything the caller has seen.
+        if (
+            parallel_tools
+            and len(pending_tool_calls) > 1
+            and checkpointer is None
+            and mw_pipeline is None
+            and not agent_id
+        ):
+            sem = asyncio.Semaphore(max_parallel_tools)
+
+            async def _guarded(idx: int, tc: ToolCall) -> tuple[int, Message]:
+                async with sem:
+                    return await _run_plain_tool_call(idx, tc)
+
+            results = await asyncio.gather(
+                *[_guarded(i, tc) for i, tc in enumerate(pending_tool_calls)]
+            )
+            for _, tool_msg in sorted(results, key=lambda r: r[0]):
+                messages.append(tool_msg)
+            continue
 
         # Execute each tool call
         for idx, tc in enumerate(pending_tool_calls):
