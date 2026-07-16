@@ -178,17 +178,42 @@ You generally do not need to touch `ToolRegistry` directly — auto-registration
 
 When `Tool.from_dict()` reconstructs a `FunctionTool` whose name isn't in the registry, it logs a warning and returns a schema-only skeleton. Calling `tool.aexecute()` on that skeleton returns a `ToolResult(error="No function attached...")`. Replay reruns that invoke the tool will surface the error to the agent (as the tool message content), not crash — the agent can then react to the "tool missing" signal.
 
+## Execution Policy
+
+Every tool type accepts optional keyword args that govern how a call runs — all
+off by default, so unset means no change in behavior:
+
+| Option | Effect |
+|--------|--------|
+| `timeout` | Per-call wall-clock timeout in seconds; the call is cancelled and reported as an error when exceeded. |
+| `max_retries` / `retry_delay` | Retry transient failures (exceptions or timeouts) with exponential backoff (`retry_delay * 2**attempt`). |
+| `output_type` | Validate/coerce the return value against a Pydantic-compatible type; a mismatch is returned to the model as an error. |
+| `validate_args` | *(`FunctionTool` only, default `True`)* Validate/coerce the model's arguments against the function's type hints. |
+
+```python
+@tool(timeout=2.0, max_retries=2, output_type=float)
+def fx_rate(base: str, quote: str) -> str:
+    ...
+```
+
+See [FunctionTool → Timeout, Retry & Output Validation](function-tools.md#timeout-retry-output-validation) for details.
+
 ## Sync vs Async
 
 ```python
-# Sync
+# Sync — applies the execution policy above
 result = tool.execute({"query": "test"})
 
-# Async
+# Async — applies the execution policy above
+result = await tool.ainvoke({"query": "test"})
+
+# Async, raw — bypasses the policy (no timeout / retry / output validation)
 result = await tool.aexecute({"query": "test"})
 ```
 
-Both work correctly whether called from sync or async contexts (including Jupyter notebooks).
+`execute()` and `ainvoke()` are the policy-aware entry points (the agent loop
+uses `ainvoke`). Call `aexecute()` directly only to deliberately bypass the
+policy. All work from sync or async contexts (including Jupyter notebooks).
 
 ## Error Handling
 

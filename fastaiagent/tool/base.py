@@ -144,7 +144,10 @@ class Tool:
                     result = await coro
             except control_flow:
                 raise
-            except TimeoutError:
+            except (asyncio.TimeoutError, TimeoutError):
+                # ``asyncio.wait_for`` raises ``asyncio.TimeoutError``, which is
+                # a distinct class from the builtin ``TimeoutError`` before
+                # Python 3.11 — catch both so timeouts are reported uniformly.
                 last_exc = ToolExecutionError(
                     f"Tool '{self.name}' timed out after {self.timeout}s"
                 )
