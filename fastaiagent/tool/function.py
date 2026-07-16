@@ -291,14 +291,23 @@ def _build_pydantic_schema(
 
 
 def _build_arg_validator(
-    fn: Callable[..., Any], context_param: str | None
+    fn: Callable[..., Any], context_param: str | None, allowed_names: set[str]
 ) -> type[BaseModel] | None:
     """Build a Pydantic model that validates/coerces this tool's LLM arguments.
 
-    One field per typed, LLM-facing parameter (``self``/``cls`` and the injected
-    ``RunContext`` param are excluded; untyped params are skipped so they pass
-    through unchanged). Returns ``None`` when there's nothing to validate or the
-    model can't be built — in which case arguments are passed through raw.
+    One field per typed parameter that the model can actually send — i.e. a key
+    of the tool's JSON-Schema ``properties`` (``allowed_names``). This is the
+    authoritative LLM contract: injected dependencies (``RunContext`` and the
+    common ``_dep=<obj>`` default-argument DI pattern) are *not* in the schema
+    and must be excluded, both because the model never provides them and because
+    their values can be un-copyable (e.g. a checkpointer holding a thread-local).
+
+    Optional params store a plain ``None`` default rather than the function's
+    real default: coercion only reads back keys the model actually provided, so
+    the validator's default value is never used — and keeping it simple avoids
+    Pydantic deep-copying a complex default at model-construction time. Untyped
+    params are skipped (passed through raw). Returns ``None`` when there's
+    nothing to validate or the model can't be built.
     """
     try:
         hints = get_type_hints(fn)
@@ -311,10 +320,12 @@ def _build_arg_validator(
     for param_name, param in sig.parameters.items():
         if param_name in ("self", "cls") or param_name == context_param:
             continue
+        if param_name not in allowed_names:
+            continue  # not an LLM-facing argument (injected / DI default)
         tp = hints.get(param_name)
         if tp is None or _is_context_param(tp):
             continue  # untyped → no coercion, pass through as-is
-        default = ... if param.default is inspect.Parameter.empty else param.default
+        default = ... if param.default is inspect.Parameter.empty else None
         fields[param_name] = (tp, default)
 
     if not fields:
@@ -429,7 +440,12 @@ class FunctionTool(Tool):
             # Detect context parameter at init time (not per-call)
             self._context_param_name = self._detect_context_param(fn)
             if validate_args:
-                self._arg_validator = _build_arg_validator(fn, self._context_param_name)
+                # Validate only the tool's declared LLM-facing arguments — the
+                # keys of the (possibly caller-supplied) parameter schema.
+                allowed_names = set((parameters or {}).get("properties", {}).keys())
+                self._arg_validator = _build_arg_validator(
+                    fn, self._context_param_name, allowed_names
+                )
 
         super().__init__(
             name=name,

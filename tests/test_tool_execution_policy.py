@@ -256,6 +256,38 @@ def test_invalid_policy_values_raise() -> None:
 
 
 @pytest.mark.asyncio
+async def test_di_default_params_are_not_validated() -> None:
+    # Regression: the dependency-injection-via-default pattern (e.g. Supervisor's
+    # ``delegate(task, _dep=<obj>)``) must not be pulled into the arg validator.
+    # Such defaults can be un-copyable (here: a thread-local), which would crash
+    # Pydantic's model construction — and the model never sends them anyway.
+    import threading
+
+    dep = threading.local()  # not deep-copyable — cannot pickle _thread._local
+    dep.value = 42
+    seen: dict[str, object] = {}
+
+    async def delegate(task: str, _dep: object = dep) -> str:
+        seen["task"] = task
+        seen["dep_is_same"] = _dep is dep
+        return f"did {task}"
+
+    # Explicit schema exposes only ``task`` — the LLM-facing contract.
+    tool_obj = FunctionTool(
+        name="delegate",
+        fn=delegate,
+        parameters={
+            "type": "object",
+            "properties": {"task": {"type": "string"}},
+            "required": ["task"],
+        },
+    )
+    result = await tool_obj.ainvoke({"task": "run"})
+    assert result.success, result.error
+    assert seen == {"task": "run", "dep_is_same": True}
+
+
+@pytest.mark.asyncio
 async def test_error_result_is_returned_not_raised() -> None:
     # A Tool that signals failure via ToolResult.error (not an exception) must
     # have that result surfaced unchanged when retries are exhausted.
