@@ -239,23 +239,34 @@ all off by default:
 ```python
 @tool(
     name="fx_rate",
-    timeout=2.0,        # per-call wall-clock timeout (seconds)
-    max_retries=2,      # retry on failure, exponential backoff (retry_delay * 2**n)
-    retry_delay=0.5,    # base backoff in seconds
-    output_type=float,  # validate/coerce the return value
+    timeout=2.0,      # per-call wall-clock timeout (seconds)
+    max_retries=2,    # retry on failure, exponential backoff (retry_delay * 2**n)
+    retry_delay=0.5,  # base backoff in seconds
 )
-def fx_rate(base: str, quote: str) -> str:
-    ...  # a "0.92" string is coerced to 0.92; a non-number returns an error
+def fx_rate(base: str, quote: str) -> float:
+    ...
 ```
 
 - **`timeout`** — the call is cancelled and reported as an error after N seconds.
 - **`max_retries` / `retry_delay`** — transient failures (exceptions or timeouts)
   are retried with exponential backoff before the error surfaces.
-- **`output_type`** — the return value is validated/coerced against this type
-  (any Pydantic-compatible type: `int`, `list[str]`, a `BaseModel`, …). A
-  mismatch is returned to the model as an error rather than passed downstream.
 
-These also work on `RESTTool(...)` and `MCPTool(...)` via the same keyword args.
+**`output_type`** is a separate, optional knob that validates/coerces the tool's
+*return value*. It's only useful when the raw return isn't already the clean type
+you want to hand the model — for example, parsing a `dict` into a validated model:
+
+```python
+@tool(output_type=Ticket)      # the dict return is parsed + validated into a Ticket
+def draft_ticket(subject: str) -> dict:
+    return {"title": subject, "body": "...", "priority": "high"}
+```
+
+`output_type` accepts any Pydantic-compatible type (`int`, `list[str]`, a
+`BaseModel`, …); a value that can't be coerced is returned to the model as an
+error instead of passed downstream. If your function already returns the right
+type (annotate it, e.g. `-> float`), you don't need `output_type` at all.
+
+These all work on `RESTTool(...)` and `MCPTool(...)` via the same keyword args.
 
 ## Context & Dependency Injection
 

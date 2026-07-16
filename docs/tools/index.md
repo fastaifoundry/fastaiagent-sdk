@@ -187,12 +187,12 @@ off by default, so unset means no change in behavior:
 |--------|--------|
 | `timeout` | Per-call wall-clock timeout in seconds; the call is cancelled and reported as an error when exceeded. |
 | `max_retries` / `retry_delay` | Retry transient failures (exceptions or timeouts) with exponential backoff (`retry_delay * 2**attempt`). |
-| `output_type` | Validate/coerce the return value against a Pydantic-compatible type; a mismatch is returned to the model as an error. |
+| `output_type` | Validate/coerce the *return value* against a Pydantic-compatible type (e.g. parse a `dict` into a `BaseModel`); a mismatch is returned to the model as an error. Only needed when the raw return isn't already the type you want. |
 | `validate_args` | *(`FunctionTool` only, default `True`)* Validate/coerce the model's arguments against the function's type hints. |
 
 ```python
-@tool(timeout=2.0, max_retries=2, output_type=float)
-def fx_rate(base: str, quote: str) -> str:
+@tool(timeout=2.0, max_retries=2)
+def fx_rate(base: str, quote: str) -> float:
     ...
 ```
 

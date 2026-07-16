@@ -12,9 +12,10 @@ Native tool-calling upgrades (v1.41.0), shown end to end:
      full JSON Schema from the type hint *and* validates + coerces the model's
      arguments, so the function receives a ready-to-use ``Ticket`` instance.
 
-  3. **Execution policy** — ``@tool(timeout=..., max_retries=..., output_type=...)``
-     adds a per-call timeout, automatic retries, and output validation with a
-     single line of keyword args.
+  3. **Execution policy** — ``@tool(timeout=..., max_retries=...)`` adds a
+     per-call timeout and automatic retries with one line of keyword args.
+     (An optional ``output_type=`` also validates/coerces the *return* value —
+     handy when a tool returns a loose type; see docs/tools/function-tools.md.)
 
 Prereqs:
     pip install 'fastaiagent[openai]'
@@ -100,26 +101,25 @@ def file_ticket(ticket: Ticket) -> str:
     return f"Filed [{ticket.priority.value.upper()}] {ticket.title!r}"
 
 
-# ─── 3) Execution policy: timeout + retry + output validation, one line ─────
+# ─── 3) Execution policy: timeout + retry, in one line of kwargs ────────────
 
 
 _ATTEMPTS = {"n": 0}
 
 
-@tool(name="fx_rate", timeout=2.0, max_retries=2, output_type=float)
-def fx_rate(base: str, quote: str) -> str:
+@tool(name="fx_rate", timeout=2.0, max_retries=2)
+def fx_rate(base: str, quote: str) -> float:
     """Get the FX rate between two currencies.
 
     Args:
         base: base currency code, e.g. USD
         quote: quote currency code, e.g. EUR
     """
-    # Flaky on the first call to show retries; returns a string that
-    # output_type coerces/validates to float.
+    # Flaky on the first call to demonstrate automatic retries.
     _ATTEMPTS["n"] += 1
     if _ATTEMPTS["n"] < 2:
         raise RuntimeError("upstream FX provider hiccup")
-    return "0.92"
+    return 0.92
 
 
 def main() -> None:
@@ -158,8 +158,8 @@ def main() -> None:
     )
     print(f"\nTicket answer: {ticket.output}")
 
-    # 3) Execution policy — the fx_rate tool retries its first failure, then
-    #    its "0.92" string is validated/coerced to a float by output_type.
+    # 3) Execution policy — the fx_rate tool fails once, then the SDK
+    #    automatically retries and succeeds (see tool attempts below).
     fx = agent.run("What's the USD to EUR exchange rate?")
     print(f"\nFX answer: {fx.output}  (tool attempts: {_ATTEMPTS['n']})")
 
