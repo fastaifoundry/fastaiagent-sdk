@@ -6,7 +6,6 @@ import asyncio
 import json as _json
 import logging
 import os
-import re
 import ssl
 import time
 import warnings
@@ -27,6 +26,7 @@ from fastaiagent.llm.stream import (
     ToolCallStart,
     Usage,
 )
+from fastaiagent.llm.structured import OutputSpec, _strip_code_fences
 
 logger = logging.getLogger(__name__)
 
@@ -45,17 +45,6 @@ logger = logging.getLogger(__name__)
 _replay_recorded_response: ContextVar[Any] = ContextVar(
     "_fastaiagent_replay_recorded_response", default=None
 )
-
-# --- Structured output helpers (aligned with platform) ---
-
-_CODE_FENCE_RE = re.compile(r"^\s*```(?:json)?\s*\n?(.*?)\n?\s*```\s*$", re.DOTALL)
-
-
-def _strip_code_fences(text: str) -> str:
-    """Strip markdown code fences from LLM response (Anthropic sometimes wraps JSON)."""
-    m = _CODE_FENCE_RE.match(text.strip())
-    return m.group(1).strip() if m else text
-
 
 def _serialize_for_span(value: Any) -> str | None:
     """JSON-encode an arbitrary structure for span attributes, swallowing errors."""
@@ -198,6 +187,10 @@ class LLMResponse(BaseModel):
     model: str = ""
     finish_reason: str = ""
     latency_ms: int = 0
+    # Populated when ``acomplete``/``complete`` is called with ``output_type``:
+    # the response ``content`` parsed/validated into that type (``None`` if the
+    # content couldn't be parsed).
+    parsed: Any = None
 
 
 # Built-in providers — these have first-class code paths in this module.
@@ -481,12 +474,42 @@ class LLMClient:
         self,
         messages: list[Message],
         tools: list[dict[str, Any]] | None = None,
+        *,
+        output_type: Any | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
-        """Synchronous completion."""
-        return run_sync(self.acomplete(messages, tools=tools, **kwargs))
+        """Synchronous completion. See :meth:`acomplete` for ``output_type``."""
+        return run_sync(
+            self.acomplete(messages, tools=tools, output_type=output_type, **kwargs)
+        )
 
     async def acomplete(
+        self,
+        messages: list[Message],
+        tools: list[dict[str, Any]] | None = None,
+        *,
+        output_type: Any | None = None,
+        **kwargs: Any,
+    ) -> LLMResponse:
+        """Async completion, optionally parsed into ``output_type``.
+
+        When ``output_type`` is given, the call requests structured output and
+        populates :attr:`LLMResponse.parsed` with the response parsed/validated
+        into that type. ``output_type`` accepts any Pydantic-compatible type — a
+        ``BaseModel``, ``list[Model]``, a primitive, etc. This is a convenience
+        over building ``response_format`` by hand; the Agent layer layers
+        retry-on-failure and strict mode on top.
+        """
+        if output_type is None:
+            return await self._acomplete_raw(messages, tools=tools, **kwargs)
+        spec = OutputSpec(output_type)
+        kwargs.setdefault("response_format", spec.response_format(strict=False))
+        response = await self._acomplete_raw(messages, tools=tools, **kwargs)
+        if response.content is not None:
+            response.parsed, _ = spec.parse(response.content)
+        return response
+
+    async def _acomplete_raw(
         self,
         messages: list[Message],
         tools: list[dict[str, Any]] | None = None,

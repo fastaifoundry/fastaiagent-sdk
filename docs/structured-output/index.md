@@ -236,8 +236,8 @@ print(result.output)         # Raw JSON string
 
 1. The SDK generates a `response_format` from `output_type.model_json_schema()`
 2. The format is passed to the LLM as a kwarg (works with all providers)
-3. The JSON response is automatically parsed into a Pydantic model on `result.parsed`
-4. If parsing fails, `result.parsed` is `None` and `result.output` contains the raw text
+3. The JSON response is automatically parsed into the output type on `result.parsed`
+4. If parsing fails, the agent re-asks the model with the error (up to `output_retries`, default 2); if it still fails, `result.parsed` is `None` and `result.output` holds the raw text
 
 ### Nested models
 
@@ -255,9 +255,58 @@ result = agent.run("John at 123 Main St, SF")
 print(result.parsed.address.city)  # "SF"
 ```
 
+### Lists, primitives, and other types
+
+As of v1.42.0, `output_type` accepts any Pydantic-compatible type — not just a
+`BaseModel`. Lists, primitives, enums, and unions all work; the SDK wraps
+non-object types internally and unwraps them on parse, so you just read
+`result.parsed`:
+
+```python
+agent = Agent(name="geo", output_type=list[Country], ...)
+result = agent.run("List France, Japan, and Egypt with their capitals.")
+result.parsed          # [Country(name='France', capital='Paris'), ...]
+
+agent = Agent(name="counter", output_type=int, ...)
+agent.run("How many sides does a hexagon have?").parsed   # 6
+```
+
+### Retry on validation failure
+
+If the model returns malformed JSON or output that doesn't match the schema, the
+agent re-asks it with the validation error and tries again — up to
+`AgentConfig.output_retries` times (**default 2**). Retries only fire on failure,
+so they add no cost on the happy path. Set `output_retries=0` to restore the old
+behavior (a failure yields `parsed=None`):
+
+```python
+agent = Agent(
+    name="extractor",
+    output_type=Invoice,
+    config=AgentConfig(output_retries=3),   # 0 disables
+    ...
+)
+```
+
+### Strict Structured Outputs (OpenAI/Azure)
+
+For a hard schema guarantee on OpenAI/Azure, enable native strict Structured
+Outputs. The SDK adapts the schema (all-required + `additionalProperties:false`)
+automatically. It's opt-in and ignored by non-OpenAI providers:
+
+```python
+agent = Agent(
+    name="extractor",
+    output_type=Company,
+    config=AgentConfig(strict_output=True),
+    llm=LLMClient(provider="openai", model="gpt-4o"),
+)
+```
+
 ### Streaming
 
-`stream()` collects all tokens and parses at the end:
+`stream()` collects all tokens and parses at the end (retry applies to
+`run()`/`arun()`, not streaming):
 
 ```python
 result = agent.stream("Alice is 30 from Tokyo.")
@@ -267,6 +316,24 @@ print(result.parsed)  # Person(name='Alice', age=30, city='Tokyo')
 ### Serialization
 
 `to_dict()` includes the JSON schema in `config.response_format`. The `output_type` Python class cannot be restored from `from_dict()` — the schema is informational.
+
+### At the `LLMClient` level (no Agent)
+
+`output_type` also works directly on `LLMClient.complete()` / `acomplete()`, which
+populate `LLMResponse.parsed`:
+
+```python
+from fastaiagent import LLMClient
+from fastaiagent.llm.message import UserMessage
+
+client = LLMClient(provider="openai", model="gpt-4o")
+resp = client.complete([UserMessage("France and its capital?")], output_type=Country)
+resp.parsed   # Country(name='France', capital='Paris')
+```
+
+The same flexible types apply. The retry and strict-mode features are Agent-level;
+at the client level you get a single structured call (build `response_format`
+yourself if you need strict mode).
 
 ## LLM Parameters
 

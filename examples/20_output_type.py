@@ -10,8 +10,7 @@ Usage:
 
 from pydantic import BaseModel
 
-from fastaiagent import Agent, LLMClient
-
+from fastaiagent import Agent, AgentConfig, LLMClient
 
 # --- Define your output models ---
 
@@ -109,6 +108,58 @@ def example_streaming():
     print()
 
 
+# --- Example 4: Non-model output types (list / primitive) ---
+
+
+def example_flexible_types():
+    """output_type accepts any Pydantic-compatible type — list, int, etc."""
+    print("=== Example 4: Lists & primitives ===\n")
+
+    list_agent = Agent(
+        name="geo",
+        system_prompt="You extract structured data.",
+        llm=LLMClient(provider="openai", model="gpt-4o-mini"),
+        output_type=list[Address],
+    )
+    result = list_agent.run(
+        "Two offices: 1 Market St, San Francisco, USA and "
+        "10 Downing St, London, UK."
+    )
+    print(f"Parsed {len(result.parsed)} addresses; first city: {result.parsed[0].city}")
+
+    num_agent = Agent(
+        name="counter",
+        system_prompt="Answer with a single number.",
+        llm=LLMClient(provider="openai", model="gpt-4o-mini"),
+        output_type=int,
+    )
+    print(f"Sides of a hexagon: {num_agent.run('How many sides does a hexagon have?').parsed}")
+    print()
+
+
+# --- Example 5: Retry + strict Structured Outputs ---
+
+
+def example_retry_and_strict():
+    """Auto-retry on validation failure (default) + OpenAI strict mode."""
+    print("=== Example 5: Retry + strict ===\n")
+
+    agent = Agent(
+        name="customer-strict",
+        system_prompt="Extract customer information.",
+        llm=LLMClient(provider="openai", model="gpt-4o"),
+        output_type=Customer,
+        # output_retries defaults to 2 (re-ask the model on a parse failure);
+        # strict_output uses OpenAI's native hard-guarantee Structured Outputs.
+        config=AgentConfig(output_retries=2, strict_output=True),
+    )
+    result = agent.run(
+        "Maria (maria@acme.io), active, at 5 King St, Boston, USA."
+    )
+    print(f"Parsed: {result.parsed.name} in {result.parsed.address.city}")
+    print()
+
+
 # --- Main ---
 
 
@@ -121,3 +172,5 @@ if __name__ == "__main__":
         example_simple()
         example_nested()
         example_streaming()
+        example_flexible_types()
+        example_retry_and_strict()
