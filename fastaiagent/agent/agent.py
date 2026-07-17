@@ -36,9 +36,10 @@ from fastaiagent.chain.interrupt import (
 from fastaiagent.checkpointers import Checkpointer, SQLiteCheckpointer
 from fastaiagent.guardrail.executor import execute_guardrails
 from fastaiagent.guardrail.guardrail import Guardrail, GuardrailPosition
-from fastaiagent.llm.client import LLMClient, _strip_code_fences
+from fastaiagent.llm.client import LLMClient
 from fastaiagent.llm.message import Message, SystemMessage, UserMessage
 from fastaiagent.llm.stream import StreamEvent, TextDelta
+from fastaiagent.llm.structured import OutputSpec
 from fastaiagent.multimodal.image import Image as MultimodalImage
 from fastaiagent.multimodal.pdf import PDF as MultimodalPDF  # noqa: N811
 from fastaiagent.multimodal.types import ContentPart, normalize_input
@@ -81,6 +82,14 @@ class AgentConfig(BaseModel):
     # otherwise it transparently falls back to sequential.
     parallel_tools: bool = False
     max_parallel_tools: int = Field(default=4, ge=1, le=64)
+    # Structured output (``output_type``): on a parse/validation failure, re-ask
+    # the model with the error up to this many times. 0 disables (previous
+    # behavior — a failure yields ``parsed=None``). Only fires on failure, so it
+    # adds no calls on the happy path.
+    output_retries: int = Field(default=2, ge=0, le=5)
+    # Use OpenAI/Azure native *strict* Structured Outputs (hard schema guarantee)
+    # for ``output_type``. Off by default; ignored by non-OpenAI providers.
+    strict_output: bool = False
 
 
 class AgentResult(BaseModel):
@@ -175,6 +184,11 @@ class Agent:
         self.memory = memory
         self.config = config or AgentConfig()
         self.output_type = output_type
+        # Resolve structured-output plan once (schema + parser). Supports any
+        # Pydantic-compatible type (BaseModel, list[Model], primitives, unions).
+        self._output_spec: OutputSpec | None = (
+            OutputSpec(output_type) if output_type is not None else None
+        )
         self.middleware: list[AgentMiddleware] = list(middleware) if middleware else []
         self._mw_pipeline = _MiddlewarePipeline(self.middleware)
         self._checkpointer: Checkpointer | None = checkpointer
@@ -185,27 +199,62 @@ class Agent:
 
     def _build_response_format(self) -> dict[str, Any] | None:
         """Build response_format dict from output_type for structured output."""
-        if self.output_type is None:
+        if self._output_spec is None:
             return None
-        return {
-            "type": "json_schema",
-            "json_schema": {
-                "name": self.output_type.__name__,
-                "schema": self.output_type.model_json_schema(),
-            },
-        }
+        # Native strict Structured Outputs is OpenAI/Azure-only; other providers
+        # ignore the flag and receive the normal (non-strict) json_schema.
+        strict = self.config.strict_output and self.llm.provider in ("openai", "azure")
+        return self._output_spec.response_format(strict=strict)
+
+    def _try_parse(self, text: str) -> tuple[Any | None, str | None]:
+        """Parse text into ``output_type``. Returns ``(value, error_reason)``."""
+        if self._output_spec is None:
+            return None, None
+        if not text:
+            return None, "the model returned an empty response"
+        return self._output_spec.parse(text)
 
     def _parse_output(self, text: str) -> Any | None:
-        """Parse LLM text output into output_type Pydantic model."""
-        if self.output_type is None or not text:
-            return None
-        try:
-            clean = _strip_code_fences(text)
-            data = json.loads(clean)
-            return self.output_type.model_validate(data)
-        except Exception:
-            logger.debug("Failed to parse LLM output into output_type", exc_info=True)
-            return None
+        """Parse LLM text into ``output_type`` (value only; ``None`` on failure)."""
+        value, _ = self._try_parse(text)
+        return value
+
+    async def _reask_structured(
+        self,
+        messages: list[Message],
+        bad_output: str,
+        error: str,
+        kwargs: dict[str, Any],
+    ) -> tuple[str, Any | None, int]:
+        """Re-ask the model to fix a structured-output parse/validation failure.
+
+        Appends the rejected reply plus a correction message and calls the LLM
+        again with the same ``response_format`` (no tools) up to
+        ``config.output_retries`` times. Returns
+        ``(final_output, parsed_or_None, extra_tokens)``.
+        """
+        from fastaiagent.llm.message import AssistantMessage
+
+        output = bad_output
+        reason: str | None = error
+        parsed: Any | None = None
+        extra_tokens = 0
+        for _ in range(self.config.output_retries):
+            messages.append(AssistantMessage(content=output))
+            messages.append(
+                UserMessage(
+                    "Your previous response could not be used: "
+                    f"{reason}. Reply again with ONLY the JSON value that "
+                    "satisfies the required schema — no explanation, no markdown."
+                )
+            )
+            resp = await self.llm.acomplete(messages, **kwargs)
+            output = resp.content or ""
+            extra_tokens += resp.usage.get("total_tokens", 0)
+            parsed, reason = self._try_parse(output)
+            if parsed is not None:
+                break
+        return output, parsed, extra_tokens
 
     def run(
         self,
@@ -512,7 +561,19 @@ class Agent:
                 )
 
             output = response.content or ""
-            parsed = self._parse_output(output)
+            parsed, perr = self._try_parse(output)
+            retry_tokens = 0
+            # Structured-output self-correction: on a parse/validation failure,
+            # re-ask the model with the error (opt-out via output_retries=0).
+            if (
+                parsed is None
+                and perr is not None
+                and self._output_spec is not None
+                and self.config.output_retries > 0
+            ):
+                output, parsed, retry_tokens = await self._reask_structured(
+                    llm_messages, output, perr, kwargs
+                )
 
             # Execute output guardrails.
             if self.guardrails:
@@ -529,7 +590,7 @@ class Agent:
                 traced_add(self.memory, AssistantMessage(output))
 
             latency = int((time.monotonic() - start) * 1000)
-            tokens = response.usage.get("total_tokens", 0)
+            tokens = response.usage.get("total_tokens", 0) + retry_tokens
 
             return AgentResult(
                 output=output,

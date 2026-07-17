@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.42.0] - 2026-07-17
+
+### Added
+
+- **Structured-output retry on validation failure.** When a run has an
+  `output_type` and the model returns malformed or schema-violating JSON, the
+  agent now re-asks the model with the validation error and tries again — up to
+  `AgentConfig.output_retries` (**default 2**). Retries fire only on failure, so
+  they add no cost on the happy path; set `output_retries=0` to restore the
+  previous behavior (a failure yields `parsed=None`). Applies to `run()`/`arun()`.
+- **Flexible `output_type` — any Pydantic-compatible type.** `output_type` now
+  accepts `list[Model]`, primitives (`int`, `str`, `bool`, ...), enums, and
+  unions in addition to a `BaseModel`. Non-object top-level types are wrapped in
+  a one-field object (the only shape `json_schema` response_format permits) and
+  transparently unwrapped on parse — you just read `result.parsed`.
+- **OpenAI/Azure native strict Structured Outputs.** `AgentConfig(strict_output=True)`
+  emits OpenAI's `strict: true` json_schema with an auto-adapted schema
+  (all-required + `additionalProperties: false`, defaults stripped) for a hard
+  schema guarantee. Opt-in; ignored by non-OpenAI providers.
+- **Structured output at the `LLMClient` level.** `LLMClient.complete(...)` /
+  `acomplete(...)` now accept `output_type=` and populate the new
+  `LLMResponse.parsed` with the response parsed into that type — structured
+  output without an Agent. Accepts the same flexible types. (Internals: the
+  structured-output helpers moved to `fastaiagent/llm/structured.py`;
+  `_strip_code_fences` is still re-exported from `fastaiagent.llm.client`.)
+
+### Notes
+
+- **All changes are non-breaking.** A plain `BaseModel` `output_type` emits a
+  byte-identical `response_format` and parses exactly as before. `strict_output`
+  is opt-in. `output_retries` only changes the failure path (a reliability
+  improvement) and is configurable down to 0. Structured-output parsing gained a
+  richer internal path (`fastaiagent/agent/_output.py`) but the public API
+  (`output_type`, `result.parsed`) is unchanged.
+
 ## [1.41.0] - 2026-07-17
 
 ### Added
