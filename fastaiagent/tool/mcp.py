@@ -32,6 +32,11 @@ class MCPTool(Tool):
         description: str = "",
         parameters: dict[str, Any] | None = None,
         replay_class: str | None = None,
+        *,
+        timeout: float | None = None,
+        max_retries: int = 0,
+        retry_delay: float = 0.5,
+        output_type: Any | None = None,
     ):
         self.server_url = server_url
         self.tool_name = tool_name or name
@@ -41,6 +46,10 @@ class MCPTool(Tool):
             description=description,
             parameters=parameters,
             replay_class=replay_class,
+            timeout=timeout,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
+            output_type=output_type,
         )
 
     async def _send_jsonrpc(

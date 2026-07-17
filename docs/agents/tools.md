@@ -31,6 +31,44 @@ result = agent.run("What is 15% of 230, and what's the weather in Tokyo?")
 4. LLM generates a final response using the tool results
 5. This loop repeats up to `max_iterations` times
 
+By default the tool calls in a single turn run **sequentially**. See
+[Parallel tool execution](#parallel-tool-execution) to opt into concurrency.
+
+## Parallel Tool Execution
+
+When the LLM emits several tool calls in one turn, you can run them concurrently
+instead of one after another. It's **opt-in** (default off) via `AgentConfig`:
+
+```python
+from fastaiagent import Agent, AgentConfig, LLMClient
+
+agent = Agent(
+    name="assistant",
+    llm=LLMClient(provider="openai", model="gpt-4o"),
+    tools=[get_weather, get_flights],
+    config=AgentConfig(
+        parallel_tools=True,    # run a turn's tool calls concurrently (default: False)
+        max_parallel_tools=4,   # cap concurrency with a semaphore (default: 4)
+    ),
+)
+```
+
+A turn's wall-clock becomes the *slowest* tool instead of the *sum* of all of
+them. Results are re-ordered by call index, so message history and
+`result.tool_calls` stay deterministic regardless of which tool finishes first.
+
+!!! note "When it stays sequential"
+    For correctness, the parallel path is used only when none of these
+    order/identity-sensitive features are engaged; otherwise the agent
+    transparently falls back to sequential execution:
+
+    - a **checkpointer** is configured (per-tool checkpoints / crash recovery / HITL),
+    - **middleware** is attached (`wrap_tool` sees calls in order),
+    - **managed governance** is enrolled (`agent_id` is set for policy/approvals).
+
+    Tools that share mutable `RunContext` state are your responsibility to make
+    concurrency-safe when you enable this.
+
 ## The @tool Decorator
 
 For quick tool creation:
@@ -88,8 +126,10 @@ agent = Agent(
     llm=LLMClient(provider="openai", model="gpt-4.1"),
     tools=[my_tool],
     config=AgentConfig(
-        max_iterations=5,     # Max tool-calling loop iterations (default: 10)
-        tool_choice="auto",   # "auto", "required", "none"
+        max_iterations=5,       # Max tool-calling loop iterations (default: 10)
+        tool_choice="auto",     # "auto", "required", "none"
+        parallel_tools=False,   # Run a turn's tool calls concurrently (default: False)
+        max_parallel_tools=4,   # Concurrency cap when parallel_tools is on (default: 4)
     ),
 )
 ```

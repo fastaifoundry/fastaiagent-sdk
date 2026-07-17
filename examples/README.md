@@ -72,6 +72,7 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 - [`32_mcp_expose_agent.py`](32_mcp_expose_agent.py) — expose Agent as MCP server
 - [`41_agent_tools.py`](41_agent_tools.py) — tool decoration patterns
 - [`70_tool_replay_class.py`](70_tool_replay_class.py) — mark tools `read_only` / `idempotent` / `side_effecting` for replay
+- [`90_parallel_and_pydantic_tools.py`](90_parallel_and_pydantic_tools.py) — parallel tool execution, Pydantic-typed + auto-coerced args, and per-tool timeout / retry / output validation → [docs](../docs/tools/function-tools.md)
 
 ### Knowledge bases
 - [`06_rag_agent.py`](06_rag_agent.py) — basic RAG with `LocalKB`
