@@ -62,6 +62,50 @@ So the mental model is: **blocking = a gate that can stop the run; non-blocking
 = an observer that records but never blocks.** Set `blocking=True` for policy
 you must enforce, `blocking=False` for signals you want to watch.
 
+Concretely, `execute_guardrails(guardrails, data, position)` filters the list to
+that position, then:
+
+```python
+for g in blocking:                       # sequential, fail-fast
+    result = await g.aexecute(data)
+    if not result.passed:
+        raise GuardrailBlockedError(...)  # stops the run
+results += await asyncio.gather(          # non-blocking, parallel
+    *[g.aexecute(data) for g in non_blocking],
+    return_exceptions=True,               # an exception → GuardrailResult(passed=False)
+)
+```
+
+A blocking failure at **any** position raises `GuardrailBlockedError`, which
+propagates out of the agent run — that's how `input`/`tool_call`/`tool_result`/`output`
+all "stop" the run when they must.
+
+### The verdict object
+
+Every guardrail — whatever its type — resolves to one
+`GuardrailResult(passed, score, message, execution_time_ms, metadata)`. `passed`
+is the only field the executor branches on; the rest are for observability (the
+Local UI reads them). For a `code` guardrail, your `fn` can return a bare `bool`
+(coerced to `GuardrailResult(passed=...)`) or a full `GuardrailResult`, and a
+raised exception is caught and recorded as `passed=False` — a guardrail crash
+never crashes the agent.
+
+### How each type decides
+
+`run_guardrail` dispatches on `GuardrailType` to five deciders, all producing the
+same `GuardrailResult`:
+
+| Type | How it decides |
+|------|----------------|
+| `code` | Runs your Python `fn(data)` — arbitrary logic |
+| `regex` | Matches a pattern; `match_type` flips whether a match means pass or fail |
+| `schema` | Validates the data against a JSON Schema |
+| `llm_judge` | Calls a model with a rubric and parses the verdict **fail-closed** (ambiguous → fail) |
+| `classifier` | Calls a classification endpoint (e.g. a moderation model) and thresholds the score |
+
+This is the mechanical basis for the two-axis view below: the *type* is which
+decider runs; the *concern* is what you point it at.
+
 ## Two axes: implementation type × what it checks
 
 A guardrail is described by two independent things — don't conflate them:

@@ -78,6 +78,20 @@ later nodes and edge conditions see what earlier nodes produced.
     routing precedence, parallel failure modes, cycle accounting, the resume
     contract, and validation — see the [Execution Spec](spec.md).
 
+### How routing actually decides
+
+After a node runs, the executor rebuilds a **context** — `{input, state,
+node_results}` — reflecting what that node just wrote, then walks the node's
+outgoing edges *in declaration order*. Each edge's `condition` is a small
+templated expression: placeholders like `{{state.category}}` or
+`{{node_results.classify.output}}` are resolved against that context, then
+compared with an operator (`==`, `!=`, `<`, `contains`, `startswith`, …). The
+**first** conditional edge that evaluates true wins; a single unconditional
+sibling acts as the default fallback. If every edge is unconditional, they *all*
+fire (fan-out). This is why the graph can branch on live data without you
+writing any dispatch code — the condition strings *are* the router, evaluated
+against state the previous node produced.
+
 ## Topologies at a glance
 
 A chain is a general directed graph (with cycles), so the same primitives —

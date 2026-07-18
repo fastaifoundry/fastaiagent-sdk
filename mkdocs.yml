@@ -94,6 +94,7 @@ nav:
       - "Human-in-the-Loop": chains/hitl.md
       - "Idempotency": chains/idempotency.md
   - Durability:
+      - "Concepts & Mental Model": durability/concepts.md
       - durability/index.md
       - Quickstart: durability/quickstart.md
       - "Side effects & idempotency": durability/side-effects.md
@@ -120,6 +121,7 @@ nav:
       - "Concepts & Mental Model": prompts/concepts.md
       - prompts/index.md
   - Knowledge Base:
+      - "Concepts & Mental Model": knowledge-base/concepts.md
       - knowledge-base/index.md
       - "Platform KB": knowledge-base/platform-kb.md
       - Backends: knowledge-base/backends.md
@@ -143,6 +145,7 @@ nav:
       - "AutoLLM": evaluation/optimization.md
       - "Trace Curation": evaluation/curation.md
   - Simulation:
+      - "Concepts & Mental Model": simulation/concepts.md
       - simulation/index.md
   - Multimodal:
       - multimodal/index.md

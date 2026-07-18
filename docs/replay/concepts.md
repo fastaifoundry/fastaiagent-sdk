@@ -72,6 +72,18 @@ The **determinism mode** controls how faithful the reproduction is:
     or mark them with a `replay_class` that the central Replay engine honors.
     See [Fidelity Guarantees](guarantees.md).
 
+### How `recorded` mode substitutes the model
+
+The mechanism behind byte-identical reproduction is a queue. Before re-running,
+the executor pulls every `llm.*` span's captured response (`gen_ai.response.*`)
+from the trace, orders them by start time, and installs that list in a
+`ContextVar`. During the rerun, `LLMClient` checks that queue first: if it's
+non-empty it **pops the next recorded response and returns it instead of calling
+the provider**. So a multi-turn tool loop replays each turn's exact model output
+in order, no network involved. The agent loop otherwise runs normally — which is
+why tools still execute (they're driven by the recorded tool calls) but the
+model's words are fixed.
+
 ## Our approach, in context
 
 Most tools in this space offer one of two things. Observability platforms let
