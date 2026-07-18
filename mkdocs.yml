@@ -75,6 +75,7 @@ nav:
       - Installation: getting-started/installation.md
       - "Build Your First Agent": getting-started/first-agent.md
   - Agents:
+      - "Concepts & Mental Model": agents/concepts.md
       - agents/index.md
       - Tools: agents/tools.md
       - "Dynamic Instructions": agents/dynamic-instructions.md
@@ -84,6 +85,7 @@ nav:
       - Swarm: agents/swarm.md
       - Durability: agents/durability.md
   - Chains:
+      - "Concepts & Mental Model": chains/concepts.md
       - chains/index.md
       - "Execution Spec": chains/spec.md
       - "Code-first nodes (@node, typed I/O)": chains/typed-nodes.md
@@ -102,10 +104,12 @@ nav:
       - "Connected checkpoints (platform)": durability/connected-checkpoints.md
       - "API reference": durability/api-reference.md
   - Guardrails:
+      - "Concepts & Mental Model": guardrails/concepts.md
       - guardrails/index.md
       - "Responsible AI (Trust Layer)": guardrails/responsible-ai.md
       - "Managed governance (approvals)": guardrails/managed-governance.md
   - Tools:
+      - "Concepts & Mental Model": tools/concepts.md
       - tools/index.md
       - "Function Tools": tools/function-tools.md
       - "REST Tools": tools/rest-tools.md
@@ -113,6 +117,7 @@ nav:
       - "MCP Server": tools/mcp-server.md
       - "Schema Drift Detection": tools/schema-drift.md
   - Prompts:
+      - "Concepts & Mental Model": prompts/concepts.md
       - prompts/index.md
   - Knowledge Base:
       - knowledge-base/index.md
@@ -125,6 +130,7 @@ nav:
   - Testing:
       - testing/index.md
   - Evaluation:
+      - "Concepts & Mental Model": evaluation/concepts.md
       - evaluation/index.md
       - "LLM-as-Judge": evaluation/llm-judge.md
       - "Pytest plugin": evaluation/pytest.md
@@ -150,6 +156,7 @@ nav:
       - tracing/index.md
       - "Capture any OTel / OpenInference framework": tracing/third-party-otel.md
   - Agent Replay:
+      - "Concepts & Mental Model": replay/concepts.md
       - replay/index.md
       - "Fidelity Guarantees": replay/guarantees.md
   - Security: security.md
