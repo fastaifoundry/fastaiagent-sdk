@@ -1,11 +1,17 @@
-"""FASTAIAGENT_TRACE_PAYLOADS gating covers every free-text span attribute.
+"""What ``FASTAIAGENT_TRACE_PAYLOADS=0`` does and does not cover.
 
-Regression: ``agent.input`` and ``agent.output`` were written unconditionally,
-so setting the flag dropped the ``gen_ai.*`` payloads and the system prompt but
-still persisted the user's input and the model's final answer.
+These are characterization tests: they pin the *current, intentional* scope of
+the flag so it can't drift silently.
+
+The flag gates the ``gen_ai.*`` payload attributes and the resolved system
+prompt. It deliberately does **not** gate ``agent.input`` / ``agent.output``:
+those are what ``Replay`` reconstructs a run from and what the UI search
+indexes, so dropping them would be a breaking change. Callers who need those
+masked should install a ``RedactionPolicy`` — both keys are already in
+``SENSITIVE_ATTR_KEYS``.
 
 Mock-free: drives a real ``Agent`` with the shipped ``TestModel`` stand-in (no
-network) and reads the spans back out of the real local SQLite store.
+network) and reads spans back out of the real local SQLite store.
 """
 
 from __future__ import annotations
@@ -17,13 +23,15 @@ import pytest
 from fastaiagent import Agent, TraceStore
 from fastaiagent.testing import TestModel
 
-_PAYLOAD_ATTRS = {
-    "agent.input",
-    "agent.output",
+# Gated by the flag.
+_GATED_ATTRS = {
     "agent.system_prompt",
     "gen_ai.request.messages",
     "gen_ai.response.content",
 }
+# Free-text, but recorded regardless of the flag (see module docstring).
+_UNGATED_PAYLOAD_ATTRS = {"agent.input", "agent.output"}
+# Structural — always present.
 _STRUCTURAL_ATTRS = {"agent.name", "gen_ai.request.model"}
 
 
@@ -66,18 +74,36 @@ def test_payloads_recorded_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
 
     keys = _attrs_for_run(_agent(), "what is the capital of France?")
 
-    assert "agent.input" in keys
-    assert "agent.output" in keys
+    assert _GATED_ATTRS <= keys
+    assert _UNGATED_PAYLOAD_ATTRS <= keys
     assert _STRUCTURAL_ATTRS <= keys
 
 
 @pytest.mark.usefixtures("isolated_local_db")
-def test_gating_drops_agent_input_and_output(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_gating_drops_gen_ai_payloads_and_system_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("FASTAIAGENT_TRACE_PAYLOADS", "0")
 
     keys = _attrs_for_run(_agent(), "my account number is 12345")
 
-    assert not (_PAYLOAD_ATTRS & keys), f"payload attrs leaked: {_PAYLOAD_ATTRS & keys}"
+    assert not (_GATED_ATTRS & keys), f"gated attrs leaked: {_GATED_ATTRS & keys}"
+
+
+@pytest.mark.usefixtures("isolated_local_db")
+def test_gating_does_not_cover_agent_input_and_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Known, documented scope gap — pinned so it can't change silently.
+
+    Closing it would break ``Replay`` (which reads ``agent.input``) and UI
+    search. Use a ``RedactionPolicy`` to mask these instead.
+    """
+    monkeypatch.setenv("FASTAIAGENT_TRACE_PAYLOADS", "0")
+
+    keys = _attrs_for_run(_agent(), "my account number is 12345")
+
+    assert _UNGATED_PAYLOAD_ATTRS <= keys
 
 
 @pytest.mark.usefixtures("isolated_local_db")
@@ -93,12 +119,21 @@ def test_gating_keeps_structural_attributes(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 @pytest.mark.usefixtures("isolated_local_db")
-def test_gated_run_still_produces_a_usable_trace(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("FASTAIAGENT_TRACE_PAYLOADS", "0")
-    agent = _agent()
+def test_redaction_policy_masks_the_ungated_attributes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The supported way to protect agent input/output: mask, don't drop."""
+    from fastaiagent import RedactionPolicy, set_redaction_policy
 
-    result: Any = agent.run("hello")
-
-    assert result.output == "hello there"
-    trace = TraceStore.default().get_trace(result.trace_id or "")
-    assert len(trace.spans) >= 1
+    monkeypatch.delenv("FASTAIAGENT_TRACE_PAYLOADS", raising=False)
+    set_redaction_policy(RedactionPolicy(patterns=(r"\b\d{5}\b",), mode="capture"))
+    try:
+        result = _agent().run("my account number is 12345")
+        trace = TraceStore.default().get_trace(result.trace_id or "")
+        joined = " ".join(
+            str((s.attributes or {}).get("agent.input", "")) for s in trace.spans
+        )
+        assert "12345" not in joined
+        assert "[REDACTED]" in joined
+    finally:
+        set_redaction_policy(None)

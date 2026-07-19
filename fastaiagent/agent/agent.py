@@ -394,11 +394,16 @@ class Agent:
                 if isinstance(input, str)
                 else _input_summary_text(normalized_input_parts)
             )
-            # ``agent.input`` is free-text user content, so it obeys the same
-            # payload gate as the system prompt and the gen_ai.* payloads.
-            # Structural attributes above stay unconditional.
-            if trace_payloads_enabled():
-                span.set_attribute("agent.input", input_text)
+            # NOTE: ``agent.input`` is free-text content but is recorded
+            # unconditionally — it is NOT covered by ``trace_payloads_enabled()``,
+            # unlike ``agent.system_prompt`` and the ``gen_ai.*`` payloads below.
+            # Gating it would be a breaking change (it is what ``Replay``
+            # reconstructs a run's input from, and what the UI search indexes),
+            # so the gap is documented rather than silently closed. Users who
+            # need this masked should install a ``RedactionPolicy`` — the
+            # ``agent.input`` / ``agent.output`` keys are already in
+            # ``SENSITIVE_ATTR_KEYS``. See docs/tracing/concepts.md.
+            span.set_attribute("agent.input", input_text)
 
             # Persist multimodal attachments (Image/PDF) to the
             # ``trace_attachments`` table so the UI / Replay can fetch
@@ -462,10 +467,10 @@ class Agent:
                 **kwargs,
             )
 
-            # ``agent.output`` is free-text model content and is payload-gated;
-            # token/latency counters are structural and always recorded.
-            if trace_payloads_enabled():
-                span.set_attribute("agent.output", result.output)
+            # See the note on ``agent.input`` above — ``agent.output`` is
+            # likewise recorded unconditionally and masked via RedactionPolicy
+            # rather than dropped by ``trace_payloads_enabled()``.
+            span.set_attribute("agent.output", result.output)
             span.set_attribute("agent.tokens_used", result.tokens_used)
             span.set_attribute("agent.latency_ms", result.latency_ms)
 

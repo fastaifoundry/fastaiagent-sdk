@@ -85,17 +85,20 @@ content while structural metadata — provider, model, tool schemas, token count
 — is always kept. A gated trace stays fully useful for monitoring, cost, and
 latency, and degrades gracefully for replay.
 
-!!! info "Verified against a live run"
-    With `FASTAIAGENT_TRACE_PAYLOADS=0`, the free-text attributes —
-    `gen_ai.request.messages`, `gen_ai.response.content`, `agent.input`,
-    `agent.output`, and the resolved system prompt — are all absent, while
-    `agent.name`, `gen_ai.request.model`, and `fastaiagent.runner.type` remain.
-    Structure survives; content doesn't.
+!!! warning "Know the exact scope of the flag"
+    `FASTAIAGENT_TRACE_PAYLOADS=0` drops the `gen_ai.*` payload attributes
+    (request messages, response content) and the resolved system prompt. It
+    does **not** drop `agent.input` and `agent.output` — the run's input and
+    final answer are still recorded. Verified on a live run: with the flag off,
+    `gen_ai.request.messages` and `gen_ai.response.content` disappeared while
+    `agent.input` / `agent.output` remained.
 
-    A consequence worth knowing: because the recorded input and system prompt
-    are what [Replay](../replay/concepts.md) reconstructs from, a
-    payload-gated trace is still fully useful for monitoring, cost, and latency
-    but can no longer be replayed faithfully. That's the intended trade-off.
+    This is deliberate: `agent.input` is what [Replay](../replay/concepts.md)
+    reconstructs a run's input from, and what the UI's trace search indexes, so
+    dropping it would break both. **If your input or final answer is sensitive,
+    the flag alone is not enough — install a `RedactionPolicy`**, which masks
+    those fields (both keys are already in `SENSITIVE_ATTR_KEYS`) while keeping
+    the trace usable.
 
 ### Redaction is a different knob
 
