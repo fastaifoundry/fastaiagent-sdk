@@ -127,9 +127,11 @@ nav:
       - Backends: knowledge-base/backends.md
       - "Custom Backend": knowledge-base/custom-backend.md
   - LLM:
+      - "Concepts & Mental Model": llm/concepts.md
       - "Providers": llm/providers.md
       - "Custom Providers": llm/custom-provider.md
   - Testing:
+      - "Concepts & Mental Model": testing/concepts.md
       - testing/index.md
   - Evaluation:
       - "Concepts & Mental Model": evaluation/concepts.md
@@ -148,6 +150,7 @@ nav:
       - "Concepts & Mental Model": simulation/concepts.md
       - simulation/index.md
   - Multimodal:
+      - "Concepts & Mental Model": multimodal/concepts.md
       - multimodal/index.md
       - "When to Use It": multimodal/when-to-use.md
       - Images: multimodal/images.md
@@ -156,6 +159,7 @@ nav:
       - "Provider Support": multimodal/providers.md
       - "Multimodal Eval": multimodal/eval.md
   - Tracing:
+      - "Concepts & Mental Model": tracing/concepts.md
       - tracing/index.md
       - "Capture any OTel / OpenInference framework": tracing/third-party-otel.md
   - Agent Replay:
@@ -180,6 +184,7 @@ nav:
       - "Simulations": ui/simulations.md
       - "Trace Filters": ui/trace-filters.md
   - Platform:
+      - "Concepts & Mental Model": platform/concepts.md
       - platform/index.md
       - "Connected HITL (observer)": platform/connected-hitl.md
       - "Connected governance (enrollment)": platform/connected-governance.md
