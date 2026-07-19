@@ -10,14 +10,16 @@ from fastaiagent.tool.schema import validate_schema
 
 
 def _serialize_for_checkpoint(value: Any) -> Any:
-    """Walk ``value`` and convert :class:`Image`/:class:`PDF` to JSON-safe dicts.
+    """Walk ``value`` and convert :class:`Image`/:class:`PDF`/:class:`File`
+    to JSON-safe dicts.
 
     Tuples become lists. Other non-collection values pass through unchanged.
     """
+    from fastaiagent.multimodal.file import File as MMFile
     from fastaiagent.multimodal.image import Image as MMImage
     from fastaiagent.multimodal.pdf import PDF as MMPDF
 
-    if isinstance(value, MMImage) or isinstance(value, MMPDF):
+    if isinstance(value, (MMImage, MMPDF, MMFile)):
         return value.to_dict()
     if isinstance(value, dict):
         return {k: _serialize_for_checkpoint(v) for k, v in value.items()}
@@ -27,7 +29,13 @@ def _serialize_for_checkpoint(value: Any) -> Any:
 
 
 def _hydrate_from_checkpoint(value: Any) -> Any:
-    """Inverse of :func:`_serialize_for_checkpoint`. Rehydrates Image/PDF dicts."""
+    """Inverse of :func:`_serialize_for_checkpoint`.
+
+    Rehydrates Image/PDF/File dicts. ``File`` carries ``data_base64=""`` when it
+    references a provider-uploaded ``file_id`` instead of inline bytes, so the
+    key's *presence* — not its truthiness — is what identifies a marker dict.
+    """
+    from fastaiagent.multimodal.file import File as MMFile
     from fastaiagent.multimodal.image import Image as MMImage
     from fastaiagent.multimodal.pdf import PDF as MMPDF
 
@@ -37,6 +45,8 @@ def _hydrate_from_checkpoint(value: Any) -> Any:
             return MMImage.from_dict(value)
         if marker == "pdf" and "data_base64" in value:
             return MMPDF.from_dict(value)
+        if marker == "file" and "data_base64" in value:
+            return MMFile.from_dict(value)
         return {k: _hydrate_from_checkpoint(v) for k, v in value.items()}
     if isinstance(value, list):
         return [_hydrate_from_checkpoint(v) for v in value]
@@ -47,17 +57,17 @@ class ChainState:
     """State that flows through chain execution.
 
     Supports optional JSON Schema validation at each node. Multimodal
-    values (``Image``, ``PDF``) survive checkpoint round-trips via the
-    ``to_dict``/``from_dict`` helpers on each type.
+    values (``Image``, ``PDF``, ``File``) survive checkpoint round-trips via
+    the ``to_dict``/``from_dict`` helpers on each type.
     """
 
     def __init__(self, initial: dict[str, Any] | None = None):
-        # Hydrate any Image/PDF dict-markers produced by a previous
+        # Hydrate any Image/PDF/File dict-markers produced by a previous
         # ``snapshot()`` so resumes restore real objects, not dict stubs.
-        # User-supplied initial state with real ``Image``/``PDF`` instances
-        # passes through unchanged because the walker only rebuilds dicts
-        # whose ``type`` field is ``"image"`` / ``"pdf"`` *and* carries a
-        # ``data_base64`` field.
+        # User-supplied initial state with real ``Image``/``PDF``/``File``
+        # instances passes through unchanged because the walker only rebuilds
+        # dicts whose ``type`` field is ``"image"`` / ``"pdf"`` / ``"file"``
+        # *and* carries a ``data_base64`` field.
         self._data: dict[str, Any] = (
             {} if initial is None else _hydrate_from_checkpoint(dict(initial))
         )
@@ -74,8 +84,8 @@ class ChainState:
     def snapshot(self) -> dict[str, Any]:
         """Return a JSON-safe snapshot for checkpointing.
 
-        ``Image`` and ``PDF`` instances anywhere inside the state are
-        converted via their ``to_dict`` helpers; everything else is deep
+        ``Image``, ``PDF``, and ``File`` instances anywhere inside the state
+        are converted via their ``to_dict`` helpers; everything else is deep
         copied as before. Reverse with :py:meth:`from_snapshot`.
         """
         deep = copy.deepcopy(self._data)

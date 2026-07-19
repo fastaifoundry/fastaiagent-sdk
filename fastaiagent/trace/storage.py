@@ -153,9 +153,17 @@ class LocalStorageProcessor:
 
         If an opt-in :class:`RedactionPolicy` is installed (via
         ``set_redaction_policy``) with ``mode in {"capture", "both"}``,
-        sensitive attribute values are masked here — *before* the JSON
-        blob hits SQLite *and* before any downstream OTel exporter
-        attached via :func:`add_exporter` sees the span.
+        sensitive attribute values are masked here — *before* the JSON blob
+        hits SQLite, and therefore before anything that reads back out of the
+        local store (the UI, ``TraceStore``, and the platform drain, which
+        re-sends rows *from* SQLite).
+
+        Scope caveat: masking applies to the local copy of the attributes
+        built here, not to the ``ReadableSpan`` itself. An OTel exporter
+        registered via :func:`add_exporter` is a sibling span processor that
+        reads ``span.attributes`` directly, so it still receives the
+        unredacted values — scrub at the exporter layer when routing traces
+        to an external backend.
         """
         ctx = span.get_span_context()
         trace_id = format(ctx.trace_id, "032x")

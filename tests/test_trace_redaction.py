@@ -173,8 +173,13 @@ class _StubSpan:
 
 class TestCaptureIntegration:
     """Confirm that an installed capture-mode policy actually rewrites
-    SQLite contents — the contract that protects on-disk traces and any
-    downstream OTel exporter from leaking secrets.
+    SQLite contents — the contract that protects on-disk traces, and
+    everything that reads back out of the local store (UI, ``TraceStore``,
+    and the platform drain, which re-sends rows *from* SQLite).
+
+    Note this does not extend to OTel exporters registered via
+    ``add_exporter``: they are sibling span processors reading
+    ``span.attributes`` off the span itself, which is never mutated.
     """
 
     def test_capture_mode_redacts_stored_attributes(self, tmp_path: Path):

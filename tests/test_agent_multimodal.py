@@ -191,3 +191,29 @@ def test_non_vision_model_raises_when_image_passed_through_to_provider_dict() ->
     user_msg = msgs[-1]
     with pytest.raises(NonVisionModelError):
         user_msg.to_provider_dict("openai", **agent.llm._provider_dict_kwargs())
+
+
+# --- Input summary markers (regression: File produced no marker, so a
+# File-only input summarized to an empty string for memory/guardrails/spans) ---
+
+
+def test_input_summary_includes_file_marker() -> None:
+    from fastaiagent.agent.agent import _input_summary_text
+    from fastaiagent.multimodal import File
+
+    f = File.from_bytes(b"abcdef", mime_type="application/pdf", filename="a.pdf")
+    summary = _input_summary_text(["read this", f])
+
+    assert "read this" in summary
+    assert "[file:application/pdf:6b]" in summary
+
+
+def test_input_summary_file_id_reference_is_not_reported_as_zero_bytes() -> None:
+    from fastaiagent.agent.agent import _input_summary_text
+    from fastaiagent.multimodal import File
+
+    ref = File.from_file_id("file-xyz", mime_type="application/pdf")
+    summary = _input_summary_text([ref])
+
+    assert "id=file-xyz" in summary
+    assert ":0b" not in summary

@@ -54,9 +54,11 @@ def _input_summary_text(parts: list[ContentPart]) -> str:
     """Concatenate the text portions of a multimodal input.
 
     Used wherever a string is required (memory, guardrails, span attributes)
-    but the user passed a multimodal list. Image/PDF parts are replaced
+    but the user passed a multimodal list. Image/PDF/File parts are replaced
     with a short marker so the trace stays readable.
     """
+    from fastaiagent.multimodal.file import File as MultimodalFile
+
     pieces: list[str] = []
     for part in parts:
         if isinstance(part, str):
@@ -65,6 +67,13 @@ def _input_summary_text(parts: list[ContentPart]) -> str:
             pieces.append(f"[image:{part.media_type}:{part.size_bytes()}b]")
         elif isinstance(part, MultimodalPDF):
             pieces.append(f"[pdf:{part.size_bytes()}b]")
+        elif isinstance(part, MultimodalFile):
+            # A File may reference a provider-uploaded ``file_id`` with no
+            # inline bytes; surface that instead of a misleading "0b".
+            if part.data:
+                pieces.append(f"[file:{part.mime_type}:{part.size_bytes()}b]")
+            else:
+                pieces.append(f"[file:{part.mime_type}:id={part.file_id}]")
     return " ".join(pieces)
 
 
@@ -385,7 +394,11 @@ class Agent:
                 if isinstance(input, str)
                 else _input_summary_text(normalized_input_parts)
             )
-            span.set_attribute("agent.input", input_text)
+            # ``agent.input`` is free-text user content, so it obeys the same
+            # payload gate as the system prompt and the gen_ai.* payloads.
+            # Structural attributes above stay unconditional.
+            if trace_payloads_enabled():
+                span.set_attribute("agent.input", input_text)
 
             # Persist multimodal attachments (Image/PDF) to the
             # ``trace_attachments`` table so the UI / Replay can fetch
@@ -449,7 +462,10 @@ class Agent:
                 **kwargs,
             )
 
-            span.set_attribute("agent.output", result.output)
+            # ``agent.output`` is free-text model content and is payload-gated;
+            # token/latency counters are structural and always recorded.
+            if trace_payloads_enabled():
+                span.set_attribute("agent.output", result.output)
             span.set_attribute("agent.tokens_used", result.tokens_used)
             span.set_attribute("agent.latency_ms", result.latency_ms)
 

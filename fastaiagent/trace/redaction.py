@@ -4,10 +4,13 @@ Two redaction modes:
 
 * **Capture-time** (``mode="capture"`` or ``mode="both"``): regex
   patterns are applied to sensitive attribute keys *before* the JSON
-  blob is written to SQLite. Downstream OTel exporters added via
-  :func:`fastaiagent.trace.otel.add_exporter` also receive redacted
-  attributes, since redaction happens in the same processor before
-  the batch span exporter sees the span.
+  blob is written to SQLite — so the local store, the UI, and the
+  platform drain (which re-sends rows *from* SQLite) all see masked
+  values. Note this does **not** cover OTel exporters added via
+  :func:`fastaiagent.trace.otel.add_exporter`: those are sibling span
+  processors that read ``span.attributes`` off the span itself, which is
+  never mutated. Scrub at the exporter layer when routing to an external
+  backend.
 * **Read-time** (``mode="read"`` or ``mode="both"``): the UI trace
   endpoints apply redaction on the way out when the caller passes
   ``?redact=true``. Useful for operator screen-shares without

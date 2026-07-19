@@ -85,13 +85,17 @@ content while structural metadata — provider, model, tool schemas, token count
 — is always kept. A gated trace stays fully useful for monitoring, cost, and
 latency, and degrades gracefully for replay.
 
-!!! warning "The flag does not remove everything"
-    `FASTAIAGENT_TRACE_PAYLOADS=0` gates the `gen_ai.*` payload attributes and
-    the resolved system prompt — but `agent.input` and `agent.output` are still
-    recorded. Verified on a live run: with the flag off, `gen_ai.request.messages`
-    and `gen_ai.response.content` disappeared while `agent.input` / `agent.output`
-    remained. If your input or final answer is sensitive, the flag alone is not
-    sufficient — use a redaction policy as well.
+!!! info "Verified against a live run"
+    With `FASTAIAGENT_TRACE_PAYLOADS=0`, the free-text attributes —
+    `gen_ai.request.messages`, `gen_ai.response.content`, `agent.input`,
+    `agent.output`, and the resolved system prompt — are all absent, while
+    `agent.name`, `gen_ai.request.model`, and `fastaiagent.runner.type` remain.
+    Structure survives; content doesn't.
+
+    A consequence worth knowing: because the recorded input and system prompt
+    are what [Replay](../replay/concepts.md) reconstructs from, a
+    payload-gated trace is still fully useful for monitoring, cost, and latency
+    but can no longer be replayed faithfully. That's the intended trade-off.
 
 ### Redaction is a different knob
 

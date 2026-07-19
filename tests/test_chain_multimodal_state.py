@@ -188,3 +188,64 @@ def test_checkpoint_with_mixed_attachments_survives_round_trip(tmp_path: Path) -
     assert attachments[0].data == img.data
     assert attachments[1].data == pdf.data
     assert rebuilt["meta"]["customer"] == "ACME"
+
+
+# --- File round-trips (regression: File was previously omitted from the
+# checkpoint walker, so a File in chain state failed to serialize) ---
+
+
+def test_snapshot_serializes_file_to_dict() -> None:
+    from fastaiagent.multimodal import File
+
+    f = File.from_bytes(b"%PDF-1.4 policy", mime_type="application/pdf", filename="policy.pdf")
+    state = ChainState({"doc": f})
+
+    snap = state.snapshot()
+
+    assert isinstance(snap["doc"], dict)
+    assert snap["doc"]["type"] == "file"
+    assert snap["doc"]["filename"] == "policy.pdf"
+
+
+def test_file_survives_snapshot_round_trip() -> None:
+    from fastaiagent.multimodal import File
+
+    f = File.from_bytes(b"%PDF-1.4 policy", mime_type="application/pdf", filename="policy.pdf")
+    rebuilt = ChainState.from_snapshot(ChainState({"doc": f}).snapshot())
+
+    restored = rebuilt["doc"]
+    assert isinstance(restored, File)
+    assert restored.data == f.data
+    assert restored.mime_type == f.mime_type
+    assert restored.filename == f.filename
+
+
+def test_file_round_trips_when_nested_in_dicts_and_lists() -> None:
+    from fastaiagent.multimodal import File
+
+    f = File.from_bytes(b"binary-payload", mime_type="application/octet-stream")
+    state = ChainState({"bundle": {"items": [f]}})
+
+    restored = ChainState.from_snapshot(state.snapshot())["bundle"]["items"][0]
+    assert isinstance(restored, File)
+    assert restored.data == f.data
+
+
+def test_file_id_only_file_round_trips_without_bytes() -> None:
+    """A File referencing a provider-uploaded id carries no inline bytes."""
+    from fastaiagent.multimodal import File
+
+    ref = File.from_file_id("file-abc123", mime_type="application/pdf")
+    restored = ChainState.from_snapshot(ChainState({"ref": ref}).snapshot())["ref"]
+
+    assert isinstance(restored, File)
+    assert restored.file_id == "file-abc123"
+    assert restored.data == b""
+
+
+def test_serialize_helper_handles_file_directly() -> None:
+    from fastaiagent.multimodal import File
+
+    f = File.from_bytes(b"abc", mime_type="text/plain", filename="a.txt")
+    assert _serialize_for_checkpoint(f)["type"] == "file"
+    assert isinstance(_hydrate_from_checkpoint(_serialize_for_checkpoint(f)), File)

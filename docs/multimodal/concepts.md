@@ -106,26 +106,24 @@ here, because not every consumer can hold bytes:
 |------|-------|----------|
 | **Full fidelity** | Chain state & checkpoints, tool→LLM returns, trace attachments | Bytes preserved exactly |
 | **Degrades to a text marker** | Memory, guardrails, span attributes | Becomes e.g. `[image:image/jpeg:20481b]` |
-| **Not handled** | `File` in chain checkpoints and in the input summary | See the warning below |
 
 Memory backends, guardrails, and span attributes are **text-only**, so a
 multimodal input is recorded as a compact marker rather than the payload. The
 bytes aren't lost to observability though — they're persisted separately as
 trace attachments so the UI can render them.
 
+All three types — `Image`, `PDF`, and `File` — round-trip through chain state
+and checkpoints, and all three produce a marker in the text summary. A `File`
+that references a provider-uploaded `file_id` instead of carrying bytes
+round-trips as that reference and summarizes as
+`[file:<mime>:id=<file_id>]` rather than a misleading `0b`.
+
 !!! info "Verified against a live run"
     `examples/45_multimodal_chain.py` put an `Image` and a `PDF` into chain
-    state, checkpointed, and simulated a process restart. Both serialized into
-    the snapshot as typed dicts (`type: "image"` / `"pdf"`), rehydrated as real
-    `Image` / `PDF` objects, and compared **byte-identical** to the originals.
-
-!!! warning "`File` has gaps in the round-trip"
-    The checkpoint walker and the input-summary helper handle `Image` and `PDF`
-    but not `File` — even though `File.to_dict()`/`from_dict()` exist. A `File`
-    placed in chain state will not serialize cleanly, and a `File` input
-    contributes nothing to the text summary used for memory/guardrails/spans.
-    Prefer `Image`/`PDF` for anything that must survive a checkpoint, and pass
-    `File` as direct agent input.
+    state, checkpointed, and simulated a process restart — both rehydrated
+    **byte-identical**. A `File` (including one nested inside a dict and a
+    list, plus a `file_id`-only `File` with no inline bytes) round-tripped the
+    same way.
 
 ## Imports
 
