@@ -101,6 +101,19 @@ agent.arun(input)
   └─ memory.write ─▶ AgentResult(output, tool_calls, tokens, cost, trace_id)
 ```
 
+### What actually loops
+
+The thing that makes this a *loop* rather than a single call is the **message
+list**. It starts as `[system, memory…, user]` and each iteration *appends* to
+it: the model's reply (including any tool calls) becomes an `AssistantMessage`,
+and each tool's return becomes a tool-result message. That same growing list is
+what gets sent to `llm.acomplete(messages, tools=…)` on the next iteration — so
+the model sees its own prior tool calls and their results, and can decide to
+call another tool or answer. The loop ends the moment a reply comes back with
+**no tool calls**. That's the whole mechanism: *the conversation is the state*,
+and the model drives its own continuation until it's done (or `max_iterations`
+caps it).
+
 ## The composable layers
 
 The power of the model is that each concern is a layer that snaps onto the same

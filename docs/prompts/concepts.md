@@ -60,6 +60,22 @@ The lifecycle of a prompt:
     pinned to v1; and `diff("greeting", 1, 2)` returned a unified diff of the
     two templates (fragments shown unresolved, as `{{@tone}}`).
 
+### Under the hood
+
+The two placeholder kinds are two different operations. Fragment resolution is a
+**regex substitution** at load time — `{{@name}}` is matched and replaced with
+the fragment's content pulled from the store, so a `load()` returns a template
+that still has `{{variable}}` holes but no `{{@fragment}}` markers. `format()` is
+then a **literal string replacement** of each `{{variable}}`. That's why a
+fragment can carry variables of its own: it's spliced in *before* formatting, so
+its `{{...}}` holes get filled in the same `format()` pass.
+
+Everything lives in the unified local SQLite store as ordinary rows — separate
+tables for prompts, versions, aliases, and fragments — which is what makes
+versions immutable, aliases repointable, and diffs a row-to-row comparison. A
+connected registry adds a platform lookup in front (`source="auto"`), with a
+5-minute cache so repeated `get()`s don't re-fetch.
+
 ### Versions, aliases, and diff
 
 - **Versions** are immutable snapshots — every `register` adds one, so you can

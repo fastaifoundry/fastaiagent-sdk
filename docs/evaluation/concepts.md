@@ -64,6 +64,32 @@ results = evaluate(
 )
 ```
 
+## The concept of how `evaluate()` works
+
+Under the small call is a simple, deterministic loop:
+
+1. **Resolve scorers.** Each string is looked up in the `BUILTIN_SCORERS`
+   registry and instantiated; a `Scorer` instance is used as-is. So
+   `"exact_match"` and `ExactMatch()` are the same thing.
+2. **Run cases concurrently.** An `asyncio.Semaphore(concurrency)` bounds how
+   many cases run at once. For each case it calls `agent_fn(input)` to get the
+   output.
+3. **Score each case.** Every resolved scorer's `score()` returns a
+   `ScorerResult(score, passed, reason)` — a numeric `score` plus a boolean
+   `passed` (each scorer decides its own pass condition) and an optional reason.
+4. **Roll up.** Per scorer, results aggregate into a `MetricSummary(name,
+   avg_score, pass_rate, n)` — `avg_score` is the mean score, `pass_rate` the
+   fraction of cases that passed. That's what `summary()` prints.
+5. **Persist.** With `persist=True`, the run and per-case rows are written to
+   `local.db` so the Local UI can show it and `compare()` can diff runs.
+
+The key idea: a scorer is just a pure function `(output, expected, context) →
+ScorerResult`. Code scorers compute that directly; LLM-Judge/G-Eval compute it
+by asking a model — G-Eval builds a rubric from your steps + scale (optionally
+with Auto-CoT) and parses the model's verdict **fail-closed** (an ambiguous
+answer scores as a fail). Same contract either way, which is why you can mix
+free and paid scorers in one `scorers=[...]` list.
+
 ## Scorer families — and when to reach for each
 
 A scorer maps `(output, expected, context)` to a number. They fall into
