@@ -72,8 +72,11 @@ resources are read down; nothing is ever synced down onto your code.**
 
 **Pushed up** — traces, HITL events, checkpoints, governance enrollment (all
 background), plus explicitly-called publishes: prompts, eval results, eval
-datasets. Agents are pushed too, but only by code you write — there's no
-`Agent.push()`, because *agents are code* and shouldn't be silently synced.
+datasets. **Agent definitions** register up too — `agent.push()` / `fa.push()`, or
+automatically on connect while `auto_register` is on (the default) so a connected
+agent appears in the console. Only the *definition* is pushed (name, prompt,
+model, tools, guardrails, memory flag); your **code never syncs down** and the
+plane runs no agent code. See [Registration](registration.md).
 
 **Read down** — these fetch resources the platform owns, which is different from
 syncing your local objects: `PromptRegistry.get(...)`, `Dataset.from_platform`,

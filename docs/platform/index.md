@@ -189,15 +189,21 @@ forked.modify_prompt("Updated system prompt")
 result = forked.rerun()
 ```
 
-### Pushing agent definitions
+### Registering agent definitions
 
-Agent definitions are **not** auto-synced by `fa.connect()` (agents are code, not config).
-When you *do* want a connected control plane to know about an agent — so it appears in the
-console with its prompt, model, tools, and memory — serialize it with `Agent.to_dict()` and
-`POST` the payload to `/public/v1/sdk/agents` (scope `agent:write`, upsert by `name`):
+When connected, agents **register themselves** so they appear in the console with
+their prompt, model, tools, guardrails, and memory (`managed_by=sdk`, read-only) and
+their traces group by `agent_id`. You never write a raw `httpx.post(...)`.
+
+> **The one rule:** call `fa.connect()` once, before your agents run. They register
+> automatically. Agents that exist at connect time register then; agents created
+> later register on their first run. See [Registration](registration.md) for the full
+> model and opt-out.
 
 ```python
-from fastaiagent._platform.api import get_platform_api
+import fastaiagent as fa
+
+fa.connect(api_key="fa_k_…", target="https://app.fastaiagent.net")
 
 agent = Agent(
     name="support-bot",
@@ -206,12 +212,19 @@ agent = Agent(
     memory=AgentMemory(),           # → memory_enabled: true (optional)
     tools=[...],
 )
-get_platform_api().post("/public/v1/sdk/agents", agent.to_dict())
+agent.run("hi")                     # auto-registers on first run
+
+# Or register explicitly (CI/deploy) — same code path, returns a console URL:
+result = agent.push()               # or fa.push(agent) / `fastaiagent push --module …`
+print(result.agent_id, result.url)
 ```
 
-`to_dict()` emits `{name, agent_type, system_prompt, llm_endpoint, tools, guardrails,
-config}` plus two governed fields **only when configured** (an agent with neither is
-serialized exactly as before):
+Auto-registration is **ON by default** (best-effort, idempotent by name, non-fatal);
+opt out with `fa.connect(..., auto_register=False)`.
+
+`Agent.to_dict()` (the push payload) emits `{name, agent_type, system_prompt,
+llm_endpoint, tools, guardrails, config}` plus two governed fields **only when
+configured** (an agent with neither is serialized exactly as before):
 
 | Field | Emitted when | Effect |
 |-------|--------------|--------|
@@ -225,7 +238,6 @@ A runnable end-to-end demo (publish prompt → push agent → read back governan
 
 | Capability | Reason |
 |-----------|--------|
-| Agent definitions (automatically) | Agents are code; push explicitly via `to_dict()` + `POST /public/v1/sdk/agents` (see above) |
 | Tool implementations | Tools are Python functions in SDK |
 | Guardrail definitions | Guardrails are code-configured in SDK |
 | Chain definitions | Chains are code in SDK |
