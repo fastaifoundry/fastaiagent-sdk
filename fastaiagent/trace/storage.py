@@ -491,5 +491,38 @@ class TraceStore:
 
         return abandoned
 
+    def prune_acked(
+        self, older_than_days: int | None = None, project_id: str | None = None
+    ) -> int:
+        """Delete acked/abandoned (``synced=1``) spans to reclaim local.db space.
+
+        Distinct from ``enforce_buffer_bound`` (which only *abandons* — marks
+        ``synced=1`` but keeps the rows) and from ``purge`` (which deletes by
+        trace scope). Only ``synced=1`` rows are removed, so nothing waiting to
+        be re-sent is ever lost. ``older_than_days`` restricts to rows older than
+        the cutoff; ``project_id`` scopes to one project. Returns rows deleted.
+        """
+        db = self._db
+        clauses = ["synced = 1"]
+        params: list[Any] = []
+        if older_than_days is not None:
+            cutoff = (
+                datetime.now(timezone.utc) - timedelta(days=older_than_days)
+            ).isoformat()
+            clauses.append("start_time < ?")
+            params.append(cutoff)
+        if project_id is not None:
+            clauses.append("project_id = ?")
+            params.append(project_id)
+        where = " AND ".join(clauses)
+
+        row = db.fetchone(
+            f"SELECT COUNT(*) AS n FROM spans WHERE {where}", tuple(params)
+        )
+        n = int(row["n"]) if row else 0
+        if n:
+            db.execute(f"DELETE FROM spans WHERE {where}", tuple(params))
+        return n
+
     def close(self) -> None:
         self._db.close()

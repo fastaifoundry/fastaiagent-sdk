@@ -158,6 +158,26 @@ class Agent:
         # governed prompt (console shows the slug, not "Inline") instead of
         # inlining the resolved text and dropping the linkage.
         self.prompt_slug = prompt_slug
+        # Gap 4 provenance: if system_prompt is a control-plane registry Prompt,
+        # use its text at runtime and capture slug/version/environment so runs
+        # stamp the llm_call span for Prompt Analytics. Also auto-links
+        # prompt_slug (Gap 3) so the pushed definition references the slug.
+        self._prompt_provenance: dict[str, Any] | None = None
+        try:
+            from fastaiagent.prompt.prompt import Prompt as _Prompt
+
+            if isinstance(system_prompt, _Prompt):
+                if system_prompt.slug:
+                    self._prompt_provenance = {
+                        "slug": system_prompt.slug,
+                        "version": system_prompt.version,
+                        "environment": system_prompt.environment,
+                    }
+                    if not self.prompt_slug:
+                        self.prompt_slug = system_prompt.slug
+                self.system_prompt = system_prompt.template
+        except Exception:
+            pass
         if llm is not None and not isinstance(llm, LLMClient):
             # A raw openai/AzureOpenAI SDK client can't be used as ``llm``
             # directly — it has no ``model``/``provider`` and no ``acomplete``.
@@ -196,6 +216,29 @@ class Agent:
         # Default ``"agent:<name>"``; ``Supervisor`` uses ``"supervisor:<name>"``,
         # delegated workers use ``"worker:<role>"``.
         self._agent_path_label: str = agent_path_label or f"agent:{self.name}"
+        # Gap 2 registration: track this agent so a later connect() can flush it
+        # to the plane (best-effort; never breaks construction).
+        try:
+            from fastaiagent._platform.push import track_agent
+
+            track_agent(self)
+        except Exception:
+            pass
+
+    def push(self, *, force: bool = True) -> Any:
+        """Register this agent's definition with the plane (Gap 2).
+
+        Explicit, first-class replacement for hand-written ``httpx.post(...)``.
+        Requires an active ``fa.connect()`` and an ``agent:write`` scope on the
+        key. Returns a :class:`~fastaiagent._platform.push.PushResult`
+        (``agent_id``, ``name``, ``version``, console ``url``). Idempotent by
+        name on the plane; ``force=True`` (default) always re-pushes so a
+        same-process definition change resyncs. Raises on platform errors so CI
+        surfaces them.
+        """
+        from fastaiagent._platform.push import push_agent
+
+        return push_agent(self, force=force, best_effort=False)
 
     def _build_response_format(self) -> dict[str, Any] | None:
         """Build response_format dict from output_type for structured output."""
@@ -264,6 +307,7 @@ class Agent:
         trace: bool = True,
         execution_id: str | None = None,
         messages: list[Message] | None = None,
+        metadata: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> AgentResult:
         """Synchronous execution.
@@ -281,6 +325,7 @@ class Agent:
                 trace=trace,
                 execution_id=execution_id,
                 messages=messages,
+                metadata=metadata,
                 **kwargs,
             )
         )
@@ -294,6 +339,7 @@ class Agent:
         execution_id: str | None = None,
         messages: list[Message] | None = None,
         wait_for_approval: bool = True,
+        metadata: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> AgentResult:
         """Async execution with tool-calling loop.
@@ -312,18 +358,33 @@ class Agent:
         console approves (see :meth:`_await_governance_approval`). Set False to
         instead receive the paused :class:`AgentResult` and drive resume yourself.
         """
-        if trace:
-            result = await self._arun_traced(
-                input,
-                context=context,
-                execution_id=execution_id,
-                messages=messages,
-                **kwargs,
-            )
-        else:
-            result = await self._arun_core(
-                input, context=context, execution_id=execution_id, messages=messages, **kwargs
-            )
+        # Gap 4: make this run's registry-prompt provenance visible to the LLM
+        # client so it can stamp fastaiagent.prompt.* on the llm_call span.
+        # ContextVar → async-task-local; no LLM call-signature changes.
+        _prov_token = None
+        if self._prompt_provenance is not None:
+            from fastaiagent.prompt.provenance import set_prompt_provenance
+
+            _prov_token = set_prompt_provenance(self._prompt_provenance)
+        try:
+            if trace:
+                result = await self._arun_traced(
+                    input,
+                    context=context,
+                    execution_id=execution_id,
+                    messages=messages,
+                    metadata=metadata,
+                    **kwargs,
+                )
+            else:
+                result = await self._arun_core(
+                    input, context=context, execution_id=execution_id, messages=messages, **kwargs
+                )
+        finally:
+            if _prov_token is not None:
+                from fastaiagent.prompt.provenance import reset_prompt_provenance
+
+                reset_prompt_provenance(_prov_token)
         if wait_for_approval:
             result = await self._await_governance_approval(result, context=context)
         return result
@@ -365,16 +426,30 @@ class Agent:
         context: RunContext[Any] | None = None,
         execution_id: str | None = None,
         messages: list[Message] | None = None,
+        metadata: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> AgentResult:
         """Execute with OTel tracing."""
         from fastaiagent.trace.otel import get_tracer
-        from fastaiagent.trace.span import trace_payloads_enabled
+        from fastaiagent.trace.span import set_metadata_attributes, trace_payloads_enabled
 
         tracer = get_tracer()
         with tracer.start_as_current_span(f"agent.{self.name}") as span:
             span.set_attribute("agent.name", self.name)
             span.set_attribute("fastaiagent.framework", "fastaiagent")
+            # Developer-supplied run tags (MLflow-style) → fastaiagent.meta.*
+            # on the root span, tagging the whole trace. Open OTel map, no wire
+            # change. The developer owns keys/values/PII.
+            set_metadata_attributes(span, metadata)
+            # Gap 2 first-run auto-register: an agent created after connect()
+            # registers itself the first time it runs. Non-blocking, best-effort,
+            # once per process — no-op when disconnected/opted-out/already pushed.
+            try:
+                from fastaiagent._platform.push import auto_register_async
+
+                auto_register_async(self)
+            except Exception:
+                pass
             # Span attributes must be primitives — coerce multimodal input
             # to a readable text summary.
             normalized_input_parts: list[ContentPart] = (

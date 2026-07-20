@@ -25,6 +25,13 @@ class _Connection:
         # behavior (a missing policy cache => the tool gate is a no-op). "closed"
         # opts in to fail-closed at the gate when governance can't be confirmed.
         self.governance_fail_mode: str = "open"
+        # Gap 2 registration: auto-register agents as governed console objects
+        # while connected. ON by default so ``connect()`` means "fully
+        # connected" — opt out with ``connect(auto_register=False)``.
+        self.auto_register: bool = True
+        # Optional console origin for deep links, when it differs from the API
+        # ``target`` (split-origin dev). Defaults to ``target`` when unset.
+        self.console_url: str | None = None
         self._platform_processor: Any = None
         self._hitl_processor: Any = None
 
@@ -142,6 +149,8 @@ def connect(
     project: str | None = None,
     *,
     governance_fail_mode: str | None = None,
+    auto_register: bool = True,
+    console_url: str | None = None,
 ) -> None:
     """Connect the SDK to FastAIAgent Platform for observability,
     prompt management, and evaluation services.
@@ -159,6 +168,14 @@ def connect(
     ``"open"`` preserves today's fail-open behavior. The resolved mode is
     attested to the plane on enrollment. Falls back to the
     ``FASTAIAGENT_GOVERNANCE_FAIL_MODE`` env var when the argument is omitted.
+
+    ``auto_register`` (Gap 2) makes ``connect()`` mean *fully connected*: every
+    agent that exists now is registered as a governed console object, and
+    agents created later register themselves on first run. This creates objects
+    in your console (best-effort, idempotent by name, non-fatal). Opt out with
+    ``auto_register=False`` — then register explicitly via ``agent.push()`` or
+    ``fastaiagent push``. ``console_url`` overrides the console origin used for
+    deep links when it differs from ``target`` (split-origin dev).
     """
     import os
 
@@ -178,6 +195,8 @@ def connect(
         else os.environ.get("FASTAIAGENT_GOVERNANCE_FAIL_MODE")
     )
     _connection.governance_fail_mode = "closed" if (_mode or "").lower() == "closed" else "open"
+    _connection.auto_register = auto_register
+    _connection.console_url = console_url
 
     # Lightweight auth check — also captures domain/project from the key
     try:
@@ -281,27 +300,83 @@ def connect(
     except Exception:
         logger.debug("Could not kick checkpoint drain on connect", exc_info=True)
 
+    # Gap 2 registration flush — register every agent that already exists so the
+    # "define agents → connect() → run" ordering links every trace from the
+    # first (the strong path). Synchronous so it completes before the user's
+    # next run; but it only does work when agents pre-exist (the intuitive
+    # "connect() first" ordering finds an empty registry and is not slowed).
+    # Best-effort — never raises into connect(). Returns the pushed agent_ids to
+    # feed governance enrollment below (closing the governed_agent_ids gap).
+    governed_agent_ids: list[str] = []
+    if auto_register:
+        try:
+            from fastaiagent._platform.push import flush_pending_registrations
+
+            governed_agent_ids = flush_pending_registrations()
+            if governed_agent_ids:
+                logger.info(
+                    "Registered %d agent(s) with the plane on connect.",
+                    len(governed_agent_ids),
+                )
+        except Exception:
+            logger.debug("Could not flush agent registrations on connect", exc_info=True)
+
     # WS4 governance enrollment (fire-and-forget attestation). One-shot best-effort
     # POST to /public/v1/governance/enroll on a daemon thread so connect() never
     # blocks on or raises from the plane — same non-blocking model as the checkpoint
     # drain above. NOT a durable outbox (enrollment is ephemeral attestation): a 4xx
     # is terminal, transient failures are dropped. Runs after the auth-check +
-    # policy-pull so domain/project/policy_cache/governance_fail_mode are populated.
+    # policy-pull + registration flush so domain/project/policy_cache/fail_mode and
+    # the just-registered governed_agent_ids are populated.
     try:
         import threading
 
         from fastaiagent import governance
 
-        threading.Thread(target=governance.enroll, daemon=True).start()
+        threading.Thread(
+            target=governance.enroll,
+            kwargs={"governed_agent_ids": governed_agent_ids or None},
+            daemon=True,
+        ).start()
     except Exception:
         logger.debug("Could not kick governance enroll on connect", exc_info=True)
+
+
+def push(agent: Any, *, force: bool = True) -> Any:
+    """Register an agent's definition with the plane (Gap 2).
+
+    First-class, explicit registration — the replacement for hand-written
+    ``httpx.post(...)`` in user code. Equivalent to ``agent.push()``. Requires
+    an active :func:`connect` and an ``agent:write`` scope. Returns a
+    :class:`~fastaiagent._platform.push.PushResult`.
+    """
+    from fastaiagent._platform.push import push_agent
+
+    if agent is None:
+        raise ValueError("push() requires an Agent (e.g. fa.push(my_agent)).")
+    return push_agent(agent, force=force, best_effort=False)
 
 
 def disconnect() -> None:
     """Disconnect from platform. Revert to local-only mode.
 
-    Forces a flush of any pending trace spans before disconnecting.
+    Forces a flush of any pending trace spans before disconnecting, and logs a
+    short session summary so the last thing a developer sees is proof it flushed.
     """
+    # Session summary (Gap 2 DX) — emitted before teardown, via the logger.
+    try:
+        from fastaiagent._platform import push as _push
+
+        registered = len(_push._pushed)
+        if registered:
+            logger.info(
+                "Session summary: %d agent(s) registered this session; "
+                "flushing pending traces…",
+                registered,
+            )
+    except Exception:
+        logger.debug("Could not build session summary on disconnect", exc_info=True)
+
     if _connection._platform_processor is not None:
         try:
             _connection._platform_processor.force_flush(timeout_millis=5000)
@@ -331,3 +406,13 @@ def disconnect() -> None:
     _connection.scopes = []
     _connection.policy_cache = None
     _connection.governance_fail_mode = "open"  # WS4: revert to non-breaking default
+    _connection.auto_register = True
+    _connection.console_url = None
+    # Clear per-process registration state so a fresh connect() re-registers
+    # (e.g. reconnecting to a different plane).
+    try:
+        from fastaiagent._platform import push as _push
+
+        _push.reset_registration_state()
+    except Exception:
+        logger.debug("Could not reset registration state on disconnect", exc_info=True)

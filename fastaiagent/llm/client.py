@@ -546,6 +546,26 @@ class LLMClient:
                 request_tools=_serialize_for_span(tools),
             )
 
+            # Gap 4: attribute this call to a control-plane registry prompt when
+            # the run is using one, so it flows into Prompt Analytics. Provenance
+            # is carried by a ContextVar set by the agent; no-op otherwise.
+            try:
+                from fastaiagent.prompt.provenance import get_prompt_provenance
+                from fastaiagent.trace.span import set_fastaiagent_attributes
+
+                _prov = get_prompt_provenance()
+                if _prov and _prov.get("slug"):
+                    set_fastaiagent_attributes(
+                        span,
+                        **{
+                            "prompt.slug": _prov.get("slug"),
+                            "prompt.version": _prov.get("version"),
+                            "prompt.environment": _prov.get("environment"),
+                        },
+                    )
+            except Exception:
+                pass
+
             recorded_queue = _replay_recorded_response.get()
             if recorded_queue:
                 # v1.14.1: queue is a list of LLMResponses, one per captured

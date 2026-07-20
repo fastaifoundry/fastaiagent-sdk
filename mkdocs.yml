@@ -186,6 +186,7 @@ nav:
   - Platform:
       - "Concepts & Mental Model": platform/concepts.md
       - platform/index.md
+      - "Registration (agent push)": platform/registration.md
       - "Connected HITL (observer)": platform/connected-hitl.md
       - "Connected governance (enrollment)": platform/connected-governance.md
   - Deployment:

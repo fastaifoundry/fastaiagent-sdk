@@ -14,6 +14,7 @@ from fastaiagent.cli.kb import kb_app
 from fastaiagent.cli.mcp import mcp_app
 from fastaiagent.cli.migrate import migrate_command
 from fastaiagent.cli.prompts import prompts_app
+from fastaiagent.cli.push import register_push_command
 from fastaiagent.cli.replay import replay_app
 from fastaiagent.cli.resume import register as register_resume_commands
 from fastaiagent.cli.runner import runner_app
@@ -62,6 +63,7 @@ app.command(
 # `fastaiagent setup-checkpointer` directly.
 register_resume_commands(app)
 register_checkpointer_commands(app)
+register_push_command(app)
 
 
 @app.command(

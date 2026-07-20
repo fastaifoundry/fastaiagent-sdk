@@ -16,6 +16,12 @@ class Prompt(BaseModel):
     variables: list[str] = Field(default_factory=list)
     version: int = 1
     metadata: dict[str, Any] = Field(default_factory=dict)
+    # Provenance (Gap 4) — set when this prompt came from the control-plane
+    # registry so a run that uses it can attribute the llm_call span for Prompt
+    # Analytics. Optional/defaulted → additive; local prompts leave them unset.
+    slug: str | None = None
+    source: str | None = None  # "platform" | "local"
+    environment: str | None = None  # e.g. "production"
 
     def model_post_init(self, __context: Any) -> None:
         if not self.variables:
