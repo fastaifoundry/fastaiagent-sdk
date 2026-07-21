@@ -38,6 +38,17 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+# Process-cumulative meter: total un-acked spans abandoned from the re-send
+# queue this process (oldest-first eviction). Surfaced in the warning and
+# readable by tests / diagnostics via ``get_abandoned_total()``.
+_abandoned_total = 0
+
+
+def get_abandoned_total() -> int:
+    """Total un-acked spans abandoned from the re-send queue this process."""
+    return _abandoned_total
+
+
 class PlatformSpanExporter(SpanExporter):
     """Exports buffered spans to the FastAIAgent Platform with retry + re-send.
 
@@ -99,10 +110,14 @@ class PlatformSpanExporter(SpanExporter):
                 self._MAX_UNSYNCED, self._MAX_AGE_DAYS, project_id=pid
             )
             if dropped:
+                global _abandoned_total
+                _abandoned_total += dropped
                 logger.warning(
-                    "Trace platform buffer bound hit: abandoned %d un-acked spans "
-                    "(kept in local.db, not re-sent)",
+                    "Trace platform buffer bound hit: abandoned %d oldest un-acked "
+                    "span(s) from the re-send queue (%d this process). They remain in "
+                    "local.db — run `fastaiagent traces prune` to reclaim space.",
                     dropped,
+                    _abandoned_total,
                 )
         except Exception:
             # Never let export crash the bg thread; local SQLite still has the data.

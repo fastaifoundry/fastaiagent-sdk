@@ -209,6 +209,11 @@ class PromptRegistry:
                 variables=data.get("variables", []),
                 version=data.get("version", 1),
                 metadata=data.get("metadata", {}),
+                # Gap 4 provenance — retained so an agent using this prompt can
+                # stamp fastaiagent.prompt.* on its llm_call span.
+                slug=data.get("slug", slug),
+                source="platform",
+                environment=data.get("environment"),
             )
 
             # Cache with TTL

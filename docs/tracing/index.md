@@ -461,6 +461,36 @@ If the platform is unreachable, traces are safe in local SQLite. No operation fa
 
 ---
 
+## Tagging a run with metadata
+
+Attach your own key/values to a run (MLflow-style tags) and they land on the
+run's root span as `fastaiagent.meta.*` attributes — queryable in the trace store
+and, when connected, on the plane. You own the keys, the values, and any PII
+implications.
+
+```python
+agent.run(
+    "Refund my order",
+    metadata={"customer": "acme", "env": "prod", "ticket": 4271},
+)
+```
+
+## Guardrail CHECKS
+
+Each guardrail that runs on a turn emits a child `guardrail.*` span (on **pass and
+block**) carrying its outcome, so a trace shows a per-span CHECKS row. Nothing extra
+in your code — just add `guardrails=[…]` to the agent.
+
+## Pruning the local buffer
+
+Traces are buffered in `local.db`. Reclaim space by deleting already-sent
+(acked/abandoned) spans:
+
+```bash
+fastaiagent traces prune               # delete all acked spans
+fastaiagent traces prune --older-than-days 7
+```
+
 ## Internals
 
 For contributors who need to modify the tracing layer, add new span attributes, debug missing spans, or understand the dual-sink model (SQLite + platform), see [Tracing Architecture (Internals)](../internals/tracing-architecture.md).

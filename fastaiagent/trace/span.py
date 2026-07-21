@@ -41,9 +41,18 @@ FASTAIAGENT_ATTRIBUTES = {
     "fastaiagent.guardrail.name": str,
     "fastaiagent.guardrail.passed": bool,
     "fastaiagent.guardrail.position": str,
+    # JSON string: ``[{"name": <guardrail>, "result": "pass"|"block"}, …]``.
+    # The plane maps this onto ``output.checks`` and the console renders a
+    # per-span CHECKS row (green pass / red block). Set via
+    # :func:`set_guardrail_attributes`.
+    "fastaiagent.guardrail.checks": str,
     "fastaiagent.prompt.name": str,
     "fastaiagent.prompt.version": int,
     "fastaiagent.prompt.slug": str,
+    # Optional deployment environment the registry prompt was resolved for
+    # (e.g. ``"production"``). Stamped on ``llm.*`` spans alongside slug/version
+    # so the plane's Prompt Analytics can attribute the call.
+    "fastaiagent.prompt.environment": str,
     "fastaiagent.cost.total_usd": float,
     "fastaiagent.thread.id": str,
     # Universal-harness attributes — set on the root span of every run so
@@ -146,6 +155,65 @@ def set_fastaiagent_attributes(span: Any, **kwargs: Any) -> None:
 
 # Back-compat alias — remove in 0.9.
 set_fastai_attributes = set_fastaiagent_attributes
+
+
+def set_guardrail_attributes(
+    span: Any,
+    name: str,
+    position: str,
+    passed: bool,
+    checks: str,
+) -> None:
+    """Stamp guardrail-outcome attributes on a per-guardrail child span.
+
+    Mirrors :func:`set_genai_attributes` for the guardrail contract. Sets the
+    plane-classified ``span_type="guardrail"`` marker plus the
+    ``fastaiagent.guardrail.*`` attributes the plane maps onto ``output.checks``.
+    Emitted on **pass and block** so the console shows green passes too — the
+    caller is responsible for the OTel span *status* (``ERROR`` on block).
+
+    ``checks`` is a pre-serialized JSON string, conventionally
+    ``[{"name": name, "result": "pass"|"block"}]``.
+    """
+    # span_type is a plane-side classifier carried as a plain (unprefixed)
+    # attribute inside the open OTel envelope — no wire-protocol bump.
+    span.set_attribute("span_type", "guardrail")
+    set_fastaiagent_attributes(
+        span,
+        **{
+            "guardrail.name": name,
+            "guardrail.position": position,
+            "guardrail.passed": passed,
+            "guardrail.checks": checks,
+        },
+    )
+
+
+def set_metadata_attributes(span: Any, metadata: dict[str, Any] | None) -> None:
+    """Stamp developer-supplied run metadata as ``fastaiagent.meta.*`` attributes.
+
+    MLflow-style tags: the developer attaches arbitrary key/values to a run
+    (``agent.run(metadata={...})``) and they land on the run's root span as
+    namespaced attributes — queryable in the trace store, and rideable on the
+    open OTel envelope with no wire change. Keys are stringified; primitive
+    values pass through, everything else is JSON-serialized. ``None`` values are
+    skipped. The developer owns the keys, the values, and any PII implications.
+    """
+    if not metadata:
+        return
+    import json
+
+    for key, value in metadata.items():
+        if value is None:
+            continue
+        attr_key = f"fastaiagent.meta.{key}"
+        if isinstance(value, (str, int, float, bool)):
+            span.set_attribute(attr_key, value)
+        else:
+            try:
+                span.set_attribute(attr_key, json.dumps(value, default=str))
+            except Exception:
+                span.set_attribute(attr_key, str(value))
 
 
 def set_template_kind(span: Any, kind: str) -> None:

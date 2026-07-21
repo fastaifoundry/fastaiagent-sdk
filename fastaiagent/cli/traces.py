@@ -54,6 +54,40 @@ def export_trace(
     store.close()
 
 
+@traces_app.command("prune")
+def prune_acked(
+    older_than_days: int | None = typer.Option(
+        None,
+        "--older-than-days",
+        help="Only delete acked spans older than this many days. Omit to prune all acked spans.",
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt."),
+) -> None:
+    """Delete acked/abandoned spans from local.db to reclaim space.
+
+    Removes only ``synced=1`` spans (already sent to the plane, or abandoned
+    from the re-send queue by the buffer bound) — nothing waiting to be re-sent
+    is ever touched. Complements ``purge`` (which deletes by trace scope).
+    """
+    from fastaiagent.trace.storage import TraceStore
+
+    store = TraceStore()
+    scope = (
+        f"acked spans older than {older_than_days} day(s)"
+        if older_than_days is not None
+        else "all acked spans"
+    )
+    if not yes:
+        confirm = typer.confirm(f"Delete {scope} from local.db?")
+        if not confirm:
+            console.print("[dim]Aborted.[/dim]")
+            store.close()
+            return
+    deleted = store.prune_acked(older_than_days=older_than_days)
+    console.print(f"[green]✓[/green] Pruned {deleted} acked span(s).")
+    store.close()
+
+
 @traces_app.command("purge")
 def purge_traces(
     older_than_days: int | None = typer.Option(

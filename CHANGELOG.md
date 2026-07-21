@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.43.0] - 2026-07-20
+
+### Added — connected-agent visibility (the console now shows *who the agent is, what it enforced, what prompt it used*)
+
+- **Guardrail results in the trace (Gap 1).** Each guardrail that runs on a turn
+  now emits one child span (`span_type="guardrail"`) carrying
+  `fastaiagent.guardrail.name/position/passed/checks` — on **pass and block** —
+  so connected traces render a per-span CHECKS row. Emitted centrally from
+  `execute_guardrails`; guardrail control flow is unchanged.
+- **First-class registration / push (Gap 2).** The SDK now owns registration —
+  no more hand-written `httpx.post(...)`. New `agent.push()` / `fa.push(agent)`
+  (returns a `PushResult` with `agent_id`, `version`, and a console `url`), a new
+  `fastaiagent push --module my_app.agents` CLI (with `--dry-run`), and
+  `connect()` flushes every already-defined agent. Idempotent (upsert-by-name,
+  once per process), best-effort, and non-fatal. Fills `governed_agent_ids` on
+  governance enroll.
+- **Per-span prompt attribution (Gap 4).** When a run uses a control-plane
+  registry prompt (`PromptRegistry.get(source="platform")` → a `Prompt` carrying
+  `slug`/`version`), the `llm_call` span is stamped with
+  `fastaiagent.prompt.slug/version/environment` for Prompt Analytics. Passing a
+  registry `Prompt` as `system_prompt` also auto-links `prompt_slug`.
+- **Run metadata / tags (MLflow-style).** `agent.run(..., metadata={...})` stamps
+  developer-supplied tags as `fastaiagent.meta.*` on the run's root span. The
+  developer owns the keys, values, and any PII implications.
+- **Rich session feedback.** `connect()` / registration / `disconnect()` now log
+  a concise summary (project, registered agents, console URLs) through the SDK
+  logger — never stdout, TTY-aware.
+- **`fastaiagent traces prune`** deletes acked/abandoned spans from `local.db`
+  (`TraceStore.prune_acked`) to reclaim space; the buffer-bound warning now meters
+  cumulative loss and points at prune.
+
+### ⚠️ Behavioral change — auto-registration is ON by default
+
+- While connected, running (or defining-then-connecting) an agent now
+  **auto-registers it as a governed console object** (`managed_by=sdk`, read-only)
+  and links its traces by `agent_id`. This is best-effort, idempotent, and
+  non-fatal, but it **creates objects in your console** and makes a network call
+  on first run. Opt out with `fa.connect(..., auto_register=False)`. No wire-
+  protocol change (`X-FAA-Protocol: 1.4`); `Agent.to_dict()` is unchanged when
+  `prompt_slug`/`memory` are unset.
+
 ## [1.42.0] - 2026-07-17
 
 ### Added

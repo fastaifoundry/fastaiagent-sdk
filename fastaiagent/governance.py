@@ -76,7 +76,7 @@ async def _get(path: str) -> dict[str, Any]:
     return data
 
 
-def enroll() -> dict[str, Any] | None:
+def enroll(governed_agent_ids: list[str] | None = None) -> dict[str, Any] | None:
     """Fire-and-forget governance enrollment (WS4). SYNC + best-effort.
 
     POSTs a stable ``instance_id`` (+ posture metadata) to
@@ -117,8 +117,12 @@ def enroll() -> dict[str, Any] | None:
         body["hostname"] = socket.gethostname()
     except Exception:
         pass
-    # governed_agent_ids / deployment_type / attributes: the SDK has no cheap
-    # source for these today, so they are omitted (all optional in the schema).
+    # governed_agent_ids: once agents self-register (Gap 2), connect() flushes
+    # their platform ids and passes them here so the plane's governance coverage
+    # knows which agents this instance governs. Omitted when empty (optional in
+    # the schema). deployment_type / attributes still omitted (no cheap source).
+    if governed_agent_ids:
+        body["governed_agent_ids"] = governed_agent_ids
 
     try:
         with httpx.Client(timeout=5, verify=True) as client:

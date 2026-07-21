@@ -1,14 +1,18 @@
-"""Example 89 — Push an agent that references a governed prompt by slug.
+"""Example 89 — Register an agent as a governed console object (the SDK-owned way).
 
-When you build an agent from a control-plane registry prompt, the natural code —
-``system_prompt=prompt.format(...)`` — **inlines** the resolved text and loses the
-link to the prompt. Pushed that way, the plane stores it as inline and the console
-shows the prompt as **"Inline"** with no model/memory linkage.
+The SDK owns registration now — no hand-written ``httpx.post(...)``. Three ways in,
+all one code path:
 
-Set ``Agent(prompt_slug=...)`` instead. ``to_dict()`` then emits the slug and sends
-``system_prompt=""``, so the pushed agent **references** the governed prompt (console
-shows the slug, memory shows **Enabled**, and the model resolves). Purely additive:
-an agent with neither ``prompt_slug`` nor ``memory`` serializes exactly as before.
+* ``fa.connect()`` **auto-registers** (default ON): running or defining-then-
+  connecting an agent pushes it. Opt out with ``connect(auto_register=False)``.
+* ``agent.push()`` / ``fa.push(agent)`` — explicit, for CI/deploy. Returns a
+  ``PushResult`` with ``agent_id``, ``version``, and a clickable console ``url``.
+* ``fastaiagent push --module my_app.agents`` — the CLI, at deploy time.
+
+This example uses ``agent.push()`` and also shows governed-input linkage: build the
+agent from a control-plane registry **Prompt** (pass it as ``system_prompt``) and
+the pushed definition references the slug (console shows the slug, not "Inline"),
+with memory **Enabled**. Purely additive — an agent with neither serializes as before.
 
 Usage:
     export FASTAIAGENT_API_KEY=fa_k_...     # key with agent:write + prompt:write
@@ -17,13 +21,13 @@ Usage:
 
 Expected output (snapshot — real run against a local plane on :20001):
     connected to http://localhost:20001
-    published prompt: acme-support-1720800000
+    published prompt: acme-support-<project>
     to_dict payload:
-      prompt_slug     = acme-support-1720800000
+      prompt_slug     = acme-support-<project>
       system_prompt   = '' (empty — the slug is the source of truth)
       memory_enabled  = True
-    pushed agent id=<uuid> version=1
-    governance: prompt_slug=acme-support-1720800000 memory_enabled=True model=gpt-4o
+    pushed agent id=<uuid> version=1 url=http://localhost:20000/next/agents/<uuid>
+    governance: prompt_slug=acme-support-<project> memory_enabled=True model=gpt-4o
     done — the console shows the slug (not "Inline") and memory Enabled.
 """
 
@@ -35,7 +39,6 @@ import httpx
 
 import fastaiagent as fa
 from fastaiagent import Agent, AgentMemory, FunctionTool, LLMClient
-from fastaiagent._platform.api import get_platform_api
 from fastaiagent.client import _connection
 from fastaiagent.prompt import PromptRegistry
 
@@ -53,7 +56,9 @@ def main() -> int:
         return 1
 
     base = target.rstrip("/")
-    fa.connect(api_key=api_key, target=target)
+    # auto_register defaults ON — we pass False here so this example pushes
+    # explicitly (below) for a deterministic, inspectable result.
+    fa.connect(api_key=api_key, target=target, auto_register=False)
     if not _connection.is_connected:
         print("Skipping: connect() did not establish a connection")
         return 1
@@ -74,10 +79,13 @@ def main() -> int:
         )
         print(f"published prompt: {slug}")
 
-        # 2. Build an agent that REFERENCES the prompt by slug + has memory.
+        # 2. Build an agent from the registry Prompt (references the slug) + memory.
+        #    Passing the Prompt object as system_prompt auto-links prompt_slug and
+        #    (on a traced run) stamps the llm span for Prompt Analytics.
+        prompt = registry.get(slug, source="platform")
         agent = Agent(
             name="acme-support-bot",
-            prompt_slug=slug,
+            system_prompt=prompt,
             llm=LLMClient(provider="openai", model="gpt-4o"),
             memory=AgentMemory(),
             tools=[FunctionTool(name="lookup_order", fn=lookup_order)],
@@ -93,10 +101,11 @@ def main() -> int:
         print("  system_prompt   = '' (empty — the slug is the source of truth)")
         print(f"  memory_enabled  = {payload['memory_enabled']}")
 
-        # 4. Push it to the plane.
-        resp = get_platform_api().post("/public/v1/sdk/agents", payload)
-        agent_id = resp.get("id") or resp.get("agent_id")
-        print(f"pushed agent id={agent_id} version={resp.get('version')}")
+        # 4. Register it — the SDK owns the POST. Returns a PushResult with a
+        #    clickable console URL. (Equivalent: fa.push(agent).)
+        result = agent.push()
+        agent_id = result.agent_id
+        print(f"pushed agent id={agent_id} version={result.version} url={result.url}")
 
         # 5. Optional machine check: read governance back.
         if agent_id:
