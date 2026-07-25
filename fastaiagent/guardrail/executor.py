@@ -27,9 +27,13 @@ def _emit_guardrail_span(guardrail: Guardrail, result: GuardrailResult) -> None:
         from fastaiagent.trace.otel import get_tracer
         from fastaiagent.trace.span import set_guardrail_attributes
 
-        checks = json.dumps(
-            [{"name": guardrail.name, "result": "pass" if result.passed else "block"}]
-        )
+        if result.errored:
+            check_result = "error"
+        elif result.passed:
+            check_result = "pass"
+        else:
+            check_result = "block"
+        checks = json.dumps([{"name": guardrail.name, "result": check_result}])
         tracer = get_tracer("fastaiagent.guardrail")
         with tracer.start_as_current_span(f"guardrail.{guardrail.name}") as span:
             set_guardrail_attributes(
@@ -38,8 +42,12 @@ def _emit_guardrail_span(guardrail: Guardrail, result: GuardrailResult) -> None:
                 position=guardrail.position.value,
                 passed=result.passed,
                 checks=checks,
+                errored=result.errored,
             )
             if result.passed:
+                # A degraded pass (errored + on_error="allow") keeps an OK
+                # status — the run continued — but the errored attribute and
+                # the "error" check result keep it distinguishable.
                 span.set_status(Status(StatusCode.OK))
             else:
                 span.set_status(

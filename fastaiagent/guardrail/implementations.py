@@ -13,7 +13,15 @@ if TYPE_CHECKING:
 
 
 async def run_guardrail(guardrail: Guardrail, data: str | dict[str, Any]) -> GuardrailResult:
-    """Run a guardrail based on its implementation type."""
+    """Run a guardrail based on its implementation type.
+
+    This is the single enforcement point for the ``on_error`` policy: if a
+    runner (or the detector it calls) raises — a model-judged check whose LLM
+    call fails, a network blip, an unparseable response — the exception is
+    caught here and turned into a ``GuardrailResult`` per the guardrail's
+    ``on_error`` setting (``"allow"`` → fail open, ``"block"`` → fail closed),
+    with ``errored=True`` so the outcome is never mistaken for a real verdict.
+    """
     runners = {
         GuardrailType.code: _run_code,
         GuardrailType.llm_judge: _run_llm_judge,
@@ -22,22 +30,34 @@ async def run_guardrail(guardrail: Guardrail, data: str | dict[str, Any]) -> Gua
         GuardrailType.classifier: _run_classifier,
     }
     runner = runners.get(guardrail.guardrail_type, _run_code)
-    return await runner(guardrail, data)
+    try:
+        return await runner(guardrail, data)
+    except Exception as e:
+        passed = guardrail.on_error == "allow"
+        return GuardrailResult(
+            passed=passed,
+            errored=True,
+            message=f"{guardrail.name} errored (on_error={guardrail.on_error}): {e}",
+            metadata={"error": str(e), "on_error": guardrail.on_error},
+        )
 
 
 async def _run_code(guardrail: Guardrail, data: str | dict[str, Any]) -> GuardrailResult:
-    """Execute a code guardrail — runs a Python function."""
+    """Execute a code guardrail — runs a Python function.
+
+    Errors raised by ``fn`` (including model-judged detectors whose LLM call
+    fails) propagate to :func:`run_guardrail`, which applies the guardrail's
+    ``on_error`` policy. We deliberately do not catch here — a local ``except``
+    would hard-code a fail-closed default and hide the ``errored`` state.
+    """
     if guardrail.fn is not None:
-        try:
-            text = data if isinstance(data, str) else json.dumps(data)
-            result = guardrail.fn(text)
-            if isinstance(result, bool):
-                return GuardrailResult(passed=result)
-            if isinstance(result, GuardrailResult):
-                return result
-            return GuardrailResult(passed=bool(result))
-        except Exception as e:
-            return GuardrailResult(passed=False, message=f"Code guardrail error: {e}")
+        text = data if isinstance(data, str) else json.dumps(data)
+        result = guardrail.fn(text)
+        if isinstance(result, bool):
+            return GuardrailResult(passed=result)
+        if isinstance(result, GuardrailResult):
+            return result
+        return GuardrailResult(passed=bool(result))
 
     # The previous version of this branch ``exec()``-ed an arbitrary code
     # string from ``guardrail.config["code"]`` under a "restricted builtins"
@@ -83,6 +103,7 @@ async def _run_llm_judge(guardrail: Guardrail, data: str | dict[str, Any]) -> Gu
     ``{data}`` placeholder in it is dropped — the surrounding text
     becomes the system instructions and the data is shipped separately.
     """
+    from fastaiagent._internal.safety_detectors import LLM_DETECTOR_MAX_RETRIES
     from fastaiagent.llm import LLMClient, SystemMessage, UserMessage
 
     prompt_template = guardrail.config.get(
@@ -108,14 +129,15 @@ async def _run_llm_judge(guardrail: Guardrail, data: str | dict[str, Any]) -> Gu
     user = f"<<DATA>>\n{text}\n<</DATA>>"
 
     llm_config = guardrail.config.get("llm", {})
-    llm = LLMClient(**llm_config) if llm_config else LLMClient()
+    llm = (
+        LLMClient(**llm_config)
+        if llm_config
+        else LLMClient(max_retries=LLM_DETECTOR_MAX_RETRIES)
+    )
 
-    try:
-        response = await llm.acomplete(
-            [SystemMessage(system), UserMessage(user)]
-        )
-    except Exception as e:
-        return GuardrailResult(passed=False, message=f"LLM judge error: {e}")
+    # A failed judge call propagates to run_guardrail, which applies the
+    # guardrail's on_error policy (default "block" preserves fail-closed).
+    response = await llm.acomplete([SystemMessage(system), UserMessage(user)])
 
     raw = (response.content or "").strip()
     return GuardrailResult(

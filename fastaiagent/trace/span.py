@@ -41,9 +41,14 @@ FASTAIAGENT_ATTRIBUTES = {
     "fastaiagent.guardrail.name": str,
     "fastaiagent.guardrail.passed": bool,
     "fastaiagent.guardrail.position": str,
-    # JSON string: ``[{"name": <guardrail>, "result": "pass"|"block"}, …]``.
+    # True when the check itself failed to run (e.g. a model-judged detector's
+    # LLM call raised) and ``passed`` reflects the guardrail's ``on_error``
+    # policy rather than a real verdict. Lets a fail-open be told apart from a
+    # genuine pass in traces.
+    "fastaiagent.guardrail.errored": bool,
+    # JSON string: ``[{"name": <guardrail>, "result": "pass"|"block"|"error"}, …]``.
     # The plane maps this onto ``output.checks`` and the console renders a
-    # per-span CHECKS row (green pass / red block). Set via
+    # per-span CHECKS row (green pass / red block / amber error). Set via
     # :func:`set_guardrail_attributes`.
     "fastaiagent.guardrail.checks": str,
     "fastaiagent.prompt.name": str,
@@ -163,6 +168,7 @@ def set_guardrail_attributes(
     position: str,
     passed: bool,
     checks: str,
+    errored: bool = False,
 ) -> None:
     """Stamp guardrail-outcome attributes on a per-guardrail child span.
 
@@ -173,7 +179,8 @@ def set_guardrail_attributes(
     caller is responsible for the OTel span *status* (``ERROR`` on block).
 
     ``checks`` is a pre-serialized JSON string, conventionally
-    ``[{"name": name, "result": "pass"|"block"}]``.
+    ``[{"name": name, "result": "pass"|"block"|"error"}]``. ``errored`` marks a
+    check that could not run (its ``passed`` reflects the ``on_error`` policy).
     """
     # span_type is a plane-side classifier carried as a plain (unprefixed)
     # attribute inside the open OTel envelope — no wire-protocol bump.
@@ -184,6 +191,7 @@ def set_guardrail_attributes(
             "guardrail.name": name,
             "guardrail.position": position,
             "guardrail.passed": passed,
+            "guardrail.errored": errored,
             "guardrail.checks": checks,
         },
     )

@@ -20,7 +20,13 @@ the Trace Detail page's *Scores* card), you land on a three-panel layout:
 |---|---|
 | **1 — What triggered it** | The exact span content the guardrail evaluated. `position` decides whether this is the agent's input, the agent's output, a tool call, or a tool response. Falls back to a hint when payload tracing is disabled (`FASTAIAGENT_TRACE_PAYLOADS=0`). |
 | **2 — Which rule matched** | Guardrail name + type (`code` / `regex` / `llm_judge` / `schema` / `classifier`) + position. Rich metadata: PII categories for `no_pii`, `match` substring for regex rules, `judge_prompt` + `judge_response` for LLM-judge rules. |
-| **3 — What happened next** | For `blocked`: the error/fallback the agent received. For `filtered`: a side-by-side **before / after** diff of the rewritten content (set `metadata.before` and `metadata.after` on the result and the UI renders them automatically). For `warned` / `passed`: explanatory text. |
+| **3 — What happened next** | For `blocked`: the error/fallback the agent received. For `filtered`: a side-by-side **before / after** diff of the rewritten content (set `metadata.before` and `metadata.after` on the result and the UI renders them automatically). For `errored`: an explanation that the check itself couldn't run, and whether the guardrail's [`on_error`](../guardrails/index.md#fail-policy-on_error) policy let the content through (`allow`) or blocked it (`block`). For `warned` / `passed`: explanatory text. |
+
+!!! note "The `errored` outcome"
+    A model-judged guardrail whose LLM call fails is logged with an `errored`
+    outcome (rather than silently passing), so you can see how often a check is
+    degrading instead of guarding. Whether it then allowed or blocked is
+    recorded in the result's `on_error` metadata.
 
 ![Guardrail event detail (filtered) with before/after diff](screenshots/sprint2-8-guardrail-detail-filtered.png)
 

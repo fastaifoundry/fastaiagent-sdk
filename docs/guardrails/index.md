@@ -447,6 +447,35 @@ for r in results:
 | `message` | `str \| None` | Human-readable explanation |
 | `execution_time_ms` | `int` | How long the check took |
 | `metadata` | `dict` | Extra data (e.g., detected PII types, blocked categories) |
+| `errored` | `bool` | True when the check itself failed to run; `passed` then reflects the `on_error` policy, not a verdict |
+
+## Fail policy: `on_error`
+
+Model-judged guardrails depend on an LLM call that can fail. `on_error` decides
+what a *failed check* means, independent of the verdict it would have returned:
+
+```python
+from fastaiagent.guardrail import toxicity_check, grounded
+
+toxicity_check(mode="llm", on_error="allow")  # fail open — an error passes through
+grounded(reference, on_error="block")         # fail closed — an error blocks
+
+# Works on any guardrail you build yourself:
+Guardrail(name="my_judge", guardrail_type=GuardrailType.llm_judge,
+          config={...}, on_error="block")
+```
+
+| `on_error` | On a check error | Built-ins that default to it |
+|------------|------------------|------------------------------|
+| `"allow"` (fail open) | Content passes through | `toxicity_check`, `no_prompt_injection`, `banned_topics` |
+| `"block"` (fail closed) | Content is blocked | `grounded`, `openai_moderation`, `allowed_topics`, custom `Guardrail`/`llm_judge` |
+
+Whichever you choose, the failure is **visible**: the result is `errored=True`,
+the trace span carries `fastaiagent.guardrail.errored`, and the Local UI logs an
+[`errored` outcome](../ui/guardrail-events.md). Deterministic guardrails
+(`no_pii`, `no_secrets`, `json_valid`, `allowed_domains`) can't make a fallible
+call, so `on_error` doesn't apply to them. Override a whole `responsible_ai(...)`
+bundle at once with `responsible_ai(on_error="block", ...)`.
 
 ## Serialization
 
@@ -460,7 +489,8 @@ data = guardrail.to_dict()
 #   "position": "output",
 #   "config": {"pattern": "https?://...", "should_match": false},
 #   "blocking": true,
-#   "description": "Blocks URLs in output"
+#   "description": "Blocks URLs in output",
+#   "on_error": "block"
 # }
 
 restored = Guardrail.from_dict(data)
