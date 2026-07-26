@@ -66,6 +66,8 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 ### Tools & guardrails
 - [`03_guardrails.py`](03_guardrails.py) — built-in PII / toxicity / JSON guardrails
 - [`23_tool_guardrails.py`](23_tool_guardrails.py) — guardrails on tool calls / results
+- [`91_guardrail_on_error.py`](91_guardrail_on_error.py) — `on_error` fail policy (fail-open vs fail-closed) + the `errored` outcome
+- [`92_plane_authored_guardrails.py`](92_plane_authored_guardrails.py) — a guardrail authored on the plane, pulled and enforced by a connected agent (1.45.0)
 - [`84_governed_agent.py`](84_governed_agent.py) — connected agent honors a managed approval policy: pause → console approve → resume (Task C)
 - [`27_middleware_tool_budget.py`](27_middleware_tool_budget.py) — `ToolBudget` middleware
 - [`30_memory_blocks.py`](30_memory_blocks.py) — `ComposableMemory` block API
