@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -38,6 +38,14 @@ class GuardrailResult(BaseModel):
     message: str | None = None
     execution_time_ms: int = 0
     metadata: dict[str, Any] = Field(default_factory=dict)
+    errored: bool = False
+    """True when the check itself failed to run (e.g. the model call raised).
+
+    ``passed`` then reflects the guardrail's ``on_error`` policy rather than a
+    real verdict: ``on_error="allow"`` yields ``passed=True`` (fail open),
+    ``on_error="block"`` yields ``passed=False`` (fail closed). Lets callers and
+    the Local UI distinguish a degraded pass from a genuine one.
+    """
 
 
 class Guardrail:
@@ -55,6 +63,7 @@ class Guardrail:
         blocking: bool = True,
         description: str = "",
         fn: Callable[..., Any] | None = None,
+        on_error: Literal["allow", "block"] = "block",
     ):
         self.name = name
         self.guardrail_type = guardrail_type
@@ -63,6 +72,10 @@ class Guardrail:
         self.blocking = blocking
         self.description = description
         self.fn = fn  # for code guardrails with inline function
+        # What to do when the check itself errors (e.g. a model-judged
+        # detector's LLM call raises). "block" fails closed (default),
+        # "allow" fails open. See GuardrailResult.errored.
+        self.on_error: Literal["allow", "block"] = on_error
 
     def execute(self, data: str | dict[str, Any]) -> GuardrailResult:
         """Execute the guardrail synchronously."""
@@ -95,6 +108,7 @@ class Guardrail:
             "config": self.config,
             "blocking": self.blocking,
             "description": self.description,
+            "on_error": self.on_error,
         }
 
     @classmethod
@@ -107,4 +121,5 @@ class Guardrail:
             config=data.get("config", {}),
             blocking=data.get("blocking", True),
             description=data.get("description", ""),
+            on_error=data.get("on_error", "block"),
         )

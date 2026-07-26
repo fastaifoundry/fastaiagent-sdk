@@ -83,12 +83,48 @@ all "stop" the run when they must.
 ### The verdict object
 
 Every guardrail — whatever its type — resolves to one
-`GuardrailResult(passed, score, message, execution_time_ms, metadata)`. `passed`
-is the only field the executor branches on; the rest are for observability (the
-Local UI reads them). For a `code` guardrail, your `fn` can return a bare `bool`
-(coerced to `GuardrailResult(passed=...)`) or a full `GuardrailResult`, and a
-raised exception is caught and recorded as `passed=False` — a guardrail crash
-never crashes the agent.
+`GuardrailResult(passed, score, message, execution_time_ms, metadata, errored)`.
+`passed` is the only field the executor branches on; the rest are for
+observability (the Local UI reads them). For a `code` guardrail, your `fn` can
+return a bare `bool` (coerced to `GuardrailResult(passed=...)`) or a full
+`GuardrailResult`. A guardrail crash never crashes the agent — a raised
+exception is caught and resolved according to the guardrail's `on_error` policy
+(see below), with `errored=True` so a degraded result is never mistaken for a
+real verdict.
+
+### When the check itself fails: `on_error`
+
+A model-judged guardrail (`toxicity_check(mode="llm")`, `grounded`, an
+`llm_judge`, OpenAI moderation, …) depends on an LLM call that can *fail* —
+a timeout, a 5xx, an unparseable response. That is different from the check
+running and returning a verdict, and you get to decide what it means:
+
+```python
+toxicity_check(mode="llm", on_error="block")   # fail closed: an error blocks
+toxicity_check(mode="llm", on_error="allow")   # fail open: an error passes through
+```
+
+- **`on_error="block"`** (fail closed) — an errored check is treated as a
+  failure. Use it for policy you must enforce even when the checker is down (a
+  bank would rather block than guess). This is the default for the guardrails
+  that already behaved this way (`grounded`, `openai_moderation`, `allowed_topics`,
+  and any `Guardrail(...)` / `llm_judge` you build yourself).
+- **`on_error="allow"`** (fail open) — an errored check lets the content
+  through. Use it when availability beats strictness (a high-traffic chatbot
+  would rather serve than let a flaky moderation API take it offline). This is
+  the default for the convenience classifiers that already behaved this way
+  (`toxicity_check`, `no_prompt_injection`, `banned_topics`).
+
+Either way the outcome is **visible**: the result carries `errored=True`, the
+trace span records a `guardrail.errored` attribute and an `"error"` check
+result, and the Local UI logs the event with an `errored` outcome — so you can
+see exactly how often a guardrail is degrading instead of guarding. Guardrail
+LLM calls also get a small automatic retry, so a single transient blip doesn't
+trip the policy at all.
+
+Deterministic guardrails (`no_pii`, `no_secrets`, `json_valid`,
+`allowed_domains`, regex/schema) don't make a fallible call, so `on_error`
+doesn't come up for them — they are reliable hard blocks.
 
 ### How each type decides
 

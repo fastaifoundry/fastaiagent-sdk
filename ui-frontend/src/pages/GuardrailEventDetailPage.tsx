@@ -59,6 +59,11 @@ const OUTCOME_META: Record<
     className: "bg-fa-warning/10 text-fa-warning border-fa-warning/40",
     icon: AlertTriangle,
   },
+  errored: {
+    label: "⚠ errored",
+    className: "bg-fa-warning/10 text-fa-warning border-fa-warning/40",
+    icon: AlertTriangle,
+  },
 };
 
 function OutcomeBadge({ outcome }: { outcome: string | null }) {
@@ -414,6 +419,32 @@ function OutcomeDetail({ event }: { event: GuardrailEvent }) {
         The guardrail <span className="font-mono">warned</span> but did not
         block — content passed through unchanged with a warning logged.
       </p>
+    );
+  }
+
+  if (event.outcome === "errored") {
+    const onError = (md as Record<string, unknown>).on_error;
+    const failedOpen = onError === "allow";
+    return (
+      <div className="space-y-2 text-sm">
+        <p>
+          The check <span className="font-mono">could not run</span> (e.g. a
+          model-judged detector's LLM call failed). Its outcome reflects the
+          guardrail's{" "}
+          <span className="font-mono">on_error={String(onError ?? "block")}</span>{" "}
+          policy, not a real verdict:{" "}
+          {failedOpen ? (
+            <>content was <span className="font-mono">allowed through</span> (fail open).</>
+          ) : (
+            <>content was <span className="font-mono">blocked</span> (fail closed).</>
+          )}
+        </p>
+        {event.message && (
+          <pre className="rounded-md border border-fa-warning/40 bg-fa-warning/5 p-2 font-mono text-xs whitespace-pre-wrap">
+            {event.message}
+          </pre>
+        )}
+      </div>
     );
   }
 

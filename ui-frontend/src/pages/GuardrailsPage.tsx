@@ -32,6 +32,7 @@ const OUTCOME_META: Record<string, { label: string; className: string }> = {
   blocked: { label: "blocked", className: "bg-destructive/10 text-destructive" },
   warned: { label: "warned", className: "bg-fa-warning/10 text-fa-warning" },
   filtered: { label: "filtered", className: "bg-fa-warning/10 text-fa-warning" },
+  errored: { label: "errored", className: "bg-fa-warning/10 text-fa-warning" },
 };
 
 const TYPE_OPTIONS = ["code", "regex", "llm_judge", "schema", "classifier"];
@@ -111,6 +112,7 @@ export function GuardrailsPage() {
           <option value="blocked">Blocked</option>
           <option value="warned">Warned</option>
           <option value="filtered">Filtered</option>
+          <option value="errored">Errored</option>
         </select>
         <select
           value={filters.type ?? ""}

@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from collections import Counter
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal
 
 from fastaiagent._internal.safety_detectors import (
     DEFAULT_PII_ENTITIES,
@@ -68,6 +68,7 @@ def no_prompt_injection(
     *,
     mode: str = "heuristic",
     llm: Any = None,
+    on_error: Literal["allow", "block"] = "allow",
 ) -> Guardrail:
     """Create a guardrail that blocks prompt-injection / jailbreak attempts.
 
@@ -75,10 +76,14 @@ def no_prompt_injection(
     :func:`fastaiagent._internal.safety_detectors.detect_prompt_injection`.
     Defaults to the ``input`` position (the usual attack surface) and the
     zero-dependency heuristic mode; ``mode="llm"`` opts into a classifier call.
+
+    ``on_error`` controls what happens when an ``mode="llm"`` check errors:
+    ``"allow"`` (default, preserves prior fail-open behavior) lets the text
+    through; ``"block"`` fails closed. Ignored in heuristic mode (can't error).
     """
 
     def check_injection(text: str) -> GuardrailResult:
-        res = detect_prompt_injection(text, mode=mode, llm=llm)
+        res = detect_prompt_injection(text, mode=mode, llm=llm, raise_on_error=True)
         if res.detected:
             return GuardrailResult(
                 passed=False,
@@ -95,6 +100,7 @@ def no_prompt_injection(
         blocking=True,
         description="Blocks prompt-injection / jailbreak attempts",
         fn=check_injection,
+        on_error=on_error,
     )
 
 
@@ -103,11 +109,16 @@ def openai_moderation(
     *,
     client: Any = None,
     model: str = "omni-moderation-latest",
+    on_error: Literal["allow", "block"] = "block",
 ) -> Guardrail:
     """Create a guardrail that blocks content flagged by OpenAI moderation.
 
     Delegates to :func:`fastaiagent._internal.safety_detectors.moderate_text`.
     Requires the ``openai`` package and an API key.
+
+    ``on_error`` controls what happens when the moderation call errors (missing
+    package/key, API failure): ``"block"`` (default, preserves prior fail-closed
+    behavior) blocks; ``"allow"`` lets the text through.
     """
 
     def check_moderation(text: str) -> GuardrailResult:
@@ -128,6 +139,7 @@ def openai_moderation(
         blocking=True,
         description="Blocks content flagged by the OpenAI moderation endpoint",
         fn=check_moderation,
+        on_error=on_error,
     )
 
 
@@ -157,6 +169,7 @@ def toxicity_check(
     mode: str = "keyword",
     llm: Any = None,
     threshold: float = 0.5,
+    on_error: Literal["allow", "block"] = "allow",
 ) -> Guardrail:
     """Create a toxicity guardrail.
 
@@ -164,10 +177,14 @@ def toxicity_check(
     into a much stronger LLM classifier with ``mode="llm"`` — it scores 0..1 and
     blocks when the score meets ``threshold`` (lower = stricter). Delegates to
     :func:`fastaiagent._internal.safety_detectors.detect_toxicity`.
+
+    ``on_error`` controls what happens when an ``mode="llm"`` check errors:
+    ``"allow"`` (default, preserves prior fail-open behavior) lets the text
+    through; ``"block"`` fails closed. Ignored in keyword mode (can't error).
     """
 
     def check_toxicity(text: str) -> GuardrailResult:
-        res = detect_toxicity(text, mode=mode, llm=llm, threshold=threshold)
+        res = detect_toxicity(text, mode=mode, llm=llm, threshold=threshold, raise_on_error=True)
         if res.toxic:
             return GuardrailResult(
                 passed=False,
@@ -184,6 +201,7 @@ def toxicity_check(
         blocking=True,
         description="Blocks potentially toxic content",
         fn=check_toxicity,
+        on_error=on_error,
     )
 
 
@@ -286,6 +304,7 @@ def grounded(
     llm: Any = None,
     threshold: float = 0.7,
     position: GuardrailPosition = GuardrailPosition.output,
+    on_error: Literal["allow", "block"] = "block",
 ) -> Guardrail:
     """Block ungrounded / hallucinated output.
 
@@ -298,6 +317,10 @@ def grounded(
 
     Note: output guardrails receive only the output text, so the reference must
     be supplied here rather than auto-wired from the agent's retrieval.
+
+    ``on_error`` controls what happens when the groundedness check errors:
+    ``"block"`` (default, preserves prior fail-closed behavior) blocks;
+    ``"allow"`` lets the output through.
     """
     from fastaiagent._internal.async_utils import run_sync
     from fastaiagent._internal.safety_detectors import score_groundedness
@@ -308,7 +331,7 @@ def grounded(
             return GuardrailResult(
                 passed=True, message="No reference available; groundedness skipped"
             )
-        res = run_sync(score_groundedness(text, str(ref), llm=llm))
+        res = run_sync(score_groundedness(text, str(ref), llm=llm, raise_on_error=True))
         return GuardrailResult(
             passed=res.score >= threshold,
             score=res.score,
@@ -323,6 +346,7 @@ def grounded(
         blocking=True,
         description="Blocks output not grounded in the provided reference",
         fn=check_grounded,
+        on_error=on_error,
     )
 
 
@@ -331,7 +355,12 @@ no_hallucination = grounded
 
 
 def _classify_topics(
-    text: str, topics: list[str], *, llm: Any = None, mode: str = "llm"
+    text: str,
+    topics: list[str],
+    *,
+    llm: Any = None,
+    mode: str = "llm",
+    raise_on_error: bool = False,
 ) -> list[str]:
     """Return the subset of ``topics`` the text relates to."""
     if mode == "keyword":
@@ -342,10 +371,12 @@ def _classify_topics(
 
     from fastaiagent._internal.async_utils import run_sync
 
-    return run_sync(_classify_topics_llm(text, topics, llm=llm))
+    return run_sync(_classify_topics_llm(text, topics, llm=llm, raise_on_error=raise_on_error))
 
 
-async def _classify_topics_llm(text: str, topics: list[str], *, llm: Any = None) -> list[str]:
+async def _classify_topics_llm(
+    text: str, topics: list[str], *, llm: Any = None, raise_on_error: bool = False
+) -> list[str]:
     import re
 
     from fastaiagent.llm import LLMClient, SystemMessage, UserMessage
@@ -370,6 +401,8 @@ async def _classify_topics_llm(text: str, topics: list[str], *, llm: Any = None)
         chosen = json.loads(raw).get("topics", [])
         return [t for t in topics if t in chosen]
     except Exception:
+        if raise_on_error:
+            raise
         # Fail open — never crash the agent on a classifier error.
         return []
 
@@ -380,15 +413,20 @@ def banned_topics(
     llm: Any = None,
     mode: str = "llm",
     position: GuardrailPosition = GuardrailPosition.output,
+    on_error: Literal["allow", "block"] = "allow",
 ) -> Guardrail:
     """Block content that falls under any banned topic (blacklist).
 
     ``mode="llm"`` (default) classifies semantically; ``mode="keyword"`` does a
     zero-dependency literal match.
+
+    ``on_error`` controls what happens when an ``mode="llm"`` classification
+    errors: ``"allow"`` (default, preserves prior fail-open behavior) lets the
+    text through; ``"block"`` fails closed. Ignored in keyword mode.
     """
 
     def check(text: str) -> GuardrailResult:
-        hits = _classify_topics(text, topics, llm=llm, mode=mode)
+        hits = _classify_topics(text, topics, llm=llm, mode=mode, raise_on_error=True)
         if hits:
             return GuardrailResult(
                 passed=False,
@@ -405,6 +443,7 @@ def banned_topics(
         description=f"Blocks banned topics: {', '.join(topics)}",
         config={"topics": topics},
         fn=check,
+        on_error=on_error,
     )
 
 
@@ -414,15 +453,21 @@ def allowed_topics(
     llm: Any = None,
     mode: str = "llm",
     position: GuardrailPosition = GuardrailPosition.output,
+    on_error: Literal["allow", "block"] = "block",
 ) -> Guardrail:
     """Allow only content within the given topics (whitelist).
 
     ``mode="llm"`` (default) classifies semantically; ``mode="keyword"`` does a
     zero-dependency literal match.
+
+    ``on_error`` controls what happens when an ``mode="llm"`` classification
+    errors. Because this is a whitelist, the default is ``"block"`` (preserves
+    prior behavior — an unclassifiable output was treated as off-topic and
+    blocked); ``"allow"`` lets the output through. Ignored in keyword mode.
     """
 
     def check(text: str) -> GuardrailResult:
-        on = _classify_topics(text, topics, llm=llm, mode=mode)
+        on = _classify_topics(text, topics, llm=llm, mode=mode, raise_on_error=True)
         if on:
             return GuardrailResult(passed=True, metadata={"matched_topics": on})
         return GuardrailResult(
@@ -439,6 +484,7 @@ def allowed_topics(
         description=f"Restricts content to topics: {', '.join(topics)}",
         config={"topics": topics},
         fn=check,
+        on_error=on_error,
     )
 
 
@@ -454,6 +500,7 @@ def responsible_ai(
     allowed: list[str] | None = None,
     llm: Any = None,
     threshold: float = 0.7,
+    on_error: Literal["allow", "block"] | None = None,
 ) -> list[Guardrail]:
     """Compose a Responsible-AI "Trust Layer" as a list of guardrails.
 
@@ -462,6 +509,10 @@ def responsible_ai(
     are on by default; the LLM-backed checks (groundedness, topic controls, LLM
     toxicity, OpenAI moderation) are opt-in, so the default bundle adds **no**
     extra LLM calls.
+
+    ``on_error``, when set, overrides the fail policy of every LLM-backed rail in
+    the bundle (``"allow"`` = fail open, ``"block"`` = fail closed). Left as
+    ``None`` (default), each rail keeps its own per-check default.
 
     Example::
 
@@ -472,21 +523,25 @@ def responsible_ai(
             llm=llm,
         ))
     """
+    # Only the LLM-backed rails accept on_error; spread it in when overridden.
+    oe: dict[str, Any] = {} if on_error is None else {"on_error": on_error}
     rails: list[Guardrail] = []
     if prompt_injection:
-        rails.append(no_prompt_injection())
+        rails.append(no_prompt_injection(**oe))
     if pii:
         rails.append(no_pii())
     if secrets:
         rails.append(no_secrets())
     if toxicity:
-        rails.append(toxicity_check(mode="llm" if llm is not None else "keyword", llm=llm))
+        rails.append(
+            toxicity_check(mode="llm" if llm is not None else "keyword", llm=llm, **oe)
+        )
     if moderation:
-        rails.append(openai_moderation())
+        rails.append(openai_moderation(**oe))
     if grounded_to is not None:
-        rails.append(grounded(grounded_to, llm=llm, threshold=threshold))
+        rails.append(grounded(grounded_to, llm=llm, threshold=threshold, **oe))
     if banned:
-        rails.append(banned_topics(banned, llm=llm))
+        rails.append(banned_topics(banned, llm=llm, **oe))
     if allowed:
-        rails.append(allowed_topics(allowed, llm=llm))
+        rails.append(allowed_topics(allowed, llm=llm, **oe))
     return rails

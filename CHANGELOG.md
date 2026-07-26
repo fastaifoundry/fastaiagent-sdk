@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.44.0] - 2026-07-25
+
+### Added — configurable guardrail fail policy (`on_error`) + a visible `errored` outcome
+
+- **`on_error` policy on every guardrail.** A model-judged check
+  (`toxicity_check(mode="llm")`, `grounded`, `openai_moderation`, a custom
+  `llm_judge`, …) can *fail to run* — a timeout, a 5xx, an unparseable response.
+  You now choose what that means: `on_error="block"` fails closed (an errored
+  check blocks), `on_error="allow"` fails open (it passes through). Available on
+  `Guardrail(...)`, on the LLM-backed built-in factories, and as a bundle-wide
+  override on `responsible_ai(on_error=...)`.
+- **Enforcement unified at one choke point.** `run_guardrail` now applies the
+  policy centrally, replacing the ad-hoc, inconsistent per-detector `except`
+  branches (some previously failed open, some closed, none configurable).
+- **Fail-open is no longer silent.** `GuardrailResult` gains `errored: bool`;
+  the trace span carries a `fastaiagent.guardrail.errored` attribute and an
+  `"error"` check result; the Local UI logs the event with a new `errored`
+  outcome (badge + detail view) so you can see how often a guardrail degrades
+  instead of guarding.
+- **Automatic retry on guardrail LLM calls.** Default-constructed detector
+  clients now retry transient 429/5xx with backoff, so a single blip doesn't
+  trip the `on_error` policy at all. A caller-supplied `llm` is respected as-is.
+
+### Behavior / compatibility
+
+- **Non-breaking.** Every built-in keeps its prior fail behavior as its default
+  (`toxicity_check`, `no_prompt_injection`, `banned_topics` default to `allow`;
+  `grounded`, `openai_moderation`, `allowed_topics`, and any custom
+  `Guardrail`/`llm_judge` default to `block`). No existing agent changes unless
+  it opts in.
+- **Eval scorers unaffected.** The shared safety detectors keep failing open for
+  the eval surface; only the guardrail path opts into re-raising (via an internal
+  `raise_on_error` flag) so its `on_error` policy governs.
+- One observability change: a moderation/groundedness error now logs the
+  `errored` outcome instead of `blocked` (additive information).
+
 ## [1.43.0] - 2026-07-20
 
 ### Added — connected-agent visibility (the console now shows *who the agent is, what it enforced, what prompt it used*)

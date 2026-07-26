@@ -79,6 +79,11 @@ def log_guardrail_event(
 
 
 def _outcome(guardrail: Guardrail, result: GuardrailResult) -> str:
+    # A check that couldn't run is reported distinctly so a fail-open (a
+    # degraded pass) is never mistaken for a genuine pass. Whether it then
+    # passed or blocked is recorded in the result's on_error metadata.
+    if result.errored:
+        return "errored"
     if result.passed:
         return "passed"
     return "blocked" if guardrail.blocking else "warned"

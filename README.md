@@ -14,7 +14,7 @@ pip install fastaiagent
 
 Runs fully standalone, or connect to the [FastAIAgent Platform](https://fastaiagent.net) for hosted observability, prompt management, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.43.0)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.44.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -533,8 +533,16 @@ and revises it. Detection logic is shared with the eval scorers
 one core detector, two surfaces — with an optional Presidio PII backend via
 `pip install fastaiagent[safety]`.
 
-See [docs/guardrails/responsible-ai.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/guardrails/responsible-ai.md)
-and the runnable [examples/73_responsible_ai.py](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/73_responsible_ai.py).
+**Honest failure mode.** A model-judged check can itself fail (a timeout, a 5xx).
+Every guardrail takes an `on_error` policy — `"block"` (fail closed) or `"allow"`
+(fail open) — so you decide what a *failed check* means, and a failure is never
+silent: the result is flagged `errored` (surfaced as its own outcome in the Local
+UI and connected traces) so a degraded check is never mistaken for a clean pass.
+
+See [docs/guardrails/responsible-ai.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/guardrails/responsible-ai.md),
+the fail-policy reference in [docs/guardrails/index.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/guardrails/index.md#fail-policy-on_error),
+and runnable [examples/73_responsible_ai.py](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/73_responsible_ai.py)
+· [examples/91_guardrail_on_error.py](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/91_guardrail_on_error.py).
 
 ## Works with LangGraph, CrewAI, PydanticAI — universal harness
 
