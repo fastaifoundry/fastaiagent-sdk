@@ -39,7 +39,7 @@ from fastaiagent.chain.interrupt import (
 )
 from fastaiagent.chain.node import node
 from fastaiagent.checkpointers import Checkpointer, PendingInterrupt, SQLiteCheckpointer
-from fastaiagent.client import connect, disconnect, push
+from fastaiagent.client import connect, disconnect, push, refresh_policy
 from fastaiagent.eval import (
     Dataset,
     EvalResults,
@@ -122,6 +122,7 @@ __all__ = [
     "__version__",
     "connect",
     "disconnect",
+    "refresh_policy",
     "push",
     "job_scope",
     "is_connected",

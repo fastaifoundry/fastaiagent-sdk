@@ -81,7 +81,11 @@ plane runs no agent code. See [Registration](registration.md).
 **Read down** — these fetch resources the platform owns, which is different from
 syncing your local objects: `PromptRegistry.get(...)`, `Dataset.from_platform`,
 `Replay.from_platform`, `PlatformKB.search`, plane-backed memory blocks, and the
-cached governance policy.
+cached governance policy. The cached policy is also *enforced* down: a guardrail
+authored on the plane is pulled and enforced at the edge alongside your local
+guardrails (see [Managed governance](../guardrails/managed-governance.md)) — a
+policy *definition* descends and the **SDK enforces it locally**; no plane code
+runs your agent.
 
 !!! warning "Three honest exceptions to 'push-only'"
     - **Checkpoint restore** genuinely pulls state down — the platform serves a

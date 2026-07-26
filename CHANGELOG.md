@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.45.0] - 2026-07-26
+
+### Added — plane-authored guardrails, enforced at the edge
+
+- **A guardrail authored on the Enterprise plane is now enforced by a connected
+  SDK agent.** `connect()` already pulled the governance policy; the SDK now turns
+  each distributed `guardrail_rule` into a runtime `Guardrail` and enforces it
+  alongside the agent's local `guardrails=[...]` — at all four positions (input /
+  output / tool_call / tool_result). An agent with *no* local guardrails still
+  blocks on a centrally-authored rule. This is the read-down half of the guardrail
+  story; local guardrails continue to travel *up* as part of an agent's definition.
+- **Reuses the existing runners, no new check engine.** A rule is mapped onto the
+  SDK's own `regex` / `schema` / `classifier` / `llm_judge` runners
+  (`fastaiagent.guardrail.from_policy`), so plane rules enforce exactly like local
+  ones — including the `on_error` fail policy. A `code` rule (server-side callable
+  the SDK doesn't have) is skipped rather than silently passing.
+- **Scoped by `agent_ids`.** A rule attached to specific agents applies only to
+  them; an unattached rule is domain-wide. Built guardrails are memoized by policy
+  `version`, so an edit on the plane is picked up on the next pull.
+- **`refresh_policy()`** re-pulls the governance policy mid-session to pick up a
+  guardrail authored on the plane after `connect()`.
+- Unconnected / local-only runs are unchanged and pay nothing (no policy cache →
+  just the local guardrail list).
+
 ## [1.44.0] - 2026-07-25
 
 ### Added — configurable guardrail fail policy (`on_error`) + a visible `errored` outcome

@@ -37,6 +37,43 @@ connect() ──▶ GET /policy (cache)
 Only tools that match a configured policy incur a `/policy/decide` round-trip;
 everything else runs untouched.
 
+## Plane-authored guardrails (enforced at the edge)
+
+The same `GET /policy` pull also carries **guardrails authored on the plane**. A
+connected agent turns each distributed rule into a runtime guardrail and enforces
+it *alongside* its local `guardrails=[...]` — at all four positions. An agent with
+**no local guardrails** still blocks on a centrally-authored rule:
+
+```python
+import fastaiagent as fa
+from fastaiagent import Agent, LLMClient
+
+# An admin created a "block-ssn-output" regex guardrail in the console.
+fa.connect(api_key="fa_k_...", target="https://app.fastaiagent.net")
+
+agent = Agent(name="support", llm=LLMClient(provider="openai", model="gpt-4o"))
+#                                    ^ no guardrails=[...] defined locally
+agent.run("Confirm my record: name Dana, SSN 123-45-6789.")
+# -> GuardrailBlockedError(guardrail_name="block-ssn-output")
+```
+
+- **No new check engine.** A rule is mapped onto the SDK's own
+  `regex` / `schema` / `classifier` / `llm_judge` runners
+  (`fastaiagent.guardrail.from_policy`), so plane rules enforce exactly like local
+  ones — including the `on_error` fail policy. A `code` rule (a server-side
+  callable the SDK doesn't have) is skipped rather than silently passing.
+- **Scoping.** A rule attached to specific agents applies only to them; an
+  unattached rule is domain-wide. Built guardrails are memoized by policy
+  `version`, so an edit on the plane is picked up on the next pull.
+- **Refresh.** `fa.refresh_policy()` re-pulls the policy mid-session to pick up a
+  guardrail authored *after* `connect()`.
+- **Local-only is unchanged.** With no connection there is no policy cache, so a
+  local run enforces exactly its own `guardrails=[...]` and pays nothing.
+
+Enforcement is always **local** — the runtime is the enforcement point (see
+[Who actually blocks](index.md)). The plane *authors and distributes*; it never
+reaches into a running agent.
+
 ## Enrolling an agent
 
 Two things make an agent governable:

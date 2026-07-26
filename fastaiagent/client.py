@@ -248,6 +248,10 @@ def connect(
             )
         if presp.status_code == 200:
             _connection.policy_cache = presp.json()
+            # Rebuild plane-authored guardrails against the fresh policy version.
+            from fastaiagent.guardrail.from_policy import clear_cache
+
+            clear_cache()
             logger.info(
                 "Cached governance policy: version=%s approval_policies=%d guardrail_rules=%d",
                 _connection.policy_cache.get("version"),
@@ -405,6 +409,12 @@ def disconnect() -> None:
     _connection.project_id = None
     _connection.scopes = []
     _connection.policy_cache = None
+    try:
+        from fastaiagent.guardrail.from_policy import clear_cache
+
+        clear_cache()
+    except Exception:
+        logger.debug("Could not clear plane-guardrail cache on disconnect", exc_info=True)
     _connection.governance_fail_mode = "open"  # WS4: revert to non-breaking default
     _connection.auto_register = True
     _connection.console_url = None
@@ -416,3 +426,46 @@ def disconnect() -> None:
         _push.reset_registration_state()
     except Exception:
         logger.debug("Could not reset registration state on disconnect", exc_info=True)
+
+
+def _plane_guardrail_rules() -> list[dict[str, Any]]:
+    """Guardrail rules distributed by the plane in the cached policy (``[]`` when
+    not connected). Consumed by :mod:`fastaiagent.guardrail.from_policy` so a
+    connected agent enforces plane-authored guardrails."""
+    if _connection.policy_cache is None:
+        return []
+    return _connection.policy_cache.get("guardrail_rules") or []
+
+
+def _plane_policy_version() -> str | None:
+    """Version hash of the cached policy (changes when a rule is edited on the
+    plane), used to key the plane-guardrail cache."""
+    if _connection.policy_cache is None:
+        return None
+    return _connection.policy_cache.get("version")
+
+
+def refresh_policy() -> str | None:
+    """Re-pull the governance policy from the plane and return its version.
+
+    ``connect()`` already pulls once; call this to pick up a guardrail authored on
+    the plane after the session started. Plane-authored guardrails are rebuilt on
+    the next agent run. No-op (returns ``None``) when not connected.
+    """
+    if not _connection.is_connected:
+        return None
+    try:
+        import httpx
+
+        with httpx.Client(timeout=10, verify=True) as client:
+            presp = client.get(
+                f"{_connection.target}/public/v1/policy", headers=_connection.headers
+            )
+        if presp.status_code == 200:
+            _connection.policy_cache = presp.json()
+            from fastaiagent.guardrail.from_policy import clear_cache
+
+            clear_cache()
+    except Exception:
+        logger.debug("refresh_policy: could not pull policy (keeping last-known)", exc_info=True)
+    return _plane_policy_version()

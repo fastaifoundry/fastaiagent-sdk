@@ -330,6 +330,24 @@ class Agent:
             )
         )
 
+    def _effective_guardrails(self) -> list[Guardrail]:
+        """The agent's local guardrails plus any plane-authored guardrails
+        distributed to this connected agent via the cached governance policy
+        (scoped by ``agent_ids``). Returns just the local list when not connected
+        or nothing applies — so unconnected/local runs are unchanged and pay
+        nothing. This is how a guardrail authored on the Enterprise plane is
+        enforced at the edge by the runtime.
+        """
+        try:
+            from fastaiagent.guardrail.from_policy import plane_guardrails_for_agent
+
+            plane = plane_guardrails_for_agent(self.agent_id)
+        except Exception:
+            return self.guardrails
+        if not plane:
+            return self.guardrails
+        return [*self.guardrails, *plane]
+
     async def arun(
         self,
         input: AgentInput,
@@ -577,11 +595,16 @@ class Agent:
                 input if isinstance(input, str) else _input_summary_text(normalized_parts)
             )
 
+            # Effective guardrails = the agent's local list + any authored on the
+            # plane and distributed to this connected agent. Computed once so
+            # input/tool/output enforcement all see the same set.
+            eff_guardrails = self._effective_guardrails()
+
             # Execute input guardrails (blocking). Guardrails are text-only
             # today; we pass the text summary so policies still trigger on
             # the textual portion of multimodal input.
-            if self.guardrails:
-                await execute_guardrails(self.guardrails, input_text, GuardrailPosition.input)
+            if eff_guardrails:
+                await execute_guardrails(eff_guardrails, input_text, GuardrailPosition.input)
 
             # Build messages — when resuming, restore the saved history.
             llm_messages = (
@@ -608,7 +631,7 @@ class Agent:
                     max_iterations=self.config.max_iterations,
                     tool_choice=self.config.tool_choice,
                     context=context,
-                    guardrails=self.guardrails or None,
+                    guardrails=eff_guardrails or None,
                     mw_pipeline=self._mw_pipeline if self._mw_pipeline else None,
                     mw_ctx=mw_ctx,
                     checkpointer=self._checkpointer,
@@ -651,8 +674,8 @@ class Agent:
                 )
 
             # Execute output guardrails.
-            if self.guardrails:
-                await execute_guardrails(self.guardrails, output, GuardrailPosition.output)
+            if eff_guardrails:
+                await execute_guardrails(eff_guardrails, output, GuardrailPosition.output)
 
             # Store in memory. Memory backends are text-only; record the
             # text summary so multimodal calls don't break the memory store.
@@ -718,9 +741,12 @@ class Agent:
             else _input_summary_text(normalize_input(input))
         )
 
+        # Effective guardrails = local + plane-authored (see arun for details).
+        eff_guardrails = self._effective_guardrails()
+
         # Execute input guardrails (blocking) on the text portion.
-        if self.guardrails:
-            await execute_guardrails(self.guardrails, input_text, GuardrailPosition.input)
+        if eff_guardrails:
+            await execute_guardrails(eff_guardrails, input_text, GuardrailPosition.input)
 
         llm_messages = self._build_messages(input, context=context, history=messages)
 
@@ -758,7 +784,7 @@ class Agent:
                 max_iterations=self.config.max_iterations,
                 tool_choice=self.config.tool_choice,
                 context=context,
-                guardrails=self.guardrails or None,
+                guardrails=eff_guardrails or None,
                 mw_pipeline=self._mw_pipeline if self._mw_pipeline else None,
                 mw_ctx=mw_ctx,
                 checkpointer=self._checkpointer,
@@ -776,8 +802,8 @@ class Agent:
             output = accumulated_text
 
             # Execute output guardrails
-            if self.guardrails:
-                await execute_guardrails(self.guardrails, output, GuardrailPosition.output)
+            if eff_guardrails:
+                await execute_guardrails(eff_guardrails, output, GuardrailPosition.output)
 
             # Store in memory (text summary for multimodal inputs).
             # Wrapped in a ``memory.write`` span (+ per-block children).
