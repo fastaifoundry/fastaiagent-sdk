@@ -14,66 +14,47 @@ Covers the four defects found by the framework/plane assessment:
   carries no ``call_id``, so tokens/cost land; and a failed provider call closes
   the LLM span as ERROR rather than leaving it UNSET with no usage.
 
-Real LLM calls throughout — no mocking. The failure tests do not mock either:
-they point the provider at a closed local port so a genuine connection error
+Real LLM calls throughout — no mocking. The failure test does not mock either:
+it points the provider at a closed local port so a genuine connection error
 propagates through the real client stack.
+
+Reads the ambient trace store via ``TraceStore.default()`` and polls for the
+span it produced, matching the other harness modules. Do **not** repoint
+``FASTAIAGENT_LOCAL_DB`` here: the OTel provider and its storage processor are
+process singletons wired on first use, so a later override neither takes effect
+nor stays contained — it leaks into every module that runs afterwards.
 """
 
 from __future__ import annotations
 
-import json
 import os
-import sqlite3
+import time
 import uuid
-from pathlib import Path
 
 import pytest
 
 pytestmark = pytest.mark.e2e
 
+HAS_OPENAI = bool(os.environ.get("OPENAI_API_KEY"))
+needs_openai = pytest.mark.skipif(not HAS_OPENAI, reason="OPENAI_API_KEY not set")
+
 CLOSED_PORT_BASE_URL = "http://127.0.0.1:9/v1"
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Helpers — mirror tests/e2e/test_harness_pydanticai.py
 # ---------------------------------------------------------------------------
-
-
-def _attrs(row: sqlite3.Row) -> dict:
-    return json.loads(row["attributes"] or "{}")
-
-
-def _root(rows: list[sqlite3.Row]) -> sqlite3.Row:
-    for r in rows:
-        if r["parent_span_id"] is None:
-            return r
-    raise AssertionError("no root span recorded")
-
-
-def _exception_events(row: sqlite3.Row) -> list[dict]:
-    return [e for e in json.loads(row["events"] or "[]") if e.get("name") == "exception"]
-
-
-def _plane_derived_name(rows: list[sqlite3.Row]) -> str | None:
-    """Reimplements the plane's ``_root_agent_name`` resolution order."""
-    root = _root(rows)
-    attrs = _attrs(root)
-    for key in ("agent.name", "chain.name", "swarm.name", "workflow.name"):
-        if attrs.get(key):
-            return str(attrs[key])
-    nm = root["name"] or ""
-    return nm.split(".", 1)[1] if "." in nm else (nm or None)
 
 
 @pytest.fixture(scope="module", autouse=True)
 def _langchain_v0_globals() -> None:
-    """Reconcile a third-party version mismatch, not a mock.
+    """Reconcile a third-party version clash, not a mock.
 
     ``langchain>=1`` removed the module-level ``verbose`` / ``debug`` /
     ``llm_cache`` globals that ``langchain-core~=0.3`` still probes in
     ``langchain_core.globals``; without them, constructing or invoking any
     LangChain chat model raises ``AttributeError``. No fastaiagent behaviour is
-    stubbed — this only restores the attributes langchain-core expects.
+    stubbed — this only restores what langchain-core expects.
     """
     try:
         import langchain
@@ -84,63 +65,74 @@ def _langchain_v0_globals() -> None:
             setattr(langchain, attr, None if attr == "llm_cache" else False)
 
 
-@pytest.fixture(scope="module")
-def trace_db(tmp_path_factory: pytest.TempPathFactory) -> str:
-    """One throwaway trace store for the whole module.
+def _trace_store():
+    from fastaiagent.trace.storage import TraceStore
 
-    Module-scoped on purpose: the OTel ``TracerProvider`` and its storage
-    processor are process singletons wired on first use, so re-pointing
-    ``FASTAIAGENT_LOCAL_DB`` per test would silently keep writing to the first
-    test's database. Tests therefore share one store and read only the spans
-    their own call produced (see :func:`spans_since`).
-    """
-    db = tmp_path_factory.mktemp("linkage") / "linkage.db"
-    os.environ["FASTAIAGENT_LOCAL_DB"] = str(db)
-    os.environ["FASTAIAGENT_UI_ENABLED"] = "1"
-    from fastaiagent._internal.config import reset_config
-
-    reset_config()
-    return str(db)
+    return TraceStore.default()
 
 
-def _max_rowid(db_path: str) -> int:
-    if not Path(db_path).exists():
-        return 0
-    conn = sqlite3.connect(db_path)
-    try:
-        row = conn.execute("SELECT COALESCE(MAX(rowid), 0) FROM spans").fetchone()
-        return int(row[0]) if row else 0
-    except sqlite3.OperationalError:  # table not created yet
-        return 0
-    finally:
-        conn.close()
+def _wait_for_trace(predicate, timeout: float = 20.0):
+    """Return the first trace containing a span matching ``predicate``."""
+    store = _trace_store()
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        for summary in store.list_traces():
+            try:
+                trace = store.get_trace(summary.trace_id)
+            except Exception:
+                continue
+            if any(predicate(span) for span in trace.spans):
+                return trace
+        time.sleep(0.25)
+    return None
 
 
-@pytest.fixture
-def spans_since(trace_db: str):
-    """Return only the spans written after this fixture was set up."""
-    cursor = _max_rowid(trace_db)
-
-    def _read() -> list[sqlite3.Row]:
-        conn = sqlite3.connect(trace_db)
-        conn.row_factory = sqlite3.Row
-        try:
-            return list(
-                conn.execute(
-                    "SELECT name, parent_span_id, status, attributes, events "
-                    "FROM spans WHERE rowid > ? ORDER BY start_time",
-                    (cursor,),
-                )
-            )
-        finally:
-            conn.close()
-
-    return _read
+def _root(trace):
+    for span in trace.spans:
+        if span.parent_span_id is None:
+            return span
+    return trace.spans[0]
 
 
-def _require_openai() -> None:
-    if not os.environ.get("OPENAI_API_KEY"):
-        pytest.skip("OPENAI_API_KEY not set")
+def _exception_events(span) -> list:
+    return [e for e in (span.events or []) if (e or {}).get("name") == "exception"]
+
+
+def _plane_derived_name(trace) -> str | None:
+    """Reimplements the plane's ``_root_agent_name`` resolution order."""
+    root = _root(trace)
+    attrs = root.attributes or {}
+    for key in ("agent.name", "chain.name", "swarm.name", "workflow.name"):
+        if attrs.get(key):
+            return str(attrs[key])
+    nm = root.name or ""
+    return nm.split(".", 1)[1] if "." in nm else (nm or None)
+
+
+def _by_agent_name(name: str):
+    return lambda span: (span.attributes or {}).get("agent.name") == name
+
+
+def _by_crew_role(role: str):
+    def _pred(span) -> bool:
+        attrs = span.attributes or {}
+        return role in str(attrs.get("crewai.agent.role", "")) or role in (span.name or "")
+
+    return _pred
+
+
+def _marker_in_payload(marker: str):
+    """Match a span whose recorded input/output carries our unique marker —
+    the only way to find an *unnamed* run's trace."""
+
+    def _pred(span) -> bool:
+        attrs = span.attributes or {}
+        for key in ("input", "output", "gen_ai.request.messages"):
+            if marker in str(attrs.get(key, "")):
+                return True
+        return False
+
+    return _pred
 
 
 # ---------------------------------------------------------------------------
@@ -148,8 +140,8 @@ def _require_openai() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_langgraph_root_span_carries_agent_name(spans_since) -> None:
-    _require_openai()
+@needs_openai
+def test_langgraph_root_span_carries_agent_name() -> None:
     pytest.importorskip("langgraph")
     from langchain_openai import ChatOpenAI
     from langgraph.prebuilt import create_react_agent
@@ -161,19 +153,22 @@ def test_langgraph_root_span_carries_agent_name(spans_since) -> None:
     graph = create_react_agent(
         ChatOpenAI(model="gpt-4o-mini", temperature=0, verbose=False), tools=[]
     )
-    guarded = lc.with_guardrails(graph, name=name)
-    guarded.invoke({"messages": [("user", "Say OK and nothing else.")]})
+    lc.with_guardrails(graph, name=name).invoke(
+        {"messages": [("user", "Say OK and nothing else.")]}
+    )
 
-    rows = spans_since()
-    assert _attrs(_root(rows)).get("agent.name") == name
+    trace = _wait_for_trace(_by_agent_name(name))
+    assert trace is not None, f"no trace carrying agent.name={name!r}"
+    root = _root(trace)
+    assert (root.attributes or {}).get("agent.name") == name
     # The span NAME stays generic — the fix is the attribute, which the plane
-    # consults first. Guarding this keeps the regression honest.
-    assert _root(rows)["name"].startswith(("langchain.", "langgraph."))
-    assert _plane_derived_name(rows) == name
+    # consults first. Asserting both keeps the regression honest.
+    assert root.name.startswith(("langchain.", "langgraph."))
+    assert _plane_derived_name(trace) == name
 
 
-def test_pydanticai_root_span_carries_agent_name(spans_since) -> None:
-    _require_openai()
+@needs_openai
+def test_pydanticai_root_span_carries_agent_name() -> None:
     pytest.importorskip("pydantic_ai")
     from pydantic_ai import Agent
 
@@ -181,17 +176,18 @@ def test_pydanticai_root_span_carries_agent_name(spans_since) -> None:
 
     pa.enable()
     name = f"e2e-linkage-{uuid.uuid4().hex[:8]}"
-    guarded = pa.with_guardrails(
+    pa.with_guardrails(
         Agent("openai:gpt-4o-mini", system_prompt="Be terse."), name=name
-    )
-    guarded.run_sync("Say OK and nothing else.")
+    ).run_sync("Say OK and nothing else.")
 
-    assert _plane_derived_name(spans_since()) == name
+    trace = _wait_for_trace(_by_agent_name(name))
+    assert trace is not None, f"no trace carrying agent.name={name!r}"
+    assert _plane_derived_name(trace) == name
 
 
-def test_unnamed_run_emits_no_agent_name(spans_since) -> None:
+@needs_openai
+def test_unnamed_run_emits_no_agent_name() -> None:
     """Unnamed runs must not invent an identity — documented behaviour."""
-    _require_openai()
     pytest.importorskip("langgraph")
     from langchain_openai import ChatOpenAI
     from langgraph.prebuilt import create_react_agent
@@ -199,23 +195,26 @@ def test_unnamed_run_emits_no_agent_name(spans_since) -> None:
     from fastaiagent.integrations import langchain as lc
 
     lc.enable()
+    marker = f"unnamed-{uuid.uuid4().hex[:8]}"
     graph = create_react_agent(
         ChatOpenAI(model="gpt-4o-mini", temperature=0, verbose=False), tools=[]
     )
-    graph.invoke({"messages": [("user", "Say OK and nothing else.")]})
+    graph.invoke({"messages": [("user", f"Reply with exactly: {marker}")]})
 
-    assert "agent.name" not in _attrs(_root(spans_since()))
+    trace = _wait_for_trace(_marker_in_payload(marker))
+    assert trace is not None, "could not locate the unnamed run's trace"
+    assert "agent.name" not in (_root(trace).attributes or {})
 
 
-def test_agent_name_context_manager(spans_since) -> None:
+@needs_openai
+def test_agent_name_context_manager() -> None:
     """The public escape hatch for code that doesn't use with_guardrails."""
-    _require_openai()
     pytest.importorskip("langgraph")
     from langchain_openai import ChatOpenAI
     from langgraph.prebuilt import create_react_agent
 
+    from fastaiagent.integrations import agent_name
     from fastaiagent.integrations import langchain as lc
-    from fastaiagent.integrations._identity import agent_name
 
     lc.enable()
     name = f"e2e-ctx-{uuid.uuid4().hex[:8]}"
@@ -225,7 +224,9 @@ def test_agent_name_context_manager(spans_since) -> None:
     with agent_name(name):
         graph.invoke({"messages": [("user", "Say OK and nothing else.")]})
 
-    assert _plane_derived_name(spans_since()) == name
+    trace = _wait_for_trace(_by_agent_name(name))
+    assert trace is not None, f"no trace carrying agent.name={name!r}"
+    assert _plane_derived_name(trace) == name
 
 
 # ---------------------------------------------------------------------------
@@ -235,11 +236,14 @@ def test_agent_name_context_manager(spans_since) -> None:
 
 def test_push_external_agent_is_noop_when_disconnected() -> None:
     """Must never raise or push when there is no plane connection."""
+    from fastaiagent.client import _connection
     from fastaiagent.integrations._registry import (
         push_external_agent,
         reset_plane_pushed_for_tests,
     )
 
+    if _connection.is_connected:
+        pytest.skip("a plane connection is active; this asserts the offline path")
     reset_plane_pushed_for_tests()
     assert push_external_agent(f"offline-{uuid.uuid4().hex[:6]}", "langchain") is None
 
@@ -249,13 +253,13 @@ def test_push_external_agent_is_noop_when_disconnected() -> None:
 # ---------------------------------------------------------------------------
 
 
+@needs_openai
 def test_crewai_failure_records_exception_once_and_marks_llm_span(
-    spans_since, monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """B: exactly one exception event per errored span.
     C: the LLM span closes as ERROR instead of dangling UNSET.
     """
-    _require_openai()
     pytest.importorskip("crewai")
     from crewai import LLM, Agent, Crew, Process, Task
 
@@ -265,8 +269,9 @@ def test_crewai_failure_records_exception_once_and_marks_llm_span(
     monkeypatch.setenv("OPENAI_BASE_URL", CLOSED_PORT_BASE_URL)
     ca.enable()
 
+    role = f"E2ERole-{uuid.uuid4().hex[:8]}"
     agent = Agent(
-        role="R",
+        role=role,
         goal="g",
         backstory="b",
         llm=LLM(model="openai/gpt-4o-mini", temperature=0),
@@ -279,35 +284,38 @@ def test_crewai_failure_records_exception_once_and_marks_llm_span(
     with pytest.raises(Exception):
         crew.kickoff()
 
-    rows = spans_since()
-    errored = [r for r in rows if _exception_events(r)]
+    trace = _wait_for_trace(_by_crew_role(role))
+    assert trace is not None, "no trace recorded for the failed crew run"
+
+    errored = [s for s in trace.spans if _exception_events(s)]
     assert errored, "expected at least one span carrying an exception event"
-    for row in errored:
-        assert len(_exception_events(row)) == 1, (
-            f"{row['name']!r} recorded {len(_exception_events(row))} exception events; "
+    for span in errored:
+        assert len(_exception_events(span)) == 1, (
+            f"{span.name!r} recorded {len(_exception_events(span))} exception events; "
             "the explicit record_exception + OTel auto-record duplication is back"
         )
 
-    llm_spans = [r for r in rows if r["name"].startswith("llm.")]
+    llm_spans = [s for s in trace.spans if (s.name or "").startswith("llm.")]
     assert llm_spans, "expected an llm.* span even though the call failed"
-    assert all(r["status"] == "ERROR" for r in llm_spans), (
+    assert all(s.status == "ERROR" for s in llm_spans), (
         "failed LLM span must close as ERROR, not dangle UNSET — otherwise it is "
         "indistinguishable from a call still in flight"
     )
 
 
-def test_crewai_llm_span_carries_usage_on_success(spans_since) -> None:
+@needs_openai
+def test_crewai_llm_span_carries_usage_on_success() -> None:
     """C: correlation works even when LLMCallStartedEvent has no call_id,
     so tokens/cost actually land on the span."""
-    _require_openai()
     pytest.importorskip("crewai")
     from crewai import LLM, Agent, Crew, Process, Task
 
     from fastaiagent.integrations import crewai as ca
 
     ca.enable()
+    role = f"E2ESupport-{uuid.uuid4().hex[:8]}"
     agent = Agent(
-        role="Support",
+        role=role,
         goal="Answer briefly.",
         backstory="Terse assistant.",
         llm=LLM(model="openai/gpt-4o-mini", temperature=0),
@@ -317,11 +325,18 @@ def test_crewai_llm_span_carries_usage_on_success(spans_since) -> None:
     task = Task(
         description="Say OK and nothing else.", expected_output="OK", agent=agent
     )
-    Crew(agents=[agent], tasks=[task], process=Process.sequential, verbose=False).kickoff()
+    Crew(
+        agents=[agent], tasks=[task], process=Process.sequential, verbose=False
+    ).kickoff()
 
-    llm_spans = [r for r in spans_since() if r["name"].startswith("llm.")]
+    trace = _wait_for_trace(_by_crew_role(role))
+    assert trace is not None, "no trace recorded for the crew run"
+
+    llm_spans = [s for s in trace.spans if (s.name or "").startswith("llm.")]
     assert llm_spans, "expected an llm.* span"
-    assert any("gen_ai.usage.input_tokens" in _attrs(r) for r in llm_spans), (
+    assert any(
+        "gen_ai.usage.input_tokens" in (s.attributes or {}) for s in llm_spans
+    ), (
         "no CrewAI LLM span carried gen_ai.usage.* — correlation regressed, so the "
         "plane receives zero tokens/cost for CrewAI runs"
     )
