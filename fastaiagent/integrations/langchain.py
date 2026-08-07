@@ -19,11 +19,18 @@ therefore leaked open.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import threading
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
+
+from fastaiagent.integrations._identity import (
+    reset_agent_name,
+    set_agent_name,
+    stamp_agent_name,
+)
 
 if TYPE_CHECKING:  # pragma: no cover - hint-only imports
     from langchain_core.callbacks import BaseCallbackHandler
@@ -327,6 +334,10 @@ def _build_handler() -> BaseCallbackHandler:
                     framework="langchain",
                     **{"framework.version": _lc_version()},
                 )
+                # The framework's own serialization names this span generically
+                # ("langchain.chain"), which carries no agent identity. Stamp the
+                # caller's name so the plane can resolve the trace to an agent.
+                stamp_agent_name(span, "langchain")
             if trace_payloads_enabled():
                 span.set_attribute("input", _safe_json(inputs))
 
@@ -836,15 +847,27 @@ class _GuardedRunnable:
             agent_name=self._fastaiagent_name,
         )
 
+    @contextlib.contextmanager
+    def _named(self) -> Any:
+        """Publish the agent name for the root span opened inside the
+        delegated call, so the control plane can link the trace."""
+        token = set_agent_name(self._fastaiagent_name)
+        try:
+            yield
+        finally:
+            reset_agent_name(token)
+
     def invoke(self, input: Any, *args: Any, **kwargs: Any) -> Any:
         self._check_input(input)
-        out = self._wrapped.invoke(input, *args, **kwargs)
+        with self._named():
+            out = self._wrapped.invoke(input, *args, **kwargs)
         self._check_output(out)
         return out
 
     async def ainvoke(self, input: Any, *args: Any, **kwargs: Any) -> Any:
         self._check_input(input)
-        out = await self._wrapped.ainvoke(input, *args, **kwargs)
+        with self._named():
+            out = await self._wrapped.ainvoke(input, *args, **kwargs)
         self._check_output(out)
         return out
 
@@ -853,25 +876,28 @@ class _GuardedRunnable:
         # in harness.md — input-only stream is the no-latency path).
         self._check_input(input)
         chunks: list[Any] = []
-        for chunk in self._wrapped.stream(input, *args, **kwargs):
-            chunks.append(chunk)
-            yield chunk
+        with self._named():
+            for chunk in self._wrapped.stream(input, *args, **kwargs):
+                chunks.append(chunk)
+                yield chunk
         if self._output_guardrails:
             self._check_output(chunks[-1] if chunks else "")
 
     async def astream(self, input: Any, *args: Any, **kwargs: Any) -> Any:
         self._check_input(input)
         chunks: list[Any] = []
-        async for chunk in self._wrapped.astream(input, *args, **kwargs):
-            chunks.append(chunk)
-            yield chunk
+        with self._named():
+            async for chunk in self._wrapped.astream(input, *args, **kwargs):
+                chunks.append(chunk)
+                yield chunk
         if self._output_guardrails:
             self._check_output(chunks[-1] if chunks else "")
 
     def batch(self, inputs: list[Any], *args: Any, **kwargs: Any) -> list[Any]:
         for i in inputs:
             self._check_input(i)
-        outs: list[Any] = self._wrapped.batch(inputs, *args, **kwargs)
+        with self._named():
+            outs: list[Any] = self._wrapped.batch(inputs, *args, **kwargs)
         for o in outs:
             self._check_output(o)
         return outs
@@ -1051,7 +1077,10 @@ def register_agent(compiled: Any, *, name: str) -> None:
     partial tree.
     """
     _require()
-    from fastaiagent.integrations._registry import upsert_agent
+    from fastaiagent.integrations._registry import (
+        push_external_agent,
+        upsert_agent,
+    )
 
     topology = _extract_topology(compiled)
     model, provider = _extract_model(compiled)
@@ -1062,6 +1091,9 @@ def register_agent(compiled: Any, *, name: str) -> None:
         provider=provider,
         topology=topology,
     )
+    # Also register with the control plane so traces stamped with this
+    # agent.name resolve to a real agent (no-op when not connected).
+    push_external_agent(name, "langchain", model=model)
 
 
 def kb_as_retriever(

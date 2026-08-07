@@ -27,7 +27,26 @@ from urllib.error import URLError
 from urllib.request import urlopen
 
 
+def _langchain_compat() -> None:
+    """Reconcile a LangChain-ecosystem version clash.
+
+    ``langchain>=1`` removed the module-level ``verbose`` / ``debug`` /
+    ``llm_cache`` globals that ``langchain-core~=0.3`` still probes in
+    ``langchain_core.globals``. With both installed, constructing *or* invoking
+    any chat model raises ``AttributeError``. Restoring the three attributes is
+    a no-op when the installed versions already agree.
+    """
+    try:
+        import langchain
+    except ImportError:
+        return
+    for attr in ("verbose", "debug", "llm_cache"):
+        if not hasattr(langchain, attr):
+            setattr(langchain, attr, None if attr == "llm_cache" else False)
+
+
 def main() -> int:
+    _langchain_compat()
     if not os.environ.get("OPENAI_API_KEY"):
         print("OPENAI_API_KEY is not set — skipping example.")
         return 0

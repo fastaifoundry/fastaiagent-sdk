@@ -23,9 +23,16 @@ us the right parent-child hierarchy without manual run-id threading.
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import json
 from typing import Any
+
+from fastaiagent.integrations._identity import (
+    reset_agent_name,
+    set_agent_name,
+    stamp_agent_name,
+)
 
 _INSTALL_HINT = 'CrewAI is required. Install with: pip install "fastaiagent[crewai]"'
 _PAYLOAD_TRUNC = 10_000
@@ -33,6 +40,11 @@ _PAYLOAD_TRUNC = 10_000
 _enabled = False
 # Open spans, keyed by event call_id / event_id. Cleared on completion.
 _llm_spans: dict[str, Any] = {}
+# Deterministic fallback for crewai builds whose LLMCallStartedEvent carries
+# no call_id/event_id (e.g. 1.6.x): queue open spans per (agent_id, task_id)
+# and pop in call order. Mirrors the LIFO fallback the tool path already uses,
+# but keyed rather than global, so concurrent agents can't cross-claim.
+_llm_span_fifo: dict[tuple[str, str], list[Any]] = {}
 _tool_spans: dict[str, Any] = {}
 # LIFO of (tool_name, span) for cases where the finished event has no
 # correlation key back to its started event. Seen on crewai 1.9.x for
@@ -151,6 +163,7 @@ def _install_method_patches() -> None:
                     framework="crewai",
                     **{"framework.version": _crewai_version()},
                 )
+                stamp_agent_name(span, "crewai")
                 span.set_attribute("crewai.crew.name", str(crew_name))
                 process = getattr(self, "process", None)
                 if process is not None:
@@ -166,8 +179,7 @@ def _install_method_patches() -> None:
                     span.set_attribute("crewai.crew.inputs", _safe_json(inputs))
                 try:
                     result = original_kickoff(self, *args, **kwargs)
-                except BaseException as e:
-                    span.record_exception(e)
+                except BaseException:
                     raise
                 if trace_payloads_enabled():
                     raw = getattr(result, "raw", None)
@@ -194,8 +206,7 @@ def _install_method_patches() -> None:
                     span.set_attribute("crewai.crew.inputs", _safe_json(inputs))
                 try:
                     result = await original_kickoff_async(self, *args, **kwargs)
-                except BaseException as e:
-                    span.record_exception(e)
+                except BaseException:
                     raise
                 if trace_payloads_enabled():
                     raw = getattr(result, "raw", None)
@@ -231,8 +242,7 @@ def _install_method_patches() -> None:
                         )
                 try:
                     result = original_execute_task(self, *args, **kwargs)
-                except BaseException as e:
-                    span.record_exception(e)
+                except BaseException:
                     raise
                 if trace_payloads_enabled():
                     span.set_attribute("crewai.agent.output", _safe_json(result))
@@ -261,8 +271,7 @@ def _install_method_patches() -> None:
                     span.set_attribute("crewai.task.agent_role", str(assigned))
                 try:
                     result = original_task_sync(self, *args, **kwargs)
-                except BaseException as e:
-                    span.record_exception(e)
+                except BaseException:
                     raise
                 if trace_payloads_enabled():
                     raw = getattr(result, "raw", None)
@@ -286,8 +295,7 @@ def _install_method_patches() -> None:
                     )
                 try:
                     return original_task_async(self, *args, **kwargs)
-                except BaseException as e:
-                    span.record_exception(e)
+                except BaseException:
                     raise
 
         Task.execute_async = _mark_patched(task_async_wrapper, original_task_async)  # type: ignore[method-assign]
@@ -430,6 +438,7 @@ def _install_event_listeners() -> None:
     from crewai.events import crewai_event_bus
     from crewai.events.types.llm_events import (
         LLMCallCompletedEvent,
+        LLMCallFailedEvent,
         LLMCallStartedEvent,
     )
     from crewai.events.types.tool_usage_events import (
@@ -438,6 +447,7 @@ def _install_event_listeners() -> None:
         ToolUsageStartedEvent,
     )
     from opentelemetry import trace as otel_trace
+    from opentelemetry.trace import Status, StatusCode
 
     from fastaiagent.trace.otel import get_tracer
     from fastaiagent.trace.span import (
@@ -477,6 +487,34 @@ def _install_event_listeners() -> None:
                 keys.append(str(value))
         return keys
 
+    def _llm_fifo_key(event: Any) -> tuple[str, str]:
+        return (
+            str(getattr(event, "agent_id", "") or ""),
+            str(getattr(event, "task_id", "") or ""),
+        )
+
+    def _claim_llm_span(event: Any, *, completed: bool = False) -> Any:
+        """Find the open LLM span for this completed/failed event.
+
+        Explicit correlation ids first; otherwise pop the oldest span queued
+        under the same (agent_id, task_id) — call order within one agent+task
+        is FIFO, so this matches even when the build emits no ids.
+        """
+        for key in _llm_correlation_keys(event, completed=completed):
+            span = _llm_spans.pop(key, None)
+            if span is not None:
+                queue = _llm_span_fifo.get(_llm_fifo_key(event))
+                if queue and span in queue:
+                    queue.remove(span)
+                return span
+        queue = _llm_span_fifo.get(_llm_fifo_key(event))
+        if queue:
+            span = queue.pop(0)
+            for k in [k for k, v in _llm_spans.items() if v is span]:
+                del _llm_spans[k]
+            return span
+        return None
+
     @crewai_event_bus.on(LLMCallStartedEvent)
     def _on_llm_started(_source: Any, event: Any) -> None:
         model = getattr(event, "model", None)
@@ -495,25 +533,17 @@ def _install_event_listeners() -> None:
                 else None
             ),
         )
-        keys = _llm_correlation_keys(event)
-        if not keys:
-            try:
-                span.end()  # no way to correlate — don't leak
-            except Exception:
-                pass
-            return
-        for key in keys:
+        for key in _llm_correlation_keys(event):
             _llm_spans[key] = span
+        # Always queue under the composite key so a build without explicit
+        # correlation ids can still be matched on completion/failure.
+        _llm_span_fifo.setdefault(_llm_fifo_key(event), []).append(span)
 
     @crewai_event_bus.on(LLMCallCompletedEvent)
     def _on_llm_completed(_source: Any, event: Any) -> None:
         # Try every key shape — first hit wins. ``event_id`` differs
         # between Started and Completed on 1.9.x, so we put it last.
-        span = None
-        for key in _llm_correlation_keys(event, completed=True):
-            span = _llm_spans.pop(key, None)
-            if span is not None:
-                break
+        span = _claim_llm_span(event, completed=True)
         if span is None:
             return
         usage = getattr(event, "usage", None) or {}
@@ -552,6 +582,32 @@ def _install_event_listeners() -> None:
         cost = compute_cost_usd(bare, in_toks, out_toks)
         if cost is not None:
             set_fastaiagent_attributes(span, **{"cost.total_usd": cost})
+        try:
+            span.end()
+        except Exception:
+            pass
+
+    @crewai_event_bus.on(LLMCallFailedEvent)
+    def _on_llm_failed(_source: Any, event: Any) -> None:
+        """Close the LLM span as ERROR when the provider call fails.
+
+        Without this the span opened by ``_on_llm_started`` is never closed as
+        failed: it reaches the backend with request attributes and no usage,
+        which is indistinguishable from a call still in flight, so cost and
+        error-rate rollups silently under-count.
+        """
+        span = _claim_llm_span(event, completed=True)
+        if span is None:
+            return
+        err = getattr(event, "error", None)
+        try:
+            if isinstance(err, BaseException):
+                span.record_exception(err)
+            elif err:
+                span.add_event("llm.error", attributes={"message": str(err)[:500]})
+            span.set_status(Status(StatusCode.ERROR, str(err)[:500] if err else "LLM call failed"))
+        except Exception:  # pragma: no cover - defensive
+            pass
         try:
             span.end()
         except Exception:
@@ -833,6 +889,16 @@ class _GuardedCrew:
     def __getattr__(self, item: str) -> Any:
         return getattr(self._wrapped, item)
 
+    @contextlib.contextmanager
+    def _named(self) -> Any:
+        """Publish the agent name for the root span opened inside the
+        delegated call, so the control plane can link the trace."""
+        token = set_agent_name(self._fastaiagent_name)
+        try:
+            yield
+        finally:
+            reset_agent_name(token)
+
     def kickoff(self, inputs: Any = None, **kwargs: Any) -> Any:
         _run_guardrails(
             _extract_input_text(inputs) if inputs is not None else "",
@@ -840,7 +906,8 @@ class _GuardedCrew:
             side="input",
             agent_name=self._fastaiagent_name,
         )
-        result = self._wrapped.kickoff(inputs=inputs, **kwargs)
+        with self._named():
+            result = self._wrapped.kickoff(inputs=inputs, **kwargs)
         _run_guardrails(
             _extract_output_text(result),
             self._output_guardrails,
@@ -856,7 +923,8 @@ class _GuardedCrew:
             side="input",
             agent_name=self._fastaiagent_name,
         )
-        result = await self._wrapped.kickoff_async(inputs=inputs, **kwargs)
+        with self._named():
+            result = await self._wrapped.kickoff_async(inputs=inputs, **kwargs)
         _run_guardrails(
             _extract_output_text(result),
             self._output_guardrails,
@@ -980,7 +1048,10 @@ def _crew_topology(crew: Any) -> dict[str, Any]:
 def register_agent(crew: Any, *, name: str) -> None:
     """Persist a CrewAI ``Crew`` to the external-agent registry."""
     _require()
-    from fastaiagent.integrations._registry import upsert_agent
+    from fastaiagent.integrations._registry import (
+        push_external_agent,
+        upsert_agent,
+    )
 
     agents = getattr(crew, "agents", None) or []
     first_model = None
@@ -993,6 +1064,11 @@ def register_agent(crew: Any, *, name: str) -> None:
         model=_bare_model(first_model) if first_model else None,
         provider=provider,
         topology=_crew_topology(crew),
+    )
+    # Also register with the control plane so traces stamped with this
+    # agent.name resolve to a real agent (no-op when not connected).
+    push_external_agent(
+        name, "crewai", model=_bare_model(first_model) if first_model else None
     )
 
 

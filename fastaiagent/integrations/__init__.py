@@ -13,11 +13,18 @@ from __future__ import annotations
 
 from typing import Any
 
-__all__ = ["langchain", "crewai", "pydanticai", "anthropic", "openai"]
+# ``agent_name`` is a plain context manager with no third-party dependency, so
+# it is imported eagerly — it is the framework-agnostic way to name a run for
+# control-plane linkage when you are not using ``with_guardrails(name=...)``.
+from fastaiagent.integrations._identity import agent_name
+
+_SUBMODULES = ["langchain", "crewai", "pydanticai", "anthropic", "openai"]
+
+__all__ = [*_SUBMODULES, "agent_name"]
 
 
 def __getattr__(name: str) -> Any:
-    if name in __all__:
+    if name in _SUBMODULES:
         import importlib
 
         return importlib.import_module(f"fastaiagent.integrations.{name}")

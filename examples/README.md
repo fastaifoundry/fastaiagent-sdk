@@ -148,6 +148,7 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 - [`57_eval_langchain.py`](57_eval_langchain.py) — eval a LangGraph agent
 - [`58_guardrail_pydanticai.py`](58_guardrail_pydanticai.py) — `with_guardrails()` on PydanticAI
 - [`59_register_external_agent.py`](59_register_external_agent.py) — register a non-fastaiagent agent
+- [`93_connected_foreign_agent_linkage.py`](93_connected_foreign_agent_linkage.py) — link a LangGraph/CrewAI/PydanticAI trace to a control-plane agent via `agent.name` + plane registration (1.46.0) → [docs](../docs/integrations/overview.md#connecting-foreign-agents-to-the-control-plane)
 
 ### Connected control plane (Enterprise)
 The connected-state-plane bundle — run against a plane with `connected_state_plane` enabled (set `FASTAIAGENT_API_KEY` + `FASTAIAGENT_TARGET`). Each prints an expected-output snapshot; the plane-console views they produce are shown in the linked docs.

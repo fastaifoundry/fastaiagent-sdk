@@ -131,3 +131,20 @@ separate workflow visualisation.
 
 - `examples/56_trace_pydanticai.py`
 - `examples/58_guardrail_pydanticai.py`
+
+## Linking traces to a control-plane agent
+
+Pass `name=` so the root span carries `agent.name`, and call `register_agent()`
+so the plane has an agent with that name to match:
+
+```python
+from fastaiagent.integrations import pydanticai as integ
+
+integ.enable()
+guarded = integ.with_guardrails(obj, name="my-agent")
+integ.register_agent(guarded, name="my-agent")   # local registry + plane
+```
+
+Unnamed runs emit no `agent.name` and are not linked. See
+[the harness overview](overview.md#connecting-foreign-agents-to-the-control-plane).
+
