@@ -126,13 +126,16 @@ def _stamp_usage_and_cost(span: Any, result: Any) -> None:
 
     if result is None:
         return
-    usage_fn = getattr(result, "usage", None)
-    if not callable(usage_fn):
-        return
-    try:
-        usage = usage_fn()
-    except Exception:
-        return
+    # ``AgentRunResult.usage`` was a method through pydantic-ai 1.106 (already
+    # deprecated there) and is a plain property from 1.107. Accept both: the
+    # old `not callable(...) -> return` guard silently dropped every token and
+    # cost value on 1.107+, because a RunUsage object is not callable.
+    usage = getattr(result, "usage", None)
+    if callable(usage):
+        try:
+            usage = usage()
+        except Exception:
+            return
     if usage is None:
         return
 
