@@ -23,6 +23,14 @@ span it produced, matching the other harness modules. Do **not** repoint
 ``FASTAIAGENT_LOCAL_DB`` here: the OTel provider and its storage processor are
 process singletons wired on first use, so a later override neither takes effect
 nor stays contained — it leaks into every module that runs afterwards.
+
+The ``zz_`` prefix is deliberate. Collection is alphabetical and the store is
+shared across modules, so this module must run *after* the existing harness
+suites. ``test_harness_pydanticai.test_11_token_capture`` selects **any** trace
+tagged ``fastaiagent.framework == "pydanticai"`` rather than a sentinel of its
+own, so extra pydanticai traffic recorded before it can be picked up instead of
+its own run. Sorting last keeps this module additive: existing order-sensitive
+tests see exactly the trace population they saw before it existed.
 """
 
 from __future__ import annotations
