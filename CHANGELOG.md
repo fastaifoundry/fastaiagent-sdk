@@ -43,6 +43,19 @@ linked to an agent**, and that CrewAI runs reported no tokens or cost at all.
   `use_span(record_exception=True)` recorded the same exception again on exit.
   Every errored span shipped two full stacktraces. Removed the 7 redundant calls.
 
+### Fixed — pydanticai token/cost capture
+
+- **Pinned `pydantic-ai<1.107` in the `pydanticai` extra.** 1.107.x returns
+  `RunUsage(input_tokens=0, output_tokens=0)` for every run — verified against an
+  identical call where 1.106.0 reports 17/2 — so token counts and computed cost
+  silently zeroed out for anyone who upgraded. The values are absent upstream
+  (`RunUsage`, per-message `RequestUsage` and `_state.usage` are all zero while
+  `requests=1`), so the SDK cannot recover them. Relax the bound once upstream
+  restores it.
+- **`AgentRunResult.usage` is accepted as either a method or a property.** It was
+  a method through 1.106 and became a property-style descriptor after; the old
+  `if not callable(...): return` guard would drop usage entirely on the new shape.
+
 ### Notes
 
 - Unnamed foreign runs are unchanged: no `agent.name` is emitted (no identity is
