@@ -26,6 +26,14 @@ instrumentor** can be captured and rendered richly with a single opt-in call —
 - I'm calling the **OpenAI / Anthropic SDK directly** → keep reading
   this page.
 
+## Connecting to the control plane
+
+Tracing works out of the box; **linking those traces to an agent on the
+Enterprise plane needs a name**. Pass `name=` to `with_guardrails(...)` (or use
+`agent_name(...)`) so the root span carries `agent.name`, and call
+`register_agent()` so the plane has an agent with that name to match. See
+[Connecting foreign agents to the control plane](overview.md#connecting-foreign-agents-to-the-control-plane).
+
 ## Universal harness — per framework
 
 - [Overview & feature matrix](overview.md)

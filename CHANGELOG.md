@@ -5,6 +5,72 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.0] - 2026-08-07
+
+### Fixed — foreign-framework traces now link to an agent on the control plane
+
+An end-to-end assessment of the LangChain / LangGraph / CrewAI / PydanticAI
+integrations against a live Enterprise plane found that **no foreign trace ever
+linked to an agent**, and that CrewAI runs reported no tokens or cost at all.
+
+- **Foreign root spans now carry `agent.name`.** Previously the name passed to
+  `with_guardrails(name=…)` / `register_agent(name=…)` never reached the span, so
+  the plane fell back to prefix-stripping a framework-constant span name —
+  deriving `"chain"` for *every* LangChain user, `"crew.crew"` for every CrewAI
+  user, and the **model name** for PydanticAI. A NULL/colliding `agent_id`
+  excludes a trace from per-agent analytics, reads as permanently dark to
+  governance coverage, and drops its guardrail rows from compliance derivation.
+  Native agents already set this attribute; foreign runs now reach parity.
+- **`register_agent()` also registers with the control plane** when connected,
+  gated exactly like the native auto-registration path (`auto_register` +
+  `agent:write`). Stamping the name is useless if no plane agent carries it.
+  Best-effort and process-idempotent — never raises into a run.
+- **New `fastaiagent.integrations.agent_name(...)` context manager** for code
+  that does not go through `with_guardrails()`.
+- **CrewAI token/cost attribution fixed.** On crewai builds whose
+  `LLMCallStartedEvent` carries no `call_id` (e.g. 1.6.x), correlation returned
+  no keys and the LLM span was ended immediately — so **zero** CrewAI LLM spans
+  ever received `gen_ai.usage.*`, `gen_ai.response.content`, or cost. Added a
+  deterministic `(agent_id, task_id)` FIFO fallback alongside the existing id
+  matching.
+- **A failed CrewAI LLM call now closes its span as ERROR.** Previously the span
+  was left `UNSET` carrying only request attributes — indistinguishable from a
+  call still in flight, so cost and error-rate rollups silently under-counted.
+  Subscribes to `LLMCallFailedEvent`.
+- **Exceptions are recorded once, not twice.** The CrewAI and PydanticAI method
+  patches called `span.record_exception(e)` and then re-raised inside a
+  `with tracer.start_as_current_span(...)` block, so OTel's
+  `use_span(record_exception=True)` recorded the same exception again on exit.
+  Every errored span shipped two full stacktraces. Removed the 7 redundant calls.
+
+### Fixed — pydanticai token/cost capture
+
+- **Pinned `genai-prices<0.1` in the `pydanticai` extra.** `genai-prices` powers
+  pydantic-ai's `RequestUsage.extract()`. From 0.1.0 it returns `input=0,
+  output=0` for a real OpenAI `CompletionUsage` payload where 0.0.60 returns the
+  true counts — so pydantic-ai's own OTel spans are zeroed before the SDK ever
+  reads them, and every pydanticai run reports no tokens and no cost. Traced end
+  to end (API returns 17/2 → `_map_usage` receives them intact → `extract()`
+  drops them) and bisected: 0.0.60 good, 0.1.0 bad.
+- **Pinned `pydantic-ai<1.107` in the `pydanticai` extra.** 1.107.x returns
+  `RunUsage(input_tokens=0, output_tokens=0)` for every run — verified against an
+  identical call where 1.106.0 reports 17/2 — so token counts and computed cost
+  silently zeroed out for anyone who upgraded. The values are absent upstream
+  (`RunUsage`, per-message `RequestUsage` and `_state.usage` are all zero while
+  `requests=1`), so the SDK cannot recover them. Relax the bound once upstream
+  restores it.
+- **`AgentRunResult.usage` is accepted as either a method or a property.** It was
+  a method through 1.106 and became a property-style descriptor after; the old
+  `if not callable(...): return` guard would drop usage entirely on the new shape.
+
+### Notes
+
+- Unnamed foreign runs are unchanged: no `agent.name` is emitted (no identity is
+  invented), and a one-time warning explains that plane linkage requires a name.
+- `_GuardedAgent.run_stream` remains unnamed — the root span opens when the
+  caller enters the returned context manager, outside the proxy's scope. This
+  mirrors its existing input-guardrails-only limitation.
+
 ## [1.45.0] - 2026-07-26
 
 ### Added — plane-authored guardrails, enforced at the edge

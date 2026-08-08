@@ -25,8 +25,15 @@ PydanticAI; we additionally guard the run-method wrap with the
 
 from __future__ import annotations
 
+import contextlib
 import functools
 from typing import Any
+
+from fastaiagent.integrations._identity import (
+    reset_agent_name,
+    set_agent_name,
+    stamp_agent_name,
+)
 
 _INSTALL_HINT = 'pydantic-ai is required. Install with: pip install "fastaiagent[pydanticai]"'
 
@@ -119,13 +126,16 @@ def _stamp_usage_and_cost(span: Any, result: Any) -> None:
 
     if result is None:
         return
-    usage_fn = getattr(result, "usage", None)
-    if not callable(usage_fn):
-        return
-    try:
-        usage = usage_fn()
-    except Exception:
-        return
+    # ``AgentRunResult.usage`` was a method through pydantic-ai 1.106 (already
+    # deprecated there) and is a plain property from 1.107. Accept both: the
+    # old `not callable(...) -> return` guard silently dropped every token and
+    # cost value on 1.107+, because a RunUsage object is not callable.
+    usage = getattr(result, "usage", None)
+    if callable(usage):
+        try:
+            usage = usage()
+        except Exception:
+            return
     if usage is None:
         return
 
@@ -171,6 +181,7 @@ def _install_method_patches() -> None:
             framework="pydanticai",
             **{"framework.version": _pa_version()},
         )
+        stamp_agent_name(span, "pydanticai")
         # Stash for cost-calc lookup post-run.
         span._model_name = bare  # noqa: SLF001
         provider = _provider_from_model(_model_name(agent))
@@ -203,8 +214,7 @@ def _install_method_patches() -> None:
                     )
                 try:
                     result = original_run_sync(self, *args, **kwargs)
-                except BaseException as e:
-                    span.record_exception(e)
+                except BaseException:
                     raise
                 if trace_payloads_enabled():
                     output = getattr(result, "output", None) or getattr(
@@ -234,8 +244,7 @@ def _install_method_patches() -> None:
                     )
                 try:
                     result = await original_run(self, *args, **kwargs)
-                except BaseException as e:
-                    span.record_exception(e)
+                except BaseException:
                     raise
                 if trace_payloads_enabled():
                     output = getattr(result, "output", None) or getattr(
@@ -498,15 +507,27 @@ class _GuardedAgent:
             agent_name=self._fastaiagent_name,
         )
 
+    @contextlib.contextmanager
+    def _named(self) -> Any:
+        """Publish the agent name for the root span opened inside the
+        delegated call, so the control plane can link the trace."""
+        token = set_agent_name(self._fastaiagent_name)
+        try:
+            yield
+        finally:
+            reset_agent_name(token)
+
     def run_sync(self, user_prompt: Any = None, **kwargs: Any) -> Any:
         self._check_input(user_prompt)
-        result = self._wrapped.run_sync(user_prompt, **kwargs)
+        with self._named():
+            result = self._wrapped.run_sync(user_prompt, **kwargs)
         self._check_output(result)
         return result
 
     async def run(self, user_prompt: Any = None, **kwargs: Any) -> Any:
         self._check_input(user_prompt)
-        result = await self._wrapped.run(user_prompt, **kwargs)
+        with self._named():
+            result = await self._wrapped.run(user_prompt, **kwargs)
         self._check_output(result)
         return result
 
@@ -580,7 +601,10 @@ def register_agent(agent: Any, *, name: str) -> None:
     badge, no workflow visualization.
     """
     _require()
-    from fastaiagent.integrations._registry import upsert_agent
+    from fastaiagent.integrations._registry import (
+        push_external_agent,
+        upsert_agent,
+    )
 
     model = _model_name(agent)
     provider = _provider_from_model(model)
@@ -619,6 +643,9 @@ def register_agent(agent: Any, *, name: str) -> None:
         system_prompt=sysprompt_str,
         topology={"nodes": tools_meta, "edges": []},
     )
+    # Also register with the control plane so traces stamped with this
+    # agent.name resolve to a real agent (no-op when not connected).
+    push_external_agent(name, "pydanticai", model=bare, system_prompt=sysprompt_str)
 
 
 def kb_as_tool(

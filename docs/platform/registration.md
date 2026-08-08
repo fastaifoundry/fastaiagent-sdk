@@ -83,6 +83,17 @@ you exactly what to do — enable `auto_register`, call `agent.push()`, or run
 ## Naming
 
 The plane keys agents by **name within the project**, so two live agents with the
-same name overwrite each other — give them distinct names. (Note: `register_agent()`
-in the framework integrations registers with the **local UI**, not the plane; use
-`agent.push()` / `fa.push()` for the plane.)
+same name overwrite each other — give them distinct names.
+
+### Foreign-framework agents (LangChain / CrewAI / PydanticAI)
+
+Since **1.46.0**, `register_agent()` in the framework integrations registers with
+the **local UI *and* the plane** (previously local-only). Plane registration is
+gated exactly like native auto-registration — connected, `auto_register` on, and
+an `agent:write` scope — and is best-effort, so it never raises into a run.
+
+Registration alone is not enough to link a *trace*: the run must also be named,
+so the root span carries `agent.name` for the plane to match against. Pass
+`name=` to `with_guardrails(...)`, or wrap the call in
+`fastaiagent.integrations.agent_name(...)`. See
+[Connecting foreign agents to the control plane](../integrations/overview.md#connecting-foreign-agents-to-the-control-plane).

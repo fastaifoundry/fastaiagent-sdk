@@ -31,7 +31,7 @@ This template is the canonical demo of `fastaiagent.integrations.langchain` / `c
 - **Sharing a single registered prompt across three frameworks** — `register_support_prompt()` writes once; every framework reads the latest version.
 - **Sharing a single guardrail set across three frameworks** — `with_guardrails(agent, input_guardrails=[...], output_guardrails=[...])` accepts the same `fa.Guardrail` type in all three.
 - **`fa.evaluate()` against any of the three** — `as_evaluable(agent)` wraps each framework's native interface into the callable `fa.evaluate` expects.
-- **External-agent registry** — `register_agent(agent, name="...")` makes the LangGraph / CrewAI / PydanticAI agent appear in the Local UI's `/agents` page with a framework badge alongside native fa.Agents.
+- **External-agent registry** — `register_agent(agent, name="...")` makes the LangGraph / CrewAI / PydanticAI agent appear in the Local UI's `/agents` page with a framework badge alongside native fa.Agents. Since **1.46.0** it also registers the agent with the Enterprise plane when connected, so traces from a *named* run link to it (see [linking to the control plane](../../docs/integrations/overview.md#connecting-foreign-agents-to-the-control-plane)).
 
 ---
 

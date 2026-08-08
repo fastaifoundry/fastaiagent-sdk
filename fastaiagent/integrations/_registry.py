@@ -279,3 +279,94 @@ __all__ = [
     "fetch_agent",
     "fetch_attachments",
 ]
+
+
+# --------------------------------------------------------------------------
+# Control-plane registration (foreign frameworks)
+# --------------------------------------------------------------------------
+
+# Process-level idempotency, mirroring ``_platform/push.py::_pushed`` so the
+# 2nd..Nth registration of the same name costs no network call.
+_plane_pushed: dict[str, str | None] = {}
+
+
+def push_external_agent(
+    name: str,
+    framework: str,
+    *,
+    model: str | None = None,
+    system_prompt: str | None = None,
+) -> str | None:
+    """Register a foreign-framework agent with the control plane.
+
+    ``upsert_agent`` only writes the local ``external_agents`` table, which the
+    Local UI reads. The plane resolves a trace to an agent **by name**, so
+    without a plane-side agent row a foreign trace has nothing to link to and
+    its ``agent_id`` stays NULL — excluding it from per-agent analytics and
+    governance coverage.
+
+    Gated exactly like the native auto-registration path: only when connected,
+    only when ``auto_register`` is on, and only when the key carries
+    ``agent:write``. Best-effort throughout — never raises into a user's run.
+
+    Returns the plane agent id when one was created/matched, else ``None``.
+    """
+    try:
+        from fastaiagent.client import _connection
+
+        if not _connection.is_connected:
+            return None
+        if not getattr(_connection, "auto_register", True):
+            return None
+    except Exception:  # pragma: no cover - defensive
+        return None
+
+    if name in _plane_pushed:
+        return _plane_pushed[name]
+
+    try:
+        from fastaiagent._platform.push import _has_agent_write_scope
+
+        if not _has_agent_write_scope():
+            logger.debug(
+                "Skipping plane registration for %r: key lacks 'agent:write'", name
+            )
+            return None
+    except Exception:  # pragma: no cover - defensive
+        pass
+
+    payload: dict[str, Any] = {"name": name, "agent_type": framework}
+    if system_prompt:
+        payload["system_prompt"] = system_prompt
+    if model:
+        payload["model"] = model
+
+    try:
+        from fastaiagent._platform.api import get_platform_api
+
+        resp = get_platform_api().post("/public/v1/sdk/agents", payload)
+        agent_id = resp.get("id") or resp.get("agent_id")
+        _plane_pushed[name] = agent_id
+        logger.info(
+            "Registered %s agent %r with the control plane (id=%s)",
+            framework,
+            name,
+            agent_id,
+        )
+        return agent_id
+    except Exception as exc:
+        # Never break a run because registration failed.
+        logger.warning(
+            "Could not register %s agent %r with the control plane: %s: %s",
+            framework,
+            name,
+            type(exc).__name__,
+            exc,
+        )
+        _plane_pushed[name] = None
+        return None
+
+
+def reset_plane_pushed_for_tests() -> None:
+    """Clear the process-level registration cache (tests only)."""
+    _plane_pushed.clear()
