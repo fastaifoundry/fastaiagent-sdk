@@ -47,11 +47,14 @@ crewai = ["crewai>=1.0,<2"]
 # (ImportError otherwise). 1.105+ uses the new name. The full `[all]` resolution
 # is too deep for pip's backtracker, so the e2e/optional-deps CI jobs install
 # with `uv` (which resolves it, picking a crewai that co-exists with this).
-# Upper bound is a regression guard, not conservatism: pydantic-ai 1.107.x
-# returns RunUsage(input_tokens=0, output_tokens=0) for every run (1.106.0
-# reports them correctly on an identical call), so token and cost
-# attribution silently zeroes out. Relax once upstream restores it.
-pydanticai = ["pydantic-ai>=1.105,<1.107"]
+# Both bounds are regression guards, not conservatism. Each independently
+# zeroes token/cost attribution for every pydanticai run:
+#   * pydantic-ai 1.107.x returns RunUsage(input_tokens=0, output_tokens=0).
+#   * genai-prices >=0.1 powers RequestUsage.extract(); given a real OpenAI
+#     CompletionUsage payload it returns 0/0 where 0.0.60 returns the true
+#     counts, so pydantic-ai's own OTel spans are zeroed before we read them.
+# Verified by bisection (0.0.60 good, 0.1.0 bad). Relax once upstream fixes.
+pydanticai = ["pydantic-ai>=1.105,<1.107", "genai-prices<0.1"]
 kb = ["fastembed>=0.3,<1", "pymupdf>=1.23,<2", "faiss-cpu>=1.7,<2"]
 qdrant = ["qdrant-client>=1.8,<2"]
 chroma = ["chromadb>=0.5,<2"]

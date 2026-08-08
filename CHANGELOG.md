@@ -45,6 +45,13 @@ linked to an agent**, and that CrewAI runs reported no tokens or cost at all.
 
 ### Fixed — pydanticai token/cost capture
 
+- **Pinned `genai-prices<0.1` in the `pydanticai` extra.** `genai-prices` powers
+  pydantic-ai's `RequestUsage.extract()`. From 0.1.0 it returns `input=0,
+  output=0` for a real OpenAI `CompletionUsage` payload where 0.0.60 returns the
+  true counts — so pydantic-ai's own OTel spans are zeroed before the SDK ever
+  reads them, and every pydanticai run reports no tokens and no cost. Traced end
+  to end (API returns 17/2 → `_map_usage` receives them intact → `extract()`
+  drops them) and bisected: 0.0.60 good, 0.1.0 bad.
 - **Pinned `pydantic-ai<1.107` in the `pydanticai` extra.** 1.107.x returns
   `RunUsage(input_tokens=0, output_tokens=0)` for every run — verified against an
   identical call where 1.106.0 reports 17/2 — so token counts and computed cost
