@@ -69,6 +69,19 @@ agent.run("Confirm my record: name Dana, SSN 123-45-6789.")
   guardrail authored *after* `connect()`.
 - **Local-only is unchanged.** With no connection there is no policy cache, so a
   local run enforces exactly its own `guardrails=[...]` and pays nothing.
+- **Plane rules stay plane rules.** A reconstructed guardrail is marked
+  `origin="plane"`, which keeps it out of the agent definition sent by
+  `agent.push()` and stops it being enforced twice if you also pass it in
+  `guardrails=[...]`. Both matter: the plane upserts pushed guardrails *by name*
+  and attaches them to the pushing agent, so echoing a domain-wide rule back
+  would narrow it to just that agent — silently dropping it for every other
+  agent in the domain. You never need to pass plane rules in explicitly; the
+  runtime injects them.
+
+!!! tip "You don't need to pull them yourself"
+    `plane_guardrails_for_agent(...)` exists for runtimes that aren't `fa.Agent`
+    (see [Guardrails & evals without the runtime](../integrations/primitives-without-the-runtime.md)).
+    A connected `fa.Agent` already enforces plane rules with no code at all.
 
 Enforcement is always **local** — the runtime is the enforcement point (see
 [Who actually blocks](index.md)). The plane *authors and distributes*; it never

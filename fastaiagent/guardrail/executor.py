@@ -20,12 +20,16 @@ def _emit_guardrail_span(guardrail: Guardrail, result: GuardrailResult) -> None:
     span nests under whatever span is currently active (the agent/turn span),
     since OTel context propagates through ``await``. Best-effort — a tracing
     failure must never break guardrail execution.
+
+    This is the **SDK runtime's** emit half: it pairs the compute done by
+    ``guardrail.aexecute`` with the SDK's own tracer. A foreign runtime that
+    borrows :func:`fastaiagent.run_guardrail` calls
+    :func:`fastaiagent.emit_guardrail` with *its* tracer instead — same span
+    shape, its own exporter.
     """
     try:
-        from opentelemetry.trace import Status, StatusCode
-
         from fastaiagent.trace.otel import get_tracer
-        from fastaiagent.trace.span import set_guardrail_attributes
+        from fastaiagent.trace.span import emit_guardrail
 
         if result.errored:
             check_result = "error"
@@ -34,28 +38,15 @@ def _emit_guardrail_span(guardrail: Guardrail, result: GuardrailResult) -> None:
         else:
             check_result = "block"
         checks = json.dumps([{"name": guardrail.name, "result": check_result}])
-        tracer = get_tracer("fastaiagent.guardrail")
-        with tracer.start_as_current_span(f"guardrail.{guardrail.name}") as span:
-            set_guardrail_attributes(
-                span,
-                name=guardrail.name,
-                position=guardrail.position.value,
-                passed=result.passed,
-                checks=checks,
-                errored=result.errored,
-            )
-            if result.passed:
-                # A degraded pass (errored + on_error="allow") keeps an OK
-                # status — the run continued — but the errored attribute and
-                # the "error" check result keep it distinguishable.
-                span.set_status(Status(StatusCode.OK))
-            else:
-                span.set_status(
-                    Status(
-                        StatusCode.ERROR,
-                        result.message or f"Blocked by guardrail: {guardrail.name}",
-                    )
-                )
+        emit_guardrail(
+            get_tracer("fastaiagent.guardrail"),
+            name=guardrail.name,
+            position=guardrail.position.value,
+            passed=result.passed,
+            checks=checks,
+            errored=result.errored,
+            message=result.message,
+        )
     except Exception:  # pragma: no cover - observability must never break a run
         pass
 

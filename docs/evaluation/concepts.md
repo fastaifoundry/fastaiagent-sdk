@@ -128,6 +128,48 @@ safe → Safety.
   `ToolUsageAccuracy().score(actual_trajectory=..., expected_trajectory=...)`.
   See [Trajectory Scoring](trajectory-scoring.md) and [Session Scoring](session-scoring.md).
 
+## Where a score lives: per-trace vs. per-run
+
+A score has to attach to *something*, and there are exactly **two** places it
+can go. They are different granularities, not alternatives:
+
+| | Per-trace inline score | Per-run batch score |
+|---|---|---|
+| **Question it answers** | "How good was *this* interaction?" | "How good is the agent on *this dataset*?" |
+| **Shape** | An `EVALUATOR` span on the trace, carrying `evaluation.{name,score,label,explanation,annotator_kind}` | An eval run: `evaluate(...)` → `EvalResults.publish()` |
+| **Scale** | `evaluation.score` on **0..1** | Whatever the scorer returns |
+| **When** | Live traffic, one turn at a time | Development, pre-release, CI |
+| **Cardinality** | One trace, one or more scores | One dataset, one number per scorer |
+
+The distinction that trips people up: **publishing an eval run is not a
+per-trace annotation.** An `EvalResults` is a measurement over a dataset — it
+doesn't tell you the quality of any particular production trace. If you want a
+score sitting on a live trace, that's the `EVALUATOR` span.
+
+The SDK doesn't score inline anywhere in `agent.run` — that's a deliberate
+default, because judging every production turn costs an inference call per turn.
+When you *do* want it, you score explicitly and attach the result:
+
+```python
+import fastaiagent as fa
+from opentelemetry import trace
+
+scorer = fa.Scorer.from_platform("correctness")
+result = scorer.score(input=question, output=answer)
+
+fa.emit_evaluation(
+    trace.get_tracer("my.runtime"),
+    name="correctness",
+    score=result.score,        # normalized to 0..1 — a 1..5 judge is score/5
+    label="pass" if result.passed else "fail",
+    explanation=result.reason,
+)
+```
+
+An out-of-range score is clamped to `[0, 1]` and warned about, so a scale
+mistake surfaces in your logs. Full recipe, including the foreign-runtime case:
+[Guardrails & evals without the runtime](../integrations/primitives-without-the-runtime.md).
+
 ## Evaluation in your workflow
 
 - **Dev / unit test** — assert on a few cases with the [pytest plugin](pytest.md)

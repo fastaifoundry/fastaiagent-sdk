@@ -12,6 +12,24 @@ if TYPE_CHECKING:
 
 _provider: Any = None
 
+# Whether the SDK's provider should try to become OTel's *global* provider.
+# Turned off by ``connect(export_traces=False)`` so a foreign runtime that owns
+# its own exporter keeps its global provider — one exporter per process.
+_claim_global: bool = True
+
+
+def suppress_global_provider() -> None:
+    """Stop :func:`get_tracer_provider` from calling ``set_tracer_provider``.
+
+    For a process where another framework (LangChain, CrewAI, LlamaIndex…)
+    already owns the global tracer provider and its exporter. The SDK still
+    creates its own provider for its own spans — it just doesn't try to claim
+    the global slot. Call this *before* the provider is first created; OTel's
+    global set is first-wins and cannot be undone afterwards.
+    """
+    global _claim_global
+    _claim_global = False
+
 
 def get_tracer_provider() -> Any:
     """Get or create the OTel TracerProvider singleton."""
@@ -24,9 +42,10 @@ def get_tracer_provider() -> Any:
         _provider = TracerProvider()
         _provider.add_span_processor(LocalStorageProcessor())
 
-        from opentelemetry import trace as otel_trace
+        if _claim_global:
+            from opentelemetry import trace as otel_trace
 
-        otel_trace.set_tracer_provider(_provider)
+            otel_trace.set_tracer_provider(_provider)
     return _provider
 
 
@@ -44,7 +63,8 @@ def add_exporter(exporter: SpanExporter) -> None:
 
 def reset() -> None:
     """Reset the tracer provider (for testing)."""
-    global _provider
+    global _provider, _claim_global
+    _claim_global = True
     if _provider is not None:
         try:
             _provider.shutdown()

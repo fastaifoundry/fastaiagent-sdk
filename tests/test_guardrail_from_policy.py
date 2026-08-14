@@ -166,3 +166,54 @@ async def test_same_agent_passes_when_policy_cleared():
     agent = Agent(name="support", llm=TestModel(response="Sure — your SSN is 123-45-6789."))
     result = await agent.arun("what's my ssn?", trace=False)
     assert "123-45-6789" in result.output  # no plane guardrail => not blocked
+
+
+# --------------------------------------------------------------------------- #
+# Plane-authored guardrails must not round-trip back into the agent definition
+# --------------------------------------------------------------------------- #
+def test_reconstructed_guardrail_is_marked_plane_origin():
+    g = guardrail_from_policy_rule(_rule())
+    assert g.origin == "plane"
+    assert no_pii().origin == "local", "locally built guardrails default to local origin"
+    # The marker is runtime-only — the canonical wire format is unchanged.
+    assert "origin" not in g.to_dict()
+
+
+def test_plane_guardrail_excluded_from_pushed_agent_definition():
+    """Echoing a pulled plane rule back on push makes the plane attach it to this
+    agent, which narrows a domain-wide rule to only the agents that echoed it.
+    """
+    _set_policy([_rule()])
+    rails = plane_guardrails_for_agent(None)
+    assert [g.name for g in rails] == ["block-ssn-output"]
+
+    agent = Agent(name="t", llm=TestModel(response="hi"), guardrails=[no_pii(), *rails])
+    pushed = {g["name"] for g in agent.to_dict()["guardrails"]}
+    assert pushed == {"no_pii"}, "a plane-authored guardrail must never be pushed back up"
+
+
+def test_plane_guardrail_not_enforced_twice_when_also_passed_explicitly():
+    """The runtime already auto-injects plane rules; passing them too must not
+    double the enforcement (double llm_judge spend, double guardrail rows)."""
+    _set_policy([_rule()])
+    rails = plane_guardrails_for_agent(None)
+
+    explicit = Agent(name="t", llm=TestModel(response="hi"), guardrails=[*rails])
+    names = [g.name for g in explicit._effective_guardrails()]
+    assert names.count("block-ssn-output") == 1, names
+
+    # Auto-injection still works when the caller passes nothing.
+    implicit = Agent(name="t", llm=TestModel(response="hi"))
+    assert [g.name for g in implicit._effective_guardrails()] == ["block-ssn-output"]
+
+
+def test_local_guardrail_sharing_a_plane_name_still_runs():
+    """Dedupe keys on plane origin, not name alone — otherwise a local rule that
+    merely shares a name would be silently dropped, weakening enforcement."""
+    _set_policy([_rule()])
+    local_same_name = no_pii()
+    local_same_name.name = "block-ssn-output"
+    agent = Agent(name="t", llm=TestModel(response="hi"), guardrails=[local_same_name])
+    eff = agent._effective_guardrails()
+    assert [g.name for g in eff] == ["block-ssn-output", "block-ssn-output"]
+    assert {g.origin for g in eff} == {"local", "plane"}

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def trace_payloads_enabled() -> bool:
@@ -172,19 +175,30 @@ def set_guardrail_attributes(
 ) -> None:
     """Stamp guardrail-outcome attributes on a per-guardrail child span.
 
-    Mirrors :func:`set_genai_attributes` for the guardrail contract. Sets the
-    plane-classified ``span_type="guardrail"`` marker plus the
-    ``fastaiagent.guardrail.*`` attributes the plane maps onto ``output.checks``.
+    Mirrors :func:`set_genai_attributes` for the guardrail contract. The span is
+    classified with the **OpenInference** standard kind
+    (``openinference.span.kind="GUARDRAIL"``) so any consumer of that ecosystem
+    recognizes it. OpenInference standardizes the *kind*, not the outcome
+    fields — so the ``fastaiagent.guardrail.*`` namespace is our documented
+    convention riding **under** the standard kind, and it is what the plane maps
+    onto ``output.checks``.
+
+    The legacy ``span_type="guardrail"`` marker is still written alongside it
+    (dual-write) for plane deployments that predate the OpenInference reader; it
+    is not removed until that old-format reader is retired.
+
     Emitted on **pass and block** so the console shows green passes too — the
-    caller is responsible for the OTel span *status* (``ERROR`` on block).
+    caller is responsible for the OTel span *status* (``ERROR`` on block), or
+    can use :func:`emit_guardrail` which handles the whole span lifecycle.
 
     ``checks`` is a pre-serialized JSON string, conventionally
     ``[{"name": name, "result": "pass"|"block"|"error"}]``. ``errored`` marks a
     check that could not run (its ``passed`` reflects the ``on_error`` policy).
     """
-    # span_type is a plane-side classifier carried as a plain (unprefixed)
-    # attribute inside the open OTel envelope — no wire-protocol bump.
-    span.set_attribute("span_type", "guardrail")
+    # Both classifiers are plain (unprefixed) attributes carried inside the open
+    # OTel envelope — no wire-protocol bump for either.
+    span.set_attribute("span_type", "guardrail")  # legacy — old-plane back-compat
+    span.set_attribute("openinference.span.kind", "GUARDRAIL")  # the standard kind
     set_fastaiagent_attributes(
         span,
         **{
@@ -195,6 +209,142 @@ def set_guardrail_attributes(
             "guardrail.checks": checks,
         },
     )
+
+
+def set_evaluation_attributes(
+    span: Any,
+    *,
+    name: str,
+    score: float,
+    label: str | None = None,
+    explanation: str | None = None,
+    annotator_kind: str = "LLM",
+) -> None:
+    """Stamp OpenInference ``EVALUATOR`` attributes for an inline eval score.
+
+    This is the canonical shape for a **per-trace** score: one span carrying
+    ``openinference.span.kind="EVALUATOR"`` plus the ``evaluation.*`` namespace
+    (the convention Arize/Phoenix and eval2otel emit). The plane reads
+    ``evaluation.score`` off any span in a trace into a ``TraceScore``.
+
+    ``score`` **must be on a 0..1 scale**. A raw judge score on another scale
+    has to be normalized by the caller (a 1..5 judge → ``score / 5``). An
+    out-of-range value is clamped into [0, 1] and warned about rather than
+    emitted as-is, so a scale mistake surfaces at the emitter instead of landing
+    silently clamped on the plane.
+
+    ``annotator_kind`` follows the OpenInference vocabulary — ``"LLM"`` for a
+    model-judged score, ``"CODE"`` for a deterministic one, ``"HUMAN"`` for an
+    annotation.
+
+    This is a *stamper*: the SDK does not score inline anywhere in ``agent.run``
+    today. It exists for runtimes that compute a score themselves — see
+    :func:`emit_evaluation` for the one-call version. Dataset/batch/CI scoring
+    stays on ``EvalResults.publish``; the two granularities do not overlap.
+    """
+    value = float(score)
+    if not 0.0 <= value <= 1.0:
+        clamped = min(1.0, max(0.0, value))
+        logger.warning(
+            "evaluation.score=%s for %r is outside 0..1 and was clamped to %s. "
+            "Scores must be normalized before emitting (a 1..5 judge score is score/5).",
+            value,
+            name,
+            clamped,
+        )
+        value = clamped
+
+    span.set_attribute("openinference.span.kind", "EVALUATOR")
+    span.set_attribute("evaluation.name", name)
+    span.set_attribute("evaluation.score", value)
+    if label is not None:
+        span.set_attribute("evaluation.label", label)
+    if explanation is not None:
+        span.set_attribute("evaluation.explanation", explanation)
+    span.set_attribute("evaluation.annotator_kind", annotator_kind)
+
+
+def emit_guardrail(
+    tracer: Any,
+    *,
+    name: str,
+    position: str,
+    passed: bool,
+    checks: str,
+    errored: bool = False,
+    message: str | None = None,
+) -> None:
+    """Open, stamp and close one guardrail-outcome child span in a single call.
+
+    The convenience form of :func:`set_guardrail_attributes` for a runtime that
+    computed a verdict itself — e.g. a LangChain/CrewAI app that ran
+    :func:`fastaiagent.run_guardrail` (compute) and now needs to report the
+    outcome (emit).
+
+    **The tracer is yours.** Pass the tracer of the exporter your process
+    already owns; this function never reaches for the SDK's tracer provider, so
+    a borrowing runtime keeps exactly one exporter. The span nests under
+    whatever span is currently active, joining the caller's trace.
+
+    Best-effort: a tracing failure is swallowed, never propagated into the
+    caller's control flow.
+    """
+    try:
+        from opentelemetry.trace import Status, StatusCode
+
+        with tracer.start_as_current_span(f"guardrail.{name}") as span:
+            set_guardrail_attributes(
+                span,
+                name=name,
+                position=position,
+                passed=passed,
+                checks=checks,
+                errored=errored,
+            )
+            if passed:
+                # A degraded pass (errored + on_error="allow") keeps an OK
+                # status — the run continued — but the errored attribute and
+                # the "error" check result keep it distinguishable.
+                span.set_status(Status(StatusCode.OK))
+            else:
+                span.set_status(
+                    Status(StatusCode.ERROR, message or f"Blocked by guardrail: {name}")
+                )
+    except Exception:  # pragma: no cover - observability must never break a run
+        logger.debug("Failed to emit guardrail span for %r", name, exc_info=True)
+
+
+def emit_evaluation(
+    tracer: Any,
+    *,
+    name: str,
+    score: float,
+    label: str | None = None,
+    explanation: str | None = None,
+    annotator_kind: str = "LLM",
+) -> None:
+    """Open, stamp and close one ``EVALUATOR`` span in a single call.
+
+    The convenience form of :func:`set_evaluation_attributes` — e.g. a foreign
+    runtime that scored a turn with ``Scorer.from_platform(...).score(...)`` and
+    wants that score attached to the trace it just produced.
+
+    ``score`` must be on a 0..1 scale (see :func:`set_evaluation_attributes`).
+    As with :func:`emit_guardrail`, the tracer is the caller's — one exporter
+    per process — and failures are swallowed.
+    """
+    try:
+        with tracer.start_as_current_span(f"evaluation.{name}") as span:
+            set_evaluation_attributes(
+                span,
+                name=name,
+                score=score,
+                label=label,
+                explanation=explanation,
+                annotator_kind=annotator_kind,
+            )
+    except Exception:  # pragma: no cover - observability must never break a run
+        logger.debug("Failed to emit evaluation span for %r", name, exc_info=True)
 
 
 def set_metadata_attributes(span: Any, metadata: dict[str, Any] | None) -> None:

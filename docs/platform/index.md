@@ -65,6 +65,10 @@ export FASTAIAGENT_TARGET=https://app.fastaiagent.net
 | `api_key` | `str` | Required | Platform API key |
 | `target` | `str` | `https://app.fastaiagent.net` | Platform URL |
 | `project` | `str \| None` | None | Project scope |
+| `governance_fail_mode` | `str \| None` | `"open"` | `"closed"` makes a governed agent refuse tool calls when governance can't be confirmed. Falls back to `FASTAIAGENT_GOVERNANCE_FAIL_MODE` |
+| `auto_register` | `bool` | `True` | Register every agent as a governed console object (see [above](#3-connect)) |
+| `console_url` | `str \| None` | None | Console origin for deep links, when it differs from `target` |
+| `export_traces` | `bool` | `True` | `False` connects for policy/scorers/prompts **without** registering a span exporter or claiming OTel's global tracer provider — for a runtime that already owns one. See [Guardrails & evals without the runtime](../integrations/primitives-without-the-runtime.md) |
 
 ## Services
 

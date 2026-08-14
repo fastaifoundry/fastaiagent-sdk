@@ -15,6 +15,7 @@ Auto-generated reference documentation for all public FastAIAgent SDK classes an
 ## Safety
 
 - **[Guardrail](../guardrails/index.md)** — `Guardrail`, `GuardrailResult`, `no_pii`, `json_valid`, `toxicity_check`
+- **[Guardrail primitives](../integrations/primitives-without-the-runtime.md)** — `run_guardrail(guardrail, data)` (compute only, applies `on_error`), `plane_guardrails_for_agent(agent_id)`, `guardrail_from_policy_rule(rule)`. Use these when the runtime isn't `fa.Agent`.
 
 ## Durability (v1.0)
 
@@ -29,6 +30,7 @@ See the full [durability API reference](../durability/api-reference.md) for exac
 
 - **[TraceStore](../tracing/index.md)** — `TraceStore`, `TraceData`, `SpanData`, `trace_context`
 - **[Replay](../replay/index.md)** — `Replay`, `ReplayStep`, `ReplayResult`
+- **[OpenInference emitters](../integrations/primitives-without-the-runtime.md#the-wire-contract)** — `emit_guardrail(tracer, ...)` / `emit_evaluation(tracer, ...)` open+stamp+close a child span on *your* tracer; `set_guardrail_attributes(span, ...)` / `set_evaluation_attributes(span, ...)` stamp a span you already own. `evaluation.score` is a 0..1 scale.
 
 ## Intelligence
 
@@ -42,7 +44,7 @@ See the full [durability API reference](../durability/api-reference.md) for exac
 
 ## Platform
 
-- **[Connection](../platform/index.md)** — `fa.connect()`, `fa.disconnect()`, `fa.is_connected`
+- **[Connection](../platform/index.md)** — `fa.connect()`, `fa.disconnect()`, `fa.is_connected`. `connect(export_traces=False)` connects for policy/scorers/prompts *without* registering a span exporter or claiming OTel's global provider — for runtimes that already own one.
 
 ---
 

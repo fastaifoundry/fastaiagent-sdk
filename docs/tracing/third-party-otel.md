@@ -119,8 +119,21 @@ out-of-process, remote, or polyglot sources) is intentionally out of scope —
 `enable_otel_capture()` covers **in-process** instrumentors. A network receiver
 is tracked as a future / Platform-side capability.
 
+## The other direction: your runtime, your exporter
+
+`enable_otel_capture()` assumes the SDK's exporter is the one exporting — it
+pulls foreign spans *into* FastAIAgent's store. If instead your framework owns
+the exporter and you only want to borrow SDK logic (plane-authored guardrails,
+platform scorers), don't register a second exporter. Connect with
+`fa.connect(..., export_traces=False)` and emit the standard OpenInference spans
+on your own tracer with `fa.emit_guardrail(...)` / `fa.emit_evaluation(...)`.
+
+One exporter per process, either way. See [Guardrails & evals without the
+runtime](../integrations/primitives-without-the-runtime.md).
+
 ## Related
 
+- [Guardrails & evals without the runtime](../integrations/primitives-without-the-runtime.md) — borrowing SDK primitives when your framework owns the exporter
 - [Integrations](../integrations/index.md) — first-party LangChain / CrewAI / PydanticAI harness + OpenAI / Anthropic SDK auto-tracing
 - [Tracing](index.md) — how native spans are captured and stored
 - [Local UI](../ui/index.md) — the visual trace explorer

@@ -187,10 +187,27 @@ The SDK follows the OpenTelemetry GenAI semantic conventions for LLM-related att
 | `fastaiagent.chain.iteration` | Cycle iteration count |
 | `fastaiagent.tool.name` | Tool being executed |
 | `fastaiagent.checkpoint.id` | Checkpoint ID |
-| `fastaiagent.guardrail.name` | Guardrail name |
-| `fastaiagent.guardrail.passed` | Whether guardrail passed |
+| `fastaiagent.guardrail.name` | Guardrail name — what the platform keys the guardrail row on |
+| `fastaiagent.guardrail.passed` | Whether the guardrail passed |
+| `fastaiagent.guardrail.position` | `input` / `tool_call` / `tool_result` / `output` |
+| `fastaiagent.guardrail.errored` | The check couldn't run; `passed` reflects `on_error`, not a verdict |
+| `fastaiagent.guardrail.checks` | JSON `[{"name": ..., "result": "pass"｜"block"｜"error"}]` |
 | `fastaiagent.cost.total_usd` | Accumulated cost |
 | `fastaiagent.template.kind` | Flagship-template marker on root span (e.g. `"deep-research"`) — set via `set_template_kind()`. Lets the UI badge / filter trace lists by template. |
+
+### OpenInference standard attributes
+
+Spans are also classified with the OpenInference `openinference.span.kind`, so
+any consumer of that ecosystem understands them without knowing FastAIAgent:
+
+| Attribute | Set on | Notes |
+|-----------|--------|-------|
+| `openinference.span.kind = "GUARDRAIL"` | every guardrail span | The `fastaiagent.guardrail.*` fields above are the *outcome* convention riding under this kind — OpenInference standardizes the kind, not the fields. Guardrail spans also still carry a legacy `span_type="guardrail"`; that dual-write is transitional. |
+| `openinference.span.kind = "EVALUATOR"` + `evaluation.{name,score,label,explanation,annotator_kind}` | an inline eval-score span | `evaluation.score` is a **0..1** scale. Nothing in `agent.run` emits this — you emit it when you score a turn yourself, via `set_evaluation_attributes()` / `emit_evaluation()`. |
+
+Both are plain attributes on the open OTel envelope, so they need no wire
+change. See [Guardrails & evals without the runtime](../integrations/primitives-without-the-runtime.md)
+for emitting them from a runtime that isn't `fa.Agent`.
 
 ### Marking template traces
 

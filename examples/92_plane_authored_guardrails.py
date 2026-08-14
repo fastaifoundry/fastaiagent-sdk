@@ -21,14 +21,15 @@ real and everything below is automatic — no code change on the agent.
 
 from __future__ import annotations
 
-from fastaiagent import Agent, LLMClient
-from fastaiagent.client import _connection
-from fastaiagent.guardrail import no_pii
-from fastaiagent.guardrail.from_policy import (
-    clear_cache,
+from fastaiagent import (
+    Agent,
+    LLMClient,
     guardrail_from_policy_rule,
+    no_pii,
     plane_guardrails_for_agent,
 )
+from fastaiagent.client import _connection
+from fastaiagent.guardrail.from_policy import clear_cache  # test-only cache reset
 
 # The shape the plane returns from GET /public/v1/policy. An admin authored a regex
 # rule that blocks US SSNs in output, domain-wide (empty agent_ids).

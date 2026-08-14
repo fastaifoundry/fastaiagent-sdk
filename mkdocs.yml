@@ -202,6 +202,7 @@ nav:
       - "LangChain / LangGraph": integrations/langchain.md
       - CrewAI: integrations/crewai.md
       - PydanticAI: integrations/pydanticai.md
+      - "Guardrails & evals without the runtime": integrations/primitives-without-the-runtime.md
   - CLI Reference:
       - cli/index.md
       - "fastaiagent learn": cli/learn.md
