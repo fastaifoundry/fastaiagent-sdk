@@ -64,6 +64,7 @@ class Guardrail:
         description: str = "",
         fn: Callable[..., Any] | None = None,
         on_error: Literal["allow", "block"] = "block",
+        origin: Literal["local", "plane"] = "local",
     ):
         self.name = name
         self.guardrail_type = guardrail_type
@@ -76,6 +77,13 @@ class Guardrail:
         # detector's LLM call raises). "block" fails closed (default),
         # "allow" fails open. See GuardrailResult.errored.
         self.on_error: Literal["allow", "block"] = on_error
+        # Who authored this guardrail. ``"plane"`` marks one reconstructed from
+        # a control-plane policy rule (see guardrail.from_policy). It is a
+        # *runtime* marker, deliberately absent from to_dict(): a plane-authored
+        # guardrail must never be pushed back up as part of an agent's own
+        # definition, or the plane would link it to that agent and thereby
+        # narrow a domain-wide rule to just the agents that echoed it back.
+        self.origin: Literal["local", "plane"] = origin
 
     def execute(self, data: str | dict[str, Any]) -> GuardrailResult:
         """Execute the guardrail synchronously."""

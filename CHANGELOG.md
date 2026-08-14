@@ -5,6 +5,99 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.47.0] - 2026-08-14
+
+### Added — one telemetry standard for guardrails and evals, in any runtime
+
+Guardrail and eval outcomes previously reached the platform in different shapes
+depending on who ran the agent (SDK vs. a foreign framework) and whose check
+logic ran (SDK vs. foreign). This release converges all four combinations on a
+single wire contract — **OpenInference span kinds** — and makes the primitives a
+supported public surface so a foreign runtime can use them without acquiring a
+second span exporter.
+
+- **Guardrail spans now carry `openinference.span.kind = "GUARDRAIL"`.** Any
+  OpenInference-aware consumer recognizes the span; the existing
+  `fastaiagent.guardrail.{name,position,passed,errored,checks}` attributes are
+  unchanged and remain the documented outcome convention riding *under* the
+  standard kind (OpenInference standardizes the kind, not the outcome fields).
+  Additive — the legacy `span_type="guardrail"` marker is still written
+  alongside it, so old and new platform readers both work.
+- **`set_evaluation_attributes(span, …)` and `emit_evaluation(tracer, …)`** —
+  the canonical shape for a *per-trace* eval score: an `EVALUATOR` span carrying
+  `evaluation.{name,score,label,explanation,annotator_kind}`. `evaluation.score`
+  is a **0..1** scale; an out-of-range value (a raw 1..5 judge score) is clamped
+  and warned about at the emitter. Nothing in `agent.run` scores inline — this
+  is for runtimes that compute a score themselves. Batch/CI scoring is unchanged
+  and stays on `EvalResults.publish()`.
+- **`emit_guardrail(tracer, …)`** — opens, stamps and closes a guardrail-outcome
+  child span in one call, on **your** tracer. Same span shape the SDK's own
+  runtime emits, so the platform writes the same row either way.
+- **Primitives promoted to public API** — `run_guardrail`,
+  `plane_guardrails_for_agent`, `guardrail_from_policy_rule`,
+  `set_guardrail_attributes`, `set_evaluation_attributes`, `emit_guardrail`,
+  `emit_evaluation` are now exported from `fastaiagent` (previously reachable
+  only through deep module paths). The design rule they encode: **compute ≠
+  emit** — the primitive returns a result, your runtime emits it.
+- **`connect(export_traces=False)`** — connect for policy, scorers and prompts
+  *without* registering the platform span exporter and without claiming
+  OpenTelemetry's global tracer provider. This is what keeps "one exporter per
+  process" true for a LangChain/CrewAI/LlamaIndex app borrowing SDK logic. The
+  default (`True`) preserves 1.46.0 behavior exactly.
+- **New guide** — [Guardrails & evals without the agent
+  runtime](docs/integrations/primitives-without-the-runtime.md), plus the span
+  attribute contract documented in the guardrail and evaluation concept pages.
+
+No wire-protocol change: both attributes ride the existing open attribute map
+through `/public/v1/traces/ingest`. Requires a platform deployment that reads the
+OpenInference form to see the new eval scores; guardrail rows work on both.
+
+### Fixed — a synchronous `agent_fn` ran on `evaluate()`'s event loop
+
+`evaluate()` drives cases through an async loop but called a **synchronous**
+`agent_fn` inline, so the user's agent executed on the event-loop thread. Two
+consequences, both real:
+
+- **`concurrency` was silently ineffective for sync callables.** The semaphore
+  admitted N cases, but the blocking calls serialized on the loop thread anyway.
+  Measured: four 0.3s cases at `concurrency=4` took **1.21s** instead of ~0.3s.
+  This affected every sync `agent_fn`, including `fa.Agent.run`.
+- **Frameworks that refuse sync-in-async errored every case.** CrewAI ≥1.15
+  raises *"Agent execution was invoked synchronously from within a running event
+  loop. Use `kickoff_async()`"* rather than proceeding, so
+  `crewai.as_evaluable(crew)` produced `actual_output=None` on every case.
+
+A sync `agent_fn` is now run via `asyncio.to_thread`, which also propagates the
+`contextvars` copy so OTel span context and `trace_id` capture are unaffected.
+Async callables are still awaited directly, and a sync callable that returns a
+coroutine still has it awaited — both paths unchanged.
+
+### Fixed — a pulled plane guardrail could silently narrow itself domain-wide
+
+Found while verifying the above against a live plane. Both fixes are SDK-only —
+no platform change is needed for either.
+
+- **A plane-authored guardrail is no longer pushed back up as part of an agent's
+  own definition.** `plane_guardrails_for_agent(...)` rebuilds a policy rule as
+  an ordinary `Guardrail`; if you passed that object into `Agent(guardrails=[…])`
+  and the agent was registered, `Agent.to_dict()` sent it up as a *local*
+  guardrail. The platform upserts pushed guardrails **by name** and attaches them
+  to that agent — which flipped the rule from domain-wide (`agent_ids: []`) to
+  scoped, **silently dropping it for every other agent in the domain**. A
+  security control quietly losing coverage while still looking healthy in the
+  console. Guardrails now carry `Guardrail.origin` (`"local"` | `"plane"`), and
+  `to_dict()` emits only local ones. `origin` is a runtime marker and is
+  deliberately **not** part of the serialized format, so the wire shape is
+  unchanged.
+- **A plane guardrail passed explicitly is no longer enforced twice.** Since
+  1.45.0 the runtime auto-injects plane rules, so a caller who pulled them and
+  also passed them in `guardrails=[…]` ran every rule twice — double the
+  `llm_judge` spend and double the `guardrail_executions` rows behind compliance
+  metrics. `_effective_guardrails()` now skips a plane rule already present.
+  The dedupe keys on **plane origin**, not name alone: a locally authored
+  guardrail that merely shares a name still runs alongside the plane's, since
+  dropping it could weaken enforcement.
+
 ## [1.46.0] - 2026-08-07
 
 ### Fixed — foreign-framework traces now link to an agent on the control plane

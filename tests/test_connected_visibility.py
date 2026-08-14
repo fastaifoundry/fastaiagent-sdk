@@ -76,6 +76,11 @@ def test_guardrail_span_on_pass_and_block(collector: _Collector) -> None:
     ba, bst = by_result["block"]
     assert ba["fastaiagent.guardrail.passed"] is False
     assert bst == "ERROR"
+    # Dual-write: the OpenInference standard kind rides alongside the legacy
+    # span_type marker on *both* spans — added, not swapped.
+    for attrs, _ in guard:
+        assert attrs["openinference.span.kind"] == "GUARDRAIL"
+        assert attrs["span_type"] == "guardrail"
 
 
 # --------------------------------------------------------------------------- #

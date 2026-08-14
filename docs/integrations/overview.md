@@ -36,6 +36,7 @@ agents. With one or two lines of glue you get:
 | Analytics & cost tracking | ✅ | ✅ | ✅ | ✅ |
 | Eval framework | ✅ | ✅ via `as_evaluable()` | ✅ via `as_evaluable()` | ✅ via `as_evaluable()` |
 | Guardrails | ✅ | ✅ via `with_guardrails()` | ✅ via `with_guardrails()` | ✅ via `with_guardrails()` |
+| Plane-authored guardrails + inline eval scores, on your own exporter | ✅ | ✅ via [primitives](primitives-without-the-runtime.md) | ✅ via [primitives](primitives-without-the-runtime.md) | ✅ via [primitives](primitives-without-the-runtime.md) |
 | Prompt registry | ✅ | ✅ via `prompt_from_registry()` | ✅ via `prompt_from_registry()` | ✅ via `prompt_from_registry()` |
 | Knowledge bases | ✅ | ✅ as retriever | ✅ as tool | ✅ as tool |
 | Prompt playground | ✅ | ✅ | ✅ | ✅ |

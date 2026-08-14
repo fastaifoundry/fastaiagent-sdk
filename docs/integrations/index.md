@@ -41,6 +41,15 @@ Enterprise plane needs a name**. Pass `name=` to `with_guardrails(...)` (or use
 - [CrewAI](crewai.md)
 - [PydanticAI](pydanticai.md)
 
+## Borrowing SDK primitives — any runtime
+
+The harness above traces your framework. The other half is *enforcement and
+scoring*: run plane-authored guardrails and platform scorers inside a runtime
+that isn't `fa.Agent`, and emit the results as standard OpenInference spans on
+the exporter you already have — no second exporter, no rewrite.
+
+See [Guardrails & evals without the runtime](primitives-without-the-runtime.md).
+
 ---
 
 ## OpenAI SDK auto-tracing

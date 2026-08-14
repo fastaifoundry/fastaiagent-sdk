@@ -16,19 +16,30 @@ from fastaiagent.guardrail.builtins import (
     toxicity_check,
 )
 from fastaiagent.guardrail.executor import execute_guardrails
+from fastaiagent.guardrail.from_policy import (
+    guardrail_from_policy_rule,
+    plane_guardrails_for_agent,
+)
 from fastaiagent.guardrail.guardrail import (
     Guardrail,
     GuardrailPosition,
     GuardrailResult,
     GuardrailType,
 )
+from fastaiagent.guardrail.implementations import run_guardrail
 
 __all__ = [
     "Guardrail",
     "GuardrailResult",
     "GuardrailPosition",
     "GuardrailType",
+    # Runtime: compute + emit, for the SDK's own agent loop.
     "execute_guardrails",
+    # Primitives: compute only, no span. A foreign runtime pairs these with
+    # fastaiagent.emit_guardrail on its own tracer — compute ≠ emit.
+    "run_guardrail",
+    "guardrail_from_policy_rule",
+    "plane_guardrails_for_agent",
     "no_pii",
     "no_prompt_injection",
     "openai_moderation",

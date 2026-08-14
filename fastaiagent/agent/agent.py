@@ -346,7 +346,17 @@ class Agent:
             return self.guardrails
         if not plane:
             return self.guardrails
-        return [*self.guardrails, *plane]
+        # Don't enforce the same plane rule twice. A caller who pulled the rules
+        # themselves and passed them in guardrails=[...] would otherwise get two
+        # runs of every rule — double the llm_judge spend and double the
+        # guardrail rows on the plane. Matched on plane-origin name only, so a
+        # *locally* authored guardrail that merely shares a name still runs
+        # alongside the plane's (deduping those could weaken enforcement).
+        already = {g.name for g in self.guardrails if getattr(g, "origin", "local") == "plane"}
+        extra = [g for g in plane if g.name not in already]
+        if not extra:
+            return self.guardrails
+        return [*self.guardrails, *extra]
 
     async def arun(
         self,
@@ -1318,7 +1328,15 @@ class Agent:
             "system_prompt": system_prompt,
             "llm_endpoint": self.llm.to_dict(),
             "tools": [t.to_dict() for t in self.tools],
-            "guardrails": [g.to_dict() for g in self.guardrails],
+            # Only *locally authored* guardrails belong in the agent's definition.
+            # A plane-authored one (pulled via plane_guardrails_for_agent and then
+            # passed in guardrails=[...]) must not be echoed back: the plane
+            # upserts pushed guardrails by name and attaches them to this agent,
+            # which would turn a domain-wide rule into one scoped to whichever
+            # agents happened to echo it — silently dropping it for everyone else.
+            "guardrails": [
+                g.to_dict() for g in self.guardrails if getattr(g, "origin", "local") != "plane"
+            ],
             "config": self.config.model_dump(),
         }
         # Governed-input fields — emitted only when configured so an agent with

@@ -169,9 +169,46 @@ nuance matters.
   governance](managed-governance.md). That path *pauses* the run rather than
   simply passing/failing.
 
+## What a guardrail run puts on the trace
+
+Every guardrail that runs emits **one child span** — on a pass as well as a
+block, so the console shows green checks and not only failures. The span is
+classified with the OpenInference standard kind and carries the outcome in the
+`fastaiagent.guardrail.*` namespace:
+
+| Attribute | Meaning |
+|-----------|---------|
+| `openinference.span.kind` | Always `"GUARDRAIL"` — the standard classifier |
+| `fastaiagent.guardrail.name` | The guardrail's name. How the platform resolves the span to a guardrail |
+| `fastaiagent.guardrail.position` | `input` / `tool_call` / `tool_result` / `output` |
+| `fastaiagent.guardrail.passed` | The verdict |
+| `fastaiagent.guardrail.errored` | `true` when the check *couldn't run* and `passed` reflects `on_error`, not a real verdict |
+| `fastaiagent.guardrail.checks` | JSON: `[{"name": ..., "result": "pass"｜"block"｜"error"}]` |
+
+The split matters: **OpenInference standardizes the span *kind*, not the outcome
+fields.** There is no ecosystem convention for "what did this guardrail decide",
+so `fastaiagent.guardrail.*` is ours, and it rides *under* the standard kind.
+Anything that understands OpenInference recognizes the span as a guardrail;
+anything that understands FastAIAgent additionally reads the verdict.
+
+The span status follows the verdict — `OK` on pass, `ERROR` on block — with one
+deliberate exception: a *degraded pass* (`errored=true` with `on_error="allow"`)
+keeps an `OK` status, because the run did continue. The `errored` attribute is
+what tells a fail-open apart from a genuine pass.
+
+!!! note "Legacy `span_type` marker"
+    Guardrail spans also carry `span_type="guardrail"` alongside the standard
+    kind. That dual-write exists for platform deployments predating the
+    OpenInference reader and is transitional — don't build on it.
+
+If you're enforcing guardrails from a runtime that isn't `fa.Agent`, you emit
+this same span yourself with `fa.emit_guardrail(...)`. See [Guardrails and evals
+without the runtime](../integrations/primitives-without-the-runtime.md).
+
 ## Next steps
 
 - [Guardrails](index.md) — the full reference: all five types, built-in factories, custom guardrails, serialization
+- [Guardrails & evals without the runtime](../integrations/primitives-without-the-runtime.md) — borrowing `run_guardrail` from a foreign framework
 - [Responsible AI (Trust Layer)](responsible-ai.md) — the safety bundle by concern
 - [Managed governance](managed-governance.md) — platform-enforced, approval-gated tool policy
 - [Agents — the run loop](../agents/concepts.md#the-run-loop) — exactly where each position fires

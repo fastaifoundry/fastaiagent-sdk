@@ -84,6 +84,10 @@ def guardrail_from_policy_rule(rule: dict[str, Any]) -> Guardrail | None:
         blocking=blocking,
         description=rule.get("description") or "authored on the plane",
         on_error=on_error,
+        # Marks this as plane-authored, which keeps it out of the agent
+        # definition pushed back to the plane (see Guardrail.origin) and stops
+        # it being enforced twice when the caller also passes it explicitly.
+        origin="plane",
     )
 
 

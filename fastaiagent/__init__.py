@@ -63,13 +63,16 @@ from fastaiagent.guardrail import (
     allowed_topics,
     banned_topics,
     grounded,
+    guardrail_from_policy_rule,
     json_valid,
     no_hallucination,
     no_pii,
     no_prompt_injection,
     no_secrets,
     openai_moderation,
+    plane_guardrails_for_agent,
     responsible_ai,
+    run_guardrail,
     toxicity_check,
 )
 from fastaiagent.kb import KeywordStore, LocalKB, MetadataStore, PlatformKB, VectorStore
@@ -89,8 +92,12 @@ from fastaiagent.trace import (
     RedactionPolicy,
     TraceStore,
     disable_otel_capture,
+    emit_evaluation,
+    emit_guardrail,
     enable_otel_capture,
     get_redaction_policy,
+    set_evaluation_attributes,
+    set_guardrail_attributes,
     set_redaction_policy,
     trace_context,
 )
@@ -205,6 +212,11 @@ __all__ = [
     "banned_topics",
     "allowed_topics",
     "responsible_ai",
+    # Guardrail primitives — compute only, no span emission. Pair with
+    # emit_guardrail when the runtime isn't the SDK's own agent loop.
+    "run_guardrail",
+    "guardrail_from_policy_rule",
+    "plane_guardrails_for_agent",
     # Prompt
     "PromptRegistry",
     "Prompt",
@@ -246,4 +258,10 @@ __all__ = [
     "RedactionPolicy",
     "set_redaction_policy",
     "get_redaction_policy",
+    # OpenInference emitters — the standard wire shape for guardrail outcomes
+    # and inline eval scores, emitted on whichever tracer you own.
+    "set_guardrail_attributes",
+    "set_evaluation_attributes",
+    "emit_guardrail",
+    "emit_evaluation",
 ]

@@ -151,6 +151,7 @@ def connect(
     governance_fail_mode: str | None = None,
     auto_register: bool = True,
     console_url: str | None = None,
+    export_traces: bool = True,
 ) -> None:
     """Connect the SDK to FastAIAgent Platform for observability,
     prompt management, and evaluation services.
@@ -176,6 +177,20 @@ def connect(
     ``auto_register=False`` — then register explicitly via ``agent.push()`` or
     ``fastaiagent push``. ``console_url`` overrides the console origin used for
     deep links when it differs from ``target`` (split-origin dev).
+
+    ``export_traces=False`` connects for *everything but tracing*: policy pull,
+    ``Scorer.from_platform``, prompts, governance still work, but no platform
+    span exporter is registered and the SDK does not claim OTel's global tracer
+    provider. That is the mode for a **foreign runtime** — a LangChain / CrewAI
+    / LlamaIndex app that already owns an OTLP exporter and only wants to borrow
+    SDK primitives (``run_guardrail``, ``plane_guardrails_for_agent``,
+    ``Scorer``). It keeps the "one exporter per process" rule: the borrower
+    computes with the primitive and emits with :func:`fastaiagent.emit_guardrail`
+    / :func:`fastaiagent.emit_evaluation` on *its own* tracer. Note that OTel's
+    global provider is first-wins — if the SDK's provider was already created
+    and claimed the global before this call, the claim can't be taken back
+    (a foreign runtime that set its provider first is unaffected either way).
+    The default preserves today's behavior.
     """
     import os
 
@@ -197,6 +212,13 @@ def connect(
     _connection.governance_fail_mode = "closed" if (_mode or "").lower() == "closed" else "open"
     _connection.auto_register = auto_register
     _connection.console_url = console_url
+
+    # Must happen before anything can touch get_tracer_provider() — OTel's
+    # global set is first-wins, so suppression only works pre-creation.
+    if not export_traces:
+        from fastaiagent.trace.otel import suppress_global_provider
+
+        suppress_global_provider()
 
     # Lightweight auth check — also captures domain/project from the key
     try:
@@ -261,19 +283,27 @@ def connect(
     except Exception:
         logger.debug("Could not pull governance policy (keeping last-known)", exc_info=True)
 
-    # Register platform trace exporter
-    try:
-        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+    # Register platform trace exporter. Skipped by export_traces=False so a
+    # foreign runtime keeps exactly one exporter — its own.
+    if export_traces:
+        try:
+            from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-        from fastaiagent.trace.otel import get_tracer_provider
-        from fastaiagent.trace.platform_export import PlatformSpanExporter
+            from fastaiagent.trace.otel import get_tracer_provider
+            from fastaiagent.trace.platform_export import PlatformSpanExporter
 
-        exporter = PlatformSpanExporter()
-        processor = BatchSpanProcessor(exporter)
-        get_tracer_provider().add_span_processor(processor)
-        _connection._platform_processor = processor
-    except Exception:
-        logger.debug("Could not register platform trace exporter", exc_info=True)
+            exporter = PlatformSpanExporter()
+            processor = BatchSpanProcessor(exporter)
+            get_tracer_provider().add_span_processor(processor)
+            _connection._platform_processor = processor
+        except Exception:
+            logger.debug("Could not register platform trace exporter", exc_info=True)
+    else:
+        logger.info(
+            "connect(export_traces=False): no platform span exporter registered; "
+            "emit guardrail/eval spans on your own tracer "
+            "(fastaiagent.emit_guardrail / emit_evaluation)."
+        )
 
     # Register the connected-HITL event exporter. This is secondary/opportunistic
     # insurance — the primary drain trigger is a per-emit daemon thread (see
