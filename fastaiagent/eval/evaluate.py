@@ -18,6 +18,51 @@ from fastaiagent.eval.scorer import Scorer
 logger = logging.getLogger(__name__)
 
 
+def _is_async_callable(fn: Callable[..., Any]) -> bool:
+    """Whether calling ``fn`` returns an awaitable without doing blocking work.
+
+    Covers plain ``async def``, an object whose ``__call__`` is ``async def``,
+    and ``functools.partial`` wrapping either.
+    """
+    import functools
+    import inspect
+
+    target: Any = fn
+    while isinstance(target, functools.partial):
+        target = target.func
+    if inspect.iscoroutinefunction(target):
+        return True
+    call = getattr(target, "__call__", None)  # noqa: B004
+    return call is not None and inspect.iscoroutinefunction(call)
+
+
+async def _call_agent_fn(agent_fn: Callable[..., Any], input_text: Any) -> Any:
+    """Invoke a user agent callable from inside the eval loop.
+
+    A **synchronous** ``agent_fn`` is run on a worker thread rather than
+    directly on the event loop. Two reasons, both load-bearing:
+
+    * Calling it inline blocks the loop for the whole agent run, which silently
+      defeated the ``concurrency`` semaphore — sync callables serialized no
+      matter what concurrency was requested.
+    * Frameworks increasingly *refuse* to run synchronously inside a live loop.
+      CrewAI ≥1.15 raises "Agent execution was invoked synchronously from
+      within a running event loop. Use ``kickoff_async()``" rather than doing
+      it anyway, which turned every sync-driven eval case into an errored one.
+
+    ``asyncio.to_thread`` propagates the current ``contextvars`` copy, so OTel
+    span context still flows into the thread and ``trace_id`` capture works.
+    """
+    if _is_async_callable(agent_fn):
+        return await agent_fn(input_text)
+    output = await asyncio.to_thread(agent_fn, input_text)
+    # A sync callable is still allowed to hand back a coroutine; awaiting it
+    # here (back on the loop) preserves the previous contract.
+    if asyncio.iscoroutine(output):
+        output = await output
+    return output
+
+
 def evaluate(
     agent_fn: Callable[..., Any],
     dataset: Dataset | str | list[dict[str, Any]],
@@ -116,9 +161,7 @@ async def aevaluate(
             trace_id: str | None = None
             # Call agent
             try:
-                output = agent_fn(input_text)
-                if asyncio.iscoroutine(output):
-                    output = await output
+                output = await _call_agent_fn(agent_fn, input_text)
                 if hasattr(output, "output"):
                     out_val = output.output
                 else:

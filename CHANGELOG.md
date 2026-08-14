@@ -52,6 +52,26 @@ No wire-protocol change: both attributes ride the existing open attribute map
 through `/public/v1/traces/ingest`. Requires a platform deployment that reads the
 OpenInference form to see the new eval scores; guardrail rows work on both.
 
+### Fixed — a synchronous `agent_fn` ran on `evaluate()`'s event loop
+
+`evaluate()` drives cases through an async loop but called a **synchronous**
+`agent_fn` inline, so the user's agent executed on the event-loop thread. Two
+consequences, both real:
+
+- **`concurrency` was silently ineffective for sync callables.** The semaphore
+  admitted N cases, but the blocking calls serialized on the loop thread anyway.
+  Measured: four 0.3s cases at `concurrency=4` took **1.21s** instead of ~0.3s.
+  This affected every sync `agent_fn`, including `fa.Agent.run`.
+- **Frameworks that refuse sync-in-async errored every case.** CrewAI ≥1.15
+  raises *"Agent execution was invoked synchronously from within a running event
+  loop. Use `kickoff_async()`"* rather than proceeding, so
+  `crewai.as_evaluable(crew)` produced `actual_output=None` on every case.
+
+A sync `agent_fn` is now run via `asyncio.to_thread`, which also propagates the
+`contextvars` copy so OTel span context and `trace_id` capture are unaffected.
+Async callables are still awaited directly, and a sync callable that returns a
+coroutine still has it awaited — both paths unchanged.
+
 ### Fixed — a pulled plane guardrail could silently narrow itself domain-wide
 
 Found while verifying the above against a live plane. Both fixes are SDK-only —
