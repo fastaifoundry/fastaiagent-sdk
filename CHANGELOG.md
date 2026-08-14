@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.47.1] - 2026-08-14
+
+### Fixed — 1.47.0 shipped without the Local UI bundle
+
+**If you installed 1.47.0, `fastaiagent ui` serves no frontend.** Upgrade to
+1.47.1. No source change is involved — 1.47.0's Python code is identical.
+
+The 1.47.0 artifacts were built with `python -m build`, which builds the wheel
+*from the sdist*. The sdist deliberately excludes `fastaiagent/ui/static`
+(it is Vite build output, not source — see `[tool.hatch.build.targets.sdist]`),
+and the wheel's `force-include` of that directory therefore found nothing to
+include. Releases 1.40.0–1.46.0 were built from the source tree and are
+unaffected: they bundle 142 static files; 1.47.0 bundled one (`.gitkeep`).
+
+The correct build is what CI's `build-wheel` job already does — build the
+frontend with Vite, then `python -m build --wheel` from the source tree, then
+assert the wheel carries `fastaiagent/ui/static/assets/`. CI was green
+throughout; the broken artifact came from a manual local build that bypassed it.
+
 ## [1.47.0] - 2026-08-14
 
 ### Added — one telemetry standard for guardrails and evals, in any runtime
