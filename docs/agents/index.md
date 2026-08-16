@@ -307,7 +307,7 @@ byte-identical to earlier versions):
 - `memory_enabled` — `true` when `memory=` is configured.
 
 This is the canonical payload for pushing an agent to a connected control plane — `POST` it
-to `/public/v1/sdk/agents`. See [Pushing agent definitions](../platform/index.md#pushing-agent-definitions).
+to `/public/v1/sdk/agents`. See [Pushing agent definitions](../platform/index.md#registering-agent-definitions).
 
 ## AgentResult
 

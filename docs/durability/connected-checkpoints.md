@@ -20,7 +20,7 @@ local `resume()` continues from it. This keeps the open/closed boundary intact.
 ## Local-first, non-blocking, non-lossy
 
 Replication reuses the same durable outbox as
-[trace export](../platform/index.md#durable-trace-buffering--retry), but it is
+[trace export](../platform/index.md#durable-trace-buffering-retry), but it is
 **write-driven** (checkpoints aren't tied to spans):
 
 1. The checkpointer writes locally first (`synced=0`) — the durable source of truth.
