@@ -73,7 +73,11 @@ Under the small call is a simple, deterministic loop:
    `"exact_match"` and `ExactMatch()` are the same thing.
 2. **Run cases concurrently.** An `asyncio.Semaphore(concurrency)` bounds how
    many cases run at once. For each case it calls `agent_fn(input)` to get the
-   output.
+   output. An `async def` callable is awaited directly; a **synchronous** one is
+   run on a worker thread (`asyncio.to_thread`) so it can't block the event loop
+   and stall the other cases. Two things follow: a sync `agent_fn` must be
+   thread-safe, and frameworks that refuse to run synchronously inside a live
+   event loop (CrewAI ≥1.15, for one) work correctly.
 3. **Score each case.** Every resolved scorer's `score()` returns a
    `ScorerResult(score, passed, reason)` — a numeric `score` plus a boolean
    `passed` (each scorer decides its own pass condition) and an optional reason.

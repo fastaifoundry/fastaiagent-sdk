@@ -17,7 +17,7 @@ import { TracesTable } from "@/components/traces/TracesTable";
 import { useTraces } from "@/hooks/use-traces";
 import { useWorkflow } from "@/hooks/use-workflows";
 import { formatCost, formatDurationMs, formatTimeAgo } from "@/lib/format";
-import type { RunnerType } from "@/lib/types";
+import type { RunnerType, WorkflowRunnerType } from "@/lib/types";
 
 const WorkflowTopologyView = lazy(() =>
   import("@/components/workflows/WorkflowTopologyView").then((m) => ({
@@ -25,7 +25,7 @@ const WorkflowTopologyView = lazy(() =>
   }))
 );
 
-const ICON: Record<Exclude<RunnerType, "agent">, LucideIcon> = {
+const ICON: Record<WorkflowRunnerType, LucideIcon> = {
   chain: GitBranch,
   swarm: Network,
   supervisor: UsersRound,

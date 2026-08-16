@@ -72,6 +72,11 @@ _SPAN_KIND_MAP: dict[str, str] = {
     "EMBEDDING": "embedding",
     "RERANKER": "reranker",
     "GUARDRAIL": "guardrail",
+    # An inline eval-score span (see fastaiagent.emit_evaluation). Without this
+    # the Local UI falls back to classifying it as an agent span, which reads as
+    # a stray agent run in the trace list. Kept in step with the control plane's
+    # own map so a span is classified the same way locally and remotely.
+    "EVALUATOR": "evaluator",
 }
 
 # Substrings looked for in the instrumentation scope name to label the root

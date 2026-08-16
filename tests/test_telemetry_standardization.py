@@ -354,3 +354,32 @@ def test_global_provider_claim_follows_the_flag(export_traces: str, expected: st
     )
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout.strip().endswith(expected), proc.stdout
+
+
+# --------------------------------------------------------------------------- #
+# Span-kind classification — the Local UI reads fastaiagent.runner.type
+# --------------------------------------------------------------------------- #
+def test_openinference_kinds_classify_for_the_local_ui() -> None:
+    """Both kinds this release emits must normalize to a runner type.
+
+    Without EVALUATOR in the map, an inline eval-score span falls back to being
+    classified as an agent span and shows up in the Local UI's trace list as a
+    stray agent run. The map must also stay in step with the control plane's,
+    so a span is classified identically locally and remotely.
+    """
+    from fastaiagent.trace.normalize import _SPAN_KIND_MAP, normalize_attributes
+
+    assert _SPAN_KIND_MAP["GUARDRAIL"] == "guardrail"
+    assert _SPAN_KIND_MAP["EVALUATOR"] == "evaluator"
+
+    guard = normalize_attributes({"openinference.span.kind": "GUARDRAIL"})
+    assert guard["fastaiagent.runner.type"] == "guardrail"
+
+    ev = normalize_attributes(
+        {"openinference.span.kind": "EVALUATOR", "evaluation.name": "helpfulness",
+         "evaluation.score": 0.8}
+    )
+    assert ev["fastaiagent.runner.type"] == "evaluator"
+    # Passthrough: the normalizer never drops the payload it classified on.
+    assert ev["evaluation.score"] == 0.8
+    assert ev["evaluation.name"] == "helpfulness"
