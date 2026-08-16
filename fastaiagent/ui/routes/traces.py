@@ -10,6 +10,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 
+from fastaiagent.trace.normalize import _SPAN_KIND_MAP
 from fastaiagent.ui.deps import get_context, project_filter, require_session
 
 logger = logging.getLogger(__name__)
@@ -110,8 +111,19 @@ def _summarize_trace(spans: list[dict[str, Any]]) -> dict[str, Any]:
                 framework = str(fw)
         if runner_type is None:
             explicit = attr(attrs, "runner.type")
+            # An OpenInference-classified span carries its kind directly. Map it
+            # through the same table the write-time normalizer and the control
+            # plane use, so a GUARDRAIL/EVALUATOR span is labelled identically
+            # everywhere. Needed because the normalizer only runs under
+            # enable_otel_capture(), so natively emitted spans reach here with
+            # no fastaiagent.runner.type — and would otherwise fall through the
+            # name-prefix checks to the model's "agent" default.
+            kind = attrs.get("openinference.span.kind") if attrs else None
+            mapped_kind = _SPAN_KIND_MAP.get(str(kind).upper()) if kind else None
             if explicit:
                 runner_type = str(explicit)
+            elif mapped_kind:
+                runner_type = mapped_kind
             elif span_name.startswith("chain."):
                 runner_type = "chain"
             elif span_name.startswith("swarm."):

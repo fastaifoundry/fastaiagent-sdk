@@ -1,4 +1,4 @@
-import { Bot, GitBranch, Network, UsersRound } from "lucide-react";
+import { Bot, GitBranch, Network, Ruler, Shield, UsersRound } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { RunnerType } from "@/lib/types";
@@ -34,6 +34,19 @@ const META: Record<
     label: "supervisor",
     icon: UsersRound,
     chip: "bg-fa-warning/10 text-fa-warning",
+  },
+  // OpenInference span kinds that can be a trace root when a foreign runtime
+  // emits a standalone check or score. Without these they fall through to the
+  // agent badge below and read as a stray agent run.
+  guardrail: {
+    label: "guardrail",
+    icon: Shield,
+    chip: "bg-destructive/10 text-destructive",
+  },
+  evaluator: {
+    label: "evaluator",
+    icon: Ruler,
+    chip: "bg-fa-success/10 text-fa-success",
   },
 };
 

@@ -30,4 +30,15 @@ describe("WorkflowBadge", () => {
     // But it's in the title attribute for hover tooltips.
     expect(screen.getByTitle("support-pipeline")).toBeInTheDocument();
   });
+
+  it("renders distinct badges for OpenInference root kinds", () => {
+    // emit_guardrail / emit_evaluation can produce a trace ROOT span. Before
+    // these entries existed they fell through to META.agent and a standalone
+    // eval score showed up in the trace list as an "AGENT" run.
+    for (const type of ["guardrail", "evaluator"] as const) {
+      const { unmount } = render(<WorkflowBadge type={type} />);
+      expect(screen.getByText(type)).toBeInTheDocument();
+      unmount();
+    }
+  });
 });

@@ -2,7 +2,20 @@
  * Shared TypeScript types mirroring the FastAPI server's Pydantic models.
  */
 
-export type RunnerType = "agent" | "chain" | "swarm" | "supervisor";
+// Root-span classifications the trace list can show. The first four are
+// runners; "guardrail" / "evaluator" are OpenInference span kinds that reach
+// us as a trace root when a foreign runtime emits a standalone check or score
+// (fastaiagent.emit_guardrail / emit_evaluation).
+export type RunnerType =
+  | "agent"
+  | "chain"
+  | "swarm"
+  | "supervisor"
+  | "guardrail"
+  | "evaluator";
+
+// The multi-step workflow topologies — a strict subset of RunnerType.
+export type WorkflowRunnerType = "chain" | "swarm" | "supervisor";
 
 export interface TraceRow {
   trace_id: string;
@@ -669,7 +682,7 @@ export interface TraceFilters {
 }
 
 export interface WorkflowSummary {
-  runner_type: Exclude<RunnerType, "agent">;
+  runner_type: WorkflowRunnerType;
   workflow_name: string;
   run_count: number;
   success_rate: number;

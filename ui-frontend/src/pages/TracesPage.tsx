@@ -30,7 +30,14 @@ const STR_KEYS: (keyof TraceFilters)[] = [
   "until",
 ];
 
-const VALID_RUNNERS: RunnerType[] = ["agent", "chain", "swarm", "supervisor"];
+const VALID_RUNNERS: RunnerType[] = [
+  "agent",
+  "chain",
+  "swarm",
+  "supervisor",
+  "guardrail",
+  "evaluator",
+];
 // Backend regex for ``framework`` query param: leading letter then
 // letters / digits / [_.-]. Mirroring it on the client lets us reject
 // pathological URL params before they round-trip to the API.
