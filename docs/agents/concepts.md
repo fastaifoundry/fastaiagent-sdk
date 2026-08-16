@@ -182,11 +182,11 @@ attached — `execution_id` and `status` (`"completed"` or `"paused"`).
 
 Work through these runnable examples in order — each adds one capability:
 
-1. [`examples/01_simple_agent.py`](https://github.com/fastaiagent/fastaiagent-sdk/blob/main/examples/01_simple_agent.py) — the bare loop: an agent that answers.
-2. [`examples/41_agent_tools.py`](https://github.com/fastaiagent/fastaiagent-sdk/blob/main/examples/41_agent_tools.py) — give it tools and watch the tool-calling loop.
-3. [`examples/03_guardrails.py`](https://github.com/fastaiagent/fastaiagent-sdk/blob/main/examples/03_guardrails.py) — validate input and output.
-4. [`examples/30_memory_blocks.py`](https://github.com/fastaiagent/fastaiagent-sdk/blob/main/examples/30_memory_blocks.py) — add memory across turns.
-5. [`examples/18_supervisor_worker.py`](https://github.com/fastaiagent/fastaiagent-sdk/blob/main/examples/18_supervisor_worker.py) and [`examples/31_swarm_research_team.py`](https://github.com/fastaiagent/fastaiagent-sdk/blob/main/examples/31_swarm_research_team.py) — compose multiple agents.
+1. [`examples/01_simple_agent.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/01_simple_agent.py) — the bare loop: an agent that answers.
+2. [`examples/41_agent_tools.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/41_agent_tools.py) — give it tools and watch the tool-calling loop.
+3. [`examples/03_guardrails.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/03_guardrails.py) — validate input and output.
+4. [`examples/30_memory_blocks.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/30_memory_blocks.py) — add memory across turns.
+5. [`examples/18_supervisor_worker.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/18_supervisor_worker.py) and [`examples/31_swarm_research_team.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/31_swarm_research_team.py) — compose multiple agents.
 
 ## Next steps
 

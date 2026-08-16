@@ -2,8 +2,8 @@
 
 This page is the authoritative contract for how a `Chain` runs. Each rule
 here is backed by a test in
-[`tests/test_chain_routing.py`](https://github.com/fastaiagent/fastaiagent-sdk/blob/main/tests/test_chain_routing.py)
-or [`tests/test_chain_resume.py`](https://github.com/fastaiagent/fastaiagent-sdk/blob/main/tests/test_chain_resume.py).
+[`tests/test_chain_routing.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/tests/test_chain_routing.py)
+or [`tests/test_chain_resume.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/tests/test_chain_resume.py).
 If you encounter behavior that disagrees with this page, that's a bug —
 please file an issue.
 

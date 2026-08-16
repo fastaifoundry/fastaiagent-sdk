@@ -3,7 +3,7 @@
 This page documents what Agent Replay captures, what it can faithfully
 reproduce, and where the known fidelity gaps are. Each guarantee is
 backed by a test in
-[`tests/test_replay_determinism.py`](https://github.com/fastaiagent/fastaiagent-sdk/blob/main/tests/test_replay_determinism.py).
+[`tests/test_replay_determinism.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/tests/test_replay_determinism.py).
 
 ## Determinism modes
 
@@ -179,4 +179,4 @@ rerun.save_as_test(
 ```
 
 For the full failure → fix → regression-test loop, see
-[`examples/62_replay_to_regression.py`](https://github.com/fastaiagent/fastaiagent-sdk/blob/main/examples/62_replay_to_regression.py).
+[`examples/62_replay_to_regression.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/62_replay_to_regression.py).

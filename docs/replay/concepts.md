@@ -128,9 +128,9 @@ primitives to branch or resume a durable run — including chains.
 
 ## A guided path
 
-1. [`examples/04_agent_replay.py`](https://github.com/fastaiagent/fastaiagent-sdk/blob/main/examples/04_agent_replay.py) — the full loop: run → load → step → fork → modify → rerun → compare → `"recorded"`.
-2. [`examples/62_replay_to_regression.py`](https://github.com/fastaiagent/fastaiagent-sdk/blob/main/examples/62_replay_to_regression.py) — turn a production failure into a saved regression test.
-3. [`examples/70_tool_replay_class.py`](https://github.com/fastaiagent/fastaiagent-sdk/blob/main/examples/70_tool_replay_class.py) — mark tools `read_only` / `idempotent` / `side_effecting` for safe reruns.
+1. [`examples/04_agent_replay.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/04_agent_replay.py) — the full loop: run → load → step → fork → modify → rerun → compare → `"recorded"`.
+2. [`examples/62_replay_to_regression.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/62_replay_to_regression.py) — turn a production failure into a saved regression test.
+3. [`examples/70_tool_replay_class.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/70_tool_replay_class.py) — mark tools `read_only` / `idempotent` / `side_effecting` for safe reruns.
 
 ## Next steps
 

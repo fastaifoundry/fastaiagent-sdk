@@ -128,8 +128,8 @@ nest under one trace in the UI for debugging.
 
 ## A guided path
 
-1. [`examples/agent-simulation/scenario_test.py`](https://github.com/fastaiagent/fastaiagent-sdk/blob/main/examples/agent-simulation/scenario_test.py) — deterministic scripted + persona scenarios with offline models.
-2. [`examples/74_agent_hardening.py`](https://github.com/fastaiagent/fastaiagent-sdk/blob/main/examples/74_agent_hardening.py) — the full loop: `generate_scenarios → simulate → Scorecard → harden`.
+1. [`examples/agent-simulation/scenario_test.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/agent-simulation/scenario_test.py) — deterministic scripted + persona scenarios with offline models.
+2. [`examples/74_agent_hardening.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/74_agent_hardening.py) — the full loop: `generate_scenarios → simulate → Scorecard → harden`.
 
 ## Next steps
 

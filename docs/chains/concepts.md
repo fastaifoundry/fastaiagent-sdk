@@ -197,10 +197,10 @@ Chain failures surface as a small, catchable hierarchy (all subclass
 
 Work through these runnable examples in order — each adds one capability:
 
-1. [`examples/36_chain_workflow.py`](https://github.com/fastaiagent/fastaiagent-sdk/blob/main/examples/36_chain_workflow.py) — your first chain: two agents, one unified trace.
-2. [`examples/02_chain_with_cycles.py`](https://github.com/fastaiagent/fastaiagent-sdk/blob/main/examples/02_chain_with_cycles.py) — add a retry loop with `max_iterations` and an `exit_condition`.
-3. [`examples/47_workflow_topology.py`](https://github.com/fastaiagent/fastaiagent-sdk/blob/main/examples/47_workflow_topology.py) — conditional routing plus a HITL gate, rendered in the topology view.
-4. [`examples/42_durability_hitl.py`](https://github.com/fastaiagent/fastaiagent-sdk/blob/main/examples/42_durability_hitl.py) — suspend/resume across a process restart with idempotent side effects.
+1. [`examples/36_chain_workflow.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/36_chain_workflow.py) — your first chain: two agents, one unified trace.
+2. [`examples/02_chain_with_cycles.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/02_chain_with_cycles.py) — add a retry loop with `max_iterations` and an `exit_condition`.
+3. [`examples/47_workflow_topology.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/47_workflow_topology.py) — conditional routing plus a HITL gate, rendered in the topology view.
+4. [`examples/42_durability_hitl.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/42_durability_hitl.py) — suspend/resume across a process restart with idempotent side effects.
 
 ## Next steps
 

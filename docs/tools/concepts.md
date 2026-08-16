@@ -123,11 +123,11 @@ re-execute the tool or must inject the recorded output. See
 
 ## A guided path
 
-1. [`examples/41_agent_tools.py`](https://github.com/fastaiagent/fastaiagent-sdk/blob/main/examples/41_agent_tools.py) — `@tool`, a custom `Tool` subclass, and a KB-as-tool; the three origins in the UI.
-2. [`examples/67_tool_docstrings.py`](https://github.com/fastaiagent/fastaiagent-sdk/blob/main/examples/67_tool_docstrings.py) — how Google/NumPy/Sphinx docstrings become parameter descriptions.
-3. [`examples/90_parallel_and_pydantic_tools.py`](https://github.com/fastaiagent/fastaiagent-sdk/blob/main/examples/90_parallel_and_pydantic_tools.py) — Pydantic-model args, enums, parallel execution, execution policy.
-4. [`examples/23_tool_guardrails.py`](https://github.com/fastaiagent/fastaiagent-sdk/blob/main/examples/23_tool_guardrails.py) — guardrails at `tool_call` and `tool_result`.
-5. [`examples/50_agent_dependencies.py`](https://github.com/fastaiagent/fastaiagent-sdk/blob/main/examples/50_agent_dependencies.py) — `RunContext` dependency injection.
+1. [`examples/41_agent_tools.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/41_agent_tools.py) — `@tool`, a custom `Tool` subclass, and a KB-as-tool; the three origins in the UI.
+2. [`examples/67_tool_docstrings.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/67_tool_docstrings.py) — how Google/NumPy/Sphinx docstrings become parameter descriptions.
+3. [`examples/90_parallel_and_pydantic_tools.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/90_parallel_and_pydantic_tools.py) — Pydantic-model args, enums, parallel execution, execution policy.
+4. [`examples/23_tool_guardrails.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/23_tool_guardrails.py) — guardrails at `tool_call` and `tool_result`.
+5. [`examples/50_agent_dependencies.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/50_agent_dependencies.py) — `RunContext` dependency injection.
 
 ## Next steps
 
