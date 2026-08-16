@@ -130,7 +130,7 @@ curl -N -X POST http://localhost:8000/run/stream \
 - **Concurrency.** Uvicorn defaults to a single worker. For real traffic, use `uvicorn server:app --workers 4` or put it behind gunicorn: `gunicorn server:app -k uvicorn.workers.UvicornWorker -w 4`. Each worker holds its own agent instance — that's fine because LLMClient is pooled per worker.
 - **Memory across requests.** The agent above is stateless per request. If you want conversation memory scoped per user, attach a `ComposableMemory` keyed by a user id in the request body — don't share one `AgentMemory` across users (threading nightmare).
 - **Graceful shutdown.** Uvicorn handles `SIGTERM` cleanly out of the box; Kubernetes will wait for in-flight requests to finish.
-- **Timeouts.** An agent that loops on tool calls can run for minutes. Set a per-route timeout on your ingress (nginx/ALB/Cloud Run) to something generous (`300s`) and handle the truncation server-side via a [middleware-enforced `ToolBudget`](../agents/middleware.md#toolbudget).
+- **Timeouts.** An agent that loops on tool calls can run for minutes. Set a per-route timeout on your ingress (nginx/ALB/Cloud Run) to something generous (`300s`) and handle the truncation server-side via a [middleware-enforced `ToolBudget`](../agents/middleware.md#toolbudgetmax_calls10-message).
 - **Observability.** Wire `fa.connect("https://app.fastaiagent.net")` inside `build_agent()` (or at module import time) and production traces land in the same dashboard you use for dev.
 
 ## Deploying the container

@@ -56,7 +56,7 @@ await chain.resume(
 ## Local-first, never blocks
 
 Reporting reuses the same durable outbox as
-[trace export](index.md#durable-trace-buffering--retry):
+[trace export](index.md#durable-trace-buffering-retry):
 
 1. On a pause/resolution the event is written to a local `hitl_events` table
    (`synced=0`) — the durable source of truth.

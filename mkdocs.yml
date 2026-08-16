@@ -117,6 +117,7 @@ nav:
       - "MCP Tools": tools/mcp-tools.md
       - "MCP Server": tools/mcp-server.md
       - "Schema Drift Detection": tools/schema-drift.md
+      - "Context & dependency injection": tools/context.md
   - Prompts:
       - "Concepts & Mental Model": prompts/concepts.md
       - prompts/index.md
@@ -130,6 +131,8 @@ nav:
       - "Concepts & Mental Model": llm/concepts.md
       - "Providers": llm/providers.md
       - "Custom Providers": llm/custom-provider.md
+  - Streaming: streaming/index.md
+  - "Structured Output": structured-output/index.md
   - Testing:
       - "Concepts & Mental Model": testing/concepts.md
       - testing/index.md

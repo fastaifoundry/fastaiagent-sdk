@@ -382,7 +382,7 @@ payload = agent.to_dict()
 ```
 
 `prompt_slug` is optional and additive: an agent without it serializes exactly as before.
-See `examples/89_connected_agent_push.py` and [Platform](../platform/index.md#pushing-agent-definitions).
+See `examples/89_connected_agent_push.py` and [Platform](../platform/index.md#registering-agent-definitions).
 
 ---
 
