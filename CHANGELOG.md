@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.47.2] - 2026-08-16
+
+### Fixed — the Local UI badged an inline eval span as an agent run
+
+`emit_guardrail` and `emit_evaluation` became public API in 1.47.0, and both can
+produce a **trace root** when a runtime that isn't `fa.Agent` emits a standalone
+check or score. The Local UI classified such a root as `agent`, so an eval score
+appeared in the trace list as a stray agent run. Three layers each masked the
+next:
+
+- `_SPAN_KIND_MAP` (`trace/normalize.py`) carried `GUARDRAIL` but not
+  `EVALUATOR`, so the write-time normalizer could not classify an eval-score
+  span. The control plane's equivalent map already had it; the two are meant to
+  agree.
+- The UI's trace-list resolver read only `fastaiagent.runner.type` and then span
+  *name* prefixes, falling through to an `"agent"` default. That attribute is
+  written only under `enable_otel_capture()`, so natively emitted spans never
+  carried it. It now maps `openinference.span.kind` through the same table —
+  one source of truth for native and foreign spans.
+- The frontend badge did `META[type] ?? META.agent`, so even a correct
+  `runner_type` still rendered an AGENT chip. `guardrail` and `evaluator` now
+  have their own badges, and `RunnerType` gained both; the workflow pages moved
+  to an explicit `WorkflowRunnerType` (`chain` | `swarm` | `supervisor`) rather
+  than `Exclude<RunnerType, "agent">`, which would otherwise have grown silently.
+
+### Documented
+
+`docs/evaluation/concepts.md` now states that a **synchronous** `agent_fn` runs
+on a worker thread — it must be thread-safe, and frameworks that refuse to run
+synchronously inside a live event loop work correctly. That behavior shipped in
+1.47.0 but was recorded only in this changelog.
+
 ## [1.47.1] - 2026-08-14
 
 ### Fixed — 1.47.0 shipped without the Local UI bundle
