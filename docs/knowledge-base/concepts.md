@@ -134,4 +134,4 @@ apps; PlatformKB when the corpus is managed centrally and shared across agents.
 - [Backends](backends.md) — swap FAISS/BM25/SQLite for Qdrant, Chroma, or your own
 - [Platform KB](platform-kb.md) — hosted retrieval with the same interface
 - [Tools](../tools/concepts.md) — how `as_tool()` retrieval reaches the model
-- [`examples/06_rag_agent.py`](https://github.com/fastaiagent/fastaiagent-sdk/blob/main/examples/06_rag_agent.py) — a RAG agent end to end
+- [`examples/06_rag_agent.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/06_rag_agent.py) — a RAG agent end to end
