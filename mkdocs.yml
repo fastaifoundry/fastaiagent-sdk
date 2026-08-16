@@ -7,6 +7,10 @@ copyright: Copyright &copy; 2026 FastAIFoundry
 
 theme:
   name: material
+  # Brand mark shared with the console and fastaiagent.net — the hexagon with a
+  # bolt. Without these, Material serves its own default icon.
+  favicon: assets/favicon.svg
+  logo: assets/logo.svg
   palette:
     - scheme: default
       primary: deep purple
