@@ -14,7 +14,7 @@ pip install fastaiagent
 
 Runs fully standalone, or connect to the [FastAIAgent Platform](https://fastaiagent.net) for hosted observability, prompt management, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.47.2)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.48.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -160,6 +160,40 @@ result.save_as_test(
 ```
 
 **No other SDK can do this.**
+
+## Block the merge when your agent gets worse
+
+Those regression cases are only worth writing if something *enforces* them.
+Your existing pytest run is the gate — no second tool, no config-file
+universe, no export pipeline:
+
+```bash
+# Yesterday's production failures become test cases
+fastaiagent eval curate --filter failed --since 24 -o cases/regressions.jsonl
+
+# Your pytest suite now gates the build
+pytest --eval-fail-under "overall.pass_rate=0.9" \
+       --eval-baseline main --eval-tolerance 0.02
+```
+
+```
+=========================== fastaiagent eval ===========================
+exact_match            avg=0.85  pass_rate=85%  (n=20)
+overall pass_rate=88%
+baseline: main pass_rate=0.9500  →  current 0.8000 (delta -0.1500)
+  regressed: "refund past 30 days" (scorers: exact_match)
+GATE: REGRESSION — overall pass-rate dropped 0.1500 (tolerance 0.02)
+```
+
+Every case in the session rolls up into one scored run, browsable in the
+Local UI at `/evals/<run_id>`. Infra failures (provider 500, timeout) are
+recorded as **errored** — unscored and counted separately — so an outage
+reports `INVALID`, never a green build. There's a CLI too
+(`fastaiagent eval run` / `eval compare`, exit codes `0`/`1`/`3`) for
+agents you don't drive from pytest.
+
+See [docs/evaluation/agent-ci.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/evaluation/agent-ci.md)
+for the GitHub Actions recipe.
 
 ## Pause for human approval. For days.
 

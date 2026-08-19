@@ -315,6 +315,7 @@ class ForkedReplay:
         self._modifications: dict[str, Any] = {}
         self._tool_overrides: dict[str, Any] = {}
         self._determinism: DeterminismMode = "live"
+        self._on_miss: str = "live"
 
     def modify_input(self, new_input: Any) -> ForkedReplay:
         """Override the input the rerun will use.
@@ -394,7 +395,7 @@ class ForkedReplay:
         self._tool_overrides[name] = tool
         return self
 
-    def with_determinism(self, mode: DeterminismMode) -> ForkedReplay:
+    def with_determinism(self, mode: DeterminismMode, *, on_miss: str = "live") -> ForkedReplay:
         """Control how the LLM is invoked during rerun.
 
         * ``"live"`` *(default)*: call the LLM provider with whatever
@@ -407,6 +408,14 @@ class ForkedReplay:
           ``temperature=0`` (and ``seed=42`` where the provider supports
           it). Reduces nondeterminism without skipping the call.
 
+        ``on_miss`` (``"recorded"`` mode only) controls what happens when the
+        rerun makes MORE LLM calls than the original trace captured:
+
+        * ``"live"`` *(default)*: fall through to a real provider call —
+          billed and nondeterministic — with a prominent warning logged.
+        * ``"error"``: raise :class:`ReplayError` instead. Recommended for
+          regression tests, where a silent live call would mask drift.
+
         See ``docs/replay/guarantees.md`` for per-provider support and
         known limitations (e.g. streaming chunks aren't recorded
         granularly — ``recorded`` mode reconstructs from final text).
@@ -416,7 +425,10 @@ class ForkedReplay:
                 f"Unknown determinism mode {mode!r}; "
                 "expected 'live', 'recorded', or 'deterministic'"
             )
+        if on_miss not in ("live", "error"):
+            raise ReplayError(f"Unknown on_miss {on_miss!r}; expected 'live' or 'error'")
         self._determinism = mode
+        self._on_miss = on_miss
         return self
 
     async def arerun(self) -> ReplayResult:
@@ -435,7 +447,7 @@ class ForkedReplay:
         history representation across providers.
         """
         from fastaiagent.agent.agent import Agent
-        from fastaiagent.llm.client import _replay_recorded_response
+        from fastaiagent.llm.client import _replay_on_miss, _replay_recorded_response
 
         root = self._find_root_span()
         if root is None:
@@ -502,9 +514,11 @@ class ForkedReplay:
                     f"FASTAIAGENT_TRACE_PAYLOADS=1 (the default) on the original run."
                 )
             token = _replay_recorded_response.set(list(recorded_queue))
+            miss_token = _replay_on_miss.set(self._on_miss)
             try:
                 new_result = await agent.arun(new_input)
             finally:
+                _replay_on_miss.reset(miss_token)
                 _replay_recorded_response.reset(token)
         else:
             new_result = await agent.arun(new_input)

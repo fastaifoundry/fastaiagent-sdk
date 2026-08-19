@@ -46,6 +46,13 @@ _replay_recorded_response: ContextVar[Any] = ContextVar(
     "_fastaiagent_replay_recorded_response", default=None
 )
 
+# What to do when a determinism="recorded" rerun makes MORE LLM calls than the
+# original trace captured (the queue above drains): "live" falls through to a
+# real provider call (pre-1.48.0 behavior, now with a loud warning), "error"
+# raises ReplayError so a regression suite can never silently spend tokens or
+# return nondeterministic output. Set alongside the queue by ForkedReplay.
+_replay_on_miss: ContextVar[str] = ContextVar("_fastaiagent_replay_on_miss", default="live")
+
 def _serialize_for_span(value: Any) -> str | None:
     """JSON-encode an arbitrary structure for span attributes, swallowing errors."""
     if value is None:
@@ -567,15 +574,33 @@ class LLMClient:
                 pass
 
             recorded_queue = _replay_recorded_response.get()
+            if recorded_queue is not None and not recorded_queue:
+                # The rerun made more LLM calls than the original trace
+                # captured (e.g. a modified prompt triggers an extra
+                # reasoning turn). "error" fails loud — a recorded suite
+                # must never silently spend tokens or go nondeterministic;
+                # "live" preserves the pre-1.48.0 fall-through, now warned.
+                if _replay_on_miss.get() == "error":
+                    from fastaiagent._internal.errors import ReplayError
+
+                    raise ReplayError(
+                        "determinism='recorded' ran out of captured LLM responses: "
+                        "the rerun makes more LLM calls than the original trace. "
+                        "Use with_determinism('recorded', on_miss='live') to allow "
+                        "falling through to live provider calls."
+                    )
+                logger.warning(
+                    "determinism='recorded' ran out of captured LLM responses; "
+                    "falling through to a LIVE %s call (billed, nondeterministic). "
+                    "Pass with_determinism('recorded', on_miss='error') to fail "
+                    "instead.",
+                    self.provider,
+                )
             if recorded_queue:
                 # v1.14.1: queue is a list of LLMResponses, one per captured
                 # ``llm.*`` span in capture order. We pop the front so a
                 # multi-turn tool-loop rerun replays turn-1 then turn-2…
-                # matching the original trace's call sequence. When the
-                # queue drains, fall through to a live call so the agent
-                # doesn't deadlock if the rerun makes more LLM calls than
-                # the original (e.g. a tool override that triggers an
-                # extra reasoning turn).
+                # matching the original trace's call sequence.
                 recorded = recorded_queue[0]
                 del recorded_queue[0]
                 span.set_attribute("replay.mode", "recorded")

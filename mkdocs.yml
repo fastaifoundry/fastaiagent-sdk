@@ -145,6 +145,7 @@ nav:
       - evaluation/index.md
       - "LLM-as-Judge": evaluation/llm-judge.md
       - "Pytest plugin": evaluation/pytest.md
+      - "Agent CI (gates & baselines)": evaluation/agent-ci.md
       - "RAG Metrics": evaluation/rag-metrics.md
       - "Safety Metrics": evaluation/safety-metrics.md
       - "Similarity & NLP Metrics": evaluation/similarity-metrics.md

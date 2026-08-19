@@ -133,13 +133,15 @@ def _scorer_summary(cases: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
 
 
 def _case_outcome(case: dict[str, Any]) -> str:
-    """Return 'passed' if every scorer passed, else 'failed'."""
-    per = case.get("per_scorer") or {}
-    if not isinstance(per, dict) or not per:
-        return "passed"
-    return (
-        "passed" if all(isinstance(v, dict) and v.get("passed") for v in per.values()) else "failed"
-    )
+    """'errored' for infra-failed (unscored) cases, else 'passed'/'failed'.
+
+    Before the ``error`` column existed (schema v16) an errored case rendered
+    as "passed" — an outage could look green. Logic lives in
+    ``fastaiagent.eval.compare.case_outcome`` (shared with pytest/CLI gating).
+    """
+    from fastaiagent.eval.compare import case_outcome
+
+    return case_outcome(case)
 
 
 @router.get("")
@@ -257,56 +259,16 @@ def compare(
                 )
             ]
 
+        from fastaiagent.eval.compare import bucket_cases
+
         run_a = get_run(a)
         run_b = get_run(b)
         cases_a = get_cases(a)
         cases_b = get_cases(b)
 
-        # Match by ordinal first; fall back to input equality if the cases
-        # have been reordered between runs.
-        index_b: dict[Any, dict[str, Any]] = {}
-        for c in cases_b:
-            key = c.get("ordinal")
-            if key is not None:
-                index_b[key] = c
-        by_input: dict[str, dict[str, Any]] = {}
-        for c in cases_b:
-            try:
-                by_input[json.dumps(c.get("input"), sort_keys=True)] = c
-            except (TypeError, ValueError):
-                logger.debug(
-                    "Failed to serialize eval case input for comparison index", exc_info=True,
-                )
-
-        regressed: list[dict[str, Any]] = []
-        improved: list[dict[str, Any]] = []
-        unchanged_pass = 0
-        unchanged_fail = 0
-
-        for ca in cases_a:
-            cb = index_b.get(ca.get("ordinal"))
-            if cb is None:
-                try:
-                    cb = by_input.get(json.dumps(ca.get("input"), sort_keys=True))
-                except (TypeError, ValueError):
-                    logger.debug(
-                        "Failed to serialize eval case input for comparison lookup", exc_info=True,
-                    )
-                    cb = None
-            if cb is None:
-                continue
-            a_ok = _case_outcome(ca) == "passed"
-            b_ok = _case_outcome(cb) == "passed"
-            deltas = _scorer_deltas(ca, cb)
-            entry = {"a": ca, "b": cb, "scorer_deltas": deltas}
-            if a_ok and not b_ok:
-                regressed.append(entry)
-            elif b_ok and not a_ok:
-                improved.append(entry)
-            elif a_ok and b_ok:
-                unchanged_pass += 1
-            else:
-                unchanged_fail += 1
+        # Matching (ordinal-first, input fallback) + bucketing live in
+        # fastaiagent.eval.compare, shared with the pytest plugin and CLI.
+        regressed, improved, unchanged_pass, unchanged_fail = bucket_cases(cases_a, cases_b)
 
         return {
             "run_a": run_a,
@@ -328,29 +290,6 @@ def compare(
         db.close()
 
 
-def _scorer_deltas(a: dict[str, Any], b: dict[str, Any]) -> list[dict[str, Any]]:
-    """Per-scorer {passed_before, passed_after, changed} list for one case pair."""
-    per_a = a.get("per_scorer") or {}
-    per_b = b.get("per_scorer") or {}
-    if not isinstance(per_a, dict) or not isinstance(per_b, dict):
-        return []
-    out = []
-    for scorer in sorted(set(per_a) | set(per_b)):
-        ra = per_a.get(scorer) or {}
-        rb = per_b.get(scorer) or {}
-        pa = bool(ra.get("passed")) if isinstance(ra, dict) else False
-        pb = bool(rb.get("passed")) if isinstance(rb, dict) else False
-        out.append(
-            {
-                "scorer": scorer,
-                "passed_before": pa,
-                "passed_after": pb,
-                "changed": pa != pb,
-            }
-        )
-    return out
-
-
 @router.get("/{run_id}")
 def get_run(
     request: Request,
@@ -362,7 +301,7 @@ def get_run(
     ),
     outcome: str | None = Query(
         default=None,
-        pattern="^(passed|failed)$",
+        pattern="^(passed|failed|errored)$",
         description="Filter cases by overall outcome.",
     ),
     q: str | None = Query(

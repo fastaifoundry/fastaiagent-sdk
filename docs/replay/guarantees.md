@@ -62,6 +62,20 @@ Pre-v1.14.1 the same first response was returned for every LLM call
 in the rerun, which made tool-loop replays nonsensical (every turn
 parroted turn 1).
 
+#### Controlling the drained-queue fall-through (v1.48.0+)
+
+That live fall-through is billed and nondeterministic, and before
+v1.48.0 it happened silently. It is now warned loudly, and you can
+make it fatal — recommended whenever the rerun is a regression test:
+
+```python
+forked.with_determinism("recorded", on_miss="error")   # raises ReplayError
+forked.with_determinism("recorded")                    # default: on_miss="live"
+```
+
+`on_miss="error"` raises before any provider call, so a recorded suite
+can never quietly spend tokens or return drifted output.
+
 ## Known fidelity gaps
 
 These are documented limitations to set expectations. Each is tracked

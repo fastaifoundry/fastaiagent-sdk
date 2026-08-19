@@ -5,6 +5,87 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.48.0] - 2026-08-19
+
+### Added — Agent CI: failures become tests, tests become gates
+
+The SDK has had the deepest eval library in the category and no way to *gate*
+on it: `fastaiagent eval run` / `eval compare` echoed their arguments and
+exited 0, and the pytest plugin registered no pytest hooks, so a 200-row
+dataset wrote 200 single-case "runs" into `local.db` with no roll-up and no
+threshold. Everything needed to block a bad merge existed as parts; nothing
+assembled them. This release assembles them where Python developers already
+run their tests — pytest — rather than in a new config-file universe.
+
+**Pytest plugin v2** (`fastaiagent/eval/pytest_plugin.py`). Real session hooks
+(`pytest_configure` / `pytest_sessionfinish` / `pytest_terminal_summary`):
+
+- Every `evaluate_one` case in a session now aggregates into **one**
+  `eval_runs` row (name it with `--eval-run-name`, default `pytest::<rootdir>`).
+- `--eval-fail-under "overall.pass_rate=0.9"` (repeatable) gates the aggregate.
+  Grammar: `<scorer|overall>.<pass_rate|avg_score>=v`, or a bare scorer name
+  meaning its `pass_rate`. A threshold naming a scorer the run didn't produce
+  **fails** — a typo can't silently green a build.
+- `--eval-max-error-rate` bounds infra failures (see below).
+- `--eval-baseline <run_id|run_name>` + `--eval-tolerance` compare against a
+  persisted run and fail on regression, printing which cases regressed and on
+  which scorers.
+- A `fastaiagent eval` terminal-summary section explains every verdict.
+- No gate options means no gating: existing suites are unaffected.
+
+**Working CLI** (`fastaiagent/cli/eval.py`). `eval run` executes a dataset
+against `--agent path.py:attr` (a callable, or any object with `.run`) and
+gates it; `eval compare A B` diffs two persisted runs. Documented exit codes:
+`0` passed, `1` quality failed, `3` run invalid (`2` stays Click's usage
+error). `--json` writes a versioned report.
+
+**New public API**: `fastaiagent.eval.gate()` / `GateReport`,
+`compare_runs()` / `load_run()` / `RunComparison`. The run-comparison logic
+that previously lived only inside the authed UI route now lives in
+`fastaiagent/eval/compare.py`; the route delegates to it, so Python, pytest,
+the CLI, and the UI all bucket regressions identically.
+
+`persist_local()` gained a `metadata=` kwarg and records git provenance
+(`git_sha` / `git_branch`, from the GitHub Actions env or `git rev-parse`),
+so a CI baseline can be selected by ref.
+
+Docs: new [Agent CI](docs/evaluation/agent-ci.md) guide (pytest options,
+threshold grammar, baselines, GitHub Actions recipe, trace→gate loop).
+
+### Fixed — an outage could report a perfect eval score
+
+`aevaluate` has recorded infra-failed cases (provider 500, timeout, auth) as
+*unscored* since 1.31.0 so they can't masquerade as agent-quality misses. But
+nothing surfaced the error count, and `persist_local` dropped the error string
+entirely: a run where 190 of 200 cases crashed and 10 passed reported
+`pass_rate == 1.0`, and the Local UI's `_case_outcome` returned `"passed"` for
+every errored case (empty `per_scorer` fell through the `all()` check).
+
+- `EvalResults` exposes `errored_count` / `error_rate`, and `summary()` says so.
+- `Scorecard` carries `errored`; it appears in `summary()` and `to_dict()`.
+- Schema **v16** adds `eval_cases.error` (pre-existing rows keep `NULL`).
+- The UI classifies such a case as `errored` — its own outcome, excluded from
+  pass/fail buckets and from run comparisons on either side, so an outage
+  reads as neither regression nor improvement. `?outcome=errored` filters them.
+- Gating treats an over-budget error rate (or a run with nothing scored) as
+  **invalid**, which outranks *failed*: during an outage, threshold misses are
+  noise and must not be reported as agent regressions.
+
+### Fixed — `determinism="recorded"` could silently make live, billed calls
+
+When a recorded replay made more LLM calls than the original trace captured,
+the drained queue fell through to a real provider call — nondeterministic and
+billed — with no signal. That fall-through is now **warned loudly**, and
+`with_determinism("recorded", on_miss="error")` raises `ReplayError` instead;
+recommended for regression suites. Default stays `on_miss="live"`, so existing
+behavior is unchanged.
+
+### Notes
+
+Additive and non-breaking. Schema v16 is a forward-only `ALTER TABLE`.
+The pytest plugin is not xdist-aware in this release (each worker would
+persist and gate its own subset); run eval-gated suites in a single process.
+
 ## [1.47.2] - 2026-08-16
 
 ### Fixed — the Local UI badged an inline eval span as an agent run
