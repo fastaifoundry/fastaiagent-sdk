@@ -63,18 +63,35 @@ body can do additional assertions on `actual_output`, `per_scorer`, or
 
 ## Local UI integration
 
-Each persisted run shows up at `/evals` with
-`run_name="pytest::<test-id>"`, so you can:
+All cases in a pytest session aggregate into **one** persisted run
+(v1.48.0; previously each case wrote its own single-case run). It shows
+up at `/evals` named `pytest::<rootdir>` — override with
+`--eval-run-name` — so you can:
 
 - Compare the same eval across CI runs over time.
 - Click through to the trace if your agent recorded one
   (`AgentResult.trace_id`).
 
+## Gating CI
+
+The plugin can fail the pytest session on aggregate quality:
+
+```bash
+pytest --eval-fail-under "overall.pass_rate=0.9" \
+       --eval-max-error-rate 0.1 \
+       --eval-baseline main --eval-tolerance 0.02
+```
+
+Infra failures (your agent raised) are recorded as *errored* — unscored,
+excluded from pass/fail, and counted — so an outage can't green a build.
+See **[Agent CI](agent-ci.md)** for the full option list, threshold
+grammar, baselines, and a GitHub Actions recipe.
+
 ## Running
 
 Just `pytest`. The plugin is registered via the
 `[project.entry-points.pytest11]` group in fastaiagent's `pyproject.toml`,
-so no opt-in flag is needed.
+so no opt-in flag is needed. Passing no `--eval-*` options means no gating.
 
 ## See also
 

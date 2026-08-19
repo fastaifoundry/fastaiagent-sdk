@@ -17,7 +17,7 @@ from pathlib import Path
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
 
-CURRENT_SCHEMA_VERSION = 15
+CURRENT_SCHEMA_VERSION = 16
 
 # A migration step is either a SQL string or a callable that takes the
 # ``SQLiteHelper`` and runs whatever logic it needs (e.g., gated
@@ -488,6 +488,23 @@ def _v14_add_sdk_instance(db: SQLiteHelper) -> None:
     )
 
 
+def _v16_add_eval_case_error(db: SQLiteHelper) -> None:
+    """Persist infra-failure detail on ``eval_cases`` (Agent CI, 1.48.0).
+
+    ``aevaluate`` has recorded infra-errored cases (provider 500, timeout, …)
+    as unscored ``EvalCaseRecord(error=…)`` since 1.31.0, but ``persist_local``
+    dropped the error string — so an errored case was indistinguishable from a
+    passing one in the DB and the UI rendered it as "passed". The column makes
+    the error durable; ``ui/routes/evals.py::_case_outcome`` classifies any
+    case with a non-empty ``error`` as ``errored`` instead of pass/fail.
+    Gated on the table existing (it always does — created in v1).
+    """
+    rows = db.fetchall("SELECT name FROM sqlite_master WHERE type='table' AND name='eval_cases'")
+    if not rows:
+        return
+    _add_column_if_missing(db, "eval_cases", "error", "TEXT")
+
+
 _MIGRATIONS: dict[int, list[_Step]] = {
     1: [
         # Trace spans (moved from traces.db).
@@ -873,6 +890,11 @@ _MIGRATIONS: dict[int, list[_Step]] = {
         )""",
         "CREATE INDEX IF NOT EXISTS idx_optimize_iter_run "
         "ON optimize_iterations(run_id, project_id)",
+    ],
+    16: [
+        # Agent CI (1.48.0): make infra-errored eval cases durable so they can't
+        # masquerade as passing in the DB/UI. See _v16_add_eval_case_error.
+        _v16_add_eval_case_error,
     ],
 }
 

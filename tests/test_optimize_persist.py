@@ -66,7 +66,7 @@ def test_migration_v15_applies_and_is_idempotent(temp_dir: Path) -> None:
     db = init_local_db(db_path)
     try:
         ver = db.fetchone("PRAGMA user_version")
-        assert int(next(iter(ver.values()))) == CURRENT_SCHEMA_VERSION == 15
+        assert int(next(iter(ver.values()))) == CURRENT_SCHEMA_VERSION >= 15
         tables = {
             r["name"]
             for r in db.fetchall(
@@ -82,7 +82,7 @@ def test_migration_v15_applies_and_is_idempotent(temp_dir: Path) -> None:
     db2 = init_local_db(db_path)
     try:
         ver2 = db2.fetchone("PRAGMA user_version")
-        assert int(next(iter(ver2.values()))) == 15
+        assert int(next(iter(ver2.values()))) == CURRENT_SCHEMA_VERSION
     finally:
         db2.close()
 
@@ -283,7 +283,7 @@ def test_migration_v15_is_non_breaking_on_populated_db(temp_dir: Path) -> None:
     # Open via the migrator → applies v15 only.
     db = init_local_db(db_path)
     try:
-        assert int(next(iter(db.fetchone("PRAGMA user_version").values()))) == 15
+        assert int(next(iter(db.fetchone("PRAGMA user_version").values()))) == CURRENT_SCHEMA_VERSION
         # New tables exist...
         tables = {
             r["name"]

@@ -150,3 +150,21 @@ append-only — when a new customer complaint surfaces, run
 `capture.py` with the new input, `fix.py` with the new fix,
 `save_test.py` to commit the case. Future `verify.py` runs catch any
 regression of the same failure mode, automatically.
+
+## Enforcing it in CI
+
+`verify.py` proves the fix locally; [Agent CI](../evaluation/agent-ci.md)
+makes it block a merge. The same JSONL drives a gated pytest run:
+
+```python
+@dataset("regression_dataset.jsonl")
+def test_no_regressions(eval_case, evaluate_one):
+    evaluate_one(agent.run, scorers=[LLMJudge(criteria="correctness")])
+```
+
+```bash
+pytest --eval-fail-under "overall.pass_rate=0.95" --eval-baseline main
+```
+
+Rows written by `save_as_test()` load through `@dataset(...)` unchanged,
+so the capture → fix → save loop feeds the gate with no glue code.

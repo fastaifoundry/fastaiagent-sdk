@@ -31,6 +31,8 @@ except ImportError:  # pragma: no cover — exercised by subprocess test
     pytest_dataset = _missing_pytest  # type: ignore[assignment]
 
 from fastaiagent.eval.agent_metrics import Hallucination, ReflectionQuality, TaskCompletion
+from fastaiagent.eval.compare import RunComparison, compare_runs, load_run
+from fastaiagent.eval.gate import GateReport, gate
 from fastaiagent.eval.harden import HardeningReport, Recommendation, aharden, harden
 from fastaiagent.eval.rag import AnswerRelevancy, ContextPrecision, ContextRecall, Faithfulness
 from fastaiagent.eval.results import EvalResults, MetricSummary, Scorecard
@@ -85,6 +87,12 @@ __all__ = [
     "GEval",
     "Scorecard",
     "MetricSummary",
+    # Agent CI: gates + baseline comparison
+    "gate",
+    "GateReport",
+    "compare_runs",
+    "load_run",
+    "RunComparison",
     # Simulation
     "simulate",
     "asimulate",

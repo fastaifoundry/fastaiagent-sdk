@@ -392,11 +392,28 @@ results = evaluate(
 
 ## CLI Commands
 
-> **Status — not yet implemented.** The `fastaiagent eval run` and
-> `fastaiagent eval compare` subcommands are currently placeholders: they echo
-> their arguments and exit without running anything. Use the Python
-> `evaluate()` API for all evaluation today. A functional CLI (with CI
-> regression gates) is on the roadmap.
+```bash
+# Run a dataset against an agent and gate on the result
+fastaiagent eval run \
+  --agent app/agents.py:support_agent \
+  --dataset cases.jsonl \
+  --scorers exact_match,faithfulness \
+  --fail-under "overall.pass_rate=0.9" \
+  --max-error-rate 0.1 \
+  --json report.json
+
+# Compare two persisted runs (baseline first)
+fastaiagent eval compare main pr --tolerance 0.02
+
+# Turn production failures into eval cases
+fastaiagent eval curate --filter failed -o cases/regressions.jsonl
+```
+
+Exit codes: `0` gate passed · `1` quality gate failed · `3` run invalid
+(infra error rate exceeded). See **[Agent CI](agent-ci.md)** for the
+pytest-native gate, baselines, and the GitHub Actions recipe.
+
+The equivalent Python API:
 
 ```python
 from fastaiagent.eval import evaluate

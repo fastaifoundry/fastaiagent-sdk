@@ -7,9 +7,6 @@ file. Mirrors the resolver used by ``fastaiagent agent`` / ``fastaiagent mcp``.
 
 from __future__ import annotations
 
-import importlib
-import importlib.util
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -22,25 +19,12 @@ console = Console()
 
 def _resolve_target(spec: str) -> Any:
     """Resolve ``path/to/file.py:attr`` or ``pkg.module:attr`` into a live object."""
-    if ":" not in spec:
-        raise typer.BadParameter(
-            f"Expected 'path/to/file.py:attr' or 'pkg.module:attr', got {spec!r}"
-        )
-    module_part, attr = spec.rsplit(":", 1)
-    path = Path(module_part)
-    if path.exists():
-        module_name = path.stem
-        spec_obj = importlib.util.spec_from_file_location(module_name, str(path))
-        if spec_obj is None or spec_obj.loader is None:
-            raise typer.BadParameter(f"Cannot load module from {path}")
-        module = importlib.util.module_from_spec(spec_obj)
-        sys.path.insert(0, str(path.parent.resolve()))
-        spec_obj.loader.exec_module(module)
-    else:
-        module = importlib.import_module(module_part)
-    if not hasattr(module, attr):
-        raise typer.BadParameter(f"Module {module_part!r} has no attribute {attr!r}")
-    return getattr(module, attr)
+    from fastaiagent._internal.target import resolve_target
+
+    try:
+        return resolve_target(spec)
+    except ValueError as e:
+        raise typer.BadParameter(str(e)) from e
 
 
 @optimize_app.callback(invoke_without_command=True)

@@ -12,6 +12,53 @@ from typing import Any
 from fastaiagent.eval.scorer import ScorerResult
 
 
+def _git_provenance() -> dict[str, str]:
+    """Best-effort ``{git_sha, git_branch}`` for baseline selection in CI.
+
+    Prefers the GitHub Actions env (present even on detached-HEAD checkouts),
+    falls back to ``git rev-parse``; returns {} outside a repo.
+    """
+    import os
+    import subprocess
+
+    out: dict[str, str] = {}
+    sha = os.environ.get("GITHUB_SHA")
+    branch = os.environ.get("GITHUB_REF_NAME")
+    if not sha:
+        try:
+            sha = (
+                subprocess.run(
+                    ["git", "rev-parse", "HEAD"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    check=False,
+                ).stdout.strip()
+                or None
+            )
+        except (OSError, subprocess.SubprocessError):
+            sha = None
+    if not branch:
+        try:
+            branch = (
+                subprocess.run(
+                    ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    check=False,
+                ).stdout.strip()
+                or None
+            )
+        except (OSError, subprocess.SubprocessError):
+            branch = None
+    if sha:
+        out["git_sha"] = sha
+    if branch and branch != "HEAD":
+        out["git_branch"] = branch
+    return out
+
+
 @dataclass
 class EvalCaseRecord:
     """Per-case capture used by :meth:`EvalResults.persist_local`."""
@@ -45,6 +92,23 @@ class EvalResults:
         """Record one dataset case end-to-end for later persistence."""
         self.cases.append(record)
 
+    @property
+    def errored_count(self) -> int:
+        """Cases that infrastructure-failed during the run (never scored)."""
+        return sum(1 for c in self.cases if c.error)
+
+    @property
+    def error_rate(self) -> float:
+        """errored_count over ALL recorded cases (scored + errored).
+
+        0.0 when no cases were recorded at all — callers gating CI should
+        also check that scored cases exist (see ``eval/gate.py``), since a
+        run where everything errored has an error_rate of 1.0 but a run
+        with zero cases is a configuration problem, not a quality signal.
+        """
+        total = len(self.cases)
+        return (self.errored_count / total) if total else 0.0
+
     def summary(self) -> str:
         """Generate a summary table."""
         lines = ["Evaluation Results", "=" * 50]
@@ -55,6 +119,11 @@ class EvalResults:
             pass_rate = sum(1 for r in results if r.passed) / len(results)
             lines.append(
                 f"{name}: avg={avg_score:.2f} pass_rate={pass_rate:.0%} ({len(results)} cases)"
+            )
+        if self.errored_count:
+            lines.append(
+                f"errored: {self.errored_count}/{len(self.cases)} cases "
+                f"infrastructure-failed and were NOT scored"
             )
         return "\n".join(lines)
 
@@ -88,11 +157,16 @@ class EvalResults:
         dataset_name: str | None = None,
         agent_name: str | None = None,
         agent_version: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """Persist this run to the unified local.db.
 
         Writes one row to ``eval_runs`` and one per case to ``eval_cases``.
         Returns the generated ``run_id`` so callers can correlate.
+
+        ``metadata`` lands in the run row's JSON column; git provenance
+        (``git_sha`` / ``git_branch``) is merged in best-effort so a CI
+        baseline can later be selected by ref — caller-provided keys win.
         """
         from fastaiagent._internal.config import get_config
         from fastaiagent.ui.db import init_local_db
@@ -116,6 +190,7 @@ class EvalResults:
         from fastaiagent._internal.project import safe_get_project_id
 
         pid = safe_get_project_id()
+        merged_metadata = {**_git_provenance(), **(metadata or {})}
         db = init_local_db(resolved)
         try:
             db.execute(
@@ -136,7 +211,7 @@ class EvalResults:
                     pass_count,
                     fail_count,
                     pass_rate,
-                    json.dumps({}),
+                    json.dumps(merged_metadata, default=str),
                     pid,
                 ),
             )
@@ -144,8 +219,8 @@ class EvalResults:
                 db.execute(
                     """INSERT INTO eval_cases
                        (case_id, run_id, ordinal, input, expected_output,
-                        actual_output, trace_id, per_scorer, project_id)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        actual_output, trace_id, per_scorer, error, project_id)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         uuid.uuid4().hex,
                         run_id,
@@ -155,6 +230,7 @@ class EvalResults:
                         json.dumps(case.actual_output, default=str),
                         case.trace_id,
                         json.dumps(case.per_scorer),
+                        case.error,
                         pid,
                     ),
                 )
@@ -215,6 +291,10 @@ class Scorecard:
     metrics: list[MetricSummary] = field(default_factory=list)
     overall_pass_rate: float = 0.0
     label: str | None = None
+    # Cases that infrastructure-failed and were never scored. Kept separate
+    # from pass/fail so an outage can't read as either quality signal —
+    # but always VISIBLE, so a run of mostly-errored cases can't look green.
+    errored: int = 0
 
     @classmethod
     def from_eval_results(cls, results: EvalResults, *, label: str | None = None) -> Scorecard:
@@ -233,7 +313,12 @@ class Scorecard:
             total += n
             passed += sum(1 for r in rlist if r.passed)
         overall = (passed / total) if total else 0.0
-        return cls(metrics=metrics, overall_pass_rate=round(overall, 4), label=label)
+        return cls(
+            metrics=metrics,
+            overall_pass_rate=round(overall, 4),
+            label=label,
+            errored=results.errored_count,
+        )
 
     @classmethod
     def from_simulation(cls, results: Any, *, label: str | None = None) -> Scorecard:
@@ -258,11 +343,14 @@ class Scorecard:
             )
         lines.append("-" * 50)
         lines.append(f"overall pass_rate={self.overall_pass_rate:.0%}")
+        if self.errored:
+            lines.append(f"errored (unscored)={self.errored}")
         return "\n".join(lines)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "label": self.label,
             "overall_pass_rate": self.overall_pass_rate,
+            "errored": self.errored,
             "metrics": [m.to_dict() for m in self.metrics],
         }

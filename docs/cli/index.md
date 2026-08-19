@@ -108,11 +108,34 @@ fastaiagent replay fork <trace_id> --input "Try a different question"
 # Curate an eval dataset from captured agent traces
 fastaiagent eval curate --filter favorites --out cases.jsonl
 fastaiagent eval curate --filter guardrail --agent support --since 24 --out fixme.jsonl
+
+# Run a dataset against an agent and gate on the result
+fastaiagent eval run \
+  --agent app/agents.py:support_agent \
+  --dataset cases.jsonl \
+  --scorers exact_match,faithfulness \
+  --fail-under "overall.pass_rate=0.9" \
+  --max-error-rate 0.1 \
+  --run-name main \
+  --json report.json
+
+# Compare two persisted runs (baseline first)
+fastaiagent eval compare main pr --tolerance 0.02
 ```
 
 Each `agent.<name>` span (root, or nested inside a chain/supervisor/swarm) becomes
-one case. See [Trace Curation](../evaluation/curation.md). The `eval run` /
-`eval compare` subcommands are placeholders today — use the Python `evaluate()` API.
+one case. See [Trace Curation](../evaluation/curation.md).
+
+`--agent` accepts `path/to/file.py:attr` or `pkg.module:attr` (a callable, or any
+object with a `.run` method). Thresholds use `<scorer|overall>.<pass_rate|avg_score>=v`;
+a bare scorer name means its `pass_rate`.
+
+**Exit codes:** `0` gate passed · `1` quality gate failed (threshold miss or
+regression) · `3` run invalid (infra error rate exceeded, or nothing scored).
+`2` is reserved for usage errors.
+
+For gating your existing pytest suite — with baselines and regression detection —
+see [Agent CI](../evaluation/agent-ci.md).
 
 ## `fastaiagent prompts`
 
