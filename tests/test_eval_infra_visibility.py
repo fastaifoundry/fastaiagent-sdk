@@ -82,7 +82,18 @@ def test_error_persists_to_eval_cases_column(tmp_path) -> None:
         db.close()
 
 
-def test_ui_case_outcome_classifies_errored() -> None:
+def test_case_outcome_classifies_errored() -> None:
+    """The shared classifier — no optional deps needed."""
+    from fastaiagent.eval.compare import case_outcome
+
+    assert case_outcome({"error": "boom", "per_scorer": {}}) == "errored"
+    assert case_outcome({"per_scorer": {"m": {"passed": True}}}) == "passed"
+    assert case_outcome({"per_scorer": {"m": {"passed": False}}}) == "failed"
+
+
+def test_ui_route_delegates_to_shared_case_outcome() -> None:
+    """The UI route is a thin wrapper; needs the optional [ui] extra."""
+    pytest.importorskip("fastapi")
     from fastaiagent.ui.routes.evals import _case_outcome
 
     assert _case_outcome({"error": "boom", "per_scorer": {}}) == "errored"
