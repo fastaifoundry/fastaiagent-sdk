@@ -121,6 +121,10 @@ fastaiagent eval run \
 
 # Compare two persisted runs (baseline first)
 fastaiagent eval compare main pr --tolerance 0.02
+
+# Inspect what Agent-CI evidence would leave this machine (connected mode)
+fastaiagent eval export --status        # posture + runs queued for the plane
+fastaiagent eval export --dry-run       # the literal JSON that would be sent
 ```
 
 Each `agent.<name>` span (root, or nested inside a chain/supervisor/swarm) becomes
@@ -136,6 +140,13 @@ regression) · `3` run invalid (infra error rate exceeded, or nothing scored).
 
 For gating your existing pytest suite — with baselines and regression detection —
 see [Agent CI](../evaluation/agent-ci.md).
+
+`eval export` only inspects; it never sends. When connected, gate verdicts are
+pushed automatically in the background — run aggregates, gate outcome, thresholds,
+git provenance and per-case scorer verdicts + `trace_id`s. **Case inputs and outputs
+are never sent.** Disable with `connect(export_evals=False)` or
+`FASTAIAGENT_EXPORT_EVALS=0`; see
+[Agent CI → Connected mode](../evaluation/agent-ci.md#connected-mode-gates-as-governance-evidence).
 
 ## `fastaiagent prompts`
 

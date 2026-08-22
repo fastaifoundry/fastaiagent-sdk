@@ -36,6 +36,30 @@ def _is_async_callable(fn: Callable[..., Any]) -> bool:
     return call is not None and inspect.iscoroutinefunction(call)
 
 
+def infer_agent_name(agent_fn: Callable[..., Any]) -> str | None:
+    """Best-effort agent name for a callable like ``agent.run``.
+
+    Load-bearing for connected mode: the plane resolves ``agent_name`` to a real
+    agent so eval evidence attaches to a *specific* system. Without it every run
+    lands unattributed and per-agent marking silently does nothing.
+
+    Handles the common shapes — a bound method of an ``Agent`` / ``Supervisor`` /
+    ``Swarm`` / ``Chain`` (``agent.run``), a ``functools.partial`` around one, and
+    an object exposing ``.name`` directly. Returns None when there is nothing
+    trustworthy to report; a wrong name is worse than none.
+    """
+    import functools
+
+    target: Any = agent_fn
+    while isinstance(target, functools.partial):
+        target = target.func
+    owner = getattr(target, "__self__", None)  # bound method -> its instance
+    if owner is None and not callable(target):
+        owner = target
+    name = getattr(owner, "name", None) if owner is not None else None
+    return name if isinstance(name, str) and name else None
+
+
 async def _call_agent_fn(agent_fn: Callable[..., Any], input_text: Any) -> Any:
     """Invoke a user agent callable from inside the eval loop.
 
@@ -221,7 +245,9 @@ async def aevaluate(
             run_id = results.persist_local(
                 run_name=run_name,
                 dataset_name=resolved_dataset_name,
-                agent_name=agent_name,
+                # Fall back to the callable's own agent so connected runs attach
+                # to a real system instead of landing unattributed.
+                agent_name=agent_name or infer_agent_name(agent_fn),
             )
             # Stash the run_id on the returned object so callers can deep-link
             # into the Local UI (e.g. /evals/<run_id> or /evals/compare?a=…).

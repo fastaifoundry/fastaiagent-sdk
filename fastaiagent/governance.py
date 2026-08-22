@@ -123,6 +123,17 @@ def enroll(governed_agent_ids: list[str] | None = None) -> dict[str, Any] | None
     # the schema). deployment_type / attributes still omitted (no cheap source).
     if governed_agent_ids:
         body["governed_agent_ids"] = governed_agent_ids
+    # Part D: attest the Agent-CI verdict egress posture. This is the *marking*
+    # mechanism — without it the plane cannot tell "export disabled" (a deliberate
+    # config choice) apart from "this team isn't running evals at all", which are
+    # very different governance conversations. The plane merges it into
+    # SdkEnrollment.attributes. Additive: an older plane just ignores the key.
+    try:
+        from fastaiagent.eval.platform_export import eval_export_enabled
+
+        body["export_evals"] = eval_export_enabled()
+    except Exception:  # pragma: no cover — never block enroll on posture lookup
+        logger.debug("Could not resolve export_evals posture for enroll", exc_info=True)
 
     try:
         with httpx.Client(timeout=5, verify=True) as client:

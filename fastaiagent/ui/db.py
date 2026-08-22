@@ -17,7 +17,7 @@ from pathlib import Path
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
 
-CURRENT_SCHEMA_VERSION = 16
+CURRENT_SCHEMA_VERSION = 17
 
 # A migration step is either a SQL string or a callable that takes the
 # ``SQLiteHelper`` and runs whatever logic it needs (e.g., gated
@@ -505,6 +505,38 @@ def _v16_add_eval_case_error(db: SQLiteHelper) -> None:
     _add_column_if_missing(db, "eval_cases", "error", "TEXT")
 
 
+def _v17_add_eval_run_synced(db: SQLiteHelper) -> None:
+    """Durable platform-export buffer flag on ``eval_runs`` (Part D, 1.49.0).
+
+    ``EvalRunExporter`` (the SDK-side outbox) pushes Agent-CI verdicts to the plane's
+    ``sdk_eval_runs`` and marks a row ``synced=1`` only after a confirmed 2xx to
+    ``/public/v1/eval/runs/ingest``; until then it is a re-send candidate.
+
+    Mirrors v11 (spans) / v13 (checkpoints): existing rows are backfilled to
+    ``synced=1`` so connecting an existing project does NOT retroactively push the
+    whole local eval history — only runs created afterwards become push candidates.
+
+    Indexed on ``started_at`` rather than ``created_at``: ``eval_runs`` has no
+    ``created_at`` column (its timestamps are ``started_at`` / ``finished_at``).
+    """
+    rows = db.fetchall("SELECT name FROM sqlite_master WHERE type='table' AND name='eval_runs'")
+    if not rows:
+        return
+    _add_column_if_missing(db, "eval_runs", "synced", "INTEGER NOT NULL DEFAULT 0")
+    # Backfill pre-existing rows as already-handled so the upgrade is silent.
+    db.execute("UPDATE eval_runs SET synced = 1 WHERE synced = 0")
+    # The drain orders by ``started_at``, but don't assume it exists: partial /
+    # hand-rolled eval_runs tables in the wild predate it, and a migration must
+    # never fail on a table shape it didn't create.
+    columns = {r["name"] for r in db.fetchall("PRAGMA table_info(eval_runs)")}
+    if "started_at" in columns:
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_eval_runs_synced ON eval_runs(synced, started_at)"
+        )
+    else:
+        db.execute("CREATE INDEX IF NOT EXISTS idx_eval_runs_synced ON eval_runs(synced)")
+
+
 _MIGRATIONS: dict[int, list[_Step]] = {
     1: [
         # Trace spans (moved from traces.db).
@@ -895,6 +927,12 @@ _MIGRATIONS: dict[int, list[_Step]] = {
         # Agent CI (1.48.0): make infra-errored eval cases durable so they can't
         # masquerade as passing in the DB/UI. See _v16_add_eval_case_error.
         _v16_add_eval_case_error,
+    ],
+    17: [
+        # Part D (1.49.0): durable platform-export buffer for Agent-CI verdicts.
+        # Adds ``synced`` to eval_runs so EvalRunExporter can buffer un-acked runs
+        # across an outage. Existing rows backfilled to 1 — no back-push of history.
+        _v17_add_eval_run_synced,
     ],
 }
 

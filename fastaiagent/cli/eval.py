@@ -50,7 +50,7 @@ def run_eval(
 
     from fastaiagent._internal.errors import EvalError
     from fastaiagent._internal.target import resolve_agent_fn, resolve_target
-    from fastaiagent.eval.evaluate import evaluate
+    from fastaiagent.eval.evaluate import evaluate, infer_agent_name
     from fastaiagent.eval.gate import gate
     from fastaiagent.eval.results import Scorecard
 
@@ -69,8 +69,28 @@ def run_eval(
             run_name=run_name,
         )
         if not no_persist and db is not None:
-            results.run_id = results.persist_local(db_path=db, run_name=run_name)
+            results.run_id = results.persist_local(
+                db_path=db,
+                run_name=run_name,
+                # Attribute the evidence to a real agent (connected mode resolves
+                # this name to a plane agent); None when it can't be inferred.
+                agent_name=infer_agent_name(agent_fn),
+            )
         report = gate(results, fail_under=list(fail_under), max_error_rate=max_error_rate)
+        if results.run_id:
+            # Attach the verdict to the persisted run and offer it to a connected
+            # plane. The gate — not the persist — is what makes a run evidence.
+            from fastaiagent.eval.results import record_gate_result
+
+            record_gate_result(
+                results.run_id,
+                gate_outcome=report.outcome,
+                thresholds={
+                    f"{c.threshold.metric}.{c.threshold.field}": c.threshold.minimum
+                    for c in report.checks
+                },
+                db_path=db,
+            )
     except EvalError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(_EXIT_INFRA_INVALID) from exc
@@ -165,6 +185,68 @@ def compare_evals(
             f"[red]REGRESSION — pass-rate dropped {drop:.4f} (tolerance {tolerance}).[/red]"
         )
         raise typer.Exit(_EXIT_QUALITY_FAILED)
+
+
+@eval_app.command("export")
+def export_evals_cmd(
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Print the exact JSON that would be sent to the plane"
+    ),
+    status: bool = typer.Option(
+        False, "--status", help="Show the export posture and how many runs are unsynced"
+    ),
+    run_id: str | None = typer.Option(None, "--run-id", help="Preview one specific run"),
+    limit: int = typer.Option(3, "--limit", help="How many recent runs to preview"),
+    unsynced_only: bool = typer.Option(
+        False, "--unsynced-only", help="Preview only runs still queued for the plane"
+    ),
+    db: str | None = typer.Option(None, "--db", help="local.db path (default: from config)"),
+) -> None:
+    """Inspect what Agent-CI evidence would leave this machine.
+
+    Eval export sends run aggregates, the gate outcome, thresholds, git provenance
+    and per-case scorer verdicts + trace_ids. It never sends case inputs or
+    outputs — the plane joins content via trace ingest. ``--dry-run`` prints the
+    literal payload so you can hand it to a security review.
+    """
+    import json as _json
+
+    from fastaiagent.eval.platform_export import build_payloads, eval_export_enabled
+
+    if status or not dry_run:
+        from fastaiagent.client import _connection
+        from fastaiagent.eval.platform_export import EvalRunStore
+
+        table = Table(title="Eval export status")
+        table.add_column("field")
+        table.add_column("value", justify="right")
+        table.add_row("connected", "yes" if _connection.is_connected else "no")
+        table.add_row("target", _connection.target if _connection.is_connected else "-")
+        table.add_row("export enabled", "yes" if eval_export_enabled() else "no")
+        try:
+            store = EvalRunStore(db_path=db)
+            try:
+                table.add_row("runs awaiting push", str(store.count_unsynced()))
+            finally:
+                store.close()
+        except Exception as exc:  # pragma: no cover — status must not hard-fail
+            table.add_row("runs awaiting push", f"[red]unavailable: {exc}[/red]")
+        console.print(table)
+        if not dry_run:
+            console.print(
+                "[dim]Preview the exact payload with: fastaiagent eval export --dry-run[/dim]"
+            )
+            return
+
+    payloads = build_payloads(limit=limit, run_id=run_id, db_path=db, unsynced_only=unsynced_only)
+    if not payloads:
+        console.print("[yellow]No eval runs to preview.[/yellow]")
+        raise typer.Exit(0)
+    console.print(_json.dumps({"runs": payloads}, indent=2))
+    console.print(
+        f"[dim]{len(payloads)} run(s). Case inputs/outputs are absent by design — "
+        "the plane joins content via trace_id.[/dim]"
+    )
 
 
 @eval_app.command("curate")

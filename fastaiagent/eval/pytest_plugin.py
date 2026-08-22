@@ -67,6 +67,7 @@ import pytest
 
 from fastaiagent.eval.builtins import BUILTIN_SCORERS
 from fastaiagent.eval.dataset import Dataset
+from fastaiagent.eval.evaluate import infer_agent_name
 from fastaiagent.eval.results import EvalCaseRecord, EvalResults
 from fastaiagent.eval.scorer import Scorer, ScorerResult
 
@@ -129,9 +130,7 @@ def dataset(
             ds = Dataset.from_jsonl(p)
         cases = list(ds)
         ids = [str(c.get(ids_from, i)) for i, c in enumerate(cases)]
-        wrapped: Callable[..., Any] = pytest.mark.parametrize(
-            "eval_case", cases, ids=ids
-        )(fn)
+        wrapped: Callable[..., Any] = pytest.mark.parametrize("eval_case", cases, ids=ids)(fn)
         return wrapped
 
     return decorator
@@ -145,8 +144,7 @@ def _resolve_scorers(scorers: list[Scorer | str] | None) -> list[Scorer]:
             cls = BUILTIN_SCORERS.get(s)
             if cls is None:
                 pytest.fail(
-                    f"Unknown scorer '{s}'. Available: "
-                    f"{', '.join(sorted(BUILTIN_SCORERS))}."
+                    f"Unknown scorer '{s}'. Available: {', '.join(sorted(BUILTIN_SCORERS))}."
                 )
             out.append(cls())
         else:
@@ -180,6 +178,10 @@ class _CollectedCase:
     record: EvalCaseRecord
     scorer_results: dict[str, ScorerResult] = field(default_factory=dict)
     persist: bool = True
+    # The agent this case exercised, when it can be inferred from the callable.
+    # Connected mode needs it: the plane attaches eval evidence to a real agent,
+    # so an unattributed run marks nothing.
+    agent_name: str | None = None
 
 
 @dataclass
@@ -189,6 +191,9 @@ class _SessionCollector:
     gate_lines: list[str] = field(default_factory=list)
     gate_failed: bool = False
     persist_error: str | None = None
+    # Set when a --eval-baseline comparison ran; travels to the plane as evidence
+    # of regression tracking (Part D).
+    baseline_summary: dict[str, Any] | None = None
 
     def build_results(self, *, persisted_only: bool = False) -> EvalResults:
         results = EvalResults()
@@ -287,12 +292,18 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     persisted = collector.build_results(persisted_only=True)
     if persisted.cases:
         try:
-            collector.run_id = persisted.persist_local(run_name=run_name)
+            collector.run_id = persisted.persist_local(
+                run_name=run_name, agent_name=_session_agent_name(collector)
+            )
         except Exception as e:  # pragma: no cover — non-fatal
             collector.persist_error = str(e)
             logger.warning("Failed to persist aggregated pytest eval run", exc_info=True)
 
     if not _gating_requested(config):
+        # No gate was demanded, but evals DID run — still evidence. Record a
+        # trivial verdict (empty thresholds = "no gate demanded") so a connected
+        # plane sees the activity instead of marking the agent as eval-less.
+        _record_gate(collector, outcome=_ungated_outcome(all_results), thresholds={})
         return
 
     report = run_gate(
@@ -308,6 +319,15 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
             collector, all_results, baseline_ref, float(config.getoption("--eval-tolerance"))
         )
 
+    _record_gate(
+        collector,
+        outcome=report.outcome,
+        thresholds={
+            f"{t.threshold.metric}.{t.threshold.field}": t.threshold.minimum for t in report.checks
+        },
+        baseline=collector.baseline_summary,
+    )
+
     if report.outcome == "invalid":
         collector.gate_lines.append(
             "GATE: INVALID — infra failures disqualify this run (not an agent regression)"
@@ -319,6 +339,40 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
 
     if collector.gate_failed and session.exitstatus in (0, 5):
         session.exitstatus = 1
+
+
+def _session_agent_name(collector: _SessionCollector) -> str | None:
+    """The agent this session evaluated, when the whole session agrees.
+
+    A suite that exercises several agents has no single owner, so report none
+    rather than crediting the evidence to whichever ran first.
+    """
+    names = {c.agent_name for c in collector.cases if c.agent_name}
+    return names.pop() if len(names) == 1 else None
+
+
+def _ungated_outcome(results: EvalResults) -> str:
+    """Verdict for a run nobody gated: invalid when nothing was scored, else passed."""
+    from fastaiagent.eval.gate import gate as run_gate
+
+    return run_gate(results).outcome
+
+
+def _record_gate(
+    collector: _SessionCollector,
+    *,
+    outcome: str,
+    thresholds: dict[str, Any] | None = None,
+    baseline: dict[str, Any] | None = None,
+) -> None:
+    """Attach the verdict to the persisted run and offer it to the plane."""
+    if not collector.run_id:
+        return
+    from fastaiagent.eval.results import record_gate_result
+
+    record_gate_result(
+        collector.run_id, gate_outcome=outcome, thresholds=thresholds, baseline=baseline
+    )
 
 
 def _apply_baseline_gate(
@@ -354,6 +408,13 @@ def _apply_baseline_gate(
         return True
 
     collector.gate_lines.extend(comparison.describe())
+    # Kept for the plane: a pass-rate alone evidences "evals ran"; the delta vs a
+    # named baseline is what evidences "regressions tracked across versions".
+    collector.baseline_summary = {
+        "run_id": comparison.run_a.get("run_id"),
+        "pass_rate_delta": comparison.pass_rate_delta,
+        "regressed_count": len(comparison.regressed),
+    }
     drop = -comparison.pass_rate_delta
     if drop > tolerance:
         collector.gate_lines.append(
@@ -453,10 +514,15 @@ def evaluate_one(request: pytest.FixtureRequest):  # type: ignore[no-untyped-def
                 error=error,
             )
             if collector is not None:
-                collector.cases.append(_CollectedCase(record=record, persist=persist))
+                collector.cases.append(
+                    _CollectedCase(
+                        record=record,
+                        persist=persist,
+                        agent_name=infer_agent_name(agent_fn),
+                    )
+                )
             pytest.fail(
-                f"fastaiagent eval case errored (infra, not scored): {error}\n"
-                f"  input: {in_text!r}"
+                f"fastaiagent eval case errored (infra, not scored): {error}\n  input: {in_text!r}"
             )
 
         if hasattr(output, "output"):
@@ -488,7 +554,12 @@ def evaluate_one(request: pytest.FixtureRequest):  # type: ignore[no-untyped-def
         )
         if collector is not None:
             collector.cases.append(
-                _CollectedCase(record=record, scorer_results=scorer_results, persist=persist)
+                _CollectedCase(
+                    record=record,
+                    scorer_results=scorer_results,
+                    persist=persist,
+                    agent_name=infer_agent_name(agent_fn),
+                )
             )
 
         if assert_pass and not all_passed:

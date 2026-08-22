@@ -5,6 +5,83 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.49.0] - 2026-08-23
+
+### Added — Agent-CI verdicts reach the control plane (Part D)
+
+Agent CI (1.48.0) let the SDK gate on agent quality, but every verdict died on the
+machine that produced it: the run landed in `.fastaiagent/local.db` and a connected
+plane never learned it happened. An org could not answer "which of our agents passed
+their gates this week?", and — the sharper problem — a plane's compliance module can
+model a control this evidences (EU AI Act Article 55: *"Run standardized benchmarks
+and internal evals; log results and track regressions across versions"*), which an
+agent whose evals never leave the laptop leaves unevidenced.
+
+When connected, each gated run's **verdict** now pushes to
+`POST /public/v1/eval/runs/ingest` (wire v1.6):
+
+- New `fastaiagent/eval/platform_export.py` — a durable outbox mirroring the HITL and
+  checkpoint exporters. Runs queue in `local.db` and flip to `synced=1` only after a
+  confirmed 2xx; an outage buffers and the next gated run drains the backlog. The push
+  is idempotent on `run_id`, so at-least-once re-sends are free. 4xx is terminal
+  (warned once, never retried); 5xx and transport errors retry with backoff.
+- Schema **v17** adds `eval_runs.synced`. Pre-existing rows backfill to `1` — upgrading
+  never back-pushes local eval history.
+- `record_gate_result()` attaches the gate verdict (`gate_outcome`, `thresholds`,
+  `baseline`) to a persisted run and is what makes it exportable. `persist_local()`
+  necessarily runs *before* the gate, so the verdict cannot be part of that INSERT.
+  Runs nobody gated still export with an empty `thresholds` — "evals ran, no gate
+  demanded" is evidence too, and excluding them would mark those teams as eval-less.
+- `connect(export_evals=...)` (default on when connected, `FASTAIAGENT_EXPORT_EVALS`
+  from the environment, kwarg wins), reset on `disconnect()`.
+- The enroll body now attests the posture, so a plane can tell "export disabled" (a
+  deliberate config choice) apart from "this team isn't running evals" — two very
+  different governance conversations.
+- New `fastaiagent eval export --dry-run` / `--status`: print the literal payload that
+  would be sent, and the queue depth.
+
+### Privacy — what does and does not leave the machine
+
+**Case content is never sent.** The wire carries run aggregates, the gate outcome and
+thresholds, git provenance, scorer names, timings, and per-case scorer verdicts +
+`trace_id`s. It does **not** carry `input`, `expected_output`, or `actual_output` —
+the plane joins content through the per-case `trace_id` against traces it already
+received, rather than storing a second copy. A test freezes the exact wire shape and
+asserts those three fields are absent; a future "helpful" addition is a privacy
+regression, not an enhancement.
+
+Note that `run_name`, `dataset_name`, and especially `git_branch` do travel, and
+branch names routinely carry ticket IDs or customer names.
+
+**Behavior change for already-connected users:** after upgrading, gated eval verdicts
+begin flowing where they previously didn't. Nothing breaks, but it is new egress.
+Preview it with `fastaiagent eval export --dry-run`; disable with
+`connect(export_evals=False)`. Eval export is *egress*, not enforcement, so that flag
+is final — the plane cannot override it, exactly as with `export_traces`.
+
+### Fixed
+
+- **Eval runs were persisted without an agent name**, so connected runs arrived
+  unattributed and per-agent evidence could attach to nothing. `evaluate()`, the
+  pytest plugin, and `eval run` now infer the agent from the callable
+  (`agent.run` → its `Agent.name`, also through `functools.partial`); a suite that
+  exercises several agents reports none rather than crediting whichever ran first.
+- **Runs persisted to a non-default DB never exported.** The drain opened the
+  configured `local.db` while `eval run --db …` had written elsewhere, so those runs
+  sat unsynced with nothing reporting it. The kick now drains the database the run
+  was actually written to.
+- Migration v17 no longer assumes `eval_runs.started_at` exists. Partial or
+  hand-rolled `eval_runs` tables predate that column, and indexing it unconditionally
+  made `init_local_db()` raise `no such column: started_at` on upgrade.
+
+### Notes
+
+Additive and non-breaking: forward-only migration, new keyword-only flag with a
+backward-compatible default, `EvalResults.publish()` untouched, and a strict no-op
+when disconnected. Requires a plane speaking wire v1.6; the API key needs the
+`eval:execute` scope (not a default) and the domain needs `connected_state_plane` —
+both surface as one logged warning rather than silent failure.
+
 ## [1.48.0] - 2026-08-19
 
 ### Added — Agent CI: failures become tests, tests become gates

@@ -197,6 +197,7 @@ nav:
       - "Registration (agent push)": platform/registration.md
       - "Connected HITL (observer)": platform/connected-hitl.md
       - "Connected governance (enrollment)": platform/connected-governance.md
+      - "Connected eval export (Agent-CI verdicts)": platform/connected-eval-export.md
   - Deployment:
       - deployment/index.md
       - "Registered runner": deployment/runner.md
