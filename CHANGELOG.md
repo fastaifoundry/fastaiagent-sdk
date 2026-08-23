@@ -40,6 +40,8 @@ below are fixed with tests; behavior changes are opt-out-guarded.
 - **`connect(export_checkpoints=False)` / `FASTAIAGENT_EXPORT_CHECKPOINTS=0` (N7)**
   stops checkpoint-state replication to the plane; local durability is untouched.
 - Governance tool-argument egress is now documented (N8).
+- **UI: image/dataset upload and playground streaming now send the CSRF token
+  (M-10)** — two hooks bypassed the shared API client and would 403 under auth.
 
 ### Added
 

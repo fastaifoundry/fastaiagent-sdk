@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { api, readCsrfCookie } from "@/lib/api";
 import type {
   CaseBody,
   DatasetCase,
@@ -103,10 +103,17 @@ export function useDeleteCase(name: string) {
  * relative URL).
  */
 async function postFormData<T>(path: string, fd: FormData): Promise<T> {
+  // Echo the CSRF double-submit token like api.ts does — the middleware
+  // requires it on state-changing requests under auth (security_audit_2 M-10).
+  // No Content-Type: the browser sets the multipart boundary for FormData.
+  const headers: Record<string, string> = {};
+  const csrf = readCsrfCookie();
+  if (csrf) headers["X-CSRF-Token"] = csrf;
   const res = await fetch(`/api${path}`, {
     method: "POST",
     body: fd,
     credentials: "include",
+    headers,
   });
   if (!res.ok) {
     let detail = res.statusText;

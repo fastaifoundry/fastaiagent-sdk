@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { api, readCsrfCookie } from "@/lib/api";
 import type {
   PlaygroundModelsResponse,
   PlaygroundRunRequest,
@@ -45,10 +45,15 @@ export async function* streamPlayground(
   body: PlaygroundRunRequest,
   signal?: AbortSignal,
 ): AsyncGenerator<PlaygroundStreamEvent, void, unknown> {
+  // Include the CSRF double-submit token (security_audit_2 M-10) — this POST
+  // bypasses api.ts, so it must echo the token itself or 403 under auth.
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const csrf = readCsrfCookie();
+  if (csrf) headers["X-CSRF-Token"] = csrf;
   const res = await fetch("/api/playground/stream", {
     method: "POST",
     credentials: "include",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(body),
     signal,
   });

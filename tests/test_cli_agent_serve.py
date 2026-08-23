@@ -36,7 +36,14 @@ def test_health_stays_open_when_auth_enabled() -> None:
 
 
 def test_run_requires_token_when_configured() -> None:
-    client = TestClient(agent_cli._build_app(_agent(), auth_token="s3cret"))
+    # raise_server_exceptions=False so the correct-token path can proceed to
+    # execution without an LLM key (it 500s on a missing key rather than raising)
+    # — we only care that auth was cleared, not that the agent ran. Keeps the
+    # test key-free so it passes in CI (no live provider credentials).
+    client = TestClient(
+        agent_cli._build_app(_agent(), auth_token="s3cret"),
+        raise_server_exceptions=False,
+    )
     assert client.post("/run", json={"input": "x"}).status_code == 401
     assert (
         client.post(
@@ -44,7 +51,8 @@ def test_run_requires_token_when_configured() -> None:
         ).status_code
         == 401
     )
-    # Correct token clears auth — it then proceeds to execution (not a 401).
+    # Correct token clears auth — the request is no longer a 401 (it proceeds to
+    # execution, which may 500 without a provider key; that's fine here).
     assert (
         client.post(
             "/run", json={"input": "x"}, headers={"Authorization": "Bearer s3cret"}
