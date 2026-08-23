@@ -74,168 +74,174 @@ markdown_extensions:
 
 nav:
   - Home: index.md
-  - Getting Started:
-      - getting-started/index.md
-      - Installation: getting-started/installation.md
-      - "Build Your First Agent": getting-started/first-agent.md
-  - Agents:
-      - "Concepts & Mental Model": agents/concepts.md
-      - agents/index.md
-      - Tools: agents/tools.md
-      - "Dynamic Instructions": agents/dynamic-instructions.md
-      - Memory: agents/memory.md
-      - Middleware: agents/middleware.md
-      - "Multi-Agent Teams": agents/teams.md
-      - Swarm: agents/swarm.md
-      - Durability: agents/durability.md
-  - Chains:
-      - "Concepts & Mental Model": chains/concepts.md
-      - chains/index.md
-      - "Execution Spec": chains/spec.md
-      - "Code-first nodes (@node, typed I/O)": chains/typed-nodes.md
-      - "Cyclic Workflows": chains/cyclic-workflows.md
-      - Checkpointing: chains/checkpointing.md
-      - "Human-in-the-Loop": chains/hitl.md
-      - "Idempotency": chains/idempotency.md
-  - Durability:
-      - "Concepts & Mental Model": durability/concepts.md
-      - durability/index.md
-      - Quickstart: durability/quickstart.md
-      - "Side effects & idempotency": durability/side-effects.md
-      - Patterns: durability/patterns.md
-      - "Multi-agent": durability/multi-agent.md
-      - "Concurrency & job scoping": durability/concurrency.md
-      - Checkpointers: durability/checkpointers.md
-      - "Connected checkpoints (platform)": durability/connected-checkpoints.md
-      - "API reference": durability/api-reference.md
-  - Guardrails:
-      - "Concepts & Mental Model": guardrails/concepts.md
-      - guardrails/index.md
-      - "Responsible AI (Trust Layer)": guardrails/responsible-ai.md
-      - "Managed governance (approvals)": guardrails/managed-governance.md
-  - Tools:
-      - "Concepts & Mental Model": tools/concepts.md
-      - tools/index.md
-      - "Function Tools": tools/function-tools.md
-      - "REST Tools": tools/rest-tools.md
-      - "MCP Tools": tools/mcp-tools.md
-      - "MCP Server": tools/mcp-server.md
-      - "Schema Drift Detection": tools/schema-drift.md
-      - "Context & dependency injection": tools/context.md
-  - Prompts:
-      - "Concepts & Mental Model": prompts/concepts.md
-      - prompts/index.md
-  - Knowledge Base:
-      - "Concepts & Mental Model": knowledge-base/concepts.md
-      - knowledge-base/index.md
-      - "Platform KB": knowledge-base/platform-kb.md
-      - Backends: knowledge-base/backends.md
-      - "Custom Backend": knowledge-base/custom-backend.md
-  - LLM:
-      - "Concepts & Mental Model": llm/concepts.md
-      - "Providers": llm/providers.md
-      - "Custom Providers": llm/custom-provider.md
-  - Streaming: streaming/index.md
-  - "Structured Output": structured-output/index.md
-  - Testing:
-      - "Concepts & Mental Model": testing/concepts.md
-      - testing/index.md
-  - Evaluation:
-      - "Concepts & Mental Model": evaluation/concepts.md
-      - evaluation/index.md
-      - "LLM-as-Judge": evaluation/llm-judge.md
-      - "Pytest plugin": evaluation/pytest.md
-      - "Agent CI (gates & baselines)": evaluation/agent-ci.md
-      - "RAG Metrics": evaluation/rag-metrics.md
-      - "Safety Metrics": evaluation/safety-metrics.md
-      - "Similarity & NLP Metrics": evaluation/similarity-metrics.md
-      - "Trajectory Scoring": evaluation/trajectory-scoring.md
-      - "Session Scoring": evaluation/session-scoring.md
-      - "Agent Hardening & Scorecard": evaluation/agent-hardening.md
-      - "AutoLLM": evaluation/optimization.md
-      - "Trace Curation": evaluation/curation.md
-  - Simulation:
-      - "Concepts & Mental Model": simulation/concepts.md
-      - simulation/index.md
-  - Multimodal:
-      - "Concepts & Mental Model": multimodal/concepts.md
-      - multimodal/index.md
-      - "When to Use It": multimodal/when-to-use.md
-      - Images: multimodal/images.md
-      - PDFs: multimodal/pdfs.md
-      - "Files (any type)": multimodal/files.md
-      - "Provider Support": multimodal/providers.md
-      - "Multimodal Eval": multimodal/eval.md
-  - Tracing:
-      - "Concepts & Mental Model": tracing/concepts.md
-      - tracing/index.md
-      - "Capture any OTel / OpenInference framework": tracing/third-party-otel.md
-  - Agent Replay:
-      - "Concepts & Mental Model": replay/concepts.md
-      - replay/index.md
-      - "Fidelity Guarantees": replay/guarantees.md
-  - Security: security.md
-  - Environment variables: configuration/environment-variables.md
-  - Local UI:
-      - ui/index.md
-      - "Knowledge Bases browser": ui/kb.md
-      - "Workflow visualization": ui/workflow-visualization.md
-      - "Multimodal traces": ui/multimodal.md
-      - "Checkpoint inspector": ui/checkpoint-inspector.md
-      - "Cost tracking": ui/cost-tracking.md
-      - "Export trace as JSON": ui/export-trace.md
-      - "Project scoping": ui/projects.md
-      - "Prompt Playground": ui/playground.md
-      - "Agent Dependency Graph": ui/agent-dependencies.md
-      - "Guardrail Event Detail": ui/guardrail-events.md
-      - "Trace Comparison": ui/trace-comparison.md
-      - "Eval Datasets": ui/datasets.md
-      - "Simulations": ui/simulations.md
-      - "Trace Filters": ui/trace-filters.md
-  - Platform:
-      - "Concepts & Mental Model": platform/concepts.md
-      - platform/index.md
-      - "Registration (agent push)": platform/registration.md
-      - "Connected HITL (observer)": platform/connected-hitl.md
-      - "Connected governance (enrollment)": platform/connected-governance.md
-      - "Connected eval export (Agent-CI verdicts)": platform/connected-eval-export.md
-  - Deployment:
-      - deployment/index.md
-      - "Registered runner": deployment/runner.md
-      - "FastAPI + Uvicorn": deployment/fastapi.md
-      - "Docker → Cloud Run / Fly / Render": deployment/docker.md
-      - Modal: deployment/modal.md
-      - "Replicate (Cog)": deployment/replicate.md
-  - Integrations:
-      - integrations/index.md
-      - "Universal harness (overview)": integrations/overview.md
-      - "LangChain / LangGraph": integrations/langchain.md
-      - CrewAI: integrations/crewai.md
-      - PydanticAI: integrations/pydanticai.md
-      - "Guardrails & evals without the runtime": integrations/primitives-without-the-runtime.md
-  - CLI Reference:
-      - cli/index.md
-      - "fastaiagent learn": cli/learn.md
-  - Templates:
-      - flagships/index.md
-      - "Deep Research Agent": flagships/deep-research-agent.md
-      - "Financial Extraction (worked example)": flagships/deep-research-financial-extraction.md
-      - "Regression from Trace": flagships/regression-from-trace.md
-  - Learning from traces:
-      - learning/index.md
-      - "Memory loop": learning/memory-loop.md
-      - "Self-improving agents": concepts/self-improving-agents.md
-  - Tutorials:
-      - tutorials/index.md
-      - "Build Your First Agent in 5 Minutes": tutorials/first-agent.md
-      - "Trace a LangChain Agent in 2 Minutes": tutorials/trace-langchain.md
-      - "Debug with Agent Replay": tutorials/debug-with-replay.md
-      - "Memory, End to End": tutorials/memory-guide.md
-  - Migration Guides:
-      - migration-guides/index.md
-      - "From LangGraph": migration-guides/from-langgraph.md
-      - "From LangSmith": migration-guides/from-langsmith.md
-      - "From Langfuse": migration-guides/from-langfuse.md
-      - "From MLflow": migration-guides/from-mlflow.md
-  - API Reference:
-      - api-reference/index.md
+  - Get Started:
+      - Getting Started:
+          - getting-started/index.md
+          - Installation: getting-started/installation.md
+          - "Build Your First Agent": getting-started/first-agent.md
+      - Tutorials:
+          - tutorials/index.md
+          - "Build Your First Agent in 5 Minutes": tutorials/first-agent.md
+          - "Trace a LangChain Agent in 2 Minutes": tutorials/trace-langchain.md
+          - "Debug with Agent Replay": tutorials/debug-with-replay.md
+          - "Memory, End to End": tutorials/memory-guide.md
+      - Templates:
+          - flagships/index.md
+          - "Deep Research Agent": flagships/deep-research-agent.md
+          - "Financial Extraction (worked example)": flagships/deep-research-financial-extraction.md
+          - "Regression from Trace": flagships/regression-from-trace.md
+  - Build:
+      - Agents:
+          - "Concepts & Mental Model": agents/concepts.md
+          - agents/index.md
+          - Tools: agents/tools.md
+          - "Dynamic Instructions": agents/dynamic-instructions.md
+          - Memory: agents/memory.md
+          - Middleware: agents/middleware.md
+          - "Multi-Agent Teams": agents/teams.md
+          - Swarm: agents/swarm.md
+          - Durability: agents/durability.md
+      - Chains:
+          - "Concepts & Mental Model": chains/concepts.md
+          - chains/index.md
+          - "Execution Spec": chains/spec.md
+          - "Code-first nodes (@node, typed I/O)": chains/typed-nodes.md
+          - "Cyclic Workflows": chains/cyclic-workflows.md
+          - Checkpointing: chains/checkpointing.md
+          - "Human-in-the-Loop": chains/hitl.md
+          - "Idempotency": chains/idempotency.md
+      - Guardrails:
+          - "Concepts & Mental Model": guardrails/concepts.md
+          - guardrails/index.md
+          - "Responsible AI (Trust Layer)": guardrails/responsible-ai.md
+          - "Managed governance (approvals)": guardrails/managed-governance.md
+      - Tools:
+          - "Concepts & Mental Model": tools/concepts.md
+          - tools/index.md
+          - "Function Tools": tools/function-tools.md
+          - "REST Tools": tools/rest-tools.md
+          - "MCP Tools": tools/mcp-tools.md
+          - "MCP Server": tools/mcp-server.md
+          - "Schema Drift Detection": tools/schema-drift.md
+          - "Context & dependency injection": tools/context.md
+      - Prompts:
+          - "Concepts & Mental Model": prompts/concepts.md
+          - prompts/index.md
+      - Knowledge Base:
+          - "Concepts & Mental Model": knowledge-base/concepts.md
+          - knowledge-base/index.md
+          - "Platform KB": knowledge-base/platform-kb.md
+          - Backends: knowledge-base/backends.md
+          - "Custom Backend": knowledge-base/custom-backend.md
+      - LLM:
+          - "Concepts & Mental Model": llm/concepts.md
+          - "Providers": llm/providers.md
+          - "Custom Providers": llm/custom-provider.md
+      - Streaming: streaming/index.md
+      - "Structured Output": structured-output/index.md
+      - Multimodal:
+          - "Concepts & Mental Model": multimodal/concepts.md
+          - multimodal/index.md
+          - "When to Use It": multimodal/when-to-use.md
+          - Images: multimodal/images.md
+          - PDFs: multimodal/pdfs.md
+          - "Files (any type)": multimodal/files.md
+          - "Provider Support": multimodal/providers.md
+          - "Multimodal Eval": multimodal/eval.md
+  - Observe:
+      - Tracing:
+          - "Concepts & Mental Model": tracing/concepts.md
+          - tracing/index.md
+          - "Capture any OTel / OpenInference framework": tracing/third-party-otel.md
+      - Agent Replay:
+          - "Concepts & Mental Model": replay/concepts.md
+          - replay/index.md
+          - "Fidelity Guarantees": replay/guarantees.md
+      - Durability:
+          - "Concepts & Mental Model": durability/concepts.md
+          - durability/index.md
+          - Quickstart: durability/quickstart.md
+          - "Side effects & idempotency": durability/side-effects.md
+          - Patterns: durability/patterns.md
+          - "Multi-agent": durability/multi-agent.md
+          - "Concurrency & job scoping": durability/concurrency.md
+          - Checkpointers: durability/checkpointers.md
+          - "Connected checkpoints (platform)": durability/connected-checkpoints.md
+          - "API reference": durability/api-reference.md
+      - Simulation:
+          - "Concepts & Mental Model": simulation/concepts.md
+          - simulation/index.md
+      - Learning from traces:
+          - learning/index.md
+          - "Memory loop": learning/memory-loop.md
+          - "Self-improving agents": concepts/self-improving-agents.md
+  - Evaluate:
+      - Evaluation:
+          - "Concepts & Mental Model": evaluation/concepts.md
+          - evaluation/index.md
+          - "LLM-as-Judge": evaluation/llm-judge.md
+          - "Pytest plugin": evaluation/pytest.md
+          - "Agent CI (gates & baselines)": evaluation/agent-ci.md
+          - "RAG Metrics": evaluation/rag-metrics.md
+          - "Safety Metrics": evaluation/safety-metrics.md
+          - "Similarity & NLP Metrics": evaluation/similarity-metrics.md
+          - "Trajectory Scoring": evaluation/trajectory-scoring.md
+          - "Session Scoring": evaluation/session-scoring.md
+          - "Agent Hardening & Scorecard": evaluation/agent-hardening.md
+          - "AutoLLM": evaluation/optimization.md
+          - "Trace Curation": evaluation/curation.md
+      - Testing:
+          - "Concepts & Mental Model": testing/concepts.md
+          - testing/index.md
+  - Operate:
+      - Security: security.md
+      - Environment variables: configuration/environment-variables.md
+      - Local UI:
+          - ui/index.md
+          - "Knowledge Bases browser": ui/kb.md
+          - "Workflow visualization": ui/workflow-visualization.md
+          - "Multimodal traces": ui/multimodal.md
+          - "Checkpoint inspector": ui/checkpoint-inspector.md
+          - "Cost tracking": ui/cost-tracking.md
+          - "Export trace as JSON": ui/export-trace.md
+          - "Project scoping": ui/projects.md
+          - "Prompt Playground": ui/playground.md
+          - "Agent Dependency Graph": ui/agent-dependencies.md
+          - "Guardrail Event Detail": ui/guardrail-events.md
+          - "Trace Comparison": ui/trace-comparison.md
+          - "Eval Datasets": ui/datasets.md
+          - "Simulations": ui/simulations.md
+          - "Trace Filters": ui/trace-filters.md
+      - Platform:
+          - "Concepts & Mental Model": platform/concepts.md
+          - platform/index.md
+          - "Registration (agent push)": platform/registration.md
+          - "Connected HITL (observer)": platform/connected-hitl.md
+          - "Connected governance (enrollment)": platform/connected-governance.md
+          - "Connected eval export (Agent-CI verdicts)": platform/connected-eval-export.md
+      - Deployment:
+          - deployment/index.md
+          - "Registered runner": deployment/runner.md
+          - "FastAPI + Uvicorn": deployment/fastapi.md
+          - "Docker → Cloud Run / Fly / Render": deployment/docker.md
+          - Modal: deployment/modal.md
+          - "Replicate (Cog)": deployment/replicate.md
+      - Integrations:
+          - integrations/index.md
+          - "Universal harness (overview)": integrations/overview.md
+          - "LangChain / LangGraph": integrations/langchain.md
+          - CrewAI: integrations/crewai.md
+          - PydanticAI: integrations/pydanticai.md
+          - "Guardrails & evals without the runtime": integrations/primitives-without-the-runtime.md
+      - CLI Reference:
+          - cli/index.md
+          - "fastaiagent learn": cli/learn.md
+  - Reference:
+      - API Reference:
+          - api-reference/index.md
+      - Migration Guides:
+          - migration-guides/index.md
+          - "From LangGraph": migration-guides/from-langgraph.md
+          - "From LangSmith": migration-guides/from-langsmith.md
+          - "From Langfuse": migration-guides/from-langfuse.md
+          - "From MLflow": migration-guides/from-mlflow.md
