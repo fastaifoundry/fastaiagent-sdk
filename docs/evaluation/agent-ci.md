@@ -231,6 +231,68 @@ print(comparison.pass_rate_delta, len(comparison.regressed))
 `Scorecard` carries `errored`, so infra failures are visible wherever you
 aggregate.
 
+## Connected mode: gates as governance evidence
+
+When the SDK is connected to a control plane (`fa.connect(...)`), each gated run's
+**verdict** is pushed to the plane so an org can answer "which of our agents passed
+their gates this week?" — and treat an agent that produces no eval evidence as a
+compliance finding rather than a blank space.
+
+### What is sent
+
+| Sent | Not sent |
+|---|---|
+| run aggregates (pass/fail/errored counts, pass-rate) | **case inputs** |
+| gate outcome + the thresholds demanded | **expected outputs** |
+| baseline comparison (delta, regressed count) | **actual agent outputs** |
+| `git_sha` / `git_branch`, scorer names, timings | |
+| per-case scorer verdicts + `trace_id` | |
+
+Case content never leaves the machine. The plane joins content through the
+per-case `trace_id` against traces it already received, so a verdict can be opened
+against real content without shipping a second copy of it.
+
+See exactly what would be sent — this is the whole payload, no summary:
+
+```bash
+fastaiagent eval export --dry-run       # the literal JSON
+fastaiagent eval export --status        # posture + how many runs are queued
+```
+
+### Turning it off
+
+```python
+fa.connect(api_key=..., export_evals=False)     # or FASTAIAGENT_EXPORT_EVALS=0
+```
+
+Eval export is *egress*, so this flag is final — the plane cannot override it, the
+same rule `export_traces` follows. What a connected plane does instead is **mark**
+agents that produce no eval evidence, and it distinguishes two cases the SDK
+attests at connect time:
+
+- **"eval export disabled"** — you run evals and keep them local (a deliberate choice)
+- **"no eval data in N days"** — no evals are running at all
+
+Enforcement, if your plane enables it, lives in the promotion workflow: an agent
+with no eval evidence can be refused promotion to production. Nothing is blocked
+locally, and nothing is forced out of your machine.
+
+### Delivery
+
+Runs are queued in `local.db` and pushed in the background; a run is marked synced
+only after the plane confirms it. An outage just buffers — the next gated run
+drains the backlog. The push is idempotent (keyed on run id), so a retry is free.
+
+The full wire protocol — every field, the error semantics, the enrollment
+attestation — is documented in
+[Connected eval export](../platform/connected-eval-export.md).
+
+Two requirements, both of which surface as a single logged warning rather than
+silent failure:
+
+- the API key needs the **`eval:execute`** scope (it is not a default scope)
+- the domain needs the **`connected_state_plane`** entitlement
+
 ## Limitations
 
 - **Not xdist-aware.** Under `pytest -n`, each worker persists its own run

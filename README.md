@@ -14,7 +14,7 @@ pip install fastaiagent
 
 Runs fully standalone, or connect to the [FastAIAgent Platform](https://fastaiagent.net) for hosted observability, prompt management, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.48.0)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.49.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -194,6 +194,17 @@ agents you don't drive from pytest.
 
 See [docs/evaluation/agent-ci.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/evaluation/agent-ci.md)
 for the GitHub Actions recipe.
+
+**Connected to a control plane?** Each gated run's *verdict* is also reported, so
+an org can see which agents produce eval evidence — and treat an agent that
+produces none as a governance finding. What travels is metadata: aggregates, the
+gate outcome, thresholds, git provenance, and per-case scorer verdicts +
+`trace_id`s. **Case inputs and outputs never leave the machine** — the plane joins
+content through `trace_id` against traces it already has. Preview the literal
+payload with `fastaiagent eval export --dry-run`, or turn it off entirely with
+`connect(export_evals=False)` — that flag is final, the plane cannot override it.
+See [docs/platform/connected-eval-export.md](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/platform/connected-eval-export.md)
+for the wire protocol.
 
 ## Pause for human approval. For days.
 

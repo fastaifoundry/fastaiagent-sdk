@@ -34,6 +34,10 @@ class _Connection:
         self.console_url: str | None = None
         self._platform_processor: Any = None
         self._hitl_processor: Any = None
+        self._eval_processor: Any = None
+        # Agent-CI verdict egress posture. None = unset (resolved against
+        # FASTAIAGENT_EXPORT_EVALS, then default-on when connected).
+        self.export_evals: bool | None = None
 
     @property
     def is_connected(self) -> bool:
@@ -152,6 +156,7 @@ def connect(
     auto_register: bool = True,
     console_url: str | None = None,
     export_traces: bool = True,
+    export_evals: bool | None = None,
 ) -> None:
     """Connect the SDK to FastAIAgent Platform for observability,
     prompt management, and evaluation services.
@@ -191,6 +196,19 @@ def connect(
     and claimed the global before this call, the claim can't be taken back
     (a foreign runtime that set its provider first is unaffected either way).
     The default preserves today's behavior.
+
+    ``export_evals`` controls whether Agent-CI verdicts (run aggregates, gate
+    outcome, thresholds, git provenance, per-case scorer verdicts + ``trace_id``s)
+    are pushed to the plane. **Case inputs and outputs are never sent** — the plane
+    joins content via trace ingest. Defaults to on when connected (consistent with
+    traces, checkpoints and HITL events); ``FASTAIAGENT_EXPORT_EVALS=0`` sets it
+    from the environment, and this kwarg wins over the env.
+
+    Eval export is *egress*, not enforcement, so this flag is final: the plane
+    cannot override it. What a connected plane does instead is **mark** agents
+    that produce no eval evidence — the enroll call reports this posture so
+    "export disabled" stays distinguishable from "not running evals". Preview
+    exactly what would leave with ``fastaiagent eval export --dry-run``.
     """
     import os
 
@@ -212,6 +230,10 @@ def connect(
     _connection.governance_fail_mode = "closed" if (_mode or "").lower() == "closed" else "open"
     _connection.auto_register = auto_register
     _connection.console_url = console_url
+    # Egress posture for Agent-CI verdicts. None = unset, resolved against
+    # FASTAIAGENT_EXPORT_EVALS (then default-on) at each check — see
+    # fastaiagent/eval/platform_export.py::eval_export_enabled.
+    _connection.export_evals = export_evals
 
     # Must happen before anything can touch get_tracer_provider() — OTel's
     # global set is first-wins, so suppression only works pre-creation.
@@ -323,6 +345,23 @@ def connect(
     except Exception:
         logger.debug("Could not register HITL event exporter", exc_info=True)
 
+    # Register the Agent-CI verdict exporter (Part D). Same rationale as HITL:
+    # the primary drain trigger is a per-gate daemon kick (eval runs aren't
+    # span-driven), so this processor is the backlog/flush-on-disconnect path.
+    # Skipped entirely when the posture is off — nothing is queued in that case.
+    try:
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+        from fastaiagent.eval.platform_export import eval_export_enabled, get_eval_exporter
+        from fastaiagent.trace.otel import get_tracer_provider
+
+        if eval_export_enabled():
+            eval_processor = BatchSpanProcessor(get_eval_exporter())
+            get_tracer_provider().add_span_processor(eval_processor)
+            _connection._eval_processor = eval_processor
+    except Exception:
+        logger.debug("Could not register eval run exporter", exc_info=True)
+
     # Flush any checkpoint backlog written while disconnected (WS2 durability).
     # Checkpoints aren't span-driven, so replication is write-kicked by the
     # checkpointers; this one-shot drain catches a backlog from before connect().
@@ -425,6 +464,13 @@ def disconnect() -> None:
         except Exception:
             logger.debug("Failed to flush/shutdown HITL processor on disconnect", exc_info=True)
         _connection._hitl_processor = None
+    if _connection._eval_processor is not None:
+        try:
+            _connection._eval_processor.force_flush(timeout_millis=5000)
+            _connection._eval_processor.shutdown()
+        except Exception:
+            logger.debug("Failed to flush/shutdown eval processor on disconnect", exc_info=True)
+        _connection._eval_processor = None
     # Flush any pending checkpoint replications before tearing the connection
     # down (WS2 durability — non-lossy). Runs while still connected.
     try:
@@ -448,6 +494,7 @@ def disconnect() -> None:
     _connection.governance_fail_mode = "open"  # WS4: revert to non-breaking default
     _connection.auto_register = True
     _connection.console_url = None
+    _connection.export_evals = None
     # Clear per-process registration state so a fresh connect() re-registers
     # (e.g. reconnecting to a different plane).
     try:

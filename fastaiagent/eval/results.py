@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -10,6 +11,8 @@ from pathlib import Path
 from typing import Any
 
 from fastaiagent.eval.scorer import ScorerResult
+
+logger = logging.getLogger(__name__)
 
 
 def _git_provenance() -> dict[str, str]:
@@ -57,6 +60,74 @@ def _git_provenance() -> dict[str, str]:
     if branch and branch != "HEAD":
         out["git_branch"] = branch
     return out
+
+
+def record_gate_result(
+    run_id: str,
+    *,
+    gate_outcome: str,
+    thresholds: dict[str, Any] | None = None,
+    baseline: dict[str, Any] | None = None,
+    db_path: str | Path | None = None,
+) -> None:
+    """Attach a gate verdict to an already-persisted run, then offer it for export.
+
+    ``persist_local()`` necessarily runs *before* the gate — the gate scores the
+    persisted results — so the verdict can't be written in the same INSERT. This
+    merges it into the run's ``metadata`` JSON (no new columns) and is the point at
+    which the run becomes exportable: the plane requires ``gate_outcome``, so a run
+    without one is not yet evidence.
+
+    Best-effort by design: a failure here must never change a gate verdict the user
+    already saw, so everything is swallowed to debug.
+
+    Args:
+        run_id: the id returned by :meth:`EvalResults.persist_local`.
+        gate_outcome: ``passed`` | ``failed`` | ``invalid``.
+        thresholds: what the gate demanded, e.g. ``{"overall.pass_rate": 0.9}``.
+            Empty/None means no gate was demanded (the run still counts as evidence
+            that evals ran — see ``docs/evaluation/agent-ci.md``).
+        baseline: ``{run_id, pass_rate_delta, regressed_count}`` when a baseline
+            comparison ran. This is what evidences "track regressions across
+            versions" rather than merely "evals were run".
+    """
+    try:
+        from fastaiagent._internal.config import get_config
+        from fastaiagent.ui.db import init_local_db
+
+        resolved = Path(db_path) if db_path is not None else Path(get_config().local_db_path)
+        db = init_local_db(resolved)
+        try:
+            row = db.fetchone("SELECT metadata FROM eval_runs WHERE run_id = ?", (run_id,))
+            if row is None:
+                return
+            try:
+                meta = json.loads(row["metadata"] or "{}")
+            except json.JSONDecodeError:
+                meta = {}
+            meta["gate_outcome"] = gate_outcome
+            if thresholds is not None:
+                meta["thresholds"] = thresholds
+            if baseline is not None:
+                meta["baseline"] = baseline
+            db.execute(
+                "UPDATE eval_runs SET metadata = ? WHERE run_id = ?",
+                (json.dumps(meta, default=str), run_id),
+            )
+        finally:
+            db.close()
+    except Exception:  # pragma: no cover — never disturb a verdict the user saw
+        logger.debug("Failed to record gate result for run %s", run_id, exc_info=True)
+        return
+
+    # Only now is the run complete enough to be evidence. No-op when disconnected
+    # or when eval export is off.
+    try:
+        from fastaiagent.eval.platform_export import record_eval_run_for_export
+
+        record_eval_run_for_export(run_id, db_path=db_path)
+    except Exception:  # pragma: no cover
+        logger.debug("Eval export kick failed for run %s", run_id, exc_info=True)
 
 
 @dataclass
@@ -191,14 +262,20 @@ class EvalResults:
 
         pid = safe_get_project_id()
         merged_metadata = {**_git_provenance(), **(metadata or {})}
+        # Part D: only queue for platform export when export is actually on. A
+        # disabled/disconnected install writes synced=1 so it never accumulates an
+        # outbox that can't drain; enabling later ships only NEW runs, no backlog.
+        from fastaiagent.eval.platform_export import eval_export_enabled
+
+        synced = 0 if eval_export_enabled() else 1
         db = init_local_db(resolved)
         try:
             db.execute(
                 """INSERT INTO eval_runs
                    (run_id, run_name, dataset_name, agent_name, agent_version,
                     scorers, started_at, finished_at, pass_count, fail_count,
-                    pass_rate, metadata, project_id)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    pass_rate, metadata, project_id, synced)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     run_id,
                     run_name,
@@ -213,6 +290,7 @@ class EvalResults:
                     pass_rate,
                     json.dumps(merged_metadata, default=str),
                     pid,
+                    synced,
                 ),
             )
             for ordinal, case in enumerate(self.cases):

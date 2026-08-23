@@ -109,6 +109,7 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 - [`40_evals_compare.py`](40_evals_compare.py) — A/B compare two runs
 - [`61_eval_pytest.py`](61_eval_pytest.py) — `@case` / `@pytest_dataset` pytest plugin
 - [`95_agent_ci_gate.py`](95_agent_ci_gate.py) — **Agent CI**: gate a build on agent quality — aggregate thresholds, baselines, and why an outage can't report green
+- [`96_connected_eval_export.py`](96_connected_eval_export.py) — gate verdicts as **governance evidence**: what reaches a connected plane (metadata only), and how to preview the exact payload
 - [`62_replay_to_regression.py`](62_replay_to_regression.py) — turn a failing trace into a regression test
 - [`74_agent_hardening.py`](74_agent_hardening.py) — `generate_scenarios → simulate → Scorecard → harden`
 - [`80_curate_from_traces.py`](80_curate_from_traces.py) — curate an eval dataset from captured agent traces
