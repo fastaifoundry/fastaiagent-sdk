@@ -168,7 +168,17 @@ def enroll(governed_agent_ids: list[str] | None = None) -> dict[str, Any] | None
 
 
 async def decide(tool_name: str, tool_input: dict[str, Any], agent_id: str) -> dict[str, Any]:
-    """POST /policy/decide → ``{decision, approval_request_id?, reason?}``."""
+    """POST /policy/decide → ``{decision, approval_request_id?, reason?}``.
+
+    Data egress note (security_audit_2 N8): this sends the full ``tool_input``
+    (the tool's arguments) to the plane. That is intentional and load-bearing —
+    a value-based approval policy (e.g. "approve refunds over $100") cannot be
+    evaluated without the arguments. It only happens for a tool whose name
+    matches a cached approval policy (governance is otherwise a no-op), so
+    unmanaged tools never egress their inputs. If some arguments are too
+    sensitive to leave the machine, don't place those tools under a plane
+    approval policy. See ``docs/security.md`` → Governance.
+    """
     return await _post(
         "/policy/decide",
         {"tool_name": tool_name, "tool_input": tool_input, "agent_id": agent_id, "context": None},

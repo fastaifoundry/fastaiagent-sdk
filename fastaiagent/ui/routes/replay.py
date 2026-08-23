@@ -20,6 +20,34 @@ from fastaiagent.ui.deps import get_context, require_session
 
 router = APIRouter(prefix="/api/replay", tags=["replay"])
 
+
+def _safe_regression_path(db_dir: Path, dataset_path: str | None) -> Path:
+    """Resolve the regression-test JSONL target, contained to the project dir.
+
+    security_audit_2 N6: ``dataset_path`` used to be written verbatim
+    (``Path(body.dataset_path)``), so a caller could append attacker-shaped JSON
+    to any writable path (``~/.zshrc`` etc.). We now require it to resolve inside
+    the project's ``.fastaiagent`` directory and to be a ``.jsonl`` file — the
+    same containment posture the sibling dataset/playground/kb routes use. The
+    default (no ``dataset_path``) is unchanged, so the UI is unaffected.
+    """
+    if not dataset_path:
+        return db_dir / "regression_tests.jsonl"
+    base = db_dir.resolve()
+    # A leading ``/`` in dataset_path makes ``base / dataset_path`` absolute, so
+    # ``resolve()`` + ``is_relative_to`` rejects both absolute paths and ``../``.
+    candidate = (base / dataset_path).resolve()
+    if not candidate.is_relative_to(base):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "dataset_path must stay within the project directory",
+        )
+    if candidate.suffix != ".jsonl":
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "dataset_path must be a .jsonl file"
+        )
+    return candidate
+
 # Server-side cache of fork state, keyed by fork_id. One UI is one process, so
 # in-memory is fine.
 _forks: dict[str, Any] = {}
@@ -239,7 +267,7 @@ def save_as_test(
     forked = _get_fork(fork_id)
     ctx = get_context(request)
     db_dir = Path(ctx.db_path).parent
-    path = Path(body.dataset_path) if body.dataset_path else (db_dir / "regression_tests.jsonl")
+    path = _safe_regression_path(db_dir, body.dataset_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.touch(exist_ok=True)
 

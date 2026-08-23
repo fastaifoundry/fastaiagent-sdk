@@ -10,12 +10,35 @@ logger = logging.getLogger(__name__)
 
 
 def trace_payloads_enabled() -> bool:
-    """Whether to capture payload-bearing trace attributes (prompts, messages, responses).
+    """Whether to capture payload-bearing trace attributes into the LOCAL store.
 
-    Defaults to True. Set ``FASTAIAGENT_TRACE_PAYLOADS=0`` to disable when payloads
-    may contain PII or sensitive data. Structural metadata (provider, model, tool
-    schemas, guardrail config) is always captured regardless of this flag — only
-    free-text content is gated.
+    Always ``True``. The local SDK store (``local.db``) and everything that reads
+    it — the local UI and Agent Replay — are full-fidelity by design; that's the
+    whole point of a local-first debugger, and Replay reconstructs a run from the
+    captured ``agent.input``/``agent.output``/``agent.system_prompt``.
+
+    Payload **privacy** is enforced at the *export* boundary, not at capture:
+    :func:`export_payloads_enabled` controls whether payloads are sent to the
+    control plane and to third-party OTel exporters. To keep tracing but capture
+    nothing at all, disable tracing entirely with ``FASTAIAGENT_TRACE_ENABLED=0``.
+
+    Kept as a function (rather than removing the ~40 call sites) so capture stays
+    a single, obvious predicate; it simply no longer reads the environment.
+    """
+    return True
+
+
+def export_payloads_enabled() -> bool:
+    """Whether payload-bearing attributes may leave the machine.
+
+    Defaults to ``True``. Set ``FASTAIAGENT_TRACE_PAYLOADS=0`` to keep prompts,
+    completions, tool args/results, chain state, and recalled memory **local
+    only** — they stay in ``local.db`` (so the UI/Replay keep working) but are
+    stripped before spans are sent to the control plane or to any exporter
+    registered via :func:`fastaiagent.trace.otel.add_exporter`.
+
+    This is the enterprise/connected-plane control: an operator sets it so
+    sensitive content never egresses, while local debugging stays full fidelity.
     """
     return os.environ.get("FASTAIAGENT_TRACE_PAYLOADS", "1") != "0"
 

@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.50.0] - 2026-08-23 — Security hardening (security_audit_2)
+
+Second security audit (`claude_files/security_audit_2_v1.49.1.md`). All findings
+below are fixed with tests; behavior changes are opt-out-guarded.
+
+### Security
+
+- **Trace payloads are now egress-gated, not capture-gated (N3/N4).** `local.db`
+  and the UI/Replay are always full fidelity; `FASTAIAGENT_TRACE_PAYLOADS=0` now
+  strips payloads only when spans leave the machine (control plane **and**
+  third-party `add_exporter` targets — redaction now reaches exporters too).
+- **`agent serve` hardening (N1):** opt-in bearer auth (`--auth-token` /
+  `FASTAIAGENT_SERVE_TOKEN`), request-body cap, and a startup warning when bound
+  non-loopback without auth. Default bind stays `0.0.0.0` for containers.
+- **RESTTool header credentials no longer serialized (N2):** header values are
+  redacted in `to_dict`, so they never reach traces or the pushed agent def.
+- **UI DNS-rebinding + cross-origin protection (N16):** `Host` allowlist
+  (`FASTAIAGENT_UI_ALLOWED_HOSTS`) and cross-origin `Origin` rejection on
+  state-changing requests.
+- **MCPTool routed through the SSRF guard (N15)**; **cross-origin redirects drop
+  credential headers (N11)**; **regex guardrails are ReDoS-bounded** via a hard
+  timeout, `timeout_seconds` config, `regex` dependency (N13).
+- **`local.db`/dir tightened to `0600`/`0700` on every open (N10)**, opt out with
+  `FASTAIAGENT_DB_KEEP_PERMS=1`. **Trace-mutation routes are project-scoped (N9).**
+  **Replay "save as test" path is contained (N6).**
+- **Rate-limit keys use the real peer IP (N12)** unless `FASTAIAGENT_UI_TRUST_PROXY=1`.
+- **LLM TLS: explicit `verify=True` wins over `FASTAIAGENT_LLM_VERIFY` and a
+  disabled state is logged (N14).**
+- **Deserialization trust boundary (N5):** `from_dict` ignores a serialized
+  `api_key` and validates `base_url` scheme; the runner `--connect` requires
+  `https` for a non-loopback plane (`FASTAIAGENT_RUNNER_ALLOW_INSECURE=1` to opt
+  out).
+- **`connect(export_checkpoints=False)` / `FASTAIAGENT_EXPORT_CHECKPOINTS=0` (N7)**
+  stops checkpoint-state replication to the plane; local durability is untouched.
+- Governance tool-argument egress is now documented (N8).
+- **UI: image/dataset upload and playground streaming now send the CSRF token
+  (M-10)** — two hooks bypassed the shared API client and would 403 under auth.
+
+### Added
+
+- New reference: **docs/configuration/environment-variables.md** (all
+  `FASTAIAGENT_*` variables).
+- New dependency: `regex` (ReDoS-safe guardrail matching).
+
 ## [1.49.1] - 2026-08-23
 
 ### Fixed — the Local UI still rendered infra-failed eval cases as scored

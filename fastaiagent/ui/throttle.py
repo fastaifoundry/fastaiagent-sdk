@@ -18,10 +18,41 @@ Policy
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from starlette.requests import Request
+
+
+def _trust_proxy() -> bool:
+    return os.environ.get("FASTAIAGENT_UI_TRUST_PROXY", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def client_throttle_ip(request: Request) -> str:
+    """Return the client IP to key throttling on.
+
+    security_audit_2 N12: ``X-Forwarded-For`` is client-controlled on a direct
+    connection, so honoring it unconditionally let an attacker rotate the header
+    to dodge the login lockout and the LLM rate limit. We now use the real peer
+    address by default and only trust ``X-Forwarded-For`` (first hop) when the
+    operator declares a reverse proxy is in front via
+    ``FASTAIAGENT_UI_TRUST_PROXY=1``.
+    """
+    if _trust_proxy():
+        fwd = request.headers.get("x-forwarded-for", "")
+        if fwd:
+            return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
 
 # Sliding-window size and base thresholds. Tuned for "humans typing
 # passwords occasionally make mistakes" not "bots". A bot hitting 5×
@@ -176,6 +207,7 @@ def get_llm_rate_limiter() -> RateLimiter:
 __all__ = [
     "LoginThrottler",
     "RateLimiter",
+    "client_throttle_ip",
     "get_default_throttler",
     "get_llm_rate_limiter",
 ]

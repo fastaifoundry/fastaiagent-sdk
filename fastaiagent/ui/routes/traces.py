@@ -1021,16 +1021,41 @@ class BulkDeleteRequest(BaseModel):
     trace_ids: list[str]
 
 
-def _delete_traces(db: Any, trace_ids: list[str]) -> int:
+def _trace_in_project(db: Any, ctx: Any, trace_id: str) -> bool:
+    """True if ``trace_id`` has at least one span in the caller's project.
+
+    security_audit_2 N9: ``trace_notes`` / ``trace_favorites`` carry no
+    ``project_id`` column, so the trace's ownership is authoritative on the
+    ``spans`` table (which does). When ``ctx.project_id`` is empty (legacy DB /
+    test fixtures) ``project_filter`` yields no clause, preserving the previous
+    "act on any trace" behavior — so this is not a breaking change for
+    single-project installs.
+    """
+    clause, extra = project_filter(ctx)
+    row = db.fetchone(
+        f"SELECT 1 AS present FROM spans WHERE trace_id = ? {clause} LIMIT 1",
+        (trace_id, *extra),
+    )
+    return row is not None
+
+
+def _delete_traces(db: Any, trace_ids: list[str], ctx: Any | None = None) -> int:
     """Delete spans, notes, favorites, and guardrail rows for the given traces.
+
+    Only traces belonging to ``ctx``'s project are deleted (N9). ``ctx=None``
+    keeps the legacy unscoped behavior for any non-UI caller.
 
     Returns how many traces had at least one span removed.
     """
     if not trace_ids:
         return 0
+    clause, extra = project_filter(ctx) if ctx is not None else ("", ())
     deleted = 0
     for tid in trace_ids:
-        before = db.fetchone("SELECT COUNT(*) AS n FROM spans WHERE trace_id = ?", (tid,))
+        before = db.fetchone(
+            f"SELECT COUNT(*) AS n FROM spans WHERE trace_id = ? {clause}",
+            (tid, *extra),
+        )
         if not before or (before.get("n") or 0) == 0:
             continue
         db.execute("DELETE FROM spans WHERE trace_id = ?", (tid,))
@@ -1052,7 +1077,7 @@ def delete_trace(
     ctx = get_context(request)
     db = ctx.db()
     try:
-        count = _delete_traces(db, [trace_id])
+        count = _delete_traces(db, [trace_id], ctx)
         if count == 0:
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"Trace '{trace_id}' not found")
         return {"deleted": count}
@@ -1069,7 +1094,7 @@ def bulk_delete_traces(
     ctx = get_context(request)
     db = ctx.db()
     try:
-        count = _delete_traces(db, body.trace_ids)
+        count = _delete_traces(db, body.trace_ids, ctx)
         return {"deleted": count, "requested": len(body.trace_ids)}
     finally:
         db.close()
@@ -1089,6 +1114,9 @@ def set_note(
     ctx = get_context(request)
     db = ctx.db()
     try:
+        # N9: only annotate a trace owned by the caller's project.
+        if not _trace_in_project(db, ctx, trace_id):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"Trace '{trace_id}' not found")
         now = datetime.now(tz=timezone.utc).isoformat()
         db.execute(
             """INSERT INTO trace_notes (trace_id, note, updated_at)
@@ -1112,6 +1140,9 @@ def toggle_favorite(
     ctx = get_context(request)
     db = ctx.db()
     try:
+        # N9: only (un)favorite a trace owned by the caller's project.
+        if not _trace_in_project(db, ctx, trace_id):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"Trace '{trace_id}' not found")
         existing = db.fetchone(
             "SELECT trace_id FROM trace_favorites WHERE trace_id = ?",
             (trace_id,),

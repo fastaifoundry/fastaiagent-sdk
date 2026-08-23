@@ -102,7 +102,17 @@ class PlatformSpanExporter(SpanExporter):
 
             pending = store.fetch_unsynced(limit=self._DRAIN_LIMIT, project_id=pid)
             if pending:
-                wire = [s.model_dump() for s in pending]
+                # Egress filter (N3/N4): local.db keeps full fidelity, but what
+                # leaves the machine has payloads stripped when the operator set
+                # FASTAIAGENT_TRACE_PAYLOADS=0, and any installed redaction policy
+                # is applied here so the plane never receives raw sensitive values.
+                from fastaiagent.trace.redaction import apply_export_policy
+
+                wire = []
+                for s in pending:
+                    item = s.model_dump()
+                    item["attributes"] = apply_export_policy(item.get("attributes") or {})
+                    wire.append(item)
                 if self._post_with_retry(_connection, wire):
                     store.mark_synced([s.span_id for s in pending])
 

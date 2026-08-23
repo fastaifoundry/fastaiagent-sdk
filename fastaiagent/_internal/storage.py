@@ -29,15 +29,16 @@ class SQLiteHelper:
 
     def __init__(self, db_path: str | Path):
         self.db_path = Path(db_path)
-        # On a fresh install we want the SQLite file (and its containing
-        # directory) created with owner-only perms — traces, prompts, KB
-        # contents, and bcrypt hashes all live here, and ``local.db`` is
-        # otherwise world-readable on POSIX. We tighten *only* on creation
-        # so we never silently downgrade perms a user set themselves.
-        self._parent_was_new = not self.db_path.parent.exists()
+        # ``local.db`` holds trace payloads, prompts, KB contents, and (adjacent)
+        # bcrypt hashes, so it must not be group/world readable. SQLite creates
+        # files with the process umask (typically 0o644), and pre-v1.49 installs
+        # were only tightened at *creation* — so an existing DB stayed
+        # world-readable (security_audit_2 N10). We now tighten on every open,
+        # but only ever REMOVE group/other access (owner bits are never touched,
+        # so the app keeps working), and never when the operator opted out via
+        # ``FASTAIAGENT_DB_KEEP_PERMS=1`` (deliberate group sharing).
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        if self._parent_was_new:
-            self._chmod_quiet(self.db_path.parent, 0o700)
+        self._tighten_perms(self.db_path.parent, 0o700)
         # security_review_1.md M7 — connections are now per-thread.
         # The previous design used a single shared connection guarded by a
         # ``threading.Lock`` and ``check_same_thread=False``. That worked
@@ -67,6 +68,29 @@ class SQLiteHelper:
         except OSError:
             logger.debug("Could not chmod %s to %o", path, mode, exc_info=True)
 
+    @staticmethod
+    def _tighten_perms(path: Path, mode: int) -> None:
+        """Tighten ``path`` to ``mode`` iff it currently grants group/other access.
+
+        Only ever removes access — owner bits are untouched, so the owning
+        process keeps working. No-op when the path is already owner-only, and
+        when ``FASTAIAGENT_DB_KEEP_PERMS`` is set (operators who deliberately
+        share the DB with a group/other). See security_audit_2 N10.
+        """
+        if os.environ.get("FASTAIAGENT_DB_KEEP_PERMS", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }:
+            return
+        try:
+            current = os.stat(path).st_mode & 0o777
+        except OSError:
+            return
+        if current & 0o077:  # any group/other bit set → tighten
+            SQLiteHelper._chmod_quiet(path, mode)
+
     def _get_conn(self) -> sqlite3.Connection:
         if self._closed:
             raise sqlite3.ProgrammingError("Cannot operate on a closed SQLiteHelper")
@@ -77,7 +101,6 @@ class SQLiteHelper:
         # ``check_same_thread=False`` so :meth:`close` can safely close
         # connections from other threads on shutdown — but every actual
         # query stays in the thread that opened it via TLS.
-        file_was_new = not self.db_path.exists()
         conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
@@ -89,11 +112,10 @@ class SQLiteHelper:
         # timeout absorbs the brief overlap. Strictly safer: it can only turn an
         # immediate error into a short wait.
         conn.execute("PRAGMA busy_timeout=5000")
-        if file_was_new:
-            # SQLite creates the file with the process umask (typically
-            # 0o644). Tighten it so trace payloads & bcrypt hashes are
-            # not world-readable on shared hosts.
-            self._chmod_quiet(self.db_path, 0o600)
+        # Tighten the DB file on every open (N10) — covers both freshly-created
+        # files (SQLite uses the umask, typically 0o644) and pre-existing
+        # world-readable DBs from older installs. Only removes group/other bits.
+        self._tighten_perms(self.db_path, 0o600)
         with self._connections_lock:
             self._connections.append(conn)
         self._tls.conn = conn

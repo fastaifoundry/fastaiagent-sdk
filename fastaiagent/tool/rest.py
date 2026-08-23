@@ -133,11 +133,27 @@ class RESTTool(Tool):
     def _tool_type(self) -> str:
         return "rest_api"
 
+    # Sentinel written in place of header values when serializing. Header names
+    # are kept (they describe the tool's shape and aren't secret); values are
+    # not, because they routinely carry credentials.
+    _REDACTED_HEADER_VALUE = "[redacted]"
+
     def _config_dict(self) -> dict[str, Any]:
+        # security_audit_2 N2 — ``_config_dict`` is serialized into the agent
+        # definition pushed to the control plane AND into the ``agent.tools``
+        # span attribute. ``self.headers`` is exactly where users place
+        # ``Authorization`` / ``X-Api-Key``, so we MUST NOT emit real values
+        # here. Live execution reads ``self.headers`` directly (see ``aexecute``)
+        # and is unaffected; only the serialized copy is redacted.
+        redacted_headers = (
+            {k: self._REDACTED_HEADER_VALUE for k in self.headers}
+            if self.headers
+            else self.headers
+        )
         return {
             "url": self.url,
             "method": self.method,
-            "headers": self.headers,
+            "headers": redacted_headers,
             "body_mapping": self.body_mapping,
         }
 

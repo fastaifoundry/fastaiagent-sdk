@@ -10,10 +10,12 @@ from __future__ import annotations
 import hmac
 import importlib.resources as resources
 import logging
+import os
 import secrets
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
@@ -132,7 +134,25 @@ class _CSRFMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         has_session = SESSION_COOKIE_NAME in request.cookies
 
-        # Decide whether to enforce.
+        # security_audit_2 N16: reject cross-origin state-changing requests up
+        # front, in BOTH auth modes. Browsers always send ``Origin`` on a
+        # cross-origin POST/PUT/PATCH/DELETE; a value whose host isn't an allowed
+        # UI host means a page on another site is driving the request, so refuse
+        # it. Non-browser clients (curl, scripts) send no ``Origin`` and are
+        # unaffected. This is what protects the ``--no-auth`` API (which has no
+        # session and thus no double-submit token) from CORS-simple writes.
+        if method not in _CSRF_SAFE_METHODS and path != "/api/auth/login":
+            origin = request.headers.get("origin")
+            if origin:
+                origin_host = _host_of(urlparse(origin).netloc)
+                if origin_host and origin_host not in _allowed_ui_hosts():
+                    return JSONResponse(
+                        {"detail": "Cross-origin request rejected."},
+                        status_code=403,
+                    )
+
+        # Double-submit CSRF token — enforced for authenticated sessions
+        # (unchanged behavior; anonymous unsafe requests are rejected by auth).
         enforce = (
             not no_auth
             and method not in _CSRF_SAFE_METHODS
@@ -162,6 +182,52 @@ class _CSRFMiddleware(BaseHTTPMiddleware):
                 path="/",
             )
         return response
+
+
+# security_audit_2 N16 — Host-header allowlist to defeat DNS-rebinding.
+#
+# The Local UI is a loopback service, but without ``Host`` validation a
+# malicious page can rebind its own domain to 127.0.0.1 and reach the UI as
+# "same-origin", reading traces / driving state. A rebind request arrives with
+# the attacker's ``Host`` (e.g. ``evil.attacker.com``); we reject anything whose
+# host isn't loopback or explicitly allowed via ``FASTAIAGENT_UI_ALLOWED_HOSTS``
+# (comma-separated) — needed when the UI runs behind a proxy on a real hostname.
+_LOOPBACK_HOST_NAMES: frozenset[str] = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def _allowed_ui_hosts() -> frozenset[str]:
+    extra = os.environ.get("FASTAIAGENT_UI_ALLOWED_HOSTS", "")
+    names = {h.strip().lower() for h in extra.split(",") if h.strip()}
+    return frozenset(_LOOPBACK_HOST_NAMES | names)
+
+
+def _host_of(header_value: str) -> str:
+    """Extract the bare hostname from a ``Host`` header (strip port, IPv6 []) ."""
+    value = header_value.strip()
+    if value.startswith("["):  # IPv6 literal: [::1]:7842
+        return value[1 : value.find("]")].lower() if "]" in value else value.lower()
+    return value.rsplit(":", 1)[0].lower() if ":" in value else value.lower()
+
+
+class _HostValidationMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next: Any) -> Response:  # type: ignore[override]
+        host_header = request.headers.get("host", "")
+        # Empty Host (HTTP/1.0, some non-browser clients) is allowed — browsers
+        # always send it, so it isn't a rebinding vector.
+        if host_header:
+            hostname = _host_of(host_header)
+            if hostname and hostname not in _allowed_ui_hosts():
+                return JSONResponse(
+                    {
+                        "detail": (
+                            f"Host {hostname!r} is not allowed. The Local UI only "
+                            "serves loopback hosts; set FASTAIAGENT_UI_ALLOWED_HOSTS "
+                            "to permit a proxy hostname."
+                        )
+                    },
+                    status_code=400,
+                )
+        return await call_next(request)
 
 
 def _static_dir() -> Path | None:
@@ -240,6 +306,9 @@ def build_app(
     # safe responses and validates the matching ``X-CSRF-Token`` header
     # on every state-changing call from an authenticated session.
     app.add_middleware(_CSRFMiddleware)
+    # Added last → outermost → runs first: reject rebound Hosts before anything
+    # else touches the request (security_audit_2 N16).
+    app.add_middleware(_HostValidationMiddleware)
 
     for r in (
         auth.router,

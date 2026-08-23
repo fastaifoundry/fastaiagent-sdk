@@ -11,7 +11,7 @@ from fastaiagent.ui.auth import (
     verify_password,
 )
 from fastaiagent.ui.deps import get_context
-from fastaiagent.ui.throttle import get_default_throttler
+from fastaiagent.ui.throttle import client_throttle_ip, get_default_throttler
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -31,14 +31,11 @@ class StatusResponse(BaseModel):
 def _client_key(request: Request, username: str) -> str:
     """Build a throttle key from the client IP and submitted username.
 
-    Honors ``X-Forwarded-For`` (first hop) so a proxy doesn't collapse
-    every client into one bucket. Falls back to ``request.client.host``.
+    The IP comes from :func:`client_throttle_ip`, which uses the real peer
+    address unless a trusted proxy is declared (N12) — so ``X-Forwarded-For``
+    can't be spoofed to dodge the lockout.
     """
-    fwd = request.headers.get("x-forwarded-for", "")
-    ip = fwd.split(",")[0].strip() if fwd else (
-        request.client.host if request.client else "unknown"
-    )
-    return f"{ip}|{username}"
+    return f"{client_throttle_ip(request)}|{username}"
 
 
 @router.post("/login")

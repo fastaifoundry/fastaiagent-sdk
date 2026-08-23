@@ -608,8 +608,6 @@ class TestPrompts:
         from fastaiagent.ui.server import build_app
 
         app = build_app(db_path=str(seeded_db), no_auth=True)
-        from fastapi.testclient import TestClient
-
         client = TestClient(app)
         r = client.put(
             "/api/prompts/greet", json={"template": "Hola {{name}}!"}

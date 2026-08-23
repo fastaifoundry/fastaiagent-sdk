@@ -46,7 +46,17 @@ def _allow_private_networks() -> bool:
     }
 
 
-def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+def _is_blocked_ip(
+    ip: ipaddress.IPv4Address | ipaddress.IPv6Address,
+    *,
+    allow_loopback: bool = False,
+) -> bool:
+    # ``allow_loopback`` permits 127.0.0.0/8 and ::1 while STILL blocking the
+    # SSRF targets that actually matter — cloud metadata (link-local
+    # 169.254.169.254), RFC1918 private ranges, reserved/multicast. Used by MCP
+    # tools, which are very commonly run on localhost (security_audit_2 N15).
+    if allow_loopback and ip.is_loopback:
+        return False
     return (
         ip.is_private
         or ip.is_loopback
@@ -57,8 +67,13 @@ def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     )
 
 
-def validate_url(url: str) -> None:
-    """Raise if ``url`` is not a public http(s) URL we are willing to fetch."""
+def validate_url(url: str, *, allow_loopback: bool = False) -> None:
+    """Raise if ``url`` is not a public http(s) URL we are willing to fetch.
+
+    ``allow_loopback=True`` additionally permits loopback addresses (for local
+    MCP servers etc.) while keeping every other private/link-local/metadata
+    block in force.
+    """
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
         raise UnsupportedFormatError(
@@ -75,7 +90,7 @@ def validate_url(url: str) -> None:
     except ValueError:
         ip = None
     if ip is not None:
-        if _is_blocked_ip(ip):
+        if _is_blocked_ip(ip, allow_loopback=allow_loopback):
             raise MultimodalError(
                 f"Refusing to fetch {url!r}: host {host!r} is not a public "
                 f"address. Set {ALLOW_PRIVATE_NETWORKS_ENV}=1 to override."
@@ -93,12 +108,48 @@ def validate_url(url: str) -> None:
             resolved = ipaddress.ip_address(addr)
         except ValueError:
             continue
-        if _is_blocked_ip(resolved):
+        if _is_blocked_ip(resolved, allow_loopback=allow_loopback):
             raise MultimodalError(
                 f"Refusing to fetch {url!r}: host {host!r} resolves to "
                 f"non-public address {addr!r}. Set "
                 f"{ALLOW_PRIVATE_NETWORKS_ENV}=1 to override."
             )
+
+
+# Headers that must not follow a redirect to a different origin — credentials
+# and session material. Compared case-insensitively (security_audit_2 N11).
+_SENSITIVE_REDIRECT_HEADERS: frozenset[str] = frozenset(
+    {
+        "authorization",
+        "proxy-authorization",
+        "cookie",
+        "x-api-key",
+        "api-key",
+        "x-auth-token",
+        "x-amz-security-token",
+    }
+)
+
+
+def _same_origin(a: str, b: str) -> bool:
+    """True if two URLs share scheme + host + port (case-insensitive host)."""
+    pa, pb = urlparse(a), urlparse(b)
+    return (
+        pa.scheme == pb.scheme
+        and (pa.hostname or "").lower() == (pb.hostname or "").lower()
+        and pa.port == pb.port
+    )
+
+
+def _strip_sensitive_headers(headers: dict[str, str] | None) -> dict[str, str] | None:
+    """Return ``headers`` without any credential/session headers (case-insensitive)."""
+    if not headers:
+        return headers
+    return {
+        k: v
+        for k, v in headers.items()
+        if k.lower() not in _SENSITIVE_REDIRECT_HEADERS
+    }
 
 
 def safe_http_fetch(
@@ -146,6 +197,7 @@ async def asafe_http_request(
     headers: dict[str, str] | None = None,
     json: Any | None = None,
     params: dict[str, Any] | None = None,
+    allow_loopback: bool = False,
 ) -> httpx.Response:
     """Async variant of :func:`safe_http_fetch` for arbitrary verbs.
 
@@ -153,26 +205,38 @@ async def asafe_http_request(
     SSRF hardening (private-IP block + per-hop redirect validation +
     response-size cap) but with a non-GET method, headers, or a body.
 
+    ``allow_loopback`` permits loopback targets (for local MCP servers) while
+    keeping the private/link-local/metadata block in force. The flag is applied
+    on every hop, so a redirect can't escape it either way.
+
     On a 303 redirect (the only redirect that mandates a method change),
     we drop the body and switch to GET — matching what ``httpx`` does
     when ``follow_redirects=True``.
+
+    Credential/session headers (``Authorization``, ``Cookie``, API-key headers)
+    are dropped on a cross-origin redirect so a cooperating first hop can't
+    bounce a bearer token to another host (security_audit_2 N11).
     """
-    validate_url(url)
+    validate_url(url, allow_loopback=allow_loopback)
     current = url
     current_method = method.upper()
     current_json = json
+    current_headers = dict(headers) if headers else headers
     async with httpx.AsyncClient(follow_redirects=False, timeout=timeout, verify=True) as client:
         for _hop in range(max_redirects + 1):
             resp = await client.request(
                 current_method,
                 current,
-                headers=headers,
+                headers=current_headers,
                 json=current_json,
                 params=params,
             )
             if 300 <= resp.status_code < 400 and "location" in resp.headers:
                 next_target = str(httpx.URL(current).join(resp.headers["location"]))
-                validate_url(next_target)
+                validate_url(next_target, allow_loopback=allow_loopback)
+                # Strip credentials before following a redirect to a new origin.
+                if not _same_origin(current, next_target):
+                    current_headers = _strip_sensitive_headers(current_headers)
                 current = next_target
                 if resp.status_code == 303:
                     current_method = "GET"

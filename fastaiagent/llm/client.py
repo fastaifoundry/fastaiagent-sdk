@@ -249,7 +249,7 @@ class LLMClient:
         pdf_mode: str = "auto",
         max_pdf_pages: int = 20,
         max_image_size_mb: float | None = None,
-        verify: bool | str | ssl.SSLContext = True,
+        verify: bool | str | ssl.SSLContext | None = None,
         openai_client: Any = None,
         **kwargs: Any,
     ):
@@ -299,7 +299,7 @@ class LLMClient:
 
     @staticmethod
     def _resolve_verify(
-        verify: bool | str | ssl.SSLContext,
+        verify: bool | str | ssl.SSLContext | None,
     ) -> bool | ssl.SSLContext:
         """Normalise the ``verify`` argument into an httpx-compatible value.
 
@@ -311,14 +311,17 @@ class LLMClient:
         - ``str`` — path to a PEM CA bundle; converted to an ``SSLContext`` via
           :func:`ssl.create_default_context` because httpx 0.28 deprecated
           passing a path string directly to ``verify``.
+        - ``None`` (the default) — *unspecified*: consult the
+          ``FASTAIAGENT_LLM_VERIFY`` environment variable so the setting can be
+          configured without code (e.g. via an Azure ML deployment's
+          ``environment_variables``); it accepts ``"false"``/``"0"``/``"true"``/
+          ``"1"`` or a CA-bundle path. Absent the env var, verification is on.
 
-        When ``verify`` is left at its default (``True``), the
-        ``FASTAIAGENT_LLM_VERIFY`` environment variable is consulted so the
-        setting can be configured without code (e.g. via an Azure ML deployment's
-        ``environment_variables``). It accepts ``"false"``/``"0"``/``"true"``/
-        ``"1"`` or a CA-bundle path.
+        security_audit_2 N14: the env var is consulted **only** when ``verify``
+        is unspecified (``None``). An explicit ``verify=True`` is never silently
+        downgraded to ``False`` by the environment — explicit intent wins.
         """
-        if verify is True:
+        if verify is None:
             env = os.environ.get("FASTAIAGENT_LLM_VERIFY")
             if env:
                 lowered = env.strip().lower()
@@ -328,16 +331,21 @@ class LLMClient:
                     verify = True
                 else:
                     verify = env  # treat as a CA-bundle path
+            else:
+                verify = True
 
         if isinstance(verify, str):
             return ssl.create_default_context(cafile=verify)
         if verify is False:
-            warnings.warn(
+            # Warn for interactive/dev visibility AND log so the disabled state
+            # is captured even when Python warnings are filtered in production.
+            message = (
                 "LLMClient TLS verification is disabled (verify=False); LLM "
                 "traffic is vulnerable to interception. Prefer verify='<path to "
-                "CA bundle>' to trust a corporate gateway certificate instead.",
-                stacklevel=3,
+                "CA bundle>' to trust a corporate gateway certificate instead."
             )
+            warnings.warn(message, stacklevel=3)
+            logger.warning(message)
         return verify
 
     def _new_async_client(self, **kw: Any) -> Any:
@@ -1633,12 +1641,41 @@ class LLMClient:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> LLMClient:
-        """Deserialize from canonical format."""
+        """Deserialize from canonical format.
+
+        security_audit_2 N5: this dict can come from an untrusted source — a
+        replayed trace read from ``local.db``, or a runner job payload from the
+        control plane. Two guards:
+
+        * ``api_key`` is **never** taken from the dict. ``to_dict`` never emits
+          it, so its presence means a hand-crafted or tampered payload; we ignore
+          it (resolving credentials locally from the environment) and warn.
+        * ``base_url`` scheme is validated to ``http(s)`` so a junk/``file://``
+          value can't be reconstructed. (We deliberately don't block private-IP
+          endpoints — local LLMs like Ollama are legitimate — but the tool-egress
+          SSRF guards still apply to RESTTool/MCPTool.)
+        """
+        if data.get("api_key"):
+            logger.warning(
+                "Ignoring 'api_key' found in a serialized LLM config; credentials "
+                "are resolved locally, not from the payload. to_dict() never emits "
+                "this field, so its presence may indicate a tampered config."
+            )
+        base_url = data.get("base_url")
+        if base_url is not None:
+            from urllib.parse import urlparse
+
+            scheme = urlparse(str(base_url)).scheme.lower()
+            if scheme not in ("http", "https"):
+                raise ValueError(
+                    f"Refusing to deserialize LLM base_url with scheme {scheme!r}: "
+                    "only http(s) is allowed."
+                )
         return cls(
             provider=data.get("provider", "openai"),
             model=data.get("model", "gpt-4o-mini"),
-            api_key=data.get("api_key"),
-            base_url=data.get("base_url"),
+            api_key=None,  # N5: never trust a serialized api_key
+            base_url=base_url,
             temperature=data.get("temperature"),
             max_tokens=data.get("max_tokens"),
             max_retries=data.get("max_retries", 0),

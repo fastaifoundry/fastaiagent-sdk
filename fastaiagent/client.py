@@ -38,6 +38,9 @@ class _Connection:
         # Agent-CI verdict egress posture. None = unset (resolved against
         # FASTAIAGENT_EXPORT_EVALS, then default-on when connected).
         self.export_evals: bool | None = None
+        # Checkpoint-state replication to the plane (N7). Resolved to a bool at
+        # connect(); default on. Local durability is independent of this.
+        self.export_checkpoints: bool = True
 
     @property
     def is_connected(self) -> bool:
@@ -157,6 +160,7 @@ def connect(
     console_url: str | None = None,
     export_traces: bool = True,
     export_evals: bool | None = None,
+    export_checkpoints: bool | None = None,
 ) -> None:
     """Connect the SDK to FastAIAgent Platform for observability,
     prompt management, and evaluation services.
@@ -209,6 +213,21 @@ def connect(
     that produce no eval evidence — the enroll call reports this posture so
     "export disabled" stays distinguishable from "not running evals". Preview
     exactly what would leave with ``fastaiagent eval export --dry-run``.
+
+    ``export_checkpoints`` controls whether checkpoint **state** (``state_snapshot``,
+    ``node_input``/``node_output``, ``interrupt_context``) is replicated to the
+    plane. Defaults on; ``FASTAIAGENT_EXPORT_CHECKPOINTS=0`` sets it from the
+    environment, and this kwarg wins. It is **independent** of ``export_traces``.
+
+    Important: this gates *replication only* — your **local** durability
+    (SQLite/Postgres) is untouched, so same-machine crash/interrupt **resume
+    still works** with it off. What the plane replica additionally provides, and
+    what you therefore lose by disabling it, is: **cross-machine / distributed
+    runner resume** (a runner picking up an execution started on another host
+    reads the plane via ``restore_from_plane``), **disaster recovery** if the
+    local store is lost, and **console visibility** of execution state. Keep it
+    on if you rely on any of those; set it off only when same-machine local
+    durability is sufficient and checkpoint state must not leave the machine.
     """
     import os
 
@@ -234,6 +253,13 @@ def connect(
     # FASTAIAGENT_EXPORT_EVALS (then default-on) at each check — see
     # fastaiagent/eval/platform_export.py::eval_export_enabled.
     _connection.export_evals = export_evals
+    # Checkpoint-state replication to the plane (N7). kwarg > env > default-on.
+    # Independent of ``export_traces``: some users want durable state replicated
+    # for cross-machine/DR resume but not trace payloads, and vice-versa.
+    if export_checkpoints is None:
+        _env_cp = os.environ.get("FASTAIAGENT_EXPORT_CHECKPOINTS")
+        export_checkpoints = (_env_cp != "0") if _env_cp is not None else True
+    _connection.export_checkpoints = export_checkpoints
 
     # Must happen before anything can touch get_tracer_provider() — OTel's
     # global set is first-wins, so suppression only works pre-creation.
@@ -495,6 +521,7 @@ def disconnect() -> None:
     _connection.auto_register = True
     _connection.console_url = None
     _connection.export_evals = None
+    _connection.export_checkpoints = True
     # Clear per-process registration state so a fresh connect() re-registers
     # (e.g. reconnecting to a different plane).
     try:

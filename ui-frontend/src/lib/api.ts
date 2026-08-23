@@ -37,7 +37,7 @@ const SAFE_METHODS = new Set<Method>(["GET"]);
  * call. Returns null if the cookie isn't set yet — the very first
  * mutating call after a fresh page load may need a no-op GET first.
  */
-function readCsrfCookie(): string | null {
+export function readCsrfCookie(): string | null {
   const match = document.cookie.match(/(?:^|; )fastaiagent_csrf=([^;]+)/);
   return match ? decodeURIComponent(match[1]) : null;
 }

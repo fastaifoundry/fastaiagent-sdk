@@ -257,7 +257,9 @@ class TestSaveAsTestEndpoint:
         r = client.post(f"/api/replay/{trace_id}/fork", json={"step": 0})
         fork_id = r.json()["fork_id"]
 
-        explicit_path = tmp_path / "custom" / "regressions.jsonl"
+        # N6: dataset_path is contained to the project's .fastaiagent dir, so an
+        # explicit target is given relative to it (arbitrary absolute paths are
+        # rejected — see TestSaveAsTestPathContainment).
         r = client.post(
             f"/api/replay/forks/{fork_id}/save-as-test",
             json={
@@ -266,10 +268,11 @@ class TestSaveAsTestEndpoint:
                 "trace_id": "rerun_trace_id",
                 "fork_step": 0,
                 "modifications": {"prompt": "Be specific."},
-                "dataset_path": str(explicit_path),
+                "dataset_path": "custom/regressions.jsonl",
             },
         )
         assert r.status_code == 200, r.text
+        explicit_path = tmp_path / ".fastaiagent" / "custom" / "regressions.jsonl"
         record = json.loads(explicit_path.read_text().splitlines()[-1])
         # v1.14.1: the body's ``trace_id`` is the rerun id; source comes
         # from the fork automatically; modifications are recorded for
@@ -287,3 +290,45 @@ class TestSaveAsTestEndpoint:
             json={"input": "x", "expected_output": "y"},
         )
         assert r.status_code == 404
+
+
+class TestSaveAsTestPathContainment:
+    """security_audit_2 N6 — dataset_path must not escape the project directory."""
+
+    @pytest.mark.parametrize(
+        "bad_path",
+        [
+            "../../../../../../etc/cron.d/evil.jsonl",  # traversal
+            "../escape.jsonl",  # traversal one level
+            "/etc/cron.d/evil.jsonl",  # absolute
+            "/tmp/evil.jsonl",  # absolute elsewhere
+            "notjsonl",  # wrong suffix (would append arbitrary file)
+            "config",  # e.g. clobber .fastaiagent/config
+        ],
+    )
+    def test_endpoint_rejects_unsafe_dataset_path(self, ui_env, bad_path: str) -> None:
+        client, trace_id = ui_env
+        fork_id = client.post(f"/api/replay/{trace_id}/fork", json={"step": 0}).json()[
+            "fork_id"
+        ]
+        r = client.post(
+            f"/api/replay/forks/{fork_id}/save-as-test",
+            json={
+                "input": "x",
+                "expected_output": "y",
+                "dataset_path": bad_path,
+            },
+        )
+        assert r.status_code == 400, r.text
+
+    def test_endpoint_default_path_still_works(self, ui_env, tmp_path: Path) -> None:
+        client, trace_id = ui_env
+        fork_id = client.post(f"/api/replay/{trace_id}/fork", json={"step": 0}).json()[
+            "fork_id"
+        ]
+        r = client.post(
+            f"/api/replay/forks/{fork_id}/save-as-test",
+            json={"input": "x", "expected_output": "y"},
+        )
+        assert r.status_code == 200, r.text
+        assert (tmp_path / ".fastaiagent" / "regression_tests.jsonl").exists()

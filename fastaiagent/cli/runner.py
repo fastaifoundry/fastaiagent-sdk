@@ -4,13 +4,53 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import signal
+from urllib.parse import urlparse
 
 import typer
 from rich.console import Console
 
 runner_app = typer.Typer()
 console = Console()
+
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def _require_secure_connect(connect: str) -> None:
+    """Reject a non-loopback ``--connect`` plane over plaintext http (N5).
+
+    The runner runs whatever the plane dispatches with the operator's creds, so
+    the channel must be authenticated + confidential. https everywhere; loopback
+    http is allowed for dev; ``FASTAIAGENT_RUNNER_ALLOW_INSECURE=1`` is the
+    explicit opt-out for a trusted-network http plane.
+    """
+    parsed = urlparse(connect)
+    scheme = parsed.scheme.lower()
+    host = (parsed.hostname or "").lower()
+    if scheme == "https":
+        return
+    if host in _LOOPBACK_HOSTS:
+        return
+    if os.environ.get("FASTAIAGENT_RUNNER_ALLOW_INSECURE", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        console.print(
+            f"[yellow]runner: connecting to {connect!r} over plaintext http "
+            "(FASTAIAGENT_RUNNER_ALLOW_INSECURE set) — the control channel is not "
+            "encrypted.[/yellow]"
+        )
+        return
+    console.print(
+        f"[red]runner: refusing to connect to {connect!r} over http.[/red]\n"
+        "The runner executes plane-dispatched agents/tools with your credentials, "
+        "so the channel must be https. Use an https:// URL, or set "
+        "FASTAIAGENT_RUNNER_ALLOW_INSECURE=1 if the plane is on a trusted network."
+    )
+    raise typer.Exit(code=2)
 
 
 def _load_tools(entrypoints: list[str]) -> None:
@@ -57,6 +97,13 @@ def runner(
     and deregisters gracefully.
     """
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+    # security_audit_2 N5: the runner executes whatever the plane at ``--connect``
+    # dispatches (agents, tool calls) with the operator's own credentials, so the
+    # control channel must not be MITM-able. Require https for a non-loopback
+    # plane; localhost/dev http is fine, and FASTAIAGENT_RUNNER_ALLOW_INSECURE=1
+    # is an explicit escape hatch for a trusted-network http plane.
+    _require_secure_connect(connect)
 
     from fastaiagent import connect as platform_connect
     from fastaiagent._internal.errors import PlatformAuthError

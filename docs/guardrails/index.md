@@ -296,6 +296,15 @@ has_ref = Guardrail(
 )
 ```
 
+Regex guardrails run on a ReDoS-resistant engine under a hard timeout, so a
+catastrophic-backtracking pattern fails closed instead of hanging the run. The
+default is 2 seconds; adjust with `"timeout_seconds"` in the config (clamped to
+0.1–10s so a plane-supplied policy can't disable the protection):
+
+```python
+config={"pattern": r"...", "should_match": False, "timeout_seconds": 1.0}
+```
+
 ### Schema
 
 JSON Schema validation — useful for structured agent output:

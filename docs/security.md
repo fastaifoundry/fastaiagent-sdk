@@ -15,8 +15,13 @@ machine unless you explicitly:
 * Register a custom OTel `SpanExporter` via
   `fastaiagent.trace.add_exporter(...)`.
 
-The local database is read-write only by the OS user that created it.
-Back it up like any other state directory.
+The local database is kept readable and writable **only by the owning OS
+user**: the SDK tightens `~/.fastaiagent/` to `0700` and `local.db` to
+`0600` on every open, removing any group/other access (it never touches
+owner bits, and never loosens perms that are already stricter). This also
+repairs databases created by older versions that left them world-readable.
+If you deliberately share the directory with a group, opt out with
+`FASTAIAGENT_DB_KEEP_PERMS=1`. Back it up like any other state directory.
 
 ## Local UI authentication
 
@@ -33,19 +38,66 @@ The bundled Local UI (`fastaiagent ui`) ships with three modes:
 The CSRF middleware is exhaustively tested in
 `tests/test_ui_server.py` via `_CSRFAwareTestClient`.
 
+**DNS-rebinding & cross-origin protection.** The server validates the `Host`
+header against a loopback allowlist, so a page that rebinds its own domain to
+`127.0.0.1` (arriving with `Host: evil.example`) is rejected with 400. It also
+rejects state-changing requests carrying a cross-origin `Origin` header, which
+protects the `--no-auth` API from CORS-simple writes a malicious page might
+trigger. Set `FASTAIAGENT_UI_ALLOWED_HOSTS` (comma-separated) to permit a proxy
+hostname. Non-browser clients (curl, scripts) send no `Origin` and are
+unaffected.
+
+**Brute-force / rate-limit keys.** The login lockout and the playground
+LLM rate limiter are keyed on the client IP. By default this is the real
+peer address, so a client can't rotate an `X-Forwarded-For` header to dodge
+the limit. If you front the UI with a reverse proxy, set
+`FASTAIAGENT_UI_TRUST_PROXY=1` so the first `X-Forwarded-For` hop is used
+instead — do this **only** when a trusted proxy is actually in front, or
+clients could spoof it again.
+
 ## Trace payload controls
 
 Trace spans can carry full prompt messages, tool inputs/outputs, and
 model responses. Two independent levers gate what gets stored:
 
-### `FASTAIAGENT_TRACE_PAYLOADS=0` — drop payloads entirely
+### `FASTAIAGENT_TRACE_PAYLOADS=0` — keep payloads local, never export them
 
-When this env var is set to `0`, payload-bearing GenAI attributes
+FastAIAgent is **local-first**: your local store (`local.db`) and the
+tools that read it — the Local UI and Agent Replay — are always full
+fidelity, because Replay reconstructs a run from the captured prompts and
+outputs. So payload capture is controlled at the **export boundary**, not
+at capture.
+
+When `FASTAIAGENT_TRACE_PAYLOADS=0` is set, payload-bearing attributes
 (`gen_ai.request.messages`, `gen_ai.response.content`,
-`gen_ai.response.tool_calls`, `gen_ai.request.tools`) are not written
-to spans at all. Structural metadata (provider, model, token counts,
-finish reasons, tool schemas) is still captured. Use this when you
-need traces for ops/cost without storing any free-text content.
+`gen_ai.response.tool_calls`, `gen_ai.request.tools`, agent/chain
+inputs and outputs, system prompts, tool args/results, retrieved
+documents, and recalled memory) are **stripped before spans leave the
+machine** — both when pushed to the control plane and when sent to any
+exporter registered via `fastaiagent.trace.add_exporter(...)`. Structural
+metadata (provider, model, token counts, finish reasons, tool schemas,
+latencies) always flows. This is the setting to use for a connected /
+enterprise deployment where sensitive content must not egress but you
+still want full local debugging.
+
+To capture *nothing at all* (not even locally), disable tracing entirely
+with `FASTAIAGENT_TRACE_ENABLED=0`.
+
+### `export_checkpoints=False` — keep durability state off the plane
+
+When connected, checkpoint **state** (`state_snapshot`, `node_input`,
+`node_output`, `interrupt_context`) is replicated to the plane by default —
+this applies to **both** the SQLite and external-Postgres checkpointers.
+`connect(export_checkpoints=False)` (or `FASTAIAGENT_EXPORT_CHECKPOINTS=0`)
+suppresses that replication. It is independent of `export_traces`.
+
+This gates **replication only**. Your local durability (SQLite/Postgres) is
+untouched, so **same-machine crash/interrupt resume still works** with it off.
+What the plane replica additionally provides — and what you lose by disabling
+it — is **cross-machine / distributed-runner resume** (a runner resuming an
+execution that began on another host reads the plane), **disaster recovery** if
+the local store is lost, and **console visibility** of execution state. Keep it
+on if you rely on any of those.
 
 ### `RedactionPolicy` — mask matched substrings
 
@@ -106,10 +158,67 @@ redaction protects what's stored after the fact.
 
 ## SSRF posture
 
-The SDK uses `httpx` for all outbound HTTP. The Local UI server
-rejects requests to RFC1918 / loopback ranges from inside the
-sandboxed iframe panels by default; opt in to private-network
-requests with the `FASTAIAGENT_UI_ALLOW_PRIVATE_NETWORKS=1` env var.
+The SDK uses `httpx` for all outbound HTTP. Fetches whose target can be
+influenced by an LLM or by deserialized data — multimodal URL ingestion
+(`Image.from_url` / `PDF.from_url`), `RESTTool`, and `MCPTool` — are routed
+through a single SSRF-hardened helper that:
+
+* allows only `http(s)` schemes;
+* blocks private / loopback / link-local / reserved / multicast addresses
+  (including cloud-metadata `169.254.169.254`), resolving hostnames first;
+* re-validates the target on **every redirect hop**;
+* drops credential/session headers (`Authorization`, `Cookie`, API-key
+  headers) when a redirect crosses to a different origin, so a cooperating
+  first hop can't bounce a bearer token to another host; and
+* caps the response body size.
+
+`MCPTool` is the one exception to the loopback block: local MCP servers
+(`http://localhost:3000`) are a common, legitimate pattern, so loopback is
+permitted for MCP by default while every other private range stays blocked.
+For other intranet hosts, opt in with `FASTAIAGENT_ALLOW_PRIVATE_NETWORKS=1`.
+
+## Governance (tool-approval egress)
+
+When connected with a cached **approval policy**, a governed tool call sends the
+tool name **and its arguments** (`tool_input`) to the plane's `/policy/decide`
+so a value-based decision can be made (e.g. "approve refunds over $100" needs
+the amount). This is intentional and only happens for tools whose name matches a
+policy — unmanaged tools never egress their inputs, and the gate is fail-closed.
+If a tool's arguments are too sensitive to leave the machine, do not place that
+tool under a plane approval policy. Governance enrollment also reports the
+machine hostname and a stable per-install id.
+
+## Deserialization trust boundary (Replay & runners)
+
+`Agent.from_dict` / `LLMClient.from_dict` reconstruct a live agent from a plain
+dict. That dict can originate outside your code — a trace **replayed** from
+`local.db`, or a job payload a **runner** receives from the control plane — so
+the SDK hardens the reconstruction:
+
+* A serialized `api_key` is **never** trusted. `to_dict` never emits it, so its
+  presence signals a hand-crafted/tampered payload; it is ignored (credentials
+  are resolved locally from the environment) and a warning is logged.
+* `base_url` must be `http(s)`. Local endpoints (Ollama, a corporate proxy) are
+  allowed; the tool-egress SSRF guards still apply to `RESTTool`/`MCPTool`.
+* **Replay executes the trace's stored configuration** (its `base_url`, tools,
+  system prompt). Only replay traces you trust — a `local.db` an attacker can
+  write is a config-execution vector, the same as any local data store.
+
+The **runner** additionally requires an `https://` `--connect` URL for any
+non-loopback plane (it runs plane-dispatched work with your credentials). Dev
+loopback http is allowed; `FASTAIAGENT_RUNNER_ALLOW_INSECURE=1` overrides for a
+trusted-network http plane.
+
+## Outbound TLS to model providers
+
+All calls the SDK makes to model providers verify TLS by default. You can
+point at a corporate gateway's CA bundle with `verify="/path/to/ca.pem"`
+(per `LLMClient`) or `FASTAIAGENT_LLM_VERIFY=/path/to/ca.pem` (process-wide,
+no code) — always prefer this over disabling verification. Setting
+`FASTAIAGENT_LLM_VERIFY=false` disables verification for clients that didn't
+specify `verify=` explicitly and logs a warning each time; an **explicit**
+`verify=True` is never downgraded by the environment. Platform / control-plane
+calls always verify and cannot be disabled.
 
 `RESTTool` requests and `WebFetch`-style tools do not currently
 restrict destination IPs — if you wrap a public-internet-touching

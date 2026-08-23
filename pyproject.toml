@@ -1,6 +1,6 @@
 [project]
 name = "fastaiagent"
-version = "1.49.1"
+version = "1.50.0"
 description = "Build, debug, evaluate, and operate AI agents. The only SDK with fork-and-rerun Agent Replay."
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -35,6 +35,11 @@ dependencies = [
     "rich>=13.0,<15",
     "Pillow>=10.0,<13",
     "pymupdf>=1.24,<2",
+    # ``regex`` (not stdlib ``re``) backs regex guardrails: it releases the GIL
+    # and honors a hard ``timeout=``, so a catastrophic-backtracking (ReDoS)
+    # pattern fails closed instead of freezing the process. See security_audit_2
+    # N13 and fastaiagent/guardrail/implementations.py.
+    "regex>=2022.1,<2027",
 ]
 
 [project.optional-dependencies]

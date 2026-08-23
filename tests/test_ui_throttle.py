@@ -89,3 +89,38 @@ class TestLoginThrottler:
             t.record_failure("alice|1.2.3.4")
         # Different IP for the same user is its own bucket.
         assert t.check("alice|9.9.9.9") == 0.0
+
+
+class TestClientThrottleIp:
+    """security_audit_2 N12 — throttle keys use the real peer IP, not a
+    spoofable X-Forwarded-For, unless a trusted proxy is declared."""
+
+    @staticmethod
+    def _req(xff=None, peer="203.0.113.9"):
+        from types import SimpleNamespace
+
+        headers = {"x-forwarded-for": xff} if xff else {}
+        client = SimpleNamespace(host=peer) if peer is not None else None
+        return SimpleNamespace(headers=headers, client=client)
+
+    def test_default_ignores_forwarded_for(self, monkeypatch):
+        from fastaiagent.ui.throttle import client_throttle_ip
+
+        monkeypatch.delenv("FASTAIAGENT_UI_TRUST_PROXY", raising=False)
+        # Spoofed header is ignored; the real peer wins.
+        assert client_throttle_ip(self._req(xff="1.2.3.4", peer="203.0.113.9")) == "203.0.113.9"
+        assert client_throttle_ip(self._req(xff="9.9.9.9", peer="203.0.113.9")) == "203.0.113.9"
+
+    def test_trust_proxy_honors_first_hop(self, monkeypatch):
+        from fastaiagent.ui.throttle import client_throttle_ip
+
+        monkeypatch.setenv("FASTAIAGENT_UI_TRUST_PROXY", "1")
+        assert client_throttle_ip(self._req(xff="1.2.3.4, 10.0.0.1", peer="10.0.0.1")) == "1.2.3.4"
+        # No header even under trust-proxy → peer.
+        assert client_throttle_ip(self._req(xff=None, peer="10.0.0.1")) == "10.0.0.1"
+
+    def test_missing_client_is_unknown(self, monkeypatch):
+        from fastaiagent.ui.throttle import client_throttle_ip
+
+        monkeypatch.delenv("FASTAIAGENT_UI_TRUST_PROXY", raising=False)
+        assert client_throttle_ip(self._req(peer=None)) == "unknown"
