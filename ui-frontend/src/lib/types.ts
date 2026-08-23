@@ -290,6 +290,24 @@ export interface EvalCaseRow {
   actual_output: unknown;
   trace_id: string | null;
   per_scorer: Record<string, { passed: boolean; score: number; reason?: string | null }>;
+  /**
+   * Infrastructure failure (provider 500, timeout, auth) — the agent never
+   * produced an output, so the case was NOT scored and `per_scorer` is empty.
+   * Errored is its own outcome: excluded from pass/fail, never a quality miss.
+   */
+  error?: string | null;
+}
+
+/** A case's overall outcome. `errored` is infra, not agent quality. */
+export type EvalCaseOutcome = "passed" | "failed" | "errored";
+
+/** Mirrors the backend's `_case_outcome` (fastaiagent/eval/compare.py). */
+export function evalCaseOutcome(c: Pick<EvalCaseRow, "error" | "per_scorer">): EvalCaseOutcome {
+  if (c.error) return "errored";
+  const per = c.per_scorer ?? {};
+  const verdicts = Object.values(per);
+  if (verdicts.length === 0) return "passed";
+  return verdicts.every((v) => v?.passed) ? "passed" : "failed";
 }
 
 export interface EvalRunDetail {
@@ -300,7 +318,7 @@ export interface EvalRunDetail {
 
 export interface EvalCaseFilters {
   scorer?: string | null;
-  outcome?: "passed" | "failed" | null;
+  outcome?: EvalCaseOutcome | null;
   q?: string;
 }
 
@@ -434,7 +452,7 @@ export interface SimulationRunsPage {
 }
 
 export interface SimulationCaseFilters {
-  outcome?: "passed" | "failed" | null;
+  outcome?: EvalCaseOutcome | null;
 }
 
 export interface PromptListItem {

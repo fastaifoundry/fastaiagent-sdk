@@ -36,7 +36,8 @@ import { PassRateBar } from "@/components/evals/PassRateBar";
 import { useEvalRun } from "@/hooks/use-evals";
 import { formatCost, formatDurationMs, formatTimeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { EvalCaseFilters, EvalCaseRow } from "@/lib/types";
+import { evalCaseOutcome } from "@/lib/types";
+import type { EvalCaseFilters, EvalCaseOutcome, EvalCaseRow } from "@/lib/types";
 
 function stringifyShort(value: unknown, max = 120): string {
   if (value == null) return "—";
@@ -82,6 +83,9 @@ export function EvalRunDetailPage() {
   }
 
   const { run, cases, total_cases } = query.data;
+  // Errored = infra failure, never scored. Surfaced separately so the pass/fail
+  // tiles' denominator isn't silently short by cases that were never scored.
+  const erroredCount = cases.filter((c) => evalCaseOutcome(c) === "errored").length;
 
   return (
     <div className="space-y-5">
@@ -166,6 +170,14 @@ export function EvalRunDetailPage() {
             <span className="ml-2 text-xs font-normal text-muted-foreground">
               {cases.length} of {total_cases} shown
             </span>
+            {erroredCount > 0 && (
+              <span
+                className="ml-2 rounded-md bg-muted px-2 py-0.5 text-xs font-normal text-muted-foreground"
+                title="Infrastructure failures — unscored, excluded from pass/fail"
+              >
+                {erroredCount} errored
+              </span>
+            )}
           </CardTitle>
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
@@ -185,17 +197,18 @@ export function EvalRunDetailPage() {
               onValueChange={(v) =>
                 setFilters((f) => ({
                   ...f,
-                  outcome: v === "all" ? null : (v as "passed" | "failed"),
+                  outcome: v === "all" ? null : (v as EvalCaseOutcome),
                 }))
               }
             >
-              <SelectTrigger className="h-8 w-[130px] text-xs">
+              <SelectTrigger className="h-8 w-[140px] text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All outcomes</SelectItem>
                 <SelectItem value="passed">Passed only</SelectItem>
                 <SelectItem value="failed">Failed only</SelectItem>
+                <SelectItem value="errored">Errored only</SelectItem>
               </SelectContent>
             </Select>
             <Select
@@ -287,6 +300,7 @@ function CaseRow({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const errored = evalCaseOutcome(case_) === "errored";
   return (
     <>
       <TableRow>
@@ -325,7 +339,24 @@ function CaseRow({
         >
           {stringifyShort(case_.actual_output)}
         </TableCell>
-        {scorerNames.map((name) => {
+        {errored && (
+          <TableCell
+            colSpan={scorerNames.length || 1}
+            className="text-xs"
+            title={case_.error ?? undefined}
+          >
+            {/* Neutral, not destructive: an infra failure is NOT an agent-quality
+                miss, and colouring it red would read as one. */}
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2 py-0.5 font-mono text-muted-foreground">
+              <span className="h-1.5 w-1.5 rounded-full bg-current" />
+              errored
+            </span>
+            <span className="ml-2 truncate align-middle text-muted-foreground/80">
+              {case_.error}
+            </span>
+          </TableCell>
+        )}
+        {!errored && scorerNames.map((name) => {
           const score = case_.per_scorer?.[name];
           if (!score)
             return (

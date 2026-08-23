@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.49.1] - 2026-08-23
+
+### Fixed — the Local UI still rendered infra-failed eval cases as scored
+
+1.48.0 fixed the backend so an infrastructure-failed case (provider 500, timeout,
+auth) is classified `errored` — its own outcome, excluded from pass/fail — because
+such a case carries an empty `per_scorer` by design and `all()` over an empty set
+is vacuously true, so an outage used to read as a perfect run. The API has returned
+`error` and accepted `?outcome=errored` since then, but the React bundle never
+learned about the third value: the outcome filter was typed `"passed" | "failed"`,
+so an errored case showed a row of em-dashes with nothing saying why, and there was
+no way to filter to them.
+
+The Local UI now:
+
+- renders an **`errored` chip** on those rows with the failure reason inline —
+  deliberately **neutral, not red**, since an infra failure is not an agent-quality
+  miss and colouring it destructive would read as one;
+- offers **"Errored only"** in the outcome filter (the API already supported it);
+- shows an **"N errored"** count beside the case total, so a run whose scorer tiles
+  cover fewer cases than the case count explains itself instead of just not adding up.
+
+`evalCaseOutcome()` in `lib/types.ts` now mirrors the backend's `_case_outcome`, with
+a vitest suite pinning the empty-`per_scorer` case that caused the original defect.
+
+UI-only: no Python API, schema, or wire-format change. Ships in the wheel, hence a
+release rather than a docs update.
+
 ## [1.49.0] - 2026-08-23
 
 ### Added — Agent-CI verdicts reach the control plane (Part D)
