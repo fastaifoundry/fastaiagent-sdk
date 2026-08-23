@@ -39,6 +39,19 @@ agent_app = typer.Typer(
     no_args_is_help=True,
 )
 
+# ``0.0.0.0`` / ``::`` are wildcard binds — *not* loopback. Kept local (rather
+# than imported from ``cli.ui``) for the same reason ``_resolve_target`` is
+# duplicated: the two subcommand groups stay import-independent.
+_LOOPBACK_HOSTS: frozenset[str] = frozenset({"127.0.0.1", "::1", "localhost"})
+
+# Reject request bodies larger than this by default (security_audit_2 N1 —
+# ``/run`` had no size cap, so any peer could exhaust the worker's memory).
+_DEFAULT_MAX_BODY_BYTES: int = 10 * 1024 * 1024  # 10 MiB
+
+
+def _is_loopback_host(host: str) -> bool:
+    return host.lower() in _LOOPBACK_HOSTS
+
 
 def _resolve_target(spec: str) -> Any:
     """Resolve ``path/to/file.py:attr`` or ``pkg.module:attr`` into a live object.
@@ -68,13 +81,26 @@ def _resolve_target(spec: str) -> Any:
     return getattr(module, attr)
 
 
-def _build_app(target: Any) -> Any:
-    """Build a FastAPI app that exposes ``target`` over the uniform contract."""
+def _build_app(
+    target: Any,
+    *,
+    auth_token: str | None = None,
+    max_body_bytes: int = _DEFAULT_MAX_BODY_BYTES,
+) -> Any:
+    """Build a FastAPI app that exposes ``target`` over the uniform contract.
+
+    ``auth_token`` (opt-in) requires ``Authorization: Bearer <token>`` on the
+    execution routes — ``/health`` stays open for liveness probes. When it is
+    ``None`` the routes are unauthenticated, exactly as before, so containerised
+    deployments behind a gateway are unaffected. ``max_body_bytes`` caps the
+    request size (best-effort, via ``Content-Length``).
+    """
     try:
+        import hmac
         import json
 
-        from fastapi import FastAPI, HTTPException
-        from fastapi.responses import StreamingResponse
+        from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
+        from fastapi.responses import JSONResponse, StreamingResponse
     except ImportError as err:  # pragma: no cover
         raise ImportError(
             "`fastaiagent agent serve` requires fastapi and uvicorn. "
@@ -90,13 +116,41 @@ def _build_app(target: Any) -> Any:
             f"Target must be Agent or Chain, got {type(target).__name__}"
         )
 
+    async def require_token(
+        authorization: str | None = Header(default=None),
+    ) -> None:
+        """Constant-time bearer check. No-op when ``auth_token`` is unset."""
+        if auth_token is None:
+            return
+        expected = f"Bearer {auth_token}"
+        if not hmac.compare_digest(authorization or "", expected):
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED,
+                "Missing or invalid bearer token.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
     app = FastAPI(title=f"fastaiagent {target.name}")
+
+    @app.middleware("http")
+    async def _limit_body(request: Request, call_next: Any) -> Any:
+        content_length = request.headers.get("content-length")
+        if content_length is not None:
+            try:
+                if int(content_length) > max_body_bytes:
+                    return JSONResponse(
+                        {"detail": f"Request body exceeds {max_body_bytes} bytes."},
+                        status_code=413,
+                    )
+            except ValueError:
+                pass
+        return await call_next(request)
 
     @app.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    @app.post("/run", response_model=RunResponse)
+    @app.post("/run", response_model=RunResponse, dependencies=[Depends(require_token)])
     async def run(req: RunRequest) -> RunResponse:
         if not req.input.strip():
             raise HTTPException(400, "input must be non-empty")
@@ -117,7 +171,7 @@ def _build_app(target: Any) -> Any:
         )
         return RunResponse(output=chain_output)
 
-    @app.post("/run/stream")
+    @app.post("/run/stream", dependencies=[Depends(require_token)])
     async def run_stream(req: RunRequest) -> StreamingResponse:
         if not req.input.strip():
             raise HTTPException(400, "input must be non-empty")
@@ -142,14 +196,63 @@ def _build_app(target: Any) -> Any:
     return app
 
 
+def _warn_on_exposure(host: str, auth_token: str | None) -> None:
+    """Warn (once, at startup) when the service is reachable off-box.
+
+    ``serve`` is a deployment primitive — unlike the single-user local UI it
+    intentionally keeps the ``0.0.0.0`` default so container port-mapping works.
+    The trade-off is that a wildcard bind with no auth exposes agent execution
+    to the whole network, so we make that state loud rather than silent
+    (security_audit_2 N1). Loopback binds stay quiet.
+    """
+    if _is_loopback_host(host):
+        return
+    if auth_token is None:
+        typer.secho(
+            f"\n⚠️  SECURITY: serving on a non-loopback address ({host!r}) with "
+            "NO authentication.\n"
+            "   POST /run and /run/stream execute this agent — its tools and LLM "
+            "calls — for anyone\n   who can reach the port. Set --auth-token (or "
+            "FASTAIAGENT_SERVE_TOKEN) and terminate TLS\n   at a reverse proxy, or "
+            "bind --host 127.0.0.1 if remote access isn't needed.\n",
+            fg=typer.colors.RED,
+            bold=True,
+            err=True,
+        )
+    else:
+        typer.secho(
+            f"\n⚠️  Serving on {host!r}. Bearer auth is enabled — make sure TLS is "
+            "terminated by a reverse\n   proxy so the token isn't sent in plaintext.\n",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+
+
 @agent_app.command("serve")
 def serve(
     target: str = typer.Argument(
         ...,
         help="path/to/file.py:my_agent or pkg.module:my_agent (must resolve to Agent or Chain).",
     ),
-    host: str = typer.Option("0.0.0.0", "--host"),
+    host: str = typer.Option(
+        "0.0.0.0",
+        "--host",
+        help="Interface to bind. Defaults to 0.0.0.0 so the service is reachable "
+        "from outside a container; pair a non-loopback bind with --auth-token.",
+    ),
     port: int = typer.Option(8000, "--port"),
+    auth_token: str | None = typer.Option(
+        None,
+        "--auth-token",
+        envvar="FASTAIAGENT_SERVE_TOKEN",
+        help="Require 'Authorization: Bearer <token>' on /run and /run/stream. "
+        "Strongly recommended for any non-loopback bind.",
+    ),
+    max_body_bytes: int = typer.Option(
+        _DEFAULT_MAX_BODY_BYTES,
+        "--max-body-bytes",
+        help="Reject request bodies larger than this many bytes.",
+    ),
     reload: bool = typer.Option(False, "--reload", help="Auto-reload on code changes."),
 ) -> None:
     """Run an Agent or Chain as a FastAPI service on the uniform contract:
@@ -157,6 +260,8 @@ def serve(
     - ``GET  /health``
     - ``POST /run``         body: {"input": "..."}
     - ``POST /run/stream``  body: {"input": "..."}  returns SSE
+
+    The execution routes are unauthenticated unless ``--auth-token`` is set.
     """
     try:
         import uvicorn
@@ -167,5 +272,6 @@ def serve(
         ) from err
 
     resolved = _resolve_target(target)
-    app = _build_app(resolved)
+    app = _build_app(resolved, auth_token=auth_token, max_body_bytes=max_body_bytes)
+    _warn_on_exposure(host, auth_token)
     uvicorn.run(app, host=host, port=port, reload=reload)

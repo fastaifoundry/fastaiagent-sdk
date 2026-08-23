@@ -2,14 +2,38 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from typing import TYPE_CHECKING, Any
+
+import regex as _regex
 
 from fastaiagent.guardrail.guardrail import GuardrailResult, GuardrailType
 
 if TYPE_CHECKING:
     from fastaiagent.guardrail.guardrail import Guardrail
+
+# security_audit_2 N13 — bound regex evaluation so a catastrophic-backtracking
+# (ReDoS) pattern can't hang an agent run. We use the ``regex`` module rather
+# than stdlib ``re`` because ``re`` matching can neither be interrupted nor
+# time-limited (it holds the GIL and freezes the whole process on a ReDoS
+# input), whereas ``regex`` releases the GIL and honors a hard ``timeout=``.
+# Legitimate patterns finish in microseconds, so the default is generous.
+# ``timeout_seconds`` in the guardrail config may adjust it, but is clamped so a
+# plane-supplied config can't disable the protection by setting a huge value.
+_REGEX_TIMEOUT_DEFAULT_SECONDS = 2.0
+_REGEX_TIMEOUT_MIN_SECONDS = 0.1
+_REGEX_TIMEOUT_MAX_SECONDS = 10.0
+
+
+def _resolve_regex_timeout(config: dict[str, Any]) -> float:
+    raw = config.get("timeout_seconds", _REGEX_TIMEOUT_DEFAULT_SECONDS)
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return _REGEX_TIMEOUT_DEFAULT_SECONDS
+    return max(_REGEX_TIMEOUT_MIN_SECONDS, min(value, _REGEX_TIMEOUT_MAX_SECONDS))
 
 
 async def run_guardrail(guardrail: Guardrail, data: str | dict[str, Any]) -> GuardrailResult:
@@ -176,23 +200,40 @@ async def _run_regex(guardrail: Guardrail, data: str | dict[str, Any]) -> Guardr
 
     text = data if isinstance(data, str) else json.dumps(data)
 
+    flags = 0
+    if guardrail.config.get("case_insensitive", False):
+        flags |= _regex.IGNORECASE
+
+    # N13: match with the ``regex`` engine under a hard ``timeout=``. ``regex``
+    # releases the GIL during matching, so we run it on a worker thread to keep
+    # the event loop responsive; its own timeout terminates a runaway match (the
+    # thread returns cleanly — no orphan) and we fail closed. A ReDoS becomes a
+    # bounded FAIL instead of a process-wide freeze.
+    timeout = _resolve_regex_timeout(guardrail.config)
     try:
-        flags = 0
-        if guardrail.config.get("case_insensitive", False):
-            flags |= re.IGNORECASE
-
-        match = re.search(pattern, text, flags)
-        if should_match:
-            passed = match is not None
-        else:
-            passed = match is None
-
-        return GuardrailResult(
-            passed=passed,
-            message=f"Pattern {'matched' if match else 'not matched'}: {pattern}",
+        match = await asyncio.to_thread(
+            _regex.search, pattern, text, flags, timeout=timeout
         )
-    except re.error as e:
+    except TimeoutError:
+        return GuardrailResult(
+            passed=False,
+            message=(
+                f"Regex evaluation exceeded {timeout}s and was aborted "
+                f"(possible ReDoS in pattern {pattern!r})."
+            ),
+        )
+    except _regex.error as e:
         return GuardrailResult(passed=False, message=f"Invalid regex: {e}")
+
+    if should_match:
+        passed = match is not None
+    else:
+        passed = match is None
+
+    return GuardrailResult(
+        passed=passed,
+        message=f"Pattern {'matched' if match else 'not matched'}: {pattern}",
+    )
 
 
 async def _run_schema(guardrail: Guardrail, data: str | dict[str, Any]) -> GuardrailResult:

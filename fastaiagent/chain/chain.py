@@ -228,6 +228,9 @@ class Chain:
                 span.set_attribute("chain.node_ids", ",".join(n.id for n in self.nodes))
                 span.set_attribute("fastaiagent.runner.type", "chain")
                 span.set_attribute("fastaiagent.framework", "fastaiagent")
+                # Captured locally unconditionally so the UI/Replay have full
+                # fidelity; payload privacy is enforced at export (N3 egress
+                # model), not here.
                 if initial_state:
                     import json
 

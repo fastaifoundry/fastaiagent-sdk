@@ -198,6 +198,24 @@ Exposes:
 - `POST /run`         — `{"input": "..."}` → `{"output", "latency_ms", "tokens_used", "trace_id"}`
 - `POST /run/stream`  — Server-Sent Events (Agent targets only)
 
+### Security
+
+`/run` and `/run/stream` execute your agent — including its tools and LLM calls — so treat the port as sensitive.
+
+- **Default bind is `0.0.0.0`** so the service is reachable when running inside a container (binding `127.0.0.1` would make it unreachable through Docker/Kubernetes port mapping). Pass `--host 127.0.0.1` for a purely local service.
+- **The execution routes are unauthenticated by default.** Enable a bearer token with `--auth-token <token>` (or the `FASTAIAGENT_SERVE_TOKEN` env var); callers then send `Authorization: Bearer <token>`. `GET /health` stays open for liveness probes.
+- When bound to a non-loopback address **without** a token, the command prints a startup warning. For any network-exposed deployment, set a token and terminate TLS at a reverse proxy so the token isn't sent in plaintext.
+- `--max-body-bytes` caps request size (default 10 MiB).
+
+```bash
+# Authenticated, container-friendly:
+FASTAIAGENT_SERVE_TOKEN=$(openssl rand -hex 32) \
+  fastaiagent agent serve mypkg.agents:research_bot --port 9000
+
+# Local-only, no auth needed:
+fastaiagent agent serve examples/01_simple_agent.py:agent --host 127.0.0.1
+```
+
 If you need custom routes / auth / middleware, copy [`examples/33_deploy_fastapi.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/33_deploy_fastapi.py) and extend it directly instead.
 
 Requires: `pip install fastapi 'uvicorn[standard]'` (or `fastaiagent[all]`).

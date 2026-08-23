@@ -41,16 +41,16 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from fastaiagent.ui.deps import get_context, require_session
-from fastaiagent.ui.throttle import get_llm_rate_limiter
+from fastaiagent.ui.throttle import client_throttle_ip, get_llm_rate_limiter
 
 
 def _llm_rate_key(request: Request, user: str) -> str:
-    """Per-(IP, user) bucket for the LLM rate limiter (M5)."""
-    fwd = request.headers.get("x-forwarded-for", "")
-    ip = fwd.split(",")[0].strip() if fwd else (
-        request.client.host if request.client else "unknown"
-    )
-    return f"{ip}|{user}"
+    """Per-(IP, user) bucket for the LLM rate limiter (M5).
+
+    IP resolution goes through :func:`client_throttle_ip` so a spoofed
+    ``X-Forwarded-For`` can't reset the budget (N12).
+    """
+    return f"{client_throttle_ip(request)}|{user}"
 
 
 def _enforce_llm_rate_limit(request: Request, user: str) -> None:

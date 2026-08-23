@@ -43,9 +43,17 @@ from typing import Any, Literal
 RedactionMode = Literal["off", "capture", "read", "both"]
 
 # Span attribute keys whose values may contain sensitive payload content.
-# Redaction walks these keys' string values; everything else passes through.
-# Kept here (not in ``span.py``) so adding a new redactable attribute is a
-# one-line change to one module.
+#
+# This is the AUTHORITATIVE payload registry. It drives two things:
+#   1. Redaction — masks these keys' string values (capture/read/export).
+#   2. Export payload gate — ``apply_export_policy`` drops these keys entirely
+#      when ``FASTAIAGENT_TRACE_PAYLOADS=0`` (egress-gated model, N3).
+# Local capture is always full fidelity, so any attribute holding free-text /
+# user / model content MUST be listed here or it will egress even when the
+# operator opted out. Structural metadata (counts, latencies, ids, types,
+# model/provider names, tool schemas) is deliberately absent so it always flows.
+# Adding a new payload attribute anywhere in the codebase is a one-line change
+# here — keep this in sync.
 SENSITIVE_ATTR_KEYS: frozenset[str] = frozenset(
     {
         # GenAI semantic-convention payloads (see ``fastaiagent.trace.span``).
@@ -53,9 +61,10 @@ SENSITIVE_ATTR_KEYS: frozenset[str] = frozenset(
         "gen_ai.request.tools",
         "gen_ai.response.content",
         "gen_ai.response.tool_calls",
-        # Agent inputs/outputs captured by ``Agent._arun_traced``.
+        # Agent inputs/outputs/system prompt captured by ``Agent._arun_traced``.
         "agent.input",
         "agent.output",
+        "agent.system_prompt",
         "fastaiagent.agent.input",
         "fastaiagent.agent.output",
         # Tool invocation payloads.
@@ -66,6 +75,12 @@ SENSITIVE_ATTR_KEYS: frozenset[str] = frozenset(
         # Chain payloads — ``Chain.aexecute`` writes JSON-serialized state.
         "chain.input",
         "chain.output",
+        # Retrieval / KB payloads — the query and returned document content can
+        # both carry user data and proprietary corpus text. Set by
+        # ``fastaiagent.kb._tracing`` and the LangChain retriever integration.
+        "retrieval.query",
+        "retrieval.doc_ids",
+        "retrieval.documents",
         # Research template free-form payloads.
         "fastaiagent.research.brief",
         "fastaiagent.research.findings",
@@ -75,6 +90,17 @@ SENSITIVE_ATTR_KEYS: frozenset[str] = frozenset(
         "memory.query",
         "memory.snippets",
         "memory.detail",
+        # Framework-integration payloads (crewai / pydantic-ai). Structural
+        # fields (names, roles, models, process, counts) are intentionally
+        # excluded; only free-text content is listed.
+        "crewai.agent.backstory",
+        "crewai.agent.goal",
+        "crewai.agent.output",
+        "crewai.crew.inputs",
+        "crewai.crew.output",
+        "crewai.task.description",
+        "crewai.task.output",
+        "pydanticai.agent.system_prompt",
     }
 )
 
@@ -216,3 +242,37 @@ def _read_redact(attrs: dict[str, Any]) -> dict[str, Any]:
     if policy is None or policy.mode not in ("read", "both"):
         return attrs
     return redact_attributes(attrs, policy)
+
+
+def apply_export_policy(attrs: dict[str, Any]) -> dict[str, Any]:
+    """Transform span attributes for EGRESS (control plane + OTel exporters).
+
+    The single "on the way out" filter for the egress-gated privacy model
+    (security_audit_2 N3 + N4). Local capture is always full fidelity; this is
+    where content is held back from leaving the machine:
+
+    1. **Payload gate** — when ``export_payloads_enabled()`` is False
+       (``FASTAIAGENT_TRACE_PAYLOADS=0``), the payload-bearing keys
+       (:data:`SENSITIVE_ATTR_KEYS`) are dropped entirely.
+    2. **Redaction** — a capture/both-mode :class:`RedactionPolicy`, if
+       installed, masks whatever payloads remain. This is what makes redaction
+       reach third-party exporters (N4), not just ``local.db``.
+
+    Returns a new dict; ``attrs`` is never mutated. Zero-copy fast path when
+    payloads are exported and no policy is installed.
+    """
+    from fastaiagent.trace.span import export_payloads_enabled
+
+    payloads_ok = export_payloads_enabled()
+    policy = get_redaction_policy()
+    redacting = policy is not None and policy.mode in ("capture", "both")
+    if payloads_ok and not redacting:
+        return attrs
+
+    out = dict(attrs)
+    if not payloads_ok:
+        for key in SENSITIVE_ATTR_KEYS:
+            out.pop(key, None)
+    if redacting:
+        out = redact_attributes(out, policy)
+    return out

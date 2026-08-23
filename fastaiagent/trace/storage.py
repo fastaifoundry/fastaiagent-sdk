@@ -153,9 +153,16 @@ class LocalStorageProcessor:
 
         If an opt-in :class:`RedactionPolicy` is installed (via
         ``set_redaction_policy``) with ``mode in {"capture", "both"}``,
-        sensitive attribute values are masked here — *before* the JSON
-        blob hits SQLite *and* before any downstream OTel exporter
-        attached via :func:`add_exporter` sees the span.
+        sensitive attribute values are masked here before the JSON blob hits
+        SQLite.
+
+        Note: this masks the *local* copy only. Redaction for spans that leave
+        the machine is applied independently at the egress boundary — the
+        control-plane exporter and :func:`fastaiagent.trace.otel.add_exporter`
+        both run :func:`fastaiagent.trace.redaction.apply_export_policy`
+        (security_audit_2 N4). That is also where the payload gate
+        (``FASTAIAGENT_TRACE_PAYLOADS=0``) drops payloads from export while
+        local.db keeps full fidelity.
         """
         ctx = span.get_span_context()
         trace_id = format(ctx.trace_id, "032x")

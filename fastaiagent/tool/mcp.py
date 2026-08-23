@@ -56,8 +56,6 @@ class MCPTool(Tool):
         self, method: str, params: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         """Send a JSON-RPC 2.0 request to the MCP server."""
-        import httpx
-
         headers: dict[str, str] = {"Content-Type": "application/json"}
         if self.auth_token:
             headers["Authorization"] = f"Bearer {self.auth_token}"
@@ -69,10 +67,26 @@ class MCPTool(Tool):
             "params": params or {},
         }
 
-        async with httpx.AsyncClient(timeout=30, verify=True) as client:
-            resp = await client.post(self.server_url, json=payload, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
+        # security_audit_2 N15: route through the SSRF-hardened helper instead of
+        # a raw client. ``server_url`` can be attacker-influenced via
+        # deserialization / trace replay / runner payloads, so this blocks
+        # cloud-metadata (169.254.169.254) and RFC1918 pivots. ``allow_loopback``
+        # keeps the common local-MCP dev workflow (``http://localhost:3000``)
+        # working by default; set FASTAIAGENT_ALLOW_PRIVATE_NETWORKS=1 for other
+        # intranet MCP hosts.
+        from fastaiagent.multimodal._http import asafe_http_request
+
+        resp = await asafe_http_request(
+            self.server_url,
+            method="POST",
+            json=payload,
+            headers=headers,
+            timeout=30,
+            max_redirects=3,
+            max_bytes=25 * 1024 * 1024,
+            allow_loopback=True,
+        )
+        data = resp.json()
 
         if "error" in data:
             raise ToolExecutionError(f"MCP error: {data['error'].get('message', 'Unknown')}")

@@ -263,6 +263,46 @@ class TestSQLiteHelper:
         # Parent dir: owner-only (0o700).
         assert (db_path.parent.stat().st_mode & 0o777) == 0o700
 
+    @pytest.mark.skipif(
+        os.name == "nt", reason="POSIX file modes do not apply on Windows"
+    )
+    def test_preexisting_loose_perms_tightened_on_open(self, temp_dir):
+        """security_audit_2 N10 — a pre-existing world-readable DB/dir is
+        tightened on open (not just at creation), removing only group/other
+        access and never touching owner bits."""
+        root = temp_dir / "old-install" / ".fastaiagent"
+        db_path = root / "local.db"
+        root.mkdir(parents=True)
+        db_path.write_text("")
+        os.chmod(root, 0o755)
+        os.chmod(db_path, 0o644)
+
+        with SQLiteHelper(db_path) as db:
+            db.execute("CREATE TABLE t (id TEXT)")  # forces a connection open
+
+        assert (db_path.stat().st_mode & 0o777) == 0o600
+        assert (root.stat().st_mode & 0o777) == 0o700
+
+    @pytest.mark.skipif(
+        os.name == "nt", reason="POSIX file modes do not apply on Windows"
+    )
+    def test_keep_perms_env_opts_out_of_tightening(self, temp_dir, monkeypatch):
+        """N10 — operators who deliberately share the DB can opt out."""
+        monkeypatch.setenv("FASTAIAGENT_DB_KEEP_PERMS", "1")
+        root = temp_dir / "shared" / ".fastaiagent"
+        db_path = root / "local.db"
+        root.mkdir(parents=True)
+        db_path.write_text("")
+        os.chmod(root, 0o750)
+        os.chmod(db_path, 0o640)
+
+        with SQLiteHelper(db_path) as db:
+            db.execute("CREATE TABLE t (id TEXT)")
+
+        # Perms preserved exactly.
+        assert (db_path.stat().st_mode & 0o777) == 0o640
+        assert (root.stat().st_mode & 0o777) == 0o750
+
     def test_m7_per_thread_connections_isolated(self, temp_dir):
         """M7 — each thread gets its own ``sqlite3.Connection``.
 
@@ -330,16 +370,29 @@ class TestSQLiteHelper:
     @pytest.mark.skipif(
         os.name == "nt", reason="POSIX file modes do not apply on Windows"
     )
-    def test_chmod_does_not_downgrade_existing_files(self, temp_dir):
-        """If a user pre-created the parent dir with their own perms, we
-        must not silently rewrite them.
+    def test_chmod_only_tightens_never_loosens(self, temp_dir):
+        """security_audit_2 N10 — perms are only ever tightened, never loosened.
+
+        Supersedes the old "never rewrite user perms" behavior: a pre-existing
+        group/world-accessible dir is now pulled in to owner-only on open (the
+        fix), while a dir that is already owner-only (or stricter) is left
+        untouched (owner bits are never stripped). Operators who deliberately
+        share can opt out via FASTAIAGENT_DB_KEEP_PERMS (covered separately).
         """
-        existing_parent = temp_dir / "user-managed"
-        existing_parent.mkdir(mode=0o755)
-        db_path = existing_parent / "test.db"
-        # Open helper but only the file is new; the parent already existed.
+        # Already owner-only → untouched (we never loosen or rewrite).
+        strict_parent = temp_dir / "strict"
+        strict_parent.mkdir()
+        os.chmod(strict_parent, 0o700)
+        with SQLiteHelper(strict_parent / "a.db") as db:
+            db.execute("CREATE TABLE t (id TEXT)")
+        assert (strict_parent.stat().st_mode & 0o777) == 0o700
+
+        # Group/world-accessible → tightened to owner-only (the N10 fix).
+        loose_parent = temp_dir / "loose"
+        loose_parent.mkdir()
+        os.chmod(loose_parent, 0o755)
+        db_path = loose_parent / "b.db"
         with SQLiteHelper(db_path) as db:
             db.execute("CREATE TABLE t (id TEXT)")
-        # New file gets tightened, existing parent stays as the user wrote it.
         assert (db_path.stat().st_mode & 0o777) == 0o600
-        assert (existing_parent.stat().st_mode & 0o777) == 0o755
+        assert (loose_parent.stat().st_mode & 0o777) == 0o700

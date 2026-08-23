@@ -140,9 +140,12 @@ class TestLocalKBRetrievalSpan:
 
 
 class TestPayloadGating:
-    def test_payload_disabled_strips_query_and_doc_ids(
+    def test_payload_disabled_keeps_local_but_strips_on_export(
         self, monkeypatch, tmp_path, _isolated_db
     ):
+        # Egress-gated model (security_audit_2 N3): FASTAIAGENT_TRACE_PAYLOADS=0
+        # no longer suppresses *capture* — local.db stays full fidelity so the
+        # UI/Replay work — it strips payloads only when spans LEAVE the machine.
         monkeypatch.setenv("FASTAIAGENT_TRACE_PAYLOADS", "0")
 
         from fastaiagent.kb.local import LocalKB
@@ -174,11 +177,19 @@ class TestPayloadGating:
         rows = _read_spans(_isolated_db)
         span = [r for r in rows if r["name"].startswith("retrieval.")][0]
         attrs = _attrs(span)
-        assert "retrieval.query" not in attrs
-        assert "retrieval.doc_ids" not in attrs
-        # Structural attrs still captured.
+        # LOCAL: query + doc_ids retained (full fidelity for the local UI).
+        assert attrs["retrieval.query"] == "secret query"
+        assert "retrieval.doc_ids" in attrs
         assert attrs["retrieval.result_count"] == 1
         assert attrs["retrieval.top_k"] == 1
+
+        # EXPORT: the same attributes are stripped on the way out.
+        from fastaiagent.trace.redaction import apply_export_policy
+
+        exported = apply_export_policy(attrs)
+        assert "retrieval.query" not in exported
+        assert "retrieval.doc_ids" not in exported
+        assert exported["retrieval.result_count"] == 1  # structural survives
 
 
 class TestRetrievalKbIdEmission:
@@ -215,13 +226,20 @@ class TestRetrievalKbIdEmission:
         assert "retrieval.kb_id" not in self._span_attrs(_isolated_db)
 
     def test_kb_id_is_ungated_by_payloads(self, monkeypatch, tmp_path, _isolated_db):
-        # kb_id is a routing/index key, not payload: it survives payloads OFF,
-        # while retrieval.query (payload) is stripped.
+        # kb_id is a routing/index key, not payload. Under the egress model
+        # (N3) both it and the query are captured locally even with payloads
+        # OFF; the query is a payload so it is stripped only at export.
         monkeypatch.setenv("FASTAIAGENT_TRACE_PAYLOADS", "0")
         self._emit("kb_xyz")
         attrs = self._span_attrs(_isolated_db)
         assert attrs["retrieval.kb_id"] == "kb_xyz"
-        assert "retrieval.query" not in attrs
+        assert attrs["retrieval.query"] == "some query"  # local: full fidelity
+
+        from fastaiagent.trace.redaction import apply_export_policy
+
+        exported = apply_export_policy(attrs)
+        assert exported["retrieval.kb_id"] == "kb_xyz"  # structural egresses
+        assert "retrieval.query" not in exported  # payload stripped on export
 
 
 class TestPlatformKBRetrievalKbId:

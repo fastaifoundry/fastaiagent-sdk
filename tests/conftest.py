@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -99,6 +100,16 @@ class CaptureServer:
             self._server.server_close()
         if self._thread is not None:
             self._thread.join(timeout=5)
+
+
+@pytest.fixture(autouse=True)
+def _allow_testserver_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Let the UI's N16 Host-allowlist accept Starlette's ``TestClient`` default
+    ``Host: testserver``. Real deployments never set this, so production stays
+    restricted to loopback hosts."""
+    existing = os.environ.get("FASTAIAGENT_UI_ALLOWED_HOSTS", "")
+    value = f"{existing},testserver" if existing else "testserver"
+    monkeypatch.setenv("FASTAIAGENT_UI_ALLOWED_HOSTS", value)
 
 
 @pytest.fixture

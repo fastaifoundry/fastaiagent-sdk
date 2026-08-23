@@ -28,6 +28,14 @@ weather_api = RESTTool(
 result = await weather_api.aexecute({"city": "Paris", "days": 3})
 ```
 
+!!! note "Header credentials stay local"
+    Header **values** (e.g. `X-API-Key`, `Authorization`) are used at request
+    time but are **redacted when the tool is serialized** — so they are not
+    written into traces or into the agent definition pushed to the control
+    plane. Requests also route through an SSRF-hardened client that blocks
+    private/metadata addresses and drops credential headers on a cross-origin
+    redirect. See [Security Posture](../security.md).
+
 > **Replay safety.** Pass `replay_class="read_only" | "idempotent" | "side_effecting"` to mark how [Agent Replay](../replay/index.md) treats this tool — default `side_effecting`. A `GET` is **not** auto-classified `read_only`; mark it explicitly. See [Replay safety](index.md#replay-safety-replay_class).
 
 ## Body Mapping Options

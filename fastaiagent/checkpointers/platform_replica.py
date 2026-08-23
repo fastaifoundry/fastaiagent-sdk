@@ -278,6 +278,12 @@ def _drain_guarded(cp: Any) -> None:
 
     if not _connection.is_connected:
         return
+    # security_audit_2 N7: honor the checkpoint-egress opt-out. Local durability
+    # (SQLite/Postgres) is untouched — only replication of state to the plane is
+    # suppressed. Single choke point for the write-kick, connect-drain, and
+    # disconnect-drain paths.
+    if not getattr(_connection, "export_checkpoints", True):
+        return
     if not (hasattr(cp, "fetch_unsynced") and hasattr(cp, "mark_synced")):
         return
     lock = _lock_for(cp)

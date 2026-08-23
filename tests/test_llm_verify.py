@@ -98,3 +98,24 @@ def test_explicit_param_overrides_with_false(monkeypatch) -> None:
         warnings.simplefilter("ignore")
         client = LLMClient(provider="openai", model="gpt-4o", api_key="k", verify=False)
     assert _ssl_context(client).verify_mode == ssl.CERT_NONE
+
+
+def test_explicit_true_not_downgraded_by_env(monkeypatch) -> None:
+    # security_audit_2 N14: an explicit verify=True must NOT be silently
+    # disabled by FASTAIAGENT_LLM_VERIFY=false. Explicit intent wins.
+    monkeypatch.setenv("FASTAIAGENT_LLM_VERIFY", "false")
+    client = LLMClient(provider="azure", model="m", api_key="k", verify=True)
+    assert _ssl_context(client).verify_mode == ssl.CERT_REQUIRED
+
+
+def test_verify_false_also_logs(monkeypatch, caplog) -> None:
+    # N14: the disabled state is logged (survives warnings-filter suppression),
+    # not only warned.
+    import logging
+
+    monkeypatch.delenv("FASTAIAGENT_LLM_VERIFY", raising=False)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        with caplog.at_level(logging.WARNING):
+            LLMClient(provider="azure", model="m", api_key="k", verify=False)
+    assert any("verification is disabled" in r.message for r in caplog.records)
