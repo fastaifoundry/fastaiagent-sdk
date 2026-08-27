@@ -39,21 +39,21 @@ function StatusIcon({ status }: { status: string }) {
   if (status === "completed")
     return (
       <CheckCircle2
-        className="h-4 w-4 text-emerald-600 dark:text-emerald-400"
+        className="h-4 w-4 text-fa-success"
         aria-label="completed"
       />
     );
   if (status === "interrupted")
     return (
       <PauseCircle
-        className="h-4 w-4 text-amber-600 dark:text-amber-400"
+        className="h-4 w-4 text-fa-warning"
         aria-label="interrupted"
       />
     );
   if (status === "failed")
     return (
       <XCircle
-        className="h-4 w-4 text-red-600 dark:text-red-400"
+        className="h-4 w-4 text-destructive"
         aria-label="failed"
       />
     );
@@ -70,11 +70,11 @@ function StatusIcon({ status }: { status: string }) {
 function StatusPill({ status }: { status: string }) {
   const tone =
     status === "completed"
-      ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+      ? "bg-fa-success/10 text-fa-success"
       : status === "interrupted"
-        ? "bg-amber-500/10 text-amber-700 dark:text-amber-300"
+        ? "bg-fa-warning/10 text-fa-warning"
         : status === "failed"
-          ? "bg-red-500/10 text-red-700 dark:text-red-300"
+          ? "bg-destructive/10 text-destructive"
           : "bg-muted text-muted-foreground";
   return (
     <span className={`rounded px-2 py-0.5 text-[10px] font-medium ${tone}`}>
@@ -172,7 +172,7 @@ export function CheckpointTimeline({ checkpoints }: Props) {
                     </span>
                   </button>
                   {cp.status === "interrupted" && cp.interrupt_reason ? (
-                    <div className="mt-1 ml-0 text-[11px] text-amber-700 dark:text-amber-300">
+                    <div className="mt-1 ml-0 text-[11px] text-fa-warning">
                       Interrupt:{" "}
                       <span className="font-mono">{cp.interrupt_reason}</span>
                       {ageText(cp.created_at)

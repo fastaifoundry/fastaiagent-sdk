@@ -28,6 +28,7 @@ import {
 } from "@/hooks/use-kb";
 import { formatTimeAgo } from "@/lib/format";
 import type { KbSearchHit } from "@/lib/types";
+import { Timestamp } from "@/components/shared/Timestamp";
 
 export function KbDetailPage() {
   const { name } = useParams<{ name: string }>();
@@ -362,7 +363,7 @@ function LineageTab({ name }: { name: string }) {
                     {t.name}
                   </Link>
                   <span className="shrink-0 text-muted-foreground">
-                    {formatTimeAgo(t.start_time)}
+                    <Timestamp iso={t.start_time} />
                   </span>
                 </li>
               ))}

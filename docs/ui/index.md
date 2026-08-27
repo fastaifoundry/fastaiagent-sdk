@@ -61,18 +61,51 @@ create new credentials.
 
 ---
 
+## Appearance
+
+The UI ships **two complete looks**, switched from the toggle in the top-right
+of the header. Both serve the same routes and the same data — the difference is
+navigation and styling only.
+
+| | **New** (default) | **Classic** |
+|---|---|---|
+| Navigation | 80px icon rail; hovering a pillar pops a flyout of its pages | Fixed 240px sidebar, always visible |
+| Pillars | Build · Evaluate · Observe · Govern | 7 flat `// SECTION` groups |
+| Palette | Indigo, calm slate surfaces | Indigo light / electric-cyan dark |
+| Type | IBM Plex Sans + IBM Plex Mono | DM Sans + JetBrains Mono |
+| Search | `⌘K` / `Ctrl-K` command palette | — |
+
+The New shell matches the FastAIAgent Enterprise console, so the two products
+read as one system. Classic is the original Local UI, kept as an escape hatch.
+
+Your choice persists in `localStorage` under `fastaiagent-ui-skin` and is
+applied before first paint, so there is no flash on reload. Theme (light / dark
+/ system) is an independent axis — every combination of skin and theme works.
+
+!!! note "Switching reloads the page"
+    Changing skin swaps the whole app shell, so the toggle persists the choice
+    and reloads. Nothing is lost — the UI reads from `local.db` on every view.
+
 ## Tour
 
 Screenshots below are captured from a real running instance against the
 seeded snapshot DB — they stay in sync with the code via
-`scripts/capture-ui-screenshots.sh`.
+`scripts/capture-ui-screenshots.sh`. They show the **New** shell.
 
 ### Home
 
-The overview lands you on "what happened since I last looked": traces in the
-last 24 hours, failing traces, eval runs in the last 7 days, and average
-pass rate. Two side-panels list the most recent traces and eval runs so you
-can jump straight in.
+Home leads with **what needs attention**, not with what exists. A ranked strip
+calls out failed or interrupted executions, failing traces (naming the agents
+behind them), runs blocked waiting on a human approval, and eval pass rates
+that have dropped below 70% — each one linking to the page that owns the fix.
+
+When nothing is wrong it collapses to a single line, so an all-clear takes one
+glance rather than six.
+
+Below that: the counts you'd expect (traces and failures in the last 24 hours,
+eval runs and average pass rate over 7 days, pending approvals, failed
+executions), the most recent traces and eval runs, plus the agents appearing in
+recent failures and any prompt versions committed in the last week.
 
 ![Home overview](screenshots/01-overview.png)
 
@@ -408,10 +441,28 @@ agent, and points you at the detail page.
 
 ### Analytics
 
-Latency percentiles (p50 / p95 / p99), cost over time, error rate, and
-trace volume charts across a configurable window (24h / 7d / 30d). Below,
-top-5 slowest agents and top-5 priciest agents — Langfuse-style signals
-that tell you where to invest performance or cost work.
+Headline numbers first — traces, success rate, errors and total cost — then
+latency **p50 / p95 / p99** on their own row. The p99 matters: a healthy median
+routinely hides a slow tail, and an average alone will not show it.
+
+Charts across a configurable window (24h / 7d / 30d):
+
+- **Latency percentiles** — p50 / p95 / p99 over time.
+- **Cost over time** — USD spend per bucket.
+- **Error rate** — share of traces ending in error.
+- **Volume by status** — traces per bucket with failures stacked on top, so a
+  bad period is visible at any height. (A single volume line can't distinguish
+  a healthy hour from a failing one.)
+- **Top models by cost** — direct-labelled, largest first.
+- **Token split** — prompt vs completion across all models.
+
+Below: top-5 slowest and top-5 priciest agents, and a per-model / per-agent /
+per-node cost breakdown.
+
+!!! note "Costs are estimates"
+    Cost figures are derived from recorded token counts and published API
+    pricing. Local models (e.g. Ollama) show `$0.00`, and actual billing may
+    differ under your provider agreement.
 
 ![Analytics](screenshots/13-analytics.png)
 
@@ -535,6 +586,12 @@ The frontend is a plain React 19 + Vite SPA built at release time and bundled
 into the wheel under `fastaiagent/ui/static/`. At runtime, FastAPI serves the
 bundle and an `/api/*` REST surface. **There is no WebSocket or live stream** —
 every page refreshes on user action via React Query.
+
+Both skins are one bundle, not two builds. Every colour, radius and font is a
+CSS custom property, so selecting Classic adds a single `skin-classic` class to
+`<html>` and the whole app restyles — no rebuild, no second stylesheet. Only the
+app shell (rail vs sidebar) is a separate React component. Fonts for both skins
+are self-hosted so the strict CSP needs no external font-CDN allowance.
 
 ## Privacy
 

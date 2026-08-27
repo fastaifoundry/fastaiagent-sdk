@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   formatCost,
+  formatDateTime,
+  formatDateTimeFull,
   formatDurationMs,
   formatTimeAgo,
   formatTokens,
@@ -96,6 +98,55 @@ describe("formatTimeAgo", () => {
   it("returns hours past when appropriate", () => {
     const iso = new Date(Date.now() - 3 * 60 * 60_000).toISOString();
     expect(formatTimeAgo(iso)).toBe("3h ago");
+  });
+});
+
+describe("formatDateTime", () => {
+  // Asserted against the parsed Date rather than a literal string: the output
+  // is locale- and timezone-dependent, and hardcoding "Aug 27, 21:44:53" would
+  // fail on any machine (or CI runner) outside the author's timezone.
+  const ISO = "2026-08-27T21:44:53+00:00";
+
+  it("renders in the viewer's local timezone, not UTC", () => {
+    const d = new Date(ISO);
+    const out = formatDateTime(ISO);
+    expect(out).toContain(String(d.getHours()).padStart(2, "0"));
+    expect(out).toContain(String(d.getDate()).padStart(2, "0"));
+  });
+
+  it("includes seconds — traces routinely fire within the same minute", () => {
+    expect(formatDateTime(ISO)).toContain("53");
+  });
+
+  it("uses 24-hour time so the column stays aligned", () => {
+    expect(formatDateTime(ISO)).not.toMatch(/[ap]\.?m\.?/i);
+  });
+
+  it("handles a missing timestamp", () => {
+    expect(formatDateTime(null)).toBe("—");
+    expect(formatDateTime(undefined)).toBe("—");
+    expect(formatDateTime("")).toBe("—");
+  });
+
+  it("passes an unparseable value through rather than showing 'Invalid Date'", () => {
+    expect(formatDateTime("not-a-date")).toBe("not-a-date");
+  });
+
+  it("distinguishes two traces one second apart", () => {
+    const a = formatDateTime("2026-08-27T21:44:53+00:00");
+    const b = formatDateTime("2026-08-27T21:44:54+00:00");
+    expect(a).not.toBe(b);
+  });
+});
+
+describe("formatDateTimeFull", () => {
+  it("includes the year, which the compact form omits", () => {
+    expect(formatDateTimeFull("2026-08-27T21:44:53+00:00")).toContain("2026");
+  });
+
+  it("handles missing and invalid values", () => {
+    expect(formatDateTimeFull(null)).toBe("—");
+    expect(formatDateTimeFull("nope")).toBe("nope");
   });
 });
 

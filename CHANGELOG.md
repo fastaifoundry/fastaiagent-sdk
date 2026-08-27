@@ -5,6 +5,123 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.52.0] - 2026-08-27 — Local UI reskin
+
+A **pure-UI** release. No API, route, data or behaviour changes — no Python source
+file is touched. The Local UI now matches the FastAIAgent Enterprise console, and
+the previous look ships alongside it as a one-click fallback.
+
+### Added
+
+- **New default UI shell.** An 80px icon rail replaces the fixed 240px sidebar;
+  hovering (or clicking) a pillar pops a flyout of its pages, so content gets the
+  full width. The seven flat `// SECTION` groups regroup into four lifecycle
+  pillars — **Build · Evaluate · Observe · Govern** — plus a pinned Home. All 14
+  destinations are preserved 1:1; a test asserts the new nav covers every route the
+  classic sidebar linked to, so regrouping cannot silently drop a page.
+- **Command palette.** `⌘K` / `Ctrl-K` jumps to any page, with arrow-key
+  selection. Navigation only — it adds no actions the UI did not already have.
+- **New / Classic toggle** in the header. The choice persists in `localStorage`
+  (`fastaiagent-ui-skin`) and is applied before first paint, so there is no flash.
+  Skin and theme (light / dark / system) are independent axes.
+- **"Trace Studio" palette**, matching Enterprise: indigo `#4747e0` light /
+  `#6366f1` dark, calmer surfaces, a 10px radius, and IBM Plex Sans + IBM Plex Mono.
+  Both skins' fonts are self-hosted, so the strict CSP still needs no font-CDN
+  allowance.
+- **Shared chart layer** (`components/charts/`) — one tooltip, one axis style, one
+  categorical ramp. Status colours are reserved and never reused as a data series.
+- **Home now leads with what needs attention.** A ranked strip states failed or
+  interrupted executions (critical), failing traces (naming the worst-offending
+  agents), runs blocked on approval, and eval pass rates below 70% — each linking to
+  the page that owns the fix. With nothing wrong it collapses to a single calm line
+  rather than a wall of green zeros. The ranking rules are a pure function with 12
+  unit tests; notably a 0% pass rate over *zero* runs is not flagged, since an idle
+  project is not a broken one.
+- **Analytics gained the numbers it was already computing** — latency **P99** and
+  **success rate** were returned by the API and rendered nowhere. P99 is the one that
+  catches a slow tail hiding behind a healthy median (on the dev dataset: P50 of 1ms
+  beside a P99 of 3.26s).
+- **Volume by status** replaces the plain trace-volume line — a flat total can be
+  100% healthy or 40% failing and look identical; failures now stack on top.
+- **Top models by cost** (direct-labelled bar chart) and a **prompt vs completion
+  token split**, both from the cost breakdown the page already fetched and showed
+  only as a table.
+- **Cost-estimate disclaimer** on Analytics — figures are derived from recorded
+  tokens and published pricing, and local models show $0.00.
+
+### Fixed
+
+- **An invisible line on the Analytics "Trace volume" chart.** It was drawn with
+  `var(--accent)`, which is a neutral surface colour in the new palette. Volume is
+  identity, so it now takes a categorical step.
+- **Glow effects no longer hardcode the old cyan.** The dark-mode focus ring,
+  execute-button and active-nav glows derived their colour from a literal
+  `hsl(190 95% 55%)`; they now follow `--ring`, so they track whichever skin is on.
+- **`localStorage` failures no longer leave the page unthemed.** The pre-paint
+  script threw in hardened/private browsing contexts, losing both theme and skin.
+  It now degrades to the system preference.
+- **Timestamps now say when something happened, not how long ago.** `Started`
+  columns, event times and version dates render an absolute, local,
+  second-precision timestamp (`Aug 27, 22:34:45`) instead of `6h ago`.
+
+  These surfaces are read while correlating a run against a log line, a deploy or
+  another run — and a relative label can't be matched against any of them. Worse,
+  several consecutive runs all rendered as "6h ago", destroying the ordering the
+  column exists to convey. Seconds are included because runs routinely fire within
+  the same minute.
+
+  Applied to: the trace list and trace summary bar, Eval Runs, Simulations, AutoLLM
+  (optimize) and Guardrail Events lists, the Datasets list (created / modified), the
+  eval-run, simulation and guardrail-event detail views, prompt version history, and
+  the trace/eval comparison pickers — where two candidate runs both reading "3h ago"
+  was precisely what made them impossible to tell apart.
+
+  The rule, encoded in the shared `<Timestamp>` component: **"when did this happen"
+  is absolute; "how stale is this" is relative.** So `last run`, `last used` and
+  `updated` on the agents, workflows, tools and knowledge-base views deliberately
+  keep the relative form, where recency is the actual question.
+
+  Nothing is lost — the relative reading, full date and timezone all move into the
+  tooltip. `formatTimeAgo` itself is unchanged; `formatDateTime` /
+  `formatDateTimeFull` are new alongside it, and their tests assert against the
+  parsed `Date` rather than literal strings, so they pass in any timezone (verified
+  under three).
+- **Prompt and Dataset rows are clickable across their whole width.** In both lists
+  the name link was the only way into the detail page, which is inconsistent with
+  traces, evals, guardrails, simulations and optimizes, where the whole row opens.
+
+  Each had its own tell that this was drift rather than design: the Prompts row
+  rendered a `cursor-pointer` with no click handler, so the pointer advertised a
+  target the row would not accept; the Datasets row's actions cell already called
+  `stopPropagation()` for a row handler that was never added, and the file's own
+  comment claimed "each row links to the detail page" while only one cell did.
+
+  In both, the name stays a real anchor, so keyboard focus, middle-click and
+  open-in-new-tab keep working, and the actions cells (export, delete) don't
+  trigger navigation.
+
+  Three other link-bearing rows were reviewed and deliberately left alone: eval-run
+  cases (the row's primary interaction is expand/collapse), memory facts (no detail
+  route — the link points at a source trace), and optimize iterations (only some
+  rows carry an eval link, so a row click would navigate inconsistently).
+
+### Changed
+
+- **Home surfaces two fields that were already on the wire and rendered nowhere:**
+  `agents_with_errors` (labelled as a sample of the 10 most recent errors, which is
+  what the API actually returns — not a total) and `prompt_changes_last_7d`.
+- Status and diff colours in the span-alignment table, checkpoint timeline and
+  state-diff views move from raw palette utilities (`emerald-600`, `amber-500`, …)
+  to semantic tokens (`fa-success`, `fa-warning`, `destructive`, `fa-info`), so
+  they follow the active skin instead of fighting it.
+- The wheel's static bundle grows ~460 KiB (IBM Plex, imported per subset — latin
+  and latin-ext only — rather than via the default entrypoints, which would have
+  pulled ~450 KiB of Cyrillic/Greek/Vietnamese the UI never renders).
+
+> **Note.** Classic preserves the original palette, fonts, radius and shell. It is
+> a look-and-navigation fallback, not a frozen pixel snapshot: page-level layout
+> improvements are shared by both skins.
+
 ## [1.51.0] - 2026-08-27 — Judge correctness (Evals Phase 0)
 
 The SDK half of the Evals Phase 0 correctness work. Two silent-corruption bugs in the

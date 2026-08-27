@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import { RegistryExternalBanner } from "@/components/prompts/RegistryGate";
 import { usePrompts } from "@/hooks/use-prompts";
 
 export function PromptsPage() {
+  const navigate = useNavigate();
   const prompts = usePrompts();
   const rows = prompts.data?.rows ?? [];
   const isLocal = prompts.data?.registry_is_local ?? true;
@@ -69,8 +70,19 @@ export function PromptsPage() {
             </TableHeader>
             <TableBody>
               {rows.map((row) => (
-                <TableRow key={row.name} className="cursor-pointer">
-                  <TableCell>
+                // The whole row is the click target, matching TracesTable and
+                // every other list here. It previously carried `cursor-pointer`
+                // with no handler, so the pointer promised a click the row did
+                // not accept — only the name did.
+                <TableRow
+                  key={row.name}
+                  className="cursor-pointer"
+                  onClick={() => navigate(`/prompts/${encodeURIComponent(row.name)}`)}
+                >
+                  {/* The name stays a real anchor so keyboard focus,
+                      middle-click and open-in-new-tab keep working; the cell
+                      stops propagation so the row handler doesn't double-fire. */}
+                  <TableCell onClick={(e) => e.stopPropagation()}>
                     <Link
                       to={`/prompts/${encodeURIComponent(row.name)}`}
                       className="font-medium hover:text-primary"

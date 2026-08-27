@@ -4,8 +4,9 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { TraceStatusBadge } from "./TraceStatusBadge";
 import { WorkflowBadge } from "./WorkflowBadge";
-import { copyToClipboard, formatCost, formatDurationMs, formatTimeAgo, formatTokens } from "@/lib/format";
+import { copyToClipboard, formatCost, formatDurationMs, formatTokens } from "@/lib/format";
 import type { TraceDetail } from "@/lib/types";
+import { Timestamp } from "@/components/shared/Timestamp";
 
 interface Props {
   trace: TraceDetail;
@@ -47,7 +48,7 @@ export function TraceSummaryBar({ trace, duration_ms }: Props) {
             </Button>
           </div>
           <span className="text-xs text-muted-foreground">
-            started {formatTimeAgo(trace.start_time)}
+            started <Timestamp iso={trace.start_time} />
           </span>
         </div>
         <TraceStatusBadge status={trace.status} />

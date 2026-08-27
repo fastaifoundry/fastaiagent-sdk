@@ -7,8 +7,9 @@ import { TableSkeleton } from "@/components/shared/LoadingSkeleton";
 import { SpanAlignmentTable } from "@/components/traces/SpanAlignmentTable";
 import { TraceCompareSummary } from "@/components/traces/TraceCompareSummary";
 import { useCompareTraces } from "@/hooks/use-traces";
-import { formatTimeAgo, shortTraceId } from "@/lib/format";
+import { shortTraceId } from "@/lib/format";
 import type { CompareTraceHalf } from "@/lib/types";
+import { Timestamp } from "@/components/shared/Timestamp";
 
 function timeApartLabel(seconds: number | null): string {
   if (seconds == null) return "";
@@ -38,7 +39,7 @@ function HalfLabel({
         {half.name || shortTraceId(half.trace_id)}
       </Link>
       <div className="text-[11px] font-mono text-muted-foreground">
-        {shortTraceId(half.trace_id)} · {formatTimeAgo(half.start_time)}
+        {shortTraceId(half.trace_id)} · <Timestamp iso={half.start_time} />
         {half.agent_name ? ` · ${half.agent_name}` : ""}
       </div>
     </div>

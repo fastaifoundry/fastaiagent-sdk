@@ -19,7 +19,7 @@ export function EmptyState({
   action,
 }: EmptyStateProps) {
   return (
-    <div className="rounded-lg border border-dashed p-12 text-center">
+    <div className="rounded-xl border border-border bg-card p-12 text-center">
       {Icon && (
         <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
           <Icon className="h-6 w-6 text-muted-foreground" />

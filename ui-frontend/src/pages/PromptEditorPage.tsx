@@ -29,7 +29,7 @@ import {
 } from "@/hooks/use-prompts";
 import { ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { formatTimeAgo } from "@/lib/format";
+import { Timestamp } from "@/components/shared/Timestamp";
 
 function extractVars(template: string): string[] {
   const matches = template.matchAll(/\{\{(\w+)\}\}/g);
@@ -251,7 +251,7 @@ export function PromptEditorPage() {
                       >
                         <span className="font-mono">v{v.version}</span>
                         <span className="text-xs text-muted-foreground">
-                          {formatTimeAgo(v.created_at)} · {v.created_by ?? "unknown"}
+                          <Timestamp iso={v.created_at} /> · {v.created_by ?? "unknown"}
                         </span>
                       </button>
                     </li>

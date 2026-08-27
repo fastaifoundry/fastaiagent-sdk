@@ -34,13 +34,13 @@ const MATCH_LABELS: Record<CompareMatchKind, string> = {
 };
 
 const MATCH_STYLES: Record<CompareMatchKind, string> = {
-  same: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
-  faster: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
-  slower: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
+  same: "bg-fa-success/10 text-fa-success border-fa-success/20",
+  faster: "bg-fa-success/10 text-fa-success border-fa-success/20",
+  slower: "bg-fa-warning/10 text-fa-warning border-fa-warning/20",
   different_output:
-    "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
-  new_in_a: "bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/20",
-  new_in_b: "bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/20",
+    "bg-fa-warning/10 text-fa-warning border-fa-warning/20",
+  new_in_a: "bg-fa-info/10 text-fa-info border-fa-info/20",
+  new_in_b: "bg-fa-info/10 text-fa-info border-fa-info/20",
 };
 
 function MatchBadge({ kind }: { kind: CompareMatchKind }) {

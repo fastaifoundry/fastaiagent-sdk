@@ -45,10 +45,18 @@ test("sprint2-1 — playground empty state", async ({ page }) => {
   await expect(page.getByText("// RESPONSE", { exact: true })).toBeVisible();
   await expect(page.getByText("// HISTORY", { exact: true })).toBeVisible();
 
-  // Sidebar shows the new Playground item under PROMPT REGISTRY.
+  // Nav offers Playground. In the default (new) shell it lives inside the
+  // Build pillar's flyout, which only mounts once the rail button is opened;
+  // in the classic shell it sits in the always-visible sidebar. Opening the
+  // pillar first works for both, since the classic sidebar has no "Build".
+  const buildPillar = page.getByTitle("Build");
+  const hasFlyout = (await buildPillar.count()) > 0;
+  if (hasFlyout) await buildPillar.click();
   await expect(
     page.getByRole("link", { name: /^Playground$/i }).first()
   ).toBeVisible();
+  // Close it again so it doesn't overlay the screenshot below.
+  if (hasFlyout) await buildPillar.click();
 
   await page.waitForTimeout(300);
   await page.screenshot(SHOT("sprint2-1-playground-empty"));

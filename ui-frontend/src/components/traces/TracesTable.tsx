@@ -25,7 +25,8 @@ import {
 import { TraceStatusBadge } from "./TraceStatusBadge";
 import { WorkflowBadge } from "./WorkflowBadge";
 import { api, ApiError } from "@/lib/api";
-import { copyToClipboard, formatCost, formatDurationMs, formatTimeAgo, formatTokens, shortTraceId } from "@/lib/format";
+import { copyToClipboard, formatCost, formatDurationMs, formatTokens, shortTraceId } from "@/lib/format";
+import { Timestamp } from "@/components/shared/Timestamp";
 import { cn } from "@/lib/utils";
 import { useBulkDeleteTraces, useDeleteTrace } from "@/hooks/use-traces";
 import type { TraceRow, TracesPage } from "@/lib/types";
@@ -201,7 +202,7 @@ export function TracesTable({ rows, hideBulkSelect }: Props) {
               <TableHead className="w-[90px] text-right">Duration</TableHead>
               <TableHead className="w-[80px] text-right">Tokens</TableHead>
               <TableHead className="w-[90px] text-right">Cost</TableHead>
-              <TableHead className="w-[100px]">Started</TableHead>
+              <TableHead className="w-[150px]">Started</TableHead>
               <TableHead className="w-[88px]"></TableHead>
             </TableRow>
           </TableHeader>
@@ -273,7 +274,7 @@ export function TracesTable({ rows, hideBulkSelect }: Props) {
                 {formatCost(row.total_cost_usd)}
               </TableCell>
               <TableCell className="text-xs text-muted-foreground">
-                {formatTimeAgo(row.start_time)}
+                <Timestamp iso={row.start_time} />
               </TableCell>
               <TableCell
                 className="text-right"

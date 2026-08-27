@@ -14,9 +14,11 @@
     --radius-3xl: calc(var(--radius) + 12px);
     --radius-4xl: calc(var(--radius) + 16px);
 
-    /* Fonts — DM Sans + JetBrains Mono */
-    --font-sans: 'DM Sans', sans-serif;
-    --font-mono: 'JetBrains Mono', monospace;
+    /* Fonts — indirected through runtime vars so the skin class can swap them.
+       `@theme inline` substitutes the declared value textually, so utilities
+       emit `font-family: var(--fa-font-mono)` and resolve at runtime. */
+    --font-sans: var(--fa-font-sans);
+    --font-mono: var(--fa-font-mono);
 
     /* Standard shadcn color mappings */
     --color-background: var(--background);
@@ -67,11 +69,183 @@
 }
 
 /* ============================================================
-   LIGHT THEME — "Clean Lab"
-   Crisp, technical, cool and precise.
+   SKINS
+   ============================================================
+   Two complete looks live in this file, selected by a class on <html>:
+
+     (default, no class)  "Trace Studio"      — matches the Enterprise /next UI
+     html.skin-classic    "Clean Lab"         — the original Local UI look
+
+   The default owns the base blocks so the common render path needs no class
+   at all — no pre-paint flash, no script dependency. Classic is the override.
+
+   Because `@theme inline` substitutes declared values textually, every utility
+   emits `var(--token)` and resolves at runtime, so redefining these custom
+   properties reskins the whole app with zero component changes.
+
+   Specificity (all four blocks are unlayered, so this is the whole story):
+     :root                   (0,1,0)
+     .dark                   (0,1,0)  — later in source, so it wins over :root
+     html.skin-classic       (0,1,1)  — beats both base blocks
+     html.skin-classic.dark  (0,2,1)  — beats all three
+
+   INVARIANT: because `html.skin-classic` out-specifies `.dark`, the
+   `html.skin-classic.dark` block must re-declare every colour token, not a
+   delta — otherwise a classic *light* value leaks into classic dark mode.
+   Enforced by index.css.test.ts.
+   ============================================================ */
+
+/* ============================================================
+   LIGHT — "Trace Studio" (default)
+   Calm slate-white, indigo primary, teal/violet span accents.
    ============================================================ */
 :root {
+    --radius: 0.625rem;
+
+    /* Font families (resolved by the --font-sans/--font-mono theme entries) */
+    --fa-font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+    --fa-font-mono: 'IBM Plex Mono', monospace;
+
+    /* Base */
+    --background: #f3f4f8;
+    --foreground: #1b1e28;
+
+    /* Surfaces */
+    --card: #ffffff;
+    --card-foreground: #1b1e28;
+    --popover: #ffffff;
+    --popover-foreground: #1b1e28;
+    --fa-surface-elevated: #f8f9fc;
+    --fa-terminal: #171922;
+    --fa-terminal-foreground: #aab2c5;
+
+    /* Primary: Indigo */
+    --primary: #4747e0;
+    --primary-foreground: #ffffff;
+    --fa-glow: #4747e0;
+
+    /* Secondary — neutral chip */
+    --secondary: #eef0f6;
+    --secondary-foreground: #4a5268;
+
+    /* Accent — subtle neutral (calm hover surfaces) */
+    --accent: #f0f1f6;
+    --accent-foreground: #1b1e28;
+
+    /* Muted */
+    --muted: #eef0f6;
+    --muted-foreground: #6b7183;
+
+    /* Status */
+    --fa-success: #177245;
+    --fa-warning: #a35a06;
+    --fa-info: #2563eb;
+    --destructive: #c22f35;
+    --destructive-foreground: #ffffff;
+
+    /* Borders */
+    --border: #e2e5ee;
+    --input: #dcdfe9;
+    --ring: #4747e0;
+    --fa-grid-line: #eef0f6;
+
+    /* Charts — indigo · teal · violet · amber · blue */
+    --chart-1: #4747e0;
+    --chart-2: #0e9384;
+    --chart-3: #b04ad4;
+    --chart-4: #d97708;
+    --chart-5: #2563eb;
+
+    /* Sidebar */
+    --sidebar: #ffffff;
+    --sidebar-foreground: #1b1e28;
+    --sidebar-primary: #4747e0;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #f0f1f6;
+    --sidebar-accent-foreground: #1b1e28;
+    --sidebar-border: #e2e5ee;
+    --sidebar-ring: #4747e0;
+}
+
+/* ============================================================
+   DARK — "Trace Studio Dark" (default)
+   Deep blue-black panels, indigo primary, terminal JSON.
+   ============================================================ */
+.dark {
+    /* Base */
+    --background: #0f1117;
+    --foreground: #e6e9f2;
+
+    /* Surfaces */
+    --card: #171a23;
+    --card-foreground: #e6e9f2;
+    --popover: #1b1f2a;
+    --popover-foreground: #e6e9f2;
+    --fa-surface-elevated: #1f2430;
+    --fa-terminal: #0b0d13;
+    --fa-terminal-foreground: #aab2c5;
+
+    /* Primary: Indigo (lifted for dark contrast) */
+    --primary: #6366f1;
+    --primary-foreground: #ffffff;
+    --fa-glow: #6366f1;
+
+    /* Secondary — neutral chip */
+    --secondary: #232838;
+    --secondary-foreground: #c9cfdd;
+
+    /* Accent — subtle neutral (calm hover surfaces) */
+    --accent: #1d2130;
+    --accent-foreground: #e6e9f2;
+
+    /* Muted */
+    --muted: #232838;
+    --muted-foreground: #9aa3b5;
+
+    /* Status */
+    --fa-success: #4ade80;
+    --fa-warning: #fbbf24;
+    --fa-info: #60a5fa;
+    --destructive: #dc3d43;
+    --destructive-foreground: #ffffff;
+
+    /* Borders */
+    --border: #262b38;
+    --input: #2a3040;
+    --ring: #6366f1;
+    --fa-grid-line: #1f2430;
+
+    /* Charts — indigo · teal · violet · amber · blue.
+       Dark steps are *chosen* against the dark surface, not flipped from light:
+       #14b8a6 / #e08a1e / #60a5fa sat at OKLCH L≈0.70–0.71, outside the dark
+       band (0.48–0.67), so they glared; re-stepped to the nearest passing value
+       of the same hue. Copy verbatim — do not re-derive. */
+    --chart-1: #6366f1;
+    --chart-2: #0f9d8f;
+    --chart-3: #c05ae0;
+    --chart-4: #c2760f;
+    --chart-5: #3d86e0;
+
+    /* Sidebar */
+    --sidebar: #14161f;
+    --sidebar-foreground: #e8eaf2;
+    --sidebar-primary: #6366f1;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #1d2130;
+    --sidebar-accent-foreground: #e8eaf2;
+    --sidebar-border: #262b38;
+    --sidebar-ring: #6366f1;
+}
+
+/* ============================================================
+   CLASSIC LIGHT — "Clean Lab"
+   Crisp, technical, cool and precise. The original Local UI look.
+   ============================================================ */
+html.skin-classic {
     --radius: 0.375rem;
+
+    --fa-font-sans: 'DM Sans', sans-serif;
+    --fa-font-mono: 'JetBrains Mono', monospace;
 
     /* Base */
     --background: hsl(220 15% 97%);
@@ -135,10 +309,11 @@
 }
 
 /* ============================================================
-   DARK THEME — "Midnight Operator"
+   CLASSIC DARK — "Midnight Operator"
    Deep blue-black, electric cyan, terminal-inspired.
+   Must re-declare every colour token (see INVARIANT above).
    ============================================================ */
-.dark {
+html.skin-classic.dark {
     /* Base */
     --background: hsl(230 15% 8%);
     --foreground: hsl(220 10% 90%);
@@ -198,6 +373,69 @@
     --sidebar-accent-foreground: hsl(220 10% 90%);
     --sidebar-border: hsl(230 15% 20%);
     --sidebar-ring: hsl(190 95% 55%);
+}
+
+/* ============================================================
+   TYPE SCALE — named roles, one look per role
+   ============================================================
+   These name the ROLE, not the size. Density may vary by role — a dense trace
+   table legitimately reads smaller than a landing page — but the same role must
+   look the same on every screen, which is what drifts without this.
+
+   Rule of thumb: sans carries prose; mono carries identifiers, numerals and
+   eyebrow labels.
+
+   Classic overrides below keep its original, larger proportions so switching
+   skins restores the old look wholesale.
+   ============================================================ */
+@layer components {
+    /* Page-level heading — the one <h1> on a screen. */
+    .fa-page-title {
+        @apply text-xl font-bold tracking-tight;
+    }
+    .fa-page-subtitle {
+        @apply mt-0.5 text-[13px] text-muted-foreground;
+    }
+
+    /* Eyebrow label above a section, a chart, or a stat. Mono, small, wide. */
+    .fa-section-label {
+        @apply font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground;
+    }
+
+    /* Stat tiles: label is a section label; value is tabular so columns align. */
+    .fa-stat-value {
+        @apply font-mono text-[22px] font-bold tabular-nums;
+    }
+
+    /* Two body sizes, not seven. */
+    .fa-body {
+        @apply text-[13px];
+    }
+    .fa-meta {
+        @apply text-[11px] text-muted-foreground;
+    }
+}
+
+/* Classic proportions — the pre-reskin sizes. */
+html.skin-classic .fa-page-title {
+    font-size: 1.5rem;
+    line-height: 2rem;
+    letter-spacing: normal;
+}
+html.skin-classic .fa-page-subtitle {
+    margin-top: 0.25rem;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+}
+html.skin-classic .fa-section-label {
+    font-size: 0.75rem;
+    line-height: 1rem;
+    font-weight: 400;
+    letter-spacing: 0.1em;
+}
+html.skin-classic .fa-stat-value {
+    font-size: 1.875rem;
+    line-height: 2.25rem;
 }
 
 /* ============================================================
@@ -262,25 +500,28 @@
    GLOW EFFECTS — dark mode only
    ============================================================ */
 
+/* These derive their colour from --ring via color-mix, so they follow whichever
+   skin is active instead of hardcoding one skin's accent. */
+
 /* Glow focus ring on focusable elements */
 .dark *:focus-visible {
     box-shadow:
         0 0 0 2px var(--background),
         0 0 0 3px var(--ring),
-        0 0 12px hsl(190 95% 55% / 0.2);
+        0 0 12px color-mix(in srgb, var(--ring) 20%, transparent);
 }
 
 /* Execute / Run button glow */
 .dark .btn-execute {
-    box-shadow: 0 0 20px hsl(190 95% 55% / 0.25);
+    box-shadow: 0 0 20px color-mix(in srgb, var(--ring) 25%, transparent);
 }
 .dark .btn-execute:hover {
-    box-shadow: 0 0 30px hsl(190 95% 55% / 0.4);
+    box-shadow: 0 0 30px color-mix(in srgb, var(--ring) 40%, transparent);
 }
 
 /* Active sidebar item inset glow */
 .dark .sidebar-item-active {
-    box-shadow: inset 3px 0 8px hsl(190 95% 55% / 0.1);
+    box-shadow: inset 3px 0 8px color-mix(in srgb, var(--ring) 10%, transparent);
 }
 
 /* Running state pulse */
@@ -312,13 +553,59 @@
 
 /* ============================================================
    JSON SYNTAX HIGHLIGHTING
+   ============================================================
+   JsonViewer always renders on the dark --fa-terminal surface, in both skins
+   and both themes, so these are fixed values tuned against that block rather
+   than theme tokens. (Trace Studio's --accent is a neutral surface colour,
+   so the old var(--accent) mapping for booleans would be near-invisible.) */
+.json-key { color: #8f96ff; }
+.json-string { color: #7ee0a3; }
+.json-number { color: #f0b455; }
+.json-boolean { color: #f0b455; }
+.json-null { color: #7d8598; }
+.json-bracket { color: #aab2c5; }
+
+/* Classic keeps its original token-driven mapping. */
+html.skin-classic .json-key { color: var(--primary); }
+html.skin-classic .json-string { color: var(--fa-success); }
+html.skin-classic .json-number { color: var(--fa-warning); }
+html.skin-classic .json-boolean { color: var(--accent); }
+html.skin-classic .json-null { color: var(--muted-foreground); }
+html.skin-classic .json-bracket { color: var(--muted-foreground); }
+
+/* ============================================================
+   NEW-SKIN PRIMITIVE POLISH
+   ============================================================
+   Scoped to the default skin so classic keeps its original chrome, and
+   expressed as CSS against shadcn's `data-slot` attributes so no component
+   markup has to change. These rules are unlayered, so they beat the
+   `@layer utilities` classes they override without needing !important.
    ============================================================ */
-.json-key { color: var(--primary); }
-.json-string { color: var(--fa-success); }
-.json-number { color: var(--fa-warning); }
-.json-boolean { color: var(--accent); }
-.json-null { color: var(--muted-foreground); }
-.json-bracket { color: var(--muted-foreground); }
+
+/* Tables: softer inner rules than the outer border, an elevated header band,
+   and the wider tracking the /next tables use. */
+html:not(.skin-classic) [data-slot="table-container"] {
+    border-radius: var(--radius-xl);
+}
+html:not(.skin-classic) [data-slot="table-header"] {
+    background-color: var(--fa-surface-elevated);
+}
+html:not(.skin-classic) [data-slot="table-head"] {
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+}
+html:not(.skin-classic) [data-slot="table-body"] [data-slot="table-row"] {
+    border-color: color-mix(in srgb, var(--border) 60%, transparent);
+}
+
+/* Numeric columns read as columns when they're tabular and right-aligned.
+   Opt in per cell with `data-numeric`. */
+html:not(.skin-classic) [data-numeric] {
+    text-align: right;
+    font-family: var(--fa-font-mono);
+    font-variant-numeric: tabular-nums;
+}
 
 /* ============================================================
    CHAIN NODE POLISH — React Flow overrides

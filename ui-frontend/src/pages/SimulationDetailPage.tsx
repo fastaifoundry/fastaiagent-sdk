@@ -9,7 +9,7 @@ import { TableSkeleton } from "@/components/shared/LoadingSkeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { SimulationTranscriptView } from "@/components/simulations/SimulationTranscriptView";
 import { useSimulationRun } from "@/hooks/use-simulations";
-import { formatTimeAgo } from "@/lib/format";
+import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { CriterionVerdict, SimulationCase } from "@/lib/types";
 
@@ -66,7 +66,7 @@ export function SimulationDetailPage() {
         />
         <StatCard label="Passed" value={String(run.pass_count ?? 0)} />
         <StatCard label="Failed" value={String(run.fail_count ?? 0)} />
-        <StatCard label="Started" value={formatTimeAgo(run.started_at ?? "")} />
+        <StatCard label="Started" value={formatDateTime(run.started_at ?? "")} />
       </div>
 
       {cases.length === 0 ? (
