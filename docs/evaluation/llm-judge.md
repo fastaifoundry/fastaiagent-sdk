@@ -41,6 +41,47 @@ judge = LLMJudge(
 
 The judge LLM must respond with JSON containing `score` and `reasoning` fields.
 
+### Placeholders
+
+The canonical placeholders are `{input}`, `{output}` and `{expected}`. For compatibility with
+templates authored on the control plane, these legacy aliases are also accepted and interpolate
+identically:
+
+| Placeholder | Aliases accepted |
+|---|---|
+| `{input}` | `{{input}}` |
+| `{output}` | `{{output}}` |
+| `{expected}` | `{expected_output}`, `{{expected}}`, `{{expected_output}}` |
+
+Prefer the canonical single-brace spelling in new templates. Interpolation is a plain
+substitution, not `str.format()`, so a literal JSON example such as `{"score": ...}` in your
+template is left untouched — and content substituted *into* the template is never re-scanned,
+so an input that happens to contain the text `{output}` stays literal.
+
+If a custom `prompt_template` contains none of the known placeholders, the judge never sees the
+content it is scoring, so a `UserWarning` is raised at construction time.
+
+A template pulled with `Scorer.from_platform("my-judge")` is served verbatim by the platform and
+follows the same rules — whichever spelling it was authored in.
+
+### Verdict parsing
+
+Judge models sometimes wrap their verdict in prose or truncate the JSON. Rather than silently
+scoring `0.0`, the judge:
+
+1. parses the reply as JSON (tolerating ```json code fences);
+2. falls back to a regex scan for `"score"` / `"reasoning"` if that fails;
+3. retries **once**, handing the model its own reply back and demanding bare JSON;
+4. only then returns `score=0.0, passed=False` with a `reason` that quotes the unparseable reply.
+
+A transport/LLM error reports a different `reason` (`Judge error: …`) than an unreadable verdict
+(`Judge verdict unparseable after retry: …`), so the two are distinguishable in results.
+
+### Scale and threshold
+
+The raw verdict is normalized from `scale` into 0–1, and `passed = score >= threshold`
+(default `0.5`). With `scale="1-5"`, a judge verdict of `4` becomes `0.75`.
+
 ## G-Eval (evaluation steps + rubric)
 
 For richer, more reliable judging, pass `evaluation_steps` and/or a score-band `rubric`. This turns the judge into a **G-Eval**: it reasons step-by-step through your evaluation steps, scores against the rubric, and normalizes the result to 0–1. The plain `criteria`-only judge above is unchanged — G-Eval activates only when you provide steps or a rubric (or use the `GEval` class).

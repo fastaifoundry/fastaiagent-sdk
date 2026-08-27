@@ -2,21 +2,25 @@
 
 ``LLMJudge`` runs in one of two modes:
 
-* **Legacy single-call** (default) — ``LLMJudge(criteria="correctness")``: builds a
-  prompt from ``criteria``/``prompt_template``, makes one LLM call, and passes when
-  ``score >= 0.5``. Behaviour is unchanged from earlier releases.
+* **Single-call** (default) — ``LLMJudge(criteria="correctness")``: builds a prompt
+  from ``criteria``/``prompt_template``, makes one LLM call, normalizes the verdict
+  from ``scale`` to 0-1, and passes when ``score >= threshold``.
 * **G-Eval** — opt in by passing ``evaluation_steps`` and/or a score-band ``rubric``
   (or by using the :class:`GEval` subclass). Adds chain-of-thought reasoning over
   explicit evaluation steps, a scoring rubric, scale normalization, and a
   configurable ``threshold``. This is the DeepEval-style "G-Eval" judge.
 
-The new behaviour is purely additive: when neither ``evaluation_steps`` nor
-``rubric`` is supplied, ``ascore`` runs the verbatim legacy path.
+Both paths share the same template renderer and the same tolerant verdict parsing:
+a reply that isn't clean JSON is recovered by regex, and an unrecoverable one earns
+exactly one retry before the judge reports failure — so a flaky judge reply never
+degrades into a silent ``0.0``.
 """
 
 from __future__ import annotations
 
 import json
+import re
+import warnings
 from typing import Any
 
 from fastaiagent._internal.async_utils import run_sync
@@ -25,6 +29,129 @@ from fastaiagent.eval.scorer import Scorer, ScorerResult
 # A score-band rubric: a list of ``(score_value_on_scale, description)`` anchors,
 # e.g. ``[(1, "Mostly wrong"), (3, "Partially correct"), (5, "Fully correct")]``.
 Rubric = list[tuple[float, str]]
+
+# Canonical judge-template placeholders are the single-brace {input}/{output}/{expected}.
+# {expected_output} and the double-brace forms are legacy aliases: templates authored on
+# the control plane (and served to the SDK verbatim by ``Scorer.from_platform``) use all of
+# them, so both runtimes interpolate the union rather than rewriting anyone's template.
+JUDGE_PLACEHOLDERS = (
+    "{{input}}",
+    "{{output}}",
+    "{{expected}}",
+    "{{expected_output}}",
+    "{input}",
+    "{output}",
+    "{expected}",
+    "{expected_output}",
+)
+
+# Double-brace alternatives come first: ``{{input}}`` contains ``{input}`` as a substring,
+# so the reverse order would leave stray braces behind. One pass, so substituted content is
+# never rescanned — an ``input`` value containing the literal text "{output}" stays literal.
+_PLACEHOLDER_RE = re.compile(
+    r"\{\{input\}\}|\{\{output\}\}|\{\{expected_output\}\}|\{\{expected\}\}"
+    r"|\{expected_output\}|\{expected\}|\{input\}|\{output\}"
+)
+
+_SCORE_RE = re.compile(r'"score"\s*:\s*([\d.]+)')
+_REASONING_RE = re.compile(r'"reasoning"\s*:\s*"([^"]+)"')
+
+_RETRY_INSTRUCTION = (
+    'Return ONLY the JSON object: {"score": <number>, "reasoning": "<one sentence>"}'
+)
+
+
+def render_judge_template(template: str, input: str, output: str, expected: str) -> str:
+    """Interpolate a judge prompt template, accepting every placeholder alias.
+
+    Canonical spelling is ``{input}``/``{output}``/``{expected}``; ``{expected_output}``
+    and the double-brace forms are accepted as legacy aliases. Uses a single regex pass
+    rather than ``str.format``, so a literal JSON exemplar like ``{"score": ...}`` in the
+    template survives untouched.
+    """
+    mapping = {
+        "{{input}}": input,
+        "{input}": input,
+        "{{output}}": output,
+        "{output}": output,
+        "{{expected}}": expected,
+        "{expected}": expected,
+        "{{expected_output}}": expected,
+        "{expected_output}": expected,
+    }
+    return _PLACEHOLDER_RE.sub(lambda m: mapping[m.group(0)], template)
+
+
+class _UnparseableVerdictError(Exception):
+    """The judge replied, but no score could be recovered — even after a retry.
+
+    Distinct from a transport/LLM error so the two report different reasons.
+    """
+
+    def __init__(self, raw: str):
+        self.raw = raw
+        super().__init__(raw)
+
+
+def _parse_verdict(content: str) -> tuple[float, str] | None:
+    """Extract ``(raw_score, reasoning)`` from a judge reply, or ``None`` if unparseable.
+
+    Tries strict JSON first (tolerating markdown fences), then falls back to a regex
+    scan — models that wrap the verdict in prose still yield their score instead of
+    silently scoring 0.0.
+    """
+    from fastaiagent.eval.agent_metrics import _strip_fences
+
+    try:
+        data = json.loads(_strip_fences(content))
+        if isinstance(data, dict) and "score" in data:
+            return float(data["score"]), str(data.get("reasoning", ""))
+    except Exception:
+        pass
+
+    match = _SCORE_RE.search(content)
+    if match:
+        try:
+            raw = float(match.group(1))
+        except ValueError:
+            return None
+        reason_match = _REASONING_RE.search(content)
+        return raw, (reason_match.group(1) if reason_match else "Could not parse reasoning")
+    return None
+
+
+async def _complete_and_parse(llm: Any, messages: list[Any]) -> tuple[float, str]:
+    """Call the judge and parse its verdict, retrying once on an unparseable reply.
+
+    The retry hands the model its own reply back and demands bare JSON. Transport
+    errors propagate untouched; only a genuinely unreadable verdict raises
+    :class:`_UnparseableVerdictError`.
+    """
+    from fastaiagent.llm import AssistantMessage, UserMessage
+
+    response = await llm.acomplete(messages)
+    content = response.content or ""
+    parsed = _parse_verdict(content)
+    if parsed is not None:
+        return parsed
+
+    retry = await llm.acomplete(
+        [*messages, AssistantMessage(content), UserMessage(_RETRY_INSTRUCTION)]
+    )
+    retry_content = retry.content or ""
+    parsed = _parse_verdict(retry_content)
+    if parsed is not None:
+        return parsed
+    raise _UnparseableVerdictError(retry_content or content)
+
+
+def _unparseable_result(exc: _UnparseableVerdictError) -> ScorerResult:
+    """Failure result for an unreadable verdict — quotes the reply so it's diagnosable."""
+    return ScorerResult(
+        score=0.0,
+        passed=False,
+        reason=f"Judge verdict unparseable after retry: {exc.raw[:200]!r}",
+    )
 
 
 def _parse_scale(scale: str) -> tuple[float, float]:
@@ -105,11 +232,17 @@ class LLMJudge(Scorer):
 
     Two modes:
 
-    * **Legacy** (default) — ``LLMJudge(criteria="correctness")``: one LLM call,
-      ``passed = score >= 0.5``. Unchanged from earlier releases.
+    * **Single-call** (default) — ``LLMJudge(criteria="correctness")``: one LLM call
+      against ``prompt_template``.
     * **G-Eval** — pass ``evaluation_steps`` and/or a score-band ``rubric`` (or use
-      :class:`GEval`): chain-of-thought over the steps + rubric, the raw score is
-      normalized from ``scale`` to 0-1, and ``passed = score >= threshold``.
+      :class:`GEval`): chain-of-thought over the steps + rubric.
+
+    Either way the raw verdict is normalized from ``scale`` into 0-1 and
+    ``passed = score >= threshold``.
+
+    ``prompt_template`` accepts the canonical ``{input}``/``{output}``/``{expected}``
+    placeholders as well as the legacy ``{expected_output}`` and double-brace aliases —
+    see :func:`render_judge_template`.
 
     Example:
         judge = LLMJudge(criteria="correctness")
@@ -149,6 +282,16 @@ class LLMJudge(Scorer):
         self._force_geval = False
         if name is not None:
             self.name = name
+        if prompt_template and not any(p in prompt_template for p in JUDGE_PLACEHOLDERS):
+            # Non-blocking lint, mirroring the control plane: a template with no
+            # placeholder means the judge never sees the content it is scoring.
+            warnings.warn(
+                "Judge prompt_template contains no known placeholder "
+                "({input}, {output}, {expected}); the judge will not see the "
+                "evaluated content.",
+                UserWarning,
+                stacklevel=2,
+            )
 
     @property
     def _geval_mode(self) -> bool:
@@ -182,40 +325,36 @@ class LLMJudge(Scorer):
     async def _ascore_legacy(
         self, input: str, output: str, expected: str | None = None, **kwargs: Any
     ) -> ScorerResult:
-        """Single-call judge — verbatim legacy behaviour (``passed = score >= 0.5``)."""
-        from fastaiagent.eval.agent_metrics import _strip_fences
+        """Single-call judge — one LLM call against ``prompt_template``."""
         from fastaiagent.llm import LLMClient, SystemMessage, UserMessage
 
         llm = self._llm or LLMClient()
 
-        prompt = self.prompt_template.replace("{input}", input)
-        prompt = prompt.replace("{output}", output)
-        prompt = prompt.replace("{expected}", expected or "N/A")
+        prompt = render_judge_template(self.prompt_template, input, output, expected or "N/A")
 
         try:
-            response = await llm.acomplete(
+            raw, reasoning = await _complete_and_parse(
+                llm,
                 [
                     SystemMessage("You are an evaluation judge. Respond with JSON only."),
                     UserMessage(prompt),
-                ]
+                ],
             )
-            content = response.content or ""
-
-            # Parse JSON response (tolerate ```json code fences some models add)
-            data = json.loads(_strip_fences(content))
-            score_val = float(data.get("score", 0))
-            reasoning = data.get("reasoning", "")
-            passed = score_val >= 0.5
-
-            return ScorerResult(score=score_val, passed=passed, reason=reasoning)
+        except _UnparseableVerdictError as e:
+            return _unparseable_result(e)
         except Exception as e:
             return ScorerResult(score=0.0, passed=False, reason=f"Judge error: {e}")
+
+        score_val = _normalize_to_unit(raw, self.scale)
+        return ScorerResult(
+            score=score_val, passed=score_val >= self.threshold, reason=reasoning
+        )
 
     async def _ascore_geval(
         self, input: str, output: str, expected: str | None = None, **kwargs: Any
     ) -> ScorerResult:
         """G-Eval path — chain-of-thought over evaluation steps + score-band rubric."""
-        from fastaiagent.eval.agent_metrics import _resolve_context, _strip_fences
+        from fastaiagent.eval.agent_metrics import _resolve_context
         from fastaiagent.llm import LLMClient, SystemMessage, UserMessage
 
         llm = self._llm or LLMClient()
@@ -233,26 +372,27 @@ class LLMJudge(Scorer):
                 expected=expected,
                 context=context,
             )
-            response = await llm.acomplete(
+            raw, reasoning = await _complete_and_parse(
+                llm,
                 [
                     SystemMessage(
                         "You are a meticulous evaluation judge. Reason step by step, "
                         "then respond with JSON only."
                     ),
                     UserMessage(prompt),
-                ]
+                ],
             )
-            data = json.loads(_strip_fences(response.content or "{}"))
-            raw = float(data.get("score", 0.0))
-            score_val = _normalize_to_unit(raw, self.scale)
-            reasoning = str(data.get("reasoning", ""))
-            return ScorerResult(
-                score=score_val,
-                passed=score_val >= self.threshold,
-                reason=reasoning,
-            )
+        except _UnparseableVerdictError as e:
+            return _unparseable_result(e)
         except Exception as e:
             return ScorerResult(score=0.0, passed=False, reason=f"Judge error: {e}")
+
+        score_val = _normalize_to_unit(raw, self.scale)
+        return ScorerResult(
+            score=score_val,
+            passed=score_val >= self.threshold,
+            reason=reasoning,
+        )
 
     async def _ensure_steps(self, llm: Any) -> list[str] | None:
         """Lazily derive evaluation steps from ``criteria`` (G-Eval "Auto-CoT").

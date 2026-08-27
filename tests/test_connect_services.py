@@ -300,6 +300,35 @@ class TestScorerFromPlatform:
             assert scorer.criteria == "helpfulness"
             assert scorer.scale == "0-1"
 
+    def test_from_platform_legacy_alias_template_interpolates(self):
+        """Platform templates are served verbatim, and older ones use the legacy
+        ``{expected_output}``/double-brace aliases. They must interpolate SDK-side —
+        before this they reached the judge raw, so it never saw the expected answer.
+
+        The platform HTTP call is patched (as everywhere in this file); the judge LLM
+        is a real ``TestModel``, so the prompt travels the production path.
+        """
+        import json as _json
+
+        from fastaiagent.testing import TestModel
+
+        _set_connected()
+        platform_data = {
+            "criteria": "correctness",
+            "prompt_template": "Q: {input}\nExpected: {expected_output}\nGot: {{output}}",
+            "scale": "binary",
+        }
+        with _mock_api_get(platform_data):
+            scorer = Scorer.from_platform("legacy-judge")
+
+        assert "{expected_output}" in scorer.prompt_template  # pulled verbatim
+        scorer._llm = TestModel(response=_json.dumps({"score": 1.0, "reasoning": "ok"}))
+        result = scorer.score(input="capital of Japan?", output="Tokyo", expected="Tokyo")
+
+        assert result.passed
+        prompt = scorer._llm.calls[0]["messages"][-1].content
+        assert prompt == "Q: capital of Japan?\nExpected: Tokyo\nGot: Tokyo"
+
 
 # --- PlatformSpanExporter ---
 

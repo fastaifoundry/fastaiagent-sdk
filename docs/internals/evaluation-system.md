@@ -331,33 +331,61 @@ A generic LLM-based scorer that delegates evaluation to an LLM. Used internally 
 
 ```python
 LLMJudge(
-    criteria: str,                     # What to evaluate (e.g., "correctness", "helpfulness")
+    criteria: str,                      # What to evaluate (e.g., "correctness", "helpfulness")
     prompt_template: str | None = None, # Custom template with {input}/{output}/{expected} placeholders
-    llm: Any = None,                   # Custom LLMClient (defaults to LLMClient())
-    scale: str = "0-1",               # "binary", "0-1", or "1-5"
+    llm: Any = None,                    # Custom LLMClient (defaults to LLMClient())
+    scale: str = "binary",              # "binary", "0-1", "1-5", ...
+    threshold: float = 0.5,             # Pass threshold, applied to the normalized 0-1 score
 )
 ```
 
 ### How It Works
 
-1. Build the evaluation prompt by substituting `{input}`, `{output}`, `{expected}` into the template
+1. Render the prompt with `render_judge_template(...)`, substituting `{input}`, `{output}` and
+   `{expected}` into the template
 2. Call the LLM with:
-   - System message: `"You are an evaluation judge. Evaluate the following and respond in JSON format with 'score' (0-1) and 'reasoning'."`
+   - System message: `"You are an evaluation judge. Respond with JSON only."`
    - User message: the filled template
-3. Parse the LLM's JSON response: `{"score": 0.85, "reasoning": "The output is accurate but..."}`
-4. Return `ScorerResult(score=parsed_score, passed=score >= threshold, reason=reasoning)`
+3. Parse the verdict: `{"score": 0.85, "reasoning": "The output is accurate but..."}`
+4. Normalize the raw score from `scale` into 0-1 and return
+   `ScorerResult(score=normalized, passed=score >= threshold, reason=reasoning)`
+
+### Template Rendering — `render_judge_template`
+
+The template is a de-facto wire contract: the control plane serves `prompt_template` verbatim to
+`Scorer.from_platform`, so both runtimes must interpolate the same set of spellings. Canonical is
+single-brace `{input}`/`{output}`/`{expected}`; `{expected_output}` and the double-brace forms are
+accepted as legacy aliases (`JUDGE_PLACEHOLDERS`).
+
+Two properties are load-bearing:
+
+- **Never `str.format()`** — templates carry literal JSON exemplars like `{"score": ...}`.
+- **One regex pass**, with the double-brace alternatives ordered first (`{{input}}` contains
+  `{input}` as a substring). A single pass also means substituted content is never re-scanned, so
+  an `input` value containing the text `{output}` survives as literal text.
+
+A custom template with no known placeholder raises a `UserWarning` at construction — the judge
+would otherwise score without ever seeing the content.
+
+### Verdict Parsing — `_parse_verdict` / `_complete_and_parse`
+
+Shared by both the single-call and G-Eval paths. Strict JSON (fence-tolerant) → regex fallback on
+`"score"`/`"reasoning"` → one retry that hands the model its own reply back with
+`_RETRY_INSTRUCTION` → `_UnparseableVerdictError`. Only that last case yields `score=0.0`, and its
+`reason` quotes the raw reply, so it is distinguishable from a transport error (`Judge error: …`).
+The retry costs at most one extra LLM call, and only on an unreadable verdict.
 
 ### Default Prompt Template
 
 ```
-Evaluate the following based on the criterion: {criteria}
+Evaluate the following response for {criteria}.
 
 Input: {input}
-Output: {output}
 Expected: {expected}
+Actual Output: {output}
 
-Provide a score from 0 to 1 and your reasoning.
-Respond in JSON: {{"score": <float>, "reasoning": "<string>"}}
+Respond with JSON: {"score": <number>, "reasoning": "<explanation>"}
+Score should be between 0 and 1.
 ```
 
 ### Usage
