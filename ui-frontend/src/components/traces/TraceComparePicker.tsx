@@ -16,10 +16,10 @@ import { useTraces } from "@/hooks/use-traces";
 import {
   formatCost,
   formatDurationMs,
-  formatTimeAgo,
   shortTraceId,
 } from "@/lib/format";
 import type { TraceRow } from "@/lib/types";
+import { Timestamp } from "@/components/shared/Timestamp";
 
 interface Props {
   /** The trace already chosen (the "left" / A side). Excluded from the picker. */
@@ -98,7 +98,7 @@ export function TraceComparePicker({ pinnedTraceId, triggerLabel }: Props) {
                       </div>
                       <div className="text-[11px] font-mono text-muted-foreground">
                         {shortTraceId(row.trace_id)} ·{" "}
-                        {formatTimeAgo(row.start_time)}
+                        <Timestamp iso={row.start_time} />
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-3 text-[11px] font-mono tabular-nums text-muted-foreground">

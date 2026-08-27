@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import {
+  Bar,
+  BarChart,
   CartesianGrid,
   Legend,
   Line,
@@ -27,6 +29,15 @@ import { EmptyState } from "@/components/shared/EmptyState";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { CostBreakdownTable } from "@/components/analytics/CostBreakdownTable";
+import { ChartTooltip, Panel } from "@/components/charts/chart-kit";
+import {
+  AXIS_PROPS,
+  GRID_STROKE,
+  STATUS_FILL,
+  fmtUsd,
+} from "@/components/charts/chart-tokens";
+import { useCostBreakdown } from "@/hooks/use-cost-breakdown";
+import type { CostByModelRow } from "@/lib/types";
 import { useAnalytics } from "@/hooks/use-analytics";
 import { formatCost, formatDurationMs } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -38,6 +49,21 @@ const WINDOW_CHOICES: { label: string; hours: number; granularity: "hour" | "day
 ];
 
 type CostPeriod = "1d" | "7d" | "30d" | "all";
+
+const CHART_MARGIN = { top: 6, right: 20, bottom: 4, left: 12 };
+
+/** Shared time-axis config — every timeline on this page reads the same. */
+const TIME_AXIS = {
+  type: "number" as const,
+  scale: "time" as const,
+  domain: ["dataMin", "dataMax"] as [string, string],
+  tickFormatter: (v: number) =>
+    new Date(v).toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+    }),
+  ...AXIS_PROPS,
+};
 
 function periodFromChoice(label: string): CostPeriod {
   if (label === "24h") return "1d";
@@ -62,8 +88,32 @@ export function AnalyticsPage() {
       cost: p.cost_usd,
       errorRate: Math.round(p.error_rate * 100),
       traces: p.trace_count,
+      // Split the bucket so failures stack visibly on top of successes.
+      // The API reports totals and errors; "ok" is the remainder.
+      failed: p.error_count,
+      ok: Math.max(0, p.trace_count - p.error_count),
     }));
   }, [analytics.data]);
+
+  // The cost dashboard below already fetches this breakdown; reusing the same
+  // query key means the two panels share one request, not two.
+  const costPeriod = periodFromChoice(choice.label);
+  const modelCosts = useCostBreakdown({ groupBy: "model", period: costPeriod });
+
+  const modelRows = useMemo(() => {
+    const rows = (modelCosts.data?.rows ?? []) as CostByModelRow[];
+    // Largest first — recharts renders the first datum at the TOP in a
+    // vertical layout, so this reads as a ranked list.
+    return [...rows].sort((a, b) => b.cost_usd - a.cost_usd).slice(0, 8);
+  }, [modelCosts.data]);
+
+  const tokenSplit = useMemo(() => {
+    const rows = (modelCosts.data?.rows ?? []) as CostByModelRow[];
+    const prompt = rows.reduce((n, r) => n + (r.input_tokens ?? 0), 0);
+    const completion = rows.reduce((n, r) => n + (r.output_tokens ?? 0), 0);
+    const total = prompt + completion;
+    return { prompt, completion, total, promptPct: total ? (prompt / total) * 100 : 0 };
+  }, [modelCosts.data]);
 
   return (
     <div className="space-y-5">
@@ -107,10 +157,17 @@ export function AnalyticsPage() {
         <EmptyState title="No analytics yet" />
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
             <StatCard
               label="Traces"
               value={analytics.data.summary.trace_count.toLocaleString()}
+            />
+            <StatCard
+              label="Success rate"
+              value={`${(
+                (1 - analytics.data.summary.error_rate) *
+                100
+              ).toFixed(1)}%`}
             />
             <StatCard
               label="Errors"
@@ -119,182 +176,233 @@ export function AnalyticsPage() {
               )}%)`}
             />
             <StatCard
-              label="P50"
-              value={formatDurationMs(analytics.data.summary.p50_ms)}
-            />
-            <StatCard
-              label="P95"
-              value={formatDurationMs(analytics.data.summary.p95_ms)}
-            />
-            <StatCard
               label="Total cost"
               value={formatCost(analytics.data.summary.total_cost_usd)}
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Latency percentiles</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={220}>
-                  <LineChart data={chartData} margin={{ top: 6, right: 20, bottom: 4, left: 12 }}>
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      className="stroke-border"
-                      vertical={false}
-                    />
-                    <XAxis
-                      dataKey="bucket"
-                      type="number"
-                      scale="time"
-                      domain={["dataMin", "dataMax"]}
-                      tickFormatter={(v) => new Date(v).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                      className="text-muted-foreground text-xs"
-                      stroke="currentColor"
-                    />
-                    <YAxis
-                      tickFormatter={(v) => formatDurationMs(Number(v))}
-                      width={72}
-                      className="text-muted-foreground text-xs"
-                      stroke="currentColor"
-                    />
-                    <Tooltip
-                      cursor={{ stroke: "var(--color-primary)", strokeWidth: 1 }}
-                      contentStyle={{
-                        background: "var(--color-card)",
-                        border: "1px solid var(--color-border)",
-                        borderRadius: 6,
-                        fontSize: 12,
-                      }}
-                      labelFormatter={(v) => new Date(v).toLocaleString()}
-                      formatter={(value) => [formatDurationMs(Number(value)), ""]}
-                    />
-                    <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Line type="monotone" dataKey="p50" stroke="var(--color-fa-success)" name="p50" strokeWidth={2} dot={false} />
-                    <Line type="monotone" dataKey="p95" stroke="var(--color-fa-warning)" name="p95" strokeWidth={2} dot={false} />
-                    <Line type="monotone" dataKey="p99" stroke="var(--color-destructive)" name="p99" strokeWidth={2} dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Cost over time</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={220}>
-                  <LineChart data={chartData} margin={{ top: 6, right: 20, bottom: 4, left: 12 }}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
-                    <XAxis
-                      dataKey="bucket"
-                      type="number"
-                      scale="time"
-                      domain={["dataMin", "dataMax"]}
-                      tickFormatter={(v) => new Date(v).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                      className="text-muted-foreground text-xs"
-                      stroke="currentColor"
-                    />
-                    <YAxis
-                      tickFormatter={(v) => formatCost(Number(v))}
-                      width={72}
-                      className="text-muted-foreground text-xs"
-                      stroke="currentColor"
-                    />
-                    <Tooltip
-                      cursor={{ stroke: "var(--color-primary)", strokeWidth: 1 }}
-                      contentStyle={{
-                        background: "var(--color-card)",
-                        border: "1px solid var(--color-border)",
-                        borderRadius: 6,
-                        fontSize: 12,
-                      }}
-                      labelFormatter={(v) => new Date(v).toLocaleString()}
-                      formatter={(value) => [formatCost(Number(value)), "Cost"]}
-                    />
-                    <Line type="monotone" dataKey="cost" stroke="var(--color-primary)" name="cost" strokeWidth={2} dot={{ r: 2 }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Error rate</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={220}>
-                  <LineChart data={chartData} margin={{ top: 6, right: 20, bottom: 4, left: 12 }}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
-                    <XAxis
-                      dataKey="bucket"
-                      type="number"
-                      scale="time"
-                      domain={["dataMin", "dataMax"]}
-                      tickFormatter={(v) => new Date(v).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                      className="text-muted-foreground text-xs"
-                      stroke="currentColor"
-                    />
-                    <YAxis
-                      tickFormatter={(v) => `${v}%`}
-                      width={48}
-                      className="text-muted-foreground text-xs"
-                      stroke="currentColor"
-                      domain={[0, 100]}
-                    />
-                    <Tooltip
-                      cursor={{ stroke: "var(--color-primary)", strokeWidth: 1 }}
-                      contentStyle={{
-                        background: "var(--color-card)",
-                        border: "1px solid var(--color-border)",
-                        borderRadius: 6,
-                        fontSize: 12,
-                      }}
-                      labelFormatter={(v) => new Date(v).toLocaleString()}
-                      formatter={(value) => [`${value}%`, "Error rate"]}
-                    />
-                    <Line type="monotone" dataKey="errorRate" stroke="var(--color-destructive)" name="errorRate" strokeWidth={2} dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Trace volume</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={220}>
-                  <LineChart data={chartData} margin={{ top: 6, right: 20, bottom: 4, left: 12 }}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
-                    <XAxis
-                      dataKey="bucket"
-                      type="number"
-                      scale="time"
-                      domain={["dataMin", "dataMax"]}
-                      tickFormatter={(v) => new Date(v).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                      className="text-muted-foreground text-xs"
-                      stroke="currentColor"
-                    />
-                    <YAxis width={48} className="text-muted-foreground text-xs" stroke="currentColor" />
-                    <Tooltip
-                      cursor={{ stroke: "var(--color-primary)", strokeWidth: 1 }}
-                      contentStyle={{
-                        background: "var(--color-card)",
-                        border: "1px solid var(--color-border)",
-                        borderRadius: 6,
-                        fontSize: 12,
-                      }}
-                      labelFormatter={(v) => new Date(v).toLocaleString()}
-                    />
-                    <Line type="monotone" dataKey="traces" stroke="var(--color-accent)" name="traces" strokeWidth={2} dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
+          {/* Percentiles get their own row. P99 was already computed by the
+              API and thrown away by the UI — which is exactly the number that
+              catches a slow tail hiding behind a healthy median. */}
+          <div className="grid grid-cols-3 gap-4">
+            <StatCard
+              label="Latency P50"
+              value={formatDurationMs(analytics.data.summary.p50_ms)}
+            />
+            <StatCard
+              label="Latency P95"
+              value={formatDurationMs(analytics.data.summary.p95_ms)}
+            />
+            <StatCard
+              label="Latency P99"
+              value={formatDurationMs(analytics.data.summary.p99_ms)}
+            />
           </div>
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <Panel
+              title="Latency percentiles"
+              subtitle="p50 · p95 · p99 over the selected window"
+            >
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={chartData} margin={CHART_MARGIN}>
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke={GRID_STROKE}
+                    vertical={false}
+                  />
+                  <XAxis dataKey="bucket" {...TIME_AXIS} />
+                  <YAxis
+                    tickFormatter={(v) => formatDurationMs(Number(v))}
+                    width={72}
+                    {...AXIS_PROPS}
+                  />
+                  <Tooltip
+                    cursor={{ stroke: "var(--primary)", strokeWidth: 1 }}
+                    content={
+                      <ChartTooltip
+                        labelFormatter={(v) => new Date(v).toLocaleString()}
+                        valueFormatter={(v) => formatDurationMs(v)}
+                      />
+                    }
+                  />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  {/* Percentiles are a severity ramp, not identity — the
+                      reserved status palette is the right scale here. */}
+                  <Line type="monotone" dataKey="p50" stroke={STATUS_FILL.completed} name="p50" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="p95" stroke="var(--fa-warning)" name="p95" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="p99" stroke={STATUS_FILL.failed} name="p99" strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </Panel>
+
+            <Panel title="Cost over time" subtitle="USD spend per bucket">
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={chartData} margin={CHART_MARGIN}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} vertical={false} />
+                  <XAxis dataKey="bucket" {...TIME_AXIS} />
+                  <YAxis
+                    tickFormatter={(v) => formatCost(Number(v))}
+                    width={72}
+                    {...AXIS_PROPS}
+                  />
+                  <Tooltip
+                    cursor={{ stroke: "var(--primary)", strokeWidth: 1 }}
+                    content={
+                      <ChartTooltip
+                        labelFormatter={(v) => new Date(v).toLocaleString()}
+                        valueFormatter={(v) => formatCost(v)}
+                      />
+                    }
+                  />
+                  <Line type="monotone" dataKey="cost" stroke="var(--chart-1)" name="Cost" strokeWidth={2} dot={{ r: 2 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </Panel>
+
+            <Panel title="Error rate" subtitle="Share of traces ending in error">
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={chartData} margin={CHART_MARGIN}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} vertical={false} />
+                  <XAxis dataKey="bucket" {...TIME_AXIS} />
+                  <YAxis
+                    tickFormatter={(v) => `${v}%`}
+                    width={48}
+                    domain={[0, 100]}
+                    {...AXIS_PROPS}
+                  />
+                  <Tooltip
+                    cursor={{ stroke: "var(--primary)", strokeWidth: 1 }}
+                    content={
+                      <ChartTooltip
+                        labelFormatter={(v) => new Date(v).toLocaleString()}
+                        valueFormatter={(v) => `${v}%`}
+                      />
+                    }
+                  />
+                  <Line type="monotone" dataKey="errorRate" stroke={STATUS_FILL.failed} name="Error rate" strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </Panel>
+
+            {/* Was a single "Trace volume" line, which hid the failure mix:
+                a flat total can be 100% healthy or 40% failing and look the
+                same. Stacking failures on top keeps them visible at any
+                height, and status always ships with a legend — never colour
+                alone. */}
+            <Panel
+              title="Volume by status"
+              subtitle={`Traces per ${choice.granularity}, failures stacked on top`}
+            >
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={chartData} margin={CHART_MARGIN}>
+                  <CartesianGrid stroke={GRID_STROKE} vertical={false} />
+                  <XAxis dataKey="bucket" {...TIME_AXIS} />
+                  <YAxis width={48} allowDecimals={false} {...AXIS_PROPS} />
+                  <Tooltip
+                    cursor={{ fill: "var(--muted)", opacity: 0.35 }}
+                    content={
+                      <ChartTooltip
+                        labelFormatter={(v) => new Date(v).toLocaleString()}
+                      />
+                    }
+                  />
+                  <Legend wrapperStyle={{ fontSize: 11, paddingTop: 6 }} iconType="square" iconSize={8} />
+                  {/* A surface-coloured hairline separates the segments. */}
+                  <Bar dataKey="ok" name="ok" stackId="s" fill={STATUS_FILL.completed}
+                       maxBarSize={24} stroke="var(--card)" strokeWidth={2} />
+                  <Bar dataKey="failed" name="failed" stackId="s" fill={STATUS_FILL.failed}
+                       maxBarSize={24} radius={[4, 4, 0, 0]} stroke="var(--card)" strokeWidth={2} />
+                </BarChart>
+              </ResponsiveContainer>
+            </Panel>
+          </div>
+
+          {(modelRows.length > 0 || tokenSplit.total > 0) && (
+            <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
+              <Panel
+                title="Top models by cost"
+                subtitle="Estimated from recorded tokens and published pricing"
+              >
+                {modelRows.length === 0 ? (
+                  <p className="py-6 text-center text-[12.5px] text-muted-foreground">
+                    No priced model calls in this period.
+                  </p>
+                ) : (
+                  // Magnitude → one hue; one series → no legend; every bar is
+                  // direct-labelled, so the panel also reads as a table.
+                  <ResponsiveContainer width="100%" height={Math.max(140, modelRows.length * 30)}>
+                    <BarChart data={modelRows} layout="vertical" margin={{ top: 0, right: 64, bottom: 0, left: 0 }}>
+                      <XAxis type="number" hide />
+                      <YAxis
+                        type="category"
+                        dataKey="model"
+                        width={150}
+                        tickLine={false}
+                        axisLine={false}
+                        tickFormatter={(m: string) => (m.length > 20 ? `${m.slice(0, 19)}…` : m)}
+                        {...AXIS_PROPS}
+                      />
+                      <Tooltip
+                        cursor={{ fill: "var(--muted)", opacity: 0.35 }}
+                        content={<ChartTooltip valueFormatter={fmtUsd} />}
+                      />
+                      <Bar
+                        dataKey="cost_usd"
+                        name="cost"
+                        fill="var(--chart-1)"
+                        maxBarSize={18}
+                        radius={[0, 4, 4, 0]}
+                        label={{
+                          position: "right",
+                          formatter: (v: unknown) => (typeof v === "number" ? fmtUsd(v) : ""),
+                          fill: "var(--muted-foreground)",
+                          fontSize: 10,
+                        }}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </Panel>
+
+              <Panel
+                title="Token split"
+                subtitle="Prompt vs completion tokens across all models"
+              >
+                {tokenSplit.total === 0 ? (
+                  <p className="py-6 text-center text-[12.5px] text-muted-foreground">
+                    No token usage recorded in this period.
+                  </p>
+                ) : (
+                  <>
+                    {/* Part-to-whole of two → one stacked bar, direct-labelled below. */}
+                    <div className="flex h-7 w-full overflow-hidden rounded-md">
+                      <div style={{ width: `${tokenSplit.promptPct}%`, background: "var(--chart-1)" }} />
+                      <div style={{ width: "2px", background: "var(--card)" }} />
+                      <div style={{ flex: 1, background: "var(--chart-2)" }} />
+                    </div>
+                    <div className="mt-3 space-y-1.5">
+                      {[
+                        { name: "Prompt", tok: tokenSplit.prompt, color: "var(--chart-1)" },
+                        { name: "Completion", tok: tokenSplit.completion, color: "var(--chart-2)" },
+                      ].map((r) => (
+                        <div key={r.name} className="flex items-center gap-2 text-[12px]">
+                          <span className="h-2.5 w-2.5 rounded-sm" style={{ background: r.color }} />
+                          <span className="text-muted-foreground">{r.name}</span>
+                          <span className="ml-auto font-mono tabular-nums">
+                            {r.tok.toLocaleString()}
+                          </span>
+                          <span className="w-14 text-right font-mono text-[11px] tabular-nums text-muted-foreground">
+                            {Math.round((r.tok / tokenSplit.total) * 100)}%
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </Panel>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <Card>
@@ -423,6 +531,12 @@ export function AnalyticsPage() {
               </TabsContent>
             </Tabs>
           </div>
+
+          <p className="rounded-lg bg-muted/50 p-3 font-mono text-xs text-muted-foreground">
+            Cost figures are estimates derived from recorded token counts and
+            published API pricing — local models (e.g. Ollama) show $0.00.
+            Actual billing may differ under your provider agreement.
+          </p>
         </>
       )}
     </div>

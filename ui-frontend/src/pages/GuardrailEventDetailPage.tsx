@@ -31,9 +31,9 @@ import {
   useMarkFalsePositive,
 } from "@/hooks/use-guardrails";
 import { ApiError } from "@/lib/api";
-import { formatTimeAgo } from "@/lib/format";
 import type { GuardrailContextSpan, GuardrailEvent } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { Timestamp } from "@/components/shared/Timestamp";
 
 const OUTCOME_META: Record<
   string,
@@ -181,7 +181,7 @@ export function GuardrailEventDetailPage() {
               event id: {event.event_id}
             </span>
             <span className="text-xs text-muted-foreground">
-              {formatTimeAgo(event.timestamp)}
+              <Timestamp iso={event.timestamp} />
             </span>
             {event.agent_name && (
               <Link
@@ -480,7 +480,7 @@ function ContextTimeline({
             <div className="flex items-center justify-between gap-2 text-xs">
               <span className="font-mono">{s.name}</span>
               <span className="text-muted-foreground">
-                {formatTimeAgo(s.start_time)}
+                <Timestamp iso={s.start_time} />
               </span>
             </div>
             {(s.input || s.output) && (

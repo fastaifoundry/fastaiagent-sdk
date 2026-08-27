@@ -45,6 +45,45 @@ export function formatTimeAgo(iso: string | null | undefined): string {
   return new Date(iso).toLocaleDateString();
 }
 
+/**
+ * Absolute local timestamp, compact enough for a table column.
+ *
+ * Deliberately separate from `formatTimeAgo` rather than replacing it: that
+ * helper is shared by ~25 surfaces (evals, guardrails, KB, agents, playground…)
+ * and changing it would silently restyle all of them.
+ *
+ * Seconds are included because traces frequently fire within the same minute —
+ * minute precision would render consecutive runs as identical timestamps.
+ *
+ * The stored value carries a UTC offset (…+00:00), so this renders in the
+ * viewer's local timezone, which is what you want when correlating a run
+ * against something else that happened on this machine.
+ */
+export function formatDateTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString(undefined, {
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+}
+
+/** Full local timestamp for tooltips — includes the year and timezone name. */
+export function formatDateTimeFull(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString(undefined, {
+    dateStyle: "full",
+    timeStyle: "long",
+  });
+}
+
 export function shortTraceId(id: string): string {
   return id.length <= 10 ? id : `${id.slice(0, 8)}…${id.slice(-4)}`;
 }

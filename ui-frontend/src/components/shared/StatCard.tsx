@@ -9,14 +9,14 @@ interface StatCardProps {
 
 export function StatCard({ label, value, icon, accent }: StatCardProps) {
   return (
-    <div className={`rounded-md border p-4 bg-card ${accent || ""}`}>
+    <div
+      className={`rounded-xl border border-border bg-card p-4 ${accent || ""}`}
+    >
       <div className="flex items-center gap-1.5">
         {icon}
-        <p className="text-xs font-mono uppercase tracking-widest text-muted-foreground">
-          {label}
-        </p>
+        <p className="fa-section-label">{label}</p>
       </div>
-      <p className="text-3xl font-bold font-mono mt-1">{value}</p>
+      <p className="fa-stat-value mt-1">{value}</p>
     </div>
   );
 }

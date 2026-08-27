@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Download, Image as ImageIcon, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -22,18 +22,25 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useDeleteDataset } from "@/hooks/use-datasets";
-import { formatTimeAgo } from "@/lib/format";
 import type { DatasetSummary } from "@/lib/types";
+import { Timestamp } from "@/components/shared/Timestamp";
 
 interface Props {
   rows: DatasetSummary[];
 }
 
 /**
- * Datasets list view. Each row links to the detail page for inline
- * editing; the export action triggers a JSONL download via the API.
+ * Datasets list view. The whole row opens the detail page for inline editing;
+ * the export and delete actions live in their own cell and don't trigger it.
+ *
+ * The row used to be inert except for the name link — the comment here claimed
+ * "each row links to the detail page" while only one cell actually did, and the
+ * actions cell already stopped propagation for a row handler that was never
+ * added. Every other list in the UI (traces, evals, guardrails, simulations,
+ * optimizes, prompts) opens from anywhere in the row.
  */
 export function DatasetTable({ rows }: Props) {
+  const navigate = useNavigate();
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const del = useDeleteDataset();
 
@@ -64,8 +71,20 @@ export function DatasetTable({ rows }: Props) {
           </TableHeader>
           <TableBody>
             {rows.map((row) => (
-              <TableRow key={row.name}>
-                <TableCell className="font-medium">
+              <TableRow
+                key={row.name}
+                className="cursor-pointer"
+                onClick={() =>
+                  navigate(`/datasets/${encodeURIComponent(row.name)}`)
+                }
+              >
+                {/* The name stays a real anchor so keyboard focus, middle-click
+                    and open-in-new-tab keep working; the cell stops propagation
+                    so the row handler doesn't also fire. */}
+                <TableCell
+                  className="font-medium"
+                  onClick={(e) => e.stopPropagation()}
+                >
                   <Link
                     to={`/datasets/${encodeURIComponent(row.name)}`}
                     className="hover:text-primary"
@@ -85,10 +104,10 @@ export function DatasetTable({ rows }: Props) {
                   )}
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">
-                  {formatTimeAgo(row.modified_at)}
+                  <Timestamp iso={row.modified_at} />
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">
-                  {formatTimeAgo(row.created_at)}
+                  <Timestamp iso={row.created_at} />
                 </TableCell>
                 <TableCell
                   className="text-right"

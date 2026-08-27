@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ThemeSwitcher } from "@/components/theme/ThemeSwitcher";
+import { SkinSwitcher } from "@/components/theme/SkinSwitcher";
 import { api, ApiError } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth-store";
 
@@ -39,6 +40,7 @@ export function Header() {
         <span>{noAuth ? "auth disabled" : `signed in as ${username ?? "…"}`}</span>
       </div>
       <div className="flex items-center gap-2">
+        <SkinSwitcher />
         <ThemeSwitcher />
         {!noAuth && (
           <>

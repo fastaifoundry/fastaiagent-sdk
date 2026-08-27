@@ -75,9 +75,12 @@ test("07 — Eval run detail", async ({ page }) => {
   await page.goto("/evals");
   await page.getByText("support-smoke").click();
   await expect(page.getByText(/Pass rate/i).first()).toBeVisible();
-  // The Cases card title is an exact match; the row header also contains
-  // "Cases" so scope to the card title.
-  await expect(page.getByText("Cases", { exact: true }).first()).toBeVisible();
+  // Scope to the card title — the row header also contains "Cases". An exact
+  // text match no longer works: the title carries "N of M shown" (and an
+  // errored count) in sibling spans, so its text is not just "Cases".
+  await expect(
+    page.locator('[data-slot="card-title"]').filter({ hasText: /^Cases/ }).first()
+  ).toBeVisible();
   await page.waitForTimeout(300);
   await page.screenshot(SHOT("07-eval-detail"));
 });
@@ -300,7 +303,9 @@ test("20 — Agent Replay comparison view", async ({ page }) => {
       "You are a customer support agent. Refunds are processed within 7 business days."
     );
 
-  await page.getByRole("button", { name: /Rerun from this step/i }).click();
+  // Label is "Rerun with modifications" (renamed in v1.14.1 from
+  // "Rerun from this step"); match on the stable "Rerun with" prefix.
+  await page.getByRole("button", { name: /Rerun with modifications/i }).click();
 
   // Wait for ReplayDiffView to render — give it more time than default
   // because the client runs 3 sequential requests (fork, modify, rerun)

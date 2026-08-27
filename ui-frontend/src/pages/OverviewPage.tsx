@@ -1,11 +1,15 @@
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { RefreshCw } from "lucide-react";
+import { FileText, RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { StatCard } from "@/components/shared/StatCard";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { TraceStatusBadge } from "@/components/traces/TraceStatusBadge";
+import { Panel } from "@/components/charts/chart-kit";
+import { AttentionStrip } from "@/components/overview/AttentionStrip";
+import { buildAttention } from "@/components/overview/attention";
 import { api } from "@/lib/api";
 
 interface OverviewPayload {
@@ -27,11 +31,35 @@ interface OverviewPayload {
   agents_with_errors: { agent_name: string; error_count: number }[];
 }
 
+/**
+ * Pass-rate chip. Thresholds mirror the Enterprise console's score chips so a
+ * given rate reads the same in both products: ≥85% good, ≥70% watch, below
+ * that a failure. Always carries the number, never colour alone.
+ */
+function ScoreChip({ value }: { value: number }) {
+  const pct = Math.round(value * 100);
+  const tone =
+    value >= 0.85
+      ? "bg-fa-success/15 text-fa-success"
+      : value >= 0.7
+      ? "bg-fa-warning/15 text-fa-warning"
+      : "bg-destructive/15 text-destructive";
+  return (
+    <span
+      className={`shrink-0 rounded-full px-2 py-0.5 font-mono text-[10.5px] font-medium ${tone}`}
+    >
+      {pct}%
+    </span>
+  );
+}
+
 export function OverviewPage() {
-  const { data, refetch, isFetching } = useQuery({
+  const { data, refetch, isFetching, isLoading } = useQuery({
     queryKey: ["overview"],
     queryFn: () => api.get<OverviewPayload>("/overview"),
   });
+
+  const attention = useMemo(() => buildAttention(data), [data]);
 
   return (
     <div className="space-y-6">
@@ -41,6 +69,9 @@ export function OverviewPage() {
           Refresh
         </Button>
       </PageHeader>
+
+      {/* What's wrong, before what exists. */}
+      <AttentionStrip items={attention} isLoading={isLoading} />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
         <StatCard label="Traces (24h)" value={String(data?.traces_last_24h ?? "—")} />
@@ -61,7 +92,10 @@ export function OverviewPage() {
           Each card is wrapped in a Link so a click jumps straight to the
           relevant page. */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-        <Link to="/approvals" className="block transition-transform hover:scale-[1.01]">
+        <Link
+          to="/approvals"
+          className="block rounded-xl transition-colors hover:border-primary/50 [&>div]:hover:border-primary/50"
+        >
           <StatCard
             label="Pending approvals"
             value={String(data?.pending_approvals_count ?? "—")}
@@ -69,7 +103,7 @@ export function OverviewPage() {
         </Link>
         <Link
           to="/approvals"
-          className="block transition-transform hover:scale-[1.01]"
+          className="block rounded-xl transition-colors [&>div]:hover:border-primary/50"
         >
           <StatCard
             label="Failed executions"
@@ -79,61 +113,122 @@ export function OverviewPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Recent traces</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {data?.recent_traces?.length ? (
-              <ul className="space-y-2 text-sm">
-                {data.recent_traces.map((t) => (
-                  <li
-                    key={t.trace_id}
-                    className="flex items-center justify-between rounded-md px-2 py-1.5 hover:bg-muted/50"
+        <Panel title="Recent traces" subtitle="Latest agent runs recorded locally">
+          {data?.recent_traces?.length ? (
+            <ul className="fa-body divide-y divide-border/60">
+              {data.recent_traces.map((t) => (
+                <li
+                  key={t.trace_id}
+                  className="flex items-center justify-between gap-3 py-2"
+                >
+                  <Link
+                    to={`/traces/${t.trace_id}`}
+                    className="truncate hover:text-primary hover:underline"
                   >
-                    <span className="truncate">{t.name || t.trace_id}</span>
-                    <span className="ml-3 shrink-0 text-xs text-muted-foreground">
-                      {t.status}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <EmptyState
-                title="No traces yet"
-                description="Run an agent — traces will appear here."
-              />
-            )}
-          </CardContent>
-        </Card>
+                    {t.name || t.trace_id}
+                  </Link>
+                  <TraceStatusBadge status={t.status} className="shrink-0" />
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <EmptyState
+              title="No traces yet"
+              description="Run an agent — traces will appear here."
+            />
+          )}
+        </Panel>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Recent eval runs</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {data?.recent_eval_runs?.length ? (
-              <ul className="space-y-2 text-sm">
-                {data.recent_eval_runs.map((r) => (
-                  <li
-                    key={r.run_id}
-                    className="flex items-center justify-between rounded-md px-2 py-1.5 hover:bg-muted/50"
+        <Panel title="Recent eval runs" subtitle="Most recent scored runs">
+          {data?.recent_eval_runs?.length ? (
+            <ul className="fa-body divide-y divide-border/60">
+              {data.recent_eval_runs.map((r) => (
+                <li
+                  key={r.run_id}
+                  className="flex items-center justify-between gap-3 py-2"
+                >
+                  <Link
+                    to={`/evals/${r.run_id}`}
+                    className="truncate hover:text-primary hover:underline"
                   >
-                    <span className="truncate">{r.run_name || r.run_id}</span>
-                    <span className="ml-3 shrink-0 text-xs text-muted-foreground">
-                      {Math.round((r.pass_rate ?? 0) * 100)}%
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <EmptyState
-                title="No eval runs yet"
-                description="Call evaluate() — runs will appear here."
-              />
-            )}
-          </CardContent>
-        </Card>
+                    {r.run_name || r.run_id}
+                  </Link>
+                  <ScoreChip value={r.pass_rate ?? 0} />
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <EmptyState
+              title="No eval runs yet"
+              description="Call evaluate() — runs will appear here."
+            />
+          )}
+        </Panel>
+      </div>
+
+      {/* Both of these were already in the /overview payload and rendered
+          nowhere. */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Panel
+          title="Agents in recent failures"
+          subtitle="Grouped from the 10 most recent errors — a sample, not a total"
+        >
+          {data?.agents_with_errors?.length ? (
+            <ul className="fa-body divide-y divide-border/60">
+              {data.agents_with_errors.map((a) => (
+                <li
+                  key={a.agent_name}
+                  className="flex items-center justify-between gap-3 py-2"
+                >
+                  <Link
+                    to={`/agents/${encodeURIComponent(a.agent_name)}`}
+                    className="truncate font-mono hover:text-primary hover:underline"
+                  >
+                    {a.agent_name}
+                  </Link>
+                  <span className="shrink-0 rounded-full bg-destructive/15 px-2 py-0.5 font-mono text-[10.5px] font-medium text-destructive">
+                    {a.error_count} {a.error_count === 1 ? "error" : "errors"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="py-6 text-center text-[12.5px] text-muted-foreground">
+              No agent errors in the last 24 hours.
+            </p>
+          )}
+        </Panel>
+
+        <Panel
+          title="Prompt changes"
+          subtitle="New prompt versions committed in the last 7 days"
+        >
+          {data?.prompt_changes_last_7d?.length ? (
+            <ul className="fa-body divide-y divide-border/60">
+              {data.prompt_changes_last_7d.map((p) => (
+                <li
+                  key={`${p.slug}@${p.version}`}
+                  className="flex items-center justify-between gap-3 py-2"
+                >
+                  <Link
+                    to={`/prompts/${encodeURIComponent(p.slug)}`}
+                    className="flex min-w-0 items-center gap-2 hover:text-primary"
+                  >
+                    <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className="truncate font-mono hover:underline">{p.slug}</span>
+                  </Link>
+                  <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+                    v{p.version}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="py-6 text-center text-[12.5px] text-muted-foreground">
+              No prompt versions committed in the last 7 days.
+            </p>
+          )}
+        </Panel>
       </div>
     </div>
   );

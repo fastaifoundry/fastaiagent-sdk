@@ -34,7 +34,8 @@ import { EmptyState } from "@/components/shared/EmptyState";
 import { CaseDiffCard } from "@/components/evals/CaseDiffCard";
 import { PassRateBar } from "@/components/evals/PassRateBar";
 import { useEvalRun } from "@/hooks/use-evals";
-import { formatCost, formatDurationMs, formatTimeAgo } from "@/lib/format";
+import { formatDateTime,
+  formatCost, formatDurationMs } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { evalCaseOutcome } from "@/lib/types";
 import type { EvalCaseFilters, EvalCaseOutcome, EvalCaseRow } from "@/lib/types";
@@ -128,7 +129,7 @@ export function EvalRunDetailPage() {
         <StatCard label="Total cost" value={formatCost(run.cost_usd ?? 0)} />
         <StatCard
           label="Started"
-          value={formatTimeAgo(run.started_at ?? "")}
+          value={formatDateTime(run.started_at ?? "")}
         />
       </div>
 

@@ -15,8 +15,8 @@ import {
 import { TableSkeleton } from "@/components/shared/LoadingSkeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { useGuardrailEvents } from "@/hooks/use-guardrails";
-import { formatTimeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { Timestamp } from "@/components/shared/Timestamp";
 
 interface Filters {
   rule: string | null;
@@ -271,7 +271,7 @@ export function GuardrailsPage() {
                       {row.message ?? "—"}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {formatTimeAgo(row.timestamp)}
+                      <Timestamp iso={row.timestamp} />
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">

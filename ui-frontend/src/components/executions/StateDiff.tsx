@@ -60,21 +60,21 @@ export function StateDiff({ prev, next }: Props) {
       {Object.keys(added).length > 0 ? (
         <Section
           label="Added"
-          tone="bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
+          tone="bg-fa-success/10 text-fa-success border-fa-success/30"
           body={jsonBlock(added)}
         />
       ) : null}
       {Object.keys(changed).length > 0 ? (
         <Section
           label="Changed"
-          tone="bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30"
+          tone="bg-fa-warning/10 text-fa-warning border-fa-warning/30"
           body={jsonBlock(changed)}
         />
       ) : null}
       {Object.keys(removed).length > 0 ? (
         <Section
           label="Removed"
-          tone="bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/30"
+          tone="bg-destructive/10 text-destructive border-destructive/30"
           body={jsonBlock(removed)}
         />
       ) : null}

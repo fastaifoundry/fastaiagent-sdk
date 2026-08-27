@@ -3,6 +3,8 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { NextLayout } from "@/components/layout/next/NextLayout";
+import { getSkin } from "@/lib/skin";
 import { LoginPage } from "@/pages/LoginPage";
 import { OverviewPage } from "@/pages/OverviewPage";
 import { useAuth } from "@/hooks/use-auth";
@@ -155,6 +157,16 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/**
+ * Picks the shell for the active skin. Both layouts render <Outlet/>, so the
+ * route table below is shared verbatim — no duplication, no route can exist in
+ * one skin and not the other. Statically imported (not lazy) so the shell
+ * never flashes.
+ */
+function Shell() {
+  return getSkin() === "classic" ? <AppLayout /> : <NextLayout />;
+}
+
 function PageFallback() {
   return (
     <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
@@ -173,7 +185,7 @@ export default function App() {
             <Route
               element={
                 <AuthGuard>
-                  <AppLayout />
+                  <Shell />
                 </AuthGuard>
               }
             >

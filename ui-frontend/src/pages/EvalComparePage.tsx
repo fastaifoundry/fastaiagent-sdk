@@ -16,8 +16,10 @@ import { TableSkeleton } from "@/components/shared/LoadingSkeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { CaseDiffCard } from "@/components/evals/CaseDiffCard";
 import { useEvalCompare, useEvalRuns } from "@/hooks/use-evals";
-import { formatCost, formatTimeAgo } from "@/lib/format";
+import { formatDateTime,
+  formatCost } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { Timestamp } from "@/components/shared/Timestamp";
 
 export function EvalComparePage() {
   const [params, setParams] = useSearchParams();
@@ -83,7 +85,7 @@ export function EvalComparePage() {
                     {r.run_name || r.run_id.slice(0, 12)} ·{" "}
                     {r.dataset_name ?? "—"} ·{" "}
                     {Math.round((r.pass_rate ?? 0) * 100)}% ·{" "}
-                    {formatTimeAgo(r.started_at)}
+                    <Timestamp iso={r.started_at} />
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -104,7 +106,7 @@ export function EvalComparePage() {
                     {r.run_name || r.run_id.slice(0, 12)} ·{" "}
                     {r.dataset_name ?? "—"} ·{" "}
                     {Math.round((r.pass_rate ?? 0) * 100)}% ·{" "}
-                    {formatTimeAgo(r.started_at)}
+                    <Timestamp iso={r.started_at} />
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -277,7 +279,7 @@ function RunSummary({
           v={`${Math.round((run.pass_rate ?? 0) * 100)}% (${run.pass_count}/${(run.pass_count ?? 0) + (run.fail_count ?? 0)})`}
         />
         <Row k="Cost" v={formatCost(run.cost_usd ?? 0)} />
-        <Row k="Started" v={formatTimeAgo(run.started_at ?? "")} />
+        <Row k="Started" v={formatDateTime(run.started_at ?? "")} />
       </CardContent>
     </Card>
   );

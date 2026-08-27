@@ -16,7 +16,8 @@ import { EmptyState } from "@/components/shared/EmptyState";
 import { PassRateBar } from "@/components/evals/PassRateBar";
 import { QualityTrendChart } from "@/components/evals/QualityTrendChart";
 import { useEvalRuns, useEvalTrend } from "@/hooks/use-evals";
-import { formatCost, formatDurationMs, formatTimeAgo } from "@/lib/format";
+import { formatCost, formatDurationMs } from "@/lib/format";
+import { Timestamp } from "@/components/shared/Timestamp";
 
 export function EvalRunsPage() {
   const navigate = useNavigate();
@@ -125,7 +126,7 @@ export function EvalRunsPage() {
                       : "—"}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
-                    {formatTimeAgo(row.started_at)}
+                    <Timestamp iso={row.started_at} />
                   </TableCell>
                 </TableRow>
               ))}

@@ -22,7 +22,7 @@ import {
 import { TableSkeleton } from "@/components/shared/LoadingSkeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { useOptimizeRuns } from "@/hooks/use-optimizes";
-import { formatTimeAgo } from "@/lib/format";
+import { Timestamp } from "@/components/shared/Timestamp";
 
 const ALL_AGENTS = "__all__";
 
@@ -149,7 +149,7 @@ export function OptimizeRunsPage() {
                       )}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {formatTimeAgo(row.started_at)}
+                      <Timestamp iso={row.started_at} />
                     </TableCell>
                   </TableRow>
                 );
