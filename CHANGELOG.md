@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.51.0] - 2026-08-27 — Judge correctness (Evals Phase 0)
+
+The SDK half of the Evals Phase 0 correctness work. Two silent-corruption bugs in the
+LLM judge are fixed — both could quietly produce a wrong score rather than an error, so
+**scores can legitimately change (usually improve) for workloads that were hitting them**.
+
+### Fixed
+
+- **Judge templates now accept every placeholder alias.** The prompt template is a wire
+  contract: the control plane serves it verbatim and `Scorer.from_platform()` feeds it
+  straight into the judge. Templates authored with the legacy `{expected_output}` or
+  double-brace (`{{input}}`, `{{output}}`, `{{expected}}`, `{{expected_output}}`)
+  spellings reached the judge **uninterpolated and unwarned** — so the judge never saw
+  the expected answer. They now render identically to the canonical
+  `{input}`/`{output}`/`{expected}`. Rendering is a single regex pass, so content
+  substituted into the template is never re-scanned, and a literal JSON exemplar like
+  `{"score": ...}` still survives untouched.
+- **An unparseable judge verdict no longer scores a silent `0.0`.** A reply wrapped in
+  prose is now recovered by a regex fallback; a genuinely unreadable one earns exactly
+  one retry (the model is handed its own reply back and asked for bare JSON) before the
+  judge gives up. Costs at most one extra LLM call, and only on an unreadable verdict.
+  Applies to both the single-call and G-Eval paths.
+- **A transport error and an unreadable verdict now report different reasons** —
+  `Judge error: …` vs `Judge verdict unparseable after retry: …`, the latter quoting the
+  raw reply. Previously both collapsed into the same `score=0.0` result.
+- **`LLMJudge` honours `scale` and `threshold` in the single-call path.** It previously
+  returned the raw judge number and hardcoded `passed = score >= 0.5`, ignoring both. A
+  platform scorer with `scale="1-5"` returned a bare `4.0` where every other SDK scorer
+  returns 0-1; it now normalizes to `0.75`, matching the G-Eval path. **If you passed
+  `threshold=` to a non-G-Eval `LLMJudge`, it now takes effect and can change pass/fail.**
+
+### Added
+
+- **`render_judge_template()`** in `fastaiagent.eval.llm_judge` — the shared alias-union
+  renderer, mirroring the control plane's.
+- **A `UserWarning` when a custom `prompt_template` contains no known placeholder**, so a
+  judge that would score without ever seeing the content says so instead of failing quietly.
+
 ## [1.50.0] - 2026-08-23 — Security hardening (security_audit_2)
 
 Second security audit (`claude_files/security_audit_2_v1.49.1.md`). All findings
