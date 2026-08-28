@@ -36,6 +36,12 @@ class TraceRow(BaseModel):
     # ``fastaiagent.framework`` attribute on the root span. Powers the FA /
     # LC / CA / PA badge in the Traces list and the framework filter.
     framework: str | None = None
+    # Where the run came from, drawn from the ``fastaiagent.source`` attribute
+    # on the root span. Playground runs set it to "playground"; without it
+    # surfaced here there is no way to tell an experiment apart from a
+    # production run in the Traces list, despite the Playground docs promising
+    # exactly that.
+    source: str | None = None
     # Whether this trace is starred (present in ``trace_favorites``). Drives the
     # filled star in the Traces list — without it the toggle is write-only and
     # the UI shows no state.
@@ -102,6 +108,7 @@ def _summarize_trace(spans: list[dict[str, Any]]) -> dict[str, Any]:
     runner_type: str | None = None
     runner_name: str | None = None
     framework: str | None = None
+    source: str | None = None
     for sp in spans:
         attrs = _row_attrs(sp)
         span_name = sp.get("name") or ""
@@ -109,6 +116,10 @@ def _summarize_trace(spans: list[dict[str, Any]]) -> dict[str, Any]:
             fw = attr(attrs, "framework")
             if fw:
                 framework = str(fw)
+        if source is None:
+            src = attr(attrs, "source")
+            if src:
+                source = str(src)
         if runner_type is None:
             explicit = attr(attrs, "runner.type")
             # An OpenInference-classified span carries its kind directly. Map it
@@ -185,6 +196,7 @@ def _summarize_trace(spans: list[dict[str, Any]]) -> dict[str, Any]:
         "runner_type": runner_type or "agent",
         "runner_name": runner_name or agent_name,
         "framework": framework,
+        "source": source,
     }
 
 
@@ -243,6 +255,18 @@ def list_traces(
             "``fastaiagent.framework`` attribute on the root span. "
             "Free-text — any value that the harness or a custom "
             "instrumentation has stamped on a trace."
+        ),
+    ),
+    source: str | None = Query(
+        default=None,
+        # Same shape rule as ``framework`` — open-ended slug, validated so a
+        # caller that later interpolates it can't smuggle LIKE wildcards.
+        pattern=r"^[A-Za-z][A-Za-z0-9_.-]{0,63}$",
+        description=(
+            "Filter by where the run originated, drawn from the "
+            "``fastaiagent.source`` attribute on the root span. "
+            "Prompt Playground runs are stamped ``playground``, so "
+            "``?source=playground`` separates experiments from real traffic."
         ),
     ),
     min_duration_ms: int | None = Query(default=None),
@@ -353,6 +377,8 @@ def list_traces(
                 continue
             if runner_name and summary["runner_name"] != runner_name:
                 continue
+            if source and summary["source"] != source:
+                continue
             if framework and summary["framework"] != framework:
                 continue
             duration = _ms(summary["start_time"], summary["end_time"])
@@ -389,6 +415,7 @@ def list_traces(
                     runner_type=summary["runner_type"],
                     runner_name=summary["runner_name"],
                     framework=summary["framework"],
+                    source=summary["source"],
                     favorited=bool(row["is_fav"]),
                 )
             )

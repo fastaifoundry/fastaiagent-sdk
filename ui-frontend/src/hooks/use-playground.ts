@@ -95,6 +95,9 @@ export async function* streamPlayground(
   }
 }
 
+/** Exported for unit tests only — not part of the module's public surface. */
+export { parseSseMessage as __parseSseMessageForTests };
+
 function parseSseMessage(raw: string): PlaygroundStreamEvent | null {
   let event = "message";
   const dataLines: string[] = [];
@@ -116,9 +119,15 @@ function parseSseMessage(raw: string): PlaygroundStreamEvent | null {
       return { event: "done", metadata: payload.metadata };
     }
     if (event === "error") {
+      // Provider errors are redacted server-side and logged under a fresh
+      // correlation id. Keep the id — without it the user is told "LLM call
+      // failed." with no way to find the matching server log line.
       return {
         event: "error",
         message: String(payload.message ?? "stream error"),
+        ...(payload.correlation_id
+          ? { correlation_id: String(payload.correlation_id) }
+          : {}),
       };
     }
   } catch {

@@ -8,7 +8,10 @@ Three endpoints:
 
 * ``GET /api/playground/models`` — list known providers + models with
   ``has_key`` set so the UI can disable options for providers without
-  configured API keys.
+  configured API keys. The list comes from
+  :mod:`fastaiagent.ui.model_catalog`, which layers a user ``models.json``
+  over the shipped defaults so a stale dropdown can be fixed without an
+  SDK release.
 * ``POST /api/playground/run`` — non-streaming JSON LLM call. Returns the
   full response with metadata (latency, tokens, cost, trace_id).
 * ``POST /api/playground/stream`` — same body as ``/run`` but streams tokens
@@ -27,21 +30,28 @@ import asyncio
 import base64
 import json
 import logging
-import os
 import re
 import time
 import uuid
 from pathlib import Path
 from typing import Any
-
-logger = logging.getLogger(__name__)
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from fastaiagent.ui.deps import get_context, require_session
+from fastaiagent.ui.model_catalog import (
+    build_catalog,
+    env_key_is_set,
+    env_var_for,
+    has_api_key,
+    load_overrides,
+)
 from fastaiagent.ui.throttle import client_throttle_ip, get_llm_rate_limiter
+
+logger = logging.getLogger(__name__)
 
 
 def _llm_rate_key(request: Request, user: str) -> str:
@@ -72,171 +82,47 @@ def _enforce_llm_rate_limit(request: Request, user: str) -> None:
 router = APIRouter(prefix="/api/playground", tags=["playground"])
 
 
-# ---------------------------------------------------------------------------
-# Provider catalog — built-ins keep their hand-curated model lists; preset
-# providers (added via ``fastaiagent.llm.providers.register_provider``) are
-# merged in dynamically from the registry so the Playground dropdown picks
-# up new providers without a UI rebuild.
-# ---------------------------------------------------------------------------
-_BUILTIN_CATALOG: dict[str, list[str]] = {
-    "openai": [
-        "gpt-4o-mini",
-        "gpt-4o",
-        "gpt-4.1-mini",
-        "gpt-4.1",
-        "o3-mini",
-    ],
-    "anthropic": [
-        "claude-haiku-4-5",
-        "claude-sonnet-4-5",
-        "claude-opus-4-5",
-        "claude-3-5-sonnet-latest",
-    ],
-    "ollama": [
-        "llama3.2",
-        "llama3.2-vision",
-        "qwen2.5",
-    ],
-}
-
-_BUILTIN_ENV_KEY: dict[str, str] = {
-    "openai": "OPENAI_API_KEY",
-    "anthropic": "ANTHROPIC_API_KEY",
-    "ollama": "",  # local — no key required
-}
-
-# Curated per-preset model suggestions for the Playground dropdown. The
-# preset's ``default_model`` is always included first; these are common
-# additional choices users typically want. Adding entries here only affects
-# the UI affordance — runtime ``LLMClient(provider=..., model="anything")``
-# accepts any model the upstream API supports.
-_PRESET_MODEL_HINTS: dict[str, list[str]] = {
-    "groq": [
-        "llama-3.3-70b-versatile",
-        "llama-3.1-70b-versatile",
-        "llama-3.1-8b-instant",
-        "mixtral-8x7b-32768",
-    ],
-    "gemini": [
-        "gemini-2.5-flash",
-        "gemini-2.5-pro",
-        "gemini-flash-latest",
-    ],
-    "openrouter": [
-        "openai/gpt-4o-mini",
-        "openai/gpt-4o",
-        "anthropic/claude-3-5-sonnet",
-        "anthropic/claude-3-5-haiku",
-        "meta-llama/llama-3.1-70b-instruct",
-    ],
-    "deepseek": [
-        "deepseek-chat",
-        "deepseek-reasoner",
-    ],
-    "together": [
-        "meta-llama/Llama-3.1-70B-Instruct-Turbo",
-        "meta-llama/Llama-3.1-8B-Instruct-Turbo",
-    ],
-    "fireworks": [
-        "accounts/fireworks/models/llama-v3p1-70b-instruct",
-        "accounts/fireworks/models/llama-v3p1-8b-instruct",
-    ],
-    "perplexity": [
-        "llama-3.1-sonar-small-128k-online",
-        "llama-3.1-sonar-large-128k-online",
-    ],
-    "mistral": [
-        "mistral-large-latest",
-        "mistral-small-latest",
-        "open-mistral-nemo",
-    ],
-    "lmstudio": ["local-model"],
-    "vllm": ["local-model"],
-    "sambanova": ["Meta-Llama-3.1-70B-Instruct"],
-    "cerebras": ["llama3.1-70b", "llama3.1-8b"],
-}
-
-
 _VARIABLE_RE = re.compile(r"\{\{(\w+)\}\}")
 
 
 def _env_key_for_provider(provider: str) -> str | None:
-    """Return the env-var name for a provider, or ``None`` if unknown.
+    """Env-var name for a provider, or ``None`` if unknown.
 
-    Built-ins use ``_BUILTIN_ENV_KEY``; presets read from the registry.
-    A return of ``""`` means "no key required" (local providers).
+    ``""`` means "no key required" (local providers such as ollama). Thin
+    wrapper over :func:`~fastaiagent.ui.model_catalog.env_var_for` so callers
+    here don't each have to load the override file.
     """
-    if provider in _BUILTIN_ENV_KEY:
-        return _BUILTIN_ENV_KEY[provider]
-    from fastaiagent.llm.providers import get_preset
+    return env_var_for(provider, load_overrides(_db_path(None)))
 
-    preset = get_preset(provider)
-    if preset is None:
+
+def _has_api_key(provider: str, request: Request | None = None) -> bool:
+    db_path = _db_path(request)
+    return has_api_key(provider, load_overrides(db_path))
+
+
+def _db_path(request: Request | None) -> str | None:
+    """Best-effort local.db path, used to locate the catalog override file."""
+    if request is None:
         return None
-    # Local-style presets (lmstudio, vllm) ship an env var name but the
-    # server itself doesn't require auth. Treat empty/blank values as
-    # "no key required" the same way the built-in ollama row does.
-    return preset.env_var or ""
-
-
-def _has_api_key(provider: str) -> bool:
-    env_var = _env_key_for_provider(provider)
-    if env_var is None:
-        return False
-    if env_var == "":
-        return True
-    return bool(os.environ.get(env_var))
-
-
-def _build_provider_catalog() -> list[dict[str, Any]]:
-    """Merge built-in catalog + preset registry into a single response shape.
-
-    Order: built-ins first (in their declared order), then presets sorted
-    alphabetically. Each entry includes ``models`` (curated suggestions)
-    and ``has_key`` so the UI can disable rows without a configured key.
-    """
-    from fastaiagent.llm.providers import list_presets
-
-    rows: list[dict[str, Any]] = []
-    for provider, models in _BUILTIN_CATALOG.items():
-        rows.append(
-            {
-                "provider": provider,
-                "models": models,
-                "has_key": _has_api_key(provider),
-                "env_var": _BUILTIN_ENV_KEY.get(provider) or None,
-            }
-        )
-    for preset in list_presets():
-        # Default-model first, then curated hints (deduplicated).
-        hints = _PRESET_MODEL_HINTS.get(preset.key, [])
-        seen: set[str] = set()
-        merged_models: list[str] = []
-        for m in [preset.default_model, *hints]:
-            if m and m not in seen:
-                seen.add(m)
-                merged_models.append(m)
-        rows.append(
-            {
-                "provider": preset.key,
-                "models": merged_models,
-                "has_key": _has_api_key(preset.key),
-                "env_var": preset.env_var or None,
-            }
-        )
-    return rows
+    try:
+        return get_context(request).db_path
+    except Exception:  # noqa: BLE001 — override file is optional, never fatal
+        return None
 
 
 @router.get("/models")
-def list_models(_user: str = Depends(require_session)) -> dict[str, Any]:
+def list_models(
+    request: Request, _user: str = Depends(require_session)
+) -> dict[str, Any]:
     """Return the provider/model catalog with ``has_key`` flags.
 
-    As of v1.8.1 the catalog includes both built-in providers and any
-    presets registered via :func:`fastaiagent.llm.providers.register_provider`,
-    so the Playground dropdown automatically picks up new providers
-    without a UI rebuild.
+    Sources, in order of precedence: a ``models.json`` override file, then the
+    shipped defaults in :mod:`fastaiagent.ui.model_catalog`, merged with any
+    presets registered via
+    :func:`fastaiagent.llm.providers.register_provider`. See that module for
+    the override file's shape and location.
     """
-    return {"providers": _build_provider_catalog()}
+    return {"providers": build_catalog(_db_path(request))}
 
 
 # ---------------------------------------------------------------------------
@@ -245,9 +131,31 @@ def list_models(_user: str = Depends(require_session)) -> dict[str, Any]:
 
 
 class PlaygroundParameters(BaseModel):
-    temperature: float | None = Field(default=1.0, ge=0.0, le=2.0)
+    """Sampling knobs. ``None`` means "don't send it" — not "send the default".
+
+    ``temperature`` and ``top_p`` default to ``None`` deliberately. Sending
+    both is a hard 400 on Anthropic ("`temperature` and `top_p` cannot both be
+    specified for this model"), and Claude 5 rejects ``top_p`` on its own
+    ("`top_p` is deprecated for this model"). Defaulting them to 1.0 meant
+    every Anthropic call from the Playground failed. Only forward what the
+    user explicitly asked for; let each provider apply its own defaults.
+    """
+
+    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     max_tokens: int | None = Field(default=1024, ge=1, le=200_000)
-    top_p: float | None = Field(default=1.0, ge=0.0, le=1.0)
+    top_p: float | None = Field(default=None, ge=0.0, le=1.0)
+
+    def client_kwargs(self) -> dict[str, Any]:
+        """Only the knobs that were actually set, for ``LLMClient(**kwargs)``."""
+        return {
+            k: v
+            for k, v in (
+                ("temperature", self.temperature),
+                ("max_tokens", self.max_tokens),
+                ("top_p", self.top_p),
+            )
+            if v is not None
+        }
 
 
 # ~25 MiB raw → ~33.4M base64 chars (4/3 expansion). Cap at 35M to leave a
@@ -258,6 +166,21 @@ _MAX_IMAGE_DECODED_BYTES: int = 25 * 1024 * 1024  # 25 MiB
 
 
 class PlaygroundRunRequest(BaseModel):
+    """One Playground run.
+
+    ``base_url`` and ``api_key`` are the AI-gateway path. Large orgs usually
+    front their models with an OpenAI-compatible gateway reached at a private
+    URL with a bearer token, and that token is frequently short-lived
+    (SSO/OAuth-issued), so an env var read at server start is the wrong shape —
+    you'd restart the UI on every rotation.
+
+    Both are **per request**: not persisted, not written to the DB, not logged,
+    and not echoed back in the response. The key exists only for the lifetime
+    of the call. Anything you want to keep belongs in an env var (see
+    ``models.json``'s ``env_var`` override for pointing a provider at a
+    different variable).
+    """
+
     provider: str
     model: str
     prompt_template: str
@@ -266,6 +189,58 @@ class PlaygroundRunRequest(BaseModel):
     parameters: PlaygroundParameters = Field(default_factory=PlaygroundParameters)
     image_b64: str | None = Field(default=None, max_length=_MAX_IMAGE_B64_CHARS)
     image_media_type: str | None = None
+    base_url: str | None = Field(
+        default=None,
+        max_length=2048,
+        description="Override the provider's endpoint (AI gateway, proxy, "
+        "self-hosted server). http/https only.",
+    )
+    api_key: str | None = Field(
+        default=None,
+        max_length=8192,
+        description="Per-request credential. Never stored, logged, or returned.",
+    )
+
+    @field_validator("base_url")
+    @classmethod
+    def _validate_base_url(cls, v: str | None) -> str | None:
+        """Only http/https, and nothing that isn't a real absolute URL.
+
+        The server makes the outbound call, so this value decides where the
+        prompt goes. Rejecting other schemes keeps `file://`, `gopher://` and
+        friends out of the request path.
+        """
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            return None
+        parsed = urlparse(v)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise ValueError(
+                "base_url must be an absolute http:// or https:// URL "
+                "(e.g. https://ai-gateway.internal/v1)"
+            )
+        return v
+
+    @field_validator("api_key")
+    @classmethod
+    def _validate_api_key(cls, v: str | None) -> str | None:
+        # Treat whitespace-only as absent so an accidental space doesn't
+        # shadow a perfectly good env var.
+        if v is None:
+            return None
+        v = v.strip()
+        return v or None
+
+    def connection_kwargs(self) -> dict[str, Any]:
+        """Endpoint/credential overrides for ``LLMClient``, omitting unset ones."""
+        out: dict[str, Any] = {}
+        if self.base_url:
+            out["base_url"] = self.base_url
+        if self.api_key:
+            out["api_key"] = self.api_key
+        return out
 
 
 def _resolve_template(template: str, variables: dict[str, Any]) -> str:
@@ -318,14 +293,58 @@ def _build_messages(req: PlaygroundRunRequest) -> list[Any]:
     return messages
 
 
-def _check_api_key_or_400(provider: str) -> None:
-    if not _has_api_key(provider):
-        env_var = _env_key_for_provider(provider) or "(provider key)"
+def _check_api_key_or_400(
+    provider: str,
+    request: Request | None = None,
+    body: PlaygroundRunRequest | None = None,
+) -> None:
+    """Refuse early when we have no credential to call the provider with.
+
+    A per-request ``api_key`` satisfies this on its own — that's the whole
+    point of the gateway-token path, and requiring the env var *as well* would
+    defeat it.
+    """
+    if body is not None and body.api_key:
+        return
+
+    overrides = load_overrides(_db_path(request))
+
+    # Never let the server's own key follow a user-supplied endpoint.
+    #
+    # ``provider`` selects the wire format; ``base_url`` selects where the
+    # request goes. LLMClient's normal behaviour is to fall back to the
+    # provider's env var when no key is passed, which is right when base_url
+    # is the provider's own URL and badly wrong once it isn't: point the
+    # Playground at any host with the Token box empty and OPENAI_API_KEY goes
+    # with it. A typo'd or hostile URL becomes key exfiltration.
+    #
+    # We can't just pass an empty key — LLMClient does
+    # ``self.api_key or os.environ.get(...)``, and "" is falsy, so it falls
+    # through to the environment anyway. So refuse the request instead, and
+    # say why. If no env key is configured there is nothing to leak, which is
+    # the local-server case (Ollama/vLLM on a custom port) — allow that.
+    if body is not None and body.base_url and env_key_is_set(provider, overrides):
+        env_var = env_var_for(provider, overrides) or "the provider key"
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            (
+                f"A custom endpoint needs its own token. Without one, "
+                f"{env_var} from this server's environment would be sent to "
+                f"{body.base_url} — which is only correct if that endpoint is "
+                f"'{provider}' itself. Enter the endpoint's token, or clear "
+                f"the Endpoint field to call {provider} directly."
+            ),
+        )
+
+    if not has_api_key(provider, overrides):
+        env_var = env_var_for(provider, overrides) or "(provider key)"
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             (
                 f"No API key found for provider '{provider}'. "
-                f"Set {env_var} in your environment and restart the UI."
+                f"Set {env_var} in your environment and restart the UI, "
+                f"or supply a token for this run in the Playground's "
+                f"Connection panel."
             ),
         )
 
@@ -343,15 +362,14 @@ async def run(
     from fastaiagent.ui.pricing import compute_cost_usd
 
     _enforce_llm_rate_limit(request, _user)
-    _check_api_key_or_400(body.provider)
+    _check_api_key_or_400(body.provider, request, body)
     messages = _build_messages(body)
 
     client = LLMClient(
         provider=body.provider,
         model=body.model,
-        temperature=body.parameters.temperature,
-        max_tokens=body.parameters.max_tokens,
-        top_p=body.parameters.top_p,
+        **body.parameters.client_kwargs(),
+        **body.connection_kwargs(),
     )
 
     tracer = get_tracer("fastaiagent.ui.playground")
@@ -439,15 +457,14 @@ async def stream(
     from fastaiagent.ui.pricing import compute_cost_usd
 
     _enforce_llm_rate_limit(request, _user)
-    _check_api_key_or_400(body.provider)
+    _check_api_key_or_400(body.provider, request, body)
     messages = _build_messages(body)
 
     client = LLMClient(
         provider=body.provider,
         model=body.model,
-        temperature=body.parameters.temperature,
-        max_tokens=body.parameters.max_tokens,
-        top_p=body.parameters.top_p,
+        **body.parameters.client_kwargs(),
+        **body.connection_kwargs(),
     )
 
     async def event_stream() -> Any:

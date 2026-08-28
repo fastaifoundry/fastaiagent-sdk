@@ -9,7 +9,7 @@
  * The streaming run shot is gated on ``OPENAI_API_KEY`` because it requires
  * a real LLM call. The static-layout shots run without a key.
  */
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,6 +26,33 @@ const SHOT = (name: string) => ({
 });
 
 test.describe.configure({ mode: "serial" });
+
+/**
+ * Skip a test when the fixture data it needs isn't in the server's DB.
+ *
+ * Specs 4-6 assert on records that `scripts/capture-sprint2-screenshots.sh`
+ * seeds. Run standalone against any other DB they'd fail on missing data,
+ * which isn't a regression — so check first and skip with a reason.
+ *
+ * The blunt alternative (a bare `test.skip(...)` at file scope) is what this
+ * file used to do, and it silently disabled all nine specs whenever one
+ * unrelated env var was unset.
+ */
+async function requireSeed(
+  page: Page,
+  apiPath: string,
+  present: (json: unknown) => boolean,
+  what: string,
+) {
+  const res = await page.request.get(apiPath);
+  const ok = res.ok() && present(await res.json().catch(() => null));
+  test.skip(!ok, `${what} not seeded — run scripts/capture-sprint2-screenshots.sh`);
+}
+
+const rowsOf = (json: unknown): unknown[] =>
+  Array.isArray(json)
+    ? json
+    : ((json as { rows?: unknown[] } | null)?.rows ?? []);
 
 // ---------------------------------------------------------------------------
 // Sprint 2 / Feature 1 — Prompt Playground
@@ -89,11 +116,13 @@ test("sprint2-2 — selecting a prompt populates variables", async ({ page }) =>
 
 const HAS_OPENAI = !!process.env.OPENAI_API_KEY;
 
-test.skip(!HAS_OPENAI, "OPENAI_API_KEY not set — skipping live LLM run");
-
 test("sprint2-3 — running streams a real response with metadata", async ({
   page,
 }) => {
+  // Scoped to this test only. As a bare `test.skip(...)` at file scope this
+  // skipped every test in the file, so one missing key silently disabled the
+  // eight specs that need no key at all.
+  test.skip(!HAS_OPENAI, "OPENAI_API_KEY not set — skipping live LLM run");
   await page.goto("/playground");
 
   await page.getByRole("combobox").first().click();
@@ -126,6 +155,12 @@ test("sprint2-3 — running streams a real response with metadata", async ({
 test("sprint2-4 — supervisor dependency graph with worker subtrees", async ({
   page,
 }) => {
+  await requireSeed(
+    page,
+    "/api/agents",
+    (j) => rowsOf(j).some((a) => (a as { name?: string }).name === "planner"),
+    "agent 'planner'",
+  );
   await page.goto("/agents/planner");
 
   // Wait for the agent header so we know the page rendered.
@@ -154,6 +189,12 @@ test("sprint2-4 — supervisor dependency graph with worker subtrees", async ({
 });
 
 test("sprint2-5 — single worker dependency view", async ({ page }) => {
+  await requireSeed(
+    page,
+    "/api/agents",
+    (j) => rowsOf(j).some((a) => (a as { name?: string }).name === "researcher"),
+    "agent 'researcher'",
+  );
   await page.goto("/agents/researcher");
   await expect(
     page.getByRole("heading", { name: /^researcher$/ })
@@ -181,6 +222,12 @@ const FILTERED_EVENT_ID = process.env.SPRINT2_FILTERED_EVENT_ID;
 test("sprint2-6 — guardrails list shows new filters and clickable rows", async ({
   page,
 }) => {
+  await requireSeed(
+    page,
+    "/api/guardrail-events",
+    (j) => rowsOf(j).length > 0,
+    "guardrail events",
+  );
   await page.goto("/guardrails");
   // Filters bar is rendered.
   await expect(
@@ -196,14 +243,15 @@ test("sprint2-6 — guardrails list shows new filters and clickable rows", async
   await page.screenshot(SHOT("sprint2-6-guardrails-list-filters"));
 });
 
-test.skip(
-  !BLOCKED_EVENT_ID,
-  "SPRINT2_BLOCKED_EVENT_ID not set — capture script wires it",
-);
-
 test("sprint2-7 — event detail page renders three panels (blocked)", async ({
   page,
 }) => {
+  // Scoped to this test only — see the note on sprint2-3. At file scope this
+  // skipped the whole suite whenever the capture script wasn't driving it.
+  test.skip(
+    !BLOCKED_EVENT_ID,
+    "SPRINT2_BLOCKED_EVENT_ID not set — capture script wires it",
+  );
   await page.goto(`/guardrail-events/${BLOCKED_EVENT_ID}`);
   await expect(
     page.getByRole("heading", { name: /no_pii/i })
