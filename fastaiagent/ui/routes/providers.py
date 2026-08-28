@@ -1,8 +1,9 @@
 """Read-only endpoint exposing the LLM provider preset registry.
 
-The local UI uses this to populate dropdowns (Playground provider picker,
-trace-detail badge metadata) without baking the list into the React
-bundle. Returns one entry per *known* provider — built-in
+The local UI uses this for trace-detail badge metadata and provider
+capability flags. Note the Playground's provider/model picker does **not**
+read this endpoint — it uses ``GET /api/playground/models``, which is backed
+by :mod:`fastaiagent.ui.model_catalog`. Returns one entry per *known* provider — built-in
 (``openai``, ``anthropic``, ``ollama``, ``azure``, ``bedrock``,
 ``custom``, ``test``) and registered presets — with capability flags so
 the UI can grey out fields a provider doesn't support.
@@ -41,7 +42,8 @@ _BUILTIN_INFO: dict[str, dict[str, Any]] = {
     "anthropic": {
         "base_url": "https://api.anthropic.com/v1",
         "env_var": "ANTHROPIC_API_KEY",
-        "default_model": "claude-3-5-haiku-latest",
+        # claude-3-5-haiku-latest was retired 2026-02-19 and now 404s.
+        "default_model": "claude-haiku-4-5",
         "wire": "builtin_anthropic",
         "capabilities": {
             "tools": True,

@@ -30,6 +30,11 @@ from fastaiagent.llm.stream import TextDelta, ToolCallEnd, ToolCallStart
 HAS_GROQ = bool(os.environ.get("GROQ_API_KEY"))
 HAS_GEMINI = bool(os.environ.get("GEMINI_API_KEY"))
 
+# Groq decommissions models on its own schedule — the llama-3.1/3.3 and
+# mixtral ids these tests used were all returning 400/404 by 2026-08.
+# Keep the model id in one place so the next retirement is a one-line fix.
+GROQ_MODEL = "openai/gpt-oss-20b"
+
 needs_groq = pytest.mark.skipif(not HAS_GROQ, reason="GROQ_API_KEY not set")
 needs_gemini = pytest.mark.skipif(not HAS_GEMINI, reason="GEMINI_API_KEY not set")
 
@@ -54,7 +59,7 @@ def _skip_on_quota(exc: Exception) -> None:
 
 @needs_groq
 def test_groq_simple_completion() -> None:
-    client = LLMClient(provider="groq", model="llama-3.1-8b-instant")
+    client = LLMClient(provider="groq", model=GROQ_MODEL)
     resp = client.complete(
         [UserMessage("Reply with the single word: pong. Nothing else.")]
     )
@@ -66,7 +71,7 @@ def test_groq_simple_completion() -> None:
 
 @needs_groq
 def test_groq_streaming_accumulates() -> None:
-    client = LLMClient(provider="groq", model="llama-3.1-8b-instant")
+    client = LLMClient(provider="groq", model=GROQ_MODEL)
 
     async def collect() -> str:
         chunks: list[str] = []
@@ -86,7 +91,7 @@ def test_groq_tool_call() -> None:
     """Groq supports OpenAI-style tool calling on the larger Llama models."""
     client = LLMClient(
         provider="groq",
-        model="llama-3.3-70b-versatile",
+        model=GROQ_MODEL,
         temperature=0.0,
     )
     tools = [
@@ -136,7 +141,7 @@ def test_groq_trace_span_records_provider() -> None:
         pytest.skip("Tracer provider already installed; can't assert spans cleanly")
     trace.set_tracer_provider(provider)
 
-    client = LLMClient(provider="groq", model="llama-3.1-8b-instant")
+    client = LLMClient(provider="groq", model=GROQ_MODEL)
     client.complete([UserMessage("ok")])
 
     spans = exporter.get_finished_spans()

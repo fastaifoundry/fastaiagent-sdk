@@ -5,6 +5,130 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.53.0] - 2026-08-28 — Playground: Anthropic fix + configurable model catalog
+
+Live-testing the Prompt Playground against real provider APIs found that the
+**entire Anthropic path was broken**, and that a third of the shipped model
+suggestions pointed at models the providers had already decommissioned.
+
+### Fixed
+
+- **Anthropic was completely unusable from the Playground.**
+  `PlaygroundParameters` defaulted `temperature` and `top_p` to `1.0` and never
+  to `None`, so every request sent both. Anthropic rejects that with
+  `400 "temperature and top_p cannot both be specified for this model"`, and
+  Claude 5 rejects `top_p` on its own. Both now default to `None` and are only
+  forwarded when explicitly set; in the UI they read `auto` until switched on.
+- **Dead models removed from the shipped catalog.** Verified against the live
+  APIs: `claude-3-5-sonnet-latest` (retired), `gemini-2.5-pro` (404 for new
+  users) and **all four** Groq entries (decommissioned) were being offered.
+  Groq's preset `default_model` (`llama-3.1-70b-versatile`) was itself dead, so
+  `LLMClient(provider="groq")` with no model failed; it is now
+  `openai/gpt-oss-120b`. Perplexity's default moves to `sonar` (unverified — we
+  have no key). `providers.py` advertised the retired
+  `claude-3-5-haiku-latest` as Anthropic's default.
+- **Cost was 3x too high for Opus 4.5+.** The broad `claude-opus-4` prefix
+  ($15/$75) swallowed every `claude-opus-4-*` id. Added the correct $5/$25 rows
+  for 4.5/4.6/4.7/4.8, plus the previously-missing Claude 5 family
+  (`claude-opus-5`, `claude-sonnet-5`, `claude-fable-5`, `claude-mythos-5`) and
+  `claude-sonnet-4-6`, which had rendered as "—".
+- **Switching provider no longer leaves a mismatched model.** Going
+  openai → anthropic kept `gpt-4o-mini` selected and posted the invalid pair.
+- **Error correlation ids reach the UI.** The server redacts provider errors and
+  logs them under a fresh id; the SSE parser dropped that id, leaving users with
+  a bare "LLM call failed." and no way to diagnose it. This is a large part of
+  why the Anthropic outage went unreported.
+- Playground `Label`s are now wired to their controls with `htmlFor` (a11y).
+
+- **Cost could read as a million times its value.** `formatCost` rendered
+  sub-cent amounts as `$0.31m` (milli-dollars) while `formatTokens` used `M`
+  for millions in the same metadata row. Now `$0.000313`, plus `<$0.000001`
+  for vanishing amounts. Affects every cost display in the UI.
+- **LM Studio and vLLM were unusable.** Both declare an env var on their preset,
+  so the "blank env var means no key needed" rule never fired and they showed
+  as disabled — you had to invent a dummy `LMSTUDIO_API_KEY` to reach a local
+  server that wanted no auth. Local providers are no longer key-gated.
+- **`sprint2.spec.ts` skipped its own suite.** Two file-scoped `test.skip()`
+  calls meant one unset env var silently disabled all nine specs, including
+  three playground ones needing no key. Moved inside the tests that need them;
+  data-dependent specs now skip with a reason instead of failing.
+- **Playground traces weren't identifiable.** `playground.py` has always
+  documented that runs are "filterable in the Traces page", but the API never
+  exposed the attribute. `TraceRow` now carries `source` (from
+  `fastaiagent.source` on the root span) and `GET /api/traces?source=playground`
+  filters on it — free text, so any stamped source works.
+- **A 0% `run-eval` looked like a failing eval.** With no agent registered the
+  endpoint scores inputs against an identity function, so a Playground-saved
+  case can never pass. The result now reports `mode: "echo"` with an
+  explanatory `note`, and the UI shows it as a dataset check rather than a
+  clean-looking eval failure.
+
+- **The server's API key could follow a custom endpoint.** Found while
+  building the endpoint override, and verified by capturing the outbound
+  `Authorization` header: with an Endpoint set and no token, `LLMClient`'s
+  normal env fallback sent the real `OPENAI_API_KEY` to whatever host was
+  typed. Correct when the endpoint *is* the provider; key exfiltration when
+  it isn't. A run that overrides the endpoint without a token is now refused
+  whenever a provider key is configured, naming the variable at risk. (Passing
+  an empty key doesn't work — `self.api_key or os.environ.get(...)` treats `""`
+  as absent — hence a refusal rather than a silent blank.) Endpoints with no
+  configured provider key are unaffected, so local servers on a custom port
+  still work with no token.
+
+### Added
+
+- **Endpoint + per-run token for AI gateways.** `base_url` and `api_key` on the
+  Playground run/stream requests, surfaced as a Connection panel. Org models
+  typically sit behind an OpenAI-compatible gateway on a private URL with a
+  short-lived bearer token — an env var read once at server start can't
+  express that. Both are per-request: never persisted, never logged, never
+  echoed in a response, cleared by a page reload; a canary test asserts the
+  token reaches none of the response, logs, DB, or any written file.
+  `base_url` accepts `http`/`https` only. `custom` and `azure` now appear in
+  the provider list so a bare endpoint is reachable at all.
+- **Configurable model catalog** — new `fastaiagent.ui.model_catalog`. A
+  `models.json` (from `$FASTAIAGENT_MODEL_CATALOG`, else beside `local.db`)
+  overrides the model suggestions per provider, so a stale dropdown is fixable
+  without waiting for a release. Malformed files log a warning and fall back to
+  the built-ins rather than breaking the picker.
+- **Free-text model entry.** The model picker is a combobox: pick a suggestion
+  or type any id the provider accepts. `LLMClient` already accepted arbitrary
+  models; the UI no longer stands in the way. This also works around
+  `fastaiagent ui` not importing user code, which makes locally-registered
+  presets invisible to the dropdown.
+- **Organisation pricing overrides.** A reserved `pricing` block in the same
+  `models.json` sets your negotiated per-million-token rates. Applied by every
+  caller of `compute_cost_usd()` — traces, analytics, evals, cost breakdown,
+  trace export — not just the Playground. Also `pricing.set_rate_overrides()` /
+  `reload_rate_overrides()` for programmatic use. The Playground now labels the
+  figure `~$x est.` with a tooltip explaining what list price can't know
+  (negotiated discounts, Bedrock/Vertex partner rates, batch, prompt caching).
+
+### Testing
+
+- **Removed a false-green test.** `TestRunWithAnthropic` did
+  `if r.status_code == 502: pytest.skip(...)` — it had been failing on every run
+  and reporting success. A failed provider call is now a failure.
+- **Live playground tests moved to `tests/e2e/`** marked `e2e`. Outside that
+  directory they never received CI's API keys, so they skipped everywhere.
+- New live coverage: Anthropic **streaming** (there was none), Claude 5 models,
+  the default-parameters regression, error correlation ids, and a test asserting
+  **every model in the shipped Anthropic catalog actually runs** — the class of
+  bug that let dead models ship.
+- New `tests/test_ui_model_catalog.py`: override precedence, both file forms,
+  and graceful degradation across five malformed-file shapes.
+- First unit tests for the SSE parser (`use-playground.test.ts`, 10 cases) and
+  new Playwright coverage of the model picker, run against **both** UI skins.
+- Pricing regressions pinning the Anthropic tier rates and the org overrides.
+
+### Notes
+
+No breaking changes. Behaviour differences to be aware of: requests that
+previously relied on the Playground's implicit `temperature=1.0` / `top_p=1.0`
+now let the provider default apply, and `LLMClient(provider="groq")` /
+`LLMClient(provider="perplexity")` with no explicit model now resolve to a live
+model instead of a decommissioned one.
+
 ## [1.52.0] - 2026-08-27 — Local UI reskin
 
 A **pure-UI** release. No API, route, data or behaviour changes — no Python source

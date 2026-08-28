@@ -405,200 +405,276 @@ class TestSaveAsEval:
         assert r.status_code == 400
 
 
+
 # ---------------------------------------------------------------------------
-# Real-LLM tests — gated on env; require OPENAI_API_KEY in ~/.zshrc
+# Sampling parameters — regression for the 1.52.0 Anthropic outage
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skipif(
-    not os.environ.get("OPENAI_API_KEY"),
-    reason="OPENAI_API_KEY not set — skipping real-LLM run",
-)
-class TestRunWithOpenAI:
-    def test_basic_run(self, client: TestClient) -> None:
+class TestParameterDefaults:
+    """``temperature`` and ``top_p`` must not be sent unless asked for.
+
+    At 1.52.0 both defaulted to 1.0, so every request carried both. Anthropic
+    replies 400 "`temperature` and `top_p` cannot both be specified for this
+    model", and Claude 5 rejects ``top_p`` on its own — which made the whole
+    provider unusable from the Playground. The live proof lives in
+    ``tests/e2e/test_playground_live_e2e.py``; this is the fast unit guard.
+    """
+
+    def test_unset_params_are_omitted_from_client_kwargs(self) -> None:
+        params = playground_route.PlaygroundParameters()
+        assert params.temperature is None
+        assert params.top_p is None
+        assert params.client_kwargs() == {"max_tokens": 1024}
+
+    def test_explicit_params_are_forwarded(self) -> None:
+        params = playground_route.PlaygroundParameters(temperature=0.2, top_p=0.9)
+        assert params.client_kwargs() == {
+            "temperature": 0.2,
+            "max_tokens": 1024,
+            "top_p": 0.9,
+        }
+
+    def test_zero_temperature_is_forwarded_not_dropped(self) -> None:
+        """0.0 is falsy but meaningful — it must survive the None filter."""
+        params = playground_route.PlaygroundParameters(temperature=0.0)
+        assert params.client_kwargs()["temperature"] == 0.0
+
+    def test_null_max_tokens_is_omitted(self) -> None:
+        params = playground_route.PlaygroundParameters(max_tokens=None)
+        assert "max_tokens" not in params.client_kwargs()
+
+    def test_request_without_parameters_block_sends_neither(self) -> None:
+        body = playground_route.PlaygroundRunRequest(
+            provider="anthropic", model="claude-opus-5", prompt_template="hi"
+        )
+        assert body.parameters.client_kwargs() == {"max_tokens": 1024}
+
+
+# ---------------------------------------------------------------------------
+# Endpoint + per-request credential (AI-gateway path)
+# ---------------------------------------------------------------------------
+
+
+class TestConnectionOverrides:
+    """``base_url`` / ``api_key`` let the Playground reach a gateway.
+
+    Org LLM endpoints usually sit behind an OpenAI-compatible gateway on a
+    private URL with a bearer token, and those tokens are often short-lived —
+    so they can't come from an env var read once at server start.
+    """
+
+    def test_unset_overrides_are_omitted(self) -> None:
+        body = playground_route.PlaygroundRunRequest(
+            provider="openai", model="gpt-4o-mini", prompt_template="hi"
+        )
+        assert body.connection_kwargs() == {}
+
+    def test_set_overrides_are_forwarded(self) -> None:
+        body = playground_route.PlaygroundRunRequest(
+            provider="custom",
+            model="house-7b",
+            prompt_template="hi",
+            base_url="https://ai-gateway.internal/v1",
+            api_key="tok-123",
+        )
+        assert body.connection_kwargs() == {
+            "base_url": "https://ai-gateway.internal/v1",
+            "api_key": "tok-123",
+        }
+
+    @pytest.mark.parametrize(
+        "bad",
+        ["file:///etc/passwd", "gopher://x", "not-a-url", "javascript:alert(1)", "//x"],
+    )
+    def test_non_http_base_url_rejected(self, client: TestClient, bad: str) -> None:
+        """The server makes the outbound call, so the scheme is ours to police."""
         r = client.post(
             "/api/playground/run",
             json={
-                "provider": "openai",
-                "model": "gpt-4o-mini",
-                "prompt_template": "Reply with exactly the word 'pong'.",
+                "provider": "custom",
+                "model": "m",
+                "prompt_template": "hi",
                 "variables": {},
-                "parameters": {"temperature": 0.0, "max_tokens": 8, "top_p": 1.0},
+                "base_url": bad,
+                "api_key": "x",
             },
         )
-        assert r.status_code == 200, r.text
-        body = r.json()
-        assert body["response"]
-        assert body["model"] == "gpt-4o-mini"
-        assert body["provider"] == "openai"
-        assert body["latency_ms"] >= 0
-        assert body["tokens"]["input"] > 0
-        assert body["tokens"]["output"] > 0
-        assert body["cost_usd"] is not None and body["cost_usd"] > 0
-        assert body["trace_id"]
+        assert r.status_code == 422, r.text
 
-    def test_variables_substituted_into_real_prompt(
-        self, client: TestClient
+    def test_whitespace_only_credential_is_treated_as_absent(self) -> None:
+        body = playground_route.PlaygroundRunRequest(
+            provider="openai", model="m", prompt_template="hi", api_key="   "
+        )
+        assert body.api_key is None
+        assert body.connection_kwargs() == {}
+
+    def test_request_token_satisfies_the_key_gate(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        r = client.post(
-            "/api/playground/run",
-            json={
-                "provider": "openai",
-                "model": "gpt-4o-mini",
-                "prompt_template": "Repeat the word inside the brackets exactly: [{{word}}]",
-                "variables": {"word": "spaceship"},
-                "parameters": {"temperature": 0.0, "max_tokens": 16, "top_p": 1.0},
-            },
-        )
-        assert r.status_code == 200, r.text
-        text = r.json()["response"].lower()
-        assert "spaceship" in text
+        """With no env key, a per-run token must still get past the 400 gate.
 
+        It should fail later at the provider (502), not up front (400).
+        """
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        body = {
+            "provider": "anthropic",
+            "model": "claude-haiku-4-5",
+            "prompt_template": "hi",
+            "variables": {},
+            "base_url": "https://nonexistent-gateway.invalid/v1",
+            "api_key": "tok-abc",
+            "parameters": {"max_tokens": 8},
+        }
+        r = client.post("/api/playground/run", json=body)
+        assert r.status_code != 400, r.text
 
-@pytest.mark.skipif(
-    not os.environ.get("OPENAI_API_KEY"),
-    reason="OPENAI_API_KEY not set — skipping real streaming run",
-)
-class TestStreamWithOpenAI:
-    def test_yields_tokens_then_done(self, client: TestClient) -> None:
-        with client.stream(
-            "POST",
-            "/api/playground/stream",
-            json={
-                "provider": "openai",
-                "model": "gpt-4o-mini",
-                "prompt_template": "Count from 1 to 5, comma separated.",
-                "variables": {},
-                "parameters": {
-                    "temperature": 0.0,
-                    "max_tokens": 32,
-                    "top_p": 1.0,
-                },
-            },
-        ) as resp:
-            assert resp.status_code == 200
-            events: list[tuple[str, dict]] = []
-            current_event = "message"
-            current_data: list[str] = []
-            for line in resp.iter_lines():
-                if line == "":
-                    if current_data:
-                        try:
-                            events.append(
-                                (current_event, json.loads("\n".join(current_data)))
-                            )
-                        except json.JSONDecodeError:
-                            pass
-                    current_event = "message"
-                    current_data = []
-                    continue
-                if line.startswith("event:"):
-                    current_event = line[6:].strip()
-                elif line.startswith("data:"):
-                    current_data.append(line[5:].lstrip())
-
-        token_events = [e for e in events if e[0] == "token"]
-        done_events = [e for e in events if e[0] == "done"]
-        assert len(token_events) >= 2, f"got {len(token_events)} token events: {events}"
-        assert len(done_events) == 1
-        meta = done_events[0][1]["metadata"]
-        assert meta["provider"] == "openai"
-        assert meta["model"] == "gpt-4o-mini"
-        assert meta["trace_id"]
-
-
-@pytest.mark.skipif(
-    not os.environ.get("ANTHROPIC_API_KEY"),
-    reason="ANTHROPIC_API_KEY not set — skipping real-LLM run",
-)
-class TestRunWithAnthropic:
-    def test_basic_run(self, client: TestClient) -> None:
+    def test_missing_key_and_no_token_still_400s(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         r = client.post(
             "/api/playground/run",
             json={
                 "provider": "anthropic",
                 "model": "claude-haiku-4-5",
-                "prompt_template": "Reply with exactly the word 'pong'.",
+                "prompt_template": "hi",
                 "variables": {},
-                "parameters": {"temperature": 0.0, "max_tokens": 16, "top_p": 1.0},
             },
         )
-        # claude-haiku-4-5 may or may not be live yet; accept any 2xx with content
-        # or a 502 (provider error) which is what we want to surface to the UI.
-        if r.status_code == 502:
-            pytest.skip(f"Anthropic provider error: {r.json().get('detail')}")
-        assert r.status_code == 200, r.text
-        body = r.json()
-        assert body["response"]
-        assert body["provider"] == "anthropic"
+        assert r.status_code == 400
+        assert "ANTHROPIC_API_KEY" in r.text
 
-
-# ---------------------------------------------------------------------------
-# Trace integration — verify source=playground tag lands in the spans table
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.skipif(
-    not os.environ.get("OPENAI_API_KEY"),
-    reason="OPENAI_API_KEY not set — needs a real LLM round-trip to emit a span",
-)
-class TestPlaygroundTraceTag:
-    def test_run_emits_span_with_source_playground(
-        self, client: TestClient
+    def test_credential_never_echoed_in_the_response(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Verify that running the playground emits a span with the
-        ``fastaiagent.source = "playground"`` attribute.
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        secret = "sk-CANARY-should-not-appear"
+        r = client.post(
+            "/api/playground/run",
+            json={
+                "provider": "anthropic",
+                "model": "claude-haiku-4-5",
+                "prompt_template": "hi",
+                "variables": {},
+                "base_url": "https://nonexistent-gateway.invalid/v1",
+                "api_key": secret,
+                "parameters": {"max_tokens": 8},
+            },
+        )
+        assert secret not in r.text
 
-        We check the configured trace store (whichever path
-        ``get_config().resolved_trace_db_path`` points at) rather than the
-        test fixture's local.db, because the OTel processor uses the
-        process-level config, not whatever build_app() was passed. This
-        mirrors how playground spans land in production.
-        """
+
+class TestLocalProvidersAreNotKeyGated:
+    """You run these servers, so there's usually nothing to authenticate to.
+
+    lmstudio and vllm declare env vars on their presets, which made them show
+    as disabled in the UI — you had to invent a dummy key to use a local
+    server that wanted none.
+    """
+
+    @pytest.mark.parametrize("provider", ["ollama", "lmstudio", "vllm"])
+    def test_local_provider_is_selectable_without_a_key(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch, provider: str
+    ) -> None:
+        monkeypatch.delenv("LMSTUDIO_API_KEY", raising=False)
+        monkeypatch.delenv("VLLM_API_KEY", raising=False)
+        rows = client.get("/api/playground/models").json()["providers"]
+        row = next(r for r in rows if r["provider"] == provider)
+        assert row["has_key"] is True, f"{provider} should not be key-gated"
+
+    def test_custom_endpoint_provider_is_offered(self, client: TestClient) -> None:
+        """`custom` is the point-at-your-own-gateway provider; it must appear."""
+        rows = client.get("/api/playground/models").json()["providers"]
+        assert "custom" in {r["provider"] for r in rows}
+
+
+class TestEnvKeyNeverFollowsACustomEndpoint:
+    """The server's own key must not be sent to a user-supplied endpoint.
+
+    ``provider`` picks the wire format; ``base_url`` picks the destination.
+    LLMClient falls back to the provider's env var when no key is passed —
+    right when base_url is the provider's own URL, and a key-exfiltration path
+    the moment it isn't. Verified live: before this guard, an endpoint override
+    with an empty token box sent OPENAI_API_KEY to whatever host was typed.
+
+    Passing an empty key doesn't help — LLMClient does
+    ``self.api_key or os.environ.get(...)`` and "" is falsy — so the request
+    is refused instead.
+    """
+
+    def test_endpoint_without_token_is_refused_when_env_key_exists(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-real-key")
         r = client.post(
             "/api/playground/run",
             json={
                 "provider": "openai",
-                "model": "gpt-4o-mini",
-                "prompt_template": "Say hi.",
+                "model": "m",
+                "prompt_template": "hi",
                 "variables": {},
-                "parameters": {"temperature": 0.0, "max_tokens": 8, "top_p": 1.0},
+                "base_url": "https://someone-elses-host.example/v1",
             },
         )
-        assert r.status_code == 200, r.text
-        trace_id = r.json()["trace_id"]
-        assert trace_id, "expected a non-empty trace_id"
+        assert r.status_code == 400, r.text
+        detail = r.json()["detail"]
+        # The message must name the variable at risk and the destination.
+        assert "OPENAI_API_KEY" in detail
+        assert "someone-elses-host.example" in detail
+        # ...and must not contain the key itself.
+        assert "sk-real-key" not in r.text
 
-        # Span export is async — give the OTel exporter a beat to flush.
-        from time import sleep
+    def test_endpoint_with_token_is_allowed(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-real-key")
+        r = client.post(
+            "/api/playground/run",
+            json={
+                "provider": "openai",
+                "model": "m",
+                "prompt_template": "hi",
+                "variables": {},
+                "base_url": "https://gateway.internal/v1",
+                "api_key": "gw-token",
+                "parameters": {"max_tokens": 8},
+            },
+        )
+        # Gets past the gate; fails later at the unreachable host.
+        assert r.status_code != 400, r.text
 
-        sleep(0.5)
+    def test_endpoint_without_token_is_fine_when_nothing_could_leak(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A local server on a custom port needs no token and has no key to leak."""
+        monkeypatch.delenv("VLLM_API_KEY", raising=False)
+        r = client.post(
+            "/api/playground/run",
+            json={
+                "provider": "vllm",
+                "model": "local-model",
+                "prompt_template": "hi",
+                "variables": {},
+                "base_url": "http://127.0.0.1:9999/v1",
+                "parameters": {"max_tokens": 8},
+            },
+        )
+        assert r.status_code != 400, r.text
 
-        from fastaiagent._internal.config import get_config
-        from fastaiagent._internal.storage import SQLiteHelper
-
-        configured = get_config().resolved_trace_db_path
-        if not Path(configured).exists():
-            pytest.skip(f"configured trace db not present at {configured}")
-        db = SQLiteHelper(str(configured))
-        try:
-            rows = db.fetchall(
-                "SELECT attributes FROM spans WHERE name = 'playground.run' "
-                "ORDER BY start_time DESC LIMIT 5"
-            )
-        finally:
-            db.close()
-        if not rows:
-            pytest.skip(
-                "OTel exporter didn't flush the playground.run span "
-                "during the test window — non-deterministic in a "
-                "subprocess test, real flow still works."
-            )
-        sources = []
-        for r in rows:
-            try:
-                a = json.loads(r["attributes"] or "{}")
-            except json.JSONDecodeError:
-                continue
-            sources.append(a.get("fastaiagent.source"))
-        assert "playground" in sources
+    def test_no_endpoint_still_uses_the_env_key_normally(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The guard must not break the ordinary path."""
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-real-key")
+        r = client.post(
+            "/api/playground/run",
+            json={
+                "provider": "openai",
+                "model": "m",
+                "prompt_template": "hi",
+                "variables": {},
+                "parameters": {"max_tokens": 8},
+            },
+        )
+        assert r.status_code != 400, r.text

@@ -44,6 +44,23 @@ describe("PromptsPage", () => {
     expect(navigate).toHaveBeenCalledWith("/prompts/support-greeting");
   });
 
+  it("opens the detail page from the empty space in the name cell", () => {
+    // The regression this replaces: stopPropagation sat on the whole name
+    // cell rather than on the anchor, so every click that landed in the
+    // cell's blank area was swallowed. The name column is the widest one
+    // (~968px against ~108px of text), which made ~860px of each row look
+    // clickable and do nothing — while the narrow right-hand cells worked.
+    //
+    // The test above clicks a cell that *has* text, so it never covered this.
+    renderWithProviders(<PromptsPage />);
+
+    const nameCell = screen.getByRole("link", { name: "support-greeting" })
+      .parentElement as HTMLElement;
+    fireEvent.click(nameCell);
+
+    expect(navigate).toHaveBeenCalledWith("/prompts/support-greeting");
+  });
+
   it("keeps the name a real anchor so it can open in a new tab", async () => {
     renderWithProviders(<PromptsPage />);
     const link = screen.getByRole("link", { name: "support-greeting" });
@@ -53,7 +70,8 @@ describe("PromptsPage", () => {
   it("does not double-navigate when the name itself is clicked", async () => {
     renderWithProviders(<PromptsPage />);
     fireEvent.click(screen.getByRole("link", { name: "support-greeting" }));
-    // The cell stops propagation, so the row handler must not also fire.
+    // The anchor stops propagation, so the row handler must not also fire.
+    // (Scoped to the anchor, not the cell — see the dead-zone test above.)
     await waitFor(() => expect(navigate).not.toHaveBeenCalled());
   });
 

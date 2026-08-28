@@ -14,9 +14,18 @@ export function formatDurationMs(ms: number | null | undefined): string {
   return `${m}m ${rem}s`;
 }
 
+/**
+ * Format a USD cost.
+ *
+ * Sub-cent values are shown in full rather than scaled. The previous
+ * `$0.31m` (milli-dollars) collided with `formatTokens`' `M` for millions in
+ * the same metadata row, so a third of a cent could read as $310,000. Extra
+ * decimals are cheap; an ambiguous unit is not.
+ */
 export function formatCost(usd: number | null | undefined): string {
   if (usd == null || usd === 0) return "—";
-  if (usd < 0.001) return `$${(usd * 1000).toFixed(2)}m`; // millicents
+  if (usd < 0.000001) return "<$0.000001";
+  if (usd < 0.001) return `$${usd.toFixed(6)}`;
   if (usd < 1) return `$${usd.toFixed(4)}`;
   return `$${usd.toFixed(2)}`;
 }

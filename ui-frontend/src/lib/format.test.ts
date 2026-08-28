@@ -41,8 +41,17 @@ describe("formatCost", () => {
     expect(formatCost(0)).toBe("—");
   });
 
-  it("formats sub-millicent as millicents", () => {
-    expect(formatCost(0.0005)).toBe("$0.50m");
+  it("shows sub-cent amounts in full, with no scaled unit", () => {
+    // Regression: this used to render "$0.50m" (milli-dollars), which sat
+    // next to formatTokens' "M" for millions in the same metadata row and
+    // could be read as $500,000.
+    expect(formatCost(0.0005)).toBe("$0.000500");
+    expect(formatCost(0.000313)).toBe("$0.000313");
+    expect(formatCost(0.0005)).not.toContain("m");
+  });
+
+  it("floors vanishingly small amounts instead of showing $0.000000", () => {
+    expect(formatCost(0.0000005)).toBe("<$0.000001");
   });
 
   it("formats cents with four decimals", () => {

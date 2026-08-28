@@ -79,15 +79,16 @@ export function DatasetTable({ rows }: Props) {
                 }
               >
                 {/* The name stays a real anchor so keyboard focus, middle-click
-                    and open-in-new-tab keep working; the cell stops propagation
-                    so the row handler doesn't also fire. */}
-                <TableCell
-                  className="font-medium"
-                  onClick={(e) => e.stopPropagation()}
-                >
+                    and open-in-new-tab keep working. stopPropagation goes on
+                    the *anchor*, not the cell: on the cell it also swallowed
+                    clicks on the blank area beside the text, and this being
+                    the widest column that left ~600px of dead row under a
+                    pointer cursor. Same bug as the Prompts list. */}
+                <TableCell className="font-medium">
                   <Link
                     to={`/datasets/${encodeURIComponent(row.name)}`}
                     className="hover:text-primary"
+                    onClick={(e) => e.stopPropagation()}
                   >
                     {row.name}
                   </Link>

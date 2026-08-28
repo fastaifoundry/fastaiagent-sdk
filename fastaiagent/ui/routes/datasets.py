@@ -622,6 +622,14 @@ class RunEvalResult(BaseModel):
     pass_rate: float | None
     pass_count: int
     fail_count: int
+    # "echo" when no agent_name was given: the run scores the dataset against
+    # an identity function, so a case only passes when expected_output equals
+    # input. A 0% pass rate is the normal result for real data and must not be
+    # read as a failing eval — hence surfacing the mode instead of leaving the
+    # caller to infer it. "agent" means a registered runner produced the
+    # outputs and the pass rate is meaningful.
+    mode: str = "agent"
+    note: str | None = None
 
 
 @router.post("/{name}/run-eval", response_model=RunEvalResult)
@@ -683,11 +691,22 @@ def run_eval(
     pass_count = sum(1 for c in results.cases if all(s["passed"] for s in c.per_scorer.values()))
     fail_count = len(results.cases) - pass_count
     pass_rate = pass_count / len(results.cases) if results.cases else None
+    echo_mode = runner is None
     return RunEvalResult(
         run_id=run_id,
         pass_rate=pass_rate,
         pass_count=pass_count,
         fail_count=fail_count,
+        mode="echo" if echo_mode else "agent",
+        note=(
+            "No agent was selected, so this run echoed each input back "
+            "unchanged. It checks the dataset loads and scores, not model "
+            "quality — cases pass only where expected_output equals input. "
+            "To evaluate a real agent, register one with "
+            "build_app(runners=[...]) and pass agent_name."
+            if echo_mode
+            else None
+        ),
     )
 
 

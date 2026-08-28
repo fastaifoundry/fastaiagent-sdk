@@ -80,12 +80,17 @@ export function PromptsPage() {
                   onClick={() => navigate(`/prompts/${encodeURIComponent(row.name)}`)}
                 >
                   {/* The name stays a real anchor so keyboard focus,
-                      middle-click and open-in-new-tab keep working; the cell
-                      stops propagation so the row handler doesn't double-fire. */}
-                  <TableCell onClick={(e) => e.stopPropagation()}>
+                      middle-click and open-in-new-tab keep working.
+                      stopPropagation belongs on the *anchor*, not the cell:
+                      on the cell it also swallowed clicks on the cell's empty
+                      area, and since this is the widest column that was ~860px
+                      of dead zone in the middle of a row the cursor advertised
+                      as clickable. */}
+                  <TableCell>
                     <Link
                       to={`/prompts/${encodeURIComponent(row.name)}`}
                       className="font-medium hover:text-primary"
+                      onClick={(e) => e.stopPropagation()}
                     >
                       {row.name}
                     </Link>

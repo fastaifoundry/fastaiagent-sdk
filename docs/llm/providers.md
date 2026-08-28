@@ -168,12 +168,25 @@ dropdowns and analytics.
 
 ## Local UI integration
 
-Every registered provider — built-in or preset — appears in the
+Every provider the *server process* knows about — the built-ins and the
+presets shipped in `fastaiagent.llm.providers` — appears in the
 [Prompt Playground](../ui/playground.md) provider dropdown automatically
-(via `GET /api/playground/models`). No UI rebuild is required when you
-register a new preset; refresh the page and the dropdown picks it up.
-Providers whose API-key env var is not set show up disabled with a
-tooltip pointing to the right variable.
+(via `GET /api/playground/models`). No UI rebuild is required. Providers
+whose API-key env var is not set show up disabled with a tooltip pointing
+to the right variable.
+
+!!! warning "Presets you register yourself are not picked up"
+    `fastaiagent ui` starts a standalone server that does **not** import your
+    application code, so a `register_provider(...)` call in your project
+    never runs in that process and won't appear in the dropdown. To use such
+    a provider from the Playground, either register it somewhere the UI
+    process imports, or drive it from your own code where the registration
+    has run.
+
+    Model *ids* are a different matter and need no code at all: the model
+    field accepts free text, and `.fastaiagent/models.json` changes the
+    suggestions. See
+    [Customising the model list](../ui/playground.md#customising-the-model-list).
 
 ## Need a provider that isn't listed?
 

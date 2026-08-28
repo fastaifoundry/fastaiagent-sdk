@@ -121,9 +121,20 @@ export function DatasetDetailPage() {
   const handleRunEval = async () => {
     try {
       const result = await runEval.mutateAsync({ scorers: ["exact_match"] });
-      toast.success(
-        `Eval kicked off — ${result.pass_count} pass / ${result.fail_count} fail`
-      );
+      const tally = `${result.pass_count} pass / ${result.fail_count} fail`;
+      if (result.mode === "echo") {
+        // No agent is registered, so this scored inputs against themselves.
+        // Reporting it as a plain tally made a structurally-normal 0% look
+        // like the model had failed every case.
+        toast.warning(`Dataset check — ${tally}`, {
+          description:
+            result.note ??
+            "No agent selected, so inputs were echoed back. This validates the dataset, not model quality.",
+          duration: 10_000,
+        });
+      } else {
+        toast.success(`Eval kicked off — ${tally}`);
+      }
       navigate(`/evals/${result.run_id}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Run failed");

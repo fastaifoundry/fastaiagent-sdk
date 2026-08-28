@@ -35,6 +35,10 @@ export interface TraceRow {
   // span. Free-text — any value the harness or a custom instrumentation
   // has stamped survives a trip through the API as-is.
   framework?: string | null;
+  // Where the run originated, from ``fastaiagent.source`` on the root span.
+  // Prompt Playground runs are stamped "playground", so experiments can be
+  // told apart from real traffic (and filtered via ?source=).
+  source?: string | null;
   // Whether this trace is starred (present in trace_favorites). Drives the
   // filled star in the Traces list.
   favorited?: boolean;
@@ -247,6 +251,13 @@ export interface DatasetRunEvalResult {
   pass_rate: number | null;
   pass_count: number;
   fail_count: number;
+  /**
+   * "echo" when no agent ran: inputs are echoed back unchanged, so a case
+   * passes only where expected_output equals input. A 0% pass rate is normal
+   * there and does not mean the eval failed.
+   */
+  mode?: "echo" | "agent";
+  note?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -948,10 +959,17 @@ export interface PlaygroundModelsResponse {
   providers: PlaygroundProviderInfo[];
 }
 
+/**
+ * `null` means "don't send this parameter" — not "send the default".
+ *
+ * Anthropic rejects `temperature` and `top_p` together, and Claude 5 rejects
+ * `top_p` outright, so shipping 1.0 defaults broke every Anthropic call. Only
+ * forward what the user explicitly enabled.
+ */
 export interface PlaygroundParameters {
-  temperature: number;
+  temperature: number | null;
   max_tokens: number;
-  top_p: number;
+  top_p: number | null;
 }
 
 export interface PlaygroundRunRequest {
@@ -963,6 +981,10 @@ export interface PlaygroundRunRequest {
   parameters: PlaygroundParameters;
   image_b64?: string;
   image_media_type?: string;
+  /** Point at an AI gateway / proxy / self-hosted server. http(s) only. */
+  base_url?: string;
+  /** Per-request credential. Never persisted client- or server-side. */
+  api_key?: string;
 }
 
 export interface PlaygroundRunResponse {
@@ -988,7 +1010,7 @@ export interface PlaygroundDoneMetadata {
 export type PlaygroundStreamEvent =
   | { event: "token"; text: string }
   | { event: "done"; metadata: PlaygroundDoneMetadata }
-  | { event: "error"; message: string };
+  | { event: "error"; message: string; correlation_id?: string };
 
 export interface SaveAsEvalRequest {
   dataset_name: string;

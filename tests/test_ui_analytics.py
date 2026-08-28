@@ -146,6 +146,85 @@ class TestPricing:
     def test_zero_tokens_returns_none(self):
         assert compute_cost_usd("gpt-4o", 0, 0) is None
 
+    @pytest.mark.parametrize(
+        ("model", "input_per_m", "output_per_m"),
+        [
+            # Regression: the broad "claude-opus-4" row ($15/$75) used to
+            # swallow every claude-opus-4-* id, reporting 3x the real cost for
+            # the 4.5+ tier — including a model shipped in the Playground.
+            ("claude-opus-4-5", 5.00, 25.00),
+            ("claude-opus-4-8", 5.00, 25.00),
+            # Claude 5 had no entry at all, so cost rendered as a dash.
+            ("claude-opus-5", 5.00, 25.00),
+            ("claude-sonnet-5", 3.00, 15.00),
+            ("claude-fable-5", 10.00, 50.00),
+            # The older Opus tier genuinely is $15/$75 — don't over-correct.
+            ("claude-opus-4-1", 15.00, 75.00),
+        ],
+    )
+    def test_anthropic_tier_rates(self, model, input_per_m, output_per_m):
+        assert compute_cost_usd(model, 1_000_000, 0) == pytest.approx(input_per_m)
+        assert compute_cost_usd(model, 0, 1_000_000) == pytest.approx(output_per_m)
+
+
+class TestRateOverrides:
+    """Org rates beat list price, everywhere cost is computed."""
+
+    def test_override_wins_over_builtin(self):
+        from fastaiagent.ui import pricing
+
+        try:
+            pricing.set_rate_overrides({"claude-opus-5": (4.0, 20.0)})
+            assert compute_cost_usd("claude-opus-5", 1_000_000, 0) == pytest.approx(4.0)
+            # Untouched models keep list price.
+            assert compute_cost_usd("claude-sonnet-5", 1_000_000, 0) == pytest.approx(3.0)
+        finally:
+            pricing.set_rate_overrides(None)
+
+    def test_override_still_prefix_matches(self):
+        from fastaiagent.ui import pricing
+
+        try:
+            pricing.set_rate_overrides({"gpt-4o-mini": (0.10, 0.40)})
+            assert compute_cost_usd(
+                "gpt-4o-mini-2024-07-18", 1_000_000, 0
+            ) == pytest.approx(0.10)
+        finally:
+            pricing.set_rate_overrides(None)
+
+    def test_clearing_restores_list_price(self):
+        from fastaiagent.ui import pricing
+
+        pricing.set_rate_overrides({"gpt-4o-mini": (0.10, 0.40)})
+        pricing.set_rate_overrides(None)
+        assert compute_cost_usd("gpt-4o-mini", 1_000_000, 0) == pytest.approx(0.15)
+
+    def test_malformed_entry_is_skipped_others_survive(self, temp_dir, monkeypatch):
+        import json
+
+        from fastaiagent.ui import model_catalog, pricing
+
+        catalog = temp_dir / "models.json"
+        catalog.write_text(
+            json.dumps(
+                {
+                    "pricing": {
+                        "claude-opus-5": {"input_per_1m": "nope", "output_per_1m": 20.0},
+                        "gpt-4o-mini": {"input_per_1m": 0.10, "output_per_1m": 0.40},
+                    }
+                }
+            )
+        )
+        monkeypatch.setenv(model_catalog.CATALOG_ENV_VAR, str(catalog))
+        try:
+            pricing.reload_rate_overrides()
+            # Bad entry ignored -> list price.
+            assert compute_cost_usd("claude-opus-5", 1_000_000, 0) == pytest.approx(5.0)
+            # Good entry applied.
+            assert compute_cost_usd("gpt-4o-mini", 1_000_000, 0) == pytest.approx(0.10)
+        finally:
+            pricing.set_rate_overrides(None)
+
 
 class TestAnalyticsEndpoint:
     def test_returns_summary_with_percentiles(self, client: TestClient):

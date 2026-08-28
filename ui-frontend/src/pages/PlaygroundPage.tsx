@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -50,10 +51,12 @@ import type {
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
+// temperature/top_p start unset on purpose — see PlaygroundParameters in
+// lib/types.ts. Sending 1.0 defaults made every Anthropic call 400.
 const DEFAULT_PARAMS: PlaygroundParameters = {
-  temperature: 1,
+  temperature: null,
   max_tokens: 1024,
-  top_p: 1,
+  top_p: null,
 };
 
 const VAR_RE = /\{\{(\w+)\}\}/g;
@@ -127,6 +130,15 @@ export function PlaygroundPage() {
     (p) => p.provider === provider,
   );
 
+  // Switching provider must repoint the model too. Leaving a stale
+  // `gpt-4o-mini` selected while provider flipped to `anthropic` sent a
+  // mismatched pair the provider rejects with a 404.
+  const handleProviderChange = (next: string) => {
+    setProvider(next);
+    const info = providers.find((p) => p.provider === next);
+    setModel(info?.models[0] ?? "");
+  };
+
   // First time we get models, default to a provider that has a key.
   useEffect(() => {
     if (!models.data) return;
@@ -144,6 +156,26 @@ export function PlaygroundPage() {
   // ─── Parameters
   const [params, setParams] = useState<PlaygroundParameters>(DEFAULT_PARAMS);
   const [paramsOpen, setParamsOpen] = useState<boolean>(false);
+
+  // ─── Connection: endpoint + per-run token.
+  // Component state only — deliberately never written to localStorage or sent
+  // anywhere but the run request, so a reload clears the token.
+  const [baseUrl, setBaseUrl] = useState<string>("");
+  const [apiKey, setApiKey] = useState<string>("");
+  const [connOpen, setConnOpen] = useState<boolean>(false);
+  const hasToken = apiKey.trim().length > 0;
+
+  // A token supplied here stands in for the server's env var, so a provider
+  // with no configured key is still runnable.
+  const credentialed = Boolean(providerInfo?.has_key) || hasToken;
+
+  // Anything other than a loopback origin means the token would cross the
+  // network, and the local UI serves plain HTTP.
+  const insecureOrigin =
+    typeof window !== "undefined" &&
+    !["localhost", "127.0.0.1", "[::1]", "::1"].includes(
+      window.location.hostname,
+    );
 
   // ─── Image attachment (multimodal)
   const [imageBase64, setImageBase64] = useState<string | null>(null);
@@ -185,6 +217,9 @@ export function PlaygroundPage() {
   const [response, setResponse] = useState<string>("");
   const [running, setRunning] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorCorrelationId, setErrorCorrelationId] = useState<string | null>(
+    null,
+  );
   const [lastMetadata, setLastMetadata] =
     useState<PlaygroundDoneMetadata | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -197,14 +232,23 @@ export function PlaygroundPage() {
       toast.error("Template is empty");
       return;
     }
-    if (!providerInfo?.has_key) {
+    if (!credentialed) {
       const env = providerInfo?.env_var ?? `${provider.toUpperCase()}_API_KEY`;
       setError(
-        `No API key found for provider '${provider}'. Set ${env} in your environment and restart the UI.`,
+        `No API key found for provider '${provider}'. Set ${env} in your ` +
+          `environment and restart the UI, or paste a token for this run in ` +
+          `the Connection panel.`,
       );
+      setErrorCorrelationId(null);
+      return;
+    }
+    if (!model.trim()) {
+      setError("Pick or type a model first.");
+      setErrorCorrelationId(null);
       return;
     }
     setError(null);
+    setErrorCorrelationId(null);
     setResponse("");
     setLastMetadata(null);
     setActiveHistoryId(null);
@@ -227,6 +271,8 @@ export function PlaygroundPage() {
           parameters: params,
           image_b64: imageBase64 ?? undefined,
           image_media_type: imageMediaType ?? undefined,
+          base_url: baseUrl.trim() || undefined,
+          api_key: apiKey.trim() || undefined,
         },
         ac.signal,
       )) {
@@ -238,6 +284,7 @@ export function PlaygroundPage() {
           setLastMetadata(ev.metadata);
         } else if (ev.event === "error") {
           setError(ev.message);
+          setErrorCorrelationId(ev.correlation_id ?? null);
           break;
         }
       }
@@ -281,7 +328,16 @@ export function PlaygroundPage() {
     imageBase64,
     imageMediaType,
     providerInfo,
+    credentialed,
+    baseUrl,
+    apiKey,
   ]);
+
+  // A model that isn't in the suggestion list is fine (the combobox accepts
+  // free text and LLMClient takes any id the upstream API knows), but an
+  // *empty* one never is.
+  const canRun =
+    Boolean(template.trim()) && Boolean(model.trim()) && credentialed;
 
   const handleStop = () => {
     abortRef.current?.abort();
@@ -332,7 +388,9 @@ export function PlaygroundPage() {
             <CardContent className="space-y-3">
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_140px]">
                 <div className="space-y-1">
-                  <Label className="text-xs">Prompt</Label>
+                  <Label htmlFor="playground-prompt" className="text-xs">
+                    Prompt
+                  </Label>
                   <Select
                     value={selectedSlug ?? ""}
                     onValueChange={(v) => {
@@ -341,7 +399,7 @@ export function PlaygroundPage() {
                       setVariables({});
                     }}
                   >
-                    <SelectTrigger className="w-full">
+                    <SelectTrigger id="playground-prompt" className="w-full">
                       <SelectValue placeholder="Select a prompt…" />
                     </SelectTrigger>
                     <SelectContent>
@@ -354,13 +412,15 @@ export function PlaygroundPage() {
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">Version</Label>
+                  <Label htmlFor="playground-version" className="text-xs">
+                    Version
+                  </Label>
                   <Select
                     value={selectedVersion ?? ""}
                     onValueChange={setSelectedVersion}
                     disabled={!selectedSlug || !promptDetail.data}
                   >
-                    <SelectTrigger className="w-full">
+                    <SelectTrigger id="playground-version" className="w-full">
                       <SelectValue placeholder="latest" />
                     </SelectTrigger>
                     <SelectContent>
@@ -400,8 +460,11 @@ export function PlaygroundPage() {
               )}
 
               <div className="space-y-1">
-                <Label className="text-xs">Template</Label>
+                <Label htmlFor="playground-template" className="text-xs">
+                  Template
+                </Label>
                 <Textarea
+                  id="playground-template"
                   value={template}
                   onChange={(e) => setTemplate(e.target.value)}
                   rows={8}
@@ -446,9 +509,11 @@ export function PlaygroundPage() {
             <CardContent className="space-y-3">
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-[140px_1fr]">
                 <div className="space-y-1">
-                  <Label className="text-xs">Provider</Label>
-                  <Select value={provider} onValueChange={setProvider}>
-                    <SelectTrigger className="w-full">
+                  <Label htmlFor="playground-provider" className="text-xs">
+                    Provider
+                  </Label>
+                  <Select value={provider} onValueChange={handleProviderChange}>
+                    <SelectTrigger id="playground-provider" className="w-full">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -475,19 +540,28 @@ export function PlaygroundPage() {
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">Model</Label>
-                  <Select value={model} onValueChange={setModel}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(providerInfo?.models ?? []).map((m) => (
-                        <SelectItem key={m} value={m}>
-                          {m}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="playground-model" className="text-xs">
+                    Model
+                  </Label>
+                  {/* Combobox, not a fixed list: model ids go stale between
+                      releases, and LLMClient accepts any id the upstream API
+                      knows. Suggestions come from models.json + the shipped
+                      catalog; typing anything else is allowed. */}
+                  <Input
+                    id="playground-model"
+                    list="playground-model-options"
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
+                    placeholder="Pick or type a model id…"
+                    autoComplete="off"
+                    spellCheck={false}
+                    className="font-mono text-xs"
+                  />
+                  <datalist id="playground-model-options">
+                    {(providerInfo?.models ?? []).map((m) => (
+                      <option key={m} value={m} />
+                    ))}
+                  </datalist>
                 </div>
               </div>
 
@@ -505,6 +579,94 @@ export function PlaygroundPage() {
               </button>
               {paramsOpen && (
                 <ParametersPanel value={params} onChange={setParams} />
+              )}
+
+              <button
+                type="button"
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => setConnOpen((v) => !v)}
+              >
+                {connOpen ? (
+                  <ChevronDown className="h-3 w-3" />
+                ) : (
+                  <ChevronRight className="h-3 w-3" />
+                )}
+                Connection{" "}
+                {baseUrl || hasToken ? (
+                  <span className="text-primary">
+                    ({[baseUrl && "endpoint", hasToken && "token"]
+                      .filter(Boolean)
+                      .join(" + ")}
+                    )
+                  </span>
+                ) : (
+                  "(default)"
+                )}
+              </button>
+              {connOpen && (
+                <div className="space-y-3 rounded-md border bg-muted/20 p-3">
+                  <p className="text-xs text-muted-foreground">
+                    For models behind an AI gateway or proxy. Both apply to
+                    this run only — the token is never saved, logged, or sent
+                    anywhere but the call itself, and a page reload clears it.
+                  </p>
+                  <div className="space-y-1">
+                    <Label htmlFor="playground-base-url" className="text-xs">
+                      Endpoint
+                    </Label>
+                    <Input
+                      id="playground-base-url"
+                      value={baseUrl}
+                      onChange={(e) => setBaseUrl(e.target.value)}
+                      placeholder="https://ai-gateway.internal/v1"
+                      autoComplete="off"
+                      spellCheck={false}
+                      className="font-mono text-xs"
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      Leave empty to use {provider}&apos;s default.
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="playground-api-key" className="text-xs">
+                      Token
+                    </Label>
+                    <Input
+                      id="playground-api-key"
+                      type="password"
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      placeholder={
+                        providerInfo?.env_var
+                          ? `Overrides ${providerInfo.env_var}`
+                          : "Bearer token for this run"
+                      }
+                      autoComplete="off"
+                      spellCheck={false}
+                      className="font-mono text-xs"
+                    />
+                  </div>
+                  {baseUrl.trim() && !hasToken && providerInfo?.has_key && (
+                    <p className="rounded-md border border-amber-500/50 bg-amber-500/5 p-2 text-[11px]">
+                      A custom endpoint needs its own token. Without one the
+                      server would send{" "}
+                      <code className="font-mono">
+                        {providerInfo.env_var ?? "its provider key"}
+                      </code>{" "}
+                      to this endpoint, which is only right if the endpoint
+                      really is {provider}. The run is refused until you enter
+                      a token or clear the endpoint.
+                    </p>
+                  )}
+                  {insecureOrigin && hasToken && (
+                    <p className="rounded-md border border-destructive/50 bg-destructive/5 p-2 text-[11px] text-destructive">
+                      This UI is not on localhost. The local UI serves plain
+                      HTTP, so a token typed here crosses the network
+                      unencrypted. Prefer an environment variable on the
+                      server.
+                    </p>
+                  )}
+                </div>
               )}
 
               <div className="flex items-center gap-2 pt-1">
@@ -546,10 +708,7 @@ export function PlaygroundPage() {
                 Stop
               </Button>
             ) : (
-              <Button
-                onClick={handleRun}
-                disabled={!template.trim() || !providerInfo?.has_key}
-              >
+              <Button onClick={handleRun} disabled={!canRun}>
                 <Play className="mr-1.5 h-3.5 w-3.5" />
                 Run
               </Button>
@@ -573,9 +732,19 @@ export function PlaygroundPage() {
             </CardHeader>
             <CardContent className="space-y-3">
               {error ? (
-                <pre className="rounded-md border border-destructive bg-destructive/5 p-3 font-mono text-xs whitespace-pre-wrap text-destructive">
-                  {error}
-                </pre>
+                <div className="space-y-1.5">
+                  <pre className="rounded-md border border-destructive bg-destructive/5 p-3 font-mono text-xs whitespace-pre-wrap text-destructive">
+                    {error}
+                  </pre>
+                  {errorCorrelationId && (
+                    <p className="text-xs text-muted-foreground">
+                      The provider&apos;s error is redacted here to avoid
+                      leaking account details. The full text is in the server
+                      log under correlation id{" "}
+                      <code className="font-mono">{errorCorrelationId}</code>.
+                    </p>
+                  )}
+                </div>
               ) : (
                 <pre className="min-h-[160px] max-h-[480px] overflow-auto rounded-md border bg-muted/20 p-3 font-mono text-xs whitespace-pre-wrap">
                   {response || (
@@ -596,7 +765,17 @@ export function PlaygroundPage() {
                     in {formatTokens(lastMetadata.tokens.input)} ·
                     out {formatTokens(lastMetadata.tokens.output)}
                   </span>
-                  <span>{formatCost(lastMetadata.cost_usd)}</span>
+                  <span
+                    title={
+                      "Estimated from public list prices. Does not account for " +
+                      "negotiated discounts, Bedrock/Vertex partner rates, the " +
+                      "Batch API discount, or prompt-cache multipliers. Set your " +
+                      "own rates in the 'pricing' block of .fastaiagent/models.json."
+                    }
+                    className="cursor-help border-b border-dotted border-muted-foreground/50"
+                  >
+                    ~{formatCost(lastMetadata.cost_usd)} est.
+                  </span>
                   {lastMetadata.trace_id && (
                     <Link
                       to={`/traces/${lastMetadata.trace_id}`}

@@ -44,7 +44,9 @@ def _register_builtins() -> None:
             key="groq",
             base_url="https://api.groq.com/openai/v1",
             env_var="GROQ_API_KEY",
-            default_model="llama-3.1-70b-versatile",
+            # llama-3.1-70b-versatile was decommissioned by Groq; calling it
+            # returns 400 "has been decommissioned". Verified live 2026-08-28.
+            default_model="openai/gpt-oss-120b",
             wire="openai_compat",
             capabilities=_OPENAI_COMPAT_CAPS,
             description="Groq — fast inference for open models.",
@@ -104,7 +106,9 @@ def _register_builtins() -> None:
             key="perplexity",
             base_url="https://api.perplexity.ai",
             env_var="PERPLEXITY_API_KEY",
-            default_model="llama-3.1-sonar-small-128k-online",
+            # The llama-3.1-sonar-* names were retired in favour of the plain
+            # "sonar" family. Not verified live — we have no Perplexity key.
+            default_model="sonar",
             wire="openai_compat",
             capabilities={
                 "tools": False,
