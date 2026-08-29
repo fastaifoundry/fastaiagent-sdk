@@ -132,6 +132,29 @@ def _registered_agent_names(runners: dict[str, Any]) -> set[str]:
     return out
 
 
+def _live_agent(runners: dict[str, Any], name: str) -> Any | None:
+    """Return the live ``Agent`` object named ``name``, or ``None``.
+
+    ``_find_agent_in_runners`` answers "which runner owns this name" for the
+    dependency graph; this answers "give me the object" so callers can read
+    its real ``tools`` instead of reconstructing them from a stale span.
+    Supervisors are returned as-is (they have no ``.tools`` of their own —
+    the caller degrades to the span-derived list).
+    """
+    runner, kind = _find_agent_in_runners(runners, name)
+    if runner is None:
+        return None
+    if kind == "worker":
+        for w in getattr(runner, "workers", []) or []:
+            a = getattr(w, "agent", None)
+            if a is not None and getattr(a, "name", None) == name:
+                return a
+        return None
+    if kind == "swarm-peer":
+        return (getattr(runner, "agents", {}) or {}).get(name)
+    return runner
+
+
 def _empty_agent_summary(name: str) -> dict[str, Any]:
     """Stub summary for a registered-but-not-run agent.
 
@@ -236,9 +259,15 @@ def get_agent(
         else:
             rows = db.fetchall("SELECT * FROM spans WHERE name LIKE 'agent.%'")
         by_agent = _aggregate(rows)
-        if name not in by_agent:
+        if name in by_agent:
+            payload = _format(by_agent[name])
+        elif name in _registered_agent_names(ctx.runners):
+            # Registered via `fastaiagent ui --agent` (or build_app(runners=...))
+            # but hasn't run yet. ``list_agents`` already surfaces these, so
+            # 404-ing here would ship a broken link from the directory page.
+            payload = _empty_agent_summary(name)
+        else:
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"Agent '{name}' not found")
-        payload = _format(by_agent[name])
         payload["workflows"] = _registered_workflows_for(ctx, name)
         return payload
     finally:
@@ -253,11 +282,17 @@ def get_agent_tools(
 ) -> dict[str, Any]:
     """Return tools **registered** with this agent and tools **used** at runtime.
 
-    *Registered* is read off the most-recent ``agent.<name>`` root span (the
-    SDK emits ``agent.tools`` as JSON on every run — stays None for traces
-    emitted before 0.9.4). *Used* scans every ``tool.<name>`` descendant of
-    an ``agent.<name>`` span across the whole DB and aggregates call count,
-    error count, and avg latency per tool name.
+    *Registered* comes from the live object when the agent is registered
+    (``fastaiagent ui --agent`` / ``build_app(runners=...)``) — that's current
+    and available before the first run. Otherwise it falls back to the
+    most-recent ``agent.<name>`` root span (the SDK emits ``agent.tools`` as
+    JSON on every run — stays None for traces emitted before 0.9.4), which is
+    a snapshot of the last run. The response's ``source`` field says which.
+
+    *Used* always scans every ``tool.<name>`` descendant of an ``agent.<name>``
+    span across the whole DB and aggregates call count, error count, and avg
+    latency per tool name — that's real runtime history the live object
+    doesn't have.
 
     The UI cross-references the two so it can badge registered-but-never-used
     tools (suggests dead code) and used-but-not-registered names
@@ -270,10 +305,13 @@ def get_agent_tools(
     ctx = get_context(request)
     db = ctx.db()
     pid_clause, pid_params = project_filter(ctx)
+    live = _live_agent(ctx.runners, name)
     try:
         # Project-scope guard: 404 if this agent has no spans in this project,
-        # so cross-project name probing can't confirm existence.
-        if ctx.project_id:
+        # so cross-project name probing can't confirm existence. A registered
+        # runner is proof of existence in its own right, so it bypasses the
+        # probe — otherwise a `--agent`-loaded agent 404s until its first run.
+        if ctx.project_id and live is None:
             probe = db.fetchone(
                 "SELECT 1 FROM spans WHERE name = ? AND project_id = ? LIMIT 1",
                 (f"agent.{name}", ctx.project_id),
@@ -282,34 +320,55 @@ def get_agent_tools(
                 raise HTTPException(
                     status.HTTP_404_NOT_FOUND, f"Agent '{name}' not found"
                 )
-        # ── Registered: latest agent.<name> root span with agent.tools JSON ─
+        # ── Registered ──────────────────────────────────────────────────
+        # Prefer the live object when one is registered: the span-derived
+        # list is a snapshot of the *last run*, so it's stale by construction
+        # and empty before the first run. ``source`` tells the UI which it got.
         registered: list[dict[str, Any]] = []
-        agent_rows = db.fetchall(
-            f"SELECT attributes FROM spans WHERE name = ? {pid_clause} "
-            "ORDER BY start_time DESC LIMIT 1",
-            (f"agent.{name}", *pid_params),
-        )
-        if agent_rows:
-            try:
-                attrs = json.loads(agent_rows[0].get("attributes") or "{}")
-            except json.JSONDecodeError:
-                attrs = {}
-            raw = attr(attrs, "agent.tools")
-            if isinstance(raw, str):
+        source = "trace"
+        live_tools = getattr(live, "tools", None) if live is not None else None
+        if live_tools is not None:
+            source = "runtime"
+            for t in live_tools:
+                registered.append(
+                    {
+                        "name": getattr(t, "name", None) or "?",
+                        "origin": getattr(t, "origin", None) or "unknown",
+                        "description": getattr(t, "description", "") or "",
+                        "replay_class": getattr(t, "replay_class", None),
+                    }
+                )
+        else:
+            # ── latest agent.<name> root span with agent.tools JSON ──
+            agent_rows = db.fetchall(
+                f"SELECT attributes FROM spans WHERE name = ? {pid_clause} "
+                "ORDER BY start_time DESC LIMIT 1",
+                (f"agent.{name}", *pid_params),
+            )
+            if agent_rows:
                 try:
-                    parsed = json.loads(raw)
+                    attrs = json.loads(agent_rows[0].get("attributes") or "{}")
                 except json.JSONDecodeError:
-                    parsed = []
-                if isinstance(parsed, list):
-                    for t in parsed:
-                        if isinstance(t, dict) and "name" in t:
-                            registered.append(
-                                {
-                                    "name": t.get("name"),
-                                    "origin": t.get("origin") or "unknown",
-                                    "description": t.get("description") or "",
-                                }
-                            )
+                    attrs = {}
+                raw = attr(attrs, "agent.tools")
+                if isinstance(raw, str):
+                    try:
+                        parsed = json.loads(raw)
+                    except json.JSONDecodeError:
+                        parsed = []
+                    if isinstance(parsed, list):
+                        for t in parsed:
+                            if isinstance(t, dict) and "name" in t:
+                                registered.append(
+                                    {
+                                        "name": t.get("name"),
+                                        "origin": t.get("origin") or "unknown",
+                                        "description": t.get("description") or "",
+                                        # Present in Tool.to_dict() since 0.9.4;
+                                        # None for older traces.
+                                        "replay_class": t.get("replay_class"),
+                                    }
+                                )
 
         # ── Used: aggregate tool.* spans whose parent chain rolls up to agent.<name> ─
         # Pull every trace that touched this agent, then collect tool.* spans
@@ -395,6 +454,9 @@ def get_agent_tools(
             "agent_name": name,
             "registered": registered,
             "used": used,
+            # "runtime" = read off the live registered object (current);
+            # "trace"   = reconstructed from the last run's span (may be stale).
+            "source": source,
         }
     finally:
         db.close()

@@ -121,6 +121,12 @@ from fastaiagent.ui.server import build_app
 app = build_app(runners=[supervisor])
 ```
 
+Or from the CLI, which populates the same registry:
+
+```bash
+fastaiagent ui --agent app.py:supervisor
+```
+
 When no runner is registered, the endpoint reconstructs a degraded view
 from `agent.tools` / `agent.guardrails` / `agent.llm.*` span attributes
 on the most-recent root agent span — the same data the existing

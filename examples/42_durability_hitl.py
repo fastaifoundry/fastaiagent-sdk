@@ -129,11 +129,16 @@ def main() -> None:
 
     print(
         "\nTo render the topology + checkpoint inspector in the Local UI, "
-        "register the chain with build_app:\n"
+        "register the chain. From the CLI, pointing at a module-level "
+        "Chain object:\n"
+        "    fastaiagent ui --agent app.py:chain\n"
+        "  (or embed it yourself)\n"
         "    from fastaiagent.ui.server import build_app\n"
         "    app = build_app(runners=[chain])\n"
         "Then visit http://127.0.0.1:7843/workflows/chain/refund-flow "
-        "for the topology and /executions/<id> for the checkpoint timeline."
+        "for the topology and /executions/<id> for the checkpoint timeline.\n"
+        "Registering also makes /approvals able to Approve/Reject — without "
+        "a runner, resume returns 503."
     )
 
 

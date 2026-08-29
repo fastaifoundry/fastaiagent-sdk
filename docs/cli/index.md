@@ -24,6 +24,7 @@ fastaiagent --help
 | `fastaiagent eval` | Curate eval datasets from traces; run evaluations |
 | `fastaiagent prompts` | Browse the prompt registry |
 | `fastaiagent kb` | Manage local knowledge bases |
+| `fastaiagent ui` | Start the Local UI — traces, prompts, evals, guardrails, approvals |
 | `fastaiagent agent` | Run an Agent or Chain as an HTTP service |
 | `fastaiagent mcp` | Expose an Agent or Chain as an MCP server |
 | `fastaiagent resume` | Resume a paused execution (durability) |
@@ -180,6 +181,58 @@ fastaiagent kb delete docs/old.md --name product-docs
 # Clear the whole KB
 fastaiagent kb clear --name product-docs
 ```
+
+## `fastaiagent ui`
+
+Start the [Local UI](../ui/index.md) — traces, prompts, evals, guardrails,
+datasets, and approvals over `./.fastaiagent/local.db`.
+
+```bash
+fastaiagent ui                                      # http://127.0.0.1:7842
+fastaiagent ui start --no-auth --port 8080
+fastaiagent ui reset-password
+```
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--host` | `127.0.0.1` | Bind address. Non-loopback requires `--insecure-bind`. |
+| `--port` | `7842` | Port. |
+| `--no-auth` | off | Skip login. Throwaway use only. |
+| `--no-open` | off | Don't open a browser. |
+| `--insecure-bind` | off | Acknowledge the risk of a non-loopback bind. |
+| `--db PATH` | `./.fastaiagent/local.db` | Override the DB path. |
+| `--auth-file PATH` | `./.fastaiagent/auth.json` | Override the credentials file. |
+| `--agent SPEC` | none | Register an agent with the server. Repeatable. |
+
+### `--agent`
+
+Most of the UI reads the trace database, so it needs no setup. Three
+features need the *live object*: resuming an approval, evaluating a dataset
+against a real agent, and listing an agent's tools before its first run.
+
+```bash
+fastaiagent ui --agent app.py:support_agent
+fastaiagent ui --agent app.py:support --agent mypkg.agents:billing
+```
+
+Takes `path/to/file.py:attr` or `pkg.module:attr` — the same syntax as
+`fastaiagent agent serve` and `fastaiagent eval run` — resolving to an
+`Agent`, `Chain`, `Swarm`, or `Supervisor`. Targets that fail to resolve are
+reported and skipped; the UI still starts. The module is imported, so guard
+module-level side effects with `if __name__ == "__main__":`.
+
+Unlike `agent serve`, this does **not** expose an endpoint that runs your
+agent on request. Import paths are read only from the command line, never
+from a request body.
+
+### Security
+
+The Local UI binds to loopback and refuses anything else unless you pass
+`--insecure-bind`, since the session cookie travels over plain HTTP. This is
+the opposite default from `agent serve`, which binds `0.0.0.0` for
+containers.
+
+---
 
 ## `fastaiagent agent serve`
 

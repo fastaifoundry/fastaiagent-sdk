@@ -93,9 +93,10 @@ Two-panel layout. Left: configuration. Right: response.
         is never true, and you'll see 0%. That is a dataset sanity check, not a
         model evaluation, and the UI labels the result accordingly.
 
-        `fastaiagent ui` registers no runners, so a real eval means driving the
-        app yourself with `build_app(runners=[...])` and passing `agent_name` —
-        or running the eval framework directly against the JSONL.
+        Start the UI with `fastaiagent ui --agent app.py:my_agent` (or drive the
+        app yourself with `build_app(runners=[...])`), then pass `agent_name` —
+        the result will report `mode: "agent"`. You can also run the eval
+        framework directly against the JSONL.
 
 ## Tracing
 

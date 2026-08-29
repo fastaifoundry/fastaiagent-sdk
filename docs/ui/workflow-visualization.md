@@ -46,6 +46,13 @@ app = build_app(runners=[chain])
 `Chain`, `Swarm`, and `Supervisor` instances are all accepted. The
 registered name comes from `runner.name`.
 
+If you start the UI from the CLI rather than embedding it, use `--agent`
+instead — it fills the same registry:
+
+```bash
+fastaiagent ui --agent app.py:chain
+```
+
 ## Node types
 
 | Type | Visual | Used for |

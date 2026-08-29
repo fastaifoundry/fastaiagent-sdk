@@ -112,6 +112,13 @@ def main() -> None:
     print("  • /prompts  - ui-example.assistant v1 (click to edit)")
     print("  • /evals    - the ui-example-smoke run + its cases")
     print("  • /agents   - the ui-example-assistant agent card")
+    print()
+    print("Those pages read the trace DB. To let the UI *act* on an agent")
+    print("(resume approvals, eval a dataset against it, list its live tools),")
+    print("register the Agent instance on startup:")
+    print("    fastaiagent ui --agent app.py:agent")
+    print("  (the target must be an Agent/Chain/Swarm/Supervisor object,")
+    print("   not a factory function)")
 
 
 if __name__ == "__main__":

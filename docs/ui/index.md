@@ -49,6 +49,54 @@ Opening browser...
 | `--no-open` | off | Don't launch the browser. |
 | `--db PATH` | `./.fastaiagent/local.db` | Override the local DB path. Also settable via `FASTAIAGENT_LOCAL_DB`. |
 | `--auth-file PATH` | `./.fastaiagent/auth.json` | Override the credentials file. |
+| `--agent SPEC` | none | Register an agent with the server. Repeatable. See below. |
+
+### `--agent` — let the UI act on your agents, not just read their traces
+
+Most of the UI reads `local.db`, so it works with no setup at all. Three
+features need the *live object*, not its telemetry: resuming an approval,
+evaluating a dataset against a real agent, and listing an agent's tools
+before it has ever run. `--agent` hands those objects to the server.
+
+```bash
+fastaiagent ui --agent app.py:support_agent
+fastaiagent ui --agent app.py:support --agent app.py:billing_swarm
+fastaiagent ui --agent mypkg.agents:triage        # dotted module form
+```
+
+The spec is `path/to/file.py:attr` or `pkg.module:attr` — the same syntax
+`fastaiagent eval run` and `fastaiagent agent serve` accept. It resolves to
+an `Agent`, `Chain`, `Swarm`, or `Supervisor`.
+
+What it unlocks:
+
+| Without `--agent` | With it |
+|---|---|
+| **Approvals** show pending interrupts but Approve/Reject returns 503 | Approve/Reject resumes the real run |
+| **Run eval** can only echo inputs back (a dataset sanity check) | Evaluates the real agent; result reports `mode: "agent"` |
+| **Agents** lists only agents that have already run; tools come from the last run's span | Registered agents appear immediately, with their current tools and `replay_class` |
+
+On startup it prints what it loaded:
+
+```
+Registered 2 target(s):
+  support-bot (agent)
+  billing-swarm (swarm)
+```
+
+!!! warning "The module is imported, so it executes"
+    Anything at module level runs when the UI starts. Guard demo calls with
+    `if __name__ == "__main__":`. A target that fails to resolve is reported
+    and skipped — the UI still starts — but a module calling `sys.exit()` at
+    import time will stop it.
+
+Embedded callers do the same thing directly:
+
+```python
+from fastaiagent.ui.server import build_app
+
+app = build_app(runners=[support_agent, billing_swarm])
+```
 
 ### Forgot password
 

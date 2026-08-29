@@ -6,6 +6,7 @@ import getpass
 import logging
 import sys
 from pathlib import Path
+from typing import Any
 
 import typer
 from rich.console import Console
@@ -133,15 +134,112 @@ def _prompt_first_run(auth_path: Path) -> None:
     console.print(f"[green]\N{CHECK MARK} Credentials saved to {auth_path}[/green]")
 
 
+_AGENT_HELP = (
+    "Register an agent with the server so the UI can act on it, not just "
+    "read its traces: 'path/to/file.py:attr' or 'pkg.module:attr'. "
+    "Accepts Agent, Chain, Swarm, or Supervisor. Repeatable. Unlocks "
+    "approval resume, dataset eval against a real agent, and live tool "
+    "listings. The module is imported, so guard side effects with "
+    "`if __name__ == \"__main__\":`."
+)
+
+
+def _runner_kind(runner: Any) -> str:
+    """Display label for a registered runner.
+
+    Mirrors the class-name test in ``ui/routes/agents.py`` so the CLI and
+    the API describe the same object the same way.
+    """
+    cls = type(runner).__name__.lower()
+    for kind in ("supervisor", "swarm", "chain"):
+        if kind in cls:
+            return kind
+    return "agent"
+
+
+def _load_runners(specs: list[str] | None) -> list[Any]:
+    """Resolve ``--agent`` specs into live runner objects.
+
+    Every failure is reported and skipped: a typo in one target must never
+    stop the UI from starting. Entries are validated against the same
+    contract ``build_app(runners=...)`` enforces (``.name`` + ``.aresume``)
+    *before* being handed over, because ``build_app`` raises on a bad entry
+    and that would abort startup after the user has already typed a
+    password.
+
+    ``SystemExit`` is deliberately not caught — a user module calling
+    ``sys.exit()`` at import time should still stop us, rather than being
+    swallowed into a confusing half-started server.
+    """
+    if not specs:
+        return []
+
+    from fastaiagent._internal.target import resolve_target
+
+    # Keyed by name so the summary we print matches what ``build_app``
+    # will actually register — it maps by ``.name`` and the last entry wins.
+    resolved: dict[str, Any] = {}
+    seen: dict[str, str] = {}
+    for spec in specs:
+        try:
+            obj = resolve_target(spec)
+        except Exception as exc:  # noqa: BLE001 — one bad target must not be fatal
+            console.print(f"[red]--agent {spec}: {exc}[/red]")
+            logger.debug("Failed to resolve --agent %s", spec, exc_info=True)
+            continue
+
+        name = getattr(obj, "name", None)
+        if not name or not hasattr(obj, "aresume"):
+            console.print(
+                f"[red]--agent {spec}: resolved to {type(obj).__name__}, which is not "
+                "a runnable target. Expected an Agent, Chain, Swarm, or "
+                "Supervisor (needs .name and .aresume()).[/red]"
+            )
+            continue
+
+        name = str(name)
+        if name in seen:
+            console.print(
+                f"[yellow]--agent {spec}: duplicate name {name!r} (already loaded "
+                f"from {seen[name]}). The last one wins.[/yellow]"
+            )
+        seen[name] = spec
+        resolved[name] = obj
+
+    return list(resolved.values())
+
+
+def _print_loaded_runners(runners: list[Any]) -> None:
+    if not runners:
+        return
+    console.print(f"[green]Registered {len(runners)} target(s):[/green]")
+    for r in runners:
+        console.print(f"  [bold]{r.name}[/bold] [dim]({_runner_kind(r)})[/dim]")
+    console.print(
+        "[dim]Approvals can now resume, datasets can eval against these, "
+        "and their tools are listed live.[/dim]"
+    )
+
+
 def _start_server(
-    *, host: str, port: int, db_path: Path, auth_path: Path, no_auth: bool, no_open: bool
+    *,
+    host: str,
+    port: int,
+    db_path: Path,
+    auth_path: Path,
+    no_auth: bool,
+    no_open: bool,
+    runners: list[Any] | None = None,
 ) -> None:
     import uvicorn
 
     from fastaiagent.ui.server import build_app
 
     app = build_app(
-        db_path=str(db_path), auth_path=auth_path, no_auth=no_auth
+        db_path=str(db_path),
+        auth_path=auth_path,
+        no_auth=no_auth,
+        runners=runners or None,
     )
     url = f"http://{host}:{port}"
     console.print(f"[bold]Starting UI on {url}[/bold]")
@@ -182,6 +280,7 @@ def default(
         "--auth-file",
         help="Override auth.json path.",
     ),
+    agent: list[str] = typer.Option(None, "--agent", help=_AGENT_HELP),
 ) -> None:
     """Default: start the server (equivalent to `fastaiagent ui start`)."""
     if ctx.invoked_subcommand is not None:
@@ -194,6 +293,7 @@ def default(
         insecure_bind=insecure_bind,
         db=db,
         auth=auth,
+        agent=agent,
     )
 
 
@@ -213,6 +313,7 @@ def start(
     ),
     db: Path | None = typer.Option(None, "--db"),
     auth: Path | None = typer.Option(None, "--auth-file"),
+    agent: list[str] = typer.Option(None, "--agent", help=_AGENT_HELP),
 ) -> None:
     """Start the local web UI server."""
     _run_start(
@@ -223,6 +324,7 @@ def start(
         insecure_bind=insecure_bind,
         db=db,
         auth=auth,
+        agent=agent,
     )
 
 
@@ -235,6 +337,7 @@ def _run_start(
     insecure_bind: bool,
     db: Path | None,
     auth: Path | None,
+    agent: list[str] | None = None,
 ) -> None:
     _ensure_ui_extra()
     _check_bind_safety(host, insecure_bind)
@@ -248,6 +351,12 @@ def _run_start(
         except (KeyboardInterrupt, EOFError):
             console.print("[red]Cancelled.[/red]")
             raise typer.Exit(code=1) from None
+    # Import user modules only after the bind is cleared and credentials
+    # are settled — don't execute their code for a start we're going to
+    # refuse, and don't leave a half-imported module behind a Ctrl-C at
+    # the password prompt.
+    runners = _load_runners(agent)
+    _print_loaded_runners(runners)
     _start_server(
         host=host,
         port=port,
@@ -255,6 +364,7 @@ def _run_start(
         auth_path=auth_path,
         no_auth=no_auth,
         no_open=no_open,
+        runners=runners,
     )
 
 

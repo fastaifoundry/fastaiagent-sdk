@@ -262,4 +262,153 @@ def test_route_404_for_unknown_agent(app_env):
         "agent_name": "ghost",
         "registered": [],
         "used": [],
+        # No live object and no spans, so the (empty) registered list is
+        # still nominally trace-derived.
+        "source": "trace",
+    }
+
+
+# ─── Registered runners: `fastaiagent ui --agent` / build_app(runners=...) ──
+#
+# Before the --agent flag, ctx.runners was always empty for CLI-launched UIs,
+# so none of the code paths below were reachable in practice.
+
+
+def _live_agent_fixture(name: str = "live-bot"):
+    """A real Agent with real tools, deterministic LLM, never run."""
+    from fastaiagent.agent.agent import Agent
+    from fastaiagent.testing import TestModel
+
+    lookup = FunctionTool(
+        name="lookup_order",
+        fn=lambda order_id: f"order {order_id}",
+        description="Look up an order by id",
+        replay_class="read_only",
+    )
+    refund = FunctionTool(
+        name="issue_refund",
+        fn=lambda order_id: f"refunded {order_id}",
+        description="Refund an order",
+        replay_class="side_effecting",
+    )
+    return Agent(
+        name=name,
+        system_prompt="You help customers.",
+        llm=TestModel(response="ok"),
+        tools=[lookup, refund],
+    )
+
+
+@pytest.fixture
+def app_with_registered_agent(tmp_path: Path):
+    """A UI bound to a registered agent that has never produced a span."""
+    db_path = tmp_path / "registered.db"
+    init_local_db(db_path).close()
+    agent = _live_agent_fixture()
+    app = build_app(
+        db_path=str(db_path),
+        auth_path=tmp_path / "auth.json",
+        no_auth=True,
+        runners=[agent],
+    )
+    return app, agent
+
+
+def test_registered_agent_is_listed_before_it_has_run(app_with_registered_agent):
+    app, _agent = app_with_registered_agent
+    with TestClient(app) as c:
+        body = c.get("/api/agents").json()
+    names = {a["agent_name"] for a in body["agents"]}
+    assert "live-bot" in names
+    row = next(a for a in body["agents"] if a["agent_name"] == "live-bot")
+    assert row["run_count"] == 0
+
+
+def test_registered_agent_detail_is_200_not_404(app_with_registered_agent):
+    """Regression guard: ``list_agents`` back-fills registered names, so
+    ``get_agent`` must too or the directory page links to a 404."""
+    app, _agent = app_with_registered_agent
+    with TestClient(app) as c:
+        r = c.get("/api/agents/live-bot")
+    assert r.status_code == 200, r.text
+    assert r.json()["agent_name"] == "live-bot"
+    assert r.json()["run_count"] == 0
+
+
+def test_unregistered_unknown_agent_still_404s(app_with_registered_agent):
+    app, _agent = app_with_registered_agent
+    with TestClient(app) as c:
+        assert c.get("/api/agents/ghost").status_code == 404
+
+
+def test_registered_tools_come_from_the_live_object(app_with_registered_agent):
+    app, _agent = app_with_registered_agent
+    with TestClient(app) as c:
+        body = c.get("/api/agents/live-bot/tools").json()
+    assert body["source"] == "runtime"
+    reg = {t["name"]: t for t in body["registered"]}
+    assert set(reg) == {"lookup_order", "issue_refund"}
+    assert reg["lookup_order"]["replay_class"] == "read_only"
+    assert reg["issue_refund"]["replay_class"] == "side_effecting"
+    assert reg["lookup_order"]["description"] == "Look up an order by id"
+    assert reg["lookup_order"]["origin"] == "function"
+    # Never run, so nothing is used and nothing cross-references as used.
+    assert body["used"] == []
+    assert all(t["used"] is False for t in body["registered"])
+
+
+def test_live_object_wins_over_stale_span_but_used_still_from_spans(tmp_path: Path):
+    """The registered half comes from the live object; the used half is
+    still real runtime history the object can't know about."""
+    db_path = tmp_path / "mixed.db"
+    init_local_db(db_path).close()
+    with SQLiteHelper(db_path) as db:
+        # A stale span claiming a tool the agent no longer has.
+        root = _insert_agent_root(
+            db,
+            trace_id="t-stale",
+            agent_name="live-bot",
+            registered_tools=[
+                {"name": "removed_tool", "description": "gone", "origin": "function"}
+            ],
+        )
+        _insert_tool_span(
+            db,
+            trace_id="t-stale",
+            parent_span_id=root,
+            tool_name="lookup_order",
+            origin="function",
+        )
+    app = build_app(
+        db_path=str(db_path),
+        auth_path=tmp_path / "auth.json",
+        no_auth=True,
+        runners=[_live_agent_fixture()],
+    )
+    with TestClient(app) as c:
+        body = c.get("/api/agents/live-bot/tools").json()
+
+    assert body["source"] == "runtime"
+    reg_names = {t["name"] for t in body["registered"]}
+    # The stale span's tool is gone; the live tools are there.
+    assert "removed_tool" not in reg_names
+    assert reg_names == {"lookup_order", "issue_refund"}
+    # Used still reflects the real call, and cross-referencing works.
+    used = {t["name"]: t for t in body["used"]}
+    assert used["lookup_order"]["call_count"] == 1
+    assert used["lookup_order"]["registered"] is True
+    reg = {t["name"]: t for t in body["registered"]}
+    assert reg["lookup_order"]["used"] is True
+    assert reg["issue_refund"]["used"] is False
+
+
+def test_span_derived_path_still_used_when_nothing_registered(app_env):
+    """No runners → unchanged behaviour, now labelled."""
+    with TestClient(app_env) as c:
+        body = c.get("/api/agents/support-bot/tools").json()
+    assert body["source"] == "trace"
+    assert {t["name"] for t in body["registered"]} == {
+        "lookup_order",
+        "search_support-docs",
+        "file_search",
     }

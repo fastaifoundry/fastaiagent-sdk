@@ -702,8 +702,9 @@ def run_eval(
             "No agent was selected, so this run echoed each input back "
             "unchanged. It checks the dataset loads and scores, not model "
             "quality — cases pass only where expected_output equals input. "
-            "To evaluate a real agent, register one with "
-            "build_app(runners=[...]) and pass agent_name."
+            "To evaluate a real agent, register one — start the UI with "
+            "`fastaiagent ui --agent app.py:my_agent` (or use "
+            "build_app(runners=[...])) — then pass agent_name."
             if echo_mode
             else None
         ),

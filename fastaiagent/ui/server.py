@@ -259,10 +259,13 @@ def build_app(
     Each must expose ``.name`` and ``.aresume(...)``. The
     ``POST /api/executions/{id}/resume`` endpoint looks one up by the
     checkpoint's ``chain_name`` field and returns 503 if no match.
+    ``fastaiagent ui --agent path/to/file.py:attr`` populates this from
+    the command line; embedded callers pass the objects directly.
 
     ``project_id`` (optional) overrides the project the UI scopes to.
-    When omitted, ``ProjectConfig.get_project_id()`` is used (which
-    resolves ``./.fastaiagent/config.toml`` or the directory name).
+    When omitted this defaults to ``""`` (unscoped reads). Note that the
+    ``fastaiagent ui`` CLI does not currently set it, so CLI-launched UIs
+    run unscoped even though writers persist a resolved project id.
     Endpoints filter SQL by this id so multiple projects can share the
     same DB (Postgres) without cross-contamination.
     """
