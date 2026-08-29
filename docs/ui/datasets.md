@@ -37,10 +37,14 @@ and a header full of bulk affordances:
   number; nothing partial is written. `mode=append` (default) preserves
   existing cases; `mode=replace` overwrites.
 - **Export** downloads the JSONL.
-- **Run eval** kicks off the eval framework against the dataset (echo
-  agent + `exact_match` scorer by default). The resulting `run_id` is
-  the same one Eval Runs would have produced — clicking through deep-
-  links into `/evals/{run_id}`.
+- **Run eval** kicks off the eval framework against the dataset. Pick an
+  agent to evaluate a real one; with none selected it falls back to an echo
+  agent + `exact_match` scorer, which checks that the dataset loads and
+  scores rather than that a model is any good (the result is labelled
+  `mode: "echo"` and says so). Agents are selectable once they're registered
+  — start the UI with `fastaiagent ui --agent app.py:my_agent`. The
+  resulting `run_id` is the same one Eval Runs would have produced —
+  clicking through deep-links into `/evals/{run_id}`.
 
 ## Case editor
 

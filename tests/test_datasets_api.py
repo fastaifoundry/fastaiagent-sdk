@@ -388,3 +388,65 @@ class TestRunEval:
         runs = client.get("/api/evals").json()
         run_ids = [r["run_id"] for r in runs.get("rows", [])]
         assert body["run_id"] in run_ids
+
+
+class TestRunEvalAgainstARegisteredAgent:
+    """Before `fastaiagent ui --agent`, ctx.runners was always empty for a
+    CLI-launched UI, so naming an agent 404'd and the only reachable mode
+    was echo. These cover the repaired path."""
+
+    @pytest.fixture
+    def client_with_agent(self, temp_dir: Path) -> TestClient:
+        from fastaiagent import Agent
+        from fastaiagent.testing import TestModel
+
+        fa_dir = temp_dir / ".fastaiagent"
+        fa_dir.mkdir(parents=True, exist_ok=True)
+        db_path = fa_dir / "local.db"
+        init_local_db(db_path).close()
+        agent = Agent(name="support-bot", llm=TestModel(response="match"))
+        app = build_app(db_path=str(db_path), no_auth=True, runners=[agent])
+        return TestClient(app)
+
+    def test_named_agent_runs_in_agent_mode_not_echo(
+        self, client_with_agent: TestClient
+    ) -> None:
+        c = client_with_agent
+        c.post("/api/datasets", json={"name": "agentic"})
+        c.post(
+            "/api/datasets/agentic/cases",
+            json={"input": "anything", "expected_output": "match"},
+        )
+        r = c.post(
+            "/api/datasets/agentic/run-eval",
+            json={"scorers": ["exact_match"], "agent_name": "support-bot"},
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["mode"] == "agent"
+        assert body["note"] is None
+        # The agent answered "match" regardless of input, so the case passes
+        # on the agent's output — not by echoing the input back.
+        assert body["pass_count"] == 1
+        assert body["fail_count"] == 0
+
+    def test_unregistered_agent_name_still_404s(
+        self, client_with_agent: TestClient
+    ) -> None:
+        c = client_with_agent
+        c.post("/api/datasets", json={"name": "ghosted"})
+        c.post("/api/datasets/ghosted/cases", json={"input": "a", "expected_output": "a"})
+        r = c.post(
+            "/api/datasets/ghosted/run-eval",
+            json={"scorers": ["exact_match"], "agent_name": "not-registered"},
+        )
+        assert r.status_code == 404
+
+    def test_omitting_agent_name_still_echoes(self, client_with_agent: TestClient) -> None:
+        """Registering a runner must not change the no-agent default."""
+        c = client_with_agent
+        c.post("/api/datasets", json={"name": "plain"})
+        c.post("/api/datasets/plain/cases", json={"input": "a", "expected_output": "a"})
+        r = c.post("/api/datasets/plain/run-eval", json={"scorers": ["exact_match"]})
+        assert r.status_code == 200, r.text
+        assert r.json()["mode"] == "echo"

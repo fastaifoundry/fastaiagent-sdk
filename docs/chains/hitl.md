@@ -94,6 +94,12 @@ app = build_app(db_path=..., runners=[my_chain, my_agent, my_swarm])
 ```
 
 ```bash
+# Same thing from the CLI. Without it, Approve/Reject returns 503 —
+# the UI can show a pending interrupt but not resolve it.
+fastaiagent ui --agent app.py:my_chain --agent app.py:my_agent
+```
+
+```bash
 # POST /api/executions/{execution_id}/resume
 curl -X POST http://127.0.0.1:7842/api/executions/refund-abc/resume \
     -H 'Content-Type: application/json' \

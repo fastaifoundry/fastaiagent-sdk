@@ -433,7 +433,9 @@ both and renders the same data.
 ## HTTP endpoints (Local UI)
 
 Mounted by [`build_app(...)`](../ui/index.md). Pass an iterable of
-`runners=` so the server can resume them.
+`runners=` so the server can resume them — or start the UI with
+`fastaiagent ui --agent app.py:my_chain`, which fills the same registry.
+Without either, resume returns `503`.
 
 | Method | Path | Purpose |
 |---|---|---|

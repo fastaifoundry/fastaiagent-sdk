@@ -5,6 +5,66 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.54.0] - 2026-08-29 — `fastaiagent ui --agent`: register real agents with the Local UI
+
+`fastaiagent ui` called `build_app()` without `runners=`, so `ctx.runners` was
+permanently empty for every CLI-launched UI. Only embedded callers ever filled
+it. Three shipped features were degraded as a result — this closes all three.
+
+### Added
+
+- **`fastaiagent ui --agent SPEC`** (repeatable, on both `fastaiagent ui` and
+  `fastaiagent ui start`). Takes `path/to/file.py:attr` or `pkg.module:attr` —
+  the same syntax as `fastaiagent agent serve` and `fastaiagent eval run`, via
+  the shared `_internal/target.py` resolver — and registers the resolved
+  `Agent` / `Chain` / `Swarm` / `Supervisor` with the server.
+  Loaded targets are printed on startup with their kind.
+  Import paths are read **only** from the command line, never from a request
+  body; this adds no endpoint that runs your agent on request.
+- `GET /api/agents/{name}/tools` now returns a **`source`** field:
+  `"runtime"` when read off the live registered object, `"trace"` when
+  reconstructed from the last run's span.
+- `replay_class` is now included per tool in that response, on both paths.
+
+### Fixed
+
+- **`/approvals` can resume.** `POST /api/executions/{id}/resume` returned
+  **503 "No runner registered"** for every CLI-launched UI, making the HITL
+  feature shipped in 1.25.0 unusable outside embedded apps.
+- **Dataset eval can run a real agent.** With no runners, naming an agent
+  404'd and the only reachable mode was the echo identity function, which
+  checks that a dataset loads rather than that an agent is any good. Selecting
+  a registered agent now reports `mode: "agent"`.
+- **`GET /api/agents/{name}` no longer 404s** for a registered agent that
+  hasn't run yet. `list_agents` already back-filled these, so the directory
+  page linked to a 404 as soon as any runner was registered.
+- Corrected the stale `build_app` docstring claiming the `fastaiagent ui` CLI
+  sets `project_id` — it does not (CLI-launched UIs still read unscoped).
+
+### Changed
+
+Both changes are reachable only when a runner is registered, which was
+impossible from the CLI before this release. Embedded `build_app(runners=[…])`
+callers will see them.
+
+- `GET /api/agents/{name}/tools` sources its **registered** half from the live
+  object when one is registered, instead of the most recent `agent.tools`
+  span. The span snapshot is the last run's, so it is stale by construction
+  and empty before the first run. The **used** half still comes from spans —
+  that is real runtime history the live object doesn't have — and the
+  registered/used cross-reference badges are unchanged.
+- `GET /api/agents/{name}` returns a zeroed summary instead of 404 for a
+  registered-but-never-run agent.
+
+### Docs
+
+`docs/ui/index.md` (new `--agent` section + flags table), `docs/cli/index.md`
+(**`fastaiagent ui` was entirely absent** from the CLI reference — now
+documented), `docs/ui/datasets.md`, `docs/ui/playground.md`,
+`docs/ui/workflow-visualization.md`, `docs/ui/agent-dependencies.md`,
+`docs/chains/hitl.md`, `docs/durability/api-reference.md`, and the
+`examples/35_local_ui.py` / `examples/42_durability_hitl.py` epilogues.
+
 ## [1.53.0] - 2026-08-28 — Playground: Anthropic fix + configurable model catalog
 
 Live-testing the Prompt Playground against real provider APIs found that the
