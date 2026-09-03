@@ -59,6 +59,33 @@ jobs:
           echo "ui/static/assets files in wheel: $n"
           if [ "$n" -lt 50 ]; then echo "::error::wheel is missing the Local UI bundle (fastaiagent/ui/static) — was the frontend built first?"; exit 1; fi
 
+  # Guard the *default* install: `pip install fastaiagent` with no extras must
+  # stay permissively licensed and must still carry the whole library-usage
+  # surface. Both properties are invisible to the `test` job, which installs
+  # `[dev]` and therefore has everything — this is the regression that returns
+  # silently the next time someone adds a convenient dependency.
+  #
+  # A real venv with a real resolve, deliberately: the failure mode being
+  # guarded is a *resolution* outcome, so mocking the tree would prove nothing.
+  clean-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install core only (no extras, no dev)
+        run: |
+          python -m venv .corevenv
+          .corevenv/bin/pip install --upgrade pip
+          .corevenv/bin/pip install .
+      - name: Show the resolved core tree
+        run: .corevenv/bin/pip list
+      - name: No AGPL/GPL in the default dependency tree
+        run: .corevenv/bin/python scripts/check_licences.py
+      - name: Library-usage surface works with no extras
+        run: .corevenv/bin/python scripts/check_core_surface.py
+
   optional-deps:
     runs-on: ubuntu-latest
     strategy:

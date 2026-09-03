@@ -37,6 +37,17 @@ fetching. See [Image URL safety](images.md#url-safety) for the full ruleset.
 * Any other vision-capable model (Ollama, Mistral, custom) → `vision`
 * Non-vision model (gpt-3.5-turbo, claude-2.1, …) → `text`
 
+!!! note "`text` and `vision` need a PDF engine; `native` does not"
+
+    The core install ships no PDF library — `pymupdf` is AGPL-licensed and was
+    removed from the default dependency tree in 1.55.0. `text` and `vision`
+    modes (and `PDF.extract_text()` / `page_count()` / `to_page_images()`)
+    require `pip install "fastaiagent[kb]"`.
+
+    `native` parses nothing locally, so it works on a plain
+    `pip install fastaiagent` — and it is what `auto` already picks for every
+    model in the list above.
+
 `native` mode forwards the **whole** PDF — it does not render or extract
 locally, so `max_pdf_pages` does not apply and PDFs that `pymupdf` cannot
 decompress (e.g. some flate-compressed streams) still work. Custom

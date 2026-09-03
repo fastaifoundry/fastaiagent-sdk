@@ -11,6 +11,14 @@
 pip install fastaiagent
 ```
 
+The core install is deliberately small and **permissively licensed throughout** —
+no copyleft anywhere in the resolved tree. A `clean-core` CI job installs the
+package with no extras on every pull request and fails the build if an AGPL or
+GPL package appears, or if the library-usage surface (`run_guardrail`,
+`plane_guardrails_for_agent`, guardrail evaluation) stops working without extras.
+Dropping the SDK into an existing LangChain or CrewAI project should not drag a
+licence review along with it.
+
 ## Optional Integrations
 
 FastAIAgent uses optional dependencies to keep the core package lightweight.
@@ -25,6 +33,17 @@ FastAIAgent uses optional dependencies to keep the core package lightweight.
 | `otel-export` | OpenTelemetry OTLP exporter | `pip install "fastaiagent[otel-export]"` |
 | `postgres` | Postgres durability backend (psycopg3) | `pip install "fastaiagent[postgres]"` |
 | `all` | All of the above | `pip install "fastaiagent[all]"` |
+
+!!! note "PDF handling needs an extra"
+
+    `PDF.extract_text()`, `PDF.page_count()`, `PDF.to_page_images()`,
+    `LocalKB.add("file.pdf")` and Local UI PDF thumbnails all need a PDF engine,
+    which the core install does not ship. Install `fastaiagent[kb]` for those.
+
+    You usually don't need it. `pdf_mode="auto"` — the default — selects
+    `native` for Claude 3.5/3.7/4.x, GPT-4o/4.1/5/o-series, Azure, Bedrock
+    Claude and Gemini, which forwards the raw PDF to the provider and parses
+    nothing locally. See [PDFs](../multimodal/pdfs.md).
 
 ## Development Setup
 
