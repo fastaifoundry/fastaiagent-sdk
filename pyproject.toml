@@ -1,6 +1,6 @@
 [project]
 name = "fastaiagent"
-version = "1.54.0"
+version = "1.55.0"
 description = "Build, debug, evaluate, and operate AI agents. The only SDK with fork-and-rerun Agent Replay."
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -34,7 +34,14 @@ dependencies = [
     "typer>=0.9,<1",
     "rich>=13.0,<15",
     "Pillow>=10.0,<13",
-    "pymupdf>=1.24,<2",
+    # NOTE: ``pymupdf`` is deliberately NOT here. It is dual-licensed
+    # AGPL-3.0 / Artifex Commercial, and our policy rules out paid licences —
+    # so AGPL is its only available option. Enterprise licence scanners flag
+    # AGPL anywhere in a resolved tree and procurement blocks on the flag, so
+    # an AGPL dependency in the *default* ``pip install fastaiagent`` is
+    # disqualifying for an Apache-2.0 SDK. It stays confined to the ``kb``
+    # extra (opt-in) and is guarded by the ``clean-core`` CI job, which fails
+    # if anything AGPL/GPL re-enters the core tree.
     # ``regex`` (not stdlib ``re``) backs regex guardrails: it releases the GIL
     # and honors a hard ``timeout=``, so a catastrophic-backtracking (ReDoS)
     # pattern fails closed instead of freezing the process. See security_audit_2
@@ -113,6 +120,13 @@ dev = [
     # drift check for ``enable_otel_capture()`` against a real OpenInference
     # instrumentor. Not a runtime dependency of the SDK.
     "openinference-instrumentation-openai>=0.1,<1",
+    # Test-only PDF engine. ``pymupdf`` left the core ``dependencies`` (AGPL —
+    # see the note there), but the multimodal/KB/attachment suites still drive
+    # it, and the ``test`` CI job installs only ``.[dev]``. Declaring it here
+    # keeps those suites runnable without putting AGPL back in anyone's
+    # ``pip install fastaiagent`` tree — the ``clean-core`` job proves that.
+    # Replaced by ``pypdfium2`` when the call sites are ported.
+    "pymupdf>=1.24,<2",
 ]
 
 [project.scripts]

@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.55.0] - 2026-09-03 — no AGPL in the default install
+
+`pymupdf` sat in the core `dependencies`, so every `pip install fastaiagent`
+pulled **AGPL-3.0** into the resolved tree. PyMuPDF is dual-licensed AGPL-3.0 /
+Artifex Commercial and our policy rules out paid licences, so AGPL was its only
+available option.
+
+Whether a *pip* dependency triggers AGPL obligations for an Apache-2.0 package is
+genuinely contested, and we make no claim either way. The practical problem does
+not depend on resolving it: enterprise licence scanners flag AGPL anywhere in a
+dependency tree and procurement blocks on the flag, not the nuance. For an SDK
+whose adoption story is "just `pip install` it and borrow the primitive," that is
+disqualifying.
+
+`pymupdf` was already declared in the `kb` extra as well, so removing the core
+declaration changes no install that works today.
+
+### Changed
+
+- **`pymupdf` is no longer a core dependency.** It remains in the `kb` extra.
+  `pip install fastaiagent` now resolves to 25 permissively-licensed
+  distributions with no copyleft anywhere in the tree.
+
+  If you were relying on `pymupdf` arriving transitively — `PDF.extract_text()`,
+  `PDF.page_count()`, `PDF.to_page_images()`, `LocalKB.add("x.pdf")`, or PDF
+  thumbnails in the Local UI — install `fastaiagent[kb]`, or add `pymupdf`
+  yourself. **`pdf_mode="native"` is unaffected** and needs no PDF library at
+  all: it forwards raw bytes to the provider, and it is what `pdf_mode="auto"`
+  (the default) already selects for Claude 3.5/3.7/4.x, GPT-4o/4.1/5/o-series,
+  Azure, Bedrock Claude and Gemini.
+
+### Added
+
+- **`clean-core` CI job.** Builds a real venv with `pip install .` — no extras,
+  no `dev` — and runs two gates against it. This is a *resolution* property, so
+  the job does a real resolve rather than asserting against a fixture.
+  - `scripts/check_licences.py` fails if any AGPL/GPL package is present.
+  - `scripts/check_core_surface.py` asserts `import fastaiagent`, `run_guardrail`,
+    `plane_guardrails_for_agent` and a real end-to-end guardrail evaluation all
+    work with nothing but core installed.
+
+  A note for anyone writing a similar gate: the obvious
+  `'AGPL' in metadata['License']` **does not catch PyMuPDF**, whose licence
+  string reads `Dual Licensed - GNU AFFERO GPL 3.0 or Artifex Commercial
+  License` — "AFFERO GPL", not "AGPL". Many packages also declare licences only
+  via trove classifiers or PEP 639 `License-Expression`, and a naive `"GPL" in`
+  matches LGPL. `scripts/check_licences.py` handles all three.
+
 ## [1.54.0] - 2026-08-29 — `fastaiagent ui --agent`: register real agents with the Local UI
 
 `fastaiagent ui` called `build_app()` without `runners=`, so `ctx.runners` was
