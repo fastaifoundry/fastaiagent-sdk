@@ -36,11 +36,13 @@ kb.add("Any text content. It will be chunked and embedded automatically.")
 
 ### Files
 
-Supported formats: `.txt`, `.md`, `.pdf` (requires `pip install fastaiagent[kb]`)
+Supported formats: `.txt`, `.md`, and `.pdf` — PDF needs a local engine, which
+`pip install "fastaiagent[kb]"` includes (or the lighter
+`pip install "fastaiagent[pdf]"` if you only want PDF decoding).
 
 ```python
 kb.add("docs/readme.md")
-kb.add("docs/manual.pdf")      # Requires a PDF engine (fastaiagent[kb])
+kb.add("docs/manual.pdf")      # Needs a PDF engine: fastaiagent[kb] or [pdf]
 kb.add("docs/notes.txt")
 ```
 

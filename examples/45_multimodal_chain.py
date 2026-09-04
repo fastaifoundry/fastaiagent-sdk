@@ -16,6 +16,7 @@ agent pass over the loaded image is left to ``examples/43_multimodal_image.py``.
 
 Usage::
 
+    pip install "fastaiagent[pdf]"     # page_count() decodes the PDF locally
     python examples/45_multimodal_chain.py
 """
 

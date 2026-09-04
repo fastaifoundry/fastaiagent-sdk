@@ -9,15 +9,19 @@ Demonstrates the three ``pdf_mode`` settings against a 2-page contract:
 * ``native``  — raw PDF forwarded to the provider, which parses it
                 server-side. Supported by Anthropic (Claude 3.5+) and
                 OpenAI/Azure vision models (gpt-4o/4.1/5, o-series). Lowest
-                cost while preserving layout, and — because there is no local
-                local rendering — it reads PDFs whose compression a local parser
-                can't decode. This is what ``pdf_mode="auto"`` now picks for
-                gpt-4o.
+                cost while preserving layout, and — because nothing is decoded
+                locally — it reads PDFs whose compression a local parser can't
+                handle. This is what ``pdf_mode="auto"`` now picks for gpt-4o.
 
 Token counts are printed so the cost difference is concrete.
 
+``text`` and ``vision`` decode the PDF locally, so this example needs the
+optional PDF engine. ``native`` alone would not. (Or supply your own text:
+``PDF.from_file(path, text=my_parser.extract(path))``.)
+
 Usage::
 
+    pip install "fastaiagent[pdf]"
     zsh -lc 'export OPENAI_API_KEY=sk-... ANTHROPIC_API_KEY=sk-ant-...'
     zsh -lc 'python examples/44_multimodal_pdf.py'
 """

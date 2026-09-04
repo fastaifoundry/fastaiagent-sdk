@@ -55,3 +55,7 @@ document types must be uploaded first (Files API) and passed via
 `File` sits alongside the existing `Image` and `PDF` inputs — nothing changes
 for them. `PDF` remains the right choice when you want `pdf_mode="text"` /
 `"vision"` control; `File` always forwards natively.
+
+Those two modes decode locally, so they need `pip install "fastaiagent[pdf]"`
+— or your own extracted text via `PDF.from_file(p, text=...)`. See
+[Bring your own PDF parser](pdfs.md#bring-your-own-pdf-parser).
