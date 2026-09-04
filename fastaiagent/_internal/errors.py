@@ -228,6 +228,17 @@ class MultimodalError(FastAIAgentError):
     """Error related to multimodal input (image, PDF) handling."""
 
 
+class MissingPDFBackendError(MultimodalError, ImportError):
+    """Local PDF decoding was requested but no PDF engine is installed.
+
+    Also inherits :class:`ImportError` on purpose. Before the ``pdf`` extra
+    existed, this path failed with a bare ``ModuleNotFoundError`` (an
+    ``ImportError`` subclass) from ``import pymupdf``. Inheriting both keeps
+    every existing ``except ImportError:`` handler working while new code can
+    catch a typed SDK error and read an actionable message.
+    """
+
+
 class UnsupportedFormatError(MultimodalError):
     """The provided media format / scheme is not supported."""
 

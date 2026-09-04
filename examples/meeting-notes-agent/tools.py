@@ -109,9 +109,9 @@ def load_transcript(path: str, ctx: fa.RunContext[MeetingDeps]) -> dict:
     """Read a meeting transcript from disk.
 
     Supported: ``.md`` / ``.txt`` (plain text) and ``.pdf`` (extracted via
-    ``fa.PDF.extract_text`` — uses pypdf under the hood). Returns a dict
-    with keys ``text``, ``title``, ``date`` — title and date are best-effort
-    parsed from the first heading and a ``date:`` line if present.
+    ``fa.PDF.extract_text``, which needs ``pip install "fastaiagent[pdf]"``).
+    Returns a dict with keys ``text``, ``title``, ``date`` — title and date are
+    best-effort parsed from the first heading and a ``date:`` line if present.
     """
     p = Path(path).expanduser().resolve()
     if not p.exists():

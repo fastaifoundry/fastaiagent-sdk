@@ -76,17 +76,21 @@ def _build_thumbnail(data: bytes, media_type: str) -> tuple[bytes | None, dict[s
 
 
 def _build_pdf_thumbnail(data: bytes) -> tuple[bytes | None, dict[str, Any]]:
-    """Render the first page of a PDF as a JPEG thumbnail."""
-    try:
-        import pymupdf
+    """Render the first page of a PDF as a JPEG thumbnail.
 
-        with pymupdf.open(stream=data, filetype="pdf") as doc:  # type: ignore[no-untyped-call]
-            if doc.page_count == 0:
-                return None, {}
-            page = doc[0]
-            pix = page.get_pixmap(dpi=72)
-            png = pix.tobytes("png")
-            page_count = doc.page_count
+    Best-effort. Returns ``(None, {})`` when no local PDF engine is installed
+    (``fastaiagent[pdf]``) — the attachment row is still written, the UI just
+    shows a generic file badge instead of a page preview.
+    """
+    try:
+        from fastaiagent.multimodal import _pdf_backend
+
+        if not _pdf_backend.available():
+            return None, {}
+        page_count = _pdf_backend.page_count(data)
+        if page_count == 0:
+            return None, {}
+        png = _pdf_backend.render_pages(data, dpi=72, limit=1)[0]
         return _build_thumbnail(png, "image/png")[0], {"page_count": page_count}
     except Exception:
         logger.debug("Failed to build PDF thumbnail", exc_info=True)

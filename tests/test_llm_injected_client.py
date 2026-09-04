@@ -163,7 +163,7 @@ def test_azure_native_pdf_emits_file_block_with_deployment_name(stub_url: str) -
     # name the native-PDF prefix registry can't match, and an explicit
     # pdf_mode="native". The request body must carry the raw PDF as a `file`
     # part (server-side parsing) — NOT locally-rendered image_url blocks, which
-    # would require PyMuPDF and crash on flate-compressed PDFs.
+    # would require the local PDF engine and crash on flate-compressed PDFs.
     from fastaiagent import PDF
 
     client = openai.AzureOpenAI(
@@ -175,7 +175,7 @@ def test_azure_native_pdf_emits_file_block_with_deployment_name(stub_url: str) -
         openai_client=client,
         pdf_mode="native",
     )
-    # PyMuPDF can't parse this; if the SDK tried to render it, the call would
+    # No parser can read this; if the SDK tried to render it, the call would
     # raise before ever reaching the stub.
     pdf = PDF.from_bytes(b"%PDF-1.4 flate-broken not-really-a-pdf")
 

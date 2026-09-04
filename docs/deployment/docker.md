@@ -12,7 +12,8 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# System deps (faiss needs libstdc++, pymupdf needs libgl1 if PDFs).
+# System deps (faiss needs libstdc++). The PDF engine (pypdfium2) ships a
+# self-contained wheel and needs no system GL.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends libstdc++6 libgl1 \
  && rm -rf /var/lib/apt/lists/*

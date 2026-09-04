@@ -1,2 +1,2 @@
-fastaiagent>=1.6.1
+fastaiagent[pdf]>=1.56.0   # [pdf] powers load_transcript() on .pdf inputs
 python-dotenv>=1.0.0

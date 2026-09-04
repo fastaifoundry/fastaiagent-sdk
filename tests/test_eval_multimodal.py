@@ -1,7 +1,7 @@
 """Phase 6 tests — Eval JSONL loader recognizes image/pdf parts.
 
 Mock-free: real JSONL on disk, real ``Dataset.from_jsonl`` reading real
-fixture binaries via real Pillow / pymupdf. No HTTP and no mock LLM.
+fixture binaries via real Pillow / pypdfium2. No HTTP and no mock LLM.
 
 Spec test #12.
 """

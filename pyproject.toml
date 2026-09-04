@@ -1,6 +1,6 @@
 [project]
 name = "fastaiagent"
-version = "1.55.0"
+version = "1.56.0"
 description = "Build, debug, evaluate, and operate AI agents. The only SDK with fork-and-rerun Agent Replay."
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -34,14 +34,10 @@ dependencies = [
     "typer>=0.9,<1",
     "rich>=13.0,<15",
     "Pillow>=10.0,<13",
-    # NOTE: ``pymupdf`` is deliberately NOT here. It is dual-licensed
-    # AGPL-3.0 / Artifex Commercial, and our policy rules out paid licences —
-    # so AGPL is its only available option. Enterprise licence scanners flag
-    # AGPL anywhere in a resolved tree and procurement blocks on the flag, so
-    # an AGPL dependency in the *default* ``pip install fastaiagent`` is
-    # disqualifying for an Apache-2.0 SDK. It stays confined to the ``kb``
-    # extra (opt-in) and is guarded by the ``clean-core`` CI job, which fails
-    # if anything AGPL/GPL re-enters the core tree.
+    # NOTE: no PDF engine here, deliberately. PDF *decoding* is opt-in via the
+    # ``pdf`` extra (or bring your own text — see ``multimodal/pdf.py``);
+    # ``pdf_mode="native"`` forwards raw bytes and needs no engine at all.
+    # The ``clean-core`` CI job fails if anything AGPL/GPL enters this tree.
     # ``regex`` (not stdlib ``re``) backs regex guardrails: it releases the GIL
     # and honors a hard ``timeout=``, so a catastrophic-backtracking (ReDoS)
     # pattern fails closed instead of freezing the process. See security_audit_2
@@ -67,7 +63,18 @@ crewai = ["crewai>=1.0,<2"]
 #     counts, so pydantic-ai's own OTel spans are zeroed before we read them.
 # Verified by bisection (0.0.60 good, 0.1.0 bad). Relax once upstream fixes.
 pydanticai = ["pydantic-ai>=1.105,<1.107", "genai-prices<0.1"]
-kb = ["fastembed>=0.3,<1", "pymupdf>=1.23,<2", "faiss-cpu>=1.7,<2"]
+# Local PDF decoding: text extraction, page count, page rasterization.
+# ``pypdfium2`` is BSD-3-Clause + Apache-2.0 bindings to PDFium — Google's PDF
+# engine, the one in Chrome. It replaced ``pymupdf``, which is dual-licensed
+# AGPL-3.0 / Artifex Commercial; our policy rules out paid licences, so AGPL
+# was its only available option, and licence scanners block on it.
+#
+# You do NOT need this extra for the common case: ``pdf_mode="native"`` (what
+# ``auto`` picks for Claude 3.5+/4.x, GPT-4o/4.1/5/o-series, Azure, Bedrock
+# Claude and Gemini) forwards the raw PDF to the provider and parses nothing
+# locally. Nor do you need it to bring your own parser — see ``PDF(text=...)``.
+pdf = ["pypdfium2>=4,<6"]
+kb = ["fastembed>=0.3,<1", "fastaiagent[pdf]", "faiss-cpu>=1.7,<2"]
 qdrant = ["qdrant-client>=1.8,<2"]
 chroma = ["chromadb>=0.5,<2"]
 mcp-server = ["mcp>=1.2,<2"]
@@ -95,7 +102,7 @@ ui = [
     # endpoints (Sprint 3) — image upload + JSONL import are multipart.
     "python-multipart>=0.0.9,<1",
 ]
-all = ["fastaiagent[openai,anthropic,langchain,crewai,pydanticai,kb,qdrant,chroma,mcp-server,otel-export,postgres,redis,safety,ui]"]
+all = ["fastaiagent[openai,anthropic,langchain,crewai,pydanticai,pdf,kb,qdrant,chroma,mcp-server,otel-export,postgres,redis,safety,ui]"]
 docs = [
     "mkdocs>=1.6,<2",
     "mkdocs-material>=9.5,<10",
@@ -120,13 +127,11 @@ dev = [
     # drift check for ``enable_otel_capture()`` against a real OpenInference
     # instrumentor. Not a runtime dependency of the SDK.
     "openinference-instrumentation-openai>=0.1,<1",
-    # Test-only PDF engine. ``pymupdf`` left the core ``dependencies`` (AGPL —
-    # see the note there), but the multimodal/KB/attachment suites still drive
-    # it, and the ``test`` CI job installs only ``.[dev]``. Declaring it here
-    # keeps those suites runnable without putting AGPL back in anyone's
+    # Test-only PDF engine, so the multimodal/KB/attachment suites run under
+    # the plain ``pip install -e ".[dev]"`` CI matrix. It is the same engine the
+    # ``pdf`` extra ships; declaring it here does not put it in anyone's
     # ``pip install fastaiagent`` tree — the ``clean-core`` job proves that.
-    # Replaced by ``pypdfium2`` when the call sites are ported.
-    "pymupdf>=1.24,<2",
+    "pypdfium2>=4,<6",
 ]
 
 [project.scripts]

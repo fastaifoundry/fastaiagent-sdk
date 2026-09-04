@@ -161,7 +161,10 @@ class MeetingNotes(BaseModel):
 
 ### Multimodal: PDF transcripts
 
-`load_transcript` reads `.pdf` files via `fa.PDF.extract_text()`:
+`load_transcript` reads `.pdf` files via `fa.PDF.extract_text()`, which needs
+the optional PDF engine (`pip install "fastaiagent[pdf]"`, already in this
+example's `requirements.txt`). To use a parser you already have instead, pass
+its output as `PDF.from_file(p, text=...)` and no engine is needed:
 
 ```python
 from fastaiagent.multimodal.pdf import PDF

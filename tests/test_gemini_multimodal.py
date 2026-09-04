@@ -1,7 +1,7 @@
 """Gemini native multimodal conversion — images and PDFs become inlineData.
 
 Pure-function tests on the Gemini wire's message converter (no network). Uses
-real Pillow/pymupdf-constructed parts, the same objects production passes.
+real Pillow/pypdfium2-constructed parts, the same objects production passes.
 """
 
 from __future__ import annotations

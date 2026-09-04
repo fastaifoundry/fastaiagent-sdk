@@ -59,9 +59,9 @@ A PDF can reach a model three ways, and `pdf_mode="auto"` decides which:
 
 | Mode | What happens |
 |------|--------------|
-| `native` | Send the PDF as a document part — the provider parses it |
-| `vision` | Render pages to images locally and send those |
-| `text` | Extract text locally and send that |
+| `native` | Send the PDF as a document part — the provider parses it. No local engine needed |
+| `vision` | Render pages to images locally and send those. Needs `fastaiagent[pdf]` |
+| `text` | Extract text locally and send that. Needs `fastaiagent[pdf]`, or your own text via `PDF(text=...)` |
 
 `auto` resolves in order: **native** if the capability registry says this model
 parses PDFs, else **vision** if the model has vision, else **text**. The

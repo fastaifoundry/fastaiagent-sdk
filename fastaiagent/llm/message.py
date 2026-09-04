@@ -15,7 +15,7 @@ def _summarize_parts(parts: list[Any]) -> list[dict[str, Any]]:
     """Compact, render-free summary of multimodal parts for telemetry/logs.
 
     Keeps text verbatim; represents ``Image``/``PDF`` by type and size only —
-    never their bytes. Deliberately avoids ``pymupdf`` so serializing a message
+    never their bytes. Deliberately avoids the PDF engine so serializing a message
     for a span can't fail on an unparseable PDF or bloat the span with base64.
     """
     from fastaiagent.multimodal.file import File
@@ -125,8 +125,9 @@ class Message(BaseModel):
         NOT the provider wire format. This path must never render or base64
         media: it is called to serialize request messages onto OTel spans, and
         going through :py:meth:`to_provider_dict` there would base64 every image
-        and run PyMuPDF page-rendering for PDFs (expensive, and it raises on
-        PDFs PyMuPDF can't decompress) purely to build a log line. Actual
+        and run page-rendering for PDFs (expensive, it needs the optional PDF
+        engine, and it raises on PDFs that engine can't decompress) purely to
+        build a log line. Actual
         provider requests are built by :py:meth:`to_provider_dict` with the real
         provider and ``pdf_mode``.
         """

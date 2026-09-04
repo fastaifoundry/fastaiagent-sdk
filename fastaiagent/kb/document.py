@@ -35,18 +35,28 @@ def ingest_file(path: str | Path) -> list[Document]:
 
 
 def _ingest_pdf(path: Path) -> list[Document]:
-    """Ingest a PDF file using PyMuPDF (optional dependency)."""
-    try:
-        import pymupdf
-    except ImportError:
+    """Ingest a PDF file, one Document per non-empty page.
+
+    Needs a local PDF engine (optional dependency). ``fastaiagent[kb]`` pulls
+    it in; ``fastaiagent[pdf]`` is the lighter option if you only want PDF
+    decoding without the embedding stack.
+    """
+    from fastaiagent.multimodal import _pdf_backend
+
+    if not _pdf_backend.available():
         raise ImportError(
-            "PDF ingestion requires pymupdf. Install with: pip install fastaiagent[kb]"
+            "PDF ingestion requires a local PDF engine. Install with: "
+            'pip install "fastaiagent[kb]" (or the lighter "fastaiagent[pdf]"). '
+            "Alternatively, extract the text yourself and pass it to "
+            "LocalKB.add() as a string."
         )
 
+    data = path.read_bytes()
     docs = []
-    doc = pymupdf.open(str(path))
-    for page_num, page in enumerate(doc):
-        text = page.get_text()
+    # Per page, so ``metadata["page"]`` is right. Splitting the joined
+    # ``extract_text`` output on blank lines would misnumber any page whose
+    # own text contains one.
+    for page_num, text in enumerate(_pdf_backend.extract_text_per_page(data)):
         if text.strip():
             docs.append(
                 Document(
@@ -55,5 +65,4 @@ def _ingest_pdf(path: Path) -> list[Document]:
                     metadata={"page": page_num + 1, "type": "pdf"},
                 )
             )
-    doc.close()
     return docs

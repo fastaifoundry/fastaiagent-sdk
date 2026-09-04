@@ -64,7 +64,7 @@ trips over sooner or later:
    text-only arrays. The SDK collapses text-only blocks back to a plain
    string so non-vision OpenAI models keep accepting requests unchanged.
 3. **PDFs are a three-way problem.** OpenAI / Bedrock / Ollama can't
-   accept PDFs natively. You pick between `pymupdf.extract_text()`
+   accept PDFs natively. You pick between local text extraction
    (cheap, layout lost), render pages to images (vision-mode, expensive,
    layout preserved), or Anthropic's native `document` block (Claude
    reads the PDF directly). `pdf_mode="auto"` picks the right one based
