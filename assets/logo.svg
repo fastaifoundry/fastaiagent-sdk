@@ -1,0 +1,10 @@
+<!-- Header mark: the FastAIAgent hexagon with the bolt knocked out so the header
+     bar shows through. Filled white rather than currentColor: Material loads
+     this via an <img>, where currentColor has no inherited colour to resolve
+     against. White reads on both the deep-purple (light) and slate (dark)
+     header palettes. -->
+<svg width="32" height="32" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+  <path fill="#ffffff" fill-rule="evenodd" clip-rule="evenodd"
+        d="M60 14 L102 37 L102 83 L60 106 L18 83 L18 37 Z
+           M64 20 L24 68 L60 68 L56 100 L96 52 L60 52 Z"/>
+</svg>
