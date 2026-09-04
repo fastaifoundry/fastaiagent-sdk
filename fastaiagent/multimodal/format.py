@@ -326,7 +326,7 @@ def _pdf_blocks_openai(
 ) -> list[dict[str, Any]]:
     if pdf_mode == "native":
         # Forward the raw PDF; OpenAI/Azure parse it server-side (text + page
-        # images) — no local PyMuPDF rendering, so PDFs that PyMuPDF can't
+        # images) — no local rendering, so PDFs a local parser can't
         # decompress still work, matching the raw OpenAI SDK.
         return [
             {

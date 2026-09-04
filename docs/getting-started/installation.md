@@ -29,21 +29,26 @@ FastAIAgent uses optional dependencies to keep the core package lightweight.
 | `anthropic` | Anthropic SDK auto-tracing | `pip install "fastaiagent[anthropic]"` |
 | `langchain` | LangChain auto-tracing | `pip install "fastaiagent[langchain]"` |
 | `crewai` | CrewAI auto-tracing | `pip install "fastaiagent[crewai]"` |
-| `kb` | Local knowledge base (FastEmbed + PyMuPDF) | `pip install "fastaiagent[kb]"` |
+| `pdf` | Local PDF decoding — text, page count, page rendering (pypdfium2) | `pip install "fastaiagent[pdf]"` |
+| `kb` | Local knowledge base (FastEmbed + faiss + `pdf`) | `pip install "fastaiagent[kb]"` |
 | `otel-export` | OpenTelemetry OTLP exporter | `pip install "fastaiagent[otel-export]"` |
 | `postgres` | Postgres durability backend (psycopg3) | `pip install "fastaiagent[postgres]"` |
 | `all` | All of the above | `pip install "fastaiagent[all]"` |
 
-!!! note "PDF handling needs an extra"
+!!! note "Local PDF decoding is optional — three ways to avoid it"
 
     `PDF.extract_text()`, `PDF.page_count()`, `PDF.to_page_images()`,
-    `LocalKB.add("file.pdf")` and Local UI PDF thumbnails all need a PDF engine,
-    which the core install does not ship. Install `fastaiagent[kb]` for those.
+    `LocalKB.add("file.pdf")` and Local UI PDF thumbnails decode locally, which
+    the core install does not ship an engine for. You have three options:
 
-    You usually don't need it. `pdf_mode="auto"` — the default — selects
-    `native` for Claude 3.5/3.7/4.x, GPT-4o/4.1/5/o-series, Azure, Bedrock
-    Claude and Gemini, which forwards the raw PDF to the provider and parses
-    nothing locally. See [PDFs](../multimodal/pdfs.md).
+    1. **Do nothing.** `pdf_mode="auto"` (the default) selects `native` for
+       Claude 3.5/3.7/4.x, GPT-4o/4.1/5/o-series, Azure, Bedrock Claude and
+       Gemini — the raw PDF goes to the provider and nothing is parsed locally.
+    2. **Bring your own parser** —
+       `PDF.from_file(p, text=my_parser.extract(p))`. No engine involved.
+    3. **Install the extra** — `pip install "fastaiagent[pdf]"`.
+
+    See [PDFs](../multimodal/pdfs.md).
 
 ## Development Setup
 

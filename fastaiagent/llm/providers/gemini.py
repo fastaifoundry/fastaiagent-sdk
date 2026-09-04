@@ -62,7 +62,7 @@ def _user_parts(content: Any) -> list[dict[str, Any]]:
 
     Text stays text; ``Image`` and ``PDF`` become native ``inlineData`` blobs
     (base64) — Gemini reads both directly (it even extracts a PDF's embedded
-    text for free), so no local PyMuPDF rendering is involved and ``pdf_mode``
+    text for free), so no local rendering is involved and ``pdf_mode``
     doesn't apply. Inline data is best for smaller payloads; very large PDFs
     would need the Gemini File API (not yet wired here).
     """

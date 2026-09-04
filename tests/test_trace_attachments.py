@@ -1,7 +1,7 @@
 """Phase 5 tests — ``trace_attachments`` table + helpers.
 
 Mock-free: every assertion runs against a real on-disk SQLite trace store
-populated by the real Pillow / pymupdf code paths. No mocked DB, no mocked
+populated by the real Pillow / pypdfium2 code paths. No mocked DB, no mocked
 HTTP — the REST endpoint is exercised separately in ``test_ui_routes.py``
 where applicable.
 

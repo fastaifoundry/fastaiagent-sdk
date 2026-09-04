@@ -50,9 +50,9 @@ early with a clear message rather than letting the provider 4xx.
    Bedrock-hosted Claude 3.5+, or OpenAI/Azure gpt-4o/4.1/5 + o-series) →
    forward the raw PDF (a `document` block for Anthropic, a `file` part for
    OpenAI/Azure). No local rendering, so `max_pdf_pages` does not apply.
-2. Else if the model is **vision-capable** → render pages with pymupdf
+2. Else if the model is **vision-capable** → render pages locally
    and emit per-page image blocks.
-3. Else → extract text with pymupdf and emit a single text block.
+3. Else → extract text locally and emit a single text block.
 
 You can always override with `pdf_mode="text" | "vision" | "native"` on
 the `LLMClient` or via `fa.config.pdf_mode`. Custom OpenAI-compatible

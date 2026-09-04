@@ -2,7 +2,7 @@
 
 Demonstrates the three ``pdf_mode`` settings against a 2-page contract:
 
-* ``text``    — pymupdf extracts text, sends as plain text. Cheapest, no
+* ``text``    — extracts text locally, sends as plain text. Cheapest, no
                 vision LLM required (gpt-3.5-turbo / claude-2.x work).
 * ``vision``  — pages rendered to PNG, sent as image blocks to a vision
                 LLM. Preserves layout (tables, signatures).
@@ -10,7 +10,7 @@ Demonstrates the three ``pdf_mode`` settings against a 2-page contract:
                 server-side. Supported by Anthropic (Claude 3.5+) and
                 OpenAI/Azure vision models (gpt-4o/4.1/5, o-series). Lowest
                 cost while preserving layout, and — because there is no local
-                pymupdf rendering — it reads PDFs whose compression pymupdf
+                local rendering — it reads PDFs whose compression a local parser
                 can't decode. This is what ``pdf_mode="auto"`` now picks for
                 gpt-4o.
 

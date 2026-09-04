@@ -2,7 +2,7 @@
 
 These are unit tests on a pure function — no HTTP, no mock LLM. They verify
 the wire-format dict shape against the spec for each provider, and they use
-real Pillow / pymupdf to construct the input parts (the same code paths
+real Pillow / pypdfium2 to construct the input parts (the same code paths
 production calls hit).
 
 Spec test mappings:
@@ -240,7 +240,7 @@ def test_auto_mode_uses_native_for_anthropic_vision_model() -> None:
 
 def test_auto_mode_uses_native_for_openai_gpt4o() -> None:
     # gpt-4o accepts native PDF file input, so auto forwards the raw PDF
-    # instead of rendering pages locally with PyMuPDF (matches raw OpenAI SDK).
+    # instead of rendering pages locally (matches raw OpenAI SDK).
     pdf = PDF.from_file(FIXTURES / "contract.pdf")
     out = format_multimodal_message([pdf], "openai", model="gpt-4o", pdf_mode="auto")
     assert out["content"][0]["type"] == "file"

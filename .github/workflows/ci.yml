@@ -91,7 +91,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        extras: ["", "openai", "anthropic", "kb", "ui", "ui,kb", "postgres", "all"]
+        extras: ["", "openai", "anthropic", "pdf", "kb", "ui", "ui,kb", "postgres", "all"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

@@ -22,7 +22,7 @@ fetching. See [Image URL safety](images.md#url-safety) for the full ruleset.
 
 | Mode      | Wire format                                   | Cost  | Layout fidelity |
 |-----------|-----------------------------------------------|-------|-----------------|
-| `text`    | `pymupdf` extracts text → single text block   | Low   | None — bare text |
+| `text`    | extracted text → single text block            | Low   | None — bare text |
 | `vision`  | Pages rendered to PNG → image blocks per page | High  | High — preserves tables, signatures |
 | `native`  | Raw PDF forwarded to the provider (Anthropic `document` block / OpenAI `file` part) | Med | Highest — the model reads the PDF directly |
 | `auto`    | Default — picks the best mode for the model   | Mixed | Mixed |
@@ -37,22 +37,55 @@ fetching. See [Image URL safety](images.md#url-safety) for the full ruleset.
 * Any other vision-capable model (Ollama, Mistral, custom) → `vision`
 * Non-vision model (gpt-3.5-turbo, claude-2.1, …) → `text`
 
-!!! note "`text` and `vision` need a PDF engine; `native` does not"
+!!! note "`text` and `vision` decode locally; `native` does not"
 
-    The core install ships no PDF library — `pymupdf` is AGPL-licensed and was
-    removed from the default dependency tree in 1.55.0. `text` and `vision`
-    modes (and `PDF.extract_text()` / `page_count()` / `to_page_images()`)
-    require `pip install "fastaiagent[kb]"`.
+    The core install ships no PDF engine. `text` and `vision` modes (and
+    `PDF.extract_text()` / `page_count()` / `to_page_images()`) need
+    `pip install "fastaiagent[pdf]"` — or your own parser, see below.
 
     `native` parses nothing locally, so it works on a plain
-    `pip install fastaiagent` — and it is what `auto` already picks for every
+    `pip install fastaiagent`, and it is what `auto` already picks for every
     model in the list above.
 
 `native` mode forwards the **whole** PDF — it does not render or extract
-locally, so `max_pdf_pages` does not apply and PDFs that `pymupdf` cannot
+locally, so `max_pdf_pages` does not apply and PDFs that a local parser cannot
 decompress (e.g. some flate-compressed streams) still work. Custom
 OpenAI-compatible endpoints stay on `vision` under `auto`; pass
 `pdf_mode="native"` explicitly if your endpoint accepts the `file` part.
+
+## Bring your own PDF parser
+
+If you already parse PDFs with something else — pdfplumber, pypdf, Tika, a
+vendor OCR API — hand the SDK the result and skip local decoding entirely:
+
+```python
+import pdfplumber
+from fastaiagent import PDF
+
+with pdfplumber.open("contract.pdf") as doc:
+    text = "\n\n".join(p.extract_text() or "" for p in doc.pages)
+
+pdf = PDF.from_file("contract.pdf", text=text)
+pdf.extract_text()          # returns your text verbatim — no PDF engine involved
+```
+
+`text=` is available on `from_file`, `from_bytes` and `from_url`, and survives
+`to_dict()`/`from_dict()`, so a checkpointed chain resumes with the text intact.
+`pdf_mode="text"` uses it too, so this works end to end against any model.
+
+It covers **extraction only**. `page_count()` and `to_page_images()` still need
+an engine, because they need the document's real geometry. For vision without
+one, render the pages with your own library and pass the `Image` parts straight
+into the call:
+
+```python
+from fastaiagent import Image
+client.complete([Image.from_file("page1.png"), Image.from_file("page2.png"), "Summarize"])
+```
+
+Without an engine and without `text=`, these methods raise `MissingPDFBackendError`,
+which names every way forward. It subclasses `ImportError` as well as
+`MultimodalError`, so existing `except ImportError:` handlers keep working.
 
 Configure globally or per-LLMClient:
 
@@ -102,7 +135,7 @@ for i, page in enumerate(pages):
 
 ## Costs and latency
 
-PDF rendering at 150 dpi via pymupdf takes ~200–400 ms per page on a
+PDF rendering at 150 dpi takes ~200–400 ms per page on a
 modern laptop. Adding 20 page images to a single chat request adds
 roughly 20× a single-image vision call's tokens — read your provider's
 pricing page before turning vision mode on by default.

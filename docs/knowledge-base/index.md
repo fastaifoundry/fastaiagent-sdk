@@ -40,7 +40,7 @@ Supported formats: `.txt`, `.md`, `.pdf` (requires `pip install fastaiagent[kb]`
 
 ```python
 kb.add("docs/readme.md")
-kb.add("docs/manual.pdf")      # Requires pymupdf
+kb.add("docs/manual.pdf")      # Requires a PDF engine (fastaiagent[kb])
 kb.add("docs/notes.txt")
 ```
 
@@ -468,11 +468,11 @@ try:
 except FileNotFoundError:
     print("File not found")
 
-# PDF without pymupdf
+# PDF without a PDF engine installed
 try:
     kb.add("document.pdf")  # Only works if document.pdf exists
 except ImportError:
-    print("Install pymupdf: pip install fastaiagent[kb]")
+    print('Install a PDF engine: pip install "fastaiagent[kb]"')
 
 # Embedding dimension mismatch on reload
 try:
