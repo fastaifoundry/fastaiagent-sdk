@@ -77,6 +77,39 @@ with check("code guardrail runs via the sync Guardrail.execute path"):
     length = Guardrail(name="short-enough", fn=lambda text: len(text) < 100)
     assert length.execute("ok").passed
 
+with check("a mask action redacts core-only (no extras)"):
+    masker = Guardrail(
+        name="mask-ssn",
+        guardrail_type=GuardrailType.regex,
+        config={"pattern": r"\d{3}-\d{2}-\d{4}", "should_match": False},
+        action="mask",
+    )
+    masked = masker.execute("my ssn is 123-45-6789")
+    assert masked.action_taken == "masked", f"expected a mask, got {masked!r}"
+    assert masked.modified_data == "my ssn is [REDACTED]", masked.modified_data
+
+with check("a mask with nothing to redact fails closed core-only"):
+    from fastaiagent.guardrail.actions import coerce_action, halts
+
+    # An action this build cannot perform must never become a silent pass.
+    assert coerce_action("teleport") == "block"
+    no_span = Guardrail(
+        name="mask-nothing",
+        guardrail_type=GuardrailType.regex,
+        config={"pattern": r"\d{3}-\d{2}-\d{4}", "should_match": True},
+        action="mask",
+    )
+    degraded = no_span.execute("nothing sensitive here")
+    assert degraded.action_taken == "blocked", f"expected a block, got {degraded!r}"
+    assert halts(no_span, degraded) is True
+
+with check("the run-scoped guardrail context slot works core-only"):
+    import fastaiagent as _fa
+
+    with _fa.guardrail_context(context="some retrieved text"):
+        assert _fa.get_guardrail_context()["context"] == "some retrieved text"
+    assert _fa.get_guardrail_context() == {}
+
 # PDF: the core install ships no engine, so the two engine-free routes must
 # work and the third must fail with an error that names the way out.
 print("\nPDF without a local engine")

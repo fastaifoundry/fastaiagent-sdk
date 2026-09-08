@@ -28,6 +28,8 @@ class GuardrailType(str, Enum):
     regex = "regex"
     schema = "schema"
     classifier = "classifier"
+    content_safety = "content_safety"
+    groundedness = "groundedness"
 
 
 class GuardrailResult(BaseModel):
@@ -47,11 +49,34 @@ class GuardrailResult(BaseModel):
     the Local UI distinguish a degraded pass from a genuine one.
     """
 
+    action: str = "block"
+    """The consequence this guardrail was *configured* to carry. Never branch on
+    this — branch on :attr:`action_taken`. See ``fastaiagent.guardrail.actions``."""
+
+    action_taken: str = "none"
+    """What the action actually did: ``none`` (clean pass) | ``blocked`` |
+    ``warned`` | ``masked`` | ``overridden`` | ``reask``.
+
+    Distinct from ``action`` because an action does not always get what it asked
+    for: an errored check always blocks, and a ``mask`` that finds no span to
+    redact degrades to a block rather than passing the payload through.
+    """
+
+    modified_data: str | dict[str, Any] | None = None
+    """The rewritten payload when ``action_taken`` is ``masked`` or
+    ``overridden``; ``None`` otherwise. The caller decides whether it can apply
+    the rewrite faithfully — where it cannot, the outcome degrades to a block."""
+
+    def rewrote_payload(self) -> bool:
+        """True when this result carries a payload the caller should use instead."""
+        return self.action_taken in ("masked", "overridden") and self.modified_data is not None
+
 
 class Guardrail:
     """A validation guardrail for agent input/output/tool calls.
 
-    Supports 5 implementation types: code, llm_judge, regex, schema, classifier.
+    Supports 7 implementation types: code, llm_judge, regex, schema, classifier,
+    content_safety, groundedness.
     """
 
     def __init__(
@@ -65,6 +90,9 @@ class Guardrail:
         fn: Callable[..., Any] | None = None,
         on_error: Literal["allow", "block"] = "block",
         origin: Literal["local", "plane"] = "local",
+        action: str = "block",
+        severity: str | None = None,
+        floor: bool = False,
     ):
         self.name = name
         self.guardrail_type = guardrail_type
@@ -84,6 +112,21 @@ class Guardrail:
         # definition, or the plane would link it to that agent and thereby
         # narrow a domain-wide rule to just the agents that echoed it back.
         self.origin: Literal["local", "plane"] = origin
+        # What a genuine failure costs: block | warn | mask | override | reask.
+        # A third axis, independent of ``blocking`` (does it run inline and can
+        # it halt?) and ``on_error`` (what does an un-runnable check mean?).
+        # Coerced on the way in so an unrecognised value fails closed to
+        # "block" rather than quietly letting the payload through.
+        from fastaiagent.guardrail.actions import coerce_action, coerce_severity
+
+        self.action: str = coerce_action(action)
+        # Operator-assigned impact. Carried, shown and traced; nothing in the
+        # SDK's enforcement depends on it.
+        self.severity: str | None = coerce_severity(severity)
+        # True when this is the domain-wide baseline only an admin may change.
+        # Enforced by the plane; at the edge it is worth showing, because "this
+        # is not your team's rule to argue with" is useful context locally.
+        self.floor: bool = bool(floor)
 
     def execute(self, data: str | dict[str, Any]) -> GuardrailResult:
         """Execute the guardrail synchronously."""
@@ -104,7 +147,7 @@ class Guardrail:
         if get_config().ui_enabled:
             from fastaiagent.ui.events import log_guardrail_event
 
-            log_guardrail_event(self, result)
+            log_guardrail_event(self, result, data=data)
         return result
 
     def to_dict(self) -> dict[str, Any]:
@@ -117,6 +160,9 @@ class Guardrail:
             "blocking": self.blocking,
             "description": self.description,
             "on_error": self.on_error,
+            "action": self.action,
+            "severity": self.severity,
+            "floor": self.floor,
         }
 
     @classmethod
@@ -130,4 +176,7 @@ class Guardrail:
             blocking=data.get("blocking", True),
             description=data.get("description", ""),
             on_error=data.get("on_error", "block"),
+            action=data.get("action", "block"),
+            severity=data.get("severity"),
+            floor=data.get("floor", False),
         )

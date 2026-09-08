@@ -58,10 +58,16 @@ agent.run("Confirm my record: name Dana, SSN 123-45-6789.")
 ```
 
 - **No new check engine.** A rule is mapped onto the SDK's own
-  `regex` / `schema` / `classifier` / `llm_judge` runners
-  (`fastaiagent.guardrail.from_policy`), so plane rules enforce exactly like local
-  ones — including the `on_error` fail policy. A `code` rule (a server-side
-  callable the SDK doesn't have) is skipped rather than silently passing.
+  `regex` / `schema` / `classifier` / `llm_judge` / `content_safety` /
+  `groundedness` runners (`fastaiagent.guardrail.from_policy`), so plane rules
+  enforce exactly like local ones — including the `on_error` fail policy. A
+  `code` rule (a server-side callable the SDK doesn't have) is skipped rather
+  than silently passing.
+- **The rule does what it says.** Each rule also carries an `action` — `block`,
+  `warn`, `mask`, `override` or `reask` — so a "Mask PII in output" rule authored
+  in the console **redacts** inside your process rather than blocking the run.
+  It carries `severity` and `floor` too; neither changes enforcement. See
+  [Actions, severity & floor](actions.md).
 - **Scoping.** A rule attached to specific agents applies only to them; an
   unattached rule is domain-wide. Built guardrails are memoized by policy
   `version`, so an edit on the plane is picked up on the next pull.
@@ -77,6 +83,13 @@ agent.run("Confirm my record: name Dana, SSN 123-45-6789.")
   would narrow it to just that agent — silently dropping it for every other
   agent in the domain. You never need to pass plane rules in explicitly; the
   runtime injects them.
+
+!!! warning "A `groundedness` rule needs its context"
+    It is the one rule that reads a *pair*: an answer and the context the answer
+    was supposed to use. An output guardrail only receives the answer, so supply
+    the context with `fa.guardrail_context(context=docs)` around the run. Without
+    it the rule **fails closed** — scoring an answer against nothing would block
+    everything, which is worse than reporting that the rule could not run.
 
 !!! tip "You don't need to pull them yourself"
     `plane_guardrails_for_agent(...)` exists for runtimes that aren't `fa.Agent`
@@ -132,6 +145,15 @@ if res.status == "paused":               # res.pending_interrupt["reason"] == "p
 A runnable end-to-end example is in `examples/84_governed_agent.py`.
 
 ## Verified end-to-end
+
+**Guardrail actions** (SDK 1.57.0, wire v1.9) are exercised against a live local
+plane by `tests/e2e/test_connected_guardrail_actions_e2e.py`: a console-authored
+"Mask PII in output" rule arrives over `/policy`, redacts a real agent reply
+in-process, and lands a `filtered` event with a before/after diff — plus a
+`content_safety` block naming the category that tripped, a `groundedness` rule
+passing with context and failing closed without it, and `floor` surviving the
+wire. The judges themselves run against a real model in
+`tests/e2e/test_guardrail_actions_e2e.py`.
 
 Against a live plane, a connected agent pausing for approval and resuming once the
 console approves (real `gpt-4o-mini`, both modes):

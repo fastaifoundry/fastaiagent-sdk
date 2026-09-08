@@ -154,13 +154,19 @@ SDK-run agent and a borrowed-primitive runtime indistinguishable downstream.
 
 | Span | Classifier | Payload |
 |------|-----------|---------|
-| Guardrail | `openinference.span.kind = "GUARDRAIL"` | `fastaiagent.guardrail.{name,position,passed,errored,checks}` |
+| Guardrail | `openinference.span.kind = "GUARDRAIL"` | `fastaiagent.guardrail.{name,position,passed,errored,checks}` plus the optional `{action,action_taken,severity,floor}` |
 | Inline eval | `openinference.span.kind = "EVALUATOR"` | `evaluation.{name,score,label,explanation,annotator_kind}` |
 
 OpenInference standardizes the *kind*, not guardrail outcome fields — there is
 no ecosystem standard for those — so `fastaiagent.guardrail.*` is our documented
 convention riding under the standard kind. `fastaiagent.guardrail.name` is how
 the plane resolves the span to a guardrail row, so always send it.
+
+`action` / `action_taken` / `severity` / `floor` are optional keyword arguments
+on both emitters, omitted when you don't pass them — a borrowing runtime that
+knows nothing about the [action spectrum](../guardrails/actions.md) stamps
+exactly what it stamped before. Pass them when your runtime honours an action, so
+a warn or a mask is distinguishable downstream from a block.
 
 Guardrail spans also still carry the legacy `span_type="guardrail"` marker
 alongside the standard kind. That dual-write is transitional, for plane

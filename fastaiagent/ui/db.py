@@ -17,7 +17,7 @@ from pathlib import Path
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
 
-CURRENT_SCHEMA_VERSION = 17
+CURRENT_SCHEMA_VERSION = 18
 
 # A migration step is either a SQL string or a callable that takes the
 # ``SQLiteHelper`` and runs whatever logic it needs (e.g., gated
@@ -459,8 +459,7 @@ def _v13_add_checkpoint_synced(db: SQLiteHelper) -> None:
     # Backfill pre-existing rows as already-handled so the upgrade is silent.
     db.execute("UPDATE checkpoints SET synced = 1 WHERE synced = 0")
     db.execute(
-        "CREATE INDEX IF NOT EXISTS idx_checkpoints_synced "
-        "ON checkpoints(synced, created_at)"
+        "CREATE INDEX IF NOT EXISTS idx_checkpoints_synced ON checkpoints(synced, created_at)"
     )
 
 
@@ -535,6 +534,33 @@ def _v17_add_eval_run_synced(db: SQLiteHelper) -> None:
         )
     else:
         db.execute("CREATE INDEX IF NOT EXISTS idx_eval_runs_synced ON eval_runs(synced)")
+
+
+def _v18_add_guardrail_action_columns(db: SQLiteHelper) -> None:
+    """Carry the wire-v1.9 guardrail fields into the Local UI (1.57.0).
+
+    ``outcome`` alone can no longer describe what happened: a failure may now
+    warn, mask, override or re-ask instead of blocking, and two rules with the
+    same outcome can have arrived there very differently — a ``mask`` that found
+    nothing to redact blocks, and so does an errored ``warn``. ``action`` records
+    what the rule was configured to cost and ``action_taken`` what it actually
+    did; the pair is what makes an over-blocking rule visible.
+
+    ``severity`` and ``floor`` change no behaviour. They are shown because
+    "critical" and "this is the organisation baseline, not your team's rule to
+    argue with" are useful context in a local run.
+
+    Gated on the table existing (it always does — created in v1).
+    """
+    rows = db.fetchall(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='guardrail_events'"
+    )
+    if not rows:
+        return
+    _add_column_if_missing(db, "guardrail_events", "action", "TEXT")
+    _add_column_if_missing(db, "guardrail_events", "action_taken", "TEXT")
+    _add_column_if_missing(db, "guardrail_events", "severity", "TEXT")
+    _add_column_if_missing(db, "guardrail_events", "floor", "INTEGER DEFAULT 0")
 
 
 _MIGRATIONS: dict[int, list[_Step]] = {
@@ -933,6 +959,11 @@ _MIGRATIONS: dict[int, list[_Step]] = {
         # Adds ``synced`` to eval_runs so EvalRunExporter can buffer un-acked runs
         # across an outage. Existing rows backfilled to 1 — no back-push of history.
         _v17_add_eval_run_synced,
+    ],
+    18: [
+        # Guardrail actions (1.57.0): what a failure cost, not just that it
+        # failed. See _v18_add_guardrail_action_columns.
+        _v18_add_guardrail_action_columns,
     ],
 }
 

@@ -43,6 +43,11 @@ _RECONSTRUCTABLE = {
     GuardrailType.schema,
     GuardrailType.classifier,
     GuardrailType.llm_judge,
+    # Model-backed judges with structure. Their prompts and parsing live in
+    # ``hazard_taxonomy`` / ``grounding``, mirrored from the plane so a rule
+    # reaches the same verdict at the edge as it does at /guardrails/{id}/test.
+    GuardrailType.content_safety,
+    GuardrailType.groundedness,
 }
 
 # (version, agent_id) -> built guardrails. Rebuilt when the policy version changes
@@ -76,14 +81,29 @@ def guardrail_from_policy_rule(rule: dict[str, Any]) -> Guardrail | None:
     if on_error not in ("allow", "block"):
         on_error = "block"
 
+    # Wire v1.9 adds ``action``/``severity``/``floor``. Read with ``.get()`` and
+    # coerced, so a rule from a plane that predates them (no key at all) and a
+    # rule carrying an action this build has never heard of both land on
+    # "block" — the safe reading for a safety control.
+    config = dict(rule.get("config") or {})
+    # ``override`` needs copy to substitute for the payload. The plane keeps the
+    # tripwire message beside the rule rather than in its config, so carry it in
+    # here where the action can reach it.
+    tripwire = rule.get("tripwire_message")
+    if tripwire and "tripwire_message" not in config:
+        config["tripwire_message"] = tripwire
+
     return Guardrail(
         name=name,
         guardrail_type=gtype,
         position=position,
-        config=rule.get("config") or {},
+        config=config,
         blocking=blocking,
         description=rule.get("description") or "authored on the plane",
         on_error=on_error,
+        action=rule.get("action", "block"),
+        severity=rule.get("severity"),
+        floor=bool(rule.get("floor", False)),
         # Marks this as plane-authored, which keeps it out of the agent
         # definition pushed back to the plane (see Guardrail.origin) and stops
         # it being enforced twice when the caller also passes it explicitly.

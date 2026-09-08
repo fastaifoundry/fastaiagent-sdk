@@ -14,7 +14,7 @@ from fastaiagent.agent.middleware import MiddlewareContext, _MiddlewarePipeline
 from fastaiagent.chain.checkpoint import Checkpoint
 from fastaiagent.chain.interrupt import InterruptSignal, _agent_path
 from fastaiagent.checkpointers.protocol import Checkpointer, PendingInterrupt
-from fastaiagent.guardrail.executor import execute_guardrails
+from fastaiagent.guardrail.executor import GuardrailOutcome, execute_guardrails
 from fastaiagent.guardrail.guardrail import GuardrailPosition
 from fastaiagent.llm.client import LLMResponse
 from fastaiagent.llm.message import (
@@ -296,13 +296,9 @@ def _coerce_tool_output_to_message_content(
             page_count = output.page_count()
         except Exception:
             page_count = -1
-        summary = (
-            f"[tool returned pdf: size_bytes={output.size_bytes()}, pages={page_count}]"
-        )
+        summary = f"[tool returned pdf: size_bytes={output.size_bytes()}, pages={page_count}]"
         return [summary, output], summary
-    if isinstance(output, list) and any(
-        isinstance(p, (MMImage, MMPDF)) for p in output
-    ):
+    if isinstance(output, list) and any(isinstance(p, (MMImage, MMPDF)) for p in output):
         summary = "[tool returned multimodal content with " + str(len(output)) + " parts]"
         return list(output), summary
     if isinstance(output, str):
@@ -316,6 +312,69 @@ def _coerce_tool_output_to_message_content(
         return text, text
     text = json.dumps(output, default=str)
     return text, text
+
+
+def _rewritten_tool_arguments(
+    original: dict[str, Any], outcome: GuardrailOutcome
+) -> dict[str, Any]:
+    """Take a masked/overridden tool call back apart into its arguments.
+
+    Tool-call guardrails judge a ``{"tool", "arguments"}`` JSON envelope, so a
+    rewrite comes back as a rewritten envelope. Anything that no longer parses
+    as that envelope cannot be handed to the tool — an ``override`` replaces the
+    whole payload with prose, for instance — so it degrades to a block rather
+    than invoking the tool with arguments nobody vetted.
+
+    (The plane refuses ``mask`` on tool rules for a related reason: its hosted
+    MCP gate acts on the verdict while passing the caller's original arguments
+    through. A locally-defined guardrail can still ask for one, so handle it.)
+    """
+    from fastaiagent._internal.errors import GuardrailBlockedError
+
+    try:
+        envelope = json.loads(str(outcome.data))
+        rewritten = envelope["arguments"]
+    except (json.JSONDecodeError, TypeError, KeyError, ValueError):
+        rewritten = None
+
+    if not isinstance(rewritten, dict):
+        raise GuardrailBlockedError(
+            guardrail_name="tool_call",
+            message=(
+                "A guardrail rewrote this tool call, but the result is not a usable "
+                "arguments object; blocked instead."
+            ),
+            results=outcome.results,
+        )
+    return rewritten
+
+
+def _rewritten_tool_result(
+    message_content: str | list[Any], outcome: GuardrailOutcome
+) -> tuple[str | list[Any], str]:
+    """Apply a masked/overridden tool result to both values the caller carries.
+
+    ``_coerce_tool_output_to_message_content`` returns a pair: the content that
+    goes into the next ``ToolMessage``, and the text form used for traces and
+    guardrails. Only the text form was judged. When the two are the same string
+    the rewrite covers both; when the message content is a list of parts (a tool
+    that returned an Image or PDF) the model would still see the unmasked parts,
+    so the rewrite cannot be applied and the call blocks.
+    """
+    from fastaiagent._internal.errors import GuardrailBlockedError
+
+    rewritten = str(outcome.data)
+    if isinstance(message_content, str):
+        return rewritten, rewritten
+
+    raise GuardrailBlockedError(
+        guardrail_name="tool_result",
+        message=(
+            "A guardrail rewrote this tool result, but it carries image/PDF content "
+            "parts the rewrite cannot cover; blocked instead."
+        ),
+        results=outcome.results,
+    )
 
 
 async def _invoke_tool_with_span(
@@ -377,16 +436,24 @@ async def _invoke_tool_with_span(
             # Tool-call guardrail: validate arguments before execution
             if guardrails:
                 tc_data = json.dumps({"tool": tool_name, "arguments": arguments}, default=str)
-                await execute_guardrails(guardrails, tc_data, GuardrailPosition.tool_call)
+                tc_outcome = await execute_guardrails(
+                    guardrails, tc_data, GuardrailPosition.tool_call
+                )
+                if tc_outcome.modified:
+                    arguments = _rewritten_tool_arguments(arguments, tc_outcome)
 
             result = await tool.ainvoke(arguments, context=context)
             if result.success:
-                message_content, result_text = _coerce_tool_output_to_message_content(
-                    result.output
-                )
+                message_content, result_text = _coerce_tool_output_to_message_content(result.output)
                 # Tool-result guardrail: validate output after execution
                 if guardrails:
-                    await execute_guardrails(guardrails, result_text, GuardrailPosition.tool_result)
+                    tr_outcome = await execute_guardrails(
+                        guardrails, result_text, GuardrailPosition.tool_result
+                    )
+                    if tr_outcome.modified:
+                        message_content, result_text = _rewritten_tool_result(
+                            message_content, tr_outcome
+                        )
                 span.set_attribute("tool.status", "ok")
             else:
                 result_text = f"Error: {result.error}"

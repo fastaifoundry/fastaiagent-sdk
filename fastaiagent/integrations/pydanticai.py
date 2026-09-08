@@ -100,11 +100,7 @@ def _model_name(agent: Any) -> str:
         return "unknown"
     if isinstance(m, str):
         return m
-    return (
-        getattr(m, "model_name", None)
-        or getattr(m, "name", None)
-        or str(m)
-    )
+    return getattr(m, "model_name", None) or getattr(m, "name", None) or str(m)
 
 
 def _agent_name(agent: Any) -> str:
@@ -209,21 +205,15 @@ def _install_method_patches() -> None:
             span = _open_root(self)
             with otel_trace.use_span(span, end_on_exit=True):
                 if trace_payloads_enabled() and args:
-                    span.set_attribute(
-                        "pydanticai.agent.input", str(args[0])[:1_000]
-                    )
+                    span.set_attribute("pydanticai.agent.input", str(args[0])[:1_000])
                 try:
                     result = original_run_sync(self, *args, **kwargs)
                 except BaseException:
                     raise
                 if trace_payloads_enabled():
-                    output = getattr(result, "output", None) or getattr(
-                        result, "data", None
-                    )
+                    output = getattr(result, "output", None) or getattr(result, "data", None)
                     if output is not None:
-                        span.set_attribute(
-                            "pydanticai.agent.output", str(output)[:1_000]
-                        )
+                        span.set_attribute("pydanticai.agent.output", str(output)[:1_000])
                 _stamp_usage_and_cost(span, result)
                 return result
 
@@ -239,21 +229,15 @@ def _install_method_patches() -> None:
             span = _open_root(self)
             with otel_trace.use_span(span, end_on_exit=True):
                 if trace_payloads_enabled() and args:
-                    span.set_attribute(
-                        "pydanticai.agent.input", str(args[0])[:1_000]
-                    )
+                    span.set_attribute("pydanticai.agent.input", str(args[0])[:1_000])
                 try:
                     result = await original_run(self, *args, **kwargs)
                 except BaseException:
                     raise
                 if trace_payloads_enabled():
-                    output = getattr(result, "output", None) or getattr(
-                        result, "data", None
-                    )
+                    output = getattr(result, "output", None) or getattr(result, "data", None)
                     if output is not None:
-                        span.set_attribute(
-                            "pydanticai.agent.output", str(output)[:1_000]
-                        )
+                        span.set_attribute("pydanticai.agent.output", str(output)[:1_000])
                 _stamp_usage_and_cost(span, result)
                 return result
 
@@ -290,9 +274,7 @@ def _install_method_patches() -> None:
                 self._span = span
                 self._token = token
                 if trace_payloads_enabled() and self._args:
-                    span.set_attribute(
-                        "pydanticai.agent.input", str(self._args[0])[:1_000]
-                    )
+                    span.set_attribute("pydanticai.agent.input", str(self._args[0])[:1_000])
                 inner = original_run_stream(self._agent, *self._args, **self._kwargs)
                 self._inner = inner
                 self._run_result = await inner.__aenter__()
@@ -381,9 +363,7 @@ def as_evaluable(
     async def _evaluable(text: str) -> _EvaluableResult:
         with tracer.start_as_current_span("eval.case"):
             result = await agent.run(in_map(text))
-            return _EvaluableResult(
-                output=str(out_map(result)), trace_id=_current_trace_id()
-            )
+            return _EvaluableResult(output=str(out_map(result)), trace_id=_current_trace_id())
 
     return _evaluable
 
@@ -434,11 +414,7 @@ def disable() -> None:
 
 def _extract_output_text(result: Any) -> str:
     """Pull text out of a PydanticAI ``AgentRunResult``."""
-    return str(
-        getattr(result, "output", None)
-        or getattr(result, "data", None)
-        or result
-    )
+    return str(getattr(result, "output", None) or getattr(result, "data", None) or result)
 
 
 def _run_guardrails(
@@ -450,11 +426,16 @@ def _run_guardrails(
 ) -> None:
     if not guardrails:
         return
+    from fastaiagent.guardrail.actions import harness_halts
     from fastaiagent.integrations._registry import GuardrailBlocked
 
     for g in guardrails:
         result = g.execute(text)
-        if not result.passed and getattr(g, "blocking", True):
+        # ``warn`` records and continues; the payload-rewriting actions and
+        # ``reask`` need the SDK's own loop, so here they block. See
+        # fastaiagent.guardrail.actions.harness_halts.
+        reason = harness_halts(g, result)
+        if not result.passed:
             try:
                 from fastaiagent.ui.events import log_guardrail_event
 
@@ -462,12 +443,11 @@ def _run_guardrails(
                 merged.setdefault("framework", "pydanticai")
                 merged.setdefault("side", side)
                 result.metadata = merged
-                log_guardrail_event(g, result, agent_name=agent_name)
+                log_guardrail_event(g, result, agent_name=agent_name, data=text)
             except Exception:
                 pass
-            raise GuardrailBlocked(
-                f"{side} blocked by {g.name}: {result.message or ''}"
-            )
+        if reason is not None:
+            raise GuardrailBlocked(f"{side} blocked by {g.name}: {reason}")
 
 
 class _GuardedAgent:
@@ -623,16 +603,12 @@ def register_agent(agent: Any, *, name: str) -> None:
             )
 
     sysprompts = (
-        getattr(agent, "_system_prompts", None)
-        or getattr(agent, "system_prompt", None)
-        or None
+        getattr(agent, "_system_prompts", None) or getattr(agent, "system_prompt", None) or None
     )
     sysprompt_str: str | None = None
     if sysprompts:
         sysprompt_str = (
-            sysprompts
-            if isinstance(sysprompts, str)
-            else " | ".join(str(s) for s in sysprompts)
+            sysprompts if isinstance(sysprompts, str) else " | ".join(str(s) for s in sysprompts)
         )[:1_000]
 
     upsert_agent(
@@ -681,8 +657,7 @@ def kb_as_tool(
 
     _search_fn.__name__ = fn_name
     _search_fn.__doc__ = (
-        f"Search the {kb_name!r} knowledge base for documents relevant to "
-        "the input query."
+        f"Search the {kb_name!r} knowledge base for documents relevant to the input query."
     )
 
     if agent:
