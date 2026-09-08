@@ -217,3 +217,84 @@ def test_local_guardrail_sharing_a_plane_name_still_runs():
     eff = agent._effective_guardrails()
     assert [g.name for g in eff] == ["block-ssn-output", "block-ssn-output"]
     assert {g.origin for g in eff} == {"local", "plane"}
+
+
+# --------------------------------------------------------------------------- #
+# Wire v1.9 — action, severity and floor on every rule
+# --------------------------------------------------------------------------- #
+def test_a_rule_with_no_action_key_reconstructs_as_block():
+    """A plane that predates wire v1.9 sends no ``action`` at all. Its rules
+    must behave exactly as they did before — which is to block."""
+    rule = _rule()
+    assert "action" not in rule
+    g = guardrail_from_policy_rule(rule)
+    assert g.action == "block"
+    assert g.severity is None
+    assert g.floor is False
+
+
+def test_a_rule_with_an_unknown_action_reconstructs_as_block():
+    """An SDK older than the plane may meet an action it cannot perform. The
+    strict reading is the safe one for a safety control: fail closed, don't
+    quietly let the payload through."""
+    g = guardrail_from_policy_rule(_rule(action="quarantine"))
+    assert g.action == "block"
+
+
+@pytest.mark.parametrize("action", ["block", "warn", "mask", "override", "reask"])
+def test_every_action_the_plane_can_send_survives_the_wire(action):
+    assert guardrail_from_policy_rule(_rule(action=action)).action == action
+
+
+def test_severity_and_floor_land_on_the_reconstructed_rule():
+    g = guardrail_from_policy_rule(_rule(severity="critical", floor=True))
+    assert g.severity == "critical"
+    assert g.floor is True
+
+
+def test_a_null_severity_is_unset_not_invented():
+    assert guardrail_from_policy_rule(_rule(severity=None)).severity is None
+
+
+def test_the_tripwire_message_travels_so_override_has_copy_to_substitute():
+    """The plane keeps ``tripwire_message`` beside the rule rather than in its
+    config; ``override`` needs it as the fallback for the payload."""
+    g = guardrail_from_policy_rule(_rule(action="override"))
+    assert g.config["tripwire_message"] == "SSN blocked"
+    assert g.execute("my ssn is 123-45-6789").modified_data == "SSN blocked"
+
+
+def test_a_plane_authored_mask_rule_redacts_at_the_edge():
+    """The end-to-end point of the release: a rule an operator wrote in the
+    console now does what it says inside the customer's own process."""
+    _set_policy(
+        [
+            _rule(
+                name="mask-ssn-output",
+                action="mask",
+                config={"pattern": SSN, "should_match": False, "mask_token": "[REDACTED]"},
+            )
+        ]
+    )
+    (rail,) = plane_guardrails_for_agent(None)
+    res = rail.execute("my ssn is 123-45-6789")
+    assert res.action_taken == "masked"
+    assert res.modified_data == "my ssn is [REDACTED]"
+
+
+def test_the_two_new_types_are_no_longer_skipped():
+    """Before 1.57.0 these were dropped at debug level, so a rule that looked
+    active in the console enforced nothing at the edge."""
+    _set_policy(
+        [
+            _rule(name="safety", implementation_type="content_safety", config={"threshold": 0.5}),
+            _rule(name="grounded", implementation_type="groundedness", config={"threshold": 0.7}),
+        ]
+    )
+    assert {g.name for g in plane_guardrails_for_agent(None)} == {"safety", "grounded"}
+
+
+def test_a_code_rule_is_still_refused():
+    """Unchanged: its logic is a server-side callable we don't have, and the
+    config-embedded code path is refused for security."""
+    assert guardrail_from_policy_rule(_rule(implementation_type="code")) is None

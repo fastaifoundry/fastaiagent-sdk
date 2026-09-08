@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
@@ -29,10 +29,15 @@ def log_guardrail_event(
     span_id: str | None = None,
     agent_name: str | None = None,
     db_path: str | None = None,
+    data: Any = None,
 ) -> None:
     """Persist a guardrail execution to ``local.db`` for the UI to read.
 
     Gated on :attr:`SDKConfig.ui_enabled`; no-op when the UI isn't in use.
+
+    ``data`` is the payload the guardrail judged. It is recorded only when the
+    guardrail rewrote it, as the ``before`` half of the before/after diff the
+    event-detail page renders for a ``filtered`` outcome.
     """
     config = get_config()
     if not config.ui_enabled:
@@ -51,12 +56,18 @@ def log_guardrail_event(
 
         from fastaiagent._internal.project import safe_get_project_id
 
+        metadata = dict(result.metadata or {})
+        if result.rewrote_payload():
+            # The detail page diffs these two when outcome == "filtered".
+            metadata.setdefault("before", data if isinstance(data, str) else str(data))
+            metadata.setdefault("after", str(result.modified_data))
+
         helper.execute(
             """INSERT INTO guardrail_events
                (event_id, trace_id, span_id, guardrail_name, guardrail_type,
                 position, outcome, score, message, agent_name, timestamp, metadata,
-                project_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                project_id, action, action_taken, severity, floor)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 uuid.uuid4().hex,
                 trace_id,
@@ -69,8 +80,12 @@ def log_guardrail_event(
                 result.message,
                 agent_name,
                 timestamp,
-                json.dumps(result.metadata or {}),
+                json.dumps(metadata),
                 safe_get_project_id(),
+                result.action,
+                result.action_taken,
+                guardrail.severity,
+                1 if guardrail.floor else 0,
             ),
         )
     finally:
@@ -86,7 +101,17 @@ def _outcome(guardrail: Guardrail, result: GuardrailResult) -> str:
         return "errored"
     if result.passed:
         return "passed"
-    return "blocked" if guardrail.blocking else "warned"
+    # A rule that rewrote the payload rather than stopping the run. The
+    # event-detail page has always known this outcome and rendered a
+    # before/after diff for it; until the action spectrum existed, nothing
+    # could produce one.
+    if result.rewrote_payload():
+        return "filtered"
+    # A failure that did not halt: either an observe-only rule, or one whose
+    # action says to record and carry on.
+    if not guardrail.blocking or result.action_taken == "warned":
+        return "warned"
+    return "blocked"
 
 
 def _fill_span_context(

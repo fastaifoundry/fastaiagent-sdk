@@ -74,6 +74,11 @@ The list endpoint gained four new filters in Sprint 2: `type` and
 `position` (existing fields, now surfaced through the API and a pair of
 list-page selects), plus `false_positive` to slice annotated rows.
 
+`type` accepts the two model-backed types added in 1.57.0 (`content_safety`,
+`groundedness`), and `outcome` accepts `filtered` — a rule that rewrote the
+payload and let the run continue. Every row also carries `action`,
+`action_taken`, `severity` and `floor`.
+
 The detail endpoint joins the event row with:
 - the triggering span (read by `span_id`)
 - up to 8 surrounding spans on the same trace
@@ -95,6 +100,35 @@ ALTER TABLE guardrail_events ADD COLUMN false_positive_at TEXT;
 Migrations are idempotent — running an existing v4 DB through `init_local_db()`
 adds the columns without backfill (default `0` is correct for historical
 events).
+
+### v18 — what the failure cost (1.57.0)
+
+`outcome` alone can no longer describe what happened. A failure may now warn,
+mask, override or re-ask instead of blocking, and two rules with the same outcome
+can have arrived there very differently — a `mask` that found nothing to redact
+blocks, and so does an errored `warn`:
+
+```sql
+ALTER TABLE guardrail_events ADD COLUMN action       TEXT;
+ALTER TABLE guardrail_events ADD COLUMN action_taken TEXT;
+ALTER TABLE guardrail_events ADD COLUMN severity     TEXT;
+ALTER TABLE guardrail_events ADD COLUMN floor        INTEGER DEFAULT 0;
+```
+
+`action` is what the rule was configured to cost; `action_taken` is what it
+actually did. The pair is what makes an over-blocking rule visible. `severity`
+and `floor` change no behaviour — see
+[Actions, severity & floor](../guardrails/actions.md).
+
+All four are `NULL` on events recorded before 1.57.0, and the migration is
+additive: an older SDK opening a v18 file runs no migration and reads by name.
+
+!!! note "`filtered` is now produced, not just rendered"
+    The detail page has always known the `filtered` outcome and its before/after
+    diff. Until the action spectrum shipped, no runtime code could write one —
+    every failure was a block. A `mask` or `override` rule now writes
+    `outcome="filtered"` with `metadata.before` / `metadata.after` filled in for
+    you.
 
 ## Trace integration
 

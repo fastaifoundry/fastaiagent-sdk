@@ -62,7 +62,10 @@ from fastaiagent.guardrail import (
     GuardrailResult,
     allowed_topics,
     banned_topics,
+    clear_guardrail_context,
+    get_guardrail_context,
     grounded,
+    guardrail_context,
     guardrail_from_policy_rule,
     json_valid,
     no_hallucination,
@@ -73,6 +76,7 @@ from fastaiagent.guardrail import (
     plane_guardrails_for_agent,
     responsible_ai,
     run_guardrail,
+    set_guardrail_context,
     toxicity_check,
 )
 from fastaiagent.kb import KeywordStore, LocalKB, MetadataStore, PlatformKB, VectorStore
@@ -217,6 +221,12 @@ __all__ = [
     "run_guardrail",
     "guardrail_from_policy_rule",
     "plane_guardrails_for_agent",
+    # Run-scoped context a guardrail can read (groundedness needs the retrieved
+    # context, which an output guardrail's payload does not carry).
+    "guardrail_context",
+    "set_guardrail_context",
+    "get_guardrail_context",
+    "clear_guardrail_context",
     # Prompt
     "PromptRegistry",
     "Prompt",

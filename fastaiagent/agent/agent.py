@@ -34,7 +34,7 @@ from fastaiagent.chain.interrupt import (
     _resume_value,
 )
 from fastaiagent.checkpointers import Checkpointer, SQLiteCheckpointer
-from fastaiagent.guardrail.executor import execute_guardrails
+from fastaiagent.guardrail.executor import GuardrailOutcome, execute_guardrails
 from fastaiagent.guardrail.guardrail import Guardrail, GuardrailPosition
 from fastaiagent.llm.client import LLMClient
 from fastaiagent.llm.message import Message, SystemMessage, UserMessage
@@ -68,6 +68,58 @@ def _input_summary_text(parts: list[ContentPart]) -> str:
     return " ".join(pieces)
 
 
+def _apply_input_rewrite(original: AgentInput, outcome: GuardrailOutcome) -> tuple[AgentInput, str]:
+    """Substitute a masked/overridden input, or fail closed when we can't.
+
+    Input guardrails judge ``_input_summary_text``, a *summary* of the
+    normalized parts. For plain-text input the summary is the input, so the
+    rewrite substitutes cleanly. For multimodal input it is not: swapping the
+    summary in for the parts would drop the images the user sent, and passing
+    the original parts through would hand the model the very text the rule
+    redacted. Neither is acceptable, so the rewrite degrades to a block —
+    the same rule masking applies everywhere: never pass the payload through
+    untouched.
+    """
+    from fastaiagent._internal.errors import GuardrailBlockedError
+
+    rewritten = str(outcome.data)
+    if isinstance(original, str):
+        return rewritten, rewritten
+
+    raise GuardrailBlockedError(
+        guardrail_name="input",
+        message=(
+            "A guardrail rewrote this input, but multimodal input cannot be "
+            "rewritten faithfully (the text is a summary of the parts); blocked instead."
+        ),
+        results=outcome.results,
+    )
+
+
+def _refuse_stream_rewrite(outcome: GuardrailOutcome) -> None:
+    """Block a streamed output whose guardrails wanted to rewrite or re-ask it.
+
+    ``astream`` yields each ``TextDelta`` as it arrives, so by the time the
+    output guardrails run the caller has already seen the raw text. Applying a
+    mask now would record a redaction that never happened, and a re-ask would
+    produce a second answer for a question the caller already has an answer to.
+    """
+    from fastaiagent._internal.errors import GuardrailBlockedError
+
+    if not outcome.modified and outcome.reask is None:
+        return
+    what = "rewrite" if outcome.modified else "re-ask"
+    raise GuardrailBlockedError(
+        guardrail_name="output",
+        message=(
+            f"A guardrail asked to {what} this reply, but it has already been "
+            "streamed to the caller and cannot be taken back; blocked instead. "
+            "Use run()/arun() if this rule must rewrite the output."
+        ),
+        results=outcome.results,
+    )
+
+
 class AgentConfig(BaseModel):
     """Agent execution configuration."""
 
@@ -87,6 +139,12 @@ class AgentConfig(BaseModel):
     # behavior — a failure yields ``parsed=None``). Only fires on failure, so it
     # adds no calls on the happy path.
     output_retries: int = Field(default=2, ge=0, le=5)
+    # Output guardrails carrying ``action="reask"``: re-prompt the model with the
+    # failure as feedback up to this many times before blocking. Deliberately
+    # lower than ``output_retries`` — a guardrail re-ask is a full extra turn on
+    # a reply that already cost one, and the failure it is correcting is a policy
+    # judgement rather than a parse error. 0 makes a reask rule block outright.
+    guardrail_retries: int = Field(default=1, ge=0, le=5)
     # Use OpenAI/Azure native *strict* Structured Outputs (hard schema guarantee)
     # for ``output_type``. Off by default; ignored by non-OpenAI providers.
     strict_output: bool = False
@@ -195,8 +253,7 @@ class Agent:
                 else ""
             )
             raise TypeError(
-                f"Agent(llm=...) expects a fastaiagent LLMClient, got "
-                f"{type(llm).__name__}.{hint}"
+                f"Agent(llm=...) expects a fastaiagent LLMClient, got {type(llm).__name__}.{hint}"
             )
         self.llm = llm or LLMClient()
         self.tools: list[Tool] = list(tools) if tools else []
@@ -297,6 +354,75 @@ class Agent:
             parsed, reason = self._try_parse(output)
             if parsed is not None:
                 break
+        return output, parsed, extra_tokens
+
+    async def _guard_output(
+        self,
+        output: str,
+        parsed: Any | None,
+        guardrails: list[Guardrail],
+        llm_messages: list[Message],
+        kwargs: dict[str, Any],
+    ) -> tuple[str, Any | None, int]:
+        """Run the output guardrails, honouring whatever action they carry.
+
+        Returns ``(output, parsed, extra_tokens)``. Three of the five actions
+        resolve inside :func:`execute_guardrails`; the two that need the agent
+        loop resolve here:
+
+        * ``mask`` / ``override`` rewrote the payload — take the rewritten text
+          and re-derive ``parsed``, since the value the caller receives is no
+          longer the one we parsed.
+        * ``reask`` re-prompts the model with the failure as feedback, bounded by
+          ``config.guardrail_retries``. Exhausting the cap blocks: this is the
+          one action the plane cannot perform, and a re-ask that never converges
+          must not become a silent pass.
+        """
+        from fastaiagent._internal.errors import GuardrailBlockedError
+        from fastaiagent.llm.message import AssistantMessage
+
+        extra_tokens = 0
+        attempts = max(0, self.config.guardrail_retries)
+
+        for attempt in range(attempts + 1):
+            outcome = await execute_guardrails(
+                guardrails, output, GuardrailPosition.output, allow_reask=True
+            )
+
+            if outcome.modified:
+                output = str(outcome.data)
+                parsed, _ = self._try_parse(output)
+
+            if outcome.reask is None:
+                return output, parsed, extra_tokens
+
+            if attempt >= attempts:
+                # Out of retries. The rule asked us to try again and we did;
+                # the failure stands, so it costs what an unsatisfied guardrail
+                # always costs.
+                raise GuardrailBlockedError(
+                    guardrail_name="reask",
+                    message=(
+                        f"{outcome.reask.message or 'Guardrail failed'} "
+                        f"(re-asked {attempts} time(s) without satisfying the rule; blocked)"
+                    ),
+                    results=outcome.results,
+                )
+
+            reason = outcome.reask.message or "the reply did not satisfy a guardrail"
+            llm_messages = [
+                *llm_messages,
+                AssistantMessage(content=output),
+                UserMessage(
+                    f"Your previous response was rejected: {reason}. "
+                    "Reply again, addressing that problem. Do not mention this instruction."
+                ),
+            ]
+            resp = await self.llm.acomplete(llm_messages, **kwargs)
+            output = resp.content or ""
+            extra_tokens += resp.usage.get("total_tokens", 0)
+            parsed, _ = self._try_parse(output)
+
         return output, parsed, extra_tokens
 
     def run(
@@ -490,9 +616,7 @@ class Agent:
             # exporters, which strip payload attributes when the operator opts
             # out via ``FASTAIAGENT_TRACE_PAYLOADS=0``.
             input_text = (
-                input
-                if isinstance(input, str)
-                else _input_summary_text(normalized_input_parts)
+                input if isinstance(input, str) else _input_summary_text(normalized_input_parts)
             )
             span.set_attribute("agent.input", input_text)
 
@@ -503,9 +627,7 @@ class Agent:
                 from fastaiagent.multimodal.image import Image as _MMImage
                 from fastaiagent.multimodal.pdf import PDF as _MMPDF
 
-                if any(
-                    isinstance(p, (_MMImage, _MMPDF)) for p in normalized_input_parts
-                ):
+                if any(isinstance(p, (_MMImage, _MMPDF)) for p in normalized_input_parts):
                     from fastaiagent.trace.attachments import save_parts_for_span
                     from fastaiagent.trace.storage import TraceStore
 
@@ -522,9 +644,7 @@ class Agent:
                             "fastaiagent.input.attachment_ids",
                             json.dumps([r.attachment_id for r in saved]),
                         )
-                        span.set_attribute(
-                            "fastaiagent.input.media_count", len(saved)
-                        )
+                        span.set_attribute("fastaiagent.input.media_count", len(saved))
             except Exception:
                 # Trace persistence must never fail the agent run.
                 logger.debug("Failed to persist input attachments", exc_info=True)
@@ -609,9 +729,7 @@ class Agent:
             normalized_parts: list[ContentPart] = (
                 [input] if isinstance(input, str) else normalize_input(input)
             )
-            input_text = (
-                input if isinstance(input, str) else _input_summary_text(normalized_parts)
-            )
+            input_text = input if isinstance(input, str) else _input_summary_text(normalized_parts)
 
             # Effective guardrails = the agent's local list + any authored on the
             # plane and distributed to this connected agent. Computed once so
@@ -621,14 +739,23 @@ class Agent:
             # Execute input guardrails (blocking). Guardrails are text-only
             # today; we pass the text summary so policies still trigger on
             # the textual portion of multimodal input.
+            guarded_input: AgentInput = input
             if eff_guardrails:
-                await execute_guardrails(eff_guardrails, input_text, GuardrailPosition.input)
+                outcome = await execute_guardrails(
+                    eff_guardrails, input_text, GuardrailPosition.input
+                )
+                if outcome.modified:
+                    # A mask/override rewrote the input. We can only substitute
+                    # it when the input was plain text: for multimodal input
+                    # ``input_text`` is a *summary* of the parts, so swapping it
+                    # in would silently drop the images. Fail closed instead.
+                    guarded_input, input_text = _apply_input_rewrite(input, outcome)
 
             # Build messages — when resuming, restore the saved history.
             llm_messages = (
                 _resumed_messages
                 if _resumed_messages is not None
-                else self._build_messages(input, context=context, history=messages)
+                else self._build_messages(guarded_input, context=context, history=messages)
             )
 
             # Inject response_format for structured output.
@@ -691,9 +818,14 @@ class Agent:
                     llm_messages, output, perr, kwargs
                 )
 
-            # Execute output guardrails.
+            # Execute output guardrails. Unlike every other position this one
+            # can re-drive the model, so a `reask` rule is honoured here rather
+            # than degraded to a block.
             if eff_guardrails:
-                await execute_guardrails(eff_guardrails, output, GuardrailPosition.output)
+                output, parsed, guardrail_tokens = await self._guard_output(
+                    output, parsed, eff_guardrails, llm_messages, kwargs
+                )
+                retry_tokens += guardrail_tokens
 
             # Store in memory. Memory backends are text-only; record the
             # text summary so multimodal calls don't break the memory store.
@@ -754,19 +886,22 @@ class Agent:
         exec_id = execution_id or str(uuid.uuid4())
 
         input_text = (
-            input
-            if isinstance(input, str)
-            else _input_summary_text(normalize_input(input))
+            input if isinstance(input, str) else _input_summary_text(normalize_input(input))
         )
 
         # Effective guardrails = local + plane-authored (see arun for details).
         eff_guardrails = self._effective_guardrails()
 
         # Execute input guardrails (blocking) on the text portion.
+        guarded_input: AgentInput = input
         if eff_guardrails:
-            await execute_guardrails(eff_guardrails, input_text, GuardrailPosition.input)
+            in_outcome = await execute_guardrails(
+                eff_guardrails, input_text, GuardrailPosition.input
+            )
+            if in_outcome.modified:
+                guarded_input, input_text = _apply_input_rewrite(input, in_outcome)
 
-        llm_messages = self._build_messages(input, context=context, history=messages)
+        llm_messages = self._build_messages(guarded_input, context=context, history=messages)
 
         # Inject response_format for structured output
         response_format = self._build_response_format()
@@ -819,9 +954,19 @@ class Agent:
 
             output = accumulated_text
 
-            # Execute output guardrails
+            # Execute output guardrails. A streamed reply has already left the
+            # building: every TextDelta was yielded to the caller as it arrived,
+            # so a mask cannot un-emit the span it was meant to redact and a
+            # re-ask cannot retract the text the caller already read. Both
+            # degrade to a block here — the fail-closed reading, and the reason
+            # a team that authors a rewriting rule should not stream.
             if eff_guardrails:
-                await execute_guardrails(eff_guardrails, output, GuardrailPosition.output)
+                # ``allow_reask=True`` only so the refusal below can explain
+                # itself; nothing here can actually re-drive the model.
+                out_outcome = await execute_guardrails(
+                    eff_guardrails, output, GuardrailPosition.output, allow_reask=True
+                )
+                _refuse_stream_rewrite(out_outcome)
 
             # Store in memory (text summary for multimodal inputs).
             # Wrapped in a ``memory.write`` span (+ per-block children).

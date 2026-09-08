@@ -46,24 +46,33 @@ async def run_guardrail(guardrail: Guardrail, data: str | dict[str, Any]) -> Gua
     ``on_error`` setting (``"allow"`` → fail open, ``"block"`` → fail closed),
     with ``errored=True`` so the outcome is never mistaken for a real verdict.
     """
+    from fastaiagent.guardrail.actions import apply_action
+
     runners = {
         GuardrailType.code: _run_code,
         GuardrailType.llm_judge: _run_llm_judge,
         GuardrailType.regex: _run_regex,
         GuardrailType.schema: _run_schema,
         GuardrailType.classifier: _run_classifier,
+        GuardrailType.content_safety: _run_content_safety,
+        GuardrailType.groundedness: _run_groundedness,
     }
     runner = runners.get(guardrail.guardrail_type, _run_code)
     try:
-        return await runner(guardrail, data)
+        result = await runner(guardrail, data)
     except Exception as e:
         passed = guardrail.on_error == "allow"
-        return GuardrailResult(
+        result = GuardrailResult(
             passed=passed,
             errored=True,
             message=f"{guardrail.name} errored (on_error={guardrail.on_error}): {e}",
             metadata={"error": str(e), "on_error": guardrail.on_error},
         )
+    # Stamp what the failure costs. Runners answer "did it pass?"; the action
+    # spectrum answers "and what does that mean?" — kept apart so a runner never
+    # has to know about masking, and so an errored check can be forced to block
+    # in exactly one place.
+    return await apply_action(guardrail, data, result)
 
 
 async def _run_code(guardrail: Guardrail, data: str | dict[str, Any]) -> GuardrailResult:
@@ -153,11 +162,7 @@ async def _run_llm_judge(guardrail: Guardrail, data: str | dict[str, Any]) -> Gu
     user = f"<<DATA>>\n{text}\n<</DATA>>"
 
     llm_config = guardrail.config.get("llm", {})
-    llm = (
-        LLMClient(**llm_config)
-        if llm_config
-        else LLMClient(max_retries=LLM_DETECTOR_MAX_RETRIES)
-    )
+    llm = LLMClient(**llm_config) if llm_config else LLMClient(max_retries=LLM_DETECTOR_MAX_RETRIES)
 
     # A failed judge call propagates to run_guardrail, which applies the
     # guardrail's on_error policy (default "block" preserves fail-closed).
@@ -211,9 +216,7 @@ async def _run_regex(guardrail: Guardrail, data: str | dict[str, Any]) -> Guardr
     # bounded FAIL instead of a process-wide freeze.
     timeout = _resolve_regex_timeout(guardrail.config)
     try:
-        match = await asyncio.to_thread(
-            _regex.search, pattern, text, flags, timeout=timeout
-        )
+        match = await asyncio.to_thread(_regex.search, pattern, text, flags, timeout=timeout)
     except TimeoutError:
         return GuardrailResult(
             passed=False,
@@ -287,4 +290,128 @@ async def _run_classifier(guardrail: Guardrail, data: str | dict[str, Any]) -> G
             else "No categories detected"
         ),
         metadata={"detected": detected, "blocked": blocked},
+    )
+
+
+def _judge_client(config: dict[str, Any]) -> Any:
+    """The LLM used by a model-backed check.
+
+    ``config["llm"]`` (kwargs for ``LLMClient``) when the rule names one, else
+    the ambient default client with the detector retry budget. Same resolution
+    ``_run_llm_judge`` uses.
+    """
+    from fastaiagent._internal.safety_detectors import LLM_DETECTOR_MAX_RETRIES
+    from fastaiagent.llm import LLMClient
+
+    llm_config = config.get("llm", {})
+    if llm_config:
+        return LLMClient(**llm_config)
+    return LLMClient(max_retries=LLM_DETECTOR_MAX_RETRIES)
+
+
+async def _run_content_safety(guardrail: Guardrail, data: str | dict[str, Any]) -> GuardrailResult:
+    """Score the payload against the MLCommons hazard taxonomy, with a bar per category.
+
+    The per-category bar is the whole point of the type: "block hate at 0.3 but
+    allow borderline specialised advice up to 0.8" is the policy real operators
+    write, and ``llm_judge``'s PASS/FAIL cannot express it.
+
+    Prompt-injection hardened the same way as ``_run_llm_judge``: instructions in
+    the system message, the payload in its own ``<<DATA>>`` block.
+
+    An unparseable judge response **raises**, so ``on_error`` decides. Treating
+    it as all-zeros would turn a model outage into a silent pass.
+    """
+    from fastaiagent.guardrail import hazard_taxonomy as tax
+    from fastaiagent.llm import SystemMessage, UserMessage
+
+    config = guardrail.config or {}
+    categories = tax.resolve_categories(config)
+    if not categories:
+        raise ValueError("content_safety guardrail names no known hazard categories")
+    thresholds = tax.resolve_thresholds(config, categories)
+
+    text = data if isinstance(data, str) else json.dumps(data)
+    llm = _judge_client(config)
+    response = await llm.acomplete(
+        [
+            SystemMessage(tax.build_prompt(categories)),
+            UserMessage(f"<<DATA>>\n{text}\n<</DATA>>"),
+        ],
+        max_tokens=300,
+        temperature=0,
+    )
+
+    scores = tax.parse_scores((response.content or "").strip(), categories)
+    tripped = sorted(
+        code
+        for code, score in scores.items()
+        if score >= thresholds.get(code, tax.DEFAULT_THRESHOLD)
+    )
+    unscored = [c for c in categories if c not in scores]
+
+    return GuardrailResult(
+        passed=not tripped,
+        score=max(scores.values()) if scores else None,
+        message=(
+            "Hazard categories over their threshold: "
+            + ", ".join(f"{c} ({tax.MLCOMMONS_HAZARDS[c][0]}) {scores[c]:.2f}" for c in tripped)
+            if tripped
+            else "No hazard category over its threshold"
+        ),
+        # Same shape the plane records in ``guardrail_executions.result_detail``,
+        # so the console reads an SDK-run check exactly like a central one.
+        metadata={
+            "taxonomy": "mlcommons",
+            "scores": {c: round(v, 3) for c, v in scores.items()},
+            "thresholds": thresholds,
+            "tripped": tripped,
+            "unscored": unscored,
+        },
+    )
+
+
+async def _run_groundedness(guardrail: Guardrail, data: str | dict[str, Any]) -> GuardrailResult:
+    """Score an answer against the context it was supposed to use.
+
+    The only rule here that reads a *pair*. The context comes from the payload
+    when it is a ``{context, answer}`` object (the plane's shape), and otherwise
+    from the run-scoped slot — see :mod:`fastaiagent.guardrail.context`. Neither
+    available means the rule cannot run: ``extract_pair`` raises and ``on_error``
+    decides, fail closed by default.
+    """
+    from fastaiagent.guardrail import grounding
+    from fastaiagent.llm import SystemMessage, UserMessage
+
+    config = guardrail.config or {}
+    threshold = grounding.resolve_threshold(config)
+    context, answer = grounding.extract_pair(config, data)
+
+    llm = _judge_client(config)
+    response = await llm.acomplete(
+        [
+            SystemMessage(grounding.PROMPT),
+            UserMessage(
+                f"<<CONTEXT>>\n{context}\n<</CONTEXT>>\n\n<<ANSWER>>\n{answer}\n<</ANSWER>>"
+            ),
+        ],
+        max_tokens=400,
+        temperature=0,
+    )
+
+    score, unsupported = grounding.parse_verdict((response.content or "").strip())
+    return GuardrailResult(
+        passed=score >= threshold,
+        score=score,
+        message=(
+            f"Groundedness {score:.2f} is below the {threshold:.2f} threshold. "
+            f"Unsupported: {'; '.join(unsupported)}"
+            if score < threshold
+            else f"Groundedness {score:.2f} meets the {threshold:.2f} threshold"
+        ),
+        metadata={
+            "score": round(score, 3),
+            "threshold": threshold,
+            "unsupported_claims": unsupported,
+        },
     )

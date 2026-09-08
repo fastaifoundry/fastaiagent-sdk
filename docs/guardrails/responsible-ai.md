@@ -72,6 +72,23 @@ agent = Agent(name="rag", llm=llm, guardrails=[g])
     context. So you pass the reference here (often a `lambda` closing over your
     latest retrieval) rather than it being auto-wired.
 
+### `grounded()` vs the `groundedness` type
+
+Two engines, on purpose. Pick by where the rule is authored:
+
+| | `grounded()` | `groundedness` type |
+|---|---|---|
+| Authored | In your code | In the console, distributed over `/policy` |
+| Context from | A string or zero-arg callable | The run-scoped [`fa.guardrail_context(...)`](actions.md#groundedness) slot, or a `{context, answer}` payload |
+| Engine | Claim decomposition — N+1 model calls, names each unsupported claim | One structured judge call returning `{score, unsupported}` |
+| Missing context | Silently passes (the rule is opted out) | **Fails closed** |
+| Shares its engine with | The [`Faithfulness`](../evaluation/safety-metrics.md) eval scorer | The plane, so a rule reaches the same verdict at the edge and at `POST /guardrails/{id}/test` |
+
+A callable cannot be serialised into a policy rule, which is why the distributed
+form needs the context slot and a cheaper single-call judge. Neither changes the
+other; use `grounded()` for a rule you write in Python, the type for one an
+operator writes centrally.
+
 ## Secrets detection
 
 `no_secrets()` blocks leaked credentials — private keys, AWS / GitHub / Slack /

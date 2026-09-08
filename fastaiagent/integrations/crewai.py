@@ -171,9 +171,7 @@ def _install_method_patches() -> None:
                 span.set_attribute(
                     "crewai.crew.agent_count", len(getattr(self, "agents", []) or [])
                 )
-                span.set_attribute(
-                    "crewai.crew.task_count", len(getattr(self, "tasks", []) or [])
-                )
+                span.set_attribute("crewai.crew.task_count", len(getattr(self, "tasks", []) or []))
                 inputs = kwargs.get("inputs") or (args[0] if args else None)
                 if inputs is not None and trace_payloads_enabled():
                     span.set_attribute("crewai.crew.inputs", _safe_json(inputs))
@@ -237,9 +235,7 @@ def _install_method_patches() -> None:
                 if task is not None and trace_payloads_enabled():
                     desc = getattr(task, "description", None)
                     if desc:
-                        span.set_attribute(
-                            "crewai.agent.task_description", _truncate(desc, 400)
-                        )
+                        span.set_attribute("crewai.agent.task_description", _truncate(desc, 400))
                 try:
                     result = original_execute_task(self, *args, **kwargs)
                 except BaseException:
@@ -528,9 +524,7 @@ def _install_event_listeners() -> None:
             system=provider,
             model=bare,
             request_messages=(
-                _safe_json(getattr(event, "messages", None))
-                if trace_payloads_enabled()
-                else None
+                _safe_json(getattr(event, "messages", None)) if trace_payloads_enabled() else None
             ),
         )
         for key in _llm_correlation_keys(event):
@@ -552,16 +546,14 @@ def _install_event_listeners() -> None:
             or usage.get("input_tokens")
             or usage.get("prompt_token_count")
             if isinstance(usage, dict)
-            else getattr(usage, "prompt_tokens", None)
-            or getattr(usage, "input_tokens", None)
+            else getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", None)
         )
         out_toks = (
             usage.get("completion_tokens")
             or usage.get("output_tokens")
             or usage.get("completion_token_count")
             if isinstance(usage, dict)
-            else getattr(usage, "completion_tokens", None)
-            or getattr(usage, "output_tokens", None)
+            else getattr(usage, "completion_tokens", None) or getattr(usage, "output_tokens", None)
         )
         # 1.9.x fallback: event has no ``usage``. The TokenCalcHandler
         # patch stashed the most recent call's usage — pop it.
@@ -574,9 +566,7 @@ def _install_event_listeners() -> None:
             input_tokens=int(in_toks) if in_toks else None,
             output_tokens=int(out_toks) if out_toks else None,
             response_content=(
-                _safe_json(response)
-                if response is not None and trace_payloads_enabled()
-                else None
+                _safe_json(response) if response is not None and trace_payloads_enabled() else None
             ),
         )
         cost = compute_cost_usd(bare, in_toks, out_toks)
@@ -626,9 +616,7 @@ def _install_event_listeners() -> None:
         # CrewAI event, so it would always be the side_effecting default.
         set_fastaiagent_attributes(span, **{"runner.type": "tool"})
         if trace_payloads_enabled():
-            span.set_attribute(
-                "tool.input", _safe_json(getattr(event, "tool_args", None))
-            )
+            span.set_attribute("tool.input", _safe_json(getattr(event, "tool_args", None)))
         event_id = str(getattr(event, "event_id", "") or "")
         tool_name = str(tool_name) if tool_name else ""
         if event_id:
@@ -767,12 +755,8 @@ def as_evaluable(
     def _evaluable(text: str) -> _EvaluableResult:
         inputs = in_map(text)
         with tracer.start_as_current_span("eval.case"):
-            result = crew.kickoff(
-                inputs=dict(inputs) if isinstance(inputs, dict) else inputs
-            )
-            return _EvaluableResult(
-                output=str(out_map(result)), trace_id=_current_trace_id()
-            )
+            result = crew.kickoff(inputs=dict(inputs) if isinstance(inputs, dict) else inputs)
+            return _EvaluableResult(output=str(out_map(result)), trace_id=_current_trace_id())
 
     return _evaluable
 
@@ -849,11 +833,16 @@ def _run_guardrails(
 ) -> None:
     if not guardrails:
         return
+    from fastaiagent.guardrail.actions import harness_halts
     from fastaiagent.integrations._registry import GuardrailBlocked
 
     for g in guardrails:
         result = g.execute(text)
-        if not result.passed and getattr(g, "blocking", True):
+        # ``warn`` records and continues; the payload-rewriting actions and
+        # ``reask`` need the SDK's own loop, so here they block. See
+        # fastaiagent.guardrail.actions.harness_halts.
+        reason = harness_halts(g, result)
+        if not result.passed:
             try:
                 from fastaiagent.ui.events import log_guardrail_event
 
@@ -861,12 +850,11 @@ def _run_guardrails(
                 merged.setdefault("framework", "crewai")
                 merged.setdefault("side", side)
                 result.metadata = merged
-                log_guardrail_event(g, result, agent_name=agent_name)
+                log_guardrail_event(g, result, agent_name=agent_name, data=text)
             except Exception:
                 pass
-            raise GuardrailBlocked(
-                f"{side} blocked by {g.name}: {result.message or ''}"
-            )
+        if reason is not None:
+            raise GuardrailBlocked(f"{side} blocked by {g.name}: {reason}")
 
 
 class _GuardedCrew:
@@ -1015,9 +1003,7 @@ def _crew_topology(crew: Any) -> dict[str, Any]:
             {
                 "id": node_id,
                 "type": "task",
-                "description": (
-                    str(getattr(task, "description", ""))[:200] if task else ""
-                ),
+                "description": (str(getattr(task, "description", ""))[:200] if task else ""),
                 "agent_role": getattr(getattr(task, "agent", None), "role", None),
             }
         )
@@ -1067,9 +1053,7 @@ def register_agent(crew: Any, *, name: str) -> None:
     )
     # Also register with the control plane so traces stamped with this
     # agent.name resolve to a real agent (no-op when not connected).
-    push_external_agent(
-        name, "crewai", model=_bare_model(first_model) if first_model else None
-    )
+    push_external_agent(name, "crewai", model=_bare_model(first_model) if first_model else None)
 
 
 def kb_as_tool(

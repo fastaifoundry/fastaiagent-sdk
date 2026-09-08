@@ -158,9 +158,7 @@ def _extract_token_usage(response: Any) -> tuple[int | None, int | None]:
     llm_output = getattr(response, "llm_output", None) or {}
     usage = llm_output.get("token_usage") or llm_output.get("usage") or {}
     in_toks = (
-        usage.get("prompt_tokens")
-        or usage.get("input_tokens")
-        or usage.get("prompt_token_count")
+        usage.get("prompt_tokens") or usage.get("input_tokens") or usage.get("prompt_token_count")
     )
     out_toks = (
         usage.get("completion_tokens")
@@ -179,16 +177,11 @@ def _extract_token_usage(response: Any) -> tuple[int | None, int | None]:
                     out_toks = out_toks or meta.get("output_tokens")
                 gi = getattr(gen, "generation_info", None) or {}
                 gi_usage = (
-                    gi.get("usage_metadata")
-                    or gi.get("token_usage")
-                    or gi.get("usage")
-                    or {}
+                    gi.get("usage_metadata") or gi.get("token_usage") or gi.get("usage") or {}
                 )
                 in_toks = in_toks or gi_usage.get("input_tokens") or gi_usage.get("prompt_tokens")
                 out_toks = (
-                    out_toks
-                    or gi_usage.get("output_tokens")
-                    or gi_usage.get("completion_tokens")
+                    out_toks or gi_usage.get("output_tokens") or gi_usage.get("completion_tokens")
                 )
                 if in_toks and out_toks:
                     break
@@ -272,9 +265,7 @@ def _build_handler() -> BaseCallbackHandler:
             self._runs: dict[UUID, Any] = {}
 
         # -- lifecycle helpers ------------------------------------------------
-        def _start(
-            self, run_id: UUID, name: str, parent_run_id: UUID | None = None
-        ) -> Any:
+        def _start(self, run_id: UUID, name: str, parent_run_id: UUID | None = None) -> Any:
             from opentelemetry import trace as otel_trace
 
             tracer = get_tracer("fastaiagent.integrations.langchain")
@@ -320,13 +311,10 @@ def _build_handler() -> BaseCallbackHandler:
         ) -> None:
             is_root = parent_run_id is None
             prefix = "langgraph" if _is_langgraph(serialized) else "langchain"
-            name_part = (
-                (serialized or {}).get("name")
-                or ((serialized or {}).get("id") or ["chain"])[-1]
-            )
-            span_name = (
-                f"{prefix}.{name_part}" if is_root else f"node.{name_part}"
-            )
+            name_part = (serialized or {}).get("name") or (
+                (serialized or {}).get("id") or ["chain"]
+            )[-1]
+            span_name = f"{prefix}.{name_part}" if is_root else f"node.{name_part}"
             span = self._start(run_id, span_name, parent_run_id=parent_run_id)
             if is_root:
                 set_fastaiagent_attributes(
@@ -375,9 +363,7 @@ def _build_handler() -> BaseCallbackHandler:
         ) -> None:
             model = _model_name_from_serialized(serialized)
             provider = _provider_from_serialized(serialized)
-            span = self._start(
-                run_id, f"llm.{provider}.{model}", parent_run_id=parent_run_id
-            )
+            span = self._start(run_id, f"llm.{provider}.{model}", parent_run_id=parent_run_id)
             inv = invocation_params or {}
             set_genai_attributes(
                 span,
@@ -521,12 +507,10 @@ def _build_handler() -> BaseCallbackHandler:
             **kwargs: Any,
         ) -> None:
             retriever_name = (serialized or {}).get("name", "retriever")
-            span = self._start(
-                run_id, f"retrieval.{retriever_name}", parent_run_id=parent_run_id
-            )
-            top_k = (serialized or {}).get("kwargs", {}).get("k") or (
-                serialized or {}
-            ).get("kwargs", {}).get("top_k")
+            span = self._start(run_id, f"retrieval.{retriever_name}", parent_run_id=parent_run_id)
+            top_k = (serialized or {}).get("kwargs", {}).get("k") or (serialized or {}).get(
+                "kwargs", {}
+            ).get("top_k")
             if top_k is not None:
                 span.set_attribute("retrieval.top_k", int(top_k))
             if trace_payloads_enabled():
@@ -668,12 +652,8 @@ def as_evaluable(
     def _evaluable(text: str) -> _EvaluableResult:
         graph_input = in_map(text)
         with tracer.start_as_current_span("eval.case"):
-            result = graph_or_chain.invoke(
-                graph_input, config={"callbacks": [handler]}
-            )
-            return _EvaluableResult(
-                output=out_map(result), trace_id=_current_trace_id()
-            )
+            result = graph_or_chain.invoke(graph_input, config={"callbacks": [handler]})
+            return _EvaluableResult(output=out_map(result), trace_id=_current_trace_id())
 
     return _evaluable
 
@@ -772,22 +752,28 @@ def _run_guardrails(
     side: str,
     agent_name: str | None,
 ) -> None:
-    """Block-only guardrail loop (decision A in harness.md).
+    """Guardrail loop for a wrapped LangChain runnable (decision A in harness.md).
 
-    For each guardrail, calls ``g.execute(text)``. If it fails AND the
-    guardrail is blocking, we log the event with ``framework`` tagged
-    on it and raise ``GuardrailBlocked``. Filtering/redaction is not
-    supported (the SDK's ``GuardrailResult`` has no ``filtered_text``);
-    documented in ``docs/integrations/overview.md``.
+    For each guardrail, calls ``g.execute(text)`` and asks
+    :func:`fastaiagent.guardrail.actions.harness_halts` what the outcome costs
+    here. ``warn`` records and continues; everything else stops the call with
+    ``GuardrailBlocked``.
+
+    A proxy owns the verdict but not the payload, so the payload-rewriting
+    actions (``mask`` / ``override``) and ``reask`` cannot be honoured and block
+    instead — they need the SDK's own agent loop. See
+    ``docs/guardrails/actions.md``.
     """
     if not guardrails:
         return
 
+    from fastaiagent.guardrail.actions import harness_halts
     from fastaiagent.integrations._registry import GuardrailBlocked
 
     for g in guardrails:
         result = g.execute(text)
-        if not result.passed and getattr(g, "blocking", True):
+        reason = harness_halts(g, result)
+        if not result.passed:
             try:
                 from fastaiagent.ui.events import log_guardrail_event
 
@@ -797,14 +783,13 @@ def _run_guardrails(
                 merged_metadata.setdefault("framework", "langchain")
                 merged_metadata.setdefault("side", side)
                 result.metadata = merged_metadata
-                log_guardrail_event(g, result, agent_name=agent_name)
+                log_guardrail_event(g, result, agent_name=agent_name, data=text)
             except Exception:
                 # Logging is best-effort; never fail a guardrail check
                 # because the event store hiccupped.
                 pass
-            raise GuardrailBlocked(
-                f"{side} blocked by {g.name}: {result.message or ''}"
-            )
+        if reason is not None:
+            raise GuardrailBlocked(f"{side} blocked by {g.name}: {reason}")
 
 
 class _GuardedRunnable:
@@ -969,9 +954,7 @@ def prompt_from_registry(
             _push_prompt_lineage(slug, int(prompt.version))
             return super().format_messages(**kwargs)
 
-    tracked = _TrackedTemplate(
-        messages=base.messages, input_variables=list(base.input_variables)
-    )
+    tracked = _TrackedTemplate(messages=base.messages, input_variables=list(base.input_variables))
 
     if agent:
         # Auto-attach to the external_agent_attachments table so the
@@ -1057,10 +1040,7 @@ def _extract_model(compiled: Any) -> tuple[str | None, str | None]:
             continue
         if _classify_node_data(data) != "llm":
             continue
-        model = (
-            getattr(data, "model_name", None)
-            or getattr(data, "model", None)
-        )
+        model = getattr(data, "model_name", None) or getattr(data, "model", None)
         provider = type(data).__name__.lower().replace("chat", "")
         return (str(model) if model else None, provider or None)
     return None, None

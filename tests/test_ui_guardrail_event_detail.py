@@ -249,9 +249,7 @@ class TestDetailEndpoint:
         assert body["event"]["metadata"]["before"] == "alice@example.com"
         assert body["event"]["metadata"]["after"] == "[REDACTED]"
 
-    def test_context_includes_surrounding_spans_and_siblings(
-        self, client: TestClient
-    ) -> None:
+    def test_context_includes_surrounding_spans_and_siblings(self, client: TestClient) -> None:
         r = client.get("/api/guardrail-events/ev-blocked")
         body = r.json()
         # Surrounding spans on the same trace.
@@ -301,13 +299,11 @@ class TestFalsePositivePatch:
         )
         assert r3.status_code == 200
         assert r3.json()["false_positive"] is False
-        assert client.get("/api/guardrail-events/ev-warned").json()["event"][
-            "false_positive"
-        ] is False
+        assert (
+            client.get("/api/guardrail-events/ev-warned").json()["event"]["false_positive"] is False
+        )
 
-    def test_persists_across_db_reopen(
-        self, client: TestClient, seeded_db: Path
-    ) -> None:
+    def test_persists_across_db_reopen(self, client: TestClient, seeded_db: Path) -> None:
         """Spec: 'False positive flag persists on page refresh.' Equivalent
         at the test layer is "row survives a new SQLiteHelper connection."
         """
@@ -353,9 +349,7 @@ class TestListFilters:
             "ev-warned",
         }
 
-    def test_filter_by_false_positive_flag(
-        self, client: TestClient
-    ) -> None:
+    def test_filter_by_false_positive_flag(self, client: TestClient) -> None:
         # Mark one as FP, then filter.
         client.patch(
             "/api/guardrail-events/ev-blocked/false-positive",
@@ -388,9 +382,7 @@ class TestProjectScoping:
             )
 
         # Build app scoped to a *different* project.
-        app = build_app(
-            db_path=str(db_path), no_auth=True, project_id="my-project"
-        )
+        app = build_app(db_path=str(db_path), no_auth=True, project_id="my-project")
         client = TestClient(app)
 
         # Detail 404 — across-project lookup blocked.
@@ -403,3 +395,72 @@ class TestProjectScoping:
             ).status_code
             == 404
         )
+
+
+# ---------------------------------------------------------------------------
+# The runtime now writes the outcome the detail page always knew how to render
+# ---------------------------------------------------------------------------
+
+
+class TestActionColumns:
+    """v18 (1.57.0). Until the action spectrum shipped, the ``filtered`` outcome
+    and its before/after diff existed only in the UI and in the seeded fixtures
+    above — no runtime code could produce one. A ``mask`` rule does."""
+
+    def test_schema_carries_the_action_columns(self, seeded_db: Path) -> None:
+        with SQLiteHelper(seeded_db) as db:
+            cols = {r["name"] for r in db.fetchall("PRAGMA table_info(guardrail_events)")}
+        assert {"action", "action_taken", "severity", "floor"} <= cols
+        assert CURRENT_SCHEMA_VERSION >= 18
+
+    def test_a_mask_rule_writes_a_filtered_row_with_a_diff(self, temp_dir: Path) -> None:
+        from fastaiagent._internal.config import get_config, reset_config
+        from fastaiagent.guardrail.guardrail import (
+            Guardrail,
+            GuardrailPosition,
+            GuardrailType,
+        )
+        from fastaiagent.ui.events import log_guardrail_event
+
+        db_path = temp_dir / "local.db"
+        init_local_db(db_path).close()
+        reset_config()
+        get_config().ui_enabled = True
+
+        rule = Guardrail(
+            name="mask-ssn",
+            guardrail_type=GuardrailType.regex,
+            position=GuardrailPosition.output,
+            config={"pattern": r"\b\d{3}-\d{2}-\d{4}\b", "should_match": False},
+            action="mask",
+            severity="medium",
+            floor=True,
+        )
+        dirty = "his ssn is 123-45-6789"
+        result = rule.execute(dirty)
+        log_guardrail_event(rule, result, db_path=str(db_path), data=dirty)
+
+        with SQLiteHelper(db_path) as db:
+            rows = db.fetchall("SELECT * FROM guardrail_events WHERE guardrail_name = 'mask-ssn'")
+        assert len(rows) >= 1
+        row = rows[-1]
+        assert row["outcome"] == "filtered"
+        assert row["action"] == "mask"
+        assert row["action_taken"] == "masked"
+        assert row["severity"] == "medium"
+        assert row["floor"] == 1
+        metadata = json.loads(row["metadata"])
+        assert metadata["before"] == dirty
+        assert metadata["after"] == "his ssn is [REDACTED]"
+
+    def test_the_list_endpoint_returns_the_new_fields(self, client: TestClient) -> None:
+        events = client.get("/api/guardrail-events").json()["rows"]
+        assert events, "the seeded fixture should return rows"
+        for e in events:
+            assert "action" in e and "action_taken" in e
+            assert "severity" in e and "floor" in e
+
+    def test_filtered_is_a_usable_outcome_filter(self, client: TestClient) -> None:
+        events = client.get("/api/guardrail-events", params={"outcome": "filtered"}).json()["rows"]
+        assert events
+        assert all(e["outcome"] == "filtered" for e in events)

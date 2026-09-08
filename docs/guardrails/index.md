@@ -180,9 +180,9 @@ def check_quality(text: str) -> GuardrailResult:
 quality_guard = Guardrail(name="quality_check", fn=check_quality)
 ```
 
-## Five Implementation Types
+## Seven Implementation Types
 
-Beyond inline functions, guardrails support four more implementation types for configuration-driven validation:
+Beyond inline functions, guardrails support six more implementation types for configuration-driven validation. The last two are model-backed judges with structure, and are documented in full under [Actions, severity & floor](actions.md#two-model-backed-check-types):
 
 ### Code (default)
 
@@ -437,15 +437,27 @@ For advanced use cases, call the executor directly:
 ```python
 from fastaiagent.guardrail import execute_guardrails, GuardrailPosition
 
-results = await execute_guardrails(
+outcome = await execute_guardrails(
     guardrails=[guard1, guard2, guard3],
     data="text to validate",
     position=GuardrailPosition.output,
 )
 
-for r in results:
+for r in outcome:
     print(f"Passed: {r.passed}, Time: {r.execution_time_ms}ms, Message: {r.message}")
+
+# A `mask` or `override` rule rewrites the payload, so the outcome also carries
+# the value to carry forward. `outcome` iterates and indexes like the list it
+# used to be, so existing code keeps working.
+print(outcome.data, outcome.modified)
 ```
+
+| Field | Description |
+|-------|-------------|
+| `results` | The verdicts, one per applicable guardrail |
+| `data` | The payload to carry forward — rewritten when something rewrote it, otherwise the original |
+| `modified` | Did anything rewrite it? |
+| `reask` | The first rule that asked to re-prompt the model, if any |
 
 ## GuardrailResult
 
@@ -457,6 +469,12 @@ for r in results:
 | `execution_time_ms` | `int` | How long the check took |
 | `metadata` | `dict` | Extra data (e.g., detected PII types, blocked categories) |
 | `errored` | `bool` | True when the check itself failed to run; `passed` then reflects the `on_error` policy, not a verdict |
+| `action` | `str` | What the rule was *configured* to cost: `block` / `warn` / `mask` / `override` / `reask` |
+| `action_taken` | `str` | What it *actually did*: `none` / `blocked` / `warned` / `masked` / `overridden` / `reask`. Branch on this, never on `action` |
+| `modified_data` | `str \| dict \| None` | The rewritten payload, when the action produced one |
+
+See [Actions, severity & floor](actions.md) for what each action does and the
+two cases where a rewrite degrades to a block.
 
 ## Fail policy: `on_error`
 
@@ -499,7 +517,10 @@ data = guardrail.to_dict()
 #   "config": {"pattern": "https?://...", "should_match": false},
 #   "blocking": true,
 #   "description": "Blocks URLs in output",
-#   "on_error": "block"
+#   "on_error": "block",
+#   "action": "block",
+#   "severity": null,
+#   "floor": false
 # }
 
 restored = Guardrail.from_dict(data)

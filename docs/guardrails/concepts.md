@@ -66,12 +66,12 @@ Concretely, `execute_guardrails(guardrails, data, position)` filters the list to
 that position, then:
 
 ```python
-for g in blocking:                       # sequential, fail-fast
-    result = await g.aexecute(data)
-    if not result.passed:
+for g in blocking:                        # sequential, fail-fast
+    result = await g.aexecute(outcome.data)
+    if halts(g, result):                  # ← what the action actually did
         raise GuardrailBlockedError(...)  # stops the run
 results += await asyncio.gather(          # non-blocking, parallel
-    *[g.aexecute(data) for g in non_blocking],
+    *[g.aexecute(outcome.data) for g in non_blocking],
     return_exceptions=True,               # an exception → GuardrailResult(passed=False)
 )
 ```
@@ -80,12 +80,40 @@ A blocking failure at **any** position raises `GuardrailBlockedError`, which
 propagates out of the agent run — that's how `input`/`tool_call`/`tool_result`/`output`
 all "stop" the run when they must.
 
+### The third axis: what a failure costs
+
+`blocking` decides *whether a rule runs inline and can halt*. It does not decide
+what a failure is worth. That is `action`, a third and independent axis:
+
+| Axis | Field | Question |
+|---|---|---|
+| Scheduling | `blocking` | Does this run inline, and can it halt? |
+| Degradation | `on_error` | What does an *un-runnable* check mean? |
+| Consequence | `action` | What does a genuine failure cost? |
+
+`action` is one of `block` (the default), `warn`, `mask`, `override` or `reask`.
+A `warn` rule still runs inline and the caller still waits for its verdict — it
+just doesn't stop; a `mask` rule redacts the offending span and the run carries
+on with the redacted value. Because `mask` and `override` change the payload,
+`execute_guardrails` returns a `GuardrailOutcome` carrying both the verdicts and
+the value to carry forward.
+
+The rule that keeps this honest: every caller branches on what the action
+**actually did** (`action_taken`), never on what it was configured to do. That
+is why "an errored check always blocks" and "a mask with nothing to mask blocks"
+need no special case anywhere.
+
+See [Actions, severity & floor](actions.md) for the full contract, including
+where a rewrite cannot be applied and the run blocks instead.
+
 ### The verdict object
 
 Every guardrail — whatever its type — resolves to one
-`GuardrailResult(passed, score, message, execution_time_ms, metadata, errored)`.
-`passed` is the only field the executor branches on; the rest are for
-observability (the Local UI reads them). For a `code` guardrail, your `fn` can
+`GuardrailResult(passed, score, message, execution_time_ms, metadata, errored,
+action, action_taken, modified_data)`. The executor branches on `passed` and
+`action_taken`; `score`, `message` and `metadata` are for observability (the
+Local UI reads them), and `modified_data` carries the rewritten payload when the
+action produced one. For a `code` guardrail, your `fn` can
 return a bare `bool` (coerced to `GuardrailResult(passed=...)`) or a full
 `GuardrailResult`. A guardrail crash never crashes the agent — a raised
 exception is caught and resolved according to the guardrail's `on_error` policy
@@ -184,6 +212,10 @@ classified with the OpenInference standard kind and carries the outcome in the
 | `fastaiagent.guardrail.passed` | The verdict |
 | `fastaiagent.guardrail.errored` | `true` when the check *couldn't run* and `passed` reflects `on_error`, not a real verdict |
 | `fastaiagent.guardrail.checks` | JSON: `[{"name": ..., "result": "pass"｜"block"｜"error"}]` |
+| `fastaiagent.guardrail.action` | What the rule was configured to cost: `block` / `warn` / `mask` / `override` / `reask` |
+| `fastaiagent.guardrail.action_taken` | What it actually did: `none` / `blocked` / `warned` / `masked` / `overridden` / `reask` |
+| `fastaiagent.guardrail.severity` | `low` / `medium` / `high` / `critical`, when the rule carries one |
+| `fastaiagent.guardrail.floor` | `true` when the rule is the domain-wide baseline |
 
 The split matters: **OpenInference standardizes the span *kind*, not the outcome
 fields.** There is no ecosystem convention for "what did this guardrail decide",
@@ -207,7 +239,8 @@ without the runtime](../integrations/primitives-without-the-runtime.md).
 
 ## Next steps
 
-- [Guardrails](index.md) — the full reference: all five types, built-in factories, custom guardrails, serialization
+- [Guardrails](index.md) — the full reference: all seven types, built-in factories, custom guardrails, serialization
+- [Actions, severity & floor](actions.md) — what a failure costs, and the two model-backed check types
 - [Guardrails & evals without the runtime](../integrations/primitives-without-the-runtime.md) — borrowing `run_guardrail` from a foreign framework
 - [Responsible AI (Trust Layer)](responsible-ai.md) — the safety bundle by concern
 - [Managed governance](managed-governance.md) — platform-enforced, approval-gated tool policy

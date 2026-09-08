@@ -77,6 +77,19 @@ FASTAIAGENT_ATTRIBUTES = {
     # per-span CHECKS row (green pass / red block / amber error). Set via
     # :func:`set_guardrail_attributes`.
     "fastaiagent.guardrail.checks": str,
+    # Wire v1.9. ``action`` is what the rule was configured to cost
+    # (block|warn|mask|override|reask); ``action_taken`` is what actually
+    # happened (none|blocked|warned|masked|overridden|reask). They differ
+    # whenever an action could not get what it asked for — an errored check
+    # always blocks, and a mask that finds no span degrades to a block. Read
+    # ``action_taken``; ``action`` is context, not outcome.
+    "fastaiagent.guardrail.action": str,
+    "fastaiagent.guardrail.action_taken": str,
+    # Operator-assigned impact (low|medium|high|critical). Carried and shown;
+    # nothing in enforcement depends on it.
+    "fastaiagent.guardrail.severity": str,
+    # True when this is the domain-wide baseline only an admin may change.
+    "fastaiagent.guardrail.floor": bool,
     "fastaiagent.prompt.name": str,
     "fastaiagent.prompt.version": int,
     "fastaiagent.prompt.slug": str,
@@ -195,6 +208,11 @@ def set_guardrail_attributes(
     passed: bool,
     checks: str,
     errored: bool = False,
+    *,
+    action: str | None = None,
+    action_taken: str | None = None,
+    severity: str | None = None,
+    floor: bool | None = None,
 ) -> None:
     """Stamp guardrail-outcome attributes on a per-guardrail child span.
 
@@ -217,21 +235,33 @@ def set_guardrail_attributes(
     ``checks`` is a pre-serialized JSON string, conventionally
     ``[{"name": name, "result": "pass"|"block"|"error"}]``. ``errored`` marks a
     check that could not run (its ``passed`` reflects the ``on_error`` policy).
+
+    ``action`` / ``action_taken`` / ``severity`` / ``floor`` are the wire-v1.9
+    fields. They ride as their own flat attributes rather than being folded into
+    ``checks``, whose three-value vocabulary the plane already parses. Each is
+    omitted when not supplied, so a caller that knows nothing about actions
+    stamps exactly what it stamped before.
     """
     # Both classifiers are plain (unprefixed) attributes carried inside the open
     # OTel envelope — no wire-protocol bump for either.
     span.set_attribute("span_type", "guardrail")  # legacy — old-plane back-compat
     span.set_attribute("openinference.span.kind", "GUARDRAIL")  # the standard kind
-    set_fastaiagent_attributes(
-        span,
-        **{
-            "guardrail.name": name,
-            "guardrail.position": position,
-            "guardrail.passed": passed,
-            "guardrail.errored": errored,
-            "guardrail.checks": checks,
-        },
-    )
+    attrs: dict[str, Any] = {
+        "guardrail.name": name,
+        "guardrail.position": position,
+        "guardrail.passed": passed,
+        "guardrail.errored": errored,
+        "guardrail.checks": checks,
+    }
+    if action is not None:
+        attrs["guardrail.action"] = action
+    if action_taken is not None:
+        attrs["guardrail.action_taken"] = action_taken
+    if severity is not None:
+        attrs["guardrail.severity"] = severity
+    if floor is not None:
+        attrs["guardrail.floor"] = floor
+    set_fastaiagent_attributes(span, **attrs)
 
 
 def set_evaluation_attributes(
@@ -296,6 +326,10 @@ def emit_guardrail(
     checks: str,
     errored: bool = False,
     message: str | None = None,
+    action: str | None = None,
+    action_taken: str | None = None,
+    severity: str | None = None,
+    floor: bool | None = None,
 ) -> None:
     """Open, stamp and close one guardrail-outcome child span in a single call.
 
@@ -323,6 +357,10 @@ def emit_guardrail(
                 passed=passed,
                 checks=checks,
                 errored=errored,
+                action=action,
+                action_taken=action_taken,
+                severity=severity,
+                floor=floor,
             )
             if passed:
                 # A degraded pass (errored + on_error="allow") keeps an OK

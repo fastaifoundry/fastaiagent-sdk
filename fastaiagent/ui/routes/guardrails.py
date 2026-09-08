@@ -29,6 +29,15 @@ class GuardrailEvent(BaseModel):
     metadata: dict[str, Any]
     false_positive: bool = False
     false_positive_at: str | None = None
+    # What the failure cost. ``action`` is what the rule was configured to do,
+    # ``action_taken`` what it actually did — they differ whenever the action
+    # could not get what it asked for (an errored check always blocks; a mask
+    # with nothing to mask blocks). Both are None for events recorded before
+    # 1.57.0.
+    action: str | None = None
+    action_taken: str | None = None
+    severity: str | None = None
+    floor: bool = False
 
 
 def _row_to_event(r: dict[str, Any]) -> GuardrailEvent:
@@ -48,6 +57,10 @@ def _row_to_event(r: dict[str, Any]) -> GuardrailEvent:
         metadata=json.loads(r.get("metadata") or "{}"),
         false_positive=bool(r.get("false_positive") or 0),
         false_positive_at=r.get("false_positive_at"),
+        action=r.get("action"),
+        action_taken=r.get("action_taken"),
+        severity=r.get("severity"),
+        floor=bool(r.get("floor") or 0),
     )
 
 
@@ -56,13 +69,19 @@ def list_events(
     request: Request,
     _user: str = Depends(require_session),
     rule: str | None = Query(default=None),
-    outcome: str | None = Query(default=None),
+    outcome: str | None = Query(
+        default=None,
+        description=(
+            "Filter by ``outcome``: passed / blocked / warned / errored / "
+            "filtered (the payload was masked or overridden and the run continued)."
+        ),
+    ),
     agent: str | None = Query(default=None),
     type: str | None = Query(
         default=None,
         description=(
             "Filter by ``guardrail_type``: code / regex / llm_judge / "
-            "schema / classifier."
+            "schema / classifier / content_safety / groundedness."
         ),
     ),
     position: str | None = Query(
@@ -174,9 +193,7 @@ def _coerce_text(value: Any) -> str | None:
         return str(value)
 
 
-def _load_triggering_span(
-    db: Any, span_id: str | None, project_id: str
-) -> dict[str, Any] | None:
+def _load_triggering_span(db: Any, span_id: str | None, project_id: str) -> dict[str, Any] | None:
     """Fetch the span that this guardrail evaluated, if we can find it.
 
     Reads the recorded span_id from the event row. Returns ``None`` when
@@ -185,11 +202,7 @@ def _load_triggering_span(
     """
     if not span_id:
         return None
-    pid_clause, pid_params = (
-        ("AND project_id = ?", (project_id,))
-        if project_id
-        else ("", ())
-    )
+    pid_clause, pid_params = ("AND project_id = ?", (project_id,)) if project_id else ("", ())
     row = db.fetchone(
         f"SELECT * FROM spans WHERE span_id = ? {pid_clause} LIMIT 1",
         (span_id, *pid_params),
@@ -207,11 +220,7 @@ def _surrounding_spans(
     """
     if not trace_id:
         return []
-    pid_clause, pid_params = (
-        ("AND project_id = ?", (project_id,))
-        if project_id
-        else ("", ())
-    )
+    pid_clause, pid_params = ("AND project_id = ?", (project_id,)) if project_id else ("", ())
     rows = db.fetchall(
         f"""SELECT span_id, name, start_time, end_time, status, attributes
             FROM spans
@@ -265,16 +274,14 @@ def _sibling_events(
         params.append(project_id)
     rows = db.fetchall(
         f"""SELECT * FROM guardrail_events
-            WHERE {' AND '.join(clauses)}
+            WHERE {" AND ".join(clauses)}
             ORDER BY timestamp ASC""",
         tuple(params),
     )
     return [_row_to_event(r).model_dump() for r in rows]
 
 
-def _trigger_payload(
-    span: dict[str, Any] | None, position: str | None
-) -> dict[str, Any]:
+def _trigger_payload(span: dict[str, Any] | None, position: str | None) -> dict[str, Any]:
     """Reconstruct what the guardrail evaluated.
 
     Pulls input vs output off the triggering span based on the guardrail's
@@ -339,16 +346,12 @@ def get_event_detail(
                 status.HTTP_404_NOT_FOUND, f"Guardrail event '{event_id}' not found"
             )
         event = _row_to_event(row)
-        triggering_span = _load_triggering_span(
-            db, event.span_id, ctx.project_id
-        )
+        triggering_span = _load_triggering_span(db, event.span_id, ctx.project_id)
         return {
             "event": event.model_dump(),
             "trigger": _trigger_payload(triggering_span, event.position),
             "context": {
-                "spans": _surrounding_spans(
-                    db, event.trace_id, ctx.project_id
-                ),
+                "spans": _surrounding_spans(db, event.trace_id, ctx.project_id),
                 "sibling_events": _sibling_events(
                     db, event.event_id, event.trace_id, event.span_id, ctx.project_id
                 ),

@@ -5,6 +5,144 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.57.0] - 2026-09-08 — what a guardrail failure costs
+
+A guardrail could only ever do one thing when it failed: stop the run. So a rule
+an operator authored in the console as **"Mask PII in output"** blocked instead
+of redacting, and two check types the plane already distributes — `content_safety`
+and `groundedness` — were skipped at the edge entirely. Rules that looked active
+in the console enforced nothing inside the customer's own process.
+
+This release closes that. Every rule now carries an `action` — `block`, `warn`,
+`mask`, `override` or `reask` — and the SDK does what it says.
+
+**Nothing that works today changes.** A rule with no `action` key (any plane
+older than wire v1.9) and a rule carrying an action this build has never heard of
+both land on `block`, which is exactly what they did before. The one signature
+change is described under *Compatibility*.
+
+### Added
+
+- **The action spectrum.** `action` on `Guardrail`, `action_taken` and
+  `modified_data` on `GuardrailResult`, and a new `fastaiagent.guardrail.actions`
+  module holding the semantics. Two safety properties are pinned and tested: an
+  **errored check always blocks** whatever the action says (nothing is known about
+  the payload, so there is nothing to mask), and a **`mask` that finds no span to
+  redact degrades to a block** rather than passing the payload through untouched.
+  Both fall out of one rule — every caller branches on what the action *actually
+  did*, never on what it was configured to do.
+- **`reask`, which only the SDK can do.** An output guardrail can re-prompt the
+  model with its own failure as feedback, bounded by the new
+  `AgentConfig.guardrail_retries` (default `1`). Exhausting the cap blocks — a
+  re-ask that never converges must not become a silent pass. The plane runs no
+  agent loop, so centrally it records the intent and fails closed; this is the
+  half only the edge can supply.
+- **`content_safety`.** Scores the payload against the MLCommons hazard taxonomy
+  (S1–S14) with **a bar per category** — "block hate at 0.3 but allow borderline
+  specialised advice up to 0.8", which `llm_judge`'s PASS/FAIL cannot express.
+  Per-category scores, the thresholds they were judged against, what tripped and
+  what the judge declined to score all land in the result's metadata, in the same
+  shape the plane records. An unparseable judge response raises, so `on_error`
+  decides: treating it as all-zeros would turn a model outage into a silent pass.
+- **`groundedness`.** Scores an answer against the context it was supposed to use.
+  It is the only rule that reads a *pair*, and an output guardrail receives only
+  the answer — so `fa.guardrail_context(context=docs)` gives the retrieval step a
+  run-scoped, `ContextVar`-backed slot to put it in, and `config.context_key`
+  names the key the rule wants. **A missing context fails closed:** an answer
+  scored against nothing blocks everything and scored against itself blocks
+  nothing, and both are worse than reporting that the rule could not run.
+- **`severity` and `floor`**, read off the wire onto the `Guardrail`, serialized,
+  traced and shown in the Local UI. Neither changes enforcement — `floor` is
+  enforced by the plane — but "critical" and "this is the organisation baseline"
+  are useful context in a local run.
+- Four new span attributes: `fastaiagent.guardrail.{action,action_taken,severity,floor}`,
+  and matching optional keyword arguments on `emit_guardrail` /
+  `set_guardrail_attributes` for runtimes that borrow the primitives.
+- `examples/97_guardrail_actions.py` — every action side by side, deterministic,
+  no key or live plane needed.
+
+### Changed
+
+- **`mask` and `override` rewrite the payload, so `execute_guardrails` now returns
+  a `GuardrailOutcome`** carrying both the verdicts and the value to carry
+  forward. The rewritten value is what the *next* rule in the sequence sees, and
+  what the agent uses from there on: the text sent to the model, the
+  `AgentResult.output` (with `parsed` re-derived), the arguments handed to a tool,
+  the result the model is told.
+- **Where a rewrite cannot be applied faithfully, the run blocks** rather than
+  letting the payload through. That is multimodal input (the judged text is a
+  *summary* of the parts, so substituting it would drop your images), a streamed
+  output (every `TextDelta` has already been yielded — a mask cannot un-emit the
+  span it was meant to redact), a tool call whose rewrite is no longer an
+  arguments object, and a tool result carrying image/PDF content parts. These are
+  not regressions: before this release every such rule blocked anyway.
+- **`content_safety` and `groundedness` join `_RECONSTRUCTABLE`.** Until now they
+  were skipped at debug level — the correct conservative behaviour, just not a
+  useful one.
+- The Local UI's `filtered` outcome is now **produced**, not only rendered. The
+  event-detail page has always known it and drawn a before/after diff; no runtime
+  code could write one, because every failure was a block. A `mask` or `override`
+  rule now writes `outcome="filtered"` with `metadata.before` / `metadata.after`
+  filled in. Local schema **v17 → v18** adds `action`, `action_taken`, `severity`
+  and `floor` to `guardrail_events` (additive; `NULL` for older events).
+- The LangChain / CrewAI / PydanticAI wrappers honour `warn` and continue.
+  `mask`, `override` and `reask` need the payload or the loop, neither of which a
+  proxy owns, so there they block and say why.
+- `GuardrailType` grows two members; `Guardrail.to_dict()` / `from_dict()` grow
+  `action`, `severity` and `floor`, which also puts them on the `agent.guardrails`
+  span attribute and therefore into replay.
+
+### Docs
+
+- **New:** `docs/guardrails/actions.md` — the three axes, all five actions, the
+  two never-negotiable rules, where a rewrite applies versus blocks, `reask`, both
+  new check types, `severity`/`floor`, and the compatibility story.
+- `docs/guardrails/concepts.md` — the execution model gains the consequence axis;
+  the verdict object and the trace-attribute table gain the new fields.
+- `docs/guardrails/index.md` — "Five Implementation Types" → seven; the executor
+  section returns a `GuardrailOutcome`; `GuardrailResult` and the serialization
+  example updated.
+- `docs/guardrails/managed-governance.md` — plane rules now carry actions; a
+  callout on supplying groundedness context; **Verified end-to-end** names the two
+  new gates.
+- `docs/guardrails/responsible-ai.md` — `grounded()` versus the `groundedness`
+  type: two engines, and why.
+- `docs/ui/guardrail-events.md` — the v18 columns and the `filtered` outcome.
+- `docs/integrations/primitives-without-the-runtime.md` — the wire-contract table.
+
+### Compatibility
+
+- **Wire minor v1.9, additive.** `GET /public/v1/policy` gains `action`,
+  `severity` and `floor` on every rule plus two `implementation_type` values.
+  Every rule is read key-by-key with `.get()`, so an SDK predating this ignores
+  them, and this SDK against an older plane sees no `action` key and blocks —
+  both directions land on the pre-v1.9 behaviour. Two contract tests pin exactly
+  that.
+- **One signature change.** `execute_guardrails` returns `GuardrailOutcome`
+  instead of `list[GuardrailResult]`. It implements `__iter__`, `__len__`,
+  `__getitem__` and `__bool__`, so iterating, indexing, `len()`, `list()` and
+  unpacking all keep working — only an explicit `isinstance(x, list)` breaks. The
+  symbol is in `fastaiagent.guardrail.__all__` but not in the top-level package
+  nor in the documented stability surface.
+- Local UI schema v17 → v18 is forward-only `ADD COLUMN`; an older SDK opening a
+  v18 file runs no migration and reads by name.
+
+### Verified end-to-end
+
+- `tests/e2e/test_guardrail_actions_e2e.py` — the two judges against a real model
+  (a hazard category tripping and a benign reply passing, a per-category bar
+  changing the verdict on the same content, a supported answer separated from an
+  invented one), and a real model correcting itself when a `reask` rule tells it
+  why. Runs in CI.
+- `tests/e2e/test_connected_guardrail_actions_e2e.py` — against a **live local
+  plane**: rules authored through the console API arrive over `/policy` carrying
+  `action`/`severity`/`floor`, a "Mask PII in output" rule redacts a real agent
+  reply in-process (`'The customer\'s SSN is [REDACTED] on file.'`) and lands a
+  `filtered` event with a before/after diff, `warn` / `override` / `block` each do
+  what they say, `content_safety` blocks naming the category, `groundedness`
+  passes with context and fails closed without it, and `floor` survives the wire.
+  9 gates, all green.
+
 ## [1.56.0] - 2026-09-04 — permissive PDF engine, plus bring-your-own
 
 1.55.0 cleared AGPL from the *default* install. This clears it from everywhere

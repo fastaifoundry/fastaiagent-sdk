@@ -113,6 +113,7 @@ nav:
       - Guardrails:
           - "Concepts & Mental Model": guardrails/concepts.md
           - guardrails/index.md
+          - "Actions, severity & floor": guardrails/actions.md
           - "Responsible AI (Trust Layer)": guardrails/responsible-ai.md
           - "Managed governance (approvals)": guardrails/managed-governance.md
       - Tools:
