@@ -37,6 +37,7 @@ Run:
 from __future__ import annotations
 
 import os
+import uuid
 from collections.abc import Iterator
 from typing import Any
 
@@ -48,6 +49,14 @@ pytestmark = pytest.mark.e2e
 
 SSN_PATTERN = r"\b\d{3}-\d{2}-\d{4}\b"
 LEAK = "The customer's SSN is 123-45-6789 on file."
+
+#: Every rule this gate creates is suffixed with this, so a run never shares a
+#: name with one a previous run left behind. That matters: the plane resolves a
+#: guardrail span to its row **by name**, and where two rules in a domain share
+#: one it picks the lower id — the older rule — so a leftover would silently
+#: absorb this run's evidence. Rules that recorded executions cannot be deleted
+#: (they are audit evidence), only deactivated, so leftovers are normal.
+RUN = uuid.uuid4().hex[:8]
 
 
 #: One login for the whole module. The plane rate-limits login attempts (rightly),
@@ -98,7 +107,21 @@ class _Rules:
         self._c, self._h, self._domain = client, headers, domain_id
         self.created: list[str] = []
 
+    @property
+    def client(self) -> Any:
+        """The authoring session, for the assertions that read the plane back."""
+        return self._c
+
+    @property
+    def headers(self) -> dict[str, str]:
+        return self._h
+
+    @property
+    def domain_id(self) -> str:
+        return self._domain
+
     def add(self, **body: Any) -> dict[str, Any]:
+        body["name"] = f"{body['name']}-{RUN}"
         payload = {
             "description": "SDK guardrail-action e2e (safe to delete)",
             "guardrail_type": "output",
@@ -118,14 +141,77 @@ class _Rules:
         self.created.append(rule["id"])
         return rule
 
+    def add_in_domain(self, domain_id: str, **body: Any) -> dict[str, Any]:
+        """Author a rule in *another* domain, to prove tenancy holds."""
+        body.setdefault("name", "unnamed")
+        payload = {
+            "description": "SDK guardrail-action e2e (safe to delete)",
+            "guardrail_type": "output",
+            "validation_mode": "blocking",
+            "is_active": True,
+            "on_error": "block",
+            **body,
+        }
+        resp = self._c.post(
+            "/api/v1/guardrails", headers=self._h, params={"domain_id": domain_id}, json=payload
+        )
+        assert resp.status_code < 300, f"authoring {body.get('name')!r} failed: {resp.text}"
+        rule = resp.json()
+        self.created.append(rule["id"])
+        return rule
+
     def cleanup(self) -> None:
         for rule_id in self.created:
-            self._c.delete(f"/api/v1/guardrails/{rule_id}", headers=self._h)
+            resp = self._c.delete(f"/api/v1/guardrails/{rule_id}", headers=self._h)
+            if resp.status_code == 409:
+                # The rule has recorded executions, which are audit evidence the
+                # plane deliberately refuses to discard. Deactivating takes it
+                # off /policy, which is all the next test needs.
+                self._c.put(
+                    f"/api/v1/guardrails/{rule_id}", headers=self._h, json={"is_active": False}
+                )
         self.created.clear()
 
 
+@pytest.fixture(scope="module")
+def module_local_db(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Any]:
+    """One local store for the whole module, not one per test.
+
+    The usual ``isolated_local_db`` gives every test a fresh SQLite file. That is
+    right almost everywhere, but wrong here: ``connect()`` registers the platform
+    exporter once, and the exporter caches its ``TraceStore`` on first use
+    (``platform_export.PlatformSpanExporter._get_store``). Repointing the DB
+    mid-process therefore leaves the exporter draining a file nothing writes to
+    any more, and every span after the first test silently never ships.
+
+    Caching the store is correct in production — a real process has one
+    ``local.db`` for its lifetime — so the fixture matches reality instead of the
+    SDK working around a test.
+    """
+    from fastaiagent._internal import instance as _instance
+    from fastaiagent._internal import project as _project
+    from fastaiagent._internal.config import reset_config
+
+    db_path = tmp_path_factory.mktemp("guardrail-actions-e2e") / "local.db"
+    previous = os.environ.get("FASTAIAGENT_LOCAL_DB")
+    os.environ["FASTAIAGENT_LOCAL_DB"] = str(db_path)
+    reset_config()
+    _project.set_project_id("test-proj")
+    _instance.reset_for_testing()
+    try:
+        yield db_path
+    finally:
+        _instance.reset_for_testing()
+        _project.reset_for_testing()
+        if previous is None:
+            os.environ.pop("FASTAIAGENT_LOCAL_DB", None)
+        else:
+            os.environ["FASTAIAGENT_LOCAL_DB"] = previous
+        reset_config()
+
+
 @pytest.fixture()
-def plane(isolated_local_db: Any) -> Iterator[_Rules]:
+def plane(module_local_db: Any) -> Iterator[_Rules]:
     """A connected SDK plus an authoring session, torn down cleanly."""
     require_env()
     require_platform()
@@ -184,6 +270,79 @@ def _connect_and_refresh() -> None:
     fa.refresh_policy()
 
 
+#: A second domain, so the tenancy assertion has something to be excluded from.
+_FOREIGN_DOMAIN_NAME = "Guardrail Actions Lab (foreign)"
+
+
+def _ensure_foreign_domain(client: Any, headers: dict[str, str]) -> str | None:
+    """Find or create a second domain. ``None`` when this account cannot make one."""
+    domains = client.get("/api/v1/users/me/domains", headers=headers).json()
+    existing = next((d for d in domains if d["name"] == _FOREIGN_DOMAIN_NAME), None)
+    if existing:
+        return str(existing["id"])
+    resp = client.post(
+        "/api/v1/domains",
+        headers=headers,
+        json={
+            "name": _FOREIGN_DOMAIN_NAME,
+            "description": "Tenancy control for the SDK guardrail-action e2e.",
+        },
+    )
+    return str(resp.json()["id"]) if resp.status_code < 300 else None
+
+
+def _executions(client: Any, headers: dict[str, str], guardrail_id: str) -> list[dict[str, Any]]:
+    """Read back the rows the plane recorded for one rule.
+
+    ``project_id`` is required by the endpoint and is the project the SDK
+    connected as — the same one the ingest path stamps on every row.
+    """
+    from fastaiagent.client import _connection
+
+    resp = client.get(
+        "/api/v1/guardrail-executions",
+        headers=headers,
+        params={
+            "guardrail_id": guardrail_id,
+            "project_id": _connection.project_id,
+            "limit": 100,
+        },
+    )
+    assert resp.status_code == 200, f"GET /guardrail-executions -> {resp.status_code}: {resp.text}"
+    rows = resp.json()
+    return rows if isinstance(rows, list) else rows.get("items", rows)
+
+
+def _flush_and_await_rows(
+    client: Any,
+    headers: dict[str, str],
+    guardrail_id: str,
+    *,
+    expected: int = 1,
+    timeout: float = 45.0,
+) -> list[dict[str, Any]]:
+    """Ship the buffered spans and wait for the plane to materialise the rows.
+
+    The SDK exporter batches, and the plane resolves spans to
+    ``guardrail_executions`` on ingest, so this is genuinely asynchronous — poll
+    rather than sleep-and-hope.
+    """
+    import time
+
+    from fastaiagent.trace.otel import get_tracer_provider
+
+    get_tracer_provider().force_flush(15_000)
+    deadline = time.monotonic() + timeout
+    rows: list[dict[str, Any]] = []
+    while time.monotonic() < deadline:
+        rows = _executions(client, headers, guardrail_id)
+        if len(rows) >= expected:
+            return rows
+        time.sleep(1.0)
+        get_tracer_provider().force_flush(5_000)
+    return rows
+
+
 def _agent(response: str | list[str], name: str = "e2e-support") -> Any:
     """An agent with no local guardrails — everything it enforces came from the plane."""
     from fastaiagent import Agent
@@ -199,7 +358,7 @@ def test_every_rule_on_the_wire_carries_action_severity_and_floor(plane: _Rules)
     from fastaiagent.client import _connection
     from fastaiagent.guardrail.from_policy import guardrail_from_policy_rule
 
-    plane.add(
+    created = plane.add(
         name="e2e-wire-check",
         implementation_type="regex",
         config={"pattern": SSN_PATTERN, "should_match": False},
@@ -222,7 +381,7 @@ def test_every_rule_on_the_wire_carries_action_severity_and_floor(plane: _Rules)
         assert "severity" in rule
         assert isinstance(rule["floor"], bool)
 
-    mine = next(r for r in rules if r["name"] == "e2e-wire-check")
+    mine = next(r for r in rules if r["name"] == created["name"])
     built = guardrail_from_policy_rule(mine)
     assert (built.action, built.severity, built.floor) == ("warn", "high", False)
 
@@ -260,7 +419,7 @@ def test_the_mask_lands_a_filtered_event_with_a_before_after_diff(plane: _Rules)
     from fastaiagent._internal.config import get_config
     from fastaiagent._internal.storage import SQLiteHelper
 
-    plane.add(
+    rule = plane.add(
         name="e2e-mask-ui",
         implementation_type="regex",
         config={"pattern": SSN_PATTERN, "should_match": False, "mask_token": "[REDACTED]"},
@@ -276,7 +435,7 @@ def test_the_mask_lands_a_filtered_event_with_a_before_after_diff(plane: _Rules)
     with SQLiteHelper(get_config().local_db_path) as db:
         rows = db.fetchall(
             "SELECT * FROM guardrail_events WHERE guardrail_name = ? ORDER BY timestamp DESC",
-            ("e2e-mask-ui",),
+            (rule["name"],),
         )
     assert rows, "the masked run wrote no guardrail event"
     row = rows[0]
@@ -346,7 +505,7 @@ def test_a_content_safety_rule_blocks_and_names_the_category_that_tripped(
     from fastaiagent._internal.errors import GuardrailBlockedError
     from fastaiagent.guardrail.from_policy import plane_guardrails_for_agent
 
-    plane.add(
+    rule = plane.add(
         name="e2e-content-safety",
         implementation_type="content_safety",
         config={"categories": ["S10", "S11"], "threshold": 0.5},
@@ -361,7 +520,7 @@ def test_a_content_safety_rule_blocks_and_names_the_category_that_tripped(
         _agent(hateful).run("say something")
 
     # The verdict carries the per-category detail the console renders.
-    (rail,) = [g for g in plane_guardrails_for_agent(None) if g.name == "e2e-content-safety"]
+    (rail,) = [g for g in plane_guardrails_for_agent(None) if g.name == rule["name"]]
     verdict = rail.execute(hateful)
     assert verdict.passed is False
     assert verdict.metadata["taxonomy"] == "mlcommons"
@@ -378,7 +537,7 @@ def test_a_groundedness_rule_uses_the_run_scoped_context_and_fails_closed_withou
     import fastaiagent as fa
     from fastaiagent.guardrail.from_policy import plane_guardrails_for_agent
 
-    plane.add(
+    rule = plane.add(
         name="e2e-groundedness",
         implementation_type="groundedness",
         config={"threshold": 0.7, "context_key": "context", "answer_key": "answer"},
@@ -388,7 +547,7 @@ def test_a_groundedness_rule_uses_the_run_scoped_context_and_fails_closed_withou
     )
     _connect_and_refresh()
 
-    (rail,) = [g for g in plane_guardrails_for_agent(None) if g.name == "e2e-groundedness"]
+    (rail,) = [g for g in plane_guardrails_for_agent(None) if g.name == rule["name"]]
     docs = ["Refunds are issued within 5 business days of approval."]
 
     with fa.guardrail_context(context=docs):
@@ -415,7 +574,7 @@ def test_a_groundedness_rule_uses_the_run_scoped_context_and_fails_closed_withou
 def test_the_organisation_baseline_survives_the_wire(plane: _Rules) -> None:
     from fastaiagent.guardrail.from_policy import plane_guardrails_for_agent
 
-    plane.add(
+    rule = plane.add(
         name="e2e-floor",
         implementation_type="regex",
         config={"pattern": SSN_PATTERN, "should_match": False},
@@ -426,9 +585,165 @@ def test_the_organisation_baseline_survives_the_wire(plane: _Rules) -> None:
     )
     _connect_and_refresh()
 
-    (rail,) = [g for g in plane_guardrails_for_agent(None) if g.name == "e2e-floor"]
+    (rail,) = [g for g in plane_guardrails_for_agent(None) if g.name == rule["name"]]
     assert rail.floor is True
     assert rail.severity == "critical"
     # floor changes no enforcement at the edge — the plane is what stops a
     # project relaxing it. Locally it is context, shown next to the rule.
     assert rail.action == "warn"
+
+
+# --------------------------------------------------------------------------- #
+# 6. The cross-repo contract: what the plane records about what the SDK enforced
+#
+# Added after the plane fixed the three findings filed in
+# claude_files/plane-handover-guardrail-execution-rows.md. Before that fix a
+# domain-wide rule — the only kind /policy distributes — produced no
+# `guardrail_executions` row at all, so a mask that worked at the edge was
+# invisible to the operator who authored it. These are the five assertions the
+# plane asked for, and together they are the contract test neither repo can
+# write alone.
+# --------------------------------------------------------------------------- #
+def test_a_domain_wide_rule_records_the_runs_that_did_not_pass(plane: _Rules) -> None:
+    """F1. The rule that *acts* is the one whose evidence matters most.
+
+    The original bug wrote a row for a rule that passed and none for the
+    domain-wide rule that actually masked — the audit trail recorded the no-ops
+    and missed the interventions.
+    """
+    rule = plane.add(
+        name="e2e-rows-domainwide",
+        implementation_type="regex",
+        config={"pattern": SSN_PATTERN, "should_match": False, "mask_token": "[REDACTED]"},
+        tripwire_message="Output contained an SSN.",
+        action="mask",
+        severity="medium",
+    )
+    assert rule["project_id"] is None, "this assertion is only meaningful for a domain-wide rule"
+    _connect_and_refresh()
+
+    result = _agent(LEAK).run("what is on file?")
+    assert "[REDACTED]" in result.output, "the rule did not act, so there is nothing to record"
+
+    rows = _flush_and_await_rows(plane.client, plane.headers, rule["id"], expected=1)
+    assert rows, "a domain-wide rule produced no guardrail_executions row"
+    row = rows[0]
+    assert row["passed"] is False, "the recorded run should be the one that tripped"
+    assert row["tripwire_triggered"] is True
+    assert row["trigger_point"] == "output"
+    assert row["trace_id"], "the row should be joinable back to its trace"
+
+
+def test_the_row_carries_the_action_the_sdk_took(plane: _Rules) -> None:
+    """F2. Step 2 of the original handover's acceptance test, on the SDK path."""
+    rule = plane.add(
+        name="e2e-rows-detail",
+        implementation_type="regex",
+        config={"pattern": SSN_PATTERN, "should_match": False, "mask_token": "[REDACTED]"},
+        tripwire_message="Output contained an SSN.",
+        action="mask",
+        severity="high",
+    )
+    _connect_and_refresh()
+    _agent(LEAK).run("what is on file?")
+
+    rows = _flush_and_await_rows(plane.client, plane.headers, rule["id"], expected=1)
+    assert rows, "no execution row to inspect"
+    detail = rows[0]["result_detail"] or {}
+    assert detail.get("action") == "mask", detail
+    assert detail.get("action_taken") == "masked", detail
+    # The pre-existing key is kept, not replaced — both writers now agree.
+    assert "checks" in detail, detail
+
+
+def test_errored_is_readable_so_a_degraded_control_is_not_read_as_a_clean_block(
+    plane: _Rules,
+) -> None:
+    """F2 follow-on. A block is the control working; an error is it *not* working,
+    and under a fail-open policy it means traffic went through unchecked."""
+    rule = plane.add(
+        name="e2e-rows-errored",
+        implementation_type="groundedness",
+        # No context will be available, so the check cannot run at all.
+        config={"threshold": 0.7},
+        tripwire_message="Not grounded.",
+        action="block",
+        severity="high",
+    )
+    _connect_and_refresh()
+
+    from fastaiagent._internal.errors import GuardrailBlockedError
+
+    with pytest.raises(GuardrailBlockedError):
+        _agent("Refunds are instant.").run("go")
+
+    rows = _flush_and_await_rows(plane.client, plane.headers, rule["id"], expected=1)
+    assert rows, "an errored check produced no execution row"
+    row = rows[0]
+    assert "errored" in row, "GuardrailExecutionRead still omits `errored`"
+    assert row["errored"] is True, row
+    assert row["passed"] is False
+
+
+def test_a_rule_of_the_same_name_in_another_domain_never_resolves(plane: _Rules) -> None:
+    """F1 tenancy. Widening the resolver from project to domain must not widen it
+    past the domain."""
+    foreign_domain = _ensure_foreign_domain(plane.client, plane.headers)
+    if foreign_domain is None:
+        pytest.skip("could not provision a second domain for the tenancy check")
+
+    mine = plane.add(
+        name="e2e-rows-tenancy",
+        implementation_type="regex",
+        config={"pattern": SSN_PATTERN, "should_match": False, "mask_token": "[REDACTED]"},
+        tripwire_message="Output contained an SSN.",
+        action="mask",
+    )
+    theirs = plane.add_in_domain(
+        foreign_domain,
+        name=mine["name"],  # deliberately identical, in a different domain
+        implementation_type="regex",
+        config={"pattern": SSN_PATTERN, "should_match": False},
+        tripwire_message="Someone else's rule.",
+        action="block",
+    )
+    _connect_and_refresh()
+    _agent(LEAK).run("what is on file?")
+
+    _flush_and_await_rows(plane.client, plane.headers, mine["id"], expected=1)
+    assert _executions(plane.client, plane.headers, mine["id"]), "my own rule recorded nothing"
+    assert _executions(plane.client, plane.headers, theirs["id"]) == [], (
+        "a same-named rule in another domain absorbed this run's evidence"
+    )
+
+
+def test_deleting_a_rule_with_history_is_refused_not_a_500(plane: _Rules) -> None:
+    """F3. Those rows are what the compliance derivation reads, so the plane
+    refuses rather than cascading. The refusal has to be legible, though."""
+    rule = plane.add(
+        name="e2e-rows-delete",
+        implementation_type="regex",
+        config={"pattern": SSN_PATTERN, "should_match": False},
+        tripwire_message="Output contained an SSN.",
+        action="block",
+    )
+    _connect_and_refresh()
+
+    from fastaiagent._internal.errors import GuardrailBlockedError
+
+    with pytest.raises(GuardrailBlockedError):
+        _agent(LEAK).run("what is on file?")
+
+    _flush_and_await_rows(plane.client, plane.headers, rule["id"], expected=1)
+
+    resp = plane.client.delete(f"/api/v1/guardrails/{rule['id']}", headers=plane.headers)
+    assert resp.status_code == 409, f"expected a refusal, got {resp.status_code}: {resp.text[:200]}"
+    assert "deactivate" in resp.text.lower(), "the refusal should name the way out"
+
+    # And the documented way out works.
+    assert (
+        plane.client.put(
+            f"/api/v1/guardrails/{rule['id']}", headers=plane.headers, json={"is_active": False}
+        ).status_code
+        == 200
+    )
