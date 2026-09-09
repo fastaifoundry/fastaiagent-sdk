@@ -389,3 +389,114 @@ def test_responsible_ai_still_composes_both_rails() -> None:
     names = [g.name for g in fa.responsible_ai(banned=["politics"], allowed=["support"])]
     assert "banned_topics" in names
     assert "allowed_topics" in names
+
+
+# --------------------------------------------------------------------------- #
+# What the verdict tells a control plane
+# --------------------------------------------------------------------------- #
+def test_only_payload_free_findings_are_exported() -> None:
+    """The allowlist is the control point, so it is pinned here.
+
+    A check's metadata is captured locally at full fidelity, but most of it is
+    payload-derived — ``toxic_words`` holds the offending words, ``matches`` a
+    regex fragment. None of that may leave the machine as a side effect of
+    reporting a verdict, so a type absent from the allowlist exports nothing and
+    adding one has to be argued for rather than typed.
+    """
+    from fastaiagent.guardrail.executor import EXPORTABLE_DETAIL_KEYS
+
+    assert set(EXPORTABLE_DETAIL_KEYS) == {GuardrailType.topic}
+    assert EXPORTABLE_DETAIL_KEYS[GuardrailType.topic] == frozenset({"mode", "matched", "topics"})
+
+
+def test_a_key_outside_the_allowlist_never_reaches_the_span() -> None:
+    from fastaiagent.guardrail.executor import _exportable_detail
+    from fastaiagent.guardrail.guardrail import GuardrailResult
+
+    rule = Guardrail(name="t", guardrail_type=GuardrailType.topic)
+    result = GuardrailResult(
+        passed=False,
+        metadata={"mode": "deny", "matched": ["X"], "topics": ["X"], "raw_payload": "secret"},
+    )
+    assert _exportable_detail(rule, result) == {
+        "mode": "deny",
+        "matched": ["X"],
+        "topics": ["X"],
+    }
+
+
+def test_a_type_with_no_allowlist_entry_exports_nothing() -> None:
+    from fastaiagent.guardrail.executor import _exportable_detail
+    from fastaiagent.guardrail.guardrail import GuardrailResult
+
+    rule = Guardrail(name="cs", guardrail_type=GuardrailType.content_safety)
+    result = GuardrailResult(passed=False, metadata={"scores": {"S10": 0.9}})
+    assert _exportable_detail(rule, result) is None
+
+
+def test_matched_is_always_a_subset_of_the_operators_own_topics() -> None:
+    """The property that makes the topic detail safe to export: a model cannot
+    smuggle payload content into ``matched``, because it is intersected back
+    against the rule's own list."""
+    resolved = [COMPETITORS, MEDICAL]
+    smuggled = '{"topics": ["my social security number is 123-45-6789"]}'
+    assert tp.parse_topics(smuggled, resolved) == []
+
+
+async def test_the_detail_lands_on_the_span_for_a_topic_rule(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without this the plane records a thinner row for an edge-run rule than for
+    the same rule run centrally — the asymmetry a mirrored judge exists to
+    prevent."""
+    import json
+
+    from fastaiagent._internal.errors import GuardrailBlockedError
+    from fastaiagent.guardrail.executor import execute_guardrails
+
+    _stub_judge(monkeypatch, '{"topics": ["Competitor products"]}')
+    captured: dict[str, Any] = {}
+
+    class _Span:
+        def set_attribute(self, key: str, value: Any) -> None:
+            captured[key] = value
+
+        def set_status(self, *a: Any, **k: Any) -> None: ...
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    class _Tracer:
+        def start_as_current_span(self, name: str) -> Any:
+            captured["span_name"] = name
+            return _Span()
+
+    from fastaiagent.trace import otel as otel_mod
+
+    monkeypatch.setattr(otel_mod, "get_tracer", lambda *_a, **_k: _Tracer())
+
+    rule = Guardrail(
+        name="no-competitors",
+        guardrail_type=GuardrailType.topic,
+        config={"topics": [COMPETITORS], "mode": "deny"},
+    )
+    # A blocking rail raises; the span is stamped before it does.
+    with pytest.raises(GuardrailBlockedError):
+        await execute_guardrails([rule], "Acme is better", rule.position)
+
+    detail = json.loads(captured["fastaiagent.guardrail.detail"])
+    assert detail == {
+        "mode": "deny",
+        "matched": ["Competitor products"],
+        "topics": ["Competitor products"],
+    }
+
+
+def test_the_detail_is_inside_the_payload_egress_gate() -> None:
+    """`FASTAIAGENT_TRACE_PAYLOADS=0` and any installed redaction policy both
+    reach it. The allowlist is the guarantee; this is the backstop."""
+    from fastaiagent.trace.redaction import SENSITIVE_ATTR_KEYS
+
+    assert "fastaiagent.guardrail.detail" in SENSITIVE_ATTR_KEYS

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from typing import Any
@@ -213,6 +214,7 @@ def set_guardrail_attributes(
     action_taken: str | None = None,
     severity: str | None = None,
     floor: bool | None = None,
+    detail: dict[str, Any] | None = None,
 ) -> None:
     """Stamp guardrail-outcome attributes on a per-guardrail child span.
 
@@ -241,6 +243,19 @@ def set_guardrail_attributes(
     ``checks``, whose three-value vocabulary the plane already parses. Each is
     omitted when not supplied, so a caller that knows nothing about actions
     stamps exactly what it stamped before.
+
+    ``detail`` is the check's own structured findings, JSON-serialized onto
+    ``fastaiagent.guardrail.detail``. Without it a check reports only pass/fail:
+    a ``topic`` rule cannot say *which* topic tripped, so the same rule yields a
+    thinner audit row when the edge runs it than when the plane does — the one
+    asymmetry a mirrored judge exists to prevent.
+
+    **Pass only fields that cannot carry payload content.** The key is
+    registered in :data:`~fastaiagent.trace.redaction.SENSITIVE_ATTR_KEYS`, so
+    the payload gate and any redaction policy both reach it, but that is a
+    backstop and not a licence: the caller decides what is safe to send. The SDK
+    runtime's own allowlist is
+    :data:`~fastaiagent.guardrail.executor.EXPORTABLE_DETAIL_KEYS`.
     """
     # Both classifiers are plain (unprefixed) attributes carried inside the open
     # OTel envelope — no wire-protocol bump for either.
@@ -261,6 +276,11 @@ def set_guardrail_attributes(
         attrs["guardrail.severity"] = severity
     if floor is not None:
         attrs["guardrail.floor"] = floor
+    if detail:
+        try:
+            attrs["guardrail.detail"] = json.dumps(detail, default=str)
+        except (TypeError, ValueError):
+            pass  # a detail we cannot serialize is dropped, never fatal
     set_fastaiagent_attributes(span, **attrs)
 
 
@@ -330,6 +350,7 @@ def emit_guardrail(
     action_taken: str | None = None,
     severity: str | None = None,
     floor: bool | None = None,
+    detail: dict[str, Any] | None = None,
 ) -> None:
     """Open, stamp and close one guardrail-outcome child span in a single call.
 
@@ -361,6 +382,7 @@ def emit_guardrail(
                 action_taken=action_taken,
                 severity=severity,
                 floor=floor,
+                detail=detail,
             )
             if passed:
                 # A degraded pass (errored + on_error="allow") keeps an OK

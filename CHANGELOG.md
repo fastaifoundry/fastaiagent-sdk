@@ -49,6 +49,26 @@ domain.
   `dict`/`str` with no imports from the rest of the package, which is what makes
   that mirroring possible and the tests hermetic. Joins `hazard_taxonomy.py` and
   `grounding.py` as the third mirrored judge.
+- **`fastaiagent.guardrail.detail`** — a guardrail span can now carry the
+  check's own structured findings, so a control plane records *which* topic
+  tripped rather than only that one did. Without it the same rule produced a
+  thinner audit row when the edge ran it than when the plane did, which is the
+  one asymmetry a mirrored judge exists to prevent. `set_guardrail_attributes`
+  and `emit_guardrail` gain an optional `detail=`; both omit the attribute when
+  it is not supplied, so a caller that knows nothing about it stamps exactly
+  what it stamped before. No wire bump — it rides in the open OTel envelope.
+- **What may be exported is an allowlist, not a filter.**
+  `guardrail.executor.EXPORTABLE_DETAIL_KEYS` names the metadata keys the SDK
+  runtime will send, per type, and a type absent from it exports nothing. Most
+  guardrail metadata is payload-derived — `toxic_words` holds the offending
+  words, `matches` a regex fragment (for a PII rule, the matched value itself),
+  `unsupported_claims` model output over customer content — and none of that may
+  leave the machine as a side effect of reporting a verdict. `topic` is the only
+  entry today, and it is provably payload-free: `mode` is an enum, `topics` is
+  the rule's own config, and `matched` is intersected back against `topics` by
+  `parse_topics`, so a model cannot smuggle content into it. The key is also
+  registered in `SENSITIVE_ATTR_KEYS`, so `FASTAIAGENT_TRACE_PAYLOADS=0` and any
+  redaction policy reach it — a backstop behind the allowlist, not a licence.
 - `examples/98_topic_guardrail.py` — both polarities, the `<<DATA>>` split, a
   plane-authored rule reconstructed, and the round-trip. Deterministic: no key,
   no live plane.

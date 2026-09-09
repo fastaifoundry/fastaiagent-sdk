@@ -258,10 +258,44 @@ fastaiagent.guardrail.action        # block | warn | mask | override | reask
 fastaiagent.guardrail.action_taken  # none | blocked | warned | masked | overridden | reask
 fastaiagent.guardrail.severity      # low | medium | high | critical
 fastaiagent.guardrail.floor         # bool
+fastaiagent.guardrail.detail        # JSON: the check's own structured findings
 ```
 
 The `checks` JSON keeps its three-value vocabulary (`pass` / `block` / `error`)
 unchanged — the plane parses that string into `output.checks`.
+
+### `detail`, and why it is an allowlist
+
+`detail` is what lets an audit row say *which* topic tripped rather than only
+that one did. Without it a rule enforced at the edge records less than the same
+rule run centrally — the asymmetry a mirrored judge exists to prevent.
+
+It is deliberately **not** the whole of a result's `metadata`. Most guardrail
+metadata is derived from the payload: `toxic_words` holds the offending words,
+`matches` a regex fragment — for a PII rule, the matched value itself —
+`unsupported_claims` model output over customer content. None of that may leave
+the machine as a side effect of reporting a verdict. So
+`guardrail.executor.EXPORTABLE_DETAIL_KEYS` names, per type, the keys the SDK
+runtime will send, and **a type absent from it exports nothing**:
+
+| Type | Exported |
+|---|---|
+| `topic` | `mode`, `matched`, `topics` |
+| everything else | nothing |
+
+`topic` qualifies because its findings are provably payload-free: `mode` is an
+enum, `topics` is the rule's own config — which a plane-authored rule already
+came *from* — and `matched` is intersected back against `topics` by
+`parse_topics`, so a model cannot smuggle content into it.
+
+The attribute is also in `SENSITIVE_ATTR_KEYS`, so `FASTAIAGENT_TRACE_PAYLOADS=0`
+drops it and an installed redaction policy reaches it. That is a backstop behind
+the allowlist, not a substitute for it. Local capture is unaffected — the Local
+UI reads the full metadata either way.
+
+Borrowing a runtime's own tracer? `emit_guardrail(..., detail=...)` takes
+whatever you give it; the allowlist is the SDK runtime's own discipline, so
+apply the same judgement to what you pass.
 
 In the Local UI a rewriting rule shows as **`✎ filtered`** with a before/after
 diff, distinct from a block.
