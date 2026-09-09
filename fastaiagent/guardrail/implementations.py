@@ -56,6 +56,7 @@ async def run_guardrail(guardrail: Guardrail, data: str | dict[str, Any]) -> Gua
         GuardrailType.classifier: _run_classifier,
         GuardrailType.content_safety: _run_content_safety,
         GuardrailType.groundedness: _run_groundedness,
+        GuardrailType.topic: _run_topic,
     }
     runner = runners.get(guardrail.guardrail_type, _run_code)
     try:
@@ -414,4 +415,65 @@ async def _run_groundedness(guardrail: Guardrail, data: str | dict[str, Any]) ->
             "threshold": threshold,
             "unsupported_claims": unsupported,
         },
+    )
+
+
+async def _run_topic(guardrail: Guardrail, data: str | dict[str, Any]) -> GuardrailResult:
+    """Classify the payload against a list of named topics, then apply the rule's polarity.
+
+    ``mode="deny"`` fails when a listed topic is present (a blocklist); ``mode="allow"``
+    fails when none is (an on-topic gate). One judge call answers both — the prompt asks
+    only *which topics are present* and never states the polarity, so the two modes
+    classify identical text identically and differ solely in
+    :func:`~fastaiagent.guardrail.topics.failed`.
+
+    Prompt-injection hardened the same way as ``_run_llm_judge``: instructions in the
+    system message, the payload in its own ``<<DATA>>`` block.
+
+    No ``score``. A hazard score is a calibrated quantity worth thresholding; topic
+    presence is closer to a boolean, and a 0–1 "how much is this about medicine" would be
+    false precision nobody could tune.
+    """
+    from fastaiagent.guardrail import topics as tp
+    from fastaiagent.llm import SystemMessage, UserMessage
+
+    config = guardrail.config or {}
+    resolved = tp.resolve_topics(config)
+    if not resolved:
+        raise ValueError("topic guardrail names no topics")
+    mode = tp.resolve_mode(config)
+
+    text = data if isinstance(data, str) else json.dumps(data)
+    llm = _judge_client(config)
+    response = await llm.acomplete(
+        [
+            SystemMessage(tp.build_prompt(resolved, mode)),
+            UserMessage(f"<<DATA>>\n{text}\n<</DATA>>"),
+        ],
+        max_tokens=200,
+        temperature=0,
+    )
+
+    matched = tp.parse_topics((response.content or "").strip(), resolved)
+    names = [t["name"] for t in resolved]
+
+    if mode == "deny":
+        message = (
+            f"Denied topic(s) present: {', '.join(matched)}"
+            if matched
+            else "No denied topic present"
+        )
+    else:
+        message = (
+            f"On topic: {', '.join(matched)}"
+            if matched
+            else f"Off topic — none of: {', '.join(names)}"
+        )
+
+    return GuardrailResult(
+        passed=not tp.failed(mode, matched),
+        message=message,
+        # Same shape the plane records in ``guardrail_executions.result_detail``,
+        # so the console reads an SDK-run check exactly like a central one.
+        metadata={"mode": mode, "matched": matched, "topics": names},
     )

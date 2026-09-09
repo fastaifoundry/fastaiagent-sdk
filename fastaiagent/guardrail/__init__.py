@@ -1,4 +1,4 @@
-"""Guardrail system with 7 implementation types and built-in factories."""
+"""Guardrail system with 8 implementation types and built-in factories."""
 
 from fastaiagent.guardrail.actions import ACTIONS, ACTIONS_TAKEN
 from fastaiagent.guardrail.builtins import (

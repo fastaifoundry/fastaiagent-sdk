@@ -81,7 +81,7 @@ def list_events(
         default=None,
         description=(
             "Filter by ``guardrail_type``: code / regex / llm_judge / "
-            "schema / classifier / content_safety / groundedness."
+            "schema / classifier / content_safety / groundedness / topic."
         ),
     ),
     position: str | None = Query(

@@ -118,9 +118,9 @@ on a reply that already cost one.
 `reask` only means something where there is a model turn to redo. At every other
 position, and when streaming, it blocks.
 
-## Two model-backed check types
+## Three model-backed check types
 
-Both are judges with structure, distributed from the plane like any other rule.
+All three are judges with structure, distributed from the plane like any other rule.
 
 ### `content_safety`
 
@@ -176,6 +176,62 @@ answer into claims and verify each one — richer, N+1 model calls, offline-frie
 The `groundedness` *type* uses the plane's single-call judge, because a
 distributed rule has to reach the same verdict at the edge as it does at
 `POST /guardrails/{id}/test`, and it has to be cheap enough to run every turn.
+
+### `topic`
+
+Classifies the payload against named topics, then applies a polarity:
+
+```json
+{
+  "topics": [
+    {"name": "Competitor products",
+     "description": "Any mention, comparison or evaluation of a competing vendor's product."},
+    {"name": "Medical advice",
+     "description": "Diagnosis, treatment or medication guidance for a specific person."}
+  ],
+  "mode": "deny"
+}
+```
+
+`mode: "deny"` fails when a listed topic is present (a blocklist); `mode: "allow"`
+fails when **none** is (an on-topic gate). One type with a polarity rather than
+two types, because they share a prompt, a parser and a config — an operator
+choosing between two rule types when they mean one rule with a direction is a
+worse console.
+
+**The description is the point.** A bare label is a poor prompt: "crypto" cannot
+tell a judge whether a mention of blockchain patents counts, and that is the
+difference between topic control and a keyword list with extra steps. A bare
+string is still accepted (the name doubles as the definition) because a console
+may legitimately have no description yet, and judging a topic on its name alone
+beats refusing the whole rule.
+
+**No per-topic threshold.** `content_safety` has a bar per category because a
+hazard score is a calibrated quantity. Topic presence is closer to a boolean, and
+asking a judge "how much is this about medicine, 0 to 1" invites false precision
+from a number nobody could tune. At most `MAX_TOPICS` (20) topics are judged: a
+rule naming forty is describing a taxonomy, not a policy.
+
+The metadata carries the `mode`, the `matched` topic names in your own wording,
+and the full list of `topics` the rule asked about.
+
+**`mode` does not decide what a failure costs, and it does not decide what an
+error costs either.** A typo in `mode` *raises* rather than falling back to a
+default — every other resolver tolerates a bad input, but this one inverts the
+rule's meaning, and a whitelist silently read as a blocklist passes exactly the
+traffic it was written to stop. What that failure costs is then `on_error`'s
+call, not the polarity's: the two builtins deliberately disagree on the default
+(see [`banned_topics()` vs the `topic` type](responsible-ai.md#banned_topics-allowed_topics-vs-the-topic-type)),
+and a plane-distributed rule carries its own.
+
+The prompt asks only *which topics are present* and never states the polarity.
+Telling a judge that a topic is forbidden invites it to be helpful about the
+verdict rather than accurate about the content, and it would make the two modes
+classify identical text differently.
+
+`mask` is refused on this type — a judge returns a verdict, not spans, so a mask
+finds nothing to redact and degrades to a block. `block`, `warn`, `override` and
+`reask` all apply.
 
 ## `severity` and `floor`
 

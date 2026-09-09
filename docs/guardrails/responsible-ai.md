@@ -127,10 +127,65 @@ on-mission. They classify **semantically** by default (`mode="llm"`); use
 from fastaiagent import allowed_topics, banned_topics
 
 guardrails = [
-    banned_topics(["politics", "competitor pricing"], llm=llm),
-    allowed_topics(["billing", "shipping", "returns"], llm=llm),
+    banned_topics(["politics", "competitor pricing"]),
+    allowed_topics(["billing", "shipping", "returns"]),
 ]
 ```
+
+Give a topic a **definition** and the judge stops guessing what you meant. Either
+shape works:
+
+```python
+banned_topics({
+    "Competitor products": "Any mention or comparison of a competing vendor's product.",
+    "Medical advice": "Diagnosis, treatment or medication guidance for a specific person.",
+})
+
+banned_topics([
+    {"name": "Competitor products", "description": "Any mention of a rival vendor's product."},
+])
+```
+
+A bare name still works — it just asks the judge to infer the scope from the
+label, and "crypto" cannot tell it whether blockchain patents count.
+
+### `banned_topics()` / `allowed_topics()` vs the `topic` type
+
+Unlike [`grounded()` and `groundedness`](#grounded-vs-the-groundedness-type),
+these are **not** two engines. Since 1.58.0 the factories are thin wrappers that
+emit a [`topic`](actions.md#topic) rule — same prompt, same parser, same verdict
+as one authored in the console:
+
+```python
+banned_topics(["politics"]).to_dict()["guardrail_type"]   # -> 'topic'
+```
+
+That matters because of what it fixes. These factories used to emit `code`
+guardrails, whose logic is a local Python callable — so pushing one to the
+console produced an opaque row the plane could neither run, edit, nor
+re-distribute. Now the same call **round-trips**: it arrives as a first-class
+rule an operator can open, change, and hand to every other agent in the domain.
+
+Two call shapes deliberately stay local `code` rules, because neither can be
+reproduced centrally:
+
+| Call | Emits | Why |
+|---|---|---|
+| `banned_topics([...])` | `topic` | The default. Round-trips to the console. |
+| `banned_topics([...], llm={"model": "gpt-4o-mini"})` | `topic` | Kwargs serialise, so the plane can rebuild the same judge. |
+| `banned_topics([...], mode="keyword")` | `code` | A substring match with no judge — there is nothing to distribute. |
+| `banned_topics([...], llm=LLMClient(...))` | `code` | A live client cannot be serialised into a stored config. |
+
+`responsible_ai(banned=[...], llm=client)` passes a client through, so it lands in
+that last row; drop the `llm=` argument (or pass a kwargs dict) to get a
+distributable rule.
+
+!!! note "The two defaults disagree, on purpose"
+    `banned_topics()` defaults to `on_error="allow"` and `allowed_topics()` to
+    `on_error="block"`. A whitelist that cannot classify must not pass: "no topic
+    matched" and "the judge could not answer" would otherwise both fail the rule,
+    and only one of them is a verdict. The polarity never overrides `on_error` —
+    a plane-distributed rule carries its own and the runner simply honours it.
 
 ## Reflection — self-critique and revise
 

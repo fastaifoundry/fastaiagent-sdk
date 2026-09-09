@@ -156,7 +156,7 @@ doesn't come up for them — they are reliable hard blocks.
 
 ### How each type decides
 
-`run_guardrail` dispatches on `GuardrailType` to five deciders, all producing the
+`run_guardrail` dispatches on `GuardrailType` to eight deciders, all producing the
 same `GuardrailResult`:
 
 | Type | How it decides |
@@ -166,6 +166,12 @@ same `GuardrailResult`:
 | `schema` | Validates the data against a JSON Schema |
 | `llm_judge` | Calls a model with a rubric and parses the verdict **fail-closed** (ambiguous → fail) |
 | `classifier` | Calls a classification endpoint (e.g. a moderation model) and thresholds the score |
+| `content_safety` | Scores the payload against the MLCommons hazard taxonomy, with a bar per category |
+| `groundedness` | Scores an answer against the context it was given |
+| `topic` | Classifies against named topics, then `deny` (blocklist) or `allow` (on-topic gate) |
+
+The last three are model-backed judges with structure — see
+[Actions, severity & floor](actions.md#three-model-backed-check-types).
 
 This is the mechanical basis for the two-axis view below: the *type* is which
 decider runs; the *concern* is what you point it at.
@@ -175,7 +181,8 @@ decider runs; the *concern* is what you point it at.
 A guardrail is described by two independent things — don't conflate them:
 
 - **Implementation type** (`GuardrailType`) — *how* it decides:
-  `code`, `regex`, `schema`, `llm_judge`, `classifier`.
+  `code`, `regex`, `schema`, `llm_judge`, `classifier`, `content_safety`,
+  `groundedness`, `topic`.
 - **What it checks** — the concern: prompt injection, PII, secrets, toxicity,
   groundedness, topic, moderation. The [Responsible AI](responsible-ai.md)
   bundle is a curated set of these, each implemented as an ordinary `Guardrail`.

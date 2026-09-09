@@ -19,7 +19,7 @@ the Trace Detail page's *Scores* card), you land on a three-panel layout:
 | Panel | Contents |
 |---|---|
 | **1 — What triggered it** | The exact span content the guardrail evaluated. `position` decides whether this is the agent's input, the agent's output, a tool call, or a tool response. Falls back to a hint when payload tracing is disabled (`FASTAIAGENT_TRACE_PAYLOADS=0`). |
-| **2 — Which rule matched** | Guardrail name + type (`code` / `regex` / `llm_judge` / `schema` / `classifier`) + position. Rich metadata: PII categories for `no_pii`, `match` substring for regex rules, `judge_prompt` + `judge_response` for LLM-judge rules. |
+| **2 — Which rule matched** | Guardrail name + type (`code` / `regex` / `llm_judge` / `schema` / `classifier` / `content_safety` / `groundedness` / `topic`) + position. Rich metadata: PII categories for `no_pii`, `match` substring for regex rules, `judge_prompt` + `judge_response` for LLM-judge rules, the `matched` topic names for a `topic` rule. |
 | **3 — What happened next** | For `blocked`: the error/fallback the agent received. For `filtered`: a side-by-side **before / after** diff of the rewritten content (set `metadata.before` and `metadata.after` on the result and the UI renders them automatically). For `errored`: an explanation that the check itself couldn't run, and whether the guardrail's [`on_error`](../guardrails/index.md#fail-policy-on_error) policy let the content through (`allow`) or blocked it (`block`). For `warned` / `passed`: explanatory text. |
 
 !!! note "The `errored` outcome"
@@ -74,10 +74,10 @@ The list endpoint gained four new filters in Sprint 2: `type` and
 `position` (existing fields, now surfaced through the API and a pair of
 list-page selects), plus `false_positive` to slice annotated rows.
 
-`type` accepts the two model-backed types added in 1.57.0 (`content_safety`,
-`groundedness`), and `outcome` accepts `filtered` — a rule that rewrote the
-payload and let the run continue. Every row also carries `action`,
-`action_taken`, `severity` and `floor`.
+`type` accepts every implementation type, including the model-backed ones
+(`content_safety` and `groundedness`, added in 1.57.0; `topic`, added in 1.58.0),
+and `outcome` accepts `filtered` — a rule that rewrote the payload and let the run
+continue. Every row also carries `action`, `action_taken`, `severity` and `floor`.
 
 The detail endpoint joins the event row with:
 - the triggering span (read by `span_id`)
