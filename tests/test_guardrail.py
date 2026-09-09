@@ -626,3 +626,55 @@ class TestExecutor:
         ]
         results = await execute_guardrails(guardrails, "test", GuardrailPosition.input)
         assert len(results) == 1
+
+
+# --------------------------------------------------------------------------- #
+# A schema guardrail with no schema is not a passing guardrail
+# --------------------------------------------------------------------------- #
+class TestVacuousSchemaGuardrail:
+    """``validate_schema`` finds no violations in ``{}``, so an empty schema used
+    to report every payload as valid while the console showed an active control.
+
+    Found by the plane team fixing their half: their shipped "JSON Output
+    Validation" template carried ``{"schema": {}}``, so anyone who copied it got
+    a rule enforcing nothing. Both sides now refuse it.
+    """
+
+    @pytest.mark.parametrize("config", [{"schema": {}}, {}, {"schema": None}, {"schema": "nope"}])
+    def test_a_rule_with_no_usable_schema_errors_instead_of_passing(self, config) -> None:
+        g = Guardrail(name="json-validation", guardrail_type=GuardrailType.schema, config=config)
+        res = g.execute({"literally": "anything"})
+        assert res.errored is True, config
+        assert res.passed is False, "a validation control that validates nothing must not pass"
+        assert "no schema" in (res.message or "")
+
+    def test_on_error_still_decides_what_it_costs(self) -> None:
+        g = Guardrail(
+            name="json-validation",
+            guardrail_type=GuardrailType.schema,
+            config={"schema": {}},
+            on_error="allow",
+        )
+        res = g.execute({"a": 1})
+        # Fail-open is a choice the rule is allowed to make; `errored` keeps it
+        # distinguishable from a real pass.
+        assert res.passed is True and res.errored is True
+
+    def test_a_real_schema_is_unaffected(self) -> None:
+        g = Guardrail(
+            name="s", guardrail_type=GuardrailType.schema, config={"schema": {"type": "object"}}
+        )
+        assert g.execute({"a": 1}).passed is True
+        assert g.execute('"a string"').passed is False
+
+    def test_json_schema_is_accepted_as_an_alias(self) -> None:
+        """Older console rules used ``json_schema``. Reading only ``schema``
+        would leave such a rule empty at the edge and populated centrally — the
+        same rule reaching two different verdicts."""
+        g = Guardrail(
+            name="s",
+            guardrail_type=GuardrailType.schema,
+            config={"json_schema": {"type": "object"}},
+        )
+        assert g.execute({"a": 1}).passed is True
+        assert g.execute('"a string"').passed is False

@@ -405,8 +405,33 @@ def test_only_payload_free_findings_are_exported() -> None:
     """
     from fastaiagent.guardrail.executor import EXPORTABLE_DETAIL_KEYS
 
-    assert set(EXPORTABLE_DETAIL_KEYS) == {GuardrailType.topic}
+    assert set(EXPORTABLE_DETAIL_KEYS) == {
+        GuardrailType.topic,
+        GuardrailType.content_safety,
+        GuardrailType.groundedness,
+    }
     assert EXPORTABLE_DETAIL_KEYS[GuardrailType.topic] == frozenset({"mode", "matched", "topics"})
+    assert EXPORTABLE_DETAIL_KEYS[GuardrailType.content_safety] == frozenset(
+        {"taxonomy", "scores", "thresholds", "tripped", "unscored"}
+    )
+    assert EXPORTABLE_DETAIL_KEYS[GuardrailType.groundedness] == frozenset(
+        {"score", "threshold", "unsupported_claims"}
+    )
+
+
+def test_the_one_payload_derived_export_stays_behind_the_payload_gate() -> None:
+    """``unsupported_claims`` quotes the answer, unlike every other exported key.
+
+    It is exported deliberately — the payload gate is the right control for it
+    rather than exclusion — and that only holds while the gate actually covers
+    it. If someone later moves ``detail`` out of ``SENSITIVE_ATTR_KEYS`` because
+    "the scores are just numbers", this is the test that stops them.
+    """
+    from fastaiagent.guardrail.executor import EXPORTABLE_DETAIL_KEYS
+    from fastaiagent.trace.redaction import SENSITIVE_ATTR_KEYS
+
+    assert "unsupported_claims" in EXPORTABLE_DETAIL_KEYS[GuardrailType.groundedness]
+    assert "fastaiagent.guardrail.detail" in SENSITIVE_ATTR_KEYS
 
 
 def test_a_key_outside_the_allowlist_never_reaches_the_span() -> None:
@@ -429,9 +454,46 @@ def test_a_type_with_no_allowlist_entry_exports_nothing() -> None:
     from fastaiagent.guardrail.executor import _exportable_detail
     from fastaiagent.guardrail.guardrail import GuardrailResult
 
-    rule = Guardrail(name="cs", guardrail_type=GuardrailType.content_safety)
-    result = GuardrailResult(passed=False, metadata={"scores": {"S10": 0.9}})
+    # `regex` carries `match` — a payload fragment, and for a PII rule the
+    # matched value itself. No entry, so nothing leaves.
+    rule = Guardrail(name="r", guardrail_type=GuardrailType.regex)
+    result = GuardrailResult(passed=False, metadata={"match": "123-45-6789"})
     assert _exportable_detail(rule, result) is None
+
+
+def test_the_model_backed_judges_export_their_findings() -> None:
+    """The plane's Analytics view plots score distributions against the bar in
+    force, and was blind to edge-run checks until these landed."""
+    from fastaiagent.guardrail.executor import _exportable_detail
+    from fastaiagent.guardrail.guardrail import GuardrailResult
+
+    cs = Guardrail(name="cs", guardrail_type=GuardrailType.content_safety)
+    detail = _exportable_detail(
+        cs,
+        GuardrailResult(
+            passed=False,
+            metadata={
+                "taxonomy": "mlcommons",
+                "scores": {"S10": 0.9},
+                "thresholds": {"S10": 0.3},
+                "tripped": ["S10"],
+                "unscored": [],
+                "leaked": "should not travel",
+            },
+        ),
+    )
+    assert detail is not None and "leaked" not in detail
+    assert detail["tripped"] == ["S10"] and detail["scores"] == {"S10": 0.9}
+
+    gr = Guardrail(name="gr", guardrail_type=GuardrailType.groundedness)
+    detail = _exportable_detail(
+        gr,
+        GuardrailResult(
+            passed=False,
+            metadata={"score": 0.2, "threshold": 0.7, "unsupported_claims": ["invented"]},
+        ),
+    )
+    assert detail == {"score": 0.2, "threshold": 0.7, "unsupported_claims": ["invented"]}
 
 
 def test_matched_is_always_a_subset_of_the_operators_own_topics() -> None:

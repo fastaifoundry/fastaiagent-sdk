@@ -281,17 +281,34 @@ runtime will send, and **a type absent from it exports nothing**:
 | Type | Exported |
 |---|---|
 | `topic` | `mode`, `matched`, `topics` |
+| `content_safety` | `taxonomy`, `scores`, `thresholds`, `tripped`, `unscored` |
+| `groundedness` | `score`, `threshold`, `unsupported_claims` |
 | everything else | nothing |
 
-`topic` qualifies because its findings are provably payload-free: `mode` is an
-enum, `topics` is the rule's own config — which a plane-authored rule already
-came *from* — and `matched` is intersected back against `topics` by
-`parse_topics`, so a model cannot smuggle content into it.
+Most of those are payload-free by construction. `topic`'s `mode` is an enum, its
+`topics` is the rule's own config — which a centrally-authored rule came *from* —
+and its `matched` is intersected back against `topics` by `parse_topics`, so a
+model cannot smuggle content into it. `content_safety` and `groundedness` export
+scores, the bars they were judged against, and category codes: derived numbers
+and rule config, no text.
 
-The attribute is also in `SENSITIVE_ATTR_KEYS`, so `FASTAIAGENT_TRACE_PAYLOADS=0`
-drops it and an installed redaction policy reaches it. That is a backstop behind
-the allowlist, not a substitute for it. Local capture is unaffected — the Local
-UI reads the full metadata either way.
+!!! warning "`unsupported_claims` is the exception, and it is deliberate"
+    It quotes the answer, so it **is** payload-derived. It is exported anyway,
+    because the payload gate is the right control for it rather than exclusion:
+    `FASTAIAGENT_TRACE_PAYLOADS=0` already means "no customer content leaves",
+    and a deployment with payloads *on* has consented to span inputs and outputs
+    — strictly more content than five clipped claims (`parse_verdict` caps the
+    list at five). Excluding it would let an operator see the claims at
+    `POST /guardrails/{id}/test` but not for the run that actually failed, which
+    is the one worth debugging.
+
+    Do **not** move it out from behind the payload gate on the grounds that its
+    neighbours are safe. They are; it is not.
+
+The attribute is in `SENSITIVE_ATTR_KEYS`, so `FASTAIAGENT_TRACE_PAYLOADS=0`
+drops it and an installed redaction policy reaches it. For the safe keys that is
+a backstop; for `unsupported_claims` it is the control itself. Local capture is
+unaffected — the Local UI reads the full metadata either way.
 
 Borrowing a runtime's own tracer? `emit_guardrail(..., detail=...)` takes
 whatever you give it; the allowlist is the SDK runtime's own discipline, so

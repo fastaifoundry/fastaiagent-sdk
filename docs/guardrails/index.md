@@ -307,7 +307,15 @@ config={"pattern": r"...", "should_match": False, "timeout_seconds": 1.0}
 
 ### Schema
 
-JSON Schema validation — useful for structured agent output:
+JSON Schema validation — useful for structured agent output.
+
+!!! warning "A rule with no schema errors, it does not pass"
+    An empty `schema` validates *everything*: the validator finds no violations
+    in `{}`, so the rule reported every payload as valid while showing as an
+    active control — worse than no rule, because it looks like one. Since 1.59.0
+    a missing, empty or non-object schema **raises**, so `on_error` decides what
+    it costs and the result is marked `errored`. `json_schema` is accepted as an
+    alias for `schema`.
 
 ```python
 schema_guard = Guardrail(

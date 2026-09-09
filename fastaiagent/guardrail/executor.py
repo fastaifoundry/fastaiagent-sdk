@@ -61,16 +61,39 @@ class GuardrailOutcome:
 #: leave the machine as a side effect of reporting a verdict, so this is an
 #: allowlist rather than a filter: a type absent from it exports nothing.
 #:
-#: ``topic`` is the one type whose findings are provably payload-free.
-#: ``mode`` is an enum, ``topics`` is the rule's own config — authored on the
-#: plane, which already has it — and ``matched`` is intersected back against
-#: ``topics`` by ``topics.parse_topics``, so ``matched`` is always a subset of
-#: what the plane sent us and a model cannot smuggle content into it.
+#: Most entries here are payload-free by construction. ``topic``'s ``mode`` is an
+#: enum, its ``topics`` is the rule's own config — authored centrally, so the
+#: plane already has it — and its ``matched`` is intersected back against
+#: ``topics`` by ``topics.parse_topics``, so a model cannot smuggle content into
+#: it. ``content_safety`` and ``groundedness`` export scores, the bars they were
+#: judged against, and category codes: derived numbers and rule config, no text.
+#:
+#: ⚠ ``groundedness.unsupported_claims`` is the exception — it quotes the
+#: answer, so it **is** payload-derived, and it is here deliberately. The
+#: judgement (agreed with the plane, 2026-09-10): the payload gate is the right
+#: control for it rather than exclusion. ``FASTAIAGENT_TRACE_PAYLOADS=0`` already
+#: means "no customer content leaves"; a deployment with payloads *on* has
+#: consented to span inputs and outputs, which is strictly more content than five
+#: clipped claims — and ``grounding.parse_verdict`` caps the list at five.
+#: Excluding it would leave an operator able to see the claims at
+#: ``/guardrails/{id}/test`` but not for the run that actually failed, which is
+#: the one worth debugging.
+#:
+#: **Do not move ``unsupported_claims`` out from behind the payload gate on the
+#: grounds that its neighbours are safe.** They are safe; it is not. The whole
+#: ``detail`` attribute is registered in
+#: :data:`~fastaiagent.trace.redaction.SENSITIVE_ATTR_KEYS`, and that
+#: registration is what makes this entry defensible.
 #:
 #: Widening this is a deliberate act: ``tests/test_guardrail_topics.py`` pins the
 #: contents so a new entry has to be argued for, not typed.
 EXPORTABLE_DETAIL_KEYS: dict[GuardrailType, frozenset[str]] = {
     GuardrailType.topic: frozenset({"mode", "matched", "topics"}),
+    GuardrailType.content_safety: frozenset(
+        {"taxonomy", "scores", "thresholds", "tripped", "unscored"}
+    ),
+    # ``unsupported_claims`` is payload-derived — see the ⚠ above.
+    GuardrailType.groundedness: frozenset({"score", "threshold", "unsupported_claims"}),
 }
 
 

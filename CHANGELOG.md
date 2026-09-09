@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.59.0] - 2026-09-10 — a validation rule that validated nothing
+
+Two items from the Enterprise plane team, found while building their half of the
+`topic` type. One is a real defect in a check that has shipped for a long time.
+
+### Fixed
+
+- **A `schema` guardrail with no schema passed every payload.** `validate_schema`
+  finds no violations in `{}`, so an empty schema reported everything as valid
+  while the console showed an active control — worse than having no rule,
+  because it looks like one. The plane's own shipped *JSON Output Validation*
+  template carried `{"schema": {}}`, so anyone who copied it got a rule
+  enforcing nothing. A missing, empty or non-object schema now **raises**, which
+  routes through `run_guardrail` so `on_error` decides what it costs and the
+  result is marked `errored`.
+- **`json_schema` is accepted as an alias for `schema`.** The plane accepts
+  either and older console rules used the latter, so a rule authored before that
+  split was empty at the edge and populated centrally — the same rule reaching
+  two different verdicts.
+
+### Added
+
+- **`content_safety` and `groundedness` now export their findings** on
+  `fastaiagent.guardrail.detail`, joining `topic`: `taxonomy` / `scores` /
+  `thresholds` / `tripped` / `unscored`, and `score` / `threshold` /
+  `unsupported_claims`. A central Analytics view that plots score distributions
+  against the bar in force was blind to edge-run checks — which is the traffic
+  that matters — because the SDK reported only pass/fail.
+- `unsupported_claims` is the one exported key that is **payload-derived**: it
+  quotes the answer. It is exported deliberately, because the payload gate is
+  the right control for it rather than exclusion — `FASTAIAGENT_TRACE_PAYLOADS=0`
+  already means "no customer content leaves", and a deployment with payloads on
+  has consented to span inputs and outputs, strictly more content than five
+  clipped claims. Excluding it would let an operator see the claims at
+  `POST /guardrails/{id}/test` but not for the run that actually failed. A test
+  pins it behind the gate so a later reader cannot move it out on the grounds
+  that its neighbours are safe.
+
+### Compatibility
+
+- **An existing `schema` rule with an empty schema flips from passing everything
+  to erroring** — and with the default `on_error="block"`, to blocking. That is
+  a deliberate trade: a validation control that validates nothing should be
+  found, not hidden. If you have such a rule, give it a schema or remove it;
+  `on_error="allow"` keeps it fail-open while still reporting `errored=True`.
+  A rule with a real schema is unaffected.
+- The new exported keys are additive. No wire bump.
+
 ## [1.58.0] - 2026-09-09 — "don't discuss competitors", as a rule you can distribute
 
 The most-asked-for absence in the guardrail set was the simplest policy to state:
