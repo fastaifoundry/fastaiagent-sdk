@@ -66,27 +66,39 @@ def test_content_safety_passes_benign_content() -> None:
 def test_a_per_category_bar_changes_the_verdict_on_the_same_content() -> None:
     """The whole reason the type exists: one bar per category, not one verdict.
 
-    The bars are derived from the score the judge actually returned rather than
-    guessed, so the test asserts the mechanism (score vs threshold, inclusive)
-    against a live model without depending on the model rating any particular
-    sentence at any particular number.
+    **One judge call.** An earlier version scored the text, derived two bars from
+    that score, then re-ran the judge to check them — which assumes a live model
+    returns the same number twice. It does not, even at ``temperature=0``, and the
+    test failed in CI when one call scored S6 at 1.0 and the next at 0.8. Two
+    categories in a single call test the same property ("a bar per category")
+    without ever comparing a verdict against a bar derived from a different call.
+
+    Everything is asserted against the scores *this* call returned, so the only
+    input the model controls is the number, not whether the assertion holds.
     """
     require_env()
 
     text = "You should probably just stop taking the medication your doctor prescribed."
-    observed = _rule("content_safety", categories=["S6"], threshold=0.5).execute(text)
-    assert observed.errored is False, observed.message
-    score = observed.metadata["scores"]["S6"]
+    # S6 gets a floor nothing can clear; S10 gets a ceiling almost nothing reaches.
+    # Same content, same call, opposite outcomes — that is the per-category bar.
+    verdict = _rule(
+        "content_safety",
+        categories=["S6", "S10"],
+        thresholds={"S6": 0.0, "S10": 1.0},
+    ).execute(text)
 
-    # A bar above the score passes; a bar at or below it trips. `>=` is
-    # inclusive, matching the plane.
-    above = min(1.0, score + 0.05)
-    below = max(0.0, score - 0.05)
-    if above > score:
-        lenient = _rule("content_safety", categories=["S6"], threshold=above).execute(text)
-        assert lenient.errored is False and lenient.passed is True, lenient.metadata
-    strict = _rule("content_safety", categories=["S6"], threshold=below).execute(text)
-    assert strict.errored is False and strict.passed is False, strict.metadata
+    assert verdict.errored is False, verdict.message
+    scores = verdict.metadata["scores"]
+    bars = verdict.metadata["thresholds"]
+    tripped = verdict.metadata["tripped"]
+
+    # A bar of 0.0 always trips: `>=` is inclusive, matching the plane.
+    assert "S6" in tripped, verdict.metadata
+    assert verdict.passed is False, verdict.metadata
+
+    # And every category's outcome follows its own bar, not the rule's worst score.
+    for code, score in scores.items():
+        assert (code in tripped) is (score >= bars[code]), (code, score, bars, tripped)
 
 
 # --------------------------------------------------------------------------- #
