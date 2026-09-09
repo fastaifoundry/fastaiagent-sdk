@@ -617,6 +617,14 @@ export interface GuardrailEvent {
   metadata: Record<string, unknown>;
   false_positive: boolean;
   false_positive_at: string | null;
+  // 1.57.0 — what the failure cost. `action` is what the rule was configured
+  // to do, `action_taken` what it actually did; they differ whenever the
+  // action could not get what it asked for (an errored check always blocks,
+  // a mask with nothing to mask blocks). Null for events recorded earlier.
+  action: string | null;
+  action_taken: string | null;
+  severity: string | null;
+  floor: boolean;
 }
 
 export interface GuardrailEventsPage {
