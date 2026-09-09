@@ -123,6 +123,13 @@ and `floor` change no behaviour — see
 All four are `NULL` on events recorded before 1.57.0, and the migration is
 additive: an older SDK opening a v18 file runs no migration and reads by name.
 
+The events table shows `Action` and `Severity` next to the outcome, with a
+`FLOOR` badge on the organisation baseline. An action that **could not be
+carried out** is flagged with `*`: an errored check always blocks whatever its
+action said, and a `mask` that finds no span to redact degrades to a block. Both
+are safety behaviours, not faults — but a rule configured to `mask` that shows
+`blocked` is worth seeing at a glance.
+
 !!! note "`filtered` is now produced, not just rendered"
     The detail page has always known the `filtered` outcome and its before/after
     diff. Until the action spectrum shipped, no runtime code could write one —

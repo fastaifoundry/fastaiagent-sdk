@@ -35,7 +35,37 @@ const OUTCOME_META: Record<string, { label: string; className: string }> = {
   errored: { label: "errored", className: "bg-fa-warning/10 text-fa-warning" },
 };
 
-const TYPE_OPTIONS = ["code", "regex", "llm_judge", "schema", "classifier"];
+const TYPE_OPTIONS = [
+  "code",
+  "regex",
+  "llm_judge",
+  "schema",
+  "classifier",
+  "content_safety",
+  "groundedness",
+];
+
+// What each action produces when it gets what it asked for. An outcome that
+// differs is worth flagging: an errored check always blocks whatever the action
+// said, and a `mask` that finds no span to redact degrades to a block rather
+// than passing the payload through. Both are safety behaviours, not bugs — but
+// an operator reading "mask" in the rule and "blocked" in the row deserves to
+// see that the two disagree.
+const ACTION_FULFILLED: Record<string, string> = {
+  block: "blocked",
+  warn: "warned",
+  mask: "masked",
+  override: "overridden",
+  reask: "reask",
+};
+
+// Operator-assigned impact. Carried and shown; nothing branches on it.
+const SEVERITY_CLASS: Record<string, string> = {
+  low: "text-muted-foreground",
+  medium: "text-fa-warning",
+  high: "text-fa-warning",
+  critical: "text-destructive",
+};
 const POSITION_OPTIONS = ["input", "output", "tool_call", "tool_result"];
 
 export function GuardrailsPage() {
@@ -202,6 +232,8 @@ export function GuardrailsPage() {
                 <TableHead className="w-[90px]">Type</TableHead>
                 <TableHead className="w-[100px]">Position</TableHead>
                 <TableHead className="w-[110px]">Outcome</TableHead>
+                <TableHead className="w-[100px]">Action</TableHead>
+                <TableHead className="w-[90px]">Severity</TableHead>
                 <TableHead className="w-[80px] text-right">Score</TableHead>
                 <TableHead>Agent</TableHead>
                 <TableHead>Message</TableHead>
@@ -257,6 +289,45 @@ export function GuardrailsPage() {
                         <span className="h-1.5 w-1.5 rounded-full bg-current" />
                         {meta.label}
                       </span>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {(() => {
+                        const taken = row.action_taken;
+                        if (!taken || taken === "none") return "—";
+                        const diverged =
+                          !!row.action && ACTION_FULFILLED[row.action] !== taken;
+                        return (
+                          <span
+                            className={cn("font-mono", diverged && "text-fa-warning")}
+                            title={
+                              diverged
+                                ? `configured as "${row.action}", but the action could not be carried out`
+                                : undefined
+                            }
+                          >
+                            {taken}
+                            {diverged && " *"}
+                          </span>
+                        );
+                      })()}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      <span
+                        className={cn(
+                          "font-mono",
+                          SEVERITY_CLASS[row.severity ?? ""] ?? "text-muted-foreground",
+                        )}
+                      >
+                        {row.severity ?? "—"}
+                      </span>
+                      {row.floor && (
+                        <span
+                          className="ml-1 rounded-sm bg-primary/10 px-1 py-px text-[9px] uppercase text-primary"
+                          title="Organisation baseline — only a domain admin may change this rule"
+                        >
+                          floor
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="text-right font-mono tabular-nums text-xs">
                       {row.score != null ? row.score.toFixed(2) : "—"}

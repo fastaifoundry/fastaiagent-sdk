@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.57.1] - 2026-09-09 — the Local UI catches up with 1.57.0
+
+1.57.0 taught the SDK two new guardrail types and gave every rule an `action`.
+It did not tell the Local UI. The backend accepted `content_safety` and
+`groundedness`, the runtime recorded events for them, and the one screen an
+operator would use to find those events could not select them — so the events
+existed and were unreachable.
+
+Patch release: no library behaviour changes, and no wire change.
+
+### Fixed
+
+- **The guardrail-events type filter offers all seven implementation types.**
+  It still listed five, so an event from a `content_safety` or `groundedness`
+  rule could not be filtered for. The SPA is a prebuilt bundle, which is why
+  nothing in the Python suite caught it.
+
+### Added
+
+- **The events table shows what the failure cost** — an `Action` column
+  (`action_taken`) and a `Severity` column, with a `FLOOR` badge on the
+  organisation baseline. These have been on the API and in `local.db` since
+  1.57.0 with nothing rendering them, which was half of the handover's "surface
+  them in the Local UI".
+- An action that **could not be carried out** is flagged. An errored check always
+  blocks whatever its action said, and a `mask` with no span to redact degrades
+  to a block; both are safety behaviours, but an operator reading "mask" on the
+  rule and "blocked" on the row deserves to see that the two disagree. The
+  comparison needs a map, not string equality — the actions are present tense
+  (`block`) and the outcomes past (`blocked`).
+- `tests/test_ui_guardrail_vocab_drift.py` holds the SPA's filter lists to the
+  SDK's own enums, so the next type added fails a test instead of shipping an
+  unreachable filter. Verified by reverting the fix and watching it fail.
+
+### Docs
+
+- `docs/ui/guardrail-events.md` — the new columns and the divergence marker.
+
 ## [1.57.0] - 2026-09-08 — what a guardrail failure costs
 
 A guardrail could only ever do one thing when it failed: stop the run. So a rule
