@@ -44,10 +44,12 @@ _RECONSTRUCTABLE = {
     GuardrailType.classifier,
     GuardrailType.llm_judge,
     # Model-backed judges with structure. Their prompts and parsing live in
-    # ``hazard_taxonomy`` / ``grounding``, mirrored from the plane so a rule
-    # reaches the same verdict at the edge as it does at /guardrails/{id}/test.
+    # ``hazard_taxonomy`` / ``grounding`` / ``topics``, mirrored from the plane so
+    # a rule reaches the same verdict at the edge as it does at
+    # /guardrails/{id}/test.
     GuardrailType.content_safety,
     GuardrailType.groundedness,
+    GuardrailType.topic,
 }
 
 # (version, agent_id) -> built guardrails. Rebuilt when the policy version changes

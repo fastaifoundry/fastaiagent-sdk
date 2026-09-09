@@ -75,6 +75,11 @@ SENSITIVE_ATTR_KEYS: frozenset[str] = frozenset(
         # Chain payloads — ``Chain.aexecute`` writes JSON-serialized state.
         "chain.input",
         "chain.output",
+        # A guardrail's structured findings. The SDK runtime only ever puts
+        # rule-derived values here (see ``guardrail.executor.EXPORTABLE_DETAIL_KEYS``),
+        # but a borrowing runtime sets it itself, and a future key could be
+        # derived from the payload — so it is gated like one.
+        "fastaiagent.guardrail.detail",
         # Retrieval / KB payloads — the query and returned document content can
         # both carry user data and proprietary corpus text. Set by
         # ``fastaiagent.kb._tracing`` and the LangChain retriever integration.

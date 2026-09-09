@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastaiagent._internal.errors import GuardrailBlockedError
 from fastaiagent.guardrail.actions import halts
-from fastaiagent.guardrail.guardrail import GuardrailPosition, GuardrailResult
+from fastaiagent.guardrail.guardrail import GuardrailPosition, GuardrailResult, GuardrailType
 
 if TYPE_CHECKING:
     from fastaiagent.guardrail.guardrail import Guardrail
@@ -51,6 +51,38 @@ class GuardrailOutcome:
         return True
 
 
+#: Per-type allowlist of ``GuardrailResult.metadata`` keys the SDK runtime sends
+#: to a control plane on the guardrail span.
+#:
+#: A check's metadata is captured locally at full fidelity, but most of it is
+#: derived from the payload — ``toxic_words`` holds the offending words,
+#: ``matches`` a regex fragment (for a PII rule, the matched value itself),
+#: ``unsupported_claims`` model output over customer content. None of that may
+#: leave the machine as a side effect of reporting a verdict, so this is an
+#: allowlist rather than a filter: a type absent from it exports nothing.
+#:
+#: ``topic`` is the one type whose findings are provably payload-free.
+#: ``mode`` is an enum, ``topics`` is the rule's own config — authored on the
+#: plane, which already has it — and ``matched`` is intersected back against
+#: ``topics`` by ``topics.parse_topics``, so ``matched`` is always a subset of
+#: what the plane sent us and a model cannot smuggle content into it.
+#:
+#: Widening this is a deliberate act: ``tests/test_guardrail_topics.py`` pins the
+#: contents so a new entry has to be argued for, not typed.
+EXPORTABLE_DETAIL_KEYS: dict[GuardrailType, frozenset[str]] = {
+    GuardrailType.topic: frozenset({"mode", "matched", "topics"}),
+}
+
+
+def _exportable_detail(guardrail: Guardrail, result: GuardrailResult) -> dict[str, object] | None:
+    """The subset of ``result.metadata`` this guardrail may put on its span."""
+    allowed = EXPORTABLE_DETAIL_KEYS.get(guardrail.guardrail_type)
+    if not allowed or not result.metadata:
+        return None
+    detail = {k: v for k, v in result.metadata.items() if k in allowed}
+    return detail or None
+
+
 def _emit_guardrail_span(guardrail: Guardrail, result: GuardrailResult) -> None:
     """Emit one child span carrying a guardrail's outcome.
 
@@ -88,6 +120,7 @@ def _emit_guardrail_span(guardrail: Guardrail, result: GuardrailResult) -> None:
             action_taken=result.action_taken,
             severity=guardrail.severity,
             floor=guardrail.floor,
+            detail=_exportable_detail(guardrail, result),
         )
     except Exception:  # pragma: no cover - observability must never break a run
         pass

@@ -43,6 +43,7 @@ const TYPE_OPTIONS = [
   "classifier",
   "content_safety",
   "groundedness",
+  "topic",
 ];
 
 // What each action produces when it gets what it asked for. An outcome that

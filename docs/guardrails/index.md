@@ -180,9 +180,9 @@ def check_quality(text: str) -> GuardrailResult:
 quality_guard = Guardrail(name="quality_check", fn=check_quality)
 ```
 
-## Seven Implementation Types
+## Eight Implementation Types
 
-Beyond inline functions, guardrails support six more implementation types for configuration-driven validation. The last two are model-backed judges with structure, and are documented in full under [Actions, severity & floor](actions.md#two-model-backed-check-types):
+Beyond inline functions, guardrails support seven more implementation types for configuration-driven validation. The last three — `content_safety`, `groundedness` and `topic` — are model-backed judges with structure, and are documented in full under [Actions, severity & floor](actions.md#three-model-backed-check-types):
 
 ### Code (default)
 
@@ -362,6 +362,39 @@ content_filter = Guardrail(
     },
 )
 ```
+
+### Model-backed judges
+
+Three types are judges with *structure* — a model call whose question, and whose
+answer, have a fixed shape, so an operator can say which harm, which bar, or
+which topic they mean and read from the audit row which one tripped. Their
+prompts and parsers are mirrored from the plane so a rule reaches the same
+verdict at the edge as it does centrally. Each is documented in full under
+[Actions, severity & floor](actions.md#three-model-backed-check-types):
+
+| Type | Decides | Configured with |
+|------|---------|-----------------|
+| `content_safety` | Which MLCommons hazard categories (S1–S14) the payload hits, each against its own bar | `categories`, `threshold`, `thresholds` |
+| `groundedness` | Whether an answer is supported by the context it was given | `threshold`, `context_key`, `answer_key` |
+| `topic` | Which named topics the payload discusses, then `deny` or `allow` on that | `topics` (`{name, description}`), `mode` |
+
+```python
+no_competitors = Guardrail(
+    name="no_competitors",
+    guardrail_type=GuardrailType.topic,
+    config={
+        "topics": [
+            {"name": "Competitor products",
+             "description": "Any mention or comparison of a competing vendor's product."},
+        ],
+        "mode": "deny",   # "allow" makes the same list an on-topic gate
+    },
+)
+```
+
+Unlike `classifier` above, this is not substring matching: the *description* is
+what lets the judge catch "the other vendor's offering" without the word
+"competitor" appearing anywhere.
 
 ## Positions
 

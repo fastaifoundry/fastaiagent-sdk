@@ -300,6 +300,13 @@ function RuleDetail({ event }: { event: GuardrailEvent }) {
   const judgeResponse = (md as Record<string, unknown>).judge_response;
   const matched = (md as Record<string, unknown>).match;
   const piiTypes = (md as Record<string, unknown>).pii_types;
+  // A `topic` rule reports which of the operator's named topics the judge found,
+  // in the operator's own wording, plus the polarity that turned that into a
+  // verdict. Without the polarity an empty list is unreadable: it is a clean pass
+  // for a blocklist and the whole reason an on-topic gate blocked.
+  const topicMode = (md as Record<string, unknown>).mode;
+  const topicMatched = (md as Record<string, unknown>).matched;
+  const topicsAsked = (md as Record<string, unknown>).topics;
 
   return (
     <ul className="space-y-1.5 text-sm">
@@ -325,6 +332,32 @@ function RuleDetail({ event }: { event: GuardrailEvent }) {
         <li>
           <span className="text-muted-foreground">pii types:</span>{" "}
           <span className="font-mono">{(piiTypes as string[]).join(", ")}</span>
+        </li>
+      )}
+      {typeof topicMode === "string" && (
+        <li>
+          <span className="text-muted-foreground">mode:</span>{" "}
+          <span className="font-mono">
+            {topicMode === "deny" ? "deny (blocklist)" : "allow (on-topic gate)"}
+          </span>
+        </li>
+      )}
+      {Array.isArray(topicMatched) && (
+        <li>
+          <span className="text-muted-foreground">topics matched:</span>{" "}
+          {topicMatched.length > 0 ? (
+            <span className="font-mono text-fa-warning">
+              {(topicMatched as string[]).join(", ")}
+            </span>
+          ) : (
+            <span className="font-mono text-muted-foreground">none</span>
+          )}
+        </li>
+      )}
+      {Array.isArray(topicsAsked) && topicsAsked.length > 0 && (
+        <li>
+          <span className="text-muted-foreground">topics checked:</span>{" "}
+          <span className="font-mono">{(topicsAsked as string[]).join(", ")}</span>
         </li>
       )}
       {typeof matched === "string" && matched && (

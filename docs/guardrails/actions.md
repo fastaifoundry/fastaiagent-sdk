@@ -118,9 +118,9 @@ on a reply that already cost one.
 `reask` only means something where there is a model turn to redo. At every other
 position, and when streaming, it blocks.
 
-## Two model-backed check types
+## Three model-backed check types
 
-Both are judges with structure, distributed from the plane like any other rule.
+All three are judges with structure, distributed from the plane like any other rule.
 
 ### `content_safety`
 
@@ -177,6 +177,62 @@ The `groundedness` *type* uses the plane's single-call judge, because a
 distributed rule has to reach the same verdict at the edge as it does at
 `POST /guardrails/{id}/test`, and it has to be cheap enough to run every turn.
 
+### `topic`
+
+Classifies the payload against named topics, then applies a polarity:
+
+```json
+{
+  "topics": [
+    {"name": "Competitor products",
+     "description": "Any mention, comparison or evaluation of a competing vendor's product."},
+    {"name": "Medical advice",
+     "description": "Diagnosis, treatment or medication guidance for a specific person."}
+  ],
+  "mode": "deny"
+}
+```
+
+`mode: "deny"` fails when a listed topic is present (a blocklist); `mode: "allow"`
+fails when **none** is (an on-topic gate). One type with a polarity rather than
+two types, because they share a prompt, a parser and a config — an operator
+choosing between two rule types when they mean one rule with a direction is a
+worse console.
+
+**The description is the point.** A bare label is a poor prompt: "crypto" cannot
+tell a judge whether a mention of blockchain patents counts, and that is the
+difference between topic control and a keyword list with extra steps. A bare
+string is still accepted (the name doubles as the definition) because a console
+may legitimately have no description yet, and judging a topic on its name alone
+beats refusing the whole rule.
+
+**No per-topic threshold.** `content_safety` has a bar per category because a
+hazard score is a calibrated quantity. Topic presence is closer to a boolean, and
+asking a judge "how much is this about medicine, 0 to 1" invites false precision
+from a number nobody could tune. At most `MAX_TOPICS` (20) topics are judged: a
+rule naming forty is describing a taxonomy, not a policy.
+
+The metadata carries the `mode`, the `matched` topic names in your own wording,
+and the full list of `topics` the rule asked about.
+
+**`mode` does not decide what a failure costs, and it does not decide what an
+error costs either.** A typo in `mode` *raises* rather than falling back to a
+default — every other resolver tolerates a bad input, but this one inverts the
+rule's meaning, and a whitelist silently read as a blocklist passes exactly the
+traffic it was written to stop. What that failure costs is then `on_error`'s
+call, not the polarity's: the two builtins deliberately disagree on the default
+(see [`banned_topics()` vs the `topic` type](responsible-ai.md#banned_topics-allowed_topics-vs-the-topic-type)),
+and a plane-distributed rule carries its own.
+
+The prompt asks only *which topics are present* and never states the polarity.
+Telling a judge that a topic is forbidden invites it to be helpful about the
+verdict rather than accurate about the content, and it would make the two modes
+classify identical text differently.
+
+`mask` is refused on this type — a judge returns a verdict, not spans, so a mask
+finds nothing to redact and degrades to a block. `block`, `warn`, `override` and
+`reask` all apply.
+
 ## `severity` and `floor`
 
 Neither changes enforcement.
@@ -202,10 +258,44 @@ fastaiagent.guardrail.action        # block | warn | mask | override | reask
 fastaiagent.guardrail.action_taken  # none | blocked | warned | masked | overridden | reask
 fastaiagent.guardrail.severity      # low | medium | high | critical
 fastaiagent.guardrail.floor         # bool
+fastaiagent.guardrail.detail        # JSON: the check's own structured findings
 ```
 
 The `checks` JSON keeps its three-value vocabulary (`pass` / `block` / `error`)
 unchanged — the plane parses that string into `output.checks`.
+
+### `detail`, and why it is an allowlist
+
+`detail` is what lets an audit row say *which* topic tripped rather than only
+that one did. Without it a rule enforced at the edge records less than the same
+rule run centrally — the asymmetry a mirrored judge exists to prevent.
+
+It is deliberately **not** the whole of a result's `metadata`. Most guardrail
+metadata is derived from the payload: `toxic_words` holds the offending words,
+`matches` a regex fragment — for a PII rule, the matched value itself —
+`unsupported_claims` model output over customer content. None of that may leave
+the machine as a side effect of reporting a verdict. So
+`guardrail.executor.EXPORTABLE_DETAIL_KEYS` names, per type, the keys the SDK
+runtime will send, and **a type absent from it exports nothing**:
+
+| Type | Exported |
+|---|---|
+| `topic` | `mode`, `matched`, `topics` |
+| everything else | nothing |
+
+`topic` qualifies because its findings are provably payload-free: `mode` is an
+enum, `topics` is the rule's own config — which a plane-authored rule already
+came *from* — and `matched` is intersected back against `topics` by
+`parse_topics`, so a model cannot smuggle content into it.
+
+The attribute is also in `SENSITIVE_ATTR_KEYS`, so `FASTAIAGENT_TRACE_PAYLOADS=0`
+drops it and an installed redaction policy reaches it. That is a backstop behind
+the allowlist, not a substitute for it. Local capture is unaffected — the Local
+UI reads the full metadata either way.
+
+Borrowing a runtime's own tracer? `emit_guardrail(..., detail=...)` takes
+whatever you give it; the allowlist is the SDK runtime's own discipline, so
+apply the same judgement to what you pass.
 
 In the Local UI a rewriting rule shows as **`✎ filtered`** with a before/after
 diff, distinct from a block.

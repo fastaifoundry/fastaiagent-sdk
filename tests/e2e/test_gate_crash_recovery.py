@@ -100,18 +100,28 @@ def _spawn_worker(ckpt_db: str, execution_id: str) -> subprocess.Popen[bytes]:
     )
 
 
-def _wait_for_step_2_checkpoint(ckpt_db: str, execution_id: str, timeout: float = 30.0) -> None:
+def _wait_for_step_2_checkpoint(
+    ckpt_db: str,
+    execution_id: str,
+    timeout: float = 90.0,
+    proc: subprocess.Popen[bytes] | None = None,
+) -> None:
     """Poll the checkpoint store until step_2 is committed.
 
     We use a fresh ``SQLiteCheckpointer`` per poll so we read the worker's
     latest committed state via SQLite WAL. Returns once ``step_2`` is the
-    latest checkpoint, or raises ``TimeoutError``.
+    latest checkpoint, or raises.
 
-    Default timeout is 30s (was 10s) — the worker subprocess does Python
-    interpreter startup + module import + chain construction + first
-    SQLite write before step_2 lands. On loaded GitHub runners that
-    occasionally exceeds 10s. 30s gives headroom while staying fast on
-    healthy machines (typical resolution: <100ms).
+    This is a **liveness bound, not the thing under test** — the gate asserts
+    that a SIGKILLed chain resumes, not that it reaches step_2 quickly. The
+    worker does interpreter startup + module import + chain construction + a
+    first SQLite write before step_2 lands; on a loaded GitHub runner that has
+    now blown a 10s bound and then a 30s one, each time as a false failure. 90s
+    costs nothing on a healthy machine (typical resolution: <100ms).
+
+    ``proc`` makes a dead worker report itself. Without it, a worker that died
+    on import looked identical to a slow one: the poll simply ran out and said
+    "never checkpointed", which is the symptom and not the cause.
     """
     from fastaiagent import SQLiteCheckpointer
 
@@ -126,6 +136,14 @@ def _wait_for_step_2_checkpoint(ckpt_db: str, execution_id: str, timeout: float 
             latest = None
         if latest is not None and latest.node_id == "step_2":
             return
+        if proc is not None and proc.poll() is not None:
+            # It is not slow, it is gone. Say so now rather than in 90s.
+            out = proc.stdout.read() if proc.stdout else b""
+            err = proc.stderr.read() if proc.stderr else b""
+            raise AssertionError(
+                f"worker exited with {proc.returncode} before checkpointing step_2\n"
+                f"stdout: {out!r}\nstderr: {err!r}"
+            )
         time.sleep(0.05)
     raise TimeoutError(
         f"step_2 was never checkpointed within {timeout}s for execution {execution_id!r}"
@@ -173,7 +191,7 @@ class TestCrashRecoveryGate:
         # 5s in step_3.
         proc = _spawn_worker(ckpt_db, execution_id)
         try:
-            _wait_for_step_2_checkpoint(ckpt_db, execution_id)
+            _wait_for_step_2_checkpoint(ckpt_db, execution_id, proc=proc)
             # 2. SIGKILL mid-step_3.
             _kill_and_reap(proc)
             assert proc.returncode is not None
