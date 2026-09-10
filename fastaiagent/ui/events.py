@@ -21,6 +21,24 @@ if TYPE_CHECKING:
     from fastaiagent.guardrail.guardrail import Guardrail, GuardrailResult
 
 
+def _capture_redact_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    """Mask a guardrail event's metadata with the installed capture-mode policy.
+
+    ``trace.storage`` runs span attributes through ``_capture_redact`` on the way
+    into ``local.db``; guardrail events skipped it. Best-effort by construction —
+    an event row must never be lost because a policy raised.
+    """
+    try:
+        from fastaiagent.trace.redaction import _walk_and_redact, get_redaction_policy
+
+        policy = get_redaction_policy()
+        if policy is None or policy.mode not in ("capture", "both") or not policy._compiled:
+            return metadata
+        return {k: _walk_and_redact(v, policy) for k, v in metadata.items()}
+    except Exception:  # pragma: no cover - redaction must not break the write
+        return metadata
+
+
 def log_guardrail_event(
     guardrail: Guardrail,
     result: GuardrailResult,
@@ -61,6 +79,15 @@ def log_guardrail_event(
             # The detail page diffs these two when outcome == "filtered".
             metadata.setdefault("before", data if isinstance(data, str) else str(data))
             metadata.setdefault("after", str(result.modified_data))
+
+        # Local capture stays full fidelity — that is the documented model, and
+        # Replay depends on it, so ``FASTAIAGENT_TRACE_PAYLOADS`` (an *export*
+        # boundary) deliberately does not reach here. But an installed
+        # capture-mode ``RedactionPolicy`` does, exactly as it does for span
+        # attributes in ``trace.storage``. That consistency was missing: `before`
+        # is the payload *prior* to redaction — the PII or secret the rule exists
+        # to remove — and it was the one place a policy could not reach.
+        metadata = _capture_redact_metadata(metadata)
 
         helper.execute(
             """INSERT INTO guardrail_events

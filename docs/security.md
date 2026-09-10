@@ -144,6 +144,14 @@ For cases where you *want* to keep payloads (debugging, replay) but
 need to mask secrets that leaked through, install a regex-based
 redaction policy. The Local UI exposes a **"Mask secrets"** toggle on
 the trace detail page that sends `?redact=true` to the trace API.
+
+A `capture`- or `both`-mode policy reaches **guardrail event metadata** too, since
+1.62.0. That matters most for a `mask` or `override` rule: the Local UI's
+before/after diff stores the payload *prior* to redaction — the PII or secret the
+rule exists to remove — and it was the one local write a policy could not reach,
+while span attributes had been redacted on capture all along. Note the payload
+gate (`FASTAIAGENT_TRACE_PAYLOADS`) deliberately does **not** apply here: it is an
+export boundary, and local capture stays full fidelity so Replay keeps working.
 When a policy with `mode in {"read", "both"}` is installed, the
 toggle masks values in the rendered span output:
 

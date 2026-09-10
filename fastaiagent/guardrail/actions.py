@@ -160,7 +160,10 @@ async def mask_payload(guardrail: Guardrail, data: str | dict[str, Any]) -> str 
             detect_secrets,
             mask_spans,
         )
-        from fastaiagent.guardrail.implementations import _resolve_pii_entities
+        from fastaiagent.guardrail.implementations import (
+            _resolve_pii_backend,
+            _resolve_pii_entities,
+        )
 
         if guardrail.guardrail_type == GuardrailType.pii:
             spans = [
@@ -168,7 +171,13 @@ async def mask_payload(guardrail: Guardrail, data: str | dict[str, Any]) -> str 
                 for m in detect_pii(
                     text,
                     entities=_resolve_pii_entities(config),
-                    backend=str(config.get("backend") or "regex").lower().strip(),
+                    # Through the shared resolver, not an inline lowercase. 1.61.0
+                    # moved ``_run_pii`` onto it and claimed "one place to be wrong
+                    # rather than two" — this call site was the second place, and
+                    # kept its own copy. It is only unreachable today because the
+                    # runner validates first and ``apply_action`` short-circuits an
+                    # errored result; that is an accident of ordering, not a design.
+                    backend=_resolve_pii_backend(config),
                 )
             ]
         else:

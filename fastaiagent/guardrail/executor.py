@@ -105,12 +105,29 @@ EXPORTABLE_DETAIL_KEYS: dict[GuardrailType, frozenset[str]] = {
 }
 
 
+#: Per-entry character cap applied to ``groundedness.unsupported_claims`` on the
+#: way out. The list is capped at five by ``grounding.parse_verdict``, and the ⚠
+#: note above rests on that — but a *count* cap leaves the volume unbounded, so a
+#: judge (or an injected one) could return the whole answer, or the whole
+#: retrieved context, as a single "claim". Long enough to identify the claim,
+#: short enough that it cannot become a channel for the payload.
+#:
+#: Applied **here**, not in ``grounding.py``: that module is mirrored from the
+#: plane and clipping there would widen a cross-repo divergence to fix an egress
+#: concern. The bound is claimed by this allowlist, so it is enforced by this
+#: allowlist — the local result keeps full fidelity either way.
+_MAX_CLAIM_CHARS = 300
+
+
 def _exportable_detail(guardrail: Guardrail, result: GuardrailResult) -> dict[str, object] | None:
     """The subset of ``result.metadata`` this guardrail may put on its span."""
     allowed = EXPORTABLE_DETAIL_KEYS.get(guardrail.guardrail_type)
     if not allowed or not result.metadata:
         return None
     detail = {k: v for k, v in result.metadata.items() if k in allowed}
+    claims = detail.get("unsupported_claims")
+    if isinstance(claims, list):
+        detail["unsupported_claims"] = [str(c)[:_MAX_CLAIM_CHARS] for c in claims]
     return detail or None
 
 
@@ -206,8 +223,16 @@ async def execute_guardrails(
             # the model originally produced.
             outcome.data = result.modified_data  # type: ignore[assignment]
             outcome.modified = True
-        if result.action_taken == "reask" and outcome.reask is None:
-            outcome.reask = result
+        if result.action_taken == "reask":
+            # First-wins on *which* failure the caller is handed back, because it
+            # can only re-drive the model once per attempt. But the decision to
+            # continue is **per rule**: gating it on ``outcome.reask is None`` too
+            # meant a second failing reask rule skipped this branch entirely, fell
+            # through to ``halts()`` — which is True for ``reask`` on a blocking
+            # rule — and hard-blocked. Adding a second reask rule silently turned
+            # the pair into a block and bypassed the retry loop.
+            if outcome.reask is None:
+                outcome.reask = result
             if allow_reask and guardrail.blocking:
                 # The caller can re-drive the model, so hand the failure back
                 # instead of raising. If the re-ask never converges the caller

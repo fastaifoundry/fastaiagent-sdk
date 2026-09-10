@@ -51,13 +51,30 @@ def require_platform() -> None:
     Used on steps 2 (connect) and 10 (verify trace in dashboard) so CI runs
     without hitting a remote platform, while local runs against a
     docker-compose platform still exercise the full push/verify path.
+
+    **``E2E_REQUIRED=1`` overrides the skip**, the same way it does in
+    :func:`require_env`. Without that escape hatch this was an *unconditional*
+    skip whenever CI set ``E2E_SKIP_PLATFORM``, and the 2026-09-10 audit found
+    what that cost: ``test_connected_guardrail_actions_e2e.py`` is the **only**
+    place that pins severity/floor crossing the wire, a plane-authored
+    mask/warn/override enforcing in-process, and a domain-wide rule producing an
+    execution row — and all of it skipped on every PR, silently and by
+    configuration rather than by accident. A skip is not a check; a gate with no
+    way to demand it is not a gate.
     """
-    if _skip_platform():
-        pytest.skip(
-            "E2E_SKIP_PLATFORM=1 — platform-dependent step bypassed. "
-            "Run locally without this flag (and with FASTAIAGENT_TARGET set) "
-            "to exercise the platform push/verify path."
+    if not _skip_platform():
+        return
+    message = (
+        "E2E_SKIP_PLATFORM=1 — platform-dependent step bypassed. "
+        "Run locally without this flag (and with FASTAIAGENT_TARGET set) "
+        "to exercise the platform push/verify path."
+    )
+    if os.environ.get("E2E_REQUIRED") == "1":
+        pytest.fail(
+            f"{message} E2E_REQUIRED=1 demands the platform path actually run — "
+            "unset E2E_SKIP_PLATFORM or drop E2E_REQUIRED."
         )
+    pytest.skip(message)
 
 
 def require_anthropic() -> None:
@@ -105,9 +122,7 @@ def require_ollama_running(host: str = "http://localhost:11434") -> None:
     except Exception as e:
         pytest.skip(f"Ollama daemon not reachable at {host}: {e}")
     if resp.status_code != 200:
-        pytest.skip(
-            f"Ollama daemon at {host} returned status {resp.status_code}"
-        )
+        pytest.skip(f"Ollama daemon at {host} returned status {resp.status_code}")
 
 
 def require_otlp_endpoint(
@@ -145,9 +160,7 @@ def require_otlp_endpoint(
     except Exception as e:
         pytest.skip(f"OTLP query API not reachable at {query_url}: {e}")
     if q.status_code != 200:
-        pytest.skip(
-            f"OTLP query API at {query_url} returned status {q.status_code}"
-        )
+        pytest.skip(f"OTLP query API at {query_url} returned status {q.status_code}")
 
 
 @pytest.fixture(scope="module")

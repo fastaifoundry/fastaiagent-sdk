@@ -118,6 +118,13 @@ on a reply that already cost one.
 `reask` only means something where there is a model turn to redo. At every other
 position, and when streaming, it blocks.
 
+Two reask rules on the same position are fine, and both get their turn. The
+caller is handed the **first** failure — it can only re-drive the model once per
+attempt — and the retry re-runs every rule, so the second one is judged again on
+the corrected reply. (Before 1.62.0 the second failing reask rule fell through to
+a hard block, silently turning a pair of them into something neither was
+configured to do.)
+
 ## Three model-backed check types
 
 All three are judges with structure, distributed from the plane like any other rule.
@@ -165,6 +172,13 @@ with fa.guardrail_context(context=docs):
 The slot is backed by a `ContextVar`, so it is per-task: concurrent runs never
 see each other's context. `config.context_key` names the key the rule wants, so
 the retrieval step and the rule never have to know about each other.
+
+It also survives a **synchronous call made from inside a running event loop** —
+`agent.run(...)` from a Jupyter cell, a pytest-asyncio test, or one of the
+framework integrations. That path offloads to a worker thread, and before 1.62.0
+the thread started with an empty context, so the slot read back empty and the
+rule blocked the run it was meant to score. A plain script was always fine, which
+is exactly why it went unnoticed.
 
 **A missing context fails closed.** An answer scored against nothing blocks
 everything, and scored against itself blocks nothing; both are worse than

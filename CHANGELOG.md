@@ -129,6 +129,62 @@ that keeps happening.
   plane's resolver. With `or`, a rule carrying `{"schema": {}, "json_schema": {…}}`
   returned a verdict here and errored centrally.
 
+- **`run_sync` dropped the caller's `contextvars` context**, so a shipped feature
+  worked in a script and broke everywhere else. Offloading to a worker thread with
+  `ThreadPoolExecutor().submit(asyncio.run, coro)` starts that thread with an
+  *empty* context, so every `ContextVar` the caller set read back as its default
+  inside the coroutine.
+
+  The concrete cost: `fa.guardrail_context(context=docs)` backs a `groundedness`
+  rule, and losing it means the rule cannot find its context, raises, and — with
+  the default `on_error="block"` — **blocks the run it was supposed to score**.
+  Only from a Jupyter cell, a pytest-asyncio test, or one of the framework
+  integrations; a plain script was always fine, which is exactly why nobody saw
+  it. The context is now copied into the worker, so both paths agree.
+
+- **A second `reask` rule hard-blocked.** The continue-instead-of-raise branch was
+  gated on `outcome.reask is None` along with the recording of the first failure,
+  so a second failing reask rule skipped the branch entirely, fell through to
+  `halts()` — which is True for `reask` on a blocking rule — and raised. Adding a
+  second reask rule silently converted the pair into a hard block and bypassed the
+  retry loop. First-wins now applies only to *which* failure is handed back; the
+  decision to continue is per rule.
+
+- **`mask_payload` kept its own copy of the pii backend resolution.** 1.61.0's
+  changelog claims `resolve_backend` was mirrored "instead of lowercasing inline
+  at the call site — one place to be wrong rather than two". That was true of
+  `_run_pii` and false here: this call site still had the inline copy, two lines
+  below a call to the shared *entity* resolver. It is only unreachable today
+  because the runner validates first and `apply_action` short-circuits an errored
+  result — an accident of ordering, not a design.
+
+- **`unsupported_claims` was capped by count but not by volume.** The export
+  allowlist admits this one payload-derived key on the argument that it is "five
+  clipped claims", and the list is capped at five — but each entry was unbounded,
+  so a judge (or an injected one) could return the whole answer, or the whole
+  retrieved context, as a single "claim". Each entry is now clipped on export.
+  Applied in `guardrail.executor`, **not** in `grounding.py`: that module is
+  mirrored from the plane, and clipping there would widen a cross-repo divergence
+  to fix an egress concern. The bound is claimed by the allowlist, so it is
+  enforced by the allowlist; the local result keeps full fidelity.
+
+- **A `RedactionPolicy` could not reach guardrail event metadata.**
+  `trace.storage` has run span attributes through capture-mode redaction on the
+  way into `local.db` all along; `ui.events` skipped it — and `metadata["before"]`
+  on a mask/override event is the payload *prior* to redaction, i.e. exactly the
+  PII or secret the rule exists to remove. Now consistent. The payload gate still
+  deliberately does not apply: it is an export boundary, `local.db` is never
+  uploaded, and Replay depends on full local fidelity.
+
+- **`require_platform` had no `E2E_REQUIRED` escape hatch**, so the platform-path
+  skip was unconditional whenever CI set `E2E_SKIP_PLATFORM=1` — which it does.
+  `test_connected_guardrail_actions_e2e.py` is the **only** place that pins
+  severity/floor crossing the wire, a plane-authored mask/warn/override enforcing
+  in-process, and a domain-wide rule producing an execution row, and all of it
+  skipped on every PR: silently, and by configuration rather than by accident.
+  `require_env` has had the hatch for a long time; this one now matches. A gate
+  with no way to demand it is not a gate.
+
 ### Added
 
 - **`fastaiagent.trace.redaction.SENSITIVE_EVENT_ATTR_KEYS`** — the event-attribute
@@ -219,7 +275,13 @@ that keeps happening.
 - `tests/test_guardrail_unusable_config_sweep.py` — the class-level sweep, **28
   passing and 10 `xfail`**: the `regex` and `classifier` gaps that need sign-off,
   named in the output rather than absent.
-- Full suite **2740 passed, 3 skipped, 10 xfailed**. `ruff` and `mypy` clean on
+- `tests/test_guardrail_audit_followups.py` — 17 gates for the six items above.
+  Each fix was reverted in turn: **10 of the 17 fail without their change**, and the
+  other 7 pin adjacent behaviour that did not move. Two of them had to be hardened
+  first — one was passing *vacuously* over an empty table because `ui_enabled` is
+  off by default, and one **skipped instead of failing**, which is the very defect
+  it tests for.
+- Full suite **2757 passed, 3 skipped, 10 xfailed**. `ruff` and `mypy` clean on
   every file touched; `mkdocs build --strict` builds; `check_licences.py` and
   `check_core_surface.py` both pass in a clean core-only venv with `jsonschema` in
   the tree (verified by building one — the dev venv's extras make those scripts
