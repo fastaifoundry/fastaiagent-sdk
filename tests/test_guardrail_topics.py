@@ -409,6 +409,11 @@ def test_only_payload_free_findings_are_exported() -> None:
         GuardrailType.topic,
         GuardrailType.content_safety,
         GuardrailType.groundedness,
+        # Counts and entity names only; the argument for these two, and the proof
+        # that no matched value escapes, live in
+        # ``tests/test_guardrail_entity_detection.py``.
+        GuardrailType.pii,
+        GuardrailType.secrets,
     }
     assert EXPORTABLE_DETAIL_KEYS[GuardrailType.topic] == frozenset({"mode", "matched", "topics"})
     assert EXPORTABLE_DETAIL_KEYS[GuardrailType.content_safety] == frozenset(

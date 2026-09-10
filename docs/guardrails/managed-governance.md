@@ -59,7 +59,8 @@ agent.run("Confirm my record: name Dana, SSN 123-45-6789.")
 
 - **No new check engine.** A rule is mapped onto the SDK's own
   `regex` / `schema` / `classifier` / `llm_judge` / `content_safety` /
-  `groundedness` / `topic` runners (`fastaiagent.guardrail.from_policy`), so plane rules
+  `groundedness` / `topic` / `pii` / `secrets` runners
+  (`fastaiagent.guardrail.from_policy`), so plane rules
   enforce exactly like local ones — including the `on_error` fail policy. A
   `code` rule (a server-side callable the SDK doesn't have) is skipped rather
   than silently passing.

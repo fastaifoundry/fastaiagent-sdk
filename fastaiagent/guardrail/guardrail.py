@@ -31,6 +31,8 @@ class GuardrailType(str, Enum):
     content_safety = "content_safety"
     groundedness = "groundedness"
     topic = "topic"
+    pii = "pii"
+    secrets = "secrets"
 
 
 class GuardrailResult(BaseModel):
@@ -76,8 +78,8 @@ class GuardrailResult(BaseModel):
 class Guardrail:
     """A validation guardrail for agent input/output/tool calls.
 
-    Supports 8 implementation types: code, llm_judge, regex, schema, classifier,
-    content_safety, groundedness, topic.
+    Supports 10 implementation types: code, llm_judge, regex, schema, classifier,
+    content_safety, groundedness, topic, pii, secrets.
     """
 
     def __init__(

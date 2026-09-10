@@ -307,6 +307,14 @@ function RuleDetail({ event }: { event: GuardrailEvent }) {
   const topicMode = (md as Record<string, unknown>).mode;
   const topicMatched = (md as Record<string, unknown>).matched;
   const topicsAsked = (md as Record<string, unknown>).topics;
+  // `pii` / `secrets` report which entity kinds were found and how many of each —
+  // never the matched values. There is nothing here to reveal that the payload
+  // panel above does not already show, which is the point.
+  const entityCounts = (md as Record<string, unknown>).counts;
+  const entityFound = (md as Record<string, unknown>).found;
+  const piiBackend = (md as Record<string, unknown>).backend;
+  const isEntityRule =
+    event.guardrail_type === "pii" || event.guardrail_type === "secrets";
 
   return (
     <ul className="space-y-1.5 text-sm">
@@ -332,6 +340,34 @@ function RuleDetail({ event }: { event: GuardrailEvent }) {
         <li>
           <span className="text-muted-foreground">pii types:</span>{" "}
           <span className="font-mono">{(piiTypes as string[]).join(", ")}</span>
+        </li>
+      )}
+      {isEntityRule && Array.isArray(entityFound) && (
+        <li>
+          <span className="text-muted-foreground">found:</span>{" "}
+          {entityFound.length > 0 ? (
+            <span className="font-mono text-fa-warning">
+              {(entityFound as string[]).join(", ")}
+            </span>
+          ) : (
+            <span className="font-mono text-muted-foreground">none</span>
+          )}
+        </li>
+      )}
+      {isEntityRule && entityCounts != null && typeof entityCounts === "object" && (
+        <li>
+          <span className="text-muted-foreground">counts:</span>{" "}
+          <span className="font-mono">
+            {Object.entries(entityCounts as Record<string, number>)
+              .map(([k, n]) => `${k} ×${n}`)
+              .join(", ") || "—"}
+          </span>
+        </li>
+      )}
+      {event.guardrail_type === "pii" && typeof piiBackend === "string" && (
+        <li>
+          <span className="text-muted-foreground">backend:</span>{" "}
+          <span className="font-mono">{piiBackend}</span>
         </li>
       )}
       {typeof topicMode === "string" && (

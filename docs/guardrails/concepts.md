@@ -150,13 +150,16 @@ see exactly how often a guardrail is degrading instead of guarding. Guardrail
 LLM calls also get a small automatic retry, so a single transient blip doesn't
 trip the policy at all.
 
-Deterministic guardrails (`no_pii`, `no_secrets`, `json_valid`,
-`allowed_domains`, regex/schema) don't make a fallible call, so `on_error`
-doesn't come up for them — they are reliable hard blocks.
+The `no_pii()`, `no_secrets()`, `json_valid()` and `allowed_domains()` builtins
+don't make a fallible call, so `on_error` doesn't come up for them — they are
+reliable hard blocks. The `pii` **type** is different: it raises on an unknown
+entity, an unknown backend, or `backend="presidio"` without the `[safety]`
+extra, and `on_error` decides what each costs. Detection that cannot run is not
+detection that found nothing.
 
 ### How each type decides
 
-`run_guardrail` dispatches on `GuardrailType` to eight deciders, all producing the
+`run_guardrail` dispatches on `GuardrailType` to ten deciders, all producing the
 same `GuardrailResult`:
 
 | Type | How it decides |
@@ -169,6 +172,8 @@ same `GuardrailResult`:
 | `content_safety` | Scores the payload against the MLCommons hazard taxonomy, with a bar per category |
 | `groundedness` | Scores an answer against the context it was given |
 | `topic` | Classifies against named topics, then `deny` (blocklist) or `allow` (on-topic gate) |
+| `pii` | Detects personal data with the shared detectors; can redact, not just refuse |
+| `secrets` | Detects leaked credentials and tokens; can redact, not just refuse |
 
 The last three are model-backed judges with structure — see
 [Actions, severity & floor](actions.md#three-model-backed-check-types).
@@ -182,7 +187,7 @@ A guardrail is described by two independent things — don't conflate them:
 
 - **Implementation type** (`GuardrailType`) — *how* it decides:
   `code`, `regex`, `schema`, `llm_judge`, `classifier`, `content_safety`,
-  `groundedness`, `topic`.
+  `groundedness`, `topic`, `pii`, `secrets`.
 - **What it checks** — the concern: prompt injection, PII, secrets, toxicity,
   groundedness, topic, moderation. The [Responsible AI](responsible-ai.md)
   bundle is a curated set of these, each implemented as an ordinary `Guardrail`.

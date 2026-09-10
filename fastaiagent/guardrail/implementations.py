@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 import regex as _regex
 
+from fastaiagent._internal.safety_detectors import DEFAULT_PII_ENTITIES
 from fastaiagent.guardrail.guardrail import GuardrailResult, GuardrailType
 
 if TYPE_CHECKING:
@@ -57,6 +58,8 @@ async def run_guardrail(guardrail: Guardrail, data: str | dict[str, Any]) -> Gua
         GuardrailType.content_safety: _run_content_safety,
         GuardrailType.groundedness: _run_groundedness,
         GuardrailType.topic: _run_topic,
+        GuardrailType.pii: _run_pii,
+        GuardrailType.secrets: _run_secrets,
     }
     runner = runners.get(guardrail.guardrail_type, _run_code)
     try:
@@ -492,4 +495,110 @@ async def _run_topic(guardrail: Guardrail, data: str | dict[str, Any]) -> Guardr
         # Same shape the plane records in ``guardrail_executions.result_detail``,
         # so the console reads an SDK-run check exactly like a central one.
         metadata={"mode": mode, "matched": matched, "topics": names},
+    )
+
+
+def _resolve_pii_entities(config: dict[str, Any]) -> list[str]:
+    """The entities a ``pii`` rule scans for, defaulting to the original four.
+
+    Mirrors the plane's ``detectors.resolve_entities``, error string included, so
+    a rule reaches the same verdict at the edge as it does at
+    ``POST /guardrails/{id}/test``. The names themselves are validated by
+    :func:`~fastaiagent._internal.safety_detectors.detect_pii`, which raises on
+    one it cannot honour rather than quietly scanning for something else.
+    """
+    raw = config.get("entities")
+    if raw is None:
+        return list(DEFAULT_PII_ENTITIES)
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, list):
+        raise ValueError("pii guardrail 'entities' must be a list of entity names")
+    return [str(e) for e in raw]
+
+
+async def _run_pii(guardrail: Guardrail, data: str | dict[str, Any]) -> GuardrailResult:
+    """Detect personal data with the SDK's own detectors.
+
+    The detection is not new — ``detect_pii`` has backed the ``no_pii`` builtin
+    and the ``PIILeakage`` scorer for a long time, and the plane mirrors it. What
+    this type adds is the ability to rebuild that check from a rule's config, so
+    an operator can author it centrally.
+
+    **Fails loud.** An unknown entity, an unknown backend, or ``presidio``
+    without the ``[safety]`` extra all raise, and ``on_error`` decides what that
+    costs. Returning "no PII found" for a check that could not run is the defect
+    the ``schema`` type carried until 1.59.0: a detection control whose absence
+    reports success reads as a healthy control while inspecting nothing.
+
+    **The result carries counts, never values.** ``PIIMatch.value`` holds the
+    matched text — correct in-process, where masking needs it, and unacceptable
+    on a span: guardrail metadata reaches a control plane's durable,
+    tenant-visible execution row, and the control that *finds* personal data must
+    not become a standing database of it.
+    """
+    from fastaiagent._internal.safety_detectors import detect_pii
+
+    config = guardrail.config or {}
+    entities = _resolve_pii_entities(config)
+    backend = str(config.get("backend") or "regex").lower().strip()
+
+    text = data if isinstance(data, str) else json.dumps(data)
+    matches = detect_pii(text, entities=entities, backend=backend)
+
+    counts: dict[str, int] = {}
+    for m in matches:
+        counts[m.entity] = counts.get(m.entity, 0) + 1
+    found = sorted(counts)
+
+    return GuardrailResult(
+        passed=not matches,
+        message=(
+            f"Personal data detected: {', '.join(found)}" if found else "No personal data detected"
+        ),
+        # The shape the plane records in ``guardrail_executions.result_detail``
+        # (``detectors.summarize_pii``), so a row means the same thing however it
+        # was produced. ``entities`` records what was *asked* for, so the row
+        # stays readable after the rule is edited.
+        metadata={
+            "backend": backend,
+            "entities": list(entities),
+            "found": found,
+            "counts": counts,
+            "total": len(matches),
+        },
+    )
+
+
+async def _run_secrets(guardrail: Guardrail, data: str | dict[str, Any]) -> GuardrailResult:
+    """Detect leaked credentials with the SDK's own detectors.
+
+    Takes **no detection config at all**, deliberately: a tenant narrowing a
+    credential detector is a tenant weakening it, so there is no entity list to
+    get wrong and ``config`` may legitimately be ``{}``. Only ``mask_token`` is
+    read, and only when the action is ``mask``.
+
+    Reports kinds and counts — not even ``SecretMatch.masked``. A four-character
+    prefix is fine in a developer's terminal, which is what it was built for, and
+    is more than a durable multi-tenant table needs in order to say that a Stripe
+    key went out.
+    """
+    from fastaiagent._internal.safety_detectors import detect_secrets
+
+    text = data if isinstance(data, str) else json.dumps(data)
+    matches = detect_secrets(text)
+
+    counts: dict[str, int] = {}
+    for m in matches:
+        counts[m.kind] = counts.get(m.kind, 0) + 1
+    found = sorted(counts)
+
+    return GuardrailResult(
+        passed=not matches,
+        message=(
+            f"Leaked credential(s) detected: {', '.join(found)}"
+            if found
+            else "No leaked credential detected"
+        ),
+        metadata={"found": found, "counts": counts, "total": len(matches)},
     )

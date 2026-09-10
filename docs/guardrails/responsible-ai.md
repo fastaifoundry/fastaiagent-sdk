@@ -89,6 +89,23 @@ form needs the context slot and a cheaper single-call judge. Neither changes the
 other; use `grounded()` for a rule you write in Python, the type for one an
 operator writes centrally.
 
+### `no_pii()` / `no_secrets()` vs the `pii` / `secrets` types
+
+Same detectors underneath — `detect_pii` and `detect_secrets` — so they always
+agree on *what* they find. They differ in what you can do with the finding:
+
+| | `no_pii()` / `no_secrets()` | the `pii` / `secrets` types |
+|---|---|---|
+| Authored | In your code | In the console, distributed over `/policy` |
+| Emits | a `code` guardrail with `fn=` | a config-driven rule that round-trips |
+| Can `mask` | **No** — a `code` rule has no span for the masker, so `action="mask"` degrades to a block | **Yes** — the detectors' offsets are replaced in place |
+| `on_error` | Doesn't come up | Decides what an unknown entity, an unknown backend or a missing `[safety]` extra costs |
+| Reports | `pii_types` / `secret_kinds` plus counts | The plane's row shape: `found`, `counts`, `total` (and `backend` / `entities` for `pii`) |
+
+Reach for the builtins when the rule lives in your code, and the types when an
+operator should own it centrally — or when you want redaction rather than a
+refusal.
+
 ## Secrets detection
 
 `no_secrets()` blocks leaked credentials — private keys, AWS / GitHub / Slack /

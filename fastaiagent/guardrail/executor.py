@@ -94,6 +94,14 @@ EXPORTABLE_DETAIL_KEYS: dict[GuardrailType, frozenset[str]] = {
     ),
     # ``unsupported_claims`` is payload-derived — see the ⚠ above.
     GuardrailType.groundedness: frozenset({"score", "threshold", "unsupported_claims"}),
+    # Entity detection. Counts and entity names only — the same shape the plane's
+    # ``detectors.summarize_pii`` / ``summarize_secrets`` persist, and for the
+    # same reason: the row is durable and tenant-visible, so the control that
+    # finds personal data must not become a standing database of it. Note what is
+    # deliberately absent — ``PIIMatch.value`` (the matched text), the offsets,
+    # and even ``SecretMatch.masked``.
+    GuardrailType.pii: frozenset({"backend", "entities", "found", "counts", "total"}),
+    GuardrailType.secrets: frozenset({"found", "counts", "total"}),
 }
 
 

@@ -5,6 +5,80 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.60.0] - 2026-09-10 — guardrails that redact instead of refusing
+
+The plane has been able to author `pii` and `secrets` rules for a while, and
+ships four templates that use them. A connected SDK skipped every one at debug
+level, because neither type existed here — while the console listed both as
+edge-enforceable.
+
+The detection was never the missing part. `detect_pii` and `detect_secrets` have
+backed the `no_pii()` / `no_secrets()` builtins and the `PIILeakage` scorer all
+along, and **the mirror runs the other way for these two**: those detectors are
+ours and the plane's `agents/services/detectors.py` is the copy. What was missing
+was only the typed-config rebuild.
+
+Implements `sdk-handover-entity-detection.md`. **Wire: no bump, stays v1.9.**
+
+### Added
+
+- **`GuardrailType.pii` and `GuardrailType.secrets`**, both reconstructable from
+  a `/policy` rule. `pii` takes `entities` (the six the detectors know, default
+  four) and `backend` (`regex` | `presidio`); `secrets` takes **no detection
+  config at all**, deliberately — a tenant narrowing a credential detector is a
+  tenant weakening it, so `config` may legitimately be `{}`.
+- **The first guardrails that can genuinely redact.** Every maskable type until
+  now re-ran a pattern; these replace the spans their detectors return, which is
+  what a judge can never do. `mask_spans` lands in `_internal/safety_detectors.py`
+  beside the detectors, merging overlapping spans before replacement and applying
+  them right-to-left. Both matter: one secret routinely matches two patterns — an
+  OpenAI key inside `api_key = "sk-..."` hits `openai_api_key` *and*
+  `generic_secret` — and replacing the ranges independently leaves fragments of
+  the very value being redacted, while a left-to-right edit invalidates every
+  later offset as soon as the token differs in length.
+- **Counts and entity kinds on the span; never values.** `PIIMatch` carries the
+  matched text, which is right in-process where masking needs it and wrong
+  anywhere durable: guardrail metadata reaches a control plane's tenant-visible
+  execution row, and the control that *finds* personal data must not become a
+  standing database of it. The `EXPORTABLE_DETAIL_KEYS` entries are exactly the
+  plane's `summarize_pii` / `summarize_secrets` shapes, and `secrets` withholds
+  even `SecretMatch.masked`.
+- `examples/99_entity_guardrails.py` — block vs mask on one detector, the overlap
+  merge, and a proof that no matched value reaches the metadata. No API key.
+
+### Fixed
+
+- **`detect_pii` validated entity names only under the regex backend.** The
+  presidio branch returned before the check, dropped unrecognised names silently,
+  and — when *every* requested name was unrecognised — passed an empty list,
+  which Presidio reads as "scan for everything". A rule with a typo in it quietly
+  widened to every recognizer Presidio has, and under `action="mask"` redacted
+  more than anyone asked for. Both the entity names and the backend are now
+  validated **before** the backend is chosen, so every caller is fixed: the new
+  type, the `no_pii` builtin and the `PIILeakage` scorer. Narrowing or widening
+  what a detection rule looks for without saying so is the same defect in two
+  directions.
+- **`MASKABLE_TYPES` described a rule it did not enforce.** Nothing read it — the
+  real gate was an if-chain inside `mask_payload`. It now names the four maskable
+  types *and* `mask_payload` consults it, so the constant states a fact.
+
+### Changed
+
+- The Local UI's type filter offers `pii` and `secrets`, and the event-detail
+  panel shows the entity kinds found, their counts, and (for `pii`) the backend.
+
+### Compatibility
+
+- Purely additive. Two new enum members, two new runners, two new allowlist
+  entries. No existing rule changes behaviour.
+- The `detect_pii` fix turns a silent widening into a raised error. A caller
+  passing an entity name the detectors do not know was already not getting what
+  it asked for; it now finds out. Nothing that passed a valid name is affected.
+- **The plane must re-mirror `safety_detectors.py`.** Their
+  `backend/tests/test_detectors_mirror.py` fails until they do — which is what
+  that test is for. The change touches no regex table, no Luhn verdict and no
+  masked form, so a straight re-copy restores it.
+
 ## [1.59.0] - 2026-09-10 — a validation rule that validated nothing
 
 Two items from the Enterprise plane team, found while building their half of the

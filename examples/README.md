@@ -70,6 +70,7 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 - [`92_plane_authored_guardrails.py`](92_plane_authored_guardrails.py) — a guardrail authored on the plane, pulled and enforced by a connected agent (1.45.0)
 - [`97_guardrail_actions.py`](97_guardrail_actions.py) — what a failure *costs*: `block` / `warn` / `mask` / `override` / `reask` side by side (1.57.0)
 - [`98_topic_guardrail.py`](98_topic_guardrail.py) — the `topic` type: "don't discuss competitors" as one rule with a `deny` / `allow` polarity (1.58.0)
+- [`99_entity_guardrails.py`](99_entity_guardrails.py) — the `pii` / `secrets` types: the first rules that **redact** instead of refusing, and why they report counts and never values (1.60.0)
 - [`84_governed_agent.py`](84_governed_agent.py) — connected agent honors a managed approval policy: pause → console approve → resume (Task C)
 - [`27_middleware_tool_budget.py`](27_middleware_tool_budget.py) — `ToolBudget` middleware
 - [`30_memory_blocks.py`](30_memory_blocks.py) — `ComposableMemory` block API

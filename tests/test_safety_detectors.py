@@ -77,6 +77,46 @@ def test_unknown_backend_raises() -> None:
         detect_pii("x", backend="bogus")
 
 
+def test_unknown_entity_raises_under_presidio_too() -> None:
+    """Entity names were validated only inside the regex branch, so the presidio
+    backend dropped unrecognised names silently — and with *every* name
+    unrecognised the mapped list came out empty, which Presidio reads as "scan
+    for everything". A typo widened the rule instead of failing it.
+
+    Validation now runs before the backend is chosen, so this raises without
+    Presidio ever being imported (the test holds with or without the extra).
+    """
+    with pytest.raises(ValueError, match="Unknown PII entity"):
+        detect_pii("x", entities=("not_a_thing",), backend="presidio")
+
+
+def test_the_backend_is_validated_before_the_entities_are_scanned() -> None:
+    with pytest.raises(ValueError, match="Unknown PII backend"):
+        detect_pii("x", entities=("not_a_thing",), backend="bogus")
+
+
+# --- Span masking ---------------------------------------------------------- #
+
+
+def test_mask_spans_merges_overlaps_and_replaces_right_to_left() -> None:
+    """The two properties that make span masking correct. Overlaps are real: one
+    secret routinely matches two patterns, and replacing the ranges
+    independently leaves fragments of the value being redacted."""
+    from fastaiagent._internal.safety_detectors import detect_secrets, mask_spans
+
+    text = 'x api_key = "sk-proj-abcdefghijklmnopqrstuvwxyz123456" y'
+    spans = [(m.start, m.end) for m in detect_secrets(text)]
+    assert len(spans) > 1, "the overlap fixture stopped overlapping"
+    assert mask_spans(text, spans, "[REDACTED]") == "x [REDACTED] y"
+
+    # Right-to-left: a token longer than what it replaces must not shift the
+    # offsets of the spans that follow it.
+    assert mask_spans("a@b.com and c@d.com", [(0, 7), (12, 19)], "[LONGER-TOKEN]") == (
+        "[LONGER-TOKEN] and [LONGER-TOKEN]"
+    )
+    assert mask_spans("nothing", [], "[REDACTED]") == "nothing"
+
+
 # --- Prompt injection ------------------------------------------------------ #
 
 
