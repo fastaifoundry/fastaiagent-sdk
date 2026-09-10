@@ -50,6 +50,12 @@ _RECONSTRUCTABLE = {
     GuardrailType.content_safety,
     GuardrailType.groundedness,
     GuardrailType.topic,
+    # Entity detection. The mirror runs the other way for these two: the
+    # detectors in ``_internal.safety_detectors`` are ours and the plane copies
+    # them, so a centrally-authored rule is enforced here by the same code that
+    # wrote the patterns.
+    GuardrailType.pii,
+    GuardrailType.secrets,
 }
 
 # (version, agent_id) -> built guardrails. Rebuilt when the policy version changes

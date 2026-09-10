@@ -44,6 +44,8 @@ const TYPE_OPTIONS = [
   "content_safety",
   "groundedness",
   "topic",
+  "pii",
+  "secrets",
 ];
 
 // What each action produces when it gets what it asked for. An outcome that

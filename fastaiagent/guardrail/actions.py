@@ -48,8 +48,18 @@ ACTIONS_TAKEN: tuple[str, ...] = (
     "reask",
 )
 
-#: Only these two types locate the offending text, so only these can mask.
-MASKABLE_TYPES: tuple[GuardrailType, ...] = (GuardrailType.regex, GuardrailType.classifier)
+#: Only these types locate the offending text, so only these can mask; the rest
+#: return a bare verdict, and a mask with nothing to redact degrades to a block.
+#: ``regex`` and ``classifier`` re-run their pattern; ``pii`` and ``secrets``
+#: replace the spans their detectors return. Matches the plane's
+#: ``MASKABLE_IMPLEMENTATION_TYPES``, and :func:`mask_payload` reads it — it was
+#: documentation-only until 1.60.0, describing a rule it did not enforce.
+MASKABLE_TYPES: tuple[GuardrailType, ...] = (
+    GuardrailType.regex,
+    GuardrailType.classifier,
+    GuardrailType.pii,
+    GuardrailType.secrets,
+)
 
 #: Severities the plane may send. Anything else (including ``None``) is unset.
 SEVERITIES: tuple[str, ...] = ("low", "medium", "high", "critical")
@@ -83,9 +93,11 @@ def _mask_token(config: dict[str, Any]) -> str:
 async def mask_payload(guardrail: Guardrail, data: str | dict[str, Any]) -> str | None:
     """Redact the offending spans in ``data``, or ``None`` if nothing was masked.
 
-    Defined for ``regex`` and ``classifier`` only — the two types that locate the
-    offending text rather than returning a bare verdict. Returns ``None`` (which
-    the caller must treat as "block") when:
+    Defined for :data:`MASKABLE_TYPES` — the types that locate the offending text
+    rather than returning a bare verdict. ``regex`` and ``classifier`` re-run
+    their pattern; ``pii`` and ``secrets`` re-run their detector and replace the
+    spans it returns, which is why they are the first non-pattern types that can
+    mask at all. Returns ``None`` (which the caller must treat as "block") when:
 
     * the guardrail is any other type;
     * the rule is ``should_match=True`` — its failure is that the pattern is
@@ -95,6 +107,9 @@ async def mask_payload(guardrail: Guardrail, data: str | dict[str, Any]) -> str 
     The replacement is a **callable**, so a ``mask_token`` containing ``\\1`` is
     inserted literally instead of being expanded as a backreference.
     """
+    if guardrail.guardrail_type not in MASKABLE_TYPES:
+        return None
+
     config = guardrail.config or {}
     token = _mask_token(config)
 
@@ -131,6 +146,34 @@ async def mask_payload(guardrail: Guardrail, data: str | dict[str, Any]) -> str 
                 continue
             for keyword in keywords:
                 out = _regex.sub(_regex.escape(keyword), replace, out, flags=_regex.IGNORECASE)
+        return out if out != text else None
+
+    if guardrail.guardrail_type in (GuardrailType.pii, GuardrailType.secrets):
+        # Span replacement, not a second pattern pass: the detectors return real
+        # offsets. They are re-run here rather than threaded through the result
+        # because ``mask_payload`` is handed the payload, not the verdict — and
+        # for `regex` above the same re-derivation is already the design. The one
+        # cost is a `presidio` rule paying for a second `AnalyzerEngine`; the
+        # shipped redaction templates use the regex backend.
+        from fastaiagent._internal.safety_detectors import (
+            detect_pii,
+            detect_secrets,
+            mask_spans,
+        )
+        from fastaiagent.guardrail.implementations import _resolve_pii_entities
+
+        if guardrail.guardrail_type == GuardrailType.pii:
+            spans = [
+                (m.start, m.end)
+                for m in detect_pii(
+                    text,
+                    entities=_resolve_pii_entities(config),
+                    backend=str(config.get("backend") or "regex").lower().strip(),
+                )
+            ]
+        else:
+            spans = [(m.start, m.end) for m in detect_secrets(text)]
+        out = mask_spans(text, spans, token)
         return out if out != text else None
 
     return None

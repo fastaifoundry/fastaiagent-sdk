@@ -180,9 +180,9 @@ def check_quality(text: str) -> GuardrailResult:
 quality_guard = Guardrail(name="quality_check", fn=check_quality)
 ```
 
-## Eight Implementation Types
+## Ten Implementation Types
 
-Beyond inline functions, guardrails support seven more implementation types for configuration-driven validation. The last three — `content_safety`, `groundedness` and `topic` — are model-backed judges with structure, and are documented in full under [Actions, severity & floor](actions.md#three-model-backed-check-types):
+Beyond inline functions, guardrails support nine more implementation types for configuration-driven validation. Three of them — `content_safety`, `groundedness` and `topic` — are model-backed judges with structure; two more — `pii` and `secrets` — are detector-backed and are the only types that can genuinely redact. All five are documented in full under [Actions, severity & floor](actions.md#three-model-backed-check-types):
 
 ### Code (default)
 
@@ -404,6 +404,33 @@ Unlike `classifier` above, this is not substring matching: the *description* is
 what lets the judge catch "the other vendor's offering" without the word
 "competitor" appearing anywhere.
 
+### Detector-backed types
+
+Two types ask a *detector* rather than a model — the same `detect_pii` /
+`detect_secrets` that have backed `no_pii()`, `no_secrets()` and the
+`PIILeakage` scorer all along. They are deterministic and free, and because a
+detector returns offsets where a judge returns a verdict, they are the only
+types that can genuinely **redact**:
+
+| Type | Decides | Configured with |
+|------|---------|-----------------|
+| `pii` | Which personal-data entities the payload contains | `entities`, `backend`, `mask_token` |
+| `secrets` | Which credential kinds it leaked | `mask_token` only — narrowing a credential detector only weakens it |
+
+```python
+redact_pii = Guardrail(
+    name="redact_pii",
+    guardrail_type=GuardrailType.pii,
+    config={"entities": ["email", "ssn"], "mask_token": "[REDACTED]"},
+    action="mask",     # the payload continues, redacted, instead of blocking
+)
+```
+
+Both report **counts and entity kinds, never the matched values**. See
+[Actions, severity & floor](actions.md#two-detector-backed-check-types) for the
+full contract, including why an unknown entity raises rather than narrowing the
+scan.
+
 ## Positions
 
 All four guardrail positions are fully wired and operational:
@@ -540,10 +567,12 @@ Guardrail(name="my_judge", guardrail_type=GuardrailType.llm_judge,
 
 Whichever you choose, the failure is **visible**: the result is `errored=True`,
 the trace span carries `fastaiagent.guardrail.errored`, and the Local UI logs an
-[`errored` outcome](../ui/guardrail-events.md). Deterministic guardrails
-(`no_pii`, `no_secrets`, `json_valid`, `allowed_domains`) can't make a fallible
-call, so `on_error` doesn't apply to them. Override a whole `responsible_ai(...)`
-bundle at once with `responsible_ai(on_error="block", ...)`.
+[`errored` outcome](../ui/guardrail-events.md). The `no_pii()`, `no_secrets()`,
+`json_valid()` and `allowed_domains()` builtins can't make a fallible call, so
+`on_error` doesn't apply to them — but the `pii` **type** can, and does: an
+unknown entity, an unknown backend or a missing `[safety]` extra all raise, and
+`on_error` decides the cost. Override a whole `responsible_ai(...)` bundle at
+once with `responsible_ai(on_error="block", ...)`.
 
 ## Serialization
 

@@ -99,17 +99,32 @@ def detect_pii(
 
     Returns:
         A list of :class:`PIIMatch`.
+
+    Raises:
+        ValueError: on an unknown backend, or an unknown entity name.
+        ImportError: for ``backend="presidio"`` without the ``[safety]`` extra.
+
+    Both validations run **before** the backend is chosen, and that ordering is
+    load-bearing. Entity names used to be checked only inside the regex branch,
+    so ``backend="presidio"`` silently dropped names it did not recognise — and
+    when *every* requested name was unrecognised the mapped list came out empty,
+    which Presidio reads as "scan for everything". A rule with a typo in it
+    quietly widened to every recognizer Presidio has. Narrowing or widening what
+    a detection rule looks for without saying so is the same defect in two
+    directions; a name we cannot honour is an error, not a suggestion.
     """
+    if backend not in ("regex", "presidio"):
+        raise ValueError(f"Unknown PII backend {backend!r}. Use 'regex' or 'presidio'.")
+    for entity in entities:
+        if entity not in _PII_REGEXES:
+            raise ValueError(f"Unknown PII entity {entity!r}. Known: {sorted(_PII_REGEXES)}")
+
     if backend == "presidio":
         return _detect_pii_presidio(text, entities=tuple(entities))
-    if backend != "regex":
-        raise ValueError(f"Unknown PII backend {backend!r}. Use 'regex' or 'presidio'.")
 
     matches: list[PIIMatch] = []
     for entity in entities:
-        pattern = _PII_REGEXES.get(entity)
-        if pattern is None:
-            raise ValueError(f"Unknown PII entity {entity!r}. Known: {sorted(_PII_REGEXES)}")
+        pattern = _PII_REGEXES[entity]
         for m in pattern.finditer(text):
             value = m.group(0)
             # Credit cards: only count Luhn-valid candidates (kills the many
@@ -140,11 +155,16 @@ def _detect_pii_presidio(text: str, *, entities: tuple[str, ...]) -> list[PIIMat
         "ip": "IP_ADDRESS",
         "iban": "IBAN_CODE",
     }
+    # ``detect_pii`` has already rejected any name outside ``_PII_REGEXES``, and
+    # this map covers all of them, so ``wanted`` is never empty here. It matters
+    # that it cannot be: Presidio reads an empty entity list as "scan for
+    # everything", so an ``or None`` fallback would turn a rule we could not
+    # honour into a broader one than anybody asked for.
     wanted = [presidio_map[e] for e in entities if e in presidio_map]
     inverse = {v: k for k, v in presidio_map.items()}
 
     analyzer = AnalyzerEngine()
-    results = analyzer.analyze(text=text, entities=wanted or None, language="en")
+    results = analyzer.analyze(text=text, entities=wanted, language="en")
     matches: list[PIIMatch] = []
     for r in results:
         entity = inverse.get(r.entity_type, r.entity_type.lower())
@@ -457,6 +477,45 @@ def detect_secrets(text: str) -> list[SecretMatch]:
                 SecretMatch(kind=label, masked=_mask_secret(value), start=m.start(), end=m.end())
             )
     return matches
+
+
+def mask_spans(text: str, spans: list[tuple[int, int]], token: str) -> str:
+    """``text`` with every span replaced by ``token``.
+
+    :class:`PIIMatch` and :class:`SecretMatch` carry real offsets, which is what
+    lets a guardrail *redact* rather than only refuse. Two details are not
+    optional:
+
+    **Overlaps are merged first.** A single secret routinely matches two
+    patterns — an OpenAI key inside ``api_key = "sk-..."`` hits both
+    ``openai_api_key`` and ``generic_secret`` — and replacing overlapping ranges
+    independently corrupts the output, leaving fragments of the very value being
+    redacted.
+
+    **Replacement runs right-to-left.** Every offset was computed against the
+    original string, so editing left-to-right invalidates every span after the
+    first as soon as ``token`` differs in length from what it replaced.
+
+    Note that ``generic_secret``'s span covers the whole assignment, quotes
+    included, so masking it replaces ``api_key = "..."`` rather than just the
+    value. That is deliberate: leaving a dangling ``api_key = ""`` behind would
+    advertise exactly where the credential was.
+    """
+    if not spans:
+        return text
+
+    ordered = sorted(spans)
+    merged: list[list[int]] = [list(ordered[0])]
+    for start, end in ordered[1:]:
+        if start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+
+    out = text
+    for start, end in reversed(merged):
+        out = out[:start] + token + out[end:]
+    return out
 
 
 # --------------------------------------------------------------------------- #

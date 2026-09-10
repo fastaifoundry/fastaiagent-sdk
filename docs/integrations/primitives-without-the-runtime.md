@@ -56,8 +56,8 @@ a second `PlatformSpanExporter` on your provider.
 
 Guardrails authored on the plane arrive through the cached `/policy` document.
 `plane_guardrails_for_agent` reconstructs them as runnable `Guardrail` objects —
-`regex`, `schema`, `classifier`, `llm_judge`, `content_safety`, `groundedness`
-and `topic` rules rebuild from their config; a `code` rule can't (its logic is a
+`regex`, `schema`, `classifier`, `llm_judge`, `content_safety`, `groundedness`,
+`topic`, `pii` and `secrets` rules rebuild from their config; a `code` rule can't (its logic is a
 server-side callable) and is skipped.
 
 ```python

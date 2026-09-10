@@ -32,7 +32,7 @@ Guardrail(
 |---|---|
 | `block` | Raise `GuardrailBlockedError`. The default, and what every rule authored before wire v1.9 does. |
 | `warn` | Record the failure and continue. The verdict is still a failure — the evidence stays honest — it just doesn't halt. |
-| `mask` | Replace the offending spans and continue with the redacted value. Defined for `regex` and `classifier` only, the two types that locate the offending text. |
+| `mask` | Replace the offending spans and continue with the redacted value. Defined for the types that locate the offending text: `regex` and `classifier` re-run their pattern, `pii` and `secrets` replace the spans their detectors return. Everything else returns a bare verdict, and a mask with nothing to redact degrades to a block. |
 | `override` | Replace the payload with `config["override_message"]` (falling back to the rule's tripwire message) and continue. |
 | `reask` | Re-prompt the model with the failure as feedback, bounded by `AgentConfig.guardrail_retries`. |
 
@@ -233,6 +233,68 @@ classify identical text differently.
 finds nothing to redact and degrades to a block. `block`, `warn`, `override` and
 `reask` all apply.
 
+## Two detector-backed check types
+
+`content_safety`, `groundedness` and `topic` ask a model. These two ask a
+detector — the same `detect_pii` / `detect_secrets` that have backed the
+`no_pii()` and `no_secrets()` builtins and the `PIILeakage` scorer all along.
+That has two consequences worth knowing: they are deterministic and free, and
+they are the **first types that can genuinely mask**, because a detector returns
+offsets where a judge returns only a verdict.
+
+### `pii`
+
+```json
+{ "entities": ["email", "phone", "ssn", "credit_card"],
+  "backend": "regex",
+  "mask_token": "[REDACTED]" }
+```
+
+`entities` defaults to the four above; `ip` and `iban` are available opt-in.
+`backend` is `regex` (default, zero-dependency) or `presidio` (needs the
+`[safety]` extra). `mask_token` is read only when the action is `mask`.
+
+**It fails loud.** An unknown entity, an unknown backend, or `presidio` without
+the extra all raise, so `on_error` decides the cost and the result is marked
+`errored`. Reporting "no PII found" for a check that could not run is the defect
+the `schema` type carried until 1.59.0 — a detection control whose absence reads
+as success.
+
+### `secrets`
+
+```json
+{ "mask_token": "[REDACTED]" }
+```
+
+**No detection config at all**, deliberately: a tenant narrowing a credential
+detector is a tenant weakening it. `config` may legitimately be `{}`. It covers
+private keys, AWS / GitHub / Slack / Google / OpenAI / Stripe tokens, JWTs, and
+generic `api_key = "..."` assignments.
+
+### What both report, and what they never report
+
+Counts per entity kind, and the kinds found — **never the matched values**. A
+`PIIMatch` carries the matched text, which is right in-process where masking
+needs it and wrong anywhere durable: guardrail metadata reaches a control plane's
+tenant-visible execution row, and the control that *finds* personal data must not
+become a standing database of it. `secrets` withholds even the masked form.
+
+### Masking merges overlaps
+
+One secret routinely matches two patterns — an OpenAI key inside
+`api_key = "sk-..."` hits both `openai_api_key` and `generic_secret`. Overlapping
+spans are merged before replacement and applied right-to-left, so a token of a
+different length cannot shift the spans that follow it:
+
+```
+before:  deploy with api_key = "sk-proj-abc...456" now
+after:   deploy with [REDACTED] now
+```
+
+Note that `generic_secret`'s span covers the whole assignment, quotes included,
+so masking replaces `api_key = "..."` rather than just the value — deliberate,
+since a dangling `api_key = ""` advertises exactly where the credential was.
+
 ## `severity` and `floor`
 
 Neither changes enforcement.
@@ -283,6 +345,8 @@ runtime will send, and **a type absent from it exports nothing**:
 | `topic` | `mode`, `matched`, `topics` |
 | `content_safety` | `taxonomy`, `scores`, `thresholds`, `tripped`, `unscored` |
 | `groundedness` | `score`, `threshold`, `unsupported_claims` |
+| `pii` | `backend`, `entities`, `found`, `counts`, `total` |
+| `secrets` | `found`, `counts`, `total` |
 | everything else | nothing |
 
 Most of those are payload-free by construction. `topic`'s `mode` is an enum, its
