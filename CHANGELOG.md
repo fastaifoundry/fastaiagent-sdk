@@ -5,15 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.62.0] - 2026-09-10 — two channels nobody was watching
+## [1.62.0] - 2026-09-10 — what a green board was hiding
 
 A cross-repo audit ran the whole guardrail feature — SDK 1.44 → 1.61, plane #48 →
 #118 — against the existing suites. **683 tests passed with zero failures and zero
-skips.** These two defects were among what survived it, which is the point: the
-board was green because neither behaviour had a test.
+skips.** Five defects survived that, which is the point: the board was green
+because none of these behaviours had a test.
 
-Both are in the same shape — a rule that is *stated* in one place and *enforced*
-somewhere else, with nothing holding the two together.
+Four of the five are the same shape — a rule *stated* in one place and *enforced*
+somewhere else, with nothing holding the two together. The fifth is the reason
+that keeps happening.
+
 
 ### Fixed
 
@@ -77,6 +79,56 @@ somewhere else, with nothing holding the two together.
   `executor._emit_guardrail_span`) so one unserializable value costs that value
   rather than the whole event.
 
+- **A `schema` guardrail enforced almost nothing at the edge.** It validated with
+  the SDK's own `tool.schema.validate_schema`, which understands `type`,
+  `properties`, `required`, `items` and `additionalProperties` — and silently
+  ignores everything else: `enum`, `minimum`/`maximum`, `minLength`/`maxLength`,
+  `pattern`, `format`, `const`, `oneOf`/`anyOf`/`allOf`/`not`, `minItems`,
+  `uniqueItems`, `$ref`. It also skipped `required` entirely unless the schema
+  carried an explicit `"type": "object"`.
+
+  A `schema` rule is authored **centrally**, against full JSON Schema, and
+  validated there with `jsonschema`. So an operator would write
+  `{"status": {"enum": ["ok","error"]}}`, watch **Test** correctly reject
+  `{"status": "weird"}`, and get a rule that passed it in production. Measured by
+  running both validators on the same inputs: **five of five** non-trivial schemas
+  diverged, every one in the direction of the edge under-enforcing.
+
+  It survived #114 / 1.59.0 — the release written to end exactly this drift —
+  because that fix pinned the config *resolver* on both sides and never compared
+  the *validator* underneath. The same "a type's behaviour spans two modules and
+  only one was pinned" lesson 1.61.0 learned for `pii`, in a type nobody
+  re-checked. It stayed hidden because the one shipped template uses only the five
+  keywords the SDK happened to implement.
+
+  The guardrail now runs `jsonschema`, resolving the dialect from `$schema` with
+  `validator_for` + `check_schema` — which is what `jsonschema.validate` does
+  internally, and `validate` is what the plane calls. Hardcoding a draft would
+  have been a fresh divergence inside the fix for a divergence.
+
+  **`validate_schema` is unchanged.** Its other three callers — chain input/output
+  validation, chain state, and tool drift detection — depend on its leniency, and
+  tightening those is a separate decision. Its docs now say plainly that it is
+  drift detection and not a conformance checker.
+
+- **The span *status description* still reached third-party exporters.** 1.62.0
+  gated attributes and events; a span has a third content channel. `Status` carries
+  a free-text description, and for a guardrail span that description **is** the
+  rule's failure message. `_rebuild_span` copied `status` by reference, so with
+  `FASTAIAGENT_TRACE_PAYLOADS=0` and a Datadog or Jaeger exporter attached, the
+  judge's raw reply still left through a different field. Fixing the events channel
+  without this one left the hole half-closed, and the open half went to a third
+  party.
+
+  The description is now withheld on egress and masked instead when a
+  `RedactionPolicy` is installed. The status **code** always survives, so an errored
+  span still reads as errored. The control-plane path was never affected — its wire
+  model carries the status as a bare code and discards the description.
+
+- The `json_schema` alias is resolved with `is None` rather than `or`, matching the
+  plane's resolver. With `or`, a rule carrying `{"schema": {}, "json_schema": {…}}`
+  returned a verdict here and errored centrally.
+
 ### Added
 
 - **`fastaiagent.trace.redaction.SENSITIVE_EVENT_ATTR_KEYS`** — the event-attribute
@@ -95,6 +147,44 @@ somewhere else, with nothing holding the two together.
   that and therefore certify rather than check. It was rewritten to assert on the
   wire payload.)
 
+- **`jsonschema>=4.20.0` as a core dependency**, with the floor matching the
+  plane's exactly — that is the point, not a coincidence. It cannot be an extra: a
+  validation control that silently under-enforces when the extra is missing is the
+  defect this dependency exists to close. MIT, pure Python. Verified in a
+  core-only venv that `clean-core`'s licence and surface gates both still pass.
+
+- **`tests/test_guardrail_unusable_config_sweep.py`** — one invariant, swept across
+  every type a control plane can distribute:
+
+  > A guardrail whose configuration cannot check anything must report that it
+  > **could not run** — never a clean verdict.
+
+  This project shipped a violation of that rule three times in three consecutive
+  releases (`topic` 1.58.0, `schema` 1.59.0, `pii` 1.61.0), each found by hand,
+  each fix closing that instance. The 1.61.0 changelog said it outright: *"One line
+  of that in runnable form would have caught both this defect and the `schema`
+  one."* This is that line.
+
+  It fails when a new distributable type is added without an unusable-config case,
+  so the step that was skipped three times now blocks. Two configs that merely
+  *look* degenerate are deliberately excluded, with a test pinning that too:
+  `content_safety` with no categories falls back to the six defaults, and `secrets`
+  takes no detection config by design.
+
+  **10 cases are `xfail`** — `regex` with an empty or missing pattern, and
+  `classifier` with no `blocked` list. Both are real, both are in the audit, and
+  both change what an existing rule does, so they need explicit sign-off rather
+  than a drive-by fix. They are visible and named in the test output instead of
+  absent.
+
+- **`CLAUDE.md`** — this repo had none, while the plane's has carried the
+  cross-repo rules for a long time. That asymmetry is the mechanical reason those
+  rules kept being re-derived, and occasionally re-derived wrong: it is why the
+  mirror direction flipped between `topic` and `pii` unnoticed. It records the
+  SDK/plane split, which side is canonical per mirrored file, the wire rule, the
+  conformance protocol, the unusable-config invariant, the three egress channels,
+  and the release conventions.
+
 ### Compatibility
 
 - **No wire change.** Still v1.9. The plane receives strictly *less* on the event
@@ -107,19 +197,36 @@ somewhere else, with nothing holding the two together.
   dropping it.
 - An action failure that used to crash the run now blocks it and reports
   `errored=True` with `action_taken="blocked"`. Nothing that worked changes.
+- **A `schema` rule starts enforcing keywords it previously ignored.** Nothing that
+  blocked stops blocking; payloads that were passing *and should not have been* now
+  fail. That is the fix — the rule begins doing what the console already showed it
+  doing — but if you have a `schema` rule with a keyword beyond the basic five,
+  expect it to start catching things.
+- One new core dependency. `pip install fastaiagent` gains `jsonschema` and its two
+  small transitive deps.
+- Third-party exporters no longer receive the span status description under
+  `FASTAIAGENT_TRACE_PAYLOADS=0`.
 
 ### Verified
 
-- `tests/test_guardrail_egress_and_containment.py` — 24 gates, no model and no
-  plane. Each was checked against the pre-fix tree: the 5 containment gates and the
-  3 exporter gates fail without the change (the containment ones with the exact
-  `AttributeError`/`sqlite3.OperationalError` that used to escape, the exporter one
-  showing the SSN in the wire payload). The runner-failure test passes on both
-  sides on purpose — it is the regression guard for the branch that did **not**
-  change.
-- Full suite: **2709 passed, 3 skipped**. `ruff check` clean on every file touched;
-  `mypy` clean on every file touched (two pre-existing errors elsewhere are
-  unchanged).
+- `tests/test_guardrail_egress_and_containment.py` — **28 gates**, no model and no
+  plane, covering all three channels. Each was checked against the pre-fix tree:
+  the 5 containment gates and the 3 exporter gates fail without the change (the
+  containment ones with the exact `AttributeError` / `sqlite3.OperationalError`
+  that used to escape, the exporter one showing the SSN in the wire payload). The
+  runner-failure test passes on both sides on purpose — it is the regression guard
+  for the branch that did **not** change.
+- `tests/test_guardrail_unusable_config_sweep.py` — the class-level sweep, **28
+  passing and 10 `xfail`**: the `regex` and `classifier` gaps that need sign-off,
+  named in the output rather than absent.
+- Full suite **2740 passed, 3 skipped, 10 xfailed**. `ruff` and `mypy` clean on
+  every file touched; `mkdocs build --strict` builds; `check_licences.py` and
+  `check_core_surface.py` both pass in a clean core-only venv with `jsonschema` in
+  the tree (verified by building one — the dev venv's extras make those scripts
+  fail for unrelated reasons).
+- The `schema` fix was verified by executing **both** validators — SDK and
+  `jsonschema` — over the same seven schemas: all seven now agree, where six
+  previously diverged.
 
 ## [1.61.0] - 2026-09-10 — the contract becomes a test
 

@@ -43,6 +43,14 @@ dependencies = [
     # pattern fails closed instead of freezing the process. See security_audit_2
     # N13 and fastaiagent/guardrail/implementations.py.
     "regex>=2022.1,<2027",
+    # ``jsonschema`` backs the ``schema`` guardrail, and the floor matches the
+    # control plane's exactly — that is the whole point. A ``schema`` rule is
+    # authored centrally against full JSON Schema and enforced at the edge, so
+    # both sides have to run the *same* validator or the rule reaches two
+    # verdicts. It cannot be an extra: a validation control that silently
+    # under-enforces when the extra is missing is the defect this dependency
+    # exists to close. MIT, pure Python, no transitive weight of note.
+    "jsonschema>=4.20.0,<5",
 ]
 
 [project.optional-dependencies]
@@ -183,3 +191,10 @@ select = ["E", "F", "I", "N", "W", "UP"]
 python_version = "3.10"
 strict = true
 warn_unused_ignores = true
+
+# Two core deps ship no type stubs. Both are used behind narrow, well-typed
+# wrappers (``guardrail/implementations.py``), so silencing the import here beats
+# adding stub packages to every dev install for two call sites.
+[[tool.mypy.overrides]]
+module = ["regex.*", "jsonschema.*"]
+ignore_missing_imports = true

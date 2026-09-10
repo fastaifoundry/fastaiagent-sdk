@@ -398,3 +398,69 @@ class TestEventLoggingIsBestEffort:
         log_guardrail_event(
             rule, result, data="x", db_path=str(tmp_path / "local.db"), agent_name="a"
         )
+
+
+class TestSpanStatusIsFilteredToo:
+    """The third content channel, and the last one.
+
+    A span's ``Status`` carries a free-text description, and for a guardrail span
+    that description **is** the rule's failure message. ``_rebuild_span`` copied
+    ``status`` by reference, so filtering attributes and events still let that text
+    reach a Datadog or Jaeger exporter with the payload gate on.
+    """
+
+    @staticmethod
+    def _errored_span():
+        from opentelemetry.trace import Status, StatusCode
+
+        class _Span:
+            status = Status(StatusCode.ERROR, JUDGE_LEAK)
+
+        return _Span()
+
+    def test_the_description_is_withheld_when_the_gate_is_on(self, monkeypatch):
+        pytest.importorskip("opentelemetry.sdk.trace")
+        monkeypatch.setenv("FASTAIAGENT_TRACE_PAYLOADS", "0")
+
+        from opentelemetry.trace import StatusCode
+
+        from fastaiagent.trace.otel import _filtered_status
+
+        out = _filtered_status(self._errored_span())
+
+        assert out is not None, "the status must be rebuilt when the gate is on"
+        assert out.description is None
+        assert out.status_code is StatusCode.ERROR, "the code is structural and must survive"
+
+    def test_a_capture_policy_masks_the_description(self, monkeypatch):
+        pytest.importorskip("opentelemetry.sdk.trace")
+        monkeypatch.setenv("FASTAIAGENT_TRACE_PAYLOADS", "1")
+        set_redaction_policy(RedactionPolicy(patterns=[r"\d{3}-\d{2}-\d{4}"], mode="capture"))
+
+        from fastaiagent.trace.otel import _filtered_status
+
+        out = _filtered_status(self._errored_span())
+
+        assert out is not None
+        assert "123-45-6789" not in (out.description or "")
+
+    def test_untouched_when_payloads_are_exported(self, monkeypatch):
+        pytest.importorskip("opentelemetry.sdk.trace")
+        monkeypatch.setenv("FASTAIAGENT_TRACE_PAYLOADS", "1")
+
+        from fastaiagent.trace.otel import _filtered_status
+
+        assert _filtered_status(self._errored_span()) is None
+
+    def test_a_span_with_no_description_needs_no_rebuild(self, monkeypatch):
+        pytest.importorskip("opentelemetry.sdk.trace")
+        monkeypatch.setenv("FASTAIAGENT_TRACE_PAYLOADS", "0")
+
+        from opentelemetry.trace import Status, StatusCode
+
+        from fastaiagent.trace.otel import _filtered_status
+
+        class _Span:
+            status = Status(StatusCode.OK)
+
+        assert _filtered_status(_Span()) is None

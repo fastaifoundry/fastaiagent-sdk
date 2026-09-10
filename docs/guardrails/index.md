@@ -317,6 +317,22 @@ JSON Schema validation — useful for structured agent output.
     it costs and the result is marked `errored`. `json_schema` is accepted as an
     alias for `schema`.
 
+!!! note "Full JSON Schema, since 1.62.0"
+    The `schema` guardrail validates with **`jsonschema`** against the whole
+    spec — `enum`, `minimum`/`maximum`, `minLength`/`maxLength`, `pattern`,
+    `format`, `const`, `oneOf`/`anyOf`/`allOf`, `minItems`, `uniqueItems`, `$ref`
+    and the rest, with the dialect resolved from `$schema` exactly as the control
+    plane resolves it.
+
+    Before 1.62.0 it used the SDK's own `tool.schema.validate_schema`, which
+    understands five keywords and silently ignores the rest. A rule authored
+    centrally with an `enum` was correctly rejected by **Test** and passed
+    everything in production. Nothing that previously blocked stops blocking —
+    the rule simply enforces what the console already promised.
+
+    `validate_schema` keeps its own job, [tool drift
+    detection](../tools/schema-drift.md), where its leniency is the point.
+
 ```python
 schema_guard = Guardrail(
     name="response_schema",

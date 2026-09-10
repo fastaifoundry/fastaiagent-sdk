@@ -98,6 +98,27 @@ deliberately — a class name is structural, so you can still see *that* a
 attributes, `local.db` keeps full fidelity, so the Local UI and Replay are
 unaffected.
 
+**And the span status, since 1.62.0.** A span's `Status` carries a free-text
+*description*, and for a guardrail span that description **is** the rule's
+failure message. Because the egress filter rebuilt only the attributes, that
+text still reached any exporter registered with
+`fastaiagent.trace.add_exporter(...)` — a Datadog or Jaeger backend, say — with
+the gate on. The description is now withheld there too; the status **code**
+always survives, so an errored span still reads as errored. The control-plane
+path was never affected: its wire model carries the status as a bare code and
+discards the description.
+
+So a span has **three** content channels, and all three are gated:
+
+| Channel | Registry | Filter |
+|---|---|---|
+| `attributes` | `SENSITIVE_ATTR_KEYS` | `apply_export_policy` |
+| `events` | `SENSITIVE_EVENT_ATTR_KEYS` | `apply_event_export_policy` |
+| `status.description` | — | `otel._filtered_status` |
+
+With a `RedactionPolicy` installed and payload export left on, all three are
+**masked** rather than dropped — you keep the diagnostic, without the values.
+
 To capture *nothing at all* (not even locally), disable tracing entirely
 with `FASTAIAGENT_TRACE_ENABLED=0`.
 

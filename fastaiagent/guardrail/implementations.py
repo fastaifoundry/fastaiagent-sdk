@@ -302,42 +302,104 @@ async def _run_regex(guardrail: Guardrail, data: str | dict[str, Any]) -> Guardr
 
 
 async def _run_schema(guardrail: Guardrail, data: str | dict[str, Any]) -> GuardrailResult:
-    """Execute a JSON schema validation guardrail.
+    """Execute a JSON Schema validation guardrail, with a *real* JSON Schema validator.
 
-    A rule with no schema **raises** rather than passing. ``validate_schema``
-    finds no violations in ``{}``, so an empty schema reported every payload as
-    valid while the console showed an active control — a validation rule that
-    validates nothing, which is worse than no rule at all because it looks like
-    one. Raising routes through :func:`run_guardrail`, so ``on_error`` decides
-    what it costs and the result is marked ``errored``.
+    **This runs ``jsonschema``, deliberately, and not the SDK's own
+    ``tool.schema.validate_schema``.** That function understands ``type``,
+    ``properties``, ``required``, ``items`` and ``additionalProperties`` — and
+    silently ignores everything else: ``enum``, ``minimum``/``maximum``,
+    ``minLength``/``maxLength``, ``pattern``, ``format``, ``const``,
+    ``oneOf``/``anyOf``/``allOf``/``not``, ``minItems``, ``uniqueItems``,
+    ``$ref``. It also skips ``required`` entirely unless the schema carries an
+    explicit ``"type": "object"``.
 
-    ``json_schema`` is accepted as an alias: older console rules used that key,
-    and reading only ``schema`` would leave such a rule empty at the edge and
-    populated centrally — the same rule reaching two different verdicts.
+    A ``schema`` rule is authored **centrally**, against full JSON Schema, and
+    validated there with ``jsonschema``. So an operator would write
+    ``{"status": {"enum": ["ok", "error"]}}``, watch ``POST /guardrails/{id}/test``
+    correctly reject ``{"status": "weird"}``, and get a rule that passed it in
+    production. Five of five non-trivial schemas diverged that way, every one in
+    the direction of the edge under-enforcing. The 1.59.0 fix pinned the config
+    *resolver* on both sides and never compared the *validator* underneath, which
+    is the same "a type's behaviour spans two modules and only one was pinned"
+    lesson 1.61.0 learned for ``pii``.
+
+    ``validate_schema`` keeps its own job — drift detection for tool outputs and
+    chain state, where it is the documented contract and its callers depend on its
+    leniency. Only the guardrail path moves.
+
+    Fail-loud, in the same three places the plane fails:
+
+    * **no usable schema** — missing, empty, non-dict, or ``true`` (a legal JSON
+      Schema meaning "accept anything") — **raises**, so ``on_error`` decides and
+      the result is marked ``errored``. A validation rule that validates nothing
+      is worse than no rule, because it looks like one.
+    * **a malformed schema** raises out of ``jsonschema`` and is likewise an
+      errored check, not a verdict.
+    * **a missing ``jsonschema``** raises rather than falling back. The fallback
+      *is* the defect; a broken install is precisely when a safety control must
+      not quietly succeed.
+
+    ``json_schema`` is accepted as an alias, resolved with ``is None`` rather than
+    ``or`` so it matches the plane's resolver exactly — with ``or``, a rule
+    carrying ``{"schema": {}, "json_schema": {...}}`` returned a verdict here and
+    errored centrally.
     """
-    schema = guardrail.config.get("schema") or guardrail.config.get("json_schema")
+    try:
+        import jsonschema
+    except ImportError as exc:  # pragma: no cover - a broken install, not a code path
+        raise RuntimeError(
+            "jsonschema is not installed, so this schema guardrail cannot run"
+        ) from exc
+
+    config = guardrail.config or {}
+    schema = config.get("schema")
+    if schema is None:
+        schema = config.get("json_schema")
     if not isinstance(schema, dict) or not schema:
         raise ValueError(
             "schema guardrail has no schema, so it would validate every payload as valid"
         )
 
-    try:
-        if isinstance(data, str):
+    if isinstance(data, str):
+        try:
             parsed = json.loads(data)
-        else:
-            parsed = data
-    except json.JSONDecodeError as e:
-        return GuardrailResult(passed=False, message=f"Invalid JSON: {e}")
+        except (ValueError, TypeError) as e:
+            return GuardrailResult(passed=False, message=f"Invalid JSON: {e}")
+    else:
+        parsed = data
 
-    from fastaiagent.tool.schema import validate_schema
-
-    violations = validate_schema(schema, parsed)
-    if violations:
-        messages = [v.message for v in violations[:3]]
+    # ``iter_errors`` rather than ``validate`` so the local result can name more
+    # than the first violation — the Local UI renders these. Sorted by path so a
+    # rule reports the same thing twice in a row; ``iter_errors`` does not promise
+    # an order. Nothing here is exported: ``schema`` has no
+    # ``EXPORTABLE_DETAIL_KEYS`` entry, so the detail stays on the machine.
+    # ``validator_for`` + ``check_schema`` is what ``jsonschema.validate`` does
+    # internally, and the plane calls ``validate`` — so the dialect is resolved from
+    # ``$schema`` the same way on both sides, and a malformed schema raises
+    # ``SchemaError`` here exactly as it does there. Hardcoding a draft would be a
+    # fresh divergence in the fix for a divergence.
+    validator_cls = jsonschema.validators.validator_for(schema)
+    validator_cls.check_schema(schema)
+    validator = validator_cls(schema)
+    errors = sorted(validator.iter_errors(parsed), key=lambda e: list(e.absolute_path))
+    if errors:
+        messages = [
+            f"{'/'.join(str(p) for p in e.absolute_path) or '<root>'}: {e.message}"
+            for e in errors[:3]
+        ]
         return GuardrailResult(
             passed=False,
             message=f"Schema violations: {'; '.join(messages)}",
-            metadata={"violations": [v.model_dump() for v in violations]},
+            metadata={
+                "violations": [
+                    {
+                        "path": "/".join(str(p) for p in e.absolute_path),
+                        "message": e.message,
+                        "validator": str(e.validator),
+                    }
+                    for e in errors
+                ]
+            },
         )
     return GuardrailResult(passed=True)
 

@@ -2,6 +2,24 @@
 
 Detect when tool responses no longer match their declared schema — catches API changes before they break your agents.
 
+!!! info "This is drift detection, not JSON Schema validation"
+
+    `validate_schema` understands `type`, `properties`, `required`, `items` and
+    `additionalProperties`, and **ignores every other keyword** — `enum`,
+    `minimum`/`maximum`, `minLength`/`maxLength`, `pattern`, `format`, `const`,
+    `oneOf`/`anyOf`/`allOf`, `minItems`, `uniqueItems`, `$ref`. It also skips
+    `required` unless the schema carries an explicit `"type": "object"`.
+
+    That is deliberate and right for its job: catching an upstream API that
+    started returning a string where it used to return a number. It is **not** a
+    conformance checker, so do not reach for it when you need one.
+
+    The `schema` **guardrail** is a different thing and does not use this
+    function — it runs `jsonschema` against the full spec, because a `schema` rule
+    can be authored on the control plane and must reach the same verdict at the
+    edge as it does centrally. See
+    [Guardrails](../guardrails/index.md).
+
 ## Validating a Single Response
 
 ```python
