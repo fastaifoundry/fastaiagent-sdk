@@ -241,8 +241,24 @@ async def _run_regex(guardrail: Guardrail, data: str | dict[str, Any]) -> Guardr
 
 
 async def _run_schema(guardrail: Guardrail, data: str | dict[str, Any]) -> GuardrailResult:
-    """Execute a JSON schema validation guardrail."""
-    schema = guardrail.config.get("schema", {})
+    """Execute a JSON schema validation guardrail.
+
+    A rule with no schema **raises** rather than passing. ``validate_schema``
+    finds no violations in ``{}``, so an empty schema reported every payload as
+    valid while the console showed an active control — a validation rule that
+    validates nothing, which is worse than no rule at all because it looks like
+    one. Raising routes through :func:`run_guardrail`, so ``on_error`` decides
+    what it costs and the result is marked ``errored``.
+
+    ``json_schema`` is accepted as an alias: older console rules used that key,
+    and reading only ``schema`` would leave such a rule empty at the edge and
+    populated centrally — the same rule reaching two different verdicts.
+    """
+    schema = guardrail.config.get("schema") or guardrail.config.get("json_schema")
+    if not isinstance(schema, dict) or not schema:
+        raise ValueError(
+            "schema guardrail has no schema, so it would validate every payload as valid"
+        )
 
     try:
         if isinstance(data, str):
