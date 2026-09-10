@@ -5,6 +5,298 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.62.0] - 2026-09-10 — what a green board was hiding
+
+A cross-repo audit ran the whole guardrail feature — SDK 1.44 → 1.61, plane #48 →
+#118 — against the existing suites. **683 tests passed with zero failures and zero
+skips.** Five defects survived that, which is the point: the board was green
+because none of these behaviours had a test.
+
+Four of the five are the same shape — a rule *stated* in one place and *enforced*
+somewhere else, with nothing holding the two together. The fifth is the reason
+that keeps happening.
+
+
+### Fixed
+
+- **A guardrail's failure message left the machine with
+  `FASTAIAGENT_TRACE_PAYLOADS=0` set.** A span carries two content channels — its
+  attributes and its **events** — and only the first was ever filtered.
+
+  That gap needed nobody to write an event by hand. OpenTelemetry records an
+  exception on the enclosing span automatically; a blocked guardrail raises
+  `GuardrailBlockedError` inside the agent's own span; and
+  `str(GuardrailBlockedError)` **is** the guardrail's `result.message`. For an
+  `llm_judge` rule that message is `response.content` — the judge's entire raw
+  reply. For `groundedness` it embeds the unsupported claims, quoted verbatim out
+  of the model's answer. Both are model output over customer content, and both
+  reached the plane as `sdk_events` and `traces.error`.
+
+  `exception.message` and `exception.stacktrace` are now dropped on egress by the
+  same gate that drops the attribute keys, on **both** the control-plane path and
+  the third-party `add_exporter` path — the latter mattered too, because
+  `_rebuild_span` copied `events` by reference. The stacktrace is not redundant
+  with the message: a formatted traceback ends with `<Type>: <message>`, so
+  dropping only the message leaves the text.
+
+  `exception.type` is deliberately kept. A class name is structural, so an
+  operator with payloads off can still see *that* a `GuardrailBlockedError`
+  occurred, and where. `local.db` keeps full fidelity as always, so the Local UI
+  and Replay are unaffected.
+
+- **`run_guardrail` was not the single enforcement point it documented itself as.**
+  `apply_action` was called *outside* its `try`, and `apply_action` re-runs
+  detectors and regex substitutions to build a mask. Anything it raised escaped as
+  a bare `AttributeError`/`TypeError` from `agent.run()` — no `errored` flag, no
+  `on_error`, not even a `GuardrailBlockedError`. A function whose docstring calls
+  it "the single enforcement point for the `on_error` policy" had a third of its
+  body outside its own guard.
+
+  Reachable today: a `secrets` rule with `action="mask"` and a non-dict `config`.
+  `secrets` is the one maskable type whose runner never reads `config` (by design
+  — it takes no detection config), so a malformed config reaches `mask_payload`
+  without the runner erroring first. For `regex`, `classifier` and `pii` the
+  runner touches a superset of what the mask touches and so always raises first;
+  that was checked rather than assumed, and is recorded in the code, because the
+  audit that found this defect had named those three as the triggers.
+
+  It is now caught **separately** from a runner failure, because the two mean
+  different things. A runner that raises means *the check could not run*, which is
+  exactly what `on_error` answers. An action that raises means the check **did**
+  run and returned a verdict, and only the consequence could not be applied — so
+  `on_error` gets no say and the outcome is a block, even under
+  `on_error="allow"`. That is the existing rule for a `mask` that finds no span to
+  redact; a mask that *raised* is strictly worse than one that found nothing.
+
+- **A broken event store could abort an agent run.** `log_guardrail_event` is
+  `try`/**`finally`** with no `except`, and `Guardrail.aexecute` called it
+  unguarded — so a locked or read-only `local.db`, a full disk, or metadata that
+  would not serialize propagated out and killed the run, turning an observability
+  problem into an outage. The three framework integrations had guarded this call
+  for a long time with the comment *"never fail a guardrail check because the
+  event store hiccupped"*; the SDK's own runtime had not. It is now best-effort
+  there too, and the insert uses `default=str` (matching
+  `executor._emit_guardrail_span`) so one unserializable value costs that value
+  rather than the whole event.
+
+- **A `schema` guardrail enforced almost nothing at the edge.** It validated with
+  the SDK's own `tool.schema.validate_schema`, which understands `type`,
+  `properties`, `required`, `items` and `additionalProperties` — and silently
+  ignores everything else: `enum`, `minimum`/`maximum`, `minLength`/`maxLength`,
+  `pattern`, `format`, `const`, `oneOf`/`anyOf`/`allOf`/`not`, `minItems`,
+  `uniqueItems`, `$ref`. It also skipped `required` entirely unless the schema
+  carried an explicit `"type": "object"`.
+
+  A `schema` rule is authored **centrally**, against full JSON Schema, and
+  validated there with `jsonschema`. So an operator would write
+  `{"status": {"enum": ["ok","error"]}}`, watch **Test** correctly reject
+  `{"status": "weird"}`, and get a rule that passed it in production. Measured by
+  running both validators on the same inputs: **five of five** non-trivial schemas
+  diverged, every one in the direction of the edge under-enforcing.
+
+  It survived #114 / 1.59.0 — the release written to end exactly this drift —
+  because that fix pinned the config *resolver* on both sides and never compared
+  the *validator* underneath. The same "a type's behaviour spans two modules and
+  only one was pinned" lesson 1.61.0 learned for `pii`, in a type nobody
+  re-checked. It stayed hidden because the one shipped template uses only the five
+  keywords the SDK happened to implement.
+
+  The guardrail now runs `jsonschema`, resolving the dialect from `$schema` with
+  `validator_for` + `check_schema` — which is what `jsonschema.validate` does
+  internally, and `validate` is what the plane calls. Hardcoding a draft would
+  have been a fresh divergence inside the fix for a divergence.
+
+  **`validate_schema` is unchanged.** Its other three callers — chain input/output
+  validation, chain state, and tool drift detection — depend on its leniency, and
+  tightening those is a separate decision. Its docs now say plainly that it is
+  drift detection and not a conformance checker.
+
+- **The span *status description* still reached third-party exporters.** 1.62.0
+  gated attributes and events; a span has a third content channel. `Status` carries
+  a free-text description, and for a guardrail span that description **is** the
+  rule's failure message. `_rebuild_span` copied `status` by reference, so with
+  `FASTAIAGENT_TRACE_PAYLOADS=0` and a Datadog or Jaeger exporter attached, the
+  judge's raw reply still left through a different field. Fixing the events channel
+  without this one left the hole half-closed, and the open half went to a third
+  party.
+
+  The description is now withheld on egress and masked instead when a
+  `RedactionPolicy` is installed. The status **code** always survives, so an errored
+  span still reads as errored. The control-plane path was never affected — its wire
+  model carries the status as a bare code and discards the description.
+
+- The `json_schema` alias is resolved with `is None` rather than `or`, matching the
+  plane's resolver. With `or`, a rule carrying `{"schema": {}, "json_schema": {…}}`
+  returned a verdict here and errored centrally.
+
+- **`run_sync` dropped the caller's `contextvars` context**, so a shipped feature
+  worked in a script and broke everywhere else. Offloading to a worker thread with
+  `ThreadPoolExecutor().submit(asyncio.run, coro)` starts that thread with an
+  *empty* context, so every `ContextVar` the caller set read back as its default
+  inside the coroutine.
+
+  The concrete cost: `fa.guardrail_context(context=docs)` backs a `groundedness`
+  rule, and losing it means the rule cannot find its context, raises, and — with
+  the default `on_error="block"` — **blocks the run it was supposed to score**.
+  Only from a Jupyter cell, a pytest-asyncio test, or one of the framework
+  integrations; a plain script was always fine, which is exactly why nobody saw
+  it. The context is now copied into the worker, so both paths agree.
+
+- **A second `reask` rule hard-blocked.** The continue-instead-of-raise branch was
+  gated on `outcome.reask is None` along with the recording of the first failure,
+  so a second failing reask rule skipped the branch entirely, fell through to
+  `halts()` — which is True for `reask` on a blocking rule — and raised. Adding a
+  second reask rule silently converted the pair into a hard block and bypassed the
+  retry loop. First-wins now applies only to *which* failure is handed back; the
+  decision to continue is per rule.
+
+- **`mask_payload` kept its own copy of the pii backend resolution.** 1.61.0's
+  changelog claims `resolve_backend` was mirrored "instead of lowercasing inline
+  at the call site — one place to be wrong rather than two". That was true of
+  `_run_pii` and false here: this call site still had the inline copy, two lines
+  below a call to the shared *entity* resolver. It is only unreachable today
+  because the runner validates first and `apply_action` short-circuits an errored
+  result — an accident of ordering, not a design.
+
+- **`unsupported_claims` was capped by count but not by volume.** The export
+  allowlist admits this one payload-derived key on the argument that it is "five
+  clipped claims", and the list is capped at five — but each entry was unbounded,
+  so a judge (or an injected one) could return the whole answer, or the whole
+  retrieved context, as a single "claim". Each entry is now clipped on export.
+  Applied in `guardrail.executor`, **not** in `grounding.py`: that module is
+  mirrored from the plane, and clipping there would widen a cross-repo divergence
+  to fix an egress concern. The bound is claimed by the allowlist, so it is
+  enforced by the allowlist; the local result keeps full fidelity.
+
+- **A `RedactionPolicy` could not reach guardrail event metadata.**
+  `trace.storage` has run span attributes through capture-mode redaction on the
+  way into `local.db` all along; `ui.events` skipped it — and `metadata["before"]`
+  on a mask/override event is the payload *prior* to redaction, i.e. exactly the
+  PII or secret the rule exists to remove. Now consistent. The payload gate still
+  deliberately does not apply: it is an export boundary, `local.db` is never
+  uploaded, and Replay depends on full local fidelity.
+
+- **`require_platform` had no way to demand the platform path**, so the skip was
+  unconditional whenever `E2E_SKIP_PLATFORM=1` was set — which CI does.
+  `test_connected_guardrail_actions_e2e.py` is the **only** place that pins
+  severity/floor crossing the wire, a plane-authored mask/warn/override enforcing
+  in-process, and a domain-wide rule producing an execution row, and all of it
+  skipped on every PR: silently, and by configuration rather than by accident. A
+  gate with no way to demand it is not a gate.
+
+  The opt-in is **`E2E_PLATFORM_REQUIRED=1`**, deliberately *not* `E2E_REQUIRED`.
+  The first version of this reused that flag and broke CI: it already means "the
+  core e2e gate must actually run — do not skip because a key is missing", and CI
+  sets it **together with** `E2E_SKIP_PLATFORM=1` on purpose (run the gate for
+  real, without a platform). Overloading it turned nine passing steps into hard
+  failures. Two flags, two questions: *must the gate run at all* versus *must it
+  include the platform round-trip*. A test now pins CI's own combination as a skip.
+
+### Added
+
+- **`fastaiagent.trace.redaction.SENSITIVE_EVENT_ATTR_KEYS`** — the event-attribute
+  payload registry, sibling to `SENSITIVE_ATTR_KEYS`. Separate because events are
+  a separate channel; a test pins its contents so it cannot be narrowed to the
+  message alone.
+- **`apply_event_export_policy(events)`** — the event-shaped sibling of
+  `apply_export_policy`. Same two steps: the payload gate drops the sensitive keys,
+  then an installed capture/both-mode policy masks what remains. Malformed events
+  pass through untouched rather than raising, because this runs on the export path
+  and must never be the reason a batch fails.
+- **`platform_export.to_wire(span)`** — the per-span serialize-and-filter step,
+  split out of `export()` so the filtering is reachable from a test without a live
+  plane. (The first draft of that test grepped the exporter's source for a function
+  name; the same audit had just flagged three plane-side tests that do exactly
+  that and therefore certify rather than check. It was rewritten to assert on the
+  wire payload.)
+
+- **`jsonschema>=4.20.0` as a core dependency**, with the floor matching the
+  plane's exactly — that is the point, not a coincidence. It cannot be an extra: a
+  validation control that silently under-enforces when the extra is missing is the
+  defect this dependency exists to close. MIT, pure Python. Verified in a
+  core-only venv that `clean-core`'s licence and surface gates both still pass.
+
+- **`tests/test_guardrail_unusable_config_sweep.py`** — one invariant, swept across
+  every type a control plane can distribute:
+
+  > A guardrail whose configuration cannot check anything must report that it
+  > **could not run** — never a clean verdict.
+
+  This project shipped a violation of that rule three times in three consecutive
+  releases (`topic` 1.58.0, `schema` 1.59.0, `pii` 1.61.0), each found by hand,
+  each fix closing that instance. The 1.61.0 changelog said it outright: *"One line
+  of that in runnable form would have caught both this defect and the `schema`
+  one."* This is that line.
+
+  It fails when a new distributable type is added without an unusable-config case,
+  so the step that was skipped three times now blocks. Two configs that merely
+  *look* degenerate are deliberately excluded, with a test pinning that too:
+  `content_safety` with no categories falls back to the six defaults, and `secrets`
+  takes no detection config by design.
+
+  **10 cases are `xfail`** — `regex` with an empty or missing pattern, and
+  `classifier` with no `blocked` list. Both are real, both are in the audit, and
+  both change what an existing rule does, so they need explicit sign-off rather
+  than a drive-by fix. They are visible and named in the test output instead of
+  absent.
+
+- **`CLAUDE.md`** — this repo had none, while the plane's has carried the
+  cross-repo rules for a long time. That asymmetry is the mechanical reason those
+  rules kept being re-derived, and occasionally re-derived wrong: it is why the
+  mirror direction flipped between `topic` and `pii` unnoticed. It records the
+  SDK/plane split, which side is canonical per mirrored file, the wire rule, the
+  conformance protocol, the unusable-config invariant, the three egress channels,
+  and the release conventions.
+
+### Compatibility
+
+- **No wire change.** Still v1.9. The plane receives strictly *less* on the event
+  channel when the payload gate is on, which is the fix; nothing new is sent.
+- **Behaviour change, deliberate, only under `FASTAIAGENT_TRACE_PAYLOADS=0`:** an
+  errored span's `exception.message` and `exception.stacktrace` no longer reach the
+  plane or third-party exporters. If you were relying on those to debug a blocked
+  run centrally, they remain in `local.db` at full fidelity — or leave payload
+  export on and install a `RedactionPolicy`, which now masks the message instead of
+  dropping it.
+- An action failure that used to crash the run now blocks it and reports
+  `errored=True` with `action_taken="blocked"`. Nothing that worked changes.
+- **A `schema` rule starts enforcing keywords it previously ignored.** Nothing that
+  blocked stops blocking; payloads that were passing *and should not have been* now
+  fail. That is the fix — the rule begins doing what the console already showed it
+  doing — but if you have a `schema` rule with a keyword beyond the basic five,
+  expect it to start catching things.
+- One new core dependency. `pip install fastaiagent` gains `jsonschema` and its two
+  small transitive deps.
+- Third-party exporters no longer receive the span status description under
+  `FASTAIAGENT_TRACE_PAYLOADS=0`.
+
+### Verified
+
+- `tests/test_guardrail_egress_and_containment.py` — **28 gates**, no model and no
+  plane, covering all three channels. Each was checked against the pre-fix tree:
+  the 5 containment gates and the 3 exporter gates fail without the change (the
+  containment ones with the exact `AttributeError` / `sqlite3.OperationalError`
+  that used to escape, the exporter one showing the SSN in the wire payload). The
+  runner-failure test passes on both sides on purpose — it is the regression guard
+  for the branch that did **not** change.
+- `tests/test_guardrail_unusable_config_sweep.py` — the class-level sweep, **28
+  passing and 10 `xfail`**: the `regex` and `classifier` gaps that need sign-off,
+  named in the output rather than absent.
+- `tests/test_guardrail_audit_followups.py` — 18 gates for the six items above.
+  Each fix was reverted in turn: **10 of the 17 fail without their change**, and the
+  other 7 pin adjacent behaviour that did not move. Two of them had to be hardened
+  first — one was passing *vacuously* over an empty table because `ui_enabled` is
+  off by default, and one **skipped instead of failing**, which is the very defect
+  it tests for.
+- Full suite **2757 passed, 3 skipped, 10 xfailed**. `ruff` and `mypy` clean on
+  every file touched; `mkdocs build --strict` builds; `check_licences.py` and
+  `check_core_surface.py` both pass in a clean core-only venv with `jsonschema` in
+  the tree (verified by building one — the dev venv's extras make those scripts
+  fail for unrelated reasons).
+- The `schema` fix was verified by executing **both** validators — SDK and
+  `jsonschema` — over the same seven schemas: all seven now agree, where six
+  previously diverged.
+
 ## [1.61.0] - 2026-09-10 — the contract becomes a test
 
 1.60.0 implemented the `pii`/`secrets` handover faithfully and still diverged

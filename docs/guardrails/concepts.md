@@ -150,6 +150,23 @@ see exactly how often a guardrail is degrading instead of guarding. Guardrail
 LLM calls also get a small automatic retry, so a single transient blip doesn't
 trip the policy at all.
 
+!!! note "`on_error` answers *"could not run"*, not *"could not apply"*"
+
+    Applying the **action** can fail too — a `mask` re-runs a detector or a regex
+    substitution to build the redacted payload, and that work can raise. Since
+    1.62.0 that is caught, but it is caught **separately** and `on_error` gets no
+    say: the check *did* run and returned a verdict, and only the consequence
+    could not be applied, so the outcome is a block even under
+    `on_error="allow"`. It is the same rule as a `mask` that finds no span to
+    redact — a mask that raised is strictly worse than one that found nothing.
+    The result carries `errored=True`, `action_taken="blocked"`, and an
+    `action_error` in its metadata.
+
+    Before 1.62.0 this was not caught at all: `apply_action` sat outside
+    `run_guardrail`'s handler, so a failure there surfaced as a bare
+    `AttributeError` out of `agent.run()` — no `errored` flag, no `on_error`, not
+    even a `GuardrailBlockedError`.
+
 The `no_pii()`, `no_secrets()`, `json_valid()` and `allowed_domains()` builtins
 don't make a fallible call, so `on_error` doesn't come up for them — they are
 reliable hard blocks. The `pii` **type** is different: it raises on an unknown

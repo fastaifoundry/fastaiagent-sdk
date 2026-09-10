@@ -80,6 +80,45 @@ latencies) always flows. This is the setting to use for a connected /
 enterprise deployment where sensitive content must not egress but you
 still want full local debugging.
 
+**Span events are gated too, since 1.62.0.** A span carries two content
+channels — its attributes and its *events* — and until 1.62.0 only the
+first was filtered. That gap did not need anyone to write an event by
+hand: OpenTelemetry records an exception on the enclosing span
+automatically, and a blocked guardrail raises inside the agent's own span
+carrying its `result.message`. For an `llm_judge` rule that message is the
+judge's entire raw reply; for `groundedness` it quotes the unsupported
+claims out of the model's answer. Both are model output over your content,
+and both used to leave with `FASTAIAGENT_TRACE_PAYLOADS=0` set.
+
+`exception.message` and `exception.stacktrace` (`SENSITIVE_EVENT_ATTR_KEYS`)
+are now dropped on egress alongside the attribute keys, on both the
+control-plane and third-party exporter paths. `exception.type` is kept
+deliberately — a class name is structural, so you can still see *that* a
+`GuardrailBlockedError` occurred and where, without the text. As with
+attributes, `local.db` keeps full fidelity, so the Local UI and Replay are
+unaffected.
+
+**And the span status, since 1.62.0.** A span's `Status` carries a free-text
+*description*, and for a guardrail span that description **is** the rule's
+failure message. Because the egress filter rebuilt only the attributes, that
+text still reached any exporter registered with
+`fastaiagent.trace.add_exporter(...)` — a Datadog or Jaeger backend, say — with
+the gate on. The description is now withheld there too; the status **code**
+always survives, so an errored span still reads as errored. The control-plane
+path was never affected: its wire model carries the status as a bare code and
+discards the description.
+
+So a span has **three** content channels, and all three are gated:
+
+| Channel | Registry | Filter |
+|---|---|---|
+| `attributes` | `SENSITIVE_ATTR_KEYS` | `apply_export_policy` |
+| `events` | `SENSITIVE_EVENT_ATTR_KEYS` | `apply_event_export_policy` |
+| `status.description` | — | `otel._filtered_status` |
+
+With a `RedactionPolicy` installed and payload export left on, all three are
+**masked** rather than dropped — you keep the diagnostic, without the values.
+
 To capture *nothing at all* (not even locally), disable tracing entirely
 with `FASTAIAGENT_TRACE_ENABLED=0`.
 
@@ -105,6 +144,14 @@ For cases where you *want* to keep payloads (debugging, replay) but
 need to mask secrets that leaked through, install a regex-based
 redaction policy. The Local UI exposes a **"Mask secrets"** toggle on
 the trace detail page that sends `?redact=true` to the trace API.
+
+A `capture`- or `both`-mode policy reaches **guardrail event metadata** too, since
+1.62.0. That matters most for a `mask` or `override` rule: the Local UI's
+before/after diff stores the payload *prior* to redaction — the PII or secret the
+rule exists to remove — and it was the one local write a policy could not reach,
+while span attributes had been redacted on capture all along. Note the payload
+gate (`FASTAIAGENT_TRACE_PAYLOADS`) deliberately does **not** apply here: it is an
+export boundary, and local capture stays full fidelity so Replay keeps working.
 When a policy with `mode in {"read", "both"}` is installed, the
 toggle masks values in the rendered span output:
 
