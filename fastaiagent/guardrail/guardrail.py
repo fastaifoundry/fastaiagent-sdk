@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from enum import Enum
 from typing import Any, Literal
@@ -150,7 +151,19 @@ class Guardrail:
         if get_config().ui_enabled:
             from fastaiagent.ui.events import log_guardrail_event
 
-            log_guardrail_event(self, result, data=data)
+            try:
+                log_guardrail_event(self, result, data=data)
+            except Exception:
+                # Logging is best-effort; never fail a guardrail check because the
+                # event store hiccupped. ``log_guardrail_event`` is try/*finally*
+                # with no ``except``, so a locked or read-only ``local.db``, a full
+                # disk, or metadata that would not serialize used to propagate out
+                # of here and abort the whole agent run — turning an observability
+                # problem into an outage. The three framework integrations already
+                # guarded this call; the SDK's own runtime did not.
+                logging.getLogger(__name__).debug(
+                    "Failed to log guardrail event for %r", self.name, exc_info=True
+                )
         return result
 
     def to_dict(self) -> dict[str, Any]:

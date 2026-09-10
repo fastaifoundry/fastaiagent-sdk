@@ -49,6 +49,31 @@ def get_abandoned_total() -> int:
     return _abandoned_total
 
 
+def to_wire(span: Any) -> dict[str, Any]:
+    """Serialize one stored span for egress, with both content channels filtered.
+
+    Egress filter (N3/N4): ``local.db`` keeps full fidelity, but what leaves the
+    machine has payloads stripped when the operator set
+    ``FASTAIAGENT_TRACE_PAYLOADS=0``, and any installed redaction policy is
+    applied here so the plane never receives raw sensitive values.
+
+    **Both** channels, which is the part that was missing. Span *attributes* were
+    filtered from the start; span *events* were not, and OTel records exceptions
+    on the enclosing span automatically — so a blocked guardrail raising inside
+    ``agent.*`` carried its own ``result.message`` (for ``llm_judge``, the judge's
+    whole reply) past the payload gate.
+
+    Split out of ``export`` so the filtering is reachable from a test without a
+    live plane.
+    """
+    from fastaiagent.trace.redaction import apply_event_export_policy, apply_export_policy
+
+    item: dict[str, Any] = span.model_dump()
+    item["attributes"] = apply_export_policy(item.get("attributes") or {})
+    item["events"] = apply_event_export_policy(item.get("events") or [])
+    return item
+
+
 class PlatformSpanExporter(SpanExporter):
     """Exports buffered spans to the FastAIAgent Platform with retry + re-send.
 
@@ -106,13 +131,7 @@ class PlatformSpanExporter(SpanExporter):
                 # leaves the machine has payloads stripped when the operator set
                 # FASTAIAGENT_TRACE_PAYLOADS=0, and any installed redaction policy
                 # is applied here so the plane never receives raw sensitive values.
-                from fastaiagent.trace.redaction import apply_export_policy
-
-                wire = []
-                for s in pending:
-                    item = s.model_dump()
-                    item["attributes"] = apply_export_policy(item.get("attributes") or {})
-                    wire.append(item)
+                wire = [to_wire(s) for s in pending]
                 if self._post_with_retry(_connection, wire):
                     store.mark_synced([s.span_id for s in pending])
 

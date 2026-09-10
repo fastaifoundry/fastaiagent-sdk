@@ -80,7 +80,12 @@ def log_guardrail_event(
                 result.message,
                 agent_name,
                 timestamp,
-                json.dumps(metadata),
+                # ``default=str`` matches ``executor._emit_guardrail_span``. A ``code``
+                # guardrail can return anything in ``metadata``; without this a
+                # datetime or a model object raised here, and now that the caller
+                # catches (see ``Guardrail.aexecute``) it would silently cost the
+                # whole event rather than one unserializable value.
+                json.dumps(metadata, default=str),
                 safe_get_project_id(),
                 result.action,
                 result.action_taken,

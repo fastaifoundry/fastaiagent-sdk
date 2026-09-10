@@ -80,6 +80,24 @@ latencies) always flows. This is the setting to use for a connected /
 enterprise deployment where sensitive content must not egress but you
 still want full local debugging.
 
+**Span events are gated too, since 1.62.0.** A span carries two content
+channels — its attributes and its *events* — and until 1.62.0 only the
+first was filtered. That gap did not need anyone to write an event by
+hand: OpenTelemetry records an exception on the enclosing span
+automatically, and a blocked guardrail raises inside the agent's own span
+carrying its `result.message`. For an `llm_judge` rule that message is the
+judge's entire raw reply; for `groundedness` it quotes the unsupported
+claims out of the model's answer. Both are model output over your content,
+and both used to leave with `FASTAIAGENT_TRACE_PAYLOADS=0` set.
+
+`exception.message` and `exception.stacktrace` (`SENSITIVE_EVENT_ATTR_KEYS`)
+are now dropped on egress alongside the attribute keys, on both the
+control-plane and third-party exporter paths. `exception.type` is kept
+deliberately — a class name is structural, so you can still see *that* a
+`GuardrailBlockedError` occurred and where, without the text. As with
+attributes, `local.db` keeps full fidelity, so the Local UI and Replay are
+unaffected.
+
 To capture *nothing at all* (not even locally), disable tracing entirely
 with `FASTAIAGENT_TRACE_ENABLED=0`.
 

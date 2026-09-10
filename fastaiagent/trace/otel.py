@@ -54,8 +54,8 @@ def get_tracer(name: str = "fastaiagent") -> Any:
     return get_tracer_provider().get_tracer(name)
 
 
-def _rebuild_span(span: Any, attributes: dict[str, Any]) -> Any:
-    """Return a ``ReadableSpan`` identical to ``span`` but with new attributes.
+def _rebuild_span(span: Any, attributes: dict[str, Any], events: Any = None) -> Any:
+    """Return a ``ReadableSpan`` identical to ``span`` but with new attributes/events.
 
     ``ReadableSpan.attributes`` is immutable, so redacting/stripping for export
     means reconstructing the span. All other fields are copied by reference.
@@ -68,7 +68,7 @@ def _rebuild_span(span: Any, attributes: dict[str, Any]) -> Any:
         parent=span.parent,
         resource=span.resource,
         attributes=attributes,
-        events=span.events,
+        events=span.events if events is None else events,
         links=span.links,
         kind=span.kind,
         instrumentation_scope=span.instrumentation_scope,
@@ -76,6 +76,54 @@ def _rebuild_span(span: Any, attributes: dict[str, Any]) -> Any:
         start_time=span.start_time,
         end_time=span.end_time,
     )
+
+
+def _filtered_events(span: Any) -> Any:
+    """Apply the egress payload gate to a span's events, or ``None`` if unchanged.
+
+    The dict-shaped sibling lives in ``redaction.apply_event_export_policy``; OTel
+    spans carry real ``Event`` objects, so this rebuilds them while borrowing the
+    same key registry. Returning ``None`` keeps the zero-copy fast path — the
+    common case is a span with no events at all.
+    """
+    from opentelemetry.sdk.trace import Event
+
+    from fastaiagent.trace.redaction import (
+        SENSITIVE_EVENT_ATTR_KEYS,
+        _walk_and_redact,
+        get_redaction_policy,
+    )
+    from fastaiagent.trace.span import export_payloads_enabled
+
+    events = getattr(span, "events", None)
+    if not events:
+        return None
+
+    payloads_ok = export_payloads_enabled()
+    policy = get_redaction_policy()
+    masker = (
+        policy
+        if (policy is not None and policy.mode in ("capture", "both") and policy._compiled)
+        else None
+    )
+    if payloads_ok and masker is None:
+        return None
+
+    rebuilt = []
+    changed = False
+    for event in events:
+        attrs = dict(getattr(event, "attributes", None) or {})
+        for key in SENSITIVE_EVENT_ATTR_KEYS:
+            if key not in attrs:
+                continue
+            if not payloads_ok:
+                attrs.pop(key, None)
+                changed = True
+            elif masker is not None:
+                attrs[key] = _walk_and_redact(attrs[key], masker)
+                changed = True
+        rebuilt.append(Event(name=event.name, attributes=attrs, timestamp=event.timestamp))
+    return rebuilt if changed else None
 
 
 class _EgressFilteredExporter:
@@ -100,9 +148,9 @@ class _EgressFilteredExporter:
             try:
                 attrs = dict(span.attributes or {})
                 new_attrs = apply_export_policy(attrs)
-                filtered.append(
-                    span if new_attrs == attrs else _rebuild_span(span, new_attrs)
-                )
+                new_events = _filtered_events(span)
+                unchanged = new_attrs == attrs and new_events is None
+                filtered.append(span if unchanged else _rebuild_span(span, new_attrs, new_events))
             except Exception:
                 # Fail closed: if we can't rebuild a filtered span, drop it from
                 # the export batch rather than leak an unfiltered one. It remains

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 from typing import TYPE_CHECKING, Any
 
@@ -18,6 +19,8 @@ from fastaiagent.guardrail.guardrail import GuardrailResult, GuardrailType
 
 if TYPE_CHECKING:
     from fastaiagent.guardrail.guardrail import Guardrail
+
+logger = logging.getLogger(__name__)
 
 # security_audit_2 N13 — bound regex evaluation so a catastrophic-backtracking
 # (ReDoS) pattern can't hang an agent run. We use the ``regex`` module rather
@@ -50,8 +53,24 @@ async def run_guardrail(guardrail: Guardrail, data: str | dict[str, Any]) -> Gua
     caught here and turned into a ``GuardrailResult`` per the guardrail's
     ``on_error`` setting (``"allow"`` → fail open, ``"block"`` → fail closed),
     with ``errored=True`` so the outcome is never mistaken for a real verdict.
+
+    **Applying the action is guarded too, and differently.** ``apply_action`` used
+    to sit outside the ``try``, so anything it raised — and it re-runs detectors
+    and regex substitutions to build a mask — escaped as a bare ``TypeError`` or
+    ``ImportError`` from ``agent.run()``: no ``errored`` flag, no ``on_error``, not
+    even a ``GuardrailBlockedError``. A function documented as the single
+    enforcement point had a third of its body outside its own guard.
+
+    It is caught separately rather than folded into the same handler because the
+    two failures mean different things. A runner that raises means *the check
+    could not run*, which is exactly what ``on_error`` is the answer to. An action
+    that raises means the check **did** run and returned a verdict, and only the
+    consequence could not be applied — so ``on_error`` gets no say and the outcome
+    is a block. That is the existing rule for a mask that finds no span to redact
+    (``actions.py``); a mask that raised is strictly worse than one that found
+    nothing.
     """
-    from fastaiagent.guardrail.actions import apply_action
+    from fastaiagent.guardrail.actions import apply_action, coerce_action
 
     runners = {
         GuardrailType.code: _run_code,
@@ -80,7 +99,42 @@ async def run_guardrail(guardrail: Guardrail, data: str | dict[str, Any]) -> Gua
     # spectrum answers "and what does that mean?" — kept apart so a runner never
     # has to know about masking, and so an errored check can be forced to block
     # in exactly one place.
-    return await apply_action(guardrail, data, result)
+    try:
+        return await apply_action(guardrail, data, result)
+    except Exception as e:
+        # Fail closed, and deliberately without consulting ``on_error`` — see the
+        # docstring.
+        #
+        # Reachable today via a ``secrets`` rule with ``action="mask"`` and a
+        # non-dict ``config``. ``secrets`` is the one maskable type whose runner
+        # never reads ``config`` (deliberately — it takes no detection config), so
+        # a malformed config reaches ``mask_payload`` without the runner erroring
+        # first. Checked, and it is worth writing down: for ``regex``,
+        # ``classifier`` and ``pii`` the runner touches a superset of what
+        # ``mask_payload`` touches, so it always raises first and the result is
+        # already ``errored`` before it gets here. This handler is a real fix for
+        # one live path and defence in depth for every future maskable type.
+        logger.warning(
+            "Guardrail %r ran, but applying action=%r failed: %s. Blocking.",
+            guardrail.name,
+            guardrail.action,
+            e,
+        )
+        return GuardrailResult(
+            passed=False,
+            errored=True,
+            message=(
+                f"{guardrail.name} could not apply action={guardrail.action!r} "
+                f"({e}); blocked instead"
+            ),
+            metadata={
+                **(result.metadata or {}),
+                "action_error": str(e),
+                "verdict_before_action": result.passed,
+            },
+            action=coerce_action(guardrail.action),
+            action_taken="blocked",
+        )
 
 
 async def _run_code(guardrail: Guardrail, data: str | dict[str, Any]) -> GuardrailResult:

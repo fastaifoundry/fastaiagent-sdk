@@ -109,6 +109,33 @@ SENSITIVE_ATTR_KEYS: frozenset[str] = frozenset(
     }
 )
 
+# Span *event* attribute keys whose values may contain sensitive payload content.
+#
+# Separate registry because events are a separate channel: ``SENSITIVE_ATTR_KEYS``
+# governs ``span.attributes``, and until 1.62.0 nothing governed ``span.events`` at
+# all — so a payload-derived string could leave the machine through an event even
+# with ``FASTAIAGENT_TRACE_PAYLOADS=0``.
+#
+# The concrete case: OTel's ``record_exception`` fires automatically for any
+# exception raised inside a span, and ``str(GuardrailBlockedError)`` **is** the
+# guardrail's ``result.message``. For an ``llm_judge`` rule that message is the
+# judge's entire raw response; for ``groundedness`` it quotes the unsupported
+# claims out of the model's answer. Both are model output over customer content.
+#
+# ``exception.stacktrace`` is listed for the same reason and is not redundant: a
+# formatted traceback ends with ``<Type>: <message>``, so it carries the message
+# even when the message key is dropped.
+#
+# ``exception.type`` is deliberately absent — a class name is structural, and
+# keeping it means an operator with payloads off can still see *that* a
+# ``GuardrailBlockedError`` occurred, and where.
+SENSITIVE_EVENT_ATTR_KEYS: frozenset[str] = frozenset(
+    {
+        "exception.message",
+        "exception.stacktrace",
+    }
+)
+
 
 @dataclass(frozen=True)
 class RedactionPolicy:
@@ -280,4 +307,58 @@ def apply_export_policy(attrs: dict[str, Any]) -> dict[str, Any]:
             out.pop(key, None)
     if redacting:
         out = redact_attributes(out, policy)
+    return out
+
+
+def apply_event_export_policy(events: list[Any]) -> list[Any]:
+    """Transform span *events* for EGRESS — the sibling of :func:`apply_export_policy`.
+
+    Span attributes were gated from the start; events were not, so a payload-derived
+    string could leave the machine through an exception event while
+    ``FASTAIAGENT_TRACE_PAYLOADS=0`` was set. The gap was reachable without anyone
+    writing an event by hand: OTel records exceptions on the enclosing span
+    automatically, and a blocked guardrail raises inside the ``agent.*`` span with
+    its own ``result.message`` as the exception text.
+
+    Same two steps as the attribute filter, applied to each event's attributes:
+    the payload gate drops :data:`SENSITIVE_EVENT_ATTR_KEYS`, then an installed
+    capture/both-mode policy masks what remains.
+
+    Takes and returns the **dict** event shape written by
+    ``fastaiagent.trace.storage`` (``{"name", "timestamp", "attributes"}``); the
+    OTel exporter path rebuilds real ``Event`` objects and only borrows
+    :data:`SENSITIVE_EVENT_ATTR_KEYS`. Returns a new list; ``events`` is never
+    mutated, and non-dict entries are passed through untouched.
+    """
+    from fastaiagent.trace.span import export_payloads_enabled
+
+    payloads_ok = export_payloads_enabled()
+    policy = get_redaction_policy()
+    redacting = policy is not None and policy.mode in ("capture", "both")
+    if payloads_ok and not redacting:
+        return events
+
+    # ``redact_attributes`` keys off ``policy.apply_to_keys``, which is the *span
+    # attribute* registry — it would no-op on ``exception.message``. So the mask is
+    # applied directly to the event keys this module registers as sensitive.
+    masker = policy if (redacting and policy is not None and policy._compiled) else None
+
+    out: list[Any] = []
+    for event in events:
+        if not isinstance(event, dict):
+            out.append(event)
+            continue
+        attrs = event.get("attributes")
+        if not isinstance(attrs, dict):
+            out.append(event)
+            continue
+        new_attrs = dict(attrs)
+        for key in SENSITIVE_EVENT_ATTR_KEYS:
+            if key not in new_attrs:
+                continue
+            if not payloads_ok:
+                new_attrs.pop(key, None)
+            elif masker is not None:
+                new_attrs[key] = _walk_and_redact(new_attrs[key], masker)
+        out.append({**event, "attributes": new_attrs})
     return out

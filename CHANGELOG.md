@@ -5,6 +5,122 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.62.0] - 2026-09-10 — two channels nobody was watching
+
+A cross-repo audit ran the whole guardrail feature — SDK 1.44 → 1.61, plane #48 →
+#118 — against the existing suites. **683 tests passed with zero failures and zero
+skips.** These two defects were among what survived it, which is the point: the
+board was green because neither behaviour had a test.
+
+Both are in the same shape — a rule that is *stated* in one place and *enforced*
+somewhere else, with nothing holding the two together.
+
+### Fixed
+
+- **A guardrail's failure message left the machine with
+  `FASTAIAGENT_TRACE_PAYLOADS=0` set.** A span carries two content channels — its
+  attributes and its **events** — and only the first was ever filtered.
+
+  That gap needed nobody to write an event by hand. OpenTelemetry records an
+  exception on the enclosing span automatically; a blocked guardrail raises
+  `GuardrailBlockedError` inside the agent's own span; and
+  `str(GuardrailBlockedError)` **is** the guardrail's `result.message`. For an
+  `llm_judge` rule that message is `response.content` — the judge's entire raw
+  reply. For `groundedness` it embeds the unsupported claims, quoted verbatim out
+  of the model's answer. Both are model output over customer content, and both
+  reached the plane as `sdk_events` and `traces.error`.
+
+  `exception.message` and `exception.stacktrace` are now dropped on egress by the
+  same gate that drops the attribute keys, on **both** the control-plane path and
+  the third-party `add_exporter` path — the latter mattered too, because
+  `_rebuild_span` copied `events` by reference. The stacktrace is not redundant
+  with the message: a formatted traceback ends with `<Type>: <message>`, so
+  dropping only the message leaves the text.
+
+  `exception.type` is deliberately kept. A class name is structural, so an
+  operator with payloads off can still see *that* a `GuardrailBlockedError`
+  occurred, and where. `local.db` keeps full fidelity as always, so the Local UI
+  and Replay are unaffected.
+
+- **`run_guardrail` was not the single enforcement point it documented itself as.**
+  `apply_action` was called *outside* its `try`, and `apply_action` re-runs
+  detectors and regex substitutions to build a mask. Anything it raised escaped as
+  a bare `AttributeError`/`TypeError` from `agent.run()` — no `errored` flag, no
+  `on_error`, not even a `GuardrailBlockedError`. A function whose docstring calls
+  it "the single enforcement point for the `on_error` policy" had a third of its
+  body outside its own guard.
+
+  Reachable today: a `secrets` rule with `action="mask"` and a non-dict `config`.
+  `secrets` is the one maskable type whose runner never reads `config` (by design
+  — it takes no detection config), so a malformed config reaches `mask_payload`
+  without the runner erroring first. For `regex`, `classifier` and `pii` the
+  runner touches a superset of what the mask touches and so always raises first;
+  that was checked rather than assumed, and is recorded in the code, because the
+  audit that found this defect had named those three as the triggers.
+
+  It is now caught **separately** from a runner failure, because the two mean
+  different things. A runner that raises means *the check could not run*, which is
+  exactly what `on_error` answers. An action that raises means the check **did**
+  run and returned a verdict, and only the consequence could not be applied — so
+  `on_error` gets no say and the outcome is a block, even under
+  `on_error="allow"`. That is the existing rule for a `mask` that finds no span to
+  redact; a mask that *raised* is strictly worse than one that found nothing.
+
+- **A broken event store could abort an agent run.** `log_guardrail_event` is
+  `try`/**`finally`** with no `except`, and `Guardrail.aexecute` called it
+  unguarded — so a locked or read-only `local.db`, a full disk, or metadata that
+  would not serialize propagated out and killed the run, turning an observability
+  problem into an outage. The three framework integrations had guarded this call
+  for a long time with the comment *"never fail a guardrail check because the
+  event store hiccupped"*; the SDK's own runtime had not. It is now best-effort
+  there too, and the insert uses `default=str` (matching
+  `executor._emit_guardrail_span`) so one unserializable value costs that value
+  rather than the whole event.
+
+### Added
+
+- **`fastaiagent.trace.redaction.SENSITIVE_EVENT_ATTR_KEYS`** — the event-attribute
+  payload registry, sibling to `SENSITIVE_ATTR_KEYS`. Separate because events are
+  a separate channel; a test pins its contents so it cannot be narrowed to the
+  message alone.
+- **`apply_event_export_policy(events)`** — the event-shaped sibling of
+  `apply_export_policy`. Same two steps: the payload gate drops the sensitive keys,
+  then an installed capture/both-mode policy masks what remains. Malformed events
+  pass through untouched rather than raising, because this runs on the export path
+  and must never be the reason a batch fails.
+- **`platform_export.to_wire(span)`** — the per-span serialize-and-filter step,
+  split out of `export()` so the filtering is reachable from a test without a live
+  plane. (The first draft of that test grepped the exporter's source for a function
+  name; the same audit had just flagged three plane-side tests that do exactly
+  that and therefore certify rather than check. It was rewritten to assert on the
+  wire payload.)
+
+### Compatibility
+
+- **No wire change.** Still v1.9. The plane receives strictly *less* on the event
+  channel when the payload gate is on, which is the fix; nothing new is sent.
+- **Behaviour change, deliberate, only under `FASTAIAGENT_TRACE_PAYLOADS=0`:** an
+  errored span's `exception.message` and `exception.stacktrace` no longer reach the
+  plane or third-party exporters. If you were relying on those to debug a blocked
+  run centrally, they remain in `local.db` at full fidelity — or leave payload
+  export on and install a `RedactionPolicy`, which now masks the message instead of
+  dropping it.
+- An action failure that used to crash the run now blocks it and reports
+  `errored=True` with `action_taken="blocked"`. Nothing that worked changes.
+
+### Verified
+
+- `tests/test_guardrail_egress_and_containment.py` — 24 gates, no model and no
+  plane. Each was checked against the pre-fix tree: the 5 containment gates and the
+  3 exporter gates fail without the change (the containment ones with the exact
+  `AttributeError`/`sqlite3.OperationalError` that used to escape, the exporter one
+  showing the SSN in the wire payload). The runner-failure test passes on both
+  sides on purpose — it is the regression guard for the branch that did **not**
+  change.
+- Full suite: **2709 passed, 3 skipped**. `ruff check` clean on every file touched;
+  `mypy` clean on every file touched (two pre-existing errors elsewhere are
+  unchanged).
+
 ## [1.61.0] - 2026-09-10 — the contract becomes a test
 
 1.60.0 implemented the `pii`/`secrets` handover faithfully and still diverged
