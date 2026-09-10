@@ -97,7 +97,9 @@ def test_an_unknown_entity_errors_rather_than_scanning_for_less() -> None:
     res = _rule("pii", config={"entities": ["emial"]}).execute(DIRTY)
     assert res.errored is True
     assert res.passed is False  # fails closed by default
-    assert "Unknown PII entity" in (res.message or "")
+    # The resolver's wording, mirrored from the plane so the same rule reports
+    # the same thing at the edge and at POST /guardrails/{id}/test.
+    assert "unknown PII entity 'emial'" in (res.message or "")
 
 
 @pytest.mark.parametrize("backend", ["regex", "presidio"])
@@ -115,7 +117,7 @@ def test_an_unknown_entity_errors_under_either_backend(backend: str) -> None:
 def test_an_unknown_backend_errors_rather_than_falling_back() -> None:
     res = _rule("pii", config={"backend": "presidoi"}).execute(DIRTY)
     assert res.errored is True
-    assert "Unknown PII backend" in (res.message or "")
+    assert "backend must be one of" in (res.message or "")
 
 
 def test_presidio_without_the_extra_errors_rather_than_finding_nothing(
@@ -137,6 +139,39 @@ def test_presidio_without_the_extra_errors_rather_than_finding_nothing(
     res = _rule("pii", config={"backend": "presidio"}).execute(DIRTY)
     assert res.errored is True
     assert "safety" in (res.message or "")
+
+
+def test_an_empty_entity_list_is_refused_never_read_as_found_nothing() -> None:
+    """The case that started the resolver-parity follow-up, and the one worth a
+    name of its own.
+
+    A `pii` rule scanning for zero entities used to report "No personal data
+    detected" over a payload it never inspected — a healthy-looking control
+    inspecting nothing, which is the same defect `schema` carried until 1.59.0.
+    The plane refuses it on write (422), so no distributed rule could carry it,
+    but `fa.Guardrail(guardrail_type=GuardrailType.pii, config={"entities": []})`
+    in user code reached it directly.
+    """
+    res = _rule("pii", config={"entities": []}).execute(DIRTY)
+    assert res.errored is True, "an empty entity list must not produce a verdict"
+    assert res.passed is False
+    assert "names no entities to detect" in (res.message or "")
+
+
+def test_entity_names_are_normalised_the_way_the_plane_normalises_them() -> None:
+    """Case, surrounding space and duplicates are the plane's to define — it is
+    where a rule is authored and validated. These used to raise here while
+    matching there, so the same rule passed centrally and errored at the edge."""
+    for cfg in ({"entities": ["Email"]}, {"entities": [" email "]}):
+        res = _rule("pii", config=cfg).execute(DIRTY)
+        assert res.errored is False, cfg
+        assert res.metadata["entities"] == ["email"], cfg
+
+    # Deduped, so one match is not counted twice.
+    res = _rule("pii", config={"entities": ["email", "Email", " email "]}).execute(DIRTY)
+    assert res.metadata["entities"] == ["email"]
+    assert res.metadata["counts"] == {"email": 1}
+    assert res.metadata["total"] == 1
 
 
 def test_a_non_list_entities_value_is_refused() -> None:

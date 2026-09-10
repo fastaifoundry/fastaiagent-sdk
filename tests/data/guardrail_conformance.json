@@ -1,0 +1,273 @@
+{
+  "_comment": [
+    "SHARED GUARDRAIL CONFORMANCE FIXTURE — this file exists in BOTH repos and must be byte-identical.",
+    "",
+    "  plane: backend/app/data/guardrail_conformance.json   (tests/test_guardrail_conformance.py)",
+    "  sdk:   tests/data/guardrail_conformance.json         (tests/test_guardrail_conformance.py)",
+    "",
+    "Every case is `config` + `input` -> an expected outcome. Each side writes a thin adapter that",
+    "resolves the config, runs the detector and summarises, then asserts against `expect`. Agreement",
+    "stops being a matter of reading each other's prose and becomes a test run.",
+    "",
+    "WHY THIS EXISTS. `pii`/`secrets` shipped on both sides from a written handover, faithfully, and",
+    "still diverged in four ways — because the contract spans TWO modules per side and only one of",
+    "them was pinned. The detectors were mirrored and tested; the config RESOLVERS were prose and",
+    "were not. `{'entities': []}` raised on the plane and PASSED in the SDK, which is a detection",
+    "control reporting success while inspecting nothing.",
+    "",
+    "RULES.",
+    "  1. Add a case here BEFORE changing a resolver or detector on either side.",
+    "  2. Never edit one copy alone. The plane's test_detectors_mirror.py compares the two files",
+    "     byte-for-byte when the SDK is present, so a one-sided edit fails there.",
+    "  3. `expect.raises` means the check could NOT run: the payload is uninspected, so the caller",
+    "     must surface an error and let `on_error` decide. It NEVER means 'found nothing'.",
+    "  4. `expect.detail` is the exact dict recorded in guardrail_executions.result_detail (plane:",
+    "     detectors.summarize_*, sdk: the runner's `metadata`). Counts, never values.",
+    "",
+    "Ownership for these two types: the DETECTORS are the SDK's and the plane mirrors them; the",
+    "CONFIG RESOLVERS are the plane's and the SDK mirrors those. See docs/Guardrail_Type_Contract.md."
+  ],
+  "version": 1,
+
+  "pii": [
+    {
+      "name": "absent entities scans the default four",
+      "config": {},
+      "input": "mail bob@acme.com and call 555-123-4567",
+      "expect": {
+        "detail": {
+          "backend": "regex",
+          "entities": ["email", "phone", "ssn", "credit_card"],
+          "found": ["email", "phone"],
+          "counts": {"email": 1, "phone": 1},
+          "total": 2
+        }
+      }
+    },
+    {
+      "name": "a single entity string is accepted, not treated as characters",
+      "config": {"entities": "email"},
+      "input": "mail bob@acme.com",
+      "expect": {
+        "detail": {
+          "backend": "regex", "entities": ["email"], "found": ["email"],
+          "counts": {"email": 1}, "total": 1
+        }
+      }
+    },
+    {
+      "name": "entity names are case-insensitive",
+      "config": {"entities": ["Email"]},
+      "input": "mail bob@acme.com",
+      "expect": {
+        "detail": {
+          "backend": "regex", "entities": ["email"], "found": ["email"],
+          "counts": {"email": 1}, "total": 1
+        }
+      }
+    },
+    {
+      "name": "surrounding whitespace in an entity name is tolerated",
+      "config": {"entities": [" email "]},
+      "input": "mail bob@acme.com",
+      "expect": {
+        "detail": {
+          "backend": "regex", "entities": ["email"], "found": ["email"],
+          "counts": {"email": 1}, "total": 1
+        }
+      }
+    },
+    {
+      "name": "a repeated entity is scanned once, not twice",
+      "config": {"entities": ["email", "email"]},
+      "input": "mail bob@acme.com",
+      "expect": {
+        "detail": {
+          "backend": "regex", "entities": ["email"], "found": ["email"],
+          "counts": {"email": 1}, "total": 1
+        }
+      }
+    },
+    {
+      "name": "an empty entity list is refused, never read as 'found nothing'",
+      "config": {"entities": []},
+      "input": "mail bob@acme.com and ssn 123-45-6789",
+      "expect": {"raises": true}
+    },
+    {
+      "name": "an unknown entity is refused rather than silently dropped",
+      "config": {"entities": ["dob"]},
+      "input": "born 1985-04-02",
+      "expect": {"raises": true}
+    },
+    {
+      "name": "an unknown entity is refused even alongside a known one",
+      "config": {"entities": ["email", "dob"]},
+      "input": "mail bob@acme.com",
+      "expect": {"raises": true}
+    },
+    {
+      "name": "a non-list entities value is refused",
+      "config": {"entities": 42},
+      "input": "mail bob@acme.com",
+      "expect": {"raises": true}
+    },
+    {
+      "name": "an unknown backend is refused rather than falling back to regex",
+      "config": {"backend": "presdio"},
+      "input": "mail bob@acme.com",
+      "expect": {"raises": true}
+    },
+    {
+      "name": "a Luhn-valid card is detected",
+      "config": {"entities": ["credit_card"]},
+      "input": "card 4111111111111111",
+      "expect": {
+        "detail": {
+          "backend": "regex", "entities": ["credit_card"], "found": ["credit_card"],
+          "counts": {"credit_card": 1}, "total": 1
+        }
+      }
+    },
+    {
+      "name": "a 16-digit order number is NOT a card number",
+      "config": {"entities": ["credit_card"]},
+      "input": "order 1234567890123456 shipped",
+      "expect": {
+        "detail": {
+          "backend": "regex", "entities": ["credit_card"], "found": [],
+          "counts": {}, "total": 0
+        }
+      }
+    },
+    {
+      "name": "ip and iban are opt-in, not scanned by default",
+      "config": {},
+      "input": "from 192.168.1.42 to GB33BUKB20201555555555",
+      "expect": {
+        "detail": {
+          "backend": "regex",
+          "entities": ["email", "phone", "ssn", "credit_card"],
+          "found": [], "counts": {}, "total": 0
+        }
+      }
+    },
+    {
+      "name": "ip and iban are detected when asked for",
+      "config": {"entities": ["ip", "iban"]},
+      "input": "from 192.168.1.42 to GB33BUKB20201555555555",
+      "expect": {
+        "detail": {
+          "backend": "regex", "entities": ["ip", "iban"], "found": ["iban", "ip"],
+          "counts": {"ip": 1, "iban": 1}, "total": 2
+        }
+      }
+    },
+    {
+      "name": "a clean payload passes",
+      "config": {},
+      "input": "Our support hours are 9 to 5, Monday to Friday.",
+      "expect": {
+        "detail": {
+          "backend": "regex",
+          "entities": ["email", "phone", "ssn", "credit_card"],
+          "found": [], "counts": {}, "total": 0
+        }
+      }
+    }
+  ],
+
+  "secrets": [
+    {
+      "name": "an AWS key id is detected",
+      "config": {},
+      "input": "export AWS_KEY=AKIAIOSFODNN7EXAMPLE",
+      "expect": {
+        "detail": {
+          "found": ["aws_access_key_id"], "counts": {"aws_access_key_id": 1}, "total": 1
+        }
+      }
+    },
+    {
+      "name": "one credential can match two patterns, and both are recorded",
+      "config": {},
+      "input": "api_key = \"sk-proj-abcdefghijklmnopqrst\"",
+      "expect": {
+        "detail": {
+          "found": ["generic_secret", "openai_api_key"],
+          "counts": {"openai_api_key": 1, "generic_secret": 1},
+          "total": 2
+        }
+      }
+    },
+    {
+      "name": "a private key header is detected",
+      "config": {},
+      "input": "-----BEGIN RSA PRIVATE KEY-----",
+      "expect": {
+        "detail": {"found": ["private_key"], "counts": {"private_key": 1}, "total": 1}
+      }
+    },
+    {
+      "name": "config is ignored — there is no detection config to get wrong",
+      "config": {"entities": ["nonsense"], "backend": "presdio"},
+      "input": "export AWS_KEY=AKIAIOSFODNN7EXAMPLE",
+      "expect": {
+        "detail": {
+          "found": ["aws_access_key_id"], "counts": {"aws_access_key_id": 1}, "total": 1
+        }
+      }
+    },
+    {
+      "name": "a clean payload passes",
+      "config": {},
+      "input": "Our support hours are 9 to 5.",
+      "expect": {"detail": {"found": [], "counts": {}, "total": 0}}
+    }
+  ],
+
+  "mask": [
+    {
+      "name": "pii: every span redacted, the rest kept",
+      "type": "pii",
+      "config": {"entities": ["email", "ssn"], "mask_token": "[REDACTED]"},
+      "input": "mail bob@acme.com, ssn 123-45-6789, order 42",
+      "expect": {"masked": "mail [REDACTED], ssn [REDACTED], order 42"}
+    },
+    {
+      "name": "pii: a Luhn-invalid run is left alone",
+      "type": "pii",
+      "config": {"entities": ["credit_card"], "mask_token": "[X]"},
+      "input": "order 1234567890123456 card 4111111111111111",
+      "expect": {"masked": "order 1234567890123456 card [X]"}
+    },
+    {
+      "name": "secrets: overlapping patterns merge into ONE redaction",
+      "type": "secrets",
+      "config": {"mask_token": "[X]"},
+      "input": "api_key = \"sk-proj-abcdefghijklmnopqrst\" ok",
+      "expect": {"masked": "[X] ok"}
+    },
+    {
+      "name": "a longer token does not shift later spans (right-to-left)",
+      "type": "pii",
+      "config": {"entities": ["email"], "mask_token": "[A-VERY-LONG-REDACTION-TOKEN]"},
+      "input": "a@b.co then c@d.co",
+      "expect": {"masked": "[A-VERY-LONG-REDACTION-TOKEN] then [A-VERY-LONG-REDACTION-TOKEN]"}
+    },
+    {
+      "name": "a mask token containing a backreference is inserted literally",
+      "type": "pii",
+      "config": {"entities": ["email"], "mask_token": "\\1"},
+      "input": "mail bob@acme.com",
+      "expect": {"masked": "mail \\1"}
+    },
+    {
+      "name": "nothing to mask leaves the payload untouched",
+      "type": "pii",
+      "config": {"entities": ["email"], "mask_token": "[X]"},
+      "input": "no contact details here",
+      "expect": {"masked": "no contact details here"}
+    }
+  ]
+}

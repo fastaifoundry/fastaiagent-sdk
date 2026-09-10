@@ -5,6 +5,80 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.61.0] - 2026-09-10 — the contract becomes a test
+
+1.60.0 implemented the `pii`/`secrets` handover faithfully and still diverged
+from the plane four ways, because a guardrail type's contract spans **two**
+modules and only one of them was pinned:
+
+```
+config → [resolver] → entities/backend → [detector] → matches → [summary] → row
+```
+
+The detector is mirrored and guarded by a test. The resolver was not.
+
+### Fixed
+
+- **A `pii` rule with `{"entities": []}` reported "No personal data detected"**
+  over a payload it never inspected. A detection control reporting success while
+  inspecting nothing — the same defect `schema` carried until 1.59.0, shipped
+  again in a second type. It now raises, and `on_error` decides. The plane
+  refuses the config on write (422) so no distributed rule could carry it, but
+  `fa.Guardrail(guardrail_type=GuardrailType.pii, config={"entities": []})`
+  reached it directly and `from_policy` had no guard either.
+- **Entity names are normalised the way the plane normalises them** — lowercased,
+  stripped, empties dropped, **deduplicated**. `"Email"` and `" email "` used to
+  raise here while matching centrally, so the same rule passed at
+  `POST /guardrails/{id}/test` and errored in the customer's process. Duplicates
+  used to count one match twice (`{"email": 2}`).
+- Error strings now match the plane's verbatim, so a rule reports the same thing
+  wherever it runs. `_resolve_pii_entities`'s docstring claimed this parity in
+  1.60.0 without having it.
+- `resolve_backend` is mirrored too, instead of lowercasing inline at the call
+  site — one place to be wrong rather than two.
+
+### Added
+
+- **`tests/data/guardrail_conformance.json`** — the shared fixture, byte-identical
+  to the plane's `backend/app/data/guardrail_conformance.json`, run here through a
+  thin adapter (`tests/test_guardrail_conformance.py`). 27 cases across `pii`,
+  `secrets` and masking; all 27 pass on both sides.
+
+  This is the point of the release. Agreement between the two repos stops being a
+  matter of each side reading the other's prose and becomes a test run. Six cases
+  assert `raises`, which the contract defines as **"the check could not run"** —
+  never "found nothing". One line of that in runnable form would have caught both
+  this defect and the `schema` one.
+
+  The protocol, from the plane's `docs/Guardrail_Type_Contract.md` §2: add cases
+  before changing behaviour, never edit one copy, and on a mismatch decide which
+  side owns the behaviour and change both.
+
+- A named local test for the empty-entity-list case, since it is the one that
+  reads as success while inspecting nothing.
+
+### Changed
+
+- **Ownership is now written down where it applies.** The config resolver and the
+  result shape are the **plane's** — it is where a rule is authored, validated on
+  write, and stored durably. The detectors remain **ours**. Different halves,
+  different directions, which is exactly what made this drift invisible to a
+  mirror scoped to one file. Both resolvers now say so in their docstrings.
+
+### Compatibility
+
+- `"Email"` / `" email "` change from erroring to matching — a loosening, and the
+  plane's semantics.
+- `{"entities": []}` changes from passing to erroring, and with the default
+  `on_error="block"`, to blocking. That is the fix: a rule that inspects nothing
+  should be found, not hidden.
+- Duplicate entity names no longer double-count. A row that read `total: 2` for
+  one match now reads `total: 1`.
+- Error message text changed to the plane's wording. Anything string-matching on
+  `"Unknown PII entity"` from a **typed rule** should match
+  `"unknown PII entity"`; `detect_pii`'s own string is unchanged for direct
+  callers.
+
 ## [1.60.0] - 2026-09-10 — guardrails that redact instead of refusing
 
 The plane has been able to author `pii` and `secrets` rules for a while, and

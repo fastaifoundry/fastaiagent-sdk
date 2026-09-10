@@ -38,6 +38,10 @@ LLM_DETECTOR_MAX_RETRIES = 2
 # out-of-the-box behavior is unchanged (modulo the Luhn improvement below).
 DEFAULT_PII_ENTITIES = ("email", "phone", "ssn", "credit_card")
 
+#: Backends ``detect_pii`` will dispatch to. Named so the config resolver and the
+#: detector agree on one list; the plane's mirror carries the same constant.
+PII_BACKENDS = ("regex", "presidio")
+
 _PII_REGEXES: dict[str, re.Pattern[str]] = {
     "email": re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b"),
     "phone": re.compile(r"\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b"),
@@ -113,7 +117,7 @@ def detect_pii(
     a detection rule looks for without saying so is the same defect in two
     directions; a name we cannot honour is an error, not a suggestion.
     """
-    if backend not in ("regex", "presidio"):
+    if backend not in PII_BACKENDS:
         raise ValueError(f"Unknown PII backend {backend!r}. Use 'regex' or 'presidio'.")
     for entity in entities:
         if entity not in _PII_REGEXES:

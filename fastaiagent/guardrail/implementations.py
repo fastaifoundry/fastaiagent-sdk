@@ -9,7 +9,11 @@ from typing import TYPE_CHECKING, Any
 
 import regex as _regex
 
-from fastaiagent._internal.safety_detectors import DEFAULT_PII_ENTITIES
+from fastaiagent._internal.safety_detectors import (
+    _PII_REGEXES,
+    DEFAULT_PII_ENTITIES,
+    PII_BACKENDS,
+)
 from fastaiagent.guardrail.guardrail import GuardrailResult, GuardrailType
 
 if TYPE_CHECKING:
@@ -501,11 +505,19 @@ async def _run_topic(guardrail: Guardrail, data: str | dict[str, Any]) -> Guardr
 def _resolve_pii_entities(config: dict[str, Any]) -> list[str]:
     """The entities a ``pii`` rule scans for, defaulting to the original four.
 
-    Mirrors the plane's ``detectors.resolve_entities``, error string included, so
-    a rule reaches the same verdict at the edge as it does at
-    ``POST /guardrails/{id}/test``. The names themselves are validated by
-    :func:`~fastaiagent._internal.safety_detectors.detect_pii`, which raises on
-    one it cannot honour rather than quietly scanning for something else.
+    A **deliberate twin of the plane's** ``app/agents/services/detectors.py::resolve_entities``
+    — same normalisation, same dedupe, same error strings. The config resolver is
+    the plane's to own, because that is where a rule is authored, validated on
+    write, and stored; the SDK never decides what a saved rule means. (The
+    detector underneath runs the other way: ``_internal/safety_detectors.py`` is
+    ours and the plane mirrors it.) Both halves are pinned by
+    ``tests/data/guardrail_conformance.json``.
+
+    An empty result **raises**. A rule that scans for nothing must not report
+    "no personal data detected" over a payload it never inspected — that reads as
+    a healthy control and is the same defect ``schema`` carried until 1.59.0.
+    An unknown name raises for the matching reason: silently narrowing what a
+    detection rule looks for is indistinguishable from finding nothing.
     """
     raw = config.get("entities")
     if raw is None:
@@ -514,7 +526,34 @@ def _resolve_pii_entities(config: dict[str, Any]) -> list[str]:
         raw = [raw]
     if not isinstance(raw, list):
         raise ValueError("pii guardrail 'entities' must be a list of entity names")
-    return [str(e) for e in raw]
+
+    out: list[str] = []
+    for item in raw:
+        name = str(item).strip().lower()
+        if not name:
+            continue
+        if name not in _PII_REGEXES:
+            raise ValueError(
+                f"unknown PII entity {name!r}; known entities are {', '.join(sorted(_PII_REGEXES))}"
+            )
+        if name not in out:
+            out.append(name)
+    if not out:
+        raise ValueError("pii guardrail names no entities to detect")
+    return out
+
+
+def _resolve_pii_backend(config: dict[str, Any]) -> str:
+    """``regex`` | ``presidio``. Twin of the plane's ``detectors.resolve_backend``.
+
+    An unknown backend raises rather than falling back to ``regex``: a typo read
+    as the default would quietly downgrade a rule an operator deliberately
+    upgraded, while the console still showed "presidio".
+    """
+    backend = str(config.get("backend") or "regex").lower().strip()
+    if backend not in PII_BACKENDS:
+        raise ValueError(f"pii guardrail backend must be one of {PII_BACKENDS}; got {backend!r}")
+    return backend
 
 
 async def _run_pii(guardrail: Guardrail, data: str | dict[str, Any]) -> GuardrailResult:
@@ -541,7 +580,7 @@ async def _run_pii(guardrail: Guardrail, data: str | dict[str, Any]) -> Guardrai
 
     config = guardrail.config or {}
     entities = _resolve_pii_entities(config)
-    backend = str(config.get("backend") or "regex").lower().strip()
+    backend = _resolve_pii_backend(config)
 
     text = data if isinstance(data, str) else json.dumps(data)
     matches = detect_pii(text, entities=entities, backend=backend)
