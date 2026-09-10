@@ -176,14 +176,21 @@ that keeps happening.
   deliberately does not apply: it is an export boundary, `local.db` is never
   uploaded, and Replay depends on full local fidelity.
 
-- **`require_platform` had no `E2E_REQUIRED` escape hatch**, so the platform-path
-  skip was unconditional whenever CI set `E2E_SKIP_PLATFORM=1` — which it does.
+- **`require_platform` had no way to demand the platform path**, so the skip was
+  unconditional whenever `E2E_SKIP_PLATFORM=1` was set — which CI does.
   `test_connected_guardrail_actions_e2e.py` is the **only** place that pins
   severity/floor crossing the wire, a plane-authored mask/warn/override enforcing
   in-process, and a domain-wide rule producing an execution row, and all of it
-  skipped on every PR: silently, and by configuration rather than by accident.
-  `require_env` has had the hatch for a long time; this one now matches. A gate
-  with no way to demand it is not a gate.
+  skipped on every PR: silently, and by configuration rather than by accident. A
+  gate with no way to demand it is not a gate.
+
+  The opt-in is **`E2E_PLATFORM_REQUIRED=1`**, deliberately *not* `E2E_REQUIRED`.
+  The first version of this reused that flag and broke CI: it already means "the
+  core e2e gate must actually run — do not skip because a key is missing", and CI
+  sets it **together with** `E2E_SKIP_PLATFORM=1` on purpose (run the gate for
+  real, without a platform). Overloading it turned nine passing steps into hard
+  failures. Two flags, two questions: *must the gate run at all* versus *must it
+  include the platform round-trip*. A test now pins CI's own combination as a skip.
 
 ### Added
 
@@ -275,7 +282,7 @@ that keeps happening.
 - `tests/test_guardrail_unusable_config_sweep.py` — the class-level sweep, **28
   passing and 10 `xfail`**: the `regex` and `classifier` gaps that need sign-off,
   named in the output rather than absent.
-- `tests/test_guardrail_audit_followups.py` — 17 gates for the six items above.
+- `tests/test_guardrail_audit_followups.py` — 18 gates for the six items above.
   Each fix was reverted in turn: **10 of the 17 fail without their change**, and the
   other 7 pin adjacent behaviour that did not move. Two of them had to be hardened
   first — one was passing *vacuously* over an empty table because `ui_enabled` is

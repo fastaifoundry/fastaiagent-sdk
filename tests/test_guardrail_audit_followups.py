@@ -97,13 +97,20 @@ class TestRunSyncCarriesTheCallersContext:
 
 
 class TestTheE2EGateCanBeDemanded:
-    """`require_env` fails when `E2E_REQUIRED=1`; `require_platform` only skipped."""
+    """There was no way at all to demand the platform path; now there is one.
 
-    def test_e2e_required_turns_the_platform_skip_into_a_failure(self, monkeypatch):
+    It is a **separate** flag from ``E2E_REQUIRED`` on purpose. That one already
+    means "the core gate must run, do not skip on a missing key", and CI sets it
+    alongside ``E2E_SKIP_PLATFORM`` deliberately — run the gate for real, without
+    a platform. The first version of this fix reused it and turned nine passing
+    steps into hard failures.
+    """
+
+    def test_the_platform_path_can_be_demanded(self, monkeypatch):
         from tests.e2e.conftest import require_platform
 
         monkeypatch.setenv("E2E_SKIP_PLATFORM", "1")
-        monkeypatch.setenv("E2E_REQUIRED", "1")
+        monkeypatch.setenv("E2E_PLATFORM_REQUIRED", "1")
 
         # Catch BaseException, not fail.Exception: pre-fix this raised *Skipped*,
         # and a narrow `raises` would let that propagate and skip this test — which
@@ -111,20 +118,35 @@ class TestTheE2EGateCanBeDemanded:
         with pytest.raises(BaseException) as exc:
             require_platform()
         assert isinstance(exc.value, pytest.fail.Exception), (
-            f"E2E_REQUIRED=1 must turn the platform skip into a failure; "
+            f"E2E_PLATFORM_REQUIRED=1 must turn the platform skip into a failure; "
             f"got {type(exc.value).__name__} instead"
         )
-        assert "E2E_REQUIRED" in str(exc.value)
+        assert "E2E_PLATFORM_REQUIRED" in str(exc.value)
 
     def test_it_still_skips_by_default(self, monkeypatch):
         from tests.e2e.conftest import require_platform
 
         monkeypatch.setenv("E2E_SKIP_PLATFORM", "1")
-        monkeypatch.delenv("E2E_REQUIRED", raising=False)
+        monkeypatch.delenv("E2E_PLATFORM_REQUIRED", raising=False)
 
         with pytest.raises(pytest.skip.Exception) as exc:
             require_platform()
         assert "E2E_SKIP_PLATFORM" in str(exc.value)
+
+    def test_cis_own_combination_still_skips(self, monkeypatch):
+        """The regression this fix's first version caused, pinned.
+
+        `.github/workflows/ci.yml` sets E2E_REQUIRED=1 *and* E2E_SKIP_PLATFORM=1.
+        That combination must skip, not fail — nine e2e steps depend on it.
+        """
+        from tests.e2e.conftest import require_platform
+
+        monkeypatch.setenv("E2E_SKIP_PLATFORM", "1")
+        monkeypatch.setenv("E2E_REQUIRED", "1")
+        monkeypatch.delenv("E2E_PLATFORM_REQUIRED", raising=False)
+
+        with pytest.raises(pytest.skip.Exception):
+            require_platform()
 
     def test_it_is_a_no_op_when_the_platform_is_in_play(self, monkeypatch):
         from tests.e2e.conftest import require_platform
