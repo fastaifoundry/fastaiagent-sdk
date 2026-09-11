@@ -289,14 +289,20 @@ def test_a_code_rule_with_no_function_cannot_run() -> None:
     assert result.passed is False, "and must not report a clean pass"
 
 
-def test_a_round_tripped_builtin_no_longer_reports_a_clean_pass() -> None:
-    """The reachability, executed rather than asserted (board rule 5).
+def test_a_round_tripped_builtin_comes_back_armed() -> None:
+    """The path that disarmed Replay, and the fix that makes it *faithful*.
 
-    This is the path that disarmed Replay: ``Replay.fork_at(...).rerun()`` is
-    fed from the ``agent.guardrails`` span attribute, which is ``to_dict()``
-    output. Every builtin is ``guardrail_type=code, fn=<callable>``, so every
-    one came back without its function and passed unconditionally — writing
-    green rows for checks that never executed.
+    ``Replay.fork_at(...).rerun()`` is fed from the ``agent.guardrails`` span
+    attribute, which is ``to_dict()`` output. Every builtin is
+    ``guardrail_type=code, fn=<callable>``, and ``fn`` cannot be serialized — so
+    every one used to come back without its function and pass unconditionally,
+    writing green rows for checks that never executed.
+
+    Making that *raise* (1.64.0) stopped the false green but left Replay
+    refusing to run at all, which is not faithful reproduction either — the e2e
+    rerun gate caught exactly that. The builtins are a closed set of zero-arg
+    factories identified by name, so they are restored and the check **really
+    runs**.
     """
     from fastaiagent.guardrail.builtins import no_pii
 
@@ -305,15 +311,56 @@ def test_a_round_tripped_builtin_no_longer_reports_a_clean_pass() -> None:
     assert original.fn is not None
 
     restored = Guardrail.from_dict(original.to_dict())
-    assert restored.fn is None, "fn cannot survive serialization — that is the premise"
+    assert restored.fn is not None, "a builtin must come back armed, not absent"
+
+    # Both directions: it fails on a payload with PII and passes on one without.
+    # Asserting only the failure would also pass on a rule that blocks blindly.
+    dirty = asyncio.run(run_guardrail(restored, PAYLOAD))
+    assert dirty.passed is False and dirty.errored is False, "it really inspected the payload"
+
+    clean = asyncio.run(run_guardrail(restored, "nothing sensitive in this sentence"))
+    assert clean.passed is True and clean.errored is False
+
+
+def test_a_parameterised_builtin_cannot_be_rebuilt_and_says_so() -> None:
+    """The other half of the line, and the reason it is drawn there.
+
+    ``cost_limit(max_usd=...)``, ``allowed_domains(domains=...)`` and
+    ``grounded(reference=...)`` take their policy as constructor arguments that
+    ``to_dict()`` does not carry. Rebuilding them from the name alone would
+    invent a *different* check with a default threshold — which is precisely the
+    "reports a verdict it did not earn" class this sweep exists for. They stay
+    un-restorable, and therefore report that they could not run.
+    """
+    from fastaiagent.guardrail.builtins import cost_limit
+
+    restored = Guardrail.from_dict(cost_limit(max_usd=0.5).to_dict())
+    assert restored.fn is None
 
     result = asyncio.run(run_guardrail(restored, PAYLOAD))
-
     assert result.errored is True
-    assert result.passed is False, (
-        "a replayed run must not report that a guardrail passed when the "
-        "guardrail was not there to run"
+    assert result.passed is False
+
+
+def test_a_users_own_code_rule_is_not_silently_replaced_by_a_builtin() -> None:
+    """The registry is keyed by name, so this is the obvious way to get it wrong.
+
+    A custom rule that happens to be *named* like a builtin must not come back
+    running the builtin's logic — that would be a different check wearing the
+    user's label.
+    """
+    mine = Guardrail(
+        name="my_own_check",
+        guardrail_type=GuardrailType.code,
+        position=GuardrailPosition.output,
+        fn=lambda text: True,
     )
+
+    restored = Guardrail.from_dict(mine.to_dict())
+
+    assert restored.fn is None, "an unknown name must not resolve to any callable"
+    result = asyncio.run(run_guardrail(restored, PAYLOAD))
+    assert result.errored is True
 
 
 # --------------------------------------------------------------------------- #

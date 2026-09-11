@@ -267,10 +267,33 @@ class Guardrail:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Guardrail:
-        """Deserialize from canonical format."""
+        """Deserialize from canonical format.
+
+        A ``code`` guardrail carries its logic in ``fn=``, which cannot be
+        serialized. For the **builtins** that is recoverable, because they are a
+        closed set of zero-argument factories identified by name — so
+        ``no_pii``, ``no_secrets``, ``toxicity_check``, ``json_valid``,
+        ``no_prompt_injection`` and ``openai_moderation`` come back **armed**.
+        That is what makes ``Replay.fork_at(...).rerun()`` a faithful
+        reproduction rather than a rerun with the safety controls off.
+
+        Everything else — a user's own ``fn=``, and the parameterised builtins
+        ``cost_limit`` / ``allowed_domains`` / ``grounded`` whose policy lives in
+        constructor arguments ``to_dict()`` never carried — comes back without a
+        callable and **raises at execution time** (since 1.64.0) rather than
+        reporting a clean pass over a payload nothing inspected.
+        """
+        guardrail_type = GuardrailType(data.get("guardrail_type", "code"))
+
+        fn = None
+        if guardrail_type is GuardrailType.code:
+            from fastaiagent.guardrail.builtins import restore_builtin_fn
+
+            fn = restore_builtin_fn(data["name"])
+
         return cls(
             name=data["name"],
-            guardrail_type=GuardrailType(data.get("guardrail_type", "code")),
+            guardrail_type=guardrail_type,
             position=GuardrailPosition(data.get("position", "output")),
             config=data.get("config", {}),
             blocking=data.get("blocking", True),
@@ -279,4 +302,5 @@ class Guardrail:
             action=data.get("action", "block"),
             severity=data.get("severity"),
             floor=data.get("floor", False),
+            fn=fn,
         )
