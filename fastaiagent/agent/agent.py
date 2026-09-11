@@ -35,7 +35,14 @@ from fastaiagent.chain.interrupt import (
 )
 from fastaiagent.checkpointers import Checkpointer, SQLiteCheckpointer
 from fastaiagent.guardrail.executor import GuardrailOutcome, execute_guardrails
-from fastaiagent.guardrail.guardrail import Guardrail, GuardrailPosition
+from fastaiagent.guardrail.guardrail import (
+    Guardrail,
+    GuardrailFiring,
+    GuardrailPosition,
+    collected_firings,
+    start_firing_collection,
+    stop_firing_collection,
+)
 from fastaiagent.llm.client import LLMClient
 from fastaiagent.llm.message import Message, SystemMessage, UserMessage
 from fastaiagent.llm.stream import StreamEvent, TextDelta
@@ -158,6 +165,20 @@ class AgentResult(BaseModel):
     holds ``{reason, context, node_id, agent_path}`` — the same payload the
     ``/approvals`` UI reads from the ``pending_interrupts`` table.
     ``execution_id`` is always populated when a checkpointer is configured.
+
+    ``guardrails`` lists every guardrail that executed during the run, in order,
+    across all four positions. It is the only way to observe a non-halting
+    outcome — ``warn``, ``mask`` and ``override`` all let the run finish, so
+    before 1.64.0 a run with the Local UI off and no plane attached reported a
+    clean string whether or not a rule had fired::
+
+        result = agent.run("my ssn is 123-45-6789")
+        for g in result.guardrails:
+            if g.fired():
+                print(g.name, g.position, g.action_taken)
+
+    A blocking failure still raises ``GuardrailBlockedError`` rather than
+    returning; the list is for the outcomes that do not stop the run.
     """
 
     output: str = ""
@@ -170,6 +191,7 @@ class AgentResult(BaseModel):
     execution_id: str = ""
     status: str = "completed"
     pending_interrupt: dict[str, Any] | None = None
+    guardrails: list[GuardrailFiring] = Field(default_factory=list)
 
     model_config = {"arbitrary_types_allowed": True}
 
@@ -719,6 +741,10 @@ class Agent:
         # (e.g. per-user) for this turn. Absent context → callable ids resolve
         # to "" → safe (no personal facts).
         rc_token = set_active_run_context(context)
+        # Collect every guardrail firing for this run, whatever position it ran
+        # at — the tool_call/tool_result ones happen inside the tool loop, which
+        # is why this is run-scoped rather than a local list here.
+        gf_token = start_firing_collection()
 
         # Run the agent's checkpointer setup once — cheap on subsequent calls.
         if self._checkpointer is not None:
@@ -801,6 +827,9 @@ class Agent:
                         "agent_path": susp.agent_path,
                     },
                     latency_ms=latency,
+                    # Input and tool guardrails already ran before the interrupt;
+                    # a pause is not a reason to drop what they reported.
+                    guardrails=collected_firings(),
                 )
 
             output = response.content or ""
@@ -848,12 +877,14 @@ class Agent:
                 latency_ms=latency,
                 execution_id=exec_id,
                 status="completed",
+                guardrails=collected_firings(),
             )
         finally:
             _current_checkpointer.reset(cp_token)
             _agent_path.reset(ap_token)
             _execution_id.reset(exec_token)
             reset_active_run_context(rc_token)
+            stop_firing_collection(gf_token)
 
     async def astream(
         self,
@@ -1357,17 +1388,26 @@ class Agent:
         async def _collect() -> AgentResult:
             start = time.monotonic()
             text_parts: list[str] = []
-            async for event in self.astream(input, context=context, trace=trace, **kwargs):
-                if isinstance(event, TextDelta):
-                    text_parts.append(event.text)
-            latency = int((time.monotonic() - start) * 1000)
-            output = "".join(text_parts)
-            parsed = self._parse_output(output)
-            return AgentResult(
-                output=output,
-                parsed=parsed,
-                latency_ms=latency,
-            )
+            # Opened here rather than inside ``astream``: an async generator's
+            # body runs in the context of whoever drives it, so firings recorded
+            # while iterating land in this list — and ``astream`` itself returns
+            # events, not an ``AgentResult`` to hang them on.
+            gf_token = start_firing_collection()
+            try:
+                async for event in self.astream(input, context=context, trace=trace, **kwargs):
+                    if isinstance(event, TextDelta):
+                        text_parts.append(event.text)
+                latency = int((time.monotonic() - start) * 1000)
+                output = "".join(text_parts)
+                parsed = self._parse_output(output)
+                return AgentResult(
+                    output=output,
+                    parsed=parsed,
+                    latency_ms=latency,
+                    guardrails=collected_firings(),
+                )
+            finally:
+                stop_firing_collection(gf_token)
 
         return run_sync(_collect())
 

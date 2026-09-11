@@ -5,6 +5,142 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.64.0] - 2026-09-11 — the last of the guardrail audit
+
+The closing release of the 2026-09-10 cross-repo audit. Two halves: three
+*silences*, where the SDK knew something and told nobody, and — newly signed off
+— the three remaining **verdict changes**, each of which fixes a control that
+reported success over something it had not inspected.
+
+### Changed — behaviour, signed off
+
+These change what an existing rule does. In every case the previous behaviour
+was a control reporting a verdict it had not earned.
+
+- **A `code` guardrail with no `fn` now raises instead of passing.** It returned
+  `passed=True, "No code configured"`.
+
+  This is reachable without anyone writing a broken rule. `to_dict()` cannot
+  serialize `fn` and `from_dict()` never restores it, and **every builtin**
+  (`no_pii`, `no_secrets`, `toxicity_check`, `grounded`, …) is a `code` rule. So
+  `Agent.from_dict(agent.to_dict())` rebuilt an agent whose guardrails all passed
+  unconditionally — and **`Replay.fork_at(...).rerun()`**, fed from the
+  `agent.guardrails` span attribute, re-ran incidents with every guardrail
+  disarmed *and wrote green `passed` spans and rows for checks that never
+  executed*. Replay exists to reproduce a run faithfully; it was reproducing it
+  with the safety controls off and reporting success.
+
+  It now routes through `on_error` like any other check that could not run —
+  fail closed by default, `errored` on the row either way.
+
+  **If this affects you:** you are round-tripping an agent through `to_dict()`
+  or replaying a trace. Rebuild `code` rules with `fn=` in the calling process,
+  or use a config-driven type (`regex`/`schema`/`classifier`/`pii`/`secrets`/
+  `topic`) that survives serialization.
+
+- **A `regex` rule with an empty or missing `pattern` now raises.** `regex.search("", text)`
+  returns a zero-width match at position 0, so with the default
+  `should_match=False` the rule **failed every payload** — and not as `errored`,
+  so `on_error="allow"` could not rescue it and the console showed a genuine
+  block rather than a broken rule. With `should_match=True` it passed
+  everything. This is also the edge half of the legacy-`patterns` divergence:
+  the plane falls back to a `patterns` list, the SDK reads only `pattern`, so a
+  legacy rule arrived as `""` and blocked 100% of traffic.
+
+- **A `classifier` with categories but no `blocked` list now blocks what it
+  detects.** The SDK computed `[c for c in detected if c in blocked_categories]`,
+  so with `blocked` missing or empty **nothing ever blocked**: the rule detected
+  the category and then reported success. The plane does
+  `hits = [...] if blocked else detected`. Same rule, same payload, opposite
+  verdicts — **and the SDK held the unsafe side.** The SDK now adopts the
+  plane's reading, so this divergence closes with no plane change. An explicit
+  `blocked` list still narrows exactly as before.
+
+- **A `classifier` with no categories, and an `llm_judge` with an explicitly
+  empty `prompt` or an empty `pass_value`, now raise.** An empty `pass_value` is
+  the sharp one: the fallback path tests `pass_value in reply`, and every string
+  contains `""` — so the rule passed everything it could not parse.
+
+  **Deliberately unchanged:** a *missing* `llm_judge` prompt still uses the
+  documented default. The two repos substitute *different* built-ins there, and
+  picking one would be the SDK settling a cross-repo default unilaterally. That
+  stays an open shared item.
+
+### Added
+
+- **`AgentResult.guardrails`** — every guardrail that executed during the run,
+  in order, across all four positions.
+
+  `warn`, `mask` and `override` all let the run finish; that is the point of
+  them. But `AgentResult` carried no guardrail field at all, so a run with the
+  Local UI off and no plane attached returned the same clean string whether a
+  rule had fired or not. **The one outcome class designed not to stop the run
+  was the one a caller could not observe.**
+
+  ```python
+  result = agent.run("my ssn is 123-45-6789")
+  for g in result.guardrails:
+      if g.fired():
+          print(g.name, g.position, g.action_taken)   # redact_ssn input masked
+  ```
+
+  `GuardrailFiring` is deliberately narrower than `GuardrailResult`: no
+  `metadata`, no `modified_data`. A `pii` rule's `metadata["matches"]` holds the
+  matched value itself, and neither belongs on an object handed back beside the
+  answer. Collection is a `ContextVar` scoped per run — the `tool_call` and
+  `tool_result` firings happen inside the tool loop, so a local list at the call
+  site would have missed half of them — and it sits **outside** the `ui_enabled`
+  gate, since an unconnected run is the case the finding is about.
+
+  Purely additive: the field defaults to an empty list, and a blocking failure
+  still raises `GuardrailBlockedError` rather than returning.
+
+### Fixed
+
+- **An unknown guardrail position no longer falls back in silence.**
+  `from_policy` logs *and* skips an unknown `implementation_type`, but an
+  unknown `guardrail_type` fell back to `output` saying nothing. The asymmetry
+  was the defect — skipping is safe, silently relocating is not: a rule authored
+  to gate the user's prompt would inspect the model's reply instead, leaving the
+  console showing a healthy control over an ungated input.
+
+  The fallback is **kept** (refusing the rule changes what an existing customer
+  rule does, which needs sign-off); it now emits a `WARNING` naming the rule and
+  the unrecognised value. `tool`, and a rule with no position key at all, stay
+  quiet — they are the plane's own vocabulary and a pre-v1.9 rule respectively,
+  not typos.
+
+- **The four live judge prompt-injection tests ran in no CI job at all.** They
+  sat in `tests/test_guardrail.py` gated on `skipif(not OPENAI_API_KEY)` with no
+  `e2e` marker. The unit job runs `-m "not e2e"` and skipped them for want of a
+  key; the e2e job — the only one holding keys — runs `tests/e2e/ -m e2e` and
+  never collected them. **Key-gated in a file the key-holding job does not look
+  at is indistinguishable from deleted.** Moved to
+  `tests/e2e/test_judge_prompt_injection_e2e.py` with `pytestmark`.
+
+  This is the only place the hardened H2 path is exercised against a real model;
+  the hermetic tests stub the LLM. Two of the four (OpenAI, Anthropic) now
+  actually run in CI — Groq and Gemini still skip, because the e2e job holds no
+  key for them, but they now skip *visibly in the job that would run them*.
+
+### Notes
+
+- `tests/test_guardrail_observability.py` — 19 gates, each negative-controlled:
+  removing the warning fails 1, removing the firing append fails 11, unplumbing
+  `AgentResult` fails 1.
+- One test pins behaviour it does **not** endorse: a malformed `regex` pattern
+  yields `passed=False, errored=False` — a block verdict rather than a check
+  that could not run, so `on_error` is never consulted, while the plane calls
+  the same case an error. That is the open half of the cross-repo `#11` row and
+  needs agreement, not a unilateral fix. It is recorded so the next session sees
+  it rather than rediscovering it — this test was in fact written asserting the
+  opposite, and running it disproved the premise.
+- **Cross-repo `#11`, stringification half: agreed, and it costs the SDK
+  nothing.** The SDK hands every check `json.dumps(data)` at all eight sites in
+  `guardrail/implementations.py`. The plane does the same at four of five — the
+  outlier is its `regex` path. `json.dumps` wins; the change is one line, and it
+  is the plane's.
+
 ## [1.63.0] - 2026-09-11 — two second copies
 
 Both of these are the same defect shape, which is why they ship together: a

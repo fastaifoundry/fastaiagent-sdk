@@ -23,11 +23,15 @@ line.
 ``errored=True`` plus the ``on_error`` policy. Asserting on ``errored`` tests the
 contract callers actually see.
 
-**``llm_judge`` is excluded**, and that is a gap, not an oversight: every path
-through it makes a model call, so it cannot be swept hermetically. Its known
-defect — a missing or empty ``prompt`` silently substitutes a built-in criterion
-the operator never wrote, and ``pass_value=""`` makes the fallback always pass —
-is recorded in the 2026-09-10 audit and is not fixed here.
+**``llm_judge`` is excluded from the sweep**, and that is a gap, not an
+oversight: every path through it makes a model call, so it cannot be swept
+hermetically. Two of its three defects *were* fixed in 1.64.0 and are asserted
+directly at the bottom of this file, before any model call happens: an
+explicitly empty ``prompt``, and ``pass_value=""`` making the fallback always
+pass. The third — that a **missing** ``prompt`` substitutes a *different*
+built-in criterion on each side — is deliberately untouched, because choosing
+one would be the SDK unilaterally settling a cross-repo default. It stays on the
+shared board as a "both sides, needs agreement" item.
 """
 
 from __future__ import annotations
@@ -76,19 +80,22 @@ UNUSABLE: list[tuple[str, dict[str, Any], str]] = [
     ),
     ("classifier", {}, "no categories"),
     ("classifier", {"categories": {}}, "an empty category map"),
-    (
-        "classifier",
-        {"categories": {"leak": ["secret"]}},
-        "categories with no `blocked` list: detects, then reports success",
-    ),
+    # NOTE: ``{"categories": {...}}`` with no ``blocked`` list used to live here.
+    # It is no longer an unusable config — 1.64.0 made it *work* rather than
+    # making it error, adopting the plane's reading that every detected category
+    # blocks when no narrowing list is given. See
+    # ``test_a_classifier_with_no_blocked_list_blocks_what_it_detects`` below.
 ]
 
-#: Types whose defect is real, reachable, and **not fixed here** — closing them
-#: changes what an existing rule does (a rule that passes today would start
-#: blocking), so they need explicit sign-off rather than a drive-by fix. Marked
-#: ``strict`` so that when they are fixed this test fails and has to be updated,
-#: rather than quietly passing and leaving the marker behind.
-KNOWN_UNFIXED = {"regex", "classifier"}
+#: Types whose defect was real, reachable, and deliberately left unfixed while
+#: it waited on a human: closing them changes what an existing rule does.
+#:
+#: **Empty since 1.64.0** — ``regex`` and ``classifier`` were signed off and
+#: fixed, so every case above is now a live assertion rather than an ``xfail``.
+#: Kept as an empty set rather than deleted, because the mechanism is the point:
+#: a new degenerate config that cannot be fixed without sign-off goes in here
+#: with its reason, and is named in every test run instead of being absent.
+KNOWN_UNFIXED: set[str] = set()
 
 
 def _case_id(case: tuple[str, dict[str, Any], str]) -> str:
@@ -129,7 +136,7 @@ def test_an_unusable_config_never_reports_a_clean_pass(case) -> None:
     block for the wrong reason, and that is still better than passing.
     """
     impl, config, why = case
-    if impl in KNOWN_UNFIXED and impl != "regex":
+    if impl in KNOWN_UNFIXED:
         pytest.xfail(f"known, unfixed, needs sign-off: {impl} — {why}")
 
     guardrail = Guardrail(
@@ -142,11 +149,14 @@ def test_an_unusable_config_never_reports_a_clean_pass(case) -> None:
 
     result = asyncio.run(run_guardrail(guardrail, PAYLOAD))
 
-    if result.passed:
-        pytest.xfail(
-            f"known, unfixed, needs sign-off: {impl} with {config!r} ({why}) passes the payload"
-        )
-    assert result.passed is False
+    # This used to be ``if result.passed: pytest.xfail(...)`` — a *conditional*
+    # xfail, which is the "skips instead of failing" shape that already produced
+    # one bad test in this work. With #7 signed off there is nothing left to
+    # excuse, so it asserts.
+    assert result.passed is False, (
+        f"{impl} with {config!r} ({why}) let the payload through under the default "
+        f"on_error='block'."
+    )
 
 
 def test_the_sweep_covers_every_distributable_type() -> None:
@@ -193,3 +203,179 @@ def test_defaults_are_not_mistaken_for_degenerate_configs() -> None:
 
     assert result.errored is False, "an empty `secrets` config is correct, not unusable"
     assert result.passed is False, "the payload carries an API key; it should be found"
+
+
+# --------------------------------------------------------------------------- #
+# #7, the half that was fixed by making a config *work* rather than error
+# --------------------------------------------------------------------------- #
+def test_a_classifier_with_no_blocked_list_blocks_what_it_detects() -> None:
+    """1.64.0 (signed off): the SDK adopts the plane's `classifier` reading.
+
+    Before, ``blocked = [c for c in detected if c in blocked_categories]`` meant
+    that with ``blocked`` missing or empty **nothing ever blocked** — the rule
+    detected the category and then reported success. The plane does
+    ``hits = [...] if blocked else detected``, as its own docstring states. Same
+    rule, same payload, opposite verdicts, and the SDK held the unsafe side.
+
+    This is the *whole* of the divergence for this type, so it is asserted
+    directly rather than through the could-not-run sweep: the config is usable,
+    it just used to be ignored.
+    """
+    guardrail = Guardrail(
+        name="profanity",
+        guardrail_type=GuardrailType.classifier,
+        position=GuardrailPosition.output,
+        config={"categories": {"profanity": ["damn"]}},  # no `blocked`
+        on_error="block",
+    )
+
+    result = asyncio.run(run_guardrail(guardrail, "damn it"))
+
+    assert result.passed is False, (
+        "a classifier that detects its category must not report success just "
+        "because no narrowing `blocked` list was given — the plane blocks here"
+    )
+    assert result.errored is False, "the config is usable; this is a verdict, not a failure"
+    assert result.metadata["detected"] == ["profanity"]
+    assert result.metadata["blocked"] == ["profanity"]
+
+
+def test_an_explicit_blocked_list_still_narrows() -> None:
+    """The other direction, so the fix cannot be read as "blocked is ignored".
+
+    An operator who names the categories they care about still gets exactly
+    those — detection of an unlisted category is recorded and allowed through.
+    """
+    guardrail = Guardrail(
+        name="narrowed",
+        guardrail_type=GuardrailType.classifier,
+        position=GuardrailPosition.output,
+        config={
+            "categories": {"profanity": ["damn"], "legalese": ["heretofore"]},
+            "blocked": ["legalese"],
+        },
+        on_error="block",
+    )
+
+    result = asyncio.run(run_guardrail(guardrail, "damn it"))
+
+    assert result.metadata["detected"] == ["profanity"]
+    assert result.metadata["blocked"] == [], "profanity was detected but not in `blocked`"
+    assert result.passed is True
+
+
+# --------------------------------------------------------------------------- #
+# #4 — a `code` rule with no callable. Not in the sweep because `code` is
+# edge-exempt (a plane cannot distribute one), but it is the same invariant and
+# it is the one with teeth.
+# --------------------------------------------------------------------------- #
+def test_a_code_rule_with_no_function_cannot_run() -> None:
+    """1.64.0 (signed off). This returned ``passed=True, "No code configured"``.
+
+    Reachable without anyone authoring a broken rule: ``to_dict()`` cannot
+    serialize ``fn`` and ``from_dict()`` never restores it.
+    """
+    guardrail = Guardrail(
+        name="orphaned",
+        guardrail_type=GuardrailType.code,
+        position=GuardrailPosition.output,
+        config={},
+        on_error="block",
+    )
+
+    result = asyncio.run(run_guardrail(guardrail, PAYLOAD))
+
+    assert result.errored is True, "a code rule with no callable inspected nothing"
+    assert result.passed is False, "and must not report a clean pass"
+
+
+def test_a_round_tripped_builtin_no_longer_reports_a_clean_pass() -> None:
+    """The reachability, executed rather than asserted (board rule 5).
+
+    This is the path that disarmed Replay: ``Replay.fork_at(...).rerun()`` is
+    fed from the ``agent.guardrails`` span attribute, which is ``to_dict()``
+    output. Every builtin is ``guardrail_type=code, fn=<callable>``, so every
+    one came back without its function and passed unconditionally — writing
+    green rows for checks that never executed.
+    """
+    from fastaiagent.guardrail.builtins import no_pii
+
+    original = no_pii()
+    assert original.guardrail_type is GuardrailType.code
+    assert original.fn is not None
+
+    restored = Guardrail.from_dict(original.to_dict())
+    assert restored.fn is None, "fn cannot survive serialization — that is the premise"
+
+    result = asyncio.run(run_guardrail(restored, PAYLOAD))
+
+    assert result.errored is True
+    assert result.passed is False, (
+        "a replayed run must not report that a guardrail passed when the "
+        "guardrail was not there to run"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# #7 — the two `llm_judge` halves that need no model call
+# --------------------------------------------------------------------------- #
+def test_an_llm_judge_with_an_explicitly_empty_prompt_cannot_run() -> None:
+    guardrail = Guardrail(
+        name="no-criterion",
+        guardrail_type=GuardrailType.llm_judge,
+        position=GuardrailPosition.output,
+        config={"prompt": "   "},
+        on_error="block",
+    )
+
+    result = asyncio.run(run_guardrail(guardrail, PAYLOAD))
+
+    assert result.errored is True
+    assert result.passed is False
+
+
+def test_an_llm_judge_with_an_empty_pass_value_cannot_run() -> None:
+    """``pass_value=""`` made the fallback path pass everything: the check is
+    ``pass_value in reply``, and every string contains the empty string."""
+    guardrail = Guardrail(
+        name="empty-pass-value",
+        guardrail_type=GuardrailType.llm_judge,
+        position=GuardrailPosition.output,
+        config={"prompt": "Is this acceptable?", "pass_value": ""},
+        on_error="block",
+    )
+
+    result = asyncio.run(run_guardrail(guardrail, PAYLOAD))
+
+    assert result.errored is True
+    assert result.passed is False
+
+
+def test_a_missing_prompt_still_uses_the_documented_default() -> None:
+    """The restraint, pinned.
+
+    A *missing* ``prompt`` is not an error: the two repos substitute different
+    built-in criteria, and choosing one here would be the SDK settling a
+    cross-repo default unilaterally. It stays a board item. This test exists so
+    a later "consistency" pass does not quietly close it.
+    """
+    guardrail = Guardrail(
+        name="defaulted",
+        guardrail_type=GuardrailType.llm_judge,
+        position=GuardrailPosition.output,
+        config={},
+    )
+
+    # No model call is made: this only has to get past the config checks, so we
+    # assert on the absence of a config-time raise rather than on a verdict.
+    from fastaiagent.guardrail.implementations import _run_llm_judge
+
+    try:
+        asyncio.run(_run_llm_judge(guardrail, "anything"))
+    except ValueError as exc:  # pragma: no cover - only on a regression
+        assert "prompt" not in str(exc), (
+            "a missing prompt must not raise — that default is a cross-repo "
+            "decision, not the SDK's to make alone"
+        )
+    except Exception:
+        pass  # a model/network failure is fine; the config check is what matters

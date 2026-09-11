@@ -33,6 +33,10 @@ Expected output (snapshot — real run, no credentials):
     pre-v1.9 rule  -> BLOCKED   (no `action` key at all: exactly as it behaved before)
     mask, no span  -> BLOCKED   (a mask with nothing to redact never passes the payload)
 
+    What actually fired (1.64.0):
+      output     -> 'his ssn is 123-45-6789'   (unchanged — `warn` does not stop the run)
+      fired=True  ssn-warn at output: warned
+
 See docs/guardrails/actions.md for the full contract.
 """
 
@@ -134,6 +138,19 @@ def main() -> int:
         no_span = plane_rule("mask")
         no_span["config"]["should_match"] = True
         print(f"mask, no span  -> {run_with(no_span, responses='all clear')}")
+
+        # Case 2 above is the awkward one: `warn` returns the payload unchanged,
+        # so the printed string is identical to a run where nothing fired at
+        # all. Since 1.64.0 the result says which rules ran and what they did —
+        # the only way to see a non-halting outcome with no UI and no plane.
+        print("\nWhat actually fired (1.64.0):")
+        _connection.policy_cache = {"version": "w", "guardrail_rules": [plane_rule("warn")]}
+        clear_cache()
+        agent = Agent(name="support", llm=TestModel(response=LEAK))
+        result = agent.run("what is his ssn?")
+        print(f"  output     -> {result.output!r}   (unchanged — `warn` does not stop the run)")
+        for g in result.guardrails:
+            print(f"  fired={g.fired()!s:<5} {g.name} at {g.position}: {g.action_taken}")
     finally:
         # Leave the process as we found it (unconnected).
         _connection.policy_cache = None

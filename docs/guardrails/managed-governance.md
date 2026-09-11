@@ -64,6 +64,14 @@ agent.run("Confirm my record: name Dana, SSN 123-45-6789.")
   enforce exactly like local ones — including the `on_error` fail policy. A
   `code` rule (a server-side callable the SDK doesn't have) is skipped rather
   than silently passing.
+- **Positions are mapped, and a mismatch is logged.** The plane models a single
+  `tool` phase; the SDK splits it into `tool_call` and `tool_result`, so a plane
+  `tool` rule is enforced on the call. A `guardrail_type` the SDK does *not*
+  recognise falls back to `output` and, **since 1.64.0, emits a `WARNING`**
+  naming the rule and the unrecognised value. Watch for it: the rule still runs,
+  but not where it was authored to run — a rule written to gate the user's
+  prompt would be inspecting the model's reply instead, and the console would
+  show a healthy control sitting over an ungated input.
 - **The rule does what it says.** Each rule also carries an `action` — `block`,
   `warn`, `mask`, `override` or `reask` — so a "Mask PII in output" rule authored
   in the console **redacts** inside your process rather than blocking the run.

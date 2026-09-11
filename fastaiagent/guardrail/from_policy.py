@@ -83,7 +83,24 @@ def guardrail_from_policy_rule(rule: dict[str, Any]) -> Guardrail | None:
         return None
 
     name = rule.get("name") or "plane_guardrail"
-    position = _POSITION.get(rule.get("guardrail_type", "output"), GuardrailPosition.output)
+    # An unknown position still falls back to ``output`` — but it says so now.
+    # The two branches above log *and* skip an unknown implementation type;
+    # this one used to do neither, and that asymmetry was the defect: a rule
+    # authored to gate the user's prompt would silently inspect the model's
+    # reply instead, leaving the console showing a healthy control over an
+    # ungated input. Warning rather than debug, because unlike an unknown
+    # impl type — which is skipped, and therefore safe — this one keeps
+    # running the rule, just not where it was authored to run.
+    raw_position = rule.get("guardrail_type", "output")
+    position = _POSITION.get(raw_position, GuardrailPosition.output)
+    if raw_position not in _POSITION:
+        logger.warning(
+            "Plane guardrail %r has unknown guardrail_type=%r; enforcing it at %r instead. "
+            "The rule still runs, but not necessarily where it was authored to run.",
+            name,
+            raw_position,
+            GuardrailPosition.output.value,
+        )
     blocking = rule.get("validation_mode", "blocking") != "parallel"
     on_error = rule.get("on_error", "block")
     if on_error not in ("allow", "block"):

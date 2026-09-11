@@ -269,7 +269,20 @@ no_secret = Guardrail(
 
 ### Regex
 
-Pattern matching without writing a function:
+Pattern matching without writing a function.
+
+!!! warning "`pattern` is required as of 1.64.0"
+    An empty or missing `pattern` now raises. `re.search("", text)` returns a
+    zero-width match at position 0, so the rule used to **fail every payload**
+    under the default `should_match=False` — and not as `errored`, so
+    `on_error="allow"` could not rescue it and the console showed a genuine block
+    verdict rather than a broken rule. With `should_match=True` it passed
+    everything instead.
+
+    If a rule authored on a control plane starts reporting *could not run*, check
+    whether it uses the legacy `patterns` **list** rather than `pattern`: the
+    plane falls back to it, the SDK reads only `pattern`, and such a rule
+    previously blocked 100% of traffic at the edge.
 
 ```python
 from fastaiagent.guardrail import Guardrail, GuardrailType
@@ -386,6 +399,24 @@ content_filter = Guardrail(
     },
 )
 ```
+
+`blocked` **narrows** — it names which of the detected categories should fail the
+rule. Omit it and **every detected category blocks**, which is the useful
+default: an operator who listed the categories has already said what they care
+about.
+
+!!! warning "Behaviour change in 1.64.0"
+    Omitting `blocked` used to mean **nothing ever blocked** — the rule detected
+    the category and then reported success. The control plane has always done the
+    opposite, so the same rule and payload reached opposite verdicts on the two
+    sides, with the SDK on the unsafe one. The SDK now matches the plane.
+
+    If you were relying on a `blocked`-less classifier as detect-only, set
+    `action="warn"` — that records the finding and lets the run continue, which
+    is what detect-only should have been.
+
+A `classifier` with no `categories` at all now raises rather than passing: it has
+nothing to look for, so a pass would be indistinguishable from finding nothing.
 
 ### Model-backed judges
 
@@ -612,7 +643,21 @@ data = guardrail.to_dict()
 restored = Guardrail.from_dict(data)
 ```
 
-> **Note:** Inline functions (`fn=`) are NOT serialized. After `from_dict()`, code guardrails with inline functions will have no executable logic. Use config-driven types (regex, schema, classifier) for guardrails that need to survive serialization.
+!!! danger "Inline functions (`fn=`) are NOT serialized — and since 1.64.0 that fails loudly"
+    `to_dict()` cannot serialize a callable and `from_dict()` never restores one,
+    so a `code` guardrail that has been round-tripped arrives with no logic.
+
+    **Until 1.64.0 it then returned `passed=True`.** Every builtin — `no_pii()`,
+    `no_secrets()`, `toxicity_check()`, `grounded()` — is a `code` rule, so
+    `Agent.from_dict(agent.to_dict())` rebuilt an agent whose guardrails all
+    passed unconditionally, and [`Replay.fork_at(...).rerun()`](../replay/index.md)
+    re-ran an incident with every guardrail disarmed while writing green
+    `passed` rows for checks that never executed.
+
+    It now raises, which `on_error` turns into a fail-closed `errored` result.
+    **Use a config-driven type** — `regex`, `schema`, `classifier`, `pii`,
+    `secrets`, `topic` — for any guardrail that must survive serialization or
+    replay, or rebuild the `code` rule with `fn=` in the calling process.
 
 ## Error Handling
 

@@ -170,7 +170,28 @@ async def _run_code(guardrail: Guardrail, data: str | dict[str, Any]) -> Guardra
                 "or use GuardrailType.regex / .schema / .classifier."
             ),
         )
-    return GuardrailResult(passed=True, message="No code configured")
+    # #4 (signed off, 1.64.0). This used to ``return passed=True, "No code
+    # configured"`` — a clean pass from a control that inspected nothing.
+    #
+    # It is reachable without anyone writing a broken rule: ``to_dict()`` cannot
+    # serialize ``fn`` and ``from_dict()`` never restores it, so
+    # ``Agent.from_dict(agent.to_dict())`` rebuilds every builtin — ``no_pii``,
+    # ``no_secrets``, ``toxicity_check``, ``grounded`` — as a ``code`` rule with
+    # no callable. ``Replay.fork_at(...).rerun()`` is fed from exactly that
+    # attribute, so replaying an incident re-ran it with every guardrail
+    # disarmed **and wrote green ``passed`` spans and rows for checks that never
+    # executed**. Replay exists to reproduce a run faithfully; it was reproducing
+    # it with the safety controls off and reporting success.
+    #
+    # Raising routes it through ``on_error`` like any other check that could not
+    # run: fail closed by default, and ``errored`` on the row either way.
+    raise ValueError(
+        f"code guardrail {guardrail.name!r} has no function to run. A `code` rule carries "
+        "its logic in `fn=`, which cannot be serialized — so a guardrail restored from "
+        "`to_dict()`/`from_dict()` or from a trace (Replay) arrives without it. Rebuild it "
+        "with `fn=` in the calling process, or use a config-driven type "
+        "(regex / schema / classifier / pii / secrets / topic) that survives a round-trip."
+    )
 
 
 async def _run_llm_judge(guardrail: Guardrail, data: str | dict[str, Any]) -> GuardrailResult:
@@ -205,6 +226,36 @@ async def _run_llm_judge(guardrail: Guardrail, data: str | dict[str, Any]) -> Gu
         "prompt", "Evaluate if the following is acceptable. Respond with PASS or FAIL.\n\n{data}"
     )
     pass_value = guardrail.config.get("pass_value", "PASS")
+
+    # #7 (signed off, 1.64.0), scoped deliberately narrow.
+    #
+    # An **explicitly empty** prompt is a cleared field: the operator stated no
+    # criterion, so the judge would grade against a built-in generic one and
+    # return a verdict for a question nobody asked. That raises.
+    #
+    # A **missing** ``prompt`` key does not, and that restraint is the point:
+    # the two repos substitute *different* built-in defaults with incompatible
+    # verdict protocols, and picking one here would be the SDK unilaterally
+    # deciding a cross-repo default. That stays on the shared board as a
+    # "both sides, needs agreement" item.
+    if "prompt" in guardrail.config and not str(prompt_template).strip():
+        raise ValueError(
+            f"llm_judge guardrail {guardrail.name!r} has an empty prompt. The prompt *is* the "
+            "check — without it the judge grades against a generic built-in criterion and "
+            "returns a verdict for a question the rule never asked. Remove the key to accept "
+            "the documented default, or state the criterion."
+        )
+
+    # The other half, and a pure SDK defect rather than a parity question: the
+    # fallback path asks whether ``pass_value`` appears in the reply, and every
+    # string contains "" — so an empty ``pass_value`` made that path **always
+    # pass**. The plane coerces this centrally; the edge read it raw.
+    if not str(pass_value).strip():
+        raise ValueError(
+            f"llm_judge guardrail {guardrail.name!r} has an empty pass_value. The fallback "
+            "path tests whether pass_value appears in the judge's reply, and every string "
+            "contains the empty string — so the rule would pass everything it could not parse."
+        )
 
     text = data if isinstance(data, str) else json.dumps(data)
     instructions = prompt_template.replace("{data}", "").strip()
@@ -264,6 +315,28 @@ async def _run_regex(guardrail: Guardrail, data: str | dict[str, Any]) -> Guardr
     """Execute a regex guardrail."""
     pattern = guardrail.config.get("pattern", "")
     should_match = guardrail.config.get("should_match", False)
+
+    # #7 (signed off, 1.64.0). An empty or missing pattern used to be a
+    # *verdict*, and a spectacular one: ``regex.search("", text)`` returns a
+    # zero-width match at position 0, so with the default ``should_match=False``
+    # the rule **failed every payload** — and not as ``errored``, so
+    # ``on_error="allow"`` could not rescue it and the console showed a genuine
+    # block rather than a broken rule. With ``should_match=True`` it passed
+    # everything instead. Both readings are wrong for the same reason: a pattern
+    # that matches everywhere distinguishes nothing.
+    #
+    # This is also the edge half of the legacy-``patterns`` P0: the plane reads
+    # ``pattern`` then falls back to a ``patterns`` list, the SDK reads only
+    # ``pattern``, so a legacy rule arrived here with "" and blocked 100% of
+    # traffic. It now reports that it could not run, which is the truth.
+    if not pattern:
+        raise ValueError(
+            f"regex guardrail {guardrail.name!r} has no pattern to match. An empty pattern "
+            "matches at every position, so the rule cannot distinguish anything — it would "
+            "fail every payload (should_match=False) or pass every payload "
+            "(should_match=True). If this rule came from a control plane, check whether it "
+            "uses the legacy `patterns` list rather than `pattern`."
+        )
 
     text = data if isinstance(data, str) else json.dumps(data)
 
@@ -409,6 +482,15 @@ async def _run_classifier(guardrail: Guardrail, data: str | dict[str, Any]) -> G
     categories = guardrail.config.get("categories", {})
     blocked_categories = guardrail.config.get("blocked", [])
 
+    # #7 (signed off, 1.64.0). No categories means no keywords to look for —
+    # the rule scans for nothing and used to report a clean pass for it.
+    if not categories:
+        raise ValueError(
+            f"classifier guardrail {guardrail.name!r} has no categories to detect. A rule "
+            "that scans for nothing cannot distinguish a clean payload from a dirty one, so "
+            "reporting a pass would be indistinguishable from finding nothing."
+        )
+
     text = data if isinstance(data, str) else json.dumps(data)
     text_lower = text.lower()
 
@@ -419,7 +501,20 @@ async def _run_classifier(guardrail: Guardrail, data: str | dict[str, Any]) -> G
                 detected.append(category)
                 break
 
-    blocked = [cat for cat in detected if cat in blocked_categories]
+    # #7 (signed off, 1.64.0). This was ``[c for c in detected if c in
+    # blocked_categories]`` — so with ``blocked`` missing or empty, **nothing
+    # ever blocked**: the rule detected the category and then reported success.
+    # The plane does ``hits = [...] if blocked else detected`` and blocks every
+    # detected category, as its own docstring states. Same rule, same payload,
+    # opposite verdicts — a contract break, and the SDK held the unsafe side.
+    #
+    # The SDK now adopts the plane's reading: an operator who lists categories
+    # but no ``blocked`` has said what they care about, and the useful default
+    # is that finding one matters. ``blocked`` narrows; its absence no longer
+    # disarms.
+    blocked = (
+        [cat for cat in detected if cat in blocked_categories] if blocked_categories else detected
+    )
     passed = len(blocked) == 0
 
     return GuardrailResult(
