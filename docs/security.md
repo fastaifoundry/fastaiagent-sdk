@@ -197,11 +197,17 @@ narrow or extend coverage.
 
 ### `RedactPII` middleware (orthogonal)
 
-The `fastaiagent.RedactPII` middleware applies regex masking to
-agent messages *before they're sent to the LLM* and *after the LLM
-responds*. That's a different layer than trace redaction — use it to
-prevent secrets from being sent over the wire to a model. Trace
-redaction protects what's stored after the fact.
+The `fastaiagent.RedactPII` middleware masks PII in agent messages
+*before they're sent to the LLM* and *after the LLM responds*. That's a
+different layer than trace redaction — use it to prevent secrets from
+being sent over the wire to a model. Trace redaction protects what's
+stored after the fact.
+
+Since 1.63.0 it uses the **same detector** as the `pii` guardrail type and
+the `no_pii()` builtin, so cards are Luhn-validated. It previously carried
+a private regex copy that redacted any 13–19 digit run — see
+[Middleware](agents/middleware.md#redactpiipatterns-placeholderredacted-entities)
+for what that changes.
 
 ## SSRF posture
 

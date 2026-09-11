@@ -143,9 +143,9 @@ agent = Agent(
 )
 ```
 
-### `RedactPII(patterns=..., placeholder="[REDACTED]")`
+### `RedactPII(patterns=..., placeholder="[REDACTED]", entities=...)`
 
-Redacts common PII patterns (email, US phone, SSN, long digit runs) from outbound messages **and** inbound LLM responses. Pass your own regex list for domain-specific patterns.
+Redacts PII from outbound messages **and** inbound LLM responses.
 
 ```python
 from fastaiagent import Agent, RedactPII
@@ -156,6 +156,26 @@ agent = Agent(
     ...,
 )
 ```
+
+By default it delegates to the **same detector** behind [`no_pii()`](../guardrails/index.md#no_pii),
+the `pii` guardrail type and the `PIILeakage` scorer — email, US phone, SSN and
+credit cards, with cards **Luhn-validated**. Narrow it with
+`entities=("email", "ssn")`.
+
+!!! warning "Behaviour change in 1.63.0 — it redacts *less*, and that is the fix"
+    Until 1.63.0 this middleware carried its own private copy of the PII regexes,
+    and the copy had drifted: its card pattern was a bare
+    `\b(?:\d[ \-]?){13,19}\b` with **no Luhn check**. Any 13–19 digit run —
+    an order number, an invoice id, an IMEI — was redacted as a credit card.
+
+    Because `before_model` mutates message content **in place**, that corruption
+    was what the model saw, what landed in memory, and what was replayed in a
+    guardrail re-ask. If you were relying on long digit runs being masked, pass
+    an explicit `patterns=` list.
+
+`patterns=` is unchanged: your regexes, applied verbatim, with no Luhn opinion and
+without consulting the shared detector. Non-string content (a multimodal message's
+`list[ContentPart]`) is now passed through untouched rather than raising.
 
 ## Writing Your Own Middleware
 

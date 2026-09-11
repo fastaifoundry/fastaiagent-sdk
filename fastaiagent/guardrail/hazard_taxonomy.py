@@ -130,11 +130,11 @@ def parse_scores(raw: str, categories: list[str]) -> dict[str, float]:
     """
     match = re.search(r"\{.*\}", raw or "", flags=re.DOTALL)
     if match is None:
-        raise ValueError(f"content-safety judge returned no JSON object: {raw[:200]!r}")
+        raise ValueError("content-safety judge returned no JSON object")
     try:
         parsed = json.loads(match.group(0))
     except (json.JSONDecodeError, ValueError) as exc:
-        raise ValueError(f"content-safety judge returned unparseable JSON: {raw[:200]!r}") from exc
+        raise ValueError(f"content-safety judge returned unparseable JSON: {exc}") from exc
     if not isinstance(parsed, dict):
         raise ValueError("content-safety judge did not return an object of scores")
 

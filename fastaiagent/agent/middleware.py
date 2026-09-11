@@ -269,24 +269,27 @@ class ToolBudget(AgentMiddleware):
         return await call_next(tool, args)
 
 
-# Default PII patterns: US-style email, phone, SSN, and credit-card-ish
-# digit runs. Not exhaustive — users should supply domain-specific patterns.
-_DEFAULT_PII_PATTERNS = [
-    r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}",  # email
-    r"\b(?:\+?1[\-.\s]?)?\(?\d{3}\)?[\-.\s]?\d{3}[\-.\s]?\d{4}\b",  # US phone
-    r"\b\d{3}-\d{2}-\d{4}\b",  # SSN
-    r"\b(?:\d[ \-]?){13,19}\b",  # card-ish
-]
-
-
 class RedactPII(AgentMiddleware):
-    """Redact common PII patterns from outbound prompts and inbound responses.
+    """Redact PII from outbound prompts and inbound responses.
 
-    Patterns are matched with regex. By default covers email, US phone, SSN,
-    and long digit runs (credit-card-ish). Override via the ``patterns`` arg.
+    By default this delegates to
+    :func:`fastaiagent._internal.safety_detectors.detect_pii` — the **same**
+    detector behind the ``no_pii()`` builtin, the ``pii`` guardrail type and the
+    ``PIILeakage`` scorer. Pass ``patterns=`` to use your own regexes instead;
+    that path is unchanged and does exactly what you tell it to.
 
-    Redactions use a placeholder that preserves the match length roughly for
-    display continuity; the full pre-redaction text is not retained.
+    **Why the default moved to the shared detector.** This class used to carry a
+    second, private copy of the PII regexes, and the copy had drifted: its
+    card-ish pattern was a bare ``\\b(?:\\d[ \\-]?){13,19}\\b``, with **no Luhn
+    check**. So any 13-19 digit run — an order number, an invoice id, an IMEI,
+    a concatenated timestamp — was redacted as a credit card. And because
+    ``before_model`` mutates message content **in place**, that corruption is
+    what the model saw, what landed in memory, and what was replayed in a
+    guardrail re-ask. `detect_pii` Luhn-validates card candidates for exactly
+    this reason, and it was one import away.
+
+    Redacted spans are replaced with ``placeholder``; the pre-redaction text is
+    not retained.
     """
 
     name = "redact_pii"
@@ -295,18 +298,43 @@ class RedactPII(AgentMiddleware):
         self,
         patterns: list[str] | None = None,
         placeholder: str = "[REDACTED]",
+        entities: tuple[str, ...] | None = None,
     ):
-        raw_patterns = patterns if patterns is not None else _DEFAULT_PII_PATTERNS
-        self.patterns = [re.compile(p) for p in raw_patterns]
+        # ``patterns`` keeps its old meaning: your regexes, applied verbatim.
+        # Only the *default* path changed, and only to stop being wrong.
+        self.patterns = [re.compile(p) for p in patterns] if patterns is not None else None
         self.placeholder = placeholder
+        self.entities = entities
 
-    def _redact(self, text: str) -> str:
-        if not text:
+    def _redact(self, text: Any) -> Any:
+        """Redact one message body.
+
+        Returns non-string content untouched. ``msg.content`` is a
+        ``list[ContentPart]`` for a multimodal message, and the old
+        implementation called ``pat.sub`` on it and raised
+        ``TypeError: expected string or bytes-like object`` — a middleware that
+        crashes the run it was added to protect.
+        """
+        if not text or not isinstance(text, str):
             return text
-        result = text
-        for pat in self.patterns:
-            result = pat.sub(self.placeholder, result)
-        return result
+
+        if self.patterns is not None:
+            result = text
+            for pat in self.patterns:
+                result = pat.sub(self.placeholder, result)
+            return result
+
+        from fastaiagent._internal.safety_detectors import (
+            DEFAULT_PII_ENTITIES,
+            detect_pii,
+            mask_spans,
+        )
+
+        matches = detect_pii(text, entities=list(self.entities or DEFAULT_PII_ENTITIES))
+        # ``mask_spans`` merges overlapping spans and replaces right-to-left, so
+        # one value matched by two patterns is redacted once and cleanly rather
+        # than leaving fragments of itself behind.
+        return mask_spans(text, [(m.start, m.end) for m in matches], self.placeholder)
 
     async def before_model(self, ctx: MiddlewareContext, messages: list[Message]) -> list[Message]:
         # Redact in-place on message content. Messages are Pydantic BaseModels
