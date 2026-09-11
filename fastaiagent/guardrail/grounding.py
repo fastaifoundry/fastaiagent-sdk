@@ -127,13 +127,11 @@ def parse_verdict(raw: str) -> tuple[float, list[str]]:
     """Read the judge's JSON verdict. Raises ``ValueError`` when it cannot be read (fail closed)."""
     match = re.search(r"\{.*\}", raw or "", flags=re.DOTALL)
     if match is None:
-        raise ValueError(f"groundedness judge returned no JSON object: {(raw or '')[:200]!r}")
+        raise ValueError("groundedness judge returned no JSON object")
     try:
         parsed = json.loads(match.group(0))
     except (json.JSONDecodeError, ValueError) as exc:
-        raise ValueError(
-            f"groundedness judge returned unparseable JSON: {(raw or '')[:200]!r}"
-        ) from exc
+        raise ValueError(f"groundedness judge returned unparseable JSON: {exc}") from exc
     if not isinstance(parsed, dict) or "score" not in parsed:
         raise ValueError("groundedness judge returned no score")
     try:

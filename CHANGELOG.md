@@ -5,6 +5,95 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.63.0] - 2026-09-11 — two second copies
+
+Both of these are the same defect shape, which is why they ship together: a
+**second copy** of something that drifted from the thing it was copied from. It is
+the shape the 2026-09-10 audit kept finding — `pii`'s resolver (1.61.0), the
+`schema` validator (1.62.0) — and neither of these had a test comparing the copy
+to the original.
+
+### Fixed
+
+- **A guardrail judge's reply travelled inside an error string.**
+  `hazard_taxonomy.parse_scores` and `grounding.parse_verdict` interpolated up to
+  200 characters of the model's reply into their `ValueError`. That becomes
+  `GuardrailResult.error`, and a connected control plane copies it into
+  `guardrail_executions.result_detail` — a durable, tenant-visible row that
+  `GET /guardrails/analytics` aggregates.
+
+  So a judge that refuses in prose quoting the payload, or one prompt-injected
+  into echoing its input, wrote customer content there permanently. It is the rule
+  the plane's own detector module states for that exact table, broken from the
+  other end: *the control that inspects sensitive data must not become a place
+  that stores it.* `pii` records counts and never values; the judges were
+  recording model output. It also reaches the Local UI and any log sink — the
+  thing `FASTAIAGENT_TRACE_PAYLOADS=0` exists to keep in.
+
+  **`topics.py` never did this** — it raises a bare `"topic judge returned no
+  JSON object"`. Two of three judges disagreed with the third and the third was
+  right, which is what made the fix obvious rather than a judgement call.
+
+  These two modules are the **plane's**, and the SDK mirrors them, so this is a
+  re-mirror in the correct direction: the plane fixed its copies first
+  (`2b66686`) and this adopts their wording verbatim. The failure reason is
+  kept — `"…returned no JSON object"` and `"…returned unparseable JSON: {exc}"`
+  stay distinguishable, because `errored` is derived from the presence of an
+  error and dropping the reply must not become a blind spot.
+
+  ⚠ **The two modules that diverged were the two nothing compared.** `topics.py`
+  had a cross-repo mirror test and `safety_detectors.py` had one;
+  `hazard_taxonomy.py` and `grounding.py` had neither. The plane's new
+  `test_judge_mirror.py` closes that, and gates its assertions on this release.
+
+- **`RedactPII` carried its own PII regexes, and they had drifted.** Its
+  card-ish pattern was a bare `\b(?:\d[ \-]?){13,19}\b` with **no Luhn
+  check**, so any 13–19 digit run — an order number, an invoice id, an IMEI, a
+  concatenated timestamp — was redacted as a credit card. The middleware imported
+  nothing from `_internal/safety_detectors`, which Luhn-validates card candidates
+  for exactly this reason and was one import away.
+
+  It matters more than a cosmetic false positive because `before_model` mutates
+  `msg.content` **in place**: the corrupted text is what the model saw, what
+  landed in memory, and what was replayed in a guardrail re-ask.
+
+  The default path now delegates to `detect_pii` — the same detector behind
+  `no_pii()`, the `pii` guardrail type and the `PIILeakage` scorer — and replaces
+  spans via `mask_spans`, so a value matched twice is redacted once rather than
+  leaving fragments of itself behind.
+
+- **`RedactPII` raised `TypeError` on a multimodal message.** `_redact` assumed
+  `msg.content` was a `str` and called `pat.sub` on the `list[ContentPart]` a
+  multimodal message carries — a middleware crashing the run it was added to
+  protect. Non-string content is now passed through untouched.
+
+### Added
+
+- `RedactPII(entities=...)` narrows what the default path looks for, e.g.
+  `entities=("email", "ssn")`. The six the detectors know are available.
+
+### Compatibility
+
+- **No wire change.** Still v1.9.
+- **`RedactPII` now redacts *less*, and that is the fix.** A 13–19 digit run that
+  is not a valid card number is no longer masked. If you were relying on that,
+  pass an explicit `patterns=` list — that path is unchanged, applies your
+  regexes verbatim, and never consults the shared detector.
+- **The judge error strings changed.** Anything matching on the old
+  `"…returned no JSON object: '<reply>'"` shape should match the prefix instead.
+  The outcome class is unchanged: both still raise, both still route through
+  `on_error`, both still fail closed by default.
+
+### Verified
+
+- `tests/test_judge_reply_and_redactpii.py` — 22 gates, no model and no plane.
+  Each changed file was reverted in turn: **11 of the 22 fail without their
+  change** (3 · 3 · 5), and the other 11 pin behaviour that did not move —
+  including `topics.py`, the control case, so a later "consistency" pass cannot
+  break the one judge that was always right.
+- Full suite **2781 passed, 3 skipped, 10 xfailed**. `ruff` and `mypy` clean on
+  every file touched; `mkdocs build --strict` builds.
+
 ## [1.62.0] - 2026-09-10 — what a green board was hiding
 
 A cross-repo audit ran the whole guardrail feature — SDK 1.44 → 1.61, plane #48 →
