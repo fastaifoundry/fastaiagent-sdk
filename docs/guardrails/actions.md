@@ -66,6 +66,41 @@ result.modified_data # "call me on [REDACTED]"
 `overridden` or `reask` — the same six strings the plane records in
 `guardrail_executions.result_detail`.
 
+## Seeing what fired
+
+`warn`, `mask` and `override` all let the run finish — that is what they are
+for. So `AgentResult` carries every guardrail that executed, in order, across
+all four positions:
+
+```python
+result = agent.run("my ssn is 123-45-6789")
+
+for g in result.guardrails:
+    if g.fired():
+        print(g.name, g.position, g.action_taken)
+# redact_ssn input masked
+```
+
+Each entry is a `GuardrailFiring`: `name`, `position`, `action_taken`, `passed`,
+`errored` and a diagnostic `message`. `fired()` is true when the rule did
+anything other than pass cleanly — including a check that **errored** under
+`on_error="allow"`, which yields `passed=True` and is otherwise
+indistinguishable from a genuine pass.
+
+!!! note "Added in 1.64.0"
+    Before this, a run with the Local UI off and no plane attached returned the
+    same clean string whether or not a rule had fired. The one outcome class
+    designed *not* to stop the run was the one you could not observe. It is
+    populated regardless of `FASTAIAGENT_UI_ENABLED` — an unconnected run is
+    the case it exists for.
+
+`GuardrailFiring` deliberately carries no `metadata` and no `modified_data`. A
+`pii` rule's `metadata["matches"]` holds the matched value itself, and neither
+belongs on an object handed back beside the answer — use
+`GuardrailResult` directly if you need them. A **blocking** failure still raises
+`GuardrailBlockedError` rather than returning, so this list is for the outcomes
+that let the run continue.
+
 ## Where a rewrite can and cannot be applied
 
 `mask` and `override` change the payload, so `execute_guardrails` returns a

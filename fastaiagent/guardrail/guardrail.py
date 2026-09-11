@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import logging
 from collections.abc import Callable
 from enum import Enum
@@ -76,6 +77,66 @@ class GuardrailResult(BaseModel):
         return self.action_taken in ("masked", "overridden") and self.modified_data is not None
 
 
+class GuardrailFiring(BaseModel):
+    """One guardrail execution, reported back on :attr:`AgentResult.guardrails`.
+
+    Deliberately narrower than :class:`GuardrailResult`: no ``modified_data``
+    and no ``metadata``. Those carry payload-derived content — a ``pii`` rule's
+    ``matches`` holds the matched value itself — and this record exists to
+    answer *did a rule fire, where, and what did it do*, not to re-expose the
+    payload beside the answer.
+
+    ``message`` is the exception, and it is diagnostic only: for ``regex`` it is
+    the rule's own pattern and for ``llm_judge`` the judge's reply, so treat it
+    as developer-facing. It never leaves the process — this object is returned
+    to the caller in-memory and is not part of any span or wire payload.
+    """
+
+    name: str
+    position: str
+    action_taken: str
+    """``none`` | ``blocked`` | ``warned`` | ``masked`` | ``overridden`` | ``reask``."""
+
+    passed: bool
+    errored: bool
+    message: str | None = None
+
+    def fired(self) -> bool:
+        """True when this rule did something other than pass cleanly."""
+        return self.action_taken != "none" or not self.passed or self.errored
+
+
+#: Run-scoped collector for the above, appended by :meth:`Guardrail.aexecute`.
+#: The agent installs a fresh list per run and hands it back on ``AgentResult``.
+#:
+#: ``None`` when nothing is collecting, which is the case for a bare
+#: ``guardrail.execute(...)`` call — there is no run to attribute it to.
+#:
+#: Deliberately **not** behind ``ui_enabled``: the defect this closes is that an
+#: unconnected run with the Local UI off had no way to tell that a ``warn`` or
+#: ``mask`` rule had fired at all. ``AgentResult`` returned the same clean string
+#: either way, so the one guardrail outcome designed *not* to stop the run was
+#: also the one the caller could not observe.
+_run_firings: contextvars.ContextVar[list[GuardrailFiring] | None] = contextvars.ContextVar(
+    "fastaiagent_guardrail_firings", default=None
+)
+
+
+def start_firing_collection() -> contextvars.Token[list[GuardrailFiring] | None]:
+    """Begin collecting guardrail firings for one run. Returns the reset token."""
+    return _run_firings.set([])
+
+
+def collected_firings() -> list[GuardrailFiring]:
+    """The firings recorded since :func:`start_firing_collection`, oldest first."""
+    return list(_run_firings.get() or [])
+
+
+def stop_firing_collection(token: contextvars.Token[list[GuardrailFiring] | None]) -> None:
+    """End the collection scope opened by :func:`start_firing_collection`."""
+    _run_firings.reset(token)
+
+
 class Guardrail:
     """A validation guardrail for agent input/output/tool calls.
 
@@ -146,6 +207,29 @@ class Guardrail:
         result = await run_guardrail(self, data)
         result.execution_time_ms = int((time.monotonic() - start) * 1000)
 
+        # Record the firing for whoever is collecting this run. Before the
+        # ``ui_enabled`` gate below on purpose — this is the path that makes a
+        # non-blocking outcome visible when there is no UI and no plane.
+        firings = _run_firings.get()
+        if firings is not None:
+            try:
+                firings.append(
+                    GuardrailFiring(
+                        name=self.name,
+                        position=getattr(self.position, "value", str(self.position)),
+                        action_taken=result.action_taken,
+                        passed=result.passed,
+                        errored=result.errored,
+                        message=result.message,
+                    )
+                )
+            except Exception:
+                # Same rule as the event logger below: bookkeeping never fails
+                # the check it is bookkeeping for.
+                logging.getLogger(__name__).debug(
+                    "Failed to record guardrail firing for %r", self.name, exc_info=True
+                )
+
         from fastaiagent._internal.config import get_config
 
         if get_config().ui_enabled:
@@ -183,10 +267,33 @@ class Guardrail:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Guardrail:
-        """Deserialize from canonical format."""
+        """Deserialize from canonical format.
+
+        A ``code`` guardrail carries its logic in ``fn=``, which cannot be
+        serialized. For the **builtins** that is recoverable, because they are a
+        closed set of zero-argument factories identified by name — so
+        ``no_pii``, ``no_secrets``, ``toxicity_check``, ``json_valid``,
+        ``no_prompt_injection`` and ``openai_moderation`` come back **armed**.
+        That is what makes ``Replay.fork_at(...).rerun()`` a faithful
+        reproduction rather than a rerun with the safety controls off.
+
+        Everything else — a user's own ``fn=``, and the parameterised builtins
+        ``cost_limit`` / ``allowed_domains`` / ``grounded`` whose policy lives in
+        constructor arguments ``to_dict()`` never carried — comes back without a
+        callable and **raises at execution time** (since 1.64.0) rather than
+        reporting a clean pass over a payload nothing inspected.
+        """
+        guardrail_type = GuardrailType(data.get("guardrail_type", "code"))
+
+        fn = None
+        if guardrail_type is GuardrailType.code:
+            from fastaiagent.guardrail.builtins import restore_builtin_fn
+
+            fn = restore_builtin_fn(data["name"])
+
         return cls(
             name=data["name"],
-            guardrail_type=GuardrailType(data.get("guardrail_type", "code")),
+            guardrail_type=guardrail_type,
             position=GuardrailPosition(data.get("position", "output")),
             config=data.get("config", {}),
             blocking=data.get("blocking", True),
@@ -195,4 +302,5 @@ class Guardrail:
             action=data.get("action", "block"),
             severity=data.get("severity"),
             floor=data.get("floor", False),
+            fn=fn,
         )

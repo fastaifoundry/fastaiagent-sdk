@@ -643,3 +643,48 @@ def responsible_ai(
     if allowed:
         rails.append(allowed_topics(allowed, llm=llm, **oe))
     return rails
+
+
+#: Builtins that can be rebuilt **faithfully** from a serialized guardrail.
+#:
+#: A ``code`` guardrail carries its logic in ``fn=``, which cannot be serialized.
+#: Before 1.64.0 a restored one silently returned ``passed=True``, so
+#: ``Agent.from_dict(agent.to_dict())`` and ``Replay.fork_at(...).rerun()`` ran
+#: with every builtin disarmed while writing green rows for checks that never
+#: executed. 1.64.0 made that raise — correct, but a rerun that refuses to run is
+#: not faithful reproduction either. This registry is the half that makes it
+#: faithful: :meth:`Guardrail.from_dict` restores ``fn`` from here by name.
+#:
+#: **Only zero-argument factories belong here, and that is the whole rule.**
+#: ``cost_limit(max_usd=...)``, ``allowed_domains(domains=...)`` and
+#: ``grounded(reference=...)`` take their policy as constructor arguments which
+#: ``to_dict()`` does not carry, so rebuilding them would invent a *different*
+#: check — exactly the class of defect this audit spent three releases closing.
+#: They keep raising, which is the honest outcome.
+#:
+#: ``responsible_ai()`` is absent because it returns a *list* of rails, not one.
+BUILTIN_FACTORIES: dict[str, Callable[[], Guardrail]] = {
+    "no_pii": no_pii,
+    "no_prompt_injection": no_prompt_injection,
+    "openai_moderation": openai_moderation,
+    "json_valid": json_valid,
+    "toxicity_check": toxicity_check,
+    "no_secrets": no_secrets,
+}
+
+
+def restore_builtin_fn(name: str) -> Callable[..., Any] | None:
+    """The callable for builtin ``name``, or ``None`` if it is not restorable.
+
+    Used by :meth:`Guardrail.from_dict`. Returns only the function, so the
+    restored guardrail keeps the *serialized* position, action, ``on_error`` and
+    description rather than the factory's defaults — a rule whose action was
+    changed after construction must replay with the action it actually had.
+    """
+    factory = BUILTIN_FACTORIES.get(name)
+    if factory is None:
+        return None
+    try:
+        return factory().fn
+    except Exception:  # pragma: no cover - a builtin that cannot construct
+        return None

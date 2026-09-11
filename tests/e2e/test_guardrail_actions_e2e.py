@@ -173,3 +173,48 @@ def test_a_reask_rule_gets_a_real_model_to_correct_itself() -> None:
     # and the model rewrites it in words.
     assert not any(ch.isdigit() for ch in result.output), result.output
     assert result.output.strip(), "the re-ask produced an empty reply"
+
+
+# --------------------------------------------------------------------------- #
+# AgentResult.guardrails — the run reports what fired, against a real model
+# --------------------------------------------------------------------------- #
+def test_a_masking_rule_is_reported_on_the_result() -> None:
+    """1.64.0: a non-halting outcome is observable without the UI or a plane.
+
+    ``mask`` lets the run finish, so before this the caller got a clean string
+    with no indication the input had been rewritten before the model saw it.
+    Run against a real model rather than a canned reply because the claim is
+    about the whole path — input guardrail, rewrite, model turn, result — and a
+    stub would skip the middle of it.
+    """
+    require_env()
+
+    from fastaiagent.agent.agent import Agent
+    from fastaiagent.guardrail.guardrail import Guardrail, GuardrailPosition, GuardrailType
+    from fastaiagent.llm.client import LLMClient
+
+    redact = Guardrail(
+        name="e2e-redact-ssn",
+        guardrail_type=GuardrailType.pii,
+        position=GuardrailPosition.input,
+        config={"entities": ["ssn"]},
+        action="mask",
+    )
+    agent = Agent(
+        name="e2e-observed",
+        llm=LLMClient(provider="openai", model="gpt-4o-mini"),
+        guardrails=[redact],
+    )
+
+    result = agent.run("Repeat this back to me exactly: my ssn is 123-45-6789")
+
+    fired = [g for g in result.guardrails if g.fired()]
+    assert [g.name for g in fired] == ["e2e-redact-ssn"], (
+        f"the run must report what rewrote its input; got {result.guardrails!r}"
+    )
+    assert fired[0].action_taken == "masked"
+    assert fired[0].position == "input"
+
+    # And the redaction really happened on the way to the model — the point of
+    # reporting it is that the caller can tell the model saw something else.
+    assert "123-45-6789" not in result.output, result.output
