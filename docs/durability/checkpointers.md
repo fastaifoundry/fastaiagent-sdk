@@ -95,6 +95,27 @@ fastaiagent setup-checkpointer --backend postgres \
     --connection-string "$DATABASE_URL"
 ```
 
+### Re-using a `checkpoint_id` raises
+
+`put()` is a plain `INSERT`. Writing a checkpoint whose id already exists raises
+the driver's `UniqueViolation`, matching `SQLiteCheckpointer` (whose `id` is the
+primary key).
+
+!!! warning "Changed in 1.65.0"
+    This used to be `ON CONFLICT (checkpoint_id) DO UPDATE`, so an in-place
+    rewrite silently replaced the row. That was safe only while nothing else held
+    a copy. The plane's ingest door is **insert-only**: the rewritten row was
+    re-pushed, came back `{"ingested": 0}`, the SDK marked it synced, and the
+    replica kept the **first** version forever — local said `completed` while the
+    plane said `interrupted`, with nothing anywhere to notice.
+
+    The built-in executors never re-use an id, so no `Chain` / `Agent` / `Swarm` /
+    `Supervisor` run is affected. Only code calling `put()` directly with an id it
+    has already written will now see an error where it previously saw a silent
+    rewrite — which is the behaviour it needed, because the plane's copy was never
+    being rewritten with it. To record a revised state, write a **new** checkpoint;
+    that is what a chain cycle re-executing a node already does.
+
 ### Why `JSONB` and `TIMESTAMPTZ`?
 
 - `JSONB` is parsed once on `INSERT` (so `state_snapshot` and

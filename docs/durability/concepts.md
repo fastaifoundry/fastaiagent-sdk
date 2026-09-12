@@ -29,6 +29,7 @@ captures the state of a run *at one boundary*:
 | `execution_id` | The run identifier — **immutable across resume**; the key everything is looked up by |
 | `node_id` | *Where* this checkpoint is — the re-entry address (see the scheme below) |
 | `node_index` | Position in topological/turn order |
+| `step_type` | What kind of boundary this is: `llm_call`, `tool_call`, `hitl_pause`, `node`, `handoff`, `fork_origin`, or `run_end` |
 | `status` | `"completed"`, `"interrupted"`, or `"failed"` — **this drives resume** |
 | `state_snapshot` | The full run state at this point, JSON-frozen (chain state, or serialized messages + turn for an agent) |
 | `node_input` / `node_output` | The step's inputs (e.g. saved tool args) and result |
@@ -43,6 +44,8 @@ boundary it is:
 - **Agent turn** — `"turn:N"` (checkpoint written *before* the Nth LLM call).
 - **Agent tool** — `"turn:N/tool:<name>"` (written *before* the tool runs, with
   the tool's args in `node_input`).
+- **Run end** — `"run_end"`, with `step_type="run_end"`. Not an address at all;
+  a tombstone. See below.
 
 ## When checkpoints are written
 
@@ -56,6 +59,21 @@ committed work:
 - **Agent, per tool**: `_put_tool_checkpoint` runs *before each tool dispatch*
   (`turn:N/tool:X`), saving the exact args — so resume re-invokes the tool with
   the same input.
+
+- **Run end**: one terminal row per run, `step_type="run_end"`, with
+  `status="completed"` on success or `"failed"` when an exception escaped. It is
+  written by the **outermost** runner only — a Swarm's child agents and a
+  Supervisor's workers share their parent's `execution_id`, and a marker per hop
+  would claim the run ended at every handoff. A **paused** run gets none: a pause
+  is not an ending.
+
+Why the run-end row exists: without it a run that finished and a run that died
+the instant after its last step are byte-identical — both leave a `completed`
+checkpoint as the newest row. Nothing could tell them apart, so `aresume` on an
+already-finished run silently **re-executed** it, re-calling the model and
+re-firing every side effect not wrapped in `@idempotent`. It now raises
+`AlreadyResumed` instead. A `failed` marker is stepped over rather than refused —
+crash recovery is the whole point, so a run that raised stays resumable.
 
 `execution_id` is minted once at the start of a run (or supplied by you) and
 placed in a `ContextVar` so every node, tool, and `@idempotent` function in that

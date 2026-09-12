@@ -17,7 +17,7 @@ The plane **serves** a checkpoint back; the **SDK resumes locally**. The plane
 never runs agent or chain code — restoring fetches the checkpoint and a normal
 local `resume()` continues from it. This keeps the open/closed boundary intact.
 
-## Local-first, non-blocking, non-lossy
+## Local-first, non-blocking, one deliberate loss
 
 Replication reuses the same durable outbox as
 [trace export](../platform/index.md#durable-trace-buffering-retry), but it is
@@ -29,10 +29,31 @@ Replication reuses the same durable outbox as
    `checkpoint_id`) and marks them `synced=1` **only after a 2xx**.
 3. The agent hot path never blocks — the POST + retry run on a daemon thread.
 
-Unlike traces (which abandon an old/oversized backlog), the checkpoint outbox is
-**non-lossy**: an un-acked checkpoint for an active or paused run is **never**
-dropped from the re-send queue — it stays buffered and re-drains until the plane
-acknowledges it.
+Unlike traces (which abandon an old or oversized backlog), the checkpoint outbox
+has **no age or count bound**: an un-acked checkpoint for an active or paused run
+is never dropped just because it is old or the queue is deep. A transient
+failure, a 5xx, a lapsed entitlement — all leave the row buffered to re-drain on
+the next write, `connect()`, or `disconnect()`.
+
+**The one exception is a poison row.** If the ingest door refuses a checkpoint on
+*payload* grounds — a value longer than its column, a snapshot over the plane's
+1 MB cap — it will refuse it identically every time. That used to stall the whole
+outbox: the drain sends the oldest un-acked rows as one batch and stopped at the
+first failure, so the next kick re-sent the same batch, got the same refusal, and
+stopped again. One bad row stranded **every later checkpoint of every run** on
+that checkpointer, permanently.
+
+Now the batch is bisected until the offender stands alone, that row is
+**quarantined** with the reason, and the drain moves on. One checkpoint missing
+from the replica beats every later one stranded. A quarantined row is
+`synced = 1` with a non-null `sync_error`, so it is distinguishable from one that
+actually landed, and the local UI's execution inspector shows it as **not
+replicated** with the plane's own explanation.
+
+Only payload-shaped refusals (400, 409, 413, 422) qualify. A 401, 403 (domain not
+entitled to `connected_state_plane`), 404, 408 or 429 is a condition of the
+*connection*, not of any row — those stay buffered forever, because for them
+"forever" is the correct answer: entitlement gets granted, proxies get fixed.
 
 **When not connected, replication is a strict no-op** — nothing is sent.
 
@@ -90,9 +111,14 @@ the pending interrupt too.
 ## What is replicated
 
 The full checkpoint needed to resume: `checkpoint_id`, `execution_id`,
-agent/chain id, node + step index, status, the `state_snapshot`, and the
-resume-critical fields (node I/O, iteration counters, interrupt reason/context) —
-carried losslessly so the restored `Checkpoint` is identical.
+agent/chain id, node + step index, `step_type`, status, the `state_snapshot`, and
+the resume-critical fields (node I/O, iteration counters, interrupt
+reason/context) — carried losslessly so the restored `Checkpoint` is identical.
+
+`step_type` is what lets the plane tell a **run-end** row from an ordinary step,
+and so a finished run from one that died right after its last step. Without it
+the console can only report the status of the latest checkpoint, which is why it
+renders "last step done" rather than "completed".
 
 In this release `state_snapshot` is replicated **in clear**. A customer-held
 encryption envelope (BYOK) for the payload is a documented future seam; metadata
@@ -109,6 +135,9 @@ checkpoints buffered (a terminal 4xx is not retried), and the run is unaffected.
 > additive migration (local schema v13). Existing checkpoints are marked as
 > already-synced on upgrade, so connecting an existing project does not
 > retroactively back-push history — only checkpoints written afterwards replicate.
+> Schema **v19** adds `sync_error` (poison-row quarantine) and **v20** adds
+> `step_type`; both are additive with no backfill, and Postgres gets the same two
+> columns via `ADD COLUMN IF NOT EXISTS` on the next `setup()`.
 
 ## In the console
 
@@ -120,6 +149,28 @@ locally; the plane runs no agent code):
 ![Durability run-health on the plane](../platform/img/ws2-durability-run-health.png)
 
 A runnable end-to-end example is in `examples/86_connected_durability.py`.
+
+## One tenant per runner
+
+The drain is process-global, and that bounds what a single process can replicate:
+
+* It runs on a **daemon thread** and always reads the **process-global**
+  connection and project id. A `job_scope()` that overrides the project affects
+  the writes, not the drain — the background thread cannot see a per-job
+  ContextVar.
+* `safe_get_project_id()` returns `""` rather than `None`, so
+  `SQLiteCheckpointer.fetch_unsynced` always takes its **project-scoped** branch.
+  A checkpoint written under a different project stamp is therefore never
+  fetched by this process's drain, and sits `synced=0` indefinitely.
+* `PostgresCheckpointer.fetch_unsynced` **ignores `project_id` entirely** — the
+  Postgres schema is not project-scoped. It accepts the argument for protocol
+  parity and drains every un-acked row in the schema.
+
+In practice: **run one tenant (one API key, one project) per runner process.**
+Serving several projects from one process will either strand rows the drain
+never fetches (SQLite) or replicate them all under the connected project
+(Postgres). Neither is a data-loss bug — local durability is unaffected either
+way — but neither is what you want from a replica.
 
 ## Custom checkpointers
 

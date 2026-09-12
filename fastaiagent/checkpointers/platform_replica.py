@@ -208,9 +208,24 @@ def _to_wire(row: dict[str, Any]) -> dict[str, Any]:
         },
         "created_at": _iso(row.get("created_at")),
     }
-    # Monotonic ordering hint for the plane's "latest" pick (SQLite rowid). When
-    # absent (Postgres), the plane tie-breaks by server receive order and we
-    # always drain oldest-first, so "latest received" stays correct.
+    # A TIE-BREAK ONLY, and no longer the plane's primary ordering key.
+    #
+    # ⚠ This used to say the plane picked "latest" by sequence. It did, and that
+    # was finding D1: ``sequence`` is the SQLite rowid of whichever local
+    # database wrote the row, so a fresh store — the entire point of
+    # restore-anywhere — starts at rowid 1 again and its NEW checkpoints carry
+    # SMALLER sequences than the lost store's old ones. The plane kept serving
+    # the stale pre-restore row, and a Postgres checkpointer (which sends no
+    # sequence at all) was outranked by every sequenced SQLite row regardless of
+    # recency.
+    #
+    # The plane now orders by the CLIENT clock — ``coalesce(created_at,
+    # received_at)`` → ``received_at`` → ``sequence`` → ``id`` — mirroring the
+    # SDK's own ``get_last``. The client clock leads deliberately: it is the only
+    # term that stays right when a machine dies mid-run, the run is restored
+    # elsewhere and finished, and the dead machine later drains its stale
+    # backlog. We still send this because it remains a useful third-level
+    # tie-break within one store.
     seq = row.get("_seq")
     if seq is not None:
         wire["sequence"] = int(seq)
@@ -518,8 +533,15 @@ def drain_all_sync() -> None:
 def fetch_latest_from_plane(execution_id: str, *, conn: Any | None = None) -> Checkpoint | None:
     """GET the latest checkpoint for ``execution_id`` from the plane, or None.
 
-    Returns the highest-sequence checkpoint the plane holds (404 → None). The
-    plane only **serves**; resuming happens locally — see :func:`restore_from_plane`.
+    "Latest" is by the **client clock** — ``coalesce(created_at, received_at)``,
+    then ``received_at``, then ``sequence``, then ``id`` — which mirrors the
+    SDK's own :meth:`get_last` so an operator reading the console and a resume
+    reading the wire can never see different histories of the same run. It is
+    NOT the highest ``sequence``; that was finding D1 and it broke restore across
+    stores (see the ``_seq`` note in :func:`_to_wire`).
+
+    404 → None. The plane only **serves**; resuming happens locally — see
+    :func:`restore_from_plane`.
     """
     if conn is None:
         from fastaiagent.client import _connection

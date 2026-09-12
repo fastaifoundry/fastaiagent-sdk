@@ -309,9 +309,20 @@ class SQLiteCheckpointer:
         """Return up to ``limit`` un-acked checkpoint rows (oldest first).
 
         ``rowid`` is exposed as ``_seq`` — SQLite's strictly-monotonic insertion
-        order — which the replicator forwards as the plane's ``sequence`` so the
-        "latest checkpoint" restore is unambiguous. Scoped to ``project_id`` (the
-        local stamp) when given, mirroring the trace outbox.
+        order — which the replicator forwards as the plane's ``sequence``.
+
+        ⚠ That does **not** make the restore unambiguous, whatever this docstring
+        used to claim. ``rowid`` is per-DATABASE-FILE: a fresh store starts at 1
+        again, so after a restore its newer rows carry smaller sequences than the
+        lost store's older ones. The plane orders by the client clock now and
+        uses ``sequence`` only as a third-level tie-break within one store
+        (finding D1). A Postgres checkpointer sends none at all.
+
+        Scoped to ``project_id`` (the local stamp) when given, mirroring the
+        trace outbox. Note the drain always passes one: ``safe_get_project_id()``
+        returns ``""`` rather than ``None``, so this branch is the one that runs
+        in practice — see "One tenant per runner" in
+        ``docs/durability/connected-checkpoints.md``.
         """
         if project_id is not None:
             rows = self._conn().fetchall(
