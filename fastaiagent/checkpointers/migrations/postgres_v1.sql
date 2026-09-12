@@ -45,6 +45,18 @@ ALTER TABLE {schema}.checkpoints
 CREATE INDEX IF NOT EXISTS idx_cp_synced
     ON {schema}.checkpoints (synced, created_at);
 
+-- Poison-row quarantine (durability audit D2). A checkpoint the plane's ingest
+-- door refuses on PAYLOAD grounds is refused identically every time, and the
+-- drain sends the oldest un-acked rows as one batch and stopped at the first
+-- failure while leaving them buffered -- so one such row re-sent the same batch
+-- forever and stranded every later checkpoint on this store. A quarantined row
+-- is marked ``synced = TRUE`` with the reason here, so ``fetch_unsynced`` needs
+-- no change (and no sentinel value, which a BOOLEAN could not carry anyway) and
+-- ``synced = TRUE AND sync_error IS NOT NULL`` reads as "we gave up on this one"
+-- rather than "this reached the plane". Mirrors local.db schema v19.
+ALTER TABLE {schema}.checkpoints
+    ADD COLUMN IF NOT EXISTS sync_error TEXT;
+
 -- Partial index for the /approvals + Failed Executions pages — most rows
 -- are 'completed' and don't need to be scanned.
 CREATE INDEX IF NOT EXISTS idx_cp_status_problem

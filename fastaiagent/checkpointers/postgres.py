@@ -459,9 +459,37 @@ class PostgresCheckpointer:
         with pool.connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    f"UPDATE {self._t_checkpoints} SET synced = TRUE "
-                    f"WHERE checkpoint_id = ANY(%s)",
+                    f"UPDATE {self._t_checkpoints} SET synced = TRUE WHERE checkpoint_id = ANY(%s)",
                     (list(checkpoint_ids),),
+                )
+            conn.commit()
+
+    def mark_quarantined(self, reasons: dict[str, str]) -> None:
+        """Park checkpoints the plane can never ingest, keyed id → reason (D2).
+
+        Sets ``synced = TRUE`` so ``fetch_unsynced`` stops returning the row — the
+        drain must advance past it — and records ``sync_error`` so the row stays
+        distinguishable from one that actually reached the plane. A quarantined
+        row is ``synced = TRUE AND sync_error IS NOT NULL``.
+
+        One statement, driven by an ``unnest`` of the two arrays, so a re-drain
+        that quarantines several rows still costs one round trip.
+        """
+        if not reasons:
+            return
+        self._ensure_setup()
+        pool = self._get_pool()
+        ids = list(reasons)
+        with pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    UPDATE {self._t_checkpoints} AS c
+                       SET synced = TRUE, sync_error = v.reason
+                      FROM unnest(%s::text[], %s::text[]) AS v(cid, reason)
+                     WHERE c.checkpoint_id = v.cid
+                    """,
+                    (ids, [reasons[i] for i in ids]),
                 )
             conn.commit()
 

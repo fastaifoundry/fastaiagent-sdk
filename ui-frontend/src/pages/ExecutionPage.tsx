@@ -66,6 +66,26 @@ export function ExecutionPage() {
         />
       )}
 
+      {data && (data.quarantined_count ?? 0) > 0 ? (
+        <Card
+          className="border-destructive/40 bg-destructive/5"
+          data-testid="quarantine-banner"
+        >
+          <CardContent className="py-4 text-sm">
+            <p className="font-medium">
+              The platform&rsquo;s copy of this run is incomplete.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {data.quarantined_count} checkpoint
+              {data.quarantined_count === 1 ? "" : "s"} could not be replicated
+              and {data.quarantined_count === 1 ? "was" : "were"} quarantined so
+              the outbox could keep moving. Local durability is unaffected —
+              resume still works from this machine.
+            </p>
+          </CardContent>
+        </Card>
+      ) : null}
+
       {data && checkpoints.length > 0 && (
         <>
           {latest &&

@@ -338,6 +338,22 @@ class SQLiteCheckpointer:
                 tuple(chunk),
             )
 
+    def mark_quarantined(self, reasons: dict[str, str]) -> None:
+        """Park checkpoints the plane can never ingest, keyed id → reason (D2).
+
+        Sets ``synced = 1`` so ``fetch_unsynced`` stops returning the row — the
+        drain must advance past it — and records ``sync_error`` so the row stays
+        distinguishable from one that actually reached the plane. One statement
+        per row: the map is at most a handful of ids (isolation narrows a refused
+        batch down to the offenders), so a CASE expression would cost more to read
+        than it saves.
+        """
+        for checkpoint_id, reason in reasons.items():
+            self._conn().execute(
+                "UPDATE checkpoints SET synced = 1, sync_error = ? WHERE checkpoint_id = ?",
+                (reason, checkpoint_id),
+            )
+
     # --- deletes / prune ---------------------------------------------
 
     def delete_execution(self, execution_id: str) -> None:

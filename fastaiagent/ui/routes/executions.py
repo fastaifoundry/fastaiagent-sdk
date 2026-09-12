@@ -47,9 +47,42 @@ def _open_store(db_path: str) -> SQLiteCheckpointer:
     return cp
 
 
-def _checkpoint_row_to_dict(cp: Any) -> dict[str, Any]:
-    """Pydantic ``Checkpoint`` → JSON-safe dict for the UI."""
+def _replication_state(db: Any, execution_id: str) -> dict[str, dict[str, Any]]:
+    """``{checkpoint_id: {"synced", "sync_error"}}`` for one run's checkpoints.
+
+    Read straight from the row rather than through :class:`Checkpoint`, because
+    these two are **outbox** columns, not run state — putting them on the model
+    would send them over the replication wire and back through
+    ``restore_from_plane``, where they mean nothing.
+
+    Worth surfacing at all because of durability audit D2: a checkpoint the
+    plane refuses on payload grounds is now quarantined rather than re-sent
+    forever, and without this the only trace of that is a log line the operator
+    has probably already scrolled past. ``synced=1`` with a ``sync_error`` reads
+    as "we gave up on this one, and here is what the plane said".
+    """
+    try:
+        rows = db.fetchall(
+            "SELECT checkpoint_id, synced, sync_error FROM checkpoints WHERE execution_id = ?",
+            (execution_id,),
+        )
+    except Exception:
+        # An older local.db (pre-v19) has no ``sync_error``. The inspector must
+        # still render — replication state is an extra, never a precondition.
+        return {}
     return {
+        r["checkpoint_id"]: {"synced": bool(r["synced"]), "sync_error": r["sync_error"]}
+        for r in rows
+        if r["checkpoint_id"]
+    }
+
+
+def _checkpoint_row_to_dict(cp: Any, replication: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Pydantic ``Checkpoint`` → JSON-safe dict for the UI."""
+    repl = replication.get(cp.checkpoint_id) or {}
+    return {
+        "synced": repl.get("synced"),
+        "sync_error": repl.get("sync_error"),
         "checkpoint_id": cp.checkpoint_id,
         "parent_checkpoint_id": cp.parent_checkpoint_id,
         "chain_name": cp.chain_name,
@@ -95,6 +128,12 @@ def get_execution(
         latest = store.get_last(execution_id)
         if latest is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Execution not found")
+        repl_db = ctx.db()
+        try:
+            replication = _replication_state(repl_db, execution_id)
+        finally:
+            repl_db.close()
+        quarantined = sum(1 for v in replication.values() if v.get("sync_error"))
         return {
             "execution_id": execution_id,
             "chain_name": latest.chain_name,
@@ -103,7 +142,9 @@ def get_execution(
             "checkpoint_count": len(rows),
             "latest_checkpoint_id": latest.checkpoint_id,
             "latest_state_snapshot": latest.state_snapshot,
-            "checkpoints": [_checkpoint_row_to_dict(cp) for cp in rows],
+            # >0 means the plane's copy of this run is incomplete (audit D2).
+            "quarantined_count": quarantined,
+            "checkpoints": [_checkpoint_row_to_dict(cp, replication) for cp in rows],
         }
     finally:
         store.close()
