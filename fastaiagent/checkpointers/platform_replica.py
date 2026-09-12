@@ -553,6 +553,58 @@ def fetch_latest_from_plane(execution_id: str, *, conn: Any | None = None) -> Ch
         return None
 
 
+def restore_if_missing(checkpointer: Any, execution_id: str) -> Checkpoint | None:
+    """Pull a run from the plane when the local store has never seen it (audit D4).
+
+    Called at the top of every ``resume`` path. Until this existed
+    :func:`restore_from_plane` was a helper nothing called: ``aresume``,
+    ``Chain.resume``, the CLI and the local UI all consulted only local storage,
+    so on a fresh machine a resume failed even though the plane was holding the
+    state — which made the documented "restore anywhere" story false in exactly
+    the situation it was written for.
+
+    **Only when missing.** Never overwrite: ``SQLiteCheckpointer.put`` is a plain
+    INSERT on its primary key (and since audit D3, so is Postgres), so restoring
+    over a row the store already has would raise. Just as importantly, the local
+    copy is the source of truth while it exists — the plane is a replica, and a
+    resume must never prefer the replica to a run's own machine.
+
+    No-ops when not connected, so a disconnected resume fails exactly as before.
+    Set ``FASTAIAGENT_RESTORE_FROM_PLANE=0`` to keep it that way while connected:
+    the restore resurrects a run whose local checkpoints were deliberately
+    deleted, which is right for disaster recovery and wrong for an erasure
+    request. That is a deployment-wide policy, which is why it is an environment
+    switch and not a per-call argument.
+
+    Returns the restored checkpoint, or None when nothing was restored.
+    """
+    import os
+
+    if os.environ.get("FASTAIAGENT_RESTORE_FROM_PLANE") == "0":
+        return None
+    try:
+        from fastaiagent.client import _connection
+
+        if not _connection.is_connected:
+            return None
+        if checkpointer.get_last(execution_id) is not None:
+            return None
+    except Exception:
+        logger.debug("restore-if-missing precheck failed", exc_info=True)
+        return None
+
+    restored = restore_from_plane(checkpointer, execution_id)
+    if restored is not None:
+        logger.info(
+            "Restored execution %s from the plane (%s at %s) — the local store had "
+            "no record of it.",
+            execution_id,
+            restored.status,
+            restored.node_id,
+        )
+    return restored
+
+
 def restore_from_plane(
     checkpointer: Any, execution_id: str, *, conn: Any | None = None
 ) -> Checkpoint | None:

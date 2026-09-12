@@ -1116,6 +1116,15 @@ class Agent:
         store: Checkpointer = self._checkpointer or SQLiteCheckpointer()
         store.setup()
 
+        # Restore-anywhere (audit D4): when this machine has never seen the run
+        # but the plane is holding it, pull it down first. It has to happen
+        # BEFORE the pending-interrupt claim below — for an ``interrupted``
+        # checkpoint the restore re-creates the pending row, and without it the
+        # claim finds nothing and reports AlreadyResumed on a run nobody resumed.
+        from fastaiagent.checkpointers.platform_replica import restore_if_missing
+
+        restore_if_missing(store, execution_id)
+
         def _scoped_latest(*, status: str | None = None) -> Checkpoint | None:
             """Return the most recently committed checkpoint, optionally
             filtered to those whose ``agent_path`` starts with the prefix

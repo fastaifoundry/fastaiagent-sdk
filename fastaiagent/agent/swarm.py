@@ -591,6 +591,12 @@ class Swarm:
         store: Checkpointer = self._checkpointer or SQLiteCheckpointer()
         store.setup()
 
+        # Restore-anywhere (audit D4): when this machine has never seen the run
+        # but the plane is holding it, pull it down before deciding there is
+        # nothing to resume. No-op when disconnected or already present.
+        from fastaiagent.checkpointers.platform_replica import restore_if_missing
+
+        restore_if_missing(store, execution_id)
         # Refuses a finished run and steps past a `failed` tombstone (audit D5).
         latest = latest_resumable(store, execution_id, runner="Swarm execution")
         if latest is None:

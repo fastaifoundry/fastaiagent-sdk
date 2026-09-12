@@ -38,27 +38,54 @@ acknowledges it.
 
 ## Restore-anywhere
 
+**Resume does this for you.** When you are connected and the local store has no
+record of `execution_id`, `Chain.resume` / `Agent.aresume` / `Swarm.aresume` /
+`Supervisor.aresume` fetch the run from the plane first, then resume normally:
+
 ```python
 import fastaiagent as fa
-from fastaiagent.checkpointers import SQLiteCheckpointer
-from fastaiagent.checkpointers.platform_replica import restore_from_plane
 
 fa.connect(api_key="fa-...", target="https://your-plane.example.com")
 
-# ... original run checkpointed + replicated, then the local store was lost ...
+# A different machine. This store has never heard of the run.
+fresh = SQLiteCheckpointer(db_path="rebuilt.db")
+chain = build_chain(checkpointer=fresh)          # same chain definition (code)
+await chain.resume(execution_id, resume_value=Resume(approved=True))
+```
+
+Three rules worth knowing:
+
+* **Only when missing.** If the local store already holds the run, the plane is
+  not consulted at all — the local copy is the source of truth for a run on its
+  own machine, and the plane is a replica.
+* **Only when connected.** Disconnected, a resume fails exactly as it always
+  did. Nothing about local durability depends on the plane.
+* **`FASTAIAGENT_RESTORE_FROM_PLANE=0` turns it off.** The restore resurrects a
+  run whose local checkpoints were deliberately deleted — right for disaster
+  recovery, wrong for an erasure request. It is an environment switch rather
+  than a per-call argument because it is a deployment-wide policy.
+
+⚠ The **local UI's** resume button does not do this. It resolves the runner from
+a local checkpoint row and returns 404 when there is none, so it can only resume
+runs this machine already knows about. The **CLI** (`fastaiagent resume --runner
+…`) calls `aresume` directly and does restore.
+
+### Doing it by hand
+
+`restore_from_plane` is still public if you want the checkpoint without
+resuming — inspecting it, or restoring into a store you are not about to run:
+
+```python
+from fastaiagent.checkpointers.platform_replica import restore_from_plane
 
 fresh = SQLiteCheckpointer(db_path="rebuilt.db")
 ckpt = restore_from_plane(fresh, execution_id)   # GET …/latest → write locally
-if ckpt is not None:
-    # `fresh` now holds the latest checkpoint (and, for a paused run, its pending
-    # interrupt). A normal resume proceeds against it — the plane served, the SDK resumes.
-    chain = build_chain(checkpointer=fresh)       # same chain definition (code)
-    await chain.resume(execution_id, resume_value=Resume(approved=True))
 ```
 
-`restore_from_plane` returns the latest [`Checkpoint`](api-reference.md) the plane
-holds for `execution_id` (or `None` if not connected / none found), and writes it
-into the given checkpointer so a local resume can claim it.
+It returns the latest [`Checkpoint`](api-reference.md) the plane holds for
+`execution_id` (or `None` if not connected / none found), and writes it into the
+given checkpointer so a local resume can claim it. For a paused run it re-creates
+the pending interrupt too.
 
 ## What is replicated
 
