@@ -119,6 +119,48 @@ class TestProtocolConformance:
         assert latest.node_id == "node-2"
         assert latest.checkpoint_id
 
+    def test_reusing_a_checkpoint_id_raises_on_both_backends(self, store: Checkpointer) -> None:
+        """Durability audit D3 — the two backends must agree on id reuse.
+
+        SQLite has always raised (its ``id`` is the primary key and ``put`` is a
+        plain INSERT). Postgres used to ``ON CONFLICT DO UPDATE``, and the
+        divergence was invisible until the plane replica existed: its ingest
+        door is INSERT-ONLY, so a rewritten row re-pushed as a duplicate came
+        back ``{"ingested": 0}``, the SDK marked it synced, and the plane kept
+        the FIRST version. Local said ``completed``, the replica said
+        ``interrupted``, and nothing anywhere noticed.
+
+        The exception type is the driver's, not an SDK type — "matching SQLite"
+        means matching what it actually does, and SQLite propagates
+        ``sqlite3.IntegrityError`` untouched. Both are DBAPI ``IntegrityError``
+        subclasses, which is what a portable caller catches.
+        """
+        first = _make("exec-DUP", "node-1", 0)
+        store.put(first)
+
+        rewrite = _make("exec-DUP", "node-1", 0, status="interrupted")
+        rewrite.checkpoint_id = first.checkpoint_id
+        with pytest.raises(Exception) as excinfo:
+            store.put(rewrite)
+        assert "IntegrityError" in type(excinfo.value).__mro__[0].__name__ or any(
+            "IntegrityError" in c.__name__ for c in type(excinfo.value).__mro__
+        ), f"expected an integrity error, got {type(excinfo.value).__name__}"
+
+        # And the stored row is untouched — a refused write must not half-apply.
+        stored = store.get_by_id("exec-DUP", first.checkpoint_id)
+        assert stored is not None and stored.status == "completed"
+
+    def test_a_distinct_id_for_the_same_node_still_works(self, store: Checkpointer) -> None:
+        """Refusing reuse must not refuse a legitimate re-run of the same node.
+
+        A chain cycle re-executes a node and writes a SECOND checkpoint for it
+        with a fresh id — the executors never re-use one. That path has to stay
+        open, or this fix would break every looping chain.
+        """
+        store.put(_make("exec-CYCLE", "loop-node", 0))
+        store.put(_make("exec-CYCLE", "loop-node", 0))
+        assert len(store.list("exec-CYCLE")) == 2
+
     def test_get_last_missing_returns_none(self, store: Checkpointer) -> None:
         assert store.get_last("nope") is None
 
