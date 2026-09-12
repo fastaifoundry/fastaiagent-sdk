@@ -57,6 +57,15 @@ CREATE INDEX IF NOT EXISTS idx_cp_synced
 ALTER TABLE {schema}.checkpoints
     ADD COLUMN IF NOT EXISTS sync_error TEXT;
 
+-- Run-end marker + step classification (durability audit D5). Mirrors local.db
+-- schema v20. `run_end` is the value that matters: without it a finished run and
+-- one that died right after its last step both leave a `completed` checkpoint as
+-- the newest row, so neither the plane nor `aresume` can tell them apart. The
+-- plane's wire schema has carried `step_type` since WS2 (capped at 40 chars);
+-- the SDK just never sent it. No backfill -- NULL on an existing row is honest.
+ALTER TABLE {schema}.checkpoints
+    ADD COLUMN IF NOT EXISTS step_type TEXT;
+
 -- Partial index for the /approvals + Failed Executions pages — most rows
 -- are 'completed' and don't need to be scanned.
 CREATE INDEX IF NOT EXISTS idx_cp_status_problem

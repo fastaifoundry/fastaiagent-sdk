@@ -10,6 +10,8 @@ from fastaiagent._internal.errors import (
 )
 from fastaiagent.agent import Agent
 from fastaiagent.chain import Chain, ChainResult, ChainState, NodeType
+from fastaiagent.chain.checkpoint import latest_resumable
+from fastaiagent.chain.interrupt import AlreadyResumed
 from fastaiagent.chain.node import Edge, NodeConfig
 from fastaiagent.chain.validator import detect_cycles, validate_chain
 from fastaiagent.llm.client import LLMClient, LLMResponse
@@ -217,9 +219,14 @@ class TestCheckpoint:
         result = await chain.aexecute({"input": "test"})
 
         checkpoints = store.list(result.execution_id)
-        assert len(checkpoints) == 2
+        # Two node checkpoints, then the run-end marker (audit D5) — the row
+        # that lets anyone downstream tell a finished run from one that died
+        # right after its last node.
+        assert len(checkpoints) == 3
         assert checkpoints[0].node_id == "a"
         assert checkpoints[1].node_id == "b"
+        assert [c.step_type for c in checkpoints] == ["node", "node", "run_end"]
+        assert checkpoints[2].status == "completed"
         store.close()
 
     @pytest.mark.asyncio
@@ -233,7 +240,17 @@ class TestCheckpoint:
         result = await chain.aexecute({"input": "test"})
         latest = store.get_last(result.execution_id)
         assert latest is not None
-        assert latest.node_id == "b"
+        # The newest row is now the run-end marker, not the last node. That is
+        # the point of D5: "the last node completed" and "the run finished" were
+        # the same row, so neither the plane nor resume could tell them apart.
+        assert latest.step_type == "run_end"
+        assert latest.status == "completed"
+        # The last re-entry point is still node "b" — the marker is a tombstone,
+        # never something a resume restarts at.
+        with pytest.raises(AlreadyResumed):
+            latest_resumable(store, result.execution_id)
+        resumable = [c for c in store.list(result.execution_id) if c.step_type != "run_end"]
+        assert resumable[-1].node_id == "b"
         store.close()
 
 

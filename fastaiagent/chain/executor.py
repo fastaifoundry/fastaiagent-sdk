@@ -324,6 +324,7 @@ async def execute_chain(
                     execution_id=execution_id,
                     node_id=node_id,
                     node_index=idx,
+                    step_type="hitl_pause",
                     status="interrupted",
                     state_snapshot=state.snapshot(),
                     iteration_counters=iteration_counters,
@@ -413,6 +414,7 @@ async def execute_chain(
                         execution_id=execution_id,
                         node_id=node_id,
                         node_index=idx,
+                        step_type="node",
                         status="completed",
                         state_snapshot=state.snapshot(),
                         node_output=(

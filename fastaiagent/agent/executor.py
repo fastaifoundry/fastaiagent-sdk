@@ -154,6 +154,7 @@ def _record_agent_interrupt(
         execution_id=execution_id,
         node_id=node_id,
         node_index=iteration,
+        step_type="hitl_pause",
         status="interrupted",
         state_snapshot={
             "messages": _serialize_messages(messages),
@@ -214,6 +215,7 @@ def _put_turn_checkpoint(
             execution_id=execution_id,
             node_id=f"turn:{iteration}",
             node_index=iteration,
+            step_type="llm_call",
             status="completed",
             state_snapshot={
                 "messages": _serialize_messages(messages),
@@ -244,6 +246,7 @@ def _put_tool_checkpoint(
             execution_id=execution_id,
             node_id=f"turn:{iteration}/tool:{tool_name}",
             node_index=iteration,
+            step_type="tool_call",
             status="completed",
             state_snapshot={
                 "messages": _serialize_messages(messages),

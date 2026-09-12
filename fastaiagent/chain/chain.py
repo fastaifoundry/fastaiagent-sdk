@@ -9,6 +9,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from fastaiagent._internal.async_utils import run_sync
+from fastaiagent.chain.checkpoint import latest_resumable, write_run_end
 from fastaiagent.chain.executor import execute_chain
 from fastaiagent.chain.interrupt import AlreadyResumed, Resume
 from fastaiagent.chain.node import Edge, Node, NodeConfig, NodeType
@@ -239,18 +240,45 @@ class Chain:
                     except (TypeError, ValueError):
                         logger.debug("Failed to serialize chain input for trace", exc_info=True)
 
-            raw = await execute_chain(
-                nodes=self.nodes,
-                edges=self.edges,
-                initial_state=initial_state or {},
-                state_schema=self.state_schema,
-                checkpointer=store,
-                chain_name=self.name,
-                execution_id=execution_id,
-                hitl_handler=hitl_handler,
-                run_context=context,
-                strict_routing=self.strict_routing,
-            )
+            try:
+                raw = await execute_chain(
+                    nodes=self.nodes,
+                    edges=self.edges,
+                    initial_state=initial_state or {},
+                    state_schema=self.state_schema,
+                    checkpointer=store,
+                    chain_name=self.name,
+                    execution_id=execution_id,
+                    hitl_handler=hitl_handler,
+                    run_context=context,
+                    strict_routing=self.strict_routing,
+                )
+            except BaseException as exc:
+                # Terminal marker for a run that died (audit D5). Written HERE
+                # and not in ``execute_chain`` because that function recurses
+                # into itself for cycles with the same execution_id — a write
+                # there would fire once per loop iteration. ``aexecute`` is
+                # provably called once per run.
+                if store is not None and execution_id:
+                    write_run_end(
+                        store,
+                        execution_id=execution_id,
+                        chain_name=self.name,
+                        status="failed",
+                        error=exc,
+                    )
+                raise
+            # Only a run that actually ENDED gets a marker. A paused chain has
+            # not ended, and a row after its ``interrupted`` one would hide the
+            # pause from ``resume``'s status guard.
+            if store is not None and raw.get("status") == "completed":
+                write_run_end(
+                    store,
+                    execution_id=raw.get("execution_id") or execution_id or "",
+                    chain_name=self.name,
+                    status="completed",
+                    state_snapshot=raw.get("final_state"),
+                )
 
             if span is not None:
                 try:
@@ -294,7 +322,8 @@ class Chain:
         """
         store: Checkpointer = self._checkpointer or SQLiteCheckpointer()
         store.setup()
-        latest = store.get_last(execution_id)
+        # Refuses a finished run and steps past a `failed` tombstone (audit D5).
+        latest = latest_resumable(store, execution_id, runner="Execution")
         if latest is None:
             from fastaiagent._internal.errors import ChainCheckpointError
 
@@ -358,19 +387,37 @@ class Chain:
                     break
             start_node = order[resume_idx] if resume_idx and resume_idx < len(order) else None
 
-        raw = await execute_chain(
-            nodes=self.nodes,
-            edges=self.edges,
-            initial_state=state,
-            state_schema=self.state_schema,
-            checkpointer=store,
-            chain_name=self.name,
-            execution_id=execution_id,
-            resume_from_node=start_node,
-            resume_value=resume_value,
-            run_context=context,
-            strict_routing=self.strict_routing,
-        )
+        try:
+            raw = await execute_chain(
+                nodes=self.nodes,
+                edges=self.edges,
+                initial_state=state,
+                state_schema=self.state_schema,
+                checkpointer=store,
+                chain_name=self.name,
+                execution_id=execution_id,
+                resume_from_node=start_node,
+                resume_value=resume_value,
+                run_context=context,
+                strict_routing=self.strict_routing,
+            )
+        except BaseException as exc:
+            write_run_end(
+                store, execution_id=execution_id, chain_name=self.name, status="failed", error=exc
+            )
+            raise
+        # A resumed run that reaches the end has ended just as much as one that
+        # never paused, and earns the same marker. Missing this was the gap that
+        # left every HITL-approved run looking unfinished on the plane —
+        # ``resume`` calls ``execute_chain`` directly, bypassing ``aexecute``.
+        if raw.get("status") == "completed":
+            write_run_end(
+                store,
+                execution_id=execution_id,
+                chain_name=self.name,
+                status="completed",
+                state_snapshot=raw.get("final_state"),
+            )
 
         return ChainResult(
             output=raw["output"],
@@ -484,6 +531,7 @@ class Chain:
                 execution_id=fork_id,
                 node_id="__fork_origin__",
                 node_index=base.node_index,
+                step_type="fork_origin",
                 status="completed",
                 state_snapshot=dict(state),
             )

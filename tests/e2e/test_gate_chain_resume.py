@@ -55,6 +55,7 @@ from typing import Any
 
 import pytest
 
+from fastaiagent.chain.checkpoint import latest_resumable
 from tests.e2e.conftest import require_env
 
 pytestmark = pytest.mark.e2e
@@ -179,11 +180,17 @@ class TestChainResumeGate:
             f"step_c was never reached, must not have a checkpoint: {node_ids}"
         )
 
+        # The newest row is the ``failed`` run-end marker step_b's raise produced
+        # (audit D5) — the run ended, and the marker is what says so. The last
+        # RESUMABLE row is still step_a, and that is what resume re-enters at.
         latest = store.get_last(execution_id)
         assert latest is not None
-        assert latest.node_id == "step_a"
-        assert latest.state_snapshot.get("seed_value") == "original", (
-            f"step_a snapshot did not capture seed_value: {latest.state_snapshot}"
+        assert latest.node_id == "run_end" and latest.status == "failed"
+        resume_target = latest_resumable(store, execution_id)
+        assert resume_target is not None
+        assert resume_target.node_id == "step_a"
+        assert resume_target.state_snapshot.get("seed_value") == "original", (
+            f"step_a snapshot did not capture seed_value: {resume_target.state_snapshot}"
         )
 
     def test_03_resume_with_modified_state_completes(self, gate_state: dict[str, Any]) -> None:
@@ -255,12 +262,14 @@ class TestChainResumeGate:
             f"step_c checkpoint missing after successful resume: {node_ids}"
         )
 
-        # Latest checkpoint should be step_c (the last node).
+        # The newest row is now the run-end marker; the last NODE is step_c.
         latest = store.get_last(execution_id)
         assert latest is not None
-        assert latest.node_id == "step_c", f"latest checkpoint is not step_c: {latest.node_id}"
+        assert latest.node_id == "run_end" and latest.status == "completed"
+        nodes = [cp for cp in checkpoints if cp.step_type != "run_end"]
+        assert nodes[-1].node_id == "step_c", f"last node is not step_c: {nodes[-1].node_id}"
         # Top-level seed_value carried through the resume's modified_state.
-        assert latest.state_snapshot.get("seed_value") == "patched", (
+        assert nodes[-1].state_snapshot.get("seed_value") == "patched", (
             f"latest checkpoint missing patched seed_value: {latest.state_snapshot}"
         )
         # And step_c's nested output reflects the patched seed.

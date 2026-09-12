@@ -190,6 +190,10 @@ def _to_wire(row: dict[str, Any]) -> dict[str, Any]:
         "chain_id": chain_name if rtype == "chain" else None,
         "node_id": row.get("node_id"),
         "step_index": row.get("node_index"),
+        # The plane has always had this key (capped at 40 chars) and the SDK
+        # never sent it, which is why a finished run and one that died right
+        # after its last step were indistinguishable there (audit D5).
+        "step_type": row.get("step_type"),
         "status": status,
         "parent_checkpoint_id": row.get("parent_checkpoint_id"),
         "state_snapshot": _jload(row.get("state_snapshot")),
@@ -225,6 +229,7 @@ def _wire_to_checkpoint(data: dict[str, Any]) -> Checkpoint:
         execution_id=data.get("execution_id") or "",
         node_id=data.get("node_id") or "",
         node_index=data.get("step_index") or 0,
+        step_type=data.get("step_type"),
         status=data.get("status") or "completed",
         state_snapshot=data.get("state_snapshot") or {},
         node_input=meta.get("node_input") or {},

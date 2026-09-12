@@ -69,7 +69,9 @@ class TestChainFork:
 
         # (c) ORIGINAL INTACT: the source execution's checkpoints are unchanged.
         orig_after = cp.list("orig")
-        assert {c.node_id for c in orig_after} == {"n1", "n2"}
+        # ``run_end`` is the terminal marker the original run wrote when it
+        # finished (audit D5) — a fork must not disturb it either.
+        assert {c.node_id for c in orig_after} == {"n1", "n2", "run_end"}
         n2_orig = next(c for c in orig_after if c.node_id == "n2")
         assert n2_orig.state_snapshot["output"] == 20
 

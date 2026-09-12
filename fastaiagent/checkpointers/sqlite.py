@@ -93,12 +93,12 @@ class SQLiteCheckpointer:
         self._conn().execute(
             """INSERT INTO checkpoints
                (id, checkpoint_id, parent_checkpoint_id, chain_name,
-                execution_id, node_id, node_index, status,
+                execution_id, node_id, node_index, step_type, status,
                 state_snapshot, node_input, node_output,
                 iteration, iteration_counters,
                 interrupt_reason, interrupt_context, agent_path,
                 created_at, project_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 checkpoint.checkpoint_id,
                 checkpoint.checkpoint_id,
@@ -107,6 +107,7 @@ class SQLiteCheckpointer:
                 checkpoint.execution_id,
                 checkpoint.node_id,
                 checkpoint.node_index,
+                checkpoint.step_type,
                 checkpoint.status,
                 json.dumps(checkpoint.state_snapshot),
                 json.dumps(checkpoint.node_input),
@@ -212,12 +213,12 @@ class SQLiteCheckpointer:
                 conn.execute(
                     """INSERT INTO checkpoints
                        (id, checkpoint_id, parent_checkpoint_id, chain_name,
-                        execution_id, node_id, node_index, status,
+                        execution_id, node_id, node_index, step_type, status,
                         state_snapshot, node_input, node_output,
                         iteration, iteration_counters,
                         interrupt_reason, interrupt_context, agent_path,
                         created_at, project_id)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         checkpoint.checkpoint_id,
                         checkpoint.checkpoint_id,
@@ -226,6 +227,7 @@ class SQLiteCheckpointer:
                         checkpoint.execution_id,
                         checkpoint.node_id,
                         checkpoint.node_index,
+                        checkpoint.step_type,
                         checkpoint.status,
                         json.dumps(checkpoint.state_snapshot),
                         json.dumps(checkpoint.node_input),
@@ -429,6 +431,7 @@ class SQLiteCheckpointer:
             execution_id=row["execution_id"],
             node_id=row["node_id"],
             node_index=row["node_index"] or 0,
+            step_type=row.get("step_type"),
             status=row.get("status") or "completed",
             state_snapshot=json.loads(row["state_snapshot"] or "{}"),
             node_input=json.loads(row["node_input"] or "{}"),

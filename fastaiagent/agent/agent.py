@@ -24,7 +24,12 @@ from fastaiagent.agent.middleware import (
     MiddlewareContext,
     _MiddlewarePipeline,
 )
-from fastaiagent.chain.checkpoint import Checkpoint
+from fastaiagent.chain.checkpoint import (
+    Checkpoint,
+    is_run_end,
+    latest_resumable,
+    write_run_end,
+)
 from fastaiagent.chain.idempotent import _current_checkpointer
 from fastaiagent.chain.interrupt import (
     AlreadyResumed,
@@ -736,6 +741,17 @@ class Agent:
             f"{parent_path}/{self._agent_path_label}" if parent_path else self._agent_path_label
         )
         ap_token = _agent_path.set(new_path)
+        # ⚠ Whether this Agent is the OUTERMOST runner of ``exec_id``, and so the
+        # one entitled to write its run-end marker (audit D5). A Swarm's child
+        # agents and a Supervisor's worker clones run under the SAME
+        # execution_id as their parent; without this, each child finishing its
+        # own tool loop would stamp "the run ended" on a run that is still
+        # handing off, and a swarm would accumulate one false terminal row per
+        # hop. An inherited ``_agent_path`` is exactly the signal that something
+        # above us owns this execution — a Supervisor's own inner agent sees
+        # None here (the Supervisor sets no path of its own) and correctly
+        # counts as outermost.
+        owns_run = parent_path is None
         cp_token = _current_checkpointer.set(self._checkpointer)
         # Expose the RunContext so memory blocks can resolve a dynamic scope_id
         # (e.g. per-user) for this turn. Absent context → callable ids resolve
@@ -815,6 +831,9 @@ class Agent:
                     **kwargs,
                 )
             except _AgentInterrupted as susp:
+                # Deliberately NO run-end marker: a paused run has not ended, and
+                # a row written after the ``interrupted`` one would hide the pause
+                # from ``aresume``'s status guard (audit D5).
                 latency = int((time.monotonic() - start) * 1000)
                 return AgentResult(
                     output="",
@@ -831,6 +850,20 @@ class Agent:
                     # a pause is not a reason to drop what they reported.
                     guardrails=collected_firings(),
                 )
+            except BaseException as exc:
+                # The run died. Mark it, then re-raise untouched — the marker is
+                # best-effort inside ``write_run_end`` precisely so a checkpointer
+                # problem here can never replace the exception the caller needs.
+                if self._checkpointer is not None and owns_run:
+                    write_run_end(
+                        self._checkpointer,
+                        execution_id=exec_id,
+                        chain_name=self.name,
+                        status="failed",
+                        error=exc,
+                        agent_path=new_path,
+                    )
+                raise
 
             output = response.content or ""
             parsed, perr = self._try_parse(output)
@@ -868,6 +901,18 @@ class Agent:
 
             latency = int((time.monotonic() - start) * 1000)
             tokens = response.usage.get("total_tokens", 0) + retry_tokens
+
+            # The run finished. Without this row a completed run and one that
+            # crashed right after its last turn are byte-identical — both leave a
+            # ``completed`` turn checkpoint as the newest row (audit D5).
+            if self._checkpointer is not None and owns_run:
+                write_run_end(
+                    self._checkpointer,
+                    execution_id=exec_id,
+                    chain_name=self.name,
+                    status="completed",
+                    agent_path=new_path,
+                )
 
             return AgentResult(
                 output=output,
@@ -1075,10 +1120,19 @@ class Agent:
             """Return the most recently committed checkpoint, optionally
             filtered to those whose ``agent_path`` starts with the prefix
             and (if given) whose ``status`` matches.
+
+            Run-end markers are never returned: they are tombstones, not
+            re-entry points (audit D5). The unfiltered branch routes through
+            :func:`latest_resumable`, which is also what refuses to resume a run
+            that already finished. The filtered branch skips them inline —
+            a ``status=`` filter would already exclude a ``failed`` marker, but
+            not a ``completed`` one.
             """
             if agent_path_prefix is None and status is None:
-                return store.get_last(execution_id)
+                return latest_resumable(store, execution_id, runner="Agent execution")
             for cp in reversed(store.list(execution_id, limit=500)):
+                if is_run_end(cp):
+                    continue
                 if status is not None and cp.status != status:
                     continue
                 if agent_path_prefix is not None and not (
@@ -1319,6 +1373,7 @@ class Agent:
                 execution_id=fork_id,
                 node_id="__fork_origin__",
                 node_index=base.node_index,
+                step_type="fork_origin",
                 status="completed",
                 state_snapshot=dict(base.state_snapshot),
                 agent_path=base.agent_path,

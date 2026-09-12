@@ -12,6 +12,7 @@ from fastaiagent._internal.async_utils import run_sync
 from fastaiagent.agent.agent import Agent, AgentConfig, AgentResult
 from fastaiagent.agent.context import RunContext
 from fastaiagent.agent.executor import _AgentInterrupted
+from fastaiagent.chain.checkpoint import latest_resumable
 from fastaiagent.chain.interrupt import (
     Resume,
     _execution_id,
@@ -176,9 +177,7 @@ class Supervisor:
         try:
             resp = await self.llm.acomplete(
                 [
-                    SystemMessage(
-                        "You are an output reviewer. Reply with strict JSON only."
-                    ),
+                    SystemMessage("You are an output reviewer. Reply with strict JSON only."),
                     UserMessage(prompt),
                 ]
             )
@@ -287,24 +286,18 @@ class Supervisor:
                     exec_id = _execution_id.get()
                     rv = _resume_value.get()
                     # Branch: resume vs. fresh run.
-                    if exec_id is not None and _supervisor._has_worker_state(
-                        exec_id, _worker.role
-                    ):
+                    if exec_id is not None and _supervisor._has_worker_state(exec_id, _worker.role):
                         # Scope the resume to the worker's subtree so it
                         # doesn't accidentally pick up the supervisor's own
                         # pre-tool checkpoint as "latest".
-                        worker_prefix = (
-                            f"supervisor:{_supervisor.name}/worker:{_worker.role}"
-                        )
+                        worker_prefix = f"supervisor:{_supervisor.name}/worker:{_worker.role}"
                         return await clone.aresume(
                             exec_id,
                             resume_value=rv,
                             context=_ctx,
                             agent_path_prefix=worker_prefix,
                         )
-                    return await clone.arun(
-                        current_task, context=_ctx, execution_id=exec_id
-                    )
+                    return await clone.arun(current_task, context=_ctx, execution_id=exec_id)
 
                 current_task = task
                 last_output = ""
@@ -476,7 +469,8 @@ class Supervisor:
         store: Checkpointer = self._checkpointer or SQLiteCheckpointer()
         store.setup()
 
-        latest = store.get_last(execution_id)
+        # Refuses a finished run and steps past a `failed` tombstone (audit D5).
+        latest = latest_resumable(store, execution_id, runner="Supervisor execution")
         if latest is None:
             raise ChainCheckpointError(
                 f"No checkpoint found for supervisor execution '{execution_id}'"

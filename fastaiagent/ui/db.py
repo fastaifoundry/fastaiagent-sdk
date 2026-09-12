@@ -17,7 +17,7 @@ from pathlib import Path
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
 
-CURRENT_SCHEMA_VERSION = 19
+CURRENT_SCHEMA_VERSION = 20
 
 # A migration step is either a SQL string or a callable that takes the
 # ``SQLiteHelper`` and runs whatever logic it needs (e.g., gated
@@ -500,6 +500,33 @@ def _v19_add_checkpoint_sync_error(db: SQLiteHelper) -> None:
     if not rows:
         return
     _add_column_if_missing(db, "checkpoints", "sync_error", "TEXT")
+
+
+def _v20_add_checkpoint_step_type(db: SQLiteHelper) -> None:
+    """What kind of boundary a checkpoint sits on (durability audit D5).
+
+    ``llm_call`` / ``tool_call`` / ``hitl_pause`` / ``node`` / ``handoff`` /
+    ``fork_origin``, and — the reason this column exists — ``run_end``.
+
+    Until now nothing marked the END of a run, so a finished run and one that
+    died the instant after its last step were byte-identical: both left a
+    ``completed`` checkpoint as the newest row. The plane's console could only
+    say "last step done", its ``failed`` filter could never match, and
+    ``aresume`` on a run that had already finished happily re-executed it.
+
+    The plane's wire schema has carried ``step_type`` since WS2 and caps it at
+    40 characters — the SDK simply never sent it. So this column, and nothing on
+    the plane, is what was missing.
+
+    No backfill. A NULL on every existing row is honest: we genuinely do not
+    know what boundary those checkpoints sat on, and guessing ``node`` would
+    invent history. :func:`~fastaiagent.chain.checkpoint.is_run_end` reads NULL
+    as "not a run end", which is correct for every pre-v20 row.
+    """
+    rows = db.fetchall("SELECT name FROM sqlite_master WHERE type='table' AND name='checkpoints'")
+    if not rows:
+        return
+    _add_column_if_missing(db, "checkpoints", "step_type", "TEXT")
 
 
 def _v14_add_sdk_instance(db: SQLiteHelper) -> None:
@@ -1011,6 +1038,12 @@ _MIGRATIONS: dict[int, list[_Step]] = {
         # later checkpoint on that checkpointer. See
         # _v19_add_checkpoint_sync_error.
         _v19_add_checkpoint_sync_error,
+    ],
+    20: [
+        # Durability audit D5: a run-end marker. Adds ``step_type`` so a
+        # finished run stops looking identical to one that died right after its
+        # last step. See _v20_add_checkpoint_step_type.
+        _v20_add_checkpoint_step_type,
     ],
 }
 

@@ -175,14 +175,14 @@ class PostgresCheckpointer:
                     f"""
                     INSERT INTO {self._t_checkpoints} (
                         checkpoint_id, parent_checkpoint_id, chain_name,
-                        execution_id, node_id, node_index, status,
+                        execution_id, node_id, node_index, step_type, status,
                         state_snapshot, node_input, node_output,
                         iteration, iteration_counters,
                         interrupt_reason, interrupt_context, agent_path,
                         created_at, synced
                     )
                     VALUES (
-                        %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, %s,
                         %s, %s, %s, %s, %s,
                         %s, %s, %s, %s, FALSE
                     )
@@ -202,6 +202,7 @@ class PostgresCheckpointer:
                         checkpoint.execution_id,
                         checkpoint.node_id,
                         checkpoint.node_index,
+                        checkpoint.step_type,
                         checkpoint.status,
                         Jsonb(checkpoint.state_snapshot),
                         Jsonb(checkpoint.node_input),
@@ -333,14 +334,14 @@ class PostgresCheckpointer:
                     f"""
                     INSERT INTO {self._t_checkpoints} (
                         checkpoint_id, parent_checkpoint_id, chain_name,
-                        execution_id, node_id, node_index, status,
+                        execution_id, node_id, node_index, step_type, status,
                         state_snapshot, node_input, node_output,
                         iteration, iteration_counters,
                         interrupt_reason, interrupt_context, agent_path,
                         created_at, synced
                     )
                     VALUES (
-                        %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, %s,
                         %s, %s, %s, %s, %s,
                         %s, %s, %s, %s, FALSE
                     )
@@ -352,6 +353,7 @@ class PostgresCheckpointer:
                         checkpoint.execution_id,
                         checkpoint.node_id,
                         checkpoint.node_index,
+                        checkpoint.step_type,
                         checkpoint.status,
                         Jsonb(checkpoint.state_snapshot),
                         Jsonb(checkpoint.node_input),
@@ -594,6 +596,7 @@ class PostgresCheckpointer:
             execution_id=row["execution_id"],
             node_id=row["node_id"],
             node_index=row["node_index"] or 0,
+            step_type=row.get("step_type"),
             status=row.get("status") or "completed",
             state_snapshot=dict(row["state_snapshot"]) if row["state_snapshot"] else {},
             node_input=dict(row["node_input"]) if row["node_input"] else {},
