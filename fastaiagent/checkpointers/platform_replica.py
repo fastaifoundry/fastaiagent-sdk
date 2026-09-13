@@ -155,17 +155,47 @@ def _iso(value: Any) -> str | None:
 
 
 def _resource_type(row: dict[str, Any]) -> str:
-    """Best-effort agent-vs-chain discriminator from the checkpoint row.
+    """What topology produced this run — ``agent``, ``chain``, ``swarm`` or
+    ``supervisor``.
 
-    Agents stamp ``agent_path='agent:<name>/…'`` and ``node_id='turn:N/tool:…'``;
-    plain chains do neither. Display/filtering only — restore is by execution_id,
-    so an occasional misclassification never affects correctness.
+    Read from the **root** of ``agent_path``, not from the row's own depth, and
+    that distinction is the fix (audit D8). The old version asked "does this row
+    look like an agent's?", which is a question about the *checkpoint*; the wire
+    field is a property of the **run**. A swarm writes its own handoff rows under
+    ``swarm:<name>`` while its child agents write turn rows under
+    ``swarm:<name>/agent:<child>``, so asking per row returned ``chain`` for some
+    and ``agent`` for others — one run, two answers, and never ``swarm``.
+    Measured on a real 2-agent swarm before the fix::
+
+        handoff:0                    swarm:deskflow                  -> chain
+        turn:0                       swarm:deskflow/agent:triage     -> agent
+        run_end                      swarm:deskflow                  -> chain
+
+    The plane derives a run's type from whichever checkpoint is latest, so that
+    mix meant the displayed type depended on which row happened to be newest.
+    Rooting on the path makes every row of a run agree.
+
+    ``node_id='turn:N'`` stays as a fallback for rows with no ``agent_path`` at
+    all. Display and filtering only — restore is by ``execution_id``, so this has
+    never affected correctness, only what an operator is told.
     """
     ap = row.get("agent_path") or ""
     nid = row.get("node_id") or ""
-    if ap.startswith("agent:") or nid.startswith("turn:"):
+    root = ap.split("/", 1)[0]
+    if root.startswith("swarm:"):
+        return "swarm"
+    if root.startswith("supervisor:"):
+        return "supervisor"
+    if root.startswith("agent:") or nid.startswith("turn:"):
         return "agent"
     return "chain"
+
+
+#: Topologies whose identity rides in ``agent_id``; a plain chain uses
+#: ``chain_id``. Swarm and supervisor are agent-shaped runs, so sending them with
+#: BOTH ids null — which is what the old ``rtype == "agent"`` test did once the
+#: two new values existed — would have replaced a wrong label with no label.
+_AGENT_SHAPED = frozenset({"agent", "swarm", "supervisor"})
 
 
 def _to_wire(row: dict[str, Any]) -> dict[str, Any]:
@@ -186,7 +216,16 @@ def _to_wire(row: dict[str, Any]) -> dict[str, Any]:
         "checkpoint_id": cid,
         "execution_id": row.get("execution_id") or "",
         "resource_type": rtype,
-        "agent_id": chain_name if rtype == "agent" else None,
+        # ⚠ Still the NAME, not the plane's agent UUID. That half of D8 is
+        # deliberately not done: only ``Agent`` ever registers with the plane, so
+        # a Chain, Swarm or Supervisor has no UUID to send and never will;
+        # registration races the first checkpoint, so resolving one at write time
+        # would give a single run two different ids; and the restore path rebuilds
+        # ``chain_name`` from this field, so a UUID here returns a run named
+        # ``ed1be3bc-…``. Shipping it would write permanently inconsistent
+        # history into an append-only replica. The honest version is to register
+        # the other three topologies first.
+        "agent_id": chain_name if rtype in _AGENT_SHAPED else None,
         "chain_id": chain_name if rtype == "chain" else None,
         "node_id": row.get("node_id"),
         "step_index": row.get("node_index"),

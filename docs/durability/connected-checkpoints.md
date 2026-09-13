@@ -120,6 +120,22 @@ and so a finished run from one that died right after its last step. Without it
 the console can only report the status of the latest checkpoint, which is why it
 renders "last step done" rather than "completed".
 
+`resource_type` says what **topology** produced the run — `agent`, `chain`,
+`swarm` or `supervisor` — read from the root of the run's `agent_path`, so every
+checkpoint of one run reports the same value. It is read from the root rather
+than from each row's own depth because the field describes the *run*, not the
+checkpoint: a swarm writes its handoff rows under `swarm:<name>` while its child
+agents write turn rows under `swarm:<name>/agent:<child>`, so asking per row used
+to return `chain` for some and `agent` for others, and never `swarm`.
+
+!!! note "`agent_id` is the agent's name, not the plane's agent UUID"
+    So the Durability view cannot yet link a run to its entry in the Agents
+    inventory. Sending the UUID is not a small change: only `Agent` registers
+    with the plane at all — `Chain`, `Swarm` and `Supervisor` never do, so they
+    have no id to send — registration races the first checkpoint of a run, and
+    the restore path rebuilds the agent's name *from* this field. Registering the
+    other three topologies is the prerequisite.
+
 In this release `state_snapshot` is replicated **in clear**. A customer-held
 encryption envelope (BYOK) for the payload is a documented future seam; metadata
 stays clear regardless.
