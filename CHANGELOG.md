@@ -5,6 +5,148 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.65.0] - 2026-09-13 — the SDK half of the durability audit
+
+The 2026-09-12 cross-repo durability audit found ten defects across the SDK's
+local-first checkpointing and the control plane's central replica. The plane's
+half shipped first, deliberately: it widened what its ingest door accepts so this
+release could send it. This is the SDK's half — six findings, each landed on its
+own with its own red proof, plus three defects and two wrong assumptions the
+audit itself did not have.
+
+The through-line is that **a durable copy which quietly disagrees with the
+original is worse than no durable copy.** Four of these were silent: an outbox
+that stalled forever, a replica that kept a superseded version, a finished run
+that could be re-executed, and a run the plane held that a resume refused to
+look for.
+
+### Changed — behaviour, signed off
+
+**Re-using a `checkpoint_id` now raises on `PostgresCheckpointer`.** `put` was
+`ON CONFLICT (checkpoint_id) DO UPDATE`; it is now a plain `INSERT` and a
+duplicate raises the driver's `UniqueViolation`, matching `SQLiteCheckpointer`,
+whose `id` has always been the primary key. The rewrite was safe only while
+nothing else held a copy. The plane's ingest door is **insert-only**, so a
+rewritten row was re-pushed, came back `{"ingested": 0}`, was marked synced, and
+the replica kept the **first** version forever. Reproduced live: local
+`completed`, plane `interrupted`, `0` rows un-acked — the SDK believed it was
+fully in sync.
+
+> **If this affects you:** the built-in executors never re-use a
+> `checkpoint_id`, so no `Chain` / `Agent` / `Swarm` / `Supervisor` run changes.
+> Only code calling `put()` directly with an id it has already written sees an
+> error where it previously saw a silent rewrite — which is the behaviour it
+> needed, because the plane's copy was never being rewritten with it. To record a
+> revised state, write a **new** checkpoint; a chain cycle re-running a node
+> already does exactly that.
+
+**Resuming a run that already finished now raises instead of re-running it.**
+Nothing marked the end of a run, so a completed run and one that died the instant
+after its last step were byte-identical. `aresume` on a finished run found its
+last `completed` checkpoint and cheerfully re-executed — measured at **2 extra
+node calls with a clean return** on a 2-node chain, re-calling the model and
+re-firing every side effect not wrapped in `@idempotent`. It now raises
+`AlreadyResumed`.
+
+> **If this affects you:** a **failed** run is still resumable — that is crash
+> recovery, and it behaves exactly as before. Only a *successful* run is refused.
+> Use `fork()` to branch from one of its checkpoints, or a fresh `execution_id`.
+
+**Every run writes one extra checkpoint.** The run-end marker above. `list()`
+returns one more row, `get_last()` returns the marker rather than the last step,
+and a `failed` run now appears in the Local UI's recoverable banner for the first
+time — no SDK path had ever written `status="failed"`.
+
+**The checkpoint outbox is no longer unconditionally non-lossy.** It still has no
+age or count bound, but a checkpoint the plane refuses on *payload* grounds is
+now abandoned deliberately rather than re-sent forever. One checkpoint missing
+from the replica beats every later one stranded behind it.
+
+### Fixed
+
+**A poison row no longer stalls the entire outbox.** The drain sends the oldest
+un-acked rows as one batch and stopped at the first failure while leaving them
+buffered — so the next kick re-sent the same batch, got the same refusal, and
+stopped again. One bad row stranded **every later checkpoint of every run** on
+that checkpointer, permanently. A refused batch is now bisected until the
+offender stands alone, that row is quarantined with its reason, and the drain
+advances. Live against a plane: **5 of 5 checkpoints stranded before, 0 after.**
+
+Only payload-shaped refusals (400, 409, 413, 422) qualify. A 401, 403 (domain not
+entitled to `connected_state_plane`), 404, 408 or 429 is a condition of the
+*connection*, not of any row, and still leaves everything buffered — quarantining
+on those would silently discard an entire tenant's replica the first time a plan
+lapsed. Two tests exist purely to hold that line.
+
+**Resume now restores from the plane when this machine has never seen the run.**
+`restore_from_plane` shipped as a helper **nothing called**: `aresume`,
+`Chain.resume`, `Swarm.aresume`, `Supervisor.aresume` and the CLI all consulted
+local storage only, so on a fresh machine a resume failed even though the plane
+was holding the state. The `export_checkpoints` docstring had promised
+cross-machine resume since WS2. Only when the local store is empty for that id,
+only when connected, and `FASTAIAGENT_RESTORE_FROM_PLANE=0` turns it off — the
+restore resurrects a run whose local checkpoints were deliberately deleted, which
+is right for disaster recovery and wrong for an erasure request.
+
+**A swarm no longer reports itself as a chain.** `resource_type` was a prefix
+guess that returned only `agent` or `chain`, asked per *checkpoint* rather than
+per *run* — so one swarm emitted both values and never `swarm`. It now reads the
+root of `agent_path`, and every row of a run agrees.
+
+**Three comments described a plane that no longer exists.** All three said the
+plane picks "latest" by `sequence` — which is exactly the defect the plane fixed;
+it orders by the client clock now. A comment describing behaviour the code no
+longer has is worse than none.
+
+### Added
+
+- `step_type` on `Checkpoint` (`llm_call`, `tool_call`, `hitl_pause`, `node`,
+  `handoff`, `fork_origin`, `run_end`) — the plane's wire has always had this key
+  and the SDK never sent it.
+- `QuarantinableCheckpointer`, a **third** optional protocol. Adding a method to
+  `ReplicatedCheckpointer` would have silently stopped every third-party
+  implementation conforming; a store without `mark_quarantined` keeps the old
+  behaviour rather than losing a row it cannot record the loss of.
+- `is_run_end` / `latest_resumable` / `restore_if_missing`, for anyone building
+  their own resume surface.
+- Local schema **v19** (`sync_error`) and **v20** (`step_type`); Postgres gets
+  both via `ADD COLUMN IF NOT EXISTS` on the next `setup()`. Additive, no
+  backfill — a NULL `step_type` on an existing row reads as "not a run end",
+  which keeps every pre-upgrade run resumable.
+- The Local UI's execution inspector shows a checkpoint that never reached the
+  plane as **not replicated**, with the plane's own reason. Until now a failed
+  replication was invisible on every SDK-side surface.
+
+### Notes
+
+**Known limits, stated rather than discovered later.** The local UI's resume
+button does **not** restore from the plane — it resolves its runner from a local
+checkpoint row and 404s without one. Wiring it would make that route's
+project-scope guard bypassable for any run in the domain's replica, which is a
+decision, not a detail. The CLI does restore.
+
+**`agent_id` on the wire is still the agent's name, not the plane's UUID,** so
+the Durability view cannot yet link a run to the Agents inventory. Deliberate:
+only `Agent` registers with the plane at all — `Chain`, `Swarm` and `Supervisor`
+never do — registration races the first checkpoint of a run, and the restore path
+rebuilds the agent's name *from* that field. Registering the other three
+topologies is the prerequisite.
+
+**Reverted before release: durability for platform-initiated runs.** Built, then
+removed on review. The runner only executes pre-production commands, per-case
+checkpoints had nothing that resumed them, and every playground click would have
+put a row in an operational fleet view. Its two findings are kept: a HITL agent
+run from the Playground **crashes** (its pause has nowhere to persist), and
+adding a checkpointer only changed that to reporting `completed` with an empty
+answer. Both need a fix that reaches the plane's command contract.
+
+**Three defects found while doing this work, not yet fixed:** `prune()` is
+`synced`-blind in both backends, so an un-acked checkpoint older than the cutoff
+is deleted before it replicates; a legacy row with a NULL `checkpoint_id`
+re-POSTs forever because `mark_synced` cannot match it; and a
+non-`TransportError` exception escapes the drain's daemon thread as a bare
+traceback.
+
 ## [1.64.0] - 2026-09-11 — the last of the guardrail audit
 
 The closing release of the 2026-09-10 cross-repo audit. Two halves: three
