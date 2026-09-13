@@ -11,8 +11,8 @@ This demo:
 * drains the outbox to ``POST /public/v1/checkpoints/ingest`` (``synced=1`` proves
   a confirmed 2xx — and the paused run's checkpoint is **non-lossy**, never
   abandoned);
-* simulates local loss with a **fresh, empty** checkpointer, restores the latest
-  checkpoint from ``GET /public/v1/checkpoints/{id}/latest``, and **resumes to
+* simulates local loss with a **fresh, empty** checkpointer — ``resume`` fetches
+  the run from ``GET /public/v1/checkpoints/{id}/latest`` by itself — and **resumes to
   completion** from the plane copy.
 
 See docs/durability/connected-checkpoints.md for the console run-health view.
@@ -27,7 +27,7 @@ Expected output (snapshot — real run against a local plane on :20001):
     chain paused: status=paused (checkpoints written locally)
     replicated: 2 checkpoint(s) synced=1 (incl. the interrupted one — non-lossy)
     plane served latest: status=interrupted node=approval
-    restored into a FRESH checkpointer; resuming from the plane copy...
+    resuming against a FRESH checkpointer that has never seen this run...
     resumed from plane: status=completed final_decision=True
     done — durability round-trip (replicate -> restore -> resume) complete.
 """
@@ -141,9 +141,14 @@ def main() -> int:
         print(f"plane served latest: status={served.status} node={served.node_id}")
 
         # Simulate local loss: a brand-new, empty checkpointer.
+        #
+        # Since 1.65.0 `resume` does the restore itself when it is connected and
+        # the local store has never seen the run — no `restore_from_plane` call
+        # here, which is the whole "restore anywhere" story. The helper is still
+        # public for when you want the checkpoint WITHOUT resuming; set
+        # FASTAIAGENT_RESTORE_FROM_PLANE=0 to turn the automatic step off.
         chain2, store2 = _build_chain(f".fastaiagent/dur-demo-2-{execution_id}.db")
-        platform_replica.restore_from_plane(store2, execution_id)
-        print("restored into a FRESH checkpointer; resuming from the plane copy...")
+        print("resuming against a FRESH checkpointer that has never seen this run...")
 
         resumed = run_sync(
             chain2.resume(

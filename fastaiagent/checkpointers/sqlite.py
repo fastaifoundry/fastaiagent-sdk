@@ -93,12 +93,12 @@ class SQLiteCheckpointer:
         self._conn().execute(
             """INSERT INTO checkpoints
                (id, checkpoint_id, parent_checkpoint_id, chain_name,
-                execution_id, node_id, node_index, status,
+                execution_id, node_id, node_index, step_type, status,
                 state_snapshot, node_input, node_output,
                 iteration, iteration_counters,
                 interrupt_reason, interrupt_context, agent_path,
                 created_at, project_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 checkpoint.checkpoint_id,
                 checkpoint.checkpoint_id,
@@ -107,6 +107,7 @@ class SQLiteCheckpointer:
                 checkpoint.execution_id,
                 checkpoint.node_id,
                 checkpoint.node_index,
+                checkpoint.step_type,
                 checkpoint.status,
                 json.dumps(checkpoint.state_snapshot),
                 json.dumps(checkpoint.node_input),
@@ -212,12 +213,12 @@ class SQLiteCheckpointer:
                 conn.execute(
                     """INSERT INTO checkpoints
                        (id, checkpoint_id, parent_checkpoint_id, chain_name,
-                        execution_id, node_id, node_index, status,
+                        execution_id, node_id, node_index, step_type, status,
                         state_snapshot, node_input, node_output,
                         iteration, iteration_counters,
                         interrupt_reason, interrupt_context, agent_path,
                         created_at, project_id)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         checkpoint.checkpoint_id,
                         checkpoint.checkpoint_id,
@@ -226,6 +227,7 @@ class SQLiteCheckpointer:
                         checkpoint.execution_id,
                         checkpoint.node_id,
                         checkpoint.node_index,
+                        checkpoint.step_type,
                         checkpoint.status,
                         json.dumps(checkpoint.state_snapshot),
                         json.dumps(checkpoint.node_input),
@@ -307,9 +309,20 @@ class SQLiteCheckpointer:
         """Return up to ``limit`` un-acked checkpoint rows (oldest first).
 
         ``rowid`` is exposed as ``_seq`` — SQLite's strictly-monotonic insertion
-        order — which the replicator forwards as the plane's ``sequence`` so the
-        "latest checkpoint" restore is unambiguous. Scoped to ``project_id`` (the
-        local stamp) when given, mirroring the trace outbox.
+        order — which the replicator forwards as the plane's ``sequence``.
+
+        ⚠ That does **not** make the restore unambiguous, whatever this docstring
+        used to claim. ``rowid`` is per-DATABASE-FILE: a fresh store starts at 1
+        again, so after a restore its newer rows carry smaller sequences than the
+        lost store's older ones. The plane orders by the client clock now and
+        uses ``sequence`` only as a third-level tie-break within one store
+        (finding D1). A Postgres checkpointer sends none at all.
+
+        Scoped to ``project_id`` (the local stamp) when given, mirroring the
+        trace outbox. Note the drain always passes one: ``safe_get_project_id()``
+        returns ``""`` rather than ``None``, so this branch is the one that runs
+        in practice — see "One tenant per runner" in
+        ``docs/durability/connected-checkpoints.md``.
         """
         if project_id is not None:
             rows = self._conn().fetchall(
@@ -336,6 +349,22 @@ class SQLiteCheckpointer:
             self._conn().execute(
                 f"UPDATE checkpoints SET synced = 1 WHERE checkpoint_id IN ({placeholders})",
                 tuple(chunk),
+            )
+
+    def mark_quarantined(self, reasons: dict[str, str]) -> None:
+        """Park checkpoints the plane can never ingest, keyed id → reason (D2).
+
+        Sets ``synced = 1`` so ``fetch_unsynced`` stops returning the row — the
+        drain must advance past it — and records ``sync_error`` so the row stays
+        distinguishable from one that actually reached the plane. One statement
+        per row: the map is at most a handful of ids (isolation narrows a refused
+        batch down to the offenders), so a CASE expression would cost more to read
+        than it saves.
+        """
+        for checkpoint_id, reason in reasons.items():
+            self._conn().execute(
+                "UPDATE checkpoints SET synced = 1, sync_error = ? WHERE checkpoint_id = ?",
+                (reason, checkpoint_id),
             )
 
     # --- deletes / prune ---------------------------------------------
@@ -413,6 +442,7 @@ class SQLiteCheckpointer:
             execution_id=row["execution_id"],
             node_id=row["node_id"],
             node_index=row["node_index"] or 0,
+            step_type=row.get("step_type"),
             status=row.get("status") or "completed",
             state_snapshot=json.loads(row["state_snapshot"] or "{}"),
             node_input=json.loads(row["node_input"] or "{}"),

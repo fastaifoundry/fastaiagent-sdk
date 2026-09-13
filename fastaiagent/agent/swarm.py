@@ -52,7 +52,7 @@ from fastaiagent._internal.errors import AgentError, StopAgent
 from fastaiagent.agent.agent import Agent, AgentResult
 from fastaiagent.agent.context import RunContext
 from fastaiagent.agent.middleware import AgentMiddleware, MiddlewareContext, ToolCallNext
-from fastaiagent.chain.checkpoint import Checkpoint
+from fastaiagent.chain.checkpoint import Checkpoint, latest_resumable, write_run_end
 from fastaiagent.chain.idempotent import _current_checkpointer
 from fastaiagent.chain.interrupt import (
     AlreadyResumed,
@@ -372,23 +372,59 @@ class Swarm:
         try:
             state = SwarmState()
             state.path.append(self.entrypoint)
-            return await self._run_loop(
-                exec_id=exec_id,
-                current=self.entrypoint,
-                current_input=input,
-                original_input=input,
-                state=state,
-                accumulated_tool_calls=[],
-                total_tokens=0,
-                start_iter=0,
-                start=time.monotonic(),
-                context=context,
-                kwargs=kwargs,
-            )
+            try:
+                result = await self._run_loop(
+                    exec_id=exec_id,
+                    current=self.entrypoint,
+                    current_input=input,
+                    original_input=input,
+                    state=state,
+                    accumulated_tool_calls=[],
+                    total_tokens=0,
+                    start_iter=0,
+                    start=time.monotonic(),
+                    context=context,
+                    kwargs=kwargs,
+                )
+            except BaseException as exc:
+                # ``_run_loop`` has no ``try`` of its own — SwarmError and
+                # anything a child agent raises escaped uncheckpointed until now.
+                if self._checkpointer is not None:
+                    write_run_end(
+                        self._checkpointer,
+                        execution_id=exec_id,
+                        chain_name=self.name,
+                        status="failed",
+                        error=exc,
+                        agent_path=f"swarm:{self.name}",
+                    )
+                raise
+            self._mark_run_end(exec_id, result)
+            return result
         finally:
             _current_checkpointer.reset(cp_token)
             _agent_path.reset(ap_token)
             _execution_id.reset(exec_token)
+
+    def _mark_run_end(self, exec_id: str, result: Any) -> None:
+        """Terminal marker for a swarm run that finished (audit D5).
+
+        Written at the ``_arun_swarm`` / ``aresume`` boundary rather than inside
+        ``_run_loop``, which has several returns and no ``try`` of its own. A
+        ``paused`` result is skipped: the run has not ended, and a row after the
+        ``interrupted`` one would hide the pause from ``aresume``'s guard.
+        """
+        if self._checkpointer is None:
+            return
+        if getattr(result, "status", None) != "completed":
+            return
+        write_run_end(
+            self._checkpointer,
+            execution_id=exec_id,
+            chain_name=self.name,
+            status="completed",
+            agent_path=f"swarm:{self.name}",
+        )
 
     async def _run_loop(
         self,
@@ -430,6 +466,7 @@ class Swarm:
                         execution_id=exec_id,
                         node_id=f"handoff:{iteration}",
                         node_index=iteration,
+                        step_type="handoff",
                         status="completed",
                         state_snapshot=_swarm_snapshot(
                             iteration=iteration,
@@ -554,7 +591,14 @@ class Swarm:
         store: Checkpointer = self._checkpointer or SQLiteCheckpointer()
         store.setup()
 
-        latest = store.get_last(execution_id)
+        # Restore-anywhere (audit D4): when this machine has never seen the run
+        # but the plane is holding it, pull it down before deciding there is
+        # nothing to resume. No-op when disconnected or already present.
+        from fastaiagent.checkpointers.platform_replica import restore_if_missing
+
+        restore_if_missing(store, execution_id)
+        # Refuses a finished run and steps past a `failed` tombstone (audit D5).
+        latest = latest_resumable(store, execution_id, runner="Swarm execution")
         if latest is None:
             raise ChainCheckpointError(f"No checkpoint found for swarm execution '{execution_id}'")
 
@@ -624,7 +668,7 @@ class Swarm:
                     **kwargs,
                 )
 
-            return await self._run_loop(
+            resumed = await self._run_loop(
                 exec_id=execution_id,
                 current=active_name,
                 current_input=current_input,
@@ -639,6 +683,10 @@ class Swarm:
                 skip_first_checkpoint=True,
                 first_agent_result=first_result,
             )
+            # A resumed run that reaches the end has ended just as much as one
+            # that never paused, so it earns the same marker (audit D5).
+            self._mark_run_end(execution_id, resumed)
+            return resumed
         except AlreadyResumed:
             # Re-raise so callers can distinguish "already resumed" from
             # generic checkpoint errors.

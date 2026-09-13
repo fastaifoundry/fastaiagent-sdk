@@ -248,11 +248,15 @@ class TestCrashRecoveryGate:
         store2.setup()
         after = store2.list(execution_id)
         after_ids = [cp.node_id for cp in after]
-        assert after_ids == ["step_1", "step_2", "step_3", "step_4", "step_5"], (
+        # ``run_end`` is the terminal marker the resumed run wrote when it
+        # finished (audit D5) — the row that distinguishes "completed" from
+        # "died right after step_5".
+        assert after_ids == ["step_1", "step_2", "step_3", "step_4", "step_5", "run_end"], (
             f"final checkpoint chain: {after_ids}"
         )
         latest_after = store2.get_last(execution_id)
-        assert latest_after is not None and latest_after.node_id == "step_5"
+        assert latest_after is not None and latest_after.node_id == "run_end"
+        assert latest_after.status == "completed"
         # The post-resume checkpoints' created_at must come AFTER the
         # pre-resume ones — proves the resume actually ran the nodes rather
         # than reading them from somewhere stale.

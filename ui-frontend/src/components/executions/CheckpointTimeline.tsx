@@ -162,6 +162,14 @@ export function CheckpointTimeline({ checkpoints }: Props) {
                       {cp.node_id}
                     </span>
                     <StatusPill status={cp.status} />
+                    {cp.sync_error ? (
+                      <span
+                        className="rounded px-2 py-0.5 text-[10px] font-medium bg-destructive/10 text-destructive"
+                        title={cp.sync_error}
+                      >
+                        not replicated
+                      </span>
+                    ) : null}
                     <span className="ml-auto flex items-center gap-2 text-[10px] font-mono text-muted-foreground">
                       <span>{formatTimestamp(cp.created_at)}</span>
                       {isOpen ? (
@@ -178,6 +186,15 @@ export function CheckpointTimeline({ checkpoints }: Props) {
                       {ageText(cp.created_at)
                         ? ` — waiting ${ageText(cp.created_at)}`
                         : ""}
+                    </div>
+                  ) : null}
+                  {cp.sync_error ? (
+                    <div
+                      className="mt-1 text-[11px] text-destructive"
+                      data-testid="checkpoint-quarantined"
+                    >
+                      Not replicated:{" "}
+                      <span className="font-mono">{cp.sync_error}</span>
                     </div>
                   ) : null}
                   {isOpen ? (

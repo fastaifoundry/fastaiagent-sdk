@@ -19,6 +19,12 @@ export interface ExecutionCheckpoint {
   interrupt_context: Record<string, unknown>;
   agent_path: string | null;
   created_at: string;
+  /** Replication state, not run state — null on a pre-v19 local.db. */
+  synced: boolean | null;
+  /** Set only when the checkpoint will NEVER reach the plane: the reason it
+   *  was refused. `synced` is true alongside it, because the outbox has
+   *  stopped retrying — the two together mean "we gave up on this one". */
+  sync_error: string | null;
 }
 
 export interface ExecutionDetail {
@@ -29,6 +35,8 @@ export interface ExecutionDetail {
   checkpoint_count: number;
   latest_checkpoint_id: string;
   latest_state_snapshot: Record<string, unknown>;
+  /** >0 means the plane's copy of this run is incomplete. */
+  quarantined_count?: number;
   checkpoints: ExecutionCheckpoint[];
 }
 

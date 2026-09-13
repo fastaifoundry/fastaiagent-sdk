@@ -21,7 +21,7 @@ from fastaiagent import (
     interrupt,               # Call from any node to suspend.
     Resume,                  # Value passed to aresume().
     InterruptSignal,         # Internal control-flow exception.
-    AlreadyResumed,          # Raised on a stale claim.
+    AlreadyResumed,          # Raised on a stale claim, or on a run that already finished.
 
     # Side-effect protection
     idempotent,              # Decorator.
@@ -115,11 +115,16 @@ agent / swarm / supervisor executors catch it; user code should not.
 class AlreadyResumed(Exception): ...
 ```
 
-Raised by `chain.aresume(...)` (and friends) when the
-`pending_interrupts` row was already claimed by another resumer.
-Concurrency safety net: a double-clicked Approve button, two webhook
-deliveries of the same payload, or two replicas racing on the same
-execution all converge here.
+Raised by `chain.aresume(...)` (and friends) in two situations:
+
+1. **The `pending_interrupts` row was already claimed by another resumer.**
+   Concurrency safety net: a double-clicked Approve button, two webhook
+   deliveries of the same payload, or two replicas racing on the same
+   execution all converge here.
+2. **The run already finished.** Since 1.65.0 a completed run writes a run-end
+   marker, and resuming one raises rather than silently re-executing it. Fork
+   from one of its checkpoints, or use a fresh `execution_id`, to run again. A
+   **failed** run is still resumable — that is crash recovery, not a repeat.
 
 The HTTP `POST /api/executions/{id}/resume` endpoint maps this to
 `409 Conflict`. The CLI's `fastaiagent resume` exits with code 2.
@@ -351,6 +356,60 @@ Two contract requirements that are not in the type signatures:
 
 `prune(older_than)` must skip `interrupted` checkpoints — pending HITL
 workflows that have been waiting longer than the cutoff are preserved.
+
+Two **optional** protocols sit alongside it, deliberately separate so adding
+either never stops an existing third-party checkpointer from conforming:
+
+```python
+@runtime_checkable
+class ReplicatedCheckpointer(Protocol):        # connected-plane outbox
+    def fetch_unsynced(self, limit: int, project_id: str | None = None) -> list[dict]: ...
+    def mark_synced(self, checkpoint_ids: list[str]) -> None: ...
+
+@runtime_checkable
+class QuarantinableCheckpointer(Protocol):     # poison-row parking
+    def mark_quarantined(self, reasons: dict[str, str]) -> None: ...
+```
+
+`mark_quarantined` sets the same "no longer a re-send candidate" flag
+`mark_synced` sets **and** records why the row can never reach the plane, so the
+two stay distinguishable. A checkpointer without it keeps the older behaviour —
+the rows stay buffered and the drain stops — because losing a checkpoint you
+cannot record the loss of is worse than stalling. See
+[Connected checkpoints](connected-checkpoints.md).
+
+## Run-end helpers
+
+```python
+from fastaiagent.chain.checkpoint import RUN_END, is_run_end, latest_resumable
+
+is_run_end(checkpoint) -> bool
+latest_resumable(checkpointer, execution_id, *, latest=None, runner="Execution") -> Checkpoint | None
+```
+
+`is_run_end` is true for the terminal row a run writes when it ends. A
+`step_type` of `None` — every checkpoint written before local schema v20 — reads
+as *not* an ending, which keeps pre-upgrade runs resumable.
+
+`latest_resumable` is what every resume path calls instead of `get_last`. It
+raises [`AlreadyResumed`](#alreadyresumed) for a `completed` run-end marker, and
+steps **past** a `failed` one to the last real checkpoint. Use it if you build
+your own resume surface: a run-end row's `node_id` names no node the executor can
+restart at, and `Chain.resume` matching it against the topological order would
+find nothing, leave `start_node` as `None`, and replay the chain from the top.
+
+## `restore_if_missing`
+
+```python
+from fastaiagent.checkpointers.platform_replica import restore_if_missing
+
+restore_if_missing(checkpointer, execution_id) -> Checkpoint | None
+```
+
+Called automatically at the top of every `resume` path. Fetches the run from the
+plane **only** when connected and the local store has no record of it; returns
+`None` otherwise. `FASTAIAGENT_RESTORE_FROM_PLANE=0` disables it. See
+[Restore-anywhere](connected-checkpoints.md#restore-anywhere).
 
 ## `SQLiteCheckpointer`
 

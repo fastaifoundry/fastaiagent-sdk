@@ -17,9 +17,18 @@ Design — like the trace outbox (:mod:`fastaiagent.trace.platform_export`) but
   reliable trigger.
 * The drain POSTs un-acked rows to ``/public/v1/checkpoints/ingest`` (idempotent
   by ``checkpoint_id``) and marks them ``synced=1`` **only after a 2xx**.
-* **Non-lossy:** un-acked rows are NEVER abandoned (unlike traces' age/count
-  bound) — an active/paused run's durability must not be dropped. A transient
-  failure just leaves the row buffered for the next kick / ``connect()`` flush.
+* **No age or count bound** (unlike the trace outbox): an active/paused run's
+  durability must not be dropped just because it is old or the backlog is deep.
+  A transient failure, a 5xx, an expired entitlement — all just leave the row
+  buffered for the next kick / ``connect()`` flush.
+* **One deliberate exception — the poison row** (durability audit D2). A
+  checkpoint the door refuses on *payload* grounds is refused identically every
+  time, so "leave it buffered" meant the next kick re-sent the same oldest batch,
+  got the same refusal and stopped again — stranding every later checkpoint of
+  every run on that checkpointer behind it, forever. Such a row is isolated by
+  bisecting the batch, parked with its reason (``mark_quarantined``), and logged
+  loudly. One checkpoint missing from the replica beats every later one stranded;
+  it is the same trade the plane made when it moved to per-item refusals.
 
 Restore is :func:`restore_from_plane`: GET the latest checkpoint and write it back
 into a local checkpointer so a normal ``resume`` proceeds.
@@ -37,7 +46,7 @@ import logging
 import threading
 import time
 import weakref
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from fastaiagent.chain.checkpoint import Checkpoint
 from fastaiagent.checkpointers.protocol import PendingInterrupt
@@ -47,13 +56,54 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Transient-only retry (connection / timeout / 5xx); 4xx (incl. 403) terminal.
+# Transient-only retry (connection / timeout / 5xx); 4xx terminal for the batch.
 _MAX_ATTEMPTS = 3
 _BACKOFF_BASE = 0.5
 _TIMEOUT = 10
 _DRAIN_LIMIT = 200  # checkpoints per ingest batch; a backlog drains across loops
 
 _VALID_STATUS = {"completed", "interrupted", "failed"}
+
+# Outcomes of one POST to the ingest door.
+_OK = "ok"
+_RETRY_LATER = "retry_later"
+_REFUSED = "refused"
+
+#: 4xx codes that mean **this payload** is unacceptable, so re-sending it
+#: unchanged can only fail again — the only codes that make a row a quarantine
+#: candidate (durability audit D2).
+#:
+#: ⚠ **The exclusions are the important half.** 401 / 403 (no key, or the domain
+#: is not entitled to ``connected_state_plane``), 404 / 405 (an older plane, or a
+#: proxy that does not route this path), 408 and 429 are conditions of the
+#: *connection*, not of any row. They apply identically to every checkpoint the
+#: SDK will ever send, so quarantining on them would silently discard an entire
+#: tenant's outbox — the one outcome worse than the stall this fix exists to
+#: end. Those stay buffered forever, exactly as before, because for them
+#: "forever" is the correct answer: entitlement gets granted, proxies get fixed.
+_PAYLOAD_REFUSAL_CODES = frozenset({400, 409, 413, 422})
+
+#: How much of a refusal body to keep as the quarantine reason. The plane names
+#: the offending field and its limit in the first line or so; the rest is noise
+#: in a database column an operator reads by eye.
+_REASON_MAX_CHARS = 300
+
+
+class _PostOutcome(NamedTuple):
+    """What the ingest door said about one batch.
+
+    ``rejections`` is the plane's **per-item** partial-success map (id → reason)
+    parsed from a 2xx body. A plane on ``p54t1`` or later answers 201 and names
+    what it dropped rather than failing the batch; those ids did *not* reach the
+    replica, so recording them as cleanly synced would be a lie the operator
+    cannot see.
+    """
+
+    outcome: str  # _OK | _RETRY_LATER | _REFUSED
+    rejections: dict[str, str]
+    reason: str  # human-readable, for the log and the quarantine record
+    code: int | None
+
 
 # Live checkpointers that expose the replication surface. Weak so finished
 # chains/agents are collected; the drain iterates whatever is still alive.
@@ -105,17 +155,47 @@ def _iso(value: Any) -> str | None:
 
 
 def _resource_type(row: dict[str, Any]) -> str:
-    """Best-effort agent-vs-chain discriminator from the checkpoint row.
+    """What topology produced this run — ``agent``, ``chain``, ``swarm`` or
+    ``supervisor``.
 
-    Agents stamp ``agent_path='agent:<name>/…'`` and ``node_id='turn:N/tool:…'``;
-    plain chains do neither. Display/filtering only — restore is by execution_id,
-    so an occasional misclassification never affects correctness.
+    Read from the **root** of ``agent_path``, not from the row's own depth, and
+    that distinction is the fix (audit D8). The old version asked "does this row
+    look like an agent's?", which is a question about the *checkpoint*; the wire
+    field is a property of the **run**. A swarm writes its own handoff rows under
+    ``swarm:<name>`` while its child agents write turn rows under
+    ``swarm:<name>/agent:<child>``, so asking per row returned ``chain`` for some
+    and ``agent`` for others — one run, two answers, and never ``swarm``.
+    Measured on a real 2-agent swarm before the fix::
+
+        handoff:0                    swarm:deskflow                  -> chain
+        turn:0                       swarm:deskflow/agent:triage     -> agent
+        run_end                      swarm:deskflow                  -> chain
+
+    The plane derives a run's type from whichever checkpoint is latest, so that
+    mix meant the displayed type depended on which row happened to be newest.
+    Rooting on the path makes every row of a run agree.
+
+    ``node_id='turn:N'`` stays as a fallback for rows with no ``agent_path`` at
+    all. Display and filtering only — restore is by ``execution_id``, so this has
+    never affected correctness, only what an operator is told.
     """
     ap = row.get("agent_path") or ""
     nid = row.get("node_id") or ""
-    if ap.startswith("agent:") or nid.startswith("turn:"):
+    root = ap.split("/", 1)[0]
+    if root.startswith("swarm:"):
+        return "swarm"
+    if root.startswith("supervisor:"):
+        return "supervisor"
+    if root.startswith("agent:") or nid.startswith("turn:"):
         return "agent"
     return "chain"
+
+
+#: Topologies whose identity rides in ``agent_id``; a plain chain uses
+#: ``chain_id``. Swarm and supervisor are agent-shaped runs, so sending them with
+#: BOTH ids null — which is what the old ``rtype == "agent"`` test did once the
+#: two new values existed — would have replaced a wrong label with no label.
+_AGENT_SHAPED = frozenset({"agent", "swarm", "supervisor"})
 
 
 def _to_wire(row: dict[str, Any]) -> dict[str, Any]:
@@ -136,10 +216,23 @@ def _to_wire(row: dict[str, Any]) -> dict[str, Any]:
         "checkpoint_id": cid,
         "execution_id": row.get("execution_id") or "",
         "resource_type": rtype,
-        "agent_id": chain_name if rtype == "agent" else None,
+        # ⚠ Still the NAME, not the plane's agent UUID. That half of D8 is
+        # deliberately not done: only ``Agent`` ever registers with the plane, so
+        # a Chain, Swarm or Supervisor has no UUID to send and never will;
+        # registration races the first checkpoint, so resolving one at write time
+        # would give a single run two different ids; and the restore path rebuilds
+        # ``chain_name`` from this field, so a UUID here returns a run named
+        # ``ed1be3bc-…``. Shipping it would write permanently inconsistent
+        # history into an append-only replica. The honest version is to register
+        # the other three topologies first.
+        "agent_id": chain_name if rtype in _AGENT_SHAPED else None,
         "chain_id": chain_name if rtype == "chain" else None,
         "node_id": row.get("node_id"),
         "step_index": row.get("node_index"),
+        # The plane has always had this key (capped at 40 chars) and the SDK
+        # never sent it, which is why a finished run and one that died right
+        # after its last step were indistinguishable there (audit D5).
+        "step_type": row.get("step_type"),
         "status": status,
         "parent_checkpoint_id": row.get("parent_checkpoint_id"),
         "state_snapshot": _jload(row.get("state_snapshot")),
@@ -154,9 +247,24 @@ def _to_wire(row: dict[str, Any]) -> dict[str, Any]:
         },
         "created_at": _iso(row.get("created_at")),
     }
-    # Monotonic ordering hint for the plane's "latest" pick (SQLite rowid). When
-    # absent (Postgres), the plane tie-breaks by server receive order and we
-    # always drain oldest-first, so "latest received" stays correct.
+    # A TIE-BREAK ONLY, and no longer the plane's primary ordering key.
+    #
+    # ⚠ This used to say the plane picked "latest" by sequence. It did, and that
+    # was finding D1: ``sequence`` is the SQLite rowid of whichever local
+    # database wrote the row, so a fresh store — the entire point of
+    # restore-anywhere — starts at rowid 1 again and its NEW checkpoints carry
+    # SMALLER sequences than the lost store's old ones. The plane kept serving
+    # the stale pre-restore row, and a Postgres checkpointer (which sends no
+    # sequence at all) was outranked by every sequenced SQLite row regardless of
+    # recency.
+    #
+    # The plane now orders by the CLIENT clock — ``coalesce(created_at,
+    # received_at)`` → ``received_at`` → ``sequence`` → ``id`` — mirroring the
+    # SDK's own ``get_last``. The client clock leads deliberately: it is the only
+    # term that stays right when a machine dies mid-run, the run is restored
+    # elsewhere and finished, and the dead machine later drains its stale
+    # backlog. We still send this because it remains a useful third-level
+    # tie-break within one store.
     seq = row.get("_seq")
     if seq is not None:
         wire["sequence"] = int(seq)
@@ -175,6 +283,7 @@ def _wire_to_checkpoint(data: dict[str, Any]) -> Checkpoint:
         execution_id=data.get("execution_id") or "",
         node_id=data.get("node_id") or "",
         node_index=data.get("step_index") or 0,
+        step_type=data.get("step_type"),
         status=data.get("status") or "completed",
         state_snapshot=data.get("state_snapshot") or {},
         node_input=meta.get("node_input") or {},
@@ -191,17 +300,46 @@ def _wire_to_checkpoint(data: dict[str, Any]) -> Checkpoint:
 # --- push / drain ---------------------------------------------------------
 
 
-def _post_checkpoints(conn: _Connection, wire: list[dict[str, Any]]) -> bool:
-    """POST ``wire`` to ``/public/v1/checkpoints/ingest``. Return True on 2xx.
+def _parse_rejections(resp: Any) -> dict[str, str]:
+    """Per-item refusals named in a 2xx ingest body, as ``{checkpoint_id: reason}``.
 
-    Retries connection errors, timeouts and 5xx with exponential backoff; a 4xx
-    (e.g. 403 = domain not entitled to ``connected_state_plane``) is terminal and
-    leaves the rows buffered for a later attempt (non-lossy).
+    A plane on ``p54t1`` or later answers ``201`` with
+    ``{"ingested", "rejected", "rejections": [{checkpoint_id, reason}]}`` instead
+    of failing the whole batch. An older plane sends no such key and this is
+    empty, which is the correct reading of its silence.
+    """
+    try:
+        body = resp.json()
+    except Exception:
+        return {}
+    if not isinstance(body, dict):
+        return {}
+    out: dict[str, str] = {}
+    for item in body.get("rejections") or []:
+        if not isinstance(item, dict):
+            continue
+        cid = item.get("checkpoint_id")
+        if cid:
+            out[str(cid)] = f"plane rejected: {str(item.get('reason') or 'no reason given')}"[
+                :_REASON_MAX_CHARS
+            ]
+    return out
+
+
+def _post_checkpoints(conn: _Connection, wire: list[dict[str, Any]]) -> _PostOutcome:
+    """POST ``wire`` to ``/public/v1/checkpoints/ingest`` and classify the answer.
+
+    Retries connection errors, timeouts and 5xx with exponential backoff. A 4xx
+    is terminal for this batch either way, but *which* 4xx decides what the caller
+    may do about it: a payload-shaped code (see :data:`_PAYLOAD_REFUSAL_CODES`)
+    makes the rows quarantine candidates, while an auth / routing / throttle code
+    leaves them buffered for a later attempt, unchanged from before.
     """
     import httpx
 
     url = f"{conn.target}/public/v1/checkpoints/ingest"
     payload = {"checkpoints": wire}
+    reason = "no response from the plane"
 
     for attempt in range(_MAX_ATTEMPTS):
         try:
@@ -209,19 +347,27 @@ def _post_checkpoints(conn: _Connection, wire: list[dict[str, Any]]) -> bool:
                 resp = client.post(url, json=payload, headers=conn.headers)
             code = resp.status_code
             if 200 <= code < 300:
-                return True
+                return _PostOutcome(_OK, _parse_rejections(resp), "", code)
             if 400 <= code < 500:
+                detail = (resp.text or "").strip()[:_REASON_MAX_CHARS]
+                reason = f"HTTP {code} from /checkpoints/ingest: {detail or '(no body)'}"
+                if code in _PAYLOAD_REFUSAL_CODES:
+                    return _PostOutcome(_REFUSED, {}, reason, code)
                 logger.warning(
-                    "Plane rejected %d checkpoints with HTTP %d — not retrying; "
-                    "left buffered (403 = domain not entitled to connected_state_plane).",
+                    "Plane rejected %d checkpoints with HTTP %d — not retrying; left "
+                    "buffered for a later attempt (403 = domain not entitled to "
+                    "connected_state_plane). %s",
                     len(wire),
                     code,
+                    detail,
                 )
-                return False
+                return _PostOutcome(_RETRY_LATER, {}, reason, code)
+            reason = f"HTTP {code} from /checkpoints/ingest"
             logger.debug(
                 "Checkpoint ingest HTTP %d (attempt %d/%d)", code, attempt + 1, _MAX_ATTEMPTS
             )
-        except httpx.TransportError:
+        except httpx.TransportError as exc:
+            reason = f"transport error: {type(exc).__name__}"
             logger.debug(
                 "Checkpoint ingest transient error (attempt %d/%d)",
                 attempt + 1,
@@ -230,18 +376,69 @@ def _post_checkpoints(conn: _Connection, wire: list[dict[str, Any]]) -> bool:
             )
         if attempt < _MAX_ATTEMPTS - 1:
             time.sleep(_BACKOFF_BASE * (2**attempt))
-    return False
+    return _PostOutcome(_RETRY_LATER, {}, reason, None)
+
+
+def _isolate_refused_batch(
+    conn: _Connection, wire: list[dict[str, Any]], refusal: _PostOutcome
+) -> tuple[list[str], dict[str, str]]:
+    """Bisect a payload-refused batch until each offender stands alone.
+
+    Returns ``(synced_ids, quarantined)`` — the rows that got through on a
+    re-send, and the ids that were still refused on their own, mapped to why.
+
+    Why bisect rather than park the whole batch: the drain sends up to
+    :data:`_DRAIN_LIMIT` rows at once, so a single bad checkpoint would otherwise
+    cost 200 good ones — including healthy unrelated runs written after it. Two
+    posts per split, ``O(k log n)`` for ``k`` offenders, and only ever on the
+    failure path.
+
+    A half that comes back transient mid-bisect is simply left buffered: not
+    marked, not parked, retried on the next kick. Giving up on a row requires
+    proof that the door refuses *it*, never an inference from a network blip.
+    """
+    if len(wire) == 1:
+        return [], {wire[0]["checkpoint_id"]: refusal.reason[:_REASON_MAX_CHARS]}
+
+    mid = len(wire) // 2
+    synced: list[str] = []
+    quarantined: dict[str, str] = {}
+    for half in (wire[:mid], wire[mid:]):
+        result = _post_checkpoints(conn, half)
+        if result.outcome == _OK:
+            quarantined.update(result.rejections)
+            synced.extend(
+                w["checkpoint_id"] for w in half if w["checkpoint_id"] not in result.rejections
+            )
+        elif result.outcome == _REFUSED:
+            half_synced, half_bad = _isolate_refused_batch(conn, half, result)
+            synced.extend(half_synced)
+            quarantined.update(half_bad)
+        # _RETRY_LATER: leave this half buffered for the next kick.
+    return synced, quarantined
 
 
 def _drain_checkpointer(cp: Any, conn: _Connection) -> None:
     """Drain one checkpointer's un-acked checkpoints to the plane until empty.
 
-    Non-lossy: on a push failure we stop and leave rows ``synced=0`` for the next
-    kick — we never abandon them.
+    Rows are marked ``synced`` only after a confirmed 2xx, and a transient
+    failure just leaves them buffered for the next kick — the outbox has no age
+    or count bound, unlike the trace exporter's.
+
+    The **one** deliberate exception is a payload-shaped 4xx (durability audit
+    D2). Such a refusal is deterministic, so leaving the rows buffered meant the
+    next kick re-fetched the same oldest batch, got the same refusal and stopped
+    again — permanently stranding every later checkpoint of every run on this
+    checkpointer behind one bad row. The offenders are isolated and parked
+    instead. The trade is the plane's own: one checkpoint missing from the
+    replica beats every later one stranded. A checkpointer without
+    ``mark_quarantined`` keeps the old behaviour rather than losing a row it
+    cannot record the loss of.
     """
     from fastaiagent._internal.project import safe_get_project_id
 
     pid = safe_get_project_id()
+    can_quarantine = hasattr(cp, "mark_quarantined")
     while True:
         try:
             rows = cp.fetch_unsynced(_DRAIN_LIMIT, pid)
@@ -251,13 +448,47 @@ def _drain_checkpointer(cp: Any, conn: _Connection) -> None:
         if not rows:
             return
         wire = [_to_wire(r) for r in rows]
-        if not _post_checkpoints(conn, wire):
-            return  # transient/terminal — keep buffered (non-lossy)
+        result = _post_checkpoints(conn, wire)
+
+        if result.outcome == _RETRY_LATER:
+            return  # keep buffered — the condition is not this batch's fault
+        if result.outcome == _REFUSED:
+            if not can_quarantine:
+                logger.warning(
+                    "Plane refused %d checkpoints (%s) and this checkpointer cannot "
+                    "quarantine a poison row — the outbox will stall behind it. "
+                    "Implement mark_quarantined() to let the drain advance.",
+                    len(wire),
+                    result.reason,
+                )
+                return
+            synced, quarantined = _isolate_refused_batch(conn, wire, result)
+        else:
+            quarantined = dict(result.rejections)
+            if quarantined and not can_quarantine:
+                # No way to record *why* the row never landed, so fall back to the
+                # old reading of a 2xx: the batch is done. Better a lost reason
+                # than a row re-sent forever to a door that keeps dropping it.
+                quarantined = {}
+            synced = [w["checkpoint_id"] for w in wire if w["checkpoint_id"] not in quarantined]
+
+        for cid, why in quarantined.items():
+            logger.warning(
+                "Checkpoint %s will never replicate and has been quarantined: %s. "
+                "The plane's copy of this run is incomplete.",
+                cid,
+                why,
+            )
         try:
-            cp.mark_synced([w["checkpoint_id"] for w in wire])
+            if synced:
+                cp.mark_synced(synced)
+            if quarantined:
+                cp.mark_quarantined(quarantined)
         except Exception:
-            logger.debug("checkpoint mark_synced failed", exc_info=True)
+            logger.debug("checkpoint mark_synced/mark_quarantined failed", exc_info=True)
             return
+        if not synced and not quarantined:
+            return  # nothing advanced (every half transient) — do not spin
         if len(rows) < _DRAIN_LIMIT:
             return
 
@@ -341,8 +572,15 @@ def drain_all_sync() -> None:
 def fetch_latest_from_plane(execution_id: str, *, conn: Any | None = None) -> Checkpoint | None:
     """GET the latest checkpoint for ``execution_id`` from the plane, or None.
 
-    Returns the highest-sequence checkpoint the plane holds (404 → None). The
-    plane only **serves**; resuming happens locally — see :func:`restore_from_plane`.
+    "Latest" is by the **client clock** — ``coalesce(created_at, received_at)``,
+    then ``received_at``, then ``sequence``, then ``id`` — which mirrors the
+    SDK's own :meth:`get_last` so an operator reading the console and a resume
+    reading the wire can never see different histories of the same run. It is
+    NOT the highest ``sequence``; that was finding D1 and it broke restore across
+    stores (see the ``_seq`` note in :func:`_to_wire`).
+
+    404 → None. The plane only **serves**; resuming happens locally — see
+    :func:`restore_from_plane`.
     """
     if conn is None:
         from fastaiagent.client import _connection
@@ -374,6 +612,58 @@ def fetch_latest_from_plane(execution_id: str, *, conn: Any | None = None) -> Ch
     except Exception:
         logger.debug("checkpoint restore decode failed", exc_info=True)
         return None
+
+
+def restore_if_missing(checkpointer: Any, execution_id: str) -> Checkpoint | None:
+    """Pull a run from the plane when the local store has never seen it (audit D4).
+
+    Called at the top of every ``resume`` path. Until this existed
+    :func:`restore_from_plane` was a helper nothing called: ``aresume``,
+    ``Chain.resume``, the CLI and the local UI all consulted only local storage,
+    so on a fresh machine a resume failed even though the plane was holding the
+    state — which made the documented "restore anywhere" story false in exactly
+    the situation it was written for.
+
+    **Only when missing.** Never overwrite: ``SQLiteCheckpointer.put`` is a plain
+    INSERT on its primary key (and since audit D3, so is Postgres), so restoring
+    over a row the store already has would raise. Just as importantly, the local
+    copy is the source of truth while it exists — the plane is a replica, and a
+    resume must never prefer the replica to a run's own machine.
+
+    No-ops when not connected, so a disconnected resume fails exactly as before.
+    Set ``FASTAIAGENT_RESTORE_FROM_PLANE=0`` to keep it that way while connected:
+    the restore resurrects a run whose local checkpoints were deliberately
+    deleted, which is right for disaster recovery and wrong for an erasure
+    request. That is a deployment-wide policy, which is why it is an environment
+    switch and not a per-call argument.
+
+    Returns the restored checkpoint, or None when nothing was restored.
+    """
+    import os
+
+    if os.environ.get("FASTAIAGENT_RESTORE_FROM_PLANE") == "0":
+        return None
+    try:
+        from fastaiagent.client import _connection
+
+        if not _connection.is_connected:
+            return None
+        if checkpointer.get_last(execution_id) is not None:
+            return None
+    except Exception:
+        logger.debug("restore-if-missing precheck failed", exc_info=True)
+        return None
+
+    restored = restore_from_plane(checkpointer, execution_id)
+    if restored is not None:
+        logger.info(
+            "Restored execution %s from the plane (%s at %s) — the local store had "
+            "no record of it.",
+            execution_id,
+            restored.status,
+            restored.node_id,
+        )
+    return restored
 
 
 def restore_from_plane(

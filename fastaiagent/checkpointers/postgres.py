@@ -154,7 +154,13 @@ class PostgresCheckpointer:
     # --- writes -------------------------------------------------------
 
     def put(self, checkpoint: Checkpoint) -> None:
-        """Persist a checkpoint. Fills checkpoint_id / created_at if missing."""
+        """Persist a checkpoint. Fills checkpoint_id / created_at if missing.
+
+        Re-using a ``checkpoint_id`` raises the driver's ``UniqueViolation``
+        rather than rewriting the row, matching :class:`SQLiteCheckpointer`
+        (whose ``id`` is the primary key). See the comment below for why the
+        rewrite had to go — in short, the plane's replica never learned about it.
+        """
         import uuid as _uuid
 
         from psycopg.types.json import Jsonb
@@ -166,34 +172,43 @@ class PostgresCheckpointer:
 
         self._ensure_setup()
         pool = self._get_pool()
-        # ON CONFLICT DO UPDATE — same checkpoint_id rewriting is rare but
-        # cleanly recoverable (the chain executor never re-uses an id, but
-        # third-party tools might).
+        # ⚠ A plain INSERT. Re-using a ``checkpoint_id`` RAISES — the driver's
+        # ``UniqueViolation`` — and that is the point (durability audit D3).
+        #
+        # This used to be ``ON CONFLICT (checkpoint_id) DO UPDATE``, on the
+        # reasoning that an in-place rewrite was "rare but cleanly recoverable".
+        # It was neither, once the plane entered the picture: the plane's ingest
+        # door is INSERT-ONLY, so a rewritten row re-pushed as a duplicate came
+        # back ``{"ingested": 0}``, the SDK marked it synced, and the plane kept
+        # the FIRST version forever. Reproduced during the audit: the local store
+        # said ``completed`` while the replica said ``interrupted``, with nothing
+        # anywhere to notice. A durable copy that silently disagrees with the
+        # original is worse than no durable copy.
+        #
+        # Two ways to close that. The plane declined its option (upsert when the
+        # incoming row is newer) because it is a real behavioural change to an
+        # insert-only door. This is the other, and the smaller: SQLite already
+        # raises here — its ``id`` is the primary key and ``put`` is a plain
+        # INSERT — so all this does is stop the two backends disagreeing about
+        # what writing the same id twice means. ``record_interrupt`` never had an
+        # ON CONFLICT, so it was already on this side of the line.
         with pool.connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     f"""
                     INSERT INTO {self._t_checkpoints} (
                         checkpoint_id, parent_checkpoint_id, chain_name,
-                        execution_id, node_id, node_index, status,
+                        execution_id, node_id, node_index, step_type, status,
                         state_snapshot, node_input, node_output,
                         iteration, iteration_counters,
                         interrupt_reason, interrupt_context, agent_path,
                         created_at, synced
                     )
                     VALUES (
-                        %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, %s,
                         %s, %s, %s, %s, %s,
                         %s, %s, %s, %s, FALSE
                     )
-                    ON CONFLICT (checkpoint_id) DO UPDATE SET
-                        synced = FALSE,
-                        status = EXCLUDED.status,
-                        state_snapshot = EXCLUDED.state_snapshot,
-                        node_output = EXCLUDED.node_output,
-                        iteration_counters = EXCLUDED.iteration_counters,
-                        interrupt_reason = EXCLUDED.interrupt_reason,
-                        interrupt_context = EXCLUDED.interrupt_context
                     """,
                     (
                         checkpoint.checkpoint_id,
@@ -202,6 +217,7 @@ class PostgresCheckpointer:
                         checkpoint.execution_id,
                         checkpoint.node_id,
                         checkpoint.node_index,
+                        checkpoint.step_type,
                         checkpoint.status,
                         Jsonb(checkpoint.state_snapshot),
                         Jsonb(checkpoint.node_input),
@@ -333,14 +349,14 @@ class PostgresCheckpointer:
                     f"""
                     INSERT INTO {self._t_checkpoints} (
                         checkpoint_id, parent_checkpoint_id, chain_name,
-                        execution_id, node_id, node_index, status,
+                        execution_id, node_id, node_index, step_type, status,
                         state_snapshot, node_input, node_output,
                         iteration, iteration_counters,
                         interrupt_reason, interrupt_context, agent_path,
                         created_at, synced
                     )
                     VALUES (
-                        %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, %s,
                         %s, %s, %s, %s, %s,
                         %s, %s, %s, %s, FALSE
                     )
@@ -352,6 +368,7 @@ class PostgresCheckpointer:
                         checkpoint.execution_id,
                         checkpoint.node_id,
                         checkpoint.node_index,
+                        checkpoint.step_type,
                         checkpoint.status,
                         Jsonb(checkpoint.state_snapshot),
                         Jsonb(checkpoint.node_input),
@@ -459,9 +476,37 @@ class PostgresCheckpointer:
         with pool.connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    f"UPDATE {self._t_checkpoints} SET synced = TRUE "
-                    f"WHERE checkpoint_id = ANY(%s)",
+                    f"UPDATE {self._t_checkpoints} SET synced = TRUE WHERE checkpoint_id = ANY(%s)",
                     (list(checkpoint_ids),),
+                )
+            conn.commit()
+
+    def mark_quarantined(self, reasons: dict[str, str]) -> None:
+        """Park checkpoints the plane can never ingest, keyed id → reason (D2).
+
+        Sets ``synced = TRUE`` so ``fetch_unsynced`` stops returning the row — the
+        drain must advance past it — and records ``sync_error`` so the row stays
+        distinguishable from one that actually reached the plane. A quarantined
+        row is ``synced = TRUE AND sync_error IS NOT NULL``.
+
+        One statement, driven by an ``unnest`` of the two arrays, so a re-drain
+        that quarantines several rows still costs one round trip.
+        """
+        if not reasons:
+            return
+        self._ensure_setup()
+        pool = self._get_pool()
+        ids = list(reasons)
+        with pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    UPDATE {self._t_checkpoints} AS c
+                       SET synced = TRUE, sync_error = v.reason
+                      FROM unnest(%s::text[], %s::text[]) AS v(cid, reason)
+                     WHERE c.checkpoint_id = v.cid
+                    """,
+                    (ids, [reasons[i] for i in ids]),
                 )
             conn.commit()
 
@@ -566,6 +611,7 @@ class PostgresCheckpointer:
             execution_id=row["execution_id"],
             node_id=row["node_id"],
             node_index=row["node_index"] or 0,
+            step_type=row.get("step_type"),
             status=row.get("status") or "completed",
             state_snapshot=dict(row["state_snapshot"]) if row["state_snapshot"] else {},
             node_input=dict(row["node_input"]) if row["node_input"] else {},

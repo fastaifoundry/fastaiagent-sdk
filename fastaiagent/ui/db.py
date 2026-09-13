@@ -17,7 +17,7 @@ from pathlib import Path
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
 
-CURRENT_SCHEMA_VERSION = 18
+CURRENT_SCHEMA_VERSION = 20
 
 # A migration step is either a SQL string or a callable that takes the
 # ``SQLiteHelper`` and runs whatever logic it needs (e.g., gated
@@ -444,8 +444,14 @@ def _v13_add_checkpoint_synced(db: SQLiteHelper) -> None:
     ``CheckpointExporter`` (the SDK-side outbox) replicates checkpoints to the
     plane's ``sdk_checkpoints`` and marks a row ``synced=1`` only after a confirmed
     2xx push to ``/public/v1/checkpoints/ingest``; until then it is a re-send
-    candidate. Unlike traces, the checkpoint outbox is **non-lossy** — un-acked
-    rows are never abandoned (an active/paused run's durability must not be lost).
+    candidate. Unlike traces, the checkpoint outbox has no age or count bound —
+    an active/paused run's durability must not be dropped just because it is old.
+
+    ⚠ The original wording here said un-acked rows are *never* abandoned. That was
+    written before anyone considered a row the door refuses **every** time, which
+    stalled the whole outbox behind it (durability audit D2). Schema v19 adds
+    ``sync_error`` and the one deliberate exception; see
+    :func:`_v19_add_checkpoint_sync_error`.
 
     Mirrors the v11 ``spans.synced`` migration: existing rows are backfilled to
     ``synced=1`` so connecting an existing project does NOT retroactively back-push
@@ -461,6 +467,66 @@ def _v13_add_checkpoint_synced(db: SQLiteHelper) -> None:
     db.execute(
         "CREATE INDEX IF NOT EXISTS idx_checkpoints_synced ON checkpoints(synced, created_at)"
     )
+
+
+def _v19_add_checkpoint_sync_error(db: SQLiteHelper) -> None:
+    """Poison-row quarantine for the checkpoint outbox (durability audit D2).
+
+    A checkpoint the plane's ingest door refuses on **payload** grounds — a value
+    longer than its column, a snapshot over the size cap — is refused the same way
+    every time. ``_drain_checkpointer`` sends the oldest un-acked rows as one batch
+    and stopped at the first failure while leaving them buffered, so one such row
+    re-sent the same batch forever and stranded every later checkpoint of every run
+    on that checkpointer. Quarantine ends that: the offending row is parked and the
+    drain advances.
+
+    ⚠ **This is the one place the outbox is deliberately lossy**, and the v13
+    docstring above (written before anyone considered a permanently-poisoned row)
+    overclaims when it says un-acked rows are *never* abandoned. The trade is the
+    same one the plane made in ``p54t1``: one checkpoint missing from the replica
+    beats every later one stranded behind it.
+
+    ``sync_error`` is the reason, and it rides alongside ``synced = 1`` rather than
+    a third state on ``synced`` itself. That is deliberate three ways: ``synced``
+    already means "no longer a re-send candidate", which a quarantined row is; both
+    backends' ``fetch_unsynced`` therefore need **no change** (Postgres types the
+    column ``BOOLEAN``, so a sentinel value was never portable anyway); and an
+    operator can still tell the two apart, because only a quarantined row carries a
+    reason. ``synced = 1 AND sync_error IS NOT NULL`` is "we gave up on this one".
+
+    No backfill: a NULL ``sync_error`` on every existing row is already correct.
+    """
+    rows = db.fetchall("SELECT name FROM sqlite_master WHERE type='table' AND name='checkpoints'")
+    if not rows:
+        return
+    _add_column_if_missing(db, "checkpoints", "sync_error", "TEXT")
+
+
+def _v20_add_checkpoint_step_type(db: SQLiteHelper) -> None:
+    """What kind of boundary a checkpoint sits on (durability audit D5).
+
+    ``llm_call`` / ``tool_call`` / ``hitl_pause`` / ``node`` / ``handoff`` /
+    ``fork_origin``, and — the reason this column exists — ``run_end``.
+
+    Until now nothing marked the END of a run, so a finished run and one that
+    died the instant after its last step were byte-identical: both left a
+    ``completed`` checkpoint as the newest row. The plane's console could only
+    say "last step done", its ``failed`` filter could never match, and
+    ``aresume`` on a run that had already finished happily re-executed it.
+
+    The plane's wire schema has carried ``step_type`` since WS2 and caps it at
+    40 characters — the SDK simply never sent it. So this column, and nothing on
+    the plane, is what was missing.
+
+    No backfill. A NULL on every existing row is honest: we genuinely do not
+    know what boundary those checkpoints sat on, and guessing ``node`` would
+    invent history. :func:`~fastaiagent.chain.checkpoint.is_run_end` reads NULL
+    as "not a run end", which is correct for every pre-v20 row.
+    """
+    rows = db.fetchall("SELECT name FROM sqlite_master WHERE type='table' AND name='checkpoints'")
+    if not rows:
+        return
+    _add_column_if_missing(db, "checkpoints", "step_type", "TEXT")
 
 
 def _v14_add_sdk_instance(db: SQLiteHelper) -> None:
@@ -964,6 +1030,20 @@ _MIGRATIONS: dict[int, list[_Step]] = {
         # Guardrail actions (1.57.0): what a failure cost, not just that it
         # failed. See _v18_add_guardrail_action_columns.
         _v18_add_guardrail_action_columns,
+    ],
+    19: [
+        # Durability audit D2: poison-row quarantine for the checkpoint outbox.
+        # Adds ``sync_error`` so a row the ingest door refuses on payload grounds
+        # can be parked with its reason instead of head-of-line blocking every
+        # later checkpoint on that checkpointer. See
+        # _v19_add_checkpoint_sync_error.
+        _v19_add_checkpoint_sync_error,
+    ],
+    20: [
+        # Durability audit D5: a run-end marker. Adds ``step_type`` so a
+        # finished run stops looking identical to one that died right after its
+        # last step. See _v20_add_checkpoint_step_type.
+        _v20_add_checkpoint_step_type,
     ],
 }
 

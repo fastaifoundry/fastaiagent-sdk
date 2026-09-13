@@ -132,3 +132,36 @@ class ReplicatedCheckpointer(Protocol):
         """Mark checkpoints as acked (no longer re-send candidates) after a
         confirmed 2xx ingest. Idempotent."""
         ...
+
+
+@runtime_checkable
+class QuarantinableCheckpointer(Protocol):
+    """**Optional** poison-row surface for the connected-plane outbox (audit D2).
+
+    A checkpoint the plane's ingest door refuses on *payload* grounds — a value
+    longer than its column, a state snapshot over the size cap — is refused
+    identically on every retry. The drain sends the oldest un-acked rows as one
+    batch and stops at the first failure while leaving them buffered, so one such
+    row re-sends the same batch forever and strands every later checkpoint of
+    every run on that checkpointer. Quarantine parks the offender so the drain
+    advances.
+
+    Deliberately a **third** protocol rather than two more methods on
+    :class:`ReplicatedCheckpointer`, for the same reason that one is separate from
+    :class:`Checkpointer`: these are ``@runtime_checkable``, so adding a required
+    method to an existing one silently stops every third-party implementation from
+    conforming. :mod:`fastaiagent.checkpointers.platform_replica` probes for
+    ``mark_quarantined`` with ``hasattr``; a replicated checkpointer without it
+    keeps the old behaviour — the rows stay buffered and the drain stops, exactly
+    as before.
+    """
+
+    def mark_quarantined(self, reasons: dict[str, str]) -> None:
+        """Park checkpoints that can never be ingested, keyed id → reason.
+
+        Implementations set the same "no longer a re-send candidate" flag
+        ``mark_synced`` sets **and** record the reason, so the two states stay
+        distinguishable: a synced row reached the plane, a quarantined one never
+        will. Idempotent.
+        """
+        ...

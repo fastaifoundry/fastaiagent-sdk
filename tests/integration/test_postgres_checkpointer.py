@@ -80,6 +80,27 @@ def _make(execution_id: str, node_id: str, idx: int = 0, **extra: Any) -> Checkp
     )
 
 
+def _sync_errors(store: Any, execution_id: str) -> dict[str, str | None]:
+    """``{node_id: sync_error}`` straight from the row, for both backends.
+
+    Read raw rather than through ``Checkpoint``: ``sync_error`` is an outbox
+    column, not part of the run state, and deliberately absent from the model.
+    """
+    if isinstance(store, SQLiteCheckpointer):
+        rows = store._conn().fetchall(
+            "SELECT node_id, sync_error FROM checkpoints WHERE execution_id = ?",
+            (execution_id,),
+        )
+        return {r["node_id"]: r["sync_error"] for r in rows}
+    pool = store._get_pool()
+    with pool.connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"SELECT node_id, sync_error FROM {store._t_checkpoints} WHERE execution_id = %s",
+            (execution_id,),
+        )
+        return {r[0]: r[1] for r in cur.fetchall()}
+
+
 # ---------- Round-trip protocol contract --------------------------------
 
 
@@ -97,6 +118,48 @@ class TestProtocolConformance:
         assert latest is not None
         assert latest.node_id == "node-2"
         assert latest.checkpoint_id
+
+    def test_reusing_a_checkpoint_id_raises_on_both_backends(self, store: Checkpointer) -> None:
+        """Durability audit D3 — the two backends must agree on id reuse.
+
+        SQLite has always raised (its ``id`` is the primary key and ``put`` is a
+        plain INSERT). Postgres used to ``ON CONFLICT DO UPDATE``, and the
+        divergence was invisible until the plane replica existed: its ingest
+        door is INSERT-ONLY, so a rewritten row re-pushed as a duplicate came
+        back ``{"ingested": 0}``, the SDK marked it synced, and the plane kept
+        the FIRST version. Local said ``completed``, the replica said
+        ``interrupted``, and nothing anywhere noticed.
+
+        The exception type is the driver's, not an SDK type — "matching SQLite"
+        means matching what it actually does, and SQLite propagates
+        ``sqlite3.IntegrityError`` untouched. Both are DBAPI ``IntegrityError``
+        subclasses, which is what a portable caller catches.
+        """
+        first = _make("exec-DUP", "node-1", 0)
+        store.put(first)
+
+        rewrite = _make("exec-DUP", "node-1", 0, status="interrupted")
+        rewrite.checkpoint_id = first.checkpoint_id
+        with pytest.raises(Exception) as excinfo:
+            store.put(rewrite)
+        assert "IntegrityError" in type(excinfo.value).__mro__[0].__name__ or any(
+            "IntegrityError" in c.__name__ for c in type(excinfo.value).__mro__
+        ), f"expected an integrity error, got {type(excinfo.value).__name__}"
+
+        # And the stored row is untouched — a refused write must not half-apply.
+        stored = store.get_by_id("exec-DUP", first.checkpoint_id)
+        assert stored is not None and stored.status == "completed"
+
+    def test_a_distinct_id_for_the_same_node_still_works(self, store: Checkpointer) -> None:
+        """Refusing reuse must not refuse a legitimate re-run of the same node.
+
+        A chain cycle re-executes a node and writes a SECOND checkpoint for it
+        with a fresh id — the executors never re-use one. That path has to stay
+        open, or this fix would break every looping chain.
+        """
+        store.put(_make("exec-CYCLE", "loop-node", 0))
+        store.put(_make("exec-CYCLE", "loop-node", 0))
+        assert len(store.list("exec-CYCLE")) == 2
 
     def test_get_last_missing_returns_none(self, store: Checkpointer) -> None:
         assert store.get_last("nope") is None
@@ -239,3 +302,76 @@ class TestProtocolConformance:
         latest = store.get_last("exec-INT")
         assert latest is not None
         assert latest.status == "interrupted"
+
+
+# ---------- Replication outbox surface ----------------------------------
+
+
+@pytest.mark.parametrize("store", ["sqlite", "postgres"], indirect=True)
+class TestReplicationOutbox:
+    """``ReplicatedCheckpointer`` + ``QuarantinableCheckpointer``, both backends.
+
+    The two backends reach the same states by opposite mechanics — SQLite defaults
+    ``synced`` to 0 and back-fills, Postgres defaults it to TRUE and writes FALSE
+    on every insert — so parity here is worth asserting rather than assuming. It
+    is exactly the kind of drift that let ``put`` upsert on one side and raise on
+    the other for a whole release.
+    """
+
+    def test_satisfies_the_optional_protocols(self, store: Checkpointer) -> None:
+        from fastaiagent.checkpointers.protocol import (
+            QuarantinableCheckpointer,
+            ReplicatedCheckpointer,
+        )
+
+        assert isinstance(store, ReplicatedCheckpointer)
+        assert isinstance(store, QuarantinableCheckpointer)
+
+    def test_new_rows_are_push_candidates_and_mark_synced_clears_them(
+        self, store: Checkpointer
+    ) -> None:
+        store.put(_make("exec-OUT", "node-1", 0))
+        store.put(_make("exec-OUT", "node-2", 1))
+
+        pending = store.fetch_unsynced(10)  # type: ignore[attr-defined]
+        assert len(pending) == 2, "a freshly written checkpoint must be a push candidate"
+
+        store.mark_synced([r["checkpoint_id"] for r in pending])  # type: ignore[attr-defined]
+        assert store.fetch_unsynced(10) == []  # type: ignore[attr-defined]
+
+    def test_mark_quarantined_stops_the_resend_and_records_the_reason(
+        self, store: Checkpointer
+    ) -> None:
+        """Durability audit D2 — the poison row must leave the outbox.
+
+        Quarantined and synced share the ``synced`` flag (both mean "no longer a
+        re-send candidate"), and ``sync_error`` is what keeps them distinguishable:
+        a synced row reached the plane, a quarantined one never will.
+        """
+        store.put(_make("exec-Q", "poison", 0))
+        store.put(_make("exec-Q", "healthy", 1))
+        pending = store.fetch_unsynced(10)  # type: ignore[attr-defined]
+        by_node = {r["node_id"]: r["checkpoint_id"] for r in pending}
+
+        store.mark_quarantined(  # type: ignore[attr-defined]
+            {by_node["poison"]: "state_snapshot is 2000000 bytes; the limit is 1048576"}
+        )
+        store.mark_synced([by_node["healthy"]])  # type: ignore[attr-defined]
+
+        assert store.fetch_unsynced(10) == [], "a quarantined row must not come back"  # type: ignore[attr-defined]
+
+        errors = _sync_errors(store, "exec-Q")
+        assert "2000000 bytes" in (errors["poison"] or "")
+        assert errors["healthy"] is None, "a row that reached the plane carries no error"
+
+    def test_mark_quarantined_is_idempotent_and_empty_is_a_no_op(self, store: Checkpointer) -> None:
+        store.put(_make("exec-Q2", "poison", 0))
+        cid = store.fetch_unsynced(10)[0]["checkpoint_id"]  # type: ignore[attr-defined]
+
+        store.mark_quarantined({})  # type: ignore[attr-defined]
+        assert len(store.fetch_unsynced(10)) == 1  # type: ignore[attr-defined]
+
+        store.mark_quarantined({cid: "first"})  # type: ignore[attr-defined]
+        store.mark_quarantined({cid: "second"})  # type: ignore[attr-defined]
+        assert store.fetch_unsynced(10) == []  # type: ignore[attr-defined]
+        assert _sync_errors(store, "exec-Q2")["poison"] == "second"
