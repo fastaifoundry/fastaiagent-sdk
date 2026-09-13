@@ -150,26 +150,6 @@ locally; the plane runs no agent code):
 
 A runnable end-to-end example is in `examples/86_connected_durability.py`.
 
-## Platform-initiated runs
-
-When you run the **runner daemon**, the commands the plane dispatches
-(`live_playground`, `eval_run`) are checkpointed like any other run, under the
-plane's own `command_id` as their `execution_id` — one execution per eval *case*,
-suffixed with the case id. That id is what joins the replica back to the command
-that caused it, so those runs appear in the Durability view with no wire change.
-
-`tool_exec` is excluded: one tool call, no agent loop, no run state to keep.
-
-⚠ This turns on local disk writes and plane ingest on runner hosts that
-previously had neither. `FASTAIAGENT_RUNNER_CHECKPOINTS=0` restores the old
-footprint; the job still runs, just without durability.
-
-**What it does not buy is cross-runner resume.** If the runner process dies,
-another runner cannot pick the run up — the runner channel documents "no
-cross-runner reassignment in v1" and the frozen command payload carries no
-execution id, so that needs a change on the plane. What you get is visibility and
-**same-runner** resume: the run is on disk, and `aresume(command_id)` works.
-
 ## One tenant per runner
 
 The drain is process-global, and that bounds what a single process can replicate:
