@@ -12,6 +12,20 @@ does NOT score). ``tool_exec`` runs one LOCAL connector/tool the plane dispatche
 (the SaaS + ``customer_private`` case): it resolves the tool by ``exposed_name``
 in the ToolRegistry and runs it with the operator's own creds. A
 ``guarded_live_rerun`` is not handled here.
+
+**Durability (audit D4).** Agent-running commands get a per-job checkpointer and
+run under the plane's own ``command_id`` as their ``execution_id``, so a
+platform-initiated run survives a crash on this host and shows up in the plane's
+Durability view. Before this the whole package contained no checkpoint code:
+every playground click and eval case was non-durable, and the plane could
+dispatch work and then hold no record of its state. ``tool_exec`` is deliberately
+excluded — one tool call, no agent loop, nothing to check point.
+
+What this does **not** buy is cross-runner resume: if the runner process dies,
+another cannot pick the run up. The runner channel documents "no cross-runner
+reassignment in v1" and the frozen command payload carries no execution id, so
+that half needs a plane wire bump. Same-runner resume and visibility are the
+whole of it.
 """
 
 from __future__ import annotations
@@ -27,6 +41,63 @@ class CommandResult(NamedTuple):
     result: Any | None
     trace_id: str | None
     error: str | None
+
+
+def _job_checkpointer() -> Any | None:
+    """A checkpointer for one platform-initiated job, or None when disabled.
+
+    Until this existed ``fastaiagent/runner/`` contained no checkpoint code at
+    all (audit D4): ``Agent.from_dict`` drops the checkpointer and ``arun`` was
+    called with no ``execution_id``, so every run the plane dispatched — live
+    playground, eval suites — was non-durable and invisible in the plane's
+    Durability view. The plane could dispatch work and then hold no record of
+    its state.
+
+    ⚠ **This turns on local disk writes and plane ingest on hosts that had
+    neither**, so it has an off switch: ``FASTAIAGENT_RUNNER_CHECKPOINTS=0``.
+    Default-on because a runner that loses a run on a crash is the thing being
+    fixed; the switch is for operators who want the old footprint back.
+
+    Best-effort: a checkpointer that cannot be built must not stop the job. A
+    non-durable run is worse than a durable one, and far better than none.
+    """
+    import os
+
+    if os.environ.get("FASTAIAGENT_RUNNER_CHECKPOINTS") == "0":
+        return None
+    try:
+        from fastaiagent.checkpointers.sqlite import SQLiteCheckpointer
+
+        store = SQLiteCheckpointer()
+        store.setup()
+        return store
+    except Exception:
+        logger.warning(
+            "Could not open a checkpointer for this job — it will run without "
+            "durability. Set FASTAIAGENT_RUNNER_CHECKPOINTS=0 to silence this.",
+            exc_info=True,
+        )
+        return None
+
+
+def _execution_id_for(cmd: dict[str, Any], suffix: str = "") -> str | None:
+    """Use the plane's own ``command_id`` as the run's ``execution_id``.
+
+    This is what makes a runner's checkpoints joinable to the command that
+    caused them **with no wire change**. ``CommandResult`` is the frozen shape
+    reported back to the plane, and adding a field to it would be a
+    plane-observable change; reusing an id the plane already knows costs
+    nothing and says the same thing.
+
+    Returns None when the command carries no id — then the agent mints its own
+    UUID exactly as before, and the run is durable locally but not joinable.
+    """
+    command_id = cmd.get("command_id")
+    if not command_id:
+        return None
+    # The plane's execution_id column holds 255 characters; a UUID plus a case
+    # id is nowhere near it, but a caller-supplied case id is not ours to trust.
+    return f"{command_id}{suffix}"[:255]
 
 
 async def execute_command(cmd: dict[str, Any]) -> CommandResult:
@@ -57,19 +128,20 @@ async def _run_live_playground(cmd: dict[str, Any]) -> CommandResult:
     from fastaiagent.agent.agent import Agent
 
     try:
-        agent = Agent.from_dict(agent_config)
+        # Durability for a platform-initiated run (audit D4). The execution_id is
+        # the plane's own command_id, so the replica joins back to the command
+        # without any wire change.
+        agent = Agent.from_dict(agent_config, checkpointer=_job_checkpointer())
         # job_scope isolates the per-job tool registry (one job == one asyncio
         # task, which the daemon guarantees). We do NOT override the project: the
         # plane routes traces by the runner's API key, and the trace exporter
         # drains on a background thread that can't see a per-job ContextVar, so a
         # per-job project would hide the spans from the drain. Letting the
         # process-global project stand keeps the span stamp and the drain filter
-        # consistent.
+        # consistent — and the checkpoint outbox drains on the same terms.
         with job_scope():
-            result = await agent.arun(user_input)
-        return CommandResult(
-            "completed", result.output, getattr(result, "trace_id", None), None
-        )
+            result = await agent.arun(user_input, execution_id=_execution_id_for(cmd))
+        return CommandResult("completed", result.output, getattr(result, "trace_id", None), None)
     except Exception as e:  # noqa: BLE001 — report as failed, never crash the daemon
         logger.exception("live_playground command %s failed", cmd.get("command_id"))
         return CommandResult("failed", None, None, str(e))
@@ -93,7 +165,7 @@ async def _run_eval_run(cmd: dict[str, Any]) -> CommandResult:
     from fastaiagent.agent.agent import Agent
 
     try:
-        agent = Agent.from_dict(agent_config)
+        agent = Agent.from_dict(agent_config, checkpointer=_job_checkpointer())
     except Exception as e:  # noqa: BLE001 — can't build the agent → whole command fails
         logger.exception("eval_run command %s failed to build agent", cmd.get("command_id"))
         return CommandResult("failed", None, None, str(e))
@@ -105,13 +177,17 @@ async def _run_eval_run(cmd: dict[str, Any]) -> CommandResult:
         trace_id: str | None = None
         try:
             with job_scope():  # see _run_live_playground re: no project override
-                result = await agent.arun(case.get("input", ""))
+                # One execution per CASE, not per command: a suite is N runs, and
+                # collapsing them onto one id would interleave their checkpoints
+                # into a history no resume could read.
+                result = await agent.arun(
+                    case.get("input", ""),
+                    execution_id=_execution_id_for(cmd, f"-{case_id}" if case_id else ""),
+                )
             trace_id = getattr(result, "trace_id", None)
             outputs.append({"case_id": case_id, "output": result.output, "trace_id": trace_id})
         except Exception:  # noqa: BLE001 — one bad case shouldn't fail the suite
-            logger.exception(
-                "eval_run command %s case %s failed", cmd.get("command_id"), case_id
-            )
+            logger.exception("eval_run command %s case %s failed", cmd.get("command_id"), case_id)
             outputs.append({"case_id": case_id, "output": "", "trace_id": None})
         if first_trace_id is None and trace_id:
             first_trace_id = trace_id
@@ -158,7 +234,9 @@ async def _run_tool_exec(cmd: dict[str, Any]) -> CommandResult:
     tool = ToolRegistry.get(exposed_name)
     if tool is None:
         return CommandResult(
-            "failed", None, None,
+            "failed",
+            None,
+            None,
             f"no local tool registered for exposed_name {exposed_name!r} "
             "(register it before starting the runner, e.g. via --tools)",
         )

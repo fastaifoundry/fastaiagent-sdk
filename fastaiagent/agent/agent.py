@@ -1610,12 +1610,19 @@ class Agent:
         return d
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Agent:
+    def from_dict(cls, data: dict[str, Any], *, checkpointer: Checkpointer | None = None) -> Agent:
         """Deserialize from canonical format (platform pull).
 
         Note: output_type cannot be restored from serialized data because
         it is a Python class. The response_format schema in config is
         informational and will be passed through to the LLM if present.
+
+        ``checkpointer`` is not part of the serialized definition — it is
+        infrastructure the receiving side owns, not something the plane sends.
+        The parameter exists because the runner needs to give a reconstructed
+        agent durability, and without a seam here it would have to assign the
+        private attribute from another module (audit D4). Omit it and the
+        behaviour is unchanged.
         """
         return cls(
             name=data["name"],
@@ -1625,4 +1632,5 @@ class Agent:
             tools=[Tool.from_dict(t) for t in data.get("tools", [])],
             guardrails=[Guardrail.from_dict(g) for g in data.get("guardrails", [])],
             config=AgentConfig(**data.get("config", {})),
+            checkpointer=checkpointer,
         )
