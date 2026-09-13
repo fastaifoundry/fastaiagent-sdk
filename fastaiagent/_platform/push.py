@@ -78,9 +78,7 @@ def _console_base() -> str | None:
 
     from fastaiagent.client import _connection
 
-    base = getattr(_connection, "console_url", None) or os.environ.get(
-        "FASTAIAGENT_CONSOLE_URL"
-    )
+    base = getattr(_connection, "console_url", None) or os.environ.get("FASTAIAGENT_CONSOLE_URL")
     base = base or getattr(_connection, "target", None)
     return base.rstrip("/") if base else None
 
@@ -268,6 +266,38 @@ def _warn_once(key: str, message: str) -> None:
             return
         _warned.add(key)
     logger.warning(message)
+
+
+def pushed_agent_id(name: str) -> str | None:
+    """The plane's agent UUID for ``name``, if this process has registered it.
+
+    The one supported way to ask. ``_pushed`` is private and guarded by
+    ``_lock``, so a caller reading it directly would race
+    :func:`reset_registration_state` (which ``disconnect()`` calls) against a
+    registration landing on a daemon thread.
+
+    Returns None when the name was never pushed — which is the common case in
+    three situations worth knowing, because each shapes what a caller can
+    assume:
+
+    * **The agent has not run yet.** Construction only *tracks* an agent;
+      :func:`auto_register_async` pushes it on its first run. A built-but-unused
+      agent has no id.
+    * **The registration is still in flight.** It runs on a daemon thread, so a
+      caller very early in a run may legitimately see None and a caller a moment
+      later may not.
+    * **It is not an Agent.** A ``Chain`` or a ``Swarm`` is an orchestration
+      *of* agents, not an agent, and nothing pushes a plane object for the
+      container itself. (A ``Supervisor`` does have one, by construction: its
+      inner agent is built as ``Agent(name=self.name, …)``. A Swarm's children
+      have their own.)
+
+    Callers must therefore treat None as "fall back to the name", never as an
+    error — see ``checkpointers.platform_replica._to_wire``.
+    """
+    with _lock:
+        result = _pushed.get(name)
+    return result.agent_id if result is not None else None
 
 
 def reset_registration_state() -> None:

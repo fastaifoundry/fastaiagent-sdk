@@ -5,6 +5,75 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.66.0] - 2026-09-13 — a checkpoint says which agent produced it
+
+The last open piece of durability audit finding **D8**. 1.65.0 fixed the
+*topology* half — a swarm reporting itself as a chain — and left the *identity*
+half, on a reading of the code that turned out to be wrong.
+
+### Fixed
+
+**`agent_id` on the wire is the plane's agent UUID, not the agent's name.**
+Nothing joined the checkpoint replica to the plane's Agents inventory, so a
+console could show a run and never say which registered agent produced it. The
+plane's run-detail page declines to render an agent link for exactly that
+reason. Verified end to end against a live plane: the checkpoint now carries
+`cf0cc97e-…`, and querying the plane's `agents` table with that id returns the
+agent.
+
+It falls back to the **name** when this process has no id, and that is routine
+rather than a failure:
+
+- a `Chain` and a `Swarm` **container** have no plane object at all — they are
+  orchestrations *of* agents, not agents, and nothing pushes one for them. A
+  `Supervisor` does have one, because its inner agent is built as
+  `Agent(name=self.name, …)`; a Swarm's children have their own.
+- an agent that has not run yet has none — registration fires on first **run**,
+  not on construction.
+
+> **Why this was deferred out of 1.65.0, and why that reasoning was wrong.** The
+> note then said only `Agent` registers, so "three of four topologies have no id,
+> ever". Measuring it — one run of each topology, connected — showed
+> `supervisor → UUID`, `swarm's child agent → UUID`, `swarm container → none`.
+> Most rows were always joinable. The gap is containers, not topologies.
+
+### Changed
+
+**The agent or chain name now rides in `metadata.chain_name` as well as the id
+fields.** Load-bearing rather than redundant: `_wire_to_checkpoint` rebuilds
+`Checkpoint.chain_name` from what the plane returns, and resume matches that
+against the runner — so once `agent_id` can be a UUID, a restored run would come
+back named `ed1be3bc-…` and nothing could resume it. Rows already on the plane
+have no such key and their `agent_id` *is* the name, so the fallback order keeps
+them restorable.
+
+### Added
+
+- `fastaiagent._platform.push.pushed_agent_id(name)` — the supported way to ask
+  for a registered agent's plane UUID. `_pushed` is private and lock-guarded, so
+  reading it directly races `disconnect()` against a registration landing on a
+  daemon thread.
+
+### Notes
+
+**Resolved when the batch drains, not when the row is written**, and that
+placement is the whole correctness argument. Registration runs on a background
+thread and routinely lands *after* a run's first checkpoints are written;
+resolving at write time would stamp the name onto a run's early rows and the
+UUID onto its later ones — two identities for one run, defeating the join. A
+test pins it by registering *after* the run and asserting every row still
+resolves. Run-health is unaffected either way: it reads a run's latest
+checkpoint, which since 1.65.0 is the `run_end` marker, written and drained last.
+
+**Identity never costs a checkpoint.** The resolver reaches into another
+module's lock from inside the replication drain — the one place in the SDK where
+a row is at stake — so it swallows any failure and falls back to the name. A
+test makes the registry raise and asserts the batch still replicates.
+
+**No wire bump and no plane change required.** `agent_id` is an existing
+255-character column; the plane can adopt the join whenever it likes. Nothing
+about local durability changes.
+
 ## [1.65.0] - 2026-09-13 — the SDK half of the durability audit
 
 The 2026-09-12 cross-repo durability audit found ten defects across the SDK's
