@@ -114,6 +114,9 @@ The full checkpoint needed to resume: `checkpoint_id`, `execution_id`,
 agent/chain id, node + step index, `step_type`, status, the `state_snapshot`, and
 the resume-critical fields (node I/O, iteration counters, interrupt
 reason/context) — carried losslessly so the restored `Checkpoint` is identical.
+The agent or chain **name** rides in `metadata` as well as the id fields, because
+`agent_id` may be a UUID and restore rebuilds `Checkpoint.chain_name` from what
+comes back; a run restored under a UUID would not match the runner resuming it.
 
 `step_type` is what lets the plane tell a **run-end** row from an ordinary step,
 and so a finished run from one that died right after its last step. Without it
@@ -128,13 +131,28 @@ checkpoint: a swarm writes its handoff rows under `swarm:<name>` while its child
 agents write turn rows under `swarm:<name>/agent:<child>`, so asking per row used
 to return `chain` for some and `agent` for others, and never `swarm`.
 
-!!! note "`agent_id` is the agent's name, not the plane's agent UUID"
-    So the Durability view cannot yet link a run to its entry in the Agents
-    inventory. Sending the UUID is not a small change: only `Agent` registers
-    with the plane at all — `Chain`, `Swarm` and `Supervisor` never do, so they
-    have no id to send — registration races the first checkpoint of a run, and
-    the restore path rebuilds the agent's name *from* this field. Registering the
-    other three topologies is the prerequisite.
+`agent_id` carries the **plane's agent UUID** when this process has registered
+the agent, so the Durability view can join a run to its entry in the Agents
+inventory. It falls back to the agent's **name** otherwise, and that fallback is
+routine rather than a failure:
+
+* a `Chain` and a `Swarm` **container** have no plane object at all — they are
+  orchestrations *of* agents, not agents, and nothing pushes one for them. (A
+  `Supervisor` does have one, because its inner agent is built as
+  `Agent(name=self.name, …)`; a Swarm's children have their own.)
+* an agent that has not run yet has no id — registration fires on first **run**,
+  not on construction.
+
+So the plane must handle either value in that column.
+
+!!! note "Resolved when the batch drains, not when the row is written"
+    Registration runs on a background thread and often lands *after* a run's
+    first checkpoints are written. Resolving the id at write time would stamp
+    the name onto a run's early rows and the UUID onto its later ones — two
+    identities for one run, which defeats the join. The drain maps a whole batch
+    at once, so a registration that lands mid-run still applies to all of it.
+    Run-health is unaffected either way: it reads a run's *latest* checkpoint,
+    which is the `run_end` marker, written and drained last.
 
 In this release `state_snapshot` is replicated **in clear**. A customer-held
 encryption envelope (BYOK) for the payload is a documented future seam; metadata

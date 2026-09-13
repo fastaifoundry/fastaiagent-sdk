@@ -198,6 +198,23 @@ def _resource_type(row: dict[str, Any]) -> str:
 _AGENT_SHAPED = frozenset({"agent", "swarm", "supervisor"})
 
 
+def _plane_agent_id(name: str) -> str | None:
+    """The plane's UUID for ``name`` if known, else the name itself (audit D8).
+
+    Never raises and never blocks: identity is metadata for the console's
+    benefit, and a replication path must not fail — or wait — over it.
+    """
+    if not name:
+        return None
+    try:
+        from fastaiagent._platform.push import pushed_agent_id
+
+        return pushed_agent_id(name) or name
+    except Exception:  # pragma: no cover - defensive
+        logger.debug("plane agent id lookup failed for %r", name, exc_info=True)
+        return name
+
+
 def _to_wire(row: dict[str, Any]) -> dict[str, Any]:
     """Map a local checkpoint row onto the ``/checkpoints/ingest`` wire shape.
 
@@ -216,16 +233,23 @@ def _to_wire(row: dict[str, Any]) -> dict[str, Any]:
         "checkpoint_id": cid,
         "execution_id": row.get("execution_id") or "",
         "resource_type": rtype,
-        # ⚠ Still the NAME, not the plane's agent UUID. That half of D8 is
-        # deliberately not done: only ``Agent`` ever registers with the plane, so
-        # a Chain, Swarm or Supervisor has no UUID to send and never will;
-        # registration races the first checkpoint, so resolving one at write time
-        # would give a single run two different ids; and the restore path rebuilds
-        # ``chain_name`` from this field, so a UUID here returns a run named
-        # ``ed1be3bc-…``. Shipping it would write permanently inconsistent
-        # history into an append-only replica. The honest version is to register
-        # the other three topologies first.
-        "agent_id": chain_name if rtype in _AGENT_SHAPED else None,
+        # The plane's agent UUID when this process has one, else the name.
+        #
+        # Resolved HERE, in the drain, and never at write time — that placement is
+        # the whole correctness argument (audit D8). Registration runs on a daemon
+        # thread kicked from the agent's first traced run, so at write time the id
+        # frequently does not exist yet; resolving then would stamp the name on a
+        # run's early checkpoints and the UUID on its later ones, giving the plane
+        # two identities for one run and breaking the very join this exists to
+        # create. The drain runs later and maps a whole batch at once.
+        #
+        # The window is narrowed, not closed, and the fallback is deliberate
+        # rather than a failure: a Chain and a Swarm *container* have no plane
+        # object at all — they are orchestrations of agents, not agents — so the
+        # plane must handle a name in this column regardless. Run-health is
+        # unaffected either way: it reads the run's LATEST checkpoint, which since
+        # D5 is the ``run_end`` marker, written last and drained last.
+        "agent_id": _plane_agent_id(chain_name) if rtype in _AGENT_SHAPED else None,
         "chain_id": chain_name if rtype == "chain" else None,
         "node_id": row.get("node_id"),
         "step_index": row.get("node_index"),
@@ -244,6 +268,12 @@ def _to_wire(row: dict[str, Any]) -> dict[str, Any]:
             "interrupt_reason": row.get("interrupt_reason"),
             "interrupt_context": _jload(row.get("interrupt_context")),
             "agent_path": row.get("agent_path"),
+            # ⚠ Load-bearing, not redundant with agent_id/chain_id. Once
+            # ``agent_id`` can be a UUID, it is no longer a name — and
+            # ``_wire_to_checkpoint`` rebuilds ``Checkpoint.chain_name`` from
+            # what comes back, which resume matches against the runner. Without
+            # this key a restored run would come back named ``ed1be3bc-…``.
+            "chain_name": chain_name or None,
         },
         "created_at": _iso(row.get("created_at")),
     }
@@ -275,7 +305,11 @@ def _wire_to_checkpoint(data: dict[str, Any]) -> Checkpoint:
     """Inverse of :func:`_to_wire` — reconstruct a :class:`Checkpoint` from a
     ``CheckpointRead`` restore payload."""
     meta = data.get("metadata") or {}
-    chain_name = data.get("agent_id") or data.get("chain_id") or ""
+    # Prefer the name carried in metadata; fall back to the id fields for rows
+    # written before the SDK started sending it, where they ARE the name. Order
+    # matters: since audit D8 ``agent_id`` may be a UUID, and a run restored
+    # under the name ``ed1be3bc-…`` would not match the runner resuming it.
+    chain_name = meta.get("chain_name") or data.get("agent_id") or data.get("chain_id") or ""
     return Checkpoint(
         checkpoint_id=data.get("checkpoint_id") or "",
         parent_checkpoint_id=data.get("parent_checkpoint_id"),
