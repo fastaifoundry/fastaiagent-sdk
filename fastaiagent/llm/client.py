@@ -715,7 +715,8 @@ class LLMClient:
         tools: list[dict[str, Any]] | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
-        from fastaiagent.trace.span import set_genai_attributes
+        from fastaiagent._internal.pricing import record_run_cost
+        from fastaiagent.trace.span import set_fastaiagent_attributes, set_genai_attributes
 
         start = time.monotonic()
         provider_fn = self._get_provider_fn()
@@ -741,6 +742,26 @@ class LLMClient:
                     else None,
                     finish_reason=response.finish_reason or None,
                 )
+                # Cost, priced at the call — the one place every completion this
+                # client makes passes through, so a tool loop's third turn and a
+                # structured re-ask are both counted without any call site having
+                # to remember. ``fastaiagent.cost.total_usd`` is the same key the
+                # langchain/crewai/pydanticai integrations have always set and is
+                # already in ``FASTAIAGENT_ATTRIBUTES``: an existing key on an
+                # existing payload, so not a wire event (CLAUDE.md §2.2).
+                #
+                # The attribute is set only when the cost is known. A genuinely
+                # unpriced model (a private fine-tune, a bedrock/azure deployment
+                # id) leaves it absent, which is what lets the UI fall back to its
+                # own estimate instead of reading a fabricated $0.00. A
+                # self-hosted provider is a known zero rather than an unknown —
+                # see ``LOCAL_FREE_PROVIDERS`` — so a cost gate does not refuse a
+                # laptop running ollama.
+                cost, cost_known = record_run_cost(
+                    self.model, response.usage, provider=self.provider
+                )
+                if cost_known:
+                    set_fastaiagent_attributes(span, **{"cost.total_usd": cost})
                 return response
             except LLMProviderError as e:
                 if attempt < self.max_retries and self._should_retry(e.status_code):
@@ -797,9 +818,26 @@ class LLMClient:
                 f"lmstudio, vllm, sambanova, cerebras."
             )
 
+        from fastaiagent._internal.pricing import record_run_cost
+
         for attempt in range(self.max_retries + 1):
             try:
                 async for event in fn(messages, tools, **kwargs):
+                    # The streamed twin of the cost recorded in
+                    # ``_acomplete_with_retries``. A ``Usage`` event is the only
+                    # place a stream reports its token counts, so it is where a
+                    # streamed turn gets priced — otherwise ``Agent.stream``
+                    # would report the trace id and tokens it gained in 1.67.0
+                    # and still hand back ``cost=0.0``.
+                    if isinstance(event, Usage):
+                        record_run_cost(
+                            self.model,
+                            {
+                                "prompt_tokens": event.prompt_tokens,
+                                "completion_tokens": event.completion_tokens,
+                            },
+                            provider=self.provider,
+                        )
                     yield event
                 return
             except LLMProviderError as e:

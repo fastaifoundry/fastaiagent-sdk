@@ -106,7 +106,7 @@ agent.arun(input)
   │        └─ tool calls: [tool_call GR ─▶ tool ─▶ tool_result GR] ×N ─▶ next iteration
   │
   ├─ output guardrails
-  └─ memory.write ─▶ AgentResult(output, tool_calls, tokens, cost, trace_id)
+  └─ memory.write ─▶ AgentResult(output, tool_calls, tokens, cost, cost_known, trace_id)
 ```
 
 ### What actually loops
@@ -175,8 +175,16 @@ agent.weather-probe               ← root span
 
 The `AgentResult` also carries run-level signals for debugging without opening
 the trace: `output`, `tool_calls` (each with its `iteration`, name, and args),
-`tokens_used`, `cost`, `latency_ms`, `trace_id`, and — when a checkpointer is
-attached — `execution_id` and `status` (`"completed"` or `"paused"`).
+`tokens_used`, `cost` / `cost_known`, `latency_ms`, `trace_id`, and — when a
+checkpointer is attached — `execution_id` and `status` (`"completed"` or
+`"paused"`).
+
+`cost` is summed from every LLM call the run made and is priced against the
+built-in list-price table; `cost_known` tells you whether it could be priced at
+all, because a `0.0` from an unrated model is not the same fact as a `0.0` from
+a free one. `trace_id` is present on every runner and every entry point —
+`Agent`, `Swarm`, `Supervisor` and `Chain`, streamed or not, resumed or not —
+which is what lets an eval case, a replay and the UI all point at the same run.
 
 - **Traces** are stored in `local.db` and shown in the Local UI, one card per
   run, expandable into the span tree. See [Tracing](../tracing/index.md).

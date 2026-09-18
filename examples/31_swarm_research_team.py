@@ -122,6 +122,11 @@ def demo_sync(swarm: Swarm, prompt: str) -> None:
     print("Output:", result.output[:500])
     handoffs = [c for c in result.tool_calls if c.get("tool_name", "").startswith("handoff_to_")]
     print(f"Handoffs observed: {[c['tool_name'] for c in handoffs]}")
+    # One trace for the whole swarm, whichever peer produced the answer.
+    # Before 1.67.0 this was always None: the swarm opened a root span and its
+    # result had no field pointing at it.
+    print(f"Trace ID: {result.trace_id}")
+    print(f"Cost: ${result.cost:.5f}" if result.cost_known else "Cost: unknown (unpriced model)")
     print()
 
 

@@ -64,9 +64,11 @@ so you re-embed the corpus.
 
 A KB can score a query three ways:
 
-- **Vector** — embed the query, find the nearest chunk vectors. FAISS uses
-  **inner product** on normalized vectors (equivalent to cosine similarity).
-  Great at *meaning*; weak at exact tokens (a specific SKU, an error code).
+- **Vector** — embed the query, find the nearest chunk vectors. Every backend
+  returns a **cosine similarity in `[-1, 1]`** (FAISS reaches it with an
+  inner-product index on normalized vectors; Qdrant and Chroma convert from
+  their configured distance space). Great at *meaning*; weak at exact tokens
+  (a specific SKU, an error code).
 - **Keyword (BM25)** — classic term-frequency/inverse-document-frequency
   scoring. Great at *exact terms and rare words*; blind to synonyms.
 - **Hybrid** (default) — run both, **min-max normalize** each score list to
@@ -75,6 +77,19 @@ A KB can score a query three ways:
   over-fetches (`top_k * 3` from each matcher) before fusing so a chunk strong
   in only one signal still surfaces. Hybrid is the default because most queries
   want *both* semantic recall and exact-term precision.
+
+!!! note "A hybrid score is not a cosine — except when one side is empty"
+    Normalization is what makes the two scales comparable, and it is also what
+    makes a hybrid score a *fused rank position* rather than a similarity: the
+    best vector hit is pinned to `1.0` whether its cosine was `0.95` or `0.2`.
+
+    When **one matcher returns nothing**, hybrid short-circuits and hands the
+    other list back **unnormalized**. A query with no lexical overlap therefore
+    returns raw cosine scores — the same numbers `search_type="vector"` would
+    give. That is deliberate (normalizing a single list would pin its best hit
+    to `1.0` and tell you nothing), but it means the meaning of `score` differs
+    between two calls to the same KB, and it is the path that exposed Chroma's
+    mis-scaled scores to callers before 1.67.0.
 
 !!! info "Verified against a live run"
     One policy document chunked into **3 chunks**; a hybrid search for "how long

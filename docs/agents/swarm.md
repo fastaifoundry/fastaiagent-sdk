@@ -92,6 +92,9 @@ class Swarm:
     async def astream(self, input: str, *, context=None, **kwargs) -> AsyncGenerator[StreamEvent, None]: ...
     def stream(self, input: str, *, context=None) -> AgentResult: ...
 
+    def resume(self, execution_id: str, *, resume_value=None, context=None, **kwargs) -> AgentResult: ...
+    async def aresume(self, execution_id: str, *, resume_value=None, context=None, **kwargs) -> AgentResult: ...
+
     def to_dict(self) -> dict: ...
     @classmethod
     def from_dict(cls, data: dict, agents: Sequence[Agent]) -> Swarm: ...
@@ -277,3 +280,25 @@ except SwarmError as e:
 - [Memory](memory.md) — Add long-term memory to swarm agents
 - [KB Backends](../knowledge-base/backends.md) — Give swarm agents searchable knowledge
 - [Chains](../chains/index.md) — Wrap a swarm as a chain node
+
+## What the result carries
+
+`run`, `arun`, `stream` and `resume` all return an `AgentResult` describing the
+whole swarm, not just its last agent:
+
+| Field | Notes |
+|---|---|
+| `output` | The final agent's answer |
+| `tool_calls` | Every hop's calls, each tagged with the `agent` that made it |
+| `tokens_used` | Summed across hops |
+| `cost` / `cost_known` | Summed across hops. `cost_known` is `False` if **any** hop ran a model with no rate — a partial sum is not a total |
+| `guardrails` | Every firing from every agent in the swarm, in order |
+| `trace_id` | The `swarm.<name>` root span — one trace for the whole run |
+| `execution_id` | Shared by every hop, so `resume()` picks up the right one |
+
+!!! note "1.67.0"
+    `trace_id` and `guardrails` used to be empty on every swarm path. A `warn`
+    or `mask` rule that fired inside a swarm was invisible to the caller (the
+    hole `Agent` closed in 1.64.0), and a swarm run had no trace for an eval
+    case, a replay or the UI to point at. `resume()` opened no root span at all,
+    so a resumed swarm's agent spans were emitted as unrelated orphan traces.

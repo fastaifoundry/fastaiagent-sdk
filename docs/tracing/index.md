@@ -192,7 +192,7 @@ The SDK follows the OpenTelemetry GenAI semantic conventions for LLM-related att
 | `fastaiagent.guardrail.position` | `input` / `tool_call` / `tool_result` / `output` |
 | `fastaiagent.guardrail.errored` | The check couldn't run; `passed` reflects `on_error`, not a verdict |
 | `fastaiagent.guardrail.checks` | JSON `[{"name": ..., "result": "pass"｜"block"｜"error"}]` |
-| `fastaiagent.cost.total_usd` | Accumulated cost |
+| `fastaiagent.cost.total_usd` | Estimated USD cost of that one LLM call, priced from the model id and the provider's token counts. Set by `LLMClient` on every `llm.*` span since 1.67.0, and by the LangChain / CrewAI / Pydantic-AI integrations before that. Sum it across a trace for the run's cost. **Absent** — not `0.0` — when the model has no rate, so a reader can fall back to its own estimate instead of trusting a fabricated zero. |
 | `fastaiagent.template.kind` | Flagship-template marker on root span (e.g. `"deep-research"`) — set via `set_template_kind()`. Lets the UI badge / filter trace lists by template. |
 
 ### OpenInference standard attributes

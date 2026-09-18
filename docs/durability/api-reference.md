@@ -280,6 +280,14 @@ either:
 After the active agent returns, the swarm loop continues with
 remaining handoffs, allowlists, and `max_handoffs` enforced.
 
+Since 1.67.0 the whole resume runs inside its own `swarm.<name>` root span, so
+a resumed swarm renders as **one** trace and the returned `AgentResult` carries
+its `trace_id`. Before that it opened no span at all: the resumed agents' spans
+were emitted as unrelated orphan roots, and the result had nothing for an eval
+case, a replay or the UI to point at. The resumed run is a new trace — a resume
+is a new execution of the same `execution_id`, not a continuation of the
+original trace.
+
 ## `Supervisor.aresume`
 
 ```python

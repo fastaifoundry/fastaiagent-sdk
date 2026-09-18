@@ -153,7 +153,13 @@ Collects the full stream into an `AgentResult`:
 ```python
 result = supervisor.stream("Help with my order", context=ctx)
 print(result.output)
+print(result.trace_id)   # the supervisor.<name> root span for this run
 ```
+
+Since 1.67.0 `stream()` opens its own `supervisor.<name>` root span, so a
+streamed run renders as one trace and its result carries a `trace_id` — `run()`
+and `arun()` always had one by inheriting it from the inner agent, and the
+stream path built its result by hand and inherited nothing.
 
 ## Dynamic Instructions
 
@@ -258,8 +264,9 @@ Supervisor(
 |--------|-----------|-------------|
 | `run()` | `(input, *, context=None) -> AgentResult` | Synchronous execution |
 | `arun()` | `(input, *, context=None) -> AgentResult` | Async execution |
-| `stream()` | `(input, *, context=None) -> AgentResult` | Sync streaming (collects result) |
+| `stream()` | `(input, *, context=None) -> AgentResult` | Sync streaming (collects result; carries `trace_id` and guardrail firings) |
 | `astream()` | `(input, *, context=None) -> AsyncGenerator[StreamEvent]` | Async streaming |
+| `resume()` | `(execution_id, *, resume_value=None, context=None) -> AgentResult` | Resume a paused or crashed run |
 
 All methods accept `context: RunContext | None` which is forwarded to all worker agents and their tools.
 

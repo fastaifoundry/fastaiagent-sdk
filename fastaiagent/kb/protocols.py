@@ -45,8 +45,43 @@ class VectorStore(Protocol):
 
     Implementations key chunks by ``Chunk.id``. Embeddings are expected to be
     unit-normalized (cosine-equivalent) since the built-in ``FaissVectorStore``
-    uses inner-product indexes; backends that accept any distance metric
-    should document the assumption they make.
+    uses inner-product indexes.
+
+    .. _vectorstore-score-contract:
+
+    **The score contract.** ``search`` returns a **cosine similarity in
+    ``[-1, 1]``**: ``1.0`` for an identical direction, ``0.0`` for an orthogonal
+    pair, ``-1.0`` for an opposite one, and monotonically increasing with
+    relevance in between. The three built-in backends all satisfy it — FAISS
+    returns a raw inner product (which *is* cosine for unit vectors), Qdrant
+    returns cosine verbatim, and Chroma converts from whatever HNSW space its
+    collection uses.
+
+    This was implied everywhere and written down nowhere until 1.67.0, and the
+    gap cost a real defect: ``ChromaVectorStore`` converted a **squared-L2**
+    distance with the cosine formula and returned ``2·cos - 1``, so an
+    orthogonal pair scored ``-1.0`` and an opposite one ``-3.0``. It survived
+    because every test asserted ``isinstance(score, float)`` and none asserted a
+    value. ``tests/test_kb_score_semantics_sweep.py`` is the sweep that now
+    holds the contract across all three backends.
+
+    **Why the value matters, not just the order.** A monotonic distortion keeps
+    rankings intact and still breaks callers that read the number:
+
+    * :class:`fastaiagent.agent.memory_blocks.VectorBlock` fuses similarity with
+      recency and importance as a weighted sum, which assumes the similarity
+      term lives in ``[0, 1]``. A rescaled score changes that term's slope and
+      offset, and provably inverts the fused ranking.
+    * :meth:`fastaiagent.kb.LocalKB.search` in ``hybrid`` mode min-max
+      normalizes both sides — affine-invariant, so it hides the problem — but
+      short-circuits and returns **raw** vector scores when the keyword side
+      finds nothing.
+    * :meth:`fastaiagent.kb.LocalKB.as_tool` formats the score into the tool
+      result the *model* reads.
+
+    A custom backend that cannot express cosine should say so in its own
+    docstring rather than returning a differently-scaled number quietly: a
+    caller comparing two backends has no other way to find out.
     """
 
     @property
@@ -61,7 +96,12 @@ class VectorStore(Protocol):
     def search(
         self, query_embedding: list[float], top_k: int
     ) -> list[tuple[Chunk, float]]:
-        """Return the top-``top_k`` (chunk, score) pairs, highest score first."""
+        """Return the top-``top_k`` (chunk, score) pairs, highest score first.
+
+        ``score`` is a cosine similarity in ``[-1, 1]`` — see the class
+        docstring for the full contract and why the value, not just the order,
+        is part of it.
+        """
         ...
 
     def delete(self, chunk_ids: list[str]) -> None:

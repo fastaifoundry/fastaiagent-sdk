@@ -65,15 +65,25 @@ class Scorer:
 
 
 class CodeScorer(Scorer):
-    """A scorer backed by a Python function."""
+    """A scorer backed by a Python function.
+
+    Extra keyword arguments are filtered to what the wrapped function actually
+    declares. ``evaluate()`` supplies run facts (``latency_ms``, ``cost``,
+    ``cost_known``) to every scorer since 1.67.0, and a user function written as
+    ``def check(input, output, expected)`` must keep working — it simply never
+    asked for them. A function with ``**kwargs`` still receives everything.
+    """
 
     def __init__(self, name: str, fn: Callable[..., Any]):
         self.name = name
         self._fn = fn
+        self._accepted = _accepted_kwargs(fn)
 
     def score(
         self, input: str, output: str, expected: str | None = None, **kwargs: Any
     ) -> ScorerResult:
+        if self._accepted is not None:
+            kwargs = {k: v for k, v in kwargs.items() if k in self._accepted}
         result = self._fn(input=input, output=output, expected=expected, **kwargs)
         if isinstance(result, ScorerResult):
             return result
@@ -82,3 +92,27 @@ class CodeScorer(Scorer):
         if isinstance(result, (int, float)):
             return ScorerResult(score=float(result), passed=float(result) >= 0.5)
         return ScorerResult(score=0.0, passed=False, reason=str(result))
+
+
+def _accepted_kwargs(fn: Callable[..., Any]) -> set[str] | None:
+    """Keyword names ``fn`` will accept, or ``None`` when it takes ``**kwargs``.
+
+    ``None`` means "pass everything through" — that is the signature that opted
+    in. An unreadable signature (a C callable, an exotic wrapper) also returns
+    ``None``: better to hand it everything and let it raise on its own terms
+    than to silently drop an argument it wanted.
+    """
+    import inspect
+
+    try:
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return None
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()):
+        return None
+    return {
+        name
+        for name, p in params.items()
+        if p.kind
+        in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+    }

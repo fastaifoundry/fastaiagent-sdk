@@ -394,7 +394,9 @@ for c in chunks:
 | Field | Type | Description |
 |-------|------|-------------|
 | `chunk` | `Chunk` | The matched chunk |
-| `score` | `float` | Similarity score (higher is better) |
+| `score` | `float` | Cosine similarity, `[-1, 1]` — higher is better |
+
+`score` is a **cosine similarity**, and every backend returns it on the same scale: `1.0` for an identical direction, `0.0` for an orthogonal one, `-1.0` for an opposite one. That holds for FAISS, Qdrant and Chroma alike, so a score means the same thing whichever backend is underneath and two backends can be compared directly. `hybrid` mode is the one exception: when both matchers return hits it min-max normalizes each list to `[0, 1]` before fusing, so a hybrid score is a *fused rank position*, not a cosine. When the keyword side returns nothing, hybrid hands back the raw (cosine) vector scores unchanged — see [Concepts](concepts.md#3-the-three-matchers-vector-keyword-hybrid).
 
 ### Chunk
 

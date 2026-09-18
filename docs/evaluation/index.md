@@ -222,11 +222,20 @@ scorer.score(input="q", output="A longer answer")  # passed=True
 
 ### Latency
 
-Passes if execution latency is under a threshold. Pass `latency_ms` as a kwarg.
+Passes if execution latency is under a threshold.
+
+`evaluate()` supplies `latency_ms` automatically — from the `AgentResult` when
+your callable returns one, and measured around the call otherwise, so the gate
+works even for a callable that returns a bare string. You can still pass it by
+hand when calling the scorer directly.
 
 ```python
 from fastaiagent.eval.builtins import Latency
 
+# Inside evaluate(): latency is filled in for you.
+evaluate(agent_fn=agent.run, dataset=ds, scorers=[Latency(max_ms=2000)])
+
+# Standalone:
 scorer = Latency(max_ms=2000)
 scorer.score(input="q", output="answer", latency_ms=1500)  # passed=True
 scorer.score(input="q", output="answer", latency_ms=3000)  # passed=False
@@ -234,14 +243,40 @@ scorer.score(input="q", output="answer", latency_ms=3000)  # passed=False
 
 ### CostUnder
 
-Passes if cost is under a threshold. Pass `cost` as a kwarg.
+Passes if the run's USD spend is under a threshold.
+
+`evaluate()` supplies `cost` and `cost_known` automatically from the
+`AgentResult`. A value you pass yourself still wins.
 
 ```python
 from fastaiagent.eval.builtins import CostUnder
 
+evaluate(agent_fn=agent.run, dataset=ds, scorers=[CostUnder(max_usd=0.05)])
+
 scorer = CostUnder(max_usd=0.05)
 scorer.score(input="q", output="answer", cost=0.03)  # passed=True
 ```
+
+!!! warning "Unknown cost fails the gate — it is not treated as free"
+    When the model has no rate in the pricing table (a private fine-tune, a
+    bedrock or azure deployment id), the run cannot be priced and `cost_known`
+    is `False`. `CostUnder` then **fails** and says so, rather than certifying a
+    run it never priced. Give the model a rate with `set_rate_overrides()` or
+    the `pricing` block of `models.json` to gate on it properly.
+
+    **Self-hosted providers are the exception**, and they are a known zero
+    rather than an unknown: `ollama`, `lmstudio` and `vllm` run on hardware you
+    already pay for, so a run costs nothing *to the provider*, `cost_known` is
+    `True`, and a budget gate passes it. Treating local inference as unpriced
+    would refuse every laptop running ollama — a false positive, not a safety
+    property.
+
+!!! danger "Before 1.67.0 both of these could not fail"
+    `evaluate()` passed neither `cost` nor `latency_ms`, so both scorers read
+    `0` out of an empty `**kwargs` and passed every case — `CostUnder` reported
+    "Cost: $0.0000" and `Latency` "Latency: 0ms" regardless of the run. If you
+    have a `CostUnder` or `Latency` gate in CI that has always been green,
+    expect it to start giving a real verdict.
 
 ### Using by Name
 

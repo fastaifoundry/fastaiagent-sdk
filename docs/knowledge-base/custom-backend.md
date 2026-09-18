@@ -95,7 +95,9 @@ That single subclass runs the full contract — add/search roundtrip, delete, re
 
 ## Tips
 
-- **Score direction** — `search` must return highest-score-first. If your backend returns distances, convert (`similarity = 1 - distance` is a safe default for cosine).
+- **Score semantics** — `search` must return highest-score-first **and** return a cosine similarity in `[-1, 1]`: `1.0` identical, `0.0` orthogonal, `-1.0` opposite. The value is part of the contract, not just the order — `VectorBlock` fuses it with recency as a weighted sum, `LocalKB`'s hybrid mode hands raw vector scores straight back when the keyword side is empty, and `LocalKB.as_tool()` prints the number into the text the model reads.
+- **Converting a distance** — there is no safe default. `similarity = 1 - distance` is right **only** for a true cosine distance. Check the space your index is actually configured with, and convert from that one: squared L2 (what Chroma's default `l2` reports, and FAISS's `IndexFlatL2`) needs `1 - d/2` for unit vectors, plain Euclidean needs `1 - d²/2`, and an inner-product index usually needs no conversion at all. Assuming cosine over a squared-L2 distance is exactly the defect `ChromaVectorStore` shipped with until 1.67.0 — it returned `2·cos - 1`, down to `-3.0`, and no test caught it because every test asserted the score was a `float` and none asserted a value.
+- **Test the values** — `tests/test_kb_score_semantics_sweep.py` is the cross-backend sweep: identical `≈ 1.0`, orthogonal `≈ 0.0`, opposite `≈ -1.0`. Add your backend to its factory map.
 - **Metadata round-trip** — `Chunk.metadata` is a free-form `dict[str, Any]`. Serialize non-primitive values when the backend requires it (JSON-encode + parse back on read — see `ChromaVectorStore` for an example).
 - **Lazy connections** — if your backend is remote, hold off on opening the connection until the first `add`/`search`. Tests construct your adapter many times; make that cheap.
 - **Don't raise on unknown ids in delete** — silent no-op is the contract.

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -183,6 +184,13 @@ async def aevaluate(
             expected = item.get("expected_output", item.get("expected"))
 
             trace_id: str | None = None
+            # What the run cost and how long it took. Collected here because
+            # ``evaluate`` is the only thing holding the result, and because two
+            # documented budget gates were reading them out of ``**kwargs`` that
+            # nobody ever filled: ``CostUnder`` and ``Latency`` were
+            # structurally incapable of failing.
+            run_facts: dict[str, Any] = {}
+            call_started = time.monotonic()
             # Call agent
             try:
                 output = await _call_agent_fn(agent_fn, input_text)
@@ -194,6 +202,21 @@ async def aevaluate(
                 # preserve any real (possibly non-str) output unchanged.
                 output_text = "" if out_val is None else out_val
                 trace_id = getattr(output, "trace_id", None)
+                # Latency is always knowable — measured here when the callable
+                # returns something that isn't an AgentResult (a bare string,
+                # a dict), so the gate never has to guess.
+                measured_ms = int((time.monotonic() - call_started) * 1000)
+                run_facts["latency_ms"] = int(getattr(output, "latency_ms", 0) or measured_ms)
+                # Cost is NOT always knowable, and "unknown" must not read as
+                # "free" — see ``AgentResult.cost_known``. A callable that
+                # returns a bare string reports neither, so the gate is told the
+                # cost is unknown rather than zero.
+                if hasattr(output, "cost"):
+                    run_facts["cost"] = float(getattr(output, "cost", 0.0) or 0.0)
+                    run_facts["cost_known"] = bool(getattr(output, "cost_known", False))
+                else:
+                    run_facts["cost"] = 0.0
+                    run_facts["cost_known"] = False
             except Exception as e:
                 # Infrastructure failure DURING scoring (provider 500, timeout,
                 # network/auth error) is NOT an agent-quality miss. Record the case
@@ -213,12 +236,15 @@ async def aevaluate(
 
             # Score
             per_scorer: dict[str, dict[str, Any]] = {}
+            # Caller kwargs win: someone passing ``cost=`` to ``evaluate()``
+            # is overriding on purpose, and always could.
+            score_kwargs = {**run_facts, **kwargs}
             for scorer in resolved_scorers:
                 result = scorer.score(
                     input=input_text,
                     output=output_text,
                     expected=expected,
-                    **kwargs,
+                    **score_kwargs,
                 )
                 results.add(scorer.name, result)
                 per_scorer[scorer.name] = {

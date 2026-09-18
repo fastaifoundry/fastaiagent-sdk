@@ -67,6 +67,12 @@ class ChainResult(BaseModel):
     node_results: dict[str, Any] = Field(default_factory=dict)
     status: str = "completed"
     pending_interrupt: dict[str, Any] | None = None
+    #: The OTel trace this run emitted, or ``None`` when ``trace=False`` was
+    #: passed. Additive in 1.67.0: a chain has opened a ``chain.<name>`` root
+    #: span since long before, and ``ChainResult`` had no field to name it —
+    #: so eval-to-trace linking and the UI's open-trace affordance had nothing
+    #: to point at for a chain.
+    trace_id: str | None = None
 
     model_config = {"arbitrary_types_allowed": True}
 
@@ -393,6 +399,11 @@ class Chain:
                 except (TypeError, ValueError):
                     logger.debug("Failed to serialize chain output for trace", exc_info=True)
                 span.set_attribute("chain.execution_id", raw.get("execution_id") or "")
+                # Read inside the ``with`` — the span context is only valid
+                # while the span is current.
+                trace_id = format(span.get_span_context().trace_id, "032x")
+            else:
+                trace_id = None
 
         return ChainResult(
             output=raw["output"],
@@ -401,6 +412,7 @@ class Chain:
             node_results=raw["node_results"],
             status=raw.get("status", "completed"),
             pending_interrupt=raw.get("pending_interrupt"),
+            trace_id=trace_id,
         )
 
     async def resume(
@@ -498,37 +510,55 @@ class Chain:
                     break
             start_node = order[resume_idx] if resume_idx and resume_idx < len(order) else None
 
-        try:
-            raw = await execute_chain(
-                nodes=self.nodes,
-                edges=self.edges,
-                initial_state=state,
-                state_schema=self.state_schema,
-                checkpointer=store,
-                chain_name=self.name,
-                execution_id=execution_id,
-                resume_from_node=start_node,
-                resume_value=resume_value,
-                run_context=context,
-                strict_routing=self.strict_routing,
-            )
-        except BaseException as exc:
-            write_run_end(
-                store, execution_id=execution_id, chain_name=self.name, status="failed", error=exc
-            )
-            raise
-        # A resumed run that reaches the end has ended just as much as one that
-        # never paused, and earns the same marker. Missing this was the gap that
-        # left every HITL-approved run looking unfinished on the plane —
-        # ``resume`` calls ``execute_chain`` directly, bypassing ``aexecute``.
-        if raw.get("status") == "completed":
-            write_run_end(
-                store,
-                execution_id=execution_id,
-                chain_name=self.name,
-                status="completed",
-                state_snapshot=raw.get("final_state"),
-            )
+        # A resumed chain is a run, and a run gets a root span — the same
+        # correction ``Swarm.aresume`` got in 1.67.0. ``resume`` calls
+        # ``execute_chain`` directly, so without this its node spans were
+        # emitted as orphan roots and the returned ``ChainResult`` had no trace
+        # to name.
+        from fastaiagent.trace.otel import get_tracer
+
+        with get_tracer().start_as_current_span(f"chain.{self.name}") as span:
+            span.set_attribute("chain.name", self.name)
+            span.set_attribute("chain.resumed_execution_id", execution_id)
+            span.set_attribute("fastaiagent.runner.type", "chain")
+            span.set_attribute("fastaiagent.framework", "fastaiagent")
+            trace_id = format(span.get_span_context().trace_id, "032x")
+            try:
+                raw = await execute_chain(
+                    nodes=self.nodes,
+                    edges=self.edges,
+                    initial_state=state,
+                    state_schema=self.state_schema,
+                    checkpointer=store,
+                    chain_name=self.name,
+                    execution_id=execution_id,
+                    resume_from_node=start_node,
+                    resume_value=resume_value,
+                    run_context=context,
+                    strict_routing=self.strict_routing,
+                )
+            except BaseException as exc:
+                write_run_end(
+                    store,
+                    execution_id=execution_id,
+                    chain_name=self.name,
+                    status="failed",
+                    error=exc,
+                )
+                raise
+            # A resumed run that reaches the end has ended just as much as one
+            # that never paused, and earns the same marker. Missing this was the
+            # gap that left every HITL-approved run looking unfinished on the
+            # plane — ``resume`` calls ``execute_chain`` directly, bypassing
+            # ``aexecute``.
+            if raw.get("status") == "completed":
+                write_run_end(
+                    store,
+                    execution_id=execution_id,
+                    chain_name=self.name,
+                    status="completed",
+                    state_snapshot=raw.get("final_state"),
+                )
 
         return ChainResult(
             output=raw["output"],
@@ -537,6 +567,7 @@ class Chain:
             node_results=raw["node_results"],
             status=raw.get("status", "completed"),
             pending_interrupt=raw.get("pending_interrupt"),
+            trace_id=trace_id,
         )
 
     # Alias matching the ``aresume()`` contract that ``Agent`` / ``Swarm`` /
@@ -670,18 +701,28 @@ class Chain:
             )
         )
 
-        raw = await execute_chain(
-            nodes=self.nodes,
-            edges=self.edges,
-            initial_state=state,
-            state_schema=self.state_schema,
-            checkpointer=store,
-            chain_name=self.name,
-            execution_id=fork_id,
-            resume_from_node=start_node,
-            run_context=context,
-            strict_routing=self.strict_routing,
-        )
+        from fastaiagent.trace.otel import get_tracer
+
+        # Same reasoning as ``resume``: a fork is its own run under a fresh
+        # execution id, so it gets its own root span and its own trace id.
+        with get_tracer().start_as_current_span(f"chain.{self.name}") as span:
+            span.set_attribute("chain.name", self.name)
+            span.set_attribute("chain.forked_execution_id", fork_id)
+            span.set_attribute("fastaiagent.runner.type", "chain")
+            span.set_attribute("fastaiagent.framework", "fastaiagent")
+            trace_id = format(span.get_span_context().trace_id, "032x")
+            raw = await execute_chain(
+                nodes=self.nodes,
+                edges=self.edges,
+                initial_state=state,
+                state_schema=self.state_schema,
+                checkpointer=store,
+                chain_name=self.name,
+                execution_id=fork_id,
+                resume_from_node=start_node,
+                run_context=context,
+                strict_routing=self.strict_routing,
+            )
         return ChainResult(
             output=raw["output"],
             final_state=raw["final_state"],
@@ -689,6 +730,7 @@ class Chain:
             node_results=raw["node_results"],
             status=raw.get("status", "completed"),
             pending_interrupt=raw.get("pending_interrupt"),
+            trace_id=trace_id,
         )
 
     def fork(

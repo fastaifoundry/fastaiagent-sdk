@@ -66,7 +66,11 @@ def demo_real_agent() -> None:
 
     # 1) Free-form answer — substring, length, and real latency/cost.
     r1 = agent.run("In one short sentence, what is the capital of France?")
-    print(f"  q1: {r1.output!r}  ({r1.latency_ms} ms, ${r1.cost:.5f})")
+    # ``cost`` is a real number since 1.67.0 — before that nothing ever assigned
+    # it and this line printed $0.00000 for every run. ``cost_known`` separates
+    # "spent nothing" from "no rate for this model".
+    cost_text = f"${r1.cost:.5f}" if r1.cost_known else "unpriced"
+    print(f"  q1: {r1.output!r}  ({r1.latency_ms} ms, {cost_text})")
     _show("contains", Contains().score(input="", output=r1.output, expected="Paris"))
     _show("length_between", LengthBetween(min_len=5, max_len=200).score(input="", output=r1.output))
     _show(

@@ -7,11 +7,13 @@ import logging
 import time
 import uuid
 from collections.abc import AsyncGenerator, Callable, Sequence
+from contextvars import ContextVar
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 from fastaiagent._internal.async_utils import run_sync
+from fastaiagent._internal.pricing import run_cost, start_run_cost, stop_run_cost
 from fastaiagent.agent.context import (
     RunContext,
     reset_active_run_context,
@@ -51,7 +53,7 @@ from fastaiagent.guardrail.guardrail import (
 )
 from fastaiagent.llm.client import LLMClient
 from fastaiagent.llm.message import Message, SystemMessage, UserMessage
-from fastaiagent.llm.stream import StreamEvent, TextDelta
+from fastaiagent.llm.stream import StreamEvent, TextDelta, Usage
 from fastaiagent.llm.structured import OutputSpec
 from fastaiagent.multimodal.image import Image as MultimodalImage
 from fastaiagent.multimodal.pdf import PDF as MultimodalPDF  # noqa: N811
@@ -74,6 +76,20 @@ SIBLING_SKIPPED_NOTE = "the agent was interrupted before this tool ran; it was n
 #: call. Telling the model it was "interrupted" on a branch nobody interrupted
 #: would be a small lie in the one place the model reasons from.
 FORK_SKIPPED_NOTE = "this tool was not run: the conversation was branched before its result"
+
+#: Bridge from :meth:`Agent.astream` back to the synchronous :meth:`Agent.stream`.
+#:
+#: ``astream`` is a generator: it yields events, never an :class:`AgentResult`,
+#: so the run's identity (trace id, execution id, token count) had no way back
+#: to the caller that collects those events — which is why a streamed run
+#: returned ``trace_id=None``, ``tokens_used=0`` and ``execution_id=""`` right
+#: up to 1.67.0. An async generator's body runs in the context of whoever drives
+#: it, so a dict published here by ``stream()`` is filled in by ``astream``
+#: while it iterates. Same property the run-scoped guardrail firing collection
+#: relies on, and the reason that one is opened in ``stream()`` too.
+_stream_outcome: ContextVar[dict[str, Any] | None] = ContextVar(
+    "fastaiagent_stream_outcome", default=None
+)
 
 
 def _loop_end_turn(tool_calls: list[dict[str, Any]], start_iteration: int) -> int:
@@ -215,7 +231,19 @@ class AgentResult(BaseModel):
     parsed: Any | None = None
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     tokens_used: int = 0
+    #: Estimated USD spent on this run, summed over every LLM call it made —
+    #: the tool loop's turns, a structured re-ask, a guardrail re-ask. Declared
+    #: since the first release and never assigned until 1.67.0.
+    #:
+    #: ``0.0`` has two meanings, and ``cost_known`` is how you tell them apart:
+    #: genuinely free, versus a model we could not price. A self-hosted provider
+    #: (ollama, lmstudio, vllm) runs on hardware the operator already pays for,
+    #: so it is a known zero; a bedrock/azure deployment id is partner-billed
+    #: and a private fine-tune is simply unknown, so both are ``cost_known
+    #: False``. Never read ``cost == 0`` alone as "this run was free".
     cost: float = 0.0
+    #: ``True`` only when every LLM call in the run could be priced.
+    cost_known: bool = False
     latency_ms: int = 0
     trace_id: str | None = None
     execution_id: str = ""
@@ -786,6 +814,12 @@ class Agent:
         # at — the tool_call/tool_result ones happen inside the tool loop, which
         # is why this is run-scoped rather than a local list here.
         gf_token = start_firing_collection()
+        # Accumulate this run's LLM spend. Run-scoped for the same reason the
+        # firing collection is: the calls happen inside the tool loop, the
+        # structured re-ask and the guardrail re-ask, none of which return a
+        # cost up to here. ``LLMClient`` records into it at the one point every
+        # completion passes through.
+        rcost_token = start_run_cost()
 
         # Run the agent's checkpointer setup once — cheap on subsequent calls.
         if self._checkpointer is not None:
@@ -916,11 +950,14 @@ class Agent:
                     )
                     run_ended = True
 
+                cost, cost_known = run_cost()
                 return AgentResult(
                     output=output,
                     parsed=parsed,
                     tool_calls=tool_calls,
                     tokens_used=tokens,
+                    cost=cost,
+                    cost_known=cost_known,
                     latency_ms=latency,
                     execution_id=exec_id,
                     status="completed",
@@ -931,8 +968,13 @@ class Agent:
                 # a row written after the ``interrupted`` one would hide the pause
                 # from ``aresume``'s status guard (audit D5).
                 latency = int((time.monotonic() - start) * 1000)
+                # A paused run has already spent what it spent; reporting 0.0
+                # would make a pause look free.
+                paused_cost, paused_cost_known = run_cost()
                 return AgentResult(
                     output="",
+                    cost=paused_cost,
+                    cost_known=paused_cost_known,
                     execution_id=exec_id,
                     status="paused",
                     pending_interrupt={
@@ -987,6 +1029,7 @@ class Agent:
             _execution_id.reset(exec_token)
             reset_active_run_context(rc_token)
             stop_firing_collection(gf_token)
+            stop_run_cost(rcost_token)
 
     async def astream(
         self,
@@ -1011,16 +1054,75 @@ class Agent:
         and checkpoints are written during streaming — matching the behavior
         of :meth:`arun`.
 
+        ``trace`` (default ``True``) opens an ``agent.<name>`` root span around
+        the whole streamed run, exactly as :meth:`arun` does. Before 1.67.0 the
+        parameter was accepted and ignored: a streamed run produced ``llm.*``
+        and tool spans with no agent root to hang them on, and the
+        :class:`AgentResult` :meth:`stream` built from it carried no
+        ``trace_id``, no ``tokens_used`` and an empty ``execution_id``. All
+        three come from this span. Pass ``trace=False`` to stream inside a
+        workflow that already owns the root span.
+
         Example:
             async for event in agent.astream("Hello"):
                 if isinstance(event, TextDelta):
                     print(event.text, end="", flush=True)
         """
+        from contextlib import nullcontext
+
+        from fastaiagent.trace.otel import get_tracer
+
         exec_id = execution_id or str(uuid.uuid4())
 
         input_text = (
             input if isinstance(input, str) else _input_summary_text(normalize_input(input))
         )
+
+        span_cm = (
+            get_tracer().start_as_current_span(f"agent.{self.name}") if trace else nullcontext(None)
+        )
+        # ``stream()`` drives this generator, so the span opened here is current
+        # in the driver's context — the same property the firing collection
+        # relies on. That is what lets ``stream()`` read the run's identity out
+        # of ``_stream_outcome`` below without ``astream`` having to return one.
+        outcome = _stream_outcome.get()
+        with span_cm as span:
+            if span is not None:
+                span.set_attribute("agent.name", self.name)
+                span.set_attribute("fastaiagent.framework", "fastaiagent")
+                span.set_attribute("agent.input", input_text)
+                span.set_attribute("agent.streamed", True)
+                if outcome is not None:
+                    outcome["trace_id"] = format(span.get_span_context().trace_id, "032x")
+            if outcome is not None:
+                outcome["execution_id"] = exec_id
+            async for event in self._astream_inner(
+                input,
+                context=context,
+                execution_id=exec_id,
+                messages=messages,
+                input_text=input_text,
+                span=span,
+                outcome=outcome,
+                **kwargs,
+            ):
+                yield event
+
+    async def _astream_inner(
+        self,
+        input: AgentInput,
+        *,
+        context: RunContext[Any] | None = None,
+        execution_id: str,
+        messages: list[Message] | None = None,
+        input_text: str,
+        span: Any = None,
+        outcome: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> AsyncGenerator[StreamEvent, None]:
+        """The streamed run itself. Split out of :meth:`astream` only so the
+        root span opened there wraps the whole generator body."""
+        exec_id = execution_id
 
         # Effective guardrails = local + plane-authored (see arun for details).
         eff_guardrails = self._effective_guardrails()
@@ -1063,6 +1165,7 @@ class Agent:
         try:
             # Stream tool loop — yields events to caller
             accumulated_text = ""
+            streamed_tokens = 0
             async for event in stream_tool_loop(
                 llm=self.llm,
                 messages=llm_messages,
@@ -1083,6 +1186,11 @@ class Agent:
             ):
                 if isinstance(event, TextDelta):
                     accumulated_text += event.text
+                elif isinstance(event, Usage):
+                    # The only place a stream reports token counts. Summed
+                    # across every turn of the loop so a streamed run reports
+                    # the same kind of number ``arun`` does.
+                    streamed_tokens += event.prompt_tokens + event.completion_tokens
                 yield event
 
             output = accumulated_text
@@ -1109,6 +1217,13 @@ class Agent:
 
                 traced_add(self.memory, UserMessage(input_text))
                 traced_add(self.memory, AssistantMessage(output))
+
+            if span is not None:
+                span.set_attribute("agent.output", output)
+                span.set_attribute("agent.tokens_used", streamed_tokens)
+            if outcome is not None:
+                outcome["tokens_used"] = streamed_tokens
+                outcome["output"] = output
         finally:
             _current_checkpointer.reset(cp_token)
             _agent_path.reset(ap_token)
@@ -1548,6 +1663,13 @@ class Agent:
             # while iterating land in this list — and ``astream`` itself returns
             # events, not an ``AgentResult`` to hang them on.
             gf_token = start_firing_collection()
+            # Same trick, same reason: the streamed run's trace id, execution id
+            # and token count are published into this dict by ``astream`` while
+            # we iterate. Before 1.67.0 all three were simply absent from the
+            # result a streamed run returned.
+            outcome: dict[str, Any] = {}
+            so_token = _stream_outcome.set(outcome)
+            rcost_token = start_run_cost()
             try:
                 async for event in self.astream(input, context=context, trace=trace, **kwargs):
                     if isinstance(event, TextDelta):
@@ -1555,13 +1677,21 @@ class Agent:
                 latency = int((time.monotonic() - start) * 1000)
                 output = "".join(text_parts)
                 parsed = self._parse_output(output)
+                cost, cost_known = run_cost()
                 return AgentResult(
                     output=output,
                     parsed=parsed,
+                    tokens_used=int(outcome.get("tokens_used", 0) or 0),
+                    cost=cost,
+                    cost_known=cost_known,
                     latency_ms=latency,
+                    trace_id=outcome.get("trace_id"),
+                    execution_id=str(outcome.get("execution_id", "") or ""),
                     guardrails=collected_firings(),
                 )
             finally:
+                stop_run_cost(rcost_token)
+                _stream_outcome.reset(so_token)
                 stop_firing_collection(gf_token)
 
         return run_sync(_collect())

@@ -61,6 +61,12 @@ from fastaiagent.chain.interrupt import (
     _execution_id,
 )
 from fastaiagent.checkpointers import Checkpointer, SQLiteCheckpointer
+from fastaiagent.guardrail.guardrail import (
+    GuardrailFiring,
+    collected_firings,
+    start_firing_collection,
+    stop_firing_collection,
+)
 from fastaiagent.llm.message import AssistantMessage, UserMessage
 from fastaiagent.llm.stream import (
     HandoffEvent,
@@ -348,6 +354,13 @@ class Swarm:
 
             span.set_attribute("swarm.output", result.output)
             span.set_attribute("swarm.handoff_count", len(result.tool_calls or []))
+            # Stamped HERE, at the span, rather than at each of the three
+            # ``AgentResult(...)`` sites inside ``_run_loop`` — one place per
+            # topology, so a future return site cannot forget. Deliberately NOT
+            # propagated up from the child agent's result: that id is the same
+            # only by accident of nesting, and there is no child result at all
+            # when a swarm returns early.
+            result.trace_id = format(span.get_span_context().trace_id, "032x")
         return result
 
     async def _arun_swarm(
@@ -451,6 +464,18 @@ class Swarm:
         """
         iteration = start_iter
         injected = first_agent_result
+        # Cost accumulates across hops alongside tokens. It starts "known" and
+        # is narrowed by any hop that could not be priced, so a swarm mixing a
+        # priced model with a local one reports ``cost_known=False`` rather than
+        # a partial sum that looks like the total.
+        total_cost = 0.0
+        cost_known = True
+        # Each child agent already reports its own firings on its own result —
+        # a nested ``start_firing_collection`` shadows the caller's, so the
+        # swarm cannot simply read ``collected_firings()`` here. Accumulating
+        # the children's lists is how a warn/mask that fired on hop two reaches
+        # the caller of ``swarm.run``, the same way ``tool_calls`` does.
+        accumulated_firings: list[GuardrailFiring] = []
 
         while True:
             # Handoff-boundary checkpoint — captures everything needed to
@@ -503,13 +528,21 @@ class Swarm:
                     output="",
                     tool_calls=accumulated_tool_calls,
                     tokens_used=total_tokens + result.tokens_used,
+                    cost=total_cost + result.cost,
+                    cost_known=cost_known and result.cost_known,
                     latency_ms=latency,
                     execution_id=exec_id,
                     status="paused",
                     pending_interrupt=result.pending_interrupt,
+                    guardrails=accumulated_firings + list(result.guardrails),
                 )
 
             total_tokens += result.tokens_used
+            # Cost sums across hops the same way tokens do; a swarm whose second
+            # agent runs an unpriced model does not know what the whole run cost.
+            total_cost += result.cost
+            cost_known = cost_known and result.cost_known
+            accumulated_firings.extend(result.guardrails)
             handoff = self._find_handoff(result)
             for call in result.tool_calls:
                 call_copy = dict(call)
@@ -522,9 +555,15 @@ class Swarm:
                     output=result.output,
                     tool_calls=accumulated_tool_calls,
                     tokens_used=total_tokens,
+                    cost=total_cost,
+                    cost_known=cost_known,
                     latency_ms=latency,
                     execution_id=exec_id,
                     status="completed",
+                    # A warn/mask firing inside a swarm was invisible to the
+                    # caller: ``agent.py`` closed this in 1.64.0 and the swarm's
+                    # own return sites dropped the list on the floor.
+                    guardrails=accumulated_firings,
                 )
 
             target, reason = handoff
@@ -586,6 +625,39 @@ class Swarm:
         loop continues normally — handoffs, allowlists, max_handoffs all
         still apply.
         """
+        from fastaiagent.trace.otel import get_tracer
+
+        # A resumed swarm is a run, and a run gets a root span. ``aresume`` opened
+        # none at all before 1.67.0: the child agent's spans were emitted as
+        # orphan roots, the UI rendered N unrelated traces instead of one resumed
+        # workflow, and the returned result had no id to name. Opened around the
+        # whole method so the restore, the checkpoint walk and every handoff after
+        # it are descendants.
+        with get_tracer().start_as_current_span(f"swarm.{self.name}") as span:
+            span.set_attribute("swarm.name", self.name)
+            span.set_attribute("swarm.resumed_execution_id", execution_id)
+            span.set_attribute("fastaiagent.runner.type", "swarm")
+            span.set_attribute("fastaiagent.framework", "fastaiagent")
+            result = await self._aresume_inner(
+                execution_id,
+                resume_value=resume_value,
+                context=context,
+                **kwargs,
+            )
+            span.set_attribute("swarm.output", result.output)
+            result.trace_id = format(span.get_span_context().trace_id, "032x")
+        return result
+
+    async def _aresume_inner(
+        self,
+        execution_id: str,
+        *,
+        resume_value: Resume | None = None,
+        context: RunContext[Any] | None = None,
+        **kwargs: Any,
+    ) -> AgentResult:
+        """The resume itself. Split out of :meth:`aresume` only so the root span
+        opened there wraps every step of it."""
         from fastaiagent._internal.errors import ChainCheckpointError
 
         store: Checkpointer = self._checkpointer or SQLiteCheckpointer()
@@ -755,16 +827,40 @@ class Swarm:
             current = target
 
     def stream(self, input: Any, *, context: RunContext[Any] | None = None) -> AgentResult:
-        """Synchronous streaming — collects into an :class:`AgentResult`."""
+        """Synchronous streaming — collects into an :class:`AgentResult`.
+
+        Opens a ``swarm.<name>`` root span, so a streamed swarm renders as one
+        trace and the returned result can name it — the same identity
+        :meth:`arun` has always had.
+        """
+        from fastaiagent.trace.otel import get_tracer
 
         async def _collect() -> AgentResult:
             start = time.monotonic()
             text_parts: list[str] = []
-            async for event in self.astream(input, context=context):
-                if isinstance(event, TextDelta):
-                    text_parts.append(event.text)
-            latency = int((time.monotonic() - start) * 1000)
-            return AgentResult(output="".join(text_parts), latency_ms=latency)
+            gf_token = start_firing_collection()
+            try:
+                with get_tracer().start_as_current_span(f"swarm.{self.name}") as span:
+                    span.set_attribute("swarm.name", self.name)
+                    span.set_attribute("swarm.entrypoint", self.entrypoint)
+                    span.set_attribute("fastaiagent.runner.type", "swarm")
+                    span.set_attribute("fastaiagent.framework", "fastaiagent")
+                    span.set_attribute("swarm.streamed", True)
+                    async for event in self.astream(input, context=context):
+                        if isinstance(event, TextDelta):
+                            text_parts.append(event.text)
+                    output = "".join(text_parts)
+                    span.set_attribute("swarm.output", output)
+                    trace_id = format(span.get_span_context().trace_id, "032x")
+                latency = int((time.monotonic() - start) * 1000)
+                return AgentResult(
+                    output=output,
+                    latency_ms=latency,
+                    trace_id=trace_id,
+                    guardrails=collected_firings(),
+                )
+            finally:
+                stop_firing_collection(gf_token)
 
         return run_sync(_collect())
 

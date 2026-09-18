@@ -79,6 +79,16 @@ class LengthBetween(Scorer):
 
 
 class Latency(Scorer):
+    """Budget gate on wall-clock time.
+
+    ``latency_ms`` is supplied by :func:`fastaiagent.eval.evaluate` — from the
+    result when the callable returns an :class:`~fastaiagent.agent.AgentResult`,
+    and measured around the call otherwise. Before 1.67.0 ``evaluate`` passed
+    neither, so this gate read ``0`` out of an empty ``**kwargs`` and reported
+    "Latency: 0ms" for every case it ever scored: a documented budget gate that
+    could not fail.
+    """
+
     name = "latency"
 
     def __init__(self, max_ms: int = 5000):
@@ -97,6 +107,22 @@ class Latency(Scorer):
 
 
 class CostUnder(Scorer):
+    """Budget gate on USD spend.
+
+    ``cost`` and ``cost_known`` are supplied by
+    :func:`fastaiagent.eval.evaluate` from the run's
+    :class:`~fastaiagent.agent.AgentResult`. Before 1.67.0 nothing populated
+    ``AgentResult.cost`` and ``evaluate`` passed no ``cost`` at all, so this
+    gate read ``0.0`` and reported "Cost: $0.0000" for every case — a
+    documented budget gate that could not fail.
+
+    **Unknown is not free.** A model with no rate in the pricing table (a local
+    ollama model, a private fine-tune, a bedrock/azure deployment id) yields
+    ``cost_known=False``. Certifying that run as under budget would be the
+    §2.4 shape the guardrail sweep exists to prevent: a check that could not
+    check anything returning a clean verdict. It fails, and says why.
+    """
+
     name = "cost_under"
 
     def __init__(self, max_usd: float = 0.10):
@@ -106,6 +132,21 @@ class CostUnder(Scorer):
         self, input: str, output: str, expected: str | None = None, **kw: Any
     ) -> ScorerResult:
         cost = kw.get("cost", 0.0)
+        # Absent entirely -> an old caller passing ``cost=`` by hand, which has
+        # always meant "here is the cost". Present and False -> the run really
+        # could not be priced.
+        cost_known = kw.get("cost_known", True)
+        if not cost_known:
+            return ScorerResult(
+                score=0.0,
+                passed=False,
+                reason=(
+                    f"Cost: unknown (max: ${self.max_usd:.4f}) — no rate for this "
+                    "model, so the run could not be priced. An unpriced run is "
+                    "not a free one; set a rate via set_rate_overrides() or the "
+                    "models.json 'pricing' block to gate on it."
+                ),
+            )
         passed = cost <= self.max_usd
         return ScorerResult(
             score=1.0 if passed else 0.0,
