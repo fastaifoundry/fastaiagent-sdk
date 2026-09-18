@@ -106,7 +106,10 @@ def test_kb_dir_expands_in_the_config(home, in_tmp_cwd, monkeypatch):
 
     monkeypatch.setenv("FASTAIAGENT_KB_DIR", "~/kbs")
     reset_config()
-    assert str(get_config().kb_dir) == str(home / "kbs")
+    # Compare as paths: on Windows the expansion of a POSIX-looking "~/kbs"
+    # is normalised to backslashes, and a string compare would fail on the
+    # separator rather than on the behaviour under test.
+    assert Path(get_config().kb_dir) == home / "kbs"
 
 
 def test_kb_root_expands(home, in_tmp_cwd, monkeypatch):
@@ -118,7 +121,7 @@ def test_kb_root_expands(home, in_tmp_cwd, monkeypatch):
 
     monkeypatch.setenv("FASTAIAGENT_KB_DIR", "~/kbs")
     reset_config()
-    assert str(kb_root()) == str(home / "kbs")
+    assert Path(kb_root()) == home / "kbs"
 
 
 def test_llm_verify_ca_bundle_path_expands(home, monkeypatch):

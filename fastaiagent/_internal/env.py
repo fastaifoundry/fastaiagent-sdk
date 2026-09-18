@@ -99,7 +99,13 @@ def env_path(name: str, default: str | None = None) -> str | None:
     stripped = raw.strip()
     if not stripped:
         return default
-    return os.path.expanduser(os.path.expandvars(stripped))
+    # ``normpath`` last, so a Windows operator writing the POSIX-looking
+    # ``~/agents/local.db`` — which is what every doc and .env example shows —
+    # gets ``C:\Users\me\agents\local.db`` rather than a mixed-separator
+    # ``C:\Users\me/agents/local.db``. Both open the same file, but only one of
+    # them compares equal to a path built any other way, and these values are
+    # used as store identities.
+    return os.path.normpath(os.path.expanduser(os.path.expandvars(stripped)))
 
 
 @dataclass(frozen=True)
