@@ -53,8 +53,16 @@ def overview(request: Request, _user: str = Depends(require_session)) -> dict[st
         where_for_recent = (
             "WHERE project_id = ?" if ctx.project_id else ""
         )
+        # A trace is named by its root span, not by whichever of its span names
+        # sorts first: Home listed ``agent.alpha`` for a swarm run whose root was
+        # ``swarm.pair``. This was the third hand-written copy of that aggregate
+        # and the last one anybody thought to check, so it now shares
+        # ``TraceStore``'s expression rather than repeating it.
+        from fastaiagent.trace.storage import TraceStore
+
         recent_traces = db.fetchall(
-            f"""SELECT trace_id, MIN(name) AS name, MIN(start_time) AS start_time,
+            f"""SELECT trace_id, {TraceStore.TRACE_NAME_SQL} AS name,
+                      MIN(start_time) AS start_time,
                       MIN(status) AS status
                FROM spans
                {where_for_recent}

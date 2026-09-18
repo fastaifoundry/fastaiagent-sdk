@@ -38,21 +38,35 @@ from .conftest import MockLLMClient
 TRACE_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 
 
+#: Every canned reply bills this much, so the tokens arm below has a number to
+#: assert on. ``LLMResponse.usage`` defaults to empty, which would make "reports
+#: tokens" trivially true of nothing.
+USAGE = {"prompt_tokens": 7, "completion_tokens": 5, "total_tokens": 12}
+
+
+def _reply(text: str) -> LLMResponse:
+    return LLMResponse(content=text, finish_reason="stop", usage=dict(USAGE))
+
+
 def _agent(name: str = "solo", responses=None) -> Agent:
-    return Agent(name=name, system_prompt="be brief", llm=MockLLMClient(responses))
+    return Agent(
+        name=name,
+        system_prompt="be brief",
+        llm=MockLLMClient(responses or [_reply("mock reply")]),
+    )
 
 
 def _swarm(checkpointer=None, name: str = "pair") -> Swarm:
-    a = Agent(name="alpha", llm=MockLLMClient([LLMResponse(content="alpha done")]))
-    b = Agent(name="beta", llm=MockLLMClient([LLMResponse(content="beta done")]))
+    a = Agent(name="alpha", llm=MockLLMClient([_reply("alpha done")]))
+    b = Agent(name="beta", llm=MockLLMClient([_reply("beta done")]))
     return Swarm(name=name, agents=[a, b], entrypoint="alpha", checkpointer=checkpointer)
 
 
 def _supervisor() -> Supervisor:
-    worker = Agent(name="worker", llm=MockLLMClient([LLMResponse(content="worker output")]))
+    worker = Agent(name="worker", llm=MockLLMClient([_reply("worker output")]))
     return Supervisor(
         name="boss",
-        llm=MockLLMClient([LLMResponse(content="final answer")]),
+        llm=MockLLMClient([_reply("final answer")]),
         workers=[Worker(agent=worker, role="worker", description="does the work")],
     )
 
@@ -129,6 +143,26 @@ def test_every_result_path_stamps_a_trace_id(path: str, tmp_path) -> None:
     assert tid is not None, f"{path} returned a result with no trace_id"
     assert TRACE_ID_RE.match(tid), f"{path} trace_id {tid!r} is not a 32-hex OTel id"
     assert tid != "0" * 32, f"{path} trace_id is the all-zero invalid span context"
+
+
+#: ``chain.execute`` returns a ``ChainResult``, which has no token field — a
+#: chain is a graph of steps, not a billed conversation. Everything else in the
+#: registry hands back an ``AgentResult``, and an ``AgentResult`` that made LLM
+#: calls has to say what they cost in tokens.
+_NO_TOKEN_FIELD = {"chain.execute"}
+
+
+@pytest.mark.parametrize("path", sorted(set(PATH_RUNNERS) - _NO_TOKEN_FIELD))
+def test_every_agent_result_path_reports_tokens(path: str, tmp_path) -> None:
+    """The ``trace_id`` class, again, for the other number a hand-built result
+    forgets. ``Swarm.stream`` and ``Supervisor.stream`` each assembled an
+    ``AgentResult`` field by field and left ``tokens_used`` at its default —
+    the same defect ``Agent.stream`` had until 1.67.0."""
+    runner = PATH_RUNNERS[path]
+    result = runner(tmp_path) if path in _NEEDS_TMP_PATH else runner()
+    assert result.tokens_used > 0, (
+        f"{path} made at least one LLM call and reported {result.tokens_used} tokens"
+    )
 
 
 def test_registry_covers_the_public_surface() -> None:

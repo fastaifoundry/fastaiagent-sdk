@@ -9,6 +9,7 @@ from collections.abc import AsyncGenerator, Callable, Sequence
 from typing import Any
 
 from fastaiagent._internal.async_utils import run_sync
+from fastaiagent._internal.pricing import run_cost, start_run_cost, stop_run_cost
 from fastaiagent.agent.agent import Agent, AgentConfig, AgentResult
 from fastaiagent.agent.context import RunContext
 from fastaiagent.agent.executor import _AgentInterrupted
@@ -26,7 +27,7 @@ from fastaiagent.guardrail.guardrail import (
 )
 from fastaiagent.llm.client import LLMClient
 from fastaiagent.llm.message import SystemMessage, UserMessage
-from fastaiagent.llm.stream import StreamEvent, TextDelta
+from fastaiagent.llm.stream import StreamEvent, TextDelta, Usage
 from fastaiagent.tool.base import Tool
 from fastaiagent.tool.function import FunctionTool
 
@@ -564,6 +565,19 @@ class Supervisor:
             start = time.monotonic()
             text_parts: list[str] = []
             gf_token = start_firing_collection()
+            # A hand-assembled result reports what it is told to report: this
+            # one was never told about tokens or cost, so a streamed supervisor
+            # run looked free. ``Usage`` is the only event carrying a stream's
+            # token counts.
+            #
+            # These are the SUPERVISOR's own turns. A delegated worker runs
+            # through ``arun`` inside a delegate tool, which opens its own
+            # accumulator and reports on its own result — so the worker's spend
+            # is counted once, there, and not re-counted here. That is the same
+            # boundary ``run``/``arun`` have, and the same one ``cost`` took in
+            # 1.67.0.
+            streamed_tokens = 0
+            rcost_token = start_run_cost()
             try:
                 with get_tracer().start_as_current_span(f"supervisor.{self.name}") as span:
                     span.set_attribute("supervisor.name", self.name)
@@ -576,17 +590,25 @@ class Supervisor:
                     async for event in self.astream(input, context=context, **kwargs):
                         if isinstance(event, TextDelta):
                             text_parts.append(event.text)
+                        elif isinstance(event, Usage):
+                            streamed_tokens += event.prompt_tokens + event.completion_tokens
                     output = "".join(text_parts)
                     span.set_attribute("supervisor.output", output)
+                    span.set_attribute("supervisor.tokens_used", streamed_tokens)
                     trace_id = trace_id_of(span)
                 latency = int((time.monotonic() - start) * 1000)
+                cost, cost_known = run_cost()
                 return AgentResult(
                     output=output,
+                    tokens_used=streamed_tokens,
+                    cost=cost,
+                    cost_known=cost_known,
                     latency_ms=latency,
                     trace_id=trace_id,
                     guardrails=collected_firings(),
                 )
             finally:
+                stop_run_cost(rcost_token)
                 stop_firing_collection(gf_token)
 
         return run_sync(_collect())

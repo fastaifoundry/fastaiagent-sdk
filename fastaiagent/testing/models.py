@@ -90,21 +90,32 @@ def _coerce_responses(
     return [_CannedTurn(text=text, tool_calls=tcs, usage=usage)]
 
 
-def _record_test_span(
+def _record_test_completion(
     *,
     model: str,
     messages: list[Message],
     tools: list[dict[str, Any]] | None,
     response: LLMResponse,
 ) -> None:
-    """Emit a real OTel span tagged provider="test".
+    """Emit a real OTel span tagged provider="test", and bill the run's tokens.
 
     Mirrors what ``LLMClient.acomplete`` does for real providers so the
-    Local UI shows a spans for ``TestModel`` runs (useful for snapshot
+    Local UI shows a span for ``TestModel`` runs (useful for snapshot
     replay tests of agent behaviour).
+
+    The token count goes into the run-scoped accumulator for the same reason it
+    does on the real client: these models implement the ``LLMClient`` surface
+    rather than extend its internals, so they never reach
+    ``_acomplete_with_retries`` — and without this an offline multi-turn run
+    reports whichever turn came back last. Tokens only, deliberately: a
+    ``test-model`` has no rate, and pricing it would flip ``cost_known`` to
+    false on every offline run.
     """
+    from fastaiagent._internal.pricing import record_run_tokens
     from fastaiagent.trace.otel import get_tracer
     from fastaiagent.trace.span import set_genai_attributes
+
+    record_run_tokens(response.usage)
 
     tracer = get_tracer("fastaiagent.testing.models")
     with tracer.start_as_current_span(f"llm.test.{model}") as span:
@@ -230,7 +241,7 @@ class TestModel(LLMClient):
             finish_reason=finish,
             latency_ms=self._delay_ms,
         )
-        _record_test_span(model=self.model, messages=messages, tools=tools, response=response)
+        _record_test_completion(model=self.model, messages=messages, tools=tools, response=response)
         return response
 
     async def astream(
@@ -257,7 +268,7 @@ class TestModel(LLMClient):
             model=self.model,
             finish_reason=finish,
         )
-        _record_test_span(model=self.model, messages=messages, tools=tools, response=response)
+        _record_test_completion(model=self.model, messages=messages, tools=tools, response=response)
 
         if turn.text:
             yield TextDelta(text=turn.text)
@@ -370,12 +381,10 @@ class FunctionModel(LLMClient):
         raw: Any = self._fn(messages)
         if asyncio.iscoroutine(raw):
             raw = await raw
-        response = _normalise_responder_return(
-            raw, model=self.model, base_index=self._call_count
-        )
+        response = _normalise_responder_return(raw, model=self.model, base_index=self._call_count)
         self._call_count += 1
         response.latency_ms = int((time.monotonic() - start) * 1000)
-        _record_test_span(model=self.model, messages=messages, tools=tools, response=response)
+        _record_test_completion(model=self.model, messages=messages, tools=tools, response=response)
         return response
 
     async def astream(

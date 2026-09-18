@@ -347,11 +347,31 @@ class TraceStore:
             spans=spans,
         )
 
+    #: How a trace gets its label.
+    #:
+    #: The root span names the run; ``MIN(name)`` is only the fallback. Until
+    #: 1.68.0 the fallback *was* the rule, so the label was the lexicographic
+    #: minimum of every span in the trace — measured: a trace whose spans are
+    #: ``['swarm.pair', 'agent.alpha']`` listed as ``agent.alpha``. Since
+    #: ``agent.*`` and ``chain.*`` both sort ahead of ``supervisor.*`` and
+    #: ``swarm.*``, that was most multi-agent traces, and 1.67.0 made it more
+    #: visible by giving root spans to three paths that previously had none.
+    #:
+    #: The fallback still matters: a trace can legitimately arrive with no root
+    #: (a sampled export, a foreign ingest, a crash between a child's ``on_end``
+    #: and its parent's), and an unnamed row in the list is worse than an
+    #: approximate one. The empty-string arm covers direct ingests that write
+    #: ``''`` where OTel capture writes NULL.
+    TRACE_NAME_SQL = (
+        "COALESCE(MIN(CASE WHEN parent_span_id IS NULL OR parent_span_id = '' "
+        "THEN name END), MIN(name))"
+    )
+
     def list_traces(self, last_hours: int = 24, **filters: Any) -> list[TraceSummary]:
         """List recent traces."""
         rows = self._db.fetchall(
-            """SELECT trace_id,
-                      MIN(name) as name,
+            f"""SELECT trace_id,
+                      {self.TRACE_NAME_SQL} as name,
                       MIN(start_time) as start_time,
                       MIN(status) as status,
                       COUNT(*) as span_count
@@ -375,8 +395,8 @@ class TraceStore:
         """Search traces by name or attributes."""
         if query:
             rows = self._db.fetchall(
-                """SELECT trace_id,
-                          MIN(name) as name,
+                f"""SELECT trace_id,
+                          {self.TRACE_NAME_SQL} as name,
                           MIN(start_time) as start_time,
                           MIN(status) as status,
                           COUNT(*) as span_count
