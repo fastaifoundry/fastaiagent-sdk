@@ -9,7 +9,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from fastaiagent._internal.async_utils import run_sync
-from fastaiagent.chain.checkpoint import latest_resumable, write_run_end
+from fastaiagent.chain.checkpoint import latest_forkable, latest_resumable, write_run_end
 from fastaiagent.chain.executor import execute_chain
 from fastaiagent.chain.interrupt import AlreadyResumed, Resume
 from fastaiagent.chain.node import Edge, Node, NodeConfig, NodeType
@@ -17,6 +17,39 @@ from fastaiagent.chain.validator import validate_chain
 from fastaiagent.checkpointers import Checkpointer, SQLiteCheckpointer
 
 logger = logging.getLogger(__name__)
+
+#: Config keys the executor and the validator actually read. Anything else in
+#: ``**config`` still rides through untouched — a chain may legitimately stash
+#: its own metadata on a node — but it earns a warning, because the far more
+#: common cause is a misspelled argument that silently became inert config and
+#: left the node with nothing to run.
+_KNOWN_CONFIG_KEYS = frozenset(
+    {
+        "agent_name",
+        "agents",
+        "auto_approve",
+        "conditions",
+        "input_mapping",
+        "input_schema",
+        "output_key",
+        "output_schema",
+        "reachable",
+        "template",
+        "tool_name",
+    }
+)
+
+#: Names that *look* like they attach a callable to a node, and do not. Every
+#: one of them lands in ``**config`` — ``add_node("fetch", fn=my_tool)`` builds
+#: an **agent** node with no agent, which until 1.67.0 ran to
+#: ``status="completed"`` with an error string as its output.
+_CALLABLE_LOOKALIKE_KWARGS = ("fn", "function", "func", "callable")
+
+
+def _type_name(obj: object) -> str:
+    """``type(obj).__name__`` — a free function because ``add_node`` shadows
+    the builtin ``type`` with its own parameter."""
+    return obj.__class__.__name__
 
 
 class ChainResult(BaseModel):
@@ -81,7 +114,7 @@ class Chain:
         id: str,
         agent: Any = None,
         tool: Any = None,
-        type: NodeType = NodeType.agent,
+        type: NodeType | str | None = None,
         name: str = "",
         *,
         node: Node | None = None,
@@ -92,6 +125,32 @@ class Chain:
     ) -> Chain:
         """Add a node to the chain.
 
+        **The node's type is inferred from what you attach** when you do not
+        pass ``type=`` yourself: ``tool=`` builds a tool node, ``node=`` builds a
+        tool node, ``agent=`` (or attaching nothing) builds an agent node. An
+        explicit ``type=`` always wins, and ``agent=`` alongside ``tool=`` still
+        means an agent node — the tool is ignored there exactly as before.
+
+        Before 1.67.0 only ``node=`` inferred anything, so
+        ``add_node("fetch", tool=my_tool)`` built an **agent** node with no
+        agent, and the run completed with ``{"error": "No agent attached…"}`` as
+        that node's output. The docs' own Node Types table taught that form.
+
+        Two mistakes are refused here rather than at run time, because a
+        ``TypeError`` naming the right form costs nothing and a node that cannot
+        run costs a whole execution:
+
+        * ``fn=`` / ``function=`` / ``func=`` / ``callable=`` — none of them is a
+          parameter of this method, so each is absorbed into ``**config`` and
+          attaches nothing.
+        * a ``tool=`` that is not a Tool — a bare function has no ``aexecute``
+          and used to surface as ``AttributeError: 'function' object has no
+          attribute 'aexecute'`` from deep inside the executor.
+
+        ``**config`` stays open (``input_mapping``, ``template``, ``conditions``,
+        ``agents`` and a chain's own metadata all ride in it); an unrecognised
+        key is logged at WARNING rather than refused.
+
         Pass ``node=`` a :func:`fastaiagent.node`-decorated function to add a
         typed, code-first node. ``output_key`` stores the node's output under a
         named state key (instead of the legacy ``_<id>_output`` wrap), and
@@ -99,6 +158,18 @@ class Chain:
         node's resolved inputs / output at its boundary. All additive — a node
         without any of these behaves exactly as before.
         """
+        lookalikes = [k for k in _CALLABLE_LOOKALIKE_KWARGS if k in config]
+        if lookalikes:
+            bad = lookalikes[0]
+            raise TypeError(
+                f"add_node({id!r}, {bad}=...) attaches nothing: {bad!r} is not a "
+                f"parameter of add_node, so it was absorbed into the node's config and "
+                f"the node was left with nothing to run. Wrap the function as a tool — "
+                f"chain.add_node({id!r}, tool=FunctionTool(name=..., fn=...)) — or "
+                f"decorate it with @node and pass chain.add_node({id!r}, node=<fn>)."
+            )
+
+        explicit_type = type is not None
         if node is not None:
             tool = node.tool
             type = NodeType.tool
@@ -109,6 +180,26 @@ class Chain:
                 input_schema = node.input_schema
             if output_schema is None:
                 output_schema = node.output_schema
+        elif not explicit_type:
+            # Infer from what was attached. ``agent`` wins when both are given,
+            # which is what an un-typed ``agent=`` + ``tool=`` has always meant.
+            type = NodeType.tool if (tool is not None and agent is None) else NodeType.agent
+
+        if tool is not None and not hasattr(tool, "aexecute"):
+            if isinstance(tool, Node):
+                raise TypeError(
+                    f"add_node({id!r}, tool=<@node function>) — a @node-decorated "
+                    f"function is not a Tool. Pass it as chain.add_node({id!r}, "
+                    f"node={tool.name}) so its schemas and output_key come with it."
+                )
+            raise TypeError(
+                f"add_node({id!r}, tool={_type_name(tool)}) — a tool node needs a Tool, "
+                f"not a bare {_type_name(tool)}: it has no aexecute(), so the node "
+                f"raised AttributeError mid-run. Wrap it — "
+                f"chain.add_node({id!r}, tool=FunctionTool(name='...', fn=<fn>)) — or "
+                f"decorate it with @node and pass node=<fn>."
+            )
+
         # Stash the 2.4b extras into ``config`` so they ride the existing
         # NodeConfig serialization and the executor can read them per node.
         if output_key is not None:
@@ -117,9 +208,23 @@ class Chain:
             config["input_schema"] = input_schema
         if output_schema is not None:
             config["output_schema"] = output_schema
+        unknown = sorted(set(config) - _KNOWN_CONFIG_KEYS)
+        if unknown:
+            logger.warning(
+                "Chain '%s' node '%s': unrecognised add_node keyword(s) %s were stored "
+                "as node config and will not be read by the executor. If one of them was "
+                "meant to attach something, see add_node's signature.",
+                self.name,
+                id,
+                unknown,
+            )
+        # ``type`` is settled by here — explicit, inferred, or the legacy agent
+        # default. Coerced through the enum so the string form callers have
+        # always been able to pass (``type="transformer"``) keeps working.
+        resolved_type = NodeType(type) if type is not None else NodeType.agent
         node_config = NodeConfig(
             id=id,
-            type=type,
+            type=resolved_type,
             name=name or id,
             agent=agent,
             agent_name=agent.name if agent and hasattr(agent, "name") else None,
@@ -469,9 +574,15 @@ class Chain:
         ``execution_id`` — the original run is left completely intact. Pass
         ``checkpoint_id`` to branch from a specific step (use
         ``checkpointer.list(execution_id)`` to find ids); omit it to branch from
-        the last checkpoint. ``input`` / ``modified_state`` patch the restored
-        state so the branch diverges; the chain then runs forward from the node
-        *after* the fork point.
+        the last **executed step** — the run-end marker every finished run has
+        written since 1.65.0 is stepped over, because it names no node to run
+        forward from. ``input`` / ``modified_state`` patch the restored state so
+        the branch diverges; the chain then runs forward from the node *after*
+        the fork point.
+
+        A run held only by the plane is pulled down first, so a fork works on a
+        machine that never saw the original run — the same restore-anywhere
+        behaviour :meth:`resume` has.
 
         Returns a :class:`ChainResult` whose ``execution_id`` is the new forked
         id. The fork's lineage links back to the source via
@@ -487,17 +598,22 @@ class Chain:
 
         store: Checkpointer = self._checkpointer or SQLiteCheckpointer()
         store.setup()
-        base = (
-            store.get_by_id(execution_id, checkpoint_id)
-            if checkpoint_id is not None
-            else store.get_last(execution_id)
-        )
+        # Restore-anywhere (audit D4). ``resume`` has done this since 1.65.0 and
+        # ``fork`` never did, so forking a plane-held run on a fresh machine
+        # failed even though the state was there to be had.
+        from fastaiagent.checkpointers.platform_replica import restore_if_missing
+
+        restore_if_missing(store, execution_id)
+        # NOT ``latest_resumable``: that one raises AlreadyResumed on a finished
+        # run, which is the case fork exists to serve. See ``latest_forkable``.
+        base = latest_forkable(store, execution_id, checkpoint_id=checkpoint_id)
         if base is None:
             from fastaiagent._internal.errors import ChainCheckpointError
 
             raise ChainCheckpointError(
                 f"No checkpoint found to fork for execution '{execution_id}'"
                 + (f" / checkpoint '{checkpoint_id}'" if checkpoint_id else "")
+                + " — the run holds no executed step to branch from."
             )
 
         # Restore the checkpoint's state, then apply the fork's modifications so
@@ -512,17 +628,28 @@ class Chain:
         # failed/completed resume, but under a fresh execution_id.
         order = _topological_sort(self.nodes, self.edges)
         start_node: str | None = None
-        for i, nid in enumerate(order):
-            if nid == base.node_id:
-                start_node = order[i + 1] if i + 1 < len(order) else None
-                break
+        known_node = base.node_id in order
+        if known_node:
+            i = order.index(base.node_id)
+            start_node = order[i + 1] if i + 1 < len(order) else None
         if start_node is None:
             from fastaiagent._internal.errors import ChainResumeError
 
+            hint = (
+                f"Pick an earlier step: chain.fork('{execution_id}', "
+                f"checkpoint_id=<id>), with ids from "
+                f"checkpointer.list('{execution_id}')."
+            )
+            if known_node:
+                raise ChainResumeError(
+                    f"Cannot fork execution '{execution_id}' from node "
+                    f"'{base.node_id}': it is the last node in the chain, so nothing "
+                    f"downstream would run. {hint}"
+                )
             raise ChainResumeError(
-                f"Cannot fork execution '{execution_id}' from node "
-                f"'{base.node_id}': it is the final node, so nothing downstream "
-                "would run. Fork from an earlier checkpoint."
+                f"Cannot fork execution '{execution_id}' from checkpoint "
+                f"'{base.node_id}': it does not name a node of chain '{self.name}', "
+                f"so there is nothing to run forward from. {hint}"
             )
 
         fork_id = str(uuid.uuid4())

@@ -122,9 +122,13 @@ Raised by `chain.aresume(...)` (and friends) in two situations:
    deliveries of the same payload, or two replicas racing on the same
    execution all converge here.
 2. **The run already finished.** Since 1.65.0 a completed run writes a run-end
-   marker, and resuming one raises rather than silently re-executing it. Fork
-   from one of its checkpoints, or use a fresh `execution_id`, to run again. A
-   **failed** run is still resumable — that is crash recovery, not a repeat.
+   marker, and resuming one raises rather than silently re-executing it. To run
+   again, use a fresh `execution_id`; to branch from a step of the finished run,
+   call `fork(execution_id, checkpoint_id=<an earlier step>)` — with an
+   **explicit** `checkpoint_id`, because a bare `fork()` branches from the last
+   executed step and a chain that ran to its last node has nothing downstream of
+   it. A **failed** run is still resumable — that is crash recovery, not a
+   repeat.
 
 The HTTP `POST /api/executions/{id}/resume` endpoint maps this to
 `409 Conflict`. The CLI's `fastaiagent resume` exits with code 2.
@@ -170,11 +174,20 @@ async def afork(
 Fork a run from a saved checkpoint into a **new, independent** execution.
 Unlike `resume` (which continues the *same* `execution_id`), `afork` branches
 under a **fresh** id, so the original run is left completely intact.
-`checkpoint_id` selects the step to branch from (omit for the last checkpoint;
-`checkpointer.list(execution_id)` lists ids). `input` / `modified_state` patch
-the restored state so the branch diverges; the chain runs forward from the node
-*after* the fork point. The result's `execution_id` is the new forked id, linked
-to the source via `parent_checkpoint_id`. A sync `fork(...)` wrapper exists.
+`checkpoint_id` selects the step to branch from (omit for the last **executed**
+step — the run-end marker is skipped, because it names no node to run forward
+from; `checkpointer.list(execution_id)` lists ids). `input` / `modified_state`
+patch the restored state so the branch diverges; the chain runs forward from the
+node *after* the fork point. The result's `execution_id` is the new forked id,
+linked to the source via `parent_checkpoint_id`. A sync `fork(...)` wrapper
+exists.
+
+Unlike `resume`, forking a **finished** run is ordinary rather than refused — a
+fork writes a new `execution_id` and leaves the original untouched. Forking a
+**failed** run branches from its last executed step. Either way the run is
+pulled down from the plane first when this machine has never seen it
+([`restore_if_missing`](#restore_if_missing)) — wired into `afork` in 1.67.0,
+having been on the resume paths only.
 
 This is the SDK's checkpoint-fork primitive. Trace-based counterfactual replay
 (re-deriving a run from ingested spans) is the Enterprise plane's job, not the
@@ -235,8 +248,13 @@ Fork an agent run from a checkpoint into a **new** execution (sibling of
 `aresume`). Pass `input` to re-ask the run with a different request — the
 counterfactual "what if the user had asked X"; the branch runs as a fresh,
 traced conversation under the new id. Omit `input` to re-run the restored
-conversation forward (e.g. with a modified `context`). The new run links back to
-the source via `parent_checkpoint_id`. A sync `fork(...)` wrapper exists.
+conversation forward (e.g. with a modified `context`); the restored history is
+balanced first, so a branch taken at a pre-tool checkpoint answers the calls it
+steps over instead of sending the provider a history it rejects. The new run
+links back to the source via `parent_checkpoint_id` — at the last **executed**
+turn, never at the run-end marker, and without inheriting that marker's
+`run_status` into the branch's state (both fixed in 1.67.0). A sync `fork(...)`
+wrapper exists.
 `Swarm` / `Supervisor` forking is a planned fast-follow.
 
 ## `Swarm.aresume`
@@ -390,10 +408,13 @@ cannot record the loss of is worse than stalling. See
 ## Run-end helpers
 
 ```python
-from fastaiagent.chain.checkpoint import RUN_END, is_run_end, latest_resumable
+from fastaiagent.chain.checkpoint import (
+    RUN_END, is_run_end, latest_forkable, latest_resumable,
+)
 
 is_run_end(checkpoint) -> bool
 latest_resumable(checkpointer, execution_id, *, latest=None, runner="Execution") -> Checkpoint | None
+latest_forkable(checkpointer, execution_id, *, checkpoint_id=None) -> Checkpoint | None
 ```
 
 `is_run_end` is true for the terminal row a run writes when it ends. A
@@ -407,6 +428,17 @@ your own resume surface: a run-end row's `node_id` names no node the executor ca
 restart at, and `Chain.resume` matching it against the topological order would
 find nothing, leave `start_node` as `None`, and replay the chain from the top.
 
+`latest_forkable` is the same skip for the **fork** paths, and the asymmetry
+between the two is deliberate: it never raises `AlreadyResumed`, because a
+finished run is the most ordinary thing anyone forks — a fork writes a new
+`execution_id` and re-enters nothing. It returns `None` when a run holds nothing
+but its marker (it died at node 0), so the caller can say "no checkpoint to
+fork"; and it raises `ChainCheckpointError` when an explicitly passed
+`checkpoint_id` names the marker, which is a caller mistake rather than an empty
+history. Added in 1.67.0, when both fork paths were found still calling
+`get_last` raw and refusing every finished run with a message that called
+`run_end` a node.
+
 ## `restore_if_missing`
 
 ```python
@@ -415,7 +447,8 @@ from fastaiagent.checkpointers.platform_replica import restore_if_missing
 restore_if_missing(checkpointer, execution_id) -> Checkpoint | None
 ```
 
-Called automatically at the top of every `resume` path. Fetches the run from the
+Called automatically at the top of every `resume` **and** `fork` path (fork
+since 1.67.0). Fetches the run from the
 plane **only** when connected and the local store has no record of it; returns
 `None` otherwise. `FASTAIAGENT_RESTORE_FROM_PLANE=0` disables it. See
 [Restore-anywhere](connected-checkpoints.md#restore-anywhere).

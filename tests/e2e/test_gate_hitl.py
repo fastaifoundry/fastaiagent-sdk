@@ -9,8 +9,10 @@ Two SDK moving parts this gate covers:
 
 1. ``NodeType.hitl`` — a chain node type that represents "pause here
    for approval". It does not call an agent or a tool; its result
-   dict carries an ``approved`` field and, when no handler is
-   configured, an ``Auto-approved (no HITL handler)`` message.
+   dict carries an ``approved`` field and, when the node opted in with
+   ``auto_approve=True``, an ``Auto-approved (auto_approve=True)``
+   message. Since 1.67.0 a gate with **neither** a handler nor that
+   opt-in refuses the run rather than approving itself.
 
 2. ``hitl_handler`` — a callable passed to ``Chain.execute()`` /
    ``Chain.aexecute()``. Called with ``(node, context, state)`` each
@@ -19,8 +21,9 @@ Two SDK moving parts this gate covers:
 
 Six sub-tests, all self-contained (no LLM, no network, no platform):
 
-1. Auto-approve when no handler is provided — execution completes
-   and the HITL node's result dict carries the documented message.
+1. A gate with no handler and no opt-in refuses; a gate that opted
+   in with ``auto_approve=True`` completes and carries the documented
+   message.
 2. Custom handler is invoked with the expected three arguments
    ``(node, context, state)`` and ``context`` exposes the expected
    keys (``input``, ``state``, ``node_results``).
@@ -88,17 +91,28 @@ class TestHITLGate:
 
     # ── 1. Auto-approve path ────────────────────────────────────────────
 
-    def test_01_auto_approve_when_no_handler(
+    def test_01_auto_approve_when_asked_for(
         self, gate_state: dict[str, Any]
     ) -> None:
         require_env()
+        import pytest
+
         from fastaiagent import Chain
+        from fastaiagent._internal.errors import ChainError
         from fastaiagent.chain.node import NodeType
 
-        chain = Chain("hitl-auto-approve-gate", checkpoint_enabled=False)
-        chain.add_node("review", type=NodeType.hitl)
+        # A gate nobody can answer must not answer itself (1.67.0). Before that,
+        # forgetting ``hitl_handler=`` on a call that had it in development was
+        # enough to wave the gate through and still report ``completed``.
+        unconfigured = Chain("hitl-no-handler-gate", checkpoint_enabled=False)
+        unconfigured.add_node("review", type=NodeType.hitl)
+        with pytest.raises(ChainError, match="no handler"):
+            unconfigured.execute({"message": "go"})
 
-        # No hitl_handler passed — the executor should auto-approve.
+        chain = Chain("hitl-auto-approve-gate", checkpoint_enabled=False)
+        chain.add_node("review", type=NodeType.hitl, auto_approve=True)
+
+        # The opt-in is on the node, so it is visible in the chain's definition.
         result = chain.execute({"message": "go"})
 
         assert result is not None, "auto-approve chain returned None"

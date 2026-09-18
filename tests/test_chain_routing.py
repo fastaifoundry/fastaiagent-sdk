@@ -356,8 +356,12 @@ class TestRoutingValidator:
             Edge(source="router", target="default_target"),
         ]
         errors = validate_chain(nodes, edges)
-        assert not any("handle" in e.lower() for e in errors)
-        assert not any("default" in e.lower() for e in errors)
+        # Only the ROUTING findings are under test here. Since 1.67.0 validate()
+        # also reports nodes with nothing attached, and one of these nodes is
+        # literally called "default_target" — so filter to the routing family
+        # rather than searching every error for the substring.
+        routing = [e for e in errors if e.startswith("Condition node")]
+        assert routing == []
 
     def test_fanout_chain_without_conditions_still_validates(self):
         """No conditions anywhere → no routing-related errors."""

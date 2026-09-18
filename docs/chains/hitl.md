@@ -210,19 +210,38 @@ You can inspect the approval decision after execution:
 result = chain.execute({"message": "..."}, hitl_handler=my_handler)
 review_result = result.node_results.get("review", {})
 print(review_result.get("approved"))   # True or False
-print(review_result.get("message"))    # "Auto-approved (no HITL handler)" if no handler
+print(review_result.get("message"))    # "Auto-approved (auto_approve=True)" if opted in
 ```
 
-### Auto-Approve (Testing)
+### An unconfigured gate refuses
 
-If no handler is provided, HITL nodes auto-approve. This is useful for testing:
+**A `NodeType.hitl` node with no `hitl_handler` raises `ChainError` and fails the
+run.** Changed in 1.67.0.
+
+Until then it approved itself and returned
+`{"approved": True, "message": "Auto-approved (no HITL handler)"}`, and the run
+reported `status="completed"`. That is a control which could not run reporting a
+clean pass — in the one node type whose entire job is to stop things. Forgetting
+to pass `hitl_handler` to a call that *did* pass it in development was enough.
 
 ```python
-# No hitl_handler — auto-approves
-result = chain.execute({"message": "Write a response"})
+chain.add_node("review", type=NodeType.hitl)
+chain.execute({"message": "..."})          # ChainError: Approval gate 'review' has no handler
+chain.execute({"message": "..."}, hitl_handler=my_handler)   # fine
 ```
 
-Or pass a lambda for quick testing:
+### Auto-approve, when you ask for it (testing)
+
+The convenience survives; it just has to be requested on the node, where it is
+visible in the chain's definition and in its serialized form:
+
+```python
+chain.add_node("review", type=NodeType.hitl, auto_approve=True)
+result = chain.execute({"message": "Write a response"})   # approves, says so
+```
+
+Or pass a lambda for quick testing, which needs no opt-in because it *is* a
+handler:
 
 ```python
 result = chain.execute(

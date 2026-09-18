@@ -52,7 +52,14 @@ def build_chain() -> Chain:
 
     chain = Chain("refund-flow")
     chain.add_node("research", agent=researcher)
+    # A real approval gate: no ``auto_approve``, so running this chain requires
+    # ``hitl_handler=``. This example only renders the topology, never runs it.
     chain.add_node("approval", type=NodeType.hitl, name="Manager approval")
+    # ``tool=`` makes this a TOOL node — the type is inferred from what is
+    # attached. Before 1.67.0 only ``node=`` inferred anything, so this exact
+    # line built an *agent* node with no agent: the canvas drew "process" as an
+    # agent, its tool was absent from the topology's tools list, and a run of
+    # this chain would have reported ``completed`` having never called it.
     chain.add_node("process", tool=process_refund)
     chain.add_node("notify_rejection", agent=notifier)
 

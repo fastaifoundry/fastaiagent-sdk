@@ -545,7 +545,13 @@ async def _execute_node(
     """
     if node.type == NodeType.agent:
         if node.agent is None:
-            return {"error": f"No agent attached to node '{node.id}'"}
+            raise ChainError(
+                f"Node '{node.id}' is an agent node with nothing attached to run. "
+                f"Attach one — chain.add_node('{node.id}', agent=<Agent>) — or, if you "
+                f"meant to attach a tool, pass tool= (the node type is inferred from it). "
+                f"Until 1.67.0 this returned an error string as the node's output and the "
+                f"run still reported status='completed'."
+            )
         # Accept the same shapes ``Agent.run`` accepts so multimodal Chain
         # state can flow into a vision agent without the executor flattening
         # it. Dict inputs are still stringified for the legacy convention
@@ -564,7 +570,11 @@ async def _execute_node(
 
     elif node.type == NodeType.tool:
         if node.tool is None:
-            return {"error": f"No tool attached to node '{node.id}'"}
+            raise ChainError(
+                f"Node '{node.id}' is a tool node with no tool attached, so there is "
+                f"nothing to run. Pass one — "
+                f"chain.add_node('{node.id}', tool=FunctionTool(name=..., fn=...))."
+            )
         # Resolve arguments from config template
         args = {}
         for key, template in node.config.get("input_mapping", {}).items():
@@ -588,6 +598,12 @@ async def _execute_node(
 
     elif node.type == NodeType.condition:
         conditions = node.config.get("conditions", [])
+        if not conditions:
+            raise ChainError(
+                f"Condition node '{node.id}' has no conditions, so it can only ever "
+                f"route one way and decides nothing. Pass conditions=[{{'expression': "
+                f"'...', 'handle': '...'}}, ...]."
+            )
         for cond in conditions:
             expr = cond.get("expression", "")
             if _evaluate_condition(expr, context):
@@ -596,13 +612,22 @@ async def _execute_node(
 
     elif node.type == NodeType.transformer:
         template = node.config.get("template", "")
+        if not template:
+            raise ChainError(
+                f"Transformer node '{node.id}' has no template, so its output could "
+                f"only ever be the empty string. Pass template='...' (it renders "
+                f"{{{{state.x}}}} / {{{{input.x}}}} against the chain's state)."
+            )
         return {"output": _render_template(template, context)}
 
     elif node.type == NodeType.parallel:
         # Execute child agents in parallel
         child_agents = node.config.get("agents", [])
         if not child_agents:
-            return {"outputs": []}
+            raise ChainError(
+                f"Parallel node '{node.id}' has no children, so it fans out to nothing. "
+                f"Pass agents=[<Agent>, <Agent>, ...]."
+            )
         tasks = []
         from fastaiagent.multimodal.image import Image as _MMImage
         from fastaiagent.multimodal.pdf import PDF as _MMPDF
@@ -616,7 +641,11 @@ async def _execute_node(
             if hasattr(child, "arun"):
                 tasks.append(child.arun(parallel_input, context=run_context, trace=False))
         if not tasks:
-            return {"outputs": []}
+            raise ChainError(
+                f"Parallel node '{node.id}' has {len(child_agents)} configured "
+                f"child/children and none of them exposes arun(), so nothing ran. "
+                f"Its members must be Agents (or anything with an arun())."
+            )
 
         mode = node.parallel_failure_mode
 
@@ -659,13 +688,25 @@ async def _execute_node(
         if hitl_handler:
             approval = hitl_handler(node, context, state)
             return {"approved": approval}
-        return {"approved": True, "message": "Auto-approved (no HITL handler)"}
+        if node.config.get("auto_approve") is True:
+            return {"approved": True, "message": "Auto-approved (auto_approve=True)"}
+        raise ChainError(
+            f"Approval gate '{node.id}' has no handler, so there is nobody to approve "
+            f"anything. Pass one at run time — chain.execute(..., hitl_handler=fn) — or, "
+            f"for a gate you genuinely want to wave through, say so on the node: "
+            f"chain.add_node('{node.id}', type=NodeType.hitl, auto_approve=True). "
+            f"Until 1.67.0 an unconfigured gate approved itself and reported "
+            f"'Auto-approved (no HITL handler)'."
+        )
 
     elif node.type in (NodeType.start, NodeType.end):
         return context.get("input", {})
 
     else:
-        return {"error": f"Unknown node type: {node.type}"}
+        raise ChainError(
+            f"Node '{node.id}' has node type {node.type!r}, which this executor has no "
+            f"branch for, so it cannot run."
+        )
 
 
 def _topological_sort(nodes: list[NodeConfig], edges: list[Edge]) -> list[str]:

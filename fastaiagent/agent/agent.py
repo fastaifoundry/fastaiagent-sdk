@@ -27,6 +27,7 @@ from fastaiagent.agent.middleware import (
 from fastaiagent.chain.checkpoint import (
     Checkpoint,
     is_run_end,
+    latest_forkable,
     latest_resumable,
     write_run_end,
 )
@@ -66,6 +67,13 @@ AgentInput = str | MultimodalImage | MultimodalPDF | list[ContentPart]
 #: is answered rather than dispatched — its side effect never happens, and the
 #: note has to say that plainly or the model will assume it did.
 SIBLING_SKIPPED_NOTE = "the agent was interrupted before this tool ran; it was not run on resume"
+
+#: The same repair on the fork path, said differently on purpose. A resume is a
+#: recovery — the run was going to make this call and was interrupted. A fork is
+#: a deliberate branch someone asked for, and the branch simply starts after the
+#: call. Telling the model it was "interrupted" on a branch nobody interrupted
+#: would be a small lie in the one place the model reasons from.
+FORK_SKIPPED_NOTE = "this tool was not run: the conversation was branched before its result"
 
 
 def _loop_end_turn(tool_calls: list[dict[str, Any]], start_iteration: int) -> int:
@@ -1414,8 +1422,15 @@ class Agent:
 
         ``checkpoint_id`` selects the step to branch from
         (``checkpointer.list(execution_id)`` lists ids); omit it for the last
-        checkpoint. Returns an :class:`AgentResult` whose ``execution_id`` is
-        the new forked id, linked to the source via ``parent_checkpoint_id``.
+        **executed** step — the run-end marker a finished run has written since
+        1.65.0 is stepped over, because it is a tombstone rather than a step.
+        Before 1.67.0 the branch inherited that marker: its origin row pointed at
+        the tombstone and carried ``run_status`` into the new run's state.
+        Returns an :class:`AgentResult` whose ``execution_id`` is the new forked
+        id, linked to the source via ``parent_checkpoint_id``.
+
+        A run held only by the plane is pulled down first, so a fork works on a
+        machine that never saw the original run.
 
         Checkpoint-fork is the SDK primitive; trace-based counterfactual replay
         is the Enterprise plane's job (see :mod:`fastaiagent.trace.replay`).
@@ -1425,15 +1440,19 @@ class Agent:
 
         store: Checkpointer = self._checkpointer or SQLiteCheckpointer()
         store.setup()
-        base = (
-            store.get_by_id(execution_id, checkpoint_id)
-            if checkpoint_id is not None
-            else store.get_last(execution_id)
-        )
+        # Restore-anywhere (audit D4) — ``aresume`` has done this since 1.65.0
+        # and ``afork`` never did.
+        from fastaiagent.checkpointers.platform_replica import restore_if_missing
+
+        restore_if_missing(store, execution_id)
+        # NOT ``latest_resumable``: that one raises AlreadyResumed on a finished
+        # run, which is precisely what people fork. See ``latest_forkable``.
+        base = latest_forkable(store, execution_id, checkpoint_id=checkpoint_id)
         if base is None:
             raise ChainCheckpointError(
                 f"No checkpoint found to fork for agent execution '{execution_id}'"
                 + (f" / checkpoint '{checkpoint_id}'" if checkpoint_id else "")
+                + " — the run holds no executed step to branch from."
             )
 
         fork_id = str(uuid.uuid4())
@@ -1461,6 +1480,14 @@ class Agent:
         from fastaiagent.agent.executor import _deserialize_messages
 
         messages = _deserialize_messages(base.state_snapshot.get("messages", []))
+        # A pre-tool checkpoint's snapshot holds the assistant message that
+        # declares a set of tool calls and none of their results — a history both
+        # providers reject. Commit 2 caught it at the provider boundary and
+        # warned; repairing it here is repairing it at source, and a fork needs
+        # its own note: nothing was interrupted, the branch just starts earlier.
+        from fastaiagent.llm.message import balance_tool_messages
+
+        messages = balance_tool_messages(messages, note=FORK_SKIPPED_NOTE)
         start_iteration = int(base.state_snapshot.get("turn", 0))
         original_input = ""
         for m in messages:

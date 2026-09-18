@@ -87,8 +87,16 @@ for cp in store.list(execution_id="<id>"):
     print(f"Node: {cp.node_id}, State: {cp.state_snapshot}")
 
 latest = store.get_last(execution_id="<id>")
-print(f"Last completed: {latest.node_id}")
+print(f"Last completed: {latest.node_id}")   # "run_end" on a run that has ended
 ```
+
+!!! note "`get_last` on a finished run returns the terminal marker"
+
+    Since 1.65.0 every run that ends — successfully or not — writes one
+    `run_end` row, and it is the newest. It is a tombstone, not an address: its
+    `node_id` names no node. Code that picks a re-entry point should call
+    `latest_resumable` (to resume) or `latest_forkable` (to branch) rather than
+    `get_last`; see [Run-end helpers](../durability/api-reference.md#run-end-helpers).
 
 The `Checkpointer` protocol also exposes `get_by_id`, `delete_execution`, and `prune(older_than=…)` for housekeeping.
 

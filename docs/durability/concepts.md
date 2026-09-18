@@ -77,6 +77,17 @@ re-firing every side effect not wrapped in `@idempotent`. It now raises
 `AlreadyResumed` instead. A `failed` marker is stepped over rather than refused —
 crash recovery is the whole point, so a run that raised stays resumable.
 
+**Fork reads the same rows and answers differently**, which is the one place the
+tombstone's meaning splits. `resume` re-enters the *same* run, so a finished one
+must be refused. `fork` writes a *new* `execution_id` and leaves the original
+untouched, so a finished run is the most ordinary thing to branch. Both must skip
+the marker — it addresses no node — and they do so through two helpers,
+`latest_resumable` and `latest_forkable`. Until 1.67.0 the fork paths skipped
+nothing: they called `get_last`, picked the tombstone, and refused with
+*"Cannot fork … from node 'run_end': it is the final node"*, which is false twice
+over — `run_end` is not a node, and the run it was refusing to branch was often a
+**failed** one that had branched fine before the marker existed.
+
 `execution_id` is minted once at the start of a run (or supplied by you) and
 placed in a `ContextVar` so every node, tool, and `@idempotent` function in that
 run reads the same id.
