@@ -117,6 +117,19 @@ sends an email, or makes any other side-effectful call before suspending,
 wrap it with [`@idempotent`](idempotency.md) — that's exactly what the
 decorator exists for.
 
+### Sibling tool calls in the same turn
+
+When an agent's model asks for several tools in one turn and the **first** of
+them calls `interrupt()`, resume answers that one and continues at the next turn.
+The siblings are **not re-dispatched**: their side effects never happen, and each
+is answered with a note telling the model the tool did not run. Resume re-enters
+a run at a checkpoint, not in the middle of a turn, so there is nowhere to
+re-enter that would run them in order — and running them after the fact would fire
+side effects for calls the model never saw a first result for.
+
+If a particular tool must survive a pause, put the `interrupt()` in *that* tool,
+or drive the calls across separate turns.
+
 ### Atomic resume claim
 
 `chain.resume(execution_id, resume_value=…)` atomically deletes the

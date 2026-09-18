@@ -226,6 +226,38 @@ class _Unset:
 _UNSET: Any = _Unset()
 
 
+def _sanitized_history(messages: list[Message], *, where: str) -> list[Message]:
+    """Last line of defence for the tool-call/tool-result invariant.
+
+    Every path that can break the invariant repairs itself at the source (see
+    ``balance_tool_messages``); this is belt and braces for the ones nobody has
+    found yet, and for histories users assemble by hand and pass straight to
+    ``acomplete``.
+
+    It **warns, naming the ids**, rather than repairing quietly. A silent repair
+    here would turn every future instance of this class of bug into an invisible
+    fix — the operator would see a working agent and no signal that the history
+    their code built was wrong — which is the same failure mode as a guardrail
+    that cannot run reporting a clean pass.
+    """
+    from fastaiagent.llm.message import balance_tool_messages, tool_message_imbalance
+
+    unanswered, orphans = tool_message_imbalance(messages)
+    if not unanswered and not orphans:
+        return messages
+    logger.warning(
+        "%s: message history broke the tool-call contract and was repaired before "
+        "sending — unanswered tool_call id(s): %s; orphaned tool result id(s): %s. "
+        "Every assistant tool_call needs exactly one tool result and every tool "
+        "result needs a parent call; the provider would have rejected this request. "
+        "If the history is yours, fix it at the source.",
+        where,
+        unanswered or "none",
+        orphans or "none",
+    )
+    return balance_tool_messages(messages, note="no result was recorded for this tool call")
+
+
 class LLMClient:
     """Unified LLM client supporting multiple providers.
 
@@ -598,6 +630,8 @@ class LLMClient:
         from fastaiagent.trace.otel import get_tracer
         from fastaiagent.trace.span import set_genai_attributes
 
+        messages = _sanitized_history(messages, where="acomplete")
+
         tracer = get_tracer("fastaiagent.llm.client")
         with tracer.start_as_current_span(f"llm.{self.provider}.{self.model}") as span:
             set_genai_attributes(
@@ -729,6 +763,8 @@ class LLMClient:
                 if isinstance(event, TextDelta):
                     print(event.text, end="", flush=True)
         """
+        messages = _sanitized_history(messages, where="astream")
+
         stream_providers: dict[str, Any] = {
             "openai": self._stream_openai,
             "anthropic": self._stream_anthropic,

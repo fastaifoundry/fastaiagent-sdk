@@ -61,6 +61,23 @@ logger = logging.getLogger(__name__)
 
 AgentInput = str | MultimodalImage | MultimodalPDF | list[ContentPart]
 
+#: What the model is told about a sibling tool call a resume stepped over. The
+#: resume re-enters at a checkpoint, never in the middle of a turn, so the call
+#: is answered rather than dispatched — its side effect never happens, and the
+#: note has to say that plainly or the model will assume it did.
+SIBLING_SKIPPED_NOTE = "the agent was interrupted before this tool ran; it was not run on resume"
+
+
+def _loop_end_turn(tool_calls: list[dict[str, Any]], start_iteration: int) -> int:
+    """The turn index one past the tool loop's last turn.
+
+    Used as the re-entry point for a run that died *after* the loop. Derived from
+    the loop's own records rather than counted here, so it stays right whether
+    the loop ended normally, on ``StopAgent``, or at ``max_iterations``.
+    """
+    iterations = [int(rec.get("iteration", 0)) for rec in tool_calls or []]
+    return (max(iterations) + 1) if iterations else start_iteration
+
 
 def _input_summary_text(parts: list[ContentPart]) -> str:
     """Concatenate the text portions of a multimodal input.
@@ -810,6 +827,15 @@ class Agent:
             if self._mw_pipeline:
                 mw_ctx = MiddlewareContext(run_context=context, agent_name=self.name)
 
+            # The run-end marker has to cover EVERYTHING that can still kill the
+            # run, not just the tool loop: 1.65.0's D5 fix wrapped only
+            # ``execute_tool_loop``, so a run that died in the structured-output
+            # re-ask, an output guardrail or a memory write left no tombstone at
+            # all — and a run that crashed there was byte-identical to one that
+            # finished. ``loop_done`` and ``run_ended`` are what let the handler
+            # below tell the three cases apart.
+            loop_done = False
+            run_ended = False
             try:
                 response, tool_calls = await execute_tool_loop(
                     llm=self.llm,
@@ -829,6 +855,68 @@ class Agent:
                     parallel_tools=self.config.parallel_tools,
                     max_parallel_tools=self.config.max_parallel_tools,
                     **kwargs,
+                )
+                loop_done = True
+
+                output = response.content or ""
+                parsed, perr = self._try_parse(output)
+                retry_tokens = 0
+                # Structured-output self-correction: on a parse/validation failure,
+                # re-ask the model with the error (opt-out via output_retries=0).
+                if (
+                    parsed is None
+                    and perr is not None
+                    and self._output_spec is not None
+                    and self.config.output_retries > 0
+                ):
+                    output, parsed, retry_tokens = await self._reask_structured(
+                        llm_messages, output, perr, kwargs
+                    )
+
+                # Execute output guardrails. Unlike every other position this one
+                # can re-drive the model, so a `reask` rule is honoured here rather
+                # than degraded to a block.
+                if eff_guardrails:
+                    output, parsed, guardrail_tokens = await self._guard_output(
+                        output, parsed, eff_guardrails, llm_messages, kwargs
+                    )
+                    retry_tokens += guardrail_tokens
+
+                # Store in memory. Memory backends are text-only; record the
+                # text summary so multimodal calls don't break the memory store.
+                # Wrapped in a ``memory.write`` span (+ per-block children).
+                if self.memory:
+                    from fastaiagent.agent._memory_tracing import traced_add
+                    from fastaiagent.llm.message import AssistantMessage
+
+                    traced_add(self.memory, UserMessage(input_text))
+                    traced_add(self.memory, AssistantMessage(output))
+
+                latency = int((time.monotonic() - start) * 1000)
+                tokens = response.usage.get("total_tokens", 0) + retry_tokens
+
+                # The run finished. Without this row a completed run and one that
+                # crashed right after its last turn are byte-identical — both leave a
+                # ``completed`` turn checkpoint as the newest row (audit D5).
+                if self._checkpointer is not None and owns_run:
+                    write_run_end(
+                        self._checkpointer,
+                        execution_id=exec_id,
+                        chain_name=self.name,
+                        status="completed",
+                        agent_path=new_path,
+                    )
+                    run_ended = True
+
+                return AgentResult(
+                    output=output,
+                    parsed=parsed,
+                    tool_calls=tool_calls,
+                    tokens_used=tokens,
+                    latency_ms=latency,
+                    execution_id=exec_id,
+                    status="completed",
+                    guardrails=collected_firings(),
                 )
             except _AgentInterrupted as susp:
                 # Deliberately NO run-end marker: a paused run has not ended, and
@@ -854,7 +942,27 @@ class Agent:
                 # The run died. Mark it, then re-raise untouched — the marker is
                 # best-effort inside ``write_run_end`` precisely so a checkpointer
                 # problem here can never replace the exception the caller needs.
-                if self._checkpointer is not None and owns_run:
+                if self._checkpointer is not None and owns_run and not run_ended:
+                    if loop_done:
+                        # The tool loop ENDED before this failure, so the loop is
+                        # not the place to re-enter. Without this row the newest
+                        # resumable checkpoint is the last *pre-tool* one, and
+                        # ``aresume`` re-invokes that tool: measured as one charge
+                        # becoming two. A turn-boundary row past the loop's last
+                        # turn re-issues the model instead, which is the documented
+                        # (and idempotent-by-default) resume shape.
+                        try:
+                            from fastaiagent.agent.executor import _put_turn_checkpoint
+
+                            _put_turn_checkpoint(
+                                checkpointer=self._checkpointer,
+                                execution_id=exec_id,
+                                agent_name=self.name,
+                                iteration=_loop_end_turn(tool_calls, _start_iteration),
+                                messages=llm_messages,
+                            )
+                        except Exception:  # pragma: no cover - best effort, like the marker
+                            logger.debug("loop-end checkpoint failed", exc_info=True)
                     write_run_end(
                         self._checkpointer,
                         execution_id=exec_id,
@@ -865,65 +973,6 @@ class Agent:
                     )
                 raise
 
-            output = response.content or ""
-            parsed, perr = self._try_parse(output)
-            retry_tokens = 0
-            # Structured-output self-correction: on a parse/validation failure,
-            # re-ask the model with the error (opt-out via output_retries=0).
-            if (
-                parsed is None
-                and perr is not None
-                and self._output_spec is not None
-                and self.config.output_retries > 0
-            ):
-                output, parsed, retry_tokens = await self._reask_structured(
-                    llm_messages, output, perr, kwargs
-                )
-
-            # Execute output guardrails. Unlike every other position this one
-            # can re-drive the model, so a `reask` rule is honoured here rather
-            # than degraded to a block.
-            if eff_guardrails:
-                output, parsed, guardrail_tokens = await self._guard_output(
-                    output, parsed, eff_guardrails, llm_messages, kwargs
-                )
-                retry_tokens += guardrail_tokens
-
-            # Store in memory. Memory backends are text-only; record the
-            # text summary so multimodal calls don't break the memory store.
-            # Wrapped in a ``memory.write`` span (+ per-block children).
-            if self.memory:
-                from fastaiagent.agent._memory_tracing import traced_add
-                from fastaiagent.llm.message import AssistantMessage
-
-                traced_add(self.memory, UserMessage(input_text))
-                traced_add(self.memory, AssistantMessage(output))
-
-            latency = int((time.monotonic() - start) * 1000)
-            tokens = response.usage.get("total_tokens", 0) + retry_tokens
-
-            # The run finished. Without this row a completed run and one that
-            # crashed right after its last turn are byte-identical — both leave a
-            # ``completed`` turn checkpoint as the newest row (audit D5).
-            if self._checkpointer is not None and owns_run:
-                write_run_end(
-                    self._checkpointer,
-                    execution_id=exec_id,
-                    chain_name=self.name,
-                    status="completed",
-                    agent_path=new_path,
-                )
-
-            return AgentResult(
-                output=output,
-                parsed=parsed,
-                tool_calls=tool_calls,
-                tokens_used=tokens,
-                latency_ms=latency,
-                execution_id=exec_id,
-                status="completed",
-                guardrails=collected_firings(),
-            )
         finally:
             _current_checkpointer.reset(cp_token)
             _agent_path.reset(ap_token)
@@ -1301,6 +1350,21 @@ class Agent:
             _execution_id.reset(exec_token)
             if rv_token is not None:
                 _resume_value.reset(rv_token)
+
+        # The pre-tool checkpoint is written BEFORE dispatch, so when the pause
+        # landed on the first of several parallel calls the snapshot holds an
+        # assistant message declaring all of them and no results at all. We have
+        # just answered the one that was suspended; its siblings are still
+        # unanswered, and restarting at ``start_iteration + 1`` skips them
+        # forever — a history OpenAI and Anthropic both 400 on, and this one is
+        # persisted, so it survives the process that made it.
+        #
+        # They are answered, NOT re-dispatched: the resume machinery re-enters a
+        # run at a checkpoint, not in the middle of a turn, and firing them here
+        # would run side effects the model never saw a first result for.
+        from fastaiagent.llm.message import balance_tool_messages
+
+        messages = balance_tool_messages(messages, note=SIBLING_SKIPPED_NOTE)
 
         # Continue the loop at the next iteration with the updated
         # message history.

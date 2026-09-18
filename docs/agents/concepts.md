@@ -69,6 +69,14 @@ Calling `agent.run(...)` / `await agent.arun(...)` executes this sequence
      `GuardrailPosition.tool_call` guardrail on the arguments *before* and a
      `GuardrailPosition.tool_result` guardrail on the output *after*. Results are
      appended to the messages and the loop continues.
+   - **Every turn closes its tool calls.** However the turn ends — normally, on
+     `StopAgent` from `wrap_tool`, on a pause, on a resume that stepped over
+     siblings — the message list is left with exactly one tool result per
+     `tool_call_id` the assistant message declared, and no tool result without a
+     parent call. OpenAI and Anthropic both reject anything else, and the history
+     outlives the turn: a structured-output re-ask, a `reask` guardrail, a fork or
+     a resume all re-send it. A call that never ran is answered with a note saying
+     so, never with an invented result and never by dropping the call.
 6. **Output guardrails** — run every `GuardrailPosition.output` guardrail on the
    final answer.
 7. **Write to memory** — a `memory.write` span records the user message and the

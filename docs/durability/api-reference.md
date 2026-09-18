@@ -203,6 +203,15 @@ Three resume shapes are auto-detected from the latest checkpoint:
 3. **Turn-boundary crash** — loop re-enters at the saved turn,
    re-issuing the LLM call.
 
+In shapes 1 and 2 the resumed tool's result is appended to the saved history
+before the loop continues. If that turn declared **several** tool calls and the
+crash or pause landed on one of the earlier ones, the siblings are answered with
+a note saying the tool did not run — they are **not re-dispatched**, so their side
+effects never happen. Every assistant `tool_calls` message therefore leaves the
+resume with exactly one result per `tool_call_id`, which is what OpenAI and
+Anthropic require of the next request. See
+[Concepts → A turn with several tool calls](concepts.md#a-turn-with-several-tool-calls).
+
 `agent_path_prefix` is an advanced kwarg used by `Supervisor`'s
 delegate tools to scope the resume to a worker's subtree (so the
 worker doesn't accidentally pick up a sibling supervisor pre-tool

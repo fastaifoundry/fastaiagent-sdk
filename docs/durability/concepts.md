@@ -61,7 +61,9 @@ committed work:
   the same input.
 
 - **Run end**: one terminal row per run, `step_type="run_end"`, with
-  `status="completed"` on success or `"failed"` when an exception escaped. It is
+  `status="completed"` on success or `"failed"` when an exception escaped —
+  including an exception from *after* the tool loop (the re-ask, output
+  guardrails, memory). It is
   written by the **outermost** runner only — a Swarm's child agents and a
   Supervisor's workers share their parent's `execution_id`, and a marker per hop
   would claim the run ended at every handoff. A **paused** run gets none: a pause
@@ -107,6 +109,37 @@ For an agent, the same idea specializes by `node_id`: a `turn:N` crash re-issues
 the LLM call with saved history; a `turn:N/tool:X` crash re-invokes the tool
 with saved args (no LLM re-call); a tool `interrupt()` re-invokes the tool so
 its `interrupt()` returns the `Resume`.
+
+### A turn with several tool calls
+
+The pre-tool checkpoint is written *before* dispatch, so when a model asks for
+three tools in one turn and the **first** pauses, the saved history holds the
+assistant message declaring all three and no results at all.
+
+Resume answers the call it suspended on and then continues at the **next turn**.
+The siblings are **not re-dispatched** — resume re-enters a run at a checkpoint,
+never in the middle of a turn, and firing them here would run side effects the
+model never saw a first result for. They are instead answered with a note saying
+the tool did not run, so:
+
+* the history stays acceptable to OpenAI and Anthropic (before 1.67.0 it was not,
+  and the 400 arrived on the first request after the resume — from a shape that
+  had been persisted, so it survived the process that made it);
+* the model is told plainly that the work did not happen, and can ask for it
+  again on the next turn if it still needs it.
+
+If a tool *must* run even across a pause, make it the call the pause lands on, or
+drive the calls across separate turns.
+
+### A failure *after* the tool loop
+
+A run can also die past the loop — in the structured-output re-ask, an output
+guardrail, or a memory write. Since 1.67.0 that writes a `failed` run-end marker
+like any other crash (before, it wrote none at all, and the run was
+indistinguishable from one that simply finished), plus a turn-boundary row one
+past the loop's last turn. Resume then re-enters **after** the loop and re-issues
+the model, rather than stepping back into the last pre-tool checkpoint and
+re-invoking a tool that had already run.
 
 ## Interrupt, suspend, and the atomic claim
 

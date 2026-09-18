@@ -22,6 +22,7 @@ from fastaiagent.llm.message import (
     Message,
     ToolCall,
     ToolMessage,
+    balance_tool_messages,
 )
 from fastaiagent.llm.stream import (
     StreamEvent,
@@ -36,6 +37,12 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from fastaiagent.guardrail.guardrail import Guardrail
+
+#: What the model is told about a tool call the agent stopped short of running.
+#: Middleware ``StopAgent`` ends a turn *between* the assistant message that
+#: declared the calls and the results that answer them; the calls it skipped are
+#: never dispatched, so the honest record is that they produced nothing.
+STOPPED_NOTE = "the agent stopped before this tool ran, so it was not run"
 
 
 class _AgentInterrupted(Exception):  # noqa: N818  (internal sentinel, mirrors InterruptSignal)
@@ -687,6 +694,22 @@ async def execute_tool_loop(
                         # ``_invoke_tool_with_span`` before the stopper fired.
                         if tool_call_record not in all_tool_calls:
                             all_tool_calls.append(tool_call_record)
+                        # The assistant message at the top of this turn already
+                        # declares EVERY call in it. Returning here leaves this
+                        # one — and every later sibling — unanswered, which is a
+                        # history OpenAI and Anthropic both 400 on. Answer the
+                        # in-flight call with whatever the terminal actually
+                        # produced (a stopper that fires before ``call_next``,
+                        # like ``ToolBudget``, produces nothing), then balance
+                        # the siblings. They are NOT dispatched: their side
+                        # effects never happen and the synthetic result says so.
+                        in_flight = tool_call_record.get("error") or tool_call_record.get("output")
+                        if in_flight is not None:
+                            messages.append(ToolMessage(content=str(in_flight), tool_call_id=tc.id))
+                        # ``messages[:]`` and not a rebind: ``Agent._arun_core``
+                        # holds this same list object and is what re-sends it
+                        # (structured-output re-ask, ``reask`` guardrail).
+                        messages[:] = balance_tool_messages(messages, note=STOPPED_NOTE)
                         return (
                             LLMResponse(content=str(stop), finish_reason="stop"),
                             all_tool_calls,
@@ -947,6 +970,11 @@ async def stream_tool_loop(
                             mw_ctx, wrap_target, dict(tc.arguments), _terminal
                         )
                     except StopAgent:
+                        # Streaming twin of the same gap — see the comment on
+                        # ``execute_tool_loop``'s handler. The stream path keeps
+                        # no per-call record, so the in-flight call is answered
+                        # by the same synthetic note as its siblings.
+                        messages[:] = balance_tool_messages(messages, note=STOPPED_NOTE)
                         return
                     tool_message_content: str | list[Any]
                     if isinstance(tr.output, str):
