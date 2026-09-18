@@ -290,11 +290,17 @@ whole swarm, not just its last agent:
 |---|---|
 | `output` | The final agent's answer |
 | `tool_calls` | Every hop's calls, each tagged with the `agent` that made it |
-| `tokens_used` | Summed across hops |
+| `tokens_used` | Summed across hops, and across **every** turn within each hop. Whole-run since 1.68.0 — it used to be the last response of the last hop. |
 | `cost` / `cost_known` | Summed across hops. `cost_known` is `False` if **any** hop ran a model with no rate — a partial sum is not a total |
 | `guardrails` | Every firing from every agent in the swarm, in order |
 | `trace_id` | The `swarm.<name>` root span — one trace for the whole run |
 | `execution_id` | Shared by every hop, so `resume()` picks up the right one |
+
+!!! note "1.68.0 — `stream()` reports spend now"
+    `Swarm.stream()` built its result by hand and left `tokens_used`, `cost` and
+    `cost_known` at their defaults, so a streamed swarm looked free while the
+    identical `arun()` reported real numbers. It now sums the `Usage` events every
+    hop yields and reads the same run-scoped cost accumulator `arun()` uses.
 
 !!! note "1.67.0"
     `trace_id` and `guardrails` used to be empty on every swarm path. A `warn`

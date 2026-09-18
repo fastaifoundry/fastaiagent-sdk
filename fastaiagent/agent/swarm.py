@@ -49,6 +49,7 @@ from typing import Any
 
 from fastaiagent._internal.async_utils import run_sync
 from fastaiagent._internal.errors import AgentError, StopAgent
+from fastaiagent._internal.pricing import run_cost, start_run_cost, stop_run_cost
 from fastaiagent.agent.agent import Agent, AgentResult
 from fastaiagent.agent.context import RunContext
 from fastaiagent.agent.middleware import AgentMiddleware, MiddlewareContext, ToolCallNext
@@ -73,6 +74,7 @@ from fastaiagent.llm.stream import (
     StreamEvent,
     TextDelta,
     ToolCallEnd,
+    Usage,
 )
 from fastaiagent.tool.base import Tool, ToolResult
 from fastaiagent.tool.function import FunctionTool
@@ -842,6 +844,13 @@ class Swarm:
             start = time.monotonic()
             text_parts: list[str] = []
             gf_token = start_firing_collection()
+            # The streamed swarm's result was assembled field by field and left
+            # ``tokens_used`` and ``cost`` at their defaults — the same hole
+            # ``Agent.stream`` had until 1.67.0. A ``Usage`` event is the only
+            # place a stream reports its token counts, and every hop's child
+            # agent yields one through ``astream``.
+            streamed_tokens = 0
+            rcost_token = start_run_cost()
             try:
                 with get_tracer().start_as_current_span(f"swarm.{self.name}") as span:
                     span.set_attribute("swarm.name", self.name)
@@ -852,17 +861,25 @@ class Swarm:
                     async for event in self.astream(input, context=context):
                         if isinstance(event, TextDelta):
                             text_parts.append(event.text)
+                        elif isinstance(event, Usage):
+                            streamed_tokens += event.prompt_tokens + event.completion_tokens
                     output = "".join(text_parts)
                     span.set_attribute("swarm.output", output)
+                    span.set_attribute("swarm.tokens_used", streamed_tokens)
                     trace_id = trace_id_of(span)
                 latency = int((time.monotonic() - start) * 1000)
+                cost, cost_known = run_cost()
                 return AgentResult(
                     output=output,
+                    tokens_used=streamed_tokens,
+                    cost=cost,
+                    cost_known=cost_known,
                     latency_ms=latency,
                     trace_id=trace_id,
                     guardrails=collected_firings(),
                 )
             finally:
+                stop_run_cost(rcost_token)
                 stop_firing_collection(gf_token)
 
         return run_sync(_collect())

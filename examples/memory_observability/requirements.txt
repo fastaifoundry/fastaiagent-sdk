@@ -1,0 +1,7 @@
+# `memory.read` / `memory.write` spans (and their per-block children) shipped
+# in 1.34.0 — without them this example has nothing to show.
+fastaiagent>=1.34.0
+
+# Optional — snapshot.py drives the Local UI to capture the screenshots in
+# README.md. companion.py needs neither.
+# playwright>=1.44.0

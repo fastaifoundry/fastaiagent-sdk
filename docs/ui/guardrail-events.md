@@ -147,5 +147,21 @@ it — and back — without a search round-trip.
 ## Example
 
 [examples/51_guardrail_events.py](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/51_guardrail_events.py)
-runs an agent through three different guardrail outcomes (blocked /
-filtered / warned) and prints the URL where each detail page renders.
+**executes four real guardrails** inside two real traces — `blocked`
+(`no_pii()` finds an email in the output), `filtered` (a `regex` rule with
+`action="mask"`), `warned` (`action="warn"`), and a `mask` the runtime could
+not carry out, which degrades to a block and earns the `*` marker — then prints
+the URL of each detail page.
+
+No agent runs and no API key is needed: every rule is a `regex` or `code` check,
+and the rows come from the runtime's own writer (`ui.events.log_guardrail_event`,
+reached through `Guardrail.execute`). Before 1.68.0 the example INSERTed rows
+directly with a pre-v18 column list, so `action`, `action_taken`, `severity` and
+`floor` were always NULL — the `*` marker documented above could never appear on
+the very row the example exists to show.
+
+```bash
+python examples/51_guardrail_events.py
+fastaiagent ui --no-auth
+# http://127.0.0.1:7842/guardrails
+```

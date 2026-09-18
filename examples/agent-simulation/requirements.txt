@@ -1,0 +1,5 @@
+# `Scenario` / `simulate()` / `SimulatedUser` shipped in 1.15.0.
+fastaiagent>=1.15.0
+
+# scenario_test.py runs under pytest.
+pytest>=7.4.0

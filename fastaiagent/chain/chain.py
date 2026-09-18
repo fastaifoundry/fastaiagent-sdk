@@ -9,7 +9,12 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from fastaiagent._internal.async_utils import run_sync
-from fastaiagent.chain.checkpoint import latest_forkable, latest_resumable, write_run_end
+from fastaiagent.chain.checkpoint import (
+    latest_forkable,
+    latest_resumable,
+    write_run_end,
+    write_run_end_once,
+)
 from fastaiagent.chain.executor import execute_chain
 from fastaiagent.chain.interrupt import AlreadyResumed, Resume
 from fastaiagent.chain.node import Edge, Node, NodeConfig, NodeType
@@ -714,18 +719,46 @@ class Chain:
             span.set_attribute("fastaiagent.runner.type", "chain")
             span.set_attribute("fastaiagent.framework", "fastaiagent")
             trace_id = trace_id_of(span)
-            raw = await execute_chain(
-                nodes=self.nodes,
-                edges=self.edges,
-                initial_state=state,
-                state_schema=self.state_schema,
-                checkpointer=store,
-                chain_name=self.name,
-                execution_id=fork_id,
-                resume_from_node=start_node,
-                run_context=context,
-                strict_routing=self.strict_routing,
-            )
+            # A fork is a run, and a run that ends leaves a tombstone — the same
+            # rule ``aexecute`` and ``resume`` have followed since the durability
+            # audit (D5). ``afork`` had neither half: a branch that died left no
+            # ``run_end`` row at all, so it was indistinguishable from one that
+            # simply stopped and ``latest_resumable`` handed back its last real
+            # checkpoint. Both markers are best-effort inside ``write_run_end``,
+            # so a checkpointer problem can never replace the exception below.
+            try:
+                raw = await execute_chain(
+                    nodes=self.nodes,
+                    edges=self.edges,
+                    initial_state=state,
+                    state_schema=self.state_schema,
+                    checkpointer=store,
+                    chain_name=self.name,
+                    execution_id=fork_id,
+                    resume_from_node=start_node,
+                    run_context=context,
+                    strict_routing=self.strict_routing,
+                )
+            except BaseException as exc:
+                write_run_end_once(
+                    store,
+                    execution_id=fork_id,
+                    chain_name=self.name,
+                    status="failed",
+                    error=exc,
+                )
+                raise
+            # Only a run that actually ENDED gets one. A paused branch has not
+            # ended, and a row after its ``interrupted`` one would hide the pause
+            # from ``resume``'s status guard.
+            if raw.get("status") == "completed":
+                write_run_end_once(
+                    store,
+                    execution_id=fork_id,
+                    chain_name=self.name,
+                    status="completed",
+                    state_snapshot=raw.get("final_state"),
+                )
         return ChainResult(
             output=raw["output"],
             final_state=raw["final_state"],

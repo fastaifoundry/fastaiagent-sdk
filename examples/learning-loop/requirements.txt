@@ -1,2 +1,4 @@
-fastaiagent
-python-dotenv
+# `fastaiagent.learn` / `PersistentFactBlock` / the `learned_memory` table
+# all shipped in 1.7.0.
+fastaiagent>=1.7.0
+python-dotenv>=1.0.0

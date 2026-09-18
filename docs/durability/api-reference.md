@@ -95,8 +95,21 @@ Value passed to `chain.aresume(...)` /
 
 The `metadata` dict is the structured channel for non-decision data:
 `{"approver": "alice", "reason": "verified ID", "ticket": "T-1234"}`.
-There's also a reserved `data` field for non-approval resume cases that
-v1.0 does not exercise.
+
+!!! warning "`approved` and `metadata` are the only two fields"
+    There is no `data` field. `Resume` ignores unknown keyword arguments, so
+    `Resume(approved=True, data={"amount": 500})` **silently drops** the `data`
+    dict — no error, and `model_extra` is `None`. Put non-approval payload in
+    `metadata` instead:
+
+    ```python
+    Resume(approved=True, metadata={"amount": 500, "approver": "alice"})
+    ```
+
+    If you have seen `data` described as *reserved for non-approval resume
+    cases*, read that as a note about a possible future field rather than an
+    API: nothing declares it, nothing reads it, and passing it today loses your
+    payload.
 
 ## `InterruptSignal`
 
@@ -189,6 +202,21 @@ pulled down from the plane first when this machine has never seen it
 ([`restore_if_missing`](#restore_if_missing)) — wired into `afork` in 1.67.0,
 having been on the resume paths only.
 
+!!! note "A forked branch closes itself (1.68.0)"
+    The branch now writes its own `run_end` row under its own `execution_id`,
+    the same as any run: `failed` when it raises, `completed` when it finishes,
+    none when it pauses. Before 1.68.0 `afork` wrote neither, so a dead branch
+    was indistinguishable from one that merely stopped.
+
+    What that changes for **resuming the branch** — and the direction is the one
+    people guess wrong: a **completed** branch is now refused with
+    `AlreadyResumed`, exactly like a completed run, where it previously
+    re-executed. A **crashed** branch is *not* refused —
+    [`latest_resumable`](#run-end-helpers) steps over a `failed` marker and hands
+    back the last real checkpoint, because crash recovery is the feature. The
+    marker's value on a crash is that the branch is now *distinguishable* as
+    dead, on the branch's own row rather than by inference.
+
 This is the SDK's checkpoint-fork primitive. Trace-based counterfactual replay
 (re-deriving a run from ingested spans) is the Enterprise plane's job, not the
 SDK's.
@@ -256,6 +284,11 @@ turn, never at the run-end marker, and without inheriting that marker's
 `run_status` into the branch's state (both fixed in 1.67.0). A sync `fork(...)`
 wrapper exists.
 `Swarm` / `Supervisor` forking is a planned fast-follow.
+
+Since 1.68.0 the branch also writes its own terminal `run_end` row — `failed` on
+a crash, `completed` on a finished branch — so the same
+`AlreadyResumed`-on-complete / step-over-on-failure rule that governs any run now
+governs a forked one. See the note under [`Chain.afork`](#chainafork).
 
 ## `Swarm.aresume`
 
@@ -419,7 +452,9 @@ cannot record the loss of is worse than stalling. See
 from fastaiagent.chain.checkpoint import (
     RUN_END, is_run_end, latest_forkable, latest_resumable,
 )
+```
 
+```text
 is_run_end(checkpoint) -> bool
 latest_resumable(checkpointer, execution_id, *, latest=None, runner="Execution") -> Checkpoint | None
 latest_forkable(checkpointer, execution_id, *, checkpoint_id=None) -> Checkpoint | None
@@ -451,7 +486,9 @@ history. Added in 1.67.0, when both fork paths were found still calling
 
 ```python
 from fastaiagent.checkpointers.platform_replica import restore_if_missing
+```
 
+```text
 restore_if_missing(checkpointer, execution_id) -> Checkpoint | None
 ```
 
@@ -519,11 +556,12 @@ The shape returned by `Checkpointer.list_pending_interrupts()` and
 
 ## `ChainResult` / `AgentResult`
 
-Both gained two fields in v1.0:
+Both gained the durability fields in v1.0:
 
 ```python
 class ChainResult(BaseModel):
     # ... v0.x fields ...
+    execution_id: str = ""
     status: str = "completed"             # "completed" or "paused"
     pending_interrupt: dict[str, Any] | None = None
 
@@ -533,6 +571,9 @@ class AgentResult(BaseModel):
     status: str = "completed"             # "completed" or "paused"
     pending_interrupt: dict[str, Any] | None = None
 ```
+
+`AgentResult` carries more than the durability three — see the
+[full field table](../agents/index.md#agentresult).
 
 `pending_interrupt` (when `status == "paused"`) carries the same
 payload as the corresponding `pending_interrupts` row:
@@ -564,15 +605,17 @@ Without either, resume returns `503`.
 
 ## ContextVars (advanced)
 
-For users implementing custom topologies or backends. These live in
-`fastaiagent.chain.interrupt`:
+For users implementing custom topologies or backends. The first three live in
+`fastaiagent.chain.interrupt`; `_current_checkpointer` lives in
+`fastaiagent.chain.idempotent` (with the decorator that reads it), and is
+imported from there by every runner:
 
 | ContextVar | Set by | Read by |
 |---|---|---|
 | `_execution_id: ContextVar[str \| None]` | `execute_chain`, `Agent._arun_core`, `Swarm._arun_swarm`, `Supervisor.arun` | `interrupt()`, `@idempotent`, `record_interrupt(...)` |
 | `_resume_value: ContextVar[Resume \| None]` | `Chain.aresume`, `Agent.aresume`, `Swarm.aresume`, `Supervisor.aresume` (just before re-invoking the suspended node) | `interrupt()` (returns this when set) |
 | `_agent_path: ContextVar[str \| None]` | Each runner extends with its segment | `record_interrupt(...)`, `_put_*_checkpoint` helpers |
-| `_current_checkpointer: ContextVar[Checkpointer \| None]` | `execute_chain` (Phase 3 wiring) | `@idempotent`'s `inner(...)` |
+| `_current_checkpointer: ContextVar[Checkpointer \| None]` *(defined in `fastaiagent.chain.idempotent`)* | `execute_chain`, `Agent._arun_core`, `Swarm._arun_swarm` | `@idempotent`'s `inner(...)` |
 
 In normal usage you never read or set these directly — the runners do
 it for you.

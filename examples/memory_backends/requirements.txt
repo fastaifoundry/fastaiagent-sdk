@@ -1,0 +1,5 @@
+# `Memory(location=...)` over an external FactStore shipped in 1.38.0.
+# The extras carry the drivers: [postgres] and [redis] for the two backends,
+# [kb] for the embedder that `semantic="auto"` needs (the script degrades
+# without it). SQLite always works with no extra.
+fastaiagent[postgres,redis,kb]>=1.38.0

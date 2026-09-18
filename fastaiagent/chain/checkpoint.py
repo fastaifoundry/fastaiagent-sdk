@@ -128,6 +128,49 @@ def write_run_end(
         logger.debug("run-end checkpoint write failed for %s", execution_id, exc_info=True)
 
 
+def write_run_end_once(
+    checkpointer: Any,
+    *,
+    execution_id: str,
+    chain_name: str,
+    status: str,
+    error: BaseException | None = None,
+    state_snapshot: dict[str, Any] | None = None,
+    agent_path: str | None = None,
+) -> None:
+    """:func:`write_run_end`, unless this run already carries a terminal row.
+
+    For the fork paths, where two layers can each be entitled to close the run
+    and neither can see the other: ``Agent.afork`` resolves its own store
+    (``self._checkpointer or SQLiteCheckpointer()``) and so must mark a branch
+    that ``_arun_core`` will not — but ``_arun_core`` *does* mark it whenever the
+    agent carries a checkpointer of its own. Guessing which case applies from the
+    caller's fields is how a second tombstone gets written; reading the store is
+    how it does not.
+
+    Best-effort in both directions, exactly like :func:`write_run_end`: a
+    checkpointer that cannot answer must never replace the exception a caller is
+    about to re-raise, so a failed read falls through to the write.
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+    try:
+        if is_run_end(checkpointer.get_last(execution_id)):
+            return
+    except Exception:  # pragma: no cover - defensive; fall through and write
+        logger.debug("run-end presence check failed for %s", execution_id, exc_info=True)
+    write_run_end(
+        checkpointer,
+        execution_id=execution_id,
+        chain_name=chain_name,
+        status=status,
+        error=error,
+        state_snapshot=state_snapshot,
+        agent_path=agent_path,
+    )
+
+
 def latest_resumable(
     checkpointer: Any,
     execution_id: str,

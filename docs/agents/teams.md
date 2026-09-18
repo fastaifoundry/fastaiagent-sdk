@@ -161,6 +161,22 @@ streamed run renders as one trace and its result carries a `trace_id` — `run()
 and `arun()` always had one by inheriting it from the inner agent, and the
 stream path built its result by hand and inherited nothing.
 
+Since 1.68.0 that hand-built result also carries `tokens_used`, `cost` and
+`cost_known`. All three used to come back at their defaults, so a streamed
+supervisor run looked free while the identical `arun()` reported real numbers.
+
+!!! info "A supervisor's tokens and cost are the **supervisor's own** turns"
+    A delegated worker runs through `Agent.arun()` inside a `delegate_to_<role>`
+    tool. That call opens its own accumulator and reports its spend on its own
+    `AgentResult` — so a worker's tokens are counted once, there, and are **not**
+    re-counted on the supervisor's result.
+
+    This is a scope boundary, not a missing number, and it is the same one `run()`
+    and `arun()` have always had: `cost` took it in 1.67.0 and `tokens_used` takes
+    it in 1.68.0. To get a team-wide total, sum the supervisor's figure with each
+    worker's — do not expect the supervisor's alone to be it. (A `Swarm` differs:
+    hops are peers of one run, so `Swarm` sums across them.)
+
 ## Dynamic Instructions
 
 Customize the supervisor's behavior per request using callable prompts. The callable receives the `RunContext` (or `None` if no context is passed).
@@ -264,7 +280,7 @@ Supervisor(
 |--------|-----------|-------------|
 | `run()` | `(input, *, context=None) -> AgentResult` | Synchronous execution |
 | `arun()` | `(input, *, context=None) -> AgentResult` | Async execution |
-| `stream()` | `(input, *, context=None) -> AgentResult` | Sync streaming (collects result; carries `trace_id` and guardrail firings) |
+| `stream()` | `(input, *, context=None) -> AgentResult` | Sync streaming (collects result; carries `trace_id`, guardrail firings, and since 1.68.0 `tokens_used` / `cost` / `cost_known`) |
 | `astream()` | `(input, *, context=None) -> AsyncGenerator[StreamEvent]` | Async streaming |
 | `resume()` | `(execution_id, *, resume_value=None, context=None) -> AgentResult` | Resume a paused or crashed run |
 

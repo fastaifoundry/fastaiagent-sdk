@@ -128,6 +128,8 @@ Attributes set **after** execution:
 |-----------|--------|----------------|
 | `agent.output` | `result.output` | No |
 | `agent.tokens_used` | `result.tokens_used` | No |
+| `swarm.tokens_used` | streamed `Usage` events | No |
+| `supervisor.tokens_used` | streamed `Usage` events | No |
 | `agent.latency_ms` | `result.latency_ms` | No |
 
 The trace_id is extracted from the span context after the span is created:

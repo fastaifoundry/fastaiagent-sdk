@@ -179,10 +179,14 @@ the trace: `output`, `tool_calls` (each with its `iteration`, name, and args),
 checkpointer is attached — `execution_id` and `status` (`"completed"` or
 `"paused"`).
 
-`cost` is summed from every LLM call the run made and is priced against the
-built-in list-price table; `cost_known` tells you whether it could be priced at
-all, because a `0.0` from an unrated model is not the same fact as a `0.0` from
-a free one. `trace_id` is present on every runner and every entry point —
+`tokens_used` and `cost` are both summed from **every** LLM call the run made —
+each turn of the tool loop, a structured re-ask, a guardrail re-ask — because
+both are read from one run-scoped accumulator `LLMClient` writes to at the single
+point every completion passes through. `tokens_used` was read off the *last*
+response until 1.68.0, so a multi-turn run under-reported it; expect the number
+to rise. `cost` is priced against the built-in list-price table, and `cost_known`
+tells you whether it could be priced at all, because a `0.0` from an unrated
+model is not the same fact as a `0.0` from a free one. `trace_id` is present on every runner and every entry point —
 `Agent`, `Swarm`, `Supervisor` and `Chain`, streamed or not, resumed or not —
 which is what lets an eval case, a replay and the UI all point at the same run.
 

@@ -69,10 +69,36 @@ Non-JSON-serializable returns raise `IdempotencyError` at the first call:
 def bad():
     return open("/tmp/x")  # file handles aren't JSONable
 
-# Calling bad() inside a chain run raises:
 # IdempotencyError: @idempotent function 'bad' returned a
 # non-JSON-serializable value of type 'TextIOWrapper': ...
 ```
+
+!!! note "Inside a chain you catch `ToolExecutionError`, not `IdempotencyError`"
+    The decorator raises `IdempotencyError`, but a chain reaches your function
+    through a `FunctionTool`, and `FunctionTool` wraps **any** exception the
+    function raises:
+
+    ```
+    ToolExecutionError: Tool 'n' failed: @idempotent function 'bad' returned a
+    non-JSON-serializable value of type 'TextIOWrapper': ...
+    ```
+
+    The original is preserved on `__cause__`, so catch the wrapper and inspect
+    it:
+
+    ```python
+    from fastaiagent import IdempotencyError
+    from fastaiagent._internal.errors import ToolExecutionError
+
+    try:
+        chain.execute({"order_id": "A-1"})
+    except ToolExecutionError as e:
+        if isinstance(e.__cause__, IdempotencyError):
+            ...  # a cached node returned something unserializable
+    ```
+
+    Called directly — in a unit test, or from a runtime that is not the chain
+    executor — it raises `IdempotencyError` unwrapped.
 
 A consequence: the first call returns the original Python object, but a
 **cache hit** returns the deserialized JSON form (a dict, list, or

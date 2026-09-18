@@ -259,7 +259,7 @@ def _match(model: str) -> _Rate | None:
 
 
 # ---------------------------------------------------------------------------
-# Run-scoped cost accumulation
+# Run-scoped usage accumulation (cost AND tokens)
 # ---------------------------------------------------------------------------
 #
 # ``AgentResult.cost`` was declared in the very first release and never
@@ -273,14 +273,22 @@ def _match(model: str) -> _Rate | None:
 # (a tool loop turn, a structured re-ask, a guardrail re-ask) reports the sum of
 # all three rather than whichever response happened to come back last.
 #
-# "Unknown" is tracked separately from "zero". ``compute_cost_usd`` returns
-# ``None`` for a model it has no rate for: ollama and lmstudio are genuinely
-# free, but a bedrock/azure deployment id is partner-billed and a private
-# fine-tune is simply unknown. Reporting any of those as ``$0.00 spent`` would
-# make a budget gate certify a run it never priced — the §2.4 shape of a check
-# that cannot check reporting a clean verdict. So the run carries a
+# ``tokens_used`` is in the same bucket for exactly that reason. Until 1.68.0 it
+# was computed at the call site from ``response.usage["total_tokens"]``, and
+# ``execute_tool_loop`` returns only the LAST response — so a three-turn run
+# reported one turn's tokens next to a cost that covered all three. Two numbers
+# derived from the same completions have to be produced by the same hook, or
+# they drift, and one of them is always the one nobody re-checks.
+#
+# "Unknown" is tracked separately from "zero" — for cost. ``compute_cost_usd``
+# returns ``None`` for a model it has no rate for: ollama and lmstudio are
+# genuinely free, but a bedrock/azure deployment id is partner-billed and a
+# private fine-tune is simply unknown. Reporting any of those as ``$0.00 spent``
+# would make a budget gate certify a run it never priced — the §2.4 shape of a
+# check that cannot check reporting a clean verdict. So the run carries a
 # ``cost_known`` flag alongside the number, and a budget check treats unknown as
-# unknown.
+# unknown. Tokens need no such flag: a provider either reported a count or it
+# reported nothing, and nothing is zero.
 
 _TOKEN_KEYS_IN = ("prompt_tokens", "input_tokens")
 _TOKEN_KEYS_OUT = ("completion_tokens", "output_tokens")
@@ -351,11 +359,38 @@ def usage_cost(
     return cost, True
 
 
+def usage_tokens(usage: dict[str, Any] | None) -> int:
+    """Total tokens one completion reported, however the provider spelled it.
+
+    ``total_tokens`` when the provider gave one (every OpenAI-compatible wire
+    does), else prompt + completion — which is what the Anthropic, Gemini,
+    Bedrock and Ollama adapters normalise to, and the only shape a streamed
+    ``Usage`` event has.
+    """
+    if not usage:
+        return 0
+    total = usage.get("total_tokens")
+    if total is not None:
+        try:
+            return int(total)
+        except (TypeError, ValueError):
+            return 0
+    return _tokens(usage, _TOKEN_KEYS_IN) + _tokens(usage, _TOKEN_KEYS_OUT)
+
+
 @dataclass
-class _RunCost:
+class _RunUsage:
+    """What one run has spent, in dollars and in tokens.
+
+    One bucket rather than two because the two numbers describe the same set of
+    completions. Keeping them apart is how ``cost`` ended up correct across
+    every turn of a tool loop while ``tokens_used`` reported only the last.
+    """
+
     usd: float = 0.0
     calls: int = 0
     priced_calls: int = 0
+    tokens: int = 0
 
     @property
     def known(self) -> bool:
@@ -367,21 +402,23 @@ class _RunCost:
         Zero calls is *known* and zero: a scope that has not called a model yet
         has provably spent nothing. That is what lets an ``input``-position
         ``cost_limit`` rule give a real verdict instead of erroring.
+
+        Cost only — tokens carry no such flag, see the section comment above.
         """
         return self.priced_calls == self.calls
 
 
-_run_cost: ContextVar[_RunCost | None] = ContextVar("fastaiagent_run_cost", default=None)
+_run_cost: ContextVar[_RunUsage | None] = ContextVar("fastaiagent_run_cost", default=None)
 
 
-def start_run_cost() -> Token[_RunCost | None]:
-    """Begin accumulating cost for the current task. Returns the reset token.
+def start_run_cost() -> Token[_RunUsage | None]:
+    """Begin accumulating cost + tokens for the current task. Returns the reset token.
 
     Nested runs (a swarm's child agent inside the swarm's own scope) each open
-    their own accumulator, so a child's cost is reported on the child's result
+    their own accumulator, so a child's usage is reported on the child's result
     and re-counted on the parent only if the parent also accumulates.
     """
-    return _run_cost.set(_RunCost())
+    return _run_cost.set(_RunUsage())
 
 
 def record_run_cost(
@@ -390,15 +427,31 @@ def record_run_cost(
     *,
     provider: str | None = None,
 ) -> tuple[float, bool]:
-    """Price one completion and add it to the active run, if any."""
+    """Price one completion, count its tokens, and add both to the active run."""
     cost, known = usage_cost(model, usage, provider=provider)
     bucket = _run_cost.get()
     if bucket is not None:
         bucket.calls += 1
+        bucket.tokens += usage_tokens(usage)
         if known:
             bucket.priced_calls += 1
             bucket.usd += cost
     return cost, known
+
+
+def record_run_tokens(usage: dict[str, Any] | None) -> None:
+    """Count one completion's tokens without pricing it.
+
+    For completions the SDK makes through something that is *not*
+    ``LLMClient._acomplete_with_retries`` — the offline ``TestModel`` /
+    ``FunctionModel``, which implement the client surface rather than extend its
+    internals. They have no rate and must not be priced (a ``test-model`` with a
+    price would make every offline run's ``cost_known`` false), but their token
+    counts are real and a multi-turn offline run should report all of them.
+    """
+    bucket = _run_cost.get()
+    if bucket is not None:
+        bucket.tokens += usage_tokens(usage)
 
 
 def run_cost() -> tuple[float, bool]:
@@ -409,5 +462,11 @@ def run_cost() -> tuple[float, bool]:
     return (bucket.usd, True) if bucket.known else (0.0, False)
 
 
-def stop_run_cost(token: Token[_RunCost | None]) -> None:
+def run_tokens() -> int:
+    """Tokens billed to the active run so far. ``0`` when not tracking."""
+    bucket = _run_cost.get()
+    return bucket.tokens if bucket is not None else 0
+
+
+def stop_run_cost(token: Token[_RunUsage | None]) -> None:
     _run_cost.reset(token)

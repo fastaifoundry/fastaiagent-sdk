@@ -43,12 +43,13 @@ def test_capital(evaluate_one):  # type: ignore[no-untyped-def]
 
 # --- @pytest_dataset: parametrise over a JSONL file -----------------------
 
-_DATASET_PATH = Path(__file__).with_name("_eval_pytest_data.jsonl")
-_DATASET_PATH.write_text(
-    '{"input": "ping", "expected_output": "pong"}\n'
-    '{"input": "ack",  "expected_output": "ack"}\n',
-    encoding="utf-8",
-)
+# ``@dataset(...)`` reads the file when the decorator runs — i.e. at import,
+# during pytest collection — so the file has to exist before then. It used to
+# be *written* here, at module level, which meant merely collecting or
+# importing this example dropped an untracked file into the repo. The dataset
+# is checked in next to the example instead: nothing to clean up, and it is a
+# file you can open and edit, which is the point of the decorator.
+_DATASET_PATH = Path(__file__).with_name("eval_pytest_dataset.jsonl")
 
 
 @dataset(_DATASET_PATH)

@@ -1,8 +1,14 @@
 """Example 08: Trace a real LangChain LLM call with FastAIAgent.
 
 Drives ``ChatOpenAI.invoke()`` through the fastaiagent LangChain callback
-handler and prints the recently-emitted ``langchain.*`` spans from the
-local trace store.
+handler and prints the spans that call wrote to the local trace store.
+
+Note what the span is *called*. Invoking a chat model directly fires
+``on_chat_model_start``, which the handler names ``llm.{provider}.{model}`` —
+so this run produces ``llm.openai.gpt-4.1``, not ``langchain.*``. A
+``langchain.{name}`` span only appears for a root ``on_chain_start``, i.e.
+when you invoke an actual LangChain *chain* (``prompt | llm``, an LCEL
+runnable, an AgentExecutor). This example invokes the model on its own.
 
 Requirements:
     pip install "fastaiagent[langchain]" langchain langchain-openai
@@ -46,6 +52,40 @@ def _langchain_compat() -> None:
             setattr(langchain, attr, None if attr == "llm_cache" else False)
 
 
+def _max_span_rowid(db_path: Path) -> int:
+    """Highest ``spans.rowid`` currently stored, or 0 if there is no store yet."""
+    if not db_path.exists():
+        return 0
+    conn = sqlite3.connect(str(db_path))
+    try:
+        row = conn.execute("SELECT COALESCE(MAX(rowid), 0) FROM spans").fetchone()
+        return int(row[0]) if row else 0
+    except sqlite3.OperationalError:
+        # No ``spans`` table yet — the first traced call creates it.
+        return 0
+    finally:
+        conn.close()
+
+
+def _spans_since(db_path: Path, watermark: int) -> list[tuple[str, str]]:
+    """``(name, trace_id)`` for every span written after ``watermark``."""
+    if not db_path.exists():
+        return []
+    conn = sqlite3.connect(str(db_path))
+    try:
+        return [
+            (str(name), str(trace_id))
+            for name, trace_id in conn.execute(
+                "SELECT name, trace_id FROM spans WHERE rowid > ? ORDER BY rowid",
+                (watermark,),
+            )
+        ]
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        conn.close()
+
+
 def main() -> int:
     _langchain_compat()
     if not os.environ.get("OPENAI_API_KEY"):
@@ -65,6 +105,17 @@ def main() -> int:
     handler = lc_int.get_callback_handler()
     print(f"handler: {type(handler).__name__}")
 
+    # Read the db path the SDK actually writes to, so FASTAIAGENT_LOCAL_DB /
+    # FASTAIAGENT_TRACE_DB_PATH are honoured instead of assumed.
+    from fastaiagent._internal.config import get_config
+
+    db_path = Path(get_config().resolved_trace_db_path)
+
+    # Watermark the span table *before* the call. Selecting "recent spans"
+    # by name instead would show rows from unrelated earlier runs on a
+    # lived-in local.db — and show nothing at all on a clean machine.
+    watermark = _max_span_rowid(db_path)
+
     marker = uuid.uuid4().hex[:8]
     print(f"\nInvoking ChatOpenAI (marker={marker}) ...")
 
@@ -78,28 +129,14 @@ def main() -> int:
     )
     print(f"response: {response.content!r}")
 
-    db_path = Path.cwd() / ".fastaiagent" / "local.db"
-    if not db_path.exists():
-        print(f"\nNote: no local trace store found at {db_path}.")
-        return 0
+    rows = _spans_since(db_path, watermark)
 
-    conn = sqlite3.connect(str(db_path))
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT name FROM spans WHERE name LIKE 'langchain.%' "
-            "ORDER BY rowid DESC LIMIT 5"
-        )
-        rows = cur.fetchall()
-    finally:
-        conn.close()
-
-    print(f"\nMost recent langchain.* spans in {db_path.name}:")
+    print(f"\nSpans this run wrote to {db_path}:")
     if not rows:
         print("  (none — spans may still be in flight; try again in a moment)")
     else:
-        for (name,) in rows:
-            print(f"  - {name}")
+        for name, trace_id in rows:
+            print(f"  - {name}  (trace {trace_id[:16]})")
 
     print("\nView all traces with: fastaiagent traces list")
     return 0

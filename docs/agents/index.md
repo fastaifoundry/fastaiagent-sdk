@@ -56,7 +56,7 @@ agent = Agent(
 result = agent.run("What's the weather in Paris and where is order ORD-123?")
 print(result.output)       # LLM's final text response
 print(result.tool_calls)   # List of tool calls made
-print(result.tokens_used)  # Total tokens consumed
+print(result.tokens_used)  # Tokens across EVERY turn of the run, not just the last
 print(result.latency_ms)   # Total execution time
 ```
 
@@ -118,6 +118,8 @@ print(result.output)  # Clean output passes both guardrails
 To guard against **input** containing PII, set the position explicitly:
 
 ```python
+from fastaiagent import Agent, LLMClient
+from fastaiagent._internal.errors import GuardrailBlockedError
 from fastaiagent.guardrail import no_pii, GuardrailPosition
 
 agent = Agent(
@@ -138,18 +140,35 @@ except GuardrailBlockedError as e:
 
 **Built-in guardrail factories:**
 
-| Factory | What it checks |
-|---------|---------------|
-| `no_pii()` | SSN, email, phone numbers, credit card numbers |
-| `json_valid()` | Output is valid JSON |
-| `toxicity_check()` | Toxic keywords |
-| `cost_limit(max_usd=0.10)` | The run's accumulated LLM spend so far. Blocks over budget; **raises** (so `on_error` decides) when the model has no rate in the pricing table, because an unpriced run is not a free one. Until 1.67.0 this always passed. |
-| `allowed_domains(["api.example.com"])` | URL domains in tool calls |
+All thirteen are exported from `fastaiagent.guardrail`. The default position is
+in the signature — `no_pii()` is an **output** guardrail, `no_prompt_injection()`
+an **input** one, `allowed_domains()` a **tool_call** one — and every factory
+takes `position=` to move it.
+
+| Factory | What it checks | Default position |
+|---------|---------------|---|
+| `no_pii(entities=…, backend=…)` | Email, US phone, SSN, credit cards (Luhn-validated) | `output` |
+| `no_secrets()` | Leaked credentials, API keys and tokens | `output` |
+| `no_prompt_injection(mode="heuristic"｜"llm")` | Prompt-injection / jailbreak attempts. `on_error="allow"` by default | `input` |
+| `json_valid()` | Output is valid JSON | `output` |
+| `toxicity_check(mode="keyword"｜"llm")` | Toxic language. `on_error="allow"` by default | `output` |
+| `openai_moderation(model="omni-moderation-latest")` | Content flagged by the OpenAI moderation endpoint. `on_error="block"` | `output` |
+| `grounded(reference, threshold=0.7)` | Whether the answer is supported by `reference`. `on_error="block"` | `output` |
+| `no_hallucination(reference, threshold=0.7)` | Alias of `grounded()` — same check, the name you reach for | `output` |
+| `banned_topics([...])` | Content falling under any banned topic (blocklist). `on_error="allow"` | `output` |
+| `allowed_topics([...])` | Content *outside* the given topics (allowlist gate). `on_error="block"` | `output` |
+| `cost_limit(max_usd=0.10)` | The run's accumulated LLM spend so far. Blocks over budget; **raises** (so `on_error` decides) when the model has no rate in the pricing table, because an unpriced run is not a free one. Until 1.67.0 this always passed. | `output` |
+| `allowed_domains(["api.example.com"])` | URL domains in tool calls | `tool_call` |
+| `responsible_ai(...)` | Not one guardrail — returns a **list** to spread into `guardrails=[...]`. See [Responsible AI](../guardrails/responsible-ai.md) | (several) |
+
+See the [Guardrails reference](../guardrails/index.md) for each factory's full
+signature and [`on_error`](../guardrails/concepts.md#when-the-check-itself-fails-on_error)
+for what a *degraded* check costs.
 
 **Custom guardrails:**
 
 ```python
-from fastaiagent.guardrail import Guardrail, GuardrailPosition
+from fastaiagent.guardrail import Guardrail, GuardrailPosition, GuardrailType
 
 # Inline function
 guardrail = Guardrail(
@@ -311,17 +330,48 @@ to `/public/v1/sdk/agents`. See [Pushing agent definitions](../platform/index.md
 
 ## AgentResult
 
-Every agent execution returns an `AgentResult`:
+Every agent execution returns an `AgentResult`. It has twelve fields, and the
+table below is all of them:
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `output` | `str` | The agent's final text response |
+| `parsed` | `Any \| None` | The response parsed into your `output_type`, when the agent declares one. `None` otherwise — read this, not `output`, for a structured run. |
 | `tool_calls` | `list[dict]` | All tool calls made during execution |
-| `tokens_used` | `int` | Total tokens consumed |
+| `tokens_used` | `int` | Tokens across **every** LLM call the run made — each turn of the tool loop, a structured re-ask, a guardrail re-ask. Same run-scoped accumulator `cost` is built from, so the two always agree. |
 | `cost` | `float` | Estimated USD spend, summed over **every** LLM call the run made — the tool loop's turns, a structured re-ask, a guardrail re-ask. Priced from the model id and the provider's token counts against the built-in list-price table (override it with `set_rate_overrides()`). `0.0` for a model with no rate — see `cost_known`. |
 | `cost_known` | `bool` | Whether every call in the run could be priced. **`cost == 0.0` does not always mean the run was free**: a private fine-tune and a bedrock/azure deployment id have no rate, and reporting `$0.00` for them would be a guess, so this reads `False`. A self-hosted provider (`ollama`, `lmstudio`, `vllm`) is the exception — it runs on hardware you already pay for, so it is a known zero and this reads `True`. Check this flag before trusting the number. |
 | `latency_ms` | `int` | Total execution time in milliseconds |
 | `trace_id` | `str \| None` | Trace ID for debugging. Populated on every path since 1.67.0 — `run`, `arun`, `stream`, and the same fields on `Swarm`, `Supervisor` and `Chain`. |
+| `execution_id` | `str` | The durable execution's id. Always populated when a `checkpointer=` is configured; `""` otherwise. It is what you pass to `agent.aresume(...)`. |
+| `status` | `str` | `"completed"` for a normal run, `"paused"` when a tool called [`interrupt()`](../durability/index.md). A paused run **returns** — it does not raise — so a durability user must branch on this. |
+| `pending_interrupt` | `dict \| None` | Set when `status == "paused"`: `{reason, context, node_id, agent_path}` — the same payload the `/approvals` UI reads from the `pending_interrupts` table. |
+| `guardrails` | `list[GuardrailFiring]` | Every guardrail that executed, in order, across all four positions. The **only** way to observe a non-halting outcome: `warn`, `mask` and `override` all let the run finish, so before 1.64.0 a run with the Local UI off and no plane attached reported a clean string whether or not a rule had fired. A blocking failure still raises `GuardrailBlockedError` rather than returning. |
+
+```python
+result = agent.run("my ssn is 123-45-6789")
+
+if result.status == "paused":
+    print("waiting on", result.pending_interrupt["reason"], result.execution_id)
+
+for g in result.guardrails:
+    if g.fired():
+        print(g.name, g.position, g.action_taken)
+```
+
+!!! warning "`tokens_used` counts the whole run as of 1.68.0 — the number goes up"
+    It used to be read off the **last** LLM response the tool loop returned, so a
+    three-call run reported one call's tokens and a re-ask reported none of the
+    turns that preceded it. It now comes from the run-scoped accumulator
+    `LLMClient` writes to at the single point every completion passes through —
+    the same hook `cost` uses, which is why the two now agree.
+
+    This is a behaviour change with no deprecation window: for any multi-turn run
+    the reported number **increases**, and a budget, alert or assertion calibrated
+    against the old value will see a step change at 1.68.0. Single-call runs are
+    unaffected. A custom client that implements `acomplete` without extending
+    `LLMClient` never reaches the accumulator and keeps the legacy last-response
+    sum, because that is a better answer for it than zero.
 
 !!! note "Where cost comes from, and where it lands"
     It is computed at the provider call inside `LLMClient` and also written to

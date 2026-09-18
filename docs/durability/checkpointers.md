@@ -199,8 +199,11 @@ The Protocol surface is small. To add Redis, S3, MongoDB, etc.,
 implement these methods on a class and pass it as `checkpointer=`:
 
 ```python
+from __future__ import annotations   # required: ``list`` below shadows the builtin
+
 from datetime import timedelta
 from typing import Any
+
 from fastaiagent.chain.checkpoint import Checkpoint
 from fastaiagent.checkpointers import PendingInterrupt
 
@@ -220,6 +223,15 @@ class MyBackend:
     def put_idempotent(self, execution_id: str, function_key: str, result: Any) -> None: ...
     def prune(self, older_than: timedelta) -> int: ...
 ```
+
+!!! warning "`list` is a method name here, and it shadows the builtin"
+    The Protocol's `list(...)` comes from the v1 spec, so a backend must spell
+    it that way. Inside the class body that name then shadows `list`, and the
+    later `-> list[Checkpoint]` annotations are evaluated against the *method* —
+    `TypeError: 'function' object is not subscriptable` at class-definition
+    time. `from __future__ import annotations` (above) defers annotation
+    evaluation and fixes it; the SDK's own Protocol instead imports `builtins`
+    and writes `-> builtins.list[Checkpoint]`. Either works — pick one.
 
 The
 [`Checkpointer`](api-reference.md#checkpointer-protocol) Protocol is
@@ -294,23 +306,46 @@ A queue (Redis, SQS, RabbitMQ) drives jobs into a worker pool. Each
 worker polls for pending interrupts and resumes them.
 
 ```python
-import time
-from datetime import timedelta
+import asyncio
+import os
+
+from fastaiagent.chain.interrupt import AlreadyResumed, Resume
 from fastaiagent.checkpointers.postgres import PostgresCheckpointer
 
 cp = PostgresCheckpointer(os.environ["DATABASE_URL"])
+chains_by_name = {...}          # your own registry: chain_name -> Chain
 
-while True:
-    for pending in cp.list_pending_interrupts(limit=10):
-        # Domain logic: should this auto-resume? After how long? With what?
-        if should_auto_approve(pending):
+
+def should_auto_approve(pending) -> bool:
+    # Domain logic: should this auto-resume? After how long? With what?
+    return False
+
+
+async def worker() -> None:
+    while True:
+        for pending in cp.list_pending_interrupts(limit=10):
+            if not should_auto_approve(pending):
+                continue
+            chain = chains_by_name[pending.chain_name]
             try:
-                chain = chains_by_name[pending.chain_name]
-                await chain.aresume(pending.execution_id, resume_value=Resume(approved=True))
+                await chain.aresume(
+                    pending.execution_id,
+                    resume_value=Resume(approved=True),
+                )
             except AlreadyResumed:
                 pass  # another worker beat us
-    time.sleep(5)
+
+        await asyncio.sleep(5)
+
+
+asyncio.run(worker())
 ```
+
+Note the shape: `aresume` is a coroutine, so the poll loop has to live **inside**
+an `async def` — `await` at module level is a `SyntaxError`, and `time.sleep`
+inside an async worker would block the event loop for every other task in the
+process. `AlreadyResumed` and `Resume` both come from
+`fastaiagent.chain.interrupt`.
 
 The atomic-claim contract makes "another worker beat us" a clean
 no-op, not a duplicate side effect.

@@ -13,7 +13,13 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from fastaiagent._internal.async_utils import run_sync
-from fastaiagent._internal.pricing import run_cost, start_run_cost, stop_run_cost
+from fastaiagent._internal.pricing import (
+    run_cost,
+    run_tokens,
+    start_run_cost,
+    stop_run_cost,
+    usage_tokens,
+)
 from fastaiagent.agent.context import (
     RunContext,
     reset_active_run_context,
@@ -32,6 +38,7 @@ from fastaiagent.chain.checkpoint import (
     latest_forkable,
     latest_resumable,
     write_run_end,
+    write_run_end_once,
 )
 from fastaiagent.chain.idempotent import _current_checkpointer
 from fastaiagent.chain.interrupt import (
@@ -90,6 +97,28 @@ FORK_SKIPPED_NOTE = "this tool was not run: the conversation was branched before
 _stream_outcome: ContextVar[dict[str, Any] | None] = ContextVar(
     "fastaiagent_stream_outcome", default=None
 )
+
+
+def _run_tokens_or(response: Any, retry_tokens: int) -> int:
+    """This run's token total.
+
+    The run-scoped accumulator is authoritative: ``LLMClient`` adds to it at the
+    one point every completion passes through, so a three-turn tool loop, a
+    structured re-ask and a guardrail re-ask are all counted once and the number
+    agrees with ``cost``, which is built from the same hook. Before 1.68.0 this
+    was ``response.usage["total_tokens"] + retry_tokens`` — and
+    ``execute_tool_loop`` hands back only the LAST response, so every turn but
+    the last went unbilled.
+
+    The fallback covers a client that implements ``acomplete`` instead of
+    extending ``LLMClient``'s internals — a user's own subclass, or a test
+    double. Those never reach the accumulator, and the legacy sum is a better
+    answer for them than zero.
+    """
+    accumulated = run_tokens()
+    if accumulated:
+        return accumulated
+    return usage_tokens(getattr(response, "usage", None)) + retry_tokens
 
 
 def _loop_end_turn(tool_calls: list[dict[str, Any]], start_iteration: int) -> int:
@@ -935,7 +964,7 @@ class Agent:
                     traced_add(self.memory, AssistantMessage(output))
 
                 latency = int((time.monotonic() - start) * 1000)
-                tokens = response.usage.get("total_tokens", 0) + retry_tokens
+                tokens = _run_tokens_or(response, retry_tokens)
 
                 # The run finished. Without this row a completed run and one that
                 # crashed right after its last turn are byte-identical — both leave a
@@ -969,10 +998,13 @@ class Agent:
                 # from ``aresume``'s status guard (audit D5).
                 latency = int((time.monotonic() - start) * 1000)
                 # A paused run has already spent what it spent; reporting 0.0
-                # would make a pause look free.
+                # would make a pause look free. Same for its tokens, which the
+                # paused branch simply never set — a HITL run that burned three
+                # turns before the approval gate reported none of them.
                 paused_cost, paused_cost_known = run_cost()
                 return AgentResult(
                     output="",
+                    tokens_used=run_tokens(),
                     cost=paused_cost,
                     cost_known=paused_cost_known,
                     execution_id=exec_id,
@@ -1587,6 +1619,57 @@ class Agent:
             )
         )
 
+        # A fork is a run, and a run that ends leaves a tombstone (audit D5).
+        # ``_arun_core`` writes one — but only when the AGENT carries a
+        # checkpointer, while ``afork`` runs off ``self._checkpointer or
+        # SQLiteCheckpointer()``. So a fork could be durable while the agent was
+        # not: the lineage row landed in a real store and the branch was closed
+        # by nobody, leaving a dead fork indistinguishable from one that simply
+        # stopped. ``write_run_end_once`` reads the store rather than guessing,
+        # so the delegating case still ends with exactly one row.
+        #
+        # ``agent_path`` is this agent's own label, not ``base.agent_path``: the
+        # row describes the RUN, so it carries the path of whoever owns it. The
+        # source checkpoint may have been written by an agent nested under a
+        # swarm, and inheriting that path would name the branch after a topology
+        # it is no longer part of. Same rule ``write_run_end`` documents.
+        try:
+            result = await self._fork_branch(
+                base, fork_id, input=input, context=context, **kwargs
+            )
+        except BaseException as exc:
+            write_run_end_once(
+                store,
+                execution_id=fork_id,
+                chain_name=self.name,
+                status="failed",
+                error=exc,
+                agent_path=self._agent_path_label,
+            )
+            raise
+        # A paused branch has not ended, and a row after its ``interrupted`` one
+        # would hide the pause from ``aresume``'s status guard.
+        if result.status == "completed":
+            write_run_end_once(
+                store,
+                execution_id=fork_id,
+                chain_name=self.name,
+                status="completed",
+                agent_path=self._agent_path_label,
+            )
+        return result
+
+    async def _fork_branch(
+        self,
+        base: Checkpoint,
+        fork_id: str,
+        *,
+        input: AgentInput | None,
+        context: RunContext[Any] | None,
+        **kwargs: Any,
+    ) -> AgentResult:
+        """Run one forked branch. Split out of :meth:`afork` only so the marker
+        above wraps both of its shapes."""
         if input is not None:
             # Counterfactual input: re-run with the new request under the fork id.
             return await self.arun(input, context=context, execution_id=fork_id, **kwargs)
