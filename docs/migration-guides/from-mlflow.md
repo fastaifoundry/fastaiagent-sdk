@@ -62,14 +62,21 @@ fastaiagent.integrations.langchain.enable()
 mlflow.register_model(model_uri, "my-model")
 
 # After (FastAIAgent) — version prompts instead
-from fastaiagent.prompt import PromptRegistry, Prompt
+from fastaiagent.prompt import PromptRegistry
+
 registry = PromptRegistry()
-registry.save(Prompt(
+prompt = registry.register(
     name="support-prompt",
     template="You are a support agent for {{company}}...",
-    version=2,
-))
+    version=2,          # omit to auto-increment
+)
+print(prompt.name, prompt.version)  # "support-prompt" 2
 ```
+
+`register()` takes the fields and **returns** the stored `Prompt`; there is no
+`save()` and it does not accept a `Prompt` object. Read one back with
+`registry.get("support-prompt")` (add `version=` to pin), and fill it in with
+[`Prompt.format(**kwargs)`](../prompts/index.md).
 
 ## Next Steps
 

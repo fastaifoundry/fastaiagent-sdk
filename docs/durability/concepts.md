@@ -69,6 +69,14 @@ committed work:
   would claim the run ended at every handoff. A **paused** run gets none: a pause
   is not an ending.
 
+    Since 1.68.0 a **fork is a run** by this rule too. `Chain.afork` and
+    `Agent.afork` write the same terminal row under the branch's own
+    `execution_id` — `failed` when the branch raises, `completed` when it
+    finishes, and none when it pauses. Before 1.68.0 a forked branch wrote no
+    marker at all in either direction, so a branch that died was byte-identical
+    to one that merely stopped, and a branch that *finished* left nothing to stop
+    `aresume` re-executing it.
+
 Why the run-end row exists: without it a run that finished and a run that died
 the instant after its last step are byte-identical — both leave a `completed`
 checkpoint as the newest row. Nothing could tell them apart, so `aresume` on an
@@ -80,7 +88,10 @@ crash recovery is the whole point, so a run that raised stays resumable.
 **Fork reads the same rows and answers differently**, which is the one place the
 tombstone's meaning splits. `resume` re-enters the *same* run, so a finished one
 must be refused. `fork` writes a *new* `execution_id` and leaves the original
-untouched, so a finished run is the most ordinary thing to branch. Both must skip
+untouched, so a finished run is the most ordinary thing to branch. Note which
+run each question is about: once a branch has its own marker (1.68.0), resuming
+**the branch** follows the ordinary rule — a completed branch raises
+`AlreadyResumed`, a failed one is stepped over and stays resumable. Both must skip
 the marker — it addresses no node — and they do so through two helpers,
 `latest_resumable` and `latest_forkable`. Until 1.67.0 the fork paths skipped
 nothing: they called `get_last`, picked the tombstone, and refused with

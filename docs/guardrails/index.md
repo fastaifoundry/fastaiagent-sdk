@@ -182,7 +182,7 @@ quality_guard = Guardrail(name="quality_check", fn=check_quality)
 
 ## Ten Implementation Types
 
-Beyond inline functions, guardrails support nine more implementation types for configuration-driven validation. Three of them — `content_safety`, `groundedness` and `topic` — are model-backed judges with structure; two more — `pii` and `secrets` — are detector-backed and are the only types that can genuinely redact. All five are documented in full under [Actions, severity & floor](actions.md#three-model-backed-check-types):
+Beyond inline functions, guardrails support nine more implementation types for configuration-driven validation. Three of them — `content_safety`, `groundedness` and `topic` — are model-backed judges with structure; two more — `pii` and `secrets` — are detector-backed and are the only types that can genuinely redact. All five are documented in full under *Actions, severity & floor* — the judges under [Three model-backed check types](actions.md#three-model-backed-check-types), the detectors under [Two detector-backed check types](actions.md#two-detector-backed-check-types):
 
 ### Code (default)
 

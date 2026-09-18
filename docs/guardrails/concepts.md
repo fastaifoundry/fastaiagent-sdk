@@ -48,8 +48,16 @@ applicable guardrails with a deliberate two-phase strategy:
    it executes (fail-fast).
 2. **Non-blocking guardrails run after, in parallel** (`asyncio.gather`). A
    non-blocking failure is *recorded* but does **not** stop the run, and an
-   exception inside one is caught and turned into a failed result rather than
-   crashing the agent (fail-open).
+   exception that escapes one is caught and turned into
+   `GuardrailResult(passed=False, errored=True, action_taken="blocked")` rather
+   than crashing the agent.
+
+!!! warning "That catch is *not* fail-open"
+    The recorded verdict is a **failure**, not a pass — the executor fails
+    closed on what it writes down, and `on_error` gets no say on this path
+    (`executor.py` builds the result directly). What it does *not* do is halt
+    the run, because a non-blocking rule never can. "Does not stop the run" and
+    "passes the payload" are different things; only the first is true here.
 
 !!! info "Verified against a live run"
     With one blocking + two non-blocking guardrails at `input`: on clean data
@@ -72,7 +80,7 @@ for g in blocking:                        # sequential, fail-fast
         raise GuardrailBlockedError(...)  # stops the run
 results += await asyncio.gather(          # non-blocking, parallel
     *[g.aexecute(outcome.data) for g in non_blocking],
-    return_exceptions=True,               # an exception → GuardrailResult(passed=False)
+    return_exceptions=True,               # → GuardrailResult(passed=False, errored=True)
 )
 ```
 
@@ -182,18 +190,34 @@ same `GuardrailResult`:
 | Type | How it decides |
 |------|----------------|
 | `code` | Runs your Python `fn(data)` — arbitrary logic |
-| `regex` | Matches a pattern; `match_type` flips whether a match means pass or fail |
+| `regex` | Searches for `config["pattern"]`; `should_match` flips whether a match means pass (`True`) or fail (default `False`) |
 | `schema` | Validates the data against a JSON Schema |
 | `llm_judge` | Calls a model with a rubric and parses the verdict **fail-closed** (ambiguous → fail) |
-| `classifier` | Calls a classification endpoint (e.g. a moderation model) and thresholds the score |
+| `classifier` | Keyword matching, **not** a model: substring-searches `config["categories"]` (a `{category: [keyword, …]}` map) and blocks the hits, narrowed by `config["blocked"]` when one is given |
 | `content_safety` | Scores the payload against the MLCommons hazard taxonomy, with a bar per category |
 | `groundedness` | Scores an answer against the context it was given |
 | `topic` | Classifies against named topics, then `deny` (blocklist) or `allow` (on-topic gate) |
 | `pii` | Detects personal data with the shared detectors; can redact, not just refuse |
 | `secrets` | Detects leaked credentials and tokens; can redact, not just refuse |
 
-The last three are model-backed judges with structure — see
-[Actions, severity & floor](actions.md#three-model-backed-check-types).
+Three of them — `content_safety`, `groundedness` and `topic` — are model-backed
+judges with structure; two more — `pii` and `secrets` — are detector-backed and
+are the only types that can genuinely redact. See
+[Actions, severity & floor](actions.md#three-model-backed-check-types) for the
+first three and [its detector section](actions.md#two-detector-backed-check-types)
+for the other two.
+
+!!! warning "`classifier` is not a model, and since 1.64.0 `blocked` only narrows"
+    `classifier` is pure substring matching over the keyword lists in
+    `config["categories"]` — there is no endpoint, no model and no score
+    threshold. Two consequences worth knowing:
+
+    - A rule with **no categories** raises rather than reporting a pass: a rule
+      that scans for nothing cannot tell a clean payload from a dirty one.
+    - Until 1.64.0, a rule with **no `blocked` list** detected categories and
+      then reported success — nothing ever blocked. It now blocks every category
+      it detects, matching the plane; `blocked` narrows that set, and its absence
+      no longer disarms the rule.
 
 This is the mechanical basis for the two-axis view below: the *type* is which
 decider runs; the *concern* is what you point it at.
@@ -268,8 +292,8 @@ without the runtime](../integrations/primitives-without-the-runtime.md).
 
 ## Next steps
 
-- [Guardrails](index.md) — the full reference: all seven types, built-in factories, custom guardrails, serialization
-- [Actions, severity & floor](actions.md) — what a failure costs, and the two model-backed check types
+- [Guardrails](index.md) — the full reference: all ten types, built-in factories, custom guardrails, serialization
+- [Actions, severity & floor](actions.md) — what a failure costs, plus the three model-backed and two detector-backed check types
 - [Guardrails & evals without the runtime](../integrations/primitives-without-the-runtime.md) — borrowing `run_guardrail` from a foreign framework
 - [Responsible AI (Trust Layer)](responsible-ai.md) — the safety bundle by concern
 - [Managed governance](managed-governance.md) — platform-enforced, approval-gated tool policy

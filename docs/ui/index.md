@@ -179,12 +179,26 @@ every child agent + LLM call nests beneath it. That means a 3-agent
 chain is **one** trace with a tree, not three orphan agent traces — and
 the Workflow badge shows you which kind of runner it was.
 
+!!! warning "The list names a trace by its **root** span (1.68.0)"
+    Until 1.68.0 the traces list and the Home page named a trace by the
+    lexicographically smallest span name in it, not its root. Because `agent.*`
+    and `chain.*` both sort ahead of `supervisor.*` and `swarm.*`, that was most
+    multi-agent traces: a swarm whose spans were `swarm.pair` and `agent.alpha`
+    listed as **`agent.alpha`**. It now lists as **`swarm.pair`**.
+
+    So a trace you knew by a child agent's name is now under its runner's name.
+    Any saved filter, bookmark or screenshot that referred to a swarm or
+    supervisor run by a child agent is stale. The old rule survives only as a
+    fallback, for a trace that legitimately arrives with no root span (a sampled
+    export, a foreign ingest, a crash between a child's `on_end` and its
+    parent's) — an unnamed row is worse than an approximate one.
+
 Everything the SDK does is traced as a span in that tree:
 
 | Span name | Emitted by | Notable attributes |
 |---|---|---|
-| `agent.<name>` | `Agent.arun()` | `agent.name`, `agent.input`, `agent.output`, `agent.tokens_used`, `agent.latency_ms`, `agent.llm.*` |
-| `chain.<name>` / `swarm.<name>` / `supervisor.<name>` | `Chain.execute()` / `Swarm.arun()` / `Supervisor.arun()` | `fastaiagent.runner.type`, `chain.node_count`, `swarm.entrypoint`, etc. |
+| `agent.<name>` | `Agent.arun()` | `agent.name`, `agent.input`, `agent.output`, `agent.tokens_used` (whole run, every turn — see [`AgentResult`](../agents/index.md#agentresult)), `agent.latency_ms`, `agent.llm.*` |
+| `chain.<name>` / `swarm.<name>` / `supervisor.<name>` | `Chain.execute()` / `Swarm.arun()` / `Supervisor.arun()` | `fastaiagent.runner.type`, `chain.node_count`, `swarm.entrypoint`, and — on a streamed run — `swarm.tokens_used` / `supervisor.tokens_used` |
 | `llm.<provider>.<model>` | `LLMClient.complete()` | `gen_ai.request.*`, `gen_ai.usage.*`, `gen_ai.response.*` |
 | `tool.<name>` | every `@tool` / `FunctionTool.aexecute` | `tool.name`, `tool.args`, `tool.status`, `tool.result`, `tool.error` |
 | `retrieval.<kb_name>` | `LocalKB.search()` / `PlatformKB.search()` | `retrieval.kb_name`, `retrieval.kb_id` (PlatformKB only; ungated), `retrieval.backend`, `retrieval.search_type`, `retrieval.query`, `retrieval.top_k`, `retrieval.result_count`, `retrieval.latency_ms`, `retrieval.doc_ids` |

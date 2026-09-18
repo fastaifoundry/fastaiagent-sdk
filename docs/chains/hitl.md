@@ -194,15 +194,41 @@ If you need halt-on-reject, combine a HITL node with a **condition node** that b
 chain.add_node("draft", agent=drafter_agent)
 chain.add_node("review", type=NodeType.hitl)
 chain.add_node("check_approval", type=NodeType.condition,
-               conditions=[{"expression": "{{state.output.approved}} == True", "handle": "approved"}])
+               conditions=[{"expression": "{{state.approved}} == true", "handle": "approved"}])
 chain.add_node("send", agent=sender_agent)
 chain.add_node("abort", type=NodeType.end)
 
 chain.connect("draft", "review")
 chain.connect("review", "check_approval")
-chain.connect("check_approval", "send", condition="approved")
+chain.connect("check_approval", "send", label="approved")   # label, not condition
 chain.connect("check_approval", "abort")  # Default route if not approved
 ```
+
+Rejected, this routes `check_approval → abort` and `send` never runs; approved,
+it routes `check_approval → send`. Three details decide that, and getting any
+one of them wrong silently sends the rejected draft anyway:
+
+- **`label=`, not `condition=`.** A condition node returns `{"matched": handle}`
+  and the router picks the outgoing edge whose **`label`** equals that handle.
+  `connect(..., condition=...)` sets a different field — an *expression* the
+  router only consults for **non-condition** nodes — so `condition="approved"`
+  leaves the `send` edge with an empty label. With no edge labelled `approved`
+  and none labelled `default`, the router falls through to *the first unlabelled
+  edge in declaration order* — `send`, both when the draft was approved and when
+  it was rejected.
+- **`{{state.approved}}`, not `{{state.output.approved}}`.** The HITL node
+  returns `{"approved": bool}`, and a dict result is merged into state at the
+  **top level**. There is no `state.output.approved`; that path resolves to the
+  empty string.
+- **`== true`, not `== True`.** Condition expressions are rendered to text and
+  compared as strings. A non-string value is rendered with `json.dumps`, so
+  `True` becomes `true` — and `"true" == "True"` is false. Compare against the
+  lowercase JSON spelling.
+
+!!! warning "Verified: the pre-1.68.0 version of this example did not halt"
+    With `condition="approved"`, `state.output.approved` and `== True`, a
+    rejected run executed `draft → review → check_approval → send`. All three
+    faults pointed the same way — towards sending.
 
 You can inspect the approval decision after execution:
 

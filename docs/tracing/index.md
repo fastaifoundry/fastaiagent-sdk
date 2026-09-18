@@ -129,11 +129,18 @@ Returned by `list_traces()` and `search()`:
 | Field | Type | Description |
 |-------|------|-------------|
 | `trace_id` | `str` | Unique trace identifier |
-| `name` | `str` | Root span name |
+| `name` | `str` | Root span name. Falls back to the lexicographically smallest span name only when the trace has no root span. |
 | `start_time` | `str` | ISO timestamp |
 | `status` | `str` | OK, ERROR, UNSET |
 | `span_count` | `int` | Number of spans |
 | `duration_ms` | `int` | Total duration |
+
+!!! note "`name` became the root span in 1.68.0"
+    It was the smallest span name in the trace, full stop — so a swarm whose
+    spans were `swarm.pair` and `agent.alpha` came back as `agent.alpha`, because
+    `agent.*` sorts ahead of `swarm.*`. That hit most multi-agent traces, and the
+    same expression backs the Local UI's traces list and Home page, so a run you
+    knew by a child agent's name now lists under its runner's.
 
 ### TraceData
 
@@ -241,8 +248,10 @@ Every `agent.run()` root span carries enough metadata for [Agent Replay](../repl
 | `agent.name` | Agent name |
 | `agent.input` | Input passed to `agent.run()` |
 | `agent.output` | Final output |
-| `agent.tokens_used` | Total tokens consumed |
+| `agent.tokens_used` | Tokens across every LLM call of the run (each tool-loop turn and every re-ask), not just the last response. Whole-run since 1.68.0. |
 | `agent.latency_ms` | Wall-clock duration |
+| `swarm.tokens_used` | Tokens across a streamed swarm run, summed over every hop. Set by `Swarm.stream()` only — the non-streaming path reports the same number on the result. New in 1.68.0. |
+| `supervisor.tokens_used` | The supervisor's **own** turns, not its workers' — each worker reports its spend on its own result. Set by `Supervisor.stream()` only. New in 1.68.0. |
 | `agent.config` | JSON-encoded `AgentConfig` (max_iterations, temperature, max_tokens, etc.) |
 | `agent.tools` | JSON-encoded list of tool schemas (name, description, parameters) |
 | `agent.guardrails` | JSON-encoded list of guardrails (name, position, blocking, type) |

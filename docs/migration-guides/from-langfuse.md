@@ -50,10 +50,15 @@ compiled = prompt.compile(variable="value")
 
 # After (FastAIAgent)
 from fastaiagent.prompt import PromptRegistry
+
 registry = PromptRegistry()
 prompt = registry.get("my-prompt")
-rendered = prompt.render(variable="value")
+rendered = prompt.format(variable="value")
 ```
+
+The method is `Prompt.format(**kwargs)` — there is no `render()`. It is the
+`compile()` of Langfuse's `TextPromptClient` under a different name, and it
+substitutes `{{variable}}` placeholders in the stored template.
 
 ### 3. Replace Langfuse Scores
 

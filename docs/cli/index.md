@@ -76,13 +76,19 @@ fastaiagent disconnect
 ## `fastaiagent traces`
 
 ```bash
-# List recent traces
+# List recent traces (last 24h by default)
 fastaiagent traces list
-fastaiagent traces list --limit 50
+fastaiagent traces list --last-hours 168
 
-# Export a trace as JSON
-fastaiagent traces export <trace_id> --output trace.json
+# Export a trace as JSON — printed to stdout, so redirect to save it
+fastaiagent traces export <trace_id> > trace.json
+fastaiagent traces export <trace_id> --format json
 ```
+
+!!! note "There is no `--limit` and no `--output`"
+    `traces list` windows by time, not by row count — `--last-hours N` is its
+    only option. `traces export` takes `--format` (currently `json`) and writes
+    to stdout; shell redirection is how you get a file.
 
 ## `fastaiagent replay`
 

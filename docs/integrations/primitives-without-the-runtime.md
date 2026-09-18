@@ -155,13 +155,23 @@ SDK-run agent and a borrowed-primitive runtime indistinguishable downstream.
 
 | Span | Classifier | Payload |
 |------|-----------|---------|
-| Guardrail | `openinference.span.kind = "GUARDRAIL"` | `fastaiagent.guardrail.{name,position,passed,errored,checks}` plus the optional `{action,action_taken,severity,floor}` |
+| Guardrail | `openinference.span.kind = "GUARDRAIL"` | `fastaiagent.guardrail.{name,position,passed,errored,checks}` plus the optional `{action,action_taken,severity,floor}` and `fastaiagent.guardrail.detail` |
 | Inline eval | `openinference.span.kind = "EVALUATOR"` | `evaluation.{name,score,label,explanation,annotator_kind}` |
 
 OpenInference standardizes the *kind*, not guardrail outcome fields — there is
 no ecosystem standard for those — so `fastaiagent.guardrail.*` is our documented
 convention riding under the standard kind. `fastaiagent.guardrail.name` is how
 the plane resolves the span to a guardrail row, so always send it.
+
+`detail` is the check's own structured findings — which topic tripped, which
+entity kinds a `pii` scan counted — JSON-serialized onto
+`fastaiagent.guardrail.detail`. Pass it and your audit row is as thick as the
+plane's for the same rule; omit it and the check reports only pass/fail. **Pass
+only fields that cannot carry payload content:** the key is registered in
+`SENSITIVE_ATTR_KEYS` so the payload gate reaches it, but that is a backstop,
+not a licence. The SDK runtime's own allowlist for its built-in types is
+`guardrail.executor.EXPORTABLE_DETAIL_KEYS` — an allowlist, not a filter, so a
+type absent from it exports nothing.
 
 `action` / `action_taken` / `severity` / `floor` are optional keyword arguments
 on both emitters, omitted when you don't pass them — a borrowing runtime that

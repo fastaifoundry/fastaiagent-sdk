@@ -26,7 +26,7 @@ asyncio.run(main())
 
 ## StreamEvent Types
 
-Every streaming method yields `StreamEvent` objects. There are five event types:
+Every streaming method yields `StreamEvent` objects. There are six event types:
 
 | Event | Fields | When Emitted |
 |-------|--------|-------------|
@@ -34,13 +34,19 @@ Every streaming method yields `StreamEvent` objects. There are five event types:
 | `ToolCallStart` | `call_id: str`, `tool_name: str` | LLM initiates a tool call |
 | `ToolCallEnd` | `call_id: str`, `tool_name: str`, `arguments: dict` | Tool call arguments fully parsed |
 | `Usage` | `prompt_tokens: int`, `completion_tokens: int` | Token counts (typically at end of response) |
+| `HandoffEvent` | `from_agent: str`, `to_agent: str`, `reason: str = ""` | Control passes from one agent to another. Emitted by [`Swarm.astream()`](../agents/swarm.md#streaming) only, tagged in ahead of the target agent's first `TextDelta` |
 | `StreamDone` | *(none)* | End-of-stream marker |
 
 ```python
 from fastaiagent.llm.stream import (
-    StreamEvent, TextDelta, ToolCallStart, ToolCallEnd, Usage, StreamDone
+    StreamEvent, TextDelta, ToolCallStart, ToolCallEnd, Usage, HandoffEvent, StreamDone
 )
 ```
+
+A single-agent `astream()` never yields a `HandoffEvent` — there is nothing to
+hand off to — so a loop that only handles the other five is still correct for
+`LLMClient.astream()` and `Agent.astream()`. Handle it when you stream a `Swarm`,
+or an agent switch renders as a gap in the text.
 
 These types align with the FastAIAgent Platform's streaming protocol for seamless compatibility.
 
@@ -181,6 +187,18 @@ print(result.trace_id, result.tokens_used, result.execution_id)
     came back empty. Pass `trace=False` to stream inside a workflow that already
     owns the root span. `Swarm.stream()` and `Supervisor.stream()` open their own
     `swarm.*` / `supervisor.*` roots the same way.
+
+!!! warning "A streamed `Swarm` / `Supervisor` now reports tokens and cost too (1.68.0)"
+    `Swarm.stream()` and `Supervisor.stream()` assemble their `AgentResult` by
+    hand, and until 1.68.0 that hand-assembly never mentioned `tokens_used`,
+    `cost` or `cost_known` — all three came back at their defaults, so a streamed
+    multi-agent run looked **free** while the identical `run()` / `arun()` call
+    reported real numbers. Both now sum `Usage` events for tokens and read the
+    run-scoped accumulator for cost.
+
+    If you have been treating a streamed swarm or supervisor result as having no
+    spend data, that assumption no longer holds — and if you were reading `0.0`
+    as "free", it will now read as whatever the run actually cost.
 
 ```python
 # Async — yields events from LLM

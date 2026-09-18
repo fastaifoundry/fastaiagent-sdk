@@ -142,12 +142,12 @@ a silent success. If your middleware needs the remaining calls to run, return a
 Keeps only the most recent `keep_last` messages plus any leading `SystemMessage`. Cheap alternative to summarization for long-running agents.
 
 ```python
-from fastaiagent import Agent, TrimLongMessages
+from fastaiagent import Agent, LLMClient, TrimLongMessages
 
 agent = Agent(
     name="chatty",
+    llm=LLMClient(provider="openai", model="gpt-4.1"),
     middleware=[TrimLongMessages(keep_last=30)],
-    ...,
 )
 ```
 
@@ -169,12 +169,12 @@ more expensive of the two.
 Raises `StopAgent` once `max_calls` tool invocations have occurred in a single run.
 
 ```python
-from fastaiagent import Agent, ToolBudget
+from fastaiagent import Agent, LLMClient, ToolBudget
 
 agent = Agent(
     name="budgeted",
+    llm=LLMClient(provider="openai", model="gpt-4.1"),
     middleware=[ToolBudget(max_calls=5)],
-    ...,
 )
 ```
 
@@ -200,12 +200,12 @@ return the stop message unparsed.
 Redacts PII from outbound messages **and** inbound LLM responses.
 
 ```python
-from fastaiagent import Agent, RedactPII
+from fastaiagent import Agent, LLMClient, RedactPII
 
 agent = Agent(
     name="safe",
+    llm=LLMClient(provider="openai", model="gpt-4.1"),
     middleware=[RedactPII()],
-    ...,
 )
 ```
 
@@ -234,7 +234,7 @@ without consulting the shared detector. Non-string content (a multimodal message
 A `TokenCounter` middleware that tallies tokens across a run:
 
 ```python
-from fastaiagent import AgentMiddleware
+from fastaiagent import Agent, AgentMiddleware, LLMClient
 
 class TokenCounter(AgentMiddleware):
     name = "token_counter"
@@ -244,7 +244,11 @@ class TokenCounter(AgentMiddleware):
         ctx.scratch["tokens_total"] = ctx.scratch.get("tokens_total", 0) + used
         return response
 
-agent = Agent(name="counter", llm=..., middleware=[TokenCounter()])
+agent = Agent(
+    name="counter",
+    llm=LLMClient(provider="openai", model="gpt-4.1"),
+    middleware=[TokenCounter()],
+)
 result = await agent.arun("hello")
 # Access via a second middleware, or log from after_model.
 ```
