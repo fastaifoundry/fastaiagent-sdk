@@ -977,7 +977,8 @@ def get_span_attachment(
             if record.full_data is None:
                 raise HTTPException(
                     status.HTTP_404_NOT_FOUND,
-                    "full_data not stored — set fa.config.trace_full_images=True before the run",
+                    "full_data not stored — set fastaiagent.config.trace_full_images = True "
+                    "(or FASTAIAGENT_TRACE_FULL_IMAGES=1) before the run",
                 )
             return Response(content=record.full_data, media_type=record.media_type)
         if record.thumbnail is None:

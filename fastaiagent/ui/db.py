@@ -792,7 +792,7 @@ _MIGRATIONS: dict[int, list[_Step]] = {
         # Multimodal attachments. Span ``attributes`` JSON only stores
         # metadata + thumbnails; full bytes live here so the trace DB
         # doesn't balloon. ``thumbnail`` is always populated; ``full_data``
-        # only when ``fa.config.trace_full_images=True``.
+        # only when ``fastaiagent.config.trace_full_images`` is True.
         """CREATE TABLE IF NOT EXISTS trace_attachments (
             attachment_id  TEXT PRIMARY KEY,
             trace_id       TEXT NOT NULL,

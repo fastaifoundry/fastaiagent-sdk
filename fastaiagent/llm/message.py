@@ -243,3 +243,109 @@ def ToolMessage(content: str | list[Any], tool_call_id: str) -> Message:  # noqa
     returns multimodal output (e.g. a screenshot ``Image``).
     """
     return Message(role=MessageRole.tool, content=content, tool_call_id=tool_call_id)
+
+
+# --- The tool-call / tool-result invariant ---------------------------------
+#
+# Both OpenAI and Anthropic reject a request whose history breaks it:
+#
+#   * every assistant message carrying ``tool_calls`` must be followed by
+#     exactly one tool result per ``tool_call_id``;
+#   * every tool result must have a parent tool call.
+#
+# Several agent paths can end a turn between those two halves — a middleware
+# ``StopAgent`` raised from inside ``wrap_tool``, a resume that answers one of
+# several parallel calls, a message trimmer that slices the pair apart. The
+# history is then wrong whether or not anything re-sends it, which is why the
+# repair lives here rather than at each call site's convenience.
+
+#: What a synthesized tool result says when the call never ran. Deliberately
+#: plain text the model can act on: it must not read like a tool *result*, and
+#: it must not invite a retry the agent has no way to service (a skipped
+#: sibling is never re-dispatched — see ``docs/durability/concepts.md``).
+UNANSWERED_TOOL_RESULT = "[no result: {note}]"
+
+
+def tool_message_imbalance(messages: list[Message]) -> tuple[list[str], list[str]]:
+    """Return ``(unanswered_tool_call_ids, orphaned_tool_result_ids)``.
+
+    Pure inspection — nothing is modified. ``unanswered`` is in the order the
+    assistant declared the calls; ``orphans`` in the order they appear.
+    """
+    unanswered: list[str] = []
+    orphans: list[str] = []
+    open_ids: list[str] = []
+    answered: set[str] = set()
+
+    for msg in messages:
+        if msg.role == MessageRole.assistant and msg.tool_calls:
+            unanswered.extend(i for i in open_ids if i not in answered)
+            open_ids = [tc.id for tc in msg.tool_calls]
+            answered = set()
+        elif msg.role == MessageRole.tool:
+            tool_call_id = msg.tool_call_id or ""
+            if tool_call_id in open_ids and tool_call_id not in answered:
+                answered.add(tool_call_id)
+            else:
+                orphans.append(tool_call_id)
+        else:
+            unanswered.extend(i for i in open_ids if i not in answered)
+            open_ids = []
+            answered = set()
+
+    unanswered.extend(i for i in open_ids if i not in answered)
+    return unanswered, orphans
+
+
+def balance_tool_messages(messages: list[Message], *, note: str) -> list[Message]:
+    """Restore the provider invariant: every assistant tool_call has exactly one
+    ToolMessage, and every ToolMessage has a parent tool_call.
+
+    Returns a new list. Two repairs, and they are not symmetric:
+
+    * **Unanswered calls are answered**, with a synthetic result carrying
+      ``note`` — the tool is *not* run. The note is the honest record that the
+      call produced nothing; inventing a plausible result, or dropping the
+      assistant message so the call disappears, would both hide a turn the model
+      believes it took.
+    * **Orphaned results are dropped.** There is nothing truthful to invent a
+      parent call from, and a result with no call is the half a provider
+      rejects outright.
+
+    ``note`` should say *why* in the model's own terms ("the agent stopped
+    before this tool ran"), because the model reads it.
+    """
+    out: list[Message] = []
+    open_ids: list[str] = []
+    answered: set[str] = set()
+
+    def flush() -> None:
+        nonlocal open_ids, answered
+        for tool_call_id in open_ids:
+            if tool_call_id not in answered:
+                out.append(
+                    ToolMessage(
+                        content=UNANSWERED_TOOL_RESULT.format(note=note),
+                        tool_call_id=tool_call_id,
+                    )
+                )
+        open_ids = []
+        answered = set()
+
+    for msg in messages:
+        if msg.role == MessageRole.assistant and msg.tool_calls:
+            flush()
+            out.append(msg)
+            open_ids = [tc.id for tc in msg.tool_calls]
+        elif msg.role == MessageRole.tool:
+            tool_call_id = msg.tool_call_id or ""
+            if tool_call_id in open_ids and tool_call_id not in answered:
+                answered.add(tool_call_id)
+                out.append(msg)
+            # else: orphan — dropped.
+        else:
+            flush()
+            out.append(msg)
+
+    flush()
+    return out

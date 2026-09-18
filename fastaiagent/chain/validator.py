@@ -36,6 +36,50 @@ def detect_cycles(nodes: list[NodeConfig], edges: list[Edge]) -> list[list[str]]
     return cycles
 
 
+def _payload_errors(node: NodeConfig) -> list[str]:
+    """What is missing from this node for it to be able to run at all.
+
+    Kept as its own function because it is a per-node question, and because the
+    list has to stay in step with ``executor._execute_node``: every raise there
+    has an entry here, and a node type with nothing to require has none.
+
+    Wording note — these strings must not contain the words "handle" or
+    "default", which name the *routing* findings a caller may filter on.
+    """
+    errors: list[str] = []
+    if node.type == NodeType.agent:
+        if node.agent is None:
+            errors.append(
+                f"Node '{node.id}' is an agent node with no agent attached. "
+                f"Pass chain.add_node('{node.id}', agent=<Agent>) — or pass tool=, "
+                f"which makes it a tool node."
+            )
+    elif node.type == NodeType.tool:
+        if node.tool is None:
+            errors.append(
+                f"Node '{node.id}' is a tool node with no tool attached. "
+                f"Pass chain.add_node('{node.id}', tool=FunctionTool(name=..., fn=...))."
+            )
+    elif node.type == NodeType.transformer:
+        if not node.config.get("template"):
+            errors.append(
+                f"Node '{node.id}' is a transformer with no template, so it can only "
+                f"produce an empty string. Pass template='...'."
+            )
+    elif node.type == NodeType.parallel:
+        if not node.config.get("agents"):
+            errors.append(
+                f"Node '{node.id}' is a parallel node with no children. Pass agents=[<Agent>, ...]."
+            )
+    elif node.type == NodeType.condition:
+        if not node.config.get("conditions"):
+            errors.append(
+                f"Node '{node.id}' is a condition node with no conditions, so it "
+                f"decides nothing. Pass conditions=[...]."
+            )
+    return errors
+
+
 def validate_chain(nodes: list[NodeConfig], edges: list[Edge]) -> list[str]:
     """Validate chain structure. Returns list of error messages."""
     errors: list[str] = []
@@ -63,6 +107,13 @@ def validate_chain(nodes: list[NodeConfig], edges: list[Edge]) -> list[str]:
             continue
         if len(nodes) > 1 and node.id not in connected:
             errors.append(f"Node '{node.id}' is orphaned (no edges)")
+
+    # Per-node payload checks — the design-time half of the 1.67.0 rule that a
+    # node which cannot run must say so. The executor now raises on each of
+    # these, which is the enforcement; this is the same finding reported before
+    # the run starts and before the model bill.
+    for node in nodes:
+        errors.extend(_payload_errors(node))
 
     # Check cyclic edges have max_iterations
     for edge in edges:

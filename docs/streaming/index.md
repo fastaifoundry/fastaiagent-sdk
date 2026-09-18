@@ -169,7 +169,18 @@ async for event in agent.astream("Hello"):
 # Sync — collects all events into a single result
 result = agent.stream("Hello")   # returns AgentResult
 print(result.output)
+print(result.trace_id, result.tokens_used, result.execution_id)
 ```
+
+!!! note "A streamed run is a traced run (1.67.0)"
+    `astream()` opens an `agent.<name>` root span, exactly as `arun()` does, so
+    the `llm.*` and `tool.*` spans of a streamed run nest under one root and the
+    `AgentResult` from `stream()` carries `trace_id`, `tokens_used`, `cost` and
+    `execution_id`. Before 1.67.0 `astream()` accepted a `trace` parameter and
+    ignored it: streamed spans were emitted as orphan roots and all four fields
+    came back empty. Pass `trace=False` to stream inside a workflow that already
+    owns the root span. `Swarm.stream()` and `Supervisor.stream()` open their own
+    `swarm.*` / `supervisor.*` roots the same way.
 
 ```python
 # Async — yields events from LLM

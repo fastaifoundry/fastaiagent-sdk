@@ -81,10 +81,14 @@ Three rules worth knowing:
   own machine, and the plane is a replica.
 * **Only when connected.** Disconnected, a resume fails exactly as it always
   did. Nothing about local durability depends on the plane.
-* **`FASTAIAGENT_RESTORE_FROM_PLANE=0` turns it off.** The restore resurrects a
-  run whose local checkpoints were deliberately deleted — right for disaster
+* **`FASTAIAGENT_RESTORE_FROM_PLANE` off turns it off.** The restore resurrects
+  a run whose local checkpoints were deliberately deleted — right for disaster
   recovery, wrong for an erasure request. It is an environment switch rather
-  than a per-call argument because it is a deployment-wide policy.
+  than a per-call argument because it is a deployment-wide policy. Any of
+  `0`/`false`/`no`/`off` disables it (before 1.67.0 only the literal `0` did,
+  which is worth checking if you set it to honour a deletion request), and it is
+  listed with the other egress controls in
+  [Environment variables](../configuration/environment-variables.md).
 
 ⚠ The **local UI's** resume button does not do this. It resolves the runner from
 a local checkpoint row and returns 404 when there is none, so it can only resume
@@ -162,8 +166,17 @@ stays clear regardless.
 
 Connected durability is part of the Enterprise bundle, gated by the
 `connected_state_plane` feature flag on your domain. If the domain is not
-entitled, the ingest endpoint returns `403` — the SDK logs a warning, leaves the
-checkpoints buffered (a terminal 4xx is not retried), and the run is unaffected.
+entitled, the ingest endpoint returns `403` — the SDK logs a warning, **leaves
+the checkpoints buffered**, and the run is unaffected. They drain on the next
+kick after entitlement is granted; nothing is discarded.
+
+(To be precise about which 4xx does what: a 401/403/404/408/429 is a condition of
+the *connection*, so the batch is not retried in that drain pass but the rows
+stay buffered forever — see
+["Local-first, non-blocking, one deliberate loss"](#local-first-non-blocking-one-deliberate-loss)
+above. Only the
+payload-shaped refusals — 400, 409, 413, 422 — quarantine the offending row,
+because re-sending that exact payload can only fail the same way.)
 
 > Upgrade note: the local `checkpoints.synced` column is added by an automatic,
 > additive migration (local schema v13). Existing checkpoints are marked as

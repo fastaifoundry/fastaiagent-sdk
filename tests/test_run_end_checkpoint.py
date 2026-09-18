@@ -106,6 +106,41 @@ async def test_a_node_that_raises_writes_a_failed_marker_and_still_raises(tmp_pa
 
 
 @pytest.mark.asyncio
+async def test_a_node_that_could_not_run_writes_a_failed_marker(tmp_path) -> None:
+    """The marker has to record what the run actually did, not what it attempted.
+
+    A node with nothing attached used to *return* ``{"error": "No agent
+    attached…"}`` as its result. The executor merged that into chain state, wrote
+    the node's own checkpoint ``status="completed"``, and the run finished with a
+    ``completed`` marker — so the durable record of a chain that ran nothing was
+    byte-identical to one that worked. The distinction the marker was introduced
+    to make (finished vs. died) was being made correctly over an answer that was
+    itself wrong.
+    """
+    store = _store(tmp_path, "unrunnable.db")
+    chain = Chain("unrunnable", checkpoint_enabled=True, checkpointer=store)
+    chain.add_node(
+        "first",
+        tool=FunctionTool(name="first", fn=_double),
+        type=NodeType.tool,
+        input_mapping={"value": "{{state.amount}}"},
+    )
+    chain.add_node("empty", type=NodeType.agent)  # nothing attached
+    chain.connect("first", "empty")
+
+    with pytest.raises(Exception):
+        await chain.aexecute({"amount": 2}, execution_id="ex-unrunnable")
+
+    marker = store.get_last("ex-unrunnable")
+    assert is_run_end(marker)
+    assert marker is not None and marker.status == "failed"
+    assert "nothing attached to run" in marker.state_snapshot.get("run_error", "")
+    # And the failed run stays resumable — a repaired chain re-enters at the
+    # node that could not run, exactly as a crashed one does.
+    assert latest_resumable(store, "ex-unrunnable").node_id == "first"
+
+
+@pytest.mark.asyncio
 async def test_a_paused_run_gets_no_marker(tmp_path) -> None:
     """A pause is not an ending.
 

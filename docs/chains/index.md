@@ -33,7 +33,7 @@ print(result.execution_id)     # UUID for checkpointing/resume
 
 | Type | Purpose | Example |
 |------|---------|---------|
-| `agent` | Run an agent (default) | `chain.add_node("research", agent=my_agent)` |
+| `agent` | Run an agent | `chain.add_node("research", agent=my_agent)` |
 | `tool` | Execute a tool directly | `chain.add_node("fetch", tool=my_tool)` |
 | `condition` | Branch based on state | See [Conditional Branching](#conditional-branching) |
 | `transformer` | Render a template | `chain.add_node("fmt", type=NodeType.transformer, template="Hello {{state.name}}")` |
@@ -41,13 +41,35 @@ print(result.execution_id)     # UUID for checkpointing/resume
 | `hitl` | Pause for human approval | See [Human-in-the-Loop](hitl.md) |
 | `start` / `end` | Explicit entry/exit points | `chain.add_node("in", type=NodeType.start)` |
 
+**The type is inferred from what you attach.** `agent=` builds an agent node,
+`tool=` builds a tool node, `node=` (a [`@node`](typed-nodes.md) function) builds a tool node. Every other type needs `type=` because it has no
+attachment to infer from. An explicit `type=` always wins, and `agent=` together
+with `tool=` still means an agent node.
+
 ```python
 from fastaiagent.chain import NodeType
 
-chain.add_node("classify", agent=classifier_agent)
+chain.add_node("classify", agent=classifier_agent)          # agent node
+chain.add_node("fetch", tool=fetch_tool)                    # tool node
 chain.add_node("transform", type=NodeType.transformer, template="Category: {{state.category}}")
-chain.add_node("approve", type=NodeType.hitl)
+chain.add_node("approve", type=NodeType.hitl)               # needs a hitl_handler at run time
 ```
+
+!!! warning "A node with nothing to run now fails the run"
+
+    Until 1.67.0, `add_node("fetch", tool=my_tool)` — the form this table used
+    to show — built an **agent** node with no agent, because only `node=`
+    inferred a type. The run then reported `status="completed"` with
+    `{"error": "No agent attached to node 'fetch'"}` as that node's output, and
+    `chain.validate()` returned `[]` because it only ever checked the graph.
+
+    A node that cannot run is now a **failed** run, not a completed one:
+    `add_node` refuses `fn=` / `function=` / `func=` / `callable=` and a `tool=`
+    that is not a Tool; the executor raises `ChainError` for an agent node with
+    no agent, a tool node with no tool, a transformer with no template, a
+    condition node with no conditions and a parallel node with no children; and
+    `validate()` reports all of those before the run starts. Because it is a
+    failed run rather than a completed one, it stays **resumable** once fixed.
 
 ## Connecting Nodes
 
@@ -92,7 +114,7 @@ The executor walks edges in declaration order, applying these rules at each sour
 3. **`NodeType.condition` nodes** — the node returns `{"matched": handle}`; the outgoing edge whose `label` equals that `handle` wins, with the unlabeled or `"default"`-labeled edge as fallback.
 4. **Dead branches** — a node that no upstream branch routes to is silently skipped (it does not appear in `result.node_results`).
 
-`chain.validate()` enforces two structural rules at design time: a source mixing conditional and unconditional edges may have **at most one** default, and a condition node's outgoing edges must label every `handle` it can return (or provide a default).
+`chain.validate()` enforces two structural rules at design time: a source mixing conditional and unconditional edges may have **at most one** default, and a condition node's outgoing edges must label every `handle` it can return (or provide a default). It also asks, per node, whether the node has anything to run at all — see [Concepts](concepts.md#validation).
 
 ## Typed State
 
@@ -195,6 +217,16 @@ Checks for:
 - Missing edge targets (referencing nonexistent nodes)
 - Orphaned nodes (no incoming or outgoing edges)
 - Cyclic edges without `max_iterations`
+- Routing ambiguity (more than one default edge; an unlabeled condition handle)
+- **Nodes with nothing to run** — an agent node with no agent, a tool node with
+  no tool, a transformer with no template, a parallel node with no children, a
+  condition node with no conditions
+
+The last group is new in 1.67.0 and is the design-time half of a run-time
+refusal: the executor now raises on each of them, and `validate()` is the same
+finding reported before the run starts and before the model bill. An approval
+gate is deliberately *not* in the list — its handler is an argument to
+`execute()`, so at validate() time there is nothing yet to be missing.
 
 ## Tool Node State Behavior
 
@@ -354,7 +386,7 @@ def write_record(payload: dict, ctx: fa.RunContext[Deps]) -> dict:
     return ctx.state.db.insert(payload)
 
 chain = Chain("ingest", checkpoint_enabled=True)
-chain.add_node("persist", type=NodeType.tool, tool=write_record,
+chain.add_node("persist", tool=write_record,       # type inferred from tool=
                input_mapping={"payload": "{{state.input}}"})
 
 ctx = fa.RunContext(state=Deps(db=my_pool))

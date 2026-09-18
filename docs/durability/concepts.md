@@ -61,7 +61,9 @@ committed work:
   the same input.
 
 - **Run end**: one terminal row per run, `step_type="run_end"`, with
-  `status="completed"` on success or `"failed"` when an exception escaped. It is
+  `status="completed"` on success or `"failed"` when an exception escaped —
+  including an exception from *after* the tool loop (the re-ask, output
+  guardrails, memory). It is
   written by the **outermost** runner only — a Swarm's child agents and a
   Supervisor's workers share their parent's `execution_id`, and a marker per hop
   would claim the run ended at every handoff. A **paused** run gets none: a pause
@@ -74,6 +76,17 @@ already-finished run silently **re-executed** it, re-calling the model and
 re-firing every side effect not wrapped in `@idempotent`. It now raises
 `AlreadyResumed` instead. A `failed` marker is stepped over rather than refused —
 crash recovery is the whole point, so a run that raised stays resumable.
+
+**Fork reads the same rows and answers differently**, which is the one place the
+tombstone's meaning splits. `resume` re-enters the *same* run, so a finished one
+must be refused. `fork` writes a *new* `execution_id` and leaves the original
+untouched, so a finished run is the most ordinary thing to branch. Both must skip
+the marker — it addresses no node — and they do so through two helpers,
+`latest_resumable` and `latest_forkable`. Until 1.67.0 the fork paths skipped
+nothing: they called `get_last`, picked the tombstone, and refused with
+*"Cannot fork … from node 'run_end': it is the final node"*, which is false twice
+over — `run_end` is not a node, and the run it was refusing to branch was often a
+**failed** one that had branched fine before the marker existed.
 
 `execution_id` is minted once at the start of a run (or supplied by you) and
 placed in a `ContextVar` so every node, tool, and `@idempotent` function in that
@@ -107,6 +120,37 @@ For an agent, the same idea specializes by `node_id`: a `turn:N` crash re-issues
 the LLM call with saved history; a `turn:N/tool:X` crash re-invokes the tool
 with saved args (no LLM re-call); a tool `interrupt()` re-invokes the tool so
 its `interrupt()` returns the `Resume`.
+
+### A turn with several tool calls
+
+The pre-tool checkpoint is written *before* dispatch, so when a model asks for
+three tools in one turn and the **first** pauses, the saved history holds the
+assistant message declaring all three and no results at all.
+
+Resume answers the call it suspended on and then continues at the **next turn**.
+The siblings are **not re-dispatched** — resume re-enters a run at a checkpoint,
+never in the middle of a turn, and firing them here would run side effects the
+model never saw a first result for. They are instead answered with a note saying
+the tool did not run, so:
+
+* the history stays acceptable to OpenAI and Anthropic (before 1.67.0 it was not,
+  and the 400 arrived on the first request after the resume — from a shape that
+  had been persisted, so it survived the process that made it);
+* the model is told plainly that the work did not happen, and can ask for it
+  again on the next turn if it still needs it.
+
+If a tool *must* run even across a pause, make it the call the pause lands on, or
+drive the calls across separate turns.
+
+### A failure *after* the tool loop
+
+A run can also die past the loop — in the structured-output re-ask, an output
+guardrail, or a memory write. Since 1.67.0 that writes a `failed` run-end marker
+like any other crash (before, it wrote none at all, and the run was
+indistinguishable from one that simply finished), plus a turn-boundary row one
+past the loop's last turn. Resume then re-enters **after** the loop and re-issues
+the model, rather than stepping back into the last pre-tool checkpoint and
+re-invoking a tool that had already run.
 
 ## Interrupt, suspend, and the atomic claim
 

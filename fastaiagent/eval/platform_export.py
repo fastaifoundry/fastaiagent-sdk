@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import threading
 import time
 from collections.abc import Sequence
@@ -54,6 +53,21 @@ logger = logging.getLogger(__name__)
 _contract_logged = False
 
 
+def _eval_export_env() -> bool:
+    """Resolver for ``FASTAIAGENT_EXPORT_EVALS`` (registered in ``ENV_FLAGS``).
+
+    **Behaviour change in 1.67.0, signed off.** This used to be
+    ``env.lower() in ("1", "true")``, which made it the odd one out among the
+    egress switches: ``yes``, ``on`` and an *empty* value all **disabled**
+    export, while every other switch read them as "on" / "unset". It now uses
+    the shared parser, so ``yes``/``on`` enable export and an empty value means
+    unset (default on). An unparseable value fails closed — off.
+    """
+    from fastaiagent._internal.env import env_flag
+
+    return env_flag("FASTAIAGENT_EXPORT_EVALS", default=True, on_unparsed=False)
+
+
 def eval_export_enabled() -> bool:
     """Whether persisted eval runs should be queued for the plane.
 
@@ -68,10 +82,7 @@ def eval_export_enabled() -> bool:
         flag = getattr(_connection, "export_evals", None)
         if flag is not None:
             return bool(flag)
-        env = os.environ.get("FASTAIAGENT_EXPORT_EVALS")
-        if env is not None:
-            return env.lower() in ("1", "true")
-        return True
+        return _eval_export_env()
     except Exception:  # pragma: no cover — posture check must never raise
         return False
 

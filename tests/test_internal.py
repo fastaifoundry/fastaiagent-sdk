@@ -1,6 +1,7 @@
 """Tests for fastaiagent._internal module."""
 
 import os
+from pathlib import Path
 from datetime import datetime
 from enum import Enum
 from uuid import uuid4
@@ -80,19 +81,44 @@ class TestConfig:
                 del os.environ[key]
 
     def test_default_config(self):
+        """Every field, not most of them.
+
+        This asserted 11 of 15 fields, and the four it skipped were the four
+        multimodal ones — which is exactly how they drifted into being parsed,
+        documented and read by nothing. The ``model_fields`` comparison below
+        makes the omission impossible to repeat: adding a field to
+        :class:`SDKConfig` without asserting its default fails here.
+        """
         config = SDKConfig()
-        assert config.trace_enabled is True
-        assert config.local_db_path == ".fastaiagent/local.db"
-        assert config.trace_db_path is None
-        assert config.checkpoint_db_path is None
-        assert config.prompt_dir is None
-        assert config.resolved_trace_db_path == ".fastaiagent/local.db"
-        assert config.resolved_checkpoint_db_path == ".fastaiagent/local.db"
-        assert config.ui_enabled is False
-        assert config.ui_host == "127.0.0.1"
-        assert config.ui_port == 7842
-        assert config.log_level == "WARNING"
-        assert config.default_timeout == 120
+        expected = {
+            "trace_enabled": True,
+            "local_db_path": ".fastaiagent/local.db",
+            "trace_db_path": None,
+            "checkpoint_db_path": None,
+            "prompt_dir": None,
+            "kb_dir": ".fastaiagent/kb",
+            "ui_enabled": False,
+            "ui_host": "127.0.0.1",
+            "ui_port": 7842,
+            "cache_dir": ".fastaiagent/cache/",
+            "log_level": "WARNING",
+            "default_timeout": 120,
+            "pdf_mode": "auto",
+            # ``None`` = "use the provider's own per-image cap". A number here
+            # would silently raise Anthropic's 5 MB ceiling to it.
+            "max_image_size_mb": None,
+            "max_pdf_pages": 20,
+            "trace_full_images": False,
+        }
+        assert set(expected) == set(SDKConfig.model_fields), (
+            "SDKConfig gained or lost a field — assert its default here too"
+        )
+        for field, value in expected.items():
+            assert getattr(config, field) == value, field
+        # The default is a literal, not an expanded env value, so it keeps its
+        # POSIX spelling on every platform — compare as a path, not a string.
+        assert Path(config.resolved_trace_db_path) == Path(".fastaiagent/local.db")
+        assert Path(config.resolved_checkpoint_db_path) == Path(".fastaiagent/local.db")
 
     def test_config_from_env(self):
         os.environ["FASTAIAGENT_TRACE_ENABLED"] = "false"
@@ -104,8 +130,12 @@ class TestConfig:
         assert config.trace_enabled is False
         assert config.log_level == "DEBUG"
         assert config.default_timeout == 60
-        assert config.local_db_path == "/tmp/custom.db"
-        assert config.resolved_trace_db_path == "/tmp/custom.db"
+        # ``env_path`` normalises separators, so the expected value has to be
+        # normalised too — on Windows "/tmp/custom.db" resolves to
+        # "\\tmp\\custom.db", which is the same path and a different string.
+        expected_db = os.path.normpath("/tmp/custom.db")
+        assert config.local_db_path == expected_db
+        assert config.resolved_trace_db_path == expected_db
         assert config.ui_port == 9000
 
     def test_legacy_env_var_emits_deprecation(self):
@@ -117,7 +147,7 @@ class TestConfig:
             config = SDKConfig.from_env()
         assert any(issubclass(w.category, DeprecationWarning) for w in caught)
         # Legacy path still honored for back-compat via the resolved helper.
-        assert config.resolved_trace_db_path == "/tmp/legacy-traces.db"
+        assert config.resolved_trace_db_path == os.path.normpath("/tmp/legacy-traces.db")
 
     def test_get_config_singleton(self):
         c1 = get_config()

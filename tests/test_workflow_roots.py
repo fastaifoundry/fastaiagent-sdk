@@ -47,9 +47,20 @@ def _attrs(row: dict[str, Any]) -> dict[str, Any]:
 class TestChainRoot:
     def test_chain_aexecute_emits_chain_root_span(self, _isolated_db: Path):
         from fastaiagent.chain import Chain
+        from fastaiagent.tool.function import FunctionTool
 
         chain = Chain(name="unit-chain")
-        chain.add_node("echo", tool=lambda state: {"message": state.get("msg", "")})
+        # A bare lambda used to be accepted here and quietly did nothing: with no
+        # ``type=``, the node defaulted to ``agent`` with ``agent=None``, the
+        # executor returned ``{"error": "No agent attached…"}`` as its result, and
+        # the run reported ``completed``. This test passed on a chain that never
+        # ran a node. Since 1.67.0 ``tool=`` infers a tool node and a non-Tool is
+        # refused at ``add_node``.
+        chain.add_node(
+            "echo",
+            tool=FunctionTool(name="echo", fn=lambda msg: {"message": msg}),
+            input_mapping={"msg": "{{state.msg}}"},
+        )
         asyncio.run(chain.aexecute({"msg": "hi"}))
 
         rows = _read_spans(_isolated_db)

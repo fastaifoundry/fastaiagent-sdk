@@ -197,6 +197,7 @@ nav:
   - Operate:
       - Security: security.md
       - Environment variables: configuration/environment-variables.md
+      - "SDK configuration": configuration/sdk-config.md
       - Local UI:
           - ui/index.md
           - "Knowledge Bases browser": ui/kb.md

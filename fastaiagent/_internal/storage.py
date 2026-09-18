@@ -12,6 +12,17 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def _keep_db_perms() -> bool:
+    """Resolver for ``FASTAIAGENT_DB_KEEP_PERMS`` (registered in ``ENV_FLAGS``).
+
+    Opting *in* to leaving group/other access on ``local.db`` alone, so an
+    unparseable value must mean "not opted in" — the file gets tightened.
+    """
+    from fastaiagent._internal.env import env_flag
+
+    return env_flag("FASTAIAGENT_DB_KEEP_PERMS", default=False, on_unparsed=False)
+
+
 class SQLiteHelper:
     """Thread-safe SQLite database wrapper.
 
@@ -28,7 +39,13 @@ class SQLiteHelper:
     """
 
     def __init__(self, db_path: str | Path):
-        self.db_path = Path(db_path)
+        # ``expanduser`` here and not only in ``SDKConfig.from_env`` because
+        # direct callers exist: ``fastaiagent ui --db ~/x/local.db``, the
+        # trace/eval CLIs, and user code constructing a helper by hand. Without
+        # it a ``~`` path created a literal ``./~/`` directory relative to the
+        # current working directory, so the same configured path resolved to a
+        # different store depending on where the process was started.
+        self.db_path = Path(os.path.expanduser(os.path.expandvars(str(db_path))))
         # ``local.db`` holds trace payloads, prompts, KB contents, and (adjacent)
         # bcrypt hashes, so it must not be group/world readable. SQLite creates
         # files with the process umask (typically 0o644), and pre-v1.49 installs
@@ -77,12 +94,7 @@ class SQLiteHelper:
         when ``FASTAIAGENT_DB_KEEP_PERMS`` is set (operators who deliberately
         share the DB with a group/other). See security_audit_2 N10.
         """
-        if os.environ.get("FASTAIAGENT_DB_KEEP_PERMS", "").strip().lower() in {
-            "1",
-            "true",
-            "yes",
-            "on",
-        }:
+        if _keep_db_perms():
             return
         try:
             current = os.stat(path).st_mode & 0o777

@@ -113,6 +113,28 @@ The agent returns an `AgentResult` whose `output` is the `StopAgent` message. No
 
 Use `StopAgent` for budgets, completion signals, or feature flags. Use `Guardrail` for policy rejections that should surface as errors.
 
+### What the history looks like after a stop
+
+`StopAgent` raised from `before_model` or `after_model` ends the turn on a
+boundary: nothing is half-done.
+
+`StopAgent` raised from `wrap_tool` does not. The assistant message at the top of
+that turn already declares **every** tool call the model asked for, and the stop
+lands partway through dispatching them. Both OpenAI and Anthropic reject a
+history where an assistant `tool_calls` message is not answered call-for-call, so
+the agent closes the turn before returning (since 1.67.0):
+
+* the call that was in flight is answered with whatever it actually produced — a
+  stopper that fires *before* `call_next` (`ToolBudget` does) produces nothing;
+* every call the stop skipped is answered with a short note saying it was not
+  run.
+
+The skipped calls are **not dispatched**. Their side effects never happen, and
+the note says so in terms the model can act on, rather than leaving it to assume
+a silent success. If your middleware needs the remaining calls to run, return a
+`ToolResult` from `wrap_tool` instead of raising — a short-circuit ends one call,
+`StopAgent` ends the run.
+
 ## Built-in Middleware
 
 ### `TrimLongMessages(keep_last=20)`
@@ -129,6 +151,19 @@ agent = Agent(
 )
 ```
 
+**Trimming preserves tool-call pairing.** `keep_last` is a message count, so the
+window can land between an assistant message carrying `tool_calls` and the tool
+results that answer it. Since 1.67.0 the tail is re-balanced before it is
+returned:
+
+* a tool result whose parent call was trimmed away is **dropped**;
+* a tool call whose results were trimmed away is **answered** with a note saying
+  the result is no longer in the window (the tool did run — only its result fell
+  out of the window).
+
+That can leave slightly more than `keep_last` messages. A provider 400 is the
+more expensive of the two.
+
 ### `ToolBudget(max_calls=10, message="...")`
 
 Raises `StopAgent` once `max_calls` tool invocations have occurred in a single run.
@@ -142,6 +177,23 @@ agent = Agent(
     ...,
 )
 ```
+
+The budget is checked *before* `call_next`, so the call that trips it never runs
+— see [What the history looks like after a stop](#what-the-history-looks-like-after-a-stop).
+
+**With `output_type`.** The stop message becomes the run's output, and it will
+not parse as your schema, so the agent spends its `output_retries` re-asking the
+model with the same history. That is worth knowing for two reasons: the re-ask
+costs turns the budget was meant to save, and it is the request that re-sends the
+stopped turn's history. Before 1.67.0 that second request is what returned
+
+```
+400 An assistant message with 'tool_calls' must be followed by tool messages
+    responding to each 'tool_call_id'
+```
+
+Set `AgentConfig(output_retries=0)` if you would rather a budgeted run simply
+return the stop message unparsed.
 
 ### `RedactPII(patterns=..., placeholder="[REDACTED]", entities=...)`
 

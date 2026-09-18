@@ -193,6 +193,31 @@ Chain failures surface as a small, catchable hierarchy (all subclass
 | `ChainCheckpointError` | A checkpoint save/load fails |
 | `ChainResumeError` | A resume is invalid (e.g. an interrupted run resumed without a `Resume(...)`); subclasses `ChainCheckpointError` |
 
+## Validation
+
+`chain.validate()` returns a list of strings and runs nothing. It answers two
+different questions, and the second one is new in 1.67.0:
+
+**Is the graph coherent?** Edge endpoints exist, no node is orphaned, cyclic
+edges carry a `max_iterations`, routing is unambiguous.
+
+**Can each node run at all?** An agent node with no agent, a tool node with no
+tool, a transformer with no template, a parallel node with no children, a
+condition node with no conditions. Every one of those used to validate clean and
+then *complete* a run having executed nothing — the agent case returned
+`{"error": "No agent attached to node 'x'"}` as the node's result, which the
+executor merged into state and checkpointed `status="completed"`.
+
+The executor now raises `ChainError` on each, so such a run is a **failed** run
+rather than a completed one — and therefore resumable once the chain is fixed,
+rather than a success nobody can re-enter. `validate()` is the cheaper place to
+find out.
+
+An approval gate (`NodeType.hitl`) is not in the second list, and that is a
+decision rather than an omission: a gate's handler is passed to `execute()`, so
+`validate()` cannot know whether one will be there. The executor refuses it at
+run time instead — see [Human-in-the-Loop](hitl.md).
+
 ## A guided learning path
 
 Work through these runnable examples in order — each adds one capability:

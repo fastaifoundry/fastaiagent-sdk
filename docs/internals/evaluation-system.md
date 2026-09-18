@@ -252,8 +252,14 @@ The string is used to look up the class, which is then instantiated with default
 | `JSONValid` | `"json_valid"` | Valid JSON output | `json.loads(output)` succeeds |
 | `RegexMatch` | `"regex_match"` | Pattern match | `re.search(pattern, output)` — requires `pattern` constructor arg |
 | `LengthBetween` | `"length_between"` | Output length bounds | `min_len <= len(output) <= max_len` — requires constructor args |
-| `Latency` | `"latency"` | Response time | Reads `latency_ms` from kwargs, checks `<= max_ms` |
-| `CostUnder` | `"cost_under"` | API cost budget | Reads `cost` from kwargs, checks `<= max_usd` |
+| `Latency` | `"latency"` | Response time | Reads `latency_ms` from kwargs, checks `<= max_ms`. `evaluate()` supplies it from the `AgentResult`, or measures the call when there isn't one. |
+| `CostUnder` | `"cost_under"` | API cost budget | Reads `cost` + `cost_known` from kwargs, checks `<= max_usd`. `evaluate()` supplies both from the `AgentResult`; an unpriced run (`cost_known=False`) **fails** rather than counting as free. |
+
+!!! note "1.67.0 — `evaluate()` fills these in"
+    `eval_one` now collects `latency_ms`, `cost` and `cost_known` from each
+    run and merges them under the caller's `**kwargs` (caller wins). Before
+    that, neither key was ever passed, so both budget gates were structurally
+    incapable of failing.
 
 ### RAG Scorers (LLM-Based)
 

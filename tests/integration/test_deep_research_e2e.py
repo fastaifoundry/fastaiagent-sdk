@@ -49,12 +49,13 @@ pytestmark = pytest.mark.skipif(
 def force_mock_backend(monkeypatch):
     """Pin the search backend to ``mock`` so the test is hermetic."""
     monkeypatch.setenv("SEARCH_BACKEND", "mock")
-    # Tool budget — has to leave room for ~3 search rounds AND the
-    # structured-output completion turn. Too tight (e.g. 3-8) and
-    # ToolBudget halts the researcher before it emits ResearchFindings,
-    # leaving the writer with nothing to cite. Verified empirically:
-    # 10 produces 1+ citations consistently with mock backend.
-    monkeypatch.setenv("RESEARCH_TOOL_BUDGET", "10")
+    # Tool budget: the example's own default (6). It used to be raised to 10
+    # here, with a comment blaming ToolBudget for halting the researcher
+    # "before it emits ResearchFindings" — that was not a budget that was too
+    # tight, it was this bug: ``StopAgent`` from ``wrap_tool`` left the turn's
+    # remaining tool calls unanswered, and the structured-output re-ask that
+    # followed re-sent that history and got a 400 from the provider. Running on
+    # the shipped default is the regression test (1.67.0).
     # Cheap model for researchers; keep gpt-4o for scope/write since
     # judgment quality matters for the report shape we're asserting on.
     monkeypatch.setenv("LLM_MODEL_RESEARCHER", "gpt-4o-mini")

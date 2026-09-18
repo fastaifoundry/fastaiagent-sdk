@@ -145,6 +145,41 @@ def test_env_var_controls_posture(isolated_local_db, monkeypatch, capture_server
     assert eval_export_enabled() is False
 
 
+@pytest.mark.parametrize("value", ["0", "false", "no", "off", "OFF", "  False  "])
+def test_every_false_spelling_disables_export(
+    value, isolated_local_db, monkeypatch, capture_server
+):
+    _connect(capture_server.url)
+    _connection.export_evals = None
+    monkeypatch.setenv("FASTAIAGENT_EXPORT_EVALS", value)
+    assert eval_export_enabled() is False, f"{value!r} did not disable eval export"
+
+
+@pytest.mark.parametrize("value", ["1", "true", "yes", "on", "ON", "  True  ", ""])
+def test_every_true_spelling_enables_export(value, isolated_local_db, monkeypatch, capture_server):
+    """**Behaviour change, 1.67.0 — signed off.**
+
+    This used to be ``env.lower() in ("1", "true")``, so ``yes``, ``on`` and an
+    *empty* value all **disabled** export — the opposite of every other egress
+    switch, and the opposite of what the docs said. Anyone who wrote
+    ``FASTAIAGENT_EXPORT_EVALS=yes`` believing they were turning export on had it
+    off; after this change they have it on, which is what they asked for. That is
+    the one direction in this release that OPENS something, hence its own "if
+    this affects you" note in the changelog.
+    """
+    _connect(capture_server.url)
+    _connection.export_evals = None
+    monkeypatch.setenv("FASTAIAGENT_EXPORT_EVALS", value)
+    assert eval_export_enabled() is True, f"{value!r} did not enable eval export"
+
+
+def test_an_unparseable_value_fails_closed(isolated_local_db, monkeypatch, capture_server):
+    _connect(capture_server.url)
+    _connection.export_evals = None
+    monkeypatch.setenv("FASTAIAGENT_EXPORT_EVALS", "ture")
+    assert eval_export_enabled() is False
+
+
 # ── happy path + wire shape ────────────────────────────────────────────────
 
 

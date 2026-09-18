@@ -16,6 +16,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from fastaiagent._internal.async_utils import run_sync
+from fastaiagent._internal.config import get_config
 from fastaiagent._internal.errors import LLMError, LLMProviderError
 from fastaiagent.llm.message import Message, MessageRole, ToolCall
 from fastaiagent.llm.stream import (
@@ -207,6 +208,56 @@ _BUILTIN_PROVIDERS: frozenset[str] = frozenset(
 )
 
 
+class _Unset:
+    """Sentinel for "the caller did not pass this multimodal argument".
+
+    Needed because the meaningful values overlap with the defaults: an explicit
+    ``max_image_size_mb=None`` means "use the provider's own cap" and must beat
+    ``fa.config.max_image_size_mb``, while *omitting* the argument must let the
+    global through. A plain ``None`` default cannot tell those apart.
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:  # pragma: no cover — debugging aid
+        return "<unset>"
+
+
+_UNSET: Any = _Unset()
+
+
+def _sanitized_history(messages: list[Message], *, where: str) -> list[Message]:
+    """Last line of defence for the tool-call/tool-result invariant.
+
+    Every path that can break the invariant repairs itself at the source (see
+    ``balance_tool_messages``); this is belt and braces for the ones nobody has
+    found yet, and for histories users assemble by hand and pass straight to
+    ``acomplete``.
+
+    It **warns, naming the ids**, rather than repairing quietly. A silent repair
+    here would turn every future instance of this class of bug into an invisible
+    fix — the operator would see a working agent and no signal that the history
+    their code built was wrong — which is the same failure mode as a guardrail
+    that cannot run reporting a clean pass.
+    """
+    from fastaiagent.llm.message import balance_tool_messages, tool_message_imbalance
+
+    unanswered, orphans = tool_message_imbalance(messages)
+    if not unanswered and not orphans:
+        return messages
+    logger.warning(
+        "%s: message history broke the tool-call contract and was repaired before "
+        "sending — unanswered tool_call id(s): %s; orphaned tool result id(s): %s. "
+        "Every assistant tool_call needs exactly one tool result and every tool "
+        "result needs a parent call; the provider would have rejected this request. "
+        "If the history is yours, fix it at the source.",
+        where,
+        unanswered or "none",
+        orphans or "none",
+    )
+    return balance_tool_messages(messages, note="no result was recorded for this tool call")
+
+
 class LLMClient:
     """Unified LLM client supporting multiple providers.
 
@@ -229,6 +280,12 @@ class LLMClient:
 
     Custom providers can be registered via
     :func:`fastaiagent.llm.providers.register_provider`.
+
+    The multimodal arguments ``pdf_mode``, ``max_pdf_pages`` and
+    ``max_image_size_mb`` fall back to ``fastaiagent.config`` when omitted, so
+    ``fa.config.pdf_mode = "vision"`` reaches every client in the process.
+    Passing them explicitly always wins — including an explicit
+    ``max_image_size_mb=None``, which means "use the provider's own cap".
     """
 
     def __init__(
@@ -246,9 +303,9 @@ class LLMClient:
         frequency_penalty: float | None = None,
         presence_penalty: float | None = None,
         parallel_tool_calls: bool | None = None,
-        pdf_mode: str = "auto",
-        max_pdf_pages: int = 20,
-        max_image_size_mb: float | None = None,
+        pdf_mode: str = _UNSET,
+        max_pdf_pages: int = _UNSET,
+        max_image_size_mb: float | None = _UNSET,
         verify: bool | str | ssl.SSLContext | None = None,
         openai_client: Any = None,
         **kwargs: Any,
@@ -278,9 +335,21 @@ class LLMClient:
         self.frequency_penalty = frequency_penalty
         self.presence_penalty = presence_penalty
         self.parallel_tool_calls = parallel_tool_calls
-        self.pdf_mode = pdf_mode
-        self.max_pdf_pages = max_pdf_pages
-        self.max_image_size_mb = max_image_size_mb
+        # Multimodal settings resolve caller kwarg > ``fa.config`` > built-in
+        # default. Before 1.67.0 ``fastaiagent.multimodal.format`` never called
+        # ``get_config()`` at all, so ``fa.config.pdf_mode`` / ``max_pdf_pages``
+        # / ``max_image_size_mb`` were documented but had no path to any code —
+        # only the per-client kwargs worked.
+        _cfg = get_config()
+        self.pdf_mode: str = _cfg.pdf_mode if pdf_mode is _UNSET else pdf_mode
+        self.max_pdf_pages: int = _cfg.max_pdf_pages if max_pdf_pages is _UNSET else max_pdf_pages
+        # ``None`` keeps its meaning — "use the provider's own per-image cap"
+        # (Anthropic 5 MB, OpenAI 20 MB). ``SDKConfig.max_image_size_mb``
+        # defaults to ``None`` for exactly that reason: applying a blanket 20 MB
+        # would have *raised* Anthropic's effective ceiling fourfold.
+        self.max_image_size_mb: float | None = (
+            _cfg.max_image_size_mb if max_image_size_mb is _UNSET else max_image_size_mb
+        )
         self._verify = self._resolve_verify(verify)
         # Optional pre-constructed OpenAI-SDK client (openai.OpenAI /
         # openai.AzureOpenAI / their Async variants). When supplied, the
@@ -314,28 +383,40 @@ class LLMClient:
         - ``None`` (the default) — *unspecified*: consult the
           ``FASTAIAGENT_LLM_VERIFY`` environment variable so the setting can be
           configured without code (e.g. via an Azure ML deployment's
-          ``environment_variables``); it accepts ``"false"``/``"0"``/``"true"``/
-          ``"1"`` or a CA-bundle path. Absent the env var, verification is on.
+          ``environment_variables``); it accepts any of the boolean spellings
+          (``0``/``false``/``no``/``off`` and ``1``/``true``/``yes``/``on``) or a
+          CA-bundle path. Absent the env var, verification is on.
+
+        This one variable is **tri-state**, so it is not an ``env_flag`` — but it
+        reuses the same vocabulary. Before 1.67.0 it recognised only a subset,
+        so ``FASTAIAGENT_LLM_VERIFY=off`` fell through to the path branch and was
+        handed to ``ssl.create_default_context(cafile="off")``, which raises.
 
         security_audit_2 N14: the env var is consulted **only** when ``verify``
         is unspecified (``None``). An explicit ``verify=True`` is never silently
         downgraded to ``False`` by the environment — explicit intent wins.
         """
         if verify is None:
+            from fastaiagent._internal.env import FALSE_VALUES, TRUE_VALUES
+
             env = os.environ.get("FASTAIAGENT_LLM_VERIFY")
-            if env:
+            if env and env.strip():
                 lowered = env.strip().lower()
-                if lowered in ("false", "0", "no"):
+                if lowered in FALSE_VALUES:
                     verify = False
-                elif lowered in ("true", "1", "yes"):
+                elif lowered in TRUE_VALUES:
                     verify = True
                 else:
-                    verify = env  # treat as a CA-bundle path
+                    # A CA-bundle path — expand ``~``/``$VARS`` so a deployment
+                    # can write ``~/certs/corp.pem`` and have it resolve.
+                    verify = os.path.expanduser(os.path.expandvars(env.strip()))
             else:
                 verify = True
 
         if isinstance(verify, str):
-            return ssl.create_default_context(cafile=verify)
+            return ssl.create_default_context(
+                cafile=os.path.expanduser(os.path.expandvars(verify))
+            )
         if verify is False:
             # Warn for interactive/dev visibility AND log so the disabled state
             # is captured even when Python warnings are filtered in production.
@@ -549,6 +630,8 @@ class LLMClient:
         from fastaiagent.trace.otel import get_tracer
         from fastaiagent.trace.span import set_genai_attributes
 
+        messages = _sanitized_history(messages, where="acomplete")
+
         tracer = get_tracer("fastaiagent.llm.client")
         with tracer.start_as_current_span(f"llm.{self.provider}.{self.model}") as span:
             set_genai_attributes(
@@ -632,7 +715,8 @@ class LLMClient:
         tools: list[dict[str, Any]] | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
-        from fastaiagent.trace.span import set_genai_attributes
+        from fastaiagent._internal.pricing import record_run_cost
+        from fastaiagent.trace.span import set_fastaiagent_attributes, set_genai_attributes
 
         start = time.monotonic()
         provider_fn = self._get_provider_fn()
@@ -658,6 +742,26 @@ class LLMClient:
                     else None,
                     finish_reason=response.finish_reason or None,
                 )
+                # Cost, priced at the call — the one place every completion this
+                # client makes passes through, so a tool loop's third turn and a
+                # structured re-ask are both counted without any call site having
+                # to remember. ``fastaiagent.cost.total_usd`` is the same key the
+                # langchain/crewai/pydanticai integrations have always set and is
+                # already in ``FASTAIAGENT_ATTRIBUTES``: an existing key on an
+                # existing payload, so not a wire event (CLAUDE.md §2.2).
+                #
+                # The attribute is set only when the cost is known. A genuinely
+                # unpriced model (a private fine-tune, a bedrock/azure deployment
+                # id) leaves it absent, which is what lets the UI fall back to its
+                # own estimate instead of reading a fabricated $0.00. A
+                # self-hosted provider is a known zero rather than an unknown —
+                # see ``LOCAL_FREE_PROVIDERS`` — so a cost gate does not refuse a
+                # laptop running ollama.
+                cost, cost_known = record_run_cost(
+                    self.model, response.usage, provider=self.provider
+                )
+                if cost_known:
+                    set_fastaiagent_attributes(span, **{"cost.total_usd": cost})
                 return response
             except LLMProviderError as e:
                 if attempt < self.max_retries and self._should_retry(e.status_code):
@@ -680,6 +784,8 @@ class LLMClient:
                 if isinstance(event, TextDelta):
                     print(event.text, end="", flush=True)
         """
+        messages = _sanitized_history(messages, where="astream")
+
         stream_providers: dict[str, Any] = {
             "openai": self._stream_openai,
             "anthropic": self._stream_anthropic,
@@ -712,9 +818,26 @@ class LLMClient:
                 f"lmstudio, vllm, sambanova, cerebras."
             )
 
+        from fastaiagent._internal.pricing import record_run_cost
+
         for attempt in range(self.max_retries + 1):
             try:
                 async for event in fn(messages, tools, **kwargs):
+                    # The streamed twin of the cost recorded in
+                    # ``_acomplete_with_retries``. A ``Usage`` event is the only
+                    # place a stream reports its token counts, so it is where a
+                    # streamed turn gets priced — otherwise ``Agent.stream``
+                    # would report the trace id and tokens it gained in 1.67.0
+                    # and still hand back ``cost=0.0``.
+                    if isinstance(event, Usage):
+                        record_run_cost(
+                            self.model,
+                            {
+                                "prompt_tokens": event.prompt_tokens,
+                                "completion_tokens": event.completion_tokens,
+                            },
+                            provider=self.provider,
+                        )
                     yield event
                 return
             except LLMProviderError as e:
@@ -1637,6 +1760,19 @@ class LLMClient:
             data["presence_penalty"] = self.presence_penalty
         if self.parallel_tool_calls is not None:
             data["parallel_tool_calls"] = self.parallel_tool_calls
+        # Multimodal settings are emitted only when they differ from what
+        # ``fa.config`` would resolve them to, so a default client's payload is
+        # byte-identical to what pre-1.67.0 produced (it reaches the plane as
+        # ``agent.llm.config`` and is what Replay reconstructs from) while an
+        # explicitly-configured client now survives a round-trip instead of
+        # silently picking up the *reconstructing* machine's globals.
+        _cfg = get_config()
+        if self.pdf_mode != _cfg.pdf_mode:
+            data["pdf_mode"] = self.pdf_mode
+        if self.max_pdf_pages != _cfg.max_pdf_pages:
+            data["max_pdf_pages"] = self.max_pdf_pages
+        if self.max_image_size_mb != _cfg.max_image_size_mb:
+            data["max_image_size_mb"] = self.max_image_size_mb
         return data
 
     @classmethod
@@ -1685,4 +1821,16 @@ class LLMClient:
             frequency_penalty=data.get("frequency_penalty"),
             presence_penalty=data.get("presence_penalty"),
             parallel_tool_calls=data.get("parallel_tool_calls"),
+            # ``to_dict`` has always emitted these three; ``from_dict`` never
+            # read them back, so a replayed/dispatched client silently lost the
+            # recorded multimodal settings. Harmless while the only source was a
+            # hard-coded default; a real divergence now that ``fa.config``
+            # supplies them, because the rerun would pick up the *local*
+            # machine's globals instead of what the trace recorded. A key that is
+            # absent (an older payload) still falls through to the globals.
+            **{
+                key: data[key]
+                for key in ("pdf_mode", "max_pdf_pages", "max_image_size_mb")
+                if key in data
+            },
         )

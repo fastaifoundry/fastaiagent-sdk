@@ -57,9 +57,21 @@ falls back to the thumbnail and shows:
 > Full resolution not stored. Enable `trace_full_images=True` in your SDK
 > config to capture full-resolution data.
 
-To capture full bytes set `trace_full_images=True` in your `SDKConfig` (or
-via `FASTAIAGENT_TRACE_FULL_IMAGES=1`). The trade-off is database size:
-full-res images can be 1–10 MB each.
+To capture full bytes:
+
+```python
+import fastaiagent as fa
+fa.config.trace_full_images = True      # before the run you want captured
+```
+
+or set `FASTAIAGENT_TRACE_FULL_IMAGES=1` in the environment. The trade-off is
+database size: full-res images can be 1–10 MB each.
+
+The bytes stay local — they live in `local.db` and never ride the span export
+path, so they do not reach the control plane or any `add_exporter` target. The
+`?full=1` modal above and `fastaiagent traces export` do hand them back to you
+locally; see [Attachment bytes](../security.md#attachment-bytes) for the
+posture.
 
 ## Replay & Fork integration
 

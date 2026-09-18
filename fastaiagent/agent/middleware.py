@@ -39,7 +39,7 @@ from typing import Any
 from fastaiagent._internal.errors import StopAgent
 from fastaiagent.agent.context import RunContext
 from fastaiagent.llm.client import LLMResponse
-from fastaiagent.llm.message import Message, MessageRole
+from fastaiagent.llm.message import Message, MessageRole, balance_tool_messages
 from fastaiagent.tool.base import Tool, ToolResult
 
 __all__ = [
@@ -208,6 +208,11 @@ class _MiddlewarePipeline:
 # Built-in middleware
 # ---------------------------------------------------------------------------
 
+#: What the model is told about a tool call whose result the trimmer cut away.
+#: The tool DID run — its result is simply no longer in the window — so this
+#: must not read like a failure the model should retry.
+TRIMMED_NOTE = "this tool result is no longer in the conversation window"
+
 
 class TrimLongMessages(AgentMiddleware):
     """Keep only the most recent ``keep_last`` messages plus any leading
@@ -215,6 +220,14 @@ class TrimLongMessages(AgentMiddleware):
 
     Useful for long-running agents to avoid context-window blowouts without
     the cost of summarization.
+
+    The window is a message count, so it can land *between* an assistant message
+    carrying ``tool_calls`` and the results that answer them. Both halves of that
+    split are rejected by OpenAI and Anthropic, so the tail is re-balanced before
+    it is returned: a tool result whose parent call was trimmed away is dropped,
+    and a call whose results were trimmed away is answered with a note saying the
+    result is no longer in the history. That can leave slightly more than
+    ``keep_last`` messages — a provider 400 is the more expensive of the two.
     """
 
     name = "trim_long_messages"
@@ -235,7 +248,7 @@ class TrimLongMessages(AgentMiddleware):
             head = [messages[0]]
             body = messages[1:]
 
-        tail = body[-self.keep_last :]
+        tail = balance_tool_messages(body[-self.keep_last :], note=TRIMMED_NOTE)
         return head + tail
 
 

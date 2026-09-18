@@ -19,6 +19,11 @@ from fastaiagent.chain.interrupt import (
     _resume_value,
 )
 from fastaiagent.checkpointers import Checkpointer, SQLiteCheckpointer
+from fastaiagent.guardrail.guardrail import (
+    collected_firings,
+    start_firing_collection,
+    stop_firing_collection,
+)
 from fastaiagent.llm.client import LLMClient
 from fastaiagent.llm.message import SystemMessage, UserMessage
 from fastaiagent.llm.stream import StreamEvent, TextDelta
@@ -545,16 +550,44 @@ class Supervisor:
     def stream(
         self, input: str, *, context: RunContext[Any] | None = None, **kwargs: Any
     ) -> AgentResult:
-        """Synchronous streaming — collects stream into AgentResult."""
+        """Synchronous streaming — collects stream into AgentResult.
+
+        Opens a ``supervisor.<name>`` root span so a streamed supervisor run has
+        the same identity ``run``/``arun`` do. ``run`` got its ``trace_id`` for
+        free by inheriting the inner agent's; the stream path built its result
+        by hand and inherited nothing.
+        """
+        from fastaiagent.trace.otel import get_tracer
+        from fastaiagent.trace.span import trace_id_of
 
         async def _collect() -> AgentResult:
             start = time.monotonic()
             text_parts: list[str] = []
-            async for event in self.astream(input, context=context, **kwargs):
-                if isinstance(event, TextDelta):
-                    text_parts.append(event.text)
-            latency = int((time.monotonic() - start) * 1000)
-            return AgentResult(output="".join(text_parts), latency_ms=latency)
+            gf_token = start_firing_collection()
+            try:
+                with get_tracer().start_as_current_span(f"supervisor.{self.name}") as span:
+                    span.set_attribute("supervisor.name", self.name)
+                    span.set_attribute(
+                        "supervisor.worker_count", len(getattr(self, "workers", []) or [])
+                    )
+                    span.set_attribute("fastaiagent.runner.type", "supervisor")
+                    span.set_attribute("fastaiagent.framework", "fastaiagent")
+                    span.set_attribute("supervisor.streamed", True)
+                    async for event in self.astream(input, context=context, **kwargs):
+                        if isinstance(event, TextDelta):
+                            text_parts.append(event.text)
+                    output = "".join(text_parts)
+                    span.set_attribute("supervisor.output", output)
+                    trace_id = trace_id_of(span)
+                latency = int((time.monotonic() - start) * 1000)
+                return AgentResult(
+                    output=output,
+                    latency_ms=latency,
+                    trace_id=trace_id,
+                    guardrails=collected_firings(),
+                )
+            finally:
+                stop_firing_collection(gf_token)
 
         return run_sync(_collect())
 

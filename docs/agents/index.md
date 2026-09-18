@@ -143,7 +143,7 @@ except GuardrailBlockedError as e:
 | `no_pii()` | SSN, email, phone numbers, credit card numbers |
 | `json_valid()` | Output is valid JSON |
 | `toxicity_check()` | Toxic keywords |
-| `cost_limit(max_usd=0.10)` | Accumulated cost |
+| `cost_limit(max_usd=0.10)` | The run's accumulated LLM spend so far. Blocks over budget; **raises** (so `on_error` decides) when the model has no rate in the pricing table, because an unpriced run is not a free one. Until 1.67.0 this always passed. |
 | `allowed_domains(["api.example.com"])` | URL domains in tool calls |
 
 **Custom guardrails:**
@@ -318,9 +318,19 @@ Every agent execution returns an `AgentResult`:
 | `output` | `str` | The agent's final text response |
 | `tool_calls` | `list[dict]` | All tool calls made during execution |
 | `tokens_used` | `int` | Total tokens consumed |
-| `cost` | `float` | Estimated cost in USD |
+| `cost` | `float` | Estimated USD spend, summed over **every** LLM call the run made — the tool loop's turns, a structured re-ask, a guardrail re-ask. Priced from the model id and the provider's token counts against the built-in list-price table (override it with `set_rate_overrides()`). `0.0` for a model with no rate — see `cost_known`. |
+| `cost_known` | `bool` | Whether every call in the run could be priced. **`cost == 0.0` does not always mean the run was free**: a private fine-tune and a bedrock/azure deployment id have no rate, and reporting `$0.00` for them would be a guess, so this reads `False`. A self-hosted provider (`ollama`, `lmstudio`, `vllm`) is the exception — it runs on hardware you already pay for, so it is a known zero and this reads `True`. Check this flag before trusting the number. |
 | `latency_ms` | `int` | Total execution time in milliseconds |
-| `trace_id` | `str \| None` | Trace ID for debugging |
+| `trace_id` | `str \| None` | Trace ID for debugging. Populated on every path since 1.67.0 — `run`, `arun`, `stream`, and the same fields on `Swarm`, `Supervisor` and `Chain`. |
+
+!!! note "Where cost comes from, and where it lands"
+    It is computed at the provider call inside `LLMClient` and also written to
+    the `llm.*` span as `fastaiagent.cost.total_usd` — the same attribute the
+    LangChain, CrewAI and Pydantic-AI integrations have always emitted, so the
+    control plane, the Local UI and trace export read one key for every
+    framework. Before 1.67.0 nothing populated `AgentResult.cost` and the SDK's
+    own runs were the only framework the plane received no cost for; the UI hid
+    it behind a read-time estimate from token counts.
 
 ## Error Handling
 

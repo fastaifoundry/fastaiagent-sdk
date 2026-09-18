@@ -151,6 +151,11 @@ vector_store=ChromaVectorStore(
 
 Chroma metadata is a flat primitive-typed dict — the adapter flattens nested `Chunk.metadata` values by JSON-encoding non-primitive fields and reparsing on search. You see the same `dict` shape in and out.
 
+**Distance space and scores.** New collections are created with `space="cosine"`, and `search()` returns cosine similarity in `[-1, 1]` — the same [score contract](index.md#search-result) FAISS and Qdrant honour. A collection that already exists keeps whatever space it was created with: Chroma silently ignores a space passed for an existing collection, so the adapter **detects** the live space (`store.space`) and converts from it. Chroma's own default is `l2`, which reports *squared* Euclidean distance, so the conversion is `1 - d/2` there and `1 - d` for `cosine` and `ip`.
+
+!!! warning "Collections created before 1.67.0"
+    They are `l2`, and they score correctly — the adapter converts them and logs one warning per collection. Before 1.67.0 the adapter converted squared-L2 with the cosine formula, so every score was `2·cos - 1`: an orthogonal pair scored `-1.0` and an opposite one `-3.0`. **Every Chroma score changes: `new = (old + 1) / 2`.** Rankings are unchanged for unit-normalized embeddings (all three built-in embedders normalize). To migrate to a native cosine collection, `kb.clear()` and re-index — worth doing only if your `Embedder` does not normalize, because `l2` and cosine then rank differently.
+
 ## Choosing a Backend
 
 | Scenario | Recommended |

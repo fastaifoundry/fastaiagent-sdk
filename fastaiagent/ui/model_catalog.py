@@ -184,7 +184,9 @@ def catalog_path(db_path: str | None) -> Path:
     beside ``local.db`` in the ``.fastaiagent`` directory, matching where
     playground datasets are written.
     """
-    explicit = os.environ.get(CATALOG_ENV_VAR)
+    from fastaiagent._internal.env import env_path
+
+    explicit = env_path(CATALOG_ENV_VAR)
     if explicit:
         return Path(explicit)
     if db_path:

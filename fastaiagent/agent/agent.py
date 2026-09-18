@@ -7,11 +7,13 @@ import logging
 import time
 import uuid
 from collections.abc import AsyncGenerator, Callable, Sequence
+from contextvars import ContextVar
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 from fastaiagent._internal.async_utils import run_sync
+from fastaiagent._internal.pricing import run_cost, start_run_cost, stop_run_cost
 from fastaiagent.agent.context import (
     RunContext,
     reset_active_run_context,
@@ -27,6 +29,7 @@ from fastaiagent.agent.middleware import (
 from fastaiagent.chain.checkpoint import (
     Checkpoint,
     is_run_end,
+    latest_forkable,
     latest_resumable,
     write_run_end,
 )
@@ -50,7 +53,7 @@ from fastaiagent.guardrail.guardrail import (
 )
 from fastaiagent.llm.client import LLMClient
 from fastaiagent.llm.message import Message, SystemMessage, UserMessage
-from fastaiagent.llm.stream import StreamEvent, TextDelta
+from fastaiagent.llm.stream import StreamEvent, TextDelta, Usage
 from fastaiagent.llm.structured import OutputSpec
 from fastaiagent.multimodal.image import Image as MultimodalImage
 from fastaiagent.multimodal.pdf import PDF as MultimodalPDF  # noqa: N811
@@ -60,6 +63,44 @@ from fastaiagent.tool.base import Tool
 logger = logging.getLogger(__name__)
 
 AgentInput = str | MultimodalImage | MultimodalPDF | list[ContentPart]
+
+#: What the model is told about a sibling tool call a resume stepped over. The
+#: resume re-enters at a checkpoint, never in the middle of a turn, so the call
+#: is answered rather than dispatched — its side effect never happens, and the
+#: note has to say that plainly or the model will assume it did.
+SIBLING_SKIPPED_NOTE = "the agent was interrupted before this tool ran; it was not run on resume"
+
+#: The same repair on the fork path, said differently on purpose. A resume is a
+#: recovery — the run was going to make this call and was interrupted. A fork is
+#: a deliberate branch someone asked for, and the branch simply starts after the
+#: call. Telling the model it was "interrupted" on a branch nobody interrupted
+#: would be a small lie in the one place the model reasons from.
+FORK_SKIPPED_NOTE = "this tool was not run: the conversation was branched before its result"
+
+#: Bridge from :meth:`Agent.astream` back to the synchronous :meth:`Agent.stream`.
+#:
+#: ``astream`` is a generator: it yields events, never an :class:`AgentResult`,
+#: so the run's identity (trace id, execution id, token count) had no way back
+#: to the caller that collects those events — which is why a streamed run
+#: returned ``trace_id=None``, ``tokens_used=0`` and ``execution_id=""`` right
+#: up to 1.67.0. An async generator's body runs in the context of whoever drives
+#: it, so a dict published here by ``stream()`` is filled in by ``astream``
+#: while it iterates. Same property the run-scoped guardrail firing collection
+#: relies on, and the reason that one is opened in ``stream()`` too.
+_stream_outcome: ContextVar[dict[str, Any] | None] = ContextVar(
+    "fastaiagent_stream_outcome", default=None
+)
+
+
+def _loop_end_turn(tool_calls: list[dict[str, Any]], start_iteration: int) -> int:
+    """The turn index one past the tool loop's last turn.
+
+    Used as the re-entry point for a run that died *after* the loop. Derived from
+    the loop's own records rather than counted here, so it stays right whether
+    the loop ended normally, on ``StopAgent``, or at ``max_iterations``.
+    """
+    iterations = [int(rec.get("iteration", 0)) for rec in tool_calls or []]
+    return (max(iterations) + 1) if iterations else start_iteration
 
 
 def _input_summary_text(parts: list[ContentPart]) -> str:
@@ -190,7 +231,19 @@ class AgentResult(BaseModel):
     parsed: Any | None = None
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     tokens_used: int = 0
+    #: Estimated USD spent on this run, summed over every LLM call it made —
+    #: the tool loop's turns, a structured re-ask, a guardrail re-ask. Declared
+    #: since the first release and never assigned until 1.67.0.
+    #:
+    #: ``0.0`` has two meanings, and ``cost_known`` is how you tell them apart:
+    #: genuinely free, versus a model we could not price. A self-hosted provider
+    #: (ollama, lmstudio, vllm) runs on hardware the operator already pays for,
+    #: so it is a known zero; a bedrock/azure deployment id is partner-billed
+    #: and a private fine-tune is simply unknown, so both are ``cost_known
+    #: False``. Never read ``cost == 0`` alone as "this run was free".
     cost: float = 0.0
+    #: ``True`` only when every LLM call in the run could be priced.
+    cost_known: bool = False
     latency_ms: int = 0
     trace_id: str | None = None
     execution_id: str = ""
@@ -612,7 +665,7 @@ class Agent:
     ) -> AgentResult:
         """Execute with OTel tracing."""
         from fastaiagent.trace.otel import get_tracer
-        from fastaiagent.trace.span import set_metadata_attributes
+        from fastaiagent.trace.span import set_metadata_attributes, trace_id_of
 
         tracer = get_tracer()
         with tracer.start_as_current_span(f"agent.{self.name}") as span:
@@ -661,7 +714,7 @@ class Agent:
                     span_ctx = span.get_span_context()
                     saved = save_parts_for_span(
                         db=TraceStore.default()._db,
-                        trace_id=format(span_ctx.trace_id, "032x"),
+                        trace_id=trace_id_of(span_ctx),
                         span_id=format(span_ctx.span_id, "016x"),
                         parts=normalized_input_parts,
                         role="input",
@@ -713,7 +766,7 @@ class Agent:
 
             # Set trace_id on result
             ctx = span.get_span_context()
-            result.trace_id = format(ctx.trace_id, "032x")
+            result.trace_id = trace_id_of(ctx)
             return result
 
     async def _arun_core(
@@ -761,6 +814,12 @@ class Agent:
         # at — the tool_call/tool_result ones happen inside the tool loop, which
         # is why this is run-scoped rather than a local list here.
         gf_token = start_firing_collection()
+        # Accumulate this run's LLM spend. Run-scoped for the same reason the
+        # firing collection is: the calls happen inside the tool loop, the
+        # structured re-ask and the guardrail re-ask, none of which return a
+        # cost up to here. ``LLMClient`` records into it at the one point every
+        # completion passes through.
+        rcost_token = start_run_cost()
 
         # Run the agent's checkpointer setup once — cheap on subsequent calls.
         if self._checkpointer is not None:
@@ -810,6 +869,15 @@ class Agent:
             if self._mw_pipeline:
                 mw_ctx = MiddlewareContext(run_context=context, agent_name=self.name)
 
+            # The run-end marker has to cover EVERYTHING that can still kill the
+            # run, not just the tool loop: 1.65.0's D5 fix wrapped only
+            # ``execute_tool_loop``, so a run that died in the structured-output
+            # re-ask, an output guardrail or a memory write left no tombstone at
+            # all — and a run that crashed there was byte-identical to one that
+            # finished. ``loop_done`` and ``run_ended`` are what let the handler
+            # below tell the three cases apart.
+            loop_done = False
+            run_ended = False
             try:
                 response, tool_calls = await execute_tool_loop(
                     llm=self.llm,
@@ -830,13 +898,83 @@ class Agent:
                     max_parallel_tools=self.config.max_parallel_tools,
                     **kwargs,
                 )
+                loop_done = True
+
+                output = response.content or ""
+                parsed, perr = self._try_parse(output)
+                retry_tokens = 0
+                # Structured-output self-correction: on a parse/validation failure,
+                # re-ask the model with the error (opt-out via output_retries=0).
+                if (
+                    parsed is None
+                    and perr is not None
+                    and self._output_spec is not None
+                    and self.config.output_retries > 0
+                ):
+                    output, parsed, retry_tokens = await self._reask_structured(
+                        llm_messages, output, perr, kwargs
+                    )
+
+                # Execute output guardrails. Unlike every other position this one
+                # can re-drive the model, so a `reask` rule is honoured here rather
+                # than degraded to a block.
+                if eff_guardrails:
+                    output, parsed, guardrail_tokens = await self._guard_output(
+                        output, parsed, eff_guardrails, llm_messages, kwargs
+                    )
+                    retry_tokens += guardrail_tokens
+
+                # Store in memory. Memory backends are text-only; record the
+                # text summary so multimodal calls don't break the memory store.
+                # Wrapped in a ``memory.write`` span (+ per-block children).
+                if self.memory:
+                    from fastaiagent.agent._memory_tracing import traced_add
+                    from fastaiagent.llm.message import AssistantMessage
+
+                    traced_add(self.memory, UserMessage(input_text))
+                    traced_add(self.memory, AssistantMessage(output))
+
+                latency = int((time.monotonic() - start) * 1000)
+                tokens = response.usage.get("total_tokens", 0) + retry_tokens
+
+                # The run finished. Without this row a completed run and one that
+                # crashed right after its last turn are byte-identical — both leave a
+                # ``completed`` turn checkpoint as the newest row (audit D5).
+                if self._checkpointer is not None and owns_run:
+                    write_run_end(
+                        self._checkpointer,
+                        execution_id=exec_id,
+                        chain_name=self.name,
+                        status="completed",
+                        agent_path=new_path,
+                    )
+                    run_ended = True
+
+                cost, cost_known = run_cost()
+                return AgentResult(
+                    output=output,
+                    parsed=parsed,
+                    tool_calls=tool_calls,
+                    tokens_used=tokens,
+                    cost=cost,
+                    cost_known=cost_known,
+                    latency_ms=latency,
+                    execution_id=exec_id,
+                    status="completed",
+                    guardrails=collected_firings(),
+                )
             except _AgentInterrupted as susp:
                 # Deliberately NO run-end marker: a paused run has not ended, and
                 # a row written after the ``interrupted`` one would hide the pause
                 # from ``aresume``'s status guard (audit D5).
                 latency = int((time.monotonic() - start) * 1000)
+                # A paused run has already spent what it spent; reporting 0.0
+                # would make a pause look free.
+                paused_cost, paused_cost_known = run_cost()
                 return AgentResult(
                     output="",
+                    cost=paused_cost,
+                    cost_known=paused_cost_known,
                     execution_id=exec_id,
                     status="paused",
                     pending_interrupt={
@@ -854,7 +992,27 @@ class Agent:
                 # The run died. Mark it, then re-raise untouched — the marker is
                 # best-effort inside ``write_run_end`` precisely so a checkpointer
                 # problem here can never replace the exception the caller needs.
-                if self._checkpointer is not None and owns_run:
+                if self._checkpointer is not None and owns_run and not run_ended:
+                    if loop_done:
+                        # The tool loop ENDED before this failure, so the loop is
+                        # not the place to re-enter. Without this row the newest
+                        # resumable checkpoint is the last *pre-tool* one, and
+                        # ``aresume`` re-invokes that tool: measured as one charge
+                        # becoming two. A turn-boundary row past the loop's last
+                        # turn re-issues the model instead, which is the documented
+                        # (and idempotent-by-default) resume shape.
+                        try:
+                            from fastaiagent.agent.executor import _put_turn_checkpoint
+
+                            _put_turn_checkpoint(
+                                checkpointer=self._checkpointer,
+                                execution_id=exec_id,
+                                agent_name=self.name,
+                                iteration=_loop_end_turn(tool_calls, _start_iteration),
+                                messages=llm_messages,
+                            )
+                        except Exception:  # pragma: no cover - best effort, like the marker
+                            logger.debug("loop-end checkpoint failed", exc_info=True)
                     write_run_end(
                         self._checkpointer,
                         execution_id=exec_id,
@@ -865,71 +1023,13 @@ class Agent:
                     )
                 raise
 
-            output = response.content or ""
-            parsed, perr = self._try_parse(output)
-            retry_tokens = 0
-            # Structured-output self-correction: on a parse/validation failure,
-            # re-ask the model with the error (opt-out via output_retries=0).
-            if (
-                parsed is None
-                and perr is not None
-                and self._output_spec is not None
-                and self.config.output_retries > 0
-            ):
-                output, parsed, retry_tokens = await self._reask_structured(
-                    llm_messages, output, perr, kwargs
-                )
-
-            # Execute output guardrails. Unlike every other position this one
-            # can re-drive the model, so a `reask` rule is honoured here rather
-            # than degraded to a block.
-            if eff_guardrails:
-                output, parsed, guardrail_tokens = await self._guard_output(
-                    output, parsed, eff_guardrails, llm_messages, kwargs
-                )
-                retry_tokens += guardrail_tokens
-
-            # Store in memory. Memory backends are text-only; record the
-            # text summary so multimodal calls don't break the memory store.
-            # Wrapped in a ``memory.write`` span (+ per-block children).
-            if self.memory:
-                from fastaiagent.agent._memory_tracing import traced_add
-                from fastaiagent.llm.message import AssistantMessage
-
-                traced_add(self.memory, UserMessage(input_text))
-                traced_add(self.memory, AssistantMessage(output))
-
-            latency = int((time.monotonic() - start) * 1000)
-            tokens = response.usage.get("total_tokens", 0) + retry_tokens
-
-            # The run finished. Without this row a completed run and one that
-            # crashed right after its last turn are byte-identical — both leave a
-            # ``completed`` turn checkpoint as the newest row (audit D5).
-            if self._checkpointer is not None and owns_run:
-                write_run_end(
-                    self._checkpointer,
-                    execution_id=exec_id,
-                    chain_name=self.name,
-                    status="completed",
-                    agent_path=new_path,
-                )
-
-            return AgentResult(
-                output=output,
-                parsed=parsed,
-                tool_calls=tool_calls,
-                tokens_used=tokens,
-                latency_ms=latency,
-                execution_id=exec_id,
-                status="completed",
-                guardrails=collected_firings(),
-            )
         finally:
             _current_checkpointer.reset(cp_token)
             _agent_path.reset(ap_token)
             _execution_id.reset(exec_token)
             reset_active_run_context(rc_token)
             stop_firing_collection(gf_token)
+            stop_run_cost(rcost_token)
 
     async def astream(
         self,
@@ -954,16 +1054,75 @@ class Agent:
         and checkpoints are written during streaming — matching the behavior
         of :meth:`arun`.
 
+        ``trace`` (default ``True``) opens an ``agent.<name>`` root span around
+        the whole streamed run, exactly as :meth:`arun` does. Before 1.67.0 the
+        parameter was accepted and ignored: a streamed run produced ``llm.*``
+        and tool spans with no agent root to hang them on, and the
+        :class:`AgentResult` :meth:`stream` built from it carried no
+        ``trace_id``, no ``tokens_used`` and an empty ``execution_id``. All
+        three come from this span. Pass ``trace=False`` to stream inside a
+        workflow that already owns the root span.
+
         Example:
             async for event in agent.astream("Hello"):
                 if isinstance(event, TextDelta):
                     print(event.text, end="", flush=True)
         """
+        from contextlib import nullcontext
+
+        from fastaiagent.trace.otel import get_tracer
+
         exec_id = execution_id or str(uuid.uuid4())
 
         input_text = (
             input if isinstance(input, str) else _input_summary_text(normalize_input(input))
         )
+
+        span_cm = (
+            get_tracer().start_as_current_span(f"agent.{self.name}") if trace else nullcontext(None)
+        )
+        # ``stream()`` drives this generator, so the span opened here is current
+        # in the driver's context — the same property the firing collection
+        # relies on. That is what lets ``stream()`` read the run's identity out
+        # of ``_stream_outcome`` below without ``astream`` having to return one.
+        outcome = _stream_outcome.get()
+        with span_cm as span:
+            if span is not None:
+                span.set_attribute("agent.name", self.name)
+                span.set_attribute("fastaiagent.framework", "fastaiagent")
+                span.set_attribute("agent.input", input_text)
+                span.set_attribute("agent.streamed", True)
+                if outcome is not None:
+                    outcome["trace_id"] = format(span.get_span_context().trace_id, "032x")
+            if outcome is not None:
+                outcome["execution_id"] = exec_id
+            async for event in self._astream_inner(
+                input,
+                context=context,
+                execution_id=exec_id,
+                messages=messages,
+                input_text=input_text,
+                span=span,
+                outcome=outcome,
+                **kwargs,
+            ):
+                yield event
+
+    async def _astream_inner(
+        self,
+        input: AgentInput,
+        *,
+        context: RunContext[Any] | None = None,
+        execution_id: str,
+        messages: list[Message] | None = None,
+        input_text: str,
+        span: Any = None,
+        outcome: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> AsyncGenerator[StreamEvent, None]:
+        """The streamed run itself. Split out of :meth:`astream` only so the
+        root span opened there wraps the whole generator body."""
+        exec_id = execution_id
 
         # Effective guardrails = local + plane-authored (see arun for details).
         eff_guardrails = self._effective_guardrails()
@@ -1006,6 +1165,7 @@ class Agent:
         try:
             # Stream tool loop — yields events to caller
             accumulated_text = ""
+            streamed_tokens = 0
             async for event in stream_tool_loop(
                 llm=self.llm,
                 messages=llm_messages,
@@ -1026,6 +1186,11 @@ class Agent:
             ):
                 if isinstance(event, TextDelta):
                     accumulated_text += event.text
+                elif isinstance(event, Usage):
+                    # The only place a stream reports token counts. Summed
+                    # across every turn of the loop so a streamed run reports
+                    # the same kind of number ``arun`` does.
+                    streamed_tokens += event.prompt_tokens + event.completion_tokens
                 yield event
 
             output = accumulated_text
@@ -1052,6 +1217,13 @@ class Agent:
 
                 traced_add(self.memory, UserMessage(input_text))
                 traced_add(self.memory, AssistantMessage(output))
+
+            if span is not None:
+                span.set_attribute("agent.output", output)
+                span.set_attribute("agent.tokens_used", streamed_tokens)
+            if outcome is not None:
+                outcome["tokens_used"] = streamed_tokens
+                outcome["output"] = output
         finally:
             _current_checkpointer.reset(cp_token)
             _agent_path.reset(ap_token)
@@ -1302,6 +1474,21 @@ class Agent:
             if rv_token is not None:
                 _resume_value.reset(rv_token)
 
+        # The pre-tool checkpoint is written BEFORE dispatch, so when the pause
+        # landed on the first of several parallel calls the snapshot holds an
+        # assistant message declaring all of them and no results at all. We have
+        # just answered the one that was suspended; its siblings are still
+        # unanswered, and restarting at ``start_iteration + 1`` skips them
+        # forever — a history OpenAI and Anthropic both 400 on, and this one is
+        # persisted, so it survives the process that made it.
+        #
+        # They are answered, NOT re-dispatched: the resume machinery re-enters a
+        # run at a checkpoint, not in the middle of a turn, and firing them here
+        # would run side effects the model never saw a first result for.
+        from fastaiagent.llm.message import balance_tool_messages
+
+        messages = balance_tool_messages(messages, note=SIBLING_SKIPPED_NOTE)
+
         # Continue the loop at the next iteration with the updated
         # message history.
         try:
@@ -1350,8 +1537,15 @@ class Agent:
 
         ``checkpoint_id`` selects the step to branch from
         (``checkpointer.list(execution_id)`` lists ids); omit it for the last
-        checkpoint. Returns an :class:`AgentResult` whose ``execution_id`` is
-        the new forked id, linked to the source via ``parent_checkpoint_id``.
+        **executed** step — the run-end marker a finished run has written since
+        1.65.0 is stepped over, because it is a tombstone rather than a step.
+        Before 1.67.0 the branch inherited that marker: its origin row pointed at
+        the tombstone and carried ``run_status`` into the new run's state.
+        Returns an :class:`AgentResult` whose ``execution_id`` is the new forked
+        id, linked to the source via ``parent_checkpoint_id``.
+
+        A run held only by the plane is pulled down first, so a fork works on a
+        machine that never saw the original run.
 
         Checkpoint-fork is the SDK primitive; trace-based counterfactual replay
         is the Enterprise plane's job (see :mod:`fastaiagent.trace.replay`).
@@ -1361,15 +1555,19 @@ class Agent:
 
         store: Checkpointer = self._checkpointer or SQLiteCheckpointer()
         store.setup()
-        base = (
-            store.get_by_id(execution_id, checkpoint_id)
-            if checkpoint_id is not None
-            else store.get_last(execution_id)
-        )
+        # Restore-anywhere (audit D4) — ``aresume`` has done this since 1.65.0
+        # and ``afork`` never did.
+        from fastaiagent.checkpointers.platform_replica import restore_if_missing
+
+        restore_if_missing(store, execution_id)
+        # NOT ``latest_resumable``: that one raises AlreadyResumed on a finished
+        # run, which is precisely what people fork. See ``latest_forkable``.
+        base = latest_forkable(store, execution_id, checkpoint_id=checkpoint_id)
         if base is None:
             raise ChainCheckpointError(
                 f"No checkpoint found to fork for agent execution '{execution_id}'"
                 + (f" / checkpoint '{checkpoint_id}'" if checkpoint_id else "")
+                + " — the run holds no executed step to branch from."
             )
 
         fork_id = str(uuid.uuid4())
@@ -1397,6 +1595,14 @@ class Agent:
         from fastaiagent.agent.executor import _deserialize_messages
 
         messages = _deserialize_messages(base.state_snapshot.get("messages", []))
+        # A pre-tool checkpoint's snapshot holds the assistant message that
+        # declares a set of tool calls and none of their results — a history both
+        # providers reject. Commit 2 caught it at the provider boundary and
+        # warned; repairing it here is repairing it at source, and a fork needs
+        # its own note: nothing was interrupted, the branch just starts earlier.
+        from fastaiagent.llm.message import balance_tool_messages
+
+        messages = balance_tool_messages(messages, note=FORK_SKIPPED_NOTE)
         start_iteration = int(base.state_snapshot.get("turn", 0))
         original_input = ""
         for m in messages:
@@ -1457,6 +1663,13 @@ class Agent:
             # while iterating land in this list — and ``astream`` itself returns
             # events, not an ``AgentResult`` to hang them on.
             gf_token = start_firing_collection()
+            # Same trick, same reason: the streamed run's trace id, execution id
+            # and token count are published into this dict by ``astream`` while
+            # we iterate. Before 1.67.0 all three were simply absent from the
+            # result a streamed run returned.
+            outcome: dict[str, Any] = {}
+            so_token = _stream_outcome.set(outcome)
+            rcost_token = start_run_cost()
             try:
                 async for event in self.astream(input, context=context, trace=trace, **kwargs):
                     if isinstance(event, TextDelta):
@@ -1464,13 +1677,21 @@ class Agent:
                 latency = int((time.monotonic() - start) * 1000)
                 output = "".join(text_parts)
                 parsed = self._parse_output(output)
+                cost, cost_known = run_cost()
                 return AgentResult(
                     output=output,
                     parsed=parsed,
+                    tokens_used=int(outcome.get("tokens_used", 0) or 0),
+                    cost=cost,
+                    cost_known=cost_known,
                     latency_ms=latency,
+                    trace_id=outcome.get("trace_id"),
+                    execution_id=str(outcome.get("execution_id", "") or ""),
                     guardrails=collected_firings(),
                 )
             finally:
+                stop_run_cost(rcost_token)
+                _stream_outcome.reset(so_token)
                 stop_firing_collection(gf_token)
 
         return run_sync(_collect())

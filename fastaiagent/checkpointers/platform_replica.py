@@ -648,6 +648,18 @@ def fetch_latest_from_plane(execution_id: str, *, conn: Any | None = None) -> Ch
         return None
 
 
+def _restore_from_plane_enabled() -> bool:
+    """Resolver for ``FASTAIAGENT_RESTORE_FROM_PLANE`` (registered in ``ENV_FLAGS``).
+
+    Until 1.67.0 this compared against the literal ``"0"``, so an operator who
+    wrote ``false`` to honour an erasure request kept resurrecting the run they
+    had just deleted. Fails closed — an unparseable value does **not** restore.
+    """
+    from fastaiagent._internal.env import env_flag
+
+    return env_flag("FASTAIAGENT_RESTORE_FROM_PLANE", default=True, on_unparsed=False)
+
+
 def restore_if_missing(checkpointer: Any, execution_id: str) -> Checkpoint | None:
     """Pull a run from the plane when the local store has never seen it (audit D4).
 
@@ -665,7 +677,8 @@ def restore_if_missing(checkpointer: Any, execution_id: str) -> Checkpoint | Non
     resume must never prefer the replica to a run's own machine.
 
     No-ops when not connected, so a disconnected resume fails exactly as before.
-    Set ``FASTAIAGENT_RESTORE_FROM_PLANE=0`` to keep it that way while connected:
+    Set ``FASTAIAGENT_RESTORE_FROM_PLANE`` to ``0``/``false``/``no``/``off`` to
+    keep it that way while connected:
     the restore resurrects a run whose local checkpoints were deliberately
     deleted, which is right for disaster recovery and wrong for an erasure
     request. That is a deployment-wide policy, which is why it is an environment
@@ -673,9 +686,7 @@ def restore_if_missing(checkpointer: Any, execution_id: str) -> Checkpoint | Non
 
     Returns the restored checkpoint, or None when nothing was restored.
     """
-    import os
-
-    if os.environ.get("FASTAIAGENT_RESTORE_FROM_PLANE") == "0":
+    if not _restore_from_plane_enabled():
         return None
     try:
         from fastaiagent.client import _connection

@@ -69,6 +69,14 @@ Calling `agent.run(...)` / `await agent.arun(...)` executes this sequence
      `GuardrailPosition.tool_call` guardrail on the arguments *before* and a
      `GuardrailPosition.tool_result` guardrail on the output *after*. Results are
      appended to the messages and the loop continues.
+   - **Every turn closes its tool calls.** However the turn ends — normally, on
+     `StopAgent` from `wrap_tool`, on a pause, on a resume that stepped over
+     siblings — the message list is left with exactly one tool result per
+     `tool_call_id` the assistant message declared, and no tool result without a
+     parent call. OpenAI and Anthropic both reject anything else, and the history
+     outlives the turn: a structured-output re-ask, a `reask` guardrail, a fork or
+     a resume all re-send it. A call that never ran is answered with a note saying
+     so, never with an invented result and never by dropping the call.
 6. **Output guardrails** — run every `GuardrailPosition.output` guardrail on the
    final answer.
 7. **Write to memory** — a `memory.write` span records the user message and the
@@ -98,7 +106,7 @@ agent.arun(input)
   │        └─ tool calls: [tool_call GR ─▶ tool ─▶ tool_result GR] ×N ─▶ next iteration
   │
   ├─ output guardrails
-  └─ memory.write ─▶ AgentResult(output, tool_calls, tokens, cost, trace_id)
+  └─ memory.write ─▶ AgentResult(output, tool_calls, tokens, cost, cost_known, trace_id)
 ```
 
 ### What actually loops
@@ -167,8 +175,16 @@ agent.weather-probe               ← root span
 
 The `AgentResult` also carries run-level signals for debugging without opening
 the trace: `output`, `tool_calls` (each with its `iteration`, name, and args),
-`tokens_used`, `cost`, `latency_ms`, `trace_id`, and — when a checkpointer is
-attached — `execution_id` and `status` (`"completed"` or `"paused"`).
+`tokens_used`, `cost` / `cost_known`, `latency_ms`, `trace_id`, and — when a
+checkpointer is attached — `execution_id` and `status` (`"completed"` or
+`"paused"`).
+
+`cost` is summed from every LLM call the run made and is priced against the
+built-in list-price table; `cost_known` tells you whether it could be priced at
+all, because a `0.0` from an unrated model is not the same fact as a `0.0` from
+a free one. `trace_id` is present on every runner and every entry point —
+`Agent`, `Swarm`, `Supervisor` and `Chain`, streamed or not, resumed or not —
+which is what lets an eval case, a replay and the UI all point at the same run.
 
 - **Traces** are stored in `local.db` and shown in the Local UI, one card per
   run, expandable into the span tree. See [Tracing](../tracing/index.md).

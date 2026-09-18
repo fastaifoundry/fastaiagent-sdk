@@ -64,12 +64,24 @@ For agent mode each row carries `runs`, `avg_tokens`, `avg_cost_usd`,
 
 For every LLM span the endpoint:
 
-1. Reads `agent.cost_usd` if present (the SDK's preferred field).
+1. Reads the cost the SDK reported on the span — `fastaiagent.cost.total_usd`,
+   or the legacy `agent.cost_usd`. Since 1.67.0 `LLMClient` writes
+   `fastaiagent.cost.total_usd` on every `llm.*` span it emits, which is the
+   same attribute the LangChain, CrewAI and Pydantic-AI integrations have
+   always set — so this path now hits for the SDK's own runs too, not only for
+   foreign frameworks.
 2. Falls back to `compute_cost_usd(model, input_tokens, output_tokens)`
-   from [`fastaiagent/ui/pricing.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/ui/pricing.py)
-   when the explicit cost isn't set.
+   from [`fastaiagent/_internal/pricing.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/_internal/pricing.py)
+   (re-exported as `fastaiagent.ui.pricing`) when the explicit cost isn't set —
+   an older trace, or a model with no rate at the time of the run.
 3. Drops to `0.0` only when both paths fail (unknown model + no
    reported cost).
+
+Step 1 hitting where step 2 used to is why the figures should not move: the SDK
+prices a call with the same table and the same token counts the endpoint would
+have used. A model with **no** rate still reports nothing rather than `$0.00` —
+the attribute is left absent on purpose, so the estimate can take over instead
+of a fabricated zero being read as fact.
 
 This matches the rule the workflows aggregator uses, so per-workflow
 cost cards and the breakdown tables agree by construction.

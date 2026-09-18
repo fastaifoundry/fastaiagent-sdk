@@ -166,10 +166,69 @@ def latest_resumable(
     if latest.status != "failed":
         raise AlreadyResumed(
             f"{runner} '{execution_id}' already finished ({latest.status}) — there is "
-            "nothing to resume. Use fork() to branch a new run from one of its "
-            "checkpoints, or use a fresh execution_id to run again."
+            "nothing to resume. To branch a new run from one of its steps, pass the "
+            f"step explicitly: fork('{execution_id}', checkpoint_id=<an earlier "
+            "checkpoint id>) — list them with checkpointer.list(execution_id). A bare "
+            "fork() cannot help on a chain that ran to its last node, because there is "
+            "nothing downstream of that node to run. Or use a fresh execution_id to "
+            "run again."
         )
     # A failed run: step back past the tombstone to the last real re-entry point.
+    history: list[Checkpoint] = list(checkpointer.list(execution_id, limit=500))
+    for candidate in reversed(history):
+        if not is_run_end(candidate):
+            return candidate
+    return None
+
+
+def latest_forkable(
+    checkpointer: Any,
+    execution_id: str,
+    *,
+    checkpoint_id: str | None = None,
+) -> Checkpoint | None:
+    """The checkpoint a **fork** should branch from — the resume helper's sibling.
+
+    Deliberately *not* :func:`latest_resumable`, and the difference is the whole
+    reason this exists. ``latest_resumable`` raises :class:`AlreadyResumed` on a
+    ``completed`` marker, because re-entering a finished run would re-fire its
+    side effects. Forking a finished run is not that: it writes a **new**
+    ``execution_id`` and leaves the original untouched, so a finished run is the
+    single most ordinary thing anyone forks. A helper that refused it would
+    refuse the feature's main case — which is what ``AlreadyResumed``'s own text
+    recommends people do.
+
+    What it shares with ``latest_resumable`` is the part that broke: it steps
+    **over** the run-end tombstone. Since 1.65.0 every finished run ends with
+    one, and both fork paths were still calling ``get_last`` raw — so they
+    picked the marker, failed to match its ``node_id`` against any real node,
+    and refused with a message claiming ``run_end`` was "the final node". It is
+    not a node at all.
+
+    Returns ``None`` when a run holds nothing but its marker (it died at node
+    0); the caller turns that into the truthful "no checkpoint found to fork".
+    Raises :class:`~fastaiagent._internal.errors.ChainCheckpointError` when an
+    explicitly passed ``checkpoint_id`` names the marker, because that is a
+    caller mistake rather than an empty history.
+    """
+    from fastaiagent._internal.errors import ChainCheckpointError
+
+    if checkpoint_id is not None:
+        got = checkpointer.get_by_id(execution_id, checkpoint_id)
+        picked = got if isinstance(got, Checkpoint) else None
+        if is_run_end(picked):
+            raise ChainCheckpointError(
+                f"Checkpoint '{checkpoint_id}' of execution '{execution_id}' is the "
+                f"run-end marker, not a step of the run — there is no node to run "
+                f"forward from it. Pick a step from checkpointer.list('{execution_id}'), "
+                f"or omit checkpoint_id to branch from the last executed step."
+            )
+        return picked
+
+    got = checkpointer.get_last(execution_id)
+    latest = got if isinstance(got, Checkpoint) else None
+    if latest is None or not is_run_end(latest):
+        return latest
     history: list[Checkpoint] = list(checkpointer.list(execution_id, limit=500))
     for candidate in reversed(history):
         if not is_run_end(candidate):

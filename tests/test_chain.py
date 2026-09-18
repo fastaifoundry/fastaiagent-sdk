@@ -101,10 +101,34 @@ class TestValidator:
         assert len(cycles) > 0
 
     def test_validate_valid_chain(self):
-        nodes = [NodeConfig(id="a"), NodeConfig(id="b")]
+        # Agents attached: since 1.67.0 ``validate()`` also asks whether each
+        # node has anything to run, and an agent node with no agent is exactly
+        # the configuration that used to complete a run having done nothing.
+        nodes = [
+            NodeConfig(id="a", agent=_make_agent("a")),
+            NodeConfig(id="b", agent=_make_agent("b")),
+        ]
         edges = [Edge(source="a", target="b")]
         errors = validate_chain(nodes, edges)
-        assert len(errors) == 0
+        assert errors == []
+
+    def test_validate_flags_an_agent_node_with_no_agent(self):
+        """The design-time half of the 1.67.0 rule.
+
+        Structural validation used to be all there was, so a chain whose every
+        node was empty validated clean and then ran to ``completed``.
+        """
+        nodes = [NodeConfig(id="a", agent=_make_agent("a")), NodeConfig(id="b")]
+        edges = [Edge(source="a", target="b")]
+        errors = validate_chain(nodes, edges)
+        assert any("'b'" in e and "no agent attached" in e for e in errors)
+        assert not any("'a'" in e for e in errors)
+
+    def test_validate_does_not_confuse_a_payload_error_for_a_routing_one(self):
+        """Callers filter these strings; the two families must stay separable."""
+        nodes = [NodeConfig(id="a")]
+        errors = validate_chain(nodes, [])
+        assert errors and not any("handle" in e or "default" in e for e in errors)
 
     def test_validate_missing_target(self):
         nodes = [NodeConfig(id="a")]
@@ -117,6 +141,95 @@ class TestValidator:
         edges = [Edge(source="a", target="b", is_cyclic=True, cycle_config={})]
         errors = validate_chain(nodes, edges)
         assert any("max_iterations" in e for e in errors)
+
+
+# --- add_node: what gets attached, and what silently did not ---
+
+
+class TestAddNodeAttachment:
+    """``add_node`` used to absorb every unrecognised keyword into ``**config``
+    and default the node's type to ``agent``.
+
+    So ``chain.add_node("fetch", tool=my_tool)`` — the form the docs' own Node
+    Types table taught — built an **agent** node with ``agent=None``, and the run
+    reported ``completed`` with ``{"error": "No agent attached…"}`` as that
+    node's output. These pin the three ways that is now closed.
+    """
+
+    def test_tool_without_an_explicit_type_builds_a_tool_node(self):
+        from fastaiagent.tool.function import FunctionTool
+
+        chain = Chain("infer")
+        chain.add_node("fetch", tool=FunctionTool(name="fetch", fn=lambda: "x"))
+
+        node = chain.nodes[0]
+        assert node.type is NodeType.tool
+        assert node.tool is not None
+        assert node.tool_name == "fetch"
+        assert chain.validate() == []
+
+    def test_an_explicit_type_still_wins_over_inference(self):
+        from fastaiagent.tool.function import FunctionTool
+
+        chain = Chain("explicit")
+        chain.add_node(
+            "n",
+            tool=FunctionTool(name="t", fn=lambda: "x"),
+            type=NodeType.transformer,
+            template="hi",
+        )
+        assert chain.nodes[0].type is NodeType.transformer
+
+    def test_agent_and_tool_together_still_mean_an_agent_node(self):
+        """Backwards compatibility, deliberately: this shape already worked, and
+        inference must not quietly re-route it to the tool."""
+        from fastaiagent.tool.function import FunctionTool
+
+        chain = Chain("both")
+        chain.add_node("n", agent=_make_agent("a"), tool=FunctionTool(name="t", fn=lambda: "x"))
+        assert chain.nodes[0].type is NodeType.agent
+
+    def test_a_bare_callable_as_tool_is_refused_at_add_node(self):
+        """It used to reach the executor and die with ``AttributeError:
+        'function' object has no attribute 'aexecute'`` — loud, but eight frames
+        away from the line that caused it."""
+        chain = Chain("bare")
+        with pytest.raises(TypeError) as excinfo:
+            chain.add_node("n", tool=lambda x: x, type=NodeType.tool)
+        assert "FunctionTool" in str(excinfo.value)
+        assert chain.nodes == []
+
+    @pytest.mark.parametrize("kwarg", ["fn", "function", "func", "callable"])
+    def test_callable_lookalike_kwargs_are_refused(self, kwarg):
+        chain = Chain("lookalike")
+        with pytest.raises(TypeError) as excinfo:
+            chain.add_node("n", **{kwarg: lambda x: x})
+        assert kwarg in str(excinfo.value)
+        assert "tool=" in str(excinfo.value)
+        assert chain.nodes == []
+
+    def test_a_node_decorated_function_passed_as_tool_points_at_node(self):
+        from fastaiagent.chain.node import node as node_deco
+
+        @node_deco()
+        def classify(text: str) -> str:
+            return text
+
+        chain = Chain("nodearg")
+        with pytest.raises(TypeError, match="node="):
+            chain.add_node("n", tool=classify)
+
+    def test_an_unknown_keyword_warns_but_is_still_carried(self, caplog):
+        """``**config`` is load-bearing for input_mapping/template/conditions/
+        agents and for a chain's own metadata, so this is a warning, not a
+        refusal. A typo like ``agnet=`` is the case it is for."""
+        import logging
+
+        chain = Chain("unknown")
+        with caplog.at_level(logging.WARNING, logger="fastaiagent.chain.chain"):
+            chain.add_node("n", agent=_make_agent("a"), retries=3)
+        assert "retries" in caplog.text
+        assert chain.nodes[0].config["retries"] == 3
 
 
 # --- Chain execution tests ---
@@ -183,10 +296,26 @@ class TestChainExecution:
         assert "World" in str(result.node_results.get("t", {}))
 
     @pytest.mark.asyncio
-    async def test_hitl_node_auto_approved(self):
-        """HITL node auto-approves when no handler is set."""
+    async def test_hitl_node_with_no_handler_refuses(self):
+        """An approval gate nobody can answer must not answer itself.
+
+        Until 1.67.0 an unconfigured gate returned
+        ``{"approved": True, "message": "Auto-approved (no HITL handler)"}`` and
+        the run reported ``completed`` — a control that could not run reporting a
+        clean pass, in the one node type whose entire job is to stop things.
+        """
+        from fastaiagent._internal.errors import ChainError
+
         chain = Chain("hitl", checkpoint_enabled=False)
         chain.add_node("approval", type=NodeType.hitl)
+        with pytest.raises(ChainError, match="no handler"):
+            await chain.aexecute({})
+
+    @pytest.mark.asyncio
+    async def test_hitl_node_auto_approves_when_asked_to(self):
+        """Local-dev convenience survives — it just has to be asked for."""
+        chain = Chain("hitl", checkpoint_enabled=False)
+        chain.add_node("approval", type=NodeType.hitl, auto_approve=True)
         result = await chain.aexecute({})
         assert result.node_results["approval"]["approved"] is True
 
@@ -312,8 +441,8 @@ class TestChainSerialization:
 
     def test_validate_method(self):
         chain = Chain("valid")
-        chain.add_node("a")
-        chain.add_node("b")
+        chain.add_node("a", agent=_make_agent("a"))
+        chain.add_node("b", agent=_make_agent("b"))
         chain.connect("a", "b")
         errors = chain.validate()
-        assert len(errors) == 0
+        assert errors == []

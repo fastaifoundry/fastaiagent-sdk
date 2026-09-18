@@ -112,22 +112,88 @@ So a span has **three** content channels, and all three are gated:
 
 | Channel | Registry | Filter |
 |---|---|---|
-| `attributes` | `SENSITIVE_ATTR_KEYS` | `apply_export_policy` |
+| `attributes` | `SENSITIVE_ATTR_KEYS` + `SENSITIVE_ATTR_PREFIXES` | `apply_export_policy` |
 | `events` | `SENSITIVE_EVENT_ATTR_KEYS` | `apply_event_export_policy` |
 | `status.description` | — | `otel._filtered_status` |
 
 With a `RedactionPolicy` installed and payload export left on, all three are
 **masked** rather than dropped — you keep the diagnostic, without the values.
 
+**Integration-captured spans, since 1.67.0.** A span produced by a third-party
+instrumentor (LangChain, CrewAI, PydanticAI, any OpenTelemetry/OpenInference/
+OpenLLMetry source) carries its prompt and completion on *its own* attribute
+keys. `trace.normalize` copies that text onto the canonical keys the UI reads —
+`gen_ai.prompt`, `gen_ai.completion`, `gen_ai.response.text` and their
+`fastaiagent.`-namespaced forms — and leaves the originals (`input.value`,
+`output.value`, and the indexed `gen_ai.prompt.N.content` /
+`llm.input_messages.N.message.content` families) in place. None of those were in
+the registry, so for every integration-captured agent both the copy and the
+original egressed with `FASTAIAGENT_TRACE_PAYLOADS` turned off. They are all
+gated now — the indexed families by prefix, since there is no bounded set of
+names to enumerate. Local capture is unchanged, so the Local UI's trace search
+still matches on them.
+
 To capture *nothing at all* (not even locally), disable tracing entirely
-with `FASTAIAGENT_TRACE_ENABLED=0`.
+with `FASTAIAGENT_TRACE_ENABLED=0` — see the next section.
+
+### `FASTAIAGENT_TRACE_ENABLED` — the master switch
+
+Off means **no capture at all**, not "capture and discard". The switch is
+applied where the tracer provider is built, so the SDK hands out OpenTelemetry's
+no-op tracer: spans are non-recording, attributes are never serialized, nothing
+is written to `local.db`, no attachment bytes are stored, foreign-span capture
+does not attach itself to anyone else's provider, and no exporter is registered
+because there is nothing to export.
+
+The cost is the Local UI and Replay along with it — there is no trace to read.
+If you want local debugging but no egress, that is
+`FASTAIAGENT_TRACE_PAYLOADS=0`, not this.
+
+With tracing off, `result.trace_id` degrades to the all-zero trace id rather
+than raising; code that stores or logs it keeps working.
+
+!!! warning "This started working in 1.67.0"
+    `trace_enabled` was parsed and documented from the beginning but read by
+    nothing, so anyone who set it has been capturing traces regardless. Setting
+    it now does what it always said it did.
+
+### Attachment bytes
+
+Multimodal inputs (`Image`, `PDF`) are persisted to the `trace_attachments`
+table in `local.db`, separately from span attributes:
+
+| What | When | Where it can go |
+|---|---|---|
+| 256-px JPEG thumbnail | always | `local.db` only |
+| original bytes (`full_data`) | only when `fastaiagent.config.trace_full_images` is on | `local.db`; a portable export bundle you ask for |
+
+Neither channel rides the span export path, so **no attachment bytes reach the
+control plane or any `add_exporter` target**, with the payload gate on or off.
+
+Two local surfaces do hand the originals back, deliberately and
+**ungated by `FASTAIAGENT_TRACE_PAYLOADS`**:
+
+* `GET /api/traces/{id}/spans/{id}/attachments/{id}?full=1` — the Local UI's
+  full-resolution modal, behind the UI's own session auth, on loopback.
+* `fastaiagent traces export` / `trace_export.py` — base64-embeds `full_data`
+  into the portable bundle.
+
+Both are **user-initiated local actions on a machine that already holds the
+bytes**, which is why they are not gated: the payload switch governs what the
+SDK sends on its own initiative, not what an authenticated local operator asks
+for. The distinction matters more now that `trace_full_images` is easy to turn
+on (`FASTAIAGENT_TRACE_FULL_IMAGES=1`), so treat an exported bundle as carrying
+the same sensitivity as the originals, and hand it around accordingly. If your
+threat model needs the export gated too, leave `trace_full_images` off — with no
+`full_data` stored there is nothing for the bundle to embed.
 
 ### `export_checkpoints=False` — keep durability state off the plane
 
 When connected, checkpoint **state** (`state_snapshot`, `node_input`,
 `node_output`, `interrupt_context`) is replicated to the plane by default —
 this applies to **both** the SQLite and external-Postgres checkpointers.
-`connect(export_checkpoints=False)` (or `FASTAIAGENT_EXPORT_CHECKPOINTS=0`)
+`connect(export_checkpoints=False)` (or `FASTAIAGENT_EXPORT_CHECKPOINTS=0`,
+`=false`, `=no`, `=off`)
 suppresses that replication. It is independent of `export_traces`.
 
 This gates **replication only**. Your local durability (SQLite/Postgres) is
@@ -268,9 +334,11 @@ All calls the SDK makes to model providers verify TLS by default. You can
 point at a corporate gateway's CA bundle with `verify="/path/to/ca.pem"`
 (per `LLMClient`) or `FASTAIAGENT_LLM_VERIFY=/path/to/ca.pem` (process-wide,
 no code) — always prefer this over disabling verification. Setting
-`FASTAIAGENT_LLM_VERIFY=false` disables verification for clients that didn't
-specify `verify=` explicitly and logs a warning each time; an **explicit**
-`verify=True` is never downgraded by the environment. Platform / control-plane
+`FASTAIAGENT_LLM_VERIFY` to any false value (`0`/`false`/`no`/`off`) disables
+verification for clients that didn't specify `verify=` explicitly and logs a
+warning each time; an **explicit** `verify=True` is never downgraded by the
+environment. Anything that is neither a true nor a false value is treated as a
+CA-bundle path, with `~` and `$VARS` expanded. Platform / control-plane
 calls always verify and cannot be disabled.
 
 `RESTTool` requests and `WebFetch`-style tools do not currently

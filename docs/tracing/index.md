@@ -192,7 +192,7 @@ The SDK follows the OpenTelemetry GenAI semantic conventions for LLM-related att
 | `fastaiagent.guardrail.position` | `input` / `tool_call` / `tool_result` / `output` |
 | `fastaiagent.guardrail.errored` | The check couldn't run; `passed` reflects `on_error`, not a verdict |
 | `fastaiagent.guardrail.checks` | JSON `[{"name": ..., "result": "pass"｜"block"｜"error"}]` |
-| `fastaiagent.cost.total_usd` | Accumulated cost |
+| `fastaiagent.cost.total_usd` | Estimated USD cost of that one LLM call, priced from the model id and the provider's token counts. Set by `LLMClient` on every `llm.*` span since 1.67.0, and by the LangChain / CrewAI / Pydantic-AI integrations before that. Sum it across a trace for the run's cost. **Absent** — not `0.0` — when the model has no rate, so a reader can fall back to its own estimate instead of trusting a fabricated zero. |
 | `fastaiagent.template.kind` | Flagship-template marker on root span (e.g. `"deep-research"`) — set via `set_template_kind()`. Lets the UI badge / filter trace lists by template. |
 
 ### OpenInference standard attributes
@@ -398,14 +398,33 @@ fastaiagent traces export abc123def456 --format json
 ## Disabling Tracing
 
 ```bash
-export FASTAIAGENT_TRACE_ENABLED=false
+export FASTAIAGENT_TRACE_ENABLED=false   # 0 / no / off all work too
 ```
 
-Or pass `trace=False` to agent/chain execution:
+This is the **master switch**: the SDK hands out OpenTelemetry's no-op tracer,
+so no span is built, nothing is written to `local.db`, no attachment bytes are
+stored, and there is nothing to export. The Local UI and Replay go with it —
+there is no trace to read. `result.trace_id` becomes the all-zero id rather than
+raising.
+
+!!! warning "This started working in 1.67.0"
+    The variable was parsed and documented from the beginning but read by
+    nothing. If you have it set, your next upgrade stops capturing traces — which
+    is what you asked for, but it may not be what you have been getting.
+
+To keep local traces while stopping content from leaving the machine, use
+`FASTAIAGENT_TRACE_PAYLOADS=0` instead — see
+[Security Posture](../security.md).
+
+Or pass `trace=False` to agent/chain execution, which suppresses tracing for
+that call only:
 
 ```python
 result = agent.run("Hello", trace=False)
 ```
+
+In code, the same switch is `fastaiagent.config.trace_enabled` — set it before
+the first traced run (see [SDK configuration](../configuration/sdk-config.md)).
 
 ## Resetting the Tracer
 

@@ -12,6 +12,7 @@ from collections import Counter
 from collections.abc import Callable
 from typing import Any, Literal
 
+from fastaiagent._internal.errors import GuardrailError
 from fastaiagent._internal.safety_detectors import (
     DEFAULT_PII_ENTITIES,
     detect_pii,
@@ -208,15 +209,54 @@ def toxicity_check(
 def cost_limit(
     max_usd: float,
     position: GuardrailPosition = GuardrailPosition.output,
+    *,
+    on_error: Literal["allow", "block"] = "block",
 ) -> Guardrail:
-    """Create a guardrail that checks accumulated cost."""
+    """Block a run that has spent more than ``max_usd`` so far.
+
+    Reads the run's accumulated LLM spend — the same number that lands on
+    ``AgentResult.cost`` — and fails when it exceeds the budget. At the default
+    ``output`` position that is the whole run; at ``input`` or ``tool_call`` it
+    is the spend up to that gate.
+
+    Until 1.67.0 this returned ``passed=True`` unconditionally with a comment
+    calling itself "a policy marker", while presenting as ``blocking=True`` and
+    describing itself as "Enforces cost limit of $X". Nothing in the SDK
+    populated cost, so there was nothing for it to read — a rule that could not
+    check anything reporting a clean verdict, which is the §2.4 invariant the
+    guardrail sweep exists to hold, inside the guardrail library itself.
+
+    **An unpriced model raises rather than passing.** When the model has no rate
+    (a local ollama model, a private fine-tune, a bedrock/azure deployment id)
+    the run cannot be priced, and certifying it as under budget would restore
+    the same defect in a quieter form. The raise goes through ``on_error``, so
+    the operator chooses: fail closed (the default) or ``on_error="pass"`` to
+    accept unpriced runs. Give the model a rate with
+    :func:`fastaiagent.ui.pricing.set_rate_overrides` or the ``pricing`` block
+    of ``models.json`` to gate on it properly.
+    """
 
     def check_cost(text: str) -> GuardrailResult:
-        # Cost checking is typically done by the agent executor
-        # This guardrail is a policy marker
+        from fastaiagent._internal.pricing import run_cost
+
+        spent, known = run_cost()
+        if not known:
+            raise GuardrailError(
+                f"cost_limit(max_usd={max_usd}) cannot check this run: its spend is "
+                "unknown. Either no run-scoped cost is being tracked (the rule was "
+                "executed outside an agent run), or the model has no rate in the "
+                "pricing table. An unpriced run is not a free one — set a rate via "
+                "set_rate_overrides() or the models.json 'pricing' block, or pass "
+                "on_error='allow' to accept unpriced runs."
+            )
         return GuardrailResult(
-            passed=True,
-            metadata={"max_usd": max_usd},
+            passed=spent <= max_usd,
+            message=(
+                None
+                if spent <= max_usd
+                else f"Cost limit exceeded: ${spent:.4f} spent, limit is ${max_usd:.4f}"
+            ),
+            metadata={"max_usd": max_usd, "spent_usd": round(spent, 6)},
         )
 
     return Guardrail(
@@ -227,6 +267,7 @@ def cost_limit(
         description=f"Enforces cost limit of ${max_usd}",
         config={"max_usd": max_usd},
         fn=check_cost,
+        on_error=on_error,
     )
 
 

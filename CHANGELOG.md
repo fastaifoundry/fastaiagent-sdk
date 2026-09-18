@@ -5,6 +5,243 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.67.0] - 2026-09-18 — switches, verdicts and numbers that were only decorative
+
+A verification sweep of every example and doc page against 1.66.0 turned up ten
+genuine defects. Exactly **one** is a regression. Every other one shipped broken
+and was then *documented as working* — in most cases years of releases ago.
+
+They share a shape, and it is the shape three guardrail releases in a row were
+spent learning: **a control that cannot do its job must say so, never report a
+clean verdict.** Here it appears as an egress switch that ignores the spelling
+the docs promise, a kill switch wired to nothing, a chain node that ran nothing
+and called the run fine, a budget gate structurally incapable of failing, and a
+similarity score on the wrong scale.
+
+They survived because the tests asserted **types and shapes** rather than
+**values**. No test anywhere read `result.cost`, a non-`Agent` `trace_id`, or a
+KB score. So each theme here ships a sweep that closes its *class* rather than
+its instances, the way `test_guardrail_unusable_config_sweep.py` does for
+controls: a new environment flag, node type, result path or early-return that
+skips the contract fails the sweep even though it is not named in it.
+
+### Fixed — controls that failed open
+
+**Every boolean environment switch honours every documented spelling.** Six of
+ten compared against a literal `"0"` or `("1", "true")` while
+`docs/configuration/environment-variables.md` promised `1`/`true`/`yes`/`on` and
+their negatives. One parser now serves all of them
+(`fastaiagent._internal.env.env_flag`), case- and whitespace-insensitive, with an
+empty value meaning *unset* — a docker-compose `FOO:` renders `""` and the
+operator meant "I didn't set this".
+
+**`FASTAIAGENT_TRACE_ENABLED` works.** It was parsed into `SDKConfig` and read by
+absolutely nothing, while `docs/security.md` sold it as capturing nothing at all.
+The switch now lives at `trace.otel.get_tracer_provider`: off, the SDK hands out
+OTel's no-op tracer, so no span is built, nothing reaches `local.db`, no
+attachment bytes are stored, and no exporter is registered. Suppressing there
+rather than at storage time is the difference between "captured then dropped" and
+never captured.
+
+**Prompts and completions no longer egress with the payload gate off.**
+`trace.normalize` writes the consolidated prompt and completion onto
+`gen_ai.prompt` / `gen_ai.completion` / `gen_ai.response.text` for every
+LangChain / CrewAI / PydanticAI span and leaves the OpenInference originals
+(`input.value`, `output.value`, the indexed `gen_ai.prompt.N.content` families)
+beside them. None were in `SENSITIVE_ATTR_KEYS`. Nor were `swarm.output` /
+`supervisor.output`, nor the bare `input` / `output` the LangChain integration
+writes. All are gated now, the indexed families by prefix. Local capture is
+unchanged — the gate is on the export path — so trace search still matches.
+
+**A leading `~` in a path variable was a literal directory name.** Six path
+variables and `SQLiteHelper` now expand `~` and `$VARS`. Two processes started
+from different directories got different stores and a resume found nothing, with
+no error.
+
+**`fa.config` exists, and everything it exposes is read.** Three user-facing
+surfaces told users to set it, including a live HTTP 404 body, and it had never
+existed. `pdf_mode`, `max_pdf_pages` and `max_image_size_mb` were documented as
+globals with no path to any code.
+
+### Fixed — a tool-call history the provider still accepts
+
+Five code paths could end a turn *between* the assistant message declaring a set
+of tool calls and the results answering them. OpenAI and Anthropic both reject
+that history outright. A middleware `StopAgent` from `wrap_tool`, its streaming
+twin, a resume after an interrupt on the first of several parallel calls, a fork
+from a pre-tool checkpoint, and `TrimLongMessages` slicing mid-pair. The repo's
+own deep-research example failed 4/4 runs on it, and the integration test had
+been papered over — its tool budget raised from 6 to 10, blaming the budget. It
+was never the budget.
+
+One shared repair (`llm.message.balance_tool_messages`) at all five sources, plus
+a sanitize at the provider boundary that **warns, naming the offending ids**,
+then repairs. It warns rather than repairing quietly on purpose: a silent repair
+would turn every future instance of this class into an invisible fix.
+
+**A run that dies after the tool loop writes a `failed` marker.** 1.65.0 wrapped
+only `execute_tool_loop`. The marker alone was not enough — a failed run stays
+resumable by design, so resume stepped back into the last pre-tool row and
+re-invoked a tool that had already run, measured as one charge becoming two.
+
+### Fixed — verdicts
+
+**A chain node with nothing attached fails the run instead of completing it.**
+`add_node`'s `type` defaulted to `agent` and `**config` absorbed every
+unrecognised keyword, so `add_node("fetch", tool=my_tool)` — the form the docs'
+own table taught — built an *agent* node with no agent. The executor *returned*
+`{"error": ...}` as a result, checkpointed it `completed`, and `validate()`
+returned `[]` throughout. Six node types were affected, including an approval
+gate with no handler that approved itself.
+
+**`fork()` works again on a run that has ended** — the only regression in this
+release, from 1.65.0's run-end marker. Every resume path moved to
+`latest_resumable`; both fork paths were left calling `get_last` raw, so fork
+picked the tombstone and refused with a message false twice over, since `run_end`
+is not a node at all. Worse, 1.65.0's `AlreadyResumed` recommends `fork()` — a
+remedy that had never worked for the case it recommends it for.
+
+### Fixed — numbers
+
+**Chroma relevance scores were on the wrong scale and could go negative.** The
+collection was created with no distance space, so Chroma used its `l2` default,
+which reports *squared* distance, and the adapter converted it with the cosine
+formula: `2·cos − 1`, `-1.0` for an orthogonal pair. The space is now detected
+and converted from, because Chroma silently ignores a space set on an existing
+collection — setting cosine alone would have been the same bug with the evidence
+removed.
+
+**`AgentResult.cost` was always 0.0**, declared in the first commit and never
+assigned, while all three foreign-framework integrations computed it. `evaluate()`
+passed neither `cost` nor `latency_ms` to its scorers, so `CostUnder` and
+`Latency` were structurally incapable of failing, and `cost_limit()` returned
+`passed=True` unconditionally while presenting as blocking.
+
+**`trace_id` was missing on most result paths.** Only `Agent.run` stamped it. The
+silent consequence was in `evaluate()`: agent cases carried an id, swarm cases
+carried `None`, and the eval succeeded with identical scores — so eval-to-trace
+linking, curation and replay comparison had nothing to point at.
+
+### Changed — behaviour, signed off
+
+Each of these was decided explicitly rather than inherited from the fix.
+
+**An unparseable value on a safety or egress switch fails CLOSED** and always
+warns. A typo on an opt-out is evidence of intent to restrict.
+
+> **If this affects you.** Only if you have a typo in one of the 🔒 variables
+> today — in which case you have been getting the permissive side of a control
+> you thought you had set.
+
+**The payload and replication switches honour `false` / `no` / `off`.**
+
+> **If this affects you.** If you wrote `FASTAIAGENT_TRACE_PAYLOADS=false`
+> believing payloads were withheld, they were not, and now they will be — console
+> trace content goes dark. Same for `FASTAIAGENT_EXPORT_CHECKPOINTS`, and with it
+> cross-machine resume and plane disaster recovery. Local durability is
+> untouched. `connect()` logs the resolved posture at INFO.
+
+**`FASTAIAGENT_TRACE_ENABLED` starts working.**
+
+> **If this affects you.** Anyone who set it has been capturing all along. On
+> upgrade local capture stops completely, so the Local UI, Replay and
+> `fastaiagent traces` have nothing to read, and `result.trace_id` is `None`. If
+> you wanted local debugging without egress, that is
+> `FASTAIAGENT_TRACE_PAYLOADS=0`.
+
+**`FASTAIAGENT_EXPORT_EVALS=yes|on` now ENABLES export.** The one change here that
+*opens* something: the old parse made `yes`, `on` and empty all disable it, the
+opposite of every other egress switch.
+
+> **If this affects you.** Verdict **metadata** starts reaching your plane on
+> upgrade. Case inputs and outputs are never sent. Preview exactly what would
+> leave with `fastaiagent eval export --dry-run`.
+
+**The chain executor raises where it returned an error as a result.**
+
+> **If this affects you.** A chain that reported `completed` while a node did
+> nothing now raises and writes a `failed` marker — and is therefore resumable,
+> where a completed one could never be re-entered. Nothing that worked changes.
+
+**An approval gate with no handler refuses.** Local-dev convenience survives and
+must be asked for: `auto_approve=True` on the node, so it serializes with the
+chain rather than being an invisible property of one call site.
+
+**`add_node` infers the node type from what you attach.**
+
+> **If this affects you.** A chain passing `tool=` without `type=` was building an
+> agent node that never ran your tool, and now runs it. Passing `type=`
+> explicitly changes nothing.
+
+**Chroma scores change by `new = (old + 1) / 2`.**
+
+> **If this affects you.** Ranking is unchanged for unit-normalized embeddings and
+> all three built-in embedders normalize. Anything reading the *value* changes: a
+> tuned threshold needs rescaling, and three callers were getting it wrong for
+> free — `VectorBlock`'s recency fusion, which provably inverted its ranking
+> against a FAISS-backed store; `LocalKB` hybrid mode with no keyword hits; and
+> `as_tool()`, which prints the score into the text the model reads. Existing
+> collections keep `l2`, score correctly, and log one warning. `kb.clear()` plus a
+> re-index migrates one.
+
+**Cost becomes real.**
+
+> **If this affects you.** A `CostUnder` gate in CI that has always been green now
+> gives a real verdict and may start failing. A `cost_limit` rule that has never
+> fired may now fire. A **self-hosted** provider (ollama, lmstudio, vllm) is a
+> known zero and passes; a partner-billed deployment id or a private fine-tune is
+> *unknown* and fails closed, because certifying a run you never priced is the
+> same defect in a quieter form.
+
+**Streamed and resumed runs emit a root span.**
+
+> **If this affects you.** A streamed run's trace is one tree instead of loose
+> `llm.*` spans, and adds one span per run to what the plane ingests. Pass
+> `trace=False` to stream inside a workflow that owns the root span.
+
+**`SDKConfig.max_image_size_mb` defaults to `None`, not `20.0`** — `None` is what
+`multimodal.format` has always meant by "use the provider's cap", and the field is
+now read, so a blanket 20 would have *raised* Anthropic's effective 5 MB ceiling.
+
+### Added
+
+- `fastaiagent.config`, documented at `docs/configuration/sdk-config.md`.
+- `fastaiagent._internal.env` — one truthiness parser, one path expander, and
+  `ENV_FLAGS`, the registry that makes the environment-variable documentation a
+  checkable contract rather than a promise.
+- `chain.checkpoint.latest_forkable`, the deliberate asymmetric sibling of
+  `latest_resumable`: it never raises `AlreadyResumed`, because a finished run is
+  the most ordinary thing anyone forks.
+- `llm.message.balance_tool_messages` / `tool_message_imbalance`.
+- `trace.span.trace_id_of` — `None` rather than the all-zero id when there is no
+  trace, so a join key that can never resolve is never sent.
+- `AgentResult.cost_known`, and `restore_if_missing` on both fork paths.
+- Four sweeps: environment truthiness, chain node payloads, KB score semantics,
+  and result completeness.
+
+### Notes
+
+**Verified against a live control plane, not only in the suite.** The egress
+proofs used a canary through a logging proxy; a `failed` marker, the cost
+attribute and the new root spans were all confirmed accepted by the plane's ingest
+door and read back through its API. The topology-payload leak above was found
+that way and nowhere else.
+
+**No wire change and no plane change.** `fastaiagent.cost.total_usd` is an
+existing key the integrations have always emitted, and a `failed` status is an
+existing value — a new value is not a wire event (§2.2).
+
+**Four existing tests were passing for the wrong reason** and now assert the real
+thing, including one whose span assertions held over a chain that never ran a
+node, and one whose comment named a checkpoint that was actually the run-end
+marker.
+
+**Known and left, deliberately:** `tokens_used` still under-reports a multi-turn
+tool loop while `cost` is now correct across every turn, so the two disagree;
+`TraceStore.list_traces()` labels a trace by the lexicographic minimum span name
+rather than its root; and the fork paths write no run-end marker if the branch
+itself dies.
+
 ## [1.66.0] - 2026-09-13 — a checkpoint says which agent produced it
 
 The last open piece of durability audit finding **D8**. 1.65.0 fixed the
