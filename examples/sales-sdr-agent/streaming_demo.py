@@ -6,13 +6,19 @@ Run: python streaming_demo.py --prospect carol@megacorp.global
 Unlike Agent / Supervisor, ``Chain`` doesn't expose ``astream()`` directly —
 the chain executor walks nodes serially, and each node's agent / tool fires
 in one shot. What you CAN observe in real time is the chain's trace tree:
-nodes appear as spans under ``chain.<name>`` as they execute, and
-``agent.<worker>`` sub-trees appear with their own ``llm.<provider>.<model>``
-spans inside.
+each agent a tool node wraps produces an ``agent.<worker>`` sub-tree with its
+own ``llm.<provider>.<model>`` span inside, and those land as they finish.
 
-This demo subscribes to the local trace store's "tail" stream so you see
-every span land as it's written — gives you live visibility into a
-running chain without needing the Local UI's HTTP server.
+Note what is *not* traced: the chain executor opens one ``chain.<name>``
+root span and no span per node, so ``enrich`` / ``score`` / ``draft`` have no
+spans of their own. What you see instead is what the wrapped agents do —
+``agent.lead-scorer``, its ``llm.*`` call, and the ``tool.icp_kb_search`` /
+``retrieval.*`` pairs from its KB lookups. The ``chain.<name>`` root arrives
+last, since a span is written when it ends.
+
+This demo tails the local trace store so you see every span land as it's
+written — live visibility into a running chain without needing the Local
+UI's HTTP server.
 """
 
 from __future__ import annotations
@@ -54,31 +60,40 @@ async def stream_topic(prospect_email: str) -> None:
 
     task = asyncio.create_task(_run())
 
-    # Tail the trace store: every ~250 ms, list spans newer than the last
-    # one we printed. The chain.<name> root span carries the chain's
-    # execution_id, and child spans nest under it.
+    # Tail the trace store. ``TraceStore`` is a trace-level query API
+    # (``list_traces`` / ``get_trace``) — there is no span-level listing, and no
+    # way to filter by execution_id mid-run: ``chain.execution_id`` lives on the
+    # ``chain.<name>`` root span, which is only written once it ends. So we
+    # snapshot the trace ids already in local.db (it is shared across runs) and
+    # treat any new trace as ours. Child spans are written by
+    # ``LocalStorageProcessor.on_end`` the instant each one completes.
     from fastaiagent.trace.storage import TraceStore
 
-    seen: set[str] = set()
     store = TraceStore.default()
+    known_traces = {t.trace_id for t in store.list_traces()}
+    live_traces: set[str] = set()
+    seen: set[str] = set()
+
+    def drain() -> None:
+        for summary in store.list_traces():
+            if summary.trace_id not in known_traces:
+                live_traces.add(summary.trace_id)
+        for trace_id in sorted(live_traces):
+            for span in store.get_trace(trace_id).spans:
+                if span.span_id in seen:
+                    continue
+                seen.add(span.span_id)
+                elapsed = int((time.monotonic() - started) * 1000)
+                print(f"  [{elapsed:>5} ms]  {span.name}")
 
     while not task.done():
         await asyncio.sleep(0.25)
-        try:
-            recent = store.list_spans(execution_id=execution_id, limit=50)
-        except TypeError:
-            # Older TraceStore signature — list all and filter manually.
-            recent = []
-        for span in recent:
-            sid = getattr(span, "span_id", None) or repr(span)
-            if sid in seen:
-                continue
-            seen.add(sid)
-            elapsed = int((time.monotonic() - started) * 1000)
-            name = getattr(span, "name", "?")
-            print(f"  [{elapsed:>5} ms]  {name}")
+        drain()
 
     result = await task
+    # Final pass — the ``chain.<name>`` root ends as ``aexecute`` returns, so
+    # the polling loop above never sees it.
+    drain()
     print("─" * 60)
     if result.status == "paused":
         print(f"Status: paused — {result.pending_interrupt}")

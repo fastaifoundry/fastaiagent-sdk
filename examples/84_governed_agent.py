@@ -20,12 +20,21 @@ Usage:
     export FASTAIAGENT_AGENT_ID=<platform agent uuid>
     python examples/84_governed_agent.py
 
+The precondition this example cannot run without: a matching **approval
+policy** on the domain. With none, ``/policy/decide`` returns "allow", the
+agent never pauses, and there is nothing to resume. Create one (domain-admin
+JWT, not an API key)::
+
+    POST /api/v1/approval-policies?domain_id=<domain uuid>
+    {"name": "example-84", "tool_pattern": "transfer_funds",
+     "agent_id": "<the same agent uuid>", "condition_type": "always"}
+
 Expected output (snapshot — real run against a local plane on :20001):
     connected. cached approval_policies: 1
     === arun(wait_for_approval=False) ===
       paused for approval: policy_approval_required
-      pending run status: pending  ->  (console approves) ->  approved
-      resumed: completed | output: 'I have successfully transferred $500 to Bob.'
+      -> approve this run in the console (POST /api/v1/pending-runs/{id}/approve)
+      resumed: completed | output: 'The $500 has been successfully transferred to Bob.'
 """
 
 from __future__ import annotations
@@ -54,8 +63,23 @@ def main() -> int:
         return 1
 
     fa.connect(api_key=api_key, target=target)
-    n = len((_connection.policy_cache or {}).get("approval_policies", []))
-    print(f"connected. cached approval_policies: {n}")
+    policies = (_connection.policy_cache or {}).get("approval_policies", [])
+    print(f"connected. cached approval_policies: {len(policies)}")
+
+    # Check the precondition before spending an LLM call on it. With no
+    # approval policy on the domain, ``/policy/decide`` answers "allow": the
+    # agent runs straight through, never pauses, and the resume below has
+    # nothing to claim.
+    if not policies:
+        print(
+            "Skipping: this domain has no approval policy, so nothing will pause.\n"
+            "  Create one with a domain-admin JWT (an API key cannot):\n"
+            f'    POST {target}/api/v1/approval-policies?domain_id=<domain uuid>\n'
+            '    {"name": "example-84", "tool_pattern": "transfer_funds",\n'
+            f'     "agent_id": "{agent_id}", "condition_type": "always"}}'
+        )
+        fa.disconnect()
+        return 1
 
     agent = Agent(
         name="banker",
@@ -75,6 +99,22 @@ def main() -> int:
         res = await agent.arun(
             "Transfer $500 to Bob.", wait_for_approval=False, execution_id="ex-84"
         )
+        # Assert the pause actually happened before trying to resume it. A
+        # policy can exist and still not match — wrong agent_id, a
+        # ``tool_pattern`` that does not cover ``transfer_funds``, an inactive
+        # policy, or a ``condition_type`` whose condition did not fire.
+        #
+        # This check is not decoration. Before 1.65.0, ``aresume`` on a run
+        # that never paused returned a plausible ``completed`` result, so this
+        # example printed a clean success line with no approval having
+        # happened anywhere — a governance demo that looked like it worked
+        # while the gate was inert. 1.65.0 made that raise ``AlreadyResumed``
+        # instead; what it raises on is *this* example's own missing
+        # precondition, so check it here rather than catching the exception.
+        if res.status != "paused":
+            print(f"  NOT paused (status={res.status!r}) — the policy did not match this call.")
+            print("  Check the policy's agent_id, tool_pattern and is_active, then re-run.")
+            return
         print("  paused for approval:", (res.pending_interrupt or {}).get("reason"))
         print("  -> approve this run in the console (POST /api/v1/pending-runs/{id}/approve)")
         # Once approved, resume. (The blocking default — plain agent.arun(...) —

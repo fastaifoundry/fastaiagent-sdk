@@ -127,12 +127,21 @@ def main() -> int:
         # Probe the ingest endpoint so an unentitled domain fails clearly.
         import httpx
 
-        probe = httpx.post(
-            f"{target}/public/v1/hitl/events",
-            headers=_connection.headers,
-            json={"events": []},
-            timeout=10,
-        )
+        try:
+            probe = httpx.post(
+                f"{target}/public/v1/hitl/events",
+                headers=_connection.headers,
+                json={"events": []},
+                timeout=10,
+            )
+        except httpx.RequestError as exc:
+            # ``connect()`` above succeeds offline (it stores the connection and
+            # buffers), so the first thing that actually needs the plane is this
+            # probe. Unreachable is a setup condition — report it the way the
+            # 403 below is reported, not as a raw ``httpx.ConnectError``.
+            print(f"Skipping: the plane at {target} is unreachable ({type(exc).__name__}).")
+            print("  Start it, or point FASTAIAGENT_TARGET at a running control plane.")
+            return 1
         if probe.status_code == 403:
             print("Skipping: connected_state_plane is not enabled for this domain (HTTP 403).")
             return 1

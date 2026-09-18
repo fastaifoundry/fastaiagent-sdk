@@ -1,0 +1,6 @@
+# The one-object `Memory(...)` API shipped in 1.36.0.
+fastaiagent>=1.36.0
+
+# Optional — snapshot.py drives the Local UI to capture the screenshots in
+# README.md. companion.py needs neither.
+# playwright>=1.44.0

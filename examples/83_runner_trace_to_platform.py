@@ -94,16 +94,32 @@ def main() -> int:
 
     # Confirm it landed on the platform (needs the trace:read scope).
     print("\n  Verifying on the platform (GET /public/v1/traces/{id})…")
-    resp = httpx.get(f"{target}/public/v1/traces/{res.trace_id}", headers={"X-API-Key": api_key})
-    if resp.status_code == 200:
-        d = resp.json()
-        spans = ", ".join(s["name"] for s in d.get("spans", []))
-        print(
-            f"  ✓ trace {res.trace_id}  source={d['source']}"
-            f"  status={d['status']}  spans=[{spans}]"
+    try:
+        resp = httpx.get(
+            f"{target}/public/v1/traces/{res.trace_id}",
+            headers={"X-API-Key": api_key},
+            timeout=10,
         )
+    except httpx.RequestError as exc:
+        # An unreachable plane is a setup condition, not a bug in the run above:
+        # ``connect()`` stores the connection offline and the spans sit in the
+        # local buffer until it comes back. Say that, rather than raising a raw
+        # ``httpx.ConnectError`` through the middle of a finished demo — which
+        # is what this did, while the 403 case one branch down was handled.
+        print(f"  (verify skipped: the plane at {target} is unreachable — {type(exc).__name__})")
+        print("  The spans are buffered locally and will export on the next reachable run.")
     else:
-        print(f"  (verify skipped: HTTP {resp.status_code} — key may lack the trace:read scope)")
+        if resp.status_code == 200:
+            d = resp.json()
+            spans = ", ".join(s["name"] for s in d.get("spans", []))
+            print(
+                f"  ✓ trace {res.trace_id}  source={d['source']}"
+                f"  status={d['status']}  spans=[{spans}]"
+            )
+        else:
+            print(
+                f"  (verify skipped: HTTP {resp.status_code} — key may lack the trace:read scope)"
+            )
 
     fa.disconnect()
     print("=" * 60)

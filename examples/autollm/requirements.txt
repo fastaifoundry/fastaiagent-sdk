@@ -1,2 +1,4 @@
-fastaiagent
+# `fastaiagent.optimize` (AutoLLM) needs 1.38.0 — financials.py depends on the
+# expected-output/scorer-reason view the proposer gained in that release.
+fastaiagent>=1.38.0
 openai

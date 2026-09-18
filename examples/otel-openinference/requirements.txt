@@ -1,0 +1,7 @@
+# `enable_otel_capture()` shipped in 1.16.0.
+fastaiagent[openai]>=1.16.0
+
+# The third-party instrumentor whose spans this example captures. Any
+# in-process OTel / OpenInference / OpenLLMetry instrumentor works — this is
+# just the one capture.py drives.
+openinference-instrumentation-openai>=0.1.0

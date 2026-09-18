@@ -1,0 +1,2 @@
+{"input": "ping", "expected_output": "pong"}
+{"input": "ack", "expected_output": "ack"}

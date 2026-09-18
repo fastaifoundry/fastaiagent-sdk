@@ -11,6 +11,13 @@ If you're new, start with the templates, then dip into snippets when you need a 
 
 ## Templates
 
+Sixteen folders, in two shapes. **Full-project templates** are meant to be
+forked — they ship a `README.md`, a `requirements.txt`, an `.env.example` and a
+runnable entry point. **Focused walkthroughs** are multi-file demos of one
+subsystem: read them, run them, lift the pattern.
+
+### Full-project templates
+
 | Template | Use case | What it teaches | Read-first if you want |
 |---|---|---|---|
 | [`customer-support-agent/`](customer-support-agent/) | Single-agent KB-grounded support chatbot with HITL on ticket creation | `Agent` + tools + `LocalKB` + memory + middleware + guardrails + `interrupt()` / `aresume()` + `@idempotent` + `PromptRegistry` + `Replay` + `LLMJudge`/RAG eval + multimodal + FastAPI HITL deploy | the **single-agent** golden path |
@@ -19,6 +26,24 @@ If you're new, start with the templates, then dip into snippets when you need a 
 | [`meeting-notes-agent/`](meeting-notes-agent/) | Granola / Otter / Fireflies-style transcript → structured notes generator | `Chain` with **parallel LLM fan-out** via `asyncio.gather` + Pydantic `MeetingNotes` schema enforcement at merge + multimodal `fa.PDF.extract_text` + per-attendee personalization | parallel analyzer fan-out + schema enforcement |
 | [`personal-assistant/`](personal-assistant/) | Long-lived REPL personal assistant with cross-session memory | **Every memory-block type** — `StaticBlock + SummaryBlock + VectorBlock + FactExtractionBlock` — composed via `ComposableMemory` with `FaissVectorStore` + on-disk persistence + `PromptRegistry`-backed system prompt | the canonical **memory** showcase |
 | [`harness-migration/`](harness-migration/) | Wrap an existing **LangGraph / CrewAI / PydanticAI** agent with FastAIAgent's harness | `fastaiagent.integrations.{langchain,crewai,pydanticai}` — `enable()` auto-tracing + `with_guardrails()` + `kb_as_retriever()` / `kb_as_tool()` + `prompt_from_registry()` + `register_agent()` + cross-framework `fa.evaluate()` via `as_evaluable()` | gradual migration **from another framework** |
+| [`deep-research-agent/`](deep-research-agent/) | Open-Deep-Research-style long-horizon investigation: scope → parallel sub-researchers → write | `ScopeAgent` → `asyncio.gather` over plain `Agent` sub-researchers → writer, with structured `deep_research.*` spans, a tool budget, pluggable search backends (mock / Tavily / Brave / Serper) and `fastaiagent.template.kind` for UI badging | the **long-horizon research** shape |
+| [`regression-from-trace/`](regression-from-trace/) | A customer reports a bad answer: capture it, fix it, keep it fixed | The full `trace → Replay.fork_at() → swap the broken tool or prompt → rerun → save as a regression case → evaluate()` loop, in five runnable scripts | the **debug-to-regression-test** loop |
+
+### Focused walkthroughs
+
+Single-subsystem demos. Each has a `README.md` and a `requirements.txt`; none
+needs forking.
+
+| Folder | What it shows | Run it with |
+|---|---|---|
+| [`memory_simple/`](memory_simple/) | The one-object `Memory(...)` API — tiered, multi-user safe, observable (1.36.0) | `python companion.py` |
+| [`memory_backends/`](memory_backends/) | The same `Memory` API over Postgres and Redis via `location=` — the full persist → retrieve → supersede → forget lifecycle, no LLM (1.38.0) | `PG_DSN=… REDIS_URL=… python companion.py` |
+| [`memory_observability/`](memory_observability/) | `memory.read` / `memory.write` spans with a child span per block, VectorBlock similarity scores, and the Local-UI Memory page (1.34.0) | `python companion.py`, then `fastaiagent ui` |
+| [`learning-loop/`](learning-loop/) | The smallest trace-learning loop: run → `run_extraction()` → `PersistentFactBlock` injects the learned facts into the next run (1.7.0) | `python agent.py` |
+| [`self-improving-research/`](self-improving-research/) | The loop above wrapped around `deep-research-agent/`: seed → learn → replay with facts injected (1.7.0) | `python agent.py` |
+| [`agent-simulation/`](agent-simulation/) | Multi-turn scenario testing — a `SimulatedUser` persona drives the conversation, a judge scores the transcript against success / failure criteria (1.15.0) | `pytest scenario_test.py -v` |
+| [`autollm/`](autollm/) | **AutoLLM** (`fastaiagent.optimize`): eval-driven prompt optimization with a holdout-guarded winner, on three real tasks — sentiment, financial extraction, Dutch annual reports. Real LLM, no mocks (1.38.0) | `python agent.py` |
+| [`otel-openinference/`](otel-openinference/) | `enable_otel_capture()` — capture and render spans from **any** in-process OTel / OpenInference / OpenLLMetry instrumentor, not just the first-party harness (1.16.0) | `python capture.py` |
 
 ### Recommended onboarding path
 
@@ -31,6 +56,8 @@ If you're new, start with the templates, then dip into snippets when you need a 
    - **Parallel LLM analysis with structured output** → [`meeting-notes-agent/`](meeting-notes-agent/)
    - **Long-running session with rich memory** → [`personal-assistant/`](personal-assistant/)
    - **Already on LangChain / CrewAI / PydanticAI** → [`harness-migration/`](harness-migration/)
+   - **Long-horizon research over many sources** → [`deep-research-agent/`](deep-research-agent/)
+   - **A reported bad answer you need to fix and keep fixed** → [`regression-from-trace/`](regression-from-trace/)
 5. For specific features (RAG, OTel export, MCP, cyclic chains, etc.), grep the snippet table below.
 
 ### How to fork a template
@@ -39,18 +66,33 @@ If you're new, start with the templates, then dip into snippets when you need a 
 cp -r examples/customer-support-agent ~/my-agent
 cd ~/my-agent
 cp .env.example .env       # add OPENAI_API_KEY
-pip install -r requirements.txt   # installs fastaiagent>=1.6.0 from PyPI
+pip install -r requirements.txt   # installs fastaiagent from PyPI
 # edit SYSTEM_PROMPT in agent.py, add/remove tools in tools.py, replace knowledge/
 python agent.py
 ```
 
-`fastaiagent>=1.6.0` is published on PyPI — no need to install from source unless you're contributing to the SDK.
+Every folder has a `requirements.txt`, and each pins the **minimum version that
+folder actually needs** — 1.7.0 for the learning loop, 1.34.0 for memory
+spans, 1.38.0 for AutoLLM and the external memory backends — rather than a
+blanket floor. Install the newest release and all of them are satisfied.
+
+The `cp .env.example .env` step applies to the ten folders that call
+`load_dotenv()`: the eight full-project templates plus `learning-loop/` and
+`self-improving-research/`. The focused walkthroughs read the environment
+directly (`export OPENAI_API_KEY=…`) and ship no `.env.example` — their
+READMEs give the exact command.
 
 ---
 
 ## Snippets
 
 Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates exactly one feature.
+
+> **`NN` is not a unique key.** Six numbers were reused as the set grew, so
+> `10`, `15`, `16`, `17`, `47` and `89` each name two different snippets
+> (`15_context_di_anthropic.py` and `15_providers_gemini.py`, and so on).
+> Always refer to a snippet by its **full filename**, never by its number, and
+> when adding one take the next free number rather than the next topical one.
 
 ### Agents core
 - [`01_simple_agent.py`](01_simple_agent.py) — minimal Agent with one tool
@@ -63,6 +105,12 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 - [`21_retry_backoff.py`](21_retry_backoff.py) — retry / backoff config
 - [`22_llm_parameters.py`](22_llm_parameters.py) — provider-specific LLM params
 
+### Providers & model clients
+- [`15_providers_gemini.py`](15_providers_gemini.py) — Google Gemini on fastaiagent's native wire (no `google-generativeai` dependency)
+- [`16_providers_groq.py`](16_providers_groq.py) — Groq's OpenAI-compatible endpoint, plus how to re-pin when Groq retires a model id
+- [`17_providers_openrouter.py`](17_providers_openrouter.py) — OpenRouter: many models behind one key, chosen by slug
+- [`89_azure_injected_client.py`](89_azure_injected_client.py) — Azure OpenAI with Entra ID / managed identity by handing `LLMClient` your own `AzureOpenAI` client
+
 ### Tools & guardrails
 - [`03_guardrails.py`](03_guardrails.py) — built-in PII / toxicity / JSON guardrails
 - [`23_tool_guardrails.py`](23_tool_guardrails.py) — guardrails on tool calls / results
@@ -74,6 +122,10 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 - [`84_governed_agent.py`](84_governed_agent.py) — connected agent honors a managed approval policy: pause → console approve → resume (Task C)
 - [`27_middleware_tool_budget.py`](27_middleware_tool_budget.py) — `ToolBudget` middleware
 - [`30_memory_blocks.py`](30_memory_blocks.py) — `ComposableMemory` block API
+- [`66_memory_scoring.py`](66_memory_scoring.py) — recency + importance scoring on `VectorBlock`: why a stale-but-similar memory used to outrank the fresh correct one (runs under pytest, no keys)
+- [`67_tool_docstrings.py`](67_tool_docstrings.py) — `FunctionTool` reads parameter descriptions from Google / NumPy / Sphinx docstrings (runs under pytest, no keys)
+- [`69_prompt_injection_guardrail.py`](69_prompt_injection_guardrail.py) — `no_prompt_injection()` blocks jailbreak / injection attempts before the LLM sees them; shares its detector with the `PromptInjection` scorer
+- [`73_responsible_ai.py`](73_responsible_ai.py) — the Trust Layer end to end: `no_secrets()` + `grounded()` + `toxicity_check()` + `banned_topics()` / `allowed_topics()` + the `Reflect` middleware
 - [`32_mcp_expose_agent.py`](32_mcp_expose_agent.py) — expose Agent as MCP server
 - [`41_agent_tools.py`](41_agent_tools.py) — tool decoration patterns
 - [`70_tool_replay_class.py`](70_tool_replay_class.py) — mark tools `read_only` / `idempotent` / `side_effecting` for replay
@@ -90,6 +142,7 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 - [`02_chain_with_cycles.py`](02_chain_with_cycles.py) — `Chain` DAG with cycles
 - [`72_node_framework.py`](72_node_framework.py) — code-first `@node`, typed I/O, `output_key`
 - [`18_supervisor_worker.py`](18_supervisor_worker.py) — `Supervisor` + `Worker` (also see `research-agent/`)
+- [`65_supervisor_validate.py`](65_supervisor_validate.py) — `Supervisor(validate_outputs=True)`: the manager inspects each worker's output and re-invokes it once with feedback (runs under pytest, no keys)
 - [`31_swarm_research_team.py`](31_swarm_research_team.py) — `Swarm` peer-to-peer handoffs
 - [`36_chain_workflow.py`](36_chain_workflow.py) — Chain end-to-end
 - [`39_workflows_demo.py`](39_workflows_demo.py) — workflow comparison
@@ -110,13 +163,16 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 - [`78_multimodal_eval.py`](78_multimodal_eval.py) — evaluate a vision agent over an image dataset
 - [`79_async_eval.py`](79_async_eval.py) — async `aevaluate` / `asimulate` / `aharden`
 - [`40_evals_compare.py`](40_evals_compare.py) — A/B compare two runs
+- [`60_test_model.py`](60_test_model.py) — `TestModel` / `FunctionModel`: deterministic agent tests with no network, no key, no flake
 - [`61_eval_pytest.py`](61_eval_pytest.py) — `@case` / `@pytest_dataset` pytest plugin
+- [`81_g_eval.py`](81_g_eval.py) — `GEval`: evaluation steps + score-band rubric + chain-of-thought, and the auto-derived-steps path (real LLM)
+- [`82_llm_session_metrics.py`](82_llm_session_metrics.py) — LLM-judged multi-turn metrics over a real conversation: coherence, goal completion, knowledge retention, role adherence, relevancy (real LLM)
 - [`95_agent_ci_gate.py`](95_agent_ci_gate.py) — **Agent CI**: gate a build on agent quality — aggregate thresholds, baselines, and why an outage can't report green
 - [`96_connected_eval_export.py`](96_connected_eval_export.py) — gate verdicts as **governance evidence**: what reaches a connected plane (metadata only), and how to preview the exact payload
 - [`62_replay_to_regression.py`](62_replay_to_regression.py) — turn a failing trace into a regression test
 - [`74_agent_hardening.py`](74_agent_hardening.py) — `generate_scenarios → simulate → Scorecard → harden`
 - [`80_curate_from_traces.py`](80_curate_from_traces.py) — curate an eval dataset from captured agent traces
-- [`autollm/`](autollm/) — **AutoLLM**: eval-driven prompt optimization end to end (`optimize()` → holdout-guarded winner → persisted to the **AutoLLM** UI view). Real LLM, no mocks.
+- [`autollm/`](autollm/) — **AutoLLM**: eval-driven prompt optimization end to end (`optimize()` → holdout-guarded winner → persisted to the **AutoLLM** UI view). Real LLM, no mocks. *(A folder, not a snippet — see the Focused walkthroughs table above.)*
 
 ### Tracing & replay
 - [`04_agent_replay.py`](04_agent_replay.py) — `Replay.fork_at(...).rerun()`
@@ -127,6 +183,7 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 - [`48_export_trace.py`](48_export_trace.py) — export trace as JSON
 - [`52_trace_compare.py`](52_trace_compare.py) — Local UI trace comparison
 - [`54_trace_filters.py`](54_trace_filters.py) — saved filter presets
+- [`68_trace_redaction.py`](68_trace_redaction.py) — opt-in `RedactionPolicy`: `capture` mode masks at the storage boundary, `read` mode keeps storage raw and masks on the way out
 - [`83_runner_trace_to_platform.py`](83_runner_trace_to_platform.py) — a runner job's trace flows SDK → platform, self-verified (Task A)
 
 ### Multimodal
