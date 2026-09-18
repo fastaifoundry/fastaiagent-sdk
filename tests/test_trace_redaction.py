@@ -271,3 +271,59 @@ class TestForeignOtelPayloadKeys:
         policy = RedactionPolicy(patterns=(re.escape(self.CANARY),), mode="both")
         out = redact_attributes({"gen_ai.prompt": f"see {self.CANARY}"}, policy)
         assert self.CANARY not in out["gen_ai.prompt"]
+
+
+class TestTopologyPayloadKeysAreGated:
+    """Swarm and Supervisor root spans carry the prompt in and the answer out.
+
+    These were ungated before 1.67.0 and only ``arun`` stamped them, so the leak
+    was narrow. Giving ``Swarm.stream``, ``Supervisor.stream`` and
+    ``Swarm.aresume`` root spans in the same release widened it to every streamed
+    and resumed run — a payload-bearing attribute added without the matching
+    registry line, which CLAUDE.md §2.5 names as the thing to watch for.
+    """
+
+    def test_the_topology_payload_keys_are_dropped_with_payloads_off(self, monkeypatch):
+        monkeypatch.setenv("FASTAIAGENT_TRACE_PAYLOADS", "0")
+        from fastaiagent.trace.redaction import apply_export_policy
+
+        attrs = {
+            "swarm.input": "SECRET-IN",
+            "swarm.output": "SECRET-OUT",
+            "supervisor.input": "SECRET-IN",
+            "supervisor.output": "SECRET-OUT",
+        }
+        assert apply_export_policy(attrs) == {}
+
+    def test_structural_topology_keys_survive(self, monkeypatch):
+        """A console needs these and none of them carry user content."""
+        monkeypatch.setenv("FASTAIAGENT_TRACE_PAYLOADS", "0")
+        from fastaiagent.trace.redaction import apply_export_policy
+
+        attrs = {
+            "swarm.name": "pair",
+            "swarm.agent_count": 2,
+            "swarm.handoff_count": 1,
+            "swarm.entrypoint": "alpha",
+            "supervisor.streamed": True,
+        }
+        assert apply_export_policy(attrs) == attrs
+
+    def test_the_bare_langchain_chain_payload_keys_are_dropped(self, monkeypatch):
+        """``integrations.langchain`` writes the chain's inputs and outputs onto
+        bare ``input``/``output``. Generic names, but only a span attribute is
+        matched against the registry and that integration is their only writer."""
+        monkeypatch.setenv("FASTAIAGENT_TRACE_PAYLOADS", "0")
+        from fastaiagent.trace.redaction import apply_export_policy
+
+        attrs = {"input": '{"messages": ["SECRET"]}', "output": '{"text": "SECRET"}'}
+        assert apply_export_policy(attrs) == {}
+
+    def test_all_four_topology_keys_survive_with_payloads_on(self, monkeypatch):
+        """The default path must not over-filter: what the plane received before
+        it must still receive."""
+        monkeypatch.delenv("FASTAIAGENT_TRACE_PAYLOADS", raising=False)
+        from fastaiagent.trace.redaction import apply_export_policy
+
+        attrs = {"swarm.output": "answer", "supervisor.output": "answer", "output": "x"}
+        assert apply_export_policy(attrs) == attrs

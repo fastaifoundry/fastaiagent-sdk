@@ -665,7 +665,7 @@ class Agent:
     ) -> AgentResult:
         """Execute with OTel tracing."""
         from fastaiagent.trace.otel import get_tracer
-        from fastaiagent.trace.span import set_metadata_attributes
+        from fastaiagent.trace.span import set_metadata_attributes, trace_id_of
 
         tracer = get_tracer()
         with tracer.start_as_current_span(f"agent.{self.name}") as span:
@@ -714,7 +714,7 @@ class Agent:
                     span_ctx = span.get_span_context()
                     saved = save_parts_for_span(
                         db=TraceStore.default()._db,
-                        trace_id=format(span_ctx.trace_id, "032x"),
+                        trace_id=trace_id_of(span_ctx),
                         span_id=format(span_ctx.span_id, "016x"),
                         parts=normalized_input_parts,
                         role="input",
@@ -766,7 +766,7 @@ class Agent:
 
             # Set trace_id on result
             ctx = span.get_span_context()
-            result.trace_id = format(ctx.trace_id, "032x")
+            result.trace_id = trace_id_of(ctx)
             return result
 
     async def _arun_core(

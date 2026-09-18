@@ -327,6 +327,7 @@ class Swarm:
         via :meth:`resume`.
         """
         from fastaiagent.trace.otel import get_tracer
+        from fastaiagent.trace.span import trace_id_of
 
         tracer = get_tracer()
         # Root span wraps the whole swarm run so every child agent span is a
@@ -360,7 +361,7 @@ class Swarm:
             # propagated up from the child agent's result: that id is the same
             # only by accident of nesting, and there is no child result at all
             # when a swarm returns early.
-            result.trace_id = format(span.get_span_context().trace_id, "032x")
+            result.trace_id = trace_id_of(span)
         return result
 
     async def _arun_swarm(
@@ -626,6 +627,7 @@ class Swarm:
         still apply.
         """
         from fastaiagent.trace.otel import get_tracer
+        from fastaiagent.trace.span import trace_id_of
 
         # A resumed swarm is a run, and a run gets a root span. ``aresume`` opened
         # none at all before 1.67.0: the child agent's spans were emitted as
@@ -645,7 +647,7 @@ class Swarm:
                 **kwargs,
             )
             span.set_attribute("swarm.output", result.output)
-            result.trace_id = format(span.get_span_context().trace_id, "032x")
+            result.trace_id = trace_id_of(span)
         return result
 
     async def _aresume_inner(
@@ -834,6 +836,7 @@ class Swarm:
         :meth:`arun` has always had.
         """
         from fastaiagent.trace.otel import get_tracer
+        from fastaiagent.trace.span import trace_id_of
 
         async def _collect() -> AgentResult:
             start = time.monotonic()
@@ -851,7 +854,7 @@ class Swarm:
                             text_parts.append(event.text)
                     output = "".join(text_parts)
                     span.set_attribute("swarm.output", output)
-                    trace_id = format(span.get_span_context().trace_id, "032x")
+                    trace_id = trace_id_of(span)
                 latency = int((time.monotonic() - start) * 1000)
                 return AgentResult(
                     output=output,

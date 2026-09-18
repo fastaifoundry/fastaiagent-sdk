@@ -558,6 +558,7 @@ class Supervisor:
         by hand and inherited nothing.
         """
         from fastaiagent.trace.otel import get_tracer
+        from fastaiagent.trace.span import trace_id_of
 
         async def _collect() -> AgentResult:
             start = time.monotonic()
@@ -577,7 +578,7 @@ class Supervisor:
                             text_parts.append(event.text)
                     output = "".join(text_parts)
                     span.set_attribute("supervisor.output", output)
-                    trace_id = format(span.get_span_context().trace_id, "032x")
+                    trace_id = trace_id_of(span)
                 latency = int((time.monotonic() - start) * 1000)
                 return AgentResult(
                     output=output,

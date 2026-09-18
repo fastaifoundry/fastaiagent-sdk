@@ -327,6 +327,7 @@ class Chain:
         from contextlib import nullcontext
 
         from fastaiagent.trace.otel import get_tracer
+        from fastaiagent.trace.span import trace_id_of
 
         if trace:
             span_ctx = get_tracer().start_as_current_span(f"chain.{self.name}")
@@ -401,7 +402,7 @@ class Chain:
                 span.set_attribute("chain.execution_id", raw.get("execution_id") or "")
                 # Read inside the ``with`` — the span context is only valid
                 # while the span is current.
-                trace_id = format(span.get_span_context().trace_id, "032x")
+                trace_id = trace_id_of(span)
             else:
                 trace_id = None
 
@@ -516,13 +517,14 @@ class Chain:
         # emitted as orphan roots and the returned ``ChainResult`` had no trace
         # to name.
         from fastaiagent.trace.otel import get_tracer
+        from fastaiagent.trace.span import trace_id_of
 
         with get_tracer().start_as_current_span(f"chain.{self.name}") as span:
             span.set_attribute("chain.name", self.name)
             span.set_attribute("chain.resumed_execution_id", execution_id)
             span.set_attribute("fastaiagent.runner.type", "chain")
             span.set_attribute("fastaiagent.framework", "fastaiagent")
-            trace_id = format(span.get_span_context().trace_id, "032x")
+            trace_id = trace_id_of(span)
             try:
                 raw = await execute_chain(
                     nodes=self.nodes,
@@ -702,6 +704,7 @@ class Chain:
         )
 
         from fastaiagent.trace.otel import get_tracer
+        from fastaiagent.trace.span import trace_id_of
 
         # Same reasoning as ``resume``: a fork is its own run under a fresh
         # execution id, so it gets its own root span and its own trace id.
@@ -710,7 +713,7 @@ class Chain:
             span.set_attribute("chain.forked_execution_id", fork_id)
             span.set_attribute("fastaiagent.runner.type", "chain")
             span.set_attribute("fastaiagent.framework", "fastaiagent")
-            trace_id = format(span.get_span_context().trace_id, "032x")
+            trace_id = trace_id_of(span)
             raw = await execute_chain(
                 nodes=self.nodes,
                 edges=self.edges,

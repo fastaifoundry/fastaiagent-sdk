@@ -164,3 +164,25 @@ async def test_switch_off_writes_no_attachment_bytes(fresh_tracing, monkeypatch)
         role="input",
     )
     assert saved == []
+
+
+def test_a_run_with_tracing_off_reports_no_trace_id(monkeypatch, fresh_tracing):
+    """``None``, not the all-zero OTel id.
+
+    With tracing off the root span is OTel's non-recording one, whose context is
+    invalid and whose trace id is zero, so a bare ``format(ctx.trace_id, "032x")``
+    yields ``"000…0"``. That is worse than nothing: it looks like an id, it rides
+    onto ``EvalCaseRecord.trace_id``, it is pushed to the control plane, and it is
+    a join key that can never resolve because no trace was captured.
+    """
+    monkeypatch.setenv("FASTAIAGENT_TRACE_ENABLED", "0")
+    reset_config()
+    otel.reset()
+
+    from tests.conftest import MockLLMClient
+
+    from fastaiagent.agent import Agent
+
+    result = Agent(name="no-trace", llm=MockLLMClient()).run("hi")
+    assert result.trace_id is None
+    assert result.trace_id != "0" * 32

@@ -488,3 +488,24 @@ def set_template_kind(span: Any, kind: str) -> None:
     if not kind:
         return
     span.set_attribute("fastaiagent.template.kind", kind)
+
+
+def trace_id_of(span: Any) -> str | None:
+    """The span's trace id as 32 hex characters, or ``None`` when there isn't one.
+
+    Every result-producing path stamps its trace id from its root span. With
+    tracing off (``FASTAIAGENT_TRACE_ENABLED``) that span is OTel's non-recording
+    one, whose context is invalid and whose trace id is zero — so a bare
+    ``format(ctx.trace_id, "032x")`` yields ``"000…0"``.
+
+    That is worse than nothing: it looks like an id, it is carried onto
+    ``EvalCaseRecord.trace_id`` and pushed to the control plane, and it is a join
+    key that can never resolve, because no trace was ever captured. ``None`` says
+    the true thing.
+    """
+    ctx = span.get_span_context() if hasattr(span, "get_span_context") else span
+    if ctx is None or not getattr(ctx, "trace_id", 0):
+        return None
+    if not getattr(ctx, "is_valid", True):
+        return None
+    return format(ctx.trace_id, "032x")

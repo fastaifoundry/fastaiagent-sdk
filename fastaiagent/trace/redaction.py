@@ -81,6 +81,13 @@ SENSITIVE_ATTR_KEYS: frozenset[str] = frozenset(
         # shipping the original would have been the same leak with extra steps.
         "input.value",
         "output.value",
+        # ``integrations.langchain`` writes the chain's inputs and outputs onto
+        # these bare keys (``on_chain_start`` / ``on_chain_end``). They are
+        # generic names, but only a span attribute is ever matched against this
+        # registry, and the only writer of them is that integration — where they
+        # hold the full serialized prompt and completion.
+        "input",
+        "output",
         # Agent inputs/outputs/system prompt captured by ``Agent._arun_traced``.
         "agent.input",
         "agent.output",
@@ -95,6 +102,21 @@ SENSITIVE_ATTR_KEYS: frozenset[str] = frozenset(
         # Chain payloads — ``Chain.aexecute`` writes JSON-serialized state.
         "chain.input",
         "chain.output",
+        # Swarm / Supervisor payloads — the prompt that entered the topology and
+        # the model's final answer out of it. Structural siblings
+        # (``swarm.name``, ``swarm.agent_count``, ``swarm.handoff_count``,
+        # ``supervisor.streamed``, …) are deliberately NOT listed: they carry no
+        # user content and a console needs them.
+        #
+        # These were ungated before 1.67.0 and only ``arun`` stamped them, so
+        # the leak was narrow. Adding root spans to ``Swarm.stream``,
+        # ``Supervisor.stream`` and ``Swarm.aresume`` in the same release widened
+        # it to every streamed and resumed run — a payload-bearing attribute
+        # added without the matching registry line is exactly the §2.5 case.
+        "swarm.input",
+        "swarm.output",
+        "supervisor.input",
+        "supervisor.output",
         # A guardrail's structured findings. The SDK runtime only ever puts
         # rule-derived values here (see ``guardrail.executor.EXPORTABLE_DETAIL_KEYS``),
         # but a borrowing runtime sets it itself, and a future key could be
