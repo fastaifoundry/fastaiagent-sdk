@@ -5,6 +5,169 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.68.0] - 2026-09-18 — the follow-ups 1.67.0 wrote down
+
+1.67.0 closed ten defects and ended with a list of three it had found and
+deliberately left, plus a set of documentation and examples that described a
+product slightly different from the one that shipped. This release is that list.
+
+Nothing here is a regression. Two are behaviour changes to numbers people read.
+
+### Fixed — numbers and markers
+
+**`tokens_used` covers every turn of a run.** It was read off the **last** LLM
+response the tool loop returned, so a run that made three model calls reported
+one call's tokens. 1.67.0 made `cost` correct across every turn, and the two then
+disagreed visibly on the same run. Both are now produced by one run-scoped
+accumulator written inside `LLMClient`, so they cannot drift apart again.
+`Swarm.stream` and `Supervisor.stream` assembled their result by hand and left
+tokens *and* cost at their defaults; both now accumulate, matching what
+`Agent.stream` got in 1.67.0.
+
+> **If this affects you.** `tokens_used` goes **up** for any multi-turn run — a
+> tool loop, a structured-output re-ask, a guardrail `reask`. Nothing
+> under-reports now, but a dashboard, budget alert or CI threshold calibrated
+> against the old number will see a step change on the same workload. A
+> single-turn run is unchanged. A paused (HITL) run now reports what it spent
+> before the gate instead of `0`. A `Supervisor`'s own number still excludes its
+> workers' — each worker reports its own, exactly as `cost` has since 1.67.0.
+
+**Traces are labelled by their root span.** `TraceStore.list_traces()`,
+`.search()` and the Local UI's Home page named a trace with `MIN(name)` — the
+*lexicographic* minimum of its span names. A swarm whose spans were
+`['swarm.pair', 'agent.alpha']` listed as `agent.alpha`. Since `agent.*` and
+`chain.*` sort ahead of `swarm.*` and `supervisor.*`, that was most multi-agent
+traces, and 1.67.0 made it more visible by giving root spans to three paths that
+previously had none. A third site in the UI's Home page carried the same literal;
+all three now share one constant.
+
+> **If this affects you.** Existing traces change label in the Local UI. No data
+> is rewritten — only how the list names it. A saved filter or script matching on
+> a trace name may need updating; the new name is the root span's.
+
+**A forked run that dies leaves a tombstone.** `Chain.afork` ran its branch with
+no `try`/`except` at all. `Agent.afork` was subtler than the 1.67.0 note claimed:
+it delegates to a core whose failure handler does write the marker — but `afork`
+resolves `self._checkpointer or SQLiteCheckpointer()`, so a fork can be durable
+while the agent is not, and the core, seeing no checkpointer, closes nothing.
+Both paths now write `failed` on a crash and `completed` on a finished branch,
+best-effort so a checkpointer problem can never replace the caller's exception.
+
+> **If this affects you, and the direction is the one people guess wrong.** A
+> **completed** fork is now refused by `resume` with `AlreadyResumed` where it
+> previously re-executed. A **crashed** fork stays resumable: `latest_resumable`
+> deliberately steps past a `failed` marker, because crash recovery is the
+> feature. The marker's value on a crashed branch is that it is now
+> *distinguishable* as dead rather than inferred.
+
+### Fixed — documentation that described a different product
+
+Every one of these was verified by running the code, not by reading it.
+
+- **`guardrails/concepts.md` carried five false statements.** The `regex` row
+  named a config key, `match_type`, that exists **nowhere in the codebase** — a
+  rule configured the documented way is silently ignored; the real key is
+  `should_match`. The `classifier` row described "a classification endpoint …
+  thresholds the score"; it is substring matching over `config["categories"]`
+  with no model, no endpoint and no threshold, and the page never mentioned the
+  1.64.0 change that makes a missing `blocked` list block everything detected
+  rather than nothing. "The last three are model-backed judges" pointed at
+  `topic`/`pii`/`secrets`, two of which the same page calls detector-backed.
+  "All seven types" — there are ten. "The two model-backed check types" — three,
+  plus two detector-backed.
+- **The non-blocking exception path is not fail-open.** It was labelled so. The
+  executor records `passed=False, errored=True, action_taken="blocked"` and never
+  consults `on_error` on that path: it fails **closed on the verdict** and merely
+  does not halt the run. Not stopping a run and passing the payload are different
+  things.
+- **Two snippets raised `NameError` if copy-pasted** — one using
+  `GuardrailBlockedError`, one `GuardrailType`, which is not exported from the
+  top-level package at all. The built-in factory table listed 5 of 13 factories;
+  the `AgentResult` table 7 of 12 fields, omitting `status` and
+  `pending_interrupt`, exactly what a durability user branches on.
+- **Five documented APIs do not exist**: `traces list --limit` (the option is
+  `--last-hours`), `traces export --output FILE` (it takes `--format` and writes
+  to stdout), `PromptRegistry.save(Prompt(...))` (it is `register()`, taking
+  fields), and `Prompt.render()` (it is `Prompt.format()`).
+- **`durability/` carried three snippets that do not run and two that contradict
+  the code.** The custom-backend stub raised `TypeError` because its `list`
+  method shadows the builtin its annotations need; the worker-pool loop was
+  `await` outside a function. A reserved `Resume.data` field was documented —
+  `Resume` has only `approved` and `metadata` and drops anything else silently.
+  `_current_checkpointer` was placed in `chain.interrupt`; it lives in
+  `chain.idempotent`.
+- **`chains/hitl.md`'s halt-on-reject example did not halt.** Verified: a
+  rejected draft ran `draft → review → check_approval → send`. Three independent
+  faults, all pointing towards sending — `condition=` where routing matches
+  `label=`, `state.output.approved` where the field is top-level, and `== True`
+  against a value `json.dumps` renders as `true`.
+
+### Fixed — examples
+
+- **Two streaming demos never ran.** Both called `TraceStore.list_spans`, a
+  method that has never existed; they died with `AttributeError` on the first
+  poll, in the release that introduced them. Both now tail at the trace level,
+  which is what the public API offers. Their docstrings also promised a span per
+  chain node; the chain executor traces the root only, and they now say so.
+- **`08_trace_langchain` reported nothing after a perfect run**, because it
+  verified with `WHERE name LIKE 'langchain.%'` while a direct chat-model call
+  produces `llm.{provider}.{model}`. It now watermarks `spans.rowid` before the
+  call, which also stops a lived-in `local.db` showing unrelated rows.
+- **`16_providers_groq` pinned a model Groq no longer serves**, and its key guard
+  passed, so a valid key earned a 404 traceback.
+- **`51_guardrail_events` seeded rows the UI could not render.** Its `INSERT`
+  predated the v18 schema, so `action`/`action_taken`/`severity`/`floor` were
+  always NULL and the divergence marker the UI docs describe could never appear.
+  It now runs four real guardrails inside real spans and lets the runtime's own
+  writer produce the rows, so it cannot drift again — including one rule that
+  produces the marker.
+- **`84_governed_agent` crashed on its own missing precondition** with an
+  unhandled `AlreadyResumed`. It now checks before spending an LLM call and
+  prints the exact policy to create. Before 1.65.0 the same missing precondition
+  printed a plausible success line with no approval having happened.
+- **`34_platform_kb` died on a bare `KeyError`**; **`83`/`85`/`86` let
+  `httpx.ConnectError` escape** as a raw traceback. All four now skip cleanly.
+- **`61_eval_pytest` dirtied the working tree on import**, writing its dataset at
+  module level into a path that was not ignored. The dataset is checked in.
+- **`examples/README.md` was stale in both directions**: thirteen snippets on
+  disk were unlisted and the templates table covered 6 of 16 folders. All are now
+  listed, with a callout that `NN` is no longer a unique key — six numbers name
+  two snippets each.
+- **Template packaging**: `requirements.txt` added to the five folders that had
+  none, each pinned to the version its feature shipped in; the four bare
+  `fastaiagent` pins replaced; `.env.example` added to the three folders that
+  call `load_dotenv()` but shipped none.
+
+### Added
+
+- `swarm.tokens_used` and `supervisor.tokens_used` span attributes, set on the
+  streaming paths — and documented, alongside the whole-run meaning of
+  `agent.tokens_used`.
+- `TraceStore.TRACE_NAME_SQL`, public because a second module already depended on
+  it.
+- `chain.checkpoint.write_run_end_once()` — `write_run_end` unless the run already
+  carries a terminal row, which is what lets the two fork paths close a branch
+  without giving the delegating case two tombstones.
+
+### Notes
+
+**Verified against a live control plane.** The fork markers replicate and are
+served back with the right status; the two new span attributes are accepted and
+stored; a real-provider streamed swarm reports 116 tokens where `main` reported 0.
+**Not a wire event** (§2.2): the span attributes bag is `dict[str, Any]` with no
+allow-list, and the plane's own compatibility matrix records widening a *closed*
+enum as deliberately not a bump — so adding a map entry cannot be one. The
+trace-label change is local: the export path never touches those queries, and the
+wire carries per-span names with no trace-level label at all.
+
+**Found while verifying, and deliberately left:** a streamed run through a real
+provider creates no `llm.*` span, so no `gen_ai.usage.*` exists in the trace and
+the plane's own token total stays `0`. Before this release the SDK also reported
+`0`, so the two agreed by accident; now the SDK is right and the divergence is
+visible. The fix is on our side — give the streaming client path a span carrying
+`gen_ai.usage.*`, as the non-streaming path already does — and it is a
+pre-existing gap this release merely makes legible, not one it introduces.
+
 ## [1.67.0] - 2026-09-18 — switches, verdicts and numbers that were only decorative
 
 A verification sweep of every example and doc page against 1.66.0 turned up ten
