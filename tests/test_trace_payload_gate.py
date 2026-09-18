@@ -164,6 +164,12 @@ def test_local_capture_is_unaffected_and_search_still_matches(tmp_path, monkeypa
     """
     import json
 
+    # ``routes.traces`` imports fastapi at module level, so this case needs the
+    # ``ui`` extra. It is the only one in this file that does — the export-gate
+    # assertions above, which are what the registry change is about, run
+    # everywhere.
+    pytest.importorskip("fastapi", reason="_fts_query lives in a fastapi route module")
+
     from fastaiagent._internal.config import reset_config
     from fastaiagent.ui.db import init_local_db
     from fastaiagent.ui.routes.traces import _fts_query

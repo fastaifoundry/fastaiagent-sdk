@@ -100,7 +100,20 @@ def test_model_catalog_path_expands(home, in_tmp_cwd, monkeypatch):
     assert path.is_absolute() and str(path).startswith(str(home))
 
 
+def test_kb_dir_expands_in_the_config(home, in_tmp_cwd, monkeypatch):
+    """The core half, which must run with no extras installed."""
+    from fastaiagent._internal.config import get_config
+
+    monkeypatch.setenv("FASTAIAGENT_KB_DIR", "~/kbs")
+    reset_config()
+    assert str(get_config().kb_dir) == str(home / "kbs")
+
+
 def test_kb_root_expands(home, in_tmp_cwd, monkeypatch):
+    """The UI resolver half. ``routes.kb`` imports fastapi at module level, so
+    this one cannot run without the ``ui`` extra — the assertion above covers
+    the expansion itself unconditionally."""
+    pytest.importorskip("fastapi", reason="kb_root lives in a fastapi route module")
     from fastaiagent.ui.routes.kb import kb_root
 
     monkeypatch.setenv("FASTAIAGENT_KB_DIR", "~/kbs")
