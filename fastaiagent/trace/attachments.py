@@ -6,8 +6,12 @@ into a sibling SQLite table:
 
 * always: ``thumbnail`` (256 px JPEG, ~30 KB) for inline UI rendering
 * optionally: ``full_data`` (original bytes) when
-  ``fa.config.trace_full_images`` is true and the user wants Replay to fork
-  with the exact original payload
+  ``fastaiagent.config.trace_full_images`` is true (settable in code as
+  ``fa.config.trace_full_images = True`` or via ``FASTAIAGENT_TRACE_FULL_IMAGES=1``)
+  and the user wants Replay to fork with the exact original payload
+
+Both channels are **local**: they land in ``local.db`` and never ride the span
+export path. See ``docs/security.md`` ("Attachment bytes") for the posture.
 
 Each saved attachment gets a UUID; spans reference the IDs via
 ``fastaiagent.input.attachment_ids`` / ``fastaiagent.output.attachment_ids``
@@ -177,7 +181,17 @@ def save_parts_for_span(
     Returns the list of records (in the same order as the parts that were
     media). ``role`` is stored in the metadata so the UI can label each
     attachment as input vs output.
+
+    A no-op when the trace master switch is off: ``FASTAIAGENT_TRACE_ENABLED=0``
+    means "capture nothing at all", and attachment bytes are the largest thing
+    the SDK writes locally — they must not survive the switch that suppresses
+    the span they hang off.
     """
+    from fastaiagent.trace.otel import tracing_enabled
+
+    if not tracing_enabled():
+        return []
+
     from fastaiagent.multimodal.image import Image as MMImage
     from fastaiagent.multimodal.pdf import PDF as MMPDF
 

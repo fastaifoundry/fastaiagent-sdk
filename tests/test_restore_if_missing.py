@@ -252,21 +252,56 @@ async def test_disconnected_resume_fails_exactly_as_before(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("value", ["0", "false", "no", "off", "OFF", "  False  ", "nonsense"])
 async def test_the_env_switch_keeps_a_deleted_run_deleted(
-    plane, _clean_platform, isolated_local_db, tmp_path, monkeypatch
+    value, plane, _clean_platform, isolated_local_db, tmp_path, monkeypatch
 ) -> None:
-    """``FASTAIAGENT_RESTORE_FROM_PLANE=0`` is the erasure escape hatch.
+    """``FASTAIAGENT_RESTORE_FROM_PLANE`` off is the erasure escape hatch.
 
     Restoring resurrects a run whose local checkpoints were deliberately
     removed — right for disaster recovery, wrong for a right-to-be-forgotten
     request. An operator has to be able to say no.
+
+    Until 1.67.0 only the literal ``"0"`` said no. An operator honouring a
+    deletion request who wrote ``false`` — the spelling
+    ``docs/configuration/environment-variables.md`` invites — restored the run
+    they had just deleted, silently. ``"nonsense"`` is here because the
+    signed-off rule for a safety switch is fail-closed: an unparseable value
+    does **not** restore, and warns.
     """
     state, url = plane
-    await _pause_and_replicate(tmp_path, url, "ex-erased")
-    monkeypatch.setenv("FASTAIAGENT_RESTORE_FROM_PLANE", "0")
+    await _pause_and_replicate(tmp_path, url, f"ex-erased-{value.strip().lower() or 'empty'}")
+    monkeypatch.setenv("FASTAIAGENT_RESTORE_FROM_PLANE", value)
 
     store_b = _store(tmp_path, "b.db")
     before = len(state.latest_gets)
     with pytest.raises(Exception):
-        await _chain(store_b).resume("ex-erased", resume_value=Resume(approved=True))
-    assert state.latest_gets[before:] == [], "the opt-out did not suppress the restore"
+        await _chain(store_b).resume(
+            f"ex-erased-{value.strip().lower() or 'empty'}", resume_value=Resume(approved=True)
+        )
+    assert state.latest_gets[before:] == [], (
+        f"FASTAIAGENT_RESTORE_FROM_PLANE={value!r} did not suppress the restore"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("value", ["1", "true", "yes", "on", ""])
+async def test_true_and_empty_spellings_still_restore(
+    value, plane, _clean_platform, isolated_local_db, tmp_path, monkeypatch
+) -> None:
+    """The control — and the reason an *empty* value must mean "unset".
+
+    A docker-compose ``FASTAIAGENT_RESTORE_FROM_PLANE:`` renders an empty
+    string; reading that as "off" would quietly disable cross-machine resume
+    for anyone who listed the variable without giving it a value.
+    """
+    state, url = plane
+    execution_id = f"ex-restored-{value.strip().lower() or 'empty'}"
+    await _pause_and_replicate(tmp_path, url, execution_id)
+    monkeypatch.setenv("FASTAIAGENT_RESTORE_FROM_PLANE", value)
+
+    store_b = _store(tmp_path, "b.db")
+    before = len(state.latest_gets)
+    result = await _chain(store_b).resume(execution_id, resume_value=Resume(approved=True))
+    assert state.latest_gets[before:] == [execution_id]
+    assert result is not None

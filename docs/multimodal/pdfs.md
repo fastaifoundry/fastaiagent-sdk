@@ -87,7 +87,8 @@ Without an engine and without `text=`, these methods raise `MissingPDFBackendErr
 which names every way forward. It subclasses `ImportError` as well as
 `MultimodalError`, so existing `except ImportError:` handlers keep working.
 
-Configure globally or per-LLMClient:
+Configure globally (in code, or with `FASTAIAGENT_PDF_MODE=vision`) or
+per-LLMClient, which wins:
 
 ```python
 import fastaiagent as fa
@@ -96,14 +97,17 @@ fa.config.pdf_mode = "vision"          # default "auto"
 LLMClient(provider="openai", model="gpt-4o", pdf_mode="vision")
 ```
 
+The global is read when an `LLMClient` is constructed, so set it before you
+build your clients.
+
 ## Page limit
 
 Vision mode caps pages by default to keep token costs bounded:
 
 ```python
-fa.config.max_pdf_pages = 20            # default 20
+fa.config.max_pdf_pages = 20            # default 20; FASTAIAGENT_MAX_PDF_PAGES
 
-# Or per-LLMClient:
+# Or per-LLMClient, which wins over the global:
 LLMClient(provider="openai", model="gpt-4o", max_pdf_pages=50)
 ```
 

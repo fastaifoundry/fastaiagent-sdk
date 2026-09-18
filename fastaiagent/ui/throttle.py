@@ -18,7 +18,6 @@ Policy
 
 from __future__ import annotations
 
-import os
 import threading
 import time
 from collections import deque
@@ -30,12 +29,14 @@ if TYPE_CHECKING:
 
 
 def _trust_proxy() -> bool:
-    return os.environ.get("FASTAIAGENT_UI_TRUST_PROXY", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    """Resolver for ``FASTAIAGENT_UI_TRUST_PROXY`` (registered in ``ENV_FLAGS``).
+
+    Trusting ``X-Forwarded-For`` is a capability grant, so an unparseable value
+    resolves to *not granted* — a spoofable header stays ignored.
+    """
+    from fastaiagent._internal.env import env_flag
+
+    return env_flag("FASTAIAGENT_UI_TRUST_PROXY", default=False, on_unparsed=False)
 
 
 def client_throttle_ip(request: Request) -> str:

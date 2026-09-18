@@ -46,6 +46,17 @@ def enable_otel_capture(*, framework: str | None = None) -> None:
     from fastaiagent.trace import otel
     from fastaiagent.trace.storage import LocalStorageProcessor, set_normalize_enabled
 
+    if not otel.tracing_enabled():
+        # The master switch means "capture nothing at all". Attaching a
+        # LocalStorageProcessor to a *foreign* provider would route around it —
+        # and OTel has no API to detach a processor afterwards, so the mistake
+        # would be permanent for the process.
+        logger.info(
+            "enable_otel_capture: tracing is disabled (FASTAIAGENT_TRACE_ENABLED); "
+            "foreign spans will not be captured."
+        )
+        return
+
     if _enabled:
         # Already on — just refresh the (possibly new) framework override.
         set_normalize_enabled(True, framework=framework)

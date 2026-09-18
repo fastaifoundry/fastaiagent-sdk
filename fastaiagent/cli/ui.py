@@ -256,8 +256,18 @@ def _start_server(
 @ui_app.callback(invoke_without_command=True)
 def default(
     ctx: typer.Context,
-    host: str = typer.Option("127.0.0.1", "--host"),
-    port: int = typer.Option(7842, "--port"),
+    host: str | None = typer.Option(
+        None,
+        "--host",
+        help=("Bind host. Defaults to fastaiagent.config.ui_host "
+              "(FASTAIAGENT_UI_HOST), else 127.0.0.1."),
+    ),
+    port: int | None = typer.Option(
+        None,
+        "--port",
+        help=("Bind port. Defaults to fastaiagent.config.ui_port "
+              "(FASTAIAGENT_UI_PORT), else 7842."),
+    ),
     no_auth: bool = typer.Option(False, "--no-auth", help="Skip local auth (throwaway use)."),
     no_open: bool = typer.Option(False, "--no-open"),
     insecure_bind: bool = typer.Option(
@@ -299,8 +309,18 @@ def default(
 
 @ui_app.command("start")
 def start(
-    host: str = typer.Option("127.0.0.1", "--host"),
-    port: int = typer.Option(7842, "--port"),
+    host: str | None = typer.Option(
+        None,
+        "--host",
+        help=("Bind host. Defaults to fastaiagent.config.ui_host "
+              "(FASTAIAGENT_UI_HOST), else 127.0.0.1."),
+    ),
+    port: int | None = typer.Option(
+        None,
+        "--port",
+        help=("Bind port. Defaults to fastaiagent.config.ui_port "
+              "(FASTAIAGENT_UI_PORT), else 7842."),
+    ),
     no_auth: bool = typer.Option(False, "--no-auth"),
     no_open: bool = typer.Option(False, "--no-open"),
     insecure_bind: bool = typer.Option(
@@ -330,8 +350,8 @@ def start(
 
 def _run_start(
     *,
-    host: str,
-    port: int,
+    host: str | None,
+    port: int | None,
     no_auth: bool,
     no_open: bool,
     insecure_bind: bool,
@@ -339,6 +359,16 @@ def _run_start(
     auth: Path | None,
     agent: list[str] | None = None,
 ) -> None:
+    # ``ui_host``/``ui_port`` were parsed from the environment and read by
+    # nothing — the CLI carried its own hard-coded typer defaults, so
+    # ``FASTAIAGENT_UI_PORT=9000 fastaiagent ui`` still bound 7842. The flags are
+    # now ``None``-defaulted sentinels so an explicit flag still wins.
+    from fastaiagent._internal.config import get_config
+
+    _cfg = get_config()
+    host = host if host is not None else _cfg.ui_host
+    port = port if port is not None else _cfg.ui_port
+
     _ensure_ui_extra()
     _check_bind_safety(host, insecure_bind)
     from fastaiagent.ui.auth import auth_file_exists

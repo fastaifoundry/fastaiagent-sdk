@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import signal
 from urllib.parse import urlparse
 
@@ -15,6 +14,17 @@ runner_app = typer.Typer()
 console = Console()
 
 _LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def _allow_insecure_connect() -> bool:
+    """Resolver for ``FASTAIAGENT_RUNNER_ALLOW_INSECURE`` (registered in ``ENV_FLAGS``).
+
+    Grants permission to run the control channel in the clear, so an unparseable
+    value resolves to *not granted* — the runner still refuses.
+    """
+    from fastaiagent._internal.env import env_flag
+
+    return env_flag("FASTAIAGENT_RUNNER_ALLOW_INSECURE", default=False, on_unparsed=False)
 
 
 def _require_secure_connect(connect: str) -> None:
@@ -32,12 +42,7 @@ def _require_secure_connect(connect: str) -> None:
         return
     if host in _LOOPBACK_HOSTS:
         return
-    if os.environ.get("FASTAIAGENT_RUNNER_ALLOW_INSECURE", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }:
+    if _allow_insecure_connect():
         console.print(
             f"[yellow]runner: connecting to {connect!r} over plaintext http "
             "(FASTAIAGENT_RUNNER_ALLOW_INSECURE set) — the control channel is not "

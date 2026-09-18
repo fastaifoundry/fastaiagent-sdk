@@ -51,18 +51,26 @@ WARNING fastaiagent.multimodal.resize: auto-resized image from 23000 KB
 (JPEG) to 4500 KB (image/jpeg) to fit 4.5 MB limit
 ```
 
-Override the cap globally:
+Override the cap globally — in code, or with
+`FASTAIAGENT_MAX_IMAGE_SIZE_MB=10`:
 
 ```python
 import fastaiagent as fa
-fa.config.max_image_size_mb = 10.0
+fa.config.max_image_size_mb = 10.0     # every provider, every client
 ```
 
-…or per-LLMClient:
+…or per-LLMClient, which always wins over the global:
 
 ```python
 LLMClient(provider="openai", model="gpt-4o", max_image_size_mb=8.0)
 ```
+
+Left unset (the default), each provider's own limit applies — Anthropic 5 MB,
+OpenAI 20 MB. Setting the global replaces **all** of them, so a value chosen for
+one provider also applies to the others: raising it to 20 MB would push
+Anthropic past what its API accepts. Set it per-`LLMClient` when the providers
+differ, and pass `max_image_size_mb=None` on a client to put it back on its
+provider's own limit.
 
 ## URL safety
 

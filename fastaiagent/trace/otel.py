@@ -31,10 +31,45 @@ def suppress_global_provider() -> None:
     _claim_global = False
 
 
+def tracing_enabled() -> bool:
+    """Whether the master switch (``FASTAIAGENT_TRACE_ENABLED``) is on.
+
+    Resolver for the registry in :mod:`fastaiagent._internal.env`. Reads the
+    cached :class:`~fastaiagent._internal.config.SDKConfig`, so
+    ``fa.config.trace_enabled = False`` works as well as the environment
+    variable. Never raises — a broken config must not take the runtime with it.
+    """
+    try:
+        from fastaiagent._internal.config import get_config
+
+        return bool(get_config().trace_enabled)
+    except Exception:  # pragma: no cover — defensive
+        logger.debug("Could not resolve trace_enabled; assuming tracing is on", exc_info=True)
+        return True
+
+
 def get_tracer_provider() -> Any:
-    """Get or create the OTel TracerProvider singleton."""
+    """Get or create the OTel TracerProvider singleton.
+
+    **The master switch lives here.** With ``FASTAIAGENT_TRACE_ENABLED`` off we
+    hand back OTel's ``NoOpTracerProvider``, whose tracers mint non-recording
+    spans: ``set_attribute`` is a no-op, ``on_end`` never fires, so nothing is
+    built, nothing reaches ``local.db``, and there is nothing for any exporter to
+    export. Suppressing here rather than in ``trace.storage.on_end`` is the
+    difference between "captured then dropped" and "never captured" — it also
+    costs nothing at runtime, because the payload is never serialized.
+
+    The no-op provider is deliberately **not** cached in ``_provider``: flipping
+    ``fa.config.trace_enabled`` back on (or clearing the config cache in a test)
+    then builds the real provider on the next call, with no ``reset()`` needed.
+    """
     global _provider
     if _provider is None:
+        if not tracing_enabled():
+            from opentelemetry.trace import NoOpTracerProvider
+
+            return NoOpTracerProvider()
+
         from opentelemetry.sdk.trace import TracerProvider
 
         from fastaiagent.trace.storage import LocalStorageProcessor
@@ -52,6 +87,25 @@ def get_tracer_provider() -> Any:
 def get_tracer(name: str = "fastaiagent") -> Any:
     """Get a tracer instance."""
     return get_tracer_provider().get_tracer(name)
+
+
+def add_span_processor(processor: Any) -> bool:
+    """Attach ``processor`` to the SDK's provider; ``False`` when tracing is off.
+
+    With the master switch off :func:`get_tracer_provider` returns a no-op
+    provider that has no ``add_span_processor`` at all, so every registration
+    site (the plane exporter, HITL, eval verdicts, ``add_exporter``) has to go
+    through here rather than reaching for the provider itself.
+    """
+    provider = get_tracer_provider()
+    attach = getattr(provider, "add_span_processor", None)
+    if attach is None:
+        logger.debug(
+            "Tracing is disabled (FASTAIAGENT_TRACE_ENABLED); span processor not registered."
+        )
+        return False
+    attach(processor)
+    return True
 
 
 def _filtered_status(span: Any) -> Any:
@@ -219,7 +273,7 @@ def add_exporter(exporter: SpanExporter) -> None:
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
     wrapped = _EgressFilteredExporter(exporter)
-    get_tracer_provider().add_span_processor(BatchSpanProcessor(wrapped))
+    add_span_processor(BatchSpanProcessor(wrapped))
 
 
 def reset() -> None:

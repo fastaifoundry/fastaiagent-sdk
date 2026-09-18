@@ -923,8 +923,6 @@ def get_agent_dependencies(
     with handoff edges. When no runner is registered, falls back to a
     degraded payload reconstructed from span attributes (`unresolved=True`).
     """
-    from fastaiagent._internal.config import get_config
-
     ctx = get_context(request)
     db = ctx.db()
     try:
@@ -962,7 +960,13 @@ def get_agent_dependencies(
                     status.HTTP_404_NOT_FOUND, f"Agent '{name}' not found"
                 )
 
-        kb_root = getattr(get_config(), "kb_dir", None)
+        # Before 1.67.0 this was ``getattr(get_config(), "kb_dir", None)`` against
+        # a field that did not exist, so it was always ``None`` and the agent
+        # detail view looked in ``./.fastaiagent/kb`` however
+        # ``FASTAIAGENT_KB_DIR`` was set. One resolver now serves both routes.
+        from fastaiagent.ui.routes.kb import kb_root as _resolve_kb_root
+
+        kb_root = str(_resolve_kb_root())
 
         runner, parent_kind = _find_agent_in_runners(ctx.runners, name)
         if runner is None:

@@ -10,6 +10,40 @@ from fastaiagent._version import __version__
 logger = logging.getLogger(__name__)
 
 
+def _export_checkpoints_env() -> bool:
+    """Resolver for ``FASTAIAGENT_EXPORT_CHECKPOINTS`` (registered in ``ENV_FLAGS``).
+
+    Until 1.67.0 this was ``!= "0"``, so the documented ``false``/``no``/``off``
+    spellings kept replicating checkpoint state to the plane. Fails closed on an
+    unparseable value: a typo in an egress opt-out must not egress.
+    """
+    from fastaiagent._internal.env import env_flag
+
+    return env_flag("FASTAIAGENT_EXPORT_CHECKPOINTS", default=True, on_unparsed=False)
+
+
+def _log_egress_posture() -> None:
+    """Log the resolved egress posture once per ``connect()``.
+
+    1.67.0 changed how three of these switches parse (see CHANGELOG). A line in
+    the log at connect time is how an operator sees that their value was read
+    the way they meant it, without having to reason about the parser.
+    """
+    from fastaiagent.eval.platform_export import eval_export_enabled
+    from fastaiagent.trace.otel import tracing_enabled
+    from fastaiagent.trace.span import export_payloads_enabled
+
+    logger.info(
+        "fastaiagent egress posture: tracing=%s payloads=%s traces=%s "
+        "checkpoints=%s evals=%s",
+        "on" if tracing_enabled() else "OFF",
+        "on" if export_payloads_enabled() else "OFF",
+        "on" if _connection._platform_processor is not None else "OFF",
+        "on" if _connection.export_checkpoints else "OFF",
+        "on" if eval_export_enabled() else "OFF",
+    )
+
+
 class _Connection:
     """Singleton holding platform connection state."""
 
@@ -246,7 +280,17 @@ def connect(
         if governance_fail_mode is not None
         else os.environ.get("FASTAIAGENT_GOVERNANCE_FAIL_MODE")
     )
-    _connection.governance_fail_mode = "closed" if (_mode or "").lower() == "closed" else "open"
+    _normalized_mode = (_mode or "").strip().lower()
+    if _normalized_mode and _normalized_mode not in ("open", "closed"):
+        # Only the literal "closed" hardens the gate — but until 1.67.0 a typo
+        # ("close", "strict") silently resolved to fail-open with no signal at
+        # all. The semantics stay; the silence does not.
+        logger.warning(
+            "FASTAIAGENT_GOVERNANCE_FAIL_MODE=%r is not recognised; using 'open' "
+            "(fail-open). Accepted values: open, closed.",
+            _mode,
+        )
+    _connection.governance_fail_mode = "closed" if _normalized_mode == "closed" else "open"
     _connection.auto_register = auto_register
     _connection.console_url = console_url
     # Egress posture for Agent-CI verdicts. None = unset, resolved against
@@ -257,8 +301,7 @@ def connect(
     # Independent of ``export_traces``: some users want durable state replicated
     # for cross-machine/DR resume but not trace payloads, and vice-versa.
     if export_checkpoints is None:
-        _env_cp = os.environ.get("FASTAIAGENT_EXPORT_CHECKPOINTS")
-        export_checkpoints = (_env_cp != "0") if _env_cp is not None else True
+        export_checkpoints = _export_checkpoints_env()
     _connection.export_checkpoints = export_checkpoints
 
     # Must happen before anything can touch get_tracer_provider() — OTel's
@@ -337,13 +380,13 @@ def connect(
         try:
             from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-            from fastaiagent.trace.otel import get_tracer_provider
+            from fastaiagent.trace.otel import add_span_processor
             from fastaiagent.trace.platform_export import PlatformSpanExporter
 
             exporter = PlatformSpanExporter()
             processor = BatchSpanProcessor(exporter)
-            get_tracer_provider().add_span_processor(processor)
-            _connection._platform_processor = processor
+            if add_span_processor(processor):
+                _connection._platform_processor = processor
         except Exception:
             logger.debug("Could not register platform trace exporter", exc_info=True)
     else:
@@ -363,11 +406,11 @@ def connect(
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
         from fastaiagent.trace.hitl_export import get_hitl_exporter
-        from fastaiagent.trace.otel import get_tracer_provider
+        from fastaiagent.trace.otel import add_span_processor
 
         hitl_processor = BatchSpanProcessor(get_hitl_exporter())
-        get_tracer_provider().add_span_processor(hitl_processor)
-        _connection._hitl_processor = hitl_processor
+        if add_span_processor(hitl_processor):
+            _connection._hitl_processor = hitl_processor
     except Exception:
         logger.debug("Could not register HITL event exporter", exc_info=True)
 
@@ -379,12 +422,12 @@ def connect(
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
         from fastaiagent.eval.platform_export import eval_export_enabled, get_eval_exporter
-        from fastaiagent.trace.otel import get_tracer_provider
+        from fastaiagent.trace.otel import add_span_processor
 
         if eval_export_enabled():
             eval_processor = BatchSpanProcessor(get_eval_exporter())
-            get_tracer_provider().add_span_processor(eval_processor)
-            _connection._eval_processor = eval_processor
+            if add_span_processor(eval_processor):
+                _connection._eval_processor = eval_processor
     except Exception:
         logger.debug("Could not register eval run exporter", exc_info=True)
 
@@ -439,6 +482,11 @@ def connect(
         ).start()
     except Exception:
         logger.debug("Could not kick governance enroll on connect", exc_info=True)
+
+    try:
+        _log_egress_posture()
+    except Exception:  # pragma: no cover — a log line must never fail connect()
+        logger.debug("Could not log egress posture", exc_info=True)
 
 
 def push(agent: Any, *, force: bool = True) -> Any:

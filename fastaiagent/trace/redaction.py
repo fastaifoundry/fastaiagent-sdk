@@ -61,6 +61,26 @@ SENSITIVE_ATTR_KEYS: frozenset[str] = frozenset(
         "gen_ai.request.tools",
         "gen_ai.response.content",
         "gen_ai.response.tool_calls",
+        # Foreign-OTel normalization targets. ``trace.normalize`` writes the
+        # consolidated prompt/completion text onto these keys for every span
+        # captured from LangChain / CrewAI / PydanticAI / OpenLLMetry before it
+        # is stored, and the local UI's trace search indexes them
+        # (``ui.db._FTS_INPUT_KEYS`` / ``_FTS_OUTPUT_KEYS``). They held prompts
+        # and completions in clear and were absent from this registry until
+        # 1.67.0, so an integration-captured agent egressed both even with
+        # ``FASTAIAGENT_TRACE_PAYLOADS=0``. Local capture is unaffected — the
+        # gate is on the export path only — so search still matches them.
+        "gen_ai.prompt",
+        "gen_ai.completion",
+        "gen_ai.response.text",
+        "fastaiagent.gen_ai.prompt",
+        "fastaiagent.gen_ai.response.text",
+        # ``normalize`` only *fills* the canonical keys above; it never removes
+        # the foreign ones, so the OpenInference originals it read the text out
+        # of are still on the span when it is exported. Gating the copy and
+        # shipping the original would have been the same leak with extra steps.
+        "input.value",
+        "output.value",
         # Agent inputs/outputs/system prompt captured by ``Agent._arun_traced``.
         "agent.input",
         "agent.output",
@@ -108,6 +128,29 @@ SENSITIVE_ATTR_KEYS: frozenset[str] = frozenset(
         "pydanticai.agent.system_prompt",
     }
 )
+
+#: Payload keys that arrive as an indexed **family** rather than a single name.
+#:
+#: OpenLLMetry / Traceloop spread one message list across
+#: ``gen_ai.prompt.0.content``, ``gen_ai.prompt.1.content``, … and OpenInference
+#: does the same with ``llm.input_messages.0.message.content``. There is no
+#: bounded set of names to enumerate, so the gate matches on prefix. Everything
+#: here is content; the structural siblings (``.role``, ``.name``) are cheap to
+#: drop alongside it and not worth a second, finer rule.
+SENSITIVE_ATTR_PREFIXES: tuple[str, ...] = (
+    "gen_ai.prompt.",
+    "gen_ai.completion.",
+    "llm.prompts.",
+    "llm.completions.",
+    "llm.input_messages.",
+    "llm.output_messages.",
+)
+
+
+def is_sensitive_attr(key: str) -> bool:
+    """Whether ``key`` holds payload content and must not egress with the gate off."""
+    return key in SENSITIVE_ATTR_KEYS or key.startswith(SENSITIVE_ATTR_PREFIXES)
+
 
 # Span *event* attribute keys whose values may contain sensitive payload content.
 #
@@ -303,7 +346,7 @@ def apply_export_policy(attrs: dict[str, Any]) -> dict[str, Any]:
 
     out = dict(attrs)
     if not payloads_ok:
-        for key in SENSITIVE_ATTR_KEYS:
+        for key in [k for k in out if is_sensitive_attr(k)]:
             out.pop(key, None)
     if redacting:
         out = redact_attributes(out, policy)

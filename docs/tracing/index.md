@@ -398,14 +398,33 @@ fastaiagent traces export abc123def456 --format json
 ## Disabling Tracing
 
 ```bash
-export FASTAIAGENT_TRACE_ENABLED=false
+export FASTAIAGENT_TRACE_ENABLED=false   # 0 / no / off all work too
 ```
 
-Or pass `trace=False` to agent/chain execution:
+This is the **master switch**: the SDK hands out OpenTelemetry's no-op tracer,
+so no span is built, nothing is written to `local.db`, no attachment bytes are
+stored, and there is nothing to export. The Local UI and Replay go with it —
+there is no trace to read. `result.trace_id` becomes the all-zero id rather than
+raising.
+
+!!! warning "This started working in 1.67.0"
+    The variable was parsed and documented from the beginning but read by
+    nothing. If you have it set, your next upgrade stops capturing traces — which
+    is what you asked for, but it may not be what you have been getting.
+
+To keep local traces while stopping content from leaving the machine, use
+`FASTAIAGENT_TRACE_PAYLOADS=0` instead — see
+[Security Posture](../security.md).
+
+Or pass `trace=False` to agent/chain execution, which suppresses tracing for
+that call only:
 
 ```python
 result = agent.run("Hello", trace=False)
 ```
+
+In code, the same switch is `fastaiagent.config.trace_enabled` — set it before
+the first traced run (see [SDK configuration](../configuration/sdk-config.md)).
 
 ## Resetting the Tracer
 

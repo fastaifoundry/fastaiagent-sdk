@@ -55,7 +55,8 @@ early with a clear message rather than letting the provider 4xx.
 3. Else → extract text locally and emit a single text block.
 
 You can always override with `pdf_mode="text" | "vision" | "native"` on
-the `LLMClient` or via `fa.config.pdf_mode`. Custom OpenAI-compatible
+the `LLMClient` (which wins) or process-wide via `fa.config.pdf_mode` /
+`FASTAIAGENT_PDF_MODE`. Custom OpenAI-compatible
 endpoints are not auto-detected as native (their capabilities vary); pass
 `pdf_mode="native"` explicitly to opt in.
 

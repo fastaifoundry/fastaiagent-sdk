@@ -93,7 +93,7 @@ def export_trace_cli(
         "--db",
         help=(
             "Path to local.db. Defaults to the one fastaiagent.config "
-            "resolves (typically .fastaiagent/local.db)."
+            "resolves — FASTAIAGENT_LOCAL_DB, else .fastaiagent/local.db."
         ),
     ),
 ) -> None:

@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import ipaddress
 import logging
-import os
 import socket
 from typing import Any
 from urllib.parse import urlparse
@@ -38,12 +37,14 @@ ALLOW_PRIVATE_NETWORKS_ENV = "FASTAIAGENT_ALLOW_PRIVATE_NETWORKS"
 
 
 def _allow_private_networks() -> bool:
-    return os.environ.get(ALLOW_PRIVATE_NETWORKS_ENV, "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    """Resolver for ``FASTAIAGENT_ALLOW_PRIVATE_NETWORKS`` (registered in ``ENV_FLAGS``).
+
+    A capability grant that widens the SSRF guard, so an unparseable value
+    resolves to *not granted* — private/intranet hosts stay blocked.
+    """
+    from fastaiagent._internal.env import env_flag
+
+    return env_flag(ALLOW_PRIVATE_NETWORKS_ENV, default=False, on_unparsed=False)
 
 
 def _is_blocked_ip(

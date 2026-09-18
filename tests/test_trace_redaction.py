@@ -11,6 +11,7 @@ Covers:
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -204,3 +205,69 @@ class TestCaptureIntegration:
         rows = db.fetchall("SELECT attributes FROM spans")
         stored = json.loads(rows[0]["attributes"])
         assert stored["gen_ai.response.content"] == "raw sk-DEADBEEF"
+
+
+class TestForeignOtelPayloadKeys:
+    """1.67.0: the keys ``trace.normalize`` writes were not in the registry.
+
+    ``normalize_attributes`` fans a foreign span's prompt/completion text onto
+    ``gen_ai.prompt`` / ``gen_ai.completion`` (and the UI's IO-panel keys) before
+    the span is stored, and leaves the OpenInference originals in place. None of
+    those source or target keys were listed as sensitive, so for **every**
+    integration-captured agent (LangChain / CrewAI / PydanticAI / any OTel
+    instrumentor) prompts and completions egressed with
+    ``FASTAIAGENT_TRACE_PAYLOADS`` turned off.
+    """
+
+    CANARY = "CANARY-foreign-otel-4c5d6e"
+
+    @pytest.mark.parametrize(
+        "key",
+        [
+            "gen_ai.prompt",
+            "fastaiagent.gen_ai.prompt",
+            "gen_ai.response.text",
+            "gen_ai.completion",
+            "fastaiagent.gen_ai.response.text",
+            "input.value",
+            "output.value",
+        ],
+    )
+    def test_key_is_dropped_on_export_when_payloads_are_off(self, key, monkeypatch):
+        from fastaiagent.trace.redaction import apply_export_policy
+
+        monkeypatch.setenv("FASTAIAGENT_TRACE_PAYLOADS", "0")
+        out = apply_export_policy({key: self.CANARY, "agent.name": "bot"})
+        assert key not in out
+        assert out["agent.name"] == "bot"
+
+    @pytest.mark.parametrize(
+        "key",
+        [
+            "gen_ai.prompt.0.content",
+            "gen_ai.completion.3.content",
+            "llm.input_messages.0.message.content",
+            "llm.output_messages.1.message.content",
+            "llm.prompts.0",
+            "llm.completions.0",
+        ],
+    )
+    def test_indexed_message_families_are_dropped_too(self, key, monkeypatch):
+        """OpenLLMetry/OpenInference spread one message list over many keys.
+
+        There is no bounded set of names, so the gate matches on prefix.
+        """
+        from fastaiagent.trace.redaction import apply_export_policy
+
+        monkeypatch.setenv("FASTAIAGENT_TRACE_PAYLOADS", "0")
+        out = apply_export_policy({key: self.CANARY, "gen_ai.request.model": "gpt-4o"})
+        assert key not in out
+        assert out["gen_ai.request.model"] == "gpt-4o"
+
+    def test_a_masking_policy_reaches_them_too(self):
+        """The registry drives redaction as well as the gate (both use it)."""
+        from fastaiagent.trace.redaction import redact_attributes
+
+        policy = RedactionPolicy(patterns=(re.escape(self.CANARY),), mode="both")
+        out = redact_attributes({"gen_ai.prompt": f"see {self.CANARY}"}, policy)
+        assert self.CANARY not in out["gen_ai.prompt"]

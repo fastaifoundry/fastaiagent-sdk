@@ -80,19 +80,42 @@ class TestConfig:
                 del os.environ[key]
 
     def test_default_config(self):
+        """Every field, not most of them.
+
+        This asserted 11 of 15 fields, and the four it skipped were the four
+        multimodal ones — which is exactly how they drifted into being parsed,
+        documented and read by nothing. The ``model_fields`` comparison below
+        makes the omission impossible to repeat: adding a field to
+        :class:`SDKConfig` without asserting its default fails here.
+        """
         config = SDKConfig()
-        assert config.trace_enabled is True
-        assert config.local_db_path == ".fastaiagent/local.db"
-        assert config.trace_db_path is None
-        assert config.checkpoint_db_path is None
-        assert config.prompt_dir is None
+        expected = {
+            "trace_enabled": True,
+            "local_db_path": ".fastaiagent/local.db",
+            "trace_db_path": None,
+            "checkpoint_db_path": None,
+            "prompt_dir": None,
+            "kb_dir": ".fastaiagent/kb",
+            "ui_enabled": False,
+            "ui_host": "127.0.0.1",
+            "ui_port": 7842,
+            "cache_dir": ".fastaiagent/cache/",
+            "log_level": "WARNING",
+            "default_timeout": 120,
+            "pdf_mode": "auto",
+            # ``None`` = "use the provider's own per-image cap". A number here
+            # would silently raise Anthropic's 5 MB ceiling to it.
+            "max_image_size_mb": None,
+            "max_pdf_pages": 20,
+            "trace_full_images": False,
+        }
+        assert set(expected) == set(SDKConfig.model_fields), (
+            "SDKConfig gained or lost a field — assert its default here too"
+        )
+        for field, value in expected.items():
+            assert getattr(config, field) == value, field
         assert config.resolved_trace_db_path == ".fastaiagent/local.db"
         assert config.resolved_checkpoint_db_path == ".fastaiagent/local.db"
-        assert config.ui_enabled is False
-        assert config.ui_host == "127.0.0.1"
-        assert config.ui_port == 7842
-        assert config.log_level == "WARNING"
-        assert config.default_timeout == 120
 
     def test_config_from_env(self):
         os.environ["FASTAIAGENT_TRACE_ENABLED"] = "false"

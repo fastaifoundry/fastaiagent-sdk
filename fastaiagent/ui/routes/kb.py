@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import sqlite3
 import time
@@ -35,8 +34,28 @@ _LOCALKB_CACHE: dict[tuple[str, str], Any] = {}
 _COLLECTION_NAME_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 
 
-def _kb_root() -> Path:
-    return Path(os.environ.get("FASTAIAGENT_KB_DIR", _DEFAULT_KB_DIR)).expanduser()
+def kb_root() -> Path:
+    """The KB collections root — the single resolver for the whole UI.
+
+    ``FASTAIAGENT_KB_DIR`` is re-read live (it always has been, and a long-lived
+    UI process should follow a change to it), falling back to
+    ``fastaiagent.config.kb_dir`` — a real field as of 1.67.0, which is what
+    ``routes/agents.py`` reads when it builds the agent-detail payload. Before
+    that it asked ``getattr(get_config(), "kb_dir", None)`` against a field that
+    did not exist, so the agent view always looked in ``./.fastaiagent/kb``
+    however ``FASTAIAGENT_KB_DIR`` was set.
+    """
+    from fastaiagent._internal.config import get_config
+    from fastaiagent._internal.env import env_path
+
+    explicit = env_path("FASTAIAGENT_KB_DIR")
+    if explicit:
+        return Path(explicit)
+    return Path(get_config().kb_dir or _DEFAULT_KB_DIR).expanduser()
+
+
+#: Backwards-compatible private alias — several call sites in this module use it.
+_kb_root = kb_root
 
 
 def _validate_collection_name(name: str) -> None:

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -32,16 +31,24 @@ def trace_payloads_enabled() -> bool:
 def export_payloads_enabled() -> bool:
     """Whether payload-bearing attributes may leave the machine.
 
-    Defaults to ``True``. Set ``FASTAIAGENT_TRACE_PAYLOADS=0`` to keep prompts,
-    completions, tool args/results, chain state, and recalled memory **local
-    only** — they stay in ``local.db`` (so the UI/Replay keep working) but are
-    stripped before spans are sent to the control plane or to any exporter
-    registered via :func:`fastaiagent.trace.otel.add_exporter`.
+    Defaults to ``True``. Set ``FASTAIAGENT_TRACE_PAYLOADS`` to any of
+    ``0``/``false``/``no``/``off`` to keep prompts, completions, tool
+    args/results, chain state, and recalled memory **local only** — they stay in
+    ``local.db`` (so the UI/Replay keep working) but are stripped before spans
+    are sent to the control plane or to any exporter registered via
+    :func:`fastaiagent.trace.otel.add_exporter`.
 
     This is the enterprise/connected-plane control: an operator sets it so
     sensitive content never egresses, while local debugging stays full fidelity.
+
+    Until 1.67.0 this compared against the literal ``"0"`` only, so the
+    documented ``false``/``no``/``off`` spellings silently left payloads
+    egressing. It now goes through :func:`fastaiagent._internal.env.env_flag`
+    with ``on_unparsed=False``: a typo in an egress opt-out fails **closed**.
     """
-    return os.environ.get("FASTAIAGENT_TRACE_PAYLOADS", "1") != "0"
+    from fastaiagent._internal.env import env_flag
+
+    return env_flag("FASTAIAGENT_TRACE_PAYLOADS", default=True, on_unparsed=False)
 
 
 # GenAI semantic conventions (OTel standard)

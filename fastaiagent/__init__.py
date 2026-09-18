@@ -109,6 +109,14 @@ from fastaiagent.trace.replay import Replay
 
 
 def __getattr__(name: str) -> object:
+    if name == "config":
+        # The public settings surface. ``get_config()`` is ``lru_cache``d and
+        # ``SDKConfig`` is a mutable pydantic model, so ``fa.config.pdf_mode =
+        # "vision"`` sticks for the process and is read by every consumer.
+        # Documented in ``docs/configuration/sdk-config.md``.
+        from fastaiagent._internal.config import get_config
+
+        return get_config()
     if name == "is_connected":
         from fastaiagent.client import _connection
 
@@ -131,6 +139,7 @@ def __getattr__(name: str) -> object:
 
 __all__ = [
     "__version__",
+    "config",
     "connect",
     "disconnect",
     "refresh_policy",
