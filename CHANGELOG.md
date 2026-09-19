@@ -5,6 +5,89 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.70.0] - 2026-09-19 — a streamed run the plane can count, and a close that waits
+
+Two fixes, each found by something the unit suite structurally could not see: one
+by reading a trace back from a live control plane, the other by a CI segmentation
+fault that had already been dismissed once as a flake.
+
+### Fixed
+
+**A streamed call emits the `llm.*` span it never had.** `LLMClient._stream_*`
+created no span at all, so a streamed run carried no `gen_ai.usage.*` anywhere in
+its trace. The control plane derives a run's token total from LLM spans alone, so
+it reported **0** for the whole run — tokens and cost both. Proven against a live
+plane, same workload, real provider: the SDK and the plane now agree on 13 tokens
+where the plane previously reported 0.
+
+Before 1.68.0 the SDK also reported 0, so the two agreed *by accident*. Making
+`tokens_used` whole-run in 1.68.0 made the divergence visible rather than causing
+it — a pre-existing gap, not a regression.
+
+Three details that matter at the site, because each could have gone wrong quietly:
+
+- The span is created with `start_span`, not `start_as_current_span`. This is an
+  async generator, suspended at every `yield` and resumed in a different context;
+  attaching the span as *current* across those suspensions mis-nests anything the
+  consumer starts between tokens. An `llm.*` span is a leaf — it needs a parent,
+  taken from the context at creation, and nothing else.
+- It ends in a `finally`, which covers a consumer that breaks out mid-stream. An
+  unended span never exports, so it would be worse than no span: the run looks
+  partially traced and nothing says why.
+- A retried attempt re-streams from the top, so accumulated text is cleared on
+  retry rather than concatenating two partial answers into one span.
+
+Prompt provenance, previously inlined in the non-streamed path only, is now shared
+by both — so a streamed run is no longer absent from Prompt Analytics for want of
+three attributes.
+
+**`close()` no longer frees connections other threads are still using.**
+`SQLiteHelper` opens connections with `check_same_thread=False` and closed them
+all from whichever thread called `close()`. The platform replica's drain runs on
+daemon threads that share those connections, and the read paths take no lock —
+WAL serves readers concurrently, which is true and was never the issue. Closing a
+connection while another thread is mid-query is undefined behaviour in SQLite and
+in practice a **segmentation fault**: not an exception anyone can catch, it takes
+the process down, and it surfaces wherever the interpreter happened to be rather
+than at the close. The comment at the connect site asserted the opposite — that
+the shared-thread flag made the cross-thread close safe. It permits the sharing;
+it does not make the close safe.
+
+Every statement now registers as in flight, and `close()` waits for the count to
+reach zero before freeing anything. If a statement is still running when the wait
+expires, those connections are deliberately **left open** and a warning names the
+count: a leaked connection is reclaimed when the process exits, a segfault is not
+recoverable at all. Reads still take no write lock, so the concurrency the old
+comment described is unchanged.
+
+> **If this affects you.** No API change. `close()` grew an optional `timeout`
+> (default 5s). If you have seen the SDK crash a process with exit 139 or
+> SIGSEGV — most likely with the Local UI open, or anything sharing a
+> `local.db` across threads — this was why.
+
+### Notes
+
+**How the crash hid, and my own misreading of it.** It took down CI twice, on two
+branches and two operating systems, both times immediately after the suite that
+exercises the platform replica. The first time it was re-run, passed, and recorded
+as a flake. That was wrong: a passing re-run is evidence about *timing*, not about
+correctness, and a segmentation fault cannot be caused by a test assertion. An
+error inside a subprocess also surfaces as whatever the parent asserts about that
+subprocess, so the message named the parent's symptom rather than the child's
+cause.
+
+**A limitation stated rather than discovered later.** The crash could not be
+reproduced on a development machine — five runs, sixteen concurrent readers, a
+5000-row table — so the subprocess reproduction in
+`tests/test_storage_close_safety.py` is a regression guard for the platforms that
+do hit it, not a red proof, and its docstring says so. What justifies the fix is
+the code being unsafe by construction plus two crashes at the same point. The two
+mechanism tests are red-before, green-after.
+
+**No wire event.** `gen_ai.usage.*` and `fastaiagent.cost.total_usd` are existing
+keys the non-streamed path has always set. What changed is that a streamed run now
+has a span to carry them.
+
 ## [1.69.0] - 2026-09-19 — two processes, one database
 
 A single fix, and it is a crash in the **ordinary local setup**: run
