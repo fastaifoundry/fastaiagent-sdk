@@ -138,6 +138,47 @@ Every one of these was verified by running the code, not by reading it.
   `fastaiagent` pins replaced; `.env.example` added to the three folders that
   call `load_dotenv()` but shipped none.
 
+### Fixed — five small defects bundled late
+
+Merged after the version commit, so they shipped in 1.68.0 without appearing in
+these notes until now.
+
+- **A 5xx from a self-hosted plane sent the operator to the *hosted* status
+  page.** `PlatformConnectionError` hardcoded `status.fastaiagent.net`, which
+  says nothing about someone else's deployment and costs them the first minutes
+  of an incident on their own plane. The message now names the plane actually
+  configured, and links the public status page only when that is where the
+  caller is. **This is the only one of the five that a package user can see** —
+  the rest are tests, an example and a comment, none of which ship in the wheel.
+- `examples/11_cli_usage.sh` advertised `push --agent` and `push --chain`.
+  Neither exists; the command takes `--module`. The documentation half of this
+  was fixed earlier in the same release and the example was missed.
+- The comment in `chain/interrupt.py` that called `data` *"reserved for
+  non-approval resume cases (future)"* — which is where the phantom documented
+  `Resume.data` field came from — now says plainly that no such field exists,
+  that the model accepts no extras so the payload is dropped silently, and that
+  non-approval payloads belong in `metadata`.
+- **The connected guardrail-actions gate silently required a project-scoped
+  key.** Its read-back helper sent only `project_id`, so a domain-scoped key
+  sent `None` and all five row assertions failed with `400 project_id or
+  domain_id is required` — which reads as an SDK defect and is a credential
+  shape. It prefers the project, falls back to the domain (the endpoint accepts
+  either), and asserts loudly if the key resolves to neither. The credentials
+  half is unchanged: 15 gates still skip without `E2E_PLANE_EMAIL` /
+  `E2E_PLANE_PASSWORD`.
+- **A live-model test asserted on model *wording*.**
+  `test_supervisor_worker_shares_composable_memory` claimed to prove a memory
+  block rendered into the worker's prompt, and checked whether the model
+  happened to say `"cm"`. It failed roughly half the time, which said nothing
+  about whether memory was shared. It now asserts the block rendered — the
+  claim its docstring makes — and the whole file moved to `tests/e2e/` marked
+  `e2e`, since every test in it needs a live model key. It had been skipping in
+  CI, where provider keys live in the e2e job, while flaking on any developer
+  machine that had keys.
+
+  > **Coverage change:** those tests no longer run in the main suite. That is
+  > the intent, but it is a change.
+
 ### Added
 
 - `swarm.tokens_used` and `supervisor.tokens_used` span attributes, set on the
