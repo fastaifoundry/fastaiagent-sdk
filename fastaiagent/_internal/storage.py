@@ -104,6 +104,12 @@ class SQLiteHelper:
         # Reentrant: ``exclusive()`` holds this for a whole read-modify-write
         # sequence while the statements inside it still go through ``execute()``.
         self._write_lock = threading.RLock()
+        # In-flight statement count, so ``close()`` can wait rather than free a
+        # connection another thread is executing on. Reads deliberately do NOT
+        # take ``_write_lock`` — WAL serves them concurrently with writers — so
+        # this counter is the only thing that sees them.
+        self._inflight = 0
+        self._inflight_cv = threading.Condition()
         # Backwards-compat alias: SQLiteCheckpointer (and possibly user
         # code) reaches into ``db._lock`` to wrap a multi-statement
         # transaction across two ``conn.execute`` calls. Pre-M7 the
@@ -173,6 +179,27 @@ class SQLiteHelper:
         self._tls.conn = conn
         return conn
 
+    @contextmanager
+    def _statement(self) -> Iterator[None]:
+        """Count one in-flight statement, so ``close()`` can wait for it.
+
+        Closing a SQLite connection while another thread is executing on it is
+        undefined behaviour, and in practice a **segmentation fault** — not an
+        exception you can catch. ``check_same_thread=False`` permits the shared
+        use; it does not make the close safe.
+        """
+        with self._inflight_cv:
+            if self._closed:
+                raise sqlite3.ProgrammingError("Cannot operate on a closed SQLiteHelper")
+            self._inflight += 1
+        try:
+            yield
+        finally:
+            with self._inflight_cv:
+                self._inflight -= 1
+                if self._inflight == 0:
+                    self._inflight_cv.notify_all()
+
     def _in_exclusive(self) -> bool:
         return getattr(self._tls, "exclusive_depth", 0) > 0
 
@@ -217,7 +244,7 @@ class SQLiteHelper:
     def execute(self, sql: str, params: tuple[Any, ...] | dict[str, Any] = ()) -> sqlite3.Cursor:
         """Execute a SQL statement."""
         conn = self._get_conn()
-        with self._write_lock:
+        with self._statement(), self._write_lock:
             cursor = conn.execute(sql, params)
             if not self._in_exclusive():
                 conn.commit()
@@ -228,9 +255,10 @@ class SQLiteHelper:
     ) -> sqlite3.Cursor:
         """Execute a SQL statement with multiple parameter sets."""
         conn = self._get_conn()
-        with self._write_lock:
+        with self._statement(), self._write_lock:
             cursor = conn.executemany(sql, params_list)
-            conn.commit()
+            if not self._in_exclusive():
+                conn.commit()
             return cursor
 
     def fetchone(
@@ -241,8 +269,9 @@ class SQLiteHelper:
         # serves them concurrently with writers, so we don't take the
         # write lock here.
         conn = self._get_conn()
-        cursor = conn.execute(sql, params)
-        row = cursor.fetchone()
+        with self._statement():
+            cursor = conn.execute(sql, params)
+            row = cursor.fetchone()
         if row is None:
             return None
         return dict(row)
@@ -252,13 +281,43 @@ class SQLiteHelper:
     ) -> list[dict[str, Any]]:
         """Execute a query and return all rows as dicts."""
         conn = self._get_conn()
-        cursor = conn.execute(sql, params)
-        return [dict(row) for row in cursor.fetchall()]
+        with self._statement():
+            cursor = conn.execute(sql, params)
+            return [dict(row) for row in cursor.fetchall()]
 
-    def close(self) -> None:
-        """Close every per-thread connection opened so far."""
-        with self._connections_lock:
+    def close(self, timeout: float = 5.0) -> None:
+        """Close every per-thread connection opened so far.
+
+        **Waits for in-flight statements first.** ``check_same_thread=False``
+        lets another thread share these connections — the platform replica's
+        drain thread does exactly that — and closing one while it is mid-query
+        is undefined behaviour in SQLite. In practice it is a segmentation
+        fault, which is not an exception anyone can catch: it takes the whole
+        process down, and the crash lands wherever the interpreter happened to
+        be rather than here.
+
+        If a statement is still running when ``timeout`` expires, the connection
+        is deliberately **left open**. A leaked connection is reclaimed when the
+        process exits; a segfault is not recoverable at all.
+        """
+        with self._inflight_cv:
             self._closed = True
+            deadline = time.monotonic() + timeout
+            while self._inflight and time.monotonic() < deadline:
+                self._inflight_cv.wait(timeout=0.05)
+            still_running = self._inflight
+
+        if still_running:
+            logger.warning(
+                "close() found %d statement(s) still running on %s after %.1fs — "
+                "leaving those connections open rather than risking a crash",
+                still_running,
+                self.db_path,
+                timeout,
+            )
+            return
+
+        with self._connections_lock:
             for conn in self._connections:
                 try:
                     conn.close()
