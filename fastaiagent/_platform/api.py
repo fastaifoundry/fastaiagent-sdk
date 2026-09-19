@@ -20,6 +20,11 @@ from fastaiagent._version import __version__
 logger = logging.getLogger(__name__)
 
 
+#: The hosted plane. Used to decide whether the public status page is the
+#: right thing to point an operator at when the plane returns a 5xx.
+_HOSTED_BASE_URL = "https://app.fastaiagent.net"
+
+
 class PlatformAPI:
     """HTTP client for the FastAIAgent platform public API.
 
@@ -29,7 +34,7 @@ class PlatformAPI:
     def __init__(
         self,
         api_key: str,
-        base_url: str = "https://app.fastaiagent.net",
+        base_url: str = _HOSTED_BASE_URL,
         timeout: int = 30,
     ):
         self._api_key = api_key
@@ -86,9 +91,17 @@ class PlatformAPI:
             retry_after = response.headers.get("Retry-After", "60")
             raise PlatformRateLimitError(f"Rate limit exceeded. Retry after {retry_after} seconds.")
         elif response.status_code >= 500:
+            # Name the plane the caller actually configured. The hosted status
+            # page says nothing about a self-hosted deployment, and pointing an
+            # operator at it during an outage of *their own* plane costs them
+            # the first minutes of the incident.
             raise PlatformConnectionError(
-                f"Platform server error ({response.status_code}). "
-                f"Check status at https://status.fastaiagent.net"
+                f"Platform server error ({response.status_code}) from {self._base_url}. "
+                + (
+                    "Check status at https://status.fastaiagent.net"
+                    if self._base_url == _HOSTED_BASE_URL
+                    else "Check that deployment's own logs and health endpoint."
+                )
             )
 
         response.raise_for_status()

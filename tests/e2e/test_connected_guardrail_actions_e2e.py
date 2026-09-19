@@ -294,19 +294,30 @@ def _ensure_foreign_domain(client: Any, headers: dict[str, str]) -> str | None:
 def _executions(client: Any, headers: dict[str, str], guardrail_id: str) -> list[dict[str, Any]]:
     """Read back the rows the plane recorded for one rule.
 
-    ``project_id`` is required by the endpoint and is the project the SDK
-    connected as — the same one the ingest path stamps on every row.
+    The endpoint requires a scope: **either** ``project_id`` **or** ``domain_id``.
+    Prefer the project the SDK connected as, since that is what the ingest path
+    stamps on every row — but a **domain-scoped** API key has no project, and
+    before 1.69.0 this helper sent ``project_id=None`` and the whole gate failed
+    five assertions with ``400 project_id or domain_id is required``. That looked
+    like an SDK defect and was a credential shape, so the fallback is here rather
+    than in the setup note nobody reads.
     """
     from fastaiagent.client import _connection
+
+    scope: dict[str, Any] = {}
+    if _connection.project_id:
+        scope["project_id"] = _connection.project_id
+    elif getattr(_connection, "domain_id", None):
+        scope["domain_id"] = _connection.domain_id
+    assert scope, (
+        "the connected key resolves to neither a project nor a domain — "
+        "/guardrail-executions cannot be scoped, so this gate cannot read its rows back"
+    )
 
     resp = client.get(
         "/api/v1/guardrail-executions",
         headers=headers,
-        params={
-            "guardrail_id": guardrail_id,
-            "project_id": _connection.project_id,
-            "limit": 100,
-        },
+        params={"guardrail_id": guardrail_id, "limit": 100, **scope},
     )
     assert resp.status_code == 200, f"GET /guardrail-executions -> {resp.status_code}: {resp.text}"
     rows = resp.json()
