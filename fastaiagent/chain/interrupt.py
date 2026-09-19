@@ -39,7 +39,11 @@ class Resume(BaseModel):
 
     approved: bool
     metadata: dict[str, Any] = Field(default_factory=dict)
-    # ``data`` is reserved for non-approval resume cases (future).
+    # NOTE: there is no ``data`` field, and this model does not accept extras —
+    # ``Resume(approved=True, data={...})`` drops the payload silently. An earlier
+    # version of this comment called ``data`` "reserved for future use", which is
+    # how it came to be documented as an API in docs/durability/api-reference.md.
+    # Carry non-approval payloads in ``metadata``.
 
 
 class InterruptSignal(Exception):  # noqa: N818  (public API name from v1 spec)
