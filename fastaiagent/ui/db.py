@@ -281,20 +281,20 @@ def _v10_widen_span_fts(db: SQLiteHelper) -> None:
         db.execute(f"DROP TRIGGER IF EXISTS {trig}")
 
     db.execute(
-        f"""CREATE TRIGGER spans_fts_ai
+        f"""CREATE TRIGGER IF NOT EXISTS spans_fts_ai
            AFTER INSERT ON spans BEGIN
                INSERT INTO span_fts(trace_id, span_id, name, input_text, output_text)
                VALUES (new.trace_id, new.span_id, new.name, {in_new}, {out_new});
            END"""
     )
     db.execute(
-        """CREATE TRIGGER spans_fts_ad
+        """CREATE TRIGGER IF NOT EXISTS spans_fts_ad
            AFTER DELETE ON spans BEGIN
                DELETE FROM span_fts WHERE span_id = old.span_id;
            END"""
     )
     db.execute(
-        f"""CREATE TRIGGER spans_fts_au
+        f"""CREATE TRIGGER IF NOT EXISTS spans_fts_au
            AFTER UPDATE ON spans BEGIN
                DELETE FROM span_fts WHERE span_id = old.span_id;
                INSERT INTO span_fts(trace_id, span_id, name, input_text, output_text)
@@ -1062,16 +1062,33 @@ def init_local_db(db_path: str | Path | None = None) -> SQLiteHelper:
 
 
 def _run_migrations(db: SQLiteHelper) -> None:
-    current = _get_user_version(db)
-    for version in sorted(_MIGRATIONS):
-        if version <= current:
-            continue
-        for step in _MIGRATIONS[version]:
-            if isinstance(step, str):
-                db.execute(step)
-            else:
-                step(db)
-        _set_user_version(db, version)
+    """Apply outstanding migrations, atomically with respect to other processes.
+
+    The version check and the schema change have to be one step. They were two,
+    and every statement autocommitted — so a second process could read
+    ``user_version``, decide a migration was outstanding, and then collide with
+    the schema this one had already changed. It surfaced as
+    ``sqlite3.OperationalError: trigger spans_fts_ai already exists`` and is
+    reachable in the ordinary local setup, where the UI server and an agent run
+    share one ``local.db``.
+
+    ``exclusive()`` takes SQLite's write lock up front and re-reads the version
+    inside it, so the loser of the race sees the winner's finished work and does
+    nothing. The ``IF NOT EXISTS`` guards on the triggers are the second layer —
+    they make each step survive being applied twice, which keeps a database
+    written by an older SDK recoverable.
+    """
+    with db.exclusive():
+        current = _get_user_version(db)
+        for version in sorted(_MIGRATIONS):
+            if version <= current:
+                continue
+            for step in _MIGRATIONS[version]:
+                if isinstance(step, str):
+                    db.execute(step)
+                else:
+                    step(db)
+            _set_user_version(db, version)
 
 
 def _get_user_version(db: SQLiteHelper) -> int:
