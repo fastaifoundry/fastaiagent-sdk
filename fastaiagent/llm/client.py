@@ -647,22 +647,7 @@ class LLMClient:
             # Gap 4: attribute this call to a control-plane registry prompt when
             # the run is using one, so it flows into Prompt Analytics. Provenance
             # is carried by a ContextVar set by the agent; no-op otherwise.
-            try:
-                from fastaiagent.prompt.provenance import get_prompt_provenance
-                from fastaiagent.trace.span import set_fastaiagent_attributes
-
-                _prov = get_prompt_provenance()
-                if _prov and _prov.get("slug"):
-                    set_fastaiagent_attributes(
-                        span,
-                        **{
-                            "prompt.slug": _prov.get("slug"),
-                            "prompt.version": _prov.get("version"),
-                            "prompt.environment": _prov.get("environment"),
-                        },
-                    )
-            except Exception:
-                pass
+            self._set_prompt_provenance(span)
 
             recorded_queue = _replay_recorded_response.get()
             if recorded_queue is not None and not recorded_queue:
@@ -771,6 +756,30 @@ class LLMClient:
 
         raise LLMProviderError("Retries exhausted")  # unreachable — satisfies type checker
 
+    def _set_prompt_provenance(self, span: Any) -> None:
+        """Attribute this call to a control-plane registry prompt, if one is in use.
+
+        Provenance rides on a ContextVar the agent sets; a no-op otherwise. Shared
+        by the streamed and non-streamed paths so a streamed run is not missing
+        from Prompt Analytics for want of three attributes.
+        """
+        try:
+            from fastaiagent.prompt.provenance import get_prompt_provenance
+            from fastaiagent.trace.span import set_fastaiagent_attributes
+
+            prov = get_prompt_provenance()
+            if prov and prov.get("slug"):
+                set_fastaiagent_attributes(
+                    span,
+                    **{
+                        "prompt.slug": prov.get("slug"),
+                        "prompt.version": prov.get("version"),
+                        "prompt.environment": prov.get("environment"),
+                    },
+                )
+        except Exception:  # pragma: no cover — provenance must never break a call
+            logger.debug("Could not attach prompt provenance to the span", exc_info=True)
+
     async def astream(
         self,
         messages: list[Message],
@@ -819,32 +828,111 @@ class LLMClient:
             )
 
         from fastaiagent._internal.pricing import record_run_cost
+        from fastaiagent.trace.otel import get_tracer
+        from fastaiagent.trace.span import set_fastaiagent_attributes, set_genai_attributes
 
-        for attempt in range(self.max_retries + 1):
-            try:
-                async for event in fn(messages, tools, **kwargs):
-                    # The streamed twin of the cost recorded in
-                    # ``_acomplete_with_retries``. A ``Usage`` event is the only
-                    # place a stream reports its token counts, so it is where a
-                    # streamed turn gets priced — otherwise ``Agent.stream``
-                    # would report the trace id and tokens it gained in 1.67.0
-                    # and still hand back ``cost=0.0``.
-                    if isinstance(event, Usage):
-                        record_run_cost(
-                            self.model,
-                            {
+        # A streamed call gets the same ``llm.{provider}.{model}`` span a
+        # non-streamed one has always had. Without it a streamed run emitted no
+        # LLM span at all, so no ``gen_ai.usage.*`` existed anywhere in the
+        # trace — and the control plane, which derives a run's token total from
+        # LLM spans alone, reported 0 for the whole run. The SDK's own
+        # ``tokens_used`` became correct in 1.68.0, which made the divergence
+        # visible rather than causing it.
+        #
+        # ``start_span`` rather than ``start_as_current_span``: this is an async
+        # generator, so it is suspended at every ``yield`` and resumes in a
+        # different context. Attaching the span as *current* across those
+        # suspensions mis-nests anything the consumer starts between tokens. An
+        # ``llm.*`` span is a leaf, so it needs a parent (taken from the context
+        # at creation) and nothing else.
+        tracer = get_tracer("fastaiagent.llm.client")
+        span = tracer.start_span(f"llm.{self.provider}.{self.model}")
+        set_genai_attributes(
+            span,
+            system=self.provider,
+            model=self.model,
+            temperature=kwargs.get("temperature", self.temperature),
+            max_tokens=kwargs.get("max_tokens", self.max_tokens),
+            request_messages=_serialize_for_span([m.to_openai_format() for m in messages]),
+            request_tools=_serialize_for_span(tools),
+        )
+        self._set_prompt_provenance(span)
+
+        text_parts: list[str] = []
+        streamed_tool_calls: list[dict[str, Any]] = []
+        usage_seen: dict[str, int] | None = None
+
+        try:
+            for attempt in range(self.max_retries + 1):
+                try:
+                    async for event in fn(messages, tools, **kwargs):
+                        # The streamed twin of the cost recorded in
+                        # ``_acomplete_with_retries``. A ``Usage`` event is the
+                        # only place a stream reports its token counts, so it is
+                        # where a streamed turn gets priced — otherwise
+                        # ``Agent.stream`` would report the trace id and tokens
+                        # it gained in 1.67.0 and still hand back ``cost=0.0``.
+                        if isinstance(event, Usage):
+                            usage_seen = {
                                 "prompt_tokens": event.prompt_tokens,
                                 "completion_tokens": event.completion_tokens,
-                            },
-                            provider=self.provider,
-                        )
-                    yield event
-                return
-            except LLMProviderError as e:
-                if attempt < self.max_retries and self._should_retry(e.status_code):
-                    await asyncio.sleep(self._retry_delay(attempt))
-                    continue
-                raise
+                            }
+                            record_run_cost(
+                                self.model, usage_seen, provider=self.provider
+                            )
+                        elif isinstance(event, TextDelta):
+                            text_parts.append(event.text)
+                        elif isinstance(event, ToolCallEnd):
+                            streamed_tool_calls.append(
+                                {
+                                    "id": event.call_id,
+                                    "name": event.tool_name,
+                                    "arguments": event.arguments,
+                                }
+                            )
+                        yield event
+                    return
+                except LLMProviderError as e:
+                    if attempt < self.max_retries and self._should_retry(e.status_code):
+                        # A retried attempt re-streams from the top, so drop what
+                        # the failed one produced rather than concatenating two
+                        # partial answers into the span.
+                        text_parts.clear()
+                        streamed_tool_calls.clear()
+                        await asyncio.sleep(self._retry_delay(attempt))
+                        continue
+                    span.record_exception(e)
+                    raise
+        finally:
+            # Runs on exhaustion, on an exception, AND when a consumer abandons
+            # the generator early (``GeneratorExit`` at the yield) — a streamed
+            # span that never ends is worse than none, because it never exports.
+            try:
+                if usage_seen is not None:
+                    set_genai_attributes(
+                        span,
+                        input_tokens=usage_seen.get("prompt_tokens"),
+                        output_tokens=usage_seen.get("completion_tokens"),
+                    )
+                set_genai_attributes(
+                    span,
+                    response_content="".join(text_parts) or None,
+                    response_tool_calls=_serialize_for_span(streamed_tool_calls)
+                    if streamed_tool_calls
+                    else None,
+                )
+                if usage_seen is not None:
+                    from fastaiagent._internal.pricing import usage_cost
+
+                    usd, known = usage_cost(
+                        self.model, usage_seen, provider=self.provider
+                    )
+                    if known:
+                        set_fastaiagent_attributes(span, **{"cost.total_usd": usd})
+            except Exception:  # pragma: no cover — a span must never break a stream
+                logger.debug("Could not finalise the streaming LLM span", exc_info=True)
+            finally:
+                span.end()
 
     def stream(
         self,
