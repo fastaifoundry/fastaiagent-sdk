@@ -5,6 +5,73 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.69.0] - 2026-09-19 — two processes, one database
+
+A single fix, and it is a crash in the **ordinary local setup**: run
+`fastaiagent ui` while an agent runs, and both open the same `local.db`.
+
+Found by a CI failure that named the wrong thing. The e2e crash-recovery gate
+reported *"worker exited with 1 before checkpointing step_2"*; the worker's own
+stderr held the cause — `sqlite3.OperationalError: trigger spans_fts_ai already
+exists`. Not a flaky test, and nothing to do with crash recovery. Two defects in
+the same path, the second only visible once the first was fixed.
+
+### Fixed
+
+**Migrations were not atomic across processes.** `_run_migrations` read
+`PRAGMA user_version`, then applied steps, and every statement autocommitted — so
+a second process could read the version, decide a migration was outstanding, and
+collide with the schema the first had already changed. Migration `v10` is the one
+that bites, because it *drops* three triggers and recreates them, so the loser
+finds them missing or already present depending on where it lands in the winner's
+sequence.
+
+The check and the change are now one step. `SQLiteHelper.exclusive()` takes
+SQLite's write lock up front with `BEGIN IMMEDIATE` and the version is re-read
+**inside** it, so the loser sees finished work and does nothing. Nested writes run
+on that connection without committing; the block commits once on exit and rolls
+back on error. The three unguarded `CREATE TRIGGER` statements gained
+`IF NOT EXISTS` as a second layer, which also keeps a database written by an older
+SDK recoverable.
+
+**The busy timeout was set after the statement that needed it.**
+`PRAGMA journal_mode=WAL` ran *before* `busy_timeout`, so the one statement that
+has to wait had none. Worse, converting a fresh database to WAL needs exclusive
+access and does not honour `busy_timeout` at all — it returns SQLITE_BUSY
+immediately. Measured: four processes opening one new file gave three failures and
+one success. Journal mode is a property of the **file**, not the connection, so a
+conversion another process is doing is not one to repeat: read it first, retry
+briefly, and carry on if still contended. The winner's WAL applies to us, and a
+rollback-journal database is slower, not broken.
+
+`init_local_db` has always claimed *"safe to call multiple times — migrations are
+idempotent and gated on `PRAGMA user_version`"*. That was true within one process
+and false across two. It is true now.
+
+> **If this affects you.** No API changes and nothing to migrate. If you have seen
+> `database is locked` or an `already exists` error when starting an agent while
+> the Local UI was open, this was why.
+
+### Added
+
+- `SQLiteHelper.exclusive()` — hold SQLite's write lock for a whole
+  read-modify-write sequence, for any caller that needs a check and a change to be
+  one step.
+- `tests/test_migration_concurrency.py` — the race reproduced with four processes
+  released at one instant by a barrier, started fresh rather than forked so no
+  inherited connection can hide the cross-process behaviour. Four of its five tests
+  fail against the unfixed source.
+
+### Notes
+
+The same root cause very likely explains the intermittent `database is locked`
+failures previously written off as a background-thread flake in the connected
+examples.
+
+Worth recording how this hid: an error inside a subprocess surfaces as whatever
+the parent asserts about that subprocess, so the message named the parent's
+symptom rather than the child's cause.
+
 ## [1.68.0] - 2026-09-18 — the follow-ups 1.67.0 wrote down
 
 1.67.0 closed ten defects and ended with a list of three it had found and
@@ -137,6 +204,47 @@ Every one of these was verified by running the code, not by reading it.
   none, each pinned to the version its feature shipped in; the four bare
   `fastaiagent` pins replaced; `.env.example` added to the three folders that
   call `load_dotenv()` but shipped none.
+
+### Fixed — five small defects bundled late
+
+Merged after the version commit, so they shipped in 1.68.0 without appearing in
+these notes until now.
+
+- **A 5xx from a self-hosted plane sent the operator to the *hosted* status
+  page.** `PlatformConnectionError` hardcoded `status.fastaiagent.net`, which
+  says nothing about someone else's deployment and costs them the first minutes
+  of an incident on their own plane. The message now names the plane actually
+  configured, and links the public status page only when that is where the
+  caller is. **This is the only one of the five that a package user can see** —
+  the rest are tests, an example and a comment, none of which ship in the wheel.
+- `examples/11_cli_usage.sh` advertised `push --agent` and `push --chain`.
+  Neither exists; the command takes `--module`. The documentation half of this
+  was fixed earlier in the same release and the example was missed.
+- The comment in `chain/interrupt.py` that called `data` *"reserved for
+  non-approval resume cases (future)"* — which is where the phantom documented
+  `Resume.data` field came from — now says plainly that no such field exists,
+  that the model accepts no extras so the payload is dropped silently, and that
+  non-approval payloads belong in `metadata`.
+- **The connected guardrail-actions gate silently required a project-scoped
+  key.** Its read-back helper sent only `project_id`, so a domain-scoped key
+  sent `None` and all five row assertions failed with `400 project_id or
+  domain_id is required` — which reads as an SDK defect and is a credential
+  shape. It prefers the project, falls back to the domain (the endpoint accepts
+  either), and asserts loudly if the key resolves to neither. The credentials
+  half is unchanged: 15 gates still skip without `E2E_PLANE_EMAIL` /
+  `E2E_PLANE_PASSWORD`.
+- **A live-model test asserted on model *wording*.**
+  `test_supervisor_worker_shares_composable_memory` claimed to prove a memory
+  block rendered into the worker's prompt, and checked whether the model
+  happened to say `"cm"`. It failed roughly half the time, which said nothing
+  about whether memory was shared. It now asserts the block rendered — the
+  claim its docstring makes — and the whole file moved to `tests/e2e/` marked
+  `e2e`, since every test in it needs a live model key. It had been skipping in
+  CI, where provider keys live in the e2e job, while flaking on any developer
+  machine that had keys.
+
+  > **Coverage change:** those tests no longer run in the main suite. That is
+  > the intent, but it is a change.
 
 ### Added
 
