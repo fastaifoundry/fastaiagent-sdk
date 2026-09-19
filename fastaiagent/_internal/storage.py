@@ -6,6 +6,9 @@ import logging
 import os
 import sqlite3
 import threading
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +24,36 @@ def _keep_db_perms() -> bool:
     from fastaiagent._internal.env import env_flag
 
     return env_flag("FASTAIAGENT_DB_KEEP_PERMS", default=False, on_unparsed=False)
+
+
+
+def _enable_wal(conn: sqlite3.Connection, db_path: Path) -> None:
+    """Put the database in WAL mode, tolerating a concurrent converter.
+
+    ``PRAGMA journal_mode=WAL`` needs exclusive access to convert a rollback
+    journal, and it does **not** honour ``busy_timeout`` while doing so — it
+    returns SQLITE_BUSY immediately. So several processes opening one fresh
+    ``local.db`` at the same instant would race, and all but one died with
+    "database is locked" before running a single statement. That is reachable in
+    the ordinary local setup, where the UI server and an agent run share a store.
+
+    Journal mode is a property of the FILE, not the connection, so a conversion
+    another process is doing is one we do not need to repeat. Read first, retry
+    briefly, and if it is still contended, carry on — the winner's WAL applies to
+    us too, and a rollback-journal database is slower, not broken.
+    """
+    for attempt in range(5):
+        try:
+            row = conn.execute("PRAGMA journal_mode").fetchone()
+            if row and str(row[0]).lower() == "wal":
+                return
+            conn.execute("PRAGMA journal_mode=WAL")
+            return
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc) and "busy" not in str(exc).lower():
+                raise
+            time.sleep(0.05 * (attempt + 1))
+    logger.debug("Could not switch %s to WAL — another process holds it", db_path)
 
 
 class SQLiteHelper:
@@ -68,7 +101,9 @@ class SQLiteHelper:
         self._tls = threading.local()
         self._connections: list[sqlite3.Connection] = []
         self._connections_lock = threading.Lock()
-        self._write_lock = threading.Lock()
+        # Reentrant: ``exclusive()`` holds this for a whole read-modify-write
+        # sequence while the statements inside it still go through ``execute()``.
+        self._write_lock = threading.RLock()
         # Backwards-compat alias: SQLiteCheckpointer (and possibly user
         # code) reaches into ``db._lock`` to wrap a multi-statement
         # transaction across two ``conn.execute`` calls. Pre-M7 the
@@ -115,7 +150,13 @@ class SQLiteHelper:
         # query stays in the thread that opened it via TLS.
         conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
+        # ``busy_timeout`` FIRST, and the order is load-bearing: switching a
+        # fresh database to WAL takes a lock of its own, so with the timeout set
+        # afterwards that statement had none and returned SQLITE_BUSY the instant
+        # another process was converting the same new file. That is the "database
+        # is locked" seen when several processes open one ``local.db`` at once.
+        conn.execute("PRAGMA busy_timeout=5000")
+        _enable_wal(conn, self.db_path)
         # Wait briefly for a competing writer instead of failing immediately with
         # "database is locked". Each SQLiteHelper instance has its own
         # ``_write_lock``, but separate instances (e.g. LocalStorageProcessor vs
@@ -123,7 +164,6 @@ class SQLiteHelper:
         # server) share only SQLite's file lock — WAL serializes writers, and this
         # timeout absorbs the brief overlap. Strictly safer: it can only turn an
         # immediate error into a short wait.
-        conn.execute("PRAGMA busy_timeout=5000")
         # Tighten the DB file on every open (N10) — covers both freshly-created
         # files (SQLite uses the umask, typically 0o644) and pre-existing
         # world-readable DBs from older installs. Only removes group/other bits.
@@ -133,12 +173,54 @@ class SQLiteHelper:
         self._tls.conn = conn
         return conn
 
+    def _in_exclusive(self) -> bool:
+        return getattr(self._tls, "exclusive_depth", 0) > 0
+
+    @contextmanager
+    def exclusive(self) -> Iterator[sqlite3.Connection]:
+        """Hold SQLite's write lock for a whole read-modify-write sequence.
+
+        :meth:`execute` commits every statement, which is right for an ordinary
+        write and wrong for a schema migration: another **process** can pass its
+        own version check in the gap between two of our statements and then
+        collide with the schema we just changed. That is not hypothetical — it
+        is ``sqlite3.OperationalError: trigger spans_fts_ai already exists``,
+        which took down a CI gate and fires in the ordinary local setup where
+        the UI and an agent share one ``local.db``.
+
+        ``BEGIN IMMEDIATE`` takes the write lock up front, so the check and the
+        change are one step as far as every other process is concerned. Nested
+        :meth:`execute` calls inside the block run on the same connection and do
+        **not** commit; the block commits once on exit and rolls back on error.
+        """
+        conn = self._get_conn()
+        with self._write_lock:
+            depth = getattr(self._tls, "exclusive_depth", 0)
+            if depth:  # already inside one — join it rather than nesting BEGINs
+                self._tls.exclusive_depth = depth + 1
+                try:
+                    yield conn
+                finally:
+                    self._tls.exclusive_depth = depth
+                return
+            conn.execute("BEGIN IMMEDIATE")
+            self._tls.exclusive_depth = 1
+            try:
+                yield conn
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise
+            finally:
+                self._tls.exclusive_depth = 0
+
     def execute(self, sql: str, params: tuple[Any, ...] | dict[str, Any] = ()) -> sqlite3.Cursor:
         """Execute a SQL statement."""
         conn = self._get_conn()
         with self._write_lock:
             cursor = conn.execute(sql, params)
-            conn.commit()
+            if not self._in_exclusive():
+                conn.commit()
             return cursor
 
     def executemany(
