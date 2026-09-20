@@ -93,7 +93,9 @@ model-name prefix. Longest prefix wins, so adding a new variant is
 additive:
 
 ```python
-"gpt-4.1-nano": _Rate(0.10, 0.40),
+PRICING = {
+    "gpt-4.1-nano": _Rate(0.10, 0.40),
+}
 ```
 
 Bump the rates here whenever a provider changes their per-million

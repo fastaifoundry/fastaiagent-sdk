@@ -143,8 +143,8 @@ planner = Supervisor(
     name="planner",
     llm=...,
     workers=[
-        Worker(agent=Agent(name="researcher", ...), role="researcher", ...),
-        Worker(agent=Agent(name="auditor",    ...), role="auditor",    ...),
+        Worker(agent=Agent(name="researcher", llm=...), role="researcher"),
+        Worker(agent=Agent(name="auditor",    llm=...), role="auditor"),
     ],
     checkpointer=SQLiteCheckpointer(),
 )

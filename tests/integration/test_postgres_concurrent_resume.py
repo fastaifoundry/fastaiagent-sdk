@@ -10,9 +10,18 @@ deterministically: only one transaction's ``DELETE`` succeeds at the
 ``pending_interrupts`` row; the other transactions' ``RETURNING`` clause
 returns no rows.
 
-Gated on ``PG_TEST_DSN``. The same contract is verified for SQLite as a
-sanity check, though SQLite's single-writer model makes the race window
-smaller in practice.
+Gated on ``PG_TEST_DSN``, which ``tests/integration/conftest.py`` fills in for
+you when the dev containers are up::
+
+    scripts/dev_backends.sh up
+    pytest tests/integration/test_postgres_concurrent_resume.py
+
+Set ``PG_TEST_DSN`` yourself to target a different server; an explicit value
+always wins. CI runs this in the ``durability-backends`` job against service
+containers, and fails the job if the gate reports a skip.
+
+The same contract is verified for SQLite as a sanity check, though SQLite's
+single-writer model makes the race window smaller in practice.
 """
 
 from __future__ import annotations

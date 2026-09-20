@@ -33,8 +33,7 @@ pip install fastaiagent
 ```
 
 ```python
-from fastaiagent import Agent, LLMClient
-from fastaiagent.tools import FunctionTool
+from fastaiagent import Agent, FunctionTool, LLMClient
 
 agent = Agent(
     name="assistant",

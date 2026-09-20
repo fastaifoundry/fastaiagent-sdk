@@ -5,6 +5,63 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.71.0] - 2026-09-20 — three guards that were reporting green without checking
+
+No behaviour change to the library. Three checks that were supposed to be
+watching something were not, and each had let a real defect through.
+
+### Fixed
+
+- **The documented-snippet guard skipped most of the docs.** Its fence regex
+  made an opening fence's language tag optional, so a *closing* ``` matched it
+  too: fences paired up shifted by one, the prose between two blocks was parsed
+  as Python, and real blocks were never seen. It checked 334 import sites where
+  a correct walk finds 479. Two of the ~145 it walked past were broken — the
+  **docs homepage Quick Start** imported `fastaiagent.tools`, which does not
+  exist, and the LangChain tutorial imported a `FastAI` symbol that has never
+  existed. Both fixed. The extractor now walks fence state line by line and
+  dedents each body, which also recovers four blocks that were valid Python
+  indented inside a list item.
+
+- **Thirty documented Python blocks did not parse** and nothing failed, because
+  the guard treated an unparseable block as uninteresting and skipped it — the
+  shape CLAUDE.md §2.4 names. Seventeen were a bare `...` sitting after a
+  keyword argument, which is a syntax error rather than an elision; those are
+  fixed in place. A new `test_documented_python_block_parses` now covers all
+  732 blocks, with nine signed-off exemptions for API signature listings. The
+  allowlist is keyed on a hash of each block's content, so editing a snippet
+  invalidates its exemption, and two further assertions fail on a listed block
+  that starts parsing and on a key that matches no block.
+
+- **A Playwright screenshot spec had been skipping since it was written.** Its
+  seed guard read `json.rows` and a `name` field, but `/api/agents` returns
+  `{agents: [...]}` with rows keyed `agent_name`. It therefore saw an empty
+  list and skipped the two specs that regenerate the Agent Dependency Graph
+  screenshot, reporting `2 skipped` on every green run. Six of the seven UI
+  screenshots in the README had shown the pre-reskin Classic shell since
+  2026-05-03, four months after 1.52.0 replaced it. All 36 screenshots are
+  regenerated and the README now describes the shell it shows.
+
+### Changed
+
+- **Durability backends get their own CI job.** The Postgres integration tests
+  were a step inside `e2e-quality-gate`, which declares `needs: test` and
+  carries provider secrets — so all Postgres coverage vanished whenever any one
+  of the twelve `test` matrix cells went red, and never ran on a forked PR. The
+  new `durability-backends` job has no dependencies and no secrets, runs
+  Postgres and Redis service containers, and fails if any backend gate reports
+  a skip. It also covers `test_faststore_conformance.py`, whose Postgres and
+  Redis parameters previously executed **nowhere**: no job had ever set
+  `REDIS_TEST_URL`.
+
+- **The backend-gated tests now run locally without ceremony.**
+  `tests/integration/conftest.py` detects the dev containers and points the
+  suite at them, refusing any Postgres whose database is not named
+  `fastaiagent_test` since these tests create and drop tables. An explicit
+  `PG_TEST_DSN` / `REDIS_TEST_URL` always wins. `scripts/dev_backends.sh
+  up|down|status` starts and stops them. Local skips drop from 50 to 11, and
+  none of the remaining 11 is a backend gate.
+
 ## [1.70.0] - 2026-09-19 — a streamed run the plane can count, and a close that waits
 
 Two fixes, each found by something the unit suite structurally could not see: one

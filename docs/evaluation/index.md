@@ -43,16 +43,16 @@ results = evaluate(
 
 ```python
 # Plain function
-evaluate(agent_fn=lambda x: x.upper(), ...)
+evaluate(agent_fn=lambda x: x.upper(), dataset=dataset)
 
 # Agent.run
-evaluate(agent_fn=my_agent.run, ...)
+evaluate(agent_fn=my_agent.run, dataset=dataset)
 
 # Custom wrapper
 def run_pipeline(input_text):
     result = chain.execute({"message": input_text})
     return result.output
-evaluate(agent_fn=run_pipeline, ...)
+evaluate(agent_fn=run_pipeline, dataset=dataset)
 ```
 
 ## Async

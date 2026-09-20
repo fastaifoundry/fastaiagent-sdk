@@ -605,7 +605,7 @@ All endpoints are under the `/public/v1/` prefix. All require `X-API-Key` header
 Every platform-facing method follows the same pattern. If you're adding a new platform feature, copy this:
 
 ```python
-def my_platform_method(self, ...):
+def my_platform_method(self):
     from fastaiagent._internal.errors import PlatformNotConnectedError
     from fastaiagent._platform.api import get_platform_api
     from fastaiagent.client import _connection

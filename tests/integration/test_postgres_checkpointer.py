@@ -1,14 +1,14 @@
 """Integration tests for ``PostgresCheckpointer`` (spec test #11).
 
-Gated on ``PG_TEST_DSN``. Locally run with::
+Gated on ``PG_TEST_DSN``, which ``tests/integration/conftest.py`` fills in for
+you when the dev containers are up::
 
-    docker run -d --name pg-dev -e POSTGRES_PASSWORD=test \\
-        -e POSTGRES_DB=fastaiagent_test -p 127.0.0.1:55432:5432 \\
-        postgres:16-alpine
-    PG_TEST_DSN=postgresql://postgres:test@127.0.0.1:55432/fastaiagent_test \\
-        pytest tests/integration/test_postgres_checkpointer.py
+    scripts/dev_backends.sh up
+    pytest tests/integration/test_postgres_checkpointer.py
 
-CI runs these against a service container (see ``.github/workflows/ci.yml``).
+Set ``PG_TEST_DSN`` yourself to target a different server; an explicit value
+always wins. CI runs this in the ``durability-backends`` job against service
+containers, and fails the job if the gate reports a skip.
 
 The tests parameterize over both ``SQLiteCheckpointer`` and
 ``PostgresCheckpointer`` so the same protocol contract is exercised end-to-end
