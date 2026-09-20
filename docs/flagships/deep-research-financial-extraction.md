@@ -51,7 +51,7 @@ agent = fa.Agent(
     system_prompt=researcher_prompt(subtopic, rationale),
     llm=fa.LLMClient(provider="openai", model="gpt-4o-mini"),
     tools=[search_filing],                          # ← only line that changes
-    middleware=[ToolBudget(max_calls=15, ...)],
+    middleware=[ToolBudget(max_calls=15)],
     config=fa.AgentConfig(max_iterations=20),
     output_type=ResearchFindings,
 )

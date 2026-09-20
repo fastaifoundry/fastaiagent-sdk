@@ -113,13 +113,20 @@ jobs:
       - name: Run tests
         run: pytest tests/ -v -m "not e2e" --tb=short
 
-  e2e-quality-gate:
+  # Durability backends — Postgres and Redis, on real servers.
+  #
+  # Its own job on purpose. This used to be one step inside e2e-quality-gate,
+  # which declares `needs: test` and carries provider secrets, so all Postgres
+  # coverage vanished whenever any one of the twelve `test` matrix cells went
+  # red (a CI segfault did exactly that) and never ran at all on a forked PR.
+  # Nothing gates this job and it needs no secrets.
+  #
+  # It also runs test_faststore_conformance.py, whose Postgres and Redis
+  # parameters previously executed nowhere: that file was not in the old step,
+  # and no job ever set REDIS_TEST_URL.
+  durability-backends:
     runs-on: ubuntu-latest
-    needs: test
     services:
-      # Postgres backend for the durability integration tests
-      # (tests/integration/test_postgres_*). Tests skip cleanly when
-      # PG_TEST_DSN is unset, so local runs without Docker still work.
       postgres:
         image: postgres:16-alpine
         env:
@@ -132,6 +139,46 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PG_TEST_DSN: postgresql://postgres:test@localhost:5432/fastaiagent_test
+      REDIS_TEST_URL: redis://localhost:6379/15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install with the backend extras
+        run: pip install -e ".[postgres,redis,dev]"
+      - name: Run the backend-gated integration tests
+        run: |
+          pytest tests/integration/test_postgres_checkpointer.py \
+                 tests/integration/test_postgres_concurrent_resume.py \
+                 tests/integration/test_faststore_conformance.py \
+                 -v --tb=short -p no:randomly -rs | tee pytest-durability.log
+          exit "${PIPESTATUS[0]}"
+      # A DSN typo would turn this job green by skipping — the same trap one
+      # layer up from the one it exists to close. Assert the gate opened.
+      - name: Fail if any backend gate skipped
+        run: |
+          if grep -qE "PG_TEST_DSN not set|REDIS_TEST_URL not set" pytest-durability.log; then
+            echo "::error::A backend gate skipped — the DSN did not reach the tests."
+            grep -E "PG_TEST_DSN not set|REDIS_TEST_URL not set" pytest-durability.log
+            exit 1
+          fi
+          echo "All backend gates executed."
+
+  e2e-quality-gate:
+    runs-on: ubuntu-latest
+    needs: test
     env:
       E2E_REQUIRED: "1"
       # Skip platform-push/verify steps on CI — you exercise those locally
@@ -140,7 +187,6 @@ jobs:
       E2E_SKIP_PLATFORM: "1"
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      PG_TEST_DSN: postgresql://postgres:test@localhost:5432/fastaiagent_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -154,8 +200,6 @@ jobs:
         run: uv pip install --system -e ".[all,dev]"
       - name: Run end-to-end quality gate
         run: pytest tests/e2e/ -v -m e2e --tb=short
-      - name: Run Postgres durability integration tests
-        run: pytest tests/integration/test_postgres_checkpointer.py tests/integration/test_postgres_concurrent_resume.py -v --tb=short
       - name: Regression-from-trace template smoke (no LLM)
         # Always-on guard against template drift — runs in ~30ms.
         # cd'ing isolates pytest's rootdir from the repo's top-level

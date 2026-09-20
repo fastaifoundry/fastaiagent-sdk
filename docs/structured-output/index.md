@@ -250,7 +250,7 @@ class Customer(BaseModel):
     name: str
     address: Address
 
-agent = Agent(name="extractor", output_type=Customer, ...)
+agent = Agent(name="extractor", output_type=Customer, llm=llm)
 result = agent.run("John at 123 Main St, SF")
 print(result.parsed.address.city)  # "SF"
 ```
@@ -263,11 +263,11 @@ non-object types internally and unwraps them on parse, so you just read
 `result.parsed`:
 
 ```python
-agent = Agent(name="geo", output_type=list[Country], ...)
+agent = Agent(name="geo", output_type=list[Country], llm=llm)
 result = agent.run("List France, Japan, and Egypt with their capitals.")
 result.parsed          # [Country(name='France', capital='Paris'), ...]
 
-agent = Agent(name="counter", output_type=int, ...)
+agent = Agent(name="counter", output_type=int, llm=llm)
 agent.run("How many sides does a hexagon have?").parsed   # 6
 ```
 
@@ -284,7 +284,7 @@ agent = Agent(
     name="extractor",
     output_type=Invoice,
     config=AgentConfig(output_retries=3),   # 0 disables
-    ...
+    llm=llm,
 )
 ```
 

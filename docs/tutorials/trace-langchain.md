@@ -66,10 +66,10 @@ fastaiagent.integrations.langchain.disable()
 ## Push Traces to the Platform
 
 ```python
-from fastaiagent import FastAI
+import fastaiagent as fa
 
-fa = FastAI(api_key="sk-...", project="my-project")
-# Traces are automatically pushed when platform is connected
+fa.connect(api_key="fa-...", project="my-project")
+# Traces are automatically pushed while the platform connection is open.
 ```
 
 ## Next Steps

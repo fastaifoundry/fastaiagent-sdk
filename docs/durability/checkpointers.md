@@ -250,6 +250,33 @@ Run the
 [parameterized protocol suite](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/tests/integration/test_postgres_checkpointer.py)
 against your backend before relying on it in production.
 
+### Running the backend suite locally
+
+The Postgres and Redis parameters of the integration suite need real servers.
+From a checkout:
+
+```bash
+scripts/dev_backends.sh up     # Postgres on 55432, Redis on 56379
+pytest tests/integration -q
+scripts/dev_backends.sh down
+```
+
+`tests/integration/conftest.py` detects those containers and points the suite
+at them, so there is nothing to export. It refuses any Postgres whose database
+is not named `fastaiagent_test`, since these tests create and drop tables. To
+target a server of your own, set the variables explicitly — an explicit value
+always wins:
+
+```bash
+export PG_TEST_DSN="postgresql://user:pw@host:5432/fastaiagent_test"
+export REDIS_TEST_URL="redis://host:6379/15"
+```
+
+With no server reachable and neither variable set, the Postgres and Redis
+parameters skip and only SQLite runs. CI never relies on that path: the
+`durability-backends` job runs both servers as service containers and fails if
+any backend gate reports a skip.
+
 ## Deployment shapes
 
 ### Single-container app

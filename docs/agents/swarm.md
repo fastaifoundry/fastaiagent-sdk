@@ -177,7 +177,7 @@ researcher = Agent(
     name="researcher",
     llm=llm,
     tools=[web_search, read_url],   # still available when researcher is active
-    ...,
+    # …plus any other Agent kwargs you normally pass
 )
 ```
 
@@ -201,8 +201,8 @@ shared_memory = ComposableMemory(
 swarm = Swarm(
     name="team",
     agents=[
-        Agent(name="a", llm=llm, memory=shared_memory, ...),
-        Agent(name="b", llm=llm, memory=shared_memory, ...),
+        Agent(name="a", llm=llm, memory=shared_memory),
+        Agent(name="b", llm=llm, memory=shared_memory),
     ],
     entrypoint="a",
 )

@@ -14,7 +14,7 @@ pip install fastaiagent
 
 Runs fully standalone, or connect to the [FastAIAgent Platform](https://fastaiagent.net) for hosted observability, prompt management, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.70.0)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.71.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -262,6 +262,12 @@ pass-rate trend charts, prompt editor with version lineage, guardrail
 events, agent scorecards, and a **read-only browser + search playground
 for every `LocalKB`** you've built. Everything stored in one SQLite file at
 `./.fastaiagent/local.db`. Bcrypt-hashed local auth. Nothing phones home.
+
+Navigation is an icon rail of four pillars — Build, Evaluate, Observe,
+Govern — with a `⌘K` command palette, matching the FastAIAgent Enterprise
+console so the two products read as one system. The original sidebar
+layout is still there under the **Classic** toggle in the header, and both
+serve the same routes and the same data.
 
 ![FastAIAgent Local UI — trace detail](https://raw.githubusercontent.com/fastaifoundry/fastaiagent-sdk/main/docs/ui/screenshots/03-trace-detail.png)
 

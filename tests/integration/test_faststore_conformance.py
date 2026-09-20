@@ -1,14 +1,16 @@
 """FactStore conformance — the SAME contract across SQLite / Postgres / Redis.
 
-No mocking: real backends. Postgres/Redis are gated on env DSNs and skipped when
-absent (SQLite always runs). Run all three locally with::
+No mocking: real backends. SQLite always runs; Postgres and Redis are gated on
+``PG_TEST_DSN`` / ``REDIS_TEST_URL``, which ``tests/integration/conftest.py``
+fills in for you when the dev containers are up::
 
-    docker run -d --name fa-pg -e POSTGRES_PASSWORD=test -e POSTGRES_DB=fastaiagent_test \\
-        -p 127.0.0.1:55432:5432 postgres:16-alpine
-    docker run -d --name fa-redis -p 127.0.0.1:56379:6379 redis:7-alpine
-    PG_TEST_DSN=postgresql://postgres:test@127.0.0.1:55432/fastaiagent_test \\
-    REDIS_TEST_URL=redis://127.0.0.1:56379/15 \\
-        pytest tests/integration/test_faststore_conformance.py
+    scripts/dev_backends.sh up
+    pytest tests/integration/test_faststore_conformance.py
+
+Set either variable yourself to target a different server; an explicit value
+always wins. Until the ``durability-backends`` CI job existed, the Postgres and
+Redis parameters of this file ran nowhere — no job set ``REDIS_TEST_URL`` and
+this file was absent from the one step that set ``PG_TEST_DSN``.
 
 Tests use uuid-suffixed scope_ids so runs against a shared server don't collide.
 """

@@ -8,7 +8,7 @@ FastAIAgent SDK works fully standalone. Optionally connect to [FastAIAgent Platf
 
 ```python
 # Without connect — everything works locally
-agent = Agent(name="support", ...)
+agent = Agent(name="support", llm=llm)
 result = agent.run("Help me")
 # Traces → local SQLite
 # Prompts → local files
@@ -115,7 +115,7 @@ prompt = registry.get("support-prompt", version=3)
 agent = Agent(
     name="support",
     system_prompt=prompt.template,
-    ...
+    llm=llm,
 )
 
 # Publish a prompt to the platform

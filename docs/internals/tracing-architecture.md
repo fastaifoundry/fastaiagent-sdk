@@ -274,7 +274,7 @@ rows = db.fetchall(
 for row in rows:
     SpanData(
         attributes=json.loads(row["attributes"]),  # JSON string → dict
-        ...
+        # …plus the remaining columns
     )
 ```
 

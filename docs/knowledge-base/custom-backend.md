@@ -15,9 +15,9 @@ from fastaiagent.kb.chunking import Chunk
 
 
 class MyVectorStore:
-    def __init__(self, ...):
+    def __init__(self, dimension: int):
         self._store: dict[str, tuple[Chunk, list[float]]] = {}
-        self._dim = ...
+        self._dim = dimension
 
     # --- required protocol methods ---
 
@@ -60,8 +60,7 @@ That's it — pass an instance to `LocalKB`:
 ```python
 kb = LocalKB(
     name="custom",
-    vector_store=MyVectorStore(...),
-    ...,
+    vector_store=MyVectorStore(dimension=384),
 )
 ```
 

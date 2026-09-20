@@ -49,10 +49,31 @@ async function requireSeed(
   test.skip(!ok, `${what} not seeded — run scripts/capture-sprint2-screenshots.sh`);
 }
 
-const rowsOf = (json: unknown): unknown[] =>
-  Array.isArray(json)
-    ? json
-    : ((json as { rows?: unknown[] } | null)?.rows ?? []);
+/**
+ * Unwrap a list endpoint's payload.
+ *
+ * The Local UI is not uniform here: `/api/traces` and `/api/guardrail-events`
+ * return `{rows: [...]}`, `/api/datasets` returns a bare array, and
+ * `/api/agents` returns `{agents: [...]}`. Only `rows` used to be handled, so
+ * every `requireSeed` against `/api/agents` saw an empty list and skipped —
+ * which silently disabled specs 4 and 5 (and let the dependency-graph
+ * screenshot in the README rot for four months). Fall back to the first
+ * array-valued property so a new container key cannot re-introduce that.
+ */
+const rowsOf = (json: unknown): unknown[] => {
+  if (Array.isArray(json)) return json;
+  if (json === null || typeof json !== "object") return [];
+  const obj = json as Record<string, unknown>;
+  if (Array.isArray(obj.rows)) return obj.rows;
+  return (Object.values(obj).find(Array.isArray) as unknown[]) ?? [];
+};
+
+/** Agent rows are keyed `agent_name`; registered runners also expose `name`. */
+const agentNamed = (rows: unknown[], want: string): boolean =>
+  rows.some((a) => {
+    const row = a as { name?: string; agent_name?: string };
+    return row.name === want || row.agent_name === want;
+  });
 
 // ---------------------------------------------------------------------------
 // Sprint 2 / Feature 1 — Prompt Playground
@@ -158,7 +179,7 @@ test("sprint2-4 — supervisor dependency graph with worker subtrees", async ({
   await requireSeed(
     page,
     "/api/agents",
-    (j) => rowsOf(j).some((a) => (a as { name?: string }).name === "planner"),
+    (j) => agentNamed(rowsOf(j), "planner"),
     "agent 'planner'",
   );
   await page.goto("/agents/planner");
@@ -192,7 +213,7 @@ test("sprint2-5 — single worker dependency view", async ({ page }) => {
   await requireSeed(
     page,
     "/api/agents",
-    (j) => rowsOf(j).some((a) => (a as { name?: string }).name === "researcher"),
+    (j) => agentNamed(rowsOf(j), "researcher"),
     "agent 'researcher'",
   );
   await page.goto("/agents/researcher");
