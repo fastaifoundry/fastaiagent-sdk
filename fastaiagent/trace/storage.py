@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, NamedTuple
 
 from pydantic import BaseModel, Field
 
@@ -29,6 +29,21 @@ def set_normalize_enabled(value: bool, *, framework: str | None = None) -> None:
     global _normalize_enabled, _framework_override
     _normalize_enabled = value
     _framework_override = framework if value else None
+
+
+class SpanRecord(NamedTuple):
+    """One span from :meth:`TraceStore.list_spans`, with its tail cursor.
+
+    The cursor is deliberately **not** a field on :class:`SpanData`. That model
+    is dumped whole by ``trace.platform_export.to_wire``, so any field added to
+    it becomes a new key on the span payload the plane receives — a wire event
+    under the cross-repo contract, for something the plane has no use for. A
+    local read cursor has no business on the egress model, so it rides
+    alongside instead.
+    """
+
+    cursor: int
+    span: SpanData
 
 
 class SpanData(BaseModel):
@@ -319,6 +334,58 @@ class TraceStore:
             attributes=json.loads(row["attributes"]) if row["attributes"] else {},
             events=json.loads(row["events"]) if row["events"] else [],
         )
+
+    def list_spans(
+        self,
+        *,
+        since: int = 0,
+        limit: int = 100,
+        trace_id: str | None = None,
+        execution_id: str | None = None,
+    ) -> list[SpanRecord]:
+        """Return spans across traces, oldest first, for tailing as they land.
+
+        Every "show spans as they arrive" use case previously had to walk trace
+        by trace: two streaming demos assumed a method like this one and were
+        dead because of it, and example 08 dropped to raw ``sqlite3``.
+
+        ``since`` is a cursor, not a timestamp. Pass ``0`` for the first call,
+        then the ``cursor`` of the last record you handled; each call returns
+        only rows written after it. SQLite rowids are assigned in insert order
+        and never reused within a table, so this reads each span exactly once
+        even while ``on_end`` keeps writing. Ordering by rowid rather than
+        ``start_time`` matters here: a long span *starts* before a short one
+        that finishes first, so start-time order would step over rows that
+        arrive later with an earlier timestamp.
+
+        ``trace_id`` narrows to one trace. ``execution_id`` matches the
+        ``chain.execution_id`` attribute, so a durable run can be followed
+        across the traces it spans.
+
+        Returns at most ``limit`` records. An empty list means "nothing new
+        yet", not "end of stream" — keep the cursor and call again.
+        """
+        if limit <= 0:
+            return []
+
+        where = ["rowid > ?"]
+        params: list[Any] = [since]
+        if trace_id is not None:
+            where.append("trace_id = ?")
+            params.append(trace_id)
+        if execution_id is not None:
+            # The attribute key contains a dot, so it must be quoted inside the
+            # JSON path or SQLite reads it as a nested object.
+            where.append("json_extract(attributes, '$.\"chain.execution_id\"') = ?")
+            params.append(execution_id)
+        params.append(limit)
+
+        rows = self._db.fetchall(
+            f"SELECT rowid, * FROM spans WHERE {' AND '.join(where)} "
+            f"ORDER BY rowid LIMIT ?",
+            tuple(params),
+        )
+        return [SpanRecord(cursor=r["rowid"], span=self._row_to_span(r)) for r in rows]
 
     def get_trace(self, trace_id: str) -> TraceData:
         """Get a complete trace with all its spans."""
