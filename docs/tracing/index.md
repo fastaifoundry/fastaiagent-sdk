@@ -122,6 +122,63 @@ results = store.search("support-bot")
 json_str = store.export("abc123def456...", format="json")
 ```
 
+### Tailing spans as they land
+
+`list_traces()` and `get_trace()` are both trace-shaped: to watch spans arrive
+you would have to poll each trace and diff it. `list_spans()` reads across
+traces directly, oldest first, from a cursor.
+
+```python
+import time
+
+from fastaiagent.trace import TraceStore
+
+store = TraceStore()
+cursor = 0
+
+while True:
+    page = store.list_spans(since=cursor, limit=100)
+    for record in page:
+        print(f"{record.span.name}  {record.span.status}")
+        cursor = record.cursor          # advance past what you handled
+    if not page:
+        time.sleep(0.5)                 # nothing new yet — keep the cursor
+```
+
+`since` is a **cursor, not a timestamp**. Pass `0` first, then the `cursor` of
+the last record you handled. Each call returns only rows written after it, so a
+span is read exactly once even while new ones keep arriving.
+
+That distinction matters. A long span *starts* before a short one that finishes
+first, so it is written second while carrying the earlier start time. A
+timestamp cursor would step straight over it; a write-order cursor cannot.
+
+An empty page means "nothing new yet", not "end of stream" — keep the cursor and
+call again.
+
+Two optional filters narrow the stream:
+
+```python
+store.list_spans(trace_id="abc123def456...")   # one trace
+store.list_spans(execution_id="run-42")        # one durable run, across traces
+```
+
+`execution_id` matches the `chain.execution_id` attribute, so a durable run is
+followed across every trace it spans.
+
+### SpanRecord
+
+Returned by `list_spans()`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `cursor` | `int` | Opaque write-order position. Pass it back as `since`. |
+| `span` | `SpanData` | The span itself |
+
+The cursor is deliberately not a field on `SpanData`. That model is serialized
+whole when spans are exported to the Platform, so a field added to it would put
+a new key on the wire for something only local readers use.
+
 ### TraceSummary
 
 Returned by `list_traces()` and `search()`:

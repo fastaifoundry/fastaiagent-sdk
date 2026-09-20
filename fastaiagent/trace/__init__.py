@@ -15,7 +15,7 @@ from fastaiagent.trace.span import (
     set_evaluation_attributes,
     set_guardrail_attributes,
 )
-from fastaiagent.trace.storage import TraceData, TraceStore, TraceSummary
+from fastaiagent.trace.storage import SpanData, SpanRecord, TraceData, TraceStore, TraceSummary
 from fastaiagent.trace.tracer import trace_context
 
 __all__ = [
@@ -34,6 +34,8 @@ __all__ = [
     "TraceStore",
     "TraceData",
     "TraceSummary",
+    "SpanData",
+    "SpanRecord",
     "Replay",
     "RedactionPolicy",
     "set_redaction_policy",

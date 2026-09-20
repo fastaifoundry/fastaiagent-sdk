@@ -10,7 +10,15 @@ Two providers are exercised end-to-end:
 All tests are gated on env vars (``GROQ_API_KEY``, ``GEMINI_API_KEY``).
 Run via:
 
-    zsh -lc 'pytest tests/integration/test_providers_live.py -v'
+    zsh -lc 'pytest tests/e2e/test_providers_live.py -m e2e -v'
+
+**Why this lives in ``tests/e2e/`` and is marked ``e2e``.** It makes real
+provider calls, so it fails transiently for provider reasons — a Gemini
+tool-call test failed once during the 1.70.0 work and passed four times either
+side of it. A suite that is supposed to be deterministic must not contain that.
+Per CLAUDE.md §3, a test that needs a model belongs here. In CI the keys live in
+the e2e job, so this ran nowhere useful from ``tests/integration/`` anyway; here
+it runs in the gate that actually has them.
 
 Cost: each test uses a tiny prompt; a full run costs less than a
 fraction of a cent on either provider's free tier.
@@ -26,6 +34,8 @@ import pytest
 from fastaiagent.llm import LLMClient
 from fastaiagent.llm.message import UserMessage
 from fastaiagent.llm.stream import TextDelta, ToolCallEnd, ToolCallStart
+
+pytestmark = pytest.mark.e2e
 
 HAS_GROQ = bool(os.environ.get("GROQ_API_KEY"))
 HAS_GEMINI = bool(os.environ.get("GEMINI_API_KEY"))
