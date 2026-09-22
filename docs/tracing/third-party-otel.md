@@ -73,6 +73,7 @@ The normalizer recognizes two convention families and fills the canonical key
 | `output.value`, `gen_ai.completion.N.content` | `gen_ai.completion` **and** `gen_ai.response.content` |
 | `openinference.span.kind` (`LLM`/`CHAIN`/`AGENT`/`TOOL`/…) | `fastaiagent.runner.type` |
 | `llm.system` / `llm.provider` | `gen_ai.system` |
+| *(derived from model + tokens)* | `fastaiagent.cost.total_usd`, when priceable |
 | `llm.invocation_parameters` (JSON) | `gen_ai.request.temperature` / `max_tokens` |
 | instrumentation scope name (e.g. `openinference.instrumentation.openai`) | `fastaiagent.framework` (root span only) |
 
@@ -82,8 +83,23 @@ panel keys (`gen_ai.request.messages` / `gen_ai.response.content`), so a
 captured span is both **searchable** by content and **rendered** in the
 Input/Output tabs.
 
-Cost is **not** computed by the normalizer — once the model name and token
-counts exist, the UI's existing `compute_cost_usd()` pricing table handles it.
+**Cost is computed at capture time**, once the model name and token counts have
+been normalized, and written as `fastaiagent.cost.total_usd` — the same key the
+SDK's own spans carry.
+
+It was previously left to the Local UI to price these spans when it read them.
+That worked locally and nowhere else: a span exported to the FastAIAgent
+Platform arrived with tokens and no cost, so the plane priced it from its own
+table instead. That table was missing `gpt-4.1`, and a fuzzy prefix match
+charged the 2023 `gpt-4` rate — over-reporting 187 live spans by a factor of
+10.9. Pricing here means no downstream reader has to guess.
+
+The attribute is set **only when the price is known**. A model with no rate — a
+private fine-tune, a Bedrock or Azure deployment id — leaves it absent rather
+than reporting a fabricated `0.0`, so a reader can tell "we could not price
+this" from "this was free" and fall back to its own estimate. A self-hosted
+provider such as Ollama is a *known* zero and does carry the attribute. A span
+that already has a cost keeps it.
 
 **Unknown keys pass through untouched** and still appear in the span's
 **Attributes** tab, so nothing is ever lost.
