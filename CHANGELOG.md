@@ -5,6 +5,57 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.73.0] - 2026-09-22 — the two things the control plane asked for
+
+Both come from the plane team's reply to our September handoff. Neither changes
+the wire: one removes a duplicate request, the other fills an attribute we
+already define on spans that were missing it.
+
+### Fixed
+
+- **Concurrent registrations of one agent sent one POST each.** `push_agent`
+  checked its `_pushed` cache under the lock, released it, made the network
+  call, and only wrote the cache entry once the response returned. Two
+  concurrent `run()` calls therefore both passed the check and both POSTed. The
+  plane measured the duplicate rows this produced — inserted 0.5 ms, 2.7 ms and
+  14.6 ms apart by `examples/96_connected_eval_export.py` at `concurrency=2` —
+  and reported that once two rows existed, every later push of that name failed
+  permanently on their side.
+
+  The name is now claimed *before* the request and released in a `finally`, so
+  no failure can wedge it. A caller that arrives second waits for the winner and
+  returns its result rather than racing it, so an explicit `agent.push()` that
+  collides with a background auto-register still gets a real `PushResult` back
+  instead of `None`. The claim is per name, not a lock held across the call:
+  two *different* agents must still register concurrently, and a global lock
+  around a 10-second HTTP timeout would have queued every unrelated push behind
+  the slowest one. `force=True` still always reaches the plane.
+
+  The plane has since made its insert idempotent under concurrency, so this was
+  no longer a correctness bug on either side — it was two requests where one
+  does, and a cache that was not doing its job.
+
+### Changed
+
+- **Captured foreign spans now carry their own cost.** The normalizer mapped the
+  model and token counts of a third-party OpenTelemetry span and stopped there,
+  leaving the Local UI to price it at read time. Exported spans had no such
+  step, so the control plane priced them from its own table — which was missing
+  `gpt-4.1`, fuzzy-matched it to the 2023 `gpt-4` rate, and over-reported 187
+  live spans by a factor of 10.9. The plane now prefers our figure wherever it
+  is present, so every span carrying `fastaiagent.cost.total_usd` is one no
+  downstream table has to guess at.
+
+  Set **only when the price is known**. An unpriceable model leaves it absent
+  rather than reporting a fabricated `0.0`, which is precisely why our figures
+  were right where the plane's were wrong: we decline to price bare `gpt-4` at
+  all. A self-hosted provider is a known zero and does carry the attribute, and
+  a span that already has a cost keeps it.
+
+  The normalizer's contract narrows accordingly: it never rewrites a key, but it
+  may now add this one. `test_native_span_is_noop` becomes
+  `test_native_span_keys_are_never_rewritten`.
+
 ## [1.72.0] - 2026-09-20 — a span-level read, and two things that only existed on one laptop
 
 Local-only housekeeping. Nothing here can reach the control plane: the one new

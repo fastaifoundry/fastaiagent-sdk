@@ -7,7 +7,8 @@ tokens / cost / model / IO panels render blank and they get no framework badge.
 :func:`normalize_attributes` maps those foreign conventions onto the **exact**
 canonical keys the rest of the stack already reads:
 
-- ``gen_ai.request.model`` — model (read-time cost lookup, ``traces.py``)
+- ``gen_ai.request.model`` — model
+- ``fastaiagent.cost.total_usd`` — cost, derived from the model and tokens above
 - ``gen_ai.usage.input_tokens`` / ``gen_ai.usage.output_tokens`` — token counts
 - ``gen_ai.prompt`` — prompt text (FTS ``input_text`` trigger + IO panel)
 - ``gen_ai.completion`` — response text (FTS ``output_text`` trigger + IO panel)
@@ -16,10 +17,17 @@ canonical keys the rest of the stack already reads:
 - ``gen_ai.system`` / ``gen_ai.request.temperature`` / ``gen_ai.request.max_tokens``
   — best-effort extras when the source carries them
 
-It is a **pure** function with no I/O. It only fills a canonical key when that
-key is **absent** (or empty) — it never overwrites or removes anything, so
-native fastaiagent spans (already canonical) pass through unchanged and the
-original foreign keys are always preserved alongside the added canonical ones.
+It is a **pure** function with no I/O — pricing is a static table lookup. It
+only fills a canonical key when that key is **absent** (or empty) and never
+overwrites or removes anything, so the original foreign keys are always
+preserved alongside the canonical ones added beside them.
+
+One key is *derived* rather than mapped: ``fastaiagent.cost.total_usd`` is
+computed from the normalized model and token counts, because a captured foreign
+span never carried a cost and only the Local UI used to supply one at read
+time. A span exported to the control plane had no such step. That key is set
+only when the price is known — an unpriceable model leaves it absent rather
+than reporting a fabricated zero.
 """
 
 from __future__ import annotations
@@ -216,6 +224,36 @@ def normalize_attributes(
                 max_tokens = params.get("max_completion_tokens")
             if max_tokens is not None:
                 fill("gen_ai.request.max_tokens", max_tokens)
+
+    # Cost, from the model and tokens we just canonicalized.
+    #
+    # Spans the SDK creates itself are priced at the call, but a captured
+    # foreign span was never priced at all: this module mapped the model and
+    # the token counts and stopped there, leaving the Local UI to price it at
+    # read time. The control plane has no such read-time step, so these spans
+    # arrived with tokens and no cost and were priced by the plane's own table
+    # — which is exactly where it went wrong: ``gpt-4.1`` was missing from it,
+    # a fuzzy prefix match silently charged the 2023 ``gpt-4`` rate, and 187
+    # live spans were over-reported by 10.9x. Every span that carries this
+    # attribute is one no downstream table has to guess at.
+    #
+    # ``usage_cost`` is a dict lookup, so this module stays pure and I/O-free.
+    # The attribute is set only when the price is *known*: an unpriceable model
+    # (a private fine-tune, a bedrock/azure deployment id) must stay absent
+    # rather than report a fabricated ``0.0``. That distinction is the whole
+    # reason the SDK's own figures were right where the plane's were not.
+    if "fastaiagent.cost.total_usd" not in out:
+        model = out.get("gen_ai.request.model") or out.get("gen_ai.response.model")
+        tokens = {
+            "input_tokens": out.get("gen_ai.usage.input_tokens"),
+            "output_tokens": out.get("gen_ai.usage.output_tokens"),
+        }
+        if model and any(v is not None for v in tokens.values()):
+            from fastaiagent._internal.pricing import usage_cost
+
+            usd, known = usage_cost(str(model), tokens, provider=out.get("gen_ai.system"))
+            if known:
+                out["fastaiagent.cost.total_usd"] = usd
 
     # Framework badge — root span only, to match the UI's read of the root.
     if is_root:

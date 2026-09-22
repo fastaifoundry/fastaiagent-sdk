@@ -40,6 +40,15 @@ _agent_registry: weakref.WeakSet[Agent] = weakref.WeakSet()
 # per-object) so a server that builds a fresh Agent("X") per request pushes
 # only on the first request. See the plan's Gap 2 idempotency table.
 _pushed: dict[str, PushResult] = {}
+# Names with a POST in flight right now → an Event the owner sets when it
+# finishes. ``_pushed`` alone could not prevent a duplicate push because it is
+# only written *after* the response returns; this is the claim taken *before*
+# the request. Guarded by ``_lock``.
+_inflight: dict[str, threading.Event] = {}
+# How long a caller waits on someone else's in-flight push before giving up and
+# pushing itself. Longer than the platform HTTP timeout so the normal case is a
+# clean handoff, not a double push.
+_INFLIGHT_WAIT_SECONDS = 15.0
 # Names we've already warned about (unregistered-while-connected) — warn once.
 _warned: set[str] = set()
 
@@ -131,16 +140,57 @@ def push_agent(
     from fastaiagent._platform.api import get_platform_api
 
     name = agent.name
-    with _lock:
-        if not force and name in _pushed:
-            cached = _pushed[name]
-            return PushResult(
-                agent_id=cached.agent_id,
-                name=cached.name,
-                version=cached.version,
-                url=cached.url,
-                skipped=True,
-            )
+
+    # Claim the name before the request, not after the response.
+    #
+    # ``_pushed`` used to be written only once the POST returned, with the lock
+    # released across the call. Two concurrent ``run()`` calls therefore both
+    # passed the check and both POSTed. The plane measured the duplicate rows
+    # that produced: 0.5 ms, 2.7 ms and 14.6 ms apart, from
+    # ``examples/96_connected_eval_export.py`` running at ``concurrency=2``.
+    #
+    # The claim is per name, not a lock held across the network call: two
+    # *different* agents registering at once must still overlap, and a global
+    # lock around a 10 s HTTP timeout would serialize every unrelated push
+    # behind the slowest one.
+    while True:
+        with _lock:
+            if not force and name in _pushed:
+                cached = _pushed[name]
+                return PushResult(
+                    agent_id=cached.agent_id,
+                    name=cached.name,
+                    version=cached.version,
+                    url=cached.url,
+                    skipped=True,
+                )
+            waiter = _inflight.get(name)
+            if waiter is None:
+                _inflight[name] = threading.Event()
+                break
+        # Someone else owns this name right now. Wait for their answer rather
+        # than racing them: an explicit ``agent.push()`` that collided with a
+        # background auto-register still gets a real PushResult back, which
+        # returning ``None`` here would have taken away. Bounded so a wedged
+        # winner cannot pin this thread forever — on timeout we fall through
+        # and push ourselves, which the plane now absorbs idempotently.
+        if not waiter.wait(timeout=_INFLIGHT_WAIT_SECONDS):
+            logger.debug("Timed out waiting on an in-flight push of %r", name)
+        if force:
+            # A forced push must reach the plane even if someone just pushed;
+            # re-loop to claim the name for ourselves.
+            continue
+        with _lock:
+            if name in _pushed:
+                cached = _pushed[name]
+                return PushResult(
+                    agent_id=cached.agent_id,
+                    name=cached.name,
+                    version=cached.version,
+                    url=cached.url,
+                    skipped=True,
+                )
+        # The winner failed and cached nothing. Try it ourselves.
 
     try:
         payload = agent.to_dict()
@@ -176,6 +226,13 @@ def push_agent(
             )
             return None
         raise
+    finally:
+        # Release the claim in every exit path, success or failure, so a failed
+        # push never wedges the name for the rest of the process.
+        with _lock:
+            waiter = _inflight.pop(name, None)
+        if waiter is not None:
+            waiter.set()
 
 
 def auto_register_async(agent: Agent) -> None:
@@ -305,10 +362,18 @@ def reset_registration_state() -> None:
 
     Does not clear the weak agent registry — those objects still exist and a
     subsequent connect() should re-register them.
+
+    Any in-flight claim is released *and woken*. Dropping the claims alone
+    would leave a waiting thread blocked for the full timeout, because the
+    owner's ``finally`` pops by name and would find nothing to set.
     """
     with _lock:
         _pushed.clear()
         _warned.clear()
+        waiters = list(_inflight.values())
+        _inflight.clear()
+    for waiter in waiters:
+        waiter.set()
 
 
 # Back-compat/test alias.
