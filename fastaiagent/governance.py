@@ -40,6 +40,11 @@ _POLL_TIMEOUT_SECONDS = 600.0
 #: The ``interrupt()`` reason a managed approval policy pauses with. It is what
 #: tells a governance pause apart from an ``interrupt()`` in user code — on
 #: resume, where a rejected one must not run the tool, and on the HITL ledger.
+#:
+#: ⚠ **Wire-stable: never rename.** The plane matches a resolution event to its
+#: pause by ``kind`` (see :func:`hitl_kind`) and, for SDKs up to 1.73.0, by this
+#: exact string (enterprise PR #198). Both are pinned as literals in
+#: ``tests/test_governance_approvals.py``.
 APPROVAL_REASON = "policy_approval_required"
 
 

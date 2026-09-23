@@ -625,18 +625,20 @@ class Agent:
 
         ``wait_for_approval`` (default False since 1.74.0) is **deprecated**:
         ``True`` blocks polling the plane for a console decision, which the plane
-        no longer makes. It is kept for the plane's transition window only; a
-        rejection or the poll ceiling refuses the call (see
-        :meth:`_await_governance_approval`).
+        no longer makes. It is kept for the plane's transition window only, and is
+        removed in the first SDK release after the plane retires the console
+        approve/deny. A rejection, a plane-side expiry or the poll ceiling
+        refuses the call (see :meth:`_await_governance_approval`).
         """
         if wait_for_approval:
             import warnings
 
             warnings.warn(
-                "arun(wait_for_approval=True) is deprecated: the plane no longer "
-                "approves tool calls, so the wait can only end in the deprecated "
-                "console decision or a refusal at the poll ceiling. Take the paused "
-                "result and resume it from your application with "
+                "arun(wait_for_approval=True) is deprecated and will be removed in the "
+                "first release after the control plane retires its console approve/deny: "
+                "the plane no longer approves tool calls, so the wait can only end in "
+                "that deprecated console decision or a refusal. Take the paused result "
+                "and resume it from your application with "
                 "aresume(run_id, resume_value=Resume(approved=..., "
                 "metadata={'resolver': ...})).",
                 DeprecationWarning,

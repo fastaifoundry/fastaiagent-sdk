@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Follow-ups to the control plane's reply to 1.74.0 (enterprise PR #198). No behaviour change.
+
+### Changed
+
+- **`wait_for_approval=True` has a removal point.** Its `DeprecationWarning` and the
+  managed-governance docs now say it is removed in the first SDK release after the
+  plane retires the console approve/deny, which is the one thing it can still wait for.
+
+### Tests
+
+- **A pause the plane expires is refused.** The plane's admin force-expire now sets the
+  pending run the blocking wait polls to `expired`; a test pins that the wait treats it
+  as a no and the tool never runs. It was already correct — `expired` resumed with
+  `approved=False` — but nothing exercised a plane-returned `expired`.
+- **The two values the plane matches resolutions on are pinned as literals.** The plane
+  matches a resolution event to its pause by `kind="approval"` and, for SDKs up to 1.73.0,
+  by the reason `policy_approval_required`. The tests referenced the reason through the
+  `governance.APPROVAL_REASON` constant, so a rename would have passed; they now assert
+  the literal strings on the wire, and the constant carries a never-rename note.
+
 ## [1.74.0] - 2026-09-23 — the calling application approves, and "no" means no
 
 The control plane decided who approves a policy-gated tool call: **not the plane**.
