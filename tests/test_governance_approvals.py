@@ -218,6 +218,26 @@ def test_the_deprecated_blocking_wait_refuses_at_the_ceiling(
     assert llm.told() == [REFUSAL]
 
 
+def test_the_deprecated_blocking_wait_refuses_a_pause_the_plane_expired(
+    plane: GovPlane, tmp_path: Path
+) -> None:
+    """The plane's admin force-expire is the one thing that can still expire a pause, and it
+    now sets the pending run the SDK polls to ``expired``. That is a no, never a yes."""
+    plane.resolve_as = "expired"
+    ran, tool = _bank()
+    llm = _Script(TRANSFER)
+    agent = _banker(llm, tool, tmp_path / "ckpt.db")
+
+    with pytest.warns(DeprecationWarning, match="wait_for_approval"):
+        final = asyncio.run(
+            agent.arun("Transfer $500 to Bob.", execution_id="run-1", wait_for_approval=True)
+        )
+
+    assert final.status == "completed", final
+    assert ran == []
+    assert llm.told() == [REFUSAL]
+
+
 def test_the_refusal_is_scoped_to_policy_pauses(plane: GovPlane, tmp_path: Path) -> None:
     """An ``interrupt()`` in user code is the tool's own business: on a "no" the
     tool is re-entered and decides for itself, as before 1.74.0."""
@@ -250,6 +270,8 @@ def test_the_refusal_is_scoped_to_policy_pauses(plane: GovPlane, tmp_path: Path)
         ("paused", "interrupt", None, None),
         ("resolved", "interrupt", "rejected", None),
     ]
+    # The app's own reason travels as-is; only the policy reason makes a pause an approval.
+    assert {e["reason"] for e in plane.ledger("run-u")} == {"need_sign_off"}
 
 
 # --- the evidence: kind and resolver ------------------------------------------
@@ -274,6 +296,12 @@ def test_the_ledger_records_an_approval_and_who_resolved_it(
     ]
     # No outcome the plane has not shipped yet (``expired``) ever leaves.
     assert {e["status"] for e in plane.ledger("run-1")} <= {None, "approved", "rejected"}
+    # The plane matches a resolution to a pause by these two values (2026-09-23), and on SDKs
+    # up to 1.73.0 by the reason alone. They are wire, so they are pinned as LITERALS here —
+    # a test written against ``governance.APPROVAL_REASON`` would pass through a rename.
+    assert {(e["kind"], e["reason"]) for e in plane.ledger("run-1")} == {
+        ("approval", "policy_approval_required")
+    }
 
 
 # --- the same guarantee one level up ------------------------------------------

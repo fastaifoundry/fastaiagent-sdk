@@ -197,8 +197,12 @@ if res.status == "paused" and res.pending_interrupt["reason"] == "policy_approva
     a console decision. The plane no longer makes that decision, so the wait can only
     end in the deprecated console approve/deny — kept working for the plane's
     transition window — or at its 600 s ceiling. Passing `wait_for_approval=True`
-    still works and emits a `DeprecationWarning`. **A rejection or an expired wait
-    refuses the call**; it never runs the tool.
+    still works and emits a `DeprecationWarning`. **A rejection, an expired wait, or a
+    pause the plane's admin force-expires refuses the call**; it never runs the tool.
+
+    **Removal:** `wait_for_approval=True` is removed in the first SDK release after the
+    plane retires the console approve/deny. After that point it could only ever time out
+    into a refusal, so move to resuming the pause from your application now.
 
 A runnable end-to-end example is in `examples/84_governed_agent.py`.
 
