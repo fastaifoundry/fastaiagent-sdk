@@ -3,7 +3,17 @@
 A **connected** agent can honor governance the platform admin defines centrally —
 no policy code in the agent. When the agent is about to call a tool the admin has
 flagged, the SDK asks the platform whether it may proceed; a high-stakes call
-**pauses for human approval** in the console and **resumes** once approved.
+**pauses** and hands the decision to **your application**, which asks its own user
+and resumes the run with the answer.
+
+!!! info "Who approves: your application, not the console (since 1.74.0)"
+    The plane never approves a runtime tool call. It distributes the policy,
+    **records** every pause and every resolution, **reports** on them (pending
+    count, age, outcome, who resolved it, time to resolve) and **flags** a pause
+    that outlives its policy's timeout — it never expires or decides one. Your
+    application is already talking to the person who started the run; the plane
+    is not. The console's approvals pages are a read-only record of what your
+    application decided.
 
 This builds on [guardrails](index.md) (local, in-process checks) by adding the
 **managed policy + pause/resume over the wire**. It needs [`fa.connect()`](../platform/index.md).
@@ -21,7 +31,11 @@ connect() ──▶ GET /policy (cache)
                     ├─ allow            ─▶ run
                     ├─ deny             ─▶ refuse (tell the model why)
                     └─ require_approval ─▶ POST /runs/{id}/pending + PAUSE (checkpoint)
-                                              console approves ─▶ resume ─▶ run
+                                              arun() returns status="paused"
+                                              your app asks its user
+                                              aresume(Resume(approved=…))
+                                                 ├─ approved ─▶ run the tool
+                                                 └─ rejected ─▶ refuse (tell the model)
 ```
 
 1. **`connect()`** pulls and caches the policy (`GET /policy`). On a pull failure
@@ -29,10 +43,13 @@ connect() ──▶ GET /policy (cache)
 2. Before a tool call whose name matches a cached approval policy's `tool_pattern`,
    the SDK calls **`POST /policy/decide`**.
 3. **`deny`** → the call is refused and the model is told why (the run continues).
-4. **`require_approval`** → the SDK posts **`POST /runs/{id}/pending`** and pauses
-   the agent (a real checkpoint). It then polls **`GET /runs/{id}/pending`**; when
-   the console flips the status to `approved`, the agent **resumes**. A `rejected`
-   decision refuses the call.
+4. **`require_approval`** → the SDK posts **`POST /runs/{id}/pending`** (so the
+   plane can record the pause against its approval request) and pauses the agent
+   (a real checkpoint). **`arun()` returns** the paused result to your code.
+5. Your application resumes with **`aresume(...)`**. An approval runs the tool; a
+   rejection **never runs it** — the model receives the refusal as the tool's
+   result, exactly as for `deny`. The resolution is reported to the plane with the
+   resolver you pass.
 
 Only tools that match a configured policy incur a `/policy/decide` round-trip;
 everything else runs untouched.
@@ -127,29 +144,61 @@ agent = Agent(
     tools=[FunctionTool(name="transfer_funds", fn=transfer_funds)],
     checkpointer=SQLiteCheckpointer("agent.db"),  # (2) needed to pause/resume
 )
-
-# Blocking by default: arun() waits for the console decision and resumes.
-result = await agent.arun("Transfer $500 to Bob.")
 ```
 
 - **`agent_id`** is the agent's **platform UUID** — it's sent to `/policy/decide`
   so the plane can match approval policies (and it validates the id). Without it,
-  the agent isn't enrolled and the gate is a no-op.
-- A **`checkpointer`** is required so a paused run can be resumed.
+  the agent isn't enrolled and the gate is a no-op. `agent.push()` registers the
+  agent and sets it for you. An enrolled agent stays governed inside a `Swarm` or
+  a `Supervisor` (before 1.74.0 their internal copies dropped the id, so a
+  worker's policy-gated tool ran with no approval at all).
+- A **`checkpointer`** is required so a paused run can be resumed. Without one,
+  the pause cannot be saved and surfaces as an `InterruptSignal` exception (unless
+  the agent runs inside a checkpointed `Chain`, which then owns the pause).
 
-### Blocking vs. non-blocking
+### Approving from your application
 
-`arun()` **blocks by default** (`wait_for_approval=True`): it waits for the console
-decision and resumes for you. For your own control loop, pass
-`wait_for_approval=False` to get the paused `AgentResult` and resume yourself once
-the run is approved:
+`arun()` returns the pause. Read the tool and its arguments from the pause, ask
+your user, and resume with their answer and their identity:
 
 ```python
-res = await agent.arun("Transfer $500 to Bob.", wait_for_approval=False)
-if res.status == "paused":               # res.pending_interrupt["reason"] == "policy_approval_required"
-    # ... wait for the console to approve (GET /public/v1/runs/{id}/pending) ...
-    res = await agent.aresume(res.execution_id, resume_value=Resume(approved=True))
+from fastaiagent import Resume
+
+res = await agent.arun("Transfer $500 to Bob.", execution_id="run-42")
+if res.status == "paused" and res.pending_interrupt["reason"] == "policy_approval_required":
+    ctx = res.pending_interrupt["context"]
+    tool, args = ctx["tool"], ctx["tool_input"]      # "transfer_funds", {"amount": 500, "to": "Bob"}
+
+    approved = ask_my_user(f"Allow {tool} with {args}?")   # your UI, chat reply, ticket...
+
+    res = await agent.aresume(
+        res.execution_id,
+        resume_value=Resume(approved=approved, metadata={"resolver": "alice@acme.com"}),
+    )
 ```
+
+- **The pause** (`res.pending_interrupt["context"]`) carries `tool`, `tool_input`
+  (the arguments the model chose), `run_id` and the plane's `approval_request_id`.
+- **The resume can happen later and elsewhere.** The run is checkpointed, so
+  `aresume` works from another request or process that can reach the same
+  checkpointer (or, when connected, the plane's replica). Keep the
+  `execution_id`.
+- **`approved=False` refuses the call.** The tool never runs; the model receives
+  `Refused: governance approval denied for 'transfer_funds'` as the tool's result
+  and continues, exactly as for a `deny` verdict.
+- **Pass the resolver.** `Resume.metadata["resolver"]` is recorded on the plane's
+  human-in-the-loop ledger as *who* decided — the evidence for human oversight
+  (EU AI Act Article 14). Pass the identity of the person who answered. It is the
+  only place that identity comes from; without it the ledger records the decision
+  with no one attached.
+
+!!! warning "`wait_for_approval=True` is deprecated"
+    Before 1.74.0 `arun()` blocked by default, polling `GET /runs/{id}/pending` for
+    a console decision. The plane no longer makes that decision, so the wait can only
+    end in the deprecated console approve/deny — kept working for the plane's
+    transition window — or at its 600 s ceiling. Passing `wait_for_approval=True`
+    still works and emits a `DeprecationWarning`. **A rejection or an expired wait
+    refuses the call**; it never runs the tool.
 
 A runnable end-to-end example is in `examples/84_governed_agent.py`.
 
@@ -164,33 +213,23 @@ passing with context and failing closed without it, and `floor` surviving the
 wire. The judges themselves run against a real model in
 `tests/e2e/test_guardrail_actions_e2e.py`.
 
-Against a live plane, a connected agent pausing for approval and resuming once the
-console approves (real `gpt-4o-mini`, both modes):
+**Approvals** are exercised against a live local plane by
+`tests/e2e/test_connected_approvals_e2e.py` (real `gpt-4o-mini`): a console-authored
+approval policy pauses the run, the application rejects it, the tool **never runs**,
+and the plane's ledger records `kind=approval`, `rejected` and the resolver the
+application passed. The same paths — approve, reject, the deprecated wait expiring,
+and the pause inside a `Chain`, `Swarm` and `Supervisor` — are pinned without a
+plane in `tests/test_governance_approvals.py`.
 
-```text
-connected. cached approval_policies: 1
-=== NON-BLOCKING: arun(wait_for_approval=False) ===
-  paused? paused | reason: policy_approval_required
-  pending(before): pending | console approve -> 200 approved
-  resumed: completed | output: 'I have successfully transferred $500 to Bob.'
-=== BLOCKING: arun() auto-waits for approval + resumes ===
-  pending appeared: pending | console approve -> 200 approved
-  auto-resumed: completed | output: 'I have successfully transferred $250 to Alice.'
-```
+## On the platform
 
-## In the console
-
-A connected agent's high-stakes calls surface in the console for review. Here three
-`transfer_funds` calls are **Pending** approval (one per paused run), under the
-agent's API key:
-
-![Tool approval requests pending in the console](img/governance-pending-approval.png)
+The admin manages the rules on the **Approval Policies** page (the `tool_pattern`
+set, and a `timeout_minutes` the plane uses to flag a pause as *overdue* — never to
+expire or decide it). The approvals pages are a **read-only record**: every pause,
+its outcome, who resolved it and how long it took, as reported by your
+application through the SDK.
 
 Each paused run is also a normal trace — the connected agent's run pushed to the
 platform (here `agent.banker`):
 
 ![The connected agent's run trace](img/governance-trace.png)
-
-The admin manages the rules on the **Approval Policies** page (the `tool_pattern`
-set) and resolves a connected run's pending approval via the Public API
-(`POST /api/v1/pending-runs/{id}/approve`), which flips the status the SDK polls.

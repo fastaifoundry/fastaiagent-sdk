@@ -85,3 +85,39 @@ def test_warn_on_exposure_silent_on_loopback() -> None:
         with contextlib.redirect_stderr(buf):
             agent_cli._warn_on_exposure(host, None)
         assert buf.getvalue() == ""
+
+
+def test_run_reports_a_paused_run_as_paused(isolated_local_db, tmp_path) -> None:
+    """A policy-gated call pauses the run (the calling application approves,
+    1.74.0). ``/run`` used to answer 200 with an empty ``output`` and nothing
+    else — indistinguishable from an agent that simply said nothing."""
+    import fastaiagent
+    from fastaiagent.checkpointers.sqlite import SQLiteCheckpointer
+    from tests._governance_plane import AGENT_ID, reset_connection, serve
+    from tests.test_governance_approvals import TRANSFER, _bank, _Script
+
+    ran, tool = _bank()
+    agent = Agent(
+        name="banker",
+        agent_id=AGENT_ID,
+        llm=_Script(TRANSFER),
+        tools=[tool],
+        checkpointer=SQLiteCheckpointer(str(tmp_path / "ckpt.db")),
+    )
+    with serve() as (_, url):
+        fastaiagent.connect(api_key="fa_k_serve_test", target=url)
+        try:
+            body = (
+                TestClient(agent_cli._build_app(agent))
+                .post("/run", json={"input": "Transfer $500 to Bob."})
+                .json()
+            )
+        finally:
+            reset_connection()
+
+    assert body["status"] == "paused", body
+    assert body["output"] == ""
+    assert body["execution_id"]
+    assert body["pending_interrupt"]["reason"] == "policy_approval_required"
+    assert body["pending_interrupt"]["context"]["tool_input"] == {"amount": 500, "to": "Bob"}
+    assert ran == []

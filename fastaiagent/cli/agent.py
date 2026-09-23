@@ -29,6 +29,13 @@ try:
         latency_ms: int = 0
         tokens_used: int = 0
         trace_id: str | None = None
+        # "paused" when the run stopped for a decision — a managed approval
+        # policy (the calling application approves, since 1.74.0) or an
+        # interrupt(). ``output`` is then empty: the run has not finished, and
+        # ``pending_interrupt`` says what it is waiting on.
+        status: str = "completed"
+        execution_id: str | None = None
+        pending_interrupt: dict[str, Any] | None = None
 except ImportError:  # pragma: no cover - pydantic is a required fastaiagent dep
     RunRequest = None  # type: ignore[assignment, misc]
     RunResponse = None  # type: ignore[assignment, misc]
@@ -112,9 +119,7 @@ def _build_app(
     from fastaiagent.llm.stream import TextDelta, ToolCallEnd
 
     if not isinstance(target, (Agent, Chain)):
-        raise typer.BadParameter(
-            f"Target must be Agent or Chain, got {type(target).__name__}"
-        )
+        raise typer.BadParameter(f"Target must be Agent or Chain, got {type(target).__name__}")
 
     async def require_token(
         authorization: str | None = Header(default=None),
@@ -161,6 +166,9 @@ def _build_app(
                 latency_ms=agent_result.latency_ms,
                 tokens_used=agent_result.tokens_used,
                 trace_id=agent_result.trace_id,
+                status=agent_result.status,
+                execution_id=agent_result.execution_id,
+                pending_interrupt=agent_result.pending_interrupt,
             )
         # Chain
         chain_result = await target.aexecute({"input": req.input})
@@ -169,7 +177,12 @@ def _build_app(
             if isinstance(chain_result.output, str)
             else json.dumps(chain_result.output, default=str)
         )
-        return RunResponse(output=chain_output)
+        return RunResponse(
+            output=chain_output,
+            status=chain_result.status,
+            execution_id=chain_result.execution_id,
+            pending_interrupt=chain_result.pending_interrupt,
+        )
 
     @app.post("/run/stream", dependencies=[Depends(require_token)])
     async def run_stream(req: RunRequest) -> StreamingResponse:

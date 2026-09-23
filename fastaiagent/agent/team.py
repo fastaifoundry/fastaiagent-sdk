@@ -148,6 +148,11 @@ class Supervisor:
         base = worker.agent
         return Agent(
             name=base.name,
+            # The platform identity is what managed policy is enforced on
+            # (``/policy/decide``) and what plane guardrails are scoped to. A
+            # clone without it was never gated: a worker's approval-policy tool
+            # ran with no approval at all (fixed 1.74.0).
+            agent_id=base.agent_id,
             system_prompt=base.system_prompt,
             llm=base.llm,
             tools=list(base.tools),

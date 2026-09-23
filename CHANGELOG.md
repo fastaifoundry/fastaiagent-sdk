@@ -5,6 +5,113 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.74.0] - 2026-09-23 — the calling application approves, and "no" means no
+
+The control plane decided who approves a policy-gated tool call: **not the plane**.
+It distributes the policy, records every pause and resolution, reports on them and
+flags a pause that outlives its timeout, but it never decides one. The application
+that started the run is the approver
+(`fastaiagent-enterprise/docs/Plane_Handoff_Approvals_2026-09.md`). This release
+closes the security bug that decision exposed and makes the SDK default match it.
+No wire change: every key and endpoint used here already existed.
+
+### Security
+
+- **A rejected or expired approval ran the tool anyway** (audit H1, critical).
+  `Agent.aresume` re-enters the saved tool directly, and the governance decision
+  lives in `governance.gate_tool_call`, which that path never passes through. So
+  `aresume(run_id, Resume(approved=False))` executed `transfer_funds` and the model
+  reported a successful transfer. The same happened when the blocking wait was
+  denied in the console or ran out at its 600 s ceiling, and in a Swarm or a
+  Supervisor, which resume through the same method. Reproduced against a live
+  plane with a real `gpt-4o-mini` on 1.73.0, all four ways. `aresume` now
+  recognises a managed-policy pause (`policy_approval_required`) and, on
+  `approved=False`, gives the model the refusal as the tool's result, as a `deny`
+  verdict does. An `interrupt()` in user code is unaffected: its tool is still
+  re-entered and decides for itself.
+- **A governed agent inside a Swarm or a Supervisor was never gated.** Both run a
+  copy of each agent, and the copy dropped `agent_id`, which is the identity
+  `/policy/decide` and plane guardrails are keyed on. A worker's approval-policy
+  tool therefore ran with no approval at all, and plane guardrails scoped to that
+  agent never applied to it. The copies now keep `agent_id`. Found while writing
+  the Swarm and Supervisor tests for the fix above.
+
+### Changed
+
+- ⚠ **Behaviour change: `arun()` returns the approval pause by default.**
+  `wait_for_approval` now defaults to `False`. A connected run that a policy pauses
+  comes back as `status="paused"`, and your application resumes it:
+  `aresume(run_id, resume_value=Resume(approved=..., metadata={"resolver": ...}))`.
+  Before, `arun()` blocked, polling the plane for a console decision the plane no
+  longer makes, so under the new plane it would always sit out its 600 s ceiling.
+  Code that relied on the blocking default must either resume the pause itself or
+  pass `wait_for_approval=True` explicitly.
+- **`wait_for_approval=True` is deprecated** and emits a `DeprecationWarning`. It
+  keeps working for the plane's transition window, while the deprecated console
+  approve/deny still flips the status it polls. A rejection or an expired wait
+  refuses the call; neither runs the tool.
+- **The pause carries the tool's arguments.** `pending_interrupt["context"]` for a
+  policy pause now includes `tool_input` next to `tool`, `run_id` and
+  `approval_request_id`, so the application can ask "transfer $500 to Bob?". It
+  stays local; the same arguments were already in the checkpoint's `node_input`
+  and in the pending-run context sent to the plane.
+- **The HITL ledger records a policy approval as an approval.** Pause and
+  resolution events for a `policy_approval_required` pause are sent with
+  `kind="approval"` (in the wire schema since v1.1, never sent until now) instead
+  of `kind="interrupt"`, on the agent path and on the chain path an agent's pause
+  reaches when a Chain owns it. `interrupt()` in user code stays `interrupt`. Pass
+  the end user's identity as `Resume.metadata["resolver"]`: it is recorded as who
+  decided, and is the evidence for human oversight. `status` is still only
+  `approved` or `rejected`, and an expired wait is reported as `rejected`.
+
+### Fixed
+
+- **A Chain reported an agent's pause as a finished step.** An agent with its
+  own checkpointer does not raise when it pauses: it returns `status="paused"`
+  with empty output. An agent node passed that on as its result and the chain
+  reported `completed`, having carried on past a decision nobody had made. A
+  parallel node counted such a child as a success in the same way. The blocking
+  default used to hide this for policy pauses; with the pause now returned by
+  default it would have been the usual case. The pause lives in the agent's own
+  checkpointer under the agent's own run id, so the chain cannot resume it. The
+  node now raises a `ChainError` naming the agent, the reason and the run id to
+  `aresume`, and a parallel child becomes an `error` entry. An agent with **no**
+  checkpointer is unchanged: it raises, and the chain owns and resumes the pause.
+  This applies to an `interrupt()` in the agent's tools too, which had the same
+  silent pass.
+- **`agent serve` answered a paused run with 200 and an empty `output`.**
+  `POST /run` now also returns `status`, `execution_id` and `pending_interrupt`,
+  all additive. A policy pause carries the tool and its arguments. The service
+  has no resume route; resume the `execution_id` from your application.
+
+### Docs
+
+- `guardrails/managed-governance.md` is rewritten for the application-resolves
+  flow: the non-blocking example is *the* example, with where to read the tool and
+  its arguments and where to pass the resolver. The console-approval screenshot and
+  text are gone, since the console's approvals pages are now a read-only record.
+  `platform/connected-hitl.md` documents `kind=approval`. `examples/84_governed_agent.py`
+  now rejects one transfer and approves another, and its snapshot is a real run
+  against a local plane.
+
+### Tests
+
+- `tests/test_governance_approvals.py` (13): approve, reject, the deprecated wait
+  rejected, expired and still honouring a console approval, the refusal scoped to
+  policy pauses, the ledger `kind` and resolver, a rejected approval in a Chain, a
+  Swarm and a Supervisor, and a self-checkpointed agent's pause inside an agent
+  node and a parallel node. Real `Agent`/`Chain`/`Swarm`/`Supervisor` and
+  `SQLiteCheckpointer` against a local HTTP stand-in for the governance endpoints
+  (`tests/_governance_plane.py`), with a scripted model. The Swarm and Supervisor
+  cases failed before the `agent_id` fix.
+- `tests/test_cli_agent_serve.py`: `/run` reports a paused run as paused, with the
+  tool's arguments.
+- `tests/e2e/test_governance_e2e.py` gains the reject and expiry cases with a real
+  `gpt-4o-mini`. Until now only the approve path was tested.
+- `tests/e2e/test_connected_approvals_e2e.py` is the plane's §2 reproduction and
+  its "Verifying" steps against a live plane: rejected, never run, and the ledger
+  shows `kind=approval`, `rejected` and the resolver.
+
 ## [1.73.0] - 2026-09-22 — the two things the control plane asked for
 
 Both come from the plane team's reply to our September handoff. Neither changes

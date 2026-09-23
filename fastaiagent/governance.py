@@ -8,9 +8,13 @@ When the SDK is ``connect()``-ed, it caches the platform's policy
 * ``deny``             → the tool is refused; the model is told why and continues.
 * ``require_approval`` → the SDK registers a pending run
   (``POST /runs/{run_id}/pending``) and **pauses** the agent via the existing
-  ``interrupt()`` checkpoint machinery. A human approves on the console
-  (which flips the pending run's status); the SDK observes that by polling
-  ``GET /runs/{run_id}/pending`` and **resumes** (blocking by default).
+  ``interrupt()`` checkpoint machinery. The **calling application** is the
+  approver: ``arun()`` returns the paused result, whose
+  ``pending_interrupt["context"]`` carries the tool and its arguments, and the
+  app resumes with ``Resume(approved=…, metadata={"resolver": …})``. A rejection
+  refuses the call — the model is told, the tool never runs. The plane records
+  the pause and its resolution and flags one that outlives its timeout; it never
+  decides one (plane decision, 2026-09-23).
 
 The gate is a no-op unless the SDK is connected AND a cached approval policy's
 ``tool_pattern`` (fnmatch) matches the tool — so unmanaged / policy-less runs are
@@ -29,9 +33,29 @@ logger = logging.getLogger(__name__)
 
 _RESOLVED = frozenset({"approved", "rejected", "expired"})
 
-# Poll cadence + ceiling for the blocking wait-for-approval.
+# Poll cadence + ceiling for the (deprecated) blocking wait-for-approval.
 _POLL_INTERVAL_SECONDS = 2.0
 _POLL_TIMEOUT_SECONDS = 600.0
+
+#: The ``interrupt()`` reason a managed approval policy pauses with. It is what
+#: tells a governance pause apart from an ``interrupt()`` in user code — on
+#: resume, where a rejected one must not run the tool, and on the HITL ledger.
+APPROVAL_REASON = "policy_approval_required"
+
+
+def hitl_kind(reason: str | None) -> str:
+    """The HITL ledger ``kind`` for a pause with this ``reason``.
+
+    ``approval`` has been in the wire schema since v1.1 and was never sent before
+    1.74.0, so the plane recorded every policy approval as an ad-hoc
+    ``interrupt`` by an unknown person — the wrong evidence for human oversight.
+    """
+    return "approval" if reason == APPROVAL_REASON else "interrupt"
+
+
+def denied(tool_name: str) -> str:
+    """What the model is told when a policy approval is rejected or expires."""
+    return f"Refused: governance approval denied for '{tool_name}'"
 
 
 def policy_matches(tool_name: str) -> bool:
@@ -206,14 +230,18 @@ async def get_pending_status(run_id: str) -> str | None:
 async def await_resolution(
     run_id: str,
     *,
-    poll_interval: float = _POLL_INTERVAL_SECONDS,
-    timeout: float = _POLL_TIMEOUT_SECONDS,
+    poll_interval: float | None = None,
+    timeout: float | None = None,
 ) -> str:
     """Poll ``GET /runs/{run_id}/pending`` until the status resolves.
 
     Returns ``approved`` / ``rejected`` / ``expired``. Returns ``expired`` if the
-    timeout elapses without a console decision.
+    timeout elapses without a decision — which, now that the plane never decides,
+    is what happens unless someone uses the deprecated console approve/deny. The
+    caller treats anything but ``approved`` as a refusal.
     """
+    poll_interval = _POLL_INTERVAL_SECONDS if poll_interval is None else poll_interval
+    timeout = _POLL_TIMEOUT_SECONDS if timeout is None else timeout
     waited = 0.0
     while waited < timeout:
         status = await get_pending_status(run_id)
@@ -234,6 +262,11 @@ async def gate_tool_call(
     ``interrupt()`` — which raises ``InterruptSignal`` (the executor checkpoints
     and pauses) on the first pass, and on resume returns the ``Resume`` value so
     we allow (approved) or refuse (rejected).
+
+    That resume branch is only reached when a parent **Chain** owns the
+    suspension and re-runs this agent. :meth:`Agent.aresume` re-enters the saved
+    tool directly and never comes back here, so it applies the same refusal
+    itself — see :data:`APPROVAL_REASON`.
     """
     from fastaiagent.chain.interrupt import _resume_value, interrupt
     from fastaiagent.client import _connection
@@ -265,8 +298,8 @@ async def gate_tool_call(
     # On resume, ``interrupt()`` returns the human's decision instead of raising.
     # Skip a second /policy/decide (and a second pending-run) for the same call.
     if _resume_value.get() is not None:
-        resume = interrupt(reason="policy_approval_required", context={"tool": tool_name})
-        return None if resume.approved else f"Refused: governance approval denied for '{tool_name}'"
+        resume = interrupt(reason=APPROVAL_REASON, context={"tool": tool_name})
+        return None if resume.approved else denied(tool_name)
 
     try:
         decision = await decide(tool_name, tool_input, agent_id)
@@ -292,15 +325,20 @@ async def gate_tool_call(
             )
         except Exception:
             logger.warning("pending-run registration failed for %r", tool_name, exc_info=True)
-        # Pause for console approval (raises InterruptSignal on the first pass).
+        # Pause (raises InterruptSignal on the first pass). The calling app is
+        # the approver, so the pause carries what it needs to ask its user —
+        # the tool AND its arguments ("transfer $500 to Bob?"). ``tool_input``
+        # matches the pending-run context above; it stays local (the same
+        # arguments are already in the checkpoint's ``node_input``).
         resume = interrupt(
-            reason="policy_approval_required",
+            reason=APPROVAL_REASON,
             context={
                 "tool": tool_name,
+                "tool_input": tool_input,
                 "run_id": run_id,
                 "approval_request_id": decision.get("approval_request_id"),
             },
         )
         if not resume.approved:
-            return f"Refused: governance approval denied for '{tool_name}'"
+            return denied(tool_name)
     return None

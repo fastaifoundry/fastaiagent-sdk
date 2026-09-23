@@ -186,6 +186,7 @@ def _record_agent_interrupt(
     # Best-effort: report the pause to a connected plane (no-op when not
     # connected; never blocks/raises into the agent hot path).
     try:
+        from fastaiagent.governance import hitl_kind
         from fastaiagent.trace.hitl_export import record_pause_event
 
         record_pause_event(
@@ -193,7 +194,7 @@ def _record_agent_interrupt(
             node=node_id,
             reason=sig.reason,
             agent_id=agent_name,
-            kind="interrupt",
+            kind=hitl_kind(sig.reason),
         )
     except Exception:
         logger.debug("HITL pause emit failed", exc_info=True)
