@@ -487,6 +487,7 @@ class Chain:
             # not connected; never blocks/raises). Emitted only on the winning
             # claim, so a losing AlreadyResumed race reports no phantom resolution.
             try:
+                from fastaiagent.governance import hitl_kind
                 from fastaiagent.trace.hitl_export import record_resolution_event
 
                 record_resolution_event(
@@ -496,7 +497,7 @@ class Chain:
                     resolver=resume_value.metadata.get("resolver"),
                     reason=claimed.reason,
                     chain_id=self.name,
-                    kind="interrupt",
+                    kind=hitl_kind(claimed.reason),
                 )
             except Exception:
                 logger.debug("HITL resolution emit failed", exc_info=True)

@@ -65,7 +65,7 @@ from fastaiagent.llm.structured import OutputSpec
 from fastaiagent.multimodal.image import Image as MultimodalImage
 from fastaiagent.multimodal.pdf import PDF as MultimodalPDF  # noqa: N811
 from fastaiagent.multimodal.types import ContentPart, normalize_input
-from fastaiagent.tool.base import Tool
+from fastaiagent.tool.base import Tool, ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -601,7 +601,7 @@ class Agent:
         trace: bool = True,
         execution_id: str | None = None,
         messages: list[Message] | None = None,
-        wait_for_approval: bool = True,
+        wait_for_approval: bool = False,
         metadata: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> AgentResult:
@@ -616,11 +616,32 @@ class Agent:
         ``input`` — used for multi-turn flows such as :func:`fastaiagent.simulate`.
         Default ``None`` reproduces the single-input behavior exactly.
 
-        ``wait_for_approval`` (default True): when a managed governance policy
-        pauses a tool call for approval, block and resume automatically once the
-        console approves (see :meth:`_await_governance_approval`). Set False to
-        instead receive the paused :class:`AgentResult` and drive resume yourself.
+        When a managed governance policy pauses a tool call for approval, the run
+        returns ``status="paused"``. **Your application is the approver**: show
+        ``result.pending_interrupt["context"]`` (``tool`` and ``tool_input``) to
+        its user, then call :meth:`aresume` with ``Resume(approved=...,
+        metadata={"resolver": <that user>})``. A rejection refuses the call — the
+        model is told, and the tool never runs.
+
+        ``wait_for_approval`` (default False since 1.74.0) is **deprecated**:
+        ``True`` blocks polling the plane for a console decision, which the plane
+        no longer makes. It is kept for the plane's transition window only; a
+        rejection or the poll ceiling refuses the call (see
+        :meth:`_await_governance_approval`).
         """
+        if wait_for_approval:
+            import warnings
+
+            warnings.warn(
+                "arun(wait_for_approval=True) is deprecated: the plane no longer "
+                "approves tool calls, so the wait can only end in the deprecated "
+                "console decision or a refusal at the poll ceiling. Take the paused "
+                "result and resume it from your application with "
+                "aresume(run_id, resume_value=Resume(approved=..., "
+                "metadata={'resolver': ...})).",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         # Gap 4: make this run's registry-prompt provenance visible to the LLM
         # client so it can stamp fastaiagent.prompt.* on the llm_call span.
         # ContextVar → async-task-local; no LLM call-signature changes.
@@ -655,23 +676,25 @@ class Agent:
     async def _await_governance_approval(
         self, result: AgentResult, *, context: RunContext[Any] | None = None
     ) -> AgentResult:
-        """Block on console approval of a policy-gated tool call, then resume (Task C).
+        """Deprecated blocking wait on a console decision, then resume (Task C).
 
-        When a managed policy paused this run (``reason="policy_approval_required"``),
-        poll the platform for the console's decision and resume via the agent's
-        own checkpointer — so a connected agent transparently flows through
-        human-in-the-loop approval. Scoped to governance pauses; any other pause
-        is returned unchanged.
+        When a managed policy paused this run, poll ``GET /runs/{id}/pending``
+        and resume via the agent's own checkpointer. Only the deprecated console
+        approve/deny flips that status, so under the current plane the wait
+        normally runs to the poll ceiling. Anything but ``approved`` — rejected,
+        or expired at the ceiling — resumes with ``approved=False``, which
+        :meth:`aresume` turns into a refusal: the tool never runs. Scoped to
+        governance pauses; any other pause is returned unchanged.
         """
+        from fastaiagent import governance
         from fastaiagent.client import _connection
 
         while (
             result.status == "paused"
             and isinstance(result.pending_interrupt, dict)
-            and result.pending_interrupt.get("reason") == "policy_approval_required"
+            and result.pending_interrupt.get("reason") == governance.APPROVAL_REASON
             and _connection.is_connected
         ):
-            from fastaiagent import governance
             from fastaiagent.chain.interrupt import Resume
 
             run_id = result.execution_id
@@ -1298,7 +1321,10 @@ class Agent:
            The pending row is atomically claimed; concurrent resumers see
            :class:`AlreadyResumed`. The suspended tool is re-invoked with
            ``_resume_value`` in scope so :func:`interrupt` returns the value,
-           then the agent loop continues.
+           then the agent loop continues. **Exception:** a managed-policy
+           approval pause (``policy_approval_required``) resumed with
+           ``approved=False`` does not re-invoke the tool — the model receives
+           the refusal as the tool's result, exactly as for a ``deny`` verdict.
         2. **Tool-boundary crash** (latest checkpoint is ``turn:N/tool:X``,
            ``status="completed"``): the saved tool is re-invoked with the
            saved args; the agent loop continues afterwards. The LLM is NOT
@@ -1378,6 +1404,7 @@ class Agent:
             # not connected; never blocks/raises). Emitted only on the winning
             # claim, so a losing AlreadyResumed race reports no phantom resolution.
             try:
+                from fastaiagent.governance import hitl_kind
                 from fastaiagent.trace.hitl_export import record_resolution_event
 
                 record_resolution_event(
@@ -1387,7 +1414,7 @@ class Agent:
                     resolver=resume_value.metadata.get("resolver"),
                     reason=claimed.reason,
                     agent_id=self.name,
-                    kind="interrupt",
+                    kind=hitl_kind(claimed.reason),
                 )
             except Exception:
                 logger.debug("HITL resolution emit failed", exc_info=True)
@@ -1474,9 +1501,24 @@ class Agent:
         )
         ap_token = _agent_path.set(new_path)
         cp_token = _current_checkpointer.set(self._checkpointer)
+        # A managed approval policy paused this call and the answer is no — the
+        # app rejected it, or the blocking wait expired. The decision lives in
+        # ``governance.gate_tool_call``, which this re-entry never passes through,
+        # so without this the saved tool ran anyway (audit H1). Refuse the way a
+        # ``deny`` verdict does: the model is told, the tool never runs.
+        from fastaiagent import governance
+
+        refused = (
+            resume_value is not None
+            and not resume_value.approved
+            and latest.interrupt_reason == governance.APPROVAL_REASON
+        )
         try:
             try:
-                tool_result = await tool.aexecute(tool_args, context=context)
+                if refused:
+                    tool_result = ToolResult(output=governance.denied(tool_name))
+                else:
+                    tool_result = await tool.aexecute(tool_args, context=context)
             except _AgentInterrupted:
                 # interrupt() was called again inside the resumed tool —
                 # _record_agent_interrupt already wrote the new pending

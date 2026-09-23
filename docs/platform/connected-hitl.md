@@ -27,16 +27,25 @@ user/business data ever leaves the process:
 |-------|-------|------------|
 | `run_id` | execution id | execution id |
 | `event_type` | `paused` | `resolved` |
-| `kind` | `interrupt` | `interrupt` |
+| `kind` | `approval` for a [managed-policy](../guardrails/managed-governance.md) pause, else `interrupt` | same as its pause |
 | `agent_id` / `chain_id` | which agent/chain | which agent/chain |
 | `node` | node / `turn:N/tool:name` | the resumed node |
 | `reason` | the `interrupt()` reason label | the original reason |
 | `status` | — | `approved` / `rejected` |
 | `resolver` | — | `resume_value.metadata["resolver"]` if set |
 
+`kind` tells the two kinds of pause apart on the ledger: `approval` is a tool
+call a managed approval policy paused (reason `policy_approval_required`, since
+1.74.0 — earlier versions reported those as `interrupt` too); `interrupt` is an
+`interrupt()` in your own code. `status` is only ever `approved` or `rejected`: a
+blocking wait that expires is reported as `rejected`, because that is what it
+does — the tool is refused.
+
 The raw `interrupt(reason, context)` **context dict is never sent** — only the
-short `reason` label. To attribute a resolution to an operator, pass a
-`resolver` in the resume metadata:
+short `reason` label. To attribute a resolution to a person, pass a `resolver` in
+the resume metadata — the identity of whoever answered in your app. It is the
+only source of that identity, and for a policy approval it is the heart of the
+human-oversight evidence:
 
 ```python
 import fastaiagent as fa

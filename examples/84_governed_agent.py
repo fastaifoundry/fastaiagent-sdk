@@ -3,15 +3,21 @@
 A platform admin configures an **approval policy** (a tool-name pattern). When a
 connected agent is about to call a matching tool, the SDK asks the platform
 (``POST /policy/decide``); on ``require_approval`` it registers a pending run and
-**pauses** (a real checkpoint). A human approves on the console; the agent
-**resumes** and finishes.
+**pauses** (a real checkpoint). **Your application is the approver**: ``arun()``
+returns the pause, you ask your user, and you resume with their answer. The
+plane records the pause and the outcome; it never decides one (since 1.74.0).
 
 * ``connect()`` caches the policy (``GET /policy``).
 * Enroll the agent by setting ``agent_id`` to its **platform agent UUID** — that's
   what ``/policy/decide`` matches on (and the plane validates it).
 * Give the agent a ``checkpointer`` so it can pause/resume.
-* ``arun()`` **blocks by default** until the console decides, then resumes. Pass
-  ``wait_for_approval=False`` to get the paused result and drive resume yourself.
+* ``arun()`` returns ``status="paused"``; ``pending_interrupt["context"]`` holds the
+  ``tool`` and its ``tool_input``. Resume with
+  ``aresume(run_id, resume_value=Resume(approved=..., metadata={"resolver": ...}))``.
+  A rejection never runs the tool — the model is told it was refused.
+
+This example plays the application's user twice: it **rejects** a $500 transfer to
+Bob, then **approves** a $40 transfer to Eve.
 
 Usage:
     export OPENAI_API_KEY=sk-...
@@ -31,16 +37,24 @@ JWT, not an API key)::
 
 Expected output (snapshot — real run against a local plane on :20001):
     connected. cached approval_policies: 1
-    === arun(wait_for_approval=False) ===
-      paused for approval: policy_approval_required
-      -> approve this run in the console (POST /api/v1/pending-runs/{id}/approve)
-      resumed: completed | output: 'The $500 has been successfully transferred to Bob.'
+    === Transfer $500 to Bob. ===
+      paused: transfer_funds {'amount': 500, 'to': 'Bob'}
+      the user says: no
+      resumed: completed | output: "I'm unable to process the transfer to Bob at this time due …"
+      transfer_funds ran: False
+    === Transfer $40 to Eve. ===
+      paused: transfer_funds {'amount': 40, 'to': 'Eve'}
+      the user says: yes
+      resumed: completed | output: '$40 has been successfully transferred to Eve.'
+      transfer_funds ran: True
 """
 
 from __future__ import annotations
 
 import asyncio
 import os
+import uuid
+from typing import Any
 
 import fastaiagent as fa
 from fastaiagent import Agent, FunctionTool, LLMClient
@@ -48,10 +62,19 @@ from fastaiagent.chain.interrupt import Resume
 from fastaiagent.checkpointers.sqlite import SQLiteCheckpointer
 from fastaiagent.client import _connection
 
+RAN: list[dict[str, Any]] = []
+
 
 def transfer_funds(amount: int, to: str) -> str:
     # A "high-stakes" tool — running in your boundary with your own creds.
+    RAN.append({"amount": amount, "to": to})
     return f"Transferred ${amount} to {to}."
+
+
+def ask_the_user(tool: str, args: dict[str, Any]) -> bool:
+    """Your approval surface — a UI prompt, a chat reply, a ticket. Scripted here:
+    anything over $100 is refused."""
+    return float(args.get("amount", 0)) <= 100
 
 
 def main() -> int:
@@ -74,7 +97,7 @@ def main() -> int:
         print(
             "Skipping: this domain has no approval policy, so nothing will pause.\n"
             "  Create one with a domain-admin JWT (an API key cannot):\n"
-            f'    POST {target}/api/v1/approval-policies?domain_id=<domain uuid>\n'
+            f"    POST {target}/api/v1/approval-policies?domain_id=<domain uuid>\n"
             '    {"name": "example-84", "tool_pattern": "transfer_funds",\n'
             f'     "agent_id": "{agent_id}", "condition_type": "always"}}'
         )
@@ -93,12 +116,11 @@ def main() -> int:
         checkpointer=SQLiteCheckpointer("governed_agent.db"),
     )
 
-    async def run() -> None:
-        # Non-blocking: see the pause, then resume after the console approves.
-        print("=== arun(wait_for_approval=False) ===")
-        res = await agent.arun(
-            "Transfer $500 to Bob.", wait_for_approval=False, execution_id="ex-84"
-        )
+    async def handle(request: str) -> None:
+        print(f"=== {request} ===")
+        run_id = f"ex-84-{uuid.uuid4().hex[:8]}"
+        before = len(RAN)
+        res = await agent.arun(request, execution_id=run_id)
         # Assert the pause actually happened before trying to resume it. A
         # policy can exist and still not match — wrong agent_id, a
         # ``tool_pattern`` that does not cover ``transfer_funds``, an inactive
@@ -111,16 +133,25 @@ def main() -> int:
         # while the gate was inert. 1.65.0 made that raise ``AlreadyResumed``
         # instead; what it raises on is *this* example's own missing
         # precondition, so check it here rather than catching the exception.
-        if res.status != "paused":
+        if res.status != "paused" or res.pending_interrupt is None:
             print(f"  NOT paused (status={res.status!r}) — the policy did not match this call.")
             print("  Check the policy's agent_id, tool_pattern and is_active, then re-run.")
             return
-        print("  paused for approval:", (res.pending_interrupt or {}).get("reason"))
-        print("  -> approve this run in the console (POST /api/v1/pending-runs/{id}/approve)")
-        # Once approved, resume. (The blocking default — plain agent.arun(...) —
-        # waits for the console and resumes for you.)
-        final = await agent.aresume("ex-84", resume_value=Resume(approved=True))
+        ctx = res.pending_interrupt["context"]
+        print("  paused:", ctx["tool"], ctx["tool_input"])
+        approved = ask_the_user(ctx["tool"], ctx["tool_input"])
+        print("  the user says:", "yes" if approved else "no")
+        # The resolver is recorded on the plane's ledger as who decided.
+        final = await agent.aresume(
+            run_id,
+            resume_value=Resume(approved=approved, metadata={"resolver": "example-84-user"}),
+        )
         print("  resumed:", final.status, "| output:", repr(final.output))
+        print("  transfer_funds ran:", len(RAN) > before)
+
+    async def run() -> None:
+        await handle("Transfer $500 to Bob.")
+        await handle("Transfer $40 to Eve.")
 
     asyncio.run(run())
     fa.disconnect()

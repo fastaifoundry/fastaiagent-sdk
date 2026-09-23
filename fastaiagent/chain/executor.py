@@ -345,14 +345,17 @@ async def execute_chain(
                     # Best-effort: report the pause to a connected plane (no-op
                     # when not connected; never blocks/raises into the hot path).
                     try:
+                        from fastaiagent.governance import hitl_kind
                         from fastaiagent.trace.hitl_export import record_pause_event
 
+                        # ``interrupt`` for an interrupt() in user code; a managed
+                        # policy pause of an agent inside this chain is ``approval``.
                         record_pause_event(
                             run_id=execution_id,
                             node=node_id,
                             reason=sig.reason,
                             chain_id=chain_name,
-                            kind="interrupt",
+                            kind=hitl_kind(sig.reason),
                         )
                     except Exception:
                         logger.debug("HITL pause emit failed", exc_info=True)
@@ -566,6 +569,9 @@ async def _execute_node(
             agent_input = str(raw_input)
         # Agent spans nest under the chain root span — see Chain.aexecute.
         result = await node.agent.arun(agent_input, context=run_context)
+        paused = _paused_agent_message(node.id, node.agent, result)
+        if paused:
+            raise ChainError(paused)
         return {"output": result.output, "tool_calls": result.tool_calls}
 
     elif node.type == NodeType.tool:
@@ -629,6 +635,7 @@ async def _execute_node(
                 f"Pass agents=[<Agent>, <Agent>, ...]."
             )
         tasks = []
+        runners = [child for child in child_agents if hasattr(child, "arun")]
         from fastaiagent.multimodal.image import Image as _MMImage
         from fastaiagent.multimodal.pdf import PDF as _MMPDF
 
@@ -637,9 +644,8 @@ async def _execute_node(
             parallel_input = raw_parallel_input
         else:
             parallel_input = str(raw_parallel_input)
-        for child in child_agents:
-            if hasattr(child, "arun"):
-                tasks.append(child.arun(parallel_input, context=run_context, trace=False))
+        for child in runners:
+            tasks.append(child.arun(parallel_input, context=run_context, trace=False))
         if not tasks:
             raise ChainError(
                 f"Parallel node '{node.id}' has {len(child_agents)} configured "
@@ -658,6 +664,10 @@ async def _execute_node(
                 raise ChainError(
                     f"Parallel node '{node.id}' (fail_fast): child raised {type(e).__name__}: {e}"
                 ) from e
+            for child, r in zip(runners, results):
+                paused = _paused_agent_message(node.id, child, r)
+                if paused:
+                    raise ChainError(f"Parallel node '{node.id}' (fail_fast): {paused}")
             return {
                 "outputs": [{"output": getattr(r, "output", str(r))} for r in results],
             }
@@ -666,9 +676,15 @@ async def _execute_node(
         # result, then differ in how they react to all-failures.
         results = await asyncio.gather(*tasks, return_exceptions=True)
         outputs: list[dict[str, Any]] = []
-        for r in results:
+        for child, r in zip(runners, results):
+            paused = (
+                None if isinstance(r, BaseException) else _paused_agent_message(node.id, child, r)
+            )
             if isinstance(r, Exception):
                 outputs.append({"error": str(r)})
+            elif paused:
+                # A paused child did not finish; it is not a success.
+                outputs.append({"error": paused})
             else:
                 outputs.append({"output": getattr(r, "output", str(r))})
 
@@ -707,6 +723,34 @@ async def _execute_node(
             f"Node '{node.id}' has node type {node.type!r}, which this executor has no "
             f"branch for, so it cannot run."
         )
+
+
+def _paused_agent_message(node_id: str, agent: Any, result: Any) -> str | None:
+    """Why a paused agent result cannot count as a finished node, or ``None``.
+
+    An agent that has its **own** checkpointer does not raise when it pauses — on
+    a managed approval policy or an ``interrupt()`` in one of its tools — it
+    returns ``status="paused"`` with empty output. Passing that on as the node's
+    output reported a step that never ran as done, and the chain carried on past
+    a decision nobody had made. Since 1.74.0 ``arun()`` returns policy pauses by
+    default, so this is the common case, not a corner.
+
+    The pause is stored in the agent's checkpointer under the agent's own run id,
+    so this chain cannot resume it. An agent with **no** checkpointer raises
+    instead, and the chain owns and resumes that pause.
+    """
+    if getattr(result, "status", None) != "paused":
+        return None
+    reason = (getattr(result, "pending_interrupt", None) or {}).get("reason")
+    run_id = getattr(result, "execution_id", None)
+    return (
+        f"Node '{node_id}': agent '{getattr(agent, 'name', agent)}' paused ({reason}) "
+        f"on its own checkpointer, so the pause belongs to the agent and this chain "
+        f"cannot resume it. Resume the agent directly with "
+        f"agent.aresume({run_id!r}, resume_value=Resume(...)), or give the agent no "
+        f"checkpointer so the chain's checkpointer owns the pause and chain.resume() "
+        f"resolves it."
+    )
 
 
 def _topological_sort(nodes: list[NodeConfig], edges: list[Edge]) -> list[str]:

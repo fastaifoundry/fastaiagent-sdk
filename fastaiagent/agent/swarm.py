@@ -911,6 +911,9 @@ class Swarm:
         merged_middleware = [_ExitAfterHandoff(), *base.middleware]
         return Agent(
             name=base.name,
+            # Managed policy and plane guardrails key on the platform identity;
+            # without it the clone was never gated (fixed 1.74.0).
+            agent_id=base.agent_id,
             system_prompt=base.system_prompt,
             llm=base.llm,
             tools=merged_tools,
