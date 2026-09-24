@@ -289,14 +289,20 @@ class TestMigrateCommand:
         args = ["migrate", "--db", str(target), "--trace-db", str(legacy)]
         runner = CliRunner()
 
+        def text(output: str) -> str:
+            # Rich wraps to the terminal width, and where a line breaks depends on
+            # the path length — CI's 80 columns split "was imported on" in two.
+            return " ".join(output.split())
+
         first = runner.invoke(app, args)
         assert first.exit_code == 0, first.output
 
         second = runner.invoke(app, args)
         assert second.exit_code == 0, second.output
         # Not "no legacy files detected" — the file is there, it was imported.
-        assert "was imported on" in second.output and "--force" in second.output
+        assert "was imported on" in text(second.output)
+        assert "--force" in text(second.output)
 
         forced = runner.invoke(app, [*args, "--force"])
         assert forced.exit_code == 0, forced.output
-        assert "spans from" in forced.output
+        assert "spans from" in text(forced.output)
