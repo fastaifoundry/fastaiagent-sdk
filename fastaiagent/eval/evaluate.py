@@ -11,12 +11,24 @@ from typing import Any
 
 from fastaiagent._internal.async_utils import run_sync
 from fastaiagent._internal.errors import EvalError
+from fastaiagent._internal.pause import describe_pause
 from fastaiagent.eval.builtins import BUILTIN_SCORERS
 from fastaiagent.eval.dataset import Dataset
 from fastaiagent.eval.results import EvalCaseRecord, EvalResults
 from fastaiagent.eval.scorer import Scorer
 
 logger = logging.getLogger(__name__)
+
+
+class _CasePaused(Exception):  # noqa: N818 — internal; recorded as the case's error
+    """The agent paused instead of answering (see :func:`describe_pause`)."""
+
+
+def _case_error(exc: BaseException) -> str:
+    """The recorded error for a case that produced no scorable output. A bare
+    ``InterruptSignal`` (an agent with no checkpointer pausing) is described as
+    the pause it is, not by its reason string alone."""
+    return (describe_pause(exc) or str(exc))[:500]
 
 
 def _is_async_callable(fn: Callable[..., Any]) -> bool:
@@ -194,6 +206,12 @@ async def aevaluate(
             # Call agent
             try:
                 output = await _call_agent_fn(agent_fn, input_text)
+                # A paused run (approval policy / interrupt()) has no answer yet:
+                # its ``output`` is "". Scoring that graded a run that never
+                # finished as a wrong answer; it is errored (unscored) instead.
+                paused = describe_pause(output)
+                if paused:
+                    raise _CasePaused(paused)
                 if hasattr(output, "output"):
                     out_val = output.output
                 else:
@@ -229,7 +247,7 @@ async def aevaluate(
                         actual_output=None,
                         trace_id=None,
                         per_scorer={},
-                        error=str(e)[:500],
+                        error=_case_error(e),
                     )
                 )
                 return

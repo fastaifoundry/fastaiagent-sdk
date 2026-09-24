@@ -68,9 +68,10 @@ later nodes and edge conditions see what earlier nodes produced.
 !!! info "Two output-storage rules worth knowing"
     Agent-node output is stored under `_{node_id}_output`, so it persists
     across nodes. A **tool** node's return value is wrapped as
-    `{"output": ..., "error": ...}` and each tool node overwrites
+    `{"output": ..., "error": None}` and each tool node overwrites
     `state.output` with its own result — to thread a value across several tool
     nodes, put it on top-level state via `initial_state`, not as a tool return.
+    A tool that reports an error fails the run instead (1.78.0).
     See [Tool Node State Behavior](index.md#tool-node-state-behavior).
 
 !!! info "The authoritative contract"
@@ -192,6 +193,13 @@ Chain failures surface as a small, catchable hierarchy (all subclass
 | `ChainStateValidationError` | State fails the `state_schema` |
 | `ChainCheckpointError` | A checkpoint save/load fails |
 | `ChainResumeError` | A resume is invalid (e.g. an interrupted run resumed without a `Resume(...)`); subclasses `ChainCheckpointError` |
+
+`ChainError` itself is raised when a node cannot run: nothing attached (see
+[Validation](#validation)), or a tool node whose tool could not run. A tool can
+say so two ways — raise, or *return* an error (its arguments failed validation,
+it has no function, an MCP server answered `isError`) — and both fail the run.
+Until 1.78.0 a returned error was stored as the node's result, the nodes after
+it ran on `output=None`, and the run reported `completed`.
 
 ## Validation
 

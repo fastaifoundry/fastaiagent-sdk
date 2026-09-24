@@ -40,6 +40,9 @@ class GovPlane:
         # True: ``POST /runs/{id}/pending`` answers 500, so the pause has no
         # pending run on the plane.
         self.fail_pending_post = False
+        # What ``/policy/decide`` answers for the gated tool: ``require_approval``
+        # (the default), ``deny``, ``allow``, or ``error`` for a 500.
+        self.gated_decision = "require_approval"
 
     def ledger(self, run_id: str) -> list[dict[str, Any]]:
         """The HITL events received for one run, oldest first."""
@@ -114,7 +117,19 @@ class _Handler(BaseHTTPRequestHandler):
             body = self._body()
             with st.lock:
                 st.decide_calls.append(body)
-            if body.get("tool_name") == GATED_TOOL:
+                verdict = st.gated_decision
+            if body.get("tool_name") == GATED_TOOL and verdict == "error":
+                self._json(500, {"detail": "decide failed (test)"})
+            elif body.get("tool_name") == GATED_TOOL and verdict == "deny":
+                self._json(
+                    200,
+                    {
+                        "decision": "deny",
+                        "approval_request_id": None,
+                        "reason": "transfers are blocked for this agent",
+                    },
+                )
+            elif body.get("tool_name") == GATED_TOOL and verdict == "require_approval":
                 self._json(
                     200,
                     {

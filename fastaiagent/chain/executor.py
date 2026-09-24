@@ -628,7 +628,17 @@ async def _execute_node(
                     + "; ".join(v.message for v in violations)
                 )
         result = await node.tool.aexecute(args, context=run_context)
-        return {"output": result.output, "error": result.error}
+        # A tool that *returns* an error (arguments failed validation, no function
+        # attached, an MCP server answering isError) did not run, exactly like one
+        # that raises. Until 1.78.0 the error was stored as the node's result, the
+        # downstream nodes ran on ``output=None`` and the run reported ``completed``.
+        if result.error is not None:
+            raise ChainError(
+                f"Tool node '{node.id}' ({node.tool.name}) failed: {result.error}. "
+                f"Until 1.78.0 this was recorded as the node's result and the run "
+                f"still reported status='completed'."
+            )
+        return {"output": result.output, "error": None}
 
     elif node.type == NodeType.condition:
         conditions = node.config.get("conditions", [])

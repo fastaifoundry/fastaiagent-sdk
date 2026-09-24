@@ -516,12 +516,12 @@ class ForkedReplay:
             token = _replay_recorded_response.set(list(recorded_queue))
             miss_token = _replay_on_miss.set(self._on_miss)
             try:
-                new_result = await agent.arun(new_input)
+                new_result = await self._arun_unpaused(agent, new_input)
             finally:
                 _replay_on_miss.reset(miss_token)
                 _replay_recorded_response.reset(token)
         else:
-            new_result = await agent.arun(new_input)
+            new_result = await self._arun_unpaused(agent, new_input)
 
         original_output = root.attributes.get("agent.output")
         return ReplayResult(
@@ -529,6 +529,32 @@ class ForkedReplay:
             new_output=new_result.output,
             steps_executed=len(self._steps) - self._fork_point,
             trace_id=new_result.trace_id,
+        )
+
+    async def _arun_unpaused(self, agent: Any, new_input: Any) -> Any:
+        """``agent.arun`` for a rerun, refusing a pause with a ``ReplayError``.
+
+        The rebuilt agent has no checkpointer (and no ``agent_id``, so managed
+        governance never gates a replay), so a tool that calls ``interrupt()``
+        raises the bare ``InterruptSignal``. Before 1.78.0 that escaped
+        ``arerun()``. A replay cannot hold a pause, so it says which tool
+        stopped it and how to replay past it.
+        """
+        from fastaiagent._internal.pause import what_paused
+        from fastaiagent.chain.interrupt import InterruptSignal
+
+        try:
+            result = await agent.arun(new_input)
+        except InterruptSignal as sig:
+            paused = what_paused(sig)
+        else:
+            paused = what_paused(result)
+            if not paused:
+                return result
+        raise ReplayError(
+            f"Replay of trace {self._trace.trace_id} paused: {paused}. A replay rebuilds "
+            f"the agent without a checkpointer, so it cannot hold a pause. Override the "
+            f"tool that paused with with_tool_override(name, tool) to replay past it."
         )
 
     def _apply_tool_overrides(self, tools: list[Any]) -> list[Any]:

@@ -128,11 +128,29 @@ assert results.results[0].passed
 `simulate()` returns `SimulationResults`:
 
 - `.results` — a `SimulationResult` per scenario (`transcript`, `passed`,
-  per-criterion `verdicts`, root `trace_id`).
-- `.summary()` — a printable pass/fail table.
+  per-criterion `verdicts`, root `trace_id`, and `error` — why the scenario could
+  not finish, or `None`).
+- `.summary()` — a printable pass/fail table; scenarios that could not finish show
+  as `ERROR` and are counted in `.errored_count`.
 - `.persist_local() -> run_id` — writes one `sim_runs` row + one `sim_cases`
   row per scenario to the Local UI DB (done automatically when `persist=True`).
 - `.export(path)` — dump the full results (transcripts + verdicts) to JSON.
 
 `asimulate(...)` is the async entrypoint with the same signature; both run
 scenarios concurrently (bounded by `concurrency`, default 4).
+
+### When the agent pauses
+
+If the agent pauses on a turn — a
+[managed approval policy](../guardrails/managed-governance.md) or an `interrupt()`
+in one of its tools — it has no reply to give, and a simulated user cannot approve
+anything. The scenario **stops at that turn**: it is **not judged**, it counts as
+not passed, and `SimulationResult.error` says what the run is waiting on and its
+`execution_id`. An agent with no checkpointer cannot save the pause; that scenario
+errors the same way and the other scenarios still run. The error is persisted in
+`sim_cases.error`.
+
+!!! warning "Changed in 1.78.0"
+    Before 1.78.0 the paused turn was recorded as an empty reply, the simulated user
+    answered the silence, and the judge scored a conversation that never happened.
+    An agent with no checkpointer made the whole `simulate()` call raise.

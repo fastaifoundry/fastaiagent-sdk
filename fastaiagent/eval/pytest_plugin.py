@@ -65,6 +65,7 @@ from typing import Any
 
 import pytest
 
+from fastaiagent._internal.pause import describe_pause
 from fastaiagent.eval.builtins import BUILTIN_SCORERS
 from fastaiagent.eval.dataset import Dataset
 from fastaiagent.eval.evaluate import infer_agent_name
@@ -502,7 +503,11 @@ def evaluate_one(request: pytest.FixtureRequest):  # type: ignore[no-untyped-def
             # Infra failure: the agent never produced an output. Recorded as
             # errored (unscored) so it can't masquerade as a quality miss in
             # the aggregated run — and the test still fails loudly below.
-            error = str(e)[:500]
+            error = (describe_pause(e) or str(e))[:500]
+        else:
+            # A paused run (approval policy / interrupt()) has no output either:
+            # scoring its "" graded a run that never finished as a wrong answer.
+            error = describe_pause(output)
 
         if error is not None:
             record = EvalCaseRecord(

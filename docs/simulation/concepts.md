@@ -89,6 +89,11 @@ criterion:
 
 Overall pass = all success criteria hold **and** no failure criterion occurred.
 
+A conversation that could not finish — the agent paused for an approval on some
+turn — is not judged at all: it stops there, does not pass, and carries an
+`error` instead of verdicts. See
+[When the agent pauses](index.md#when-the-agent-pauses).
+
 ## Writing vs. generating scenarios
 
 - **Hand-write** a `Scenario` when you have a specific behavior in mind —
