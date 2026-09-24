@@ -17,7 +17,7 @@ from pathlib import Path
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
 
-CURRENT_SCHEMA_VERSION = 21
+CURRENT_SCHEMA_VERSION = 22
 
 # A migration step is either a SQL string or a callable that takes the
 # ``SQLiteHelper`` and runs whatever logic it needs (e.g., gated
@@ -585,6 +585,25 @@ def _v21_add_sim_case_error(db: SQLiteHelper) -> None:
     _add_column_if_missing(db, "sim_cases", "error", "TEXT")
 
 
+def _v22_add_legacy_imports(db: SQLiteHelper) -> None:
+    """Record which legacy stores have been imported into this local.db (1.79.0).
+
+    ``fastaiagent ui`` runs the legacy migrator on every start. It copies with
+    ``INSERT OR IGNORE``, so re-runs looked harmless — but a row the user deleted
+    or pruned was simply copied back from the legacy file on the next start. One
+    row per imported source (keyed by its resolved path) makes each import happen
+    once. Local only.
+    """
+    db.execute(
+        """CREATE TABLE IF NOT EXISTS legacy_imports (
+            source      TEXT PRIMARY KEY,
+            kind        TEXT NOT NULL,
+            imported_at TEXT NOT NULL,
+            row_count   INTEGER NOT NULL DEFAULT 0
+        )"""
+    )
+
+
 def _v17_add_eval_run_synced(db: SQLiteHelper) -> None:
     """Durable platform-export buffer flag on ``eval_runs`` (Part D, 1.49.0).
 
@@ -1064,6 +1083,11 @@ _MIGRATIONS: dict[int, list[_Step]] = {
         # 1.78.0: a simulated scenario that paused is recorded as errored, not
         # as a judged conversation. See _v21_add_sim_case_error.
         _v21_add_sim_case_error,
+    ],
+    22: [
+        # 1.79.0: each legacy store is imported once, so a pruned row is not
+        # copied back on the next `fastaiagent ui` start. See _v22_add_legacy_imports.
+        _v22_add_legacy_imports,
     ],
 }
 

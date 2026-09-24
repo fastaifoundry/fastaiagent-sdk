@@ -31,7 +31,7 @@ fastaiagent --help
 | `fastaiagent list-pending` | List pending interrupts awaiting human approval |
 | `fastaiagent inspect` | Show checkpoint history for an execution |
 | `fastaiagent setup-checkpointer` | Provision the durability backend (SQLite or Postgres) |
-| `fastaiagent migrate` | Copy legacy `traces.db` / `checkpoints.db` / `.prompts/` into `local.db` |
+| `fastaiagent migrate` | Copy legacy `traces.db` / `checkpoints.db` / `.prompts/` into `local.db`, once per source (`--force` re-imports); imported history is never pushed to a plane |
 | `fastaiagent export-trace` | Export one trace as a self-contained JSON file (same payload as the Local UI's Export button) |
 
 ---
