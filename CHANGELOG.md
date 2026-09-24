@@ -5,6 +5,80 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.77.0] - 2026-09-24 — an approval gate that says no stops the chain
+
+Three items from the approvals audit's §6 backlog (M9, M4, L4). No wire change.
+
+### Changed
+
+- ⚠ **A rejection at a Chain approval gate stops the chain** (audit M9).
+  - When a `NodeType.hitl` handler says no, nothing after the gate runs. The
+    result has `status="rejected"`, `output=None`, and the gate's `node_results`
+    entry reads `{"approved": False}`. The run has ended: resuming it raises
+    `AlreadyResumed`.
+  - Before, the gate recorded the no and the chain carried on. The rejected work
+    happened unless the author had added a condition node to catch it, and that
+    wiring was easy to get subtly wrong.
+  - If you built that workaround, it keeps working for approvals but never sees a
+    rejection now. Move anything its abort branch did to a check on
+    `result.status == "rejected"`.
+  - `"rejected"` is a `ChainResult` status only. The run's end-of-run checkpoint
+    still records `completed`, so nothing new goes over the wire.
+  - A handler's answer is read as a yes or a no, and anything not truthy is a no.
+    That includes a handler that forgets to `return`.
+- **A paused stream ends with a `Paused` event** (audit M4).
+  - `Agent.astream()` ends with one `Paused(reason, context, execution_id, node_id,
+    agent_path)` event when a tool pauses the run, whether through a managed
+    approval policy or `interrupt()`. Before, the private `_AgentInterrupted`
+    exception escaped the generator.
+  - The pause is the same one `arun()` returns, with the same `context`. For a
+    policy pause that's `tool`, `tool_input` and `pending_id`.
+  - `Swarm.astream()` and `Supervisor.astream()` pass it through.
+    `agent serve /run/stream` sends it as a `paused` SSE event before `done`.
+  - `Paused` is exported from `fastaiagent` and `fastaiagent.llm`.
+- **A pause with nowhere to be saved is no longer reported as `paused`** (audit M9).
+  - With `checkpoint_enabled=False`, an `interrupt()` used to return
+    `status="paused"` with nothing persisted, so the resume it promised could never
+    work.
+  - The `InterruptSignal` now goes up to the caller, or to whatever encloses the
+    chain and can hold the pause. That's the rule an Agent without a checkpointer
+    already followed.
+
+### Fixed
+
+- **An `async def` approval handler was never awaited** (audit M9). Its coroutine is
+  truthy, so the gate approved itself and the next node ran. Only then did the run
+  crash, with `TypeError: cannot pickle 'coroutine' object`. The handler is now
+  awaited.
+
+### Docs
+
+- `chains/hitl.md`: the new rejection behaviour, async handlers, the
+  checkpointer requirement for pausing, and a note that **a pause never expires**,
+  by design (audit L4).
+- `streaming/index.md`: `Paused` in the event table, and a correction: the page
+  said a streamed `interrupt()` paused "identically to `arun()`", which it didn't.
+- CLI and deployment docs: the `paused` SSE event.
+
+### Not in this release
+
+- **M3 (runner pauses reported as `failed`)** is deferred, because it can't happen
+  today. The plane sends runner agents no tools, and pauses only start from tools.
+  Also, `Agent.from_dict` drops `agent_id`, so once tools arrive, runner agents
+  would be ungoverned. Both are in the backlog. **L3 (`X-FAA-Protocol` header)** is
+  left at the bottom of the backlog, as agreed.
+
+### Tests
+
+- `tests/test_chain_hitl_gate.py` (7): a rejection stops the chain; an approval
+  continues; `None` is a no; async handlers are awaited (yes and no); a rejected
+  run can't be resumed; a pause with no checkpointer rises. **6 of the 7 fail on
+  1.76.0**. The seventh, approval continuing, was already correct.
+- `tests/test_stream_pause.py` (3): an `interrupt()` ends the stream with
+  `Paused` and resumes; a policy pause streams the tool, its arguments and
+  `pending_id`; Swarm forwards it. `tests/test_cli_agent_serve.py`: the `paused`
+  SSE event.
+
 ## [1.76.0] - 2026-09-24 — the plane closes exactly the pause you resolved
 
 The last two items from the control plane's approvals exchange (enterprise PR #199,

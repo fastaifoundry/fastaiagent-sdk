@@ -26,7 +26,7 @@ asyncio.run(main())
 
 ## StreamEvent Types
 
-Every streaming method yields `StreamEvent` objects. There are six event types:
+Every streaming method yields `StreamEvent` objects. There are seven event types:
 
 | Event | Fields | When Emitted |
 |-------|--------|-------------|
@@ -35,13 +35,19 @@ Every streaming method yields `StreamEvent` objects. There are six event types:
 | `ToolCallEnd` | `call_id: str`, `tool_name: str`, `arguments: dict` | Tool call arguments fully parsed |
 | `Usage` | `prompt_tokens: int`, `completion_tokens: int` | Token counts (typically at end of response) |
 | `HandoffEvent` | `from_agent: str`, `to_agent: str`, `reason: str = ""` | Control passes from one agent to another. Emitted by [`Swarm.astream()`](../agents/swarm.md#streaming) only, tagged in ahead of the target agent's first `TextDelta` |
+| `Paused` | `reason: str`, `context: dict`, `execution_id: str`, `node_id: str`, `agent_path: str \| None` | The run paused — a [managed approval policy](../guardrails/managed-governance.md) or an `interrupt()` in a tool. Always the **last** event; resume with `agent.aresume(execution_id, resume_value=Resume(...))`. Since 1.77.0 |
 | `StreamDone` | *(none)* | End-of-stream marker |
 
 ```python
 from fastaiagent.llm.stream import (
-    StreamEvent, TextDelta, ToolCallStart, ToolCallEnd, Usage, HandoffEvent, StreamDone
+    StreamEvent, TextDelta, ToolCallStart, ToolCallEnd, Usage, HandoffEvent, Paused, StreamDone
 )
 ```
+
+A stream that pauses ends with one `Paused` event — the same pause `arun()` returns
+as `status="paused"`, with the same `context` (for a policy pause: `tool`,
+`tool_input`, `pending_id`). There is no output yet, so output guardrails and the
+memory write do not run for it.
 
 A single-agent `astream()` never yields a `HandoffEvent` — there is nothing to
 hand off to — so a loop that only handles the other five is still correct for
@@ -279,7 +285,7 @@ As of 1.5.0, `Agent.astream()` is at full feature parity with `Agent.run()` / `a
 
 - **Middleware hooks fire during streaming.** `before_model`, `after_model`, and `wrap_tool` are invoked at the same logical points they're invoked during a non-streaming run. A configured `ToolBudget`, `TrimLongMessages`, or custom `AgentMiddleware` works identically for both modes.
 - **Checkpoints are written during streaming.** When the agent has a `Checkpointer` configured, turn-boundary and pre-tool checkpoints are persisted as the loop runs — so a process crash mid-stream can resume from the last checkpoint with `chain.aresume(...)`.
-- **`InterruptSignal` works inside streamed tool calls.** Calling `interrupt(...)` from within a tool that runs during `astream()` pauses the run identically to `arun()` — the streaming generator surfaces the interrupt and the execution resumes via the standard `aresume` flow.
+- **`InterruptSignal` works inside streamed tool calls.** Calling `interrupt(...)` from within a tool that runs during `astream()` pauses and checkpoints the run identically to `arun()`, and the execution resumes via the standard `aresume` flow. Since 1.77.0 the stream says so with a final `Paused` event; before, a private exception escaped the generator at that point (a managed approval policy's pause did the same).
 
 Before 1.5.0, all three were silently bypassed during streaming — middleware was ignored, no checkpoints were written, and `interrupt()` raised an unhandled exception. If you upgrade and your existing streaming code starts seeing middleware applied for the first time, that is the intended behavior.
 

@@ -34,12 +34,10 @@ Six sub-tests, all self-contained (no LLM, no network, no platform):
 5. Approved flow continues past the HITL node — a 3-node chain
    (draft -> review -> finalize) runs all three nodes when the
    handler returns True.
-6. **Current SDK behavior: rejection does NOT halt the chain.** The
-   executor stores ``approved=False`` on the HITL node's result but
-   keeps running. This gate pins down that behavior so any future
-   change to "stop-on-reject" semantics fails loudly. Users who want
-   true halt-on-reject should combine HITL with a conditional edge
-   that branches on the ``approved`` field.
+6. **A rejection halts the chain (since 1.77.0, audit M9).** The gate
+   records ``approved=False``, nothing after it runs, and the result has
+   ``status="rejected"``. Until 1.77.0 the chain kept running; this gate
+   pinned that, and flagged the change when it was made deliberately.
 """
 
 from __future__ import annotations
@@ -246,18 +244,19 @@ class TestHITLGate:
             f"{list(result.node_results.keys())}"
         )
 
-    # ── 6. Approved flow continues / rejection does NOT halt ─────────────
+    # ── 6. Approved flow continues / rejection halts ──────────────────────
 
-    def test_06_rejection_does_not_halt_chain(
+    def test_06_rejection_halts_chain(
         self, gate_state: dict[str, Any]
     ) -> None:
-        """Pins down the documented current behavior: when the handler
-        returns False, the HITL node records approved=False but the
-        chain keeps running. Users who want halt-on-reject should add
-        a conditional edge that branches on the approved field.
+        """A rejection stops the chain at the gate (1.77.0, audit M9): the
+        gate records approved=False, the next node never runs, and the
+        result says ``rejected``.
 
-        This test fails loudly if that semantics ever changes, so the
-        change is noticed and either accepted or reverted deliberately.
+        Until 1.77.0 this test pinned the opposite — the chain kept going —
+        and failed loudly when the halt was introduced, as it was meant to.
+        If it fails now, rejected work is running again: that is the
+        regression, not the test.
         """
         require_env()
 
@@ -271,12 +270,7 @@ class TestHITLGate:
         assert review.get("approved") is False, (
             f"handler returned False but result shows {review}"
         )
-        # Current behavior: chain keeps going even though approval was False.
-        # If this assertion ever flips (finalize NOT in node_results), the
-        # executor has changed its halt-on-reject semantics — flag it,
-        # update the gate, and update the HITL docs together.
-        assert "finalize" in result.node_results, (
-            "SDK CHANGE DETECTED: rejection now halts chain execution. "
-            "If this is intended, update this test + the HITL docs "
-            "(docs/chains/hitl.md) together. If not, fix the regression."
+        assert result.status == "rejected", result
+        assert "finalize" not in result.node_results, (
+            "a rejected approval gate let the next node run"
         )

@@ -81,7 +81,7 @@ from fastaiagent.guardrail import (
 )
 from fastaiagent.kb import KeywordStore, LocalKB, MetadataStore, PlatformKB, VectorStore
 from fastaiagent.llm import LLMClient, Message, StreamEvent, TextDelta
-from fastaiagent.llm.stream import HandoffEvent
+from fastaiagent.llm.stream import HandoffEvent, Paused
 from fastaiagent.multimodal import PDF, ContentPart, File, Image, normalize_input
 from fastaiagent.optimize import (
     OptimizationReport,
@@ -158,6 +158,7 @@ __all__ = [
     "SwarmError",
     "SwarmState",
     "HandoffEvent",
+    "Paused",
     # Middleware
     "AgentMiddleware",
     "MiddlewareContext",

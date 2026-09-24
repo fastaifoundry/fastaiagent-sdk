@@ -63,4 +63,23 @@ class HandoffEvent:
     reason: str = ""
 
 
-StreamEvent = TextDelta | ToolCallStart | ToolCallEnd | Usage | StreamDone | HandoffEvent
+@dataclass
+class Paused:
+    """The last event of a stream whose run paused (1.77.0).
+
+    Emitted by :meth:`fastaiagent.Agent.astream` when a tool paused the run — a
+    managed approval policy or an ``interrupt()`` — instead of a private exception
+    escaping the generator. The pause is already checkpointed; resume it with
+    ``agent.aresume(execution_id, resume_value=Resume(...))``. For a policy pause
+    ``context`` carries ``tool``, ``tool_input`` and ``pending_id``, exactly like
+    ``AgentResult.pending_interrupt["context"]``.
+    """
+
+    reason: str
+    context: dict[str, Any] = field(default_factory=dict)
+    execution_id: str = ""
+    node_id: str = ""
+    agent_path: str | None = None
+
+
+StreamEvent = TextDelta | ToolCallStart | ToolCallEnd | Usage | StreamDone | HandoffEvent | Paused
