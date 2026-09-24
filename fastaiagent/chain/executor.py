@@ -627,7 +627,11 @@ async def _execute_node(
                     f"Node '{node.id}' input failed input_schema: "
                     + "; ".join(v.message for v in violations)
                 )
-        result = await node.tool.aexecute(args, context=run_context)
+        # ``ainvoke`` applies the tool's own timeout / max_retries / output_type,
+        # exactly as the agent loop does. Until 1.78.0 this called ``aexecute``,
+        # which deliberately skips that policy, so the same tool timed out,
+        # retried and validated inside an agent and did none of it in a chain.
+        result = await node.tool.ainvoke(args, context=run_context)
         # A tool that *returns* an error (arguments failed validation, no function
         # attached, an MCP server answering isError) did not run, exactly like one
         # that raises. Until 1.78.0 the error was stored as the node's result, the
@@ -638,7 +642,14 @@ async def _execute_node(
                 f"Until 1.78.0 this was recorded as the node's result and the run "
                 f"still reported status='completed'."
             )
-        return {"output": result.output, "error": None}
+        output = result.output
+        adapter = getattr(node.tool, "_output_adapter", None)
+        if getattr(node.tool, "output_type", None) is not None and adapter is not None:
+            # ``output_type`` validated (and coerced) the value; chain state keeps
+            # its JSON form — a model becomes a dict — because the checkpointer
+            # writes state with a plain ``json.dumps``.
+            output = adapter.dump_python(output, mode="json")
+        return {"output": output, "error": None}
 
     elif node.type == NodeType.condition:
         conditions = node.config.get("conditions", [])

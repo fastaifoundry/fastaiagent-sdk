@@ -245,6 +245,14 @@ When a tool node executes, its return value is wrapped in `{"output": <return_va
     strings, so `{"amount": "{{state.amount}}"}` with a missing or non-numeric
     `state.amount` fails a tool declared `amount: int`.
 
+**The tool's own execution policy applies** (1.78.0): a tool node runs its tool
+the way the agent loop does, so the tool's `timeout`, `max_retries` /
+`retry_delay` and `output_type` all take effect — a timeout or an `output_type`
+mismatch fails the run, and a failing call is retried first. With `output_type`,
+the value stored in state is the **JSON form** of the validated value (a Pydantic
+model becomes a dict), because checkpoints are JSON. Before 1.78.0 a chain skipped
+all three. See [Tools → execution policy](../tools/index.md#sync-vs-async).
+
 If you need to thread a value across multiple tool nodes (e.g., a `seed_value` that step A produces and step C reads), put it on the **top-level state** via `initial_state` to `chain.execute()` or `modified_state` to `chain.resume()` — not as a return value from a tool node. Top-level state keys persist because nothing overwrites them.
 
 ```python

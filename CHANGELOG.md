@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.78.0] - 2026-09-24 — a run that did not finish is never reported as an answer
 
-Backlog #5 and #12. No wire change: no payload gains a key, and the approval
+Backlog #5, #12 and #16. No wire change: no payload gains a key, and the approval
 strings the plane matches on (`policy_approval_required`, `kind="approval"`,
 `pending_id`) are untouched.
 
@@ -79,10 +79,28 @@ strings the plane matches on (`policy_approval_required`, `kind="approval"`,
 > node, catch `ChainError` instead. A successful tool node's result is unchanged:
 > `{"output": ..., "error": None}`. Nothing that worked changes.
 
+- ⚠ **A chain tool node applies the tool's own `timeout`, `max_retries` and
+  `output_type`** (backlog #16).
+  - The agent loop runs a tool through `ainvoke()`, which applies these. A Chain
+    tool node called `aexecute()`, which deliberately skips them. So the same tool
+    timed out, retried and validated inside an agent, and did none of that in a
+    chain.
+  - Now a timeout fails the run. A failing call is retried with backoff first. An
+    `output_type` mismatch fails the run (via #5).
+  - With `output_type`, chain state stores the **JSON form** of the validated
+    value, because checkpoints are written as JSON. A Pydantic model becomes a
+    dict, and coercion applies, so `"7"` becomes `7`.
+  - A tool that sets none of the three behaves exactly as before.
+
+> **If this affects you.** Only tools that set `timeout`, `max_retries` or
+> `output_type` change inside a chain. A side-effecting tool with `max_retries` can
+> now run more than once in a chain, as it already could in an agent.
+
 ### Docs
 
 - `chains/index.md` (Tool Node State Behavior) and `chains/concepts.md` (When
-  something goes wrong): a tool node's error fails the run.
+  something goes wrong): a tool node's error fails the run, and the tool's
+  execution policy applies. `tools/index.md` says a chain tool node uses `ainvoke`.
 - `tools/mcp-server.md`: a new section, "Approvals, pauses and governance".
 - `guardrails/managed-governance.md`: a table of what a pause becomes on each SDK
   surface that can't resume it.

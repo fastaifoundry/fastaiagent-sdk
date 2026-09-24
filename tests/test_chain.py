@@ -436,6 +436,93 @@ class TestToolNodeFailure:
         assert result.node_results["charge"] == {"output": "charged 42", "error": None}
 
 
+# --- Tool policy inside a chain (backlog #16, 1.78.0) ---
+
+
+class TestToolNodePolicy:
+    """A tool node applies the tool's own timeout / max_retries / output_type.
+
+    The agent loop calls ``tool.ainvoke`` (the policy-aware entry point); until
+    1.78.0 a chain tool node called ``tool.aexecute``, which deliberately skips
+    it — so the same tool timed out, retried and validated inside an agent and
+    did none of that inside a chain.
+    """
+
+    @pytest.mark.asyncio
+    async def test_timeout_applies(self):
+        import asyncio
+
+        from fastaiagent._internal.errors import ToolExecutionError
+
+        async def slow() -> str:
+            await asyncio.sleep(0.5)
+            return "late"
+
+        chain = Chain("slow", checkpoint_enabled=False)
+        chain.add_node("call", tool=FunctionTool(name="slow", fn=slow, timeout=0.05))
+        with pytest.raises(ToolExecutionError, match="timed out"):
+            await chain.aexecute({})
+
+    @pytest.mark.asyncio
+    async def test_max_retries_applies(self):
+        attempts: list[int] = []
+
+        def flaky() -> str:
+            attempts.append(1)
+            if len(attempts) < 3:
+                raise ConnectionError("upstream blip")
+            return "ok"
+
+        chain = Chain("flaky", checkpoint_enabled=False)
+        chain.add_node(
+            "call", tool=FunctionTool(name="flaky", fn=flaky, max_retries=2, retry_delay=0)
+        )
+        result = await chain.aexecute({})
+        assert result.status == "completed"
+        assert len(attempts) == 3
+        assert result.node_results["call"]["output"] == "ok"
+
+    @pytest.mark.asyncio
+    async def test_output_type_mismatch_fails_the_run(self):
+        from fastaiagent._internal.errors import ChainError
+
+        def count() -> str:
+            return "not a number"
+
+        chain = Chain("typed", checkpoint_enabled=False)
+        chain.add_node("call", tool=FunctionTool(name="count", fn=count, output_type=int))
+        with pytest.raises(ChainError, match="output failed schema validation"):
+            await chain.aexecute({})
+
+    @pytest.mark.asyncio
+    async def test_output_type_stores_the_validated_json_form(self, temp_dir):
+        from pydantic import BaseModel
+
+        class Ticket(BaseModel):
+            id: int
+            title: str
+
+        def open_ticket() -> dict:
+            return {"id": "7", "title": "refund"}
+
+        store = SQLiteCheckpointer(db_path=str(temp_dir / "cp.db"))
+        chain = Chain("tickets", checkpointer=store)
+        chain.add_node(
+            "open",
+            tool=FunctionTool(name="open_ticket", fn=open_ticket, output_type=Ticket),
+            output_key="ticket",
+        )
+        result = await chain.aexecute({}, execution_id="t-1")
+
+        # Coerced by output_type ("7" -> 7), stored as JSON-safe data rather than
+        # a Ticket instance, so the checkpoint (plain json.dumps) still writes.
+        assert result.status == "completed"
+        assert result.final_state["ticket"] == {"id": 7, "title": "refund"}
+        rows = store.list("t-1")
+        assert rows[-1].step_type == "run_end" and rows[-1].status == "completed"
+        store.close()
+
+
 # --- Checkpoint tests ---
 
 

@@ -211,8 +211,10 @@ result = await tool.ainvoke({"query": "test"})
 result = await tool.aexecute({"query": "test"})
 ```
 
-`execute()` and `ainvoke()` are the policy-aware entry points (the agent loop
-uses `ainvoke`). Call `aexecute()` directly only to deliberately bypass the
+`execute()` and `ainvoke()` are the policy-aware entry points: the agent loop
+uses `ainvoke`, and so does a [Chain tool node](../chains/index.md#tool-node-state-behavior)
+since 1.78.0 (before, a chain called `aexecute` and the policy silently did not
+apply there). Call `aexecute()` directly only to deliberately bypass the
 policy. All work from sync or async contexts (including Jupyter notebooks).
 
 ## Error Handling
