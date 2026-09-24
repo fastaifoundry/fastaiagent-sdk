@@ -406,6 +406,24 @@ class Agent:
 
         return push_agent(self, force=force, best_effort=False)
 
+    def _pause_owner_run_id(self, exec_id: str) -> str:
+        """The run a managed-policy pause belongs to — what its pending run is registered under.
+
+        Call it BEFORE this run binds ``_execution_id`` to ``exec_id``: it reads the
+        enclosing run's id from that ContextVar.
+
+        * With its own checkpointer the agent stores its pause itself, under ``exec_id``.
+        * With none, it cannot: the ``InterruptSignal`` rises to whatever encloses it —
+          a Chain — which stores the pause under **its** run id, reports the pause and
+          the resolution under that id, and on resume re-runs this agent under a fresh
+          ``exec_id``. So the enclosing run id is the only one that lives from pause to
+          resolution, and registering the pending run under ``exec_id`` left the plane
+          a record it could never close (1.76.0). With nothing enclosing, ``exec_id``.
+        """
+        if self._checkpointer is not None:
+            return exec_id
+        return _execution_id.get() or exec_id
+
     def _build_response_format(self) -> dict[str, Any] | None:
         """Build response_format dict from output_type for structured output."""
         if self._output_spec is None:
@@ -623,26 +641,20 @@ class Agent:
         metadata={"resolver": <that user>})``. A rejection refuses the call — the
         model is told, and the tool never runs.
 
-        ``wait_for_approval`` (default False since 1.74.0) is **deprecated**:
-        ``True`` blocks polling the plane for a console decision, which the plane
-        no longer makes. It is kept for the plane's transition window only, and is
-        removed in the first SDK release after the plane retires the console
-        approve/deny. A rejection, a plane-side expiry or the poll ceiling
-        refuses the call (see :meth:`_await_governance_approval`).
+        ``wait_for_approval=True`` was **removed in 1.76.0** and raises
+        ``ValueError`` before anything runs: it blocked polling the plane for a
+        console decision, and the plane retired its console approve/deny
+        (enterprise PR #199). ``False`` is still accepted and does nothing. The
+        parameter stays so an explicit ``wait_for_approval=False`` keeps working
+        instead of slipping through ``**kwargs`` into the model call.
         """
         if wait_for_approval:
-            import warnings
-
-            warnings.warn(
-                "arun(wait_for_approval=True) is deprecated and will be removed in the "
-                "first release after the control plane retires its console approve/deny: "
-                "the plane no longer approves tool calls, so the wait can only end in "
-                "that deprecated console decision or a refusal. Take the paused result "
-                "and resume it from your application with "
-                "aresume(run_id, resume_value=Resume(approved=..., "
-                "metadata={'resolver': ...})).",
-                DeprecationWarning,
-                stacklevel=2,
+            raise ValueError(
+                "arun(wait_for_approval=True) was removed in fastaiagent 1.76.0: the "
+                "control plane no longer approves tool calls, so there is nothing to "
+                "wait for. Take the paused result (status='paused') and resume it from "
+                "your application with aresume(run_id, resume_value=Resume(approved=..., "
+                "metadata={'resolver': ...}))."
             )
         # Gap 4: make this run's registry-prompt provenance visible to the LLM
         # client so it can stamp fastaiagent.prompt.* on the llm_call span.
@@ -671,40 +683,6 @@ class Agent:
                 from fastaiagent.prompt.provenance import reset_prompt_provenance
 
                 reset_prompt_provenance(_prov_token)
-        if wait_for_approval:
-            result = await self._await_governance_approval(result, context=context)
-        return result
-
-    async def _await_governance_approval(
-        self, result: AgentResult, *, context: RunContext[Any] | None = None
-    ) -> AgentResult:
-        """Deprecated blocking wait on a console decision, then resume (Task C).
-
-        When a managed policy paused this run, poll ``GET /runs/{id}/pending``
-        and resume via the agent's own checkpointer. Only the deprecated console
-        approve/deny flips that status, so under the current plane the wait
-        normally runs to the poll ceiling. Anything but ``approved`` — rejected,
-        or expired at the ceiling — resumes with ``approved=False``, which
-        :meth:`aresume` turns into a refusal: the tool never runs. Scoped to
-        governance pauses; any other pause is returned unchanged.
-        """
-        from fastaiagent import governance
-        from fastaiagent.client import _connection
-
-        while (
-            result.status == "paused"
-            and isinstance(result.pending_interrupt, dict)
-            and result.pending_interrupt.get("reason") == governance.APPROVAL_REASON
-            and _connection.is_connected
-        ):
-            from fastaiagent.chain.interrupt import Resume
-
-            run_id = result.execution_id
-            status = await governance.await_resolution(run_id)
-            logger.info("governance: run %s resolved=%s", run_id, status)
-            result = await self.aresume(
-                run_id, resume_value=Resume(approved=(status == "approved")), context=context
-            )
         return result
 
     async def _arun_traced(
@@ -837,6 +815,8 @@ class Agent:
         """Core execution without tracing."""
         start = time.monotonic()
         exec_id = execution_id or str(uuid.uuid4())
+        # Read BEFORE this run rebinds ``_execution_id`` below.
+        pause_run_id = self._pause_owner_run_id(exec_id)
 
         # Set up the execution-scoped ContextVars so interrupt() / @idempotent
         # can find the active execution + checkpointer. ``_agent_path`` is
@@ -950,6 +930,7 @@ class Agent:
                     start_iteration=_start_iteration,
                     parallel_tools=self.config.parallel_tools,
                     max_parallel_tools=self.config.max_parallel_tools,
+                    governance_run_id=pause_run_id,
                     **kwargs,
                 )
                 loop_done = True
@@ -1207,6 +1188,7 @@ class Agent:
 
         # Set up execution-scoped ContextVars so interrupt() / @idempotent
         # can find the active execution + checkpointer.
+        pause_run_id = self._pause_owner_run_id(exec_id)  # before the rebind below
         exec_token = _execution_id.set(exec_id)
         parent_path = _agent_path.get()
         new_path = (
@@ -1239,6 +1221,7 @@ class Agent:
                 agent_id=self.agent_id,
                 parallel_tools=self.config.parallel_tools,
                 max_parallel_tools=self.config.max_parallel_tools,
+                governance_run_id=pause_run_id,
                 **kwargs,
             ):
                 if isinstance(event, TextDelta):
@@ -1406,7 +1389,7 @@ class Agent:
             # not connected; never blocks/raises). Emitted only on the winning
             # claim, so a losing AlreadyResumed race reports no phantom resolution.
             try:
-                from fastaiagent.governance import hitl_kind
+                from fastaiagent.governance import hitl_kind, resolution_context
                 from fastaiagent.trace.hitl_export import record_resolution_event
 
                 record_resolution_event(
@@ -1417,6 +1400,7 @@ class Agent:
                     reason=claimed.reason,
                     agent_id=self.name,
                     kind=hitl_kind(claimed.reason),
+                    context=resolution_context(claimed.reason, claimed.context),
                 )
             except Exception:
                 logger.debug("HITL resolution emit failed", exc_info=True)

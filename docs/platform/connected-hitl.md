@@ -33,13 +33,18 @@ user/business data ever leaves the process:
 | `reason` | the `interrupt()` reason label | the original reason |
 | `status` | — | `approved` / `rejected` |
 | `resolver` | — | `resume_value.metadata["resolver"]` if set |
+| `context` | — | policy pause only: `{"pending_id": <id or null>}`; otherwise none |
 
 `kind` tells the two kinds of pause apart on the ledger: `approval` is a tool
 call a managed approval policy paused (reason `policy_approval_required`, since
 1.74.0 — earlier versions reported those as `interrupt` too); `interrupt` is an
-`interrupt()` in your own code. `status` is only ever `approved` or `rejected`: a
-blocking wait that expires is reported as `rejected`, because that is what it
-does — the tool is refused.
+`interrupt()` in your own code. `status` is only ever `approved` or `rejected`.
+
+`context.pending_id` (since 1.76.0) names the pending run the plane registered
+for a policy pause, so the plane closes exactly that pause instead of matching by
+position in the run. It is `null` when registering the pending run failed, which
+tells the plane there is nothing to close. It is the only thing `context` ever
+holds.
 
 The raw `interrupt(reason, context)` **context dict is never sent** — only the
 short `reason` label. To attribute a resolution to a person, pass a `resolver` in

@@ -13,8 +13,9 @@ Since 1.74.0 the calling application is the approver (plane decision,
 
 * approve → the tool runs and the model confirms;
 * **reject → the tool never runs and the model is told** (audit H1: before
-  1.74.0 it ran and the model reported a successful transfer);
-* the deprecated blocking wait **expiring → refusal**, never permission.
+  1.74.0 it ran and the model reported a successful transfer).
+
+The blocking ``wait_for_approval=True`` was removed in 1.76.0, and its tests with it.
 
 The live-plane version of the same reproduction is
 ``test_connected_approvals_e2e.py``.
@@ -125,29 +126,3 @@ def test_governance_reject_does_not_run_the_tool(
     assert ran == [], f"a rejected approval executed transfer_funds: {ran}"
     reply = final.output.lower()
     assert "transferred $500" not in reply and "successfully" not in reply, final.output
-
-
-def test_governance_blocking_wait_expiry_refuses(
-    gov_plane: tuple[GovPlane, str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Nobody decides (the plane never does now), the deprecated wait expires: a no."""
-    require_env()
-    state, url = gov_plane
-
-    import fastaiagent
-    from fastaiagent import governance
-
-    monkeypatch.setattr(governance, "_POLL_TIMEOUT_SECONDS", 1.0)
-    monkeypatch.setattr(governance, "_POLL_INTERVAL_SECONDS", 0.2)
-    fastaiagent.connect(api_key=_API_KEY, target=url)
-    agent, ran = _make_agent(tmp_path)
-
-    with pytest.warns(DeprecationWarning, match="wait_for_approval"):
-        final = asyncio.run(
-            agent.arun("Transfer $250 to Alice.", execution_id="run-exp", wait_for_approval=True)
-        )
-
-    assert state.pending_polls >= 2, "the wait should have polled until the ceiling"
-    assert final.status == "completed", final
-    assert ran == [], f"an expired approval executed transfer_funds: {ran}"
-    assert "transferred $250" not in final.output.lower(), final.output
