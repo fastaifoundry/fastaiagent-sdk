@@ -15,6 +15,8 @@ from fastaiagent.chain.interrupt import AlreadyResumed
 from fastaiagent.chain.node import Edge, NodeConfig
 from fastaiagent.chain.validator import detect_cycles, validate_chain
 from fastaiagent.llm.client import LLMClient, LLMResponse
+from fastaiagent.tool.base import Tool, ToolResult
+from fastaiagent.tool.function import FunctionTool
 
 
 class MockLLMClient(LLMClient):
@@ -330,6 +332,195 @@ class TestChainExecution:
         chain.add_node("approval", type=NodeType.hitl)
         result = await chain.aexecute({}, hitl_handler=handler)
         assert result.node_results["approval"]["approved"] is True
+
+
+# --- Tool node failure (backlog #5, 1.78.0) ---
+
+
+class _RefusingTool(Tool):
+    """A tool that reports failure by *returning* an error, as MCPTool does for
+    an ``isError`` reply — no exception crosses the tool boundary."""
+
+    async def aexecute(self, arguments, context=None):
+        return ToolResult(error="upstream refused the request")
+
+
+def _charge_chain(ran: list[str], **chain_kwargs) -> Chain:
+    """prepare → charge(amount: int) → receipt, with the amount taken from state.
+
+    ``input_mapping`` renders templates as strings, so a non-numeric
+    ``state.amount`` fails ``charge``'s argument validation before it runs.
+    """
+
+    def prepare() -> str:
+        ran.append("prepare")
+        return "ready"
+
+    def charge(amount: int) -> str:
+        ran.append("charge")
+        return f"charged {amount}"
+
+    def receipt() -> str:
+        ran.append("receipt")
+        return "receipt sent"
+
+    chain = Chain("charge-flow", **chain_kwargs)
+    chain.add_node("prepare", tool=FunctionTool(name="prepare", fn=prepare))
+    chain.add_node(
+        "charge",
+        tool=FunctionTool(name="charge", fn=charge),
+        input_mapping={"amount": "{{state.amount}}"},
+    )
+    chain.add_node("receipt", tool=FunctionTool(name="receipt", fn=receipt))
+    chain.connect("prepare", "charge")
+    chain.connect("charge", "receipt")
+    return chain
+
+
+class TestToolNodeFailure:
+    """A tool node whose tool could not run fails the run.
+
+    Until 1.78.0 a tool that *returned* an error — its arguments failed
+    validation, say — was stored as the node's result: the downstream nodes ran
+    on ``output=None`` and the run reported ``completed``. A tool that *raised*
+    already failed the run; the two were the same failure reported two ways.
+    """
+
+    @pytest.mark.asyncio
+    async def test_invalid_arguments_fail_the_run_and_stop_downstream(self):
+        from fastaiagent._internal.errors import ChainError
+
+        ran: list[str] = []
+        chain = _charge_chain(ran, checkpoint_enabled=False)
+        with pytest.raises(ChainError, match=r"Tool node 'charge' \(charge\) failed: Invalid"):
+            await chain.aexecute({"amount": "abc"})
+        # The tool never ran, and nothing after it did either — no receipt for
+        # a charge that did not happen.
+        assert ran == ["prepare"]
+
+    @pytest.mark.asyncio
+    async def test_failed_run_is_marked_failed_and_stays_resumable(self, temp_dir):
+        from fastaiagent._internal.errors import ChainError
+
+        store = SQLiteCheckpointer(db_path=str(temp_dir / "cp.db"))
+        ran: list[str] = []
+        chain = _charge_chain(ran, checkpointer=store)
+        with pytest.raises(ChainError):
+            await chain.aexecute({"amount": "abc"}, execution_id="charge-run")
+
+        rows = store.list("charge-run")
+        assert [c.step_type for c in rows] == ["node", "run_end"]
+        assert rows[-1].status == "failed"
+        # ``completed`` would refuse a resume (AlreadyResumed); ``failed`` hands
+        # back the last node that finished, so the run can be fixed and re-entered.
+        resumable = latest_resumable(store, "charge-run")
+        assert resumable is not None and resumable.node_id == "prepare"
+        store.close()
+
+    @pytest.mark.asyncio
+    async def test_a_returned_tool_error_fails_the_run(self):
+        from fastaiagent._internal.errors import ChainError
+
+        chain = Chain("refused", checkpoint_enabled=False)
+        chain.add_node("call", tool=_RefusingTool(name="remote"))
+        with pytest.raises(ChainError, match="upstream refused the request"):
+            await chain.aexecute({})
+
+    @pytest.mark.asyncio
+    async def test_valid_arguments_complete_with_the_same_result_shape(self):
+        ran: list[str] = []
+        chain = _charge_chain(ran, checkpoint_enabled=False)
+        result = await chain.aexecute({"amount": "42"})
+        assert result.status == "completed"
+        assert ran == ["prepare", "charge", "receipt"]
+        assert result.node_results["charge"] == {"output": "charged 42", "error": None}
+
+
+# --- Tool policy inside a chain (backlog #16, 1.78.0) ---
+
+
+class TestToolNodePolicy:
+    """A tool node applies the tool's own timeout / max_retries / output_type.
+
+    The agent loop calls ``tool.ainvoke`` (the policy-aware entry point); until
+    1.78.0 a chain tool node called ``tool.aexecute``, which deliberately skips
+    it — so the same tool timed out, retried and validated inside an agent and
+    did none of that inside a chain.
+    """
+
+    @pytest.mark.asyncio
+    async def test_timeout_applies(self):
+        import asyncio
+
+        from fastaiagent._internal.errors import ToolExecutionError
+
+        async def slow() -> str:
+            await asyncio.sleep(0.5)
+            return "late"
+
+        chain = Chain("slow", checkpoint_enabled=False)
+        chain.add_node("call", tool=FunctionTool(name="slow", fn=slow, timeout=0.05))
+        with pytest.raises(ToolExecutionError, match="timed out"):
+            await chain.aexecute({})
+
+    @pytest.mark.asyncio
+    async def test_max_retries_applies(self):
+        attempts: list[int] = []
+
+        def flaky() -> str:
+            attempts.append(1)
+            if len(attempts) < 3:
+                raise ConnectionError("upstream blip")
+            return "ok"
+
+        chain = Chain("flaky", checkpoint_enabled=False)
+        chain.add_node(
+            "call", tool=FunctionTool(name="flaky", fn=flaky, max_retries=2, retry_delay=0)
+        )
+        result = await chain.aexecute({})
+        assert result.status == "completed"
+        assert len(attempts) == 3
+        assert result.node_results["call"]["output"] == "ok"
+
+    @pytest.mark.asyncio
+    async def test_output_type_mismatch_fails_the_run(self):
+        from fastaiagent._internal.errors import ChainError
+
+        def count() -> str:
+            return "not a number"
+
+        chain = Chain("typed", checkpoint_enabled=False)
+        chain.add_node("call", tool=FunctionTool(name="count", fn=count, output_type=int))
+        with pytest.raises(ChainError, match="output failed schema validation"):
+            await chain.aexecute({})
+
+    @pytest.mark.asyncio
+    async def test_output_type_stores_the_validated_json_form(self, temp_dir):
+        from pydantic import BaseModel
+
+        class Ticket(BaseModel):
+            id: int
+            title: str
+
+        def open_ticket() -> dict:
+            return {"id": "7", "title": "refund"}
+
+        store = SQLiteCheckpointer(db_path=str(temp_dir / "cp.db"))
+        chain = Chain("tickets", checkpointer=store)
+        chain.add_node(
+            "open",
+            tool=FunctionTool(name="open_ticket", fn=open_ticket, output_type=Ticket),
+            output_key="ticket",
+        )
+        result = await chain.aexecute({}, execution_id="t-1")
+
+        # Coerced by output_type ("7" -> 7), stored as JSON-safe data rather than
+        # a Ticket instance, so the checkpoint (plain json.dumps) still writes.
+        assert result.status == "completed"
+        assert result.final_state["ticket"] == {"id": 7, "title": "refund"}
+        rows = store.list("t-1")
+        assert rows[-1].step_type == "run_end" and rows[-1].status == "completed"
+        store.close()
 
 
 # --- Checkpoint tests ---

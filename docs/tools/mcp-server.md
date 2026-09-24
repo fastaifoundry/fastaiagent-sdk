@@ -117,6 +117,36 @@ fastaiagent mcp serve <target> [--transport stdio] [--expose-tools] [--name NAME
 | **Prompt** (one, when `expose_system_prompt=True`) | Named `<tool>_system`, contains the agent's resolved system prompt. Useful for clients that show "what does this server do?" tooltips. |
 | **Resources** | Not currently exposed. Tracked as a follow-up — map `LocalKB` namespaces to MCP resources. |
 
+## Approvals, pauses and governance
+
+MCP has no way to pause a call and resume it later, so a run that stops for a
+decision cannot answer the client. Since 1.78.0 the server says so instead of
+answering with nothing:
+
+- **The primary tool.** If the agent (or chain) pauses — a
+  [managed approval policy](../guardrails/managed-governance.md) or an
+  `interrupt()` in one of its tools — the call returns an MCP **error**
+  (`isError: true`) naming the pause and its `execution_id`. Nothing after the
+  pause ran. The pause stays open: whoever operates the server resolves it with
+  `agent.aresume(execution_id, resume_value=Resume(...))` or
+  `fastaiagent resume <execution_id> --runner module:attr`, and the plane's
+  pending-run record closes when they do. An agent with no checkpointer cannot
+  save the pause, and the error says that too. The paused call's arguments are
+  never put in the error.
+- **Inner tools (`expose_tools=True`).** A client that calls one of a governed
+  agent's tools by name skips the agent loop, so the server asks the plane's
+  policy itself before running it. An allowed call runs; a denied one is refused
+  with the policy's reason; one that needs approval is refused, because a direct
+  call has no run to pause (call the agent's primary tool instead); if the plane
+  cannot answer, the call is refused. Refusals are MCP errors. An agent with no
+  `agent_id`, or a tool no approval policy covers, runs as before.
+
+!!! warning "Changed in 1.78.0"
+    Before 1.78.0 a paused run came back as an empty *successful* answer (`""`,
+    or the text `"null"` for a chain), and an inner tool called by name ran with
+    **no governance at all** — a tool the plane denies, or holds for approval,
+    ran anyway.
+
 ## Example — agent with KB, memory, and tools — as one MCP server
 
 Everything composes:

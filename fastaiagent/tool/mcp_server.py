@@ -64,6 +64,15 @@ __all__ = ["FastAIAgentMCPServer", "Transport"]
 Transport = Literal["stdio", "sse", "streamable-http"]
 
 
+class _PausedCall(Exception):  # noqa: N818 — reaches the client as the isError text
+    """The target paused (approval policy or ``interrupt()``). Raised out of the
+    ``tools/call`` handler, which the MCP SDK turns into ``isError: true``."""
+
+
+class _RefusedCall(Exception):  # noqa: N818 — reaches the client as the isError text
+    """Governance refused a direct inner-tool call (``expose_tools=True``)."""
+
+
 def _require_mcp() -> Any:
     """Import the upstream ``mcp`` package with an actionable error if missing."""
     try:
@@ -217,7 +226,9 @@ class FastAIAgentMCPServer:
                         "description": (
                             "The request to send to the agent/chain. The agent "
                             "runs to completion (including any tool calls it "
-                            "makes) and returns its final text output."
+                            "makes) and returns its final text output. A run "
+                            "that pauses for an approval returns an error "
+                            "naming the paused run instead."
                         ),
                     }
                 },
@@ -230,15 +241,32 @@ class FastAIAgentMCPServer:
         if not user_input:
             return "Error: 'input' argument is required and cannot be empty."
 
+        from fastaiagent._internal.pause import describe_pause
+        from fastaiagent.chain.interrupt import InterruptSignal
+
         if _is_agent(self.target):
             # Avoid OTel tracing inside the MCP server loop — callers that
             # want traces can configure them on their own side.
-            result = await self.target.arun(user_input, trace=False)  # type: ignore[union-attr]
+            try:
+                result = await self.target.arun(user_input, trace=False)  # type: ignore[union-attr]
+            except InterruptSignal as sig:
+                raise _PausedCall(describe_pause(sig)) from None
+            # A paused run has no answer: MCP cannot resume it, so it is an error
+            # (isError) naming the pause, never ``""`` as if the agent had replied.
+            paused = describe_pause(result)
+            if paused:
+                raise _PausedCall(paused)
             return result.output or ""
         if _is_chain(self.target):
-            result = await self.target.aexecute(  # type: ignore[union-attr]
-                {"input": user_input}, trace=False
-            )
+            try:
+                result = await self.target.aexecute(  # type: ignore[union-attr]
+                    {"input": user_input}, trace=False
+                )
+            except InterruptSignal as sig:
+                raise _PausedCall(describe_pause(sig)) from None
+            paused = describe_pause(result)
+            if paused:
+                raise _PausedCall(paused)
             # Chain output may be a str or a dict; stringify for MCP.
             output = result.output
             if isinstance(output, str):
@@ -247,8 +275,18 @@ class FastAIAgentMCPServer:
         raise TypeError(f"Unsupported target type: {type(self.target).__name__}")
 
     async def _invoke_inner_tool(self, name: str, arguments: dict[str, Any]) -> str:
+        from fastaiagent.governance import check_direct_call
+
         for t in self._inner_tools:
             if _sanitize_name(t.name) == name:
+                # A direct call skips the agent loop, and with it the governance
+                # gate. Ask the same policy here — before 1.78.0 a tool the plane
+                # denies, or holds for approval, ran when called by name.
+                refusal = await check_direct_call(
+                    t.name, arguments, getattr(self.target, "agent_id", None)
+                )
+                if refusal:
+                    raise _RefusedCall(refusal)
                 tool_result = await t.aexecute(arguments)
                 if tool_result.error:
                     return f"Error: {tool_result.error}"

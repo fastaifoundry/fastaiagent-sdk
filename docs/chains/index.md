@@ -230,7 +230,28 @@ gate is deliberately *not* in the list — its handler is an argument to
 
 ## Tool Node State Behavior
 
-When a tool node executes, its return value is wrapped in `{"output": <return_value>, "error": <error_or_None>}` and merged into chain state. This means each successive tool node **overwrites** `state.output` with its own wrapped result.
+When a tool node executes, its return value is wrapped in `{"output": <return_value>, "error": None}` and merged into chain state. This means each successive tool node **overwrites** `state.output` with its own wrapped result.
+
+!!! warning "A tool node whose tool could not run fails the run (1.78.0)"
+    If the tool reports an error — its arguments fail validation, it has no
+    function, an MCP server answers `isError` — the executor raises
+    `ChainError` naming the node, the nodes after it do not run, and a
+    checkpointed run is marked `failed` (so it can be fixed and resumed). A tool
+    that *raises* already failed the run. Until 1.78.0 a *returned* error was
+    stored as `{"output": None, "error": "..."}`, downstream nodes ran on it,
+    and the run reported `status="completed"`.
+
+    The common trigger is `input_mapping`: templates render state values as
+    strings, so `{"amount": "{{state.amount}}"}` with a missing or non-numeric
+    `state.amount` fails a tool declared `amount: int`.
+
+**The tool's own execution policy applies** (1.78.0): a tool node runs its tool
+the way the agent loop does, so the tool's `timeout`, `max_retries` /
+`retry_delay` and `output_type` all take effect — a timeout or an `output_type`
+mismatch fails the run, and a failing call is retried first. With `output_type`,
+the value stored in state is the **JSON form** of the validated value (a Pydantic
+model becomes a dict), because checkpoints are JSON. Before 1.78.0 a chain skipped
+all three. See [Tools → execution policy](../tools/index.md#sync-vs-async).
 
 If you need to thread a value across multiple tool nodes (e.g., a `seed_value` that step A produces and step C reads), put it on the **top-level state** via `initial_state` to `chain.execute()` or `modified_state` to `chain.resume()` — not as a return value from a tool node. Top-level state keys persist because nothing overwrites them.
 

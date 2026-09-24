@@ -206,6 +206,20 @@ if res.status == "paused" and res.pending_interrupt["reason"] == "policy_approva
 
 A runnable end-to-end example is in `examples/84_governed_agent.py`.
 
+### When something other than your application runs the agent
+
+A pause needs someone to resume it. When the agent is driven by an SDK surface that
+cannot, the pause is reported as a run that did not finish, never as an empty
+answer (1.78.0). None of these approves or rejects on anyone's behalf:
+
+| Surface | What a pause becomes |
+|---|---|
+| [MCP server](../tools/mcp-server.md#approvals-pauses-and-governance) | an MCP error naming the pause and its `execution_id`; the pause stays open for the operator to resolve |
+| MCP inner tools (`expose_tools=True`) | policy checked per call: allowed runs, denied or approval-required is refused (a direct call cannot pause) |
+| [`simulate()`](../simulation/index.md#when-the-agent-pauses) | the scenario stops there, unjudged, with `error` set |
+| [`evaluate()` / pytest eval](../evaluation/agent-ci.md#infra-failures-cant-green-a-build) | an **errored** case: unscored, counted in `error_rate` |
+| [Replay](../replay/guarantees.md#pauses-and-governance-during-a-rerun) | `ReplayError`; a rerun is not governed |
+
 ## Verified end-to-end
 
 **Guardrail actions** (SDK 1.57.0, wire v1.9) are exercised against a live local

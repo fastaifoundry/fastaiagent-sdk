@@ -17,7 +17,7 @@ from pathlib import Path
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
 
-CURRENT_SCHEMA_VERSION = 20
+CURRENT_SCHEMA_VERSION = 21
 
 # A migration step is either a SQL string or a callable that takes the
 # ``SQLiteHelper`` and runs whatever logic it needs (e.g., gated
@@ -570,6 +570,21 @@ def _v16_add_eval_case_error(db: SQLiteHelper) -> None:
     _add_column_if_missing(db, "eval_cases", "error", "TEXT")
 
 
+def _v21_add_sim_case_error(db: SQLiteHelper) -> None:
+    """Persist why a simulated scenario could not finish (1.78.0).
+
+    ``simulate()`` stops a scenario whose agent paused on a turn (an approval
+    policy or ``interrupt()``) and does not judge it; ``SimulationResult.error``
+    says why. Without the column that reason was lost on persistence and the row
+    was indistinguishable from an ordinary failed scenario. Local only —
+    simulations never leave the process. Gated on the table existing.
+    """
+    rows = db.fetchall("SELECT name FROM sqlite_master WHERE type='table' AND name='sim_cases'")
+    if not rows:
+        return
+    _add_column_if_missing(db, "sim_cases", "error", "TEXT")
+
+
 def _v17_add_eval_run_synced(db: SQLiteHelper) -> None:
     """Durable platform-export buffer flag on ``eval_runs`` (Part D, 1.49.0).
 
@@ -1044,6 +1059,11 @@ _MIGRATIONS: dict[int, list[_Step]] = {
         # finished run stops looking identical to one that died right after its
         # last step. See _v20_add_checkpoint_step_type.
         _v20_add_checkpoint_step_type,
+    ],
+    21: [
+        # 1.78.0: a simulated scenario that paused is recorded as errored, not
+        # as a judged conversation. See _v21_add_sim_case_error.
+        _v21_add_sim_case_error,
     ],
 }
 

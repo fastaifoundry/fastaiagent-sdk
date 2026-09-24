@@ -229,6 +229,69 @@ async def post_pending(
     )
 
 
+def _fail_closed_refusal(tool_name: str, agent_id: str | None) -> str | None:
+    """The WS4 opt-in fail-closed refusal, or ``None``.
+
+    When the operator has opted in (``fail_mode="closed"``) AND this agent is
+    governed (``agent_id`` set) AND we're connected but the policy cache is
+    missing (the plane was unreachable at connect, so governance can't be
+    evaluated), refuse rather than run ungoverned. Default ``fail_mode="open"``
+    skips this entirely. It does NOT weaken the ``decide()``-error fail-closed
+    path, which stays as shipped.
+    """
+    from fastaiagent.client import _connection
+
+    if (
+        getattr(_connection, "governance_fail_mode", "open") == "closed"
+        and agent_id
+        and _connection.is_connected
+        and getattr(_connection, "policy_cache", None) is None
+    ):
+        logger.warning(
+            "fail-closed: governance unavailable (no cached policy); refusing %r", tool_name
+        )
+        return "Refused: fail-closed mode — governance unavailable for this run"
+    return None
+
+
+async def check_direct_call(
+    tool_name: str, tool_input: dict[str, Any], agent_id: str | None
+) -> str | None:
+    """Gate a tool call made **outside** an agent run, which nothing can pause.
+
+    Returns ``None`` to allow the call, or a refusal string. The same policy
+    :func:`gate_tool_call` applies inside the agent loop, with one difference:
+    there is no run to pause, so ``require_approval`` is a refusal and no pending
+    run is registered — nothing could ever resolve it.
+
+    Used by the MCP server's ``expose_tools=True`` surface (1.78.0), where a
+    client calls an agent's tool by name. Before, those calls skipped governance.
+    """
+    from fastaiagent.client import _connection
+
+    refusal = _fail_closed_refusal(tool_name, agent_id)
+    if refusal:
+        return refusal
+    if not agent_id or not _connection.is_connected or not policy_matches(tool_name):
+        return None
+    try:
+        decision = await decide(tool_name, tool_input, agent_id)
+    except Exception:
+        logger.warning("policy/decide unreachable; refusing %r (fail-closed)", tool_name)
+        logger.debug("policy/decide error detail", exc_info=True)
+        return "Refused: governance check unavailable"
+    verdict = decision.get("decision")
+    if verdict == "deny":
+        return f"Refused by governance policy: {decision.get('reason') or 'not permitted'}"
+    if verdict == "require_approval":
+        return (
+            f"Refused: '{tool_name}' requires approval under governance policy, and a "
+            f"direct tool call cannot wait for one. Call the agent instead, so the "
+            f"approval pauses its run for the calling application to resolve."
+        )
+    return None
+
+
 async def gate_tool_call(
     tool_name: str, tool_input: dict[str, Any], agent_id: str, run_id: str
 ) -> str | None:
@@ -248,24 +311,11 @@ async def gate_tool_call(
     from fastaiagent.chain.interrupt import _resume_value, interrupt
     from fastaiagent.client import _connection
 
-    # WS4 opt-in fail-closed: when the operator has opted in (fail_mode="closed")
-    # AND this agent is governed (agent_id set) AND we're connected but the policy
-    # cache is missing (the plane was unreachable at connect, so governance can't
-    # be evaluated), refuse rather than run ungoverned. Default fail_mode="open"
-    # skips this entirely => the existing fail-open early-return below is unchanged.
-    # This does NOT weaken the decide()-error fail-closed path further down (that
-    # stays as shipped). When the cache IS present, this is skipped and normal
-    # policy_matches -> decide() gating runs.
-    if (
-        getattr(_connection, "governance_fail_mode", "open") == "closed"
-        and agent_id
-        and _connection.is_connected
-        and getattr(_connection, "policy_cache", None) is None
-    ):
-        logger.warning(
-            "fail-closed: governance unavailable (no cached policy); refusing %r", tool_name
-        )
-        return "Refused: fail-closed mode — governance unavailable for this run"
+    # WS4 opt-in fail-closed — see _fail_closed_refusal. When the cache IS
+    # present, this is skipped and normal policy_matches -> decide() gating runs.
+    refusal = _fail_closed_refusal(tool_name, agent_id)
+    if refusal:
+        return refusal
 
     # Governance is opt-in per agent: without a platform ``agent_id`` we can't make
     # a ``/policy/decide`` call the plane will accept (it FK-validates the agent),

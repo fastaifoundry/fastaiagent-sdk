@@ -92,6 +92,15 @@ noise, and reporting them as agent regressions would send you debugging the
 wrong thing. The CLI gives it its own exit code (`3`) so CI can tell
 "your agent got worse" apart from "the provider was down".
 
+**A case whose run paused is errored too** (1.78.0). If the agent stops for a
+[managed approval policy](../guardrails/managed-governance.md) or an `interrupt()`,
+there is no answer to score, so the case records what it was waiting on as its
+`error` instead of being scored on an empty output. Under pytest the test still
+fails loudly. With `evaluate()`, an errored case leaves the pass-rate denominator, so
+if your dataset can trigger approvals, gate with `max_error_rate`
+(`gate(results, ..., max_error_rate=0.1)` or `--eval-max-error-rate`) so a run
+full of pauses is invalid rather than green.
+
 ## Baselines: catch regressions, not absolutes
 
 Publish a baseline from your default branch:

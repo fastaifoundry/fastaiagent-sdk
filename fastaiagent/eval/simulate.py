@@ -32,7 +32,8 @@ import asyncio
 import json
 import re
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -177,6 +178,10 @@ class SimulationResult:
     transcript: list[TranscriptTurn]
     verdicts: list[CriterionVerdict]
     trace_id: str | None = None
+    #: Why the conversation could not finish, or ``None``. Set when the agent
+    #: paused on a turn (an approval policy or ``interrupt()``): the scenario
+    #: stops there, is not judged, and counts as not passed (1.78.0).
+    error: str | None = None
 
     @property
     def success_criteria(self) -> list[str]:
@@ -208,11 +213,18 @@ class SimulationResults:
     def pass_rate(self) -> float:
         return (self.pass_count / len(self.results)) if self.results else 0.0
 
+    @property
+    def errored_count(self) -> int:
+        """Scenarios that could not finish (see :attr:`SimulationResult.error`)."""
+        return sum(1 for r in self.results if r.error)
+
     def summary(self) -> str:
         lines = ["Simulation Results", "=" * 50]
         for r in self.results:
-            status = "PASS" if r.passed else "FAIL"
+            status = "ERROR" if r.error else ("PASS" if r.passed else "FAIL")
             lines.append(f"[{status}] {r.scenario_name} ({len(r.transcript)} turns)")
+            if r.error:
+                lines.append(f"    ! {r.error}")
             for v in r.verdicts:
                 mark = "✓" if v.passed else "✗"
                 lines.append(f"    {mark} ({v.kind}) {v.criterion}")
@@ -220,6 +232,11 @@ class SimulationResults:
         lines.append(
             f"{self.pass_count}/{len(self.results)} passed (pass_rate={self.pass_rate:.0%})"
         )
+        if self.errored_count:
+            lines.append(
+                f"errored: {self.errored_count}/{len(self.results)} scenarios did not "
+                f"finish (not judged, counted as not passed)"
+            )
         return "\n".join(lines)
 
     def export(self, path: str | Path, format: str = "json") -> None:
@@ -233,6 +250,7 @@ class SimulationResults:
                 "trace_id": r.trace_id,
                 "transcript": [t.to_dict() for t in r.transcript],
                 "verdicts": [v.to_dict() for v in r.verdicts],
+                "error": r.error,
             }
             for r in self.results
         ]
@@ -286,8 +304,9 @@ class SimulationResults:
                 db.execute(
                     """INSERT INTO sim_cases
                        (case_id, run_id, ordinal, scenario_name, passed,
-                        criteria, per_criterion, transcript, trace_id, project_id)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        criteria, per_criterion, transcript, trace_id, project_id,
+                        error)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         uuid.uuid4().hex,
                         run_id,
@@ -304,6 +323,7 @@ class SimulationResults:
                         json.dumps([t.to_dict() for t in r.transcript]),
                         r.trace_id,
                         pid,
+                        r.error,
                     ),
                 )
         finally:
@@ -350,21 +370,52 @@ def _make_agent_runner(
         async def run_native(transcript: list[TranscriptTurn]) -> tuple[str, str | None]:
             last_user = transcript[-1].content
             prior = _transcript_to_messages(transcript[:-1])
-            result = await agent.arun(input=last_user, messages=prior)
+            with _pause_as_scenario_stop():
+                result = await agent.arun(input=last_user, messages=prior)
+            _stop_if_paused(result)
             return (result.output or ""), getattr(result, "trace_id", None)
 
         return run_native
 
     async def run_adapter(transcript: list[TranscriptTurn]) -> tuple[str, str | None]:
         messages = _transcript_to_messages(transcript)
-        out: Any = agent(messages)
-        if asyncio.iscoroutine(out):
-            out = await out
+        with _pause_as_scenario_stop():
+            out: Any = agent(messages)
+            if asyncio.iscoroutine(out):
+                out = await out
+        _stop_if_paused(out)
         if hasattr(out, "output"):
             return (out.output or ""), getattr(out, "trace_id", None)
         return str(out), None
 
     return run_adapter
+
+
+class _ScenarioPaused(Exception):  # noqa: N818 — internal control flow, never escapes
+    """The agent paused on this turn; the scenario stops here, unjudged."""
+
+
+def _stop_if_paused(result: Any) -> None:
+    """A paused turn has no reply. Recording its ``""`` let the simulated user
+    answer silence and the judge score a conversation that never happened."""
+    from fastaiagent._internal.pause import describe_pause
+
+    paused = describe_pause(result)
+    if paused:
+        raise _ScenarioPaused(paused)
+
+
+@contextmanager
+def _pause_as_scenario_stop() -> Iterator[None]:
+    """An agent with no checkpointer raises the bare ``InterruptSignal``. Before
+    1.78.0 it escaped ``gather()`` and took every scenario of the run with it."""
+    from fastaiagent._internal.pause import describe_pause
+    from fastaiagent.chain.interrupt import InterruptSignal
+
+    try:
+        yield
+    except InterruptSignal as sig:
+        raise _ScenarioPaused(describe_pause(sig)) from None
 
 
 async def _judge_transcript(
@@ -441,6 +492,7 @@ async def _run_scenario(
         )
 
         transcript: list[TranscriptTurn] = []
+        error: str | None = None
 
         # 1. Simulated user opens the conversation.
         opening = await scenario.user.anext(transcript)
@@ -449,7 +501,12 @@ async def _run_scenario(
 
         # 2. Alternate agent / user turns until the cap or an early stop.
         while transcript and len(transcript) < scenario.max_turns:
-            reply, trace_id = await run_agent(transcript)
+            try:
+                reply, trace_id = await run_agent(transcript)
+            except _ScenarioPaused as paused:
+                # The agent is waiting on a decision; the conversation ends here.
+                error = str(paused)
+                break
             transcript.append(
                 TranscriptTurn(
                     turn_index=len(transcript),
@@ -465,8 +522,13 @@ async def _run_scenario(
                 break
             transcript.append(TranscriptTurn(turn_index=len(transcript), role="user", content=nxt))
 
-        # 3. Judge once over the full transcript.
-        passed, verdicts = await _judge_transcript(scenario, transcript, judge)
+        # 3. Judge once over the full transcript — unless it never finished: a
+        #    conversation cut off by a pause measures nothing, so it is not judged
+        #    and does not pass.
+        verdicts: list[CriterionVerdict] = []
+        passed = False
+        if error is None:
+            passed, verdicts = await _judge_transcript(scenario, transcript, judge)
 
         ctx = span.get_span_context()
         root_trace_id = format(ctx.trace_id, "032x")
@@ -478,6 +540,7 @@ async def _run_scenario(
         transcript=transcript,
         verdicts=verdicts,
         trace_id=root_trace_id,
+        error=error,
     )
 
 

@@ -109,6 +109,20 @@ forked.with_tool_override("search_kb", deterministic_stub)
 forked.with_tool_override("create_ticket", another_stub)
 ```
 
+#### Pauses and governance during a rerun
+
+The rerun agent is rebuilt from the trace **without a checkpointer and without
+its platform `agent_id`**. Two consequences:
+
+* **A rerun cannot pause.** If a tool calls `interrupt()`, `arerun()` raises
+  `ReplayError` naming what it paused on; override that tool with
+  `with_tool_override(...)` to replay past it. (Before 1.78.0 the bare
+  `InterruptSignal` escaped `arerun()`.)
+* **A rerun is not governed.** Managed approval policies never gate it. Rebuilt
+  tools have no function unless you supply one, so a real side-effecting tool
+  only runs in a rerun when you pass it in through `with_tool_override` /
+  `with_tools` — an explicit, local choice.
+
 #### Marking tools with `replay_class`
 
 Rather than override tools by hand on every rerun, declare each tool's

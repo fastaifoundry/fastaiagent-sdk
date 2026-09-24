@@ -5,6 +5,127 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.78.0] - 2026-09-24 — a run that did not finish is never reported as an answer
+
+Backlog #5, #12 and #16. No wire change: no payload gains a key, and the approval
+strings the plane matches on (`policy_approval_required`, `kind="approval"`,
+`pending_id`) are untouched.
+
+### Security
+
+- ⚠ **MCP `expose_tools=True` no longer bypasses managed governance.**
+  - A client calling a governed agent's tool by name went straight to the tool.
+    The governance gate lives in the agent loop, so it was never asked: a tool the
+    plane denies, or holds for approval, ran.
+  - Now the server asks the same policy first, through the new
+    `governance.check_direct_call`. An allowed call runs. A denied one is refused
+    with the policy's reason. One that needs approval is refused, because a direct
+    call has no run to pause, and no pending run is registered. If the plane can't
+    answer, the call is refused.
+  - Refusals are MCP errors. An agent with no `agent_id`, or a tool no approval
+    policy covers, runs as before.
+
+### Changed
+
+- ⚠ **Callers that can't hold a pause report it instead of treating `""` as the
+  answer** (backlog #12).
+  - Since 1.74.0 `arun()` returns a pause (`status="paused"`, `output=""`), and an
+    agent with no checkpointer raises the bare `InterruptSignal`.
+  - **MCP server:** a paused agent or chain comes back as an MCP error naming the
+    pause and its `execution_id`. Before, it came back as an empty *successful*
+    answer (`""`, or `"null"` for a chain). The pause stays open for the operator
+    to resolve.
+  - **`simulate()`:** the scenario stops at the paused turn and isn't judged. It
+    counts as not passed, and the new `SimulationResult.error` says why.
+    `SimulationResults.errored_count` and `summary()` count these scenarios. Before,
+    the empty reply was recorded, the simulated user answered it, and the judge
+    scored the result. An agent with no checkpointer made the whole `simulate()`
+    call raise; now only that scenario errors.
+  - **`evaluate()` / pytest eval plugin:** a paused case is **errored**
+    (unscored, `error` set), not scored on `""`.
+  - **Replay:** `arerun()` raises `ReplayError` naming what paused. Before, the
+    bare `InterruptSignal` escaped. A rerun can't pause, since it's rebuilt
+    without a checkpointer, and isn't governed.
+  - The pause text never includes the paused call's arguments.
+
+> **If this affects you.** An MCP client that got an empty answer from a paused
+> run now gets an error. A `simulate()` scenario that "passed" over an empty turn
+> now fails with `error` set. In `evaluate()` an errored case leaves the pass-rate
+> denominator. If your dataset can trigger approvals, gate with `max_error_rate`
+> so a run full of pauses is invalid rather than green. The pytest plugin still
+> fails the test.
+
+- ⚠ **A chain tool node whose tool reports an error fails the run** (backlog #5).
+  - A tool can report failure two ways: raise, or *return* an error. It returns one
+    when its arguments fail validation, when it has no function attached, or when
+    an MCP server answers `isError`. A raised error already failed the run.
+  - A returned error was stored as the node's result
+    `{"output": None, "error": "..."}`. The nodes after it ran on that, and the run
+    reported `status="completed"`. For example, a receipt step would run after a
+    charge step that never did.
+  - The executor now raises `ChainError` naming the node, the tool and the error,
+    and nothing after the node runs.
+  - A checkpointed run is marked `failed`, so it can be fixed and resumed. A
+    `completed` run can't be resumed.
+  - The common trigger is `input_mapping`. Templates render state values as
+    strings, so a missing or non-numeric `{{state.amount}}` fails a tool declared
+    `amount: int`.
+  - This is the same rule 1.67.0 applied to a node with nothing attached, one
+    layer down.
+
+> **If this affects you.** A chain that completed with an error inside a tool
+> node's result now raises `ChainError` from `execute()`/`aexecute()`. If you read
+> `node_results[...]["error"]` after the run, or routed on it with a condition
+> node, catch `ChainError` instead. A successful tool node's result is unchanged:
+> `{"output": ..., "error": None}`. Nothing that worked changes.
+
+- ⚠ **A chain tool node applies the tool's own `timeout`, `max_retries` and
+  `output_type`** (backlog #16).
+  - The agent loop runs a tool through `ainvoke()`, which applies these. A Chain
+    tool node called `aexecute()`, which deliberately skips them. So the same tool
+    timed out, retried and validated inside an agent, and did none of that in a
+    chain.
+  - Now a timeout fails the run. A failing call is retried with backoff first. An
+    `output_type` mismatch fails the run (via #5).
+  - With `output_type`, chain state stores the **JSON form** of the validated
+    value, because checkpoints are written as JSON. A Pydantic model becomes a
+    dict, and coercion applies, so `"7"` becomes `7`.
+  - A tool that sets none of the three behaves exactly as before.
+
+> **If this affects you.** Only tools that set `timeout`, `max_retries` or
+> `output_type` change inside a chain. A side-effecting tool with `max_retries` can
+> now run more than once in a chain, as it already could in an agent.
+
+### Docs
+
+- `chains/index.md` (Tool Node State Behavior) and `chains/concepts.md` (When
+  something goes wrong): a tool node's error fails the run, and the tool's
+  execution policy applies. `tools/index.md` says a chain tool node uses `ainvoke`.
+- `tools/mcp-server.md`: a new section, "Approvals, pauses and governance".
+- `guardrails/managed-governance.md`: a table of what a pause becomes on each SDK
+  surface that can't resume it.
+- `simulation/index.md` + `concepts.md`: when the agent pauses.
+- `evaluation/agent-ci.md`: a paused case is errored, and when to set
+  `max_error_rate`.
+- `replay/guarantees.md`: a rerun can't pause and isn't governed.
+
+### Internal
+
+- Local DB schema v21 adds `sim_cases.error`. Simulations never leave the process.
+
+### Tests
+
+- **The connected guardrail conformance gates run again** (backlog #4). With the
+  lab credentials, 16 of 22 connected e2e tests had been skipping or failing on
+  harness problems rather than product ones. All 22 now pass together:
+  - one console login per session, because the plane rate-limits logins;
+  - the lab domain from `E2E_PLANE_DOMAIN_ID`, where two gates had used whichever
+    domain came first and hit its plan caps;
+  - the lab's project and key are reused, not created per run;
+  - the visibility gate removes the guardrail rule its pushed agent installs;
+  - connections are reset between connected test files, because the exporters
+    cache the `local.db` they drain.
+
 ## [1.77.0] - 2026-09-24 — an approval gate that says no stops the chain
 
 Three items from the approvals audit's §6 backlog (M9, M4, L4). No wire change.
