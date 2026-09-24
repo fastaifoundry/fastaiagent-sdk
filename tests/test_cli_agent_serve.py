@@ -121,3 +121,34 @@ def test_run_reports_a_paused_run_as_paused(isolated_local_db, tmp_path) -> None
     assert body["pending_interrupt"]["reason"] == "policy_approval_required"
     assert body["pending_interrupt"]["context"]["tool_input"] == {"amount": 500, "to": "Bob"}
     assert ran == []
+
+
+def test_run_stream_sends_a_paused_event(isolated_local_db, tmp_path) -> None:
+    """A paused run ends ``/run/stream`` with a ``paused`` event (1.77.0, audit M4) —
+    before, the private exception escaped ``astream`` and broke the response."""
+    import json
+
+    from fastaiagent.checkpointers.sqlite import SQLiteCheckpointer
+    from tests.test_stream_pause import _llm, _sign_off_tool
+
+    agent = Agent(
+        name="clerk",
+        llm=_llm("ask_human", {"question": "ok?"}),
+        tools=[_sign_off_tool()],
+        checkpointer=SQLiteCheckpointer(str(tmp_path / "ckpt.db")),
+    )
+    body = (
+        TestClient(agent_cli._build_app(agent))
+        .post("/run/stream", json={"input": "Get sign-off."})
+        .text
+    )
+
+    events = [
+        json.loads(line[len("data: ") :]) for line in body.splitlines() if line.startswith("data: ")
+    ]
+    types = [e["type"] for e in events]
+    assert types[-2:] == ["paused", "done"], types
+    paused = events[-2]
+    assert paused["reason"] == "need_sign_off"
+    assert paused["execution_id"]
+    assert paused["context"] == {"question": "ok?"}

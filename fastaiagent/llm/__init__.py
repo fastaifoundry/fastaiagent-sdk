@@ -19,6 +19,7 @@ from fastaiagent.llm.providers import (
     unregister_provider,
 )
 from fastaiagent.llm.stream import (
+    Paused,
     StreamDone,
     StreamEvent,
     TextDelta,
@@ -44,6 +45,7 @@ __all__ = [
     "ToolCallEnd",
     "Usage",
     "StreamDone",
+    "Paused",
     # Provider registry
     "ProviderPreset",
     "register_provider",

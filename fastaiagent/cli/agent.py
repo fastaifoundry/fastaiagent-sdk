@@ -116,7 +116,7 @@ def _build_app(
 
     from fastaiagent.agent.agent import Agent
     from fastaiagent.chain.chain import Chain
-    from fastaiagent.llm.stream import TextDelta, ToolCallEnd
+    from fastaiagent.llm.stream import Paused, TextDelta, ToolCallEnd
 
     if not isinstance(target, (Agent, Chain)):
         raise typer.BadParameter(f"Target must be Agent or Chain, got {type(target).__name__}")
@@ -202,6 +202,16 @@ def _build_app(
                         "arguments": event.arguments,
                     }
                     yield f"data: {json.dumps(payload)}\n\n"
+                elif isinstance(event, Paused):
+                    # The run stopped for a decision; resume ``execution_id`` from
+                    # the application (there is no resume route here).
+                    paused = {
+                        "type": "paused",
+                        "reason": event.reason,
+                        "execution_id": event.execution_id,
+                        "context": event.context,
+                    }
+                    yield f"data: {json.dumps(paused, default=str)}\n\n"
             yield "data: " + json.dumps({"type": "done"}) + "\n\n"
 
         return StreamingResponse(events(), media_type="text/event-stream")

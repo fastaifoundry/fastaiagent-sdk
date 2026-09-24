@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import re
 import uuid
@@ -207,7 +208,7 @@ async def execute_chain(
         final_state: state dict at completion
         execution_id: for resume
         node_results: dict of node_id -> result
-        status: "completed" or "paused"
+        status: "completed", "paused", or "rejected" (an approval gate said no)
         pending_interrupt: dict (only when status == "paused")
 
     ``resume_value``, when provided, is injected into the ``_resume_value``
@@ -316,6 +317,13 @@ async def execute_chain(
                     node, context, state, hitl_handler, run_context=run_context
                 )
             except InterruptSignal as sig:
+                if checkpointer is None:
+                    # Nowhere to save the pause (``checkpoint_enabled=False``), so
+                    # reporting ``paused`` would promise a resume that can never
+                    # happen (audit M9). Let it rise to whatever encloses this chain
+                    # and can hold it — the same rule an Agent without a
+                    # checkpointer follows; at the top level the caller sees it.
+                    raise
                 # Persist the suspension and bubble paused status up.
                 ap = _agent_path.get()
                 interrupt_ckpt = Checkpoint(
@@ -340,25 +348,24 @@ async def execute_chain(
                     context=sig.context,
                     agent_path=ap,
                 )
-                if checkpointer is not None:
-                    checkpointer.record_interrupt(interrupt_ckpt, pending)
-                    # Best-effort: report the pause to a connected plane (no-op
-                    # when not connected; never blocks/raises into the hot path).
-                    try:
-                        from fastaiagent.governance import hitl_kind
-                        from fastaiagent.trace.hitl_export import record_pause_event
+                checkpointer.record_interrupt(interrupt_ckpt, pending)
+                # Best-effort: report the pause to a connected plane (no-op
+                # when not connected; never blocks/raises into the hot path).
+                try:
+                    from fastaiagent.governance import hitl_kind
+                    from fastaiagent.trace.hitl_export import record_pause_event
 
-                        # ``interrupt`` for an interrupt() in user code; a managed
-                        # policy pause of an agent inside this chain is ``approval``.
-                        record_pause_event(
-                            run_id=execution_id,
-                            node=node_id,
-                            reason=sig.reason,
-                            chain_id=chain_name,
-                            kind=hitl_kind(sig.reason),
-                        )
-                    except Exception:
-                        logger.debug("HITL pause emit failed", exc_info=True)
+                    # ``interrupt`` for an interrupt() in user code; a managed
+                    # policy pause of an agent inside this chain is ``approval``.
+                    record_pause_event(
+                        run_id=execution_id,
+                        node=node_id,
+                        reason=sig.reason,
+                        chain_id=chain_name,
+                        kind=hitl_kind(sig.reason),
+                    )
+                except Exception:
+                    logger.debug("HITL pause emit failed", exc_info=True)
                 return {
                     "output": None,
                     "final_state": state.snapshot(),
@@ -377,6 +384,26 @@ async def execute_chain(
                     _resume_value.reset(resume_token)
 
             node_results[node_id] = result
+
+            # An approval gate that said no stops the chain here: nothing after it
+            # runs (1.77.0, audit M9). Before, it recorded ``approved=False`` and
+            # the chain carried on — the rejected work happened anyway unless the
+            # author had wired a condition node to catch it. ``rejected`` is a
+            # ChainResult status only; the run-end checkpoint still says the run
+            # ended (``completed``), so nothing new crosses the wire.
+            if (
+                node.type == NodeType.hitl
+                and isinstance(result, dict)
+                and not result.get("approved")
+            ):
+                return {
+                    "output": None,
+                    "final_state": state.snapshot(),
+                    "execution_id": execution_id,
+                    "node_results": node_results,
+                    "status": "rejected",
+                    "pending_interrupt": None,
+                }
 
             # 2.4b (additive): the node's real output value is what an
             # output_schema validates and an output_key stores — unwrap the
@@ -501,8 +528,9 @@ async def execute_chain(
                     strict_routing=strict_routing,
                 )
                 # If a node inside the cycle interrupted, bubble paused
-                # status up — don't merge state from a partial run.
-                if cycle_result.get("status") == "paused":
+                # status up — don't merge state from a partial run. A gate that
+                # rejected inside the cycle stops the whole chain the same way.
+                if cycle_result.get("status") in ("paused", "rejected"):
                     return cycle_result
                 # Merge cycle results
                 state = ChainState(cycle_result["final_state"])
@@ -703,7 +731,13 @@ async def _execute_node(
     elif node.type == NodeType.hitl:
         if hitl_handler:
             approval = hitl_handler(node, context, state)
-            return {"approved": approval}
+            # An ``async def`` handler returns a coroutine, which is truthy: before
+            # 1.77.0 it was never awaited, so the gate approved itself and the run
+            # later crashed pickling the coroutine (audit M9).
+            if inspect.isawaitable(approval):
+                approval = await approval
+            # Anything but a yes is a no — a gate that returned None did not approve.
+            return {"approved": bool(approval)}
         if node.config.get("auto_approve") is True:
             return {"approved": True, "message": "Auto-approved (auto_approve=True)"}
         raise ChainError(

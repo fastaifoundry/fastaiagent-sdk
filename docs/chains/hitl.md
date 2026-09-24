@@ -184,51 +184,31 @@ The handler has access to:
 - `context` — includes `node_results` from all previously executed nodes
 - `state` — the current chain state
 
-### Rejection Behavior
+The handler may be `async def`; it is awaited. Its answer is read as a yes or a
+no — anything that is not truthy, including a handler that forgot to `return`,
+is a **no**.
 
-When the handler returns `False`, the HITL node records `approved=False` on its result dict, but **the chain continues running**. Rejection does not halt execution. This is by design — the HITL node captures the decision, but downstream nodes decide what to do with it.
+### Rejection stops the chain
 
-If you need halt-on-reject, combine a HITL node with a **condition node** that branches on the `approved` field:
+**When the handler says no, the chain stops at the gate.** Nothing after it runs,
+and the result says so:
 
 ```python
-chain.add_node("draft", agent=drafter_agent)
-chain.add_node("review", type=NodeType.hitl)
-chain.add_node("check_approval", type=NodeType.condition,
-               conditions=[{"expression": "{{state.approved}} == true", "handle": "approved"}])
-chain.add_node("send", agent=sender_agent)
-chain.add_node("abort", type=NodeType.end)
-
-chain.connect("draft", "review")
-chain.connect("review", "check_approval")
-chain.connect("check_approval", "send", label="approved")   # label, not condition
-chain.connect("check_approval", "abort")  # Default route if not approved
+result = chain.execute({"message": "..."}, hitl_handler=my_handler)
+if result.status == "rejected":
+    print(result.node_results["review"])   # {"approved": False}
+    print(result.output)                   # None — the chain did not finish its work
 ```
 
-Rejected, this routes `check_approval → abort` and `send` never runs; approved,
-it routes `check_approval → send`. Three details decide that, and getting any
-one of them wrong silently sends the rejected draft anyway:
+A rejected run has ended: resuming it raises `AlreadyResumed`, like a completed one.
 
-- **`label=`, not `condition=`.** A condition node returns `{"matched": handle}`
-  and the router picks the outgoing edge whose **`label`** equals that handle.
-  `connect(..., condition=...)` sets a different field — an *expression* the
-  router only consults for **non-condition** nodes — so `condition="approved"`
-  leaves the `send` edge with an empty label. With no edge labelled `approved`
-  and none labelled `default`, the router falls through to *the first unlabelled
-  edge in declaration order* — `send`, both when the draft was approved and when
-  it was rejected.
-- **`{{state.approved}}`, not `{{state.output.approved}}`.** The HITL node
-  returns `{"approved": bool}`, and a dict result is merged into state at the
-  **top level**. There is no `state.output.approved`; that path resolves to the
-  empty string.
-- **`== true`, not `== True`.** Condition expressions are rendered to text and
-  compared as strings. A non-string value is rendered with `json.dumps`, so
-  `True` becomes `true` — and `"true" == "True"` is false. Compare against the
-  lowercase JSON spelling.
-
-!!! warning "Verified: the pre-1.68.0 version of this example did not halt"
-    With `condition="approved"`, `state.output.approved` and `== True`, a
-    rejected run executed `draft → review → check_approval → send`. All three
-    faults pointed the same way — towards sending.
+!!! warning "Changed in 1.77.0"
+    Until 1.77.0 a rejection recorded `approved=False` and **the chain carried on** —
+    `send` ran unless the author had wired a condition node after the gate to catch
+    it, and getting that wiring slightly wrong sent the rejected draft anyway. That
+    workaround is no longer needed. If you had one, it now never sees a rejection
+    (the chain stops first), so anything its "abort" branch did — a notification, a
+    log line — belongs after checking `result.status == "rejected"` instead.
 
 You can inspect the approval decision after execution:
 
@@ -255,6 +235,23 @@ chain.add_node("review", type=NodeType.hitl)
 chain.execute({"message": "..."})          # ChainError: Approval gate 'review' has no handler
 chain.execute({"message": "..."}, hitl_handler=my_handler)   # fine
 ```
+
+### A pause needs somewhere to be saved
+
+An `interrupt()` in a chain built with `checkpoint_enabled=False` has nowhere to
+store the pause, so it is **not** reported as `status="paused"` — a resume of it
+could never work. Since 1.77.0 the `InterruptSignal` rises to the caller instead
+(or to whatever encloses the chain and can hold it). Keep checkpointing on for
+any chain that pauses.
+
+### A pause does not expire
+
+A pause stays open until your application resumes it: the SDK sets no deadline
+and never expires or decides one on its own. That is deliberate — the decision is
+yours, and a timeout that silently approved or rejected would make it for you. If
+a pause should not wait forever, resume it from your side with the answer your
+policy calls for. A connected plane may **flag** a pause that outlives its
+approval policy's timeout, but it never decides it either.
 
 ### Auto-approve, when you ask for it (testing)
 

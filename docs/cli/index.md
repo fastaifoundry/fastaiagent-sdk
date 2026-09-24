@@ -255,7 +255,7 @@ fastaiagent agent serve mypkg.agents:research_bot --port 9000 --reload
 Exposes:
 - `GET  /health`
 - `POST /run`         — `{"input": "..."}` → `{"output", "latency_ms", "tokens_used", "trace_id", "status", "execution_id", "pending_interrupt"}`. `status` is `"paused"` when the run stopped for a decision — a [managed approval policy](../guardrails/managed-governance.md) or an `interrupt()` — with empty `output` and the reason and context (for a policy pause, the tool and its arguments) in `pending_interrupt`. The service has no resume route: resume the `execution_id` from your application with `aresume(...)` against the same checkpointer.
-- `POST /run/stream`  — Server-Sent Events (Agent targets only)
+- `POST /run/stream`  — Server-Sent Events (Agent targets only). A run that pauses ends with a `{"type": "paused", "reason", "execution_id", "context"}` event before `done` (1.77.0).
 
 ### Security
 

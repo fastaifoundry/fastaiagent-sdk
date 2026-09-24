@@ -23,7 +23,7 @@ Every recipe in this section exposes the **same HTTP surface**, so you can switc
 |---|---|---|
 | `GET`  | `/health` | Liveness probe — returns `{"status": "ok"}` |
 | `POST` | `/run` | Synchronous run. Body: `{"input": "..."}`. Response: `{"output": "...", "latency_ms": ..., "tokens_used": ..., "trace_id": ...}` |
-| `POST` | `/run/stream` | Server-Sent Events stream of tokens. Body: `{"input": "..."}`. Each event is a JSON object with `{"type": "delta"\|"tool_call"\|"done", ...}` |
+| `POST` | `/run/stream` | Server-Sent Events stream of tokens. Body: `{"input": "..."}`. Each event is a JSON object with `{"type": "delta"\|"tool_call"\|"paused"\|"done", ...}` (`paused` from `fastaiagent agent serve` since 1.77.0, when the run stops for a decision) |
 
 Use this contract as a template; extend it freely for your needs.
 

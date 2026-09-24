@@ -60,7 +60,7 @@ from fastaiagent.guardrail.guardrail import (
 )
 from fastaiagent.llm.client import LLMClient
 from fastaiagent.llm.message import Message, SystemMessage, UserMessage
-from fastaiagent.llm.stream import StreamEvent, TextDelta, Usage
+from fastaiagent.llm.stream import Paused, StreamEvent, TextDelta, Usage
 from fastaiagent.llm.structured import OutputSpec
 from fastaiagent.multimodal.image import Image as MultimodalImage
 from fastaiagent.multimodal.pdf import PDF as MultimodalPDF  # noqa: N811
@@ -1205,33 +1205,53 @@ class Agent:
             # Stream tool loop — yields events to caller
             accumulated_text = ""
             streamed_tokens = 0
-            async for event in stream_tool_loop(
-                llm=self.llm,
-                messages=llm_messages,
-                tools=self.tools,
-                max_iterations=self.config.max_iterations,
-                tool_choice=self.config.tool_choice,
-                context=context,
-                guardrails=eff_guardrails or None,
-                mw_pipeline=self._mw_pipeline if self._mw_pipeline else None,
-                mw_ctx=mw_ctx,
-                checkpointer=self._checkpointer,
-                execution_id=exec_id,
-                agent_name=self.name,
-                agent_id=self.agent_id,
-                parallel_tools=self.config.parallel_tools,
-                max_parallel_tools=self.config.max_parallel_tools,
-                governance_run_id=pause_run_id,
-                **kwargs,
-            ):
-                if isinstance(event, TextDelta):
-                    accumulated_text += event.text
-                elif isinstance(event, Usage):
-                    # The only place a stream reports token counts. Summed
-                    # across every turn of the loop so a streamed run reports
-                    # the same kind of number ``arun`` does.
-                    streamed_tokens += event.prompt_tokens + event.completion_tokens
-                yield event
+            try:
+                async for event in stream_tool_loop(
+                    llm=self.llm,
+                    messages=llm_messages,
+                    tools=self.tools,
+                    max_iterations=self.config.max_iterations,
+                    tool_choice=self.config.tool_choice,
+                    context=context,
+                    guardrails=eff_guardrails or None,
+                    mw_pipeline=self._mw_pipeline if self._mw_pipeline else None,
+                    mw_ctx=mw_ctx,
+                    checkpointer=self._checkpointer,
+                    execution_id=exec_id,
+                    agent_name=self.name,
+                    agent_id=self.agent_id,
+                    parallel_tools=self.config.parallel_tools,
+                    max_parallel_tools=self.config.max_parallel_tools,
+                    governance_run_id=pause_run_id,
+                    **kwargs,
+                ):
+                    if isinstance(event, TextDelta):
+                        accumulated_text += event.text
+                    elif isinstance(event, Usage):
+                        # The only place a stream reports token counts. Summed
+                        # across every turn of the loop so a streamed run reports
+                        # the same kind of number ``arun`` does.
+                        streamed_tokens += event.prompt_tokens + event.completion_tokens
+                    yield event
+            except _AgentInterrupted as susp:
+                # A tool paused the run (a managed approval policy, or interrupt())
+                # and the pause is already checkpointed. Before 1.77.0 this escaped
+                # the generator as a private exception (audit M4). End the stream
+                # the way ``arun`` ends the run: one ``Paused`` event, then stop —
+                # no output guardrails, no memory write, because there is no output.
+                if span is not None:
+                    span.set_attribute("agent.status", "paused")
+                if outcome is not None:
+                    outcome["tokens_used"] = streamed_tokens
+                    outcome["output"] = ""
+                yield Paused(
+                    reason=susp.reason,
+                    context=susp.context,
+                    execution_id=exec_id,
+                    node_id=susp.node_id,
+                    agent_path=susp.agent_path,
+                )
+                return
 
             output = accumulated_text
 

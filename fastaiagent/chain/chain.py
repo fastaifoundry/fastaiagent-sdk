@@ -60,8 +60,11 @@ def _type_name(obj: object) -> str:
 class ChainResult(BaseModel):
     """Result of a chain execution.
 
-    ``status`` is ``"completed"`` for a normal run, or ``"paused"`` when a
-    node called :func:`interrupt`. In the paused case ``pending_interrupt``
+    ``status`` is ``"completed"`` for a normal run, ``"paused"`` when a
+    node called :func:`interrupt`, or ``"rejected"`` (1.77.0) when an approval
+    gate (``NodeType.hitl``) said no — the chain stopped at that gate, nothing
+    after it ran, ``output`` is ``None`` and the gate's ``node_results`` entry
+    reads ``{"approved": False}``. In the paused case ``pending_interrupt``
     holds ``{reason, context, node_id, agent_path}`` — the same payload the
     ``/approvals`` UI reads from the ``pending_interrupts`` table.
     """
@@ -388,7 +391,7 @@ class Chain:
             # Only a run that actually ENDED gets a marker. A paused chain has
             # not ended, and a row after its ``interrupted`` one would hide the
             # pause from ``resume``'s status guard.
-            if store is not None and raw.get("status") == "completed":
+            if store is not None and raw.get("status") in ("completed", "rejected"):
                 write_run_end(
                     store,
                     execution_id=raw.get("execution_id") or execution_id or "",
@@ -560,7 +563,7 @@ class Chain:
             # gap that left every HITL-approved run looking unfinished on the
             # plane — ``resume`` calls ``execute_chain`` directly, bypassing
             # ``aexecute``.
-            if raw.get("status") == "completed":
+            if raw.get("status") in ("completed", "rejected"):
                 write_run_end(
                     store,
                     execution_id=execution_id,
@@ -753,7 +756,7 @@ class Chain:
             # Only a run that actually ENDED gets one. A paused branch has not
             # ended, and a row after its ``interrupted`` one would hide the pause
             # from ``resume``'s status guard.
-            if raw.get("status") == "completed":
+            if raw.get("status") in ("completed", "rejected"):
                 write_run_end_once(
                     store,
                     execution_id=fork_id,
