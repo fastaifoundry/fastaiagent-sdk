@@ -178,7 +178,9 @@ if res.status == "paused" and res.pending_interrupt["reason"] == "policy_approva
 ```
 
 - **The pause** (`res.pending_interrupt["context"]`) carries `tool`, `tool_input`
-  (the arguments the model chose), `run_id` and the plane's `approval_request_id`.
+  (the arguments the model chose), `run_id`, the plane's `approval_request_id` and
+  `pending_id`. `run_id` is the run you resume: the agent's own, or the enclosing
+  `Chain`'s when the agent has no checkpointer and the Chain holds the pause.
 - **The resume can happen later and elsewhere.** The run is checkpointed, so
   `aresume` works from another request or process that can reach the same
   checkpointer (or, when connected, the plane's replica). Keep the
@@ -191,18 +193,16 @@ if res.status == "paused" and res.pending_interrupt["reason"] == "policy_approva
   (EU AI Act Article 14). Pass the identity of the person who answered. It is the
   only place that identity comes from; without it the ledger records the decision
   with no one attached.
+- **The plane closes exactly this pause.** Since 1.76.0 the resolution names the
+  pending run it resolves (`context.pending_id`), so the plane matches it by id
+  rather than by its position in the run. Nothing to do on your side.
 
-!!! warning "`wait_for_approval=True` is deprecated"
-    Before 1.74.0 `arun()` blocked by default, polling `GET /runs/{id}/pending` for
-    a console decision. The plane no longer makes that decision, so the wait can only
-    end in the deprecated console approve/deny — kept working for the plane's
-    transition window — or at its 600 s ceiling. Passing `wait_for_approval=True`
-    still works and emits a `DeprecationWarning`. **A rejection, an expired wait, or a
-    pause the plane's admin force-expires refuses the call**; it never runs the tool.
-
-    **Removal:** `wait_for_approval=True` is removed in the first SDK release after the
-    plane retires the console approve/deny. After that point it could only ever time out
-    into a refusal, so move to resuming the pause from your application now.
+!!! warning "`wait_for_approval=True` was removed in 1.76.0"
+    Before 1.74.0 `arun()` blocked by default, polling `GET /runs/{id}/pending` for a
+    console decision. The plane retired that console approve/deny, so there is nothing
+    left to wait for: `arun(..., wait_for_approval=True)` now raises `ValueError` before
+    anything runs. Resume the pause from your application as shown above.
+    `wait_for_approval=False` is still accepted and does nothing.
 
 A runnable end-to-end example is in `examples/84_governed_agent.py`.
 

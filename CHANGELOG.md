@@ -5,6 +5,69 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.76.0] - 2026-09-24 — the plane closes exactly the pause you resolved
+
+The last two items from the control plane's approvals exchange (enterprise PR #199,
+which closes it). No wire bump: recorded under v1.1 in the plane's compatibility matrix.
+
+### Changed
+
+- **A policy resolution names the pending run it resolves.** The `resolved` HITL event
+  of a policy pause now carries `context: {"pending_id": "<id>"}`, the id
+  `POST /runs/{run_id}/pending` returned for that pause, so the plane closes exactly
+  that pause. Until now it matched by position within the run, which went wrong as
+  soon as one pause in a run had no pending run: every later resolution landed on the
+  wrong pause.
+  - When registering the pending run failed, the event carries
+    `{"pending_id": null}`, and the plane closes nothing. The key is always present
+    for a pause this SDK registered: its absence is how the plane recognises an
+    older SDK and falls back to position.
+  - A pause saved by 1.75.0 or earlier has no id in its checkpoint, so its
+    resolution sends no `context` and keeps the positional match.
+  - Only the id is sent; the pause's own context, which holds `tool_input`, never is.
+    `interrupt()` resolutions are unchanged.
+  - The pause itself now also holds `pending_id` in `pending_interrupt["context"]`.
+- ⚠ **`wait_for_approval=True` is removed.** The plane has retired the console
+  approve/deny it polled for, so there was nothing left to wait for.
+  `arun(..., wait_for_approval=True)` now raises `ValueError` before anything runs.
+  `wait_for_approval=False` is still accepted and does nothing. Keeping the parameter
+  stops an explicit `False` from slipping through `**kwargs` into the model call. The
+  polling code (`governance.await_resolution`, `get_pending_status`) is gone. 1.75.0
+  announced this removal.
+
+### Fixed
+
+- **A policy pause owned by a Chain never closed its record on the plane.** An agent
+  with no checkpointer of its own can't store its pause, so the Chain holds it under
+  the Chain's run id. The Chain reports the pause and the resolution under that id, and
+  on resume re-runs the agent under a new run id. But the pending run was registered
+  under the agent's own run id, which is thrown away. So the plane matched nothing,
+  neither by position nor by `pending_id`, and the record stayed `pending`, then
+  overdue, then alerted.
+  - The pending run is now registered under the run that owns the pause: the
+    enclosing Chain's run id when the agent has no checkpointer, the agent's own
+    otherwise.
+  - The pause's `pending_interrupt["context"]["run_id"]` follows it, so it is now the
+    id the application actually resumes with. Before, it was an agent run id nobody
+    could resume.
+  - Standalone agents, Swarm, Supervisor and previously saved pauses are unchanged.
+  - The tool was always refused or run correctly; only the plane's record was wrong.
+    No plane change: it treats `run_id` as an opaque string.
+
+### Tests
+
+- `tests/test_governance_approvals.py`:
+  - the resolution carries exactly the plane's id, and nothing else;
+  - `null` when registration fails (key present);
+  - nothing for an `interrupt()` or a pre-1.76 pause;
+  - `wait_for_approval=True` raises before any model call, pending run or tool;
+  - a Chain-owned pause keeps one run id, the Chain's, from pause to resolution. This
+    test fails when the old run-id behaviour is put back;
+  - the four blocking-wait tests are removed.
+- The live-plane gate `tests/e2e/test_connected_approvals_e2e.py` now asserts the
+  resolved event names the plane's own pending-run id, and that the plane closed that
+  row with the app's resolver.
+
 ## [1.75.0] - 2026-09-24 — pinning what the plane matches approvals on
 
 Follow-ups to the control plane's reply to 1.74.0 (enterprise PR #198). No behaviour change.

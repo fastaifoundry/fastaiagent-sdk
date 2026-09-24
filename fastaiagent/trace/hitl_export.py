@@ -423,11 +423,14 @@ def _emit(
     status: str | None,
     resolver: str | None,
     occurred_at: str | None,
+    context: dict[str, Any] | None = None,
 ) -> None:
     """Best-effort emit: persist one event locally, then kick a background drain.
 
     A strict no-op when not connected, and wrapped so it can NEVER raise into the
-    pause/resume hot path.
+    pause/resume hot path. ``context`` is ``None`` except for a policy resolution's
+    ``{"pending_id": ...}`` (see ``governance.resolution_context``) — never the raw
+    interrupt payload.
     """
     try:
         from fastaiagent.client import _connection
@@ -450,7 +453,9 @@ def _emit(
             status=status,
             resolver=resolver,
             occurred_at=occurred_at or datetime.now(timezone.utc).isoformat(),
-            context=None,  # metadata only — no raw interrupt payloads on the wire
+            # Metadata only — never the raw interrupt payload. The one thing it
+            # may hold is the pending-run id a policy resolution names.
+            context=context,
         )
         pid = safe_get_project_id()
         # Short-lived store for the insert (own per-thread connection); the drain
@@ -506,8 +511,13 @@ def record_resolution_event(
     agent_id: str | None = None,
     chain_id: str | None = None,
     kind: str = "interrupt",
+    context: dict[str, Any] | None = None,
 ) -> None:
-    """Report a pause resolution (approved/rejected) to the plane (best-effort)."""
+    """Report a pause resolution (approved/rejected) to the plane (best-effort).
+
+    ``context`` is ``governance.resolution_context(...)``: ``{"pending_id": ...}``
+    for a policy pause recorded by 1.76.0+, otherwise ``None``.
+    """
     _emit(
         event_type="resolved",
         run_id=run_id,
@@ -520,4 +530,5 @@ def record_resolution_event(
         status="approved" if approved else "rejected",
         resolver=resolver,
         occurred_at=None,
+        context=context,
     )

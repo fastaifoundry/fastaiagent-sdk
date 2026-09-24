@@ -14,7 +14,9 @@ When the SDK is ``connect()``-ed, it caches the platform's policy
   app resumes with ``Resume(approved=…, metadata={"resolver": …})``. A rejection
   refuses the call — the model is told, the tool never runs. The plane records
   the pause and its resolution and flags one that outlives its timeout; it never
-  decides one (plane decision, 2026-09-23).
+  decides one (plane decision, 2026-09-23). The resolution event names the
+  pending run it resolves (``context.pending_id``, see :func:`resolution_context`)
+  so the plane closes exactly that pause.
 
 The gate is a no-op unless the SDK is connected AND a cached approval policy's
 ``tool_pattern`` (fnmatch) matches the tool — so unmanaged / policy-less runs are
@@ -24,18 +26,11 @@ the high-stakes tool is refused rather than run ungoverned.
 
 from __future__ import annotations
 
-import asyncio
 import fnmatch
 import logging
 from typing import Any
 
 logger = logging.getLogger(__name__)
-
-_RESOLVED = frozenset({"approved", "rejected", "expired"})
-
-# Poll cadence + ceiling for the (deprecated) blocking wait-for-approval.
-_POLL_INTERVAL_SECONDS = 2.0
-_POLL_TIMEOUT_SECONDS = 600.0
 
 #: The ``interrupt()`` reason a managed approval policy pauses with. It is what
 #: tells a governance pause apart from an ``interrupt()`` in user code — on
@@ -63,6 +58,31 @@ def denied(tool_name: str) -> str:
     return f"Refused: governance approval denied for '{tool_name}'"
 
 
+def resolution_context(
+    reason: str | None, pause_context: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    """The ``context`` a HITL *resolved* event carries — ``{"pending_id": ...}`` or nothing.
+
+    The plane matches a resolution to its pause (enterprise PR #199, wire v1.1):
+
+    * ``{"pending_id": "<id>"}`` — closes exactly that pending run;
+    * ``{"pending_id": None}`` — registration failed, so there is no pending run:
+      closes nothing. The key must be **present**: its absence reads as an older
+      SDK and falls back to matching by position within the run, which is the
+      guess this replaces;
+    * no ``context`` — position-based matching.
+
+    Only a policy pause carries it. A pause recorded before 1.76.0 has no
+    ``pending_id`` in its saved context at all, so its resolution sends no
+    ``context`` and keeps the positional match it was paused under. Nothing but
+    the id ever goes here: the pause context also holds ``tool_input``, which
+    must not leave the process on this channel.
+    """
+    if hitl_kind(reason) != "approval" or not pause_context or "pending_id" not in pause_context:
+        return None
+    return {"pending_id": pause_context["pending_id"]}
+
+
 def policy_matches(tool_name: str) -> bool:
     """True if a cached approval policy's ``tool_pattern`` matches ``tool_name``."""
     from fastaiagent.client import _connection
@@ -85,20 +105,6 @@ async def _post(path: str, body: dict[str, Any]) -> dict[str, Any]:
     async with httpx.AsyncClient(timeout=15, verify=True) as client:
         resp = await client.post(
             f"{_connection.target}/public/v1{path}", json=body, headers=_connection.headers
-        )
-    resp.raise_for_status()
-    data: dict[str, Any] = resp.json()
-    return data
-
-
-async def _get(path: str) -> dict[str, Any]:
-    import httpx
-
-    from fastaiagent.client import _connection
-
-    async with httpx.AsyncClient(timeout=15, verify=True) as client:
-        resp = await client.get(
-            f"{_connection.target}/public/v1{path}", headers=_connection.headers
         )
     resp.raise_for_status()
     data: dict[str, Any] = resp.json()
@@ -223,40 +229,6 @@ async def post_pending(
     )
 
 
-async def get_pending_status(run_id: str) -> str | None:
-    """GET /runs/{run_id}/pending → status, or None if unavailable."""
-    try:
-        return (await _get(f"/runs/{run_id}/pending")).get("status")
-    except Exception:
-        logger.debug("get pending status failed for run %s", run_id, exc_info=True)
-        return None
-
-
-async def await_resolution(
-    run_id: str,
-    *,
-    poll_interval: float | None = None,
-    timeout: float | None = None,
-) -> str:
-    """Poll ``GET /runs/{run_id}/pending`` until the status resolves.
-
-    Returns ``approved`` / ``rejected`` / ``expired``. Returns ``expired`` if the
-    timeout elapses without a decision — which, now that the plane never decides,
-    is what happens unless someone uses the deprecated console approve/deny. The
-    caller treats anything but ``approved`` as a refusal.
-    """
-    poll_interval = _POLL_INTERVAL_SECONDS if poll_interval is None else poll_interval
-    timeout = _POLL_TIMEOUT_SECONDS if timeout is None else timeout
-    waited = 0.0
-    while waited < timeout:
-        status = await get_pending_status(run_id)
-        if status in _RESOLVED:
-            return status
-        await asyncio.sleep(poll_interval)
-        waited += poll_interval
-    return "expired"
-
-
 async def gate_tool_call(
     tool_name: str, tool_input: dict[str, Any], agent_id: str, run_id: str
 ) -> str | None:
@@ -317,8 +289,12 @@ async def gate_tool_call(
     if verdict == "deny":
         return f"Refused by governance policy: {decision.get('reason') or 'not permitted'}"
     if verdict == "require_approval":
+        # The plane's id for this pause. Kept in the pause so the resolution can
+        # name it (``resolution_context``); ``None`` records that registration
+        # failed, which the plane must be told rather than left to guess.
+        pending_id: str | None = None
         try:
-            await post_pending(
+            registered = await post_pending(
                 run_id,
                 reason=decision.get("reason") or "approval required",
                 context={
@@ -328,6 +304,7 @@ async def gate_tool_call(
                 },
                 kind="approval",
             )
+            pending_id = registered.get("pending_id")
         except Exception:
             logger.warning("pending-run registration failed for %r", tool_name, exc_info=True)
         # Pause (raises InterruptSignal on the first pass). The calling app is
@@ -342,6 +319,7 @@ async def gate_tool_call(
                 "tool_input": tool_input,
                 "run_id": run_id,
                 "approval_request_id": decision.get("approval_request_id"),
+                "pending_id": pending_id,
             },
         )
         if not resume.approved:

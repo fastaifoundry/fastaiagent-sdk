@@ -11,12 +11,12 @@ plane. This is the reproduction from the plane's handoff
                                             -> the tool NEVER runs, the model is told
     the plane's HITL ledger                 -> kind=approval, resolved/rejected, the resolver
     the plane's pending run                 -> closed as rejected, by that resolver
+    the resolved event                      -> names that pending run (context.pending_id, 1.76.0)
 
 On 1.73.0 the tool ran and the model reported a successful transfer.
 
-The last assertion (the pending run closed with the app's resolver) is the
-plane's half of the same change — the approvals-observer ledger, plane branch
-``fix/approvals-observer-ledger``. A plane without it leaves the row ``pending``.
+The pending-run assertions are the plane's half: its approvals-observer ledger
+(enterprise PR #193) and exact ``pending_id`` matching (PR #199).
 
 The policy covers a tool name unique to this run, so a policy left behind by an
 earlier run (a policy with approval history cannot be deleted, only deactivated)
@@ -104,7 +104,7 @@ def lab(isolated_local_db: Path) -> Any:
         params={"domain_id": domain_id},
         headers=headers,
         json={
-            "name": f"sdk-approvals-e2e-{RUN}",
+            "name": f"sdk-approvals-e2e-{RUN}-{uuid.uuid4().hex[:4]}",
             "description": "SDK approvals e2e (safe to delete)",
             "tool_pattern": TOOL,
             "condition_type": "always",
@@ -187,3 +187,65 @@ def test_a_rejected_approval_never_runs_the_tool_and_is_recorded(lab: Any, tmp_p
     ).json()
     mine = [p for p in pending if p["run_id"] == run_id]
     assert [(p["status"], p["resolved_by"]) for p in mine] == [("rejected", resolver)], mine
+
+    # 1.76.0: the resolution names that exact pending run, so the plane matched it by
+    # id rather than by position (enterprise PR #199). The paused event carries none.
+    contexts = {e["event_type"]: e.get("context") for e in ledger.json()}
+    assert contexts == {"paused": None, "resolved": {"pending_id": mine[0]["id"]}}, contexts
+
+
+def test_a_chain_owned_pause_is_closed_on_the_plane(lab: Any, tmp_path: Path) -> None:
+    """An agent with no checkpointer inside a Chain: the Chain holds the pause under
+    its run id and resumes it. Until 1.76.0 the pending run was registered under the
+    agent's own (discarded) run id, so the plane could never close it."""
+    import fastaiagent as fa
+    from fastaiagent import Agent, Chain, FunctionTool, LLMClient
+    from fastaiagent.chain.interrupt import Resume
+    from fastaiagent.checkpointers.sqlite import SQLiteCheckpointer
+    from fastaiagent.trace.hitl_export import get_hitl_exporter
+
+    client, headers, domain_id = lab
+    ran: list[dict[str, Any]] = []
+
+    def transfer(amount: int, to: str) -> str:
+        ran.append({"amount": amount, "to": to})
+        return f"Transferred ${amount} to {to}."
+
+    agent = Agent(
+        name=f"approvals-chain-e2e-{RUN}",
+        system_prompt=(
+            f"You are a banking assistant. To move money, call {TOOL}(amount, to). "
+            "After the tool returns, tell the user in one sentence exactly what it said."
+        ),
+        llm=LLMClient(provider="openai", model="gpt-4o-mini"),
+        tools=[FunctionTool(name=TOOL, fn=transfer)],
+    )  # no checkpointer: the Chain owns the pause
+    agent.push()
+    fa.refresh_policy()
+    chain = Chain(f"desk-{RUN}", checkpointer=SQLiteCheckpointer(str(tmp_path / "chain.db")))
+    chain.add_node("bank", agent=agent)
+
+    run_id = f"approvals-chain-e2e-{RUN}"
+    paused = asyncio.run(chain.aexecute({"input": "Transfer $500 to Bob."}, execution_id=run_id))
+    assert paused.status == "paused", paused
+    assert paused.pending_interrupt["context"]["run_id"] == run_id
+
+    resolver = f"e2e-chain-{RUN}@app.example"
+    final = asyncio.run(
+        chain.aresume(run_id, resume_value=Resume(approved=False, metadata={"resolver": resolver}))
+    )
+    assert final.status == "completed", final
+    assert ran == [], f"a rejected approval executed the tool: {ran}"
+
+    get_hitl_exporter().export([])
+    pending = client.get(
+        "/api/v1/pending-runs", params={"domain_id": domain_id}, headers=headers
+    ).json()
+    mine = [p for p in pending if p["run_id"] == run_id]
+    # Registered under the Chain's run id, and closed by the Chain's resolution.
+    assert [(p["status"], p["resolved_by"]) for p in mine] == [("rejected", resolver)], mine
+    ledger = client.get(
+        "/api/v1/hitl/events", params={"domain_id": domain_id, "run_id": run_id}, headers=headers
+    ).json()
+    resolved = [e for e in ledger if e["event_type"] == "resolved"]
+    assert [e.get("context") for e in resolved] == [{"pending_id": mine[0]["id"]}], resolved

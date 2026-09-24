@@ -5,9 +5,10 @@ It implements the frozen wire the SDK talks to for a policy-gated tool call —
 and records everything it receives, so a test asserts on what actually crossed
 the wire.
 
-Like the real plane since 2026-09-23, it **never decides** a pending run on its
-own: a posted pause stays ``pending`` forever. ``resolve_as`` stands in for the
-deprecated console approve/deny, for the tests that still cover it.
+Like the real plane since 2026-09-23, it **never decides** a pending run: a
+posted pause stays ``pending`` forever, and its id is ``pr-<run_id>``. It still
+counts ``GET /runs/{id}/pending`` so a test can pin that the SDK never polls.
+``fail_pending_post`` makes registration fail, for the ``pending_id: null`` case.
 """
 
 from __future__ import annotations
@@ -33,14 +34,12 @@ class GovPlane:
         self.decide_calls: list[dict[str, Any]] = []
         self.pending_posts: list[dict[str, Any]] = []
         self.pending_polls = 0
-        self.status_by_run: dict[str, str] = {}
         # Keyed by event_id: the SDK's drain re-sends until it sees a 2xx, and
         # two drains can overlap, so the same event may arrive more than once.
         self.hitl_events: dict[str, dict[str, Any]] = {}
-        # What a newly posted pending run resolves to without anyone acting:
-        # "pending" is the real plane. "approved" / "rejected" stand in for the
-        # deprecated console decision.
-        self.resolve_as = "pending"
+        # True: ``POST /runs/{id}/pending`` answers 500, so the pause has no
+        # pending run on the plane.
+        self.fail_pending_post = False
 
     def ledger(self, run_id: str) -> list[dict[str, Any]]:
         """The HITL events received for one run, oldest first."""
@@ -105,8 +104,7 @@ class _Handler(BaseHTTPRequestHandler):
             run_id = self._run_id()
             with st.lock:
                 st.pending_polls += 1
-                status = st.status_by_run.get(run_id, "pending")
-            self._json(200, {"pending_id": f"pr-{run_id}", "status": status})
+            self._json(200, {"pending_id": f"pr-{run_id}", "status": "pending"})
         else:
             self._json(404, {"detail": "not found"})
 
@@ -131,8 +129,11 @@ class _Handler(BaseHTTPRequestHandler):
             run_id = self._run_id()
             with st.lock:
                 st.pending_posts.append({"run_id": run_id, "body": self._body()})
-                st.status_by_run[run_id] = st.resolve_as
-            self._json(201, {"pending_id": f"pr-{run_id}", "status": "pending"})
+                failing = st.fail_pending_post
+            if failing:
+                self._json(500, {"detail": "registration failed (test)"})
+            else:
+                self._json(201, {"pending_id": f"pr-{run_id}", "status": "pending"})
         elif self.path == "/public/v1/hitl/events":
             events = self._body().get("events", [])
             with st.lock:
