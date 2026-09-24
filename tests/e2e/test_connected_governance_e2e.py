@@ -30,7 +30,7 @@ from typing import Any
 
 import pytest
 
-from tests.e2e.conftest import require_env, require_platform
+from tests.e2e.conftest import plane_admin, require_env, require_platform
 
 pytestmark = pytest.mark.e2e
 
@@ -101,11 +101,8 @@ def test_connected_governance_enroll_roundtrip_and_upsert(isolated_local_db: Any
         if email and password:
             base = _connection.target.rstrip("/")
             http = httpx.Client(timeout=30)
-            tok = http.post(
-                f"{base}/api/v1/auth/login",
-                json={"email": email, "password": password},
-            ).json()["access_token"]
-            jwt = {"Authorization": f"Bearer {tok}"}
+            # One shared login for the session (the plane rate-limits logins).
+            _, jwt, _ = plane_admin(base, purpose="the coverage sub-check needs a domain admin.")
             cov = http.get(
                 f"{base}/api/v1/governance/coverage",
                 headers=jwt,

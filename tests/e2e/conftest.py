@@ -85,6 +85,133 @@ def require_platform() -> None:
     pytest.skip(message)
 
 
+#: The persistent lab domain the connected gates author into (by name, when
+#: ``E2E_PLANE_DOMAIN_ID`` is not set).
+LAB_DOMAIN_NAME = "Guardrail Actions Lab"
+
+#: One console session for the whole run — see :func:`plane_admin`.
+_PLANE_ADMIN: tuple[Any, dict[str, str], str] | None = None
+
+
+def plane_admin(target: str, *, purpose: str) -> tuple[Any, dict[str, str], str]:
+    """A domain-admin console session on the lab domain: ``(client, headers, domain_id)``.
+
+    **One login per test session.** The plane rate-limits logins, and each
+    connected gate used to log in on its own, so running them together tripped
+    ``Too many login attempts`` part-way through. ``client`` has
+    ``base_url=target``.
+
+    **The lab domain, never "the first one".** ``E2E_PLANE_DOMAIN_ID``, or the
+    domain named :data:`LAB_DOMAIN_NAME`. Two gates used ``domains[0]``, which on
+    the lab account is a different domain — they created projects and keys there
+    and ran into its plan limits.
+
+    Skips when the credentials are absent (``purpose`` says what they are for);
+    **fails** when the plane refuses the login, because a gate that could not
+    authenticate checked nothing.
+    """
+    global _PLANE_ADMIN
+    if _PLANE_ADMIN is not None:
+        return _PLANE_ADMIN
+
+    import httpx
+
+    email = os.environ.get("E2E_PLANE_EMAIL")
+    password = os.environ.get("E2E_PLANE_PASSWORD")
+    if not (email and password):
+        pytest.skip(f"E2E_PLANE_EMAIL / E2E_PLANE_PASSWORD not set — {purpose}")
+
+    client = httpx.Client(base_url=target, timeout=30)
+    try:
+        resp = client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    except httpx.TransportError as exc:
+        pytest.skip(f"plane unreachable at {target} ({exc}) — is the local plane running?")
+    if resp.status_code != 200:
+        pytest.fail(f"plane login refused: HTTP {resp.status_code} {resp.text[:160]}")
+    headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+    domain_id = os.environ.get("E2E_PLANE_DOMAIN_ID")
+    if not domain_id:
+        domains = client.get("/api/v1/users/me/domains", headers=headers).json()
+        lab = next((d for d in domains if d["name"] == LAB_DOMAIN_NAME), None)
+        if lab is None:
+            pytest.skip(
+                f"no '{LAB_DOMAIN_NAME}' domain on this plane — create it (or set "
+                "E2E_PLANE_DOMAIN_ID) so the gate does not write into a shared domain."
+            )
+        domain_id = lab["id"]
+    _PLANE_ADMIN = (client, headers, str(domain_id))
+    return _PLANE_ADMIN
+
+
+def require_lab_project(client: Any, headers: dict[str, str], domain_id: str) -> str:
+    """The id of a project in the lab domain — reused, never created.
+
+    ``E2E_PLANE_PROJECT_ID``, or the domain's first project. Gates used to create
+    one per run, which runs into the plan's project cap (HTTP 402).
+    """
+    project_id = os.environ.get("E2E_PLANE_PROJECT_ID")
+    if project_id:
+        return project_id
+    resp = client.get(f"/api/v1/domains/{domain_id}/projects", headers=headers)
+    assert resp.status_code == 200, f"listing lab projects: {resp.status_code} {resp.text[:160]}"
+    body = resp.json()
+    projects = body if isinstance(body, list) else body.get("projects", body.get("items", []))
+    if not projects:
+        pytest.skip("the lab domain has no project — create one (or set E2E_PLANE_PROJECT_ID).")
+    return str(projects[0]["id"])
+
+
+def lab_guardrail_ids(client: Any, headers: dict[str, str], domain_id: str) -> set[str]:
+    """Ids of the active, non-template guardrails in the lab domain."""
+    resp = client.get("/api/v1/guardrails", headers=headers, params={"domain_id": domain_id})
+    assert resp.status_code == 200, f"listing guardrails: {resp.status_code} {resp.text[:160]}"
+    return {
+        str(g["id"]) for g in resp.json() if not g.get("is_template") and g.get("is_active", True)
+    }
+
+
+def remove_guardrails_added_since(
+    client: Any, headers: dict[str, str], domain_id: str, before: set[str]
+) -> list[str]:
+    """Remove every lab guardrail that is not in ``before``; returns their ids.
+
+    A pushed agent's guardrails are installed on the plane, so a gate that pushes
+    an agent carrying one leaves a rule behind that every later gate receives. A
+    rule with recorded executions cannot be deleted (audit evidence), so it is
+    deactivated instead.
+    """
+    added = sorted(lab_guardrail_ids(client, headers, domain_id) - before)
+    for rule_id in added:
+        gone = client.delete(f"/api/v1/guardrails/{rule_id}", headers=headers)
+        if gone.status_code == 409:
+            client.put(f"/api/v1/guardrails/{rule_id}", headers=headers, json={"is_active": False})
+    return added
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _fresh_connection_per_connected_module(request: pytest.FixtureRequest) -> Any:
+    """Start and end every ``test_connected_*`` module disconnected, with fresh drains.
+
+    ``connect()`` wires exporters that cache the ``local.db`` they drain on first
+    use — right for a real process, which has one store for its lifetime. Run
+    several connected gates in one pytest process, though, and a later module
+    writes spans / HITL events to its own fresh store while the drain keeps
+    reading the previous one: nothing ships, and the gate fails with "no execution
+    row" or "never synced". Each passed on its own.
+    """
+    connected = request.module.__name__.rsplit(".", 1)[-1].startswith("test_connected_")
+    if connected:
+        from tests._governance_plane import reset_connection
+
+        reset_connection()
+    yield
+    if connected:
+        from tests._governance_plane import reset_connection
+
+        reset_connection()
+
+
 def require_anthropic() -> None:
     """Skip/fail the current test when ``ANTHROPIC_API_KEY`` is not set.
 

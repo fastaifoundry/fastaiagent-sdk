@@ -113,6 +113,19 @@ strings the plane matches on (`policy_approval_required`, `kind="approval"`,
 
 - Local DB schema v21 adds `sim_cases.error`. Simulations never leave the process.
 
+### Tests
+
+- **The connected guardrail conformance gates run again** (backlog #4). With the
+  lab credentials, 16 of 22 connected e2e tests had been skipping or failing on
+  harness problems rather than product ones. All 22 now pass together:
+  - one console login per session, because the plane rate-limits logins;
+  - the lab domain from `E2E_PLANE_DOMAIN_ID`, where two gates had used whichever
+    domain came first and hit its plan caps;
+  - the lab's project and key are reused, not created per run;
+  - the visibility gate removes the guardrail rule its pushed agent installs;
+  - connections are reset between connected test files, because the exporters
+    cache the `local.db` they drain.
+
 ## [1.77.0] - 2026-09-24 — an approval gate that says no stops the chain
 
 Three items from the approvals audit's §6 backlog (M9, M4, L4). No wire change.

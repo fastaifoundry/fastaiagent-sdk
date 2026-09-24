@@ -8,7 +8,7 @@ on the next read; and when disconnected the block is a strict no-op.
 NO MOCKS. The plane is the live instance at ``FASTAIAGENT_TARGET``. Per D5
 (central-extraction-only) the SDK has **no fact-push path**, so the fact must be
 produced on the plane. This gate seeds plane state via the real Enterprise API
-(create project → push agent definition → create an approved fact), then asserts
+(the lab project → push agent definition → create an approved fact), then asserts
 the SDK READ — the SDK's actual WS3 responsibility. Central extraction-from-traces
 + the annotation queue are exercised Enterprise-side; a manually-created fact is
 auto-approved and served by the same endpoint, so it exercises the same read path.
@@ -25,7 +25,7 @@ import uuid
 
 import pytest
 
-from tests.e2e.conftest import require_env, require_platform
+from tests.e2e.conftest import plane_admin, require_env, require_lab_project, require_platform
 
 pytestmark = pytest.mark.e2e
 
@@ -33,14 +33,6 @@ pytestmark = pytest.mark.e2e
 def test_connected_memory_facts_read_and_redact(isolated_local_db) -> None:
     require_env()
     require_platform()
-
-    email = os.environ.get("E2E_PLANE_EMAIL")
-    password = os.environ.get("E2E_PLANE_PASSWORD")
-    if not (email and password):
-        pytest.skip(
-            "set E2E_PLANE_EMAIL / E2E_PLANE_PASSWORD (a domain-admin on the local "
-            "plane) to run the WS3 memory gate — seeding + redaction need a session."
-        )
 
     import httpx
 
@@ -52,52 +44,21 @@ def test_connected_memory_facts_read_and_redact(isolated_local_db) -> None:
     http = httpx.Client(timeout=30)
 
     # --- plane fixture setup (real Enterprise API) -------------------------
-    tok = http.post(
-        f"{base}/api/v1/auth/login", json={"email": email, "password": password}
-    ).json()["access_token"]
-    jwt = {"Authorization": f"Bearer {tok}"}
-
-    domains = http.get(f"{base}/api/v1/users/me/domains", headers=jwt).json()
-    assert domains, "login user belongs to no domain"
-    domain_id = domains[0]["id"]
-
-    # A project must exist in the domain so the SDK agent push can resolve one.
-    # 201 = created; 409 = already exists from a prior run — both satisfy that.
-    # The agent push resolves the project itself, so we don't need its id here.
-    pr = http.post(
-        f"{base}/api/v1/domains/{domain_id}/projects",
-        headers=jwt,
-        json={"name": "WS3 E2E", "slug": "ws3-e2e"},
-    )
-    assert pr.status_code in (200, 201, 409), (
-        f"project setup failed: HTTP {pr.status_code} {pr.text[:160]}"
+    # The lab domain and one shared login (the plane rate-limits logins). This
+    # gate used ``domains[0]``, which on the lab account is another domain.
+    admin, jwt, domain_id = plane_admin(
+        base,
+        purpose="the WS3 memory gate seeds and redacts facts through the console API, "
+        "which needs a domain admin.",
     )
 
-    # Free an API-key slot (the free tier caps keys) by dropping any leftover
-    # test keys from prior runs, then mint a fresh write-scoped key.
-    lk = http.get(f"{base}/api/v1/api-keys", headers=jwt)
-    if lk.status_code == 200:
-        keys = lk.json()
-        keys = keys if isinstance(keys, list) else keys.get("keys", [])
-        for k in keys:
-            if str(k.get("name", "")).startswith("ws3-e2e") and k.get("id"):
-                http.delete(f"{base}/api/v1/api-keys/{k['id']}", headers=jwt)
+    # The SDK agent push resolves a project in the domain, so one must exist. Reuse
+    # the lab's — creating one per run ran into the plan's project cap (HTTP 402).
+    require_lab_project(admin, jwt, domain_id)
 
-    # An API key with agent:write (to push the agent definition) + agent:execute
-    # (the read needs only a valid domain key). The SDK connects with this key.
-    kr = http.post(
-        f"{base}/api/v1/api-keys",
-        headers=jwt,
-        json={
-            "name": f"ws3-e2e-{uuid.uuid4().hex[:6]}",
-            "permissions": ["read", "write", "execute"],
-            "domain_id": domain_id,
-            "scopes": ["agent:write", "agent:execute"],
-        },
-    )
-    assert kr.status_code == 201, f"key mint failed: {kr.status_code} {kr.text[:160]}"
-    api_key = kr.json()["key"]
-    api_key_id = kr.json().get("id")
+    # The lab's own key (agent:write to push the definition, agent:execute for the
+    # read). Minting one per run ran into the plan's API-key cap (HTTP 402).
+    api_key = os.environ["FASTAIAGENT_API_KEY"]
     key_hdr = {"X-API-Key": api_key}
 
     # Push the agent DEFINITION (no execution — the plane runs no agent code, §1).
@@ -156,9 +117,6 @@ def test_connected_memory_facts_read_and_redact(isolated_local_db) -> None:
         assert after.render("what channel does the customer prefer?") == []
     finally:
         fa.disconnect()
-        # Self-clean the minted key so re-runs stay under the tier's key cap.
-        if api_key_id:
-            http.delete(f"{base}/api/v1/api-keys/{api_key_id}", headers=jwt)
 
     # Disconnected → strict no-op (central facts are an enhancement, never required).
     assert PlaneFactBlock(agent_id=agent_id).render("anything") == []

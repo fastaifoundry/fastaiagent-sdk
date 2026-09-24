@@ -20,7 +20,13 @@ import uuid
 import httpx
 import pytest
 
-from tests.e2e.conftest import require_env, require_platform
+from tests.e2e.conftest import (
+    lab_guardrail_ids,
+    plane_admin,
+    remove_guardrails_added_since,
+    require_env,
+    require_platform,
+)
 
 
 @pytest.mark.e2e
@@ -28,46 +34,26 @@ def test_connected_agent_fully_visible() -> None:
     require_env()
     require_platform()
 
-    email = os.environ.get("E2E_PLANE_EMAIL")
-    password = os.environ.get("E2E_PLANE_PASSWORD")
-    if not (email and password):
-        pytest.skip("E2E_PLANE_EMAIL / E2E_PLANE_PASSWORD not set")
-
     base = os.environ["FASTAIAGENT_TARGET"].rstrip("/")
     console = os.environ.get("FASTAIAGENT_CONSOLE_URL", base)
     http = httpx.Client(timeout=30)
 
-    # --- mint a scoped key ---------------------------------------------------
-    tok = http.post(
-        f"{base}/api/v1/auth/login", json={"email": email, "password": password}
-    ).json()["access_token"]
-    jwt = {"Authorization": f"Bearer {tok}"}
-    domain_id = http.get(f"{base}/api/v1/users/me/domains", headers=jwt).json()[0]["id"]
-    http.post(
-        f"{base}/api/v1/domains/{domain_id}/projects",
-        headers=jwt,
-        json={"name": "Conn Vis E2E", "slug": "conn-vis-e2e"},
+    # --- the lab session and key ----------------------------------------------
+    # The lab domain and one shared login (the plane rate-limits logins). This
+    # gate used ``domains[0]``, which on the lab account is another domain, and
+    # created a project and minted a key per run there until the plan's caps
+    # refused them (HTTP 402). It now uses the lab's own key.
+    admin, jwt, domain_id = plane_admin(
+        base,
+        purpose="this gate reads the governed definition through the console API, "
+        "which needs a domain admin.",
     )
-    lk = http.get(f"{base}/api/v1/api-keys", headers=jwt)
-    if lk.status_code == 200:
-        keys = lk.json()
-        keys = keys if isinstance(keys, list) else keys.get("keys", [])
-        for k in keys:
-            if str(k.get("name", "")).startswith("conn-vis-e2e") and k.get("id"):
-                http.delete(f"{base}/api/v1/api-keys/{k['id']}", headers=jwt)
-    kr = http.post(
-        f"{base}/api/v1/api-keys",
-        headers=jwt,
-        json={
-            "name": f"conn-vis-e2e-{uuid.uuid4().hex[:6]}",
-            "permissions": ["read", "write", "execute"],
-            "domain_id": domain_id,
-            "scopes": ["agent:write", "agent:execute", "prompt:write", "prompt:read"],
-        },
-    )
-    assert kr.status_code == 201, f"key mint failed: {kr.status_code} {kr.text[:160]}"
-    api_key = kr.json()["key"]
-    api_key_id = kr.json().get("id")
+    api_key = os.environ["FASTAIAGENT_API_KEY"]
+    # The agent below carries ``no_pii`` and auto-registers, and the plane installs
+    # a pushed agent's guardrails as rules every later run in the domain receives.
+    # Leave the lab's rules exactly as found — a leftover ``no_pii`` blocked the
+    # whole guardrail-actions gate.
+    rules_before = lab_guardrail_ids(admin, jwt, domain_id)
 
     try:
         slug = "acme-support-system"
@@ -132,5 +118,4 @@ def test_connected_agent_fully_visible() -> None:
         )
         assert consumes.get("memory_enabled") is True, "Gap 3: memory_enabled not True"
     finally:
-        if api_key_id:
-            http.delete(f"{base}/api/v1/api-keys/{api_key_id}", headers=jwt)
+        remove_guardrails_added_since(admin, jwt, domain_id, rules_before)

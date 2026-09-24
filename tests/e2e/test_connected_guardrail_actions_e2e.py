@@ -43,7 +43,7 @@ from typing import Any
 
 import pytest
 
-from tests.e2e.conftest import require_env, require_platform
+from tests.e2e.conftest import plane_admin, require_env, require_platform
 
 pytestmark = pytest.mark.e2e
 
@@ -59,45 +59,16 @@ LEAK = "The customer's SSN is 123-45-6789 on file."
 RUN = uuid.uuid4().hex[:8]
 
 
-#: One login for the whole module. The plane rate-limits login attempts (rightly),
-#: and a per-test login would trip it well before the gate finished.
-_SESSION: tuple[Any, dict[str, str], str] | None = None
-
-
 def _admin_session(target: str) -> tuple[Any, dict[str, str], str]:
-    """Log in as a domain admin so the gate can author rules the way an operator does."""
-    global _SESSION
-    if _SESSION is not None:
-        return _SESSION
+    """Log in as a domain admin so the gate can author rules the way an operator does.
 
-    import httpx
-
-    email = os.environ.get("E2E_PLANE_EMAIL")
-    password = os.environ.get("E2E_PLANE_PASSWORD")
-    if not (email and password):
-        pytest.skip(
-            "E2E_PLANE_EMAIL / E2E_PLANE_PASSWORD not set — this gate authors "
-            "guardrails through the console API, which needs a domain admin."
-        )
-
-    client = httpx.Client(base_url=target, timeout=30)
-    resp = client.post("/api/v1/auth/login", json={"email": email, "password": password})
-    if resp.status_code != 200:
-        pytest.skip(f"plane login failed ({resp.status_code}) — is the local plane running?")
-    headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
-
-    domain_id = os.environ.get("E2E_PLANE_DOMAIN_ID")
-    if not domain_id:
-        domains = client.get("/api/v1/users/me/domains", headers=headers).json()
-        lab = next((d for d in domains if d["name"] == "Guardrail Actions Lab"), None)
-        if lab is None:
-            pytest.skip(
-                "no 'Guardrail Actions Lab' domain on this plane — create it (or set "
-                "E2E_PLANE_DOMAIN_ID) so the gate does not author rules into a shared domain."
-            )
-        domain_id = lab["id"]
-    _SESSION = (client, headers, domain_id)
-    return _SESSION
+    One login for the whole e2e session (the plane rate-limits logins) — see
+    :func:`tests.e2e.conftest.plane_admin`.
+    """
+    return plane_admin(
+        target,
+        purpose="this gate authors guardrails through the console API, which needs a domain admin.",
+    )
 
 
 class _Rules:

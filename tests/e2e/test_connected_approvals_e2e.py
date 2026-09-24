@@ -45,7 +45,7 @@ from typing import Any
 
 import pytest
 
-from tests.e2e.conftest import require_env, require_platform
+from tests.e2e.conftest import plane_admin, require_env, require_platform
 
 pytestmark = pytest.mark.e2e
 
@@ -54,32 +54,16 @@ TOOL = f"transfer_funds_{RUN}"
 
 
 def _admin(target: str) -> tuple[Any, dict[str, str], str]:
-    """A domain-admin session on the lab domain, the way an operator authors policy."""
-    import httpx
+    """A domain-admin session on the lab domain, the way an operator authors policy.
 
-    email = os.environ.get("E2E_PLANE_EMAIL")
-    password = os.environ.get("E2E_PLANE_PASSWORD")
-    if not (email and password):
-        pytest.skip(
-            "E2E_PLANE_EMAIL / E2E_PLANE_PASSWORD not set — this gate authors an "
-            "approval policy through the console API, which needs a domain admin."
-        )
-    client = httpx.Client(base_url=target, timeout=30)
-    resp = client.post("/api/v1/auth/login", json={"email": email, "password": password})
-    if resp.status_code != 200:
-        pytest.skip(f"plane login failed ({resp.status_code}) — is the local plane running?")
-    headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
-    domain_id = os.environ.get("E2E_PLANE_DOMAIN_ID")
-    if not domain_id:
-        domains = client.get("/api/v1/users/me/domains", headers=headers).json()
-        lab = next((d for d in domains if d["name"] == "Guardrail Actions Lab"), None)
-        if lab is None:
-            pytest.skip(
-                "no 'Guardrail Actions Lab' domain on this plane — create it (or set "
-                "E2E_PLANE_DOMAIN_ID) so the gate does not author policy into a shared domain."
-            )
-        domain_id = lab["id"]
-    return client, headers, domain_id
+    Shared by every connected gate (one login per session) — see
+    :func:`tests.e2e.conftest.plane_admin`.
+    """
+    return plane_admin(
+        target,
+        purpose="this gate authors an approval policy through the console API, which "
+        "needs a domain admin.",
+    )
 
 
 @pytest.fixture
