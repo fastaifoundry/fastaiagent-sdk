@@ -623,11 +623,25 @@ fastaiagent migrate
 ```
 
 Copies spans, checkpoints, prompts, and fragments from the legacy stores
-into `local.db`. Idempotent — safe to run multiple times. Legacy files are
-left in place; delete them once you've confirmed the report.
+into `local.db`. Legacy files are left in place; delete them once you've
+confirmed the report.
 
-`fastaiagent ui start` invokes `migrate` automatically when it notices
-legacy files on first launch.
+- **Each source is imported once.** `local.db` records what it imported, and
+  later runs skip it, so spans you delete or prune in `local.db` stay deleted.
+  `fastaiagent migrate --force` imports a source again.
+- **Imported traces and checkpoints are stored as already sent.** Connecting
+  to a plane never pushes this history; publish it deliberately with
+  `TraceData.publish()` if you want it there.
+
+`fastaiagent ui` invokes the same import automatically when it finds legacy
+files, and is silent once they have been imported.
+
+!!! warning "Changed in 1.79.0"
+    Before 1.79.0 the import re-ran on every `fastaiagent ui` start and copied
+    back any span you had deleted, and imported rows were marked *unsent*, so
+    the next connected run pushed that history to the plane. On the first start
+    after upgrading, the import runs one last time (stored as already sent) and
+    is then recorded.
 
 ## Architecture
 

@@ -7,8 +7,18 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from fastaiagent._internal.storage import SQLiteHelper
 from fastaiagent.ui.migration import migrate_to_local_db
+
+
+@pytest.fixture(autouse=True)
+def _cwd_without_legacy_stores(tmp_path, monkeypatch):
+    """A source not passed explicitly defaults to ``./.fastaiagent/traces.db`` etc.
+    in the working directory — run from the repo, that picked up its real legacy
+    files. Every test here names its sources; the rest must find nothing."""
+    monkeypatch.chdir(tmp_path)
 
 
 def _seed_legacy_traces(path, rows):
@@ -174,13 +184,78 @@ class TestMigrator:
         target = temp_dir / "local.db"
         first = migrate_to_local_db(target_db=target, legacy_trace_db=legacy)
         second = migrate_to_local_db(target_db=target, legacy_trace_db=legacy)
-        # Second run still reports rows encountered but does not duplicate
-        # them in the target (INSERT OR IGNORE).
         with SQLiteHelper(target) as db:
             rows = db.fetchall("SELECT COUNT(*) AS n FROM spans")
         assert first.spans_migrated == 1
-        assert second.spans_migrated == 1  # legacy rows still there
+        # Since 1.79.0 a source is imported once: the second run has nothing to do
+        # (before, it re-read the legacy file on every `fastaiagent ui` start).
+        assert second.nothing_to_do()
+        assert second.spans_migrated == 0
         assert rows[0]["n"] == 1
+
+    def test_imported_history_is_never_back_pushed(self, temp_dir):
+        """Imported spans and checkpoints are stored as already sent.
+
+        The same rule the v11/v13 upgrades follow: connecting must not push a
+        user's historical data to the plane. Before 1.79.0 imported rows took the
+        column default (unsent), so the next connected run pushed months-old
+        traces — and checkpoints to the plane's durability replica.
+        """
+        traces = temp_dir / "traces.db"
+        checkpoints = temp_dir / "checkpoints.db"
+        _seed_legacy_traces(traces, [("s1", "t1", "one"), ("s2", "t1", "two")])
+        _seed_legacy_checkpoints(checkpoints, [("c1", "chain", "e1", "n1", 0)])
+        target = temp_dir / "local.db"
+
+        migrate_to_local_db(
+            target_db=target, legacy_trace_db=traces, legacy_checkpoint_db=checkpoints
+        )
+
+        with SQLiteHelper(target) as db:
+            spans = db.fetchall("SELECT synced FROM spans")
+            ckpts = db.fetchall("SELECT synced FROM checkpoints")
+        assert [r["synced"] for r in spans] == [1, 1]
+        assert [r["synced"] for r in ckpts] == [1]
+
+    def test_a_source_is_imported_once_so_deleted_rows_stay_deleted(self, temp_dir):
+        legacy = temp_dir / "traces.db"
+        _seed_legacy_traces(legacy, [("s1", "t1", "one"), ("s2", "t1", "two")])
+        target = temp_dir / "local.db"
+        migrate_to_local_db(target_db=target, legacy_trace_db=legacy)
+
+        # The user prunes what they don't want …
+        with SQLiteHelper(target) as db:
+            db.execute("DELETE FROM spans WHERE span_id = 's1'")
+
+        # … and the next `fastaiagent ui` start must not bring it back.
+        again = migrate_to_local_db(target_db=target, legacy_trace_db=legacy)
+        with SQLiteHelper(target) as db:
+            ids = [r["span_id"] for r in db.fetchall("SELECT span_id FROM spans")]
+        assert again.nothing_to_do()
+        assert ids == ["s2"]
+
+    def test_force_reimports_still_as_already_sent(self, temp_dir):
+        legacy = temp_dir / "traces.db"
+        _seed_legacy_traces(legacy, [("s1", "t1", "one")])
+        target = temp_dir / "local.db"
+        migrate_to_local_db(target_db=target, legacy_trace_db=legacy)
+        with SQLiteHelper(target) as db:
+            db.execute("DELETE FROM spans")
+
+        forced = migrate_to_local_db(target_db=target, legacy_trace_db=legacy, force=True)
+        with SQLiteHelper(target) as db:
+            rows = db.fetchall("SELECT span_id, synced FROM spans")
+        assert forced.spans_migrated == 1
+        assert [(r["span_id"], r["synced"]) for r in rows] == [("s1", 1)]
+
+    def test_prompts_are_imported_once(self, temp_dir):
+        prompt_dir = temp_dir / ".prompts"
+        _seed_legacy_prompts(prompt_dir, [("greet", [{"version": 1, "template": "Hi"}], {})])
+        target = temp_dir / "local.db"
+        first = migrate_to_local_db(target_db=target, legacy_prompt_dir=prompt_dir)
+        second = migrate_to_local_db(target_db=target, legacy_prompt_dir=prompt_dir)
+        assert first.prompts_migrated == 1
+        assert second.nothing_to_do()
 
     def test_skips_source_equal_to_target(self, temp_dir):
         """Guard against accidentally passing the target as a legacy source."""
@@ -198,3 +273,36 @@ class TestMigrator:
         report = migrate_to_local_db(target_db=target, legacy_trace_db=target)
         assert report.spans_migrated == 0
         assert report.legacy_trace_db is None
+
+
+class TestMigrateCommand:
+    """``fastaiagent migrate`` on a source it already imported."""
+
+    def test_says_already_imported_and_force_imports_again(self, temp_dir):
+        from typer.testing import CliRunner
+
+        from fastaiagent.cli.main import app
+
+        legacy = temp_dir / "traces.db"
+        _seed_legacy_traces(legacy, [("s1", "t1", "one")])
+        target = temp_dir / "local.db"
+        args = ["migrate", "--db", str(target), "--trace-db", str(legacy)]
+        runner = CliRunner()
+
+        def text(output: str) -> str:
+            # Rich wraps to the terminal width, and where a line breaks depends on
+            # the path length — CI's 80 columns split "was imported on" in two.
+            return " ".join(output.split())
+
+        first = runner.invoke(app, args)
+        assert first.exit_code == 0, first.output
+
+        second = runner.invoke(app, args)
+        assert second.exit_code == 0, second.output
+        # Not "no legacy files detected" — the file is there, it was imported.
+        assert "was imported on" in text(second.output)
+        assert "--force" in text(second.output)
+
+        forced = runner.invoke(app, [*args, "--force"])
+        assert forced.exit_code == 0, forced.output
+        assert "spans from" in text(forced.output)

@@ -42,11 +42,23 @@ def migrate_to_local_db(
     legacy_trace_db: Path | str | None = None,
     legacy_checkpoint_db: Path | str | None = None,
     legacy_prompt_dir: Path | str | None = None,
+    force: bool = False,
 ) -> MigrationReport:
     """Copy legacy storage into the unified ``local.db``.
 
     Defaults scan for the legacy paths the SDK used before 0.8:
     ``./.fastaiagent/traces.db``, ``./.fastaiagent/checkpoints.db``, ``./.prompts/``.
+
+    **Each source is imported once** (1.79.0). ``fastaiagent ui`` calls this on
+    every start, and a row the user had deleted or pruned used to be copied back
+    from the legacy file each time. An imported source is recorded in
+    ``legacy_imports`` and skipped afterwards; ``force=True`` imports it again.
+
+    **Imported spans and checkpoints are stored as already sent** (``synced=1``),
+    the rule the v11/v13 schema upgrades follow: connecting must not push a user's
+    history to the plane. Before 1.79.0 they took the column default and the next
+    connected run pushed them. Publish history deliberately with
+    :meth:`fastaiagent.trace.storage.TraceData.publish`.
     """
     target = Path(target_db) if target_db else Path(get_config().local_db_path)
     report = MigrationReport()
@@ -63,12 +75,17 @@ def migrate_to_local_db(
     if not (trace_path or checkpoint_path or prompt_dir):
         return report
 
-    report.legacy_trace_db = trace_path
-    report.legacy_checkpoint_db = checkpoint_path
-    report.legacy_prompt_dir = prompt_dir
-
     local_db = init_local_db(target)
     try:
+        if not force:
+            trace_path = _unless_imported(local_db, trace_path, report)
+            checkpoint_path = _unless_imported(local_db, checkpoint_path, report)
+            prompt_dir = _unless_imported(local_db, prompt_dir, report)
+
+        report.legacy_trace_db = trace_path
+        report.legacy_checkpoint_db = checkpoint_path
+        report.legacy_prompt_dir = prompt_dir
+
         if trace_path is not None:
             report.spans_migrated = _copy_rows(
                 trace_path,
@@ -85,7 +102,9 @@ def migrate_to_local_db(
                     "attributes",
                     "events",
                 ),
+                already_sent=True,
             )
+            _record_import(local_db, trace_path, "traces", report.spans_migrated)
         if checkpoint_path is not None:
             report.checkpoints_migrated = _copy_rows(
                 checkpoint_path,
@@ -105,7 +124,9 @@ def migrate_to_local_db(
                     "iteration_counters",
                     "created_at",
                 ),
+                already_sent=True,
             )
+            _record_import(local_db, checkpoint_path, "checkpoints", report.checkpoints_migrated)
         if prompt_dir is not None:
             (
                 report.prompts_migrated,
@@ -113,10 +134,37 @@ def migrate_to_local_db(
                 report.fragments_migrated,
                 report.aliases_migrated,
             ) = _copy_yaml_prompts(prompt_dir, local_db)
+            _record_import(local_db, prompt_dir, "prompts", report.prompt_versions_migrated)
     finally:
         local_db.close()
 
     return report
+
+
+def _unless_imported(db: SQLiteHelper, source: Path | None, report: MigrationReport) -> Path | None:
+    """``source``, or ``None`` when this local.db already imported it."""
+    if source is None:
+        return None
+    row = db.fetchone(
+        "SELECT imported_at FROM legacy_imports WHERE source = ?", (str(source.resolve()),)
+    )
+    if row is None:
+        return source
+    report.notes.append(
+        f"{source} was imported on {row['imported_at']}; skipped "
+        f"(`fastaiagent migrate --force` imports it again)."
+    )
+    return None
+
+
+def _record_import(db: SQLiteHelper, source: Path, kind: str, row_count: int) -> None:
+    from datetime import datetime, timezone
+
+    db.execute(
+        """INSERT OR REPLACE INTO legacy_imports (source, kind, imported_at, row_count)
+           VALUES (?, ?, ?, ?)""",
+        (str(source.resolve()), kind, datetime.now(tz=timezone.utc).isoformat(), row_count),
+    )
 
 
 def _path_if_exists(explicit: Path | str | None, default: Path) -> Path | None:
@@ -130,9 +178,17 @@ def _copy_rows(
     *,
     table: str,
     columns: tuple[str, ...],
+    already_sent: bool = False,
 ) -> int:
+    """Copy ``columns`` of ``table``; rows already in the target are left alone.
+
+    ``already_sent`` stores the copies with ``synced=1`` so the platform
+    exporters never treat imported history as un-pushed.
+    """
     cols = ", ".join(columns)
-    placeholders = ", ".join("?" * len(columns))
+    # The legacy table has no ``synced`` column: it is added on the insert side only.
+    insert_cols = cols + (", synced" if already_sent else "")
+    placeholders = ", ".join("?" * len(columns)) + (", 1" if already_sent else "")
     with SQLiteHelper(source_db_path) as src:
         existing = src.fetchone(
             "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
@@ -144,7 +200,7 @@ def _copy_rows(
     if not rows:
         return 0
     target.executemany(
-        f"INSERT OR IGNORE INTO {table} ({cols}) VALUES ({placeholders})",
+        f"INSERT OR IGNORE INTO {table} ({insert_cols}) VALUES ({placeholders})",
         [tuple(row[c] for c in columns) for row in rows],
     )
     return len(rows)

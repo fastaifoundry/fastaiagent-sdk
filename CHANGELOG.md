@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.79.0] - 2026-09-25 — legacy history is imported once, and never pushed
+
+Backlog #18. No wire change.
+
+### Fixed
+
+- ⚠ **The legacy-storage import no longer re-runs on every `fastaiagent ui` start or
+  pushes old history to the plane.**
+  - `fastaiagent ui` imports the pre-0.8 stores (`.fastaiagent/traces.db`,
+    `.fastaiagent/checkpoints.db`, `.prompts/`) whenever they exist. The copy uses
+    `INSERT OR IGNORE`, so it looked idempotent. But any span you deleted or
+    pruned in `local.db` was copied back on the next start.
+  - Imported spans and checkpoints also took the column default, *unsent*. So the
+    next connected run pushed months-old traces to the plane, and checkpoints to
+    its durability replica. That breaks the rule the v11/v13 schema upgrades
+    follow: connecting never back-pushes history.
+  - **Each source is now imported once.** `local.db` records it in a new
+    `legacy_imports` table (schema v22, local only), later starts skip it, and the
+    UI no longer prints "Migrating legacy storage…" every time.
+    `fastaiagent migrate --force` imports a source again deliberately.
+  - **Imported spans and checkpoints are stored as already sent.** Publish history
+    deliberately with `TraceData.publish()`.
+
+> **If this affects you.** On the first start after upgrading, the import runs one
+> last time (as already sent) and is then recorded, so spans you deleted come back
+> once, marked sent. Rows an earlier start already imported as *unsent* are not
+> changed, because nothing can tell them apart from your own unsent spans. If you
+> don't want them on the plane, delete them from `local.db` before you next connect.
+> `fastaiagent migrate` now
+> says "was imported on …" instead of "no legacy files detected" for an imported
+> source.
+
+### Docs
+
+- `ui/index.md` (Migration from 0.7.x) and `cli/index.md`.
+
 ## [1.78.0] - 2026-09-24 — a run that did not finish is never reported as an answer
 
 Backlog #5, #12 and #16. No wire change: no payload gains a key, and the approval

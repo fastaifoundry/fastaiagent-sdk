@@ -32,10 +32,17 @@ def migrate_command(
         "--prompt-dir",
         help="Override legacy .prompts/ directory.",
     ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Import a source again even though this local.db already imported it.",
+    ),
 ) -> None:
     """Copy legacy storage (traces.db, checkpoints.db, .prompts/) into local.db.
 
-    Idempotent — safe to run more than once. Legacy files are left in place;
+    Each source is imported once; later runs skip it (``--force`` imports it
+    again). Imported traces and checkpoints are stored as already sent, so they
+    are never pushed to a connected plane. Legacy files are left in place;
     delete them yourself once you're satisfied with the migration report.
     """
     from fastaiagent.ui.migration import migrate_to_local_db
@@ -45,10 +52,15 @@ def migrate_command(
         legacy_trace_db=trace_db,
         legacy_checkpoint_db=checkpoint_db,
         legacy_prompt_dir=prompt_dir,
+        force=force,
     )
 
     if report.nothing_to_do():
-        console.print("[dim]Nothing to migrate — no legacy files detected.[/dim]")
+        if report.notes:
+            for note in report.notes:
+                console.print(f"[dim]{note}[/dim]")
+        else:
+            console.print("[dim]Nothing to migrate — no legacy files detected.[/dim]")
         return
 
     table = Table(title="Migration report")
