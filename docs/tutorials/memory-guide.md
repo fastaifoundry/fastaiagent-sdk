@@ -115,6 +115,8 @@ mem.retrieve("what foods should we avoid?", tier="user", id="alice")   # → the
 `semantic="auto"` builds a vector index sized to the embedder; pass a
 `VectorStore` for a shared/production index. Facts written by `learn=` are
 indexed automatically. Results stay scope-isolated and skip superseded facts.
+The index follows the store: after a restart, or for facts another process
+wrote, the first query embeds what's missing and finds them.
 
 ## Step 6 — Scale to an external backend
 

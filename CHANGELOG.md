@@ -87,6 +87,19 @@ The second memory-audit release. No wire change.
   (default 100; `None` = no limit), `name_filter` (trace-name prefix) and the
   new `agent_name`, and warns on unknown filters. `fastaiagent traces list
   --last-hours` now does what its help says.
+- **Semantic memory survives a restart.** `Memory(semantic=...)` kept its
+  index only in the process that wrote the facts: after a restart,
+  `retrieve(query)` returned `[]` though the facts were still stored (SQLite,
+  Postgres and Redis alike), and facts another process wrote were never found.
+  The store is now the source of truth — each semantic search first embeds the
+  subject's facts the index doesn't have yet, in one batch.
+- **Semantic memory works on Qdrant.** Fact vectors were indexed under ids like
+  `"1"`, which Qdrant rejects, and the error was swallowed, so nothing was ever
+  indexed. Vector ids are now stable UUIDs with the fact id in metadata; older
+  numeric-id vectors (Chroma) still resolve, and results are de-duplicated per
+  fact. A failed vector removal is logged instead of silently ignored.
+- **Other subjects can't crowd a subject out of a shared semantic index.** The
+  search now widens while other users' facts fill the hits.
 - **The UI Memory page works when a project is set.** Both
   `/api/learned_memory` routes built `WHERE 1=1 AND AND project_id = ?` and
   answered HTTP 500 for an app built with a `project_id`.
@@ -118,6 +131,9 @@ The second memory-audit release. No wire change.
   id; `--reprocess` restores the old behaviour. `--scope user|project` needs
   `--scope-id`, `--agent` and `--attribute-all`.
 - local.db migrates to schema v23 (adds `learn_extractions`; additive).
+- The first semantic query after a restart embeds that subject's stored facts
+  once. Fact vectors written to an external index now use UUID ids; older
+  vectors stay readable.
 - With `RedactPII`, stored history keeps the raw text; the model still gets
   the redacted copy. To keep PII out of memory, redact before the agent.
 
@@ -129,6 +145,8 @@ The second memory-audit release. No wire change.
   `examples/memory_backends` (`agent_id`, and it now cleans up its global fact).
 - `agents/swarm.md` (memory across hand-offs), `agents/middleware.md`
   (what `RedactPII` does and doesn't redact), `agents/memory.md` (write path).
+- `agents/memory.md` and `tutorials/memory-guide.md` (semantic recall follows
+  the store; the `memory.retrieve` span records a count, not scores).
 - `cli/learn.md`, `learning/memory-loop.md`, `tracing/index.md`, and the
   `learning-loop` / `self-improving-research` examples (`agent_name`, new vs
   known counts).

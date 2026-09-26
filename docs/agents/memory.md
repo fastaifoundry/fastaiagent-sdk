@@ -128,7 +128,9 @@ mem.persist("The user is allergic to peanuts", tier="user", id="alice")
 mem.retrieve("what foods should we avoid?", tier="user", id="alice")   # → the peanut fact
 ```
 
-`semantic="auto"` builds an in-process vector index sized to the embedder; pass a `VectorStore` for a shared/production index and `embedder=` to override. Facts written by `learn=` are indexed automatically (they share the store). Semantic results honor the same scope isolation and skip superseded facts; the `memory.retrieve` span records match scores.
+`semantic="auto"` builds an in-process vector index sized to the embedder; pass a `VectorStore` (FAISS, Qdrant, Chroma, your own) for a shared/production index and `embedder=` to override. Facts written by `learn=` are indexed automatically (they share the store). Semantic results honor the same scope isolation and skip superseded facts; the `memory.retrieve` span records how many facts came back.
+
+**The store is the source of truth, not the index.** Before each semantic search, the subject's active facts are read from the store and any the index doesn't have yet are embedded, in one batch. So a restarted process (whose in-process index starts empty) and facts written by another process are both found; the first query after a restart pays one embedding call for that subject's facts. Each fact's vector id is a stable UUID with the fact id in its metadata, which Qdrant requires.
 
 ### Safe-by-default scoping
 
