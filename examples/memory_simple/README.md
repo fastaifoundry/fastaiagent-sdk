@@ -36,8 +36,12 @@ zsh -lc 'python snapshot.py'       # captures the UI to screenshots/
 
 ## Notes
 - `Memory(user_id=<resolver>)` keeps a per-user working window **in-process** —
-  ideal for dev / single-node. Large-scale multi-user wants an external session
-  store (Phase 2). Safe-by-default: a missing/unresolved user id yields no
-  personal facts.
+  ideal for dev / single-node. Durable facts can live in Postgres or Redis
+  (`examples/memory_backends/`); persist a user's window yourself with
+  `mem.for_user("alice").save(path)`.
+- A run whose user can't be resolved (no `context=`, a `None` id, or a resolver
+  that raises) gets no conversation memory — global facts only — so anonymous
+  callers never share a window. For a dict state, resolve with
+  `lambda ctx: ctx.state["user_id"]`.
 - The composable blocks (`ComposableMemory`, `VectorBlock`, …) still exist for
   advanced/custom behaviours; `Memory` is the recommended default.

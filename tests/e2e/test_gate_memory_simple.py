@@ -4,6 +4,7 @@ Proves the headline promises:
 - one agent definition serves many users via a per-run `user_id` resolver;
 - `learn=llm` extracts + persists user facts (stamped with the run's trace);
 - **two users do not cross-contaminate** — the core multi-session guarantee;
+- streamed runs (`astream`) recall their own user's history, too;
 - `summarize=llm` fires on long-enough conversations.
 
 Skips locally without a key; required on CI (E2E_REQUIRED=1).
@@ -80,6 +81,54 @@ def test_memory_facade_multiuser_no_cross_contamination(tmp_path: Path, monkeypa
     ans = agent.run("What is my pet's name? One word.", context=alice)
     assert "rex" in ans.output.lower()
     assert "mia" not in ans.output.lower()
+
+
+def test_memory_facade_streamed_runs_recall_their_own_user(tmp_path: Path, monkeypatch) -> None:
+    """``astream`` built the prompt before exposing the RunContext, so a
+    per-user Memory resolved no user and read the anonymous window: a streaming
+    user never saw their own history (fixed in 1.80.0)."""
+    require_env()
+    import asyncio
+
+    from fastaiagent import Agent, LLMClient, Memory
+    from fastaiagent._internal.config import reset_config
+    from fastaiagent.agent.context import RunContext
+    from fastaiagent.learn import MemoryStore
+    from fastaiagent.llm.stream import TextDelta
+    from fastaiagent.trace.otel import reset as reset_tracer
+
+    db_path = tmp_path / "local.db"
+    monkeypatch.setenv("FASTAIAGENT_LOCAL_DB", str(db_path))
+    reset_config()
+    reset_tracer()
+
+    agent = Agent(
+        name="assistant",
+        system_prompt="You are a concise assistant. Use what you remember about the user.",
+        llm=LLMClient(provider="openai", model="gpt-4.1"),
+        memory=Memory(
+            location=MemoryStore(db_path=str(db_path)),
+            user_id=lambda ctx: ctx.state.user_id,
+        ),
+    )
+
+    async def say(text: str, user_id: str) -> str:
+        parts: list[str] = []
+        context = RunContext(state=Session(user_id=user_id))
+        async for event in agent.astream(text, context=context):
+            if isinstance(event, TextDelta):
+                parts.append(event.text)
+        return "".join(parts)
+
+    async def conversation() -> tuple[str, str]:
+        await say("My locker code is 4417. Just acknowledge it.", "alice")
+        await say("My locker code is 9082. Just acknowledge it.", "bob")
+        question = "What is my locker code? Reply with the digits only."
+        return await say(question, "alice"), await say(question, "bob")
+
+    alice_answer, bob_answer = asyncio.run(conversation())
+    assert "4417" in alice_answer and "9082" not in alice_answer
+    assert "9082" in bob_answer and "4417" not in bob_answer
 
 
 def test_memory_facade_summarize_fires(tmp_path: Path, monkeypatch) -> None:

@@ -133,10 +133,13 @@ SENSITIVE_ATTR_KEYS: frozenset[str] = frozenset(
         "fastaiagent.research.findings",
         # Memory observability payloads — recalled snippets / extracted-fact
         # detail can contain PII (FactExtractionBlock extracts facts about the
-        # user). Numeric ``memory.scores`` is structural and stays clear.
+        # user). ``memory.scope_id`` is the user id on user-tier store spans,
+        # often an email address. Numeric ``memory.scores`` is structural and
+        # stays clear.
         "memory.query",
         "memory.snippets",
         "memory.detail",
+        "memory.scope_id",
         # Framework-integration payloads (crewai / pydantic-ai). Structural
         # fields (names, roles, models, process, counts) are intentionally
         # excluded; only free-text content is listed.

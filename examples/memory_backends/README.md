@@ -29,7 +29,13 @@ REDIS_URL=redis://127.0.0.1:56379/0 \
 
 All three backends implement the same `FactStore` contract — idempotent add,
 safe-by-default scoping (empty `user`/`project` id ⇒ nothing; `"*"` ⇒ all),
-supersede (versioned, never overwrite), and guarded delete.
+supersede (versioned, never overwrite), guarded delete, and newest-first reads.
+
+Each turn reads only the newest facts it injects, however many are stored:
+Postgres through partial indexes, Redis through newest-first sorted indexes.
+The first time 1.80+ opens a Redis namespace an older SDK wrote, it indexes the
+existing facts once. See "Upgrading a Redis or Postgres store" in
+`docs/agents/memory.md`.
 
 ## Observability note
 Agent runs against **any** backend emit `memory.read` / `memory.write` /

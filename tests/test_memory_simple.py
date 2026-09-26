@@ -6,23 +6,31 @@ No mocking: real SQLite ``MemoryStore``, real blocks, real tracing. No LLM
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
+from fastaiagent import Agent
 from fastaiagent._internal.config import reset_config
+from fastaiagent._internal.errors import GuardrailBlockedError
 from fastaiagent._internal.storage import SQLiteHelper
 from fastaiagent.agent.context import (
     RunContext,
+    get_active_run_context,
     reset_active_run_context,
     set_active_run_context,
 )
 from fastaiagent.agent.memory_blocks import PersistentFactBlock
 from fastaiagent.agent.memory_simple import Memory
+from fastaiagent.guardrail import Guardrail, GuardrailPosition
 from fastaiagent.learn import Fact, MemoryStore
 from fastaiagent.llm.message import UserMessage
+from fastaiagent.testing import TestModel
 from fastaiagent.trace.otel import get_tracer
 from fastaiagent.trace.otel import reset as reset_tracer
 
@@ -227,3 +235,237 @@ def test_persist_and_retrieve_emit_spans(db):
     assert spans["memory.persist"]["memory.scope"] == "agent"
     assert spans["memory.persist"]["memory.count"] == 1
     assert spans["memory.retrieve"]["memory.count"] == 1
+
+
+# ---------------------------------------------------------------------------
+# 1.80.0 — one user's memory never reaches another
+# ---------------------------------------------------------------------------
+
+
+def _per_user(db: Path, **kwargs) -> Memory:
+    return Memory(
+        location=MemoryStore(db_path=str(db)),
+        user_id=lambda ctx: ctx.state.user_id,
+        **kwargs,
+    )
+
+
+def _turn(mem: Memory, context: RunContext | None, text: str) -> str:
+    """One simulated turn: read (as the agent does), then write the user text."""
+    tok = set_active_run_context(context)
+    try:
+        seen = " ".join(m.content or "" for m in mem.get_context("?"))
+        mem.add(UserMessage(text))
+        return seen
+    finally:
+        reset_active_run_context(tok)
+
+
+def test_unresolved_callers_share_no_window(db):
+    """Two callers with no RunContext used to share one anonymous window."""
+    mem = _per_user(db)
+    _turn(mem, None, "zed-private-message")
+    seen = _turn(mem, None, "second caller")
+    assert "zed-private-message" not in seen
+    assert len(mem) == 0 and mem.messages == []
+
+
+def test_dict_state_resolver_is_unresolved_not_shared(db, caplog):
+    """``ctx.state.user_id`` on a dict state raises; those callers must not
+    pool into one window, and the misconfiguration is logged once."""
+    mem = _per_user(db)
+    with caplog.at_level(logging.WARNING, logger="fastaiagent.agent.memory_blocks"):
+        _turn(mem, RunContext(state={"user_id": "carol"}), "quinn-is-carols-secret")
+        seen = _turn(mem, RunContext(state={"user_id": "dave"}), "dave here")
+        _turn(mem, RunContext(state={"user_id": "erin"}), "erin here")
+    assert "quinn-is-carols-secret" not in seen
+    warnings = [r for r in caplog.records if "user_id resolver raised" in r.getMessage()]
+    assert len(warnings) == 1
+
+
+def test_resolver_returning_none_is_unresolved(db):
+    """A resolver that returns None used to become the literal user "None",
+    one bucket shared by every such caller."""
+    mem = Memory(location=MemoryStore(db_path=str(db)), user_id=lambda ctx: None)
+    _turn(mem, RunContext(state=St(user_id="x")), "first-none-caller-secret")
+    seen = _turn(mem, RunContext(state=St(user_id="y")), "second none caller")
+    assert "first-none-caller-secret" not in seen
+
+
+def test_scope_resolver_returning_none_reads_nothing(db):
+    s = MemoryStore(db_path=str(db))
+    s.add(Fact(scope="user", scope_id="None", fact="fact filed under the string None"))
+    block = PersistentFactBlock(scope="user", scope_id=lambda ctx: None, store=s)
+    tok = set_active_run_context(RunContext(state=St(user_id="x")))
+    try:
+        assert block.render("?") == []
+    finally:
+        reset_active_run_context(tok)
+
+
+def test_unresolved_caller_still_sees_global_facts(db):
+    mem = _per_user(db, agent_id="support")
+    mem.persist("Return policy is 30 days", tier="global")
+    seen = _turn(mem, None, "hello")
+    assert "Return policy is 30 days" in seen
+
+
+def test_unresolved_agent_scope_resolver_reads_nothing(db):
+    """An agent-scope block whose resolver can't resolve used to read
+    ``scope_id=""`` — which at agent scope means every agent's facts."""
+    s = MemoryStore(db_path=str(db))
+    s.add(Fact(scope="agent", scope_id="billing", fact="billing-only fact"))
+    s.add(Fact(scope="agent", scope_id="support", fact="support-only fact"))
+    block = PersistentFactBlock(scope="agent", scope_id=lambda ctx: ctx.state.agent, store=s)
+    assert block.render("?") == []  # no context
+    tok = set_active_run_context(RunContext(state={"agent": "support"}))  # resolver raises
+    try:
+        assert block.render("?") == []
+    finally:
+        reset_active_run_context(tok)
+
+
+def test_static_empty_agent_scope_warns_and_star_is_explicit(db):
+    """A static ``scope_id=""`` at agent scope still reads every agent (the
+    documented global read), but it is almost always a missing id, so it warns.
+    ``"*"`` says the same thing on purpose, and is silent."""
+    s = MemoryStore(db_path=str(db))
+    s.add(Fact(scope="agent", scope_id="billing", fact="billing-only fact"))
+    with pytest.warns(UserWarning, match="every agent"):
+        block = PersistentFactBlock(scope="agent", scope_id="", store=s)
+    out = block.render("?")
+    assert out and "billing-only fact" in out[0].content
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        star = PersistentFactBlock(scope="agent", scope_id="*", store=s)
+    out = star.render("?")
+    assert out and "billing-only fact" in out[0].content
+
+
+def test_empty_agent_id_is_refused(db):
+    """``Memory(agent_id="")`` read every agent's global facts — usually an
+    unset setting, e.g. ``os.environ.get("AGENT_ID", "")``."""
+    with pytest.raises(ValueError, match="every agent"):
+        Memory(location=MemoryStore(db_path=str(db)), agent_id="")
+
+
+def test_save_load_outside_a_run_point_to_for_user(db, tmp_path):
+    mem = _per_user(db)
+    _turn(mem, RunContext(state=St(user_id="alice")), "alice-window-message")
+    with pytest.raises(ValueError, match="for_user"):
+        mem.save(tmp_path / "m")
+    with pytest.raises(ValueError, match="for_user"):
+        mem.load(tmp_path / "m")
+    mem.clear()  # no current user: nothing to clear, and no error
+
+    mem.for_user("alice").save(tmp_path / "alice")
+    assert "alice-window-message" in (tmp_path / "alice" / "primary.json").read_text()
+
+    fresh = _per_user(db)
+    fresh.for_user("alice").load(tmp_path / "alice")
+    seen = _turn(fresh, RunContext(state=St(user_id="alice")), "back again")
+    assert "alice-window-message" in seen
+
+
+def test_for_user_needs_a_per_user_memory_and_an_id(db):
+    with pytest.raises(ValueError):
+        _per_user(db).for_user("")
+    with pytest.raises(ValueError):
+        Memory(location=MemoryStore(db_path=str(db))).for_user("alice")
+
+
+def test_forget_global_without_id_refuses_to_delete_every_agent(db):
+    s = MemoryStore(db_path=str(db))
+    s.add(Fact(scope="agent", scope_id="billing", fact="billing-only fact"))
+    s.add(Fact(scope="agent", scope_id="support", fact="support-only fact"))
+    mem = Memory(location=s)  # no agent_id
+    with pytest.raises(ValueError, match='id="\\*"'):
+        mem.forget(tier="global")
+    with pytest.raises(ValueError, match='id="\\*"'):
+        mem.forget(tier="global", fact="billing-only fact")
+    assert len(s.list_active(scope="agent", scope_id="")) == 2  # untouched
+
+    # Scoped by agent_id: only that agent's facts go.
+    assert Memory(location=s, agent_id="support").forget(tier="global") == 1
+    # Explicit opt-in still works.
+    assert mem.forget(tier="global", id="*") == 1
+
+
+# --- streaming (Agent.astream) ----------------------------------------------
+
+
+def _prompt(call: dict) -> str:
+    return " ".join(m.content or "" for m in call["messages"] if isinstance(m.content, str))
+
+
+async def _drain(agent: Agent, text: str, uid: str) -> None:
+    async for _ in agent.astream(text, context=RunContext(state=St(user_id=uid))):
+        pass
+
+
+def test_astream_reads_the_callers_own_window(db):
+    """``astream`` built the prompt before exposing the RunContext, so a
+    per-user Memory read the anonymous window while writing to the user's."""
+    model = TestModel(response="noted")
+    agent = Agent(name="support", llm=model, memory=_per_user(db))
+
+    async def go():
+        await _drain(agent, "alice-first-message", "alice")
+        await _drain(agent, "alice-second-message", "alice")
+        await _drain(agent, "bob-first-message", "bob")
+
+    asyncio.run(go())
+    assert "alice-first-message" in _prompt(model.calls[1])
+    assert "alice-first-message" not in _prompt(model.calls[2])
+    assert "alice-second-message" not in _prompt(model.calls[2])
+
+
+def test_interleaved_streams_write_to_their_own_users(db):
+    """Two ``astream`` generators advanced in one task share that task's
+    context; each must still write its turn to its own user."""
+    mem = _per_user(db)
+    agent = Agent(name="support", llm=TestModel(response="noted"), memory=mem)
+
+    async def go():
+        ga = agent.astream("alice-turn", context=RunContext(state=St(user_id="alice")))
+        gb = agent.astream("bob-turn", context=RunContext(state=St(user_id="bob")))
+        await ga.__anext__()
+        await gb.__anext__()
+        async for _ in ga:
+            pass
+        async for _ in gb:
+            pass
+
+    asyncio.run(go())
+    alice = " ".join(m.content or "" for m in mem.for_user("alice").messages)
+    bob = " ".join(m.content or "" for m in mem.for_user("bob").messages)
+    assert "alice-turn" in alice and "bob-turn" not in alice
+    assert "bob-turn" in bob and "alice-turn" not in bob
+
+
+def test_blocked_stream_leaves_no_run_context(db):
+    guard = Guardrail(
+        name="block_bad",
+        position=GuardrailPosition.input,
+        blocking=True,
+        fn=lambda text: "bad" not in text,
+    )
+    agent = Agent(name="a", llm=TestModel(), guardrails=[guard], memory=_per_user(db))
+
+    async def go():
+        with pytest.raises(GuardrailBlockedError):
+            await _drain(agent, "bad input", "alice")
+        return get_active_run_context()
+
+    assert asyncio.run(go()) is None
+
+
+def test_store_span_keeps_scope_id_locally_with_payloads_off(db, monkeypatch):
+    """The egress gate never touches local capture (CLAUDE.md §2.5)."""
+    monkeypatch.setenv("FASTAIAGENT_TRACE_PAYLOADS", "0")
+    mem = Memory(location=MemoryStore(db_path=str(db)))
+    with get_tracer("fastaiagent").start_as_current_span("agent.test"):
+        mem.persist("x", tier="user", id="alice@example.com")
+    spans = {r["name"]: json.loads(r["attributes"]) for r in _read_spans(db)}
+    assert spans["memory.persist"]["memory.scope_id"] == "alice@example.com"

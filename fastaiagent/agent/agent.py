@@ -1162,29 +1162,37 @@ class Agent:
         root span opened there wraps the whole generator body."""
         exec_id = execution_id
 
-        # Effective guardrails = local + plane-authored (see arun for details).
-        eff_guardrails = self._effective_guardrails()
+        # Expose the RunContext before anything reads memory: a per-user Memory
+        # resolves its user from it while the prompt is built below. It is
+        # reset on every exit, including an input guardrail block.
+        rc_token = set_active_run_context(context)
+        try:
+            # Effective guardrails = local + plane-authored (see arun for details).
+            eff_guardrails = self._effective_guardrails()
 
-        # Execute input guardrails (blocking) on the text portion.
-        guarded_input: AgentInput = input
-        if eff_guardrails:
-            in_outcome = await execute_guardrails(
-                eff_guardrails, input_text, GuardrailPosition.input
-            )
-            if in_outcome.modified:
-                guarded_input, input_text = _apply_input_rewrite(input, in_outcome)
+            # Execute input guardrails (blocking) on the text portion.
+            guarded_input: AgentInput = input
+            if eff_guardrails:
+                in_outcome = await execute_guardrails(
+                    eff_guardrails, input_text, GuardrailPosition.input
+                )
+                if in_outcome.modified:
+                    guarded_input, input_text = _apply_input_rewrite(input, in_outcome)
 
-        llm_messages = self._build_messages(guarded_input, context=context, history=messages)
+            llm_messages = self._build_messages(guarded_input, context=context, history=messages)
 
-        # Inject response_format for structured output
-        response_format = self._build_response_format()
-        if response_format is not None:
-            kwargs["response_format"] = response_format
+            # Inject response_format for structured output
+            response_format = self._build_response_format()
+            if response_format is not None:
+                kwargs["response_format"] = response_format
 
-        # Middleware context shared across the whole run.
-        mw_ctx: MiddlewareContext | None = None
-        if self._mw_pipeline:
-            mw_ctx = MiddlewareContext(run_context=context, agent_name=self.name)
+            # Middleware context shared across the whole run.
+            mw_ctx: MiddlewareContext | None = None
+            if self._mw_pipeline:
+                mw_ctx = MiddlewareContext(run_context=context, agent_name=self.name)
+        except BaseException:
+            reset_active_run_context(rc_token)
+            raise
 
         # Set up execution-scoped ContextVars so interrupt() / @idempotent
         # can find the active execution + checkpointer.
@@ -1196,12 +1204,11 @@ class Agent:
         )
         ap_token = _agent_path.set(new_path)
         cp_token = _current_checkpointer.set(self._checkpointer)
-        rc_token = set_active_run_context(context)
-
-        if self._checkpointer is not None:
-            self._checkpointer.setup()
 
         try:
+            if self._checkpointer is not None:
+                self._checkpointer.setup()
+
             # Stream tool loop — yields events to caller
             accumulated_text = ""
             streamed_tokens = 0
@@ -1275,8 +1282,16 @@ class Agent:
                 from fastaiagent.agent._memory_tracing import traced_add
                 from fastaiagent.llm.message import AssistantMessage
 
-                traced_add(self.memory, UserMessage(input_text))
-                traced_add(self.memory, AssistantMessage(output))
+                # Re-assert this run's context for the write. A generator runs
+                # in its consumer's context, so another stream advanced in the
+                # same task between our yields may have replaced it — and a
+                # per-user Memory writes to whichever user it resolves now.
+                wr_token = set_active_run_context(context)
+                try:
+                    traced_add(self.memory, UserMessage(input_text))
+                    traced_add(self.memory, AssistantMessage(output))
+                finally:
+                    reset_active_run_context(wr_token)
 
             if span is not None:
                 span.set_attribute("agent.output", output)

@@ -5,6 +5,119 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.80.0] - 2026-09-26 — one user's memory never reaches another
+
+The first of the memory-audit releases. No wire change: no payload gains a key.
+
+### Fixed
+
+- ⚠ **Streamed runs read the right user's memory.**
+  - `Agent.astream` built the prompt before it exposed the run's `RunContext`,
+    so a `Memory(user_id=<resolver>)` could not resolve the user. A streamed
+    run read the anonymous window, while its turn was written to the real user,
+    so a streaming user never saw their own history.
+  - The context is now set before input guardrails and the prompt build.
+  - It is also set again around the memory write: two streams advanced in one
+    task share that task's context, and one could write its turn to the other's
+    user.
+- ⚠ **Callers whose user can't be resolved no longer share one window.**
+  - When a `user_id` resolver found no context, returned `None`, or raised,
+    every such caller landed in one anonymous window and read the others'
+    turns.
+  - The usual trigger is a dict state (`RunContext(state={"user_id": ...})`)
+    with the documented `ctx.state.user_id` resolver. A resolver returning
+    `None` became the literal user `"None"`: another shared window, and a
+    shared `scope_id` for its facts.
+  - An unresolved caller now gets no conversation memory: global facts only,
+    and nothing it says is kept. A raising resolver logs one warning.
+- ⚠ **An unresolved agent-scope resolver reads nothing.**
+  `PersistentFactBlock(scope="agent", scope_id=<callable>)` fell back to
+  `scope_id=""`, which at agent scope matches every agent's facts.
+- ⚠ **A shared recall store no longer mixes users.**
+  - `Memory(recall=<VectorStore>)` gave every user the same namespace, so one
+    user's messages were recalled for another. Each user's recall is now
+    namespaced `user:<id>` (prefixed with `project_id` when set).
+  - `VectorBlock` filtered by namespace *after* taking `top_k`, so a busy
+    namespace could crowd a quiet one out entirely. It now over-fetches and
+    widens until it has `top_k` of its own chunks.
+  - Untagged chunks are visible to the `"default"` namespace only.
+- **`recall="auto"` follows the embedder.**
+  - It hard-coded a 384-dimension index, so any other embedder (OpenAI's 1536,
+    `SimpleEmbedder`) failed to index silently and recall returned nothing.
+  - `Memory` now resolves one embedder, sizes `"auto"` indexes to it, and
+    passes it to every block. `embedder=` used to be ignored for recall, and
+    the default model was loaded again for every new user.
+
+### Security
+
+- **`memory.scope_id` is gated on egress.** On user-tier memory spans it is the
+  user id, often an email address. It is now in `SENSITIVE_ATTR_KEYS`: still in
+  local capture, dropped from export when `FASTAIAGENT_TRACE_PAYLOADS=0`.
+- ⚠ **`forget(tier="global")` no longer deletes every agent's facts by
+  accident.** With no `agent_id` on the `Memory` and no `id`, it matched every
+  agent. It now raises; pass `id="*"` to delete them all on purpose.
+- ⚠ **`Memory(agent_id="")` raises.** An empty agent id read every agent's
+  global facts into every prompt — usually an unset setting such as
+  `os.environ.get("AGENT_ID", "")`, and a way for facts learned from one
+  agent's users to reach another agent's system prompt.
+  `PersistentFactBlock(scope="agent", scope_id="")` still reads every agent
+  (documented) but now warns; `scope_id="*"` says so on purpose.
+- ⚠ **Redis fact reads cost what they return, not what is stored.**
+  - Every turn reads the newest `max_facts` facts. `RedisFactStore` fetched
+    every matching fact, one round trip each, before sorting and slicing, so
+    a user whose `learn=` facts piled up slowed each of their own turns and
+    loaded a Redis shared by everyone. An agent-wide read paid for every
+    agent's facts.
+  - Measured with 5,000 facts for one user: **1,011 ms and 5,000 fetches per
+    read before, 1.3 ms and 50 fetches after.**
+  - Reads now use newest-first sorted indexes. The first time a store opens a
+    namespace written by an older SDK, it indexes the existing facts once.
+- **Postgres fact reads use an index.** The only index was the `UNIQUE` one,
+  so each read sorted every matching row. Opening a store now creates two
+  partial indexes that match the read.
+
+### Added
+
+- `Memory.for_user(user_id)`: one user's working memory, for use outside a run,
+  e.g. `mem.for_user("alice").save(path)`.
+- `RedisFactStore.reindex()`: rebuilds the read indexes after an older SDK
+  wrote to the namespace.
+
+### Behaviour changes
+
+- A run that a `Memory(user_id=<resolver>)` can't resolve has no conversation
+  memory. If you relied on the shared window, pass a `RunContext` whose user
+  the resolver can read.
+- `save()` / `load()` on a per-user `Memory` outside a run raise; use
+  `for_user(user_id).save(path)`.
+- `forget(tier="global")` without `agent_id` or `id` raises; pass `id="*"`.
+- Recall entries already written to a shared external `VectorStore` under the
+  `"default"` namespace are no longer recalled by a per-user `Memory` — they
+  were the leak. The in-process `recall="auto"` default is unaffected.
+- `Memory(agent_id="")` raises; pass the agent's id, or leave it unset.
+- The first open of a Redis namespace written by an older SDK scans and indexes
+  it once. If an older SDK keeps writing there, call
+  `RedisFactStore(url).reindex()` after it stops — or upgrade every writer
+  together.
+- The first open of a Postgres store creates two indexes on `learned_memory`.
+  On a very large table, create them `CONCURRENTLY` first (see
+  `agents/memory.md`) so the build doesn't block writes.
+- With `recency_weight` or `importance_weight` set, `VectorBlock` reranks a
+  larger pool of candidates (up to 4× `top_k`), so results can shift at the
+  margin.
+
+> **If this affects you.** Facts that a `None`-returning resolver persisted
+> under the literal user `"None"` stay in the store. Remove them with
+> `Memory(location=...).forget(tier="user", id="None")`.
+
+### Docs
+
+- `agents/memory.md`: multi-user safety, `for_user`, `forget`, the keyword
+  table, `VectorBlock` namespaces, empty agent ids, and upgrading a Redis or
+  Postgres store. `tutorials/memory-guide.md`: step 2 and safe scoping.
+- README (Memory section), `examples/memory_simple/README.md` and
+  `examples/memory_backends/README.md`.
+
 ## [1.79.0] - 2026-09-25 — legacy history is imported once, and never pushed
 
 Backlog #18. No wire change.

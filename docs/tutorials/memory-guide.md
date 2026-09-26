@@ -62,8 +62,10 @@ agent.run("What's my pet?", context=RunContext(state=Session("alice")))  # → "
 ```
 
 Under the hood `Memory` routes to a **per-user working memory**, so Bob's turn
-never leaks into Alice's context. A missing/unresolved id yields **no** personal
-facts (safe-by-default).
+never leaks into Alice's context — streamed runs (`astream`) included. A run the
+resolver can't resolve (no `context=`, a `None` id, or a resolver that raises)
+gets **no conversation memory**: global facts only, and nothing it says is kept.
+For a dict state, write the resolver as `lambda ctx: ctx.state["user_id"]`.
 
 ## Step 3 — The fact lifecycle (CRUD)
 
@@ -144,7 +146,9 @@ and honors the "Mask secrets" redaction path.
 
 At `user`/`project` scope, an **empty id returns nothing** — one user's facts
 can never leak into another's context. Use `scope_id="*"` (low-level store) to
-deliberately read across all subjects. The `agent`/global tier stays permissive.
+deliberately read across all subjects. The `agent`/global tier stays permissive,
+but `Memory(agent_id="")` raises: an empty id would read every agent's facts,
+and it is almost always an unset setting.
 
 ## When to drop to blocks
 
