@@ -125,3 +125,36 @@ def test_project_partition_isolates(store: FactStore, uid: str):
     assert [f.fact for f in store.list_active(scope="user", scope_id=uid, project_id="B")] == [
         "in-B"
     ]
+
+
+# The per-turn read: PersistentFactBlock asks for the newest ``max_facts``.
+
+
+def test_limit_returns_the_newest_first(store: FactStore, uid: str):
+    for i in range(12):
+        store.add(Fact(scope="user", scope_id=uid, fact=f"fact-{i:02d}", created_at=1000.0 + i))
+    got = [f.fact for f in store.list_active(scope="user", scope_id=uid, limit=3)]
+    assert got == ["fact-11", "fact-10", "fact-09"]
+
+
+def test_limit_skips_superseded_facts(store: FactStore, uid: str):
+    ids = [
+        store.add(Fact(scope="user", scope_id=uid, fact=f"v{i}", created_at=2000.0 + i))
+        for i in range(4)
+    ]
+    store.supersede(ids[3], ids[2])  # the newest row is superseded
+    got = [f.fact for f in store.list_active(scope="user", scope_id=uid, limit=2)]
+    assert got == ["v2", "v1"]
+
+
+def test_wildcard_limit_is_newest_first_across_subjects(store: FactStore):
+    project = f"p-{uuid.uuid4().hex[:8]}"  # isolates this test on a shared server
+    for i, sid in enumerate(["ag-a", "ag-b", "ag-c"] * 2):
+        store.add(
+            Fact(
+                scope="agent", scope_id=sid, fact=f"g{i}", created_at=3000.0 + i, project_id=project
+            )
+        )
+    for sid in ("*", ""):  # "" at agent scope is the permissive (all-agents) read
+        got = store.list_active(scope="agent", scope_id=sid, project_id=project, limit=2)
+        assert [f.fact for f in got] == ["g5", "g4"]

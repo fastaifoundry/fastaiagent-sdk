@@ -5,7 +5,9 @@ Memory lets agents remember — within a conversation and across sessions. The r
 ## `Memory` — the recommended API
 
 ```python
-from fastaiagent import Agent, LLMClient, Memory
+from dataclasses import dataclass
+
+from fastaiagent import Agent, LLMClient, Memory, RunContext
 
 llm = LLMClient(provider="openai", model="gpt-4.1")
 
@@ -17,21 +19,30 @@ agent = Agent(name="support", llm=llm, memory=Memory(
     user_id=lambda ctx: ctx.state.user_id,   # resolved per run — one agent, many users
     learn=llm,                               # extract + persist durable user facts
 ))
+
+@dataclass
+class Session:
+    user_id: str
+
+# Each run names its user through the run context the resolver receives.
+agent.run("What's my plan?", context=RunContext(state=Session(user_id="alice")))
 ```
 
 The whole surface is keywords on one object:
 
 | Keyword | What it does |
 |---|---|
-| `location` | where durable facts live — `"sqlite"` (default) or a `MemoryStore` (external backends are Phase 2) |
+| `location` | where durable facts live — `"sqlite"` (default), `postgres://…` / `redis://…`, or a store instance |
 | `user_id` | personalization key — a string or `(ctx)->str` resolver (per-run, multi-user) |
 | `agent_id` | global tier: facts true for everyone using the agent |
 | `project_id` | tenant partition applied across tiers |
-| `window` | recent turns kept (session/working memory) |
+| `window` | recent messages kept (session/working memory) |
 | `learn` | an LLM → extract + persist durable user facts each turn |
 | `summarize` | an LLM → compress older turns into a running summary |
-| `recall` | `"auto"` (in-process FAISS) or a `VectorStore` → semantic recall of past exchanges |
+| `recall` | `"auto"` (an in-process FAISS index per user) or a `VectorStore` shared by every user, each user's recall namespaced → semantic recall of past exchanges |
 | `dedupe` | drop recalled content an earlier tier already injected |
+| `semantic` | `"auto"` or a `VectorStore` → `retrieve(query, ...)` by meaning |
+| `embedder` | the embedder for `semantic` and `recall`; `"auto"` indexes are sized to it |
 
 ### Tiers — who a fact is true for
 
@@ -50,14 +61,27 @@ mem.update("Prefers Slack", old="Prefers email", tier="user", id="alice")  # sup
 mem.forget(tier="user", id="alice")                      # delete; returns count
 ```
 
+`forget` refuses to mass-delete by accident. `forget(tier="user")` needs an `id`, and `forget(tier="global")` needs `agent_id=` on the `Memory` (or an `id`) — without one, an empty id would match every agent's global facts. Pass `id="*"` to delete every subject on purpose.
+
 Facts are **versioned by supersede, never overwritten** — `update` marks the old row superseded (kept in the audit history, visible under the Memory page's "Show superseded" toggle) and activates the new one. `forget` hard-deletes (including superseded history for that subject).
 
 ### Multi-user safety (important)
 
-`Memory(user_id=<resolver>)` isolates each user **completely** — durable facts *and* the live session window — by routing to a per-user working memory keyed on the resolved id. One agent definition safely serves many users; a missing/unresolved id yields **no** personal facts (safe-by-default). Two caveats:
+`Memory(user_id=<resolver>)` gives each user their own working memory — durable facts *and* the live session window — keyed on the resolved id. One agent definition safely serves many users, with `run`, `arun` and `astream` alike. The resolver receives the run's `context=`, so pass the user there on every run (see the example above).
 
-- Per-user working windows are held **in-process**. Great for dev / single-node; for large-scale or horizontally-scaled multi-user, an external session/fact backend is the Phase-2 path.
-- `recall="auto"` builds a per-user in-process vector store. For a shared, production recall store, pass your own `VectorStore` (and note it isn't user-partitioned unless you namespace it).
+**A caller the resolver can't resolve gets no conversation memory.** That covers a run with no `context=`, a resolver that returns `None` or `""`, and a resolver that raises. It sees global facts only, and nothing it says is kept, so unresolved callers can never share a window. A raising resolver logs one warning. The usual cause is a dict state read as an attribute: use `lambda ctx: ctx.state["user_id"]` for `RunContext(state={"user_id": ...})`.
+
+Outside a run there is no current user, so `save`/`load` on a per-user `Memory` raise. Use `for_user` instead:
+
+```python
+mem.for_user("alice").save("memory/alice")   # persist Alice's window
+mem.for_user("alice").load("memory/alice")   # restore it before her next run
+```
+
+Two caveats:
+
+- Per-user working windows are held **in-process**. Only durable facts move to an external `location`; for horizontally-scaled deployments, persist windows with `for_user(...).save(...)` or keep sessions sticky.
+- `recall="auto"` builds a per-user in-process vector store. A `VectorStore` you pass is shared by every user, and each user's recall is namespaced (`user:<id>`, prefixed with `project_id` when set), so one user's messages never come back for another.
 
 ### Storage backends (`location`)
 
@@ -70,7 +94,23 @@ Memory(location="redis://host:6379/0")                     # needs fastaiagent[r
 Memory(location=my_store)                                  # any object implementing FactStore
 ```
 
-All backends implement the same `FactStore` contract (idempotent add, safe scoping, supersede, delete) and are verified against one shared conformance suite, so behaviour doesn't drift. Use Postgres/Redis for multi-node or many-user deployments; SQLite for dev/single-node. Runnable demo: [`examples/memory_backends/`](https://github.com/fastaifoundry/fastaiagent-sdk/tree/main/examples/memory_backends).
+All backends implement the same `FactStore` contract (idempotent add, safe scoping, supersede, delete, newest-first reads) and are verified against one shared conformance suite, so behaviour doesn't drift. Use Postgres/Redis for multi-node or many-user deployments; SQLite for dev/single-node. Runnable demo: [`examples/memory_backends/`](https://github.com/fastaifoundry/fastaiagent-sdk/tree/main/examples/memory_backends).
+
+Every turn reads the newest facts for the user (and the agent), so a read costs what it returns, not what is stored: Postgres reads through partial indexes, and Redis through newest-first sorted indexes.
+
+!!! note "Upgrading a Redis or Postgres store to 1.80"
+    **Redis.** The first time a store opens a namespace written by an older SDK, it indexes the existing facts once (a `SCAN` over the namespace). If an older SDK keeps writing to the same namespace afterwards, its new facts are missing from reads until you call `RedisFactStore(url).reindex()` — upgrade every writer together.
+
+    **Postgres.** The first open creates two indexes on `learned_memory`. On a very large table, create them yourself beforehand so the build doesn't block writes; the store then finds them and skips the step:
+
+    ```sql
+    CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_learned_memory_subject_active
+        ON learned_memory (scope, scope_id, project_id, created_at DESC)
+        WHERE superseded_by IS NULL;
+    CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_learned_memory_scope_active
+        ON learned_memory (scope, project_id, created_at DESC)
+        WHERE superseded_by IS NULL;
+    ```
 
 !!! note "Observability with external backends"
     Agent runs against any backend emit `memory.read` / `memory.write` / `memory.persist` / `memory.retrieve` trace spans (browsable in `fastaiagent ui`). The UI **Memory page** browses the local SQLite store; facts written to an external backend are observed via those trace spans (a shared UI over external backends is future work).
@@ -89,7 +129,7 @@ mem.retrieve("what foods should we avoid?", tier="user", id="alice")   # → the
 
 ### Safe-by-default scoping
 
-At `user`/`project` scope an **empty id returns nothing** — one user's facts can never leak into another's context. Use `scope_id="*"` (on the low-level store) to deliberately read across all subjects. The `agent`/global tier stays permissive (shared truth). *(This corrects prior behaviour where an empty user id matched everyone — see the CHANGELOG.)*
+At `user`/`project` scope an **empty id returns nothing** — one user's facts can never leak into another's context. Use `scope_id="*"` (on the low-level store) to deliberately read across all subjects. The `agent`/global tier stays permissive (shared truth), but an empty agent id is refused where it is almost always a mistake: `Memory(agent_id="")` raises, and `PersistentFactBlock(scope="agent", scope_id="")` warns — use `scope_id="*"` to read every agent's facts on purpose. *(This corrects prior behaviour where an empty user id matched everyone — see the CHANGELOG.)*
 
 The Memory page (`fastaiagent ui` → Knowledge → Memory) shows the tiers side by side — `user:alice` / `user:bob` (learned, source `trace`) and a shared `agent:*` global fact (source `manual`):
 
@@ -238,7 +278,9 @@ VectorBlock(
 )
 ```
 
-Any backend implementing the `VectorStore` protocol works — `FaissVectorStore` (default), `QdrantVectorStore`, `ChromaVectorStore`, your own. See [KB Backends](../knowledge-base/backends.md).
+Any backend implementing the `VectorStore` protocol works — `FaissVectorStore`, `QdrantVectorStore`, `ChromaVectorStore`, your own. See [KB Backends](../knowledge-base/backends.md).
+
+Blocks sharing one store recall only their own `namespace`. The search over-fetches and widens until it has `top_k` of the block's own chunks, so a busy namespace can't crowd out a quiet one. Chunks with no namespace tag (for example, a store shared with a knowledge base) are read by the `"default"` namespace only.
 
 **When to use**: conversations that span days or sessions, where long-ago facts should be retrievable by meaning, not just recency.
 
@@ -382,7 +424,7 @@ from fastaiagent.agent.memory_blocks import PersistentFactBlock
 
 PersistentFactBlock(
     scope="agent",                # 'user' | 'project' | 'agent'
-    scope_id="my-agent",          # identifier within scope
+    scope_id="my-agent",          # identifier within scope; "*" = every agent
     project_id="",                # optional project filter
     max_facts=50,                 # newest-first cap
     refresh_every=1,              # re-query store every N renders (1 = always)

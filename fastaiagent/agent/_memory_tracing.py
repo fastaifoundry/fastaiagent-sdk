@@ -163,8 +163,10 @@ def memory_store_span(
 ):
     """Trace a direct ``Memory.persist`` / ``retrieve`` / ``forget`` store call.
 
-    ``scope``/``scope_id`` are routing keys (not payload), so they're emitted
-    ungated — like ``retrieval.kb_id``. Fact *content* is never put on the span.
+    ``scope`` is a routing key and is emitted ungated, like ``retrieval.kb_id``.
+    ``scope_id`` is the user id on user-tier calls — personal data — so it is in
+    ``SENSITIVE_ATTR_KEYS`` and dropped on egress when payloads are off. Fact
+    *content* is never put on the span.
     """
     from fastaiagent.trace.otel import get_tracer
 

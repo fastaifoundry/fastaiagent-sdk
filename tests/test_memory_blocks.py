@@ -354,3 +354,136 @@ def test_fact_extraction_block_live_extracts_facts() -> None:
         keyword in facts_text
         for keyword in ("python", "acme", "peanut", "chocolate", "timezone", "utc")
     )
+
+
+# ---------------------------------------------------------------------------
+# 1.80.0 — a shared recall store never hands one user's messages to another
+# ---------------------------------------------------------------------------
+
+
+@_skip_no_faiss
+def test_vector_block_other_namespaces_cannot_starve_top_k() -> None:
+    """The namespace filter ran after ``top_k``: another namespace's closer
+    chunks filled every slot, so this namespace's own message never came back."""
+    from fastaiagent.kb.backends.faiss import FaissVectorStore
+
+    store = FaissVectorStore(dimension=32, index_type="flat")
+    embedder = SimpleEmbedder(dimensions=32)
+    bob = VectorBlock(
+        store=store, embedder=embedder, top_k=5, namespace="user:bob", min_content_chars=0
+    )
+    alice = VectorBlock(
+        store=store, embedder=embedder, top_k=5, namespace="user:alice", min_content_chars=0
+    )
+    for _ in range(20):
+        bob.on_message(UserMessage("my bank pin is"))
+    alice.on_message(UserMessage("my bank pin is alice-secret-4242"))
+
+    out = alice.render("my bank pin is")
+    assert out and "alice-secret-4242" in out[0].content
+    report = alice.last_render_report()
+    assert report is not None and report.rendered_count == 1
+
+    bob_out = bob.render("my bank pin is")
+    assert bob_out and "alice-secret-4242" not in bob_out[0].content
+    bob_report = bob.last_render_report()
+    assert bob_report is not None and bob_report.rendered_count == 5  # still capped at top_k
+
+
+@_skip_no_faiss
+def test_vector_block_scoped_namespace_ignores_untagged_chunks() -> None:
+    """A chunk with no namespace tag used to pass every block's filter."""
+    from fastaiagent.kb.backends.faiss import FaissVectorStore
+    from fastaiagent.kb.chunking import Chunk
+
+    store = FaissVectorStore(dimension=32, index_type="flat")
+    embedder = SimpleEmbedder(dimensions=32)
+    text = "[user] untagged note about the payroll export"
+    store.add([Chunk(id="raw", content=text, end_char=len(text))], embedder.embed([text]))
+
+    scoped = VectorBlock(
+        store=store, embedder=embedder, namespace="user:alice", min_content_chars=0
+    )
+    assert scoped.render("payroll export") == []
+    # The default namespace keeps reading untagged chunks, as before.
+    default = VectorBlock(store=store, embedder=embedder, min_content_chars=0)
+    out = default.render("payroll export")
+    assert out and "payroll export" in out[0].content
+
+
+def _turn_as(mem, uid: str, text: str) -> str:
+    from fastaiagent.agent.context import (
+        RunContext,
+        reset_active_run_context,
+        set_active_run_context,
+    )
+
+    tok = set_active_run_context(RunContext(state={"uid": uid}))
+    try:
+        seen = " ".join(m.content or "" for m in mem.get_context(text))
+        mem.add(UserMessage(text))
+        return seen
+    finally:
+        reset_active_run_context(tok)
+
+
+@_skip_no_faiss
+def test_memory_with_shared_recall_store_isolates_users(tmp_path: Path) -> None:
+    """``Memory(recall=<shared store>)`` gave every user the same namespace."""
+    from fastaiagent import Memory
+    from fastaiagent.kb.backends.faiss import FaissVectorStore
+    from fastaiagent.learn import MemoryStore
+
+    mem = Memory(
+        location=MemoryStore(db_path=str(tmp_path / "m.db")),
+        user_id=lambda ctx: ctx.state["uid"],
+        recall=FaissVectorStore(dimension=32, index_type="flat"),
+        embedder=SimpleEmbedder(dimensions=32),
+        window=2,
+    )
+    _turn_as(mem, "alice", "my bank account number is 12345678 and my PIN is 9999")
+    assert "12345678" not in _turn_as(mem, "bob", "what is my bank account number and PIN")
+
+    # Alice's own recall still works once her window has rolled past it.
+    _turn_as(mem, "alice", "filler message one for the window")
+    _turn_as(mem, "alice", "filler message two for the window")
+    assert "12345678" in _turn_as(mem, "alice", "what is my bank account number and PIN")
+
+
+@_skip_no_faiss
+def test_static_user_memories_sharing_a_recall_store_stay_apart(tmp_path: Path) -> None:
+    from fastaiagent import Memory
+    from fastaiagent.kb.backends.faiss import FaissVectorStore
+    from fastaiagent.learn import MemoryStore
+
+    shared = FaissVectorStore(dimension=32, index_type="flat")
+    embedder = SimpleEmbedder(dimensions=32)
+    store = MemoryStore(db_path=str(tmp_path / "m.db"))
+    alice = Memory(location=store, user_id="alice", recall=shared, embedder=embedder, window=1)
+    bob = Memory(location=store, user_id="bob", recall=shared, embedder=embedder, window=1)
+
+    alice.add(UserMessage("alice's locker code is 5150"))
+    alice.add(UserMessage("some later alice message"))
+    bob_seen = " ".join(m.content or "" for m in bob.get_context("what is the locker code"))
+    assert "5150" not in bob_seen
+    alice_seen = " ".join(m.content or "" for m in alice.get_context("what is the locker code"))
+    assert "5150" in alice_seen
+
+
+@_skip_no_faiss
+def test_recall_auto_follows_the_embedder_dimension(tmp_path: Path) -> None:
+    """``recall="auto"`` hard-coded a 384-dim index; any other embedder failed
+    to index silently and recall returned nothing."""
+    from fastaiagent import Memory
+    from fastaiagent.learn import MemoryStore
+
+    mem = Memory(
+        location=MemoryStore(db_path=str(tmp_path / "m.db")),
+        recall="auto",
+        embedder=SimpleEmbedder(dimensions=32),
+        window=1,
+    )
+    mem.add(UserMessage("the staging database password rotates on fridays"))
+    mem.add(UserMessage("unrelated filler message"))
+    seen = " ".join(m.content or "" for m in mem.get_context("staging database password rotates"))
+    assert "rotates on fridays" in seen

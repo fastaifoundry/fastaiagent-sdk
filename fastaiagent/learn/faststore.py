@@ -19,7 +19,8 @@ Facts are idempotent on ``(scope, scope_id, fact, project_id)`` and versioned by
 from __future__ import annotations
 
 import time
-from typing import Protocol, runtime_checkable
+from collections.abc import Iterable
+from typing import Any, Protocol, runtime_checkable
 
 from fastaiagent.learn.store import Fact, Scope
 
@@ -166,6 +167,14 @@ CREATE TABLE IF NOT EXISTS learned_memory (
     project_id      TEXT NOT NULL DEFAULT '',
     UNIQUE (scope, scope_id, fact, project_id)
 );
+-- The per-turn read is "the newest N active facts" for one subject, or for a
+-- whole scope; these let it stop after N rows instead of sorting them all.
+CREATE INDEX IF NOT EXISTS idx_learned_memory_subject_active
+    ON learned_memory (scope, scope_id, project_id, created_at DESC)
+    WHERE superseded_by IS NULL;
+CREATE INDEX IF NOT EXISTS idx_learned_memory_scope_active
+    ON learned_memory (scope, project_id, created_at DESC)
+    WHERE superseded_by IS NULL;
 """
 
 
@@ -302,14 +311,23 @@ class PostgresFactStore:
 # ---------------------------------------------------------------------------
 
 
+# Bumped when the Redis layout gains an index that older data lacks. A store
+# that opens a namespace without this marker indexes it once (``reindex``).
+_REDIS_SCHEMA = "2"
+
+
 class RedisFactStore:
     """``FactStore`` over Redis. Requires the ``redis`` package.
 
     Layout: each fact is a hash ``fa:fact:{id}``; ids are minted from
     ``fa:fact:seq``; ``fa:uniq`` maps the idempotency tuple → id; active ids are
     tracked in per-``(scope,scope_id,project)`` sets (``fa:act:…``) with the set
-    of scope_ids per ``(scope,project)`` in ``fa:sids:…`` so ``scope_id="*"`` /
-    permissive ``agent`` reads can fan out.
+    of scope_ids per ``(scope,project)`` in ``fa:sids:…`` so deletes can fan out.
+
+    Reads go through two newest-first sorted indexes of active ids, scored by
+    ``created_at``: per subject (``fa:zact:…``) and per ``(scope,project)``
+    (``fa:zall:…``) for ``scope_id="*"`` and permissive ``agent`` reads. A read
+    fetches only the ``limit`` facts it returns, however many are stored.
     """
 
     def __init__(self, url: str, *, namespace: str = "fa"):
@@ -319,6 +337,8 @@ class RedisFactStore:
             raise ImportError("RedisFactStore needs the redis package: pip install redis") from e
         self._r = redis.from_url(url, decode_responses=True)
         self._ns = namespace
+        if self._r.get(self._k("schema")) != _REDIS_SCHEMA:
+            self.reindex()
 
     def _k(self, *parts: str) -> str:
         return ":".join((self._ns, *parts))
@@ -331,6 +351,44 @@ class RedisFactStore:
 
     def _sids_key(self, scope: str, project_id: str) -> str:
         return self._k("sids", scope, project_id)
+
+    def _zsubject_key(self, scope: str, scope_id: str, project_id: str) -> str:
+        return self._k("zact", scope, scope_id, project_id)
+
+    def _zscope_key(self, scope: str, project_id: str) -> str:
+        return self._k("zall", scope, project_id)
+
+    def _index(self, fid: int, scope: str, scope_id: str, project_id: str, created: float) -> None:
+        self._r.zadd(self._zsubject_key(scope, scope_id, project_id), {str(fid): created})
+        self._r.zadd(self._zscope_key(scope, project_id), {str(fid): created})
+
+    def _unindex(self, fid: int, scope: str, scope_id: str, project_id: str) -> None:
+        self._r.zrem(self._zsubject_key(scope, scope_id, project_id), str(fid))
+        self._r.zrem(self._zscope_key(scope, project_id), str(fid))
+
+    def _get_many(self, ids: Iterable[Any]) -> list[Fact]:
+        """Fetch fact hashes in one round trip, keeping ``ids`` order."""
+        pipe = self._r.pipeline(transaction=False)
+        for fid in ids:
+            pipe.hgetall(self._k("fact", str(fid)))
+        return [self._hash_to_fact(d) for d in pipe.execute() if d]
+
+    def reindex(self) -> int:
+        """Build the sorted read indexes from the active-id sets.
+
+        Runs once, automatically, when this version first opens a namespace an
+        older SDK wrote. Re-run it if an older SDK kept writing to the namespace
+        after that — its new facts are missing from the indexes until you do.
+        Only adds entries, so it is safe to repeat. Returns the facts indexed.
+        """
+        indexed = 0
+        for key in self._r.scan_iter(match=self._k("act", "*")):
+            for f in self._get_many(self._r.smembers(key)):
+                if f.superseded_by is None and f.id is not None:
+                    self._index(f.id, f.scope, f.scope_id, f.project_id, f.created_at or 0.0)
+                    indexed += 1
+        self._r.set(self._k("schema"), _REDIS_SCHEMA)
+        return indexed
 
     @staticmethod
     def _uniq(scope: str, scope_id: str, fact: str, project_id: str) -> str:
@@ -381,6 +439,7 @@ class RedisFactStore:
         self._r.sadd(self._act_key(fact.scope, fact.scope_id, fact.project_id), fid)
         self._r.sadd(self._all_key(fact.scope, fact.scope_id, fact.project_id), fid)
         self._r.sadd(self._sids_key(fact.scope, fact.project_id), fact.scope_id)
+        self._index(fid, fact.scope, fact.scope_id, fact.project_id, created)
         return fid
 
     def get(self, fact_id: int) -> Fact | None:
@@ -403,10 +462,15 @@ class RedisFactStore:
     ) -> list[Fact]:
         if scope in ("user", "project") and scope_id == "":
             return []
-        ids = self._ids("act", scope, scope_id, project_id)
-        facts = [f for fid in ids if (f := self.get(int(fid)))]
-        facts.sort(key=lambda f: f.created_at or 0.0, reverse=True)
-        return facts[:limit] if limit is not None else facts
+        if limit is not None and limit <= 0:
+            return []
+        if scope_id and scope_id != "*":
+            key = self._zsubject_key(scope, scope_id, project_id)
+        else:  # "*", or the permissive agent-wide read
+            key = self._zscope_key(scope, project_id)
+        ids = self._r.zrevrange(key, 0, -1 if limit is None else limit - 1)
+        # An older SDK still writing here does not unindex what it supersedes.
+        return [f for f in self._get_many(ids) if f.superseded_by is None]
 
     def supersede(self, old_id: int, new_id: int) -> None:
         old = self.get(old_id)
@@ -415,6 +479,7 @@ class RedisFactStore:
             raise ValueError(f"supersede: missing row(s) old_id={old_id} new_id={new_id}")
         self._r.hset(self._k("fact", str(old_id)), "superseded_by", new_id)
         self._r.srem(self._act_key(old.scope, old.scope_id, old.project_id), old_id)
+        self._unindex(old_id, old.scope, old.scope_id, old.project_id)
 
     def delete(
         self, scope: Scope, scope_id: str = "", project_id: str = "", fact: str | None = None
@@ -430,6 +495,7 @@ class RedisFactStore:
             self._r.delete(self._k("fact", str(fid)))
             self._r.srem(self._act_key(f.scope, f.scope_id, f.project_id), fid)
             self._r.srem(self._all_key(f.scope, f.scope_id, f.project_id), fid)
+            self._unindex(int(fid), f.scope, f.scope_id, f.project_id)
             self._r.delete(self._k("uniq", self._uniq(f.scope, f.scope_id, f.fact, f.project_id)))
             n += 1
         return n

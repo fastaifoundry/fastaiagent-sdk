@@ -100,25 +100,50 @@ def _norm_for_dedupe(text: str) -> str:
     return " ".join((text or "").lower().split())
 
 
+# ids of resolvers that have already logged a failure — one warning each, not
+# one per turn.
+_warned_resolvers: set[int] = set()
+
+
+def _resolve_dynamic_id(resolver: Callable[[Any], Any]) -> str:
+    """Call a per-run id resolver with the active :class:`RunContext`.
+
+    Returns ``""`` — *unresolved* — when there is no active context, when the
+    resolver returns ``None`` or ``""``, or when it raises. A ``None`` return is
+    unresolved rather than the literal id ``"None"``, which every such caller
+    would otherwise share. A raising resolver (e.g. ``ctx.state.user_id`` on a
+    dict state) logs one warning per resolver, so the misconfiguration is
+    visible without flooding the log.
+    """
+    from fastaiagent.agent.context import get_active_run_context
+
+    ctx = get_active_run_context()
+    if ctx is None:
+        return ""
+    try:
+        value = resolver(ctx)
+    except Exception:
+        if id(resolver) not in _warned_resolvers:
+            _warned_resolvers.add(id(resolver))
+            _log.warning(
+                "user_id resolver raised; treating this run as unresolved (no "
+                "personal memory). Check that it matches your RunContext state — "
+                "a dict state needs ctx.state['user_id'], not ctx.state.user_id.",
+                exc_info=True,
+            )
+        return ""
+    return "" if value is None else str(value)
+
+
 def _resolve_scope_id(scope_id: ScopeId) -> str:
     """Resolve a static or callable ``scope_id`` to a string for this run.
 
-    A callable is invoked with the active :class:`RunContext` (per-run dynamic
-    scoping, e.g. per user). With no active context — or if the resolver raises
-    — this returns ``""``, which the store treats as the safe default (no
-    personal facts), so nothing leaks outside a run.
+    A callable is resolved per run (see :func:`_resolve_dynamic_id`); ``""``
+    means unresolved, which the store treats as the safe default (no personal
+    facts), so nothing leaks outside a run.
     """
     if callable(scope_id):
-        from fastaiagent.agent.context import get_active_run_context
-
-        ctx = get_active_run_context()
-        if ctx is None:
-            return ""
-        try:
-            return str(scope_id(ctx))
-        except Exception:
-            _log.warning("scope_id resolver raised; treating as empty (safe)", exc_info=True)
-            return ""
+        return _resolve_dynamic_id(scope_id)
     return scope_id or ""
 
 
@@ -505,6 +530,23 @@ class SummaryBlock(MemoryBlock):
 # VectorBlock
 # ---------------------------------------------------------------------------
 
+# A VectorBlock searches ``top_k * _OVERFETCH_FACTOR`` hits before filtering by
+# namespace, and a store that can't report its size is never searched past
+# ``top_k * _MAX_FETCH_FACTOR``.
+_OVERFETCH_FACTOR = 4
+_MAX_FETCH_FACTOR = 256
+
+
+def _store_count(store: Any) -> int | None:
+    """The store's chunk count, or ``None`` if it can't say."""
+    fn = getattr(store, "count", None)
+    if not callable(fn):
+        return None
+    try:
+        return int(fn())
+    except Exception:
+        return None
+
 
 class VectorBlock(MemoryBlock):
     """Semantic recall over past messages via a :class:`VectorStore`.
@@ -532,8 +574,9 @@ class VectorBlock(MemoryBlock):
         embedder: Any :class:`fastaiagent.kb.embedding.Embedder`. If ``None``,
             the default auto-selected embedder is used.
         top_k: Number of past messages to recall per turn.
-        namespace: Metadata tag so multiple VectorBlocks over different
-            stores don't collide. Stored on each chunk's metadata.
+        namespace: Metadata tag stamped on each chunk. Blocks sharing one
+            store recall only their own namespace's chunks; untagged chunks
+            are visible to the ``"default"`` namespace only.
         min_content_chars: Messages shorter than this are not indexed
             (skip trivial "ok" / "yes" messages).
         recency_weight: Boost for recent chunks, in ``[0.0, 1.0]``. Default
@@ -678,8 +721,33 @@ class VectorBlock(MemoryBlock):
         scored.sort(key=lambda x: x[1], reverse=True)
         return scored
 
+    def _in_namespace(self, chunk: Chunk) -> bool:
+        ns = chunk.metadata.get("namespace")
+        if ns is None:
+            # Untagged chunks (a store shared with a KB, or pre-namespace data)
+            # are read by the default namespace only — never by a scoped one.
+            return self.namespace == "default"
+        return bool(ns == self.namespace)
+
+    def _search_own(self, embedding: list[float]) -> list[tuple[Chunk, float]]:
+        """Search the store, keeping only this block's namespace.
+
+        Other namespaces sharing the store must not be able to fill every slot,
+        so the search over-fetches, and widens (up to the store's size) while a
+        full page still leaves fewer than ``top_k`` of our own chunks.
+        """
+        total = _store_count(self.store)
+        ceiling = total if total is not None else self.top_k * _MAX_FETCH_FACTOR
+        fetch = min(self.top_k * _OVERFETCH_FACTOR, max(ceiling, self.top_k))
+        while True:
+            hits = list(self.store.search(embedding, fetch))
+            own = [(c, s) for c, s in hits if self._in_namespace(c)]
+            if len(own) >= self.top_k or len(hits) < fetch or fetch >= ceiling:
+                return own
+            fetch = min(fetch * 2, ceiling)
+
     def _retrieve(self, query: str) -> list[tuple[Chunk, float]]:
-        """Embed the query, search, score, and namespace-filter — no rendering.
+        """Embed the query, search this namespace, score, and cap at ``top_k``.
 
         Returns ``(chunk, final_score)`` pairs in rank order. Degrades to ``[]``
         on any embed/search error (the agent runs without recall).
@@ -692,18 +760,13 @@ class VectorBlock(MemoryBlock):
             _log.warning("VectorBlock failed to embed query: %s", err)
             return []
         try:
-            hits = self.store.search(embedding, self.top_k)
+            own = self._search_own(embedding)
         except Exception as err:
             _log.warning("VectorBlock search failed: %s", err)
             return []
-        scored = self._score_hits(list(hits))
-        # Keep the (chunk, score) pairs through the namespace filter so the
-        # render report can surface per-item scores without recomputation.
-        return [
-            (c, s)
-            for c, s in scored
-            if c.metadata.get("namespace", self.namespace) == self.namespace
-        ]
+        # Score after the namespace filter, so recency / importance weights
+        # rank this namespace's own candidates, then cap at top_k.
+        return self._score_hits(own)[: self.top_k]
 
     def _build(
         self, relevant: list[tuple[Chunk, float]], deduped_count: int | None = None
@@ -1011,8 +1074,11 @@ class PersistentFactBlock(MemoryBlock):
 
     Args:
         scope: ``"user"``, ``"project"``, or ``"agent"``.
-        scope_id: identifier within the scope (agent name, user id, …).
-            Empty string matches every scope_id within ``scope``.
+        scope_id: identifier within the scope (agent name, user id, …), or
+            a ``(RunContext) -> str`` resolver. ``"*"`` reads every scope_id
+            within ``scope``. ``""`` reads nothing at user/project scope and
+            everything at agent scope — with a warning, since it is usually a
+            missing id.
         project_id: project to scope DB queries to. Defaults to "" which
             matches the unproject-scoped rows the SDK writes by default.
         max_facts: cap on facts injected per turn. Newest facts win.
@@ -1074,6 +1140,13 @@ class PersistentFactBlock(MemoryBlock):
             )
         if recency_half_life_seconds <= 0.0:
             raise ValueError("recency_half_life_seconds must be > 0")
+        if scope == "agent" and not callable(scope_id) and scope_id == "":
+            warnings.warn(
+                "PersistentFactBlock(scope='agent', scope_id='') reads every agent's "
+                "facts. Pass the agent's id, or scope_id='*' to read them all on purpose.",
+                UserWarning,
+                stacklevel=2,
+            )
         self.scope = scope
         self.scope_id = scope_id
         self.project_id = project_id
@@ -1151,6 +1224,12 @@ class PersistentFactBlock(MemoryBlock):
 
     def render(self, query: str) -> list[Message]:
         resolved = _resolve_scope_id(self.scope_id)
+        if callable(self.scope_id) and not resolved:
+            # An unresolved dynamic id reads nothing. Querying with "" would
+            # read every subject at agent scope, which is permissive by design.
+            self._cached = None
+            self._cached_scope_id = None
+            return []
         # Dynamic scope_id (e.g. per-user): if the resolved subject changed since
         # last render, drop the cache so we never serve one user's facts to
         # another.

@@ -14,7 +14,7 @@ pip install fastaiagent
 
 Runs fully standalone, or connect to the [FastAIAgent Platform](https://fastaiagent.net) for hosted observability, prompt management, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.79.0)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.80.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -744,7 +744,7 @@ The currently active agent decides when to transfer control — no central LLM. 
 `Memory` is the front door: tiered (global / user / session), multi-user safe, and pluggable — with progressive-disclosure keywords instead of hand-wiring blocks.
 
 ```python
-from fastaiagent import Agent, LLMClient, Memory
+from fastaiagent import Agent, LLMClient, Memory, RunContext
 
 llm = LLMClient(provider="openai", model="gpt-4o-mini")
 
@@ -754,9 +754,12 @@ agent = Agent(name="support", llm=llm, memory=Memory(
     summarize=llm,                           # compress old turns
     recall="auto",                           # semantic recall of past exchanges
 ))
+
+# session: your per-request state, e.g. a dataclass with a user_id field
+agent.run("What's my plan?", context=RunContext(state=session))
 ```
 
-- **Multi-user safe** — `user_id` routes to a per-user working memory, isolating both durable facts *and* the live window (no cross-session bleed). A missing id yields no personal facts (safe-by-default).
+- **Multi-user safe** — `user_id` routes to a per-user working memory, isolating both durable facts *and* the live window (no cross-session bleed), for `run`, `arun` and `astream` alike. A run whose user can't be resolved gets no conversation memory — global facts only — so anonymous callers never share a window.
 - **Tiers** — `Memory.persist("...", tier="global")` for shared truth; `tier="user", id=...` for personalization; the conversation window is the session tier.
 - **Pluggable + semantic** — `Memory(location="postgres://…" | "redis://…")` for external backends; `Memory(semantic="auto")` enables `retrieve("query", tier=, id=)` by meaning.
 - **Observable** — every read/write and persist/retrieve is a trace span (scores included), browsable in the Local UI's Memory page.

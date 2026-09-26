@@ -42,6 +42,7 @@ from fastaiagent.agent.memory_blocks import (
     ScopeId,
     SummaryBlock,
     VectorBlock,
+    _resolve_dynamic_id,
 )
 
 if TYPE_CHECKING:
@@ -82,14 +83,34 @@ def _make_store(location: Any):
     raise TypeError("location must be 'sqlite', a store instance, or a connection string")
 
 
-def _make_recall_store(recall: Any):
-    if recall == "auto":
-        from fastaiagent.kb.backends.faiss import FaissVectorStore
+_NO_USER = (
+    "this Memory keeps one window per user, and no user is resolved here; "
+    "use mem.for_user(user_id).save(path) / .load(path)"
+)
 
-        # In-process store — fine for dev/single-node. For real multi-user, pass
-        # a shared VectorStore instance instead of "auto".
-        return FaissVectorStore(dimension=384, index_type="flat")
-    return recall  # assume a VectorStore instance
+
+class _AnonymousMemory(ComposableMemory):
+    """What a per-user ``Memory`` gives a caller whose user can't be resolved.
+
+    Global facts, and nothing else: no window, no summary, no recall. Anything
+    kept here would be shared by every unresolved caller, which is exactly the
+    cross-user leak this exists to prevent — so writes are dropped.
+    """
+
+    def add(self, message: Message) -> None:
+        return None
+
+    def clear(self) -> None:
+        return None
+
+    def reset_blocks(self) -> None:
+        return None
+
+    def save(self, path: Any) -> None:
+        raise ValueError(_NO_USER)
+
+    def load(self, path: Any) -> None:
+        raise ValueError(_NO_USER)
 
 
 def _wrap_semantic(store: Any, semantic: Any, embedder: Any):
@@ -114,20 +135,28 @@ class Memory:
     """Tiered, pluggable memory — the recommended default for agents.
 
     Args:
-        location: ``"sqlite"`` (default local.db) or a ``MemoryStore`` instance.
-            External connection strings are Phase 2.
+        location: ``"sqlite"`` (default local.db), a store instance, or a
+            ``postgres://`` / ``redis://`` connection string.
         user_id: personalization key for the user tier — a string, or a
             ``(RunContext) -> str`` resolver evaluated per run (one agent, many
-            users). Unresolved ⇒ no personal facts (safe).
+            users). A resolver gives each user their own window. A caller it
+            can't resolve (no context, ``None``, or the resolver raises) gets no
+            conversation memory — global facts only — and writes nothing.
         agent_id: partition for the global tier (shared truth). If set, global
-            facts are injected on every turn.
+            facts are injected on every turn. Must be non-empty: ``""`` would
+            read every agent's global facts, so it raises.
         project_id: tenant partition applied across tiers.
-        window: recent turns kept in the session/working window.
+        window: messages kept in the session/working window.
         learn: an ``LLMClient`` → extract + persist durable user facts each turn.
         summarize: an ``LLMClient`` → roll older turns into a running summary.
-        recall: ``"auto"`` (in-process FAISS) or a ``VectorStore`` → semantic
-            recall over past exchanges.
+        recall: ``"auto"`` (an in-process FAISS index per user) or a
+            ``VectorStore`` → semantic recall over past exchanges. A store you
+            pass is shared by every user; each user's recall is namespaced.
         dedupe: drop recalled content an earlier tier already injected.
+        semantic: ``"auto"`` or a ``VectorStore`` → ``retrieve(query=...)`` by
+            meaning.
+        embedder: the embedder for ``semantic=`` and ``recall=``. Defaults to
+            the best available one; ``"auto"`` indexes are sized to match it.
     """
 
     def __init__(
@@ -145,7 +174,22 @@ class Memory:
         semantic: Any = None,
         embedder: Any = None,
     ):
+        if agent_id is not None and not agent_id:
+            # An unset setting (e.g. os.environ.get("AGENT_ID", "")) must not
+            # become "read every agent's global facts" on every turn.
+            raise ValueError(
+                'agent_id="" would read every agent\'s global facts; pass the '
+                "agent's id, or leave agent_id unset for no global tier"
+            )
         self._store = _make_store(location)
+        # One embedder for everything that embeds (semantic facts, recall), so
+        # an "auto" index is always sized to it and the model loads once.
+        if embedder is None and (semantic is not None or recall is not None):
+            from fastaiagent.kb.embedding import get_default_embedder
+
+            embedder = get_default_embedder()
+        self._embedder = embedder
+        self._embedding_dim: int | None = None
         # Semantic layer: mirror facts into a vector index so retrieve(query=...)
         # works by meaning. Wraps the base store, so facts written by learn= are
         # indexed too (they share this handle).
@@ -167,25 +211,50 @@ class Memory:
         # durable facts, but the live window too. Static/absent user_id → one.
         self._dynamic = callable(user_id)
         self._per_user: dict[str, ComposableMemory] = {}
+        self._anonymous: _AnonymousMemory | None = None
         self._single: ComposableMemory | None = (
             None
             if self._dynamic
             else self._build_composable(user_id if isinstance(user_id, str) else None)
         )
 
-    def _build_composable(self, user_scope_id: str | None) -> ComposableMemory:
-        """Compose the block engine for one subject (or an anonymous window)."""
-        blocks: list[Any] = []
-        # Global tier (shared truth) — only when an agent_id is given.
-        if self._agent_id is not None:
-            blocks.append(
-                PersistentFactBlock(
-                    scope="agent",
-                    scope_id=self._agent_id,
-                    project_id=self._project_id,
-                    store=self._store,
-                )
+    def _global_blocks(self) -> list[Any]:
+        """The global tier (shared truth) — only when an agent_id is given."""
+        if self._agent_id is None:
+            return []
+        return [
+            PersistentFactBlock(
+                scope="agent",
+                scope_id=self._agent_id,
+                project_id=self._project_id,
+                store=self._store,
             )
+        ]
+
+    def _dimension(self) -> int:
+        """The embedder's output dimension, probed once."""
+        if self._embedding_dim is None:
+            self._embedding_dim = len(self._embedder.embed(["probe"])[0])
+        return self._embedding_dim
+
+    def _recall_store(self) -> Any:
+        if self._recall == "auto":
+            from fastaiagent.kb.backends.faiss import FaissVectorStore
+
+            # In-process index, one per subject. Pass a VectorStore instead to
+            # share one store (each user's recall is namespaced).
+            return FaissVectorStore(dimension=self._dimension(), index_type="flat")
+        return self._recall  # assume a VectorStore instance
+
+    def _recall_namespace(self, user_scope_id: str | None) -> str:
+        if not user_scope_id:
+            return "default"
+        ns = f"user:{user_scope_id}"
+        return f"{self._project_id}:{ns}" if self._project_id else ns
+
+    def _build_composable(self, user_scope_id: str | None) -> ComposableMemory:
+        """Compose the block engine for one subject (or the single window)."""
+        blocks: list[Any] = self._global_blocks()
         # User tier — write (learn) then read — only when we have a subject.
         if user_scope_id:
             if self._learn is not None:
@@ -212,33 +281,44 @@ class Memory:
         if self._recall is not None:
             blocks.append(
                 VectorBlock(
-                    store=_make_recall_store(self._recall),
+                    store=self._recall_store(),
+                    embedder=self._embedder,
+                    namespace=self._recall_namespace(user_scope_id),
                     dedupe_against_upstream=self._dedupe,
                 )
             )
         return ComposableMemory(blocks=blocks, primary=AgentMemory(max_messages=self._window))
-
-    def _resolve_user_scope_id(self) -> str:
-        from fastaiagent.agent.context import get_active_run_context
-
-        ctx = get_active_run_context()
-        if ctx is None:
-            return ""
-        try:
-            return str(self._user_id(ctx))  # type: ignore[misc]
-        except Exception:
-            return ""
 
     def _active(self) -> ComposableMemory:
         """The working memory for the current run (per-user when dynamic)."""
         if not self._dynamic:
             assert self._single is not None
             return self._single
-        uid = self._resolve_user_scope_id()
-        mem = self._per_user.get(uid)
+        uid = _resolve_dynamic_id(self._user_id)  # type: ignore[arg-type]
+        if not uid:
+            if self._anonymous is None:
+                self._anonymous = _AnonymousMemory(blocks=self._global_blocks())
+            return self._anonymous
+        return self.for_user(uid)
+
+    def for_user(self, user_id: str) -> ComposableMemory:
+        """One user's working memory (window + in-conversation blocks).
+
+        For use outside a run, where there is no current user — e.g.
+        ``mem.for_user("alice").save(path)`` to persist Alice's window, or
+        ``.load(path)`` to restore it before her next run.
+        """
+        if not self._dynamic:
+            raise ValueError(
+                "for_user() is for a per-user Memory(user_id=<resolver>); this "
+                "Memory has a single window — call save()/load() on it directly"
+            )
+        if not user_id:
+            raise ValueError("for_user() needs a non-empty user id")
+        mem = self._per_user.get(user_id)
         if mem is None:
-            mem = self._build_composable(uid or None)
-            self._per_user[uid] = mem
+            mem = self._build_composable(user_id)
+            self._per_user[user_id] = mem
         return mem
 
     # ── Agent-attachable contract (routes to the active working memory) ───────
@@ -407,11 +487,19 @@ class Memory:
     def forget(self, *, tier: str, id: str = "", fact: str | None = None) -> int:
         """Hard-delete durable facts for a tier/id. Returns rows removed.
 
-        Refuses to mass-delete at user/project scope without an id (pass
-        ``id="*"`` to delete every subject on purpose). With ``fact`` given,
-        only that exact fact is removed.
+        Refuses to mass-delete without an id — at user scope, and at global
+        scope when the Memory has no ``agent_id`` (pass ``id="*"`` to delete
+        every subject on purpose). With ``fact`` given, only that exact fact is
+        removed.
         """
         scope, scope_id = self._scope_and_id(tier, id)
+        if scope == "agent" and not scope_id:
+            # At agent scope an empty id matches every agent — a one-line call
+            # would wipe all global facts. Mirror the user tier's refusal.
+            raise ValueError(
+                'forget(tier="global") needs agent_id= on the Memory or id=; '
+                'pass id="*" to delete every agent\'s global facts on purpose'
+            )
         with memory_store_span(
             "forget", tier=tier, scope=scope, scope_id=scope_id, project_id=self._project_id
         ) as h:

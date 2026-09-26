@@ -217,3 +217,14 @@ def test_local_capture_is_unaffected_and_search_still_matches(tmp_path, monkeypa
         reset_config()
 
     assert hits, "local trace search stopped matching prompts after the registry change"
+
+
+def test_memory_scope_id_is_gated(monkeypatch):
+    """``memory.scope_id`` is the user id on user-tier memory spans, often an
+    email address. It stays in local capture and is dropped on egress."""
+    monkeypatch.setenv("FASTAIAGENT_TRACE_PAYLOADS", "0")
+    attrs = {"memory.scope_id": "alice@example.com", "memory.scope": "user", "memory.count": 1}
+    out = apply_export_policy(attrs)
+    assert "memory.scope_id" not in out
+    assert out == {"memory.scope": "user", "memory.count": 1}
+    assert "memory.scope_id" in SENSITIVE_ATTR_KEYS
