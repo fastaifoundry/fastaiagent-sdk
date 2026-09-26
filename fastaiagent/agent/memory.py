@@ -56,11 +56,13 @@ class AgentMemory:
 
         ``query`` is accepted for signature compatibility with
         :class:`ComposableMemory` and is ignored by this simple implementation.
+
+        Returns copies: callers such as middleware may edit what they are
+        given, and that must never rewrite stored history.
         """
         limit = max_messages or self.max_messages
-        if limit:
-            return list(self._messages[-limit:])
-        return list(self._messages)
+        window = self._messages[-limit:] if limit else self._messages
+        return [m.model_copy() for m in window]
 
     def clear(self) -> None:
         """Clear all messages."""

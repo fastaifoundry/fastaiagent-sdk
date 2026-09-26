@@ -220,10 +220,16 @@ credit cards, with cards **Luhn-validated**. Narrow it with
     `\b(?:\d[ \-]?){13,19}\b` with **no Luhn check**. Any 13–19 digit run —
     an order number, an invoice id, an IMEI — was redacted as a credit card.
 
-    Because `before_model` mutates message content **in place**, that corruption
-    was what the model saw, what landed in memory, and what was replayed in a
-    guardrail re-ask. If you were relying on long digit runs being masked, pass
-    an explicit `patterns=` list.
+    That corruption was what the model saw and what was replayed in a guardrail
+    re-ask. If you were relying on long digit runs being masked, pass an
+    explicit `patterns=` list.
+
+**What it redacts, and what it doesn't.** `RedactPII` redacts what the model is
+sent and what it returns. It does not change conversation memory: since 1.81.0
+`before_model` redacts copies of the messages, so history already stored keeps
+what the user actually said. (Before, it edited the stored messages in place, and
+turn 1 turned into `[REDACTED]` in memory once turn 2 ran.) To keep PII out of
+memory, redact the input before it reaches the agent.
 
 `patterns=` is unchanged: your regexes, applied verbatim, with no Luhn opinion and
 without consulting the shared detector. Non-string content (a multimodal message's

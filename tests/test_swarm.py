@@ -19,6 +19,7 @@ import pytest
 
 from fastaiagent import (
     Agent,
+    AgentMemory,
     HandoffEvent,
     LLMClient,
     Swarm,
@@ -380,3 +381,71 @@ def test_swarm_live_simple_handoff() -> None:
     # The coder should have answered — a final output with Python slicing is
     # reasonable but we don't overfit. Just confirm we didn't get a stall.
     assert len(result.output) > 5
+
+
+# ---------------------------------------------------------------------------
+# Memory across hand-offs (1.81.0): one turn per swarm run, no artifacts
+# ---------------------------------------------------------------------------
+
+
+def _memory_log(memory: AgentMemory) -> list[tuple[str, str | None]]:
+    return [(m.role.value, m.content) for m in memory.messages]
+
+
+def _two_agents(a_memory: AgentMemory, b_memory: AgentMemory, **kwargs) -> Swarm:
+    a = Agent(
+        name="a",
+        system_prompt="You are a.",
+        llm=MockLLMClient(responses=_handoff_then_stub("b", "needs b")),
+        memory=a_memory,
+        **kwargs,
+    )
+    b = Agent(
+        name="b",
+        system_prompt="You are b.",
+        llm=MockLLMClient(responses=[_final(kwargs.get("_final_text", "handled by b"))])
+        if "output_type" not in kwargs
+        else MockLLMClient(responses=[_final('{"text": "handled by b"}')]),
+        memory=b_memory,
+        **kwargs,
+    )
+    return Swarm(name="s", agents=[a, b], entrypoint="a", handoffs={"a": ["b"], "b": []})
+
+
+def test_swarm_handoff_records_one_turn_in_shared_memory() -> None:
+    """A hand-off wrote a fake ``__HANDOFF__`` reply and a fake "a handed off
+    to you…" user message into the shared history."""
+    shared = AgentMemory()
+    result = _two_agents(shared, shared).run("task")
+    assert result.output == "handled by b"
+    assert _memory_log(shared) == [("user", "task"), ("assistant", "handled by b")]
+
+
+@pytest.mark.asyncio
+async def test_swarm_astream_handoff_records_the_original_request() -> None:
+    shared = AgentMemory()
+    async for _ in _two_agents(shared, shared).astream("task"):
+        pass
+    assert _memory_log(shared) == [("user", "task"), ("assistant", "handled by b")]
+
+
+def test_swarm_handoff_with_separate_memories() -> None:
+    """The agent that hands off records nothing; the one that answers records
+    the user's original request."""
+    a_mem, b_mem = AgentMemory(), AgentMemory()
+    _two_agents(a_mem, b_mem).run("task")
+    assert _memory_log(a_mem) == []
+    assert _memory_log(b_mem) == [("user", "task"), ("assistant", "handled by b")]
+
+
+def test_swarm_handoff_with_structured_output_records_one_turn() -> None:
+    """With ``output_type`` the hand-off reply is re-asked and no longer reads
+    ``__HANDOFF__`` — the hop is still recognised as handing off."""
+    from pydantic import BaseModel
+
+    class Answer(BaseModel):
+        text: str
+
+    shared = AgentMemory()
+    _two_agents(shared, shared, output_type=Answer).run("task")
+    assert _memory_log(shared) == [("user", "task"), ("assistant", '{"text": "handled by b"}')]

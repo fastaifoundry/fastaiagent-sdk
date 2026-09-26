@@ -466,3 +466,23 @@ async def test_pipeline_before_and_after_model_isolated(recording_middleware):
 
     assert rec_a["before_model"][0]["turn"] == 7
     assert rec_b["after_model"][0]["content"] == "hello"
+
+
+@pytest.mark.asyncio
+async def test_redact_pii_never_rewrites_stored_history():
+    """``before_model`` redacted the live message objects, and the memory
+    window hands out the stored ones — so turn 1 was rewritten in memory once
+    turn 2 ran. The model sees the redacted copy; memory keeps what was said."""
+    from fastaiagent import AgentMemory
+    from tests.conftest import MockLLMClient
+
+    memory = AgentMemory()
+    llm = MockLLMClient(responses=[LLMResponse(content="noted", finish_reason="stop")])
+    agent = Agent(name="pii", llm=llm, middleware=[RedactPII()], memory=memory)
+    await agent.arun("My email is alice@test.com", trace=False)
+    await agent.arun("What is my email?", trace=False)
+
+    assert memory.messages[0].content == "My email is alice@test.com"
+    for call in llm._calls:
+        sent = [m.content for m in call["messages"] if isinstance(m.content, str)]
+        assert all("alice@test.com" not in c for c in sent)

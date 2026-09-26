@@ -176,7 +176,7 @@ print(result.output)  # "Your name is Alice."
 ### How it works
 
 1. On each `run()` call, the agent prepends stored messages to the conversation.
-2. After the agent responds, the new user message and assistant response are added to memory.
+2. After the agent responds, the new user message and assistant response are added to memory. A resumed or forked run records the question it was resuming. Middleware such as `RedactPII` changes only what the model is sent, never what memory stores.
 3. If `max_messages` is reached, the oldest messages are dropped (FIFO).
 
 ### Persistence

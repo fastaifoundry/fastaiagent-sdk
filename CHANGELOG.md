@@ -41,6 +41,24 @@ The second memory-audit release. No wire change.
   docstring, tutorial step 4 and `examples/memory_backends` did this; all three
   now set `agent_id`.
 
+- **A resumed or forked run records the question it resumed.** `aresume` and
+  `afork` recorded the *first* user message of the saved prompt, which starts
+  with the memory window, so resuming "TURN-2" wrote "TURN-1" into memory
+  again. They now take the last user message. The structured-output re-ask
+  also no longer appends its correction prompt to the saved prompt, where a
+  resume would have taken it for the user's question.
+- ⚠ **A swarm run is recorded once, without hand-off artifacts.** A hand-off
+  wrote a fake `__HANDOFF__` reply and a fake "a handed off to you…" user
+  message into memory. Now the agent that hands off writes nothing, and the
+  agent that answers records the user's original request. With one shared
+  memory a run leaves exactly one user message and one answer; with separate
+  memories only the answering agent records it.
+- ⚠ **`RedactPII` no longer rewrites stored history.** It edited the message
+  objects it was handed in place, and those were the ones memory stores, so
+  turn 1 turned into `[REDACTED]` in memory once turn 2 ran. It now redacts
+  copies, and `AgentMemory.get_context` hands out copies. The model still sees
+  only redacted text.
+
 ### Added
 
 - `Memory(max_learned_facts=)`; `FactExtractionBlock(roles=, inject=,
@@ -55,6 +73,9 @@ The second memory-audit release. No wire change.
   don't appear under "Show superseded". Pass `max_learned_facts=None` to keep
   every fact.
 - `persist` / `update` with `tier="global"` and no `agent_id` warn.
+- Swarm memory no longer contains hand-off messages; each run is one turn.
+- With `RedactPII`, stored history keeps the raw text; the model still gets
+  the redacted copy. To keep PII out of memory, redact before the agent.
 
 ### Docs
 
@@ -62,6 +83,8 @@ The second memory-audit release. No wire change.
   tier, `FactExtractionBlock` `roles` / `inject` / `max_persisted`),
   `tutorials/memory-guide.md` (steps 2 and 4), the README tiers line, and
   `examples/memory_backends` (`agent_id`, and it now cleans up its global fact).
+- `agents/swarm.md` (memory across hand-offs), `agents/middleware.md`
+  (what `RedactPII` does and doesn't redact), `agents/memory.md` (write path).
 
 ## [1.80.0] - 2026-09-26 — one user's memory never reaches another
 

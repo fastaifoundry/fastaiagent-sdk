@@ -150,6 +150,21 @@ def _input_summary_text(parts: list[ContentPart]) -> str:
     return " ".join(pieces)
 
 
+def _resumed_input_text(messages: list[Message]) -> str:
+    """The input of the run a checkpointed prompt belongs to, as memory text.
+
+    That is the **last** user message: the prompt starts with the memory window
+    and any caller history, so earlier user messages are old turns, and neither
+    the tool loop nor a re-ask adds one to the saved prompt.
+    """
+    for m in reversed(messages):
+        if m.role.value == "user" and m.content:
+            if isinstance(m.content, str):
+                return m.content
+            return _input_summary_text(list(m.content))
+    return ""
+
+
 def _apply_input_rewrite(original: AgentInput, outcome: GuardrailOutcome) -> tuple[AgentInput, str]:
     """Substitute a masked/overridden input, or fail closed when we can't.
 
@@ -459,9 +474,14 @@ class Agent:
         again with the same ``response_format`` (no tools) up to
         ``config.output_retries`` times. Returns
         ``(final_output, parsed_or_None, extra_tokens)``.
+
+        Works on a copy: the caller's list is the prompt the loop-end checkpoint
+        saves, and a resume reads the run's input from its last user message —
+        which must not be this correction prompt.
         """
         from fastaiagent.llm.message import AssistantMessage
 
+        messages = list(messages)
         output = bad_output
         reason: str | None = error
         parsed: Any | None = None
@@ -1462,19 +1482,10 @@ class Agent:
         start_iteration = int(latest.state_snapshot.get("turn", 0))
         is_tool_boundary = "/tool:" in latest.node_id
 
-        # Original input from the first user message — re-passed only so
-        # ``_arun_core`` can record it in memory at the end of the run.
-        # Multimodal resumes: the first user message may be a list, in which
-        # case the saved messages already carry the multimodal content. We
-        # only need a text summary here for memory.add() at the end.
-        original_input: str = ""
-        for m in messages:
-            if m.role.value == "user" and m.content:
-                if isinstance(m.content, str):
-                    original_input = m.content
-                else:
-                    original_input = _input_summary_text(list(m.content))
-                break
+        # The resumed run's input — re-passed only so ``_arun_core`` can record
+        # it in memory at the end of the run. The saved messages already carry
+        # any multimodal content; memory only needs the text.
+        original_input = _resumed_input_text(messages)
 
         if not is_tool_boundary:
             # Pure turn-boundary resume — re-issue LLM at this iteration.
@@ -1750,15 +1761,7 @@ class Agent:
 
         messages = balance_tool_messages(messages, note=FORK_SKIPPED_NOTE)
         start_iteration = int(base.state_snapshot.get("turn", 0))
-        original_input = ""
-        for m in messages:
-            if m.role.value == "user" and m.content:
-                original_input = (
-                    m.content
-                    if isinstance(m.content, str)
-                    else _input_summary_text(list(m.content))
-                )
-                break
+        original_input = _resumed_input_text(messages)
         return await self._arun_core(
             original_input,
             context=context,
