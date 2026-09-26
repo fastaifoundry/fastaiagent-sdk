@@ -169,7 +169,14 @@ def test_different_agents_are_not_serialized(connected: _Recorder) -> None:
 
     Holding ``_lock`` across the POST would also have fixed the duplicate, at
     the cost of serializing every unrelated push behind the slowest request.
+
+    The plane holds each POST for 0.5 s (the fixture's 0.25 s left 0.2 s of
+    slack under the bound, and Windows CI runners spend ~0.6 s starting four
+    threads and connecting — 0.94 s and 0.86 s on PR #175). Serial would take
+    2.0 s, the bound is 1.6 s, and overlap costs ~0.5 s plus overhead, so a
+    real serialization still fails by a wide margin.
     """
+    connected.delay = 0.5
     agents = [_agent(f"parallel-{i}") for i in range(4)]
     barrier = threading.Barrier(len(agents))
 
