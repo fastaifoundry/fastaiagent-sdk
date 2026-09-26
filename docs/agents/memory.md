@@ -37,7 +37,8 @@ The whole surface is keywords on one object:
 | `agent_id` | global tier: facts true for everyone using the agent |
 | `project_id` | tenant partition applied across tiers |
 | `window` | recent messages kept (session/working memory) |
-| `learn` | an LLM → extract + persist durable user facts each turn |
+| `learn` | an LLM → extract + persist durable facts from each user message (never from the model's replies) |
+| `max_learned_facts` | keep the newest N learned facts per user, deleting older ones (default `200`; `None` = no cap). Facts you `persist` yourself are never touched |
 | `summarize` | an LLM → compress older turns into a running summary |
 | `recall` | `"auto"` (an in-process FAISS index per user) or a `VectorStore` shared by every user, each user's recall namespaced → semantic recall of past exchanges |
 | `dedupe` | drop recalled content an earlier tier already injected |
@@ -53,13 +54,15 @@ The whole surface is keywords on one object:
 ### Direct store use
 
 ```python
-mem = Memory(location="sqlite")
+mem = Memory(location="sqlite", agent_id="support")
 mem.persist("Return policy is 30 days", tier="global")   # create; returns fact id
 mem.persist("Prefers email", tier="user", id="alice")
 mem.retrieve(tier="user", id="alice")                    # read → list[Fact]
 mem.update("Prefers Slack", old="Prefers email", tier="user", id="alice")  # supersede old, keep history
 mem.forget(tier="user", id="alice")                      # delete; returns count
 ```
+
+A global fact is filed under the `Memory`'s `agent_id`, and only a `Memory(agent_id=...)` with the same id injects it. `persist`/`update` with `tier="global"` and no `agent_id` warn: that fact would never be injected.
 
 `forget` refuses to mass-delete by accident. `forget(tier="user")` needs an `id`, and `forget(tier="global")` needs `agent_id=` on the `Memory` (or an `id`) — without one, an empty id would match every agent's global facts. Pass `id="*"` to delete every subject on purpose.
 
@@ -389,11 +392,15 @@ Uses a cheap LLM to extract durable facts from each user/assistant message and s
 
 ```python
 FactExtractionBlock(
-    llm=llm,            # use a fast model (gpt-4o-mini, claude-haiku)
-    max_facts=200,      # cap; oldest drop on overflow
-    extract_every=1,    # run extraction every N messages
+    llm=llm,                      # use a fast model (gpt-4o-mini, claude-haiku)
+    max_facts=200,                # cap; oldest drop on overflow
+    extract_every=1,              # run extraction every N inspected messages
+    roles=("user", "assistant"),  # which messages to read; ("user",) skips the model's own claims
+    inject=True,                  # False = extract (and persist) without rendering
 )
 ```
+
+`roles=("user",)` keeps the model's replies from being recorded as facts about the user, and halves the extraction calls. Set `inject=False` when a `PersistentFactBlock` already reads the same store, so each fact reaches the prompt once — `Memory(learn=)` does both.
 
 **When to use**: user-focused assistants where you want stable facts ("user is allergic to peanuts", "user's kids are named Maya and Omar") to persist independently from the conversation log.
 
@@ -408,8 +415,11 @@ FactExtractionBlock(
     scope="user",           # 'user' | 'project' | 'agent'
     scope_id="upendra",     # REQUIRED when persist=True
     confidence=0.6,         # stamped on auto-facts; below curated 1.0 so they sort lower
+    max_persisted=200,      # keep the newest N learned facts per subject; None = no cap
 )
 ```
+
+`max_persisted` deletes the oldest learned facts beyond the cap after each write. Only facts learned from a run (those with a `source_trace_id`) count and are deleted; facts written directly are never touched. Deleted facts are gone, not superseded.
 
 Each persisted fact is stamped with the **current trace id** as `source_trace_id`, so the [Memory page](#the-memory-page) shows a clickable link back to the run that produced it. Writes are idempotent (the store's uniqueness constraint dedupes) and failure-isolated (a store error logs and the run continues). Because it now writes an external store mid-run, `isolated_copy()` raises `MemoryIsolationError` when `persist=True` — the same guard as `VectorBlock` — so `fastaiagent.optimize` candidates don't bleed writes.
 

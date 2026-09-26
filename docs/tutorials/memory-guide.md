@@ -39,7 +39,8 @@ agent.run("What's my name?")          # → "Alice" (the session window remember
 ## Step 2 — Personalize per user (multi-user safe)
 
 Pass a `user_id` **resolver** — one agent definition serves every user, resolved
-per run from `RunContext`. Add `learn=llm` to extract and persist durable facts.
+per run from `RunContext`. Add `learn=llm` to extract and persist durable facts
+from each user message (the newest 200 per user are kept; `max_learned_facts=`).
 
 ```python
 from dataclasses import dataclass
@@ -93,12 +94,15 @@ the new one. `forget` hard-deletes, including superseded history for that subjec
 ## Step 4 — Global vs user facts
 
 ```python
+mem = Memory(location="sqlite", agent_id="support")
 mem.persist("Support replies within 24 hours.", tier="global")   # everyone sees it
 mem.persist("Alice is on the Pro plan.", tier="user", id="alice")# only Alice
 ```
 
 Attach a `Memory(agent_id="support", user_id=..., learn=llm)` and both tiers are
-injected each turn — global always, user only for the resolved user.
+injected each turn — global always, user only for the resolved user. The
+`agent_id` must match: a global fact persisted without one is filed under no
+agent, is never injected, and warns.
 
 ## Step 5 — Retrieve by meaning (semantic)
 

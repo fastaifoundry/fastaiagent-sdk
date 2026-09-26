@@ -14,7 +14,7 @@ pip install fastaiagent
 
 Runs fully standalone, or connect to the [FastAIAgent Platform](https://fastaiagent.net) for hosted observability, prompt management, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.80.0)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.81.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -760,7 +760,7 @@ agent.run("What's my plan?", context=RunContext(state=session))
 ```
 
 - **Multi-user safe** — `user_id` routes to a per-user working memory, isolating both durable facts *and* the live window (no cross-session bleed), for `run`, `arun` and `astream` alike. A run whose user can't be resolved gets no conversation memory — global facts only — so anonymous callers never share a window.
-- **Tiers** — `Memory.persist("...", tier="global")` for shared truth; `tier="user", id=...` for personalization; the conversation window is the session tier.
+- **Tiers** — `Memory(agent_id="support").persist("...", tier="global")` for shared truth; `tier="user", id=...` for personalization; the conversation window is the session tier. `learn=` reads the user's messages only and keeps the newest 200 learned facts per user.
 - **Pluggable + semantic** — `Memory(location="postgres://…" | "redis://…")` for external backends; `Memory(semantic="auto")` enables `retrieve("query", tier=, id=)` by meaning.
 - **Observable** — every read/write and persist/retrieve is a trace span (scores included), browsable in the Local UI's Memory page.
 

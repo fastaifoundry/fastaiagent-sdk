@@ -87,3 +87,21 @@ def test_semantic_search_skips_superseded(db):
     facts = [f.fact for f, _ in hits]
     assert "peanut fact v2" in facts
     assert "peanut fact v1" not in facts
+
+
+def test_forget_leaves_the_other_facts_findable(db):
+    """After any ``forget`` the semantic index went empty while its chunk list
+    stayed, so every later lookup read the wrong fact."""
+    from fastaiagent import Memory
+
+    index = FaissVectorStore(dimension=len(_VOCAB), index_type="flat")
+    mem = Memory(location=MemoryStore(db_path=str(db)), semantic=index, embedder=_KeywordEmbedder())
+    mem.persist("The user is allergic to peanuts", tier="user", id="alice")
+    mem.persist("Bob works with data pipelines", tier="user", id="bob")
+    mem.forget(tier="user", id="bob")
+
+    top = mem.retrieve("any peanut concerns?", tier="user", id="alice", limit=1)
+    assert [f.fact for f in top] == ["The user is allergic to peanuts"]
+    mem.persist("The user enjoys mountain biking", tier="user", id="alice")
+    top = mem.retrieve("weekend biking plans", tier="user", id="alice", limit=1)
+    assert [f.fact for f in top] == ["The user enjoys mountain biking"]

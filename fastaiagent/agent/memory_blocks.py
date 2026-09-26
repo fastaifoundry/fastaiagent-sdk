@@ -821,14 +821,21 @@ class FactExtractionBlock(MemoryBlock):
     """Use a structured-output LLM call to extract facts from each turn and
     persist them as a deduplicated list. Rendered as a bullet list.
 
-    Only user and assistant messages are inspected; tool messages are skipped.
-    Facts are short, self-contained statements about the user or world state.
+    Only the ``roles`` you choose are inspected (user and assistant by default);
+    tool messages are always skipped. Facts are short, self-contained
+    statements about the user or world state.
 
     Args:
         llm: LLM client for fact extraction. Use a cheap fast model
             (e.g. ``gpt-4o-mini``, ``claude-haiku-4-5``).
         max_facts: Cap the running fact list; oldest facts drop when exceeded.
-        extract_every: Run extraction every N messages (1 = every message).
+        extract_every: Run extraction every N inspected messages (1 = every one).
+        roles: Which messages to extract from — ``"user"`` and/or
+            ``"assistant"``. ``("user",)`` keeps the model's own claims from
+            being recorded as facts about the user, and halves the LLM calls.
+        inject: Render the extracted facts into the prompt. Set ``False`` when
+            a :class:`PersistentFactBlock` already reads the same store, so each
+            fact appears once.
         persist: When ``True``, newly extracted facts are also written to the
             durable ``learned_memory`` table during the run — so they survive
             across runs and can be read back by :class:`PersistentFactBlock`.
@@ -844,6 +851,10 @@ class FactExtractionBlock(MemoryBlock):
             are visibly distinguishable from human-approved ones.
         store: dependency injection for tests; defaults to a
             :class:`fastaiagent.learn.MemoryStore` against the configured local.db.
+        max_persisted: With ``persist=True``, keep at most this many learned
+            facts per subject in the store, deleting the oldest. Only facts
+            learned from a run (those with a ``source_trace_id``) count and are
+            deleted; facts written directly are never touched. ``None`` = no cap.
     """
 
     name = "facts"
@@ -859,11 +870,18 @@ class FactExtractionBlock(MemoryBlock):
         project_id: str = "",
         confidence: float = 0.6,
         store: object | None = None,
+        roles: tuple[str, ...] = ("user", "assistant"),
+        inject: bool = True,
+        max_persisted: int | None = None,
     ):
         if max_facts < 1:
             raise ValueError("max_facts must be >= 1")
         if extract_every < 1:
             raise ValueError("extract_every must be >= 1")
+        if not roles or not set(roles) <= {"user", "assistant"}:
+            raise ValueError(f"roles must be 'user' and/or 'assistant', got {roles!r}")
+        if max_persisted is not None and max_persisted < 1:
+            raise ValueError("max_persisted must be >= 1 (or None for no cap)")
         if persist:
             if scope not in ("user", "project", "agent"):
                 raise ValueError(f"scope must be one of user|project|agent, got {scope!r}")
@@ -881,6 +899,10 @@ class FactExtractionBlock(MemoryBlock):
         self.scope_id = scope_id
         self.project_id = project_id
         self.confidence = confidence
+        self.roles = tuple(roles)
+        self._roles = {MessageRole(r) for r in roles}
+        self.inject = inject
+        self.max_persisted = max_persisted
         self._store = store  # may be None — lazy init in _persist_facts
         self._messages_seen = 0
         self._facts: list[str] = []
@@ -899,12 +921,16 @@ class FactExtractionBlock(MemoryBlock):
             )
         # Share the llm handle; reset extracted-facts state per candidate.
         return FactExtractionBlock(
-            llm=self.llm, max_facts=self.max_facts, extract_every=self.extract_every
+            llm=self.llm,
+            max_facts=self.max_facts,
+            extract_every=self.extract_every,
+            roles=self.roles,
+            inject=self.inject,
         )
 
     def on_message(self, message: Message) -> None:
         self._last_write = BlockWriteReport(self.name, type(self).__name__, action="noop")
-        if message.role not in (MessageRole.user, MessageRole.assistant):
+        if message.role not in self._roles:
             return
         content = (message.content or "").strip()
         if not content:
@@ -927,6 +953,9 @@ class FactExtractionBlock(MemoryBlock):
         }
         if self.persist and added_facts:
             detail["persisted"] = self._persist_facts(added_facts)
+            pruned = self._prune()
+            if pruned:
+                detail["pruned"] = pruned
         self._last_write = BlockWriteReport(
             self.name,
             type(self).__name__,
@@ -934,7 +963,7 @@ class FactExtractionBlock(MemoryBlock):
             detail=detail,
         )
 
-    def _resolve_store(self):
+    def _resolve_store(self) -> Any:
         if self._store is None:
             from fastaiagent.learn.store import MemoryStore
 
@@ -989,11 +1018,39 @@ class FactExtractionBlock(MemoryBlock):
             _log.warning("FactExtractionBlock persist failed: %s", err)
         return written
 
+    def _prune(self) -> int:
+        """Delete the oldest learned facts beyond ``max_persisted``. Returns how
+        many were deleted. Never raises, like the write it follows.
+
+        Learned facts carry the ``source_trace_id`` of the run that produced
+        them; facts written directly (``Memory.persist``) have none and are
+        never counted or deleted.
+        """
+        if self.max_persisted is None:
+            return 0
+        scope_id = _resolve_scope_id(self.scope_id)
+        if not scope_id:
+            return 0
+        try:
+            store = self._resolve_store()
+            facts = store.list_active(
+                scope=self.scope, scope_id=scope_id, project_id=self.project_id
+            )  # newest first
+            excess = [f for f in facts if f.source_trace_id][self.max_persisted :]
+            for f in excess:
+                store.delete(
+                    scope=self.scope, scope_id=scope_id, project_id=self.project_id, fact=f.fact
+                )
+        except Exception as err:
+            _log.warning("FactExtractionBlock prune failed: %s", err)
+            return 0
+        return len(excess)
+
     def last_write_report(self) -> BlockWriteReport | None:
         return self._last_write
 
     def last_render_report(self) -> BlockRenderReport | None:
-        if not self._facts:
+        if not self._facts or not self.inject:
             return BlockRenderReport(self.name, type(self).__name__, rendered_count=0)
         return BlockRenderReport(
             self.name,
@@ -1035,7 +1092,7 @@ class FactExtractionBlock(MemoryBlock):
         return [str(item).strip() for item in data if item and isinstance(item, str)]
 
     def render(self, query: str) -> list[Message]:
-        if not self._facts:
+        if not self._facts or not self.inject:
             return []
         bullets = "\n".join(f"- {f}" for f in self._facts)
         return [SystemMessage(f"Known facts:\n{bullets}")]

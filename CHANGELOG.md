@@ -5,6 +5,64 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.81.0] - 2026-09-27 — `learn=` stores clean user facts, once
+
+The second memory-audit release. No wire change.
+
+### Fixed
+
+- ⚠ **`learn=` reads the user's messages, not the model's replies.**
+  `Memory(learn=llm)` also extracted "facts" from the assistant's answers, so
+  the model's own claims were stored as facts about the user — "Biscuit is
+  allergic to cats", "The MAAT museum showcases modern design". It now reads
+  user messages only, which also halves the extraction LLM calls.
+  `FactExtractionBlock` gains `roles=`; its default (both roles) is unchanged.
+- ⚠ **Each learned fact reaches the prompt once.** `Memory(learn=)` injected
+  the same facts twice: as "Known facts" from the extraction block and as
+  "Learned facts (user:…)" read back from the store. `FactExtractionBlock`
+  gains `inject=`; `Memory` turns it off, since the store read covers it.
+- ⚠ **A user's learned facts are capped.** `learn=` can persist up to 10 facts
+  per message, and nothing limited how many a user accumulated.
+  - `Memory(max_learned_facts=200)` keeps the newest 200 learned facts per user
+    and deletes older ones after each write; `None` turns the cap off.
+  - Only facts learned from a run (those with a `source_trace_id`) are counted
+    or deleted. Facts you `persist` yourself are never touched.
+  - `FactExtractionBlock` gains `max_persisted=` (default: no cap); a write span
+    reports `pruned` when the cap deletes.
+- **Deleting from a FAISS index no longer corrupts it.**
+  `FaissVectorStore.delete` kept the surviving chunks but emptied the index,
+  so every later search mapped positions onto the wrong chunks: after one
+  `forget`, `semantic=` retrieval returned the wrong fact. It now rebuilds from
+  the survivors' stored vectors (flat, HNSW and IVF). A rejected `add` (e.g. a
+  wrong dimension) no longer leaves a chunk with no vector.
+- **A global fact filed under no agent now warns.** `persist` / `update` with
+  `tier="global"` on a `Memory` without `agent_id` stored the fact under an
+  empty agent id, which no `Memory(agent_id=...)` ever injects. Our own
+  docstring, tutorial step 4 and `examples/memory_backends` did this; all three
+  now set `agent_id`.
+
+### Added
+
+- `Memory(max_learned_facts=)`; `FactExtractionBlock(roles=, inject=,
+  max_persisted=)`; `FaissIndex.vectors()`.
+
+### Behaviour changes
+
+- `Memory(learn=)` no longer extracts from assistant replies.
+- `Memory(learn=)` no longer renders the "Known facts" block; the same facts
+  arrive as "Learned facts (user:…)".
+- Learned facts beyond 200 per user are **deleted**, not superseded, so they
+  don't appear under "Show superseded". Pass `max_learned_facts=None` to keep
+  every fact.
+- `persist` / `update` with `tier="global"` and no `agent_id` warn.
+
+### Docs
+
+- `agents/memory.md` (the `learn` and `max_learned_facts` rows, the global
+  tier, `FactExtractionBlock` `roles` / `inject` / `max_persisted`),
+  `tutorials/memory-guide.md` (steps 2 and 4), the README tiers line, and
+  `examples/memory_backends` (`agent_id`, and it now cleans up its global fact).
+
 ## [1.80.0] - 2026-09-26 — one user's memory never reaches another
 
 The first of the memory-audit releases. No wire change: no payload gains a key.
