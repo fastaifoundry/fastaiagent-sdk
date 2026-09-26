@@ -70,11 +70,13 @@ results = run_extraction(
     store=MemoryStore(),
     scope="agent",
     scope_id="my-agent",
+    agent_name="my-agent",   # only traces in which my-agent ran
     last_hours=24,
 )
+new = sum(len(r.new_ids) for r in results)   # facts inserted by this run
 ```
 
-This is what the `fastaiagent learn` CLI calls under the hood.
+This is what the `fastaiagent learn` CLI calls under the hood. It reads traces newest first, only within the window, skips its own `learn.extract` calls and anything already mined for this scope and id (`reprocess=True` to mine them again), and stops at `max_traces` (default 100). `written_ids` lists every stored candidate; `new_ids` only the rows this run inserted.
 
 ### 4. `PersistentFactBlock` — the re-injection
 
@@ -90,7 +92,7 @@ memory = fa.ComposableMemory(
 agent = fa.Agent(name="my-agent", system_prompt="…", llm=llm, memory=memory)
 ```
 
-Every `agent.arun(...)` now sees a `Learned facts (agent:my-agent):` block prepended to the system prompt with the active facts (newest first, capped at `max_facts`). The block is read-only at runtime — facts only update via `fastaiagent learn`.
+Every `agent.arun(...)` now sees a `Learned facts (agent:my-agent):` system message right after the system prompt, with the active facts (newest first, capped at `max_facts`). The block is read-only at runtime; the facts it reads come from any of the producers above.
 
 ## Conflict resolution
 
@@ -99,7 +101,7 @@ Same fact text → idempotent insert (the UNIQUE constraint deduplicates).
 Semantically conflicting facts (e.g. "prefers terse" vs "prefers verbose") are not auto-detected by v1. Two paths:
 
 1. **Manual via CLI.** Inspect `fastaiagent learn list`, then `fastaiagent learn supersede <old_id> <new_id>`.
-2. **Automatic via re-extraction.** Re-running the loop produces newer rows; downstream consumers can prefer recency by ordering on `created_at DESC` (which `list_active` does).
+2. **Automatic via re-extraction.** New traces produce newer rows; downstream consumers can prefer recency by ordering on `created_at DESC` (which `list_active` does). Re-running the loop does not re-read traces it already mined.
 
 A fully automatic semantic-dedup pass (LLM judge per scope_id batch) is tracked in the future-work backlog.
 
@@ -140,5 +142,5 @@ sqlite3 .fastaiagent/local.db \
 
 - **Skill extraction** — reusable mini-procedures. Needs a different storage model + replay-eval to verify a skill before re-injecting.
 - **Prompt/harness mutation** — Harrison's Meta-Harness pattern. Requires an automated quality gate before a coding agent's prompt rewrites can ship.
-- **Online learning** — agents updating their own context mid-run. Out of scope; the SDK's UI is refresh-based by design.
+- **Online learning** — covered by `Memory(learn=llm)` / `FactExtractionBlock(persist=True)`, which write facts during a run; this page is the offline batch path.
 - **Cron triggers** — `fastaiagent learn` runs on demand. Schedule it however you want.

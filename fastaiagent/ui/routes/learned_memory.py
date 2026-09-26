@@ -52,11 +52,13 @@ def list_learned_memory(
     db = ctx.db()
     pid_clause, pid_params = project_filter(ctx)
 
+    # ``project_filter`` returns "AND project_id = ?" for appending; the list
+    # below is joined with " AND ", so take the condition without its "AND".
     where = ["1=1"]
     params: list = []
-
-    where.append(pid_clause if pid_clause else "1=1")
-    params.extend(pid_params)
+    if pid_clause:
+        where.append(pid_clause.strip().removeprefix("AND").strip())
+        params.extend(pid_params)
 
     if not include_superseded:
         where.append("superseded_by IS NULL")
@@ -121,7 +123,7 @@ def list_scopes(
     pid_clause, pid_params = project_filter(ctx)
     sql = (
         "SELECT scope, scope_id, COUNT(*) AS n FROM learned_memory "
-        f"WHERE superseded_by IS NULL {('AND ' + pid_clause) if pid_clause else ''} "
+        f"WHERE superseded_by IS NULL {pid_clause} "
         "GROUP BY scope, scope_id ORDER BY n DESC"
     )
     try:

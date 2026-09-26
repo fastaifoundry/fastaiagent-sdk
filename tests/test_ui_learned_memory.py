@@ -153,3 +153,24 @@ def test_redact_param_masks_facts_with_read_policy(client: TestClient) -> None:
         assert "prefers terse answers" not in facts
     finally:
         set_redaction_policy(None)
+
+
+def test_a_project_scoped_app_lists_its_project_only(tmp_path: Path, monkeypatch) -> None:
+    """With a project set, both routes built ``WHERE 1=1 AND AND project_id = ?``
+    and answered HTTP 500."""
+    from fastaiagent._internal.config import reset_config
+
+    db_path = tmp_path / "local.db"
+    monkeypatch.setenv("FASTAIAGENT_LOCAL_DB", str(db_path))
+    reset_config()
+    store = MemoryStore(db_path=str(db_path))
+    store.add(Fact(scope="agent", scope_id="alpha", fact="in project A", project_id="proj-A"))
+    store.add(Fact(scope="agent", scope_id="alpha", fact="in project B", project_id="proj-B"))
+
+    client = TestClient(build_app(db_path=str(db_path), no_auth=True, project_id="proj-A"))
+    r = client.get("/api/learned_memory")
+    assert r.status_code == 200
+    assert {row["fact"] for row in r.json()["rows"]} == {"in project A"}
+    s = client.get("/api/learned_memory/scopes")
+    assert s.status_code == 200
+    assert s.json()["scopes"] == [{"scope": "agent", "scope_id": "alpha", "n": 1}]

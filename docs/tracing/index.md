@@ -100,10 +100,15 @@ from fastaiagent.trace import TraceStore
 
 store = TraceStore()
 
-# List recent traces
+# List recent traces, newest first
 traces = store.list_traces(last_hours=24)
 for t in traces:
     print(f"{t.trace_id[:12]}  {t.name}  spans={t.span_count}  {t.start_time}")
+
+# Narrow it down
+store.list_traces(last_hours=None, limit=500)          # all time, up to 500
+store.list_traces(name_filter="chain.sales-sdr")       # trace name starts with…
+store.list_traces(agent_name="support-bot")            # traces this agent ran in
 
 # Get a specific trace with all spans
 trace = store.get_trace("abc123def456...")
@@ -121,6 +126,12 @@ results = store.search("support-bot")
 # Export as JSON
 json_str = store.export("abc123def456...", format="json")
 ```
+
+`list_traces()` returns traces that **started within `last_hours`** (default
+24; `None` for all time), newest first, at most `limit` (default 100).
+`agent_name` matches an agent anywhere in the trace — the root, or a child span
+inside a swarm, chain or supervisor. Until 1.81.0 every argument was ignored and
+the call returned the newest 100 traces of all time.
 
 ### Tailing spans as they land
 
@@ -553,7 +564,7 @@ kept in local SQLite. See
 
 ```python
 trace_store = TraceStore()
-traces = trace_store.list_traces(limit=100)
+traces = trace_store.list_traces(last_hours=None, limit=100)  # all time
 for t_summary in traces:
     trace_data = trace_store.get_trace(t_summary.trace_id)
     trace_data.publish()  # sends to platform

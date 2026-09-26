@@ -59,10 +59,47 @@ The second memory-audit release. No wire change.
   copies, and `AgentMemory.get_context` hands out copies. The model still sees
   only redacted text.
 
+- ⚠ **The learning loop mines only the traces you point it at.**
+  `fastaiagent learn` / `run_extraction` read the newest 100 traces of every
+  agent and every date — `--window` was ignored — and filed all their facts
+  under the one `--scope-id`. It then re-mined its own extraction calls on the
+  next run, and counted re-found facts as "written". Now:
+  - `--window` / `last_hours` is honoured;
+  - `--agent` / `agent_name=` keeps only traces in which that agent ran, at
+    the root or inside a swarm, chain or supervisor;
+  - extraction calls run under a `learn.extract` root span
+    (`fastaiagent.source="learn"`) and are never mined;
+  - each mined trace is recorded (new local table `learn_extractions`,
+    schema v23), so a re-run reads only new traces and doesn't re-bill ones
+    that yielded nothing. `--reprocess` mines them again; a failed extraction
+    is not recorded, so it is retried;
+  - `--max-traces` (default 100) caps a run;
+  - the summary reports **new** facts separately from already-known ones
+    (`ExtractionResult.new_ids`).
+- ⚠ **`--scope user` / `--scope project` can no longer file everyone's traces
+  under one id by accident.** Traces carry no user id, so every trace read is
+  attributed to `--scope-id`. Both scopes now need a non-empty `--scope-id`,
+  `--agent`, and `--attribute-all` to confirm the traces are all that
+  subject's (plus `--allow-personal`, as before).
+- ⚠ **`TraceStore.list_traces` honours its arguments.** It ignored
+  `last_hours` and every filter and returned the newest 100 traces of all
+  time. It now applies `last_hours` (default 24; `None` = all time), `limit`
+  (default 100; `None` = no limit), `name_filter` (trace-name prefix) and the
+  new `agent_name`, and warns on unknown filters. `fastaiagent traces list
+  --last-hours` now does what its help says.
+- **The UI Memory page works when a project is set.** Both
+  `/api/learned_memory` routes built `WHERE 1=1 AND AND project_id = ?` and
+  answered HTTP 500 for an app built with a `project_id`.
+
 ### Added
 
 - `Memory(max_learned_facts=)`; `FactExtractionBlock(roles=, inject=,
   max_persisted=)`; `FaissIndex.vectors()`.
+- `run_extraction(agent_name=, max_traces=, reprocess=)`,
+  `ExtractionResult.new_ids`, `MemoryStore.add_with_status()` /
+  `extracted_trace_ids()` / `mark_extracted()`; `TraceStore.list_traces(limit=,
+  name_filter=, agent_name=)`; CLI `fastaiagent learn --agent --max-traces
+  --reprocess --attribute-all`.
 
 ### Behaviour changes
 
@@ -74,6 +111,13 @@ The second memory-audit release. No wire change.
   every fact.
 - `persist` / `update` with `tier="global"` and no `agent_id` warn.
 - Swarm memory no longer contains hand-off messages; each run is one turn.
+- `list_traces()` with no arguments returns the last 24 hours, not the newest
+  100 of all time; pass `last_hours=None` for the old reach.
+  `fastaiagent traces list` changes the same way.
+- `fastaiagent learn` skips traces it already mined for the same scope and
+  id; `--reprocess` restores the old behaviour. `--scope user|project` needs
+  `--scope-id`, `--agent` and `--attribute-all`.
+- local.db migrates to schema v23 (adds `learn_extractions`; additive).
 - With `RedactPII`, stored history keeps the raw text; the model still gets
   the redacted copy. To keep PII out of memory, redact before the agent.
 
@@ -85,6 +129,9 @@ The second memory-audit release. No wire change.
   `examples/memory_backends` (`agent_id`, and it now cleans up its global fact).
 - `agents/swarm.md` (memory across hand-offs), `agents/middleware.md`
   (what `RedactPII` does and doesn't redact), `agents/memory.md` (write path).
+- `cli/learn.md`, `learning/memory-loop.md`, `tracing/index.md`, and the
+  `learning-loop` / `self-improving-research` examples (`agent_name`, new vs
+  known counts).
 
 ## [1.80.0] - 2026-09-26 — one user's memory never reaches another
 
