@@ -97,6 +97,7 @@ nav:
           - Tools: agents/tools.md
           - "Dynamic Instructions": agents/dynamic-instructions.md
           - "How memory works": agents/memory-concepts.md
+          - "Memory at its boundaries": agents/memory-boundaries.md
           - Memory: agents/memory.md
           - Middleware: agents/middleware.md
           - "Multi-Agent Teams": agents/teams.md
