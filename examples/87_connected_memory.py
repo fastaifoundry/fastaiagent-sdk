@@ -132,15 +132,18 @@ def _seed_fact_via_admin(base: str) -> str | None:
         if _SEED_FACT in facts:
             print("already seeded for agent ws3-mem-demo")
         else:
-            _checked(
-                http.post(
-                    f"{base}/api/v1/agents/{agent_id}/memories",
-                    headers=jwt,
-                    json={"content": _SEED_FACT, "category": "preferences", "importance": 0.9},
-                ),
-                "fact seed",
+            seeded = http.post(
+                f"{base}/api/v1/agents/{agent_id}/memories",
+                headers=jwt,
+                json={"content": _SEED_FACT, "category": "preferences", "importance": 0.9},
             )
-            print("seeded approved fact for agent ws3-mem-demo")
+            # A plane that refuses copies answers 409 duplicate_fact when the fact
+            # is already there (e.g. beyond the read's limit): already seeded.
+            if seeded.status_code == 409 and "duplicate_fact" in seeded.text:
+                print("already seeded for agent ws3-mem-demo")
+            else:
+                _checked(seeded, "fact seed")
+                print("seeded approved fact for agent ws3-mem-demo")
     finally:
         if key_id:
             http.delete(f"{base}/api/v1/api-keys/{key_id}", headers=jwt)  # stay under the key cap

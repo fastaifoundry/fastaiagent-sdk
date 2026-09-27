@@ -37,6 +37,7 @@ class _Plane(BaseHTTPRequestHandler):
     facts: list[dict[str, str]] = _DEFAULT_FACTS
 
     drop = False  # close the connection without a response: a transport failure
+    headers: dict[str, str] = {}
 
     def do_GET(self):  # noqa: N802
         if type(self).drop:
@@ -46,6 +47,8 @@ class _Plane(BaseHTTPRequestHandler):
         body = json.dumps({"facts": type(self).facts}).encode()
         self.send_response(type(self).status)
         self.send_header("Content-Type", "application/json")
+        for name, value in type(self).headers.items():
+            self.send_header(name, value)
         self.end_headers()
         self.wfile.write(body)
 
@@ -56,6 +59,7 @@ class _Plane(BaseHTTPRequestHandler):
 @pytest.fixture
 def plane():
     _Plane.status, _Plane.requests, _Plane.facts, _Plane.drop = 200, [], _DEFAULT_FACTS, False
+    _Plane.headers = {}
     server = ThreadingHTTPServer(("127.0.0.1", 0), _Plane)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     saved = (_connection.api_key, _connection.target)
@@ -237,3 +241,65 @@ def test_a_per_user_memory_includes_plane_facts(plane):
     agent.run("no user")  # an unresolved caller still gets the agent's plane facts
     assert "Refunds need a ticket id" in prompt()
     assert plane.requests[0]["agent_id"] == ["support"]
+
+
+# --- 1.83.0: a plane behind a proxy answers 502 when it is down ----------------
+
+
+@pytest.mark.parametrize("status", [502, 503, 504, 429])
+def test_a_proxy_error_is_an_outage_not_an_empty_plane(plane, caplog, status):
+    """Behind Caddy/nginx a down plane is an HTTP 502, not a refused connection.
+    The SDK read on every turn, dropped the facts it had, and warned per user."""
+    alice = PlaneFactBlock(f"proxied-{status}")
+    bob = PlaneFactBlock(f"proxied-{status}")
+    assert alice.render("first question") and bob.render("first question")  # plane up
+    plane.status = status  # the backend goes down behind the proxy
+    before = len(plane.requests)
+    with caplog.at_level(logging.WARNING, logger="fastaiagent.agent.memory_blocks"):
+        out_a = alice.render("second question")
+        out_b = bob.render("second question")
+        out_a2 = alice.render("third question")
+    assert len(plane.requests) - before == 1  # one read, then the pause holds for both
+    for out in (out_a, out_b, out_a2):
+        assert out and "Refunds need a ticket id" in out[0].content  # facts kept
+    warnings = [r for r in caplog.records if "PlaneFactBlock" in r.getMessage()]
+    assert len(warnings) == 1
+
+
+def test_retry_after_sets_the_pause(plane):
+    import time
+
+    block = PlaneFactBlock("retry-after-agent")
+    assert block.render("up")
+    plane.status, plane.headers = 503, {"Retry-After": "1"}
+    block.render("down")  # 30 s by default; the plane asks for 1 s
+    before = len(plane.requests)
+    block.render("still paused")
+    assert len(plane.requests) == before
+    time.sleep(1.1)
+    plane.status, plane.headers = 200, {}
+    assert block.render("after retry-after")
+    assert len(plane.requests) == before + 1
+
+
+def test_retry_after_is_read_as_seconds_or_a_date_and_capped():
+    from datetime import datetime, timedelta, timezone
+    from email.utils import format_datetime
+
+    from fastaiagent.agent.memory_blocks import _retry_after_seconds
+
+    assert _retry_after_seconds("7") == 7.0
+    soon = format_datetime(datetime.now(timezone.utc) + timedelta(seconds=90), usegmt=True)
+    assert 80 <= (_retry_after_seconds(soon) or 0) <= 91
+    assert _retry_after_seconds("86400") == 600.0  # capped at 10 minutes
+    assert _retry_after_seconds("soon") is None and _retry_after_seconds(None) is None
+
+
+def test_an_http_error_is_logged_once_per_agent_not_once_per_user(plane, caplog):
+    """ "Logged once per status" was per block, so N users gave N warnings."""
+    plane.status = 403
+    with caplog.at_level(logging.WARNING, logger="fastaiagent.agent.memory_blocks"):
+        for _ in range(3):
+            assert PlaneFactBlock("forbidden-agent").render("hello") == []
+    warnings = [r for r in caplog.records if "HTTP 403" in r.getMessage()]
+    assert len(warnings) == 1

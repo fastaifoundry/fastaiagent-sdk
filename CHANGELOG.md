@@ -5,6 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.83.0] - 2026-09-27 — plane facts survive a plane outage behind a proxy
+
+Follows the plane's reply to the 1.82.0 handover. No wire change. The plane
+fixed its two bugs (duplicate approved facts; `model=None` for pushed agents)
+in plane PR #216 — nothing to change in the SDK for either.
+
+### Fixed
+
+- ⚠ **A plane down behind a proxy is an outage, not an empty plane.** In
+  production the plane sits behind Caddy/nginx, which answers **502** while the
+  backend is down or restarting — so 1.82.0's back-off (transport failures
+  only) never engaged: `PlaneFactBlock` read the plane on every turn, dropped
+  the facts it had, and warned once per user. `502`, `503`, `504` and `429` are
+  now treated like a refused connection: the block keeps the facts it last
+  fetched and every block reading that plane and agent pauses for 30 s — or for
+  as long as a `Retry-After` header asks (seconds or an HTTP date, capped at
+  10 minutes).
+- **One warning per HTTP error per agent, not per user.** "Logged once per
+  status" was per block, so N users produced N warnings; it is now once per
+  plane, agent and status for the process.
+
+### Behaviour changes
+
+- During a `502` / `503` / `504` / `429` from the plane, users keep the plane
+  facts fetched before it, and the plane sees at most one read per pause per
+  agent per process (it used to see one per turn, and users got none).
+- `403` / `404` still inject no plane facts (the plane answered: no facts for
+  this key or agent).
+
+### Docs and examples
+
+- `agents/memory.md`: what a plane outage looks like and how the block pauses;
+  `Retry-After`.
+- `examples/87_connected_memory`: a `409 duplicate_fact` from the plane on the
+  seed step means "already seeded".
+- The "Memory at its boundaries" article and its docs page.
+
+### Tests
+
+- The memory contract sweep gains "plane facts survive a plane outage" across
+  `run` / `astream` × tracing × {refused connection, `502`}; the four `502`
+  cases fail on 1.82.0.
+- `tests/e2e/test_connected_visibility_e2e.py` checks the prompt-publish
+  response, so a key without `prompt:write` fails at once instead of later as
+  `PromptNotFoundError`.
+
 ## [1.82.0] - 2026-09-27 — memory that stays per user, keeps its limits, and holds up in a long-running server
 
 The four SDK follow-ups left open by the memory audit. No plane change and no

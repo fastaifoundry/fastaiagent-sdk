@@ -57,10 +57,16 @@ def test_connected_agent_fully_visible() -> None:
 
     try:
         slug = "acme-support-system"
-        http.post(
+        published = http.post(
             f"{base}/public/v1/prompts",
             headers={"X-API-Key": api_key},
             json={"slug": slug, "content": "You are {{role}} for Acme.", "category": "agent"},
+        )
+        # Fail here, not later as a PromptNotFoundError: the usual cause is a key
+        # without the prompt:write scope (403).
+        assert published.status_code in (200, 201), (
+            f"publishing prompt {slug!r} failed: HTTP {published.status_code} "
+            f"{published.text[:200]} — the key needs the prompt:write scope"
         )
 
         import fastaiagent as fa
