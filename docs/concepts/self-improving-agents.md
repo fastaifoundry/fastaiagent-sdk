@@ -28,16 +28,16 @@ Together: a Deep Research Agent that gets sharper at recurring topics on its own
 It **does** mean:
 
 - Facts learned in one run carry into the next.
-- Scoping (`agent` / `project` / `user`) keeps signal isolated.
+- Scoping (`agent` / `project` / `user`) keeps facts apart once stored — and `fastaiagent learn --agent` limits *which traces* a run reads, so one agent's conversations don't become another's facts.
 - The audit chain (`source_trace_id`, `superseded_by`) is queryable.
 - A/B comparison is one env var (`DEEP_RESEARCH_DISABLE_LEARNED_MEMORY=1`).
 
 It **does not** mean:
 
-- The agent rewrites its own prompts. (Meta-Harness — future work.)
+- The agent rewrites its own prompts at run time. (Prompt optimization ships as an explicit, eval-gated step — see below.)
 - The model fine-tunes itself. (Out of scope for the SDK.)
 - The agent extracts skills it can call back as tools. (Future work — needs replay-eval first.)
-- The improvement is automatic in real-time. The loop is **batch + offline** by design — you run `fastaiagent learn` when you want it.
+- The trace loop runs by itself. `fastaiagent learn` is **batch + offline** — you run it when you want it. (Facts *can* also be learned during a run with `Memory(learn=llm)`; see [How memory works](../agents/memory-concepts.md).)
 
 ## Try it
 
@@ -47,7 +47,7 @@ pip install -r requirements.txt
 python agent.py --topic "How does Self-RAG differ from vanilla RAG?"
 ```
 
-The script walks all three phases: seed runs → extract → replay. Inspect the trace from the replay phase in `fastaiagent ui` — you'll see a `Learned facts (agent:deep-research):` block prepended to the scope and writer system messages. That's the loop closing.
+The script walks four phases: seed runs → extract → optimize (Phase 2.5) → replay. Inspect the trace from the replay phase in `fastaiagent ui` — you'll see a `Learned facts (agent:deep-research):` block prepended to the scope and writer system messages. That's the loop closing.
 
 ## Where this sits in the broader stack
 
@@ -56,13 +56,14 @@ The script walks all three phases: seed runs → extract → replay. Inspect the
                                   │
                                   ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  Harness improvement       — future                          │
-│    Meta-Harness loop       (needs replay-eval first)         │
+│  Harness improvement       — ships (see below)               │
+│    fastaiagent.optimize    (eval-gated, AutoLLM in the UI)   │
 │                                                              │
-│  Context improvement       — v1 ships this                   │
+│  Context improvement       — ships                           │
 │    PersistentFactBlock     (read-only at runtime)            │
-│    learned_memory table    (schema v8)                       │
+│    learned_memory table    (local.db)                        │
 │    fastaiagent learn       (offline CLI)                     │
+│    Memory(learn=llm)       (during a run)                    │
 │                                                              │
 │  Substrate                 — already shipped                 │
 │    Traces in local.db      (every run, every harness)        │
@@ -76,17 +77,17 @@ The substrate was the prerequisite — without rich, queryable traces, none of t
 
 ## What ships now (harness layer)
 
-Eval-driven [optimization](../evaluation/optimization.md) (`fastaiagent.optimize`) closes the loop `harden()` opens — propose a change, re-evaluate, keep the best, holdout-guard the winner. It tunes **three levers** by greedy coordinate ascent: the **system prompt**, **few-shot examples** (bootstrapped from the train split, injected via `FewShotBlock`), and **which subset of `learned_memory` facts to inject** (selection/ablation, read-only on the fact store) — with per-candidate memory isolation (`MemoryBlock.isolated_copy()`). Every run persists to `local.db` and surfaces in the **Optimize Runs** view (trajectory + per-iteration lever attribution, drilling into each candidate's eval run). The cold-eval slice of harness improvement, built on the existing `evaluate()`.
+Eval-driven [optimization](../evaluation/optimization.md) (`fastaiagent.optimize`) closes the loop `harden()` opens — propose a change, re-evaluate, keep the best, holdout-guard the winner. It tunes **three levers** by greedy coordinate ascent: the **system prompt**, **few-shot examples** (bootstrapped from the train split, injected via `FewShotBlock`), and **which subset of `learned_memory` facts to inject** (selection/ablation, read-only on the fact store) — with per-candidate memory isolation (`MemoryBlock.isolated_copy()`). Every run persists to `local.db` and surfaces in the **AutoLLM** view (trajectory + per-iteration lever attribution, drilling into each candidate's eval run). The cold-eval slice of harness improvement, built on the existing `evaluate()`.
 
 ## The Enterprise boundary
 
 The OSS SDK owns the *on-ramp*: prompt/few-shot/memory optimization scored by **cold eval on your dataset**, end-to-end and free. The **complete, governed loop** — where candidates are scored by **replay-grounded** evaluation — is the Enterprise plane's job:
 
-- **Replay-grounded scoring** — score a candidate by forking a production trace at the decision node and rerunning from real operational state, instead of cold dataset eval. The OSS optimize loop already exposes the extension point for it: the `score_candidate` seam is a single swappable interface (the loop never calls `aevaluate()` directly), so the Enterprise implementation drops in with no driver change. Trace-based state counterfactuals live in the Enterprise Replay engine, not the SDK's read-only `trace/replay.py` — see [Agent Replay](../replay/index.md).
+- **Replay-grounded scoring** — score a candidate by forking a production trace at the decision node and rerunning from real operational state, instead of cold dataset eval. The OSS optimize loop already exposes the extension point for it: the `score_candidate` seam is a single swappable interface (the loop's scoring goes through it; a proposer may still call `aevaluate()` to draft a candidate), so the Enterprise implementation drops in with no driver change. Trace-based state counterfactuals live in the Enterprise Replay engine, not the SDK's read-only `trace/replay.py` — see [Agent Replay](../replay/index.md).
 
 ## Future work
 
 Tracked in the planning file:
 
 - **Skills** — extract reusable mini-procedures from successful traces; expose as callable tools.
-- **Online learning** — agents that update their own context mid-run.
+- **Self-directed learning** — agents deciding for themselves what to remember, beyond extracting facts from what users say (`Memory(learn=)` does the latter today).

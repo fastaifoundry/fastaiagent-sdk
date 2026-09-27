@@ -29,10 +29,12 @@ zsh -lc 'python snapshot.py'       # captures the UI to screenshots/
 ```
 
 ## What to look at
-- **Trace** — `memory.read` / `memory.write` spans with per-block children, plus
-  a `memory.persist` span for the direct global write.
-- **Memory page** (sidebar → Knowledge → Memory) — `global` + `user:alice` +
-  `user:bob` facts, each with a source `trace` link and confidence.
+- **Trace** — `memory.read` / `memory.write` spans with per-block children. The
+  direct global write happens before the conversation, so its `memory.persist`
+  span is a trace of its own.
+- **Memory page** (Build → Knowledge → Memory, or `/memory`) — the global fact
+  under `agent:assistant` plus the `user:alice` and `user:bob` facts, each with
+  its source (`trace` link or `manual`) and confidence.
 
 ## Notes
 - `Memory(user_id=<resolver>)` keeps a per-user working window **in-process** —

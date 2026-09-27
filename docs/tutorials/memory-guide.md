@@ -8,6 +8,8 @@ durable facts per user, run the full fact lifecycle (create / read / update /
 forget), scale to an external backend, retrieve by meaning, and *see* it all in
 the trace + Memory UI.
 
+> For the model behind this guide, see [How memory works](../agents/memory-concepts.md).
+
 > `Memory` is the recommended front door. It's built on composable blocks
 > (`ComposableMemory` + `StaticBlock`/`VectorBlock`/…), which remain available
 > for custom behaviours — see [Reference: Memory](../agents/memory.md#advanced-composable-blocks).

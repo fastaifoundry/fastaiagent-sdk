@@ -413,7 +413,8 @@ class SummaryBlock(MemoryBlock):
         llm: The :class:`fastaiagent.llm.client.LLMClient` to use for summarization.
         keep_last: Number of recent messages *not* to summarize.
         summarize_every: Refresh the summary every N messages seen.
-        max_chars: Soft cap on the summary length; the LLM is asked to stay under.
+        max_chars: Summary length limit: the LLM is asked to stay under it, and a
+            longer summary is cut there.
     """
 
     name = "summary"

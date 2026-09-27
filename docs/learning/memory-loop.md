@@ -1,6 +1,6 @@
 # Memory loop
 
-How `fastaiagent.learn` turns past traces into facts that future agents pick up automatically.
+How `fastaiagent.learn` turns past traces into facts that future agents pick up automatically. This is the *offline* way facts are learned; for how it relates to `Memory(learn=)` and plane facts, see [How memory works](../agents/memory-concepts.md).
 
 ## End-to-end flow
 

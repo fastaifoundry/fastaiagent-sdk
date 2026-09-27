@@ -1,6 +1,6 @@
 # `fastaiagent learn`
 
-Extract durable facts from past traces and re-inject them via `PersistentFactBlock`.
+Extract durable facts from past traces and re-inject them via `PersistentFactBlock`. Not to be confused with `Memory(learn=llm)`, which learns during a run — see [How memory works](../agents/memory-concepts.md#the-two-learns).
 
 ```
 fastaiagent learn [--scope SCOPE] [--scope-id ID] [--agent NAME] [--window N]

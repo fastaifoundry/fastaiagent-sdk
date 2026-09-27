@@ -5,9 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.81.0] - 2026-09-27 — `learn=` stores clean user facts, once
+## [1.81.0] - 2026-09-27 — memory you can trust: clean facts, true history, bounded learning, restart-safe recall
 
-The second memory-audit release. No wire change.
+The rest of the memory audit (1.80.0 fixed the cross-user leaks). No plane
+change and no wire change.
 
 ### Fixed
 
@@ -179,6 +180,25 @@ The second memory-audit release. No wire change.
   privacy and caching, what payload gating drops, the block span names.
 - `agents/memory.md` and `tutorials/memory-guide.md` (semantic recall follows
   the store; the `memory.retrieve` span records a count, not scores).
+- **New: How memory works** (`agents/memory-concepts.md`) — the four kinds of
+  memory, tiers vs scopes, what is written when, who writes durable facts, the
+  two "learn"s, isolation, what survives a restart, privacy. The other memory
+  pages link to it.
+- `agents/memory.md`: `AgentMemory`'s default window (unbounded), where
+  `importance` comes from (chunk metadata — `Message` has no such field),
+  confidence by source (0.6 run-learned, 1.0 otherwise), which spans agent
+  runs emit, the summary cadence and length cap, and a truthful async note.
+- `learning/index.md` and `concepts/self-improving-agents.md`: online learning
+  ships (`Memory(learn=)`), the CLI's PII guardrails are not a guarantee, trace
+  text goes to the extraction LLM, four phases, "AutoLLM", and no more
+  contradiction about what ships.
+- Examples: `30_memory_blocks` keeps a 2-message window so the blocks do the
+  recalling, and sizes its index to the embedder; `66_memory_scoring` adds a
+  real-FAISS case; `87_connected_memory` seeds idempotently, checks statuses,
+  says "unreachable" when the plane is down, and runs a real agent turn;
+  `89` passes `console_url`; `12_streaming`'s docstring; `learning-loop`,
+  `memory_simple` and `memory_observability` READMEs (port, UI path, `[kb]`);
+  screenshots re-shot in the current UI, and an orphan one removed.
 - `cli/learn.md`, `learning/memory-loop.md`, `tracing/index.md`, and the
   `learning-loop` / `self-improving-research` examples (`agent_name`, new vs
   known counts).

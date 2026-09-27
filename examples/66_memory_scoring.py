@@ -71,3 +71,42 @@ def test_recency_promotes_newer_email_over_older_one() -> None:
     )
     body = with_recency.render("what's my email?")[0].content
     assert body.find("alice@new.com") < body.find("alice@old.com")
+
+
+class _TwoAxisEmbedder:
+    """Stale mentions sit right on the query; the fresh one a little off it."""
+
+    def embed(self, texts):
+        return [[0.9, 0.436] if "new.com" in t else [1.0, 0.0] for t in texts]
+
+
+def test_recency_reaches_past_stale_near_duplicates_in_a_real_store() -> None:
+    """The same fix on a real FAISS store. Recency reranks the candidates the
+    store returns, so the fresh answer must be among them: with three stale
+    near-duplicates and ``top_k=2``, a search for just 2 hits would never see
+    it. ``VectorBlock`` over-fetches (``top_k * 4``) before scoring, so it does.
+    """
+    import pytest
+
+    pytest.importorskip("faiss")
+    from fastaiagent.kb.backends.faiss import FaissVectorStore
+
+    now = time.time()
+    stale = [
+        _chunk(f"my email is alice@old.com ({i})", created_at=now - 7 * 86400) for i in range(3)
+    ]
+    fresh = _chunk("actually it's alice@new.com", created_at=now - 60)
+    embedder = _TwoAxisEmbedder()
+    store = FaissVectorStore(dimension=2, index_type="flat")
+    store.add(stale + [fresh], embedder.embed([c.content for c in stale + [fresh]]))
+
+    block = VectorBlock(
+        store=store,
+        embedder=embedder,
+        top_k=2,
+        recency_weight=0.5,
+        recency_half_life_seconds=3600.0,
+    )
+    body = block.render("what's my email?")[0].content
+    assert "alice@new.com" in body, "the fresh answer never reached the scorer"
+    assert body.index("alice@new.com") < body.index("alice@old.com")

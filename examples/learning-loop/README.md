@@ -14,8 +14,8 @@ python agent.py
 To inspect the persisted facts via the local UI:
 
 ```sh
-fastaiagent ui
-# open http://127.0.0.1:7843 → /api/learned_memory
+fastaiagent ui --no-auth        # --no-auth skips the first-run login setup
+# open http://127.0.0.1:7842/memory  (or the JSON: /api/learned_memory)
 ```
 
 Or from the CLI:

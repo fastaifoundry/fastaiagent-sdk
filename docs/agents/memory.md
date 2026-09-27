@@ -2,6 +2,8 @@
 
 Memory lets agents remember — within a conversation and across sessions. The recommended API is a single object, **`Memory`**, with progressive-disclosure keywords. The composable blocks it's built on remain available for advanced/custom behaviours (see [Advanced](#advanced-composable-blocks)).
 
+New to memory here? Start with **[How memory works](memory-concepts.md)** — the kinds of memory, tiers vs scopes, what is written when, and the two "learn"s.
+
 ## `Memory` — the recommended API
 
 ```python
@@ -116,7 +118,7 @@ Every turn reads the newest facts for the user (and the agent), so a read costs 
     ```
 
 !!! note "Observability with external backends"
-    Agent runs against any backend emit `memory.read` / `memory.write` / `memory.persist` / `memory.retrieve` trace spans (browsable in `fastaiagent ui`). The UI **Memory page** browses the local SQLite store; facts written to an external backend are observed via those trace spans (a shared UI over external backends is future work).
+    Agent runs against any backend emit `memory.read` / `memory.write` trace spans, and direct `Memory.persist` / `retrieve` / `update` / `forget` calls emit `memory.persist` / `memory.retrieve` / … spans (browsable in `fastaiagent ui`). The UI **Memory page** browses the local SQLite store; facts written to an external backend are observed via those trace spans (a shared UI over external backends is future work).
 
 ### Semantic recall of facts (`semantic`)
 
@@ -136,7 +138,7 @@ mem.retrieve("what foods should we avoid?", tier="user", id="alice")   # → the
 
 At `user`/`project` scope an **empty id returns nothing** — one user's facts can never leak into another's context. Use `scope_id="*"` (on the low-level store) to deliberately read across all subjects. The `agent`/global tier stays permissive (shared truth), but an empty agent id is refused where it is almost always a mistake: `Memory(agent_id="")` raises, and `PersistentFactBlock(scope="agent", scope_id="")` warns — use `scope_id="*"` to read every agent's facts on purpose. *(This corrects prior behaviour where an empty user id matched everyone — see the CHANGELOG.)*
 
-The Memory page (`fastaiagent ui` → Knowledge → Memory) shows the tiers side by side — `user:alice` / `user:bob` (learned, source `trace`) and a shared `agent:*` global fact (source `manual`):
+The Memory page (`fastaiagent ui` → Knowledge → Memory) shows the tiers side by side — `user:alice` / `user:bob` (learned, source `trace`) and the global fact under `agent:assistant` (source `manual`, from `Memory(agent_id="assistant")`):
 
 ![Memory page — tiers](img/memory-simple-page.png)
 
@@ -197,7 +199,7 @@ result = agent.run("What's my name?")  # "Your name is Alice."
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `max_messages` | `int` | `20` | Maximum number of messages to retain |
+| `max_messages` | `int \| None` | `None` | Messages to retain (a count, not tokens). `None` keeps everything; `Memory(window=)` defaults to 20 |
 
 ---
 
@@ -262,11 +264,11 @@ SummaryBlock(
     llm=llm,
     keep_last=10,       # never summarize the N most recent messages
     summarize_every=5,  # refresh cadence
-    max_chars=800,      # soft cap on summary length
+    max_chars=800,      # asked of the LLM, and longer summaries are cut here
 )
 ```
 
-**When to use**: long conversations that otherwise blow the context window. Cheaper than re-embedding everything, but introduces one extra LLM call every `summarize_every` turns.
+**When to use**: long conversations that otherwise blow the context window. Cheaper than re-embedding everything, but introduces one extra LLM call every `summarize_every` messages (a turn is two: the user's and the answer).
 
 ### `VectorBlock`
 
@@ -376,13 +378,16 @@ similarity prevents it from outranking B.
 
 ##### Where `importance` comes from
 
-- `VectorBlock` reads `chunk.metadata['importance']` if set, defaults to
-  `1.0`. To stamp it, attach `importance` to your `Message` before
-  feeding it through memory (the block reads `getattr(message,
-  "importance", None)` in `_make_chunk`).
-- `PersistentFactBlock` reads the existing `confidence` column on
-  `learned_memory` rows. Facts produced by `fastaiagent learn` carry an
-  LLM-judged confidence; high-confidence facts naturally rank higher.
+- `VectorBlock` reads `chunk.metadata['importance']`, defaulting to `1.0`.
+  Messages the agent records carry no importance (`Message` has no such
+  field), so they all score `1.0`. To weight chunks, write them into the
+  store yourself with `metadata={"namespace": ..., "importance": 0.3}`, or
+  subclass `VectorBlock` and override `_make_chunk` to set it.
+- `PersistentFactBlock` reads the `confidence` column on `learned_memory`
+  rows: `0.6` for facts learned during a run (`Memory(learn=)`,
+  `FactExtractionBlock(persist=True)`), `1.0` for facts from
+  `fastaiagent learn` and for facts you write yourself unless you set it. With
+  `importance_weight > 0`, run-learned facts rank below the rest.
 
 **Backward compatibility**: with both weights at zero (the default),
 behaviour is byte-identical to v1.8.x — the scorer short-circuits and
@@ -627,7 +632,7 @@ Each row is one durable fact:
 | **Fact** | The stored statement, e.g. *"Has a beagle named Biscuit; allergic to cats."* This is the `fact` text a `PersistentFactBlock` injects into a matching agent's prompt. |
 | **Scope** | Rendered as `scope:scope_id` (e.g. `user:upendra`). `scope` is one of `user` / `project` / `agent`; `scope_id` is the identifier within it (a user id, a project key, or an agent name). A block reading `PersistentFactBlock(scope="user", scope_id="upendra")` will pick up exactly the `user:upendra` rows. |
 | **Source** | Where the fact came from. A **`trace`** link jumps to the run that produced it (facts persisted by `FactExtractionBlock(persist=True)` carry the run's trace id as `source_trace_id`). **`manual`** = inserted directly via `MemoryStore.add`. |
-| **Confidence** | The `confidence` column (0–1); also drives `importance_weight` ranking. Auto-extracted facts default to `0.6`, curated/manual to `1.0`, so provenance is visible at a glance. |
+| **Confidence** | The `confidence` column (0–1); also drives `importance_weight` ranking. Facts learned during a run (`Memory(learn=)`, `FactExtractionBlock(persist=True)`) get `0.6`; facts from `fastaiagent learn` and direct writes get `1.0` unless you set it. |
 | **Created** | When the fact was written. |
 
 **Scope filter** — the dropdown lists every `scope:scope_id` partition (users, projects, and agents — memory is not agent-only) with counts, plus "All scopes".
@@ -648,7 +653,7 @@ Each block runs inside a try/except inside `ComposableMemory`. A failing block i
 
 ## Future work
 
-Async parallel methods (`aon_message`, `arender`) are planned as an additive 0.5.x feature. The sync API shipped in 0.4.0 will not break when the async methods are added — same pattern as `Agent.run` / `Agent.arun`.
+Blocks are synchronous today: inside `arun`, a block's LLM, embedding and store calls run in line and hold the event loop while they do. Async block methods (`aon_message`, `arender`) are not shipped yet; when they are, they'll be additive — the sync API won't change.
 
 ---
 

@@ -1,9 +1,12 @@
 """Example 12: Streaming agent responses.
 
-Demonstrates three streaming layers:
+Demonstrates streaming at two layers:
   1. LLMClient.astream()  — raw token streaming from the LLM
-  2. stream_tool_loop()    — streaming with tool execution
-  3. Agent.astream()       — full agent streaming with guardrails and memory
+  2. Agent.astream()       — full agent streaming with tools and memory
+
+Memory keeps each turn's question and final answer (not tool calls or tool
+results), so a later turn can build on what was said — but a follow-up that
+needs an earlier tool's output will call the tool again.
 
 Usage:
     export OPENAI_API_KEY=sk-...
