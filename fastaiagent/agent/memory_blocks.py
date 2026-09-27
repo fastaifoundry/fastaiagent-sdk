@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import re
 import time
 import uuid
@@ -537,6 +536,11 @@ _OVERFETCH_FACTOR = 4
 _MAX_FETCH_FACTOR = 256
 
 
+def _half_life_decay(age_seconds: float, half_life_seconds: float) -> float:
+    """1.0 now, 0.5 after one half-life, 0.25 after two."""
+    return float(0.5 ** (age_seconds / half_life_seconds))
+
+
 def _store_count(store: Any) -> int | None:
     """The store's chunk count, or ``None`` if it can't say."""
     fn = getattr(store, "count", None)
@@ -561,7 +565,7 @@ class VectorBlock(MemoryBlock):
     ``importance_weight`` to enable the weighted-sum scorer:
 
         final_score = (1 - recency_weight - importance_weight) * cos_sim
-                    + recency_weight    * exp(-age_seconds / half_life)
+                    + recency_weight    * 0.5 ** (age_seconds / half_life)
                     + importance_weight * importance
 
     The ``importance`` field is read from each chunk's metadata
@@ -704,7 +708,7 @@ class VectorBlock(MemoryBlock):
             created_at = chunk.metadata.get("created_at")
             if isinstance(created_at, (int, float)):
                 age = max(0.0, now - float(created_at))
-                recency = math.exp(-age / self.recency_half_life_seconds)
+                recency = _half_life_decay(age, self.recency_half_life_seconds)
             else:
                 recency = 0.0  # unknown age — no boost
             importance_raw = chunk.metadata.get("importance", 1.0)
@@ -1270,7 +1274,7 @@ class PersistentFactBlock(MemoryBlock):
         for f in facts:
             created = float(f.created_at) if f.created_at is not None else now
             age = max(0.0, now - created)
-            recency = math.exp(-age / self.recency_half_life_seconds)
+            recency = _half_life_decay(age, self.recency_half_life_seconds)
             importance = float(f.confidence) if f.confidence is not None else 1.0
             score = (
                 sim_w * 1.0 + self.recency_weight * recency + self.importance_weight * importance
@@ -1407,7 +1411,9 @@ class PlaneFactBlock(MemoryBlock):
         self.refresh_every = refresh_every
         self.timeout = timeout
         self._cached: list[str] | None = None
+        self._cached_query: str | None = None
         self._renders_since_refresh = 0
+        self._logged_statuses: set[int] = set()
 
     def isolated_copy(self) -> MemoryBlock:
         # Read-only at run time (render() only GETs from the plane). Share
@@ -1426,10 +1432,22 @@ class PlaneFactBlock(MemoryBlock):
         # Read-only block — facts are produced + curated centrally on the plane.
         return
 
+    def _sent_query(self, query: str) -> str:
+        """The question to send the plane: none unless the block is query
+        conditioned *and* payloads may leave the machine — the user's raw words
+        are payload, so ``FASTAIAGENT_TRACE_PAYLOADS=0`` keeps them home (the
+        plane then returns its flat, importance-ordered list)."""
+        from fastaiagent.trace.span import export_payloads_enabled
+
+        if self.query_conditioned and query and export_payloads_enabled():
+            return query
+        return ""
+
     def _fetch_from_plane(self, query: str) -> list[str]:
         """GET the agent's approved facts from the plane; return their contents.
 
-        A no-op (``[]``) when not connected; degradable on any non-2xx or error.
+        ``query`` is what :meth:`_sent_query` allows to leave. A no-op (``[]``)
+        when not connected; degradable on any non-2xx or error.
         """
         from fastaiagent.client import _connection
 
@@ -1445,7 +1463,7 @@ class PlaneFactBlock(MemoryBlock):
         }
         if self.category:
             params["category"] = self.category
-        if self.query_conditioned and query:
+        if query:
             params["query"] = query
 
         url = f"{_connection.target}/public/v1/memory/facts"
@@ -1454,8 +1472,17 @@ class PlaneFactBlock(MemoryBlock):
         if resp.status_code != 200:
             # 403 (domain not entitled) / 404 (unknown agent) / 5xx → degrade to
             # no facts. The agent still runs; central memory is an enhancement.
-            if resp.status_code not in (403, 404):
-                _log.warning("PlaneFactBlock read got HTTP %d", resp.status_code)
+            # Say so once per status, so a misconfiguration is visible without
+            # a warning on every turn.
+            if resp.status_code not in self._logged_statuses:
+                self._logged_statuses.add(resp.status_code)
+                _log.warning(
+                    "PlaneFactBlock read for agent %r got HTTP %d; running without "
+                    "plane facts (403: the domain lacks the connected-state-plane "
+                    "feature or the key lacks access; 404: unknown agent)",
+                    self.agent_id,
+                    resp.status_code,
+                )
             return []
         data = resp.json()
         return [
@@ -1463,13 +1490,18 @@ class PlaneFactBlock(MemoryBlock):
         ]
 
     def render(self, query: str) -> list[Message]:
-        if self._cached is None or self._renders_since_refresh >= self.refresh_every:
+        sent = self._sent_query(query)
+        stale = self._renders_since_refresh >= self.refresh_every
+        # Facts fetched for one question are not the answer for another: a new
+        # question refetches even between ``refresh_every`` refreshes.
+        if self._cached is None or stale or sent != self._cached_query:
             try:
-                self._cached = self._fetch_from_plane(query)
+                self._cached = self._fetch_from_plane(sent)
             except Exception as err:
                 # Never let a plane read break the run — degrade to last-known / empty.
                 _log.warning("PlaneFactBlock refresh failed: %s", err)
                 self._cached = self._cached or []
+            self._cached_query = sent
             self._renders_since_refresh = 1
         else:
             self._renders_since_refresh += 1

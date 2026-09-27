@@ -26,7 +26,7 @@ from fastaiagent.agent.context import (
     set_active_run_context,
 )
 from fastaiagent.agent.executor import _AgentInterrupted, execute_tool_loop, stream_tool_loop
-from fastaiagent.agent.memory import AgentMemory, ComposableMemory
+from fastaiagent.agent.memory import MemoryLike
 from fastaiagent.agent.middleware import (
     AgentMiddleware,
     MiddlewareContext,
@@ -319,7 +319,7 @@ class Agent:
         llm: LLMClient | None = None,
         tools: Sequence[Tool] | None = None,
         guardrails: Sequence[Guardrail] | None = None,
-        memory: AgentMemory | ComposableMemory | None = None,
+        memory: MemoryLike | None = None,
         config: AgentConfig | None = None,
         output_type: type | None = None,
         middleware: Sequence[AgentMiddleware] | None = None,

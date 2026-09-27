@@ -118,6 +118,9 @@ class _HopMemory:
         self._base = base
         self._hop = hop
 
+    def get_context(self, query: str = "", max_messages: int | None = None) -> list[Message]:
+        return list(self._base.get_context(query=query, max_messages=max_messages))
+
     def add(self, message: Message) -> None:
         if self._hop.handed_off:
             return
@@ -983,9 +986,7 @@ class Swarm:
             llm=base.llm,
             tools=merged_tools,
             guardrails=base.guardrails,
-            # A duck-typed wrapper: it keeps the memory contract Agent uses
-            # (get_context / add / blocks / truthiness), not the class.
-            memory=_HopMemory(base.memory, hop) if base.memory is not None else None,  # type: ignore[arg-type]
+            memory=_HopMemory(base.memory, hop) if base.memory is not None else None,
             config=base.config,
             output_type=base.output_type,
             middleware=merged_middleware,

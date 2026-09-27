@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from fastaiagent.agent.agent import Agent
-    from fastaiagent.agent.memory import AgentMemory, ComposableMemory
+    from fastaiagent.agent.memory import AgentMemory, ComposableMemory, MemoryLike
     from fastaiagent.eval.results import EvalResults
     from fastaiagent.eval.scorer import Scorer
 
@@ -106,7 +106,7 @@ class CandidateScore:
 
 
 def _clone_memory_blocks(
-    memory: AgentMemory | ComposableMemory | None,
+    memory: MemoryLike | None,
     *,
     allow_writable_memory: bool = False,
 ) -> AgentMemory | ComposableMemory | None:

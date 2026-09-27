@@ -100,6 +100,29 @@ The second memory-audit release. No wire change.
   fact. A failed vector removal is logged instead of silently ignored.
 - **Other subjects can't crowd a subject out of a shared semantic index.** The
   search now widens while other users' facts fill the hits.
+- **`PlaneFactBlock` keeps your users' questions home when payloads are off.**
+  It sent the user's raw question to the plane as a URL parameter even with
+  `FASTAIAGENT_TRACE_PAYLOADS=0`. The question is now left out (the plane then
+  returns its facts by importance — `query` is optional there, so no plane
+  change and no wire change). With `refresh_every > 1`, facts fetched for one
+  question were reused for later, different questions; a new question now
+  refetches. A 403 / 404 from the plane is logged once instead of silently.
+- ⚠ **`recency_half_life_seconds` is a true half-life.** `VectorBlock` and
+  `PersistentFactBlock` applied `exp(-age / half_life)`, so after one
+  "half-life" recency weighed 0.37, not 0.5. It is now `0.5 ** (age /
+  half_life)`. Only affects `recency_weight > 0`.
+- ⚠ **`Memory`'s two fact blocks have different names.** With both an
+  `agent_id` and a user, both blocks were `persistent_facts`: one span label,
+  one `SharedMemoryContext.by_block` key, and one `optimize` replacement target
+  (which removed both). The user block is now `persistent_facts.user`; the
+  agent block keeps its name.
+- **`Agent(memory=Memory(...))` type-checks.** `Agent`'s `memory` is typed as
+  the new `MemoryLike` protocol (`get_context` + `add`), which `AgentMemory`,
+  `ComposableMemory` and `Memory` all satisfy.
+- **An `AgentMemory` window never starts with an orphan reply.** An odd
+  `max_messages` could trim a turn's question and keep its answer.
+- **`Memory()` creates no files until it is used.** It created
+  `./.fastaiagent/` in the working directory on construction.
 - **The UI Memory page works when a project is set.** Both
   `/api/learned_memory` routes built `WHERE 1=1 AND AND project_id = ?` and
   answered HTTP 500 for an app built with a `project_id`.
@@ -108,6 +131,7 @@ The second memory-audit release. No wire change.
 
 - `Memory(max_learned_facts=)`; `FactExtractionBlock(roles=, inject=,
   max_persisted=)`; `FaissIndex.vectors()`.
+- `fastaiagent.agent.memory.MemoryLike` (the memory protocol `Agent` accepts).
 - `run_extraction(agent_name=, max_traces=, reprocess=)`,
   `ExtractionResult.new_ids`, `MemoryStore.add_with_status()` /
   `extracted_trace_ids()` / `mark_extracted()`; `TraceStore.list_traces(limit=,
@@ -131,6 +155,12 @@ The second memory-audit release. No wire change.
   id; `--reprocess` restores the old behaviour. `--scope user|project` needs
   `--scope-id`, `--agent` and `--attribute-all`.
 - local.db migrates to schema v23 (adds `learn_extractions`; additive).
+- With `FASTAIAGENT_TRACE_PAYLOADS=0`, `PlaneFactBlock` sends no question, so
+  plane facts arrive by importance rather than relevance.
+- Recency scores change for `recency_weight > 0` (a true half-life).
+- With both `agent_id` and a user, the user fact block's spans are
+  `memory.read.persistent_facts.user` — update saved filters on the old name.
+- An `AgentMemory` window with an odd `max_messages` can hold one message fewer.
 - The first semantic query after a restart embeds that subject's stored facts
   once. Fact vectors written to an external index now use UUID ids; older
   vectors stay readable.
@@ -145,6 +175,8 @@ The second memory-audit release. No wire change.
   `examples/memory_backends` (`agent_id`, and it now cleans up its global fact).
 - `agents/swarm.md` (memory across hand-offs), `agents/middleware.md`
   (what `RedactPII` does and doesn't redact), `agents/memory.md` (write path).
+- `agents/memory.md`: scoring formula and worked example, `PlaneFactBlock`
+  privacy and caching, what payload gating drops, the block span names.
 - `agents/memory.md` and `tutorials/memory-guide.md` (semantic recall follows
   the store; the `memory.retrieve` span records a count, not scores).
 - `cli/learn.md`, `learning/memory-loop.md`, `tracing/index.md`, and the

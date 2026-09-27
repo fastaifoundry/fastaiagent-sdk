@@ -305,3 +305,32 @@ def test_persistent_facts_weights_above_one_rejected() -> None:
             recency_weight=0.7,
             importance_weight=0.5,
         )
+
+
+# ---------------------------------------------------------------------------
+# 1.81.0 — recency_half_life_seconds is a true half-life
+# ---------------------------------------------------------------------------
+
+
+def test_recency_halves_after_one_half_life() -> None:
+    """The scorer used exp(-age/half_life): one "half-life" left 0.37, not 0.5."""
+    import time as _time
+
+    from fastaiagent.kb.chunking import Chunk
+
+    chunk = Chunk(
+        id="c",
+        content="[user] an hour old",
+        metadata={"namespace": "default", "created_at": _time.time() - 3600},
+    )
+    block = VectorBlock(
+        store=_FakeVectorStore([(chunk, 0.9)]),
+        embedder=_FakeEmbedder(),
+        recency_weight=1.0,
+        recency_half_life_seconds=3600,
+        min_content_chars=0,
+    )
+    block.render("anything")
+    report = block.last_render_report()
+    assert report is not None and report.scores is not None
+    assert report.scores[0] == pytest.approx(0.5, abs=0.01)

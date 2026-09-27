@@ -68,12 +68,30 @@ def _tier_to_scope(tier: str) -> str:
     raise ValueError(f"tier must be one of global|user|session, got {tier!r}")
 
 
-def _make_store(location: Any):
-    """Resolve ``location`` to a fact store. Phase 1: sqlite or an instance."""
-    from fastaiagent.learn import MemoryStore
+class _LazyLocalStore:
+    """The default local store, opened on first use.
 
+    Constructing a ``Memory`` must not create ``./.fastaiagent/`` in whatever
+    directory the process happens to run in; persisting or reading a fact does.
+    """
+
+    def __init__(self) -> None:
+        self._store: Any = None
+
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("_"):
+            raise AttributeError(name)
+        if self._store is None:
+            from fastaiagent.learn import MemoryStore
+
+            self._store = MemoryStore()
+        return getattr(self._store, name)
+
+
+def _make_store(location: Any):
+    """Resolve ``location`` to a fact store: local SQLite, a URL, or an instance."""
     if location in (None, "sqlite"):
-        return MemoryStore()
+        return _LazyLocalStore()
     # A MemoryStore / FactStore-like instance (duck-typed).
     if hasattr(location, "add") and hasattr(location, "list_active"):
         return location
@@ -283,14 +301,17 @@ class Memory:
                         max_persisted=self._max_learned_facts,
                     )
                 )
-            blocks.append(
-                PersistentFactBlock(
-                    scope="user",
-                    scope_id=user_scope_id,
-                    project_id=self._project_id,
-                    store=self._store,
-                )
+            user_facts = PersistentFactBlock(
+                scope="user",
+                scope_id=user_scope_id,
+                project_id=self._project_id,
+                store=self._store,
             )
+            # The global block above is "persistent_facts"; a second block of
+            # the same name made one span label, one by_block key and one
+            # optimize replace target out of two different blocks.
+            user_facts.name = "persistent_facts.user"
+            blocks.append(user_facts)
         if self._summarize is not None:
             blocks.append(SummaryBlock(llm=self._summarize))
         if self._recall is not None:

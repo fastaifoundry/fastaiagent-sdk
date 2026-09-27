@@ -318,7 +318,7 @@ VectorBlock(
     top_k=5,
     recency_weight=0.3,                 # 0.0–1.0
     importance_weight=0.2,              # 0.0–1.0
-    recency_half_life_seconds=3600.0,   # 1 hour, exponential decay
+    recency_half_life_seconds=3600.0,   # 1 hour: recency halves every hour
 )
 ```
 
@@ -326,7 +326,7 @@ Retrieval becomes a weighted sum of three signals:
 
 ```
 final_score = (1 - recency_weight - importance_weight) * cosine_similarity
-            + recency_weight    * exp(-age_seconds / half_life)
+            + recency_weight    * 0.5 ** (age_seconds / half_life)
             + importance_weight * importance
 ```
 
@@ -355,9 +355,9 @@ Three stored messages, all matching *"what's my email?"*:
 half-life:
 
 ```
-A:  0.5*0.85 + 0.3*exp(-604800/3600) + 0.2*0.5  ≈ 0.425 + ~0.000 + 0.10 = 0.525
-B:  0.5*0.80 + 0.3*exp(-3600/3600)   + 0.2*1.0  ≈ 0.400 + 0.110  + 0.20 = 0.710
-C:  0.5*0.30 + 0.3*exp(-300/3600)    + 0.2*1.0  ≈ 0.150 + 0.276  + 0.20 = 0.626
+A:  0.5*0.85 + 0.3*0.5**(604800/3600) + 0.2*0.5  ≈ 0.425 + ~0.000 + 0.10 = 0.525
+B:  0.5*0.80 + 0.3*0.5**(3600/3600)   + 0.2*1.0  ≈ 0.400 + 0.150  + 0.20 = 0.750
+C:  0.5*0.30 + 0.3*0.5**(300/3600)    + 0.2*1.0  ≈ 0.150 + 0.283  + 0.20 = 0.633
 ```
 
 B wins — the right answer surfaces. C ranks high on recency but its low
@@ -485,7 +485,9 @@ memory = ComposableMemory(
 agent = Agent(name="support", system_prompt="...", llm=llm, memory=memory)
 ```
 
-**Read-only and degradable.** When the SDK is not connected, the plane is unreachable, or the domain isn't entitled (`403`), `PlaneFactBlock` injects nothing and the agent runs normally — central facts are an enhancement, never a dependency. The read is a bounded start-of-run network GET (like `VectorBlock`'s search), cached per `refresh_every`; it never pushes anything. The plane runs no agent code — it serves facts; recall and injection happen locally.
+**Read-only and degradable.** When the SDK is not connected, or the plane answers with an error (e.g. `403`: the domain isn't entitled), `PlaneFactBlock` injects nothing and the agent runs normally — central facts are an enhancement, never a dependency; the error is logged once. If the plane is unreachable, the block keeps serving the facts it last fetched. The read is a bounded start-of-run network GET (like `VectorBlock`'s search), cached per `refresh_every` — but a new question always refetches, so one question's facts are never served for another. It never pushes anything. The plane runs no agent code — it serves facts; recall and injection happen locally.
+
+**Your users' questions stay home when payloads are off.** With `query_conditioned=True` the user's question is sent to the plane for semantic recall. When `FASTAIAGENT_TRACE_PAYLOADS=0`, it is left out: the plane then returns the agent's facts by importance rather than by relevance to the question.
 
 **When to use**: connected (Enterprise) deployments that want a single governed, curated knowledge base shared across a fleet of agents, with central redaction / right-to-be-forgotten. See [Connected central memory](../platform/index.md) and the [memory loop](../learning/memory-loop.md).
 
@@ -610,7 +612,7 @@ Click the `memory.read.vector` child to see the recalled items and their scores:
 
 ![VectorBlock scores and snippets](img/memory-02-vectorblock-scores.png)
 
-These spans nest under the agent span automatically and are **no-ops when tracing is off** — memory behaves exactly as before, with no extra embedding or LLM calls. Snippets and query text honor `FASTAIAGENT_TRACE_PAYLOADS=0` and any installed [`RedactionPolicy`](../security.md) (the "Mask secrets" toggle), since memory content can contain PII.
+These spans nest under the agent span automatically and are **no-ops when tracing is off** — memory behaves exactly as before, with no extra embedding or LLM calls. Snippets, query text and the user id (`memory.scope_id`) are dropped from exported spans when `FASTAIAGENT_TRACE_PAYLOADS=0` (the local trace store keeps them), and honor any installed [`RedactionPolicy`](../security.md) (the "Mask secrets" toggle), since memory content can contain PII. Inside `Memory`, the global fact block's spans are `memory.read.persistent_facts` and the user fact block's are `memory.read.persistent_facts.user`.
 
 ### The Memory page
 
