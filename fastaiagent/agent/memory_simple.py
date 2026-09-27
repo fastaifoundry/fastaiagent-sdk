@@ -23,15 +23,17 @@ Example::
 
     from fastaiagent import Agent, LLMClient, Memory
 
-    mem = Memory(location="sqlite")
+    mem = Memory(location="sqlite", agent_id="support")
     mem.persist("Return policy is 30 days", tier="global")
 
     agent = Agent(name="support", llm=llm,
-                  memory=Memory(user_id=lambda ctx: ctx.state.user_id, learn=llm))
+                  memory=Memory(agent_id="support",
+                                user_id=lambda ctx: ctx.state.user_id, learn=llm))
 """
 
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING, Any
 
 from fastaiagent.agent._memory_tracing import memory_store_span
@@ -66,12 +68,30 @@ def _tier_to_scope(tier: str) -> str:
     raise ValueError(f"tier must be one of global|user|session, got {tier!r}")
 
 
-def _make_store(location: Any):
-    """Resolve ``location`` to a fact store. Phase 1: sqlite or an instance."""
-    from fastaiagent.learn import MemoryStore
+class _LazyLocalStore:
+    """The default local store, opened on first use.
 
+    Constructing a ``Memory`` must not create ``./.fastaiagent/`` in whatever
+    directory the process happens to run in; persisting or reading a fact does.
+    """
+
+    def __init__(self) -> None:
+        self._store: Any = None
+
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("_"):
+            raise AttributeError(name)
+        if self._store is None:
+            from fastaiagent.learn import MemoryStore
+
+            self._store = MemoryStore()
+        return getattr(self._store, name)
+
+
+def _make_store(location: Any):
+    """Resolve ``location`` to a fact store: local SQLite, a URL, or an instance."""
     if location in (None, "sqlite"):
-        return MemoryStore()
+        return _LazyLocalStore()
     # A MemoryStore / FactStore-like instance (duck-typed).
     if hasattr(location, "add") and hasattr(location, "list_active"):
         return location
@@ -147,7 +167,11 @@ class Memory:
             read every agent's global facts, so it raises.
         project_id: tenant partition applied across tiers.
         window: messages kept in the session/working window.
-        learn: an ``LLMClient`` → extract + persist durable user facts each turn.
+        learn: an ``LLMClient`` → extract + persist durable facts from each
+            user message (never from the model's replies).
+        max_learned_facts: keep at most this many learned facts per user,
+            deleting the oldest; facts you ``persist`` yourself are never
+            touched. ``None`` = no cap. Default ``200``.
         summarize: an ``LLMClient`` → roll older turns into a running summary.
         recall: ``"auto"`` (an in-process FAISS index per user) or a
             ``VectorStore`` → semantic recall over past exchanges. A store you
@@ -173,6 +197,7 @@ class Memory:
         dedupe: bool = False,
         semantic: Any = None,
         embedder: Any = None,
+        max_learned_facts: int | None = 200,
     ):
         if agent_id is not None and not agent_id:
             # An unset setting (e.g. os.environ.get("AGENT_ID", "")) must not
@@ -201,6 +226,7 @@ class Memory:
         self._user_id = user_id
         self._window = window
         self._learn = learn
+        self._max_learned_facts = max_learned_facts
         self._summarize = summarize
         self._recall = recall
         self._dedupe = dedupe
@@ -266,16 +292,26 @@ class Memory:
                         scope_id=user_scope_id,
                         project_id=self._project_id,
                         store=self._store,
+                        # The user's own messages only: the model's replies are
+                        # not facts about the user.
+                        roles=("user",),
+                        # The user-tier PersistentFactBlock below reads these
+                        # same facts back from the store — inject them once.
+                        inject=False,
+                        max_persisted=self._max_learned_facts,
                     )
                 )
-            blocks.append(
-                PersistentFactBlock(
-                    scope="user",
-                    scope_id=user_scope_id,
-                    project_id=self._project_id,
-                    store=self._store,
-                )
+            user_facts = PersistentFactBlock(
+                scope="user",
+                scope_id=user_scope_id,
+                project_id=self._project_id,
+                store=self._store,
             )
+            # The global block above is "persistent_facts"; a second block of
+            # the same name made one span label, one by_block key and one
+            # optimize replace target out of two different blocks.
+            user_facts.name = "persistent_facts.user"
+            blocks.append(user_facts)
         if self._summarize is not None:
             blocks.append(SummaryBlock(llm=self._summarize))
         if self._recall is not None:
@@ -361,6 +397,16 @@ class Memory:
         scope_id = id or (self._agent_id or "" if tier == "global" else "")
         return scope, scope_id
 
+    @staticmethod
+    def _warn_unscoped_global(verb: str) -> None:
+        warnings.warn(
+            f'{verb}(tier="global") with no agent_id on the Memory and no id= '
+            "stores the fact under an empty agent id, which no "
+            "Memory(agent_id=...) will ever inject. Set agent_id= on this Memory.",
+            UserWarning,
+            stacklevel=3,
+        )
+
     def persist(
         self, content: str, *, tier: str = "user", id: str = "", confidence: float = 1.0
     ) -> int:
@@ -375,6 +421,8 @@ class Memory:
         scope, scope_id = self._scope_and_id(tier, id)
         if tier == "user" and not scope_id:
             raise ValueError("persist(tier='user') requires id=<user id>")
+        if tier == "global" and not scope_id:
+            self._warn_unscoped_global("persist")
         with memory_store_span(
             "persist", tier=tier, scope=scope, scope_id=scope_id, project_id=self._project_id
         ) as h:
@@ -453,6 +501,8 @@ class Memory:
         scope, scope_id = self._scope_and_id(tier, id)
         if tier == "user" and not scope_id:
             raise ValueError("update(tier='user') requires id=<user id>")
+        if tier == "global" and not scope_id:
+            self._warn_unscoped_global("update")
         with memory_store_span(
             "update", tier=tier, scope=scope, scope_id=scope_id, project_id=self._project_id
         ) as h:

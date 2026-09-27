@@ -107,6 +107,19 @@ class FaissIndex:
                 results.append((idx, float(scores[0][i])))
         return results
 
+    def vectors(self) -> list[list[float]]:
+        """The stored vectors, in insertion order (one per ``count``).
+
+        Every index type here keeps the raw vectors (flat storage), so this is
+        exact. IVF needs its id → position map built before it can look up.
+        """
+        n = self._index.ntotal
+        if n == 0:
+            return []
+        if self._index_type == "ivf":
+            self._index.make_direct_map()
+        return [list(map(float, row)) for row in self._index.reconstruct_n(0, n)]
+
     def rebuild(self, embeddings: list[list[float]]) -> None:
         """Rebuild the index from scratch."""
         self._index = self._create_index(self._dimension, self._index_type)

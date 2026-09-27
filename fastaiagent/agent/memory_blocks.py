@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import re
 import time
 import uuid
@@ -414,7 +413,8 @@ class SummaryBlock(MemoryBlock):
         llm: The :class:`fastaiagent.llm.client.LLMClient` to use for summarization.
         keep_last: Number of recent messages *not* to summarize.
         summarize_every: Refresh the summary every N messages seen.
-        max_chars: Soft cap on the summary length; the LLM is asked to stay under.
+        max_chars: Summary length limit: the LLM is asked to stay under it, and a
+            longer summary is cut there.
     """
 
     name = "summary"
@@ -537,6 +537,11 @@ _OVERFETCH_FACTOR = 4
 _MAX_FETCH_FACTOR = 256
 
 
+def _half_life_decay(age_seconds: float, half_life_seconds: float) -> float:
+    """1.0 now, 0.5 after one half-life, 0.25 after two."""
+    return float(0.5 ** (age_seconds / half_life_seconds))
+
+
 def _store_count(store: Any) -> int | None:
     """The store's chunk count, or ``None`` if it can't say."""
     fn = getattr(store, "count", None)
@@ -561,7 +566,7 @@ class VectorBlock(MemoryBlock):
     ``importance_weight`` to enable the weighted-sum scorer:
 
         final_score = (1 - recency_weight - importance_weight) * cos_sim
-                    + recency_weight    * exp(-age_seconds / half_life)
+                    + recency_weight    * 0.5 ** (age_seconds / half_life)
                     + importance_weight * importance
 
     The ``importance`` field is read from each chunk's metadata
@@ -704,7 +709,7 @@ class VectorBlock(MemoryBlock):
             created_at = chunk.metadata.get("created_at")
             if isinstance(created_at, (int, float)):
                 age = max(0.0, now - float(created_at))
-                recency = math.exp(-age / self.recency_half_life_seconds)
+                recency = _half_life_decay(age, self.recency_half_life_seconds)
             else:
                 recency = 0.0  # unknown age — no boost
             importance_raw = chunk.metadata.get("importance", 1.0)
@@ -821,14 +826,21 @@ class FactExtractionBlock(MemoryBlock):
     """Use a structured-output LLM call to extract facts from each turn and
     persist them as a deduplicated list. Rendered as a bullet list.
 
-    Only user and assistant messages are inspected; tool messages are skipped.
-    Facts are short, self-contained statements about the user or world state.
+    Only the ``roles`` you choose are inspected (user and assistant by default);
+    tool messages are always skipped. Facts are short, self-contained
+    statements about the user or world state.
 
     Args:
         llm: LLM client for fact extraction. Use a cheap fast model
             (e.g. ``gpt-4o-mini``, ``claude-haiku-4-5``).
         max_facts: Cap the running fact list; oldest facts drop when exceeded.
-        extract_every: Run extraction every N messages (1 = every message).
+        extract_every: Run extraction every N inspected messages (1 = every one).
+        roles: Which messages to extract from — ``"user"`` and/or
+            ``"assistant"``. ``("user",)`` keeps the model's own claims from
+            being recorded as facts about the user, and halves the LLM calls.
+        inject: Render the extracted facts into the prompt. Set ``False`` when
+            a :class:`PersistentFactBlock` already reads the same store, so each
+            fact appears once.
         persist: When ``True``, newly extracted facts are also written to the
             durable ``learned_memory`` table during the run — so they survive
             across runs and can be read back by :class:`PersistentFactBlock`.
@@ -844,6 +856,10 @@ class FactExtractionBlock(MemoryBlock):
             are visibly distinguishable from human-approved ones.
         store: dependency injection for tests; defaults to a
             :class:`fastaiagent.learn.MemoryStore` against the configured local.db.
+        max_persisted: With ``persist=True``, keep at most this many learned
+            facts per subject in the store, deleting the oldest. Only facts
+            learned from a run (those with a ``source_trace_id``) count and are
+            deleted; facts written directly are never touched. ``None`` = no cap.
     """
 
     name = "facts"
@@ -859,11 +875,18 @@ class FactExtractionBlock(MemoryBlock):
         project_id: str = "",
         confidence: float = 0.6,
         store: object | None = None,
+        roles: tuple[str, ...] = ("user", "assistant"),
+        inject: bool = True,
+        max_persisted: int | None = None,
     ):
         if max_facts < 1:
             raise ValueError("max_facts must be >= 1")
         if extract_every < 1:
             raise ValueError("extract_every must be >= 1")
+        if not roles or not set(roles) <= {"user", "assistant"}:
+            raise ValueError(f"roles must be 'user' and/or 'assistant', got {roles!r}")
+        if max_persisted is not None and max_persisted < 1:
+            raise ValueError("max_persisted must be >= 1 (or None for no cap)")
         if persist:
             if scope not in ("user", "project", "agent"):
                 raise ValueError(f"scope must be one of user|project|agent, got {scope!r}")
@@ -881,6 +904,10 @@ class FactExtractionBlock(MemoryBlock):
         self.scope_id = scope_id
         self.project_id = project_id
         self.confidence = confidence
+        self.roles = tuple(roles)
+        self._roles = {MessageRole(r) for r in roles}
+        self.inject = inject
+        self.max_persisted = max_persisted
         self._store = store  # may be None — lazy init in _persist_facts
         self._messages_seen = 0
         self._facts: list[str] = []
@@ -899,12 +926,16 @@ class FactExtractionBlock(MemoryBlock):
             )
         # Share the llm handle; reset extracted-facts state per candidate.
         return FactExtractionBlock(
-            llm=self.llm, max_facts=self.max_facts, extract_every=self.extract_every
+            llm=self.llm,
+            max_facts=self.max_facts,
+            extract_every=self.extract_every,
+            roles=self.roles,
+            inject=self.inject,
         )
 
     def on_message(self, message: Message) -> None:
         self._last_write = BlockWriteReport(self.name, type(self).__name__, action="noop")
-        if message.role not in (MessageRole.user, MessageRole.assistant):
+        if message.role not in self._roles:
             return
         content = (message.content or "").strip()
         if not content:
@@ -927,6 +958,9 @@ class FactExtractionBlock(MemoryBlock):
         }
         if self.persist and added_facts:
             detail["persisted"] = self._persist_facts(added_facts)
+            pruned = self._prune()
+            if pruned:
+                detail["pruned"] = pruned
         self._last_write = BlockWriteReport(
             self.name,
             type(self).__name__,
@@ -934,7 +968,7 @@ class FactExtractionBlock(MemoryBlock):
             detail=detail,
         )
 
-    def _resolve_store(self):
+    def _resolve_store(self) -> Any:
         if self._store is None:
             from fastaiagent.learn.store import MemoryStore
 
@@ -989,11 +1023,39 @@ class FactExtractionBlock(MemoryBlock):
             _log.warning("FactExtractionBlock persist failed: %s", err)
         return written
 
+    def _prune(self) -> int:
+        """Delete the oldest learned facts beyond ``max_persisted``. Returns how
+        many were deleted. Never raises, like the write it follows.
+
+        Learned facts carry the ``source_trace_id`` of the run that produced
+        them; facts written directly (``Memory.persist``) have none and are
+        never counted or deleted.
+        """
+        if self.max_persisted is None:
+            return 0
+        scope_id = _resolve_scope_id(self.scope_id)
+        if not scope_id:
+            return 0
+        try:
+            store = self._resolve_store()
+            facts = store.list_active(
+                scope=self.scope, scope_id=scope_id, project_id=self.project_id
+            )  # newest first
+            excess = [f for f in facts if f.source_trace_id][self.max_persisted :]
+            for f in excess:
+                store.delete(
+                    scope=self.scope, scope_id=scope_id, project_id=self.project_id, fact=f.fact
+                )
+        except Exception as err:
+            _log.warning("FactExtractionBlock prune failed: %s", err)
+            return 0
+        return len(excess)
+
     def last_write_report(self) -> BlockWriteReport | None:
         return self._last_write
 
     def last_render_report(self) -> BlockRenderReport | None:
-        if not self._facts:
+        if not self._facts or not self.inject:
             return BlockRenderReport(self.name, type(self).__name__, rendered_count=0)
         return BlockRenderReport(
             self.name,
@@ -1035,7 +1097,7 @@ class FactExtractionBlock(MemoryBlock):
         return [str(item).strip() for item in data if item and isinstance(item, str)]
 
     def render(self, query: str) -> list[Message]:
-        if not self._facts:
+        if not self._facts or not self.inject:
             return []
         bullets = "\n".join(f"- {f}" for f in self._facts)
         return [SystemMessage(f"Known facts:\n{bullets}")]
@@ -1213,7 +1275,7 @@ class PersistentFactBlock(MemoryBlock):
         for f in facts:
             created = float(f.created_at) if f.created_at is not None else now
             age = max(0.0, now - created)
-            recency = math.exp(-age / self.recency_half_life_seconds)
+            recency = _half_life_decay(age, self.recency_half_life_seconds)
             importance = float(f.confidence) if f.confidence is not None else 1.0
             score = (
                 sim_w * 1.0 + self.recency_weight * recency + self.importance_weight * importance
@@ -1350,7 +1412,9 @@ class PlaneFactBlock(MemoryBlock):
         self.refresh_every = refresh_every
         self.timeout = timeout
         self._cached: list[str] | None = None
+        self._cached_query: str | None = None
         self._renders_since_refresh = 0
+        self._logged_statuses: set[int] = set()
 
     def isolated_copy(self) -> MemoryBlock:
         # Read-only at run time (render() only GETs from the plane). Share
@@ -1369,10 +1433,22 @@ class PlaneFactBlock(MemoryBlock):
         # Read-only block — facts are produced + curated centrally on the plane.
         return
 
+    def _sent_query(self, query: str) -> str:
+        """The question to send the plane: none unless the block is query
+        conditioned *and* payloads may leave the machine — the user's raw words
+        are payload, so ``FASTAIAGENT_TRACE_PAYLOADS=0`` keeps them home (the
+        plane then returns its flat, importance-ordered list)."""
+        from fastaiagent.trace.span import export_payloads_enabled
+
+        if self.query_conditioned and query and export_payloads_enabled():
+            return query
+        return ""
+
     def _fetch_from_plane(self, query: str) -> list[str]:
         """GET the agent's approved facts from the plane; return their contents.
 
-        A no-op (``[]``) when not connected; degradable on any non-2xx or error.
+        ``query`` is what :meth:`_sent_query` allows to leave. A no-op (``[]``)
+        when not connected; degradable on any non-2xx or error.
         """
         from fastaiagent.client import _connection
 
@@ -1388,7 +1464,7 @@ class PlaneFactBlock(MemoryBlock):
         }
         if self.category:
             params["category"] = self.category
-        if self.query_conditioned and query:
+        if query:
             params["query"] = query
 
         url = f"{_connection.target}/public/v1/memory/facts"
@@ -1397,8 +1473,17 @@ class PlaneFactBlock(MemoryBlock):
         if resp.status_code != 200:
             # 403 (domain not entitled) / 404 (unknown agent) / 5xx → degrade to
             # no facts. The agent still runs; central memory is an enhancement.
-            if resp.status_code not in (403, 404):
-                _log.warning("PlaneFactBlock read got HTTP %d", resp.status_code)
+            # Say so once per status, so a misconfiguration is visible without
+            # a warning on every turn.
+            if resp.status_code not in self._logged_statuses:
+                self._logged_statuses.add(resp.status_code)
+                _log.warning(
+                    "PlaneFactBlock read for agent %r got HTTP %d; running without "
+                    "plane facts (403: the domain lacks the connected-state-plane "
+                    "feature or the key lacks access; 404: unknown agent)",
+                    self.agent_id,
+                    resp.status_code,
+                )
             return []
         data = resp.json()
         return [
@@ -1406,13 +1491,18 @@ class PlaneFactBlock(MemoryBlock):
         ]
 
     def render(self, query: str) -> list[Message]:
-        if self._cached is None or self._renders_since_refresh >= self.refresh_every:
+        sent = self._sent_query(query)
+        stale = self._renders_since_refresh >= self.refresh_every
+        # Facts fetched for one question are not the answer for another: a new
+        # question refetches even between ``refresh_every`` refreshes.
+        if self._cached is None or stale or sent != self._cached_query:
             try:
-                self._cached = self._fetch_from_plane(query)
+                self._cached = self._fetch_from_plane(sent)
             except Exception as err:
                 # Never let a plane read break the run — degrade to last-known / empty.
                 _log.warning("PlaneFactBlock refresh failed: %s", err)
                 self._cached = self._cached or []
+            self._cached_query = sent
             self._renders_since_refresh = 1
         else:
             self._renders_since_refresh += 1

@@ -469,3 +469,46 @@ def test_store_span_keeps_scope_id_locally_with_payloads_off(db, monkeypatch):
         mem.persist("x", tier="user", id="alice@example.com")
     spans = {r["name"]: json.loads(r["attributes"]) for r in _read_spans(db)}
     assert spans["memory.persist"]["memory.scope_id"] == "alice@example.com"
+
+
+# --- 1.81.0: distinct block names, window pairs, no eager .fastaiagent ------------
+
+
+def test_agent_and_user_fact_blocks_have_distinct_names(db):
+    """Both were named "persistent_facts": one span label, one by_block key, and
+    optimize's block replacement removed both."""
+    mem = _per_user(db, agent_id="support")
+    names = [b.name for b in mem.for_user("alice").blocks]
+    assert "persistent_facts" in names and "persistent_facts.user" in names
+
+    store = MemoryStore(db_path=str(db))
+    store.add(Fact(scope="agent", scope_id="support", fact="global fact"))
+    store.add(Fact(scope="user", scope_id="alice", fact="alice fact"))
+    agent = Agent(name="support", llm=TestModel(response="ok"), memory=mem)
+    agent.run("hi", context=RunContext(state=St(user_id="alice")))
+    span_names = {r["name"] for r in _read_spans(db)}
+    assert {"memory.read.persistent_facts", "memory.read.persistent_facts.user"} <= span_names
+
+
+def test_an_odd_window_never_starts_with_an_orphan_reply():
+    from fastaiagent import AgentMemory
+    from fastaiagent.llm.message import AssistantMessage
+
+    mem = AgentMemory(max_messages=3)
+    for i in (1, 2):
+        mem.add(UserMessage(f"u{i}"))
+        mem.add(AssistantMessage(f"a{i}"))
+    assert [m.content for m in mem.messages] == ["u2", "a2"]  # was ["a1", "u2", "a2"]
+
+
+def test_memory_creates_no_local_files_until_used(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("FASTAIAGENT_LOCAL_DB", raising=False)
+    reset_config()
+    try:
+        mem = Memory()
+        assert not (tmp_path / ".fastaiagent").exists()
+        mem.persist("x", tier="user", id="u")
+        assert (tmp_path / ".fastaiagent" / "local.db").exists()
+    finally:
+        reset_config()

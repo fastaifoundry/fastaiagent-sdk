@@ -17,7 +17,7 @@ from pathlib import Path
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
 
-CURRENT_SCHEMA_VERSION = 22
+CURRENT_SCHEMA_VERSION = 23
 
 # A migration step is either a SQL string or a callable that takes the
 # ``SQLiteHelper`` and runs whatever logic it needs (e.g., gated
@@ -604,6 +604,27 @@ def _v22_add_legacy_imports(db: SQLiteHelper) -> None:
     )
 
 
+def _v23_add_learn_extractions(db: SQLiteHelper) -> None:
+    """Record which traces the learning loop has mined, per target (1.81.0).
+
+    ``fastaiagent learn`` re-read every trace in its window on every run —
+    re-billing the extraction LLM for traces it had already mined, including
+    ones that yielded nothing. One row per ``(trace, scope, scope_id,
+    project)`` makes a re-run skip them. Local only.
+    """
+    db.execute(
+        """CREATE TABLE IF NOT EXISTS learn_extractions (
+            trace_id     TEXT NOT NULL,
+            scope        TEXT NOT NULL,
+            scope_id     TEXT NOT NULL DEFAULT '',
+            project_id   TEXT NOT NULL DEFAULT '',
+            extracted_at REAL NOT NULL,
+            fact_count   INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (trace_id, scope, scope_id, project_id)
+        )"""
+    )
+
+
 def _v17_add_eval_run_synced(db: SQLiteHelper) -> None:
     """Durable platform-export buffer flag on ``eval_runs`` (Part D, 1.49.0).
 
@@ -1088,6 +1109,11 @@ _MIGRATIONS: dict[int, list[_Step]] = {
         # 1.79.0: each legacy store is imported once, so a pruned row is not
         # copied back on the next `fastaiagent ui` start. See _v22_add_legacy_imports.
         _v22_add_legacy_imports,
+    ],
+    23: [
+        # 1.81.0: the learning loop records each trace it mines, so a re-run
+        # skips it. See _v23_add_learn_extractions.
+        _v23_add_learn_extractions,
     ],
 }
 

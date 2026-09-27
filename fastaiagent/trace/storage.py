@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import warnings
 from datetime import datetime, timedelta, timezone
 from typing import Any, NamedTuple
 
@@ -434,19 +435,63 @@ class TraceStore:
         "THEN name END), MIN(name))"
     )
 
-    def list_traces(self, last_hours: int = 24, **filters: Any) -> list[TraceSummary]:
-        """List recent traces."""
-        rows = self._db.fetchall(
-            f"""SELECT trace_id,
+    def list_traces(
+        self,
+        last_hours: float | None = 24,
+        *,
+        limit: int | None = 100,
+        name_filter: str | None = None,
+        agent_name: str | None = None,
+        **filters: Any,
+    ) -> list[TraceSummary]:
+        """List traces, newest first.
+
+        Args:
+            last_hours: only traces that started within this many hours;
+                ``None`` for all time.
+            limit: at most this many traces; ``None`` for no limit.
+            name_filter: only traces whose name (the root span's) starts with
+                this, e.g. ``"chain.sales-sdr"``.
+            agent_name: only traces in which an agent of this name ran — at
+                the root, or as a child span (a swarm, a chain, a supervisor).
+        """
+        if filters:
+            warnings.warn(
+                f"list_traces() ignores unknown filters: {sorted(filters)}",
+                UserWarning,
+                stacklevel=2,
+            )
+        where: list[str] = []
+        having: list[str] = []
+        params: list[Any] = []
+        if agent_name is not None:
+            where.append(
+                "trace_id IN (SELECT trace_id FROM spans WHERE "
+                """json_extract(attributes, '$."agent.name"') = ? OR """
+                """json_extract(attributes, '$."fastaiagent.agent.name"') = ?)"""
+            )
+            params += [agent_name, agent_name]
+        if last_hours is not None:
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=last_hours)
+            having.append("MIN(start_time) >= ?")
+            params.append(cutoff.isoformat())
+        if name_filter is not None:
+            having.append(f"{self.TRACE_NAME_SQL} LIKE ? ESCAPE '\\'")
+            escaped = name_filter.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            params.append(escaped + "%")
+        sql = f"""SELECT trace_id,
                       {self.TRACE_NAME_SQL} as name,
                       MIN(start_time) as start_time,
                       MIN(status) as status,
                       COUNT(*) as span_count
                FROM spans
+               {"WHERE " + " AND ".join(where) if where else ""}
                GROUP BY trace_id
-               ORDER BY start_time DESC
-               LIMIT 100""",
-        )
+               {"HAVING " + " AND ".join(having) if having else ""}
+               ORDER BY start_time DESC"""
+        if limit is not None:
+            sql += f" LIMIT {int(limit)}"
+        rows = self._db.fetchall(sql, tuple(params))
         return [
             TraceSummary(
                 trace_id=row["trace_id"],
@@ -475,7 +520,7 @@ class TraceStore:
                 (f"%{query}%", f"%{query}%"),
             )
         else:
-            return self.list_traces()
+            return self.list_traces(last_hours=None)
         return [
             TraceSummary(
                 trace_id=row["trace_id"],

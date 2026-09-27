@@ -68,7 +68,7 @@ from fastaiagent.guardrail.guardrail import (
     start_firing_collection,
     stop_firing_collection,
 )
-from fastaiagent.llm.message import AssistantMessage, UserMessage
+from fastaiagent.llm.message import AssistantMessage, Message, MessageRole, UserMessage
 from fastaiagent.llm.stream import (
     HandoffEvent,
     StreamEvent,
@@ -84,15 +84,73 @@ __all__ = ["Swarm", "SwarmError", "SwarmState"]
 _HANDOFF_SENTINEL = "__HANDOFF__"
 
 
+def _input_text(value: Any) -> str:
+    """An agent input as memory text (multimodal parts summarised)."""
+    from fastaiagent.agent.agent import _input_summary_text
+    from fastaiagent.multimodal.types import normalize_input
+
+    return value if isinstance(value, str) else _input_summary_text(normalize_input(value))
+
+
+class _Hop:
+    """One hop of a swarm run: the request the swarm is serving, and whether
+    this hop ended by handing off."""
+
+    __slots__ = ("handed_off", "original_input")
+
+    def __init__(self, original_input: Any) -> None:
+        self.original_input = original_input
+        self.handed_off = False
+
+
+class _HopMemory:
+    """An agent's memory as one swarm hop sees it.
+
+    Reads pass straight through. Writes record the swarm's turn, not the hop's
+    mechanics: a hop that hands off writes nothing (its reply is the
+    ``__HANDOFF__`` sentinel, or a re-ask of it), and the hop that answers
+    records the user's original request rather than the "X handed off to
+    you…" text it was given as input. With one memory shared by every agent, a
+    swarm run leaves exactly one user message and one answer.
+    """
+
+    def __init__(self, base: Any, hop: _Hop) -> None:
+        self._base = base
+        self._hop = hop
+
+    def get_context(self, query: str = "", max_messages: int | None = None) -> list[Message]:
+        return list(self._base.get_context(query=query, max_messages=max_messages))
+
+    def add(self, message: Message) -> None:
+        if self._hop.handed_off:
+            return
+        if message.role == MessageRole.user and self._hop.original_input is not None:
+            message = UserMessage(_input_text(self._hop.original_input))
+        self._base.add(message)
+
+    def __bool__(self) -> bool:
+        return True
+
+    def __getattr__(self, name: str) -> Any:
+        # get_context, blocks, messages, save, … — everything else is the base's.
+        if name.startswith("_"):
+            raise AttributeError(name)
+        return getattr(self._base, name)
+
+
 class _ExitAfterHandoff(AgentMiddleware):
     """Internal middleware that stops an agent's tool loop as soon as a
     ``handoff_to_<peer>`` tool executes. Without this, the agent's LLM
     tends to re-call the handoff tool on the next iteration (since the
     sentinel string looks like legitimate tool output), which burns the
-    MaxIterations budget.
+    MaxIterations budget. It also marks its hop as handed off, so the hop's
+    memory writes are dropped (see :class:`_HopMemory`).
     """
 
     name = "_exit_after_handoff"
+
+    def __init__(self, hop: _Hop | None = None) -> None:
+        self._hop = hop
 
     async def wrap_tool(
         self,
@@ -103,6 +161,8 @@ class _ExitAfterHandoff(AgentMiddleware):
     ) -> ToolResult:
         result = await call_next(tool, args)
         if tool.name.startswith("handoff_to_"):
+            if self._hop is not None:
+                self._hop.handed_off = True
             # StopAgent short-circuits the remaining tool calls in this
             # iteration and the rest of the inner tool loop. Gap 3's
             # executor preserves ``all_tool_calls`` so the swarm outer
@@ -513,7 +573,9 @@ class Swarm:
                 result = injected
                 injected = None
             else:
-                active = self._active_agent(current, state, context=context)
+                active = self._active_agent(
+                    current, state, context=context, original_input=original_input
+                )
                 # Pass the same execution_id to child agents so all
                 # checkpoints land under one umbrella execution.
                 result = await active.arun(
@@ -725,7 +787,9 @@ class Swarm:
         ap_token = _agent_path.set(f"swarm:{self.name}")
         cp_token = _current_checkpointer.set(self._checkpointer)
         try:
-            active_agent = self._active_agent(active_name, state, context=context)
+            active_agent = self._active_agent(
+                active_name, state, context=context, original_input=original_input
+            )
             # Re-run the active agent. ``aresume`` handles interrupt-claim
             # + suspended-tool re-entry; plain ``arun`` is the crash-recovery
             # path (re-issues LLM, re-runs tools).
@@ -784,7 +848,7 @@ class Swarm:
         current_input = input
 
         while True:
-            active = self._active_agent(current, state, context=context)
+            active = self._active_agent(current, state, context=context, original_input=input)
             handoff_from_stream: tuple[str, str] | None = None
 
             inner_stream = active.astream(current_input, context=context, **kwargs)
@@ -893,22 +957,26 @@ class Swarm:
         name: str,
         state: SwarmState,
         context: RunContext[Any] | None = None,
+        original_input: Any = None,
     ) -> Agent:
         """Return a clone of ``agents[name]`` with handoff tools injected.
 
         The clone shares everything with the original (llm, system_prompt,
         memory, guardrails, middleware) but gets additional per-run handoff
         tools. The original agent is left untouched so multiple swarms can
-        share the same agent instances without cross-contamination.
+        share the same agent instances without cross-contamination. Its
+        memory is seen through a :class:`_HopMemory` for this hop, so the run
+        records the user's ``original_input`` once, not the hand-off mechanics.
         """
         base = self.agents[name]
+        hop = _Hop(original_input)
         handoff_tools = self._build_handoff_tools(name, state)
         merged_tools: list[Tool] = list(base.tools) + handoff_tools
         # Prepend the internal exit-after-handoff middleware so the inner
         # tool loop stops as soon as a handoff executes. User-supplied
         # middleware still runs (around the real tool) because ours wraps
         # outermost and only short-circuits after the real tool returns.
-        merged_middleware = [_ExitAfterHandoff(), *base.middleware]
+        merged_middleware = [_ExitAfterHandoff(hop), *base.middleware]
         return Agent(
             name=base.name,
             # Managed policy and plane guardrails key on the platform identity;
@@ -918,7 +986,7 @@ class Swarm:
             llm=base.llm,
             tools=merged_tools,
             guardrails=base.guardrails,
-            memory=base.memory,
+            memory=_HopMemory(base.memory, hop) if base.memory is not None else None,
             config=base.config,
             output_type=base.output_type,
             middleware=merged_middleware,

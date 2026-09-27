@@ -135,9 +135,11 @@ def plane_admin(target: str, *, purpose: str) -> tuple[Any, dict[str, str], str]
         domains = client.get("/api/v1/users/me/domains", headers=headers).json()
         lab = next((d for d in domains if d["name"] == LAB_DOMAIN_NAME), None)
         if lab is None:
+            visible = ", ".join(repr(d["name"]) for d in domains) or "none"
             pytest.skip(
-                f"no '{LAB_DOMAIN_NAME}' domain on this plane — create it (or set "
-                "E2E_PLANE_DOMAIN_ID) so the gate does not write into a shared domain."
+                f"{email} is not a member of a '{LAB_DOMAIN_NAME}' domain (it can see: "
+                f"{visible}). Set E2E_PLANE_DOMAIN_ID to the domain to use, or add this "
+                "user to the lab domain — the gate never writes into a shared domain."
             )
         domain_id = lab["id"]
     _PLANE_ADMIN = (client, headers, str(domain_id))

@@ -2,6 +2,8 @@
 
 Memory lets agents remember — within a conversation and across sessions. The recommended API is a single object, **`Memory`**, with progressive-disclosure keywords. The composable blocks it's built on remain available for advanced/custom behaviours (see [Advanced](#advanced-composable-blocks)).
 
+New to memory here? Start with **[How memory works](memory-concepts.md)** — the kinds of memory, tiers vs scopes, what is written when, and the two "learn"s.
+
 ## `Memory` — the recommended API
 
 ```python
@@ -37,7 +39,8 @@ The whole surface is keywords on one object:
 | `agent_id` | global tier: facts true for everyone using the agent |
 | `project_id` | tenant partition applied across tiers |
 | `window` | recent messages kept (session/working memory) |
-| `learn` | an LLM → extract + persist durable user facts each turn |
+| `learn` | an LLM → extract + persist durable facts from each user message (never from the model's replies) |
+| `max_learned_facts` | keep the newest N learned facts per user, deleting older ones (default `200`; `None` = no cap). Facts you `persist` yourself are never touched |
 | `summarize` | an LLM → compress older turns into a running summary |
 | `recall` | `"auto"` (an in-process FAISS index per user) or a `VectorStore` shared by every user, each user's recall namespaced → semantic recall of past exchanges |
 | `dedupe` | drop recalled content an earlier tier already injected |
@@ -53,13 +56,15 @@ The whole surface is keywords on one object:
 ### Direct store use
 
 ```python
-mem = Memory(location="sqlite")
+mem = Memory(location="sqlite", agent_id="support")
 mem.persist("Return policy is 30 days", tier="global")   # create; returns fact id
 mem.persist("Prefers email", tier="user", id="alice")
 mem.retrieve(tier="user", id="alice")                    # read → list[Fact]
 mem.update("Prefers Slack", old="Prefers email", tier="user", id="alice")  # supersede old, keep history
 mem.forget(tier="user", id="alice")                      # delete; returns count
 ```
+
+A global fact is filed under the `Memory`'s `agent_id`, and only a `Memory(agent_id=...)` with the same id injects it. `persist`/`update` with `tier="global"` and no `agent_id` warn: that fact would never be injected.
 
 `forget` refuses to mass-delete by accident. `forget(tier="user")` needs an `id`, and `forget(tier="global")` needs `agent_id=` on the `Memory` (or an `id`) — without one, an empty id would match every agent's global facts. Pass `id="*"` to delete every subject on purpose.
 
@@ -113,7 +118,7 @@ Every turn reads the newest facts for the user (and the agent), so a read costs 
     ```
 
 !!! note "Observability with external backends"
-    Agent runs against any backend emit `memory.read` / `memory.write` / `memory.persist` / `memory.retrieve` trace spans (browsable in `fastaiagent ui`). The UI **Memory page** browses the local SQLite store; facts written to an external backend are observed via those trace spans (a shared UI over external backends is future work).
+    Agent runs against any backend emit `memory.read` / `memory.write` trace spans, and direct `Memory.persist` / `retrieve` / `update` / `forget` calls emit `memory.persist` / `memory.retrieve` / … spans (browsable in `fastaiagent ui`). The UI **Memory page** browses the local SQLite store; facts written to an external backend are observed via those trace spans (a shared UI over external backends is future work).
 
 ### Semantic recall of facts (`semantic`)
 
@@ -125,13 +130,15 @@ mem.persist("The user is allergic to peanuts", tier="user", id="alice")
 mem.retrieve("what foods should we avoid?", tier="user", id="alice")   # → the peanut fact
 ```
 
-`semantic="auto"` builds an in-process vector index sized to the embedder; pass a `VectorStore` for a shared/production index and `embedder=` to override. Facts written by `learn=` are indexed automatically (they share the store). Semantic results honor the same scope isolation and skip superseded facts; the `memory.retrieve` span records match scores.
+`semantic="auto"` builds an in-process vector index sized to the embedder; pass a `VectorStore` (FAISS, Qdrant, Chroma, your own) for a shared/production index and `embedder=` to override. Facts written by `learn=` are indexed automatically (they share the store). Semantic results honor the same scope isolation and skip superseded facts; the `memory.retrieve` span records how many facts came back.
+
+**The store is the source of truth, not the index.** Before each semantic search, the subject's active facts are read from the store and any the index doesn't have yet are embedded, in one batch. So a restarted process (whose in-process index starts empty) and facts written by another process are both found; the first query after a restart pays one embedding call for that subject's facts. Each fact's vector id is a stable UUID with the fact id in its metadata, which Qdrant requires.
 
 ### Safe-by-default scoping
 
 At `user`/`project` scope an **empty id returns nothing** — one user's facts can never leak into another's context. Use `scope_id="*"` (on the low-level store) to deliberately read across all subjects. The `agent`/global tier stays permissive (shared truth), but an empty agent id is refused where it is almost always a mistake: `Memory(agent_id="")` raises, and `PersistentFactBlock(scope="agent", scope_id="")` warns — use `scope_id="*"` to read every agent's facts on purpose. *(This corrects prior behaviour where an empty user id matched everyone — see the CHANGELOG.)*
 
-The Memory page (`fastaiagent ui` → Knowledge → Memory) shows the tiers side by side — `user:alice` / `user:bob` (learned, source `trace`) and a shared `agent:*` global fact (source `manual`):
+The Memory page (`fastaiagent ui` → Knowledge → Memory) shows the tiers side by side — `user:alice` / `user:bob` (learned, source `trace`) and the global fact under `agent:assistant` (source `manual`, from `Memory(agent_id="assistant")`):
 
 ![Memory page — tiers](img/memory-simple-page.png)
 
@@ -173,7 +180,7 @@ print(result.output)  # "Your name is Alice."
 ### How it works
 
 1. On each `run()` call, the agent prepends stored messages to the conversation.
-2. After the agent responds, the new user message and assistant response are added to memory.
+2. After the agent responds, the new user message and assistant response are added to memory. A resumed or forked run records the question it was resuming. Middleware such as `RedactPII` changes only what the model is sent, never what memory stores.
 3. If `max_messages` is reached, the oldest messages are dropped (FIFO).
 
 ### Persistence
@@ -192,7 +199,7 @@ result = agent.run("What's my name?")  # "Your name is Alice."
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `max_messages` | `int` | `20` | Maximum number of messages to retain |
+| `max_messages` | `int \| None` | `None` | Messages to retain (a count, not tokens). `None` keeps everything; `Memory(window=)` defaults to 20 |
 
 ---
 
@@ -257,11 +264,11 @@ SummaryBlock(
     llm=llm,
     keep_last=10,       # never summarize the N most recent messages
     summarize_every=5,  # refresh cadence
-    max_chars=800,      # soft cap on summary length
+    max_chars=800,      # asked of the LLM, and longer summaries are cut here
 )
 ```
 
-**When to use**: long conversations that otherwise blow the context window. Cheaper than re-embedding everything, but introduces one extra LLM call every `summarize_every` turns.
+**When to use**: long conversations that otherwise blow the context window. Cheaper than re-embedding everything, but introduces one extra LLM call every `summarize_every` messages (a turn is two: the user's and the answer).
 
 ### `VectorBlock`
 
@@ -313,7 +320,7 @@ VectorBlock(
     top_k=5,
     recency_weight=0.3,                 # 0.0–1.0
     importance_weight=0.2,              # 0.0–1.0
-    recency_half_life_seconds=3600.0,   # 1 hour, exponential decay
+    recency_half_life_seconds=3600.0,   # 1 hour: recency halves every hour
 )
 ```
 
@@ -321,7 +328,7 @@ Retrieval becomes a weighted sum of three signals:
 
 ```
 final_score = (1 - recency_weight - importance_weight) * cosine_similarity
-            + recency_weight    * exp(-age_seconds / half_life)
+            + recency_weight    * 0.5 ** (age_seconds / half_life)
             + importance_weight * importance
 ```
 
@@ -350,9 +357,9 @@ Three stored messages, all matching *"what's my email?"*:
 half-life:
 
 ```
-A:  0.5*0.85 + 0.3*exp(-604800/3600) + 0.2*0.5  ≈ 0.425 + ~0.000 + 0.10 = 0.525
-B:  0.5*0.80 + 0.3*exp(-3600/3600)   + 0.2*1.0  ≈ 0.400 + 0.110  + 0.20 = 0.710
-C:  0.5*0.30 + 0.3*exp(-300/3600)    + 0.2*1.0  ≈ 0.150 + 0.276  + 0.20 = 0.626
+A:  0.5*0.85 + 0.3*0.5**(604800/3600) + 0.2*0.5  ≈ 0.425 + ~0.000 + 0.10 = 0.525
+B:  0.5*0.80 + 0.3*0.5**(3600/3600)   + 0.2*1.0  ≈ 0.400 + 0.150  + 0.20 = 0.750
+C:  0.5*0.30 + 0.3*0.5**(300/3600)    + 0.2*1.0  ≈ 0.150 + 0.283  + 0.20 = 0.633
 ```
 
 B wins — the right answer surfaces. C ranks high on recency but its low
@@ -371,13 +378,16 @@ similarity prevents it from outranking B.
 
 ##### Where `importance` comes from
 
-- `VectorBlock` reads `chunk.metadata['importance']` if set, defaults to
-  `1.0`. To stamp it, attach `importance` to your `Message` before
-  feeding it through memory (the block reads `getattr(message,
-  "importance", None)` in `_make_chunk`).
-- `PersistentFactBlock` reads the existing `confidence` column on
-  `learned_memory` rows. Facts produced by `fastaiagent learn` carry an
-  LLM-judged confidence; high-confidence facts naturally rank higher.
+- `VectorBlock` reads `chunk.metadata['importance']`, defaulting to `1.0`.
+  Messages the agent records carry no importance (`Message` has no such
+  field), so they all score `1.0`. To weight chunks, write them into the
+  store yourself with `metadata={"namespace": ..., "importance": 0.3}`, or
+  subclass `VectorBlock` and override `_make_chunk` to set it.
+- `PersistentFactBlock` reads the `confidence` column on `learned_memory`
+  rows: `0.6` for facts learned during a run (`Memory(learn=)`,
+  `FactExtractionBlock(persist=True)`), `1.0` for facts from
+  `fastaiagent learn` and for facts you write yourself unless you set it. With
+  `importance_weight > 0`, run-learned facts rank below the rest.
 
 **Backward compatibility**: with both weights at zero (the default),
 behaviour is byte-identical to v1.8.x — the scorer short-circuits and
@@ -389,11 +399,15 @@ Uses a cheap LLM to extract durable facts from each user/assistant message and s
 
 ```python
 FactExtractionBlock(
-    llm=llm,            # use a fast model (gpt-4o-mini, claude-haiku)
-    max_facts=200,      # cap; oldest drop on overflow
-    extract_every=1,    # run extraction every N messages
+    llm=llm,                      # use a fast model (gpt-4o-mini, claude-haiku)
+    max_facts=200,                # cap; oldest drop on overflow
+    extract_every=1,              # run extraction every N inspected messages
+    roles=("user", "assistant"),  # which messages to read; ("user",) skips the model's own claims
+    inject=True,                  # False = extract (and persist) without rendering
 )
 ```
+
+`roles=("user",)` keeps the model's replies from being recorded as facts about the user, and halves the extraction calls. Set `inject=False` when a `PersistentFactBlock` already reads the same store, so each fact reaches the prompt once — `Memory(learn=)` does both.
 
 **When to use**: user-focused assistants where you want stable facts ("user is allergic to peanuts", "user's kids are named Maya and Omar") to persist independently from the conversation log.
 
@@ -408,8 +422,11 @@ FactExtractionBlock(
     scope="user",           # 'user' | 'project' | 'agent'
     scope_id="upendra",     # REQUIRED when persist=True
     confidence=0.6,         # stamped on auto-facts; below curated 1.0 so they sort lower
+    max_persisted=200,      # keep the newest N learned facts per subject; None = no cap
 )
 ```
+
+`max_persisted` deletes the oldest learned facts beyond the cap after each write. Only facts learned from a run (those with a `source_trace_id`) count and are deleted; facts written directly are never touched. Deleted facts are gone, not superseded.
 
 Each persisted fact is stamped with the **current trace id** as `source_trace_id`, so the [Memory page](#the-memory-page) shows a clickable link back to the run that produced it. Writes are idempotent (the store's uniqueness constraint dedupes) and failure-isolated (a store error logs and the run continues). Because it now writes an external store mid-run, `isolated_copy()` raises `MemoryIsolationError` when `persist=True` — the same guard as `VectorBlock` — so `fastaiagent.optimize` candidates don't bleed writes.
 
@@ -473,7 +490,9 @@ memory = ComposableMemory(
 agent = Agent(name="support", system_prompt="...", llm=llm, memory=memory)
 ```
 
-**Read-only and degradable.** When the SDK is not connected, the plane is unreachable, or the domain isn't entitled (`403`), `PlaneFactBlock` injects nothing and the agent runs normally — central facts are an enhancement, never a dependency. The read is a bounded start-of-run network GET (like `VectorBlock`'s search), cached per `refresh_every`; it never pushes anything. The plane runs no agent code — it serves facts; recall and injection happen locally.
+**Read-only and degradable.** When the SDK is not connected, or the plane answers with an error (e.g. `403`: the domain isn't entitled), `PlaneFactBlock` injects nothing and the agent runs normally — central facts are an enhancement, never a dependency; the error is logged once. If the plane is unreachable, the block keeps serving the facts it last fetched. The read is a bounded start-of-run network GET (like `VectorBlock`'s search), cached per `refresh_every` — but a new question always refetches, so one question's facts are never served for another. It never pushes anything. The plane runs no agent code — it serves facts; recall and injection happen locally.
+
+**Your users' questions stay home when payloads are off.** With `query_conditioned=True` the user's question is sent to the plane for semantic recall. When `FASTAIAGENT_TRACE_PAYLOADS=0`, it is left out: the plane then returns the agent's facts by importance rather than by relevance to the question.
 
 **When to use**: connected (Enterprise) deployments that want a single governed, curated knowledge base shared across a fleet of agents, with central redaction / right-to-be-forgotten. See [Connected central memory](../platform/index.md) and the [memory loop](../learning/memory-loop.md).
 
@@ -598,7 +617,7 @@ Click the `memory.read.vector` child to see the recalled items and their scores:
 
 ![VectorBlock scores and snippets](img/memory-02-vectorblock-scores.png)
 
-These spans nest under the agent span automatically and are **no-ops when tracing is off** — memory behaves exactly as before, with no extra embedding or LLM calls. Snippets and query text honor `FASTAIAGENT_TRACE_PAYLOADS=0` and any installed [`RedactionPolicy`](../security.md) (the "Mask secrets" toggle), since memory content can contain PII.
+These spans nest under the agent span automatically and are **no-ops when tracing is off** — memory behaves exactly as before, with no extra embedding or LLM calls. Snippets, query text and the user id (`memory.scope_id`) are dropped from exported spans when `FASTAIAGENT_TRACE_PAYLOADS=0` (the local trace store keeps them), and honor any installed [`RedactionPolicy`](../security.md) (the "Mask secrets" toggle), since memory content can contain PII. Inside `Memory`, the global fact block's spans are `memory.read.persistent_facts` and the user fact block's are `memory.read.persistent_facts.user`.
 
 ### The Memory page
 
@@ -613,7 +632,7 @@ Each row is one durable fact:
 | **Fact** | The stored statement, e.g. *"Has a beagle named Biscuit; allergic to cats."* This is the `fact` text a `PersistentFactBlock` injects into a matching agent's prompt. |
 | **Scope** | Rendered as `scope:scope_id` (e.g. `user:upendra`). `scope` is one of `user` / `project` / `agent`; `scope_id` is the identifier within it (a user id, a project key, or an agent name). A block reading `PersistentFactBlock(scope="user", scope_id="upendra")` will pick up exactly the `user:upendra` rows. |
 | **Source** | Where the fact came from. A **`trace`** link jumps to the run that produced it (facts persisted by `FactExtractionBlock(persist=True)` carry the run's trace id as `source_trace_id`). **`manual`** = inserted directly via `MemoryStore.add`. |
-| **Confidence** | The `confidence` column (0–1); also drives `importance_weight` ranking. Auto-extracted facts default to `0.6`, curated/manual to `1.0`, so provenance is visible at a glance. |
+| **Confidence** | The `confidence` column (0–1); also drives `importance_weight` ranking. Facts learned during a run (`Memory(learn=)`, `FactExtractionBlock(persist=True)`) get `0.6`; facts from `fastaiagent learn` and direct writes get `1.0` unless you set it. |
 | **Created** | When the fact was written. |
 
 **Scope filter** — the dropdown lists every `scope:scope_id` partition (users, projects, and agents — memory is not agent-only) with counts, plus "All scopes".
@@ -634,7 +653,7 @@ Each block runs inside a try/except inside `ComposableMemory`. A failing block i
 
 ## Future work
 
-Async parallel methods (`aon_message`, `arender`) are planned as an additive 0.5.x feature. The sync API shipped in 0.4.0 will not break when the async methods are added — same pattern as `Agent.run` / `Agent.arun`.
+Blocks are synchronous today: inside `arun`, a block's LLM, embedding and store calls run in line and hold the event loop while they do. Async block methods (`aon_message`, `arender`) are not shipped yet; when they are, they'll be additive — the sync API won't change.
 
 ---
 

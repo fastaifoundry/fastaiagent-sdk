@@ -208,6 +208,8 @@ swarm = Swarm(
 )
 ```
 
+A swarm run is recorded as **one turn**: the user's original request and the final answer. The agent that hands off writes nothing, and the agent that answers records the original request rather than the "X handed off to you…" text it received. With separate memories, only the agent that answered records the turn.
+
 See [Memory](memory.md) for the full block reference.
 
 ### With a KB tool

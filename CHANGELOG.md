@@ -5,6 +5,204 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.81.0] - 2026-09-27 — memory you can trust: clean facts, true history, bounded learning, restart-safe recall
+
+The rest of the memory audit (1.80.0 fixed the cross-user leaks). No plane
+change and no wire change.
+
+### Fixed
+
+- ⚠ **`learn=` reads the user's messages, not the model's replies.**
+  `Memory(learn=llm)` also extracted "facts" from the assistant's answers, so
+  the model's own claims were stored as facts about the user — "Biscuit is
+  allergic to cats", "The MAAT museum showcases modern design". It now reads
+  user messages only, which also halves the extraction LLM calls.
+  `FactExtractionBlock` gains `roles=`; its default (both roles) is unchanged.
+- ⚠ **Each learned fact reaches the prompt once.** `Memory(learn=)` injected
+  the same facts twice: as "Known facts" from the extraction block and as
+  "Learned facts (user:…)" read back from the store. `FactExtractionBlock`
+  gains `inject=`; `Memory` turns it off, since the store read covers it.
+- ⚠ **A user's learned facts are capped.** `learn=` can persist up to 10 facts
+  per message, and nothing limited how many a user accumulated.
+  - `Memory(max_learned_facts=200)` keeps the newest 200 learned facts per user
+    and deletes older ones after each write; `None` turns the cap off.
+  - Only facts learned from a run (those with a `source_trace_id`) are counted
+    or deleted. Facts you `persist` yourself are never touched.
+  - `FactExtractionBlock` gains `max_persisted=` (default: no cap); a write span
+    reports `pruned` when the cap deletes.
+- **Deleting from a FAISS index no longer corrupts it.**
+  `FaissVectorStore.delete` kept the surviving chunks but emptied the index,
+  so every later search mapped positions onto the wrong chunks: after one
+  `forget`, `semantic=` retrieval returned the wrong fact. It now rebuilds from
+  the survivors' stored vectors (flat, HNSW and IVF). A rejected `add` (e.g. a
+  wrong dimension) no longer leaves a chunk with no vector.
+- **A global fact filed under no agent now warns.** `persist` / `update` with
+  `tier="global"` on a `Memory` without `agent_id` stored the fact under an
+  empty agent id, which no `Memory(agent_id=...)` ever injects. Our own
+  docstring, tutorial step 4 and `examples/memory_backends` did this; all three
+  now set `agent_id`.
+
+- **A resumed or forked run records the question it resumed.** `aresume` and
+  `afork` recorded the *first* user message of the saved prompt, which starts
+  with the memory window, so resuming "TURN-2" wrote "TURN-1" into memory
+  again. They now take the last user message. The structured-output re-ask
+  also no longer appends its correction prompt to the saved prompt, where a
+  resume would have taken it for the user's question.
+- ⚠ **A swarm run is recorded once, without hand-off artifacts.** A hand-off
+  wrote a fake `__HANDOFF__` reply and a fake "a handed off to you…" user
+  message into memory. Now the agent that hands off writes nothing, and the
+  agent that answers records the user's original request. With one shared
+  memory a run leaves exactly one user message and one answer; with separate
+  memories only the answering agent records it.
+- ⚠ **`RedactPII` no longer rewrites stored history.** It edited the message
+  objects it was handed in place, and those were the ones memory stores, so
+  turn 1 turned into `[REDACTED]` in memory once turn 2 ran. It now redacts
+  copies, and `AgentMemory.get_context` hands out copies. The model still sees
+  only redacted text.
+
+- ⚠ **The learning loop mines only the traces you point it at.**
+  `fastaiagent learn` / `run_extraction` read the newest 100 traces of every
+  agent and every date — `--window` was ignored — and filed all their facts
+  under the one `--scope-id`. It then re-mined its own extraction calls on the
+  next run, and counted re-found facts as "written". Now:
+  - `--window` / `last_hours` is honoured;
+  - `--agent` / `agent_name=` keeps only traces in which that agent ran, at
+    the root or inside a swarm, chain or supervisor;
+  - extraction calls run under a `learn.extract` root span
+    (`fastaiagent.source="learn"`) and are never mined;
+  - each mined trace is recorded (new local table `learn_extractions`,
+    schema v23), so a re-run reads only new traces and doesn't re-bill ones
+    that yielded nothing. `--reprocess` mines them again; a failed extraction
+    is not recorded, so it is retried;
+  - `--max-traces` (default 100) caps a run;
+  - the summary reports **new** facts separately from already-known ones
+    (`ExtractionResult.new_ids`).
+- ⚠ **`--scope user` / `--scope project` can no longer file everyone's traces
+  under one id by accident.** Traces carry no user id, so every trace read is
+  attributed to `--scope-id`. Both scopes now need a non-empty `--scope-id`,
+  `--agent`, and `--attribute-all` to confirm the traces are all that
+  subject's (plus `--allow-personal`, as before).
+- ⚠ **`TraceStore.list_traces` honours its arguments.** It ignored
+  `last_hours` and every filter and returned the newest 100 traces of all
+  time. It now applies `last_hours` (default 24; `None` = all time), `limit`
+  (default 100; `None` = no limit), `name_filter` (trace-name prefix) and the
+  new `agent_name`, and warns on unknown filters. `fastaiagent traces list
+  --last-hours` now does what its help says.
+- **Semantic memory survives a restart.** `Memory(semantic=...)` kept its
+  index only in the process that wrote the facts: after a restart,
+  `retrieve(query)` returned `[]` though the facts were still stored (SQLite,
+  Postgres and Redis alike), and facts another process wrote were never found.
+  The store is now the source of truth — each semantic search first embeds the
+  subject's facts the index doesn't have yet, in one batch.
+- **Semantic memory works on Qdrant.** Fact vectors were indexed under ids like
+  `"1"`, which Qdrant rejects, and the error was swallowed, so nothing was ever
+  indexed. Vector ids are now stable UUIDs with the fact id in metadata; older
+  numeric-id vectors (Chroma) still resolve, and results are de-duplicated per
+  fact. A failed vector removal is logged instead of silently ignored.
+- **Other subjects can't crowd a subject out of a shared semantic index.** The
+  search now widens while other users' facts fill the hits.
+- **`PlaneFactBlock` keeps your users' questions home when payloads are off.**
+  It sent the user's raw question to the plane as a URL parameter even with
+  `FASTAIAGENT_TRACE_PAYLOADS=0`. The question is now left out (the plane then
+  returns its facts by importance — `query` is optional there, so no plane
+  change and no wire change). With `refresh_every > 1`, facts fetched for one
+  question were reused for later, different questions; a new question now
+  refetches. A 403 / 404 from the plane is logged once instead of silently.
+- ⚠ **`recency_half_life_seconds` is a true half-life.** `VectorBlock` and
+  `PersistentFactBlock` applied `exp(-age / half_life)`, so after one
+  "half-life" recency weighed 0.37, not 0.5. It is now `0.5 ** (age /
+  half_life)`. Only affects `recency_weight > 0`.
+- ⚠ **`Memory`'s two fact blocks have different names.** With both an
+  `agent_id` and a user, both blocks were `persistent_facts`: one span label,
+  one `SharedMemoryContext.by_block` key, and one `optimize` replacement target
+  (which removed both). The user block is now `persistent_facts.user`; the
+  agent block keeps its name.
+- **`Agent(memory=Memory(...))` type-checks.** `Agent`'s `memory` is typed as
+  the new `MemoryLike` protocol (`get_context` + `add`), which `AgentMemory`,
+  `ComposableMemory` and `Memory` all satisfy.
+- **An `AgentMemory` window never starts with an orphan reply.** An odd
+  `max_messages` could trim a turn's question and keep its answer.
+- **`Memory()` creates no files until it is used.** It created
+  `./.fastaiagent/` in the working directory on construction.
+- **The UI Memory page works when a project is set.** Both
+  `/api/learned_memory` routes built `WHERE 1=1 AND AND project_id = ?` and
+  answered HTTP 500 for an app built with a `project_id`.
+
+### Added
+
+- `Memory(max_learned_facts=)`; `FactExtractionBlock(roles=, inject=,
+  max_persisted=)`; `FaissIndex.vectors()`.
+- `fastaiagent.agent.memory.MemoryLike` (the memory protocol `Agent` accepts).
+- `run_extraction(agent_name=, max_traces=, reprocess=)`,
+  `ExtractionResult.new_ids`, `MemoryStore.add_with_status()` /
+  `extracted_trace_ids()` / `mark_extracted()`; `TraceStore.list_traces(limit=,
+  name_filter=, agent_name=)`; CLI `fastaiagent learn --agent --max-traces
+  --reprocess --attribute-all`.
+
+### Behaviour changes
+
+- `Memory(learn=)` no longer extracts from assistant replies.
+- `Memory(learn=)` no longer renders the "Known facts" block; the same facts
+  arrive as "Learned facts (user:…)".
+- Learned facts beyond 200 per user are **deleted**, not superseded, so they
+  don't appear under "Show superseded". Pass `max_learned_facts=None` to keep
+  every fact.
+- `persist` / `update` with `tier="global"` and no `agent_id` warn.
+- Swarm memory no longer contains hand-off messages; each run is one turn.
+- `list_traces()` with no arguments returns the last 24 hours, not the newest
+  100 of all time; pass `last_hours=None` for the old reach.
+  `fastaiagent traces list` changes the same way.
+- `fastaiagent learn` skips traces it already mined for the same scope and
+  id; `--reprocess` restores the old behaviour. `--scope user|project` needs
+  `--scope-id`, `--agent` and `--attribute-all`.
+- local.db migrates to schema v23 (adds `learn_extractions`; additive).
+- With `FASTAIAGENT_TRACE_PAYLOADS=0`, `PlaneFactBlock` sends no question, so
+  plane facts arrive by importance rather than relevance.
+- Recency scores change for `recency_weight > 0` (a true half-life).
+- With both `agent_id` and a user, the user fact block's spans are
+  `memory.read.persistent_facts.user` — update saved filters on the old name.
+- An `AgentMemory` window with an odd `max_messages` can hold one message fewer.
+- The first semantic query after a restart embeds that subject's stored facts
+  once. Fact vectors written to an external index now use UUID ids; older
+  vectors stay readable.
+- With `RedactPII`, stored history keeps the raw text; the model still gets
+  the redacted copy. To keep PII out of memory, redact before the agent.
+
+### Docs
+
+- `agents/memory.md` (the `learn` and `max_learned_facts` rows, the global
+  tier, `FactExtractionBlock` `roles` / `inject` / `max_persisted`),
+  `tutorials/memory-guide.md` (steps 2 and 4), the README tiers line, and
+  `examples/memory_backends` (`agent_id`, and it now cleans up its global fact).
+- `agents/swarm.md` (memory across hand-offs), `agents/middleware.md`
+  (what `RedactPII` does and doesn't redact), `agents/memory.md` (write path).
+- `agents/memory.md`: scoring formula and worked example, `PlaneFactBlock`
+  privacy and caching, what payload gating drops, the block span names.
+- `agents/memory.md` and `tutorials/memory-guide.md` (semantic recall follows
+  the store; the `memory.retrieve` span records a count, not scores).
+- **New: How memory works** (`agents/memory-concepts.md`) — the four kinds of
+  memory, tiers vs scopes, what is written when, who writes durable facts, the
+  two "learn"s, isolation, what survives a restart, privacy. The other memory
+  pages link to it.
+- `agents/memory.md`: `AgentMemory`'s default window (unbounded), where
+  `importance` comes from (chunk metadata — `Message` has no such field),
+  confidence by source (0.6 run-learned, 1.0 otherwise), which spans agent
+  runs emit, the summary cadence and length cap, and a truthful async note.
+- `learning/index.md` and `concepts/self-improving-agents.md`: online learning
+  ships (`Memory(learn=)`), the CLI's PII guardrails are not a guarantee, trace
+  text goes to the extraction LLM, four phases, "AutoLLM", and no more
+  contradiction about what ships.
+- Examples: `30_memory_blocks` keeps a 2-message window so the blocks do the
+  recalling, and sizes its index to the embedder; `66_memory_scoring` adds a
+  real-FAISS case; `87_connected_memory` seeds idempotently, checks statuses,
+  says "unreachable" when the plane is down, and runs a real agent turn;
+  `89` passes `console_url`; `12_streaming`'s docstring; `learning-loop`,
+  `memory_simple` and `memory_observability` READMEs (port, UI path, `[kb]`);
+  screenshots re-shot in the current UI, and an orphan one removed.
+- `cli/learn.md`, `learning/memory-loop.md`, `tracing/index.md`, and the
+  `learning-loop` / `self-improving-research` examples (`agent_name`, new vs
+  known counts).
+
 ## [1.80.0] - 2026-09-26 — one user's memory never reaches another
 
 The first of the memory-audit releases. No wire change: no payload gains a key.

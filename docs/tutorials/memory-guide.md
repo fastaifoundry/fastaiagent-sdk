@@ -8,6 +8,8 @@ durable facts per user, run the full fact lifecycle (create / read / update /
 forget), scale to an external backend, retrieve by meaning, and *see* it all in
 the trace + Memory UI.
 
+> For the model behind this guide, see [How memory works](../agents/memory-concepts.md).
+
 > `Memory` is the recommended front door. It's built on composable blocks
 > (`ComposableMemory` + `StaticBlock`/`VectorBlock`/…), which remain available
 > for custom behaviours — see [Reference: Memory](../agents/memory.md#advanced-composable-blocks).
@@ -39,7 +41,8 @@ agent.run("What's my name?")          # → "Alice" (the session window remember
 ## Step 2 — Personalize per user (multi-user safe)
 
 Pass a `user_id` **resolver** — one agent definition serves every user, resolved
-per run from `RunContext`. Add `learn=llm` to extract and persist durable facts.
+per run from `RunContext`. Add `learn=llm` to extract and persist durable facts
+from each user message (the newest 200 per user are kept; `max_learned_facts=`).
 
 ```python
 from dataclasses import dataclass
@@ -93,12 +96,15 @@ the new one. `forget` hard-deletes, including superseded history for that subjec
 ## Step 4 — Global vs user facts
 
 ```python
+mem = Memory(location="sqlite", agent_id="support")
 mem.persist("Support replies within 24 hours.", tier="global")   # everyone sees it
 mem.persist("Alice is on the Pro plan.", tier="user", id="alice")# only Alice
 ```
 
 Attach a `Memory(agent_id="support", user_id=..., learn=llm)` and both tiers are
-injected each turn — global always, user only for the resolved user.
+injected each turn — global always, user only for the resolved user. The
+`agent_id` must match: a global fact persisted without one is filed under no
+agent, is never injected, and warns.
 
 ## Step 5 — Retrieve by meaning (semantic)
 
@@ -111,6 +117,8 @@ mem.retrieve("what foods should we avoid?", tier="user", id="alice")   # → the
 `semantic="auto"` builds a vector index sized to the embedder; pass a
 `VectorStore` for a shared/production index. Facts written by `learn=` are
 indexed automatically. Results stay scope-isolated and skip superseded facts.
+The index follows the store: after a restart, or for facts another process
+wrote, the first query embeds what's missing and finds them.
 
 ## Step 6 — Scale to an external backend
 

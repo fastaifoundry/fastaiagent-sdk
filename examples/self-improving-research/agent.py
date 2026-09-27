@@ -109,8 +109,8 @@ def phase_2_learn() -> int:
         last_hours=2,  # within this script's execution window
         max_facts_per_trace=10,
     )
-    written = sum(len(r.written_ids) for r in results)
-    print(f"\n[learn] processed {len(results)} traces, persisted {written} facts")
+    written = sum(len(r.new_ids) for r in results)
+    print(f"\n[learn] mined {len(results)} traces, persisted {written} new facts")
     if written:
         print("[learn] sample facts:")
         active = store.list_active(scope=SCOPE, scope_id=SCOPE_ID, limit=5)

@@ -43,10 +43,10 @@ def exercise(name: str, location) -> None:
     print(f"\n=== {name} ===")
     # semantic='auto' needs an embedder (fastaiagent[kb]); degrade if absent.
     try:
-        mem = Memory(location=location, semantic="auto")
+        mem = Memory(location=location, agent_id="support", semantic="auto")
         semantic = True
     except Exception:
-        mem = Memory(location=location)
+        mem = Memory(location=location, agent_id="support")
         semantic = False
 
     # CREATE — global (shared truth) + per-user personalization
@@ -72,6 +72,7 @@ def exercise(name: str, location) -> None:
     # REMOVE — forget the whole subject (incl. superseded history)
     removed = mem.forget(tier="user", id="alice")
     print("  removed:", removed, "-> now:", mem.retrieve(tier="user", id="alice"))
+    mem.forget(tier="global")  # this agent's global facts, so the run leaves nothing behind
 
 
 def main() -> int:

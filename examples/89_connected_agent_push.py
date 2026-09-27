@@ -17,6 +17,7 @@ with memory **Enabled**. Purely additive — an agent with neither serializes as
 Usage:
     export FASTAIAGENT_API_KEY=fa_k_...     # key with agent:write + prompt:write
     export FASTAIAGENT_TARGET=http://localhost:20001
+    export FASTAIAGENT_CONSOLE_URL=http://localhost:20000   # the console, for the push URL
     python examples/89_connected_agent_push.py
 
 Expected output (snapshot — real run against a local plane on :20001):
@@ -58,7 +59,10 @@ def main() -> int:
     base = target.rstrip("/")
     # auto_register defaults ON — we pass False here so this example pushes
     # explicitly (below) for a deterministic, inspectable result.
-    fa.connect(api_key=api_key, target=target, auto_register=False)
+    # The console (UI) can live on a different origin than the API — the push
+    # result's clickable URL points at it.
+    console_url = os.environ.get("FASTAIAGENT_CONSOLE_URL", "http://localhost:20000")
+    fa.connect(api_key=api_key, target=target, console_url=console_url, auto_register=False)
     if not _connection.is_connected:
         print("Skipping: connect() did not establish a connection")
         return 1

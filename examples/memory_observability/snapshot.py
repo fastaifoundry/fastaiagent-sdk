@@ -3,10 +3,11 @@
 Boots the local UI (pointed at the DB companion.py seeded), drives headless
 Chromium via Playwright, and saves PNGs into screenshots/.
 
-Three shots:
+Four shots:
     1. /traces/<trace_id>                 -- the trace with memory.read/write spans
     2. /traces/<trace_id> (memory span)   -- VectorBlock child: scores + snippets
     3. /memory                            -- the Memory page (learned facts)
+    4. /memory (Show superseded)          -- the audit history of replaced facts
 
 Prereqs (once):
     pip install playwright && python -m playwright install chromium

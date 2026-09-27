@@ -94,6 +94,31 @@ def extract(
             "is agent-scope-only to avoid surprise PII."
         ),
     ),
+    agent: str = typer.Option(
+        "",
+        "--agent",
+        help=(
+            "Only mine traces in which this agent ran (at the root, or inside a "
+            "swarm / chain / supervisor). Required for user/project scope."
+        ),
+    ),
+    max_traces: int = typer.Option(
+        100, "--max-traces", help="Mine at most this many traces per run (newest first)."
+    ),
+    reprocess: bool = typer.Option(
+        False,
+        "--reprocess",
+        help="Mine traces again even if an earlier run already mined them for this scope.",
+    ),
+    attribute_all: bool = typer.Option(
+        False,
+        "--attribute-all",
+        help=(
+            "Confirm that every selected trace belongs to --scope-id. Traces carry "
+            "no user id, so user/project extraction files everything it reads "
+            "under that one id. Required for user/project scope."
+        ),
+    ),
 ) -> None:
     """Run the extraction loop over the configured trace window.
 
@@ -114,6 +139,30 @@ def extract(
         )
         raise typer.Exit(code=2)
 
+    if scope in ("user", "project"):
+        # Traces carry no user id: every fact read is filed under --scope-id.
+        # Make the operator name that subject, narrow the traces, and say so.
+        if not scope_id:
+            console.print(
+                f"[red]--scope {scope} needs --scope-id: facts filed under an empty "
+                "id can't be read back.[/red]"
+            )
+            raise typer.Exit(code=2)
+        if not agent:
+            console.print(
+                f"[red]--scope {scope} needs --agent: without it every agent's "
+                f"traces would be filed under {scope}:{scope_id}.[/red]"
+            )
+            raise typer.Exit(code=2)
+        if not attribute_all:
+            console.print(
+                f"[red]--scope {scope} needs --attribute-all: traces carry no user "
+                f"id, so every trace {agent!r} ran in is filed under "
+                f"{scope}:{scope_id}. Pass the flag to confirm they are all that "
+                f"{scope}'s.[/red]"
+            )
+            raise typer.Exit(code=2)
+
     llm = LLMClient(provider=provider, model=model)
     store = MemoryStore()
 
@@ -129,23 +178,27 @@ def extract(
         last_hours=last_hours,
         max_facts_per_trace=max_facts,
         dry_run=dry_run,
+        agent_name=agent or None,
+        max_traces=max_traces,
+        reprocess=reprocess,
     )
 
     total_candidates = sum(len(r.candidates) for r in results)
-    total_written = sum(len(r.written_ids) for r in results)
+    total_new = sum(len(r.new_ids) for r in results)
+    total_known = sum(len(r.written_ids) for r in results) - total_new
     error_count = sum(1 for r in results if r.error)
 
     table = Table(title=f"Extraction over {len(results)} traces")
     table.add_column("trace_id", style="dim")
     table.add_column("candidates", justify="right")
-    table.add_column("written", justify="right")
+    table.add_column("new", justify="right")
     table.add_column("status")
     for r in results:
         status = "[red]error[/red]" if r.error else "ok"
         table.add_row(
             r.trace_id[:12] + "…",
             str(len(r.candidates)),
-            str(len(r.written_ids)) if not dry_run else "—",
+            str(len(r.new_ids)) if not dry_run else "—",
             status,
         )
     console.print(table)
@@ -153,8 +206,18 @@ def extract(
         f"\n[bold]Total:[/bold] {total_candidates} candidate facts across "
         f"{len(results)} traces"
         + (f"  ([red]{error_count} errored[/red])" if error_count else "")
-        + (f"  →  [green]{total_written} written[/green]" if not dry_run else "")
+        + (
+            f"  →  [green]{total_new} new[/green], {total_known} already known"
+            if not dry_run
+            else ""
+        )
     )
+    if not results:
+        console.print(
+            "[dim]No traces to mine: none in the window"
+            + (f" for agent {agent!r}" if agent else "")
+            + ", or all were mined already (--reprocess to mine them again).[/dim]"
+        )
 
     if dry_run and total_candidates > 0:
         console.print("\n[bold]Sample candidates:[/bold]")

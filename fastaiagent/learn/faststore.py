@@ -18,11 +18,16 @@ Facts are idempotent on ``(scope, scope_id, fact, project_id)`` and versioned by
 
 from __future__ import annotations
 
+import dataclasses
+import logging
 import time
+import uuid
 from collections.abc import Iterable
 from typing import Any, Protocol, runtime_checkable
 
 from fastaiagent.learn.store import Fact, Scope
+
+_log = logging.getLogger(__name__)
 
 
 @runtime_checkable
@@ -54,6 +59,28 @@ def make_fact_store(location: str):
 # ---------------------------------------------------------------------------
 
 
+_FACT_VECTOR_NS = uuid.UUID("5b0f3a52-6c1e-4f5e-9a3d-2f4b7c1d8e90")
+
+
+def _vector_id(fact_id: int, project_id: str) -> str:
+    """A stable UUID for a fact's vector — valid on every vector backend.
+
+    Qdrant accepts only unsigned integers or UUIDs as point ids, so the old
+    ``str(fact_id)`` (``"1"``) was rejected there and nothing was indexed.
+    """
+    return str(uuid.uuid5(_FACT_VECTOR_NS, f"{project_id}:{fact_id}"))
+
+
+def _chunk_fact_id(chunk: Any) -> int | None:
+    """The fact a vector belongs to: ``metadata["fact_id"]``, or the numeric
+    chunk id vectors written before 1.81.0 used."""
+    raw = (chunk.metadata or {}).get("fact_id", chunk.id)
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
 class SemanticFactStore:
     """Wrap any :class:`FactStore` and mirror every fact into a ``VectorStore``.
 
@@ -63,6 +90,11 @@ class SemanticFactStore:
     handle) become semantically searchable. :meth:`search` returns
     ``(Fact, score)`` for a query within a scope, honoring safe-by-default
     scoping and skipping superseded rows.
+
+    The store is the source of truth, not the index: before each search the
+    subject's active facts are read from ``inner`` and any this process hasn't
+    indexed are embedded — so a restarted process (an in-process FAISS index
+    starts empty) and facts written by another process are both found.
     """
 
     def __init__(self, inner, index, embedder):
@@ -71,34 +103,48 @@ class SemanticFactStore:
         self._embedder = embedder
         self._indexed: set[int] = set()
 
+    def _index_facts(self, facts: list[Fact]) -> None:
+        """Embed and index facts this process hasn't indexed yet (one batch)."""
+        from fastaiagent.kb.chunking import Chunk
+
+        todo = [f for f in facts if f.id is not None and f.id not in self._indexed]
+        if not todo:
+            return
+        try:
+            embeddings = self._embedder.embed([f.fact for f in todo])
+            chunks = [
+                Chunk(
+                    id=_vector_id(f.id, f.project_id),  # type: ignore[arg-type]
+                    content=f.fact,
+                    metadata={
+                        "fact_id": f.id,
+                        "scope": f.scope,
+                        "scope_id": f.scope_id,
+                        "project_id": f.project_id,
+                    },
+                    index=0,
+                    start_char=0,
+                    end_char=len(f.fact),
+                )
+                for f in todo
+            ]
+            self._index.add(chunks, embeddings)
+            self._indexed.update(f.id for f in todo if f.id is not None)
+        except Exception:
+            _log.warning(
+                "SemanticFactStore: failed to index facts %s",
+                [f.id for f in todo],
+                exc_info=True,
+            )
+
     # -- FactStore delegation (+ indexing on add) --
     def add(self, fact: Fact) -> int:
         fid = self._inner.add(fact)
         if fid not in self._indexed:
-            try:
-                from fastaiagent.kb.chunking import Chunk
-
-                emb = self._embedder.embed([fact.fact])[0]
-                chunk = Chunk(
-                    id=str(fid),
-                    content=fact.fact,
-                    metadata={
-                        "scope": fact.scope,
-                        "scope_id": fact.scope_id,
-                        "project_id": fact.project_id,
-                    },
-                    index=0,
-                    start_char=0,
-                    end_char=len(fact.fact),
-                )
-                self._index.add([chunk], [emb])
-                self._indexed.add(fid)
-            except Exception:
-                import logging
-
-                logging.getLogger(__name__).warning(
-                    "SemanticFactStore: failed to index fact %s", fid, exc_info=True
-                )
+            stored = self._inner.get(fid) or fact
+            if stored.id is None:
+                stored = dataclasses.replace(stored, id=fid)
+            self._index_facts([stored])
         return fid
 
     def get(self, fact_id: int) -> Fact | None:
@@ -111,18 +157,20 @@ class SemanticFactStore:
         self._inner.supersede(old_id, new_id)
 
     def delete(self, scope, scope_id="", project_id="", fact=None) -> int:
-        # Best-effort: drop matching vectors before the rows disappear.
+        # Drop matching vectors before the rows disappear. A failure here leaves
+        # stale vectors that ``search`` skips (their fact is gone), so it is
+        # logged rather than raised.
         try:
-            ids = [
-                str(f.id)
+            doomed = [
+                f
                 for f in self._inner.list_active(scope, scope_id, project_id)
-                if fact is None or f.fact == fact
+                if (fact is None or f.fact == fact) and f.id is not None
             ]
-            if ids:
-                self._index.delete(ids)
-                self._indexed.difference_update(int(i) for i in ids)
+            if doomed:
+                self._index.delete([_vector_id(f.id, f.project_id) for f in doomed])
+                self._indexed.difference_update(f.id for f in doomed)
         except Exception:
-            pass
+            _log.warning("SemanticFactStore: failed to remove vectors", exc_info=True)
         return self._inner.delete(scope, scope_id, project_id, fact)
 
     # -- Semantic search --
@@ -132,22 +180,48 @@ class SemanticFactStore:
         """Return ``(Fact, score)`` for facts semantically matching ``query``."""
         if scope in ("user", "project") and scope_id == "":
             return []
+        self._index_facts(self._inner.list_active(scope, scope_id, project_id))
         emb = self._embedder.embed([query])[0]
-        hits = self._index.search(emb, max(top_k * 5, top_k))
-        out: list[tuple[Fact, float]] = []
-        for chunk, score in hits:
+
+        def own(chunk: Any) -> bool:
             m = chunk.metadata or {}
             if m.get("scope") != scope or m.get("project_id", "") != project_id:
-                continue
-            if scope_id and scope_id != "*" and m.get("scope_id") != scope_id:
-                continue
-            f = self._inner.get(int(chunk.id))
-            if f is None or f.superseded_by is not None:
-                continue
-            out.append((f, float(score)))
-            if len(out) >= top_k:
-                break
-        return out
+                return False
+            return not (scope_id and scope_id != "*" and m.get("scope_id") != scope_id)
+
+        # Other subjects share the index; widen the search while they crowd out
+        # this one's facts, up to the index's size.
+        total = _index_count(self._index)
+        ceiling = total if total is not None else top_k * 256
+        fetch = min(top_k * 5, max(ceiling, top_k))
+        while True:
+            hits = list(self._index.search(emb, fetch))
+            out: list[tuple[Fact, float]] = []
+            seen: set[int] = set()
+            for chunk, score in hits:
+                fid = _chunk_fact_id(chunk)
+                if fid is None or fid in seen or not own(chunk):
+                    continue
+                f = self._inner.get(fid)
+                if f is None or f.superseded_by is not None:
+                    continue
+                seen.add(fid)
+                out.append((f, float(score)))
+                if len(out) >= top_k:
+                    return out
+            if len(hits) < fetch or fetch >= ceiling:
+                return out
+            fetch = min(fetch * 2, ceiling)
+
+
+def _index_count(index: Any) -> int | None:
+    fn = getattr(index, "count", None)
+    if not callable(fn):
+        return None
+    try:
+        return int(fn())
+    except Exception:
+        return None
 
 
 # ---------------------------------------------------------------------------

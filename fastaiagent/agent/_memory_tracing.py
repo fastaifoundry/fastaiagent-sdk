@@ -16,10 +16,11 @@ Design notes:
 - **No-op safe.** ``get_tracer()`` returns OTel's no-op tracer when tracing is
   off, so spans add negligible overhead and never change memory behaviour. No
   ``if tracer:`` guards needed.
-- **Mirror KB exactly.** Attributes are set directly on the span and
-  payload-bearing ones (``memory.query``, ``memory.snippets``, ``memory.detail``)
-  are gated by ``trace_payloads_enabled()`` — we do *not* register them in
-  ``FASTAIAGENT_ATTRIBUTES`` (neither does ``retrieval.*``).
+- **Mirror KB exactly.** Attributes are set directly on the span and always
+  captured locally. The payload-bearing ones (``memory.query``,
+  ``memory.snippets``, ``memory.detail``, ``memory.scope_id``) are registered in
+  ``trace.redaction.SENSITIVE_ATTR_KEYS``, so they are dropped on export when
+  ``FASTAIAGENT_TRACE_PAYLOADS=0``.
 - **No private reflection.** Per-block detail comes from each block's optional
   :meth:`MemoryBlock.last_render_report` / :meth:`last_write_report`; blocks that
   don't implement them are reported with safe defaults.
@@ -38,7 +39,7 @@ from typing import TYPE_CHECKING, Any
 from fastaiagent.trace.span import trace_payloads_enabled
 
 if TYPE_CHECKING:
-    from fastaiagent.agent.memory import AgentMemory, ComposableMemory
+    from fastaiagent.agent.memory import MemoryLike
     from fastaiagent.agent.memory_blocks import (
         BlockRenderReport,
         BlockWriteReport,
@@ -77,7 +78,7 @@ def _safe_write_report(block: MemoryBlock) -> BlockWriteReport | None:
 
 
 def traced_get_context(
-    memory: AgentMemory | ComposableMemory,
+    memory: MemoryLike,
     query: str,
 ) -> list[Message]:
     """Call ``memory.get_context(query=query)`` inside a ``memory.read`` span.
@@ -190,7 +191,7 @@ def memory_store_span(
 
 
 def traced_add(
-    memory: AgentMemory | ComposableMemory,
+    memory: MemoryLike,
     message: Message,
 ) -> None:
     """Call ``memory.add(message)`` inside a ``memory.write`` span.

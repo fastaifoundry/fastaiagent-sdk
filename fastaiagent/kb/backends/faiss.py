@@ -39,8 +39,10 @@ class FaissVectorStore:
                 f"chunks and embeddings must be aligned: "
                 f"{len(chunks)} chunks vs {len(embeddings)} embeddings"
             )
-        self._chunks.extend(chunks)
+        # Index first: if FAISS rejects the vectors (e.g. a wrong dimension),
+        # no chunk is left without one.
         self._index.add(embeddings)
+        self._chunks.extend(chunks)
 
     def search(
         self, query_embedding: list[float], top_k: int
@@ -56,15 +58,14 @@ class FaissVectorStore:
         if not chunk_ids:
             return
         id_set = set(chunk_ids)
-        # FAISS has no efficient per-id delete — rebuild from the survivors.
-        survivors = [c for c in self._chunks if c.id not in id_set]
-        if len(survivors) == len(self._chunks):
+        keep = [i for i, c in enumerate(self._chunks) if c.id not in id_set]
+        if len(keep) == len(self._chunks):
             return
-        # We don't retain raw embeddings, so a full delete requires a rebuild
-        # initiated by the caller with fresh embeddings. Reset here so the
-        # next add() starts clean; LocalKB's rebuild() path handles this.
-        self._chunks = survivors
-        self._index.reset()
+        # FAISS has no per-id delete that keeps positions aligned with
+        # ``_chunks``, so rebuild from the survivors' own stored vectors.
+        vectors = self._index.vectors()
+        self._index.rebuild([vectors[i] for i in keep])
+        self._chunks = [self._chunks[i] for i in keep]
 
     def rebuild(self, chunks: list[Chunk], embeddings: list[list[float]]) -> None:
         self._chunks = []

@@ -87,3 +87,87 @@ def test_semantic_search_skips_superseded(db):
     facts = [f.fact for f, _ in hits]
     assert "peanut fact v2" in facts
     assert "peanut fact v1" not in facts
+
+
+def test_forget_leaves_the_other_facts_findable(db):
+    """After any ``forget`` the semantic index went empty while its chunk list
+    stayed, so every later lookup read the wrong fact."""
+    from fastaiagent import Memory
+
+    index = FaissVectorStore(dimension=len(_VOCAB), index_type="flat")
+    mem = Memory(location=MemoryStore(db_path=str(db)), semantic=index, embedder=_KeywordEmbedder())
+    mem.persist("The user is allergic to peanuts", tier="user", id="alice")
+    mem.persist("Bob works with data pipelines", tier="user", id="bob")
+    mem.forget(tier="user", id="bob")
+
+    top = mem.retrieve("any peanut concerns?", tier="user", id="alice", limit=1)
+    assert [f.fact for f in top] == ["The user is allergic to peanuts"]
+    mem.persist("The user enjoys mountain biking", tier="user", id="alice")
+    top = mem.retrieve("weekend biking plans", tier="user", id="alice", limit=1)
+    assert [f.fact for f in top] == ["The user enjoys mountain biking"]
+
+
+# --- 1.81.0: the index follows the store -----------------------------------------
+
+
+def test_a_restarted_process_finds_facts_by_meaning(db):
+    """The FAISS index lived only in the process that wrote the facts: after a
+    restart ``retrieve(query)`` returned ``[]`` while the facts were still
+    stored."""
+    from fastaiagent import Memory
+
+    def fresh() -> Memory:  # a new process: same database, empty index
+        index = FaissVectorStore(dimension=len(_VOCAB), index_type="flat")
+        return Memory(
+            location=MemoryStore(db_path=str(db)), semantic=index, embedder=_KeywordEmbedder()
+        )
+
+    fresh().persist("The user is allergic to peanuts", tier="user", id="alice")
+    top = fresh().retrieve("any peanut concerns?", tier="user", id="alice", limit=1)
+    assert [f.fact for f in top] == ["The user is allergic to peanuts"]
+
+
+def test_facts_written_by_another_memory_are_found(db):
+    from fastaiagent import Memory
+
+    def mem() -> Memory:
+        index = FaissVectorStore(dimension=len(_VOCAB), index_type="flat")
+        return Memory(
+            location=MemoryStore(db_path=str(db)), semantic=index, embedder=_KeywordEmbedder()
+        )
+
+    reader, writer = mem(), mem()
+    reader.persist("The user enjoys mountain biking", tier="user", id="alice")
+    writer.persist("The user works with data pipelines", tier="user", id="alice")
+    top = reader.retrieve("data work", tier="user", id="alice", limit=1)
+    assert [f.fact for f in top] == ["The user works with data pipelines"]
+
+
+def test_other_subjects_cannot_crowd_out_a_subjects_facts(db):
+    store = _semantic_store(db)
+    for i in range(30):
+        store.add(Fact(scope="user", scope_id=f"u{i}", fact=f"peanut note {i}"))
+    store.add(Fact(scope="user", scope_id="alice", fact="alice peanut fact"))
+    hits = store.search("peanut", scope="user", scope_id="alice", top_k=1)
+    assert [f.fact for f, _ in hits] == ["alice peanut fact"]
+
+
+def test_qdrant_index_round_trip(db):
+    """Vector ids were ``str(fact_id)`` — ``"1"`` — which Qdrant rejects, and the
+    error was swallowed: semantic memory on Qdrant never indexed anything."""
+    pytest.importorskip("qdrant_client")
+    from fastaiagent import Memory
+    from fastaiagent.kb.backends.qdrant import QdrantVectorStore
+
+    index = QdrantVectorStore(
+        collection="semantic_facts", dimension=len(_VOCAB), location=":memory:"
+    )
+    mem = Memory(location=MemoryStore(db_path=str(db)), semantic=index, embedder=_KeywordEmbedder())
+    mem.persist("The user is allergic to peanuts", tier="user", id="alice")
+    mem.persist("The user enjoys mountain biking", tier="user", id="alice")
+    top = mem.retrieve("weekend biking plans", tier="user", id="alice", limit=1)
+    assert [f.fact for f in top] == ["The user enjoys mountain biking"]
+    mem.forget(tier="user", id="alice", fact="The user enjoys mountain biking")
+    assert [f.fact for f in mem.retrieve("biking", tier="user", id="alice", limit=1)] != [
+        "The user enjoys mountain biking"
+    ]

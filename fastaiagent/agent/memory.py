@@ -23,18 +23,31 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
-from fastaiagent.llm.message import Message
+from fastaiagent.llm.message import Message, MessageRole
 
 if TYPE_CHECKING:
     from fastaiagent.agent.memory_blocks import MemoryBlock
 
 
+class MemoryLike(Protocol):
+    """What ``Agent(memory=...)`` needs: read context, record messages.
+
+    ``AgentMemory``, ``ComposableMemory`` and ``Memory`` all satisfy it, as does
+    any object with these two methods.
+    """
+
+    def get_context(self, query: str = "", max_messages: int | None = None) -> list[Message]: ...
+
+    def add(self, message: Message) -> None: ...
+
+
 class AgentMemory:
     """Manages conversation history for an agent.
 
-    Supports token-window truncation and persistence.
+    A sliding window of the last ``max_messages`` messages (a count, not
+    tokens; ``None`` keeps everything), with JSON persistence.
     """
 
     def __init__(self, max_messages: int | None = None):
@@ -45,7 +58,13 @@ class AgentMemory:
         """Add a message to memory."""
         self._messages.append(message)
         if self.max_messages and len(self._messages) > self.max_messages:
-            self._messages = self._messages[-self.max_messages :]
+            window = self._messages[-self.max_messages :]
+            # Don't start the window on the second half of a turn: a reply
+            # whose question was trimmed away reads as an unprompted answer.
+            if any(m.role == MessageRole.user for m in window):
+                while window[0].role != MessageRole.user:
+                    window = window[1:]
+            self._messages = window
 
     def get_context(
         self,
@@ -56,11 +75,13 @@ class AgentMemory:
 
         ``query`` is accepted for signature compatibility with
         :class:`ComposableMemory` and is ignored by this simple implementation.
+
+        Returns copies: callers such as middleware may edit what they are
+        given, and that must never rewrite stored history.
         """
         limit = max_messages or self.max_messages
-        if limit:
-            return list(self._messages[-limit:])
-        return list(self._messages)
+        window = self._messages[-limit:] if limit else self._messages
+        return [m.model_copy() for m in window]
 
     def clear(self) -> None:
         """Clear all messages."""

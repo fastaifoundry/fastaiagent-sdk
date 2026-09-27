@@ -295,14 +295,16 @@ class RedactPII(AgentMiddleware):
     second, private copy of the PII regexes, and the copy had drifted: its
     card-ish pattern was a bare ``\\b(?:\\d[ \\-]?){13,19}\\b``, with **no Luhn
     check**. So any 13-19 digit run — an order number, an invoice id, an IMEI,
-    a concatenated timestamp — was redacted as a credit card. And because
-    ``before_model`` mutates message content **in place**, that corruption is
-    what the model saw, what landed in memory, and what was replayed in a
-    guardrail re-ask. `detect_pii` Luhn-validates card candidates for exactly
-    this reason, and it was one import away.
+    a concatenated timestamp — was redacted as a credit card, and that
+    corruption is what the model saw and what was replayed in a guardrail
+    re-ask. `detect_pii` Luhn-validates card candidates for exactly this
+    reason, and it was one import away.
 
-    Redacted spans are replaced with ``placeholder``; the pre-redaction text is
-    not retained.
+    Redacted spans are replaced with ``placeholder`` in what the model is sent.
+    ``before_model`` redacts **copies** of the messages: the objects it is
+    handed can be the ones stored in memory, so rewriting them in place used to
+    change conversation history after the fact. Memory keeps what was said; to
+    keep PII out of memory, redact before it reaches memory.
     """
 
     name = "redact_pii"
@@ -350,11 +352,14 @@ class RedactPII(AgentMiddleware):
         return mask_spans(text, [(m.start, m.end) for m in matches], self.placeholder)
 
     async def before_model(self, ctx: MiddlewareContext, messages: list[Message]) -> list[Message]:
-        # Redact in-place on message content. Messages are Pydantic BaseModels
-        # with mutable fields — safe to mutate.
-        for msg in messages:
-            if msg.content:
-                msg.content = self._redact(msg.content)
+        # Replace each message with a redacted copy. Never edit the objects
+        # themselves: they can be the ones memory stores. Keep the list itself
+        # (``[:]``) — the executor and the agent hold this same list and keep
+        # appending to it.
+        messages[:] = [
+            m.model_copy(update={"content": self._redact(m.content)}) if m.content else m
+            for m in messages
+        ]
         return messages
 
     async def after_model(self, ctx: MiddlewareContext, response: LLMResponse) -> LLMResponse:

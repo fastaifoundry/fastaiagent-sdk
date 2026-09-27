@@ -107,11 +107,13 @@ async def run() -> None:
         scope=SCOPE,
         scope_id=SCOPE_ID,
         last_hours=1,  # we just wrote them
+        agent_name=SCOPE_ID,  # only the seed agent's traces
         max_facts_per_trace=5,
     )
-    written = sum(len(r.written_ids) for r in results)
+    new = sum(len(r.new_ids) for r in results)
+    known = sum(len(r.written_ids) for r in results) - new
     candidates = sum(len(r.candidates) for r in results)
-    print(f"  scanned {len(results)} traces — {candidates} candidates, {written} written")
+    print(f"  mined {len(results)} traces — {candidates} candidates, {new} new, {known} known")
 
     print()
     print("=" * 60)

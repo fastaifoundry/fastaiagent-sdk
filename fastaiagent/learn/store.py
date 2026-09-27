@@ -78,6 +78,11 @@ class MemoryStore:
         we return the existing id without modifying anything (idempotent).
         Use :meth:`supersede` to replace a fact with a newer version.
         """
+        return self.add_with_status(fact)[0]
+
+    def add_with_status(self, fact: Fact) -> tuple[int, bool]:
+        """Like :meth:`add`, and also say whether the row was inserted now
+        (``True``) or already existed (``False``)."""
         if not fact.fact.strip():
             raise ValueError("fact text must be non-empty")
         if fact.scope not in ("user", "project", "agent"):
@@ -92,7 +97,7 @@ class MemoryStore:
                 (fact.scope, fact.scope_id, fact.fact, fact.project_id),
             )
             if existing:
-                return int(existing["id"])
+                return int(existing["id"]), False
             cursor = db.execute(
                 "INSERT INTO learned_memory "
                 "(scope, scope_id, fact, source_trace_id, confidence, created_at, project_id) "
@@ -108,13 +113,50 @@ class MemoryStore:
                 ),
             )
             new_id = cursor.lastrowid
-            return int(new_id) if new_id is not None else 0
+            return (int(new_id) if new_id is not None else 0), True
         finally:
             db.close()
 
     def add_many(self, facts: Iterable[Fact]) -> list[int]:
         """Bulk insert. Returns the list of resulting row ids in input order."""
         return [self.add(f) for f in facts]
+
+    # ─── Extraction ledger ───────────────────────────────────────────────────
+
+    def extracted_trace_ids(
+        self, scope: Scope, scope_id: str = "", project_id: str = ""
+    ) -> set[str]:
+        """Traces the learning loop has already mined for this target."""
+        db = self._open()
+        try:
+            rows = db.fetchall(
+                "SELECT trace_id FROM learn_extractions "
+                "WHERE scope = ? AND scope_id = ? AND project_id = ?",
+                (scope, scope_id, project_id),
+            )
+            return {r["trace_id"] for r in rows}
+        finally:
+            db.close()
+
+    def mark_extracted(
+        self,
+        trace_id: str,
+        scope: Scope,
+        scope_id: str = "",
+        project_id: str = "",
+        fact_count: int = 0,
+    ) -> None:
+        """Record that ``trace_id`` was mined for this target."""
+        db = self._open()
+        try:
+            db.execute(
+                "INSERT OR REPLACE INTO learn_extractions "
+                "(trace_id, scope, scope_id, project_id, extracted_at, fact_count) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (trace_id, scope, scope_id, project_id, time.time(), fact_count),
+            )
+        finally:
+            db.close()
 
     # ─── Read ────────────────────────────────────────────────────────────────
 

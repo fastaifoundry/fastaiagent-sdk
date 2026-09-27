@@ -34,7 +34,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from fastaiagent.learn.store import Fact, MemoryStore, Scope
 from fastaiagent.llm.client import LLMClient
@@ -50,8 +50,9 @@ class ExtractionResult:
 
     trace_id: str
     candidates: list[Fact]
-    written_ids: list[int]  # row ids actually inserted (or matched dedup)
+    written_ids: list[int]  # row ids of every stored candidate, new or matched
     error: str | None = None
+    new_ids: list[int] = field(default_factory=list)  # rows inserted by this run
 
 
 # ─── Prompt template ─────────────────────────────────────────────────────────
@@ -142,12 +143,38 @@ def extract_facts_from_trace(
     On extraction failure (LLM error, malformed JSON), returns ``[]`` and
     logs a warning. We never raise — bad traces shouldn't kill the loop.
     """
+    return _extract(
+        trace,
+        llm=llm,
+        scope=scope,
+        scope_id=scope_id,
+        project_id=project_id,
+        max_facts=max_facts,
+    )[0]
+
+
+def _extract(
+    trace: TraceData,
+    *,
+    llm: LLMClient,
+    scope: Scope,
+    scope_id: str,
+    project_id: str,
+    max_facts: int,
+) -> tuple[list[Fact], str | None]:
+    """Extract, and say why nothing came back when it failed.
+
+    Returns ``(facts, error)``: ``error`` is set when the LLM call or its JSON
+    failed, so the loop can retry that trace later instead of recording it as
+    mined. The LLM call runs under a ``learn.extract`` root span marked
+    ``fastaiagent.source="learn"``, which the loop never mines.
+    """
     if scope not in ("user", "project", "agent"):
         raise ValueError(f"scope must be one of user|project|agent, got {scope!r}")
 
     trace_text = _summarize_trace_for_extraction(trace)
     if not trace_text.strip():
-        return []
+        return [], None
 
     prompt = _EXTRACTION_PROMPT.format(
         scope=scope,
@@ -156,15 +183,22 @@ def extract_facts_from_trace(
         trace_text=trace_text,
     )
 
+    from fastaiagent.trace.otel import get_tracer
+    from fastaiagent.trace.span import set_fastaiagent_attributes
+
     try:
-        response = llm.complete([UserMessage(prompt)])
+        with get_tracer("fastaiagent.learn").start_as_current_span("learn.extract") as span:
+            set_fastaiagent_attributes(span, source="learn")
+            span.set_attribute("learn.source_trace_id", trace.trace_id)
+            span.set_attribute("learn.scope", scope)
+            response = llm.complete([UserMessage(prompt)])
     except Exception as err:
         _log.warning("Fact extraction LLM call failed for trace %s: %s", trace.trace_id, err)
-        return []
+        return [], str(err)
 
     text = (response.content or "").strip()
     if not text:
-        return []
+        return [], None
 
     # Tolerate code fences the LLM may wrap the JSON in.
     if text.startswith("```"):
@@ -177,10 +211,10 @@ def extract_facts_from_trace(
         data = json.loads(text)
     except json.JSONDecodeError:
         _log.warning("Fact extraction returned non-JSON for trace %s", trace.trace_id)
-        return []
+        return [], "extractor returned non-JSON"
 
     if not isinstance(data, list):
-        return []
+        return [], "extractor did not return a JSON array"
 
     now = time.time()
     facts: list[Fact] = []
@@ -199,7 +233,7 @@ def extract_facts_from_trace(
                 project_id=project_id,
             )
         )
-    return facts
+    return facts, None
 
 
 def extract_and_store(
@@ -216,8 +250,10 @@ def extract_and_store(
     """Convenience: extract from one trace + persist via the store.
 
     With ``dry_run=True``, candidates are returned but nothing is written.
+    ``written_ids`` holds every stored candidate's row, ``new_ids`` only the
+    rows this call inserted (the rest were already known).
     """
-    candidates = extract_facts_from_trace(
+    candidates, error = _extract(
         trace,
         llm=llm,
         scope=scope,
@@ -226,12 +262,23 @@ def extract_and_store(
         max_facts=max_facts,
     )
     written: list[int] = []
+    new: list[int] = []
     if not dry_run and candidates:
-        written = store.add_many(candidates)
+        add_with_status = getattr(store, "add_with_status", None)
+        for fact in candidates:
+            if add_with_status is not None:
+                fid, inserted = add_with_status(fact)
+            else:  # a store without the status API: count every row as written
+                fid, inserted = store.add(fact), False
+            written.append(fid)
+            if inserted:
+                new.append(fid)
     return ExtractionResult(
         trace_id=trace.trace_id,
         candidates=candidates,
         written_ids=written,
+        error=error,
+        new_ids=new,
     )
 
 
@@ -242,18 +289,46 @@ def run_extraction(
     scope: Scope,
     scope_id: str = "",
     project_id: str = "",
-    last_hours: int = 24,
+    last_hours: float | None = 24,
     max_facts_per_trace: int = 10,
     dry_run: bool = False,
     trace_store: TraceStore | None = None,
+    agent_name: str | None = None,
+    max_traces: int | None = 100,
+    reprocess: bool = False,
 ) -> list[ExtractionResult]:
-    """Run extraction over every trace in the configured time window.
+    """Mine the traces you point it at, newest first.
+
+    Which traces:
+        * those that started within ``last_hours`` (``None`` = all time);
+        * with ``agent_name``, only traces in which that agent ran — at the
+          root or as a child span (swarm, chain, supervisor);
+        * never the extractor's own ``learn.extract`` calls;
+        * not traces already mined for this ``scope`` / ``scope_id`` /
+          ``project_id`` (the store's ledger), unless ``reprocess=True``;
+        * at most ``max_traces`` of them.
+
+    Every fact is filed under the one ``scope`` / ``scope_id`` given: traces
+    carry no user id, so a user-scope run attributes everything it reads to
+    that user. A trace is recorded as mined only when its extraction
+    succeeded and this was not a ``dry_run``, so failures are retried.
 
     The default ``trace_store`` reads from the same ``local.db`` the SDK
     writes to. Override for tests or to point at a different store.
     """
     ts = trace_store if trace_store is not None else TraceStore()
-    summaries = ts.list_traces(last_hours=last_hours)
+    summaries = [
+        s
+        for s in ts.list_traces(last_hours=last_hours, limit=None, agent_name=agent_name)
+        if not (s.name or "").startswith("learn.")
+    ]
+    ledger = None if reprocess else getattr(store, "extracted_trace_ids", None)
+    if ledger is not None:
+        done = ledger(scope=scope, scope_id=scope_id, project_id=project_id)
+        summaries = [s for s in summaries if s.trace_id not in done]
+    if max_traces is not None:
+        summaries = summaries[:max_traces]
+    mark = getattr(store, "mark_extracted", None)
 
     results: list[ExtractionResult] = []
     for summary in summaries:
@@ -280,5 +355,13 @@ def run_extraction(
             max_facts=max_facts_per_trace,
             dry_run=dry_run,
         )
+        if not dry_run and result.error is None and mark is not None:
+            mark(
+                trace_id=summary.trace_id,
+                scope=scope,
+                scope_id=scope_id,
+                project_id=project_id,
+                fact_count=len(result.candidates),
+            )
         results.append(result)
     return results
