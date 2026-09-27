@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 import time
 import uuid
 import warnings
@@ -97,6 +98,24 @@ def _strip_role_tag(text: str) -> str:
 def _norm_for_dedupe(text: str) -> str:
     """Lowercase + collapse whitespace so upstream-dedupe matching is stable."""
     return " ".join((text or "").lower().split())
+
+
+# Facts ``FactExtractionBlock`` keeps from one message (its prompt asks for this
+# many at most).
+_MAX_FACTS_PER_MESSAGE = 10
+
+
+def _unique_facts(facts: list[str]) -> tuple[list[str], int]:
+    """Drop repeated facts, keeping the first copy of each; return the rest and
+    how many were dropped. Case and whitespace don't make a fact different."""
+    seen: set[str] = set()
+    kept: list[str] = []
+    for fact in facts:
+        key = _norm_for_dedupe(fact)
+        if key not in seen:
+            seen.add(key)
+            kept.append(fact)
+    return kept, len(facts) - len(kept)
 
 
 # ids of resolvers that have already logged a failure — one warning each, not
@@ -857,9 +876,10 @@ class FactExtractionBlock(MemoryBlock):
         store: dependency injection for tests; defaults to a
             :class:`fastaiagent.learn.MemoryStore` against the configured local.db.
         max_persisted: With ``persist=True``, keep at most this many learned
-            facts per subject in the store, deleting the oldest. Only facts
-            learned from a run (those with a ``source_trace_id``) count and are
-            deleted; facts written directly are never touched. ``None`` = no cap.
+            facts per subject in the store, deleting the oldest. Only learned
+            facts (``source="learned"``, set with tracing on or off) count and
+            are deleted; facts written directly are never touched. ``None`` = no
+            cap.
     """
 
     name = "facts"
@@ -1016,6 +1036,7 @@ class FactExtractionBlock(MemoryBlock):
                         source_trace_id=trace_id,
                         confidence=self.confidence,
                         project_id=self.project_id,
+                        source="learned",
                     )
                 )
                 written += 1
@@ -1027,9 +1048,10 @@ class FactExtractionBlock(MemoryBlock):
         """Delete the oldest learned facts beyond ``max_persisted``. Returns how
         many were deleted. Never raises, like the write it follows.
 
-        Learned facts carry the ``source_trace_id`` of the run that produced
-        them; facts written directly (``Memory.persist``) have none and are
-        never counted or deleted.
+        Learned facts are marked ``source="learned"`` (older ones carry the
+        ``source_trace_id`` of the run that produced them); facts written
+        directly (``Memory.persist``) have neither and are never counted or
+        deleted.
         """
         if self.max_persisted is None:
             return 0
@@ -1041,7 +1063,8 @@ class FactExtractionBlock(MemoryBlock):
             facts = store.list_active(
                 scope=self.scope, scope_id=scope_id, project_id=self.project_id
             )  # newest first
-            excess = [f for f in facts if f.source_trace_id][self.max_persisted :]
+            learned = [f for f in facts if f.source == "learned" or f.source_trace_id]
+            excess = learned[self.max_persisted :]
             for f in excess:
                 store.delete(
                     scope=self.scope, scope_id=scope_id, project_id=self.project_id, fact=f.fact
@@ -1094,7 +1117,10 @@ class FactExtractionBlock(MemoryBlock):
             return []
         if not isinstance(data, list):
             return []
-        return [str(item).strip() for item in data if item and isinstance(item, str)]
+        facts = [str(item).strip() for item in data if item and isinstance(item, str)]
+        # The prompt asks for at most 10; a model that returns more doesn't get
+        # to store more.
+        return facts[:_MAX_FACTS_PER_MESSAGE]
 
     def render(self, query: str) -> list[Message]:
         if not self._facts or not self.inject:
@@ -1313,7 +1339,11 @@ class PersistentFactBlock(MemoryBlock):
         if not self._cached:
             return []
         bullets = "\n".join(f"- {fact}" for fact in self._cached)
-        scope_label = f"{self.scope}:{resolved}" if resolved else self.scope
+        # A user id (often an email) would go to the model provider on every
+        # turn, whatever the trace-payload setting; agent and project ids are
+        # not personal.
+        show_id = resolved and self.scope != "user"
+        scope_label = f"{self.scope}:{resolved}" if show_id else self.scope
         return [SystemMessage(f"Learned facts ({scope_label}):\n{bullets}")]
 
     def last_render_report(self) -> BlockRenderReport | None:
@@ -1327,6 +1357,19 @@ class PersistentFactBlock(MemoryBlock):
 
     def last_write_report(self) -> BlockWriteReport | None:
         return BlockWriteReport(self.name, type(self).__name__, action="noop")
+
+
+@dataclass
+class _PlaneOutage:
+    """Whether one plane (target + agent id) is down, shared by every block
+    reading it — so an outage costs one wait and one warning, not one per user."""
+
+    down: bool = False
+    retry_at: float = 0.0
+
+
+_plane_outages: dict[tuple[str, str], _PlaneOutage] = {}
+_plane_outages_lock = threading.Lock()
 
 
 # ---------------------------------------------------------------------------
@@ -1384,6 +1427,8 @@ class PlaneFactBlock(MemoryBlock):
     """
 
     name = "plane_facts"
+    # Seconds to leave an unreachable plane alone before trying it again.
+    retry_after_seconds = 30.0
 
     def __init__(
         self,
@@ -1413,6 +1458,7 @@ class PlaneFactBlock(MemoryBlock):
         self.timeout = timeout
         self._cached: list[str] | None = None
         self._cached_query: str | None = None
+        self._deduped = 0
         self._renders_since_refresh = 0
         self._logged_statuses: set[int] = set()
 
@@ -1495,15 +1541,34 @@ class PlaneFactBlock(MemoryBlock):
         stale = self._renders_since_refresh >= self.refresh_every
         # Facts fetched for one question are not the answer for another: a new
         # question refetches even between ``refresh_every`` refreshes.
-        if self._cached is None or stale or sent != self._cached_query:
+        wanted = self._cached is None or stale or sent != self._cached_query
+        outage = self._outage()
+        if wanted and self._may_fetch(outage):
             try:
-                self._cached = self._fetch_from_plane(sent)
+                self._cached, self._deduped = _unique_facts(self._fetch_from_plane(sent))
+                with _plane_outages_lock:
+                    recovered, outage.down = outage.down, False
+                if recovered:
+                    _log.info("PlaneFactBlock: the plane is reachable again")
             except Exception as err:
-                # Never let a plane read break the run — degrade to last-known / empty.
-                _log.warning("PlaneFactBlock refresh failed: %s", err)
+                # Never let a plane read break the run — degrade to last-known /
+                # empty, and leave the plane alone for a while, for every block
+                # reading it: each would otherwise wait out the timeout and warn.
+                with _plane_outages_lock:
+                    newly_down, outage.down = not outage.down, True
+                    outage.retry_at = time.monotonic() + self.retry_after_seconds
+                if newly_down:
+                    _log.warning(
+                        "PlaneFactBlock refresh failed: %s; serving the last facts fetched "
+                        "and retrying every %.0fs",
+                        err,
+                        self.retry_after_seconds,
+                    )
                 self._cached = self._cached or []
             self._cached_query = sent
             self._renders_since_refresh = 1
+        elif wanted:
+            self._cached = self._cached or []  # backing off: the last facts fetched
         else:
             self._renders_since_refresh += 1
 
@@ -1512,6 +1577,25 @@ class PlaneFactBlock(MemoryBlock):
         bullets = "\n".join(f"- {fact}" for fact in self._cached)
         return [SystemMessage(f"Curated facts (agent:{self.agent_id}):\n{bullets}")]
 
+    def _outage(self) -> _PlaneOutage:
+        from fastaiagent.client import _connection
+
+        key = (_connection.target or "", self.agent_id)
+        with _plane_outages_lock:
+            return _plane_outages.setdefault(key, _PlaneOutage())
+
+    def _may_fetch(self, outage: _PlaneOutage) -> bool:
+        """Up: always. Down: only once the pause is over, and then for exactly
+        one caller — the rest keep serving their last facts without waiting."""
+        with _plane_outages_lock:
+            if not outage.down:
+                return True
+            now = time.monotonic()
+            if now < outage.retry_at:
+                return False
+            outage.retry_at = now + self.retry_after_seconds  # claim the retry
+            return True
+
     def last_render_report(self) -> BlockRenderReport | None:
         cached = self._cached or []
         return BlockRenderReport(
@@ -1519,6 +1603,7 @@ class PlaneFactBlock(MemoryBlock):
             type(self).__name__,
             rendered_count=len(cached),
             snippets=[_snippet(f) for f in cached] or None,
+            deduped_count=self._deduped,
         )
 
     def last_write_report(self) -> BlockWriteReport | None:

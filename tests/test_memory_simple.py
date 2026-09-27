@@ -512,3 +512,90 @@ def test_memory_creates_no_local_files_until_used(tmp_path, monkeypatch):
         assert (tmp_path / ".fastaiagent" / "local.db").exists()
     finally:
         reset_config()
+
+
+# --- 1.82.0: per-user windows are bounded --------------------------------------
+
+
+def test_per_user_windows_evict_the_least_recently_used(db, caplog):
+    """``_per_user`` kept every user's window for the life of the process."""
+    mem = _per_user(db, max_users=2)
+    _turn(mem, RunContext(state=St(user_id="alice")), "alice-message")
+    _turn(mem, RunContext(state=St(user_id="bob")), "bob-message")
+    # Touching alice makes bob the least recently used.
+    _turn(mem, RunContext(state=St(user_id="alice")), "alice again")
+    with caplog.at_level(logging.WARNING, logger="fastaiagent.agent.memory_simple"):
+        _turn(mem, RunContext(state=St(user_id="carol")), "carol-message")
+        _turn(mem, RunContext(state=St(user_id="dave")), "dave-message")
+    assert set(mem._per_user) == {"carol", "dave"}
+    evictions = [r for r in caplog.records if "max_users" in r.getMessage()]
+    assert len(evictions) == 1  # warned once, not per eviction
+
+
+def test_touching_a_user_keeps_their_window(db):
+    mem = _per_user(db, max_users=2)
+    _turn(mem, RunContext(state=St(user_id="alice")), "alice-message")
+    _turn(mem, RunContext(state=St(user_id="bob")), "bob-message")
+    _turn(mem, RunContext(state=St(user_id="alice")), "alice again")
+    _turn(mem, RunContext(state=St(user_id="carol")), "carol-message")
+    seen = _turn(mem, RunContext(state=St(user_id="alice")), "third")
+    assert "alice-message" in seen
+
+
+def test_an_evicted_user_keeps_their_facts(db):
+    mem = _per_user(db, max_users=1)
+    mem.persist("alice likes tea", tier="user", id="alice")
+    _turn(mem, RunContext(state=St(user_id="alice")), "alice-message")
+    _turn(mem, RunContext(state=St(user_id="bob")), "bob-message")
+    seen = _turn(mem, RunContext(state=St(user_id="alice")), "back again")
+    assert "alice-message" not in seen  # the window went
+    assert "alice likes tea" in seen  # the durable fact did not
+
+
+def test_max_users_must_be_positive(db):
+    with pytest.raises(ValueError, match="max_users"):
+        _per_user(db, max_users=0)
+    assert len(_per_user(db, max_users=None)._per_user) == 0  # None = unbounded
+
+
+def test_first_calls_for_one_user_share_one_window(db):
+    """An unlocked get-or-create let two threads build two windows for one user,
+    and the loser's messages vanished."""
+    import threading
+    import time
+
+    pytest.importorskip("faiss")
+
+    class _SlowEmbedder:  # a real, slow embedder widens the race window
+        def embed(self, texts):
+            time.sleep(0.05)
+            return [[float(len(t)), 1.0, 0.0] for t in texts]
+
+    mem = _per_user(db, recall="auto", embedder=_SlowEmbedder())
+    got: list = []
+    threads = [threading.Thread(target=lambda: got.append(mem.for_user("alice"))) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len({id(m) for m in got}) == 1
+
+
+# --- 1.82.0: the user id stays out of the prompt --------------------------------
+
+
+def test_the_user_id_is_not_written_into_the_prompt(db):
+    """The user fact block's heading was "Learned facts (user:<id>)", so an
+    email id went to the model provider on every turn — even with trace payloads
+    off, which gates export, not prompts."""
+    store = MemoryStore(db_path=str(db))
+    store.add(Fact(scope="user", scope_id="alice@example.com", fact="Prefers email"))
+    store.add(Fact(scope="agent", scope_id="support", fact="Returns take 30 days"))
+    mem = _per_user(db, agent_id="support")
+    model = TestModel(response="ok")
+    agent = Agent(name="support", llm=model, memory=mem)
+    agent.run("hi", context=RunContext(state=St(user_id="alice@example.com")))
+    sent = _prompt(model.calls[-1])
+    assert "Prefers email" in sent and "Learned facts (user):" in sent
+    assert "alice@example.com" not in sent
+    assert "Learned facts (agent:support):" in sent  # an agent id is not personal

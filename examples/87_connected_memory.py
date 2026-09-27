@@ -34,6 +34,9 @@ Expected output (snapshot — real run against a local plane on :20001):
       - The customer's preferred contact channel is email.
     agent turn: "How should we contact this customer?"
       -> The customer prefers email.
+    per-user Memory(plane_agent_id=...):
+      bob   -> By email; I don't know your order number.     (the plane fact, not alice's order)
+      alice -> Your order number is ZX-99.
     done — PlaneFactBlock read governed facts from the plane.
 
 With the plane down, the block degrades and the agent still runs:
@@ -115,14 +118,17 @@ def _seed_fact_via_admin(base: str) -> str | None:
             "agent push",
         )
         agent_id = ar.json().get("id") or ar.json().get("agent_id")
-        served = http.get(
-            f"{base}/public/v1/memory/facts",
-            headers={"X-API-Key": key},
-            params={"agent_id": agent_id},
+        # A failed read must stop here: treating it as "no facts" re-seeds the
+        # same fact on every run, and the plane keeps each copy.
+        served = _checked(
+            http.get(
+                f"{base}/public/v1/memory/facts",
+                headers={"X-API-Key": key},
+                params={"agent_id": agent_id},
+            ),
+            "fact read",
         )
-        facts = (
-            [f.get("content") for f in served.json().get("facts", [])] if served.is_success else []
-        )
+        facts = [f.get("content") for f in served.json().get("facts", [])]
         if _SEED_FACT in facts:
             print("already seeded for agent ws3-mem-demo")
         else:
@@ -210,6 +216,23 @@ def main() -> int:
             question = "How should we contact this customer?"
             print(f'agent turn: "{question}"')
             print(f"  -> {agent.run(question).output}")
+
+            # The same facts for many users: Memory(plane_agent_id=) adds them to
+            # every user's memory while each user keeps their own window.
+            per_user = fa.Agent(
+                name="ws3-mem-demo",
+                system_prompt="You are a concise support agent. Use the curated facts.",
+                llm=fa.LLMClient(provider="openai", model="gpt-4o-mini"),
+                memory=fa.Memory(user_id=lambda ctx: ctx.state["user"], plane_agent_id=agent_id),
+            )
+
+            def ask(user: str, text: str) -> str:
+                return per_user.run(text, context=fa.RunContext(state={"user": user})).output
+
+            ask("alice", "My order is ZX-99. Reply with just: ok")
+            print("per-user Memory(plane_agent_id=...):")
+            print(f"  bob   -> {ask('bob', 'How do you contact me, and what is my order?')}")
+            print(f"  alice -> {ask('alice', 'What is my order number?')}")
         if plane_up:
             print("done — PlaneFactBlock read governed facts from the plane.")
         else:

@@ -788,6 +788,7 @@ async def stream_tool_loop(
     parallel_tools: bool = False,
     max_parallel_tools: int = 4,
     governance_run_id: str | None = None,
+    final_reply: dict[str, str] | None = None,
     **kwargs: Any,
 ) -> AsyncGenerator[StreamEvent, None]:
     """Streaming version of execute_tool_loop.
@@ -808,6 +809,11 @@ async def stream_tool_loop(
     The final TextDelta events contain the agent's response text.
     ToolCallStart/ToolCallEnd events are emitted for both LLM-requested
     tool calls and their execution results.
+
+    ``final_reply``, when given, receives ``{"text": ...}``: the last turn's
+    reply after ``after_model`` — what ``execute_tool_loop`` returns as the
+    answer. The deltas can't carry it: they include earlier turns' text (said
+    before a tool call) and precede any middleware rewrite.
     """
     tool_defs = [t.to_openai_format() for t in tools] if tools else None
     tools_by_name = {t.name: t for t in tools}
@@ -890,6 +896,8 @@ async def stream_tool_loop(
 
         # No tool calls — final response, we're done
         if not pending_tool_calls:
+            if final_reply is not None:
+                final_reply["text"] = accumulated_text
             return
 
         # Append assistant message with accumulated content + tool calls

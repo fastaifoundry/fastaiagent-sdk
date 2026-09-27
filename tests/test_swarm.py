@@ -449,3 +449,30 @@ def test_swarm_handoff_with_structured_output_records_one_turn() -> None:
     shared = AgentMemory()
     _two_agents(shared, shared, output_type=Answer).run("task")
     assert _memory_log(shared) == [("user", "task"), ("assistant", '{"text": "handled by b"}')]
+
+
+def test_a_hop_that_hands_off_emits_no_memory_write_span(tmp_path, monkeypatch) -> None:
+    """The handing-off hop's writes are dropped, yet each still produced a
+    ``memory.write`` span saying one message was added — with block reports
+    left over from an earlier write."""
+    import json
+
+    from fastaiagent._internal.config import reset_config
+    from fastaiagent._internal.storage import SQLiteHelper
+    from fastaiagent.trace.otel import reset as reset_tracer
+
+    db = tmp_path / "local.db"
+    monkeypatch.setenv("FASTAIAGENT_LOCAL_DB", str(db))
+    reset_config()
+    reset_tracer()
+    try:
+        a_mem, b_mem = AgentMemory(), AgentMemory()
+        _two_agents(a_mem, b_mem).run("task")
+        reset_tracer()  # flush
+        with SQLiteHelper(db) as d:
+            rows = d.fetchall("SELECT name, attributes FROM spans WHERE name = 'memory.write'")
+    finally:
+        reset_tracer()
+        reset_config()
+    added = [json.loads(r["attributes"]).get("memory.messages_added") for r in rows]
+    assert added == [1, 1]  # b's user message and answer; nothing from a

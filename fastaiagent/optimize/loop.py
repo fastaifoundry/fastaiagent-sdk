@@ -21,7 +21,8 @@ from fastaiagent.optimize.candidate import (
     Candidate,
     CandidateScore,
     _clone_memory_blocks,
-    _resolve_memory_scope,
+    _FactSource,
+    _resolve_memory_source,
     apply_candidate,
     scorer_present,
 )
@@ -171,8 +172,9 @@ async def aoptimize(
 
     proposer = proposer_llm or LLMClient()
 
-    # Memory lever: resolve the fact scope once (used by the lever + the skip check).
-    mem_scope, mem_scope_id = _resolve_memory_scope(agent) if "memory" in cfg.levers else ("", "")
+    # Memory lever: resolve where the agent's facts live once — its own store,
+    # scope and project (used by the lever + the skip check).
+    mem_source = _resolve_memory_source(agent) if "memory" in cfg.levers else _FactSource("", "")
 
     eval_runs = 0
     judge_calls = 0
@@ -266,9 +268,11 @@ async def aoptimize(
             return cands
         if lever == "memory":
             subsets = propose_fact_subsets(
-                scope=mem_scope,
-                scope_id=mem_scope_id,
+                scope=mem_source.scope,
+                scope_id=mem_source.scope_id,
                 n=cfg.candidates_per_iteration,
+                store=mem_source.store,
+                project_id=mem_source.project_id,
             )
             return [
                 _candidate_for(
@@ -309,10 +313,19 @@ async def aoptimize(
     # Memory lever needs facts at the resolved scope; with none, skip it (don't
     # error, don't burn patience) and record the skip distinctly from a reject.
     if "memory" in active_levers:
-        from fastaiagent.learn.store import MemoryStore
-
-        if not MemoryStore().list_active(mem_scope, mem_scope_id):  # type: ignore[arg-type]
+        where = f"scope={mem_source.scope}:{mem_source.scope_id}"
+        if mem_source.project_id:
+            where += f" project={mem_source.project_id}"
+        if not mem_source.resolved_store().list_active(
+            mem_source.scope, mem_source.scope_id, mem_source.project_id
+        ):
             active_levers = [lv for lv in active_levers if lv != "memory"]
+            # `fastaiagent learn` writes to local.db, so it only helps an agent
+            # whose facts live there.
+            hint = (
+                "add facts where the agent's memory reads them "
+                "(`fastaiagent learn` writes to local.db)"
+            )
             trajectory.append(
                 TrajectoryPoint(
                     0,
@@ -320,18 +333,11 @@ async def aoptimize(
                     "",
                     baseline_dev.score,
                     accepted=False,
-                    rationale=(
-                        f"no learned facts at scope={mem_scope}:{mem_scope_id} — "
-                        "run `fastaiagent learn` first"
-                    ),
+                    rationale=f"no learned facts at {where} — {hint}",
                     skipped=True,
                 )
             )
-            logger.info(
-                "optimize: memory lever skipped — no learned facts at %s:%s",
-                mem_scope,
-                mem_scope_id,
-            )
+            logger.info("optimize: memory lever skipped — no learned facts at %s", where)
 
     no_improve = 0
     stopped_reason = ""

@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from fastaiagent.agent.agent import Agent
     from fastaiagent.agent.memory import AgentMemory, ComposableMemory, MemoryLike
+    from fastaiagent.agent.memory_simple import Memory
     from fastaiagent.eval.results import EvalResults
     from fastaiagent.eval.scorer import Scorer
 
@@ -109,7 +110,7 @@ def _clone_memory_blocks(
     memory: MemoryLike | None,
     *,
     allow_writable_memory: bool = False,
-) -> AgentMemory | ComposableMemory | None:
+) -> AgentMemory | ComposableMemory | Memory | None:
     """Return a per-candidate-isolated copy of ``memory`` (P2).
 
     Each candidate eval gets fresh in-process memory state so one candidate's
@@ -118,14 +119,23 @@ def _clone_memory_blocks(
 
     ``None`` → ``None``. A plain ``AgentMemory`` → a fresh empty one. A
     ``ComposableMemory`` → fresh blocks (via ``isolated_copy``) + fresh primary.
-    A block that can't be isolated (``VectorBlock`` raises ``MemoryIsolationError``)
-    aborts the run unless ``allow_writable_memory=True``, which shares it with a
-    warning (accepting cross-candidate bleed).
+    A ``Memory`` → a ``Memory`` with the same configuration and empty windows,
+    so per-user routing survives. A block that can't be isolated
+    (``VectorBlock`` raises ``MemoryIsolationError``) aborts the run unless
+    ``allow_writable_memory=True``, which shares it with a warning (accepting
+    cross-candidate bleed).
     """
     if memory is None:
         return None
     from fastaiagent.agent.memory import AgentMemory, ComposableMemory
     from fastaiagent.agent.memory_blocks import MemoryIsolationError
+    from fastaiagent.agent.memory_simple import Memory
+
+    if isinstance(memory, Memory):
+        # Its blocks are the current caller's (outside a run, the anonymous
+        # caller's), so copying them would drop every user's tier and share
+        # one window between all users.
+        return memory._derive(allow_writable_memory=allow_writable_memory)
 
     blocks = getattr(memory, "blocks", None)
     if blocks is None:
@@ -178,32 +188,86 @@ class _AllowlistStore:
         return facts[:limit] if limit is not None else facts
 
 
-def _resolve_memory_scope(agent: Agent) -> tuple[str, str]:
-    """Scope for the memory lever: inherit the agent's existing
-    ``PersistentFactBlock`` scope if it has one, else default to
-    ``("agent", agent.name)``.
+@dataclass(frozen=True)
+class _FactSource:
+    """Where the memory lever finds facts: the agent's own store, scope and project.
+
+    ``store=None`` is the default local ``MemoryStore`` (``local.db``).
     """
+
+    scope: str
+    scope_id: str
+    project_id: str = ""
+    store: Any = None
+
+    def resolved_store(self) -> Any:
+        if self.store is not None:
+            return self.store
+        from fastaiagent.learn.store import MemoryStore
+
+        return MemoryStore()
+
+
+def _resolve_memory_source(agent: Agent) -> _FactSource:
+    """Where the agent's memory reads the facts the lever selects among.
+
+    A ``Memory`` → its global tier in its own store and project. A
+    ``PersistentFactBlock`` with a fixed id → that block's scope, project and
+    store; one that resolves its id per run (per user) is skipped — its facts
+    differ for every user, and the lever selects the agent's shared facts.
+    Otherwise ``("agent", agent.name)`` in the default local store.
+    """
+    from fastaiagent.agent.memory_simple import Memory
+
     mem = getattr(agent, "memory", None)
+    if isinstance(mem, Memory):
+        # The lever replaces the global fact block, so it selects among the
+        # agent's global facts — never the facts of whichever user is current.
+        return _FactSource("agent", mem._agent_id or agent.name, mem._project_id, mem._store)
     for b in getattr(mem, "blocks", None) or []:
-        if type(b).__name__ == "PersistentFactBlock":
-            return b.scope, b.scope_id
-    return "agent", agent.name
+        if type(b).__name__ == "PersistentFactBlock" and not callable(b.scope_id):
+            return _FactSource(b.scope, b.scope_id, b.project_id, b._store)
+    return _FactSource("agent", agent.name)
+
+
+def _resolve_memory_scope(agent: Agent) -> tuple[str, str]:
+    """``(scope, scope_id)`` of :func:`_resolve_memory_source`."""
+    src = _resolve_memory_source(agent)
+    return src.scope, src.scope_id
 
 
 def _inject_block(
-    memory: AgentMemory | ComposableMemory | None, block: Any, replace_name: str
-) -> ComposableMemory:
+    memory: AgentMemory | ComposableMemory | Memory | None, block: Any, replace_name: str
+) -> ComposableMemory | Memory:
     """Add ``block`` to ``memory``, replacing any existing block of the same name
     (so re-optimization doesn't stack). Wraps a plain ``AgentMemory`` / ``None``
-    in a ``ComposableMemory`` as needed.
+    in a ``ComposableMemory`` as needed; a ``Memory`` puts it in every user's
+    memory and stays a ``Memory``.
     """
     from fastaiagent.agent.memory import AgentMemory, ComposableMemory
+    from fastaiagent.agent.memory_simple import Memory
 
+    if isinstance(memory, Memory):
+        memory._override_block(block, replace_name)
+        return memory
     if memory is None:
         return ComposableMemory(blocks=[block], primary=AgentMemory())
     if isinstance(memory, ComposableMemory):
-        memory.blocks = [b for b in memory.blocks if getattr(b, "name", "") != replace_name]
-        memory.blocks.append(block)
+        optimized_name = f"{replace_name}.optimized"
+
+        def per_user(b: Any) -> bool:
+            return callable(getattr(b, "scope_id", None))
+
+        # A block that resolves its subject per run holds each user's own facts:
+        # it stays. Anything this lever injected before is replaced (no stacking).
+        kept = [
+            b
+            for b in memory.blocks
+            if per_user(b) or getattr(b, "name", "") not in (replace_name, optimized_name)
+        ]
+        if any(getattr(b, "name", "") == replace_name for b in kept):
+            block.name = optimized_name  # keep span labels and by_block keys distinct
+        memory.blocks = [*kept, block]
         return memory
     return ComposableMemory(blocks=[block], primary=memory)
 
@@ -230,11 +294,14 @@ def apply_candidate(
     if candidate.fact_ids is not None:
         from fastaiagent.agent.memory_blocks import PersistentFactBlock
 
-        scope, scope_id = _resolve_memory_scope(base)
+        src = _resolve_memory_source(base)
         new_memory = _inject_block(
             new_memory,
             PersistentFactBlock(
-                scope=scope, scope_id=scope_id, store=_AllowlistStore(candidate.fact_ids)
+                scope=src.scope,
+                scope_id=src.scope_id,
+                project_id=src.project_id,
+                store=_AllowlistStore(candidate.fact_ids, inner=src.store),
             ),
             "persistent_facts",
         )

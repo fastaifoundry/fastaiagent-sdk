@@ -231,6 +231,7 @@ def _extract(
                 confidence=1.0,
                 created_at=now,
                 project_id=project_id,
+                source="learned",
             )
         )
     return facts, None
