@@ -236,3 +236,65 @@ def test_an_optimized_agent_keeps_users_apart_and_keeps_their_facts(store, traci
         # A per-user Memory keeps a window per user; a hand-built
         # ComposableMemory has one window for everyone, by design.
         assert "hi" not in [m.content for m in optimized.memory.for_user(bob).messages]
+
+
+# ── plane facts through an outage (1.83.0) ────────────────────────────────────
+
+
+@pytest.fixture
+def plane_stand_in() -> Iterator[Any]:
+    """A real local HTTP server standing in for the plane's fact read. Set
+    ``.down`` to "refused" (a closed connection) or an HTTP status (502 …)."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    from fastaiagent.client import _connection
+
+    class Plane(BaseHTTPRequestHandler):
+        down: Any = None
+        reads = 0
+
+        def do_GET(self):  # noqa: N802
+            type(self).reads += 1
+            if type(self).down == "refused":
+                self.close_connection = True
+                return
+            status = type(self).down or 200
+            body = json.dumps({"facts": [{"content": "plane-fact-6620"}]}).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Plane)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    saved = (_connection.api_key, _connection.target)
+    _connection.api_key = "fa_k_test"
+    _connection.target = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        yield Plane
+    finally:
+        _connection.api_key, _connection.target = saved
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.parametrize("outage", ["refused", 502])
+def test_plane_facts_survive_a_plane_outage(plane_stand_in, path, tracing, outage):
+    """Users keep the plane facts fetched before the outage, and the plane sees
+    one read for all of them, not one per turn."""
+    alice, bob = _uid("alice"), _uid("bob")
+    model = TestModel(response="noted")
+    mem = Memory(user_id=lambda ctx: ctx.state.user_id, plane_agent_id=_uid("plane-agent"))
+    agent = Agent(name="a", llm=model, memory=mem)
+    _turn(agent, "before", alice, path)
+    _turn(agent, "before", bob, path)
+    assert "plane-fact-6620" in _prompt(model)
+    plane_stand_in.down, reads = outage, plane_stand_in.reads
+    for who in (alice, bob, alice, bob):
+        _turn(agent, f"during {uuid.uuid4().hex[:4]}", who, path)  # new questions
+        assert "plane-fact-6620" in _prompt(model)
+    assert plane_stand_in.reads - reads == 1

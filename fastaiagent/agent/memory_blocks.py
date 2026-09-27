@@ -1366,6 +1366,47 @@ class _PlaneOutage:
 
     down: bool = False
     retry_at: float = 0.0
+    # HTTP errors already reported for this plane + agent: one warning each,
+    # however many users' blocks hit them.
+    logged_statuses: set[int] = field(default_factory=set)
+
+
+# A plane that is down behind a proxy answers these rather than refusing the
+# connection (Caddy / nginx: 502 while the backend restarts) — an outage, not an
+# answer. 429 asks the caller to slow down.
+_PLANE_UNAVAILABLE = frozenset({429, 502, 503, 504})
+# The longest pause a Retry-After header may ask for.
+_MAX_RETRY_AFTER_SECONDS = 600.0
+
+
+class _PlaneUnavailableError(Exception):
+    """The plane answered, but only to say it can't serve the read right now."""
+
+    def __init__(self, status: int, retry_after: float | None) -> None:
+        super().__init__(f"HTTP {status}")
+        self.retry_after = retry_after
+
+
+def _retry_after_seconds(value: str | None) -> float | None:
+    """A ``Retry-After`` header — delta-seconds or an HTTP date — in seconds,
+    capped at 10 minutes; ``None`` when absent or unreadable."""
+    if not value:
+        return None
+    value = value.strip()
+    try:
+        seconds = float(value)
+    except ValueError:
+        from datetime import datetime, timezone
+        from email.utils import parsedate_to_datetime
+
+        try:
+            when = parsedate_to_datetime(value)
+        except (TypeError, ValueError):
+            return None
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        seconds = (when - datetime.now(timezone.utc)).total_seconds()
+    return min(max(seconds, 0.0), _MAX_RETRY_AFTER_SECONDS)
 
 
 _plane_outages: dict[tuple[str, str], _PlaneOutage] = {}
@@ -1460,7 +1501,6 @@ class PlaneFactBlock(MemoryBlock):
         self._cached_query: str | None = None
         self._deduped = 0
         self._renders_since_refresh = 0
-        self._logged_statuses: set[int] = set()
 
     def isolated_copy(self) -> MemoryBlock:
         # Read-only at run time (render() only GETs from the plane). Share
@@ -1516,13 +1556,22 @@ class PlaneFactBlock(MemoryBlock):
         url = f"{_connection.target}/public/v1/memory/facts"
         with httpx.Client(timeout=self.timeout, verify=True) as client:
             resp = client.get(url, params=params, headers=_connection.headers)
+        if resp.status_code in _PLANE_UNAVAILABLE:
+            # Down behind a proxy, or asked to slow down: an outage — render()
+            # pauses reads and keeps the facts it has.
+            raise _PlaneUnavailableError(
+                resp.status_code, _retry_after_seconds(resp.headers.get("Retry-After"))
+            )
         if resp.status_code != 200:
-            # 403 (domain not entitled) / 404 (unknown agent) / 5xx → degrade to
-            # no facts. The agent still runs; central memory is an enhancement.
-            # Say so once per status, so a misconfiguration is visible without
-            # a warning on every turn.
-            if resp.status_code not in self._logged_statuses:
-                self._logged_statuses.add(resp.status_code)
+            # 403 (domain not entitled) / 404 (unknown agent) / other errors →
+            # no facts: the plane answered, and not with facts for this agent.
+            # The agent still runs; central memory is an enhancement. Say so
+            # once per status for this plane + agent — not once per user.
+            outage = self._outage()
+            with _plane_outages_lock:
+                first = resp.status_code not in outage.logged_statuses
+                outage.logged_statuses.add(resp.status_code)
+            if first:
                 _log.warning(
                     "PlaneFactBlock read for agent %r got HTTP %d; running without "
                     "plane facts (403: the domain lacks the connected-state-plane "
@@ -1554,15 +1603,19 @@ class PlaneFactBlock(MemoryBlock):
                 # Never let a plane read break the run — degrade to last-known /
                 # empty, and leave the plane alone for a while, for every block
                 # reading it: each would otherwise wait out the timeout and warn.
+                # A plane that says how long (Retry-After) is taken at its word.
+                pause = getattr(err, "retry_after", None)
+                if pause is None:
+                    pause = self.retry_after_seconds
                 with _plane_outages_lock:
                     newly_down, outage.down = not outage.down, True
-                    outage.retry_at = time.monotonic() + self.retry_after_seconds
+                    outage.retry_at = time.monotonic() + pause
                 if newly_down:
                     _log.warning(
                         "PlaneFactBlock refresh failed: %s; serving the last facts fetched "
-                        "and retrying every %.0fs",
+                        "and retrying in %.0fs",
                         err,
-                        self.retry_after_seconds,
+                        pause,
                     )
                 self._cached = self._cached or []
             self._cached_query = sent
