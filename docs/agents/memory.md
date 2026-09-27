@@ -46,6 +46,8 @@ The whole surface is keywords on one object:
 | `dedupe` | drop recalled content an earlier tier already injected |
 | `semantic` | `"auto"` or a `VectorStore` → `retrieve(query, ...)` by meaning |
 | `embedder` | the embedder for `semantic` and `recall`; `"auto"` indexes are sized to it |
+| `max_users` | with a `user_id` resolver, keep at most N users' windows in the process, dropping the least recently used (default `10_000`; `None` = no cap). A dropped user's durable facts stay |
+| `plane_agent_id` | the agent's id on a connected [Enterprise plane](../platform/index.md) → also inject the plane's curated facts, for every user (see [`PlaneFactBlock`](#planefactblock-connected-central-memory)) |
 
 ### Tiers — who a fact is true for
 
@@ -83,10 +85,32 @@ mem.for_user("alice").save("memory/alice")   # persist Alice's window
 mem.for_user("alice").load("memory/alice")   # restore it before her next run
 ```
 
-Two caveats:
+Windows live in the process:
 
 - Per-user working windows are held **in-process**. Only durable facts move to an external `location`; for horizontally-scaled deployments, persist windows with `for_user(...).save(...)` or keep sessions sticky.
 - `recall="auto"` builds a per-user in-process vector store. A `VectorStore` you pass is shared by every user, and each user's recall is namespaced (`user:<id>`, prefixed with `project_id` when set), so one user's messages never come back for another.
+
+#### How many users' windows are kept (`max_users`)
+
+A long-running server can see far more users than it needs to keep in memory at once. `Memory` keeps the windows of at most `max_users` users (default `10_000`) and, past that, drops the one used least recently:
+
+```python
+mem = Memory(
+    location="postgres://user:pw@host:5432/db",
+    user_id=lambda ctx: ctx.state.user_id,
+    max_users=50_000,          # or None for no cap (memory grows with every new user)
+)
+```
+
+What a dropped user loses and keeps:
+
+| Dropped | Kept |
+|---|---|
+| the conversation window, the running summary, the `recall="auto"` index | every durable fact — they live in the store and are read again on the user's next turn |
+
+So a returning user starts a fresh conversation but is still recognised — runnable in [`examples/100_memory_in_production.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/100_memory_in_production.py). The first drop logs one warning. Nothing is saved for you when a window is dropped: to carry a user's conversation across a drop (or a restart), save it with `mem.for_user(id).save(path)` and `load` it before their next run.
+
+In the rare case that more than `max_users` other users become active while one user's run is in flight, that run's reply can land in a fresh window. Size `max_users` well above your peak number of concurrent users.
 
 ### Storage backends (`location`)
 
@@ -99,9 +123,20 @@ Memory(location="redis://host:6379/0")                     # needs fastaiagent[r
 Memory(location=my_store)                                  # any object implementing FactStore
 ```
 
-All backends implement the same `FactStore` contract (idempotent add, safe scoping, supersede, delete, newest-first reads) and are verified against one shared conformance suite, so behaviour doesn't drift. Use Postgres/Redis for multi-node or many-user deployments; SQLite for dev/single-node. Runnable demo: [`examples/memory_backends/`](https://github.com/fastaifoundry/fastaiagent-sdk/tree/main/examples/memory_backends).
+All backends implement the same `FactStore` contract (idempotent add — also under concurrency: writers that add the same fact at once all get the one row's id — safe scoping, supersede, delete, newest-first reads) and are verified against one shared conformance suite, so behaviour doesn't drift. Use Postgres/Redis for multi-node or many-user deployments; SQLite for dev/single-node. Runnable demo: [`examples/memory_backends/`](https://github.com/fastaifoundry/fastaiagent-sdk/tree/main/examples/memory_backends).
 
 Every turn reads the newest facts for the user (and the agent), so a read costs what it returns, not what is stored: Postgres reads through partial indexes, and Redis through newest-first sorted indexes.
+
+Connections are reused. The Postgres store keeps a pool of 1–10 connections per process (a store created before a fork, as under `gunicorn --preload`, opens its own pool in each worker). The pool is closed when the store is garbage-collected and at interpreter exit. To size it or release it yourself, build the store:
+
+```python
+from fastaiagent.learn import PostgresFactStore
+
+store = PostgresFactStore("postgres://user:pw@host:5432/db", min_pool_size=1, max_pool_size=10)
+mem = Memory(location=store)
+...
+store.close()   # releases the connections; the store reopens on its next use
+```
 
 !!! note "Upgrading a Redis or Postgres store to 1.80"
     **Redis.** The first time a store opens a namespace written by an older SDK, it indexes the existing facts once (a `SCAN` over the namespace). If an older SDK keeps writing to the same namespace afterwards, its new facts are missing from reads until you call `RedisFactStore(url).reindex()` — upgrade every writer together.
@@ -180,7 +215,7 @@ print(result.output)  # "Your name is Alice."
 ### How it works
 
 1. On each `run()` call, the agent prepends stored messages to the conversation.
-2. After the agent responds, the new user message and assistant response are added to memory. A resumed or forked run records the question it was resuming. Middleware such as `RedactPII` changes only what the model is sent, never what memory stores.
+2. After the agent responds, the new user message and assistant response are added to memory. A resumed or forked run records the question it was resuming. The stored reply is the final answer after middleware (with `RedactPII`, redacted) — only the last turn's reply, not text the model said before calling a tool — and `run` and `astream` store the same. The user's message is stored as they said it.
 3. If `max_messages` is reached, the oldest messages are dropped (FIFO).
 
 ### Persistence
@@ -466,6 +501,26 @@ existing `confidence` column on `learned_memory`.
 
 Read-only block that reads **curated, human-approved** facts from a connected [Enterprise plane](../platform/index.md) via `GET /public/v1/memory/facts`, and injects them at the start of each turn. Where `PersistentFactBlock` reads facts from the **local** `learned_memory` table, `PlaneFactBlock` reads the **governed/curated** facts the plane serves — the read side of central governed memory. The plane extracts durable facts from already-ingested traces and a human curates them; the SDK only **reads** (there is no SDK fact-push path).
 
+With `Memory`, one keyword adds it — every user keeps their own window, and callers with no user still get the plane's facts:
+
+```python
+import fastaiagent as fa
+
+fa.connect(api_key="fa-...", target="https://your-plane.example.com")
+
+agent = fa.Agent(
+    name="support",
+    llm=llm,
+    memory=fa.Memory(
+        agent_id="support",                       # local global facts (optional)
+        user_id=lambda ctx: ctx.state.user_id,    # one window per user
+        plane_agent_id="my-agent-id",             # + the plane's curated facts
+    ),
+)
+```
+
+To tune the block (category filter, `max_facts`, `refresh_every`, …), compose it yourself:
+
 ```python
 import fastaiagent as fa
 from fastaiagent import Agent, AgentMemory, ComposableMemory
@@ -490,19 +545,21 @@ memory = ComposableMemory(
 agent = Agent(name="support", system_prompt="...", llm=llm, memory=memory)
 ```
 
-**Read-only and degradable.** When the SDK is not connected, or the plane answers with an error (e.g. `403`: the domain isn't entitled), `PlaneFactBlock` injects nothing and the agent runs normally — central facts are an enhancement, never a dependency; the error is logged once. If the plane is unreachable, the block keeps serving the facts it last fetched. The read is a bounded start-of-run network GET (like `VectorBlock`'s search), cached per `refresh_every` — but a new question always refetches, so one question's facts are never served for another. It never pushes anything. The plane runs no agent code — it serves facts; recall and injection happen locally.
+**Read-only and degradable.** When the SDK is not connected, or the plane answers with an error (e.g. `403`: the domain isn't entitled), `PlaneFactBlock` injects nothing and the agent runs normally — central facts are an enhancement, never a dependency; the error is logged once. If the plane is unreachable, the block keeps serving the facts it last fetched and leaves the plane alone for 30 seconds (`PlaneFactBlock.retry_after_seconds`) before trying again — so an outage costs one timeout and one warning, not one per turn. The pause is shared by every block reading the same plane and agent, so with `Memory(plane_agent_id=...)` one user's failed read spares every other user the wait; when the pause ends, one turn retries. It logs once when the plane is back. The read is a bounded start-of-run network GET (like `VectorBlock`'s search), cached per `refresh_every` — but a new question always refetches, so one question's facts are never served for another. It never pushes anything. The plane runs no agent code — it serves facts; recall and injection happen locally.
+
+**Each fact is injected once.** The plane can serve the same fact more than once — two approved copies of it, or one entry per matching vector on a semantic read. The block keeps the first copy (the plane's most important) and drops the rest, comparing text without regard to case or spacing. The trace records how many were dropped, as `memory.deduped_count` on the `memory.read.plane_facts` span. The duplicates themselves stay on the plane; remove them on the **Agent Memories** page. Facts the plane serves are not compared with those from other blocks, so a fact kept both locally and on the plane appears under both headings.
 
 **Your users' questions stay home when payloads are off.** With `query_conditioned=True` the user's question is sent to the plane for semantic recall. When `FASTAIAGENT_TRACE_PAYLOADS=0`, it is left out: the plane then returns the agent's facts by importance rather than by relevance to the question.
 
 **When to use**: connected (Enterprise) deployments that want a single governed, curated knowledge base shared across a fleet of agents, with central redaction / right-to-be-forgotten. See [Connected central memory](../platform/index.md) and the [memory loop](../learning/memory-loop.md).
 
-**Pairs with**: `PersistentFactBlock` (local facts) — compose both to merge local + central knowledge in one `ComposableMemory`.
+**Pairs with**: `PersistentFactBlock` (local facts) — `Memory(agent_id=..., plane_agent_id=...)` merges local and central knowledge per user; a hand-built `ComposableMemory` has a single window shared by everyone who uses it.
 
 The curated facts the block reads are managed on the plane's **Agent Memories** page — created or approved by a human (or extracted from traces), with redaction / right-to-be-forgotten:
 
 ![Curated agent memories on the plane](../platform/img/ws3-memory-facts.png)
 
-A runnable end-to-end example is in `examples/87_connected_memory.py`.
+A runnable end-to-end example is in `examples/87_connected_memory.py` — the block on its own, then `Memory(plane_agent_id=...)` for two users.
 
 ### Memory on a pushed agent
 

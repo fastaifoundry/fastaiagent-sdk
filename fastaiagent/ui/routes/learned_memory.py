@@ -73,7 +73,7 @@ def list_learned_memory(
 
     sql = (
         "SELECT id, scope, scope_id, fact, source_trace_id, confidence, "
-        "       created_at, superseded_by, project_id "
+        "       created_at, superseded_by, project_id, source "
         "FROM learned_memory "
         f"WHERE {' AND '.join(where)} "
         "ORDER BY created_at DESC "

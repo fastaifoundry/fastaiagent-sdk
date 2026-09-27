@@ -196,3 +196,48 @@ def test_persisting_a_global_fact_with_agent_id_is_injected(db):
         m.content or "" for m in Memory(location=store, agent_id="support").get_context("?")
     )
     assert "Support replies within 24 hours." in seen
+
+
+# --- 1.82.0: the cap and the per-message limit hold with tracing off -----------
+
+
+def _many_facts(n: int) -> FunctionModel:
+    return FunctionModel(lambda messages: json.dumps([f"fact number {i}" for i in range(n)]))
+
+
+def test_one_message_stores_at_most_ten_facts(db):
+    """The 1.81.0 CHANGELOG promised "up to 10 facts per message"; only the
+    extraction prompt asked for it, so an extractor returning 15 stored 15."""
+    store = MemoryStore(db_path=str(db))
+    block = FactExtractionBlock(
+        llm=_many_facts(15), persist=True, scope="user", scope_id="u1", store=store
+    )
+    block.on_message(UserMessage("I have a lot to say"))
+    assert len(store.list_active(scope="user", scope_id="u1")) == 10
+    assert block.last_write_report().detail["facts_extracted"] == 10
+
+
+def test_the_cap_holds_with_tracing_off(db, monkeypatch):
+    """Learned facts were told apart from yours by their trace id. With tracing
+    off they had none, so the cap never counted them and the Memory page called
+    them "manual"."""
+    monkeypatch.setenv("FASTAIAGENT_TRACE_ENABLED", "0")
+    reset_config()
+    store = MemoryStore(db_path=str(db))
+    mem = Memory(
+        location=store,
+        user_id=lambda ctx: ctx.state["uid"],
+        learn=_extractor(),
+        max_learned_facts=3,
+    )
+    mem.persist("Account manager is Dana", tier="user", id="u1")  # yours: never pruned
+    agent = Agent(name="a", llm=TestModel(response="ok"), memory=mem)
+    for i in range(5):
+        agent.run(f"I note item {i}", context=_ctx("u1"))
+
+    facts = store.list_active(scope="user", scope_id="u1")
+    learned = [f for f in facts if f.fact.startswith("User says:")]
+    assert [f.fact for f in learned] == [f"User says: I note item {i}" for i in (4, 3, 2)]
+    assert all(f.source == "learned" and not f.source_trace_id for f in learned)
+    manual = [f for f in facts if f.fact == "Account manager is Dana"]
+    assert manual and manual[0].source == ""

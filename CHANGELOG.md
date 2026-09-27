@@ -5,6 +5,178 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.82.0] - 2026-09-27 — memory that stays per user, keeps its limits, and holds up in a long-running server
+
+The four SDK follow-ups left open by the memory audit. No plane change and no
+wire change. The two plane-side follow-ups (duplicate approved facts, and
+`model = None` for pushed agents) are handed to the plane team.
+
+### Fixed
+
+- ⚠ **Optimizing an agent built on `Memory` keeps its users apart.**
+  `report.apply_to()` (and every candidate `optimize` scored) replaced a
+  per-user `Memory(user_id=<resolver>)` with a single `ComposableMemory`, so
+  every user of the optimized agent shared one conversation window: Bob's
+  prompt contained Alice's messages. It also dropped `window=` (the window
+  became unbounded), dropped `learn=` / `recall=` without a word, and lost the
+  `retrieve` / `persist` / `forget` verbs.
+  - The optimized agent now gets a `Memory` with the same configuration and
+    empty windows; the few-shot and memory levers reach every user.
+  - `learn=` and a `recall=` store you pass write during a run, so they can't
+    be isolated per candidate: `optimize()` now refuses them up front unless
+    `allow_writable_memory=True`, as it already did for `VectorBlock`.
+    `recall="auto"` is allowed.
+  - The memory lever selects among the agent's global facts
+    (`Memory(agent_id=)`, or the agent's name), never one user's.
+- **The memory lever reads the agent's own facts.** `optimize`'s memory lever
+  always read the default `local.db` and ignored `project_id`: for an agent whose
+  memory keeps facts in Postgres, Redis, another SQLite file or under a project,
+  the lever found nothing and was skipped — or selected among local facts the
+  agent never reads, and the optimized agent then injected them. It now reads,
+  and injects from, where the agent's memory reads: a `Memory`'s `location` and
+  `project_id`, or a `PersistentFactBlock`'s own store and `project_id`.
+  `propose_fact_subsets` gains `project_id=`.
+- ⚠ **`max_learned_facts` holds with tracing off.** Learned facts were told
+  apart from yours only by their trace id, which they lack when tracing is off
+  (`FASTAIAGENT_TRACE_ENABLED=0`), so the cap never counted them — a user's
+  learned facts grew without bound — and the Memory page labelled them
+  "manual". Facts now carry `source="learned"` (a new `Fact.source` field, in
+  all three stores); the page shows "learned" for an untraced one.
+- ⚠ **One message stores at most 10 facts, as 1.81.0 said.** The limit was only
+  a request in the extraction prompt; a model that returned 15 stored 15.
+- ⚠ **`astream` stores the same turn `run` does.** It stored every delta of the
+  tool loop, so text said before a tool call ("Let me check.") became part of
+  the stored answer — and of the span output and the output-guardrail input.
+  It now uses the final reply after middleware, like `run`.
+- ⚠ **With `RedactPII`, `run` and `astream` store the same reply — the redacted
+  one.** `run` stored the redacted reply and `astream` the raw text; the docs
+  said middleware never changes what memory stores. Memory keeps the user's
+  words as said and the agent's answer after middleware.
+- **An unreachable plane costs one wait and one warning, not one per turn.**
+  `PlaneFactBlock` retried on every turn — waiting out its 10 s timeout each
+  time — and warned every time. After a failed read it now serves the last
+  facts fetched and leaves the plane alone for 30 s
+  (`PlaneFactBlock.retry_after_seconds`), warns once per outage, and logs once
+  when the plane is back. The pause is shared by every block reading the same
+  plane and agent, so one user's failed read spares every other user the wait;
+  when it ends, exactly one turn retries.
+- **The user id stays out of the prompt.** The user fact block's heading was
+  `Learned facts (user:<id>)`, so an email id went to the model provider on
+  every turn, whatever the trace-payload setting. It is now
+  `Learned facts (user):`; agent and project headings keep their id.
+- **SQLite fact reads stop after `limit` rows.** They sorted every matching
+  fact; `local.db` schema v24 adds the two partial indexes Postgres got in 1.80.
+- **A swarm hop that hands off records no memory write.** Its writes were
+  dropped, but each still emitted a `memory.write` span claiming a message was
+  added, with block reports left over from an earlier write.
+- **Adding the same fact concurrently stores it once, in every store.** `add`
+  looked for the fact and then inserted it, so writers racing between the two
+  — `learn=` on two concurrent runs for one user, parallel `fastaiagent learn`,
+  several server processes — failed on the unique constraint (SQLite
+  `IntegrityError`, Postgres `UniqueViolation`; `persist` raised it, `learn=`
+  logged it), or, on Redis, all succeeded and stored the fact twice. The insert
+  is now atomic (`INSERT OR IGNORE`, `ON CONFLICT DO NOTHING`, Redis `SET NX`),
+  and every writer gets the one row's id.
+- **The memory lever works beside a per-user fact block.** With a
+  `ComposableMemory` whose `PersistentFactBlock` resolves the user per run,
+  `optimize(levers=("memory",))` raised `ProgrammingError` (the resolver
+  function was passed to the store as a scope id), and injecting the selected
+  facts removed that per-user block, so the optimized agent lost every user's
+  own facts. The lever now selects among the agent's shared facts and leaves a
+  per-user block in place; its injected block is named
+  `persistent_facts.optimized` when a per-user block already holds the name.
+- **Two first requests for one user get one window.** `Memory.for_user()` was
+  an unlocked get-or-create, so concurrent first requests for a new user could
+  each build a window, and one of them lost its messages.
+- **The Postgres fact store reuses its connections.** `PostgresFactStore`
+  opened a new connection for every call — one per turn for the fact read, one
+  per learned fact, one per hit in a semantic search. It now keeps a pool per
+  process (`min_pool_size=1`, `max_pool_size=10`); a store created before a
+  fork (`gunicorn --preload`) opens its own pool in each worker, and pooled
+  connections are checked before use so a Postgres restart is survived. A bad
+  DSN still fails at construction with the real error. A store dropped without
+  `close()` closes its pool as it is collected (and at exit), so `psycopg_pool`
+  never has to clean up from one of its own threads ("cannot join current
+  thread").
+- **A plane fact served twice is injected once.** `PlaneFactBlock` injected
+  every copy the plane returned. It now keeps the first (most important) copy,
+  comparing text without regard to case or spacing, and records the number
+  dropped as `memory.deduped_count` on the `memory.read.plane_facts` span.
+
+### Added
+
+- `Memory(max_users=10_000)`: with a per-user resolver, the most users' windows
+  kept in the process. Past it, the least recently used user's window, summary
+  and `recall="auto"` index are dropped (one warning in the log); their durable
+  facts stay. `None` = no cap.
+- `PostgresFactStore(dsn, *, min_pool_size=1, max_pool_size=10)` and
+  `PostgresFactStore.close()` (the store reopens on its next use).
+- `Memory(plane_agent_id=...)`: inject a connected plane's curated facts
+  (`PlaneFactBlock`) for every user — a per-user `Memory` couldn't include them,
+  and a hand-built `ComposableMemory` has one window for everyone.
+- `Fact.source` (`"learned"` / `""`), stored by SQLite, Postgres and Redis.
+
+### Behaviour changes
+
+- A per-user `Memory` keeps at most 10,000 users' windows per process; a
+  dropped user starts a fresh conversation but keeps their facts. Pass
+  `max_users=None` for the old unbounded behaviour.
+- `OptimizationReport.apply_to()` returns an agent whose memory is a `Memory`
+  (it was a `ComposableMemory`) when the original was a `Memory`.
+- `optimize()` over a `Memory` with `learn=` or a `recall=` store raises
+  `MemoryIsolationError` unless `allow_writable_memory=True`. For a per-user
+  `Memory` this used to pass silently and drop both.
+- For a `Memory` with a static `user_id` and no `agent_id`, the memory lever
+  selects among the agent's global facts (it used to pick that user's facts).
+- The memory lever reads the agent's own fact store and `project_id` instead of
+  `local.db`. An agent whose memory lives elsewhere now has the lever run over
+  those facts — or skipped when that store has none, even if `local.db` has
+  some. Agents on the default local store are unaffected.
+- `PostgresFactStore` keeps up to `max_pool_size` connections open for the life
+  of the process; call `close()` to release them.
+- `PlaneFactBlock`'s `memory.rendered_count` counts distinct facts.
+- `local.db` migrates to schema v24 (adds `learned_memory.source` and two
+  indexes; additive). Postgres adds the `source` column on the first open.
+- With tracing off, learned facts are now capped, and new ones show as
+  "learned" on the Memory page. Untraced facts learned before 1.82.0 can't be
+  told apart from yours, so they stay uncounted.
+- A message stores at most 10 learned facts.
+- `astream` stores, guards and traces only the final reply after middleware:
+  no text from before a tool call, and with `RedactPII` the redacted reply.
+- While the plane is unreachable, `PlaneFactBlock` retries every 30 s instead of
+  every turn.
+- The user fact heading in the prompt is `Learned facts (user):` — update any
+  prompt snapshot or eval that matched the id.
+- A handing-off swarm hop emits no `memory.write` span.
+- An optimized agent whose memory has a per-user `PersistentFactBlock` keeps
+  it (it used to be replaced); the memory lever selects among the agent's shared
+  facts.
+
+### Tests
+
+- `tests/integration/test_memory_contract_sweep.py`: memory's promises — no
+  cross-user leak of the window or of facts, the user id kept out of the prompt,
+  the learned-fact cap, `run` and `astream` storing the same turn, an optimized
+  agent keeping users apart — run across store (SQLite / Postgres / Redis) ×
+  `run` / `astream` × tracing on / off. Against 1.81.0, 38 of its 62 cases fail.
+
+### Docs
+
+- `agents/middleware.md`, `agents/memory.md`, `agents/memory-concepts.md`: what
+  `RedactPII` does to memory (the user's words as said, the reply redacted), for
+  `run` and `astream` alike; the user id stays out of the prompt.
+- `agents/memory.md`: `plane_agent_id` (with an example), the plane back-off.
+- `agents/memory.md`: `add` is idempotent under concurrency; a `max_users` section (what a dropped user loses and
+  keeps, with an example), connection pooling for the Postgres store, and
+  "each fact is injected once" for `PlaneFactBlock`.
+- `agents/memory-concepts.md`: per-user windows are bounded by `max_users`.
+- `evaluation/optimization.md`: "Agents built on `Memory`", with an example
+  and what is refused during optimize; `FactExtractionBlock` is supported
+  only with `persist=False`; the memory lever reads where the agent's memory
+  reads (and `fastaiagent learn` writes to `local.db`).
+- `examples/87_connected_memory`: a failed fact read stops the example instead
+  of seeding the fact again (how the duplicate plane facts were created).
+
 ## [1.81.0] - 2026-09-27 — memory you can trust: clean facts, true history, bounded learning, restart-safe recall
 
 The rest of the memory audit (1.80.0 fixed the cross-user leaks). No plane

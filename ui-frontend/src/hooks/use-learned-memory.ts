@@ -7,6 +7,8 @@ export interface LearnedFact {
   scope_id: string;
   fact: string;
   source_trace_id: string | null;
+  /** "learned" for a fact the SDK extracted; "" for one written directly. */
+  source?: string;
   confidence: number;
   created_at: number;
   superseded_by: number | null;

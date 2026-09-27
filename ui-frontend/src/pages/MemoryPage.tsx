@@ -192,6 +192,13 @@ export function MemoryPage() {
                         >
                           trace
                         </Link>
+                      ) : f.source === "learned" ? (
+                        <span
+                          className="font-mono text-muted-foreground"
+                          title="Learned from a run with tracing off, so there is no trace to link"
+                        >
+                          learned
+                        </span>
                       ) : (
                         <span className="font-mono text-muted-foreground">manual</span>
                       )}

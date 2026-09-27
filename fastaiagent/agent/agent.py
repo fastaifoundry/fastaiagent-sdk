@@ -1231,6 +1231,7 @@ class Agent:
 
             # Stream tool loop — yields events to caller
             accumulated_text = ""
+            final_reply: dict[str, str] = {}
             streamed_tokens = 0
             try:
                 async for event in stream_tool_loop(
@@ -1250,6 +1251,7 @@ class Agent:
                     parallel_tools=self.config.parallel_tools,
                     max_parallel_tools=self.config.max_parallel_tools,
                     governance_run_id=pause_run_id,
+                    final_reply=final_reply,
                     **kwargs,
                 ):
                     if isinstance(event, TextDelta):
@@ -1280,7 +1282,12 @@ class Agent:
                 )
                 return
 
-            output = accumulated_text
+            # The answer is the last turn's reply after middleware — what ``run``
+            # returns and stores — not every delta streamed: those include text
+            # said before a tool call, and precede any ``after_model`` rewrite
+            # (e.g. RedactPII). The deltas are the fallback when the loop ended
+            # without a final reply.
+            output = final_reply.get("text", accumulated_text)
 
             # Execute output guardrails. A streamed reply has already left the
             # building: every TextDelta was yielded to the caller as it arrived,

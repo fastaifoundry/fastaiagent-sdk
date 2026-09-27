@@ -45,7 +45,7 @@ A global fact is injected only by a `Memory` with the **same** `agent_id`. `Memo
 - A **resumed** or **forked** run records the question it resumed.
 - A **swarm** run is recorded once — the user's request and the final answer — however many hand-offs it took.
 - **Streaming** (`astream`) reads and writes exactly like `run`.
-- **Middleware** such as `RedactPII` changes what the *model* is sent, never what memory stores.
+- **Middleware** such as `RedactPII` changes what the *model* is sent, never the user's messages in memory. The stored reply is the agent's answer after middleware — redacted, with `RedactPII` — for `run` and `astream` alike.
 
 ## Who writes durable facts
 
@@ -70,7 +70,7 @@ They share a name and do different jobs:
 
 ## Isolation
 
-- **Per-user windows.** `Memory(user_id=lambda ctx: ...)` resolves the user from each run's `context=` and keeps a separate window and blocks per user.
+- **Per-user windows.** `Memory(user_id=lambda ctx: ...)` resolves the user from each run's `context=` and keeps a separate window and blocks per user — for at most `max_users` users (default 10,000), dropping the least recently used. A dropped user keeps their durable facts and starts a fresh conversation.
 - **Unresolved means no memory.** A run whose user can't be resolved — no context, a `None` id, a resolver that raises — sees only global facts and writes nothing, so anonymous callers never share a window.
 - **Facts are scoped.** At user and project scope an empty id reads nothing; `"*"` reads all on purpose.
 - **Recall is namespaced.** A vector store shared by every user keeps each user's recall under `user:<id>`.
@@ -88,8 +88,9 @@ They share a name and do different jobs:
 ## Privacy
 
 - **Local capture is full fidelity.** Traces in `local.db` keep memory reads, recalled snippets and the user id (`memory.scope_id`).
+- **The user id stays out of the prompt.** A user's facts reach the model under the heading `Learned facts (user):` — the id (often an email) is not sent to the model provider. Agent and project facts keep their id in the heading (`Learned facts (agent:support):`).
 - **Export is gated.** With `FASTAIAGENT_TRACE_PAYLOADS=0`, those payload attributes are dropped from exported spans, and `PlaneFactBlock` stops sending the user's question to the plane.
-- **Redaction is for the model.** `RedactPII` redacts what the model sees. To keep PII out of memory, redact the input before it reaches the agent.
+- **Redaction is for the model.** `RedactPII` redacts what the model sees and says; memory keeps the user's words as said and the model's reply as redacted. To keep PII out of memory entirely, redact the input before it reaches the agent.
 
 ## Where to go next
 

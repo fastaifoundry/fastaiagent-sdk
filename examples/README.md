@@ -123,6 +123,8 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 - [`27_middleware_tool_budget.py`](27_middleware_tool_budget.py) — `ToolBudget` middleware
 - [`30_memory_blocks.py`](30_memory_blocks.py) — `ComposableMemory` block API
 - [`66_memory_scoring.py`](66_memory_scoring.py) — recency + importance scoring on `VectorBlock`: why a stale-but-similar memory used to outrank the fresh correct one (runs under pytest, no keys)
+- [`100_memory_in_production.py`](100_memory_in_production.py) — a per-user `Memory` in a long-running server: `max_users` drops the least recently used window, a returning user keeps their facts, and the user id stays out of the prompt (1.82.0)
+- [`101_optimize_memory_agent.py`](101_optimize_memory_agent.py) — `optimize()` over an agent built on a per-user `Memory`: the memory lever reads the agent's own store and project, and the optimized agent still keeps users apart (1.82.0)
 - [`67_tool_docstrings.py`](67_tool_docstrings.py) — `FunctionTool` reads parameter descriptions from Google / NumPy / Sphinx docstrings (runs under pytest, no keys)
 - [`69_prompt_injection_guardrail.py`](69_prompt_injection_guardrail.py) — `no_prompt_injection()` blocks jailbreak / injection attempts before the LLM sees them; shares its detector with the `PromptInjection` scorer
 - [`73_responsible_ai.py`](73_responsible_ai.py) — the Trust Layer end to end: `no_secrets()` + `grounded()` + `toxicity_check()` + `banned_topics()` / `allowed_topics()` + the `Reflect` middleware
@@ -217,7 +219,7 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 The connected-state-plane bundle — run against a plane with `connected_state_plane` enabled (set `FASTAIAGENT_API_KEY` + `FASTAIAGENT_TARGET`). Each prints an expected-output snapshot; the plane-console views they produce are shown in the linked docs.
 - [`85_connected_hitl.py`](85_connected_hitl.py) — HITL pauses/resolutions reported to the plane (WS1 observer) → [docs](../docs/platform/connected-hitl.md)
 - [`86_connected_durability.py`](86_connected_durability.py) — checkpoints replicate → restore + resume from the plane (WS2) → [docs](../docs/durability/connected-checkpoints.md)
-- [`87_connected_memory.py`](87_connected_memory.py) — `PlaneFactBlock` reads curated governed facts (WS3) → [docs](../docs/agents/memory.md)
+- [`87_connected_memory.py`](87_connected_memory.py) — `PlaneFactBlock` reads curated governed facts (WS3), and `Memory(plane_agent_id=...)` gives them to every user with per-user windows (1.82.0) → [docs](../docs/agents/memory.md)
 - [`88_connected_governance.py`](88_connected_governance.py) — governance enrollment + opt-in fail-closed (WS4) → [docs](../docs/platform/connected-governance.md)
 - [`89_connected_agent_push.py`](89_connected_agent_push.py) — push an agent that references a registry prompt by slug + `memory_enabled` (console shows the slug, not "Inline") → [docs](../docs/platform/index.md)
 

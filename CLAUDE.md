@@ -130,6 +130,11 @@ filter**: a type absent from it exports nothing.
 - **No mocking unless agreed.** Tests exercise the real library. Where a test
   needs a model, mark it `e2e` and put it in `tests/e2e/`; keys live in `~/.zshrc`,
   so wrap live runs in `zsh -lc '…'`.
+- **Memory has a contract sweep.** `tests/integration/test_memory_contract_sweep.py`
+  runs memory's promises across store × `run`/`astream` × tracing on/off. A new
+  memory axis (a store, a call path, a memory kind) or a new promise gets a case
+  there, not only a test for the one path a change touched — that one-path habit
+  is how 1.80–1.81 shipped the bugs 1.82.0 fixed.
 - **A test that greps source certifies rather than checks.** Both repos have been
   burned by this — a call-site test once passed while four sites leaked, because
   they imported the function under an alias. Assert on behaviour.

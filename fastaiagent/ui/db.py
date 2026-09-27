@@ -17,7 +17,7 @@ from pathlib import Path
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
 
-CURRENT_SCHEMA_VERSION = 23
+CURRENT_SCHEMA_VERSION = 24
 
 # A migration step is either a SQL string or a callable that takes the
 # ``SQLiteHelper`` and runs whatever logic it needs (e.g., gated
@@ -625,6 +625,35 @@ def _v23_add_learn_extractions(db: SQLiteHelper) -> None:
     )
 
 
+def _v24_learned_memory_source_and_read_indexes(db: SQLiteHelper) -> None:
+    """``learned_memory.source`` and the per-turn read indexes (1.82.0).
+
+    ``source`` marks a fact the SDK learned (``"learned"``) apart from one
+    written directly (``""``). Learned facts were told apart only by a trace
+    id, which they lack when tracing is off — so ``max_learned_facts`` never
+    counted them. Existing rows default to ``""``.
+
+    The two partial indexes match the per-turn read — the newest active facts
+    for a subject, or for a whole scope — so SQLite stops after ``limit`` rows
+    instead of sorting them all. Postgres got the same pair in 1.80.0.
+    """
+    if not db.fetchone(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'learned_memory'"
+    ):
+        return  # nothing to extend: a database built without the table
+    _add_column_if_missing(db, "learned_memory", "source", "TEXT NOT NULL DEFAULT ''")
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_learned_memory_subject_active "
+        "ON learned_memory (scope, scope_id, project_id, created_at DESC) "
+        "WHERE superseded_by IS NULL"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_learned_memory_scope_active "
+        "ON learned_memory (scope, project_id, created_at DESC) "
+        "WHERE superseded_by IS NULL"
+    )
+
+
 def _v17_add_eval_run_synced(db: SQLiteHelper) -> None:
     """Durable platform-export buffer flag on ``eval_runs`` (Part D, 1.49.0).
 
@@ -1114,6 +1143,11 @@ _MIGRATIONS: dict[int, list[_Step]] = {
         # 1.81.0: the learning loop records each trace it mines, so a re-run
         # skips it. See _v23_add_learn_extractions.
         _v23_add_learn_extractions,
+    ],
+    24: [
+        # 1.82.0: learned facts are marked learned, and the per-turn fact read
+        # has matching indexes. See _v24_learned_memory_source_and_read_indexes.
+        _v24_learned_memory_source_and_read_indexes,
     ],
 }
 

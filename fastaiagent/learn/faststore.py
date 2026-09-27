@@ -20,8 +20,11 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import os
+import threading
 import time
 import uuid
+import weakref
 from collections.abc import Iterable
 from typing import Any, Protocol, runtime_checkable
 
@@ -241,6 +244,8 @@ CREATE TABLE IF NOT EXISTS learned_memory (
     project_id      TEXT NOT NULL DEFAULT '',
     UNIQUE (scope, scope_id, fact, project_id)
 );
+-- 1.82.0: "learned" for a fact the SDK extracted, "" for one written directly.
+ALTER TABLE learned_memory ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT '';
 -- The per-turn read is "the newest N active facts" for one subject, or for a
 -- whole scope; these let it stop after N rows instead of sorting them all.
 CREATE INDEX IF NOT EXISTS idx_learned_memory_subject_active
@@ -252,26 +257,85 @@ CREATE INDEX IF NOT EXISTS idx_learned_memory_scope_active
 """
 
 
+def _close_pool_in(pool: Any, pid: int) -> None:
+    """Close ``pool`` if this is the process that opened it (a finalizer)."""
+    if os.getpid() == pid:
+        pool.close()
+
+
 class PostgresFactStore:
     """``FactStore`` over Postgres (via ``psycopg`` v3). Requires the
-    ``fastaiagent[postgres]`` extra. Table is created on first use."""
+    ``fastaiagent[postgres]`` extra. Table is created on first use.
 
-    def __init__(self, dsn: str):
+    Connections come from a pool of ``min_pool_size`` to ``max_pool_size``,
+    one pool per process: a store built before a fork opens its own pool in
+    the child. ``close()`` releases the connections; the store reopens on its
+    next use.
+    """
+
+    def __init__(self, dsn: str, *, min_pool_size: int = 1, max_pool_size: int = 10):
         try:
-            import psycopg  # noqa: F401
+            import psycopg
+            from psycopg_pool import ConnectionPool  # noqa: F401
         except ImportError as e:  # pragma: no cover
             raise ImportError(
                 "PostgresFactStore needs psycopg — install fastaiagent[postgres]"
             ) from e
         self._dsn = dsn
-        with self._conn() as c:
+        self._min_pool_size = min_pool_size
+        self._max_pool_size = max_pool_size
+        self._pool: Any = None
+        self._pool_pid = 0
+        self._pool_finalizer: weakref.finalize[Any, Any] | None = None
+        self._pool_lock = threading.Lock()
+        # A direct connection, not the pool: a pool connects in the background,
+        # so a bad DSN would only surface as a pool timeout on first use.
+        with psycopg.connect(dsn) as c:
             c.execute(_PG_DDL)
             c.commit()
 
-    def _conn(self):
-        import psycopg
+    def _get_pool(self) -> Any:
+        pid = os.getpid()
+        pool = self._pool
+        if pool is not None and self._pool_pid == pid:
+            return pool
+        with self._pool_lock:
+            if self._pool is None or self._pool_pid != pid:
+                from psycopg_pool import ConnectionPool
 
-        return psycopg.connect(self._dsn)
+                # After a fork the parent's pool is left alone — never used or
+                # closed here: its sockets belong to the parent.
+                pool = ConnectionPool(
+                    conninfo=self._dsn,
+                    min_size=self._min_pool_size,
+                    max_size=self._max_pool_size,
+                    open=False,
+                    # A pooled connection can outlive a server restart; check
+                    # it on the way out, as a fresh connection per call did.
+                    check=getattr(ConnectionPool, "check_connection", None),
+                )
+                pool.open()
+                self._pool, self._pool_pid = pool, pid
+                # Close the pool when this store is collected (and at exit), in
+                # the thread that drops it. Left to psycopg_pool's own __del__,
+                # the close can land on one of the pool's worker threads and
+                # fail with "cannot join current thread".
+                self._pool_finalizer = weakref.finalize(self, _close_pool_in, pool, pid)
+            return self._pool
+
+    def _conn(self) -> Any:
+        return self._get_pool().connection()
+
+    def close(self) -> None:
+        """Close this process's connections. The store reopens on next use."""
+        with self._pool_lock:
+            pool, self._pool = self._pool, None
+            finalizer, self._pool_finalizer = self._pool_finalizer, None
+            ours = self._pool_pid == os.getpid()
+        if finalizer is not None:
+            finalizer.detach()
+        if pool is not None and ours:
+            pool.close()
 
     @staticmethod
     def _row_to_fact(r: tuple) -> Fact:
@@ -285,11 +349,12 @@ class PostgresFactStore:
             created_at=r[6],
             superseded_by=r[7],
             project_id=r[8],
+            source=r[9] or "",
         )
 
     _COLS = (
         "id, scope, scope_id, fact, source_trace_id, "
-        "confidence, created_at, superseded_by, project_id"
+        "confidence, created_at, superseded_by, project_id, source"
     )
 
     def add(self, fact: Fact) -> int:
@@ -307,10 +372,14 @@ class PostgresFactStore:
             row = cur.fetchone()
             if row:
                 return int(row[0])
-            cur = c.execute(
+            # ON CONFLICT: a writer that inserted the same fact since the SELECT
+            # wins, and this one returns its row instead of raising
+            # UniqueViolation. No conflict target, so a table without the
+            # constraint still accepts the insert.
+            row = c.execute(
                 "INSERT INTO learned_memory "
-                "(scope, scope_id, fact, source_trace_id, confidence, created_at, project_id) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id",
+                "(scope, scope_id, fact, source_trace_id, confidence, created_at, project_id, "
+                "source) VALUES (%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING RETURNING id",
                 (
                     fact.scope,
                     fact.scope_id,
@@ -319,11 +388,17 @@ class PostgresFactStore:
                     fact.confidence,
                     created,
                     fact.project_id,
+                    fact.source,
                 ),
-            )
-            new_id = int(cur.fetchone()[0])
+            ).fetchone()
+            if row is None:
+                row = c.execute(
+                    "SELECT id FROM learned_memory "
+                    "WHERE scope=%s AND scope_id=%s AND fact=%s AND project_id=%s",
+                    (fact.scope, fact.scope_id, fact.fact, fact.project_id),
+                ).fetchone()
             c.commit()
-            return new_id
+            return int(row[0])
 
     def get(self, fact_id: int) -> Fact | None:
         with self._conn() as c:
@@ -482,6 +557,7 @@ class RedisFactStore:
             created_at=float(d["created_at"]),
             superseded_by=int(d["superseded_by"]) if d.get("superseded_by") else None,
             project_id=d.get("project_id", ""),
+            source=d.get("source", ""),
         )
 
     def add(self, fact: Fact) -> int:
@@ -495,8 +571,9 @@ class RedisFactStore:
             return int(existing)
         fid = int(self._r.incr(self._k("fact", "seq")))
         created = fact.created_at if fact.created_at is not None else time.time()
+        fact_key = self._k("fact", str(fid))
         self._r.hset(
-            self._k("fact", str(fid)),
+            fact_key,
             mapping={
                 "id": fid,
                 "scope": fact.scope,
@@ -507,9 +584,18 @@ class RedisFactStore:
                 "created_at": created,
                 "superseded_by": "",
                 "project_id": fact.project_id,
+                "source": fact.source,
             },
         )
-        self._r.set(uniq, fid)
+        # Claim the fact only if no concurrent writer has: SET NX is atomic, so
+        # exactly one writer's row is indexed and the others return its id.
+        if not self._r.set(uniq, fid, nx=True):
+            winner = self._r.get(uniq)
+            if winner is not None:
+                self._r.delete(fact_key)  # never indexed, so never read
+                return int(winner)
+            # The winner was deleted in between: this writer's row stands.
+            self._r.set(uniq, fid)
         self._r.sadd(self._act_key(fact.scope, fact.scope_id, fact.project_id), fid)
         self._r.sadd(self._all_key(fact.scope, fact.scope_id, fact.project_id), fid)
         self._r.sadd(self._sids_key(fact.scope, fact.project_id), fact.scope_id)

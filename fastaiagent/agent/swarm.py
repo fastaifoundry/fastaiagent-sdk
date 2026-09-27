@@ -121,6 +121,12 @@ class _HopMemory:
     def get_context(self, query: str = "", max_messages: int | None = None) -> list[Message]:
         return list(self._base.get_context(query=query, max_messages=max_messages))
 
+    @property
+    def drops_writes(self) -> bool:
+        """True once this hop has handed off: ``add`` stores nothing, so the
+        tracing layer records no write."""
+        return self._hop.handed_off
+
     def add(self, message: Message) -> None:
         if self._hop.handed_off:
             return

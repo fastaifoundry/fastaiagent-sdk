@@ -170,10 +170,12 @@ def propose_fact_subsets(
     scope_id: str,
     n: int,
     store: Any = None,
+    project_id: str = "",
 ) -> list[list[int]]:
     """Propose up to ``n`` candidate fact-id subsets for the memory lever (P3).
 
-    Pure **selection / ablation**: reads ``MemoryStore.list_active(scope, scope_id)``
+    Pure **selection / ablation**: reads ``store.list_active(scope, scope_id,
+    project_id)`` (``store`` defaults to the local ``MemoryStore``)
     and returns subsets of the *existing* fact ids, ranked by confidence then
     recency (full set + progressively smaller high-confidence subsets). It never
     creates/edits/deletes/supersedes facts — the selection is run-local and leaves
@@ -182,7 +184,7 @@ def propose_fact_subsets(
     """
     from fastaiagent.learn.store import MemoryStore
 
-    facts = (store or MemoryStore()).list_active(scope, scope_id)  # type: ignore[arg-type]
+    facts = (store or MemoryStore()).list_active(scope, scope_id, project_id)  # type: ignore[arg-type]
     if not facts:
         return []
     ranked = sorted(

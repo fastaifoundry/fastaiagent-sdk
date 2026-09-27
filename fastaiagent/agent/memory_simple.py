@@ -33,14 +33,20 @@ Example::
 
 from __future__ import annotations
 
+import copy
+import logging
+import threading
 import warnings
+from collections import OrderedDict
 from typing import TYPE_CHECKING, Any
 
 from fastaiagent.agent._memory_tracing import memory_store_span
 from fastaiagent.agent.memory import AgentMemory, ComposableMemory
 from fastaiagent.agent.memory_blocks import (
     FactExtractionBlock,
+    MemoryIsolationError,
     PersistentFactBlock,
+    PlaneFactBlock,
     ScopeId,
     SummaryBlock,
     VectorBlock,
@@ -181,6 +187,15 @@ class Memory:
             meaning.
         embedder: the embedder for ``semantic=`` and ``recall=``. Defaults to
             the best available one; ``"auto"`` indexes are sized to match it.
+        max_users: with a per-user resolver, keep at most this many users'
+            windows in the process, dropping the least recently used. A dropped
+            user's window, summary and ``"auto"`` recall start afresh; their
+            durable facts are in the store and stay. ``None`` = no cap.
+            Default ``10_000``.
+        plane_agent_id: the agent's id on a connected Enterprise plane → also
+            inject the curated facts the plane serves for it
+            (:class:`PlaneFactBlock`), for every user and for unresolved
+            callers. Read-only; with no connection it injects nothing.
     """
 
     def __init__(
@@ -198,7 +213,13 @@ class Memory:
         semantic: Any = None,
         embedder: Any = None,
         max_learned_facts: int | None = 200,
+        max_users: int | None = 10_000,
+        plane_agent_id: str | None = None,
     ):
+        if max_users is not None and max_users < 1:
+            raise ValueError("max_users must be at least 1, or None for no cap")
+        if plane_agent_id is not None and not plane_agent_id:
+            raise ValueError('plane_agent_id="" names no agent; pass the id or leave it unset')
         if agent_id is not None and not agent_id:
             # An unset setting (e.g. os.environ.get("AGENT_ID", "")) must not
             # become "read every agent's global facts" on every turn.
@@ -230,32 +251,97 @@ class Memory:
         self._summarize = summarize
         self._recall = recall
         self._dedupe = dedupe
+        self._max_users = max_users
+        self._plane_agent_id = plane_agent_id
+        self._warned_eviction = False
 
         # When user_id is a per-run resolver, each user gets their OWN working
         # memory (window + in-conversation blocks) so concurrent/interleaved
         # sessions on one Memory instance never cross-contaminate — not just the
         # durable facts, but the live window too. Static/absent user_id → one.
         self._dynamic = callable(user_id)
-        self._per_user: dict[str, ComposableMemory] = {}
+        # Blocks optimize put in place of (or beside) the built-in ones, by name.
+        self._overrides: dict[str, Any] = {}
+        self._reset_windows()
+
+    def _reset_windows(self) -> None:
+        """Start every subject's working memory afresh."""
+        self._per_user: OrderedDict[str, ComposableMemory] = OrderedDict()
+        self._per_user_lock = threading.Lock()
         self._anonymous: _AnonymousMemory | None = None
         self._single: ComposableMemory | None = (
             None
             if self._dynamic
-            else self._build_composable(user_id if isinstance(user_id, str) else None)
+            else self._build_composable(self._user_id if isinstance(self._user_id, str) else None)
         )
 
-    def _global_blocks(self) -> list[Any]:
-        """The global tier (shared truth) — only when an agent_id is given."""
-        if self._agent_id is None:
-            return []
-        return [
-            PersistentFactBlock(
-                scope="agent",
-                scope_id=self._agent_id,
-                project_id=self._project_id,
-                store=self._store,
+    def _derive(self, *, allow_writable_memory: bool = False) -> Memory:
+        """A copy with the same configuration and handles, and empty windows.
+
+        For ``fastaiagent.optimize``: each candidate runs on its own copy, and
+        the optimized agent gets one — still a ``Memory``, so per-user routing,
+        the window size and the store verbs all survive. ``learn=`` and a
+        ``recall=`` store you passed write to shared stores during a run, so
+        they can't be isolated; they are refused unless
+        ``allow_writable_memory=True``, which shares them with a warning.
+        ``recall="auto"`` is an in-process index built per user of each copy.
+        """
+        writers = []
+        if self._learn is not None:
+            writers.append("learn=")
+        if self._recall is not None and self._recall != "auto":
+            writers.append("recall=")
+        if writers and not allow_writable_memory:
+            raise MemoryIsolationError(
+                f"Memory({', '.join(writers)}...) writes to a shared store during a "
+                "run, so it can't be isolated per candidate. Remove it to "
+                "optimize, or pass allow_writable_memory=True to share it."
             )
-        ]
+        if writers:
+            warnings.warn(
+                f"Memory({', '.join(writers)}...): sharing external state across "
+                "candidate evaluations (allow_writable_memory=True); dev scores may "
+                "be affected by cross-candidate writes.",
+                stacklevel=3,
+            )
+        new = copy.copy(self)
+        new._overrides = dict(self._overrides)
+        new._reset_windows()
+        return new
+
+    def _override_block(self, block: Any, replace_name: str) -> None:
+        """Put ``block`` in every subject's memory in place of ``replace_name``.
+
+        Windows start afresh, so call it on a copy from :meth:`_derive`.
+        """
+        self._overrides.pop(replace_name, None)
+        self._overrides[replace_name] = block
+        self._reset_windows()
+
+    def _with_overrides(self, blocks: list[Any]) -> list[Any]:
+        if not self._overrides:
+            return blocks
+        kept = [b for b in blocks if getattr(b, "name", "") not in self._overrides]
+        # Each subject gets its own copy: an override holds no state across users.
+        return kept + [b.isolated_copy() for b in self._overrides.values()]
+
+    def _global_blocks(self) -> list[Any]:
+        """The global tier (shared truth): the agent's facts when an agent_id is
+        given, then the plane's curated facts when a plane_agent_id is."""
+        blocks: list[Any] = []
+        if self._agent_id is not None:
+            blocks.append(
+                PersistentFactBlock(
+                    scope="agent",
+                    scope_id=self._agent_id,
+                    project_id=self._project_id,
+                    store=self._store,
+                )
+            )
+        if self._plane_agent_id is not None:
+            # One per subject, like every block here: it caches per question.
+            blocks.append(PlaneFactBlock(self._plane_agent_id))
+        return blocks
 
     def _dimension(self) -> int:
         """The embedder's output dimension, probed once."""
@@ -323,7 +409,9 @@ class Memory:
                     dedupe_against_upstream=self._dedupe,
                 )
             )
-        return ComposableMemory(blocks=blocks, primary=AgentMemory(max_messages=self._window))
+        return ComposableMemory(
+            blocks=self._with_overrides(blocks), primary=AgentMemory(max_messages=self._window)
+        )
 
     def _active(self) -> ComposableMemory:
         """The working memory for the current run (per-user when dynamic)."""
@@ -333,7 +421,9 @@ class Memory:
         uid = _resolve_dynamic_id(self._user_id)  # type: ignore[arg-type]
         if not uid:
             if self._anonymous is None:
-                self._anonymous = _AnonymousMemory(blocks=self._global_blocks())
+                self._anonymous = _AnonymousMemory(
+                    blocks=self._with_overrides(self._global_blocks())
+                )
             return self._anonymous
         return self.for_user(uid)
 
@@ -351,11 +441,38 @@ class Memory:
             )
         if not user_id:
             raise ValueError("for_user() needs a non-empty user id")
-        mem = self._per_user.get(user_id)
-        if mem is None:
-            mem = self._build_composable(user_id)
-            self._per_user[user_id] = mem
-        return mem
+        with self._per_user_lock:
+            mem = self._per_user.get(user_id)
+            if mem is not None:
+                self._per_user.move_to_end(user_id)
+                return mem
+        # Built outside the lock so one user's build never stalls another's; if
+        # two threads race, the first one in wins and the other build is unused.
+        built = self._build_composable(user_id)
+        with self._per_user_lock:
+            mem = self._per_user.get(user_id)
+            if mem is not None:
+                self._per_user.move_to_end(user_id)
+                return mem
+            self._per_user[user_id] = built
+            self._evict_over_cap()
+        return built
+
+    def _evict_over_cap(self) -> None:
+        """Drop the least recently used users' windows beyond ``max_users``."""
+        if self._max_users is None:
+            return
+        while len(self._per_user) > self._max_users:
+            self._per_user.popitem(last=False)
+            if not self._warned_eviction:
+                self._warned_eviction = True
+                logging.getLogger(__name__).warning(
+                    "Memory: more than max_users=%d users' windows in this process; "
+                    "dropping the least recently used (their durable facts stay). "
+                    "Windows are in-process: persist them with "
+                    "mem.for_user(id).save(path), or raise max_users.",
+                    self._max_users,
+                )
 
     # ── Agent-attachable contract (routes to the active working memory) ───────
     @property

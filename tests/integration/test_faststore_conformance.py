@@ -158,3 +158,44 @@ def test_wildcard_limit_is_newest_first_across_subjects(store: FactStore):
     for sid in ("*", ""):  # "" at agent scope is the permissive (all-agents) read
         got = store.list_active(scope="agent", scope_id=sid, project_id=project, limit=2)
         assert [f.fact for f in got] == ["g5", "g4"]
+
+
+def test_concurrent_adds_of_one_fact_keep_one_row(store: FactStore, uid: str):
+    """``add`` looked for the fact, then inserted it. Writers that raced between
+    the two either failed on the unique constraint (SQLite, Postgres) or both
+    succeeded and stored the fact twice (Redis). Every writer must get the one
+    row's id."""
+    import threading
+
+    writers, rounds = 8, 5
+    for r in range(rounds):
+        fact = Fact(scope="user", scope_id=uid, fact=f"prefers email #{r}")
+        gate = threading.Barrier(writers)
+        ids: list[int] = []
+        errors: list[BaseException] = []
+
+        def write(fact: Fact = fact, gate: threading.Barrier = gate) -> None:
+            gate.wait()
+            try:
+                ids.append(store.add(fact))
+            except BaseException as err:  # noqa: BLE001 — recorded, asserted below
+                errors.append(err)
+
+        threads = [threading.Thread(target=write) for _ in range(writers)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert errors == [], f"round {r}: {errors[:2]}"
+        assert len(set(ids)) == 1, f"round {r}: {sorted(set(ids))}"
+    facts = [f.fact for f in store.list_active(scope="user", scope_id=uid)]
+    assert sorted(facts) == sorted(f"prefers email #{r}" for r in range(rounds))
+
+
+def test_source_round_trips(store: FactStore, uid: str):
+    """A learned fact says so on its own (1.82.0): it used to be told apart only
+    by a trace id, which it lacks when tracing is off."""
+    store.add(Fact(scope="user", scope_id=uid, fact="learned one", source="learned"))
+    store.add(Fact(scope="user", scope_id=uid, fact="yours"))
+    by_fact = {f.fact: f.source for f in store.list_active(scope="user", scope_id=uid)}
+    assert by_fact == {"learned one": "learned", "yours": ""}

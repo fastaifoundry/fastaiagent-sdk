@@ -120,6 +120,24 @@ def test_source_trace_id_round_trips(tmp_path: Path, monkeypatch) -> None:
     assert row["confidence"] == 0.6
 
 
+def test_an_untraced_learned_fact_is_not_shown_as_manual(tmp_path: Path, monkeypatch) -> None:
+    """With tracing off a learned fact has no trace id; the page called it
+    "manual". The row now carries ``source`` so the page can say "learned"."""
+    from fastaiagent._internal.config import reset_config
+
+    db_path = tmp_path / "src.db"
+    monkeypatch.setenv("FASTAIAGENT_LOCAL_DB", str(db_path))
+    reset_config()
+    store = MemoryStore(db_path=str(db_path))
+    store.add(Fact(scope="user", scope_id="u", fact="learned, untraced", source="learned"))
+    store.add(Fact(scope="user", scope_id="u", fact="typed in by hand"))
+    tc = TestClient(build_app(db_path=str(db_path), no_auth=True))
+    rows = {r["fact"]: r for r in tc.get("/api/learned_memory").json()["rows"]}
+    assert rows["learned, untraced"]["source"] == "learned"
+    assert rows["learned, untraced"]["source_trace_id"] is None
+    assert rows["typed in by hand"]["source"] == ""
+
+
 def test_superseded_chain_exposed(client: TestClient) -> None:
     """include_superseded reveals the replaced row with superseded_by populated."""
     rows = client.get("/api/learned_memory?include_superseded=true").json()["rows"]

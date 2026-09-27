@@ -105,12 +105,16 @@ was tuned against. By construction the winner is **never worse than baseline**.
   `curate_from_traces(filter="favorites")`), filling any gap by running the agent
   and metric-filtering its passing outputs. Demos are injected via a `FewShotBlock`
   and never drawn from dev/holdout (no leakage).
-- **`memory`** — tunes *which subset* of the agent's learned facts
-  (`MemoryStore.list_active`, populated by `fastaiagent learn`) to inject, via a
-  confidence/recency ablation. Pure **selection** — it never creates, edits, or
-  deletes facts, so the audit chain is untouched. Injected through a
-  `PersistentFactBlock` backed by an allowlist store. Needs facts at the agent's
-  scope; with none it's **skipped** (recorded distinctly from a reject).
+- **`memory`** — tunes *which subset* of the agent's learned facts to inject,
+  via a confidence/recency ablation. It reads the facts **where the agent's
+  memory reads them**: a `Memory`'s `location` and `project_id` (its global
+  tier), or a `PersistentFactBlock`'s own store, scope and `project_id`; an
+  agent with neither uses `local.db` at `("agent", <agent name>)`. Pure
+  **selection** — it never creates, edits, or deletes facts, so the audit chain
+  is untouched. Injected through a `PersistentFactBlock` backed by an allowlist
+  over that same store. With no facts there it's **skipped** (recorded distinctly
+  from a reject). `fastaiagent learn` writes to `local.db`, so for an agent whose
+  memory lives in Postgres or Redis, put the facts in that store.
 
 The default is **prompt-only** (`levers=("instructions",)`) — the cheapest entry
 point (few-shot adds a bootstrap pass; memory needs `fastaiagent learn` to have
@@ -122,9 +126,59 @@ Each candidate evaluation gets an **isolated copy** of the agent's memory
 (`block.isolated_copy()`: shares external handles like the `llm`, resets
 in-process state) so one candidate's turns never bleed into another's. Agents
 with `StaticBlock` / `PersistentFactBlock` / `PlaneFactBlock` / `SummaryBlock` /
-`FactExtractionBlock` are supported. **`VectorBlock` is excluded** — it writes to
-an external store during a run, so sharing it bleeds candidates; `optimize()`
-refuses unless you pass `allow_writable_memory=True` (accepting the bleed).
+`FactExtractionBlock(persist=False)` are supported. **`VectorBlock` and
+`FactExtractionBlock(persist=True)` are excluded** — they write to an external
+store during a run, so sharing them bleeds candidates; `optimize()` refuses
+unless you pass `allow_writable_memory=True` (accepting the bleed).
+
+#### Agents built on `Memory`
+
+An agent whose memory is a [`Memory`](../agents/memory.md) optimizes the same way, and the agent you get back still has a `Memory` — with the same `window`, `location`, `agent_id` and per-user routing:
+
+```python
+from dataclasses import dataclass
+
+import fastaiagent as fa
+
+agent = fa.Agent(
+    name="support",
+    system_prompt="You answer billing questions.",
+    llm=fa.LLMClient(),
+    memory=fa.Memory(agent_id="support", user_id=lambda ctx: ctx.state.user_id, window=20),
+)
+
+report = fa.optimize(
+    agent, "cases.jsonl", scorers=["exact_match"],
+    config=fa.OptimizeConfig(levers=("instructions", "fewshot", "memory")),
+)
+better = report.apply_to(agent)   # better.memory is a Memory, one window per user
+
+
+@dataclass
+class Session:
+    user_id: str
+
+
+better.run("Why was I charged twice?", context=fa.RunContext(state=Session(user_id="alice")))
+```
+
+A runnable version, with the memory lever over facts in the agent's own store: [`examples/101_optimize_memory_agent.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/101_optimize_memory_agent.py).
+
+What carries over and what is fresh:
+
+- **Configuration carries over:** the store, `window`, `agent_id`, `max_users`, and the per-user resolver — every user still gets their own window.
+- **Windows start empty:** each candidate, and the returned agent, starts with no conversations in memory. Durable facts are in the store and are read as usual.
+- **The levers reach every user:** the few-shot demos and the selected facts are injected for each user, and for callers with no user.
+- **The memory lever works on global facts:** it selects among the agent's global facts (`agent_id=`, or the agent's name when unset) in the `Memory`'s own store and `project_id` — never among one user's facts.
+
+Memory that **writes during a run** can't be isolated per candidate, so, as with the blocks above, `optimize()` refuses it unless you pass `allow_writable_memory=True`:
+
+| Keyword | During optimize |
+|---|---|
+| `learn=` | refused — it writes learned facts to the store on every turn |
+| `recall=<VectorStore>` | refused — every candidate would write to the same store |
+| `recall="auto"` | allowed — each candidate builds its own in-process index |
+| `summarize=`, `semantic=` | allowed |
 
 ## Configuration
 
@@ -144,7 +198,7 @@ fa.OptimizeConfig(
     selection_judge=None,       # an LLM judge used *inside* the loop
     audit_judge=None,           # an LLM judge used *only* on the holdout guard
     levers=("instructions",),   # default: prompt only — add "fewshot" and/or "memory"
-    allow_writable_memory=False,  # opt in to VectorBlock agents (bleed risk)
+    allow_writable_memory=False,  # opt in to memory that writes during a run (bleed risk)
 )
 ```
 

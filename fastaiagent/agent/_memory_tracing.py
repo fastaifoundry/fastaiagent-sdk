@@ -202,6 +202,13 @@ def traced_add(
     """
     from fastaiagent.trace.otel import get_tracer
 
+    if getattr(memory, "drops_writes", False):
+        # A memory that stores nothing for this write (a swarm hop that handed
+        # off) gets no span: one would claim a message was added, with block
+        # reports left over from an earlier write.
+        memory.add(message)
+        return
+
     tracer = get_tracer("fastaiagent.memory")
     blocks = _blocks(memory)
     start = time.monotonic()

@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import asyncio
 import warnings
+from dataclasses import dataclass
 
 import pytest
 
 from fastaiagent import Agent, LLMClient
+from fastaiagent.agent.context import RunContext
 from fastaiagent.eval.llm_judge import LLMJudge
 from fastaiagent.eval.results import EvalResults
 from fastaiagent.eval.scorer import ScorerResult
@@ -28,6 +30,7 @@ from fastaiagent.optimize.candidate import _clone_memory_blocks, scorer_present
 from fastaiagent.optimize.loop import _split
 from fastaiagent.optimize.proposers import propose_prompt_rewrites
 from fastaiagent.optimize.report import TrajectoryPoint
+from fastaiagent.testing import TestModel
 
 
 def _agent(prompt: str = "ORIGINAL") -> Agent:
@@ -464,3 +467,289 @@ def test_memory_lever_never_mutates_store(tmp_path, monkeypatch):
     propose_fact_subsets(scope="agent", scope_id="t", n=3, store=store)
     after = [(f.id, f.fact, f.confidence, f.superseded_by) for f in store.list_all()]
     assert before == after  # store + audit chain unchanged
+
+
+# ── 1.82.0: a Memory stays a Memory through optimize ────────────────────────
+
+
+@dataclass
+class _St:
+    user_id: str
+
+
+def _as(uid: str) -> RunContext:
+    return RunContext(state=_St(user_id=uid))
+
+
+def _prompt(call: dict) -> str:
+    return " ".join(m.content or "" for m in call["messages"] if isinstance(m.content, str))
+
+
+def _memory_agent(mem) -> tuple[Agent, TestModel]:
+    model = TestModel(response="noted")
+    return Agent(name="support", system_prompt="P", llm=model, memory=mem), model
+
+
+def test_optimized_per_user_memory_keeps_users_apart(tmp_path, monkeypatch):
+    """``apply_to`` turned a per-user Memory into one ComposableMemory, so every
+    user of the optimized agent shared one window."""
+    from fastaiagent.agent.memory_simple import Memory
+    from fastaiagent.learn.store import MemoryStore
+
+    monkeypatch.setenv("FASTAIAGENT_LOCAL_DB", str(tmp_path / "local.db"))
+    mem = Memory(location=MemoryStore(), user_id=lambda ctx: ctx.state.user_id, window=4)
+    base, model = _memory_agent(mem)
+    # What OptimizationReport.apply_to does.
+    optimized = apply_candidate(base, Candidate(system_prompt="P2"), allow_writable_memory=True)
+
+    optimized.run("alice-private-message", context=_as("alice"))
+    optimized.run("bob here", context=_as("bob"))
+    assert "alice-private-message" not in _prompt(model.calls[-1])
+    assert isinstance(optimized.memory, Memory)
+    assert optimized.memory is not mem
+    for i in range(4):
+        optimized.run(f"alice turn {i}", context=_as("alice"))
+    assert len(optimized.memory.for_user("alice").messages) <= 4  # window= survives
+    assert mem.for_user("alice").messages == []  # the original is untouched
+
+
+def test_optimize_refuses_a_learning_per_user_memory_up_front(tmp_path, monkeypatch):
+    """A per-user Memory hid learn= behind the anonymous caller's blocks, so the
+    isolation guard never saw it and the deployed agent silently lost it."""
+    from fastaiagent.agent.memory_blocks import MemoryIsolationError
+    from fastaiagent.agent.memory_simple import Memory
+    from fastaiagent.learn.store import MemoryStore
+
+    monkeypatch.setenv("FASTAIAGENT_LOCAL_DB", str(tmp_path / "local.db"))
+    mem = Memory(location=MemoryStore(), user_id=lambda ctx: ctx.state.user_id, learn=TestModel())
+    with pytest.raises(MemoryIsolationError, match="learn="):
+        _clone_memory_blocks(mem)
+    with pytest.warns(UserWarning, match="learn="):
+        shared = _clone_memory_blocks(mem, allow_writable_memory=True)
+    assert isinstance(shared, Memory)
+    kinds = [type(b).__name__ for b in shared.for_user("alice").blocks]
+    assert "FactExtractionBlock" in kinds  # learn= kept, not dropped
+
+
+def test_auto_recall_is_isolated_per_candidate(tmp_path, monkeypatch):
+    """recall="auto" builds a fresh in-process index per user of each copy, so
+    it is isolated; only a VectorStore you pass is shared and refused."""
+    from fastaiagent.agent.memory_blocks import MemoryIsolationError
+    from fastaiagent.agent.memory_simple import Memory
+    from fastaiagent.kb.backends.faiss import FaissVectorStore
+    from fastaiagent.learn.store import MemoryStore
+
+    pytest.importorskip("faiss")
+    monkeypatch.setenv("FASTAIAGENT_LOCAL_DB", str(tmp_path / "local.db"))
+
+    class _Embedder:
+        def embed(self, texts):
+            return [[float(len(t)), 1.0, 0.0] for t in texts]
+
+    kw = dict(location=MemoryStore(), user_id=lambda ctx: ctx.state.user_id, embedder=_Embedder())
+    assert isinstance(_clone_memory_blocks(Memory(recall="auto", **kw)), Memory)
+    shared_store = FaissVectorStore(dimension=3, index_type="flat")
+    with pytest.raises(MemoryIsolationError, match="recall="):
+        _clone_memory_blocks(Memory(recall=shared_store, **kw))
+
+
+def test_memory_levers_reach_a_resolved_user(tmp_path, monkeypatch):
+    """The fact and few-shot levers apply to every user, and each user keeps
+    their own facts."""
+    from fastaiagent.agent.memory_simple import Memory
+    from fastaiagent.learn.store import Fact
+
+    store, ids = _seed_facts(tmp_path, monkeypatch, scope_id="support")
+    store.add(Fact(scope="user", scope_id="alice", fact="alice likes tea"))
+    mem = Memory(location=store, agent_id="support", user_id=lambda ctx: ctx.state.user_id)
+    base, model = _memory_agent(mem)
+    cand = Candidate(fact_ids=[ids[0]], fewshot_demos=[{"input": "demo-in", "output": "demo-out"}])
+    optimized = apply_candidate(base, cand)
+
+    optimized.run("hi", context=_as("alice"))
+    seen = _prompt(model.calls[-1])
+    assert "cite sources" in seen and "800 words" not in seen  # the fact subset
+    assert "demo-in" in seen  # the few-shot demos
+    assert "alice likes tea" in seen  # the user's own facts survive
+
+
+def test_static_user_memory_keeps_its_window_and_store_verbs(tmp_path, monkeypatch):
+    from fastaiagent.agent.memory_simple import Memory
+    from fastaiagent.learn.store import MemoryStore
+
+    monkeypatch.setenv("FASTAIAGENT_LOCAL_DB", str(tmp_path / "local.db"))
+    mem = Memory(location=MemoryStore(), user_id="alice", window=2)
+    mem.persist("alice likes tea", tier="user", id="alice")
+    base, _model = _memory_agent(mem)
+    optimized = apply_candidate(base, Candidate(system_prompt="P2"))
+
+    assert isinstance(optimized.memory, Memory)
+    for i in range(3):
+        optimized.run(f"turn {i}")
+    assert len(optimized.memory.messages) <= 2
+    assert [f.fact for f in optimized.memory.retrieve(tier="user", id="alice")] == [
+        "alice likes tea"
+    ]
+
+
+def test_resolve_memory_scope_for_a_memory(tmp_path, monkeypatch):
+    """The memory lever replaces the global fact block, so it selects among the
+    agent's global facts — never a user's."""
+    from fastaiagent.agent.memory_simple import Memory
+    from fastaiagent.learn.store import MemoryStore
+    from fastaiagent.optimize.candidate import _resolve_memory_scope
+
+    monkeypatch.setenv("FASTAIAGENT_LOCAL_DB", str(tmp_path / "local.db"))
+    a, _ = _memory_agent(Memory(location=MemoryStore(), user_id="alice", agent_id="kb"))
+    assert _resolve_memory_scope(a) == ("agent", "kb")
+    b, _ = _memory_agent(Memory(location=MemoryStore(), user_id="alice"))
+    assert _resolve_memory_scope(b) == ("agent", "support")
+
+
+# ── 1.82.0: the memory lever reads the agent's own fact store ───────────────
+
+
+def _own_store_agent(tmp_path, monkeypatch):
+    """An agent whose Memory keeps facts in its own store under a project — and a
+    default local.db that holds none of them."""
+    from fastaiagent.agent.memory_simple import Memory
+    from fastaiagent.learn.store import Fact, MemoryStore
+
+    monkeypatch.setenv("FASTAIAGENT_LOCAL_DB", str(tmp_path / "default-local.db"))
+    store = MemoryStore(db_path=str(tmp_path / "agent-facts.db"))
+    ids = [
+        store.add(Fact(scope="agent", scope_id="kb", fact=text, confidence=c, project_id="acme"))
+        for text, c in (("cite sources", 0.9), ("under 800 words", 0.5), ("prefer primary", 0.7))
+    ]
+    mem = Memory(
+        location=store, agent_id="kb", project_id="acme", user_id=lambda ctx: ctx.state.user_id
+    )
+    agent, model = _memory_agent(mem)
+    return agent, model, store, ids
+
+
+def test_memory_lever_source_is_the_agents_own_store(tmp_path, monkeypatch):
+    from fastaiagent.optimize.candidate import _resolve_memory_source
+
+    agent, _model, store, _ids = _own_store_agent(tmp_path, monkeypatch)
+    src = _resolve_memory_source(agent)
+    assert (src.scope, src.scope_id, src.project_id) == ("agent", "kb", "acme")
+    assert [f.fact for f in src.store.list_active("agent", "kb", "acme")] == [
+        f.fact for f in store.list_active("agent", "kb", "acme")
+    ]
+
+
+def test_selected_facts_come_from_the_agents_own_store(tmp_path, monkeypatch):
+    """The allowlist read the default local.db, so a fact selected from the
+    agent's store (or under its project) was never injected."""
+    agent, model, _store, ids = _own_store_agent(tmp_path, monkeypatch)
+    optimized = apply_candidate(agent, Candidate(fact_ids=[ids[0]]))
+    optimized.run("hi", context=_as("alice"))
+    seen = _prompt(model.calls[-1])
+    assert "cite sources" in seen and "800 words" not in seen
+
+
+def test_propose_fact_subsets_honours_project_id(tmp_path, monkeypatch):
+    from fastaiagent.optimize.proposers import propose_fact_subsets
+
+    _agent_, _model, store, ids = _own_store_agent(tmp_path, monkeypatch)
+    subsets = propose_fact_subsets(
+        scope="agent", scope_id="kb", n=3, store=store, project_id="acme"
+    )
+    assert subsets and subsets[0][0] == ids[0]
+
+
+def test_memory_lever_runs_over_the_agents_own_store(tmp_path, monkeypatch):
+    """optimize() looked for facts in the default local.db, found none, and
+    skipped the memory lever for any agent that keeps its facts elsewhere."""
+    from fastaiagent.optimize import optimize
+
+    agent, _model, _store, _ids = _own_store_agent(tmp_path, monkeypatch)
+    cases = [{"input": f"q{i}", "expected_output": "noted"} for i in range(6)]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        report = optimize(
+            agent,
+            cases,
+            scorers=["contains"],
+            config=OptimizeConfig(levers=("memory",), max_iterations=1),
+            persist=False,
+        )
+    memory_points = [p for p in report.trajectory if p.lever == "memory"]
+    assert memory_points and not any(p.skipped for p in memory_points)
+
+
+def test_memory_lever_source_follows_a_fact_blocks_store(tmp_path, monkeypatch):
+    from fastaiagent.agent.memory import AgentMemory, ComposableMemory
+    from fastaiagent.agent.memory_blocks import PersistentFactBlock
+    from fastaiagent.learn.store import Fact, MemoryStore
+    from fastaiagent.optimize.candidate import _resolve_memory_source
+
+    monkeypatch.setenv("FASTAIAGENT_LOCAL_DB", str(tmp_path / "default-local.db"))
+    store = MemoryStore(db_path=str(tmp_path / "block-facts.db"))
+    fid = store.add(Fact(scope="project", scope_id="docs", fact="be brief", project_id="t1"))
+    block = PersistentFactBlock(scope="project", scope_id="docs", project_id="t1", store=store)
+    agent, model = _memory_agent(ComposableMemory(blocks=[block], primary=AgentMemory()))
+
+    src = _resolve_memory_source(agent)
+    assert (src.scope, src.scope_id, src.project_id, src.store) == ("project", "docs", "t1", store)
+    apply_candidate(agent, Candidate(fact_ids=[fid])).run("hi")
+    assert "be brief" in _prompt(model.calls[-1])
+
+
+# ── 1.82.0: the memory lever and a per-user fact block ──────────────────────
+
+
+def _per_user_block_agent(tmp_path, monkeypatch):
+    """A ComposableMemory whose fact block resolves the user per run, plus shared
+    facts at the agent's default scope."""
+    from fastaiagent.agent.memory import AgentMemory, ComposableMemory
+    from fastaiagent.agent.memory_blocks import PersistentFactBlock
+    from fastaiagent.learn.store import Fact, MemoryStore
+
+    monkeypatch.setenv("FASTAIAGENT_LOCAL_DB", str(tmp_path / "local.db"))
+    store = MemoryStore()
+    store.add(Fact(scope="user", scope_id="alice", fact="alice likes tea"))
+    ids = [
+        store.add(Fact(scope="agent", scope_id="support", fact=text, confidence=c))
+        for text, c in (("cite sources", 0.9), ("under 800 words", 0.5))
+    ]
+    block = PersistentFactBlock(scope="user", scope_id=lambda ctx: ctx.state.user_id, store=store)
+    agent, model = _memory_agent(ComposableMemory(blocks=[block], primary=AgentMemory()))
+    return agent, model, ids
+
+
+def test_memory_lever_with_a_per_user_fact_block_does_not_crash(tmp_path, monkeypatch):
+    """The lever took the per-user block's resolver function for a scope id and
+    handed it to the store: optimize() raised ProgrammingError."""
+    from fastaiagent.optimize import optimize
+    from fastaiagent.optimize.candidate import _resolve_memory_source
+
+    agent, _model, _ids = _per_user_block_agent(tmp_path, monkeypatch)
+    src = _resolve_memory_source(agent)
+    assert (src.scope, src.scope_id) == ("agent", "support")  # the shared facts
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        report = optimize(
+            agent,
+            [{"input": f"q{i}", "expected_output": "noted"} for i in range(6)],
+            scorers=["contains"],
+            config=OptimizeConfig(levers=("memory",), max_iterations=1),
+            persist=False,
+        )
+    assert [p for p in report.trajectory if p.lever == "memory" and not p.skipped]
+
+
+def test_the_optimized_agent_keeps_each_users_own_facts(tmp_path, monkeypatch):
+    """Injecting the selected facts replaced every block named
+    "persistent_facts" — including the per-user one, so users lost their facts."""
+    agent, model, ids = _per_user_block_agent(tmp_path, monkeypatch)
+    optimized = apply_candidate(agent, Candidate(fact_ids=[ids[0]]))
+    names = [b.name for b in optimized.memory.blocks]
+    assert names == ["persistent_facts", "persistent_facts.optimized"]  # distinct labels
+    optimized.run("hi", context=_as("alice"))
+    seen = _prompt(model.calls[-1])
+    assert "alice likes tea" in seen  # the user's own facts
+    assert "cite sources" in seen and "800 words" not in seen  # the selected shared facts
+    again = apply_candidate(optimized, Candidate(fact_ids=[ids[1]]))  # re-optimize: no stacking
+    assert [b.name for b in again.memory.blocks] == names

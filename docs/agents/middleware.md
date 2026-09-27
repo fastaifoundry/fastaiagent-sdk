@@ -225,11 +225,19 @@ credit cards, with cards **Luhn-validated**. Narrow it with
     explicit `patterns=` list.
 
 **What it redacts, and what it doesn't.** `RedactPII` redacts what the model is
-sent and what it returns. It does not change conversation memory: since 1.81.0
-`before_model` redacts copies of the messages, so history already stored keeps
-what the user actually said. (Before, it edited the stored messages in place, and
-turn 1 turned into `[REDACTED]` in memory once turn 2 ran.) To keep PII out of
-memory, redact the input before it reaches the agent.
+sent and what it returns. In conversation memory:
+
+- **The user's messages are stored as they said them.** Since 1.81.0
+  `before_model` redacts copies, so history already stored is never rewritten.
+  (Before, it edited the stored messages in place, and turn 1 turned into
+  `[REDACTED]` in memory once turn 2 ran.)
+- **The model's reply is stored redacted.** Memory records the agent's answer
+  after all middleware — the same text `run` returns — with `run` and `astream`
+  alike. With `astream` the caller has already received the raw deltas as they
+  streamed; memory still gets the redacted reply. (Before 1.82.0, `astream`
+  stored the raw text.)
+
+To keep PII out of memory entirely, redact the input before it reaches the agent.
 
 `patterns=` is unchanged: your regexes, applied verbatim, with no Luhn opinion and
 without consulting the shared detector. Non-string content (a multimodal message's

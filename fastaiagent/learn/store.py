@@ -18,6 +18,7 @@ stores and retrieves them.
 
 from __future__ import annotations
 
+import sqlite3
 import time
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
@@ -48,6 +49,10 @@ class Fact:
     superseded_by: int | None = None
     project_id: str = ""
     id: int | None = None
+    # "learned" for a fact the SDK extracted (``learn=``, ``fastaiagent learn``),
+    # "" for one written directly. Tells learned facts apart even when tracing
+    # is off and they carry no ``source_trace_id``.
+    source: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -98,10 +103,13 @@ class MemoryStore:
             )
             if existing:
                 return int(existing["id"]), False
+            # OR IGNORE: a writer that inserted the same fact since the SELECT
+            # wins, and this one returns its row instead of failing on the
+            # unique constraint.
             cursor = db.execute(
-                "INSERT INTO learned_memory "
-                "(scope, scope_id, fact, source_trace_id, confidence, created_at, project_id) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT OR IGNORE INTO learned_memory "
+                "(scope, scope_id, fact, source_trace_id, confidence, created_at, project_id, "
+                "source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     fact.scope,
                     fact.scope_id,
@@ -110,10 +118,19 @@ class MemoryStore:
                     fact.confidence,
                     created_at,
                     fact.project_id,
+                    fact.source,
                 ),
             )
-            new_id = cursor.lastrowid
-            return (int(new_id) if new_id is not None else 0), True
+            if cursor.rowcount == 1 and cursor.lastrowid is not None:
+                return int(cursor.lastrowid), True
+            winner = db.fetchone(
+                "SELECT id FROM learned_memory "
+                "WHERE scope = ? AND scope_id = ? AND fact = ? AND project_id = ?",
+                (fact.scope, fact.scope_id, fact.fact, fact.project_id),
+            )
+            if winner is None:  # ignored for a reason other than the fact existing
+                raise sqlite3.IntegrityError(f"could not store fact {fact.fact!r}")
+            return int(winner["id"]), False
         finally:
             db.close()
 
@@ -290,4 +307,5 @@ class MemoryStore:
             created_at=float(row["created_at"]),
             superseded_by=int(row["superseded_by"]) if row["superseded_by"] is not None else None,
             project_id=row["project_id"],
+            source=row["source"] or "",
         )
