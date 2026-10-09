@@ -1,4 +1,5 @@
-import { ExternalLink, RefreshCw } from "lucide-react";
+import { useState } from "react";
+import { Check, Copy, ExternalLink, RefreshCw } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Badge } from "@/components/ui/badge";
@@ -15,7 +16,7 @@ import {
 import { TableSkeleton } from "@/components/shared/LoadingSkeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { useOptimizeRun } from "@/hooks/use-optimizes";
-import type { OptimizeIterationRow } from "@/lib/types";
+import type { OptimizeIterationRow, OptimizeRunRow } from "@/lib/types";
 
 function fmtScore(n: number | null | undefined): string {
   return n != null ? n.toFixed(3) : "—";
@@ -34,6 +35,120 @@ function statusBadge(it: OptimizeIterationRow) {
   if (it.skipped) return <Badge variant="outline">skipped</Badge>;
   if (it.accepted) return <Badge variant="default">accepted</Badge>;
   return <Badge variant="secondary">rejected</Badge>;
+}
+
+function asText(v: unknown): string {
+  return typeof v === "string" ? v : JSON.stringify(v);
+}
+
+function PromptBlock({ label, text }: { label: string; text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  function handleCopy() {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <div className="text-xs uppercase text-muted-foreground">{label}</div>
+        <button
+          type="button"
+          onClick={handleCopy}
+          title={`Copy ${label.toLowerCase()}`}
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+        >
+          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-md border bg-muted/40 p-3 font-mono text-xs">
+        {text}
+      </pre>
+    </div>
+  );
+}
+
+/** What the run would ship: the winning prompt next to the one it started from,
+ *  plus the few-shot examples and learned facts it selected. */
+function WinnerCard({ run }: { run: OptimizeRunRow }) {
+  const cand = run.best_candidate ?? {};
+  const meta = run.metadata ?? {};
+  const winning = typeof cand.system_prompt === "string" ? cand.system_prompt : null;
+  const original =
+    typeof meta.baseline_system_prompt === "string" ? meta.baseline_system_prompt : null;
+  const demos = Array.isArray(cand.fewshot_demos) ? cand.fewshot_demos : [];
+  const facts = Array.isArray(cand.fact_ids) ? cand.fact_ids : [];
+  const errors = Array.isArray(meta.proposer_errors) ? meta.proposer_errors : [];
+  const changed = winning !== null || demos.length > 0 || facts.length > 0;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">Winner</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {run.reverted ? (
+          <p className="text-sm text-muted-foreground">
+            The winner regressed on the holdout and was reverted — the agent keeps its
+            original configuration.
+          </p>
+        ) : !changed ? (
+          <p className="text-sm text-muted-foreground">
+            No candidate beat the baseline — the agent keeps its original configuration.
+          </p>
+        ) : null}
+
+        {winning !== null ? (
+          <>
+            <PromptBlock label="Winning prompt" text={winning} />
+            {original !== null ? <PromptBlock label="Original prompt" text={original} /> : null}
+          </>
+        ) : original !== null ? (
+          <PromptBlock label="Prompt (unchanged)" text={original} />
+        ) : (
+          <p className="text-xs text-muted-foreground">System prompt: unchanged.</p>
+        )}
+
+        {demos.length > 0 ? (
+          <details className="text-xs">
+            <summary className="cursor-pointer text-muted-foreground">
+              {demos.length} few-shot example{demos.length === 1 ? "" : "s"}
+            </summary>
+            <ul className="mt-2 space-y-1.5">
+              {demos.map((d, i) => (
+                <li key={i} className="rounded-md border bg-muted/40 p-2 font-mono">
+                  <div>
+                    <span className="text-muted-foreground">input: </span>
+                    {asText(d.input)}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">output: </span>
+                    {asText(d.output)}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
+
+        {facts.length > 0 ? (
+          <div className="text-xs text-muted-foreground">
+            Learned facts injected: {facts.map((id) => `#${id}`).join(", ")}
+          </div>
+        ) : null}
+
+        {errors.length > 0 ? (
+          <div className="rounded-md border border-destructive/40 p-2 text-xs">
+            The prompt proposer failed {errors.length} time{errors.length === 1 ? "" : "s"}:{" "}
+            <span className="font-mono">{errors[errors.length - 1]}</span>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
 }
 
 export function OptimizeRunDetailPage() {
@@ -102,6 +217,8 @@ export function OptimizeRunDetailPage() {
               </div>
             </CardContent>
           </Card>
+
+          <WinnerCard run={run} />
 
           {iterations.length === 0 ? (
             <EmptyState title="No trajectory" description="This run recorded no iterations." />

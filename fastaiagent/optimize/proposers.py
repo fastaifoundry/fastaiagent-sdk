@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 # its LLM. We depend on this internal rather than duplicating the logic; if
 # harden's internals move, THIS import is the seam to update. harden's *public*
 # API is untouched.
-from fastaiagent.eval.harden import _failures_text
+from fastaiagent.eval.harden import MAX_FAILURES_SHOWN, _failures_text
 
 if TYPE_CHECKING:
     from fastaiagent.agent.agent import Agent
@@ -30,10 +30,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# How many failing train cases the proposer is shown. Each renders to ~1.2k
-# characters at most, so this keeps the request well inside any context window;
-# unbounded, a 2,000-case split built a ~335k-token prompt that failed every round.
-_MAX_PROPOSER_FAILURES = 40
+# How many failing train cases the proposer is shown — the same cap as harden().
+_MAX_PROPOSER_FAILURES = MAX_FAILURES_SHOWN
 
 _REWRITE_SYSTEM = (
     "You are an expert prompt engineer improving an AI agent's system prompt. "

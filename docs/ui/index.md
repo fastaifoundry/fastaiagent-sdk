@@ -700,7 +700,14 @@ The UI ships with a full test pyramid:
 - **Frontend unit (Vitest + Testing Library)** — real DOM rendering
   through the Provider stack (`src/test/utils.tsx`). Coverage includes
   format helpers, status badges, pass-rate bar, sidebar routing, traces
-  table, span tree interactions, and the login flow.
+  table, span tree interactions, and the login flow. Run them, and the
+  frontend lint, from `ui-frontend/`:
+
+  ```bash
+  npm test          # vitest — runs in CI on every PR
+  npm run lint      # eslint — runs in CI, advisory
+  npm run typecheck # tsc
+  ```
 - **Frontend E2E / screenshots (Playwright)** —
   `ui-frontend/tests/screenshots.spec.ts` drives a real browser against the
   FastAPI server and captures the screenshots shown above. Run it with:

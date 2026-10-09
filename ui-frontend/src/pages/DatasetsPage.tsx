@@ -19,7 +19,7 @@ import { Label } from "@/components/ui/label";
 import { DatasetTable } from "@/components/datasets/DatasetTable";
 import { useCreateDataset, useDatasets } from "@/hooks/use-datasets";
 
-const NAME_RE = /^[A-Za-z0-9_\-]+$/;
+const NAME_RE = /^[A-Za-z0-9_-]+$/;
 
 /**
  * Datasets list page. Lists every JSONL under

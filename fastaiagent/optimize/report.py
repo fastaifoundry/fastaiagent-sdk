@@ -73,6 +73,9 @@ class OptimizationReport:
     # Each time the prompt proposer could not run or its reply could not be read.
     # ``stopped_reason == "proposer_failed"`` when that is why the run ended.
     proposer_errors: list[str] = field(default_factory=list)
+    # The agent's own system prompt when the run started (``None`` for a callable
+    # prompt), so the winner can be read against it — the UI shows both.
+    baseline_system_prompt: str | None = None
 
     @property
     def improved(self) -> bool:
@@ -153,7 +156,17 @@ class OptimizationReport:
             "holdout_best": self.holdout_best.score if self.holdout_best else None,
             "run_id": self.run_id,
             "proposer_errors": list(self.proposer_errors),
+            "baseline_system_prompt": self.baseline_system_prompt,
         }
+
+    def _metadata(self) -> dict[str, Any]:
+        """``optimize_runs.metadata``: what the UI shows beyond the scores."""
+        meta: dict[str, Any] = {}
+        if self.baseline_system_prompt is not None:
+            meta["baseline_system_prompt"] = self.baseline_system_prompt
+        if self.proposer_errors:
+            meta["proposer_errors"] = self.proposer_errors
+        return meta
 
     def persist_local(
         self,
@@ -218,9 +231,7 @@ class OptimizationReport:
                     len(self.trajectory),
                     timestamp,
                     timestamp,
-                    json.dumps(
-                        {"proposer_errors": self.proposer_errors} if self.proposer_errors else {}
-                    ),
+                    json.dumps(self._metadata()),
                     pid,
                 ),
             )

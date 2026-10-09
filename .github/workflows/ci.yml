@@ -41,11 +41,22 @@ jobs:
           node-version: "20"
           cache: npm
           cache-dependency-path: ui-frontend/package-lock.json
+      - name: Install Local UI dependencies
+        working-directory: ui-frontend
+        run: npm ci
+      # The frontend tests never ran in CI, so a date-pinned test sat red for
+      # weeks unseen (fixed in 1.86.0).
+      - name: Local UI tests (vitest)
+        working-directory: ui-frontend
+        run: npm test
+      # Advisory, like the Python lint job: reported, never blocking.
+      - name: Local UI lint (eslint)
+        working-directory: ui-frontend
+        continue-on-error: true
+        run: npm run lint
       - name: Build Local UI (Vite → fastaiagent/ui/static)
         working-directory: ui-frontend
-        run: |
-          npm ci
-          npm run build
+        run: npm run build
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"

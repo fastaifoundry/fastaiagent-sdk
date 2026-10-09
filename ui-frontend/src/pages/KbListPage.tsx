@@ -12,7 +12,8 @@ import { formatTimeAgo } from "@/lib/format";
 export function KbListPage() {
   const kbs = useKbCollections();
   const [query, setQuery] = useState("");
-  const allRows = kbs.data?.collections ?? [];
+  // Memoised so the empty fallback is one array, not a new one each render.
+  const allRows = useMemo(() => kbs.data?.collections ?? [], [kbs.data?.collections]);
   const rows = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return allRows;

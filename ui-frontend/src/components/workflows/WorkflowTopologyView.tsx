@@ -4,8 +4,10 @@ import {
   Background,
   Controls,
   type Edge as RFEdge,
+  type EdgeTypes,
   type Node as RFNode,
   type NodeMouseHandler,
+  type NodeTypes,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import dagre from "dagre";
@@ -198,8 +200,8 @@ export function WorkflowTopologyView({
         <ReactFlow
           nodes={computed.rfNodes}
           edges={computed.rfEdges}
-          nodeTypes={NODE_TYPES as Record<string, React.ComponentType<any>>}
-          edgeTypes={EDGE_TYPES as Record<string, React.ComponentType<any>>}
+          nodeTypes={NODE_TYPES as NodeTypes}
+          edgeTypes={EDGE_TYPES as EdgeTypes}
           onNodeClick={onNodeClick}
           fitView
           fitViewOptions={{

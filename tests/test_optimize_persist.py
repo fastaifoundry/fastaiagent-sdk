@@ -220,6 +220,49 @@ def test_get_optimize_detail_links_to_real_eval_run(client, app_db) -> None:
         db.close()
 
 
+def test_a_real_run_gives_the_ui_its_winner_and_the_prompt_it_started_from(
+    isolated_local_db,
+) -> None:
+    """The AutoLLM run page shows the winning prompt next to the original; the
+    original was never stored, so it could not (1.86.0)."""
+    import json as _json
+
+    pytest.importorskip("fastapi")
+    pytest.importorskip("itsdangerous")
+    from fastapi.testclient import TestClient
+
+    from fastaiagent import Agent
+    from fastaiagent.optimize import OptimizeConfig, optimize
+    from fastaiagent.testing import FunctionModel
+    from fastaiagent.ui.server import build_app
+
+    cases = [{"input": f"q{i}", "expected_output": "yes"} for i in range(16)]
+
+    def answer(messages):
+        system = " ".join(m.content for m in messages if m.role.value == "system")
+        return "yes" if "Say yes." in system else "maybe"
+
+    winner = "Say yes."
+    proposals = {"proposals": [{"system_prompt": winner, "rationale": "be decisive"}]}
+    agent = Agent(name="decider", system_prompt="Decide.", llm=FunctionModel(answer))
+    report = optimize(
+        agent,
+        cases,
+        ["exact_match"],
+        config=OptimizeConfig(max_iterations=1, patience=1),
+        proposer_llm=FunctionModel(lambda m: _json.dumps(proposals)),
+        persist=True,
+    )
+    assert report.improved and report.to_dict()["baseline_system_prompt"] == "Decide."
+
+    client = TestClient(build_app(db_path=str(isolated_local_db), no_auth=True))
+    r = client.get(f"/api/optimizes/{report.run_id}")
+    assert r.status_code == 200, r.text
+    run = r.json()["run"]
+    assert run["best_candidate"]["system_prompt"] == winner
+    assert run["metadata"]["baseline_system_prompt"] == "Decide."
+
+
 def test_get_missing_optimize_run_404(client) -> None:
     r = client.get("/api/optimizes/does-not-exist")
     assert r.status_code == 404

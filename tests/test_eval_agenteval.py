@@ -159,3 +159,77 @@ def test_hardening_report_to_dict() -> None:
     assert d["failure_count"] == 2
     assert d["recommendations"][0]["target"] == "tools"
     assert "add lookup_order" in report.summary()
+
+
+# --------------------------------------------------------------------------- #
+# 1.86.0: harden() shows a bounded failure block and reads any reply shape
+# --------------------------------------------------------------------------- #
+
+
+def _failing_eval(n: int) -> EvalResults:
+    from fastaiagent.eval.results import EvalCaseRecord
+
+    er = EvalResults()
+    for i in range(n):
+        er.add_case(
+            EvalCaseRecord(
+                input=f"q{i}",
+                expected_output="yes",
+                actual_output="no",
+                per_scorer={"exact_match": {"score": 0.0, "passed": False}},
+            )
+        )
+    return er
+
+
+def _recording(reply: str, seen: list[str]):
+    from fastaiagent.testing import FunctionModel
+
+    def respond(messages):
+        seen.append(messages[-1].content)
+        return reply
+
+    return FunctionModel(respond)
+
+
+def test_harden_shows_a_bounded_number_of_failures() -> None:
+    """Every failing case went into one request; 2,000 made a ~335k-token prompt."""
+    seen: list[str] = []
+    reply = '{"recommendations": [{"target": "instructions", "recommendation": "be exact"}]}'
+    report = harden(object(), _failing_eval(500), llm=_recording(reply, seen))
+    assert report.failure_count == 500
+    assert "(40 of 500)" in seen[0] and seen[0].count("Case input=") == 40
+    assert [r.recommendation for r in report.recommendations] == ["be exact"]
+
+
+def test_failures_text_caps_simulation_scenarios() -> None:
+    sr = SimulationResults(
+        [
+            SimulationResult(
+                scenario_name=f"s{i}",
+                passed=False,
+                transcript=[TranscriptTurn(turn_index=0, role="user", content="help")],
+                verdicts=[CriterionVerdict("be polite", "success", False, "was rude")],
+            )
+            for i in range(5)
+        ]
+    )
+    text, count = _failures_text(sr, max_cases=2)
+    assert count == 5
+    assert text.count("FAILED") == 2
+
+
+def test_harden_reads_a_bare_list_reply() -> None:
+    """A reply that is a JSON list raised AttributeError out of harden()."""
+    reply = '[{"target": "tools", "recommendation": "add lookup"}, "not an object"]'
+    report = harden(object(), _failing_eval(2), llm=_recording(reply, []))
+    assert [(r.target, r.recommendation) for r in report.recommendations] == [
+        ("tools", "add lookup")
+    ]
+
+
+def test_harden_reports_a_reply_with_no_recommendations_list() -> None:
+    """Valid JSON with no list read as "nothing to recommend" — a clean verdict
+    from an analysis that never happened."""
+    report = harden(object(), _failing_eval(2), llm=_recording('{"advice": "none"}', []))
+    assert [r.recommendation for r in report.recommendations] == ["(analysis failed)"]

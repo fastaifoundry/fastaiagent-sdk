@@ -551,6 +551,7 @@ async def aoptimize(
     else:
         holdout_best = holdout_baseline
 
+    baseline_prompt = agent.system_prompt if isinstance(agent.system_prompt, str) else None
     report = OptimizationReport(
         agent_name=agent.name,
         baseline=baseline_dev,
@@ -566,6 +567,7 @@ async def aoptimize(
         levers=tuple(cfg.levers),
         run_name=run_name,
         proposer_errors=proposer_errors,
+        baseline_system_prompt=baseline_prompt,
     )
 
     # Persist the run record (gated by the same flag that gates per-candidate
