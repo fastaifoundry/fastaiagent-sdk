@@ -86,6 +86,20 @@ and the `openai` pin is unchanged. Shapes follow OpenAI's own published types
   output: a false green in exactly the regression suites recorded mode exists for.
   Tool-call turns are now replayed, and a replayed turn stamps its tool calls so a
   rerun's own trace replays too.
+- ⚠ **FastAPI 0.143 sends every request through fastaiagent's tracer provider.**
+  It traces requests by default to the *global* OpenTelemetry provider, which is
+  the SDK's own once anything has been traced. That surfaced two existing defects;
+  `main` fails CI the same way on FastAPI 0.143.
+  - **A span the local store couldn't write raised inside the caller.** The error
+    reached an agent run, or any FastAPI request in the process.
+    `LocalStorageProcessor` now drops the span and logs once per error type.
+    Tracing never breaks the app.
+  - **The Local UI recorded its own API calls into `local.db` as `GET` traces.**
+    The Local UI and `agent serve` now switch FastAPI's built-in telemetry off.
+    This is detected from the installed FastAPI, so older versions are constructed
+    exactly as before.
+  - A user's own FastAPI app is left alone: its requests are still traced by
+    FastAPI's default.
 
 ### Behaviour changes
 
@@ -147,6 +161,11 @@ and the `openai` pin is unchanged. Shapes follow OpenAI's own published types
   access.
 - `scripts/check_core_surface.py`: `decide()` request and answer parsing need no
   extra.
+- `tests/test_fastapi_telemetry_optout.py`: an unwritable store never raises, and
+  neither the Local UI nor `agent serve` traces itself, while a user's app still is.
+  - Three of its cases fail on 1.83.0 under FastAPI 0.143.
+  - The self-tracing cases need a FastAPI with the setting. CI installs the latest
+    FastAPI, so they run there.
 
 ## [1.83.0] - 2026-09-27 — plane facts survive a plane outage behind a proxy
 

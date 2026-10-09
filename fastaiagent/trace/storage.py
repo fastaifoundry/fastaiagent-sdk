@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import warnings
 from datetime import datetime, timedelta, timezone
 from typing import Any, NamedTuple
@@ -11,6 +12,8 @@ from pydantic import BaseModel, Field
 
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
+
+logger = logging.getLogger(__name__)
 
 # Opt-in foreign-span normalization. Flipped on by
 # ``fastaiagent.enable_otel_capture()``; default ``False`` keeps the write path
@@ -138,6 +141,9 @@ class LocalStorageProcessor:
     def __init__(self, db_path: str | None = None):
         self.db_path = db_path or get_config().resolved_trace_db_path
         self._db: SQLiteHelper | None = None
+        # Write failures already logged, by error type — one warning each, not
+        # one per span.
+        self._warned: set[str] = set()
 
     def _on_ending(self, span: Any) -> None:
         """Called when a span is ending (before on_end)."""
@@ -165,6 +171,33 @@ class LocalStorageProcessor:
         pass
 
     def on_end(self, span: Any) -> None:
+        """Write a finished span to SQLite — and never raise into the caller.
+
+        OTel runs span processors synchronously inside whatever ended the span,
+        so an exception here surfaces in *that* code: the user's agent run, or —
+        since FastAPI 0.143 traces every request through the global provider by
+        default — an HTTP request of any FastAPI app in the process. A local
+        trace store that cannot be written (disk full, a deleted directory, a
+        locked file) is a lost span, not a failed request. Logged once per error
+        type.
+        """
+        try:
+            self._write(span)
+        except Exception as e:  # noqa: BLE001 — tracing must never break the app
+            kind = type(e).__name__
+            if kind not in self._warned:
+                self._warned.add(kind)
+                logger.warning(
+                    "fastaiagent: could not write span %r to %s (%s: %s); the span "
+                    "is dropped. Further %s errors for this store are not logged.",
+                    getattr(span, "name", "?"),
+                    self.db_path,
+                    kind,
+                    e,
+                    kind,
+                )
+
+    def _write(self, span: Any) -> None:
         """Called when a span completes — write to SQLite.
 
         If an opt-in :class:`RedactionPolicy` is installed (via
