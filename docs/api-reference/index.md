@@ -7,6 +7,7 @@ Auto-generated reference documentation for all public FastAIAgent SDK classes an
 - **[Agent](../agents/index.md)** — `Agent`, `AgentConfig`, `AgentResult`
 - **[Chain](../chains/index.md)** — `Chain`, `ChainResult`, `ChainState`
 - **[LLMClient](../getting-started/index.md)** — `LLMClient`, `LLMResponse`, `Message`
+- **[Decisions API](../llm/decisions.md)** — `LLMClient.decide()` / `adecide()`, `Predicate`, `Choice`, `Score`, `Option`, `Level`, `DecisionResult`, `PredicateAnswer`, `ChoiceAnswer`, `ScoreAnswer`, `Refusal`; `DecisionJudge`; `decision_tool`
 
 ## Tools
 

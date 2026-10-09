@@ -5,6 +5,168 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.84.0] - 2026-10-09 — OpenAI's Decisions API, end to end
+
+Support for OpenAI's Decisions API (`POST /v1/decisions`, public beta since
+2026-10-06). It's a classifier endpoint that answers fixed-answer questions with
+probabilities rather than text: about 10× faster than the Responses API (OpenAI's
+figure), and billed for input tokens only. No wire change, no new dependency,
+and the `openai` pin is unchanged. Shapes follow OpenAI's own published types
+(`openai` 3.26.0) and were checked against the live endpoint.
+
+### Added
+
+- **`LLMClient.decide()` / `adecide()`** with typed questions — `Predicate`
+  (probability), `Choice` (one of 2+ `str`/`bool` options, kept typed) and `Score`
+  (an ordered scale; `score` is Σ p·index, plus `normalized` and `level`).
+  - Questions can be one, a list, or a `{name: question}` mapping. Input can be
+    text, an `Image`, a list mixing them, or user messages.
+  - Returns a `DecisionResult` indexed by position or name, with `.predicates` /
+    `.choices` / `.scores` views, per-answer `Refusal`s, `usage`, `cost_usd`,
+    `latency_ms` and OpenAI's `request_id`.
+  - Reuses the client's key, `base_url`, TLS, `max_retries` (429/5xx) and an
+    injected `openai_client`. That uses `client.decisions.create` on openai ≥ 3.26,
+    and the client's generic `post` on 1.x/2.x, so no upgrade is needed.
+  - Non-OpenAI providers raise `LLMError`.
+- **Cost** at the decisions rate (`gpt-6-luna` $0.10/1M input, no output charge),
+  kept apart from the chat table. Decisions count toward `AgentResult.cost` and
+  `cost_limit`.
+- **Tracing**: one `llm.<provider>.decisions.<model>` span per call (provider, then
+  API, then model, beside chat spans like `llm.openai.gpt-5.1`), with usage, cost,
+  request id, the questions, the answers and the refusal count.
+  - It's a standard `CLIENT`-kind span under the OTel GenAI semantic conventions:
+    `gen_ai.operation.name="decisions"`, `gen_ai.provider.name="openai"`,
+    `gen_ai.request.model` / `response.model` / `response.id`, and usage.
+  - It also carries the OpenInference keys (`openinference.span.kind="LLM"`,
+    `llm.model_name`, `llm.token_count.*`).
+  - Any exporter added with `add_exporter` (Datadog, Jaeger, Phoenix, Langfuse,
+    ...) reads it as an LLM call, through the same egress filter.
+- **Recorded replay serves captured decisions** from their own queue. A
+  decision-driven agent replays with no model calls, and a decision the original
+  run didn't make is a miss governed by `on_miss`.
+- **`TestModel(decisions=...)`** and **`FunctionModel(decide_fn=...)`** for
+  offline tests. A `TestModel` with no canned decision raises instead of inventing
+  one.
+- **`DecisionJudge`** (`fastaiagent.eval`): an eval judge whose score is a
+  probability, or with `levels` a normalized expected level. It works in
+  `evaluate()`, the pytest gates and `simulate()`.
+- **Guardrails, `config["backend"] = "decisions"`** for `llm_judge` (takes
+  `instructions` and `threshold`), `content_safety` (one predicate per category)
+  and `topic` (one predicate per topic, `topic_threshold`). Also
+  `no_prompt_injection(mode="decisions")` and `toxicity_check(mode="decisions")`.
+- **Chain decision nodes**: a `condition` node with `decision=` routes on a
+  `Choice` and follows the edge labelled with the answer. A refusal or a
+  confidence under `min_confidence` takes the default edge.
+- **`decision_tool`** (`fastaiagent.tool`): Decisions API questions as an agent
+  tool.
+- **Supervisor `validation_mode="decisions"`** (`validation_llm`,
+  `validation_threshold`, `validation_criteria`): workers are reviewed with one
+  predicate.
+- **Supervisor `routing="decisions"`**: the supervisor routes with the Decisions API.
+  - One `decide()` call routes each request to exactly one worker. The `Choice` is
+    built from the workers' roles and descriptions, and the worker's reply is
+    returned with no synthesis turn.
+  - A refusal, or a confidence below `routing_min_confidence`, goes to
+    `fallback_worker`.
+  - `routing_questions` (e.g. urgency, mood) are asked in the same call and passed
+    to the worker as a note.
+  - `result.route` (`SupervisorRoute`) reports the worker, the confidence, whether
+    it fell back, every answer and the review scores.
+  - It works with `run` / `arun` / `astream` / `stream`, and resume continues the
+    paused worker without re-routing.
+  - `routing="tools"`, the chat model delegating by tool call, stays the default
+    and is unchanged.
+
+### Fixed
+
+- ⚠ **Recorded replay skipped every turn that only called tools.** OpenAI sends
+  `content: null` on such a turn, and the span reader treated a span with no
+  content as "not an LLM call". A recorded rerun of any tool-using agent therefore
+  jumped to the captured final answer, ran no tool, and still matched the original
+  output: a false green in exactly the regression suites recorded mode exists for.
+  Tool-call turns are now replayed, and a replayed turn stamps its tool calls so a
+  rerun's own trace replays too.
+- ⚠ **FastAPI 0.143 sends every request through fastaiagent's tracer provider.**
+  It traces requests by default to the *global* OpenTelemetry provider, which is
+  the SDK's own once anything has been traced. That surfaced two existing defects;
+  `main` fails CI the same way on FastAPI 0.143.
+  - **A span the local store couldn't write raised inside the caller.** The error
+    reached an agent run, or any FastAPI request in the process.
+    `LocalStorageProcessor` now drops the span and logs once per error type.
+    Tracing never breaks the app.
+  - **The Local UI recorded its own API calls into `local.db` as `GET` traces.**
+    The Local UI and `agent serve` now switch FastAPI's built-in telemetry off.
+    This is detected from the installed FastAPI, so older versions are constructed
+    exactly as before.
+  - A user's own FastAPI app is left alone: its requests are still traced by
+    FastAPI's default.
+
+### Behaviour changes
+
+- ⚠ **Recorded reruns now execute the agent's tools**, because the turns that call
+  them are no longer dropped. Stub any tool with side effects using
+  `with_tool_override(...)`.
+- A `backend` value other than `"chat"` / `"decisions"` on `llm_judge`,
+  `content_safety`, `topic` or `groundedness` now reports *could not run*
+  (`errored=True`, `on_error` applies). Before, the key was ignored. No shipped
+  config sets one.
+- A `condition` node may carry `decision=` instead of `conditions=`. That used to
+  be a validation error.
+- The guardrail span-detail allowlist gains `backend` for `topic` /
+  `content_safety` and `{backend, probability, threshold}` for `llm_judge`. They
+  are written only by the decisions engine, so chat-engine results keep the
+  plane's row shape exactly.
+
+### Docs and examples
+
+- New `llm/decisions.md`. Decisions sections added to guardrails, the LLM judge,
+  chains, teams, function tools, replay guarantees and providers. API-reference
+  entries.
+- New tutorial `tutorials/decision-routing.md`: a call-centre desk routed with the
+  Decisions API, compared with tool-call routing, plus the same desk as a Chain.
+  The docs home page, the agent / chain / evaluation / tools overviews, the README
+  and the examples index all mention the Decisions features.
+- Local UI screenshots of the feature end to end (`docs/ui/screenshots/decisions-*.png`):
+  the trace list, a routed ticket (route → worker → review), the route attributes,
+  a Decisions span's OTel/OpenInference attributes and answers, the Chain version,
+  a recorded replay, and cost by model.
+  - They're used in the tutorial, the decisions guide, teams, chains, replay
+    guarantees and the UI tour.
+  - They're regenerated from live runs by `scripts/capture-decisions-screenshots.sh`
+    (Playwright, `scripts/capture_decisions_screenshots.py`).
+- `examples/102_decisions_basics.py`, `103_decision_routing.py`,
+  `104_decision_guardrails_evals.py`, `105_decision_replay.py`,
+  `106_call_center_supervisor.py` and `107_call_center_chain.py`.
+  - 106 is a call-centre desk whose supervisor is `gpt-6-luna` and whose workers
+    are `gpt-5.1`. `--compare` runs the same tickets through the tool-calling
+    supervisor.
+  - 107 is the same routing as a Chain graph.
+  - All six were run against the live API, and their expected output comes from
+    those runs.
+
+### Tests
+
+- `tests/test_decisions.py`, `test_decisions_tracing.py`, `test_decision_judge.py`,
+  `test_guardrail_decisions_backend.py`, `test_decision_routing.py` and
+  `test_supervisor_decision_routing.py`. The last is swept across `run` / `arun` /
+  `astream` / `stream` / `resume` × tracing × review × fallback. They run
+  against an in-process `/v1/decisions` stand-in (`tests/_decisions_stub.py`) and
+  the real `openai` package. No mocks.
+- The unusable-config sweep gains nine decisions cases. They include the first
+  sweepable `llm_judge` cases.
+- Replay: a tool-call-only span is rebuilt, and a real recorded round trip proves
+  the rerun reached the tool and was served the captured decision.
+- Live gate `tests/e2e/test_gate_decisions.py` runs against real `gpt-6-luna` and
+  `gpt-4o-mini`. It fails rather than skips in CI when the key lacks Decisions
+  access.
+- `scripts/check_core_surface.py`: `decide()` request and answer parsing need no
+  extra.
+- `tests/test_fastapi_telemetry_optout.py`: an unwritable store never raises, and
+  neither the Local UI nor `agent serve` traces itself, while a user's app still is.
+  - Three of its cases fail on 1.83.0 under FastAPI 0.143.
+  - The self-tracing cases need a FastAPI with the setting. CI installs the latest
+    FastAPI, so they run there.
+
 ## [1.83.0] - 2026-09-27 — plane facts survive a plane outage behind a proxy
 
 Follows the plane's reply to the 1.82.0 handover. No wire change. The plane

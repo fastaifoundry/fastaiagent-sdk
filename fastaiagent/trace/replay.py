@@ -100,6 +100,40 @@ def _maybe_parse_json(value: Any) -> Any:
         return value
 
 
+def _recorded_decision_from_span(span: SpanData) -> Any | None:
+    """Rebuild a ``DecisionResult`` from a captured Decisions API span.
+
+    Those spans are named ``llm.<provider>.decisions.<model>`` and carry
+    ``gen_ai.operation.name="decide"``; the attribute is what identifies them.
+    ``None`` for any other span, or one whose answers are missing/unreadable (a
+    trace from before 1.84.0 has none) — the rerun then treats that decision as
+    a miss rather than inventing answers.
+    """
+    from fastaiagent.llm.client import is_decision_span
+    from fastaiagent.llm.decisions import _ANSWERS_ADAPTER, DecisionResult
+
+    attrs = span.attributes or {}
+    if not is_decision_span(span.name, attrs):
+        return None
+    raw = attrs.get("fastaiagent.decision.answers")
+    if raw is None:
+        return None
+    try:
+        answers = _ANSWERS_ADAPTER.validate_python(json.loads(raw) if isinstance(raw, str) else raw)
+    except Exception:
+        _log.warning("replay: unreadable decision answers on span %s", span.span_id)
+        return None
+    usage: dict[str, Any] = {}
+    for key, wire in (("gen_ai.usage.input_tokens", "input_tokens"), ("gen_ai.usage.output_tokens", "output_tokens")):
+        if attrs.get(key) is not None:
+            usage[wire] = attrs[key]
+    return DecisionResult(
+        answers=answers,
+        model=str(attrs.get("gen_ai.request.model") or ""),
+        usage=usage,
+    )
+
+
 def _recorded_response_from_span(span: SpanData) -> Any | None:
     """Reconstruct an :class:`LLMResponse` from a captured ``llm.*`` span.
 
@@ -109,16 +143,21 @@ def _recorded_response_from_span(span: SpanData) -> Any | None:
     instance that ``LLMClient.acomplete`` can return verbatim under
     ``determinism="recorded"``.
 
-    Returns ``None`` when the span lacks a response content — meaning
-    payload capture was disabled on the original run or this span isn't
-    an LLM call. Callers must check.
+    Returns ``None`` when the span carries neither response content nor tool
+    calls — this span isn't an LLM call. Callers must check.
+
+    A turn that only called tools has no content: OpenAI sends ``content:
+    null`` there, so ``gen_ai.response.content`` is never written. Until 1.84.0
+    such a span returned ``None`` and was skipped, so a recorded rerun of any
+    tool-using agent jumped straight to the captured final answer, never ran a
+    tool, and still matched the original output.
     """
     from fastaiagent.llm.client import LLMResponse
     from fastaiagent.llm.message import ToolCall
 
     attrs = span.attributes or {}
     content = attrs.get("gen_ai.response.content")
-    if content is None:
+    if content is None and not attrs.get("gen_ai.response.tool_calls"):
         return None
 
     tool_calls: list[ToolCall] = []
@@ -143,8 +182,13 @@ def _recorded_response_from_span(span: SpanData) -> Any | None:
             # failing the entire replay.
             pass
 
+    if content is None and not tool_calls:
+        # Tool calls were recorded but are unreadable, and there is no text:
+        # nothing to replay for this turn.
+        return None
+
     return LLMResponse(
-        content=content if isinstance(content, str) else str(content),
+        content=None if content is None else content if isinstance(content, str) else str(content),
         tool_calls=tool_calls,
         finish_reason=str(attrs.get("gen_ai.response.finish_reason", "stop")),
         usage={},
@@ -447,7 +491,11 @@ class ForkedReplay:
         history representation across providers.
         """
         from fastaiagent.agent.agent import Agent
-        from fastaiagent.llm.client import _replay_on_miss, _replay_recorded_response
+        from fastaiagent.llm.client import (
+            _replay_on_miss,
+            _replay_recorded_decisions,
+            _replay_recorded_response,
+        )
 
         root = self._find_root_span()
         if root is None:
@@ -514,11 +562,16 @@ class ForkedReplay:
                     f"FASTAIAGENT_TRACE_PAYLOADS=1 (the default) on the original run."
                 )
             token = _replay_recorded_response.set(list(recorded_queue))
+            # Decisions API answers replay from their own queue (installed even
+            # when empty, so a rerun that asks a decision the original never did
+            # is a miss governed by ``on_miss`` — not a silent live call).
+            decisions_token = _replay_recorded_decisions.set(self._all_decisions())
             miss_token = _replay_on_miss.set(self._on_miss)
             try:
                 new_result = await self._arun_unpaused(agent, new_input)
             finally:
                 _replay_on_miss.reset(miss_token)
+                _replay_recorded_decisions.reset(decisions_token)
                 _replay_recorded_response.reset(token)
         else:
             new_result = await self._arun_unpaused(agent, new_input)
@@ -595,6 +648,16 @@ class ForkedReplay:
         out: list[Any] = []
         for span in ordered:
             recovered = _recorded_response_from_span(span)
+            if recovered is not None:
+                out.append(recovered)
+        return out
+
+    def _all_decisions(self) -> list[Any]:
+        """Every Decisions API result recoverable from the trace, in capture order."""
+        ordered = sorted(self._trace.spans, key=lambda s: s.start_time or "")
+        out: list[Any] = []
+        for span in ordered:
+            recovered = _recorded_decision_from_span(span)
             if recovered is not None:
                 out.append(recovered)
         return out

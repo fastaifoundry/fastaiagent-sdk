@@ -143,6 +143,42 @@ with check("extract_text without an engine raises, naming every way out"):
     else:
         raise AssertionError("expected extract_text() to raise without an engine")
 
+print("\nDecisions API without the openai package")
+
+with check("decide() request + answer parsing need no extra (httpx transport)"):
+    from fastaiagent.llm import Choice, LLMClient, Predicate, Score
+    from fastaiagent.llm.decisions import build_decision_input, parse_decision
+
+    qs = [
+        Predicate(name="p", instructions="The text mentions money."),
+        Choice(name="c", instructions="Department?", options=["billing", "other"]),
+        Score(name="s", instructions="Severity?", levels=["low", "high"]),
+    ]
+    assert build_decision_input("charged twice", image_cap_mb=18.0) == "charged twice"
+    parsed = parse_decision(
+        {
+            "model": "gpt-6-luna",
+            "answers": [
+                {"type": "predicate", "name": "p", "probability": 1.0},
+                {"type": "refusal", "name": "c"},
+                {
+                    "type": "score",
+                    "name": "s",
+                    "score": 0.5,
+                    "confidence": 0.5,
+                    "probabilities": [
+                        {"value": 0, "label": "low", "probability": 0.5},
+                        {"value": 1, "label": "high", "probability": 0.5},
+                    ],
+                },
+            ],
+            "usage": {"input_tokens": 10, "output_tokens": 0},
+        },
+        qs,
+    )
+    assert parsed.refused and parsed["s"].normalized == 0.5
+    assert callable(LLMClient(model="gpt-6-luna").adecide)
+
 # The point of the exercise: none of the above may need a heavyweight or
 # copyleft dependency. ``pymupdf`` is the AGPL one this gate exists for;
 # the others are weight-only and merely confirm the core tree is slim.

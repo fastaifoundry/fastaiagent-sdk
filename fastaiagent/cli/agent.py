@@ -135,7 +135,11 @@ def _build_app(
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-    app = FastAPI(title=f"fastaiagent {target.name}")
+    from fastaiagent._internal.fastapi_compat import sdk_app_kwargs
+
+    # FastAPI's own request tracing off: an agent run is traced by the SDK; a
+    # second, FastAPI-made span per request would land beside it (FastAPI >= 0.143).
+    app = FastAPI(title=f"fastaiagent {target.name}", **sdk_app_kwargs())
 
     @app.middleware("http")
     async def _limit_body(request: Request, call_next: Any) -> Any:

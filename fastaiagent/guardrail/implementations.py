@@ -218,9 +218,16 @@ async def _run_llm_judge(guardrail: Guardrail, data: str | dict[str, Any]) -> Gu
     Backwards compatibility: ``config["prompt"]`` is still honored. Any
     ``{data}`` placeholder in it is dropped — the surrounding text
     becomes the system instructions and the data is shipped separately.
+
+    ``config["backend"] = "decisions"`` (1.84.0) asks OpenAI's Decisions API
+    whether ``config["instructions"]`` holds instead — see
+    :mod:`fastaiagent.guardrail._decisions_backend`.
     """
-    from fastaiagent._internal.safety_detectors import LLM_DETECTOR_MAX_RETRIES
-    from fastaiagent.llm import LLMClient, SystemMessage, UserMessage
+    from fastaiagent.guardrail import _decisions_backend as dx
+    from fastaiagent.llm import SystemMessage, UserMessage
+
+    if dx.resolve_backend(guardrail.config or {}, "llm_judge") == "decisions":
+        return await _run_llm_judge_decisions(guardrail, data)
 
     prompt_template = guardrail.config.get(
         "prompt", "Evaluate if the following is acceptable. Respond with PASS or FAIL.\n\n{data}"
@@ -274,8 +281,7 @@ async def _run_llm_judge(guardrail: Guardrail, data: str | dict[str, Any]) -> Gu
     )
     user = f"<<DATA>>\n{text}\n<</DATA>>"
 
-    llm_config = guardrail.config.get("llm", {})
-    llm = LLMClient(**llm_config) if llm_config else LLMClient(max_retries=LLM_DETECTOR_MAX_RETRIES)
+    llm = _judge_client(guardrail.config)
 
     # A failed judge call propagates to run_guardrail, which applies the
     # guardrail's on_error policy (default "block" preserves fail-closed).
@@ -285,6 +291,30 @@ async def _run_llm_judge(guardrail: Guardrail, data: str | dict[str, Any]) -> Gu
     return GuardrailResult(
         passed=_judge_verdict(raw, pass_value=pass_value),
         message=response.content,
+    )
+
+
+async def _run_llm_judge_decisions(
+    guardrail: Guardrail, data: str | dict[str, Any]
+) -> GuardrailResult:
+    """``llm_judge`` on the Decisions API: PASS when P(instructions hold) ≥ threshold.
+
+    The payload is sent as evidence and the criterion as the question, so the
+    ``<<DATA>>`` fencing the chat path needs has no equivalent to get wrong.
+    """
+    from fastaiagent.guardrail import _decisions_backend as dx
+
+    text = data if isinstance(data, str) else json.dumps(data)
+    probability, threshold, instructions = await dx.judge_probability(guardrail.config, text)
+    passed = probability >= threshold
+    return GuardrailResult(
+        passed=passed,
+        score=probability,
+        message=(
+            f"p={probability:.2f} that: {instructions} "
+            f"({'meets' if passed else 'below'} the {threshold:.2f} threshold)"
+        ),
+        metadata={"backend": "decisions", "probability": round(probability, 3), "threshold": threshold},
     )
 
 
@@ -557,27 +587,33 @@ async def _run_content_safety(guardrail: Guardrail, data: str | dict[str, Any]) 
     An unparseable judge response **raises**, so ``on_error`` decides. Treating
     it as all-zeros would turn a model outage into a silent pass.
     """
+    from fastaiagent.guardrail import _decisions_backend as dx
     from fastaiagent.guardrail import hazard_taxonomy as tax
     from fastaiagent.llm import SystemMessage, UserMessage
 
     config = guardrail.config or {}
+    backend = dx.resolve_backend(config, "content_safety")
     categories = tax.resolve_categories(config)
     if not categories:
         raise ValueError("content_safety guardrail names no known hazard categories")
     thresholds = tax.resolve_thresholds(config, categories)
 
     text = data if isinstance(data, str) else json.dumps(data)
-    llm = _judge_client(config)
-    response = await llm.acomplete(
-        [
-            SystemMessage(tax.build_prompt(categories)),
-            UserMessage(f"<<DATA>>\n{text}\n<</DATA>>"),
-        ],
-        max_tokens=300,
-        temperature=0,
-    )
-
-    scores = tax.parse_scores((response.content or "").strip(), categories)
+    if backend == "decisions":
+        # One predicate per category; its probability is the category's score,
+        # so the thresholds below apply unchanged.
+        scores = await dx.hazard_scores(config, categories, text)
+    else:
+        llm = _judge_client(config)
+        response = await llm.acomplete(
+            [
+                SystemMessage(tax.build_prompt(categories)),
+                UserMessage(f"<<DATA>>\n{text}\n<</DATA>>"),
+            ],
+            max_tokens=300,
+            temperature=0,
+        )
+        scores = tax.parse_scores((response.content or "").strip(), categories)
     tripped = sorted(
         code
         for code, score in scores.items()
@@ -596,12 +632,15 @@ async def _run_content_safety(guardrail: Guardrail, data: str | dict[str, Any]) 
         ),
         # Same shape the plane records in ``guardrail_executions.result_detail``,
         # so the console reads an SDK-run check exactly like a central one.
+        # ``backend`` is added only off the default engine, so a chat-run row
+        # keeps exactly the plane's shape.
         metadata={
             "taxonomy": "mlcommons",
             "scores": {c: round(v, 3) for c, v in scores.items()},
             "thresholds": thresholds,
             "tripped": tripped,
             "unscored": unscored,
+            **({"backend": backend} if backend != "chat" else {}),
         },
     )
 
@@ -615,10 +654,14 @@ async def _run_groundedness(guardrail: Guardrail, data: str | dict[str, Any]) ->
     available means the rule cannot run: ``extract_pair`` raises and ``on_error``
     decides, fail closed by default.
     """
+    from fastaiagent.guardrail import _decisions_backend as dx
     from fastaiagent.guardrail import grounding
     from fastaiagent.llm import SystemMessage, UserMessage
 
     config = guardrail.config or {}
+    # Raises on backend="decisions": a probability alone would drop
+    # ``unsupported_claims``, the evidence this type exists to produce.
+    dx.resolve_backend(config, "groundedness")
     threshold = grounding.resolve_threshold(config)
     context, answer = grounding.extract_pair(config, data)
 
@@ -668,27 +711,31 @@ async def _run_topic(guardrail: Guardrail, data: str | dict[str, Any]) -> Guardr
     presence is closer to a boolean, and a 0–1 "how much is this about medicine" would be
     false precision nobody could tune.
     """
+    from fastaiagent.guardrail import _decisions_backend as dx
     from fastaiagent.guardrail import topics as tp
     from fastaiagent.llm import SystemMessage, UserMessage
 
     config = guardrail.config or {}
+    backend = dx.resolve_backend(config, "topic")
     resolved = tp.resolve_topics(config)
     if not resolved:
         raise ValueError("topic guardrail names no topics")
     mode = tp.resolve_mode(config)
 
     text = data if isinstance(data, str) else json.dumps(data)
-    llm = _judge_client(config)
-    response = await llm.acomplete(
-        [
-            SystemMessage(tp.build_prompt(resolved, mode)),
-            UserMessage(f"<<DATA>>\n{text}\n<</DATA>>"),
-        ],
-        max_tokens=200,
-        temperature=0,
-    )
-
-    matched = tp.parse_topics((response.content or "").strip(), resolved)
+    if backend == "decisions":
+        matched = await dx.topics_present(config, resolved, text)
+    else:
+        llm = _judge_client(config)
+        response = await llm.acomplete(
+            [
+                SystemMessage(tp.build_prompt(resolved, mode)),
+                UserMessage(f"<<DATA>>\n{text}\n<</DATA>>"),
+            ],
+            max_tokens=200,
+            temperature=0,
+        )
+        matched = tp.parse_topics((response.content or "").strip(), resolved)
     names = [t["name"] for t in resolved]
 
     if mode == "deny":
@@ -709,7 +756,12 @@ async def _run_topic(guardrail: Guardrail, data: str | dict[str, Any]) -> Guardr
         message=message,
         # Same shape the plane records in ``guardrail_executions.result_detail``,
         # so the console reads an SDK-run check exactly like a central one.
-        metadata={"mode": mode, "matched": matched, "topics": names},
+        metadata={
+            "mode": mode,
+            "matched": matched,
+            "topics": names,
+            **({"backend": backend} if backend != "chat" else {}),
+        },
     )
 
 

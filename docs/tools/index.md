@@ -9,6 +9,7 @@ Tools give agents the ability to take actions — call APIs, query databases, ru
 | [FunctionTool](function-tools.md) | Wrap any Python function | Auto-generated JSON Schema from type hints |
 | [RESTTool](rest-tools.md) | Call an HTTP API endpoint | No Python function needed -- just configure URL and method |
 | [MCPTool](mcp-tools.md) | Connect to an MCP server | JSON-RPC 2.0 communication |
+| [`decision_tool`](function-tools.md#decision_tool) | Let an agent classify text with the [Decisions API](../llm/decisions.md) | A `FunctionTool` that returns probabilities (1.84.0) |
 
 ## Quick Example
 

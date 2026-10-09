@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from fastaiagent.llm.client import LLMClient, LLMResponse
+from fastaiagent.llm.decisions import DecisionResult
 from fastaiagent.llm.message import Message, ToolCall
 from fastaiagent.llm.stream import (
     StreamDone,
@@ -160,6 +161,74 @@ def _record_test_completion(
         )
 
 
+DecisionsArg = Any  # DecisionResult | dict | list of either | callable(input, questions)
+
+
+def _coerce_decision(value: Any, questions: list[Any], model: str) -> DecisionResult:
+    """A canned decision as ``DecisionResult`` (accepts the wire dict too)."""
+    from fastaiagent.llm.decisions import parse_decision
+
+    if isinstance(value, DecisionResult):
+        result = value.model_copy(deep=True)
+    elif isinstance(value, dict):
+        result = parse_decision({"model": model, **value}, questions)
+    else:
+        raise TypeError(
+            "a canned decision must be a DecisionResult or its dict form "
+            f"({{'answers': [...]}}); got {type(value).__name__}"
+        )
+    if not result.model:
+        result.model = model
+    return result
+
+
+async def _test_decide(
+    owner: Any,
+    input: Any,
+    questions: Any,
+    produce: Callable[[Any, list[Any]], Any],
+) -> DecisionResult:
+    """Shared ``adecide`` for the offline models: canned answers, a real span.
+
+    The span has the same name and attributes ``LLMClient.adecide`` writes, so
+    a ``TestModel`` run captured into a trace replays under
+    ``determinism="recorded"`` exactly like a live one. Tokens only — no price,
+    for the same reason ``_record_test_completion`` gives.
+    """
+    from fastaiagent._internal.pricing import record_run_tokens
+    from fastaiagent.llm.client import _serialize_for_span
+    from fastaiagent.llm.decisions import normalize_questions, summarize_decision_input
+    from fastaiagent.trace.otel import get_tracer
+    from fastaiagent.trace.span import set_fastaiagent_attributes, set_genai_attributes
+
+    qs = normalize_questions(questions)
+    owner.decision_calls.append({"input": input, "questions": qs})
+    raw = produce(input, qs)
+    if asyncio.iscoroutine(raw):
+        raw = await raw
+    result = _coerce_decision(raw, qs, owner.model)
+    record_run_tokens(result.usage)
+    tracer = get_tracer("fastaiagent.testing.models")
+    from opentelemetry.trace import SpanKind
+
+    from fastaiagent.llm.client import decision_span_name, stamp_decision_semconv
+
+    with tracer.start_as_current_span(
+        decision_span_name("test", owner.model), kind=SpanKind.CLIENT
+    ) as span:
+        set_genai_attributes(span, system="test", model=owner.model)
+        stamp_decision_semconv(span, provider="test", model=owner.model)
+        set_fastaiagent_attributes(
+            span,
+            **{
+                "decision.input": summarize_decision_input(input),
+                "decision.questions": _serialize_for_span([q.to_wire() for q in qs]),
+            },
+        )
+        LLMClient._stamp_decision(span, result)
+    return result
+
+
 class TestModel(LLMClient):
     # Tell pytest not to try to collect this class — its name starts with
     # "Test" but it's a runtime helper, not a test class.
@@ -176,11 +245,20 @@ class TestModel(LLMClient):
         usage: ``(prompt_tokens, completion_tokens)``.
         model: Model name reported in trace spans (default ``"test-model"``).
         delay_ms: Optional artificial latency before each call.
+        decisions: Canned Decisions API results for :meth:`adecide` /
+            :meth:`decide` — one ``DecisionResult`` (or its dict form
+            ``{"answers": [...]}``) for every call, or a list served in order
+            (the last repeats). Without it ``decide()`` raises, so a test never
+            gets an answer nobody wrote.
 
     Example:
 
         # Single canned response
         TestModel(response="hello")
+
+        # A canned decision
+        TestModel(decisions={"answers": [{"type": "predicate", "name": "spam",
+                                          "probability": 0.97}]})
 
         # Round-robin of three responses
         TestModel(response=["one", "two", "three"])
@@ -201,13 +279,44 @@ class TestModel(LLMClient):
         usage: tuple[int, int] = (0, 0),
         model: str = "test-model",
         delay_ms: int = 0,
+        decisions: DecisionsArg = None,
     ) -> None:
         super().__init__(provider="test", model=model, api_key="not-used")
         self._turns = _coerce_responses(response, tool_calls, usage)
         self._call_count = 0
         self._delay_ms = max(0, int(delay_ms))
+        if decisions is None:
+            self._decisions: list[Any] = []
+        elif isinstance(decisions, list):
+            self._decisions = list(decisions)
+        else:
+            self._decisions = [decisions]
+        self._decision_count = 0
         # Public history for tests to assert against
         self.calls: list[dict[str, Any]] = []
+        self.decision_calls: list[dict[str, Any]] = []
+
+    async def adecide(
+        self,
+        input: Any,
+        questions: Any,
+        *,
+        safety_identifier: str | None = None,
+    ) -> DecisionResult:
+        if self._delay_ms:
+            await asyncio.sleep(self._delay_ms / 1000.0)
+
+        def _next(_input: Any, _qs: list[Any]) -> Any:
+            if not self._decisions:
+                raise ValueError(
+                    "TestModel.decide() has no canned decision; pass "
+                    "TestModel(decisions={'answers': [...]})"
+                )
+            idx = min(self._decision_count, len(self._decisions) - 1)
+            self._decision_count += 1
+            return self._decisions[idx]
+
+        return await _test_decide(self, input, questions, _next)
 
     def _next_turn(self) -> _CannedTurn:
         if self._call_count < len(self._turns):
@@ -357,14 +466,36 @@ class FunctionModel(LLMClient):
         *,
         model: str = "function-model",
         delay_ms: int = 0,
+        decide_fn: Callable[[Any, list[Any]], Any] | None = None,
     ) -> None:
         super().__init__(provider="test", model=model, api_key="not-used")
         if not callable(fn):
             raise TypeError("FunctionModel requires a callable")
+        if decide_fn is not None and not callable(decide_fn):
+            raise TypeError("FunctionModel decide_fn must be callable")
         self._fn = fn
+        self._decide_fn = decide_fn
         self._call_count = 0
         self._delay_ms = max(0, int(delay_ms))
         self.calls: list[dict[str, Any]] = []
+        self.decision_calls: list[dict[str, Any]] = []
+
+    async def adecide(
+        self,
+        input: Any,
+        questions: Any,
+        *,
+        safety_identifier: str | None = None,
+    ) -> DecisionResult:
+        """Answer from ``decide_fn(input, questions)`` (sync or async).
+
+        It returns a ``DecisionResult`` or its dict form ``{"answers": [...]}``.
+        """
+        if self._decide_fn is None:
+            raise ValueError("FunctionModel.decide() needs FunctionModel(..., decide_fn=...)")
+        if self._delay_ms:
+            await asyncio.sleep(self._delay_ms / 1000.0)
+        return await _test_decide(self, input, questions, self._decide_fn)
 
     async def acomplete(
         self,

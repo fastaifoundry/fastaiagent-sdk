@@ -34,6 +34,7 @@ _KNOWN_CONFIG_KEYS = frozenset(
         "agents",
         "auto_approve",
         "conditions",
+        "decision",
         "input_mapping",
         "input_schema",
         "output_key",
@@ -222,6 +223,12 @@ class Chain:
             config["input_schema"] = input_schema
         if output_schema is not None:
             config["output_schema"] = output_schema
+        if "decision" in config:
+            # 1.84.0: route a condition node on a Decisions API Choice. Normalised
+            # to JSON here so the chain still serialises; see chain/decision.py.
+            from fastaiagent.chain.decision import normalize_decision_config
+
+            config["decision"] = normalize_decision_config(config["decision"], id)
         unknown = sorted(set(config) - _KNOWN_CONFIG_KEYS)
         if unknown:
             logger.warning(

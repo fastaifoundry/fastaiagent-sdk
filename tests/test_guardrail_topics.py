@@ -414,10 +414,20 @@ def test_only_payload_free_findings_are_exported() -> None:
         # ``tests/test_guardrail_entity_detection.py``.
         GuardrailType.pii,
         GuardrailType.secrets,
+        # 1.84.0, Decisions-API engine only: the engine name, a probability and
+        # the rule's own threshold — no payload-derived value
+        # (``tests/test_guardrail_decisions_backend.py``).
+        GuardrailType.llm_judge,
     }
-    assert EXPORTABLE_DETAIL_KEYS[GuardrailType.topic] == frozenset({"mode", "matched", "topics"})
+    # ``backend`` (1.84.0) names the engine; written only off the chat default.
+    assert EXPORTABLE_DETAIL_KEYS[GuardrailType.topic] == frozenset(
+        {"mode", "matched", "topics", "backend"}
+    )
     assert EXPORTABLE_DETAIL_KEYS[GuardrailType.content_safety] == frozenset(
-        {"taxonomy", "scores", "thresholds", "tripped", "unscored"}
+        {"taxonomy", "scores", "thresholds", "tripped", "unscored", "backend"}
+    )
+    assert EXPORTABLE_DETAIL_KEYS[GuardrailType.llm_judge] == frozenset(
+        {"backend", "probability", "threshold"}
     )
     assert EXPORTABLE_DETAIL_KEYS[GuardrailType.groundedness] == frozenset(
         {"score", "threshold", "unsupported_claims"}

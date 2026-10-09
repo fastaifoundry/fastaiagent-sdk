@@ -61,6 +61,11 @@ SENSITIVE_ATTR_KEYS: frozenset[str] = frozenset(
         "gen_ai.request.tools",
         "gen_ai.response.content",
         "gen_ai.response.tool_calls",
+        # Decisions API (``LLMClient.adecide``): the evidence the questions were
+        # asked about — user content. The questions and the answers alongside it
+        # (``fastaiagent.decision.questions`` / ``.answers``) are developer-authored
+        # structure and probabilities, exported like guardrail scores.
+        "fastaiagent.decision.input",
         # Foreign-OTel normalization targets. ``trace.normalize`` writes the
         # consolidated prompt/completion text onto these keys for every span
         # captured from LangChain / CrewAI / PydanticAI / OpenLLMetry before it

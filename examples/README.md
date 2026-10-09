@@ -111,6 +111,14 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 - [`17_providers_openrouter.py`](17_providers_openrouter.py) — OpenRouter: many models behind one key, chosen by slug
 - [`89_azure_injected_client.py`](89_azure_injected_client.py) — Azure OpenAI with Entra ID / managed identity by handing `LLMClient` your own `AzureOpenAI` client
 
+### OpenAI Decisions API (1.84.0)
+- [`102_decisions_basics.py`](102_decisions_basics.py) — `llm.decide()`: `Predicate` / `Choice` / `Score` in one request, typed bool choices, an image, cost, and `TestModel(decisions=...)` for offline tests
+- [`103_decision_routing.py`](103_decision_routing.py) — route on meaning: a Chain `condition` node with `decision=` (refusal / low confidence → default edge) and `decision_tool` inside a real agent
+- [`104_decision_guardrails_evals.py`](104_decision_guardrails_evals.py) — `backend="decisions"` guardrails (`topic`, `llm_judge`, `content_safety`, `no_prompt_injection`), `DecisionJudge`, and a Supervisor that reviews workers with `validation_mode="decisions"`
+- [`105_decision_replay.py`](105_decision_replay.py) — replay a decision-driven agent fully offline: chat turns and decisions both served from the trace
+- [`106_call_center_supervisor.py`](106_call_center_supervisor.py) — a call-centre desk whose **supervisor routes with the Decisions API** (`gpt-6-luna`): `Supervisor(routing="decisions")` routes complaints / product enquiries / everything else to `gpt-5.1` workers, with urgency and mood from the same call and a reviewed reply; `--compare` runs the tool-calling supervisor on the same tickets
+- [`107_call_center_chain.py`](107_call_center_chain.py) — the same call-centre routing as a Chain graph with a decision node
+
 ### Tools & guardrails
 - [`03_guardrails.py`](03_guardrails.py) — built-in PII / toxicity / JSON guardrails
 - [`23_tool_guardrails.py`](23_tool_guardrails.py) — guardrails on tool calls / results

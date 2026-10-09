@@ -212,6 +212,36 @@ tool = FunctionTool(
 )
 ```
 
+## decision_tool
+
+*New in 1.84.0.* `decision_tool` turns [Decisions API](../llm/decisions.md)
+questions into a `FunctionTool`. The agent passes the text it wants classified
+and gets the answers back as data. Use it when *the agent* should decide when to
+triage or check scope, at a fraction of a chat turn's latency and price:
+
+```python
+from fastaiagent.llm import Choice, LLMClient, Predicate
+from fastaiagent.tool import decision_tool
+
+triage = decision_tool(
+    {
+        "department": Choice(instructions="Which team?", options=["billing", "technical", "other"]),
+        "urgent": Predicate(instructions="The customer needs help right now."),
+    },
+    llm=LLMClient(model="gpt-6-luna"),
+    name="triage_ticket",
+)
+agent = Agent(name="support", llm=chat_llm, tools=[triage])
+```
+
+- **The tool takes one argument, `input`**, and returns a dict keyed by question
+  name. A choice returns `{"choice", "confidence", "probabilities"}`, a predicate
+  `{"probability"}`, a score `{"score", "normalized", "level", "confidence"}`, and a
+  refusal `{"refused": true}`.
+- **Questions must be named.** A single unnamed question is named `"answer"`.
+- **`llm` accepts anything with `adecide`.** `TestModel(decisions=...)` makes the
+  tool fully offline in tests.
+
 ## Argument Validation & Coercion
 
 As of v1.41.0, `FunctionTool` **validates and coerces** the model's arguments

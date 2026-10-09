@@ -291,7 +291,13 @@ def build_app(
                 )
             runner_map[str(name)] = r
 
-    app = FastAPI(title="FastAIAgent", version="0.1", docs_url=None, redoc_url=None)
+    from fastaiagent._internal.fastapi_compat import sdk_app_kwargs
+
+    # FastAPI's own request tracing off: the UI must not record its own API
+    # calls into the trace store it is showing (FastAPI >= 0.143).
+    app = FastAPI(
+        title="FastAIAgent", version="0.1", docs_url=None, redoc_url=None, **sdk_app_kwargs()
+    )
     app.state.context = AppContext(
         db_path=resolved_db,
         auth_path=resolved_auth,

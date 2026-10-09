@@ -200,6 +200,55 @@ chain.connect("router", "billing_agent", condition="category == billing")
 chain.connect("router", "tech_agent", condition="category == technical")
 ```
 
+## Routing on meaning: decision nodes
+
+*New in 1.84.0.* `conditions=` compares strings in state. `decision=` routes on
+what the input *means*, with no classifier agent in front. The node asks
+[OpenAI's Decisions API](../llm/decisions.md) a `Choice` about the rendered
+input, and follows the edge labelled with the chosen value:
+
+```python
+from fastaiagent.llm import Choice
+
+chain.add_node(
+    "triage",
+    type=NodeType.condition,
+    decision={
+        "question": Choice(
+            instructions="Which team should handle this support ticket?",
+            options={"billing": "Payments and refunds", "technical": "Bugs and outages", "other": None},
+        ),
+        "input": "{{input.message}}",     # template over state; default "{{input}}"
+        "llm": {"model": "gpt-6-luna"},   # LLMClient kwargs (this is the default model)
+        "min_confidence": 0.6,            # below it, take the default edge
+    },
+)
+chain.connect("triage", "billing_agent", label="billing")
+chain.connect("triage", "tech_agent", label="technical")
+chain.connect("triage", "human", label="other")
+chain.connect("triage", "human")          # default: refusal or low confidence
+```
+
+- **One edge label per option.** The validator reports an option no edge labels,
+  just as it does for an unlabelled `conditions` handle.
+- **A refusal, or a confidence under `min_confidence`, takes the default edge.**
+  The chain never guesses a branch.
+- **Boolean options route on `"True"` / `"False"` labels.** Use
+  `Choice(options=[True, False])` for a yes/no gate.
+- **`decision=Choice(...)` is a shorthand** for `{"question": ...}`.
+- **The node's result** is `{"matched": "<label>", "decision": {"choice",
+  "confidence", "refused"}}`, available in `ChainResult.node_results`.
+- **It serialises.** The question is stored in its wire form and `llm` as kwargs,
+  so the chain round-trips through `to_dict()` / `from_dict()`. That's also why
+  `llm` takes kwargs rather than a live client.
+- **A failed call fails the node**, like any other node error.
+
+See [`103_decision_routing.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/103_decision_routing.py)
+and the call-centre walkthrough in [`107_call_center_chain.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/107_call_center_chain.py).
+In the trace, the triage decision comes first, then only the branch it chose:
+
+![Chain trace: the triage decision, then the chosen agent](../ui/screenshots/decisions-05-chain-trace.png)
+
 ## Chain Validation
 
 Validate chain structure before execution:

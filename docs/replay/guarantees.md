@@ -44,6 +44,27 @@ of these attributes are present and `recorded` mode raises
 `ReplayError`. The fix is to enable payloads on the runs you intend
 to replay later.
 
+**A turn that only calls tools is replayed too (1.84.0).** OpenAI sends `content:
+null` on such a turn, so its span has `gen_ai.response.tool_calls` and no
+`gen_ai.response.content`. Before 1.84.0 those spans were skipped. A recorded
+rerun of any tool-using agent jumped straight to the captured final answer, never
+ran a tool, and still matched the original output. Now the tool-call turn is
+served in order, so **the rerun really executes the agent's tools**. Use
+`with_tool_override(...)` to stub any tool with side effects.
+
+### Decisions API calls (1.84.0)
+
+Calls to [`LLMClient.adecide`](../llm/decisions.md) are recorded on their own
+`llm.<provider>.decisions.<model>` spans (identified by `gen_ai.operation.name="decisions"`),
+and they replay from their **own queue**. A decision is
+never handed to a chat turn, or a chat turn to a decision. Under `recorded`, each
+`adecide` gets the next captured result, tagged `replay.mode="recorded"`. A
+decision the original run didn't make is a miss, handled by `on_miss`. That
+covers more decisions than were captured, or a captured one that answered
+different questions.
+
+![A recorded rerun: chat turns and the Decisions call all served from the capture](../ui/screenshots/decisions-06-replay-recorded.png)
+
 ### Multi-turn replay (v1.14.1+)
 
 For a multi-turn tool-loop trace with N captured `llm.*` spans,

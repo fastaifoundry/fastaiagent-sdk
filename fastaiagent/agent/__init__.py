@@ -22,7 +22,7 @@ from fastaiagent.agent.middleware import (
     TrimLongMessages,
 )
 from fastaiagent.agent.swarm import Swarm, SwarmError, SwarmState
-from fastaiagent.agent.team import Supervisor, Worker
+from fastaiagent.agent.team import Supervisor, SupervisorRoute, Worker
 
 __all__ = [
     "Agent",
@@ -43,6 +43,7 @@ __all__ = [
     "StaticBlock",
     "SummaryBlock",
     "Supervisor",
+    "SupervisorRoute",
     "Swarm",
     "SwarmError",
     "SwarmState",

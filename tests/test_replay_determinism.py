@@ -117,6 +117,45 @@ class TestRecordedResponseHelper:
         )
         assert _recorded_response_from_span(empty_span) is None
 
+    def test_a_tool_call_only_turn_is_replayed(self):
+        """1.84.0: OpenAI sends ``content: null`` on a turn that only calls tools.
+
+        Such a span has no ``gen_ai.response.content``; before 1.84.0 it was
+        skipped, so a recorded rerun jumped to the final answer without running
+        any tool — and still matched the original output.
+        """
+        span = SpanData(
+            span_id="x",
+            trace_id="t",
+            name="llm.openai.gpt-4o-mini",
+            start_time="",
+            end_time="",
+            attributes={
+                "gen_ai.response.tool_calls": json.dumps(
+                    [{"id": "call_1", "name": "lookup", "arguments": {"q": "a"}}]
+                ),
+                "gen_ai.response.finish_reason": "tool_calls",
+            },
+        )
+        rec = _recorded_response_from_span(span)
+        assert rec is not None
+        assert rec.content is None
+        assert [(tc.id, tc.name, tc.arguments) for tc in rec.tool_calls] == [
+            ("call_1", "lookup", {"q": "a"})
+        ]
+        assert rec.finish_reason == "tool_calls"
+
+    def test_unreadable_tool_calls_with_no_content_is_not_a_turn(self):
+        span = SpanData(
+            span_id="x",
+            trace_id="t",
+            name="llm.openai",
+            start_time="",
+            end_time="",
+            attributes={"gen_ai.response.tool_calls": "{not json"},
+        )
+        assert _recorded_response_from_span(span) is None
+
 
 class TestDeterminismValidation:
     def test_unknown_mode_raises(self):

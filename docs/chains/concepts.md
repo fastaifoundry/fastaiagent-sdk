@@ -93,6 +93,12 @@ fire (fan-out). This is why the graph can branch on live data without you
 writing any dispatch code — the condition strings *are* the router, evaluated
 against state the previous node produced.
 
+When the branch depends on what the input *means* rather than on a field you
+can compare, give a `condition` node a `decision=` instead (1.84.0). It asks
+[OpenAI's Decisions API](../llm/decisions.md) a `Choice` and follows the edge
+labelled with the answer. A refusal or a low confidence takes the default edge.
+See [Routing on meaning](index.md#routing-on-meaning-decision-nodes).
+
 ## Topologies at a glance
 
 A chain is a general directed graph (with cycles), so the same primitives —
