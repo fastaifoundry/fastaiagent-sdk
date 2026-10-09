@@ -52,7 +52,11 @@ class Candidate:
 
 @dataclass
 class CandidateScore:
-    """A candidate's score on one split."""
+    """A candidate's score on one split.
+
+    ``n`` counts every case in the split; ``errored`` of them raised instead of
+    answering and count as failures in ``score`` and ``pass_rate``.
+    """
 
     candidate_id: str
     split: str
@@ -64,6 +68,7 @@ class CandidateScore:
     # Underlying EvalResults — kept in-memory for the proposer (it needs the
     # failing cases). Not serialized / not part of equality.
     results: Any = field(default=None, repr=False, compare=False)
+    errored: int = 0
 
     @classmethod
     def from_eval(
@@ -76,33 +81,48 @@ class CandidateScore:
     ) -> CandidateScore:
         """Roll an ``EvalResults`` up into a scalar selection score.
 
-        Uses ``Scorecard.from_eval_results``: the ``primary_metric``'s ``avg_score``
-        when set and present, otherwise the overall pass-rate.
+        The ``primary_metric``'s average score when set and present, otherwise the
+        overall pass-rate. A case that raised instead of answering — a guardrail
+        block, ``MaxIterationsError``, a provider error — has no scorer results and
+        counts as a failure scoring 0 on every metric. ``evaluate()`` leaves such a
+        case out of its scores, and selecting on those let a candidate that crashed
+        on its hard cases outscore one that answered them (1.85.0).
         """
-        from fastaiagent.eval.results import Scorecard
+        errored = int(getattr(results, "errored_count", 0) or 0)
+        per_metric: dict[str, float] = {}
+        passed = total = 0
+        for name, rlist in results.scores.items():
+            n_metric = len(rlist) + errored
+            if not n_metric:
+                continue
+            per_metric[name] = round(sum(r.score for r in rlist) / n_metric, 4)
+            passed += sum(1 for r in rlist if r.passed)
+            total += n_metric
+        pass_rate = round(passed / total, 4) if total else 0.0
 
-        card = Scorecard.from_eval_results(results)
-        per_metric = {m.name: m.avg_score for m in card.metrics}
         if primary_metric is not None and primary_metric in per_metric:
             score = per_metric[primary_metric]
         else:
-            if primary_metric is not None:
+            # Every case erroring leaves no metric at all: that is a 0, not a
+            # misnamed primary metric.
+            if primary_metric is not None and per_metric:
                 warnings.warn(
                     f"primary_metric={primary_metric!r} not among scored metrics "
                     f"{sorted(per_metric)}; falling back to overall pass-rate.",
                     stacklevel=2,
                 )
-            score = card.overall_pass_rate
-        n = max((m.n for m in card.metrics), default=0)
+            score = pass_rate
+        n = max((len(rlist) for rlist in results.scores.values()), default=0) + errored
         return cls(
             candidate_id=candidate_id,
             split=split,
             score=score,
-            pass_rate=card.overall_pass_rate,
+            pass_rate=pass_rate,
             n=n,
             per_metric=per_metric,
             eval_run_id=getattr(results, "run_id", None),
             results=results,
+            errored=errored,
         )
 
 
@@ -283,12 +303,17 @@ def apply_candidate(
     Both replace any prior block of the same name (no stacking) inside an isolated
     copy of the agent's memory; facts render before examples. The user's agent is
     never mutated.
-    """
-    from fastaiagent.agent.agent import Agent
 
-    new_prompt = (
-        candidate.system_prompt if candidate.system_prompt is not None else base.system_prompt
-    )
+    The candidate is a copy of ``base`` — same class, agent path label and
+    registry-prompt link — with only the levers changed, so what is scored is the
+    user's agent (rebuilding a plain ``Agent`` dropped a subclass and the
+    ``prompt_slug``, 1.85.0). A changed prompt drops the ``prompt_slug``: the
+    registry prompt it names is no longer the prompt the agent runs.
+    """
+    import copy
+
+    from fastaiagent.agent.middleware import _MiddlewarePipeline
+
     new_memory = _clone_memory_blocks(base.memory, allow_writable_memory=allow_writable_memory)
 
     if candidate.fact_ids is not None:
@@ -311,19 +336,24 @@ def apply_candidate(
 
         new_memory = _inject_block(new_memory, FewShotBlock(candidate.fewshot_demos), "fewshot")
 
-    return Agent(
-        name=base.name,
-        system_prompt=new_prompt,
-        llm=base.llm,
-        tools=base.tools,
-        guardrails=base.guardrails,
-        memory=new_memory,
-        config=base.config,
-        output_type=base.output_type,
-        middleware=base.middleware,
-        checkpointer=base._checkpointer,
-        agent_id=base.agent_id,
-    )
+    new = copy.copy(base)
+    if candidate.system_prompt is not None and candidate.system_prompt != base.system_prompt:
+        new.system_prompt = candidate.system_prompt
+        new.prompt_slug = None
+        new._prompt_provenance = None
+    new.memory = new_memory
+    # Fresh containers, so nothing a candidate run does reaches the user's agent.
+    new.tools = list(base.tools)
+    new.guardrails = list(base.guardrails)
+    new.middleware = list(base.middleware)
+    new._mw_pipeline = _MiddlewarePipeline(new.middleware)
+    try:
+        from fastaiagent._platform.push import track_agent
+
+        track_agent(new)  # as Agent.__init__ does, so connect() can register it
+    except Exception:
+        pass
+    return new
 
 
 def scorer_present(scorers: list[Any], judge: Scorer) -> bool:
@@ -339,3 +369,28 @@ def scorer_present(scorers: list[Any], judge: Scorer) -> bool:
         if judge_name is not None and getattr(s, "name", None) == judge_name:
             return True
     return False
+
+
+def scorer_name(scorer: Any) -> str | None:
+    """The name a scorer reports results under (a built-in's string is its name)."""
+    return scorer if isinstance(scorer, str) else getattr(scorer, "name", None)
+
+
+def is_llm_scorer(scorer: Any) -> bool:
+    """Does scoring one case call a model? Counted by ``max_judge_calls``.
+
+    The SDK's model-backed scorers — ``LLMJudge``/``GEval``, ``DecisionJudge`` and
+    the RAG, agent, session and safety metrics — all hold their client as
+    ``_llm``. A built-in named by string is resolved the way ``evaluate()`` does.
+    """
+    if isinstance(scorer, str):
+        from fastaiagent.eval.builtins import BUILTIN_SCORERS
+
+        cls = BUILTIN_SCORERS.get(scorer)
+        if cls is None:
+            return False
+        try:
+            scorer = cls()
+        except Exception:
+            return False
+    return hasattr(scorer, "_llm")

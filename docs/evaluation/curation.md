@@ -30,6 +30,10 @@ branches by intent:
 Override per run with `mark_output_as_expected` / `--output-as-expected` /
 `--needs-review`.
 
+A dataset curated from `favorites` is safe to [optimize](optimization.md) on: the
+few-shot lever also draws demos from your favorites, but never one whose input is a
+case the candidates are scored on.
+
 ## Infrastructure errors are not gold
 
 A trace can fail for reasons the agent can't fix — endpoint 500, timeout,

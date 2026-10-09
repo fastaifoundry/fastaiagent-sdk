@@ -71,8 +71,13 @@ class HardeningReport:
         }
 
 
-def _failures_text(results: Any) -> tuple[str, int]:
-    """Render failing cases from SimulationResults or EvalResults → (text, count)."""
+def _failures_text(results: Any, *, max_cases: int | None = None) -> tuple[str, int]:
+    """Render failing cases from SimulationResults or EvalResults → (text, count).
+
+    ``max_cases`` caps how many failing cases of an ``EvalResults`` are rendered;
+    ``count`` is still the total. Unbounded, a large split builds a prompt no model
+    can take (the optimize proposer, 1.85.0).
+    """
     # SimulationResults — has .results of items with .scenario_name / .verdicts.
     sim = getattr(results, "results", None)
     if sim and hasattr(sim[0], "scenario_name"):
@@ -106,6 +111,8 @@ def _failures_text(results: Any) -> tuple[str, int]:
             if not failed:
                 continue
             count += 1
+            if max_cases is not None and len(blocks) >= max_cases:
+                continue
             # Show the proposer/harden LLM what "correct" looks like, not just that
             # the case failed. Without the expected output — and the scorer's own
             # reason (e.g. "got 1120, expected 1120000") — a proposer can't recover

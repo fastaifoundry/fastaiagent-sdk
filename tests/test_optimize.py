@@ -9,6 +9,10 @@ config validation, and report rendering — all with real objects.
 from __future__ import annotations
 
 import asyncio
+import json
+import logging
+import re
+import textwrap
 import warnings
 from dataclasses import dataclass
 
@@ -16,6 +20,7 @@ import pytest
 
 from fastaiagent import Agent, LLMClient
 from fastaiagent.agent.context import RunContext
+from fastaiagent.eval.evaluate import aevaluate
 from fastaiagent.eval.llm_judge import LLMJudge
 from fastaiagent.eval.results import EvalResults
 from fastaiagent.eval.scorer import ScorerResult
@@ -25,12 +30,13 @@ from fastaiagent.optimize import (
     OptimizationReport,
     OptimizeConfig,
     apply_candidate,
+    optimize,
 )
-from fastaiagent.optimize.candidate import _clone_memory_blocks, scorer_present
+from fastaiagent.optimize.candidate import _clone_memory_blocks, is_llm_scorer, scorer_present
 from fastaiagent.optimize.loop import _split
-from fastaiagent.optimize.proposers import propose_prompt_rewrites
+from fastaiagent.optimize.proposers import _parse_proposals, propose_prompt_rewrites
 from fastaiagent.optimize.report import TrajectoryPoint
-from fastaiagent.testing import TestModel
+from fastaiagent.testing import FunctionModel, TestModel
 
 
 def _agent(prompt: str = "ORIGINAL") -> Agent:
@@ -753,3 +759,481 @@ def test_the_optimized_agent_keeps_each_users_own_facts(tmp_path, monkeypatch):
     assert "cite sources" in seen and "800 words" not in seen  # the selected shared facts
     again = apply_candidate(optimized, Candidate(fact_ids=[ids[1]]))  # re-optimize: no stacking
     assert [b.name for b in again.memory.blocks] == names
+
+
+# ── 1.85.0: what the AutoLLM audit found ────────────────────────────────────
+#
+# The loop tests run the real optimize() with FunctionModel agents and proposers,
+# so every candidate and every reply is fixed and each outcome is exact.
+
+_CAPITALS = {
+    "France": "Paris", "Japan": "Tokyo", "Italy": "Rome", "Spain": "Madrid",
+    "Germany": "Berlin", "Canada": "Ottawa", "Egypt": "Cairo", "Norway": "Oslo",
+    "Kenya": "Nairobi", "Peru": "Lima", "Chile": "Santiago", "Greece": "Athens",
+    "Poland": "Warsaw", "Ghana": "Accra", "Cuba": "Havana", "Nepal": "Kathmandu",
+}  # fmt: skip
+_CASES = [{"input": f"Capital of {c}?", "expected_output": city} for c, city in _CAPITALS.items()]
+
+
+def _system_text(messages) -> str:
+    return "\n".join(
+        m.content for m in messages if m.role.value == "system" and isinstance(m.content, str)
+    )
+
+
+def _question(messages) -> str:
+    return next(m.content for m in reversed(messages) if m.role.value == "user")
+
+
+def _city(question: str) -> str:
+    return _CAPITALS[question.removeprefix("Capital of ").rstrip("?")]
+
+
+def _verbose(messages) -> str:
+    """Right, but never an exact match."""
+    return f"The capital is {_city(_question(messages))}."
+
+
+def _proposer(*prompts: str) -> FunctionModel:
+    """A proposer that offers ``prompts`` every round; each rationale is its prompt."""
+    reply = json.dumps({"proposals": [{"system_prompt": p, "rationale": p} for p in prompts]})
+    return FunctionModel(lambda messages: reply)
+
+
+def _judge(calls: list, *, score: int, name: str | None = None) -> LLMJudge:
+    """An LLMJudge on a FunctionModel that records each call it makes."""
+    verdict = json.dumps({"score": score, "reasoning": "fixed"})
+    return LLMJudge(
+        criteria="Is the answer right?",
+        name=name,
+        llm=FunctionModel(lambda messages: calls.append(1) or verdict),
+    )
+
+
+def _eval_run_names(db_path) -> list[str]:
+    from fastaiagent.ui.db import init_local_db
+
+    db = init_local_db(db_path)
+    try:
+        return [r["run_name"] for r in db.fetchall("SELECT run_name FROM eval_runs")]
+    finally:
+        db.close()
+
+
+def test_an_errored_case_counts_as_a_failure_in_the_score():
+    """evaluate() leaves a case that raised out of its scores; selecting on those
+    scored only the cases a candidate managed to answer."""
+
+    def agent_fn(q: str) -> str:
+        if q == "boom":
+            raise RuntimeError("provider 500")
+        return "yes" if q.startswith("y") else "no"
+
+    items = [{"input": q, "expected_output": "yes"} for q in ("y1", "n1", "boom", "y2")]
+    res = asyncio.run(aevaluate(agent_fn, items, ["exact_match"], persist=False))
+    cs = CandidateScore.from_eval("c", "dev", res, primary_metric=None)
+    assert (cs.n, cs.errored) == (4, 1)
+    assert cs.score == cs.pass_rate == 0.5
+    by_metric = CandidateScore.from_eval("c", "dev", res, primary_metric="exact_match")
+    assert by_metric.score == by_metric.per_metric["exact_match"] == 0.5
+
+
+def test_a_split_where_every_case_errored_scores_zero_without_a_warning():
+    def down(q: str) -> str:
+        raise RuntimeError("provider down")
+
+    res = asyncio.run(aevaluate(down, _CASES[:3], ["exact_match"], persist=False))
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # not a "misnamed primary metric"
+        cs = CandidateScore.from_eval("c", "dev", res, primary_metric="exact_match")
+    assert (cs.score, cs.n, cs.errored) == (0.0, 3, 3)
+
+
+def test_a_candidate_cannot_win_by_crashing_on_its_hard_cases():
+    """A prompt whose hard cases a guardrail blocked scored 1.0 on what was left
+    and beat a prompt that answered every case."""
+    from fastaiagent.guardrail import no_pii
+
+    cfg = OptimizeConfig(max_iterations=1, patience=1)
+    _train, dev, _holdout = _split(_CASES, cfg.splits, cfg.seed)
+    hard, extra = dev[0]["input"], dev[1]["input"]
+
+    def answer(messages):
+        system, q = _system_text(messages), _question(messages)
+        if "HONEST" in system:
+            return "A lovely old city." if q == hard else _city(q)
+        if "EVASIVE" in system:  # deflects to an address the guardrail blocks
+            return "contact geo@atlas-example.com" if q in (hard, extra) else _city(q)
+        return _verbose(messages)
+
+    agent = Agent(
+        name="geo", system_prompt="You answer.", llm=FunctionModel(answer), guardrails=[no_pii()]
+    )
+    report = optimize(
+        agent,
+        _CASES,
+        ["exact_match"],
+        config=cfg,
+        proposer_llm=_proposer("EVASIVE: city only", "HONEST: city only"),
+        persist=False,
+    )
+    points = {p.rationale: p for p in report.trajectory if p.iteration == 1}
+    n = len(dev)
+    assert points["EVASIVE: city only"].errored == 2
+    assert points["EVASIVE: city only"].dev_score == pytest.approx((n - 2) / n, abs=1e-3)
+    assert points["HONEST: city only"].dev_score == pytest.approx((n - 1) / n, abs=1e-3)
+    assert report.best_candidate.system_prompt == "HONEST: city only"
+    assert "[2 errored]" in report.summary()
+
+
+def test_a_proposer_that_cannot_run_is_reported_not_taken_for_no_improvement(caplog):
+    """Any proposer error became "no proposals": a run whose proposer never ran
+    ended "stopped: patience … winner kept" with nothing logged."""
+
+    def broken(messages):
+        raise RuntimeError("model 'gpt-nope' does not exist")
+
+    agent = Agent(name="geo", system_prompt="You answer.", llm=FunctionModel(_verbose))
+    with caplog.at_level(logging.WARNING, logger="fastaiagent.optimize"):
+        report = optimize(
+            agent,
+            _CASES,
+            ["exact_match"],
+            config=OptimizeConfig(max_iterations=3, patience=2),
+            proposer_llm=FunctionModel(broken),
+            persist=False,
+        )
+    assert report.stopped_reason == "proposer_failed"
+    assert len(report.proposer_errors) == 2 and "gpt-nope" in report.proposer_errors[0]
+    skipped = [p for p in report.trajectory if p.skipped]
+    assert [p.iteration for p in skipped] == [1, 2]
+    assert all(p.rationale.startswith("proposer failed: RuntimeError") for p in skipped)
+    assert "proposer failed 2x" in report.summary()
+    assert "gpt-nope" in caplog.text
+
+
+def test_a_bare_list_reply_from_the_proposer_is_read():
+    """A reply that is a JSON list (not {"proposals": [...]}) raised
+    AttributeError out of optimize() and lost the run."""
+    reply = json.dumps([{"system_prompt": "Answer with only the city name.", "rationale": "r"}])
+
+    def answer(messages):
+        if "only the city" in _system_text(messages):
+            return _city(_question(messages))
+        return _verbose(messages)
+
+    agent = Agent(name="geo", system_prompt="You answer.", llm=FunctionModel(answer))
+    report = optimize(
+        agent,
+        _CASES,
+        ["exact_match"],
+        config=OptimizeConfig(max_iterations=1, patience=1),
+        proposer_llm=FunctionModel(lambda messages: reply),
+        persist=False,
+    )
+    assert report.improved
+    assert report.best_candidate.system_prompt == "Answer with only the city name."
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        '{"proposals": [{"system_prompt": "A", "rationale": "r"}]}',
+        '[{"system_prompt": "A"}]',
+        '```json\n[{"system_prompt": "A"}]\n```',
+    ],
+)
+def test_parse_proposals_reads_the_object_and_the_bare_list(raw):
+    assert _parse_proposals(raw, 3)[0][0] == "A"
+
+
+@pytest.mark.parametrize(
+    "raw",
+    ["not json", '{"proposals": null}', '"text"', '[{"rationale": "no prompt"}]', "[]"],
+)
+def test_parse_proposals_refuses_a_reply_with_no_proposal(raw):
+    with pytest.raises(ValueError):
+        _parse_proposals(raw, 3)
+
+
+def test_the_proposer_is_shown_a_bounded_number_of_failures(caplog):
+    """Every failing train case went into one request: 2,000 cases made a
+    ~335k-token prompt that failed every round."""
+    seen: list[str] = []
+
+    def reply(messages):
+        seen.append(messages[-1].content)
+        return json.dumps({"proposals": [{"system_prompt": "P2"}]})
+
+    items = [{"input": f"q{i}", "expected_output": "yes"} for i in range(500)]
+    res = asyncio.run(aevaluate(lambda q: "no", items, ["exact_match"], persist=False))
+    out = asyncio.run(
+        propose_prompt_rewrites(current_prompt="P", results=res, llm=FunctionModel(reply), n=1)
+    )
+    assert out == [("P2", "")]
+    assert "(40 of 500)" in seen[0] and seen[0].count("Case input=") == 40
+
+    with caplog.at_level(logging.WARNING, logger="fastaiagent.optimize"):
+        nothing = asyncio.run(
+            propose_prompt_rewrites(
+                current_prompt="P", results=res, llm=FunctionModel(lambda m: "no json"), n=1
+            )
+        )
+    assert nothing == [] and "unreadable reply" in caplog.text
+
+
+def test_an_audit_judge_named_like_a_scorer_is_refused():
+    """Judges are deduped by name, so a selection judge in scorers stood in for an
+    audit judge of the same default name: the audit judge made no calls."""
+    calls: list = []
+    agent = Agent(name="t", system_prompt="P", llm=FunctionModel(lambda m: calls.append(1) or "x"))
+    cfg = OptimizeConfig(audit_judge=_judge([], score=1))
+    with pytest.raises(ValueError, match="audit_judge is named 'llm_judge'"):
+        optimize(agent, _CASES, [_judge([], score=1)], config=cfg, persist=False)
+    assert calls == []  # refused before anything ran
+
+
+def test_a_distinct_audit_judge_scores_the_holdout():
+    audit_calls: list = []
+    agent = Agent(name="geo", system_prompt="P", llm=FunctionModel(lambda m: _city(_question(m))))
+    cfg = OptimizeConfig(
+        audit_judge=_judge(audit_calls, score=1, name="audit"), max_iterations=1, patience=1
+    )
+    report = optimize(
+        agent, _CASES, ["exact_match", _judge([], score=1)], config=cfg, persist=False
+    )
+    _train, _dev, holdout = _split(_CASES, cfg.splits, cfg.seed)
+    assert not report.accepted  # only the baseline is audited
+    assert len(audit_calls) == len(holdout)
+    assert "audit" in report.holdout_baseline.per_metric
+
+
+def test_an_audit_judge_that_also_selects_is_warned_about():
+    judge = _judge([], score=1)
+    agent = Agent(name="geo", system_prompt="P", llm=FunctionModel(lambda m: _city(_question(m))))
+    with pytest.warns(UserWarning, match="drives selection as well"):
+        optimize(
+            agent,
+            _CASES,
+            [judge],
+            config=OptimizeConfig(audit_judge=judge, max_iterations=1, patience=1),
+            persist=False,
+        )
+
+
+def test_max_judge_calls_is_a_hard_cap_that_counts_judges_in_scorers():
+    """Only a selection_judge was counted: a judge passed in scorers ran 33 times
+    under max_judge_calls=4."""
+    calls: list = []
+    agent = Agent(name="geo", system_prompt="You answer.", llm=FunctionModel(_verbose))
+    report = optimize(
+        agent,
+        _CASES,
+        ["exact_match", _judge(calls, score=0)],
+        config=OptimizeConfig(max_iterations=5, patience=5, max_judge_calls=28),
+        proposer_llm=_proposer("A", "B", "C"),
+        persist=False,
+    )
+    assert len(calls) <= 28
+    assert report.stopped_reason == "budget"
+    assert report.holdout_baseline is not None  # the guard still ran, inside the cap
+
+
+def test_max_eval_runs_is_a_hard_cap_that_keeps_the_holdout_guard(isolated_local_db):
+    agent = Agent(name="geo", system_prompt="You answer.", llm=FunctionModel(_verbose))
+    report = optimize(
+        agent,
+        _CASES,
+        ["exact_match"],
+        config=OptimizeConfig(max_iterations=5, patience=5, max_eval_runs=5),
+        proposer_llm=_proposer("A", "B", "C"),
+        persist=True,
+    )
+    names = _eval_run_names(isolated_local_db)
+    assert len(names) <= 5
+    assert any(n.endswith(":holdout") for n in names)
+    assert report.stopped_reason == "budget"
+
+
+def test_caps_too_small_for_the_holdout_guard_are_refused_up_front():
+    calls: list = []
+    agent = Agent(name="t", system_prompt="P", llm=FunctionModel(lambda m: calls.append(1) or "x"))
+    for cfg in (OptimizeConfig(max_eval_runs=1), OptimizeConfig(max_judge_calls=7)):
+        with pytest.raises(ValueError, match="holdout guard"):
+            optimize(agent, _CASES, ["exact_match", _judge([], score=1)], config=cfg)
+    assert calls == []
+
+
+def test_is_llm_scorer_matches_the_model_backed_scorers():
+    assert is_llm_scorer(LLMJudge()) and is_llm_scorer("faithfulness")
+    for name in ("exact_match", "regex_match", "not-a-scorer"):
+        assert not is_llm_scorer(name)
+
+
+def test_a_baseline_already_at_the_target_stops_at_once(isolated_local_db):
+    agent = Agent(name="geo", system_prompt="P", llm=FunctionModel(lambda m: _city(_question(m))))
+    report = optimize(
+        agent,
+        _CASES,
+        ["exact_match"],
+        config=OptimizeConfig(target_score=1.0),
+        proposer_llm=_proposer("unused"),
+        persist=True,
+    )
+    assert report.stopped_reason == "target_score"
+    assert [p.lever for p in report.trajectory] == ["baseline"]
+    assert sorted(n.rsplit(":", 1)[1] for n in _eval_run_names(isolated_local_db)) == [
+        "dev",
+        "holdout",
+    ]
+
+
+def test_train_is_scored_only_for_the_instructions_lever(isolated_local_db):
+    agent = Agent(name="geo", system_prompt="P", llm=FunctionModel(_verbose))
+    optimize(
+        agent,
+        _CASES,
+        ["exact_match"],
+        config=OptimizeConfig(levers=("fewshot",), max_iterations=1, patience=1),
+        persist=True,
+    )
+    assert not [n for n in _eval_run_names(isolated_local_db) if n.endswith(":train")]
+
+
+def test_fewshot_never_shows_the_agent_a_scored_answer(isolated_local_db):
+    """Favorite traces were added as demos without a check against dev/holdout,
+    so an eval set curated from those favorites handed the agent the answers it
+    was then scored on — and the holdout guard reported the leak as a win."""
+    from fastaiagent.eval.curate import curate_from_traces
+    from fastaiagent.trace import otel
+    from fastaiagent.ui.db import init_local_db
+
+    otel.reset()  # trace into the temp DB
+    try:
+        knows = FunctionModel(lambda m: _city(_question(m)))
+        prod = Agent(name="geo", system_prompt="P", llm=knows)
+        trace_ids = [prod.run(c["input"]).trace_id for c in _CASES[:12]]
+        db = init_local_db(isolated_local_db)
+        for tid in trace_ids:  # what the UI's star does
+            db.execute(
+                "INSERT INTO trace_favorites (trace_id, created_at) VALUES (?, ?)",
+                (tid, "2026-10-09T00:00:00+00:00"),
+            )
+        db.close()
+        cases = [dict(c) for c in curate_from_traces(filter="favorites", agent="geo")]
+        assert len(cases) == 12  # the documented trace→eval path: the eval set IS the favorites
+
+        shown: list[str] = []
+
+        def from_demos(messages):
+            """Knows only what a demo tells it."""
+            system = _system_text(messages)
+            shown.append(system)
+            q = _question(messages)
+            m = re.search(rf"Input: {re.escape(q)}\nResponse: (.*)", system)
+            return m.group(1) if m else "unknown"
+
+        cfg = OptimizeConfig(levers=("fewshot",), max_iterations=1, patience=1)
+        new = Agent(name="geo", system_prompt="Q", llm=FunctionModel(from_demos))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")  # 12 cases: the small-dataset warning
+            report = optimize(new, cases, ["exact_match"], config=cfg, persist=False)
+    finally:
+        otel.reset()
+
+    _train, dev, holdout = _split(cases, cfg.splits, cfg.seed)
+    scored = [c["input"] for c in dev + holdout]
+    leaked = [q for q in scored if any(f"Input: {q}\n" in s for s in shown)]
+    assert leaked == []
+    assert not report.improved  # nothing it was shown answers a scored question
+
+
+def test_a_candidate_is_the_users_agent_with_only_the_levers_changed():
+    """apply_candidate rebuilt a plain Agent: a subclass, the agent path label and
+    the registry-prompt link were lost even when the prompt did not change."""
+
+    class Custom(Agent):
+        def greet(self) -> str:
+            return "subclass"
+
+    base = Custom(
+        name="c",
+        system_prompt="P",
+        llm=TestModel(),
+        prompt_slug="reg-prompt",
+        agent_path_label="worker:geo",
+        agent_id="a-1",
+    )
+    same = apply_candidate(base, Candidate(fewshot_demos=[{"input": "a", "output": "b"}]))
+    assert type(same) is Custom and same.greet() == "subclass"
+    assert (same.prompt_slug, same._agent_path_label, same.agent_id) == (
+        "reg-prompt",
+        "worker:geo",
+        "a-1",
+    )
+    changed = apply_candidate(base, Candidate(system_prompt="P2"))
+    assert changed.system_prompt == "P2" and changed.prompt_slug is None
+    assert changed.run("hi").output == "ok"
+    changed.tools.append(object())  # type: ignore[arg-type]
+    assert (base.system_prompt, base.prompt_slug, base.tools, base.memory) == (
+        "P",
+        "reg-prompt",
+        [],
+        None,
+    )
+
+
+def test_optimize_refuses_what_is_not_an_agent():
+    from fastaiagent import Supervisor, Worker
+
+    sup = Supervisor(name="s", llm=TestModel(), workers=[Worker(agent=_agent(), role="w")])
+    with pytest.raises(TypeError, match="takes an Agent, got Supervisor"):
+        optimize(sup, _CASES, ["exact_match"], persist=False)  # type: ignore[arg-type]
+
+
+def _cli_files(tmp_path, agent_name: str = "bot") -> tuple[str, str]:
+    (tmp_path / "bot.py").write_text(
+        textwrap.dedent(
+            f"""
+            from fastaiagent import Agent
+            from fastaiagent.testing import FunctionModel
+
+            agent = Agent(name={agent_name!r}, system_prompt="P", llm=FunctionModel(lambda m: "x"))
+            """
+        )
+    )
+    dataset = tmp_path / "cases.jsonl"
+    dataset.write_text("\n".join(json.dumps(c) for c in _CASES) + "\n")
+    return f"{tmp_path / 'bot.py'}:agent", str(dataset)
+
+
+def test_cli_prints_the_summary_as_written_and_writes_the_winner(isolated_local_db, tmp_path):
+    """The summary went through Rich markup: every "[lever]" tag vanished, and a
+    "[/...]" in it raised MarkupError after the run, before --out was written."""
+    from typer.testing import CliRunner
+
+    from fastaiagent.cli.main import app
+
+    agent, dataset = _cli_files(tmp_path, agent_name="bot[/x]")
+    out = tmp_path / "winner.txt"
+    args = ["optimize", "--agent", agent, "--dataset", dataset, "--levers", "fewshot"]
+    result = CliRunner().invoke(
+        app, [*args, "--max-iterations", "1", "--out", str(out), "--no-persist"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "Optimization — bot[/x]" in result.output
+    assert "[fewshot]" in result.output
+    assert out.read_text() == "P"
+
+
+def test_cli_refuses_an_unknown_lever(isolated_local_db, tmp_path):
+    from typer.testing import CliRunner
+
+    from fastaiagent.cli.main import app
+
+    agent, dataset = _cli_files(tmp_path)
+    result = CliRunner().invoke(
+        app, ["optimize", "--agent", agent, "--dataset", dataset, "--levers", "nope"]
+    )
+    assert result.exit_code == 1
+    assert "supported levers" in result.output

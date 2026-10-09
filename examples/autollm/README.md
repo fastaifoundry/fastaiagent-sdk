@@ -12,15 +12,17 @@ These examples are fully runnable with a real OpenAI model — **no mocks**:
   `exact_match`; AutoLLM recovers a one-word-output format fix (`gpt-4o-mini`).
 - **`financials.py`** — a real extraction task: `gpt-4o` pulls values from financial
   tables but scores **0%** because it never applies the `"(in thousands)/(in millions)"`
-  scale; AutoLLM recovers the convention (**0% → 86% dev, 100% holdout**), graded by a
+  scale; AutoLLM recovers the convention (**0% → 86–100% dev** across our runs;
+  holdout 57–100% — it has 7 cases, so one answer moves it 14 points), graded by a
   custom `NumericMatch` scorer. Shows AutoLLM works on more than classification, and
   that even a strong model needs a convention your data encodes. *(Requires ≥ 1.38.0.)*
 - **`jaarrekening.py`** — the realistic one: bank-compliance extraction of ~15
   attributes (figures + covenant ratios) from **three real Dutch annual reports**
   (Newtone, NS, Enexis — source URLs in the file). A large, professional baseline
-  prompt on `gpt-5.4-mini` scores **~0.30**; AutoLLM recovers the *transferable*
+  prompt on `gpt-5.4-mini` scores **0.30–0.50**; AutoLLM recovers the *transferable*
   conventions — unit scaling (`in miljoenen` → ×1,000,000), Dutch number format,
-  sign, and each covenant formula/rounding — reaching **1.00 dev / 1.00 holdout**.
+  sign, and each covenant formula/rounding — reaching **0.92–1.00 dev and
+  0.93–1.00 holdout** across our runs.
   Uses **three companies on purpose**: a single doc lets the optimizer *memorise*
   that company's answers (a held-out split from the same doc can't catch it); across
   companies the only way to win is a prompt that generalises. Excerpts are compact
