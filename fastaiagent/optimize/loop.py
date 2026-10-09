@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import logging
 import random
+import warnings
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from fastaiagent._internal.async_utils import run_sync
@@ -24,13 +26,15 @@ from fastaiagent.optimize.candidate import (
     _FactSource,
     _resolve_memory_source,
     apply_candidate,
+    is_llm_scorer,
+    scorer_name,
     scorer_present,
 )
 from fastaiagent.optimize.config import OptimizeConfig
 from fastaiagent.optimize.proposers import (
+    _arequest_rewrites,
     bootstrap_demos,
     propose_fact_subsets,
-    propose_prompt_rewrites,
 )
 from fastaiagent.optimize.report import OptimizationReport, TrajectoryPoint
 
@@ -110,6 +114,73 @@ def _candidate_for(
     )
 
 
+def _scorers_for(base: list[Any], judge: Scorer | None) -> list[Any]:
+    """The scorers one evaluation runs: the caller's, plus ``judge`` unless an
+    equivalent is already there (CONTRACT 3); ``exact_match`` when there are none."""
+    run = list(base)
+    if judge is not None and not scorer_present(run, judge):
+        run.append(judge)
+    return run or ["exact_match"]
+
+
+@dataclass
+class _Budget:
+    """``max_eval_runs`` / ``max_judge_calls``, kept as hard caps.
+
+    An evaluation starts only when it fits together with what the holdout guard
+    still needs (``reserve_*``), so the guard always runs and the totals never pass
+    a cap. They were checked only between candidates, with the train split, the
+    few-shot teacher pass and the guard all outside them, and only a
+    ``selection_judge`` counted as a judge.
+    """
+
+    max_runs: int | None
+    max_calls: int | None
+    runs: int = 0
+    calls: int = 0
+    reserve_runs: int = 0
+    reserve_calls: int = 0
+
+    def fits(self, runs: int, calls: int, *, reserve: bool = True) -> bool:
+        need_runs = runs + (self.reserve_runs if reserve else 0)
+        need_calls = calls + (self.reserve_calls if reserve else 0)
+        if self.max_runs is not None and self.runs + need_runs > self.max_runs:
+            return False
+        if self.max_calls is not None and self.calls + need_calls > self.max_calls:
+            return False
+        return True
+
+    def spend(self, runs: int, calls: int) -> None:
+        self.runs += runs
+        self.calls += calls
+
+
+def _check_audit_judge(audit: Scorer | None, base_scorers: list[Any]) -> None:
+    """The holdout guard must score with the audit judge that was asked for.
+
+    Judges are deduped by name (CONTRACT 3), so a different scorer of the same
+    name in ``scorers`` stood in for the audit judge without a word — the guard
+    then audited with the selection judge it was meant to check.
+    """
+    if audit is None:
+        return
+    name = scorer_name(audit)
+    for s in base_scorers:
+        if s is audit:
+            warnings.warn(
+                "audit_judge is also in scorers, so it drives selection as well as the "
+                "holdout audit. Pass a distinct audit_judge for a trustworthy guard.",
+                stacklevel=3,
+            )
+            return
+        if name is not None and scorer_name(s) == name:
+            raise ValueError(
+                f"audit_judge is named {name!r}, like a different scorer in scorers, so "
+                "the holdout guard would score with that scorer instead of the audit "
+                "judge. Give the audit judge its own name, e.g. name='audit'."
+            )
+
+
 async def aoptimize(
     agent: Agent,
     dataset: Dataset | str | list[dict[str, Any]],
@@ -128,10 +199,18 @@ async def aoptimize(
     stop on patience/budget/target, then a holdout guard reverts the winner if it
     regressed on selection-blind data.
     """
+    from fastaiagent.agent.agent import Agent
+
+    if not isinstance(agent, Agent):
+        raise TypeError(
+            f"optimize() takes an Agent, got {type(agent).__name__}. To tune a "
+            "Supervisor, Swarm or Chain, optimize the Agent behind each step."
+        )
     cfg = config or OptimizeConfig()
     base_scorers: list[Any] = list(scorers or [])
     selection_judge = cfg.selection_judge
     audit_judge = cfg.resolve_audit_judge()
+    _check_audit_judge(cfg.audit_judge, base_scorers)
 
     # The instructions lever rewrites a static string prompt only.
     if "instructions" in cfg.levers and callable(agent.system_prompt):
@@ -153,8 +232,6 @@ async def aoptimize(
             f"optimize needs at least 3 cases to form train/dev/holdout splits; got {len(items)}."
         )
     if len(items) < 15:
-        import warnings
-
         warnings.warn(
             f"optimize: only {len(items)} cases — splits will be small and scores noisy. "
             "~15+ cases recommended (or just run harden() once).",
@@ -176,58 +253,74 @@ async def aoptimize(
     # scope and project (used by the lever + the skip check).
     mem_source = _resolve_memory_source(agent) if "memory" in cfg.levers else _FactSource("", "")
 
-    eval_runs = 0
-    judge_calls = 0
+    def judge_cost(n_cases: int, judge: Scorer | None) -> int:
+        """Judge calls one evaluation makes: one per case per model-backed scorer."""
+        return n_cases * sum(1 for s in _scorers_for(base_scorers, judge) if is_llm_scorer(s))
+
+    def split_cost(split: str, judge: Scorer | None) -> int:
+        return judge_cost(len(splits_by_name[split]), judge)
+
+    # The holdout guard scores the baseline and, once one is accepted, the winner.
+    # The loop reserves both, so the guard always runs inside the caps.
+    budget = _Budget(cfg.max_eval_runs, cfg.max_judge_calls)
+    holdout_calls = split_cost("holdout", audit_judge)
+    floor_calls = split_cost("dev", selection_judge) + holdout_calls
+    if not budget.fits(2, floor_calls, reserve=False):
+        raise ValueError(
+            f"max_eval_runs={cfg.max_eval_runs}, max_judge_calls={cfg.max_judge_calls} "
+            "can't cover the baseline and the holdout guard, which need 2 evaluations "
+            f"and {floor_calls} judge calls on this dataset. Raise the caps."
+        )
+    budget.reserve_runs, budget.reserve_calls = 2, 2 * holdout_calls
 
     async def score_candidate(
         candidate: Candidate, split: str, *, judge: Scorer | None
     ) -> CandidateScore:
         # CONTRACT 1: the loop calls only this; CONTRACT 3: judge composed + deduped.
-        nonlocal eval_runs, judge_calls
         from fastaiagent.eval.dataset import Dataset
         from fastaiagent.eval.evaluate import aevaluate
 
         split_items = splits_by_name[split]
-        run_scorers = list(base_scorers)
-        if judge is not None and not scorer_present(run_scorers, judge):
-            run_scorers.append(judge)
-        if not run_scorers:
-            run_scorers = ["exact_match"]
         cand_agent = apply_candidate(
             agent, candidate, allow_writable_memory=cfg.allow_writable_memory
         )
         results = await aevaluate(
             cand_agent.arun,
             Dataset.from_list(split_items),
-            run_scorers,
+            _scorers_for(base_scorers, judge),
             persist=persist,
             run_name=f"{run_name or 'optimize'}:{candidate.id[:8]}:{split}",
             agent_name=agent.name,
         )
-        eval_runs += 1
-        if judge is not None:
-            judge_calls += len(split_items)
+        budget.spend(1, split_cost(split, judge))
         return CandidateScore.from_eval(
             candidate.id, split, results, primary_metric=cfg.primary_metric
         )
 
-    def _budget_exhausted() -> bool:
-        if cfg.max_eval_runs is not None and eval_runs >= cfg.max_eval_runs:
-            return True
-        if cfg.max_judge_calls is not None and judge_calls >= cfg.max_judge_calls:
-            return True
-        return False
+    def before_teacher_eval(n_cases: int) -> bool:
+        """The few-shot teacher pass is an evaluation too: it runs inside the caps."""
+        calls = judge_cost(n_cases, selection_judge)
+        if not budget.fits(1, calls):
+            return False
+        budget.spend(1, calls)
+        return True
 
-    async def _propose(lever: str, best: Candidate, best_train: CandidateScore) -> list[Candidate]:
-        """Build candidate variants for the active lever, on top of ``best``."""
+    # No few-shot demo may carry an input the candidates are scored on.
+    scored_inputs = [it.get("input") for it in dev + holdout]
+
+    async def _propose(
+        lever: str, best: Candidate, best_train: CandidateScore | None
+    ) -> tuple[list[Candidate], str | None]:
+        """Candidate variants for the active lever, on top of ``best``, and the
+        proposer's error when it could not run."""
         if lever == "instructions":
             effective = (
                 best.system_prompt if best.system_prompt is not None else agent.system_prompt
             )
             # Callable prompts are refused up front when the instructions lever is
             # active, so ``effective`` is always a concrete string here.
-            assert isinstance(effective, str)
-            rewrites = await propose_prompt_rewrites(
+            assert isinstance(effective, str) and best_train is not None
+            rewrites, error = await _arequest_rewrites(
                 current_prompt=effective,
                 results=best_train.results,
                 llm=proposer,
@@ -237,7 +330,7 @@ async def aoptimize(
             return [
                 _candidate_for(best, system_prompt=p, origin="prompt:rewrite", rationale=r)
                 for p, r in rewrites
-            ]
+            ], error
         if lever == "fewshot":
             ks = sorted({k for k in _FEWSHOT_KS})[: cfg.candidates_per_iteration]
             best_agent = apply_candidate(
@@ -249,6 +342,8 @@ async def aoptimize(
                 scorers=base_scorers,
                 judge=selection_judge,
                 k=max(ks),
+                exclude_inputs=scored_inputs,
+                before_teacher_eval=before_teacher_eval,
             )
             cands: list[Candidate] = []
             seen_sizes: set[int] = set()
@@ -265,7 +360,7 @@ async def aoptimize(
                         rationale=f"few-shot k={kk}",
                     )
                 )
-            return cands
+            return cands, None
         if lever == "memory":
             subsets = propose_fact_subsets(
                 scope=mem_source.scope,
@@ -279,8 +374,8 @@ async def aoptimize(
                     best, fact_ids=ids, origin="memory:subset", rationale=f"facts k={len(ids)}"
                 )
                 for ids in subsets
-            ]
-        return []
+            ], None
+        return [], None
 
     # ── Baseline ──────────────────────────────────────────────────────────────
     # NOTE (deviation from spec §4): baseline-on-dev uses the SELECTION judge so the
@@ -299,14 +394,16 @@ async def aoptimize(
             True,
             "baseline",
             eval_run_id=baseline_dev.eval_run_id,
+            errored=baseline_dev.errored,
         )
     ]
     accepted: list[str] = []
 
-    # Train results for the current best feed the instructions proposer; recomputed
-    # whenever best changes (any accepted lever).
-    best_train = await score_candidate(best, "train", judge=selection_judge)
-    train_scored_for = best.id
+    # Train results for the current best feed the instructions proposer. Scored
+    # when that lever first needs them and again whenever best changes — never for
+    # a run that doesn't move the instructions lever.
+    best_train: CandidateScore | None = None
+    train_scored_for: str | None = None
 
     active_levers = list(cfg.levers)
 
@@ -342,20 +439,50 @@ async def aoptimize(
     no_improve = 0
     stopped_reason = ""
     iteration = 0
+    # Consecutive rounds whose proposer could not run, and every such error.
+    failed_streak = 0
+    proposer_errors: list[str] = []
 
-    while active_levers and iteration < cfg.max_iterations:
+    # A baseline already at the target has nothing to climb to.
+    if cfg.target_score is not None and baseline_dev.score >= cfg.target_score:
+        stopped_reason = "target_score"
+
+    while not stopped_reason and active_levers and iteration < cfg.max_iterations:
         iteration += 1
-        if _budget_exhausted():
-            stopped_reason = "budget"
-            break
-
         lever = active_levers[(iteration - 1) % len(active_levers)]
 
-        if lever == "instructions" and best.id != train_scored_for:
+        # Start a round only when its first candidate (and, for the instructions
+        # lever, a train re-score) fits the budget.
+        need_train = lever == "instructions" and best.id != train_scored_for
+        round_calls = split_cost("dev", selection_judge)
+        if need_train:
+            round_calls += split_cost("train", selection_judge)
+        if not budget.fits(2 if need_train else 1, round_calls):
+            stopped_reason = "budget"
+            break
+        if need_train:
             best_train = await score_candidate(best, "train", judge=selection_judge)
             train_scored_for = best.id
 
-        candidates = await _propose(lever, best, best_train)
+        candidates, error = await _propose(lever, best, best_train)
+        if error:
+            # A proposer that could not run is not "no improvement": say so.
+            failed_streak += 1
+            proposer_errors.append(error)
+            logger.warning("optimize: the prompt proposer failed: %s", error)
+            trajectory.append(
+                TrajectoryPoint(
+                    iteration,
+                    lever,
+                    "",
+                    best_dev.score,
+                    accepted=False,
+                    rationale=f"proposer failed: {error}",
+                    skipped=True,
+                )
+            )
+        else:
+            failed_streak = 0
         if not candidates:
             no_improve += 1
             if no_improve >= cfg.patience:
@@ -365,7 +492,7 @@ async def aoptimize(
 
         scored: list[tuple[Candidate, CandidateScore]] = []
         for cand in candidates:
-            if _budget_exhausted():
+            if not budget.fits(1, split_cost("dev", selection_judge)):
                 break
             cs = await score_candidate(cand, "dev", judge=selection_judge)
             scored.append((cand, cs))
@@ -378,10 +505,11 @@ async def aoptimize(
                     False,
                     cand.rationale,
                     eval_run_id=cs.eval_run_id,
+                    errored=cs.errored,
                 )
             )
 
-        if not scored:
+        if not scored:  # the few-shot teacher pass spent what the round had
             stopped_reason = "budget"
             break
 
@@ -406,6 +534,10 @@ async def aoptimize(
 
     if not stopped_reason:
         stopped_reason = "max_iterations" if active_levers else "no_active_levers"
+    # Every round since the last improvement failed to propose: the proposer, not
+    # the search, is why the run ended.
+    if stopped_reason in ("patience", "max_iterations") and 0 < failed_streak == no_improve:
+        stopped_reason = "proposer_failed"
 
     # ── Holdout regression guard (selection-blind, audit judge) ─────────────────
     holdout_baseline = await score_candidate(base_candidate, "holdout", judge=audit_judge)
@@ -433,6 +565,7 @@ async def aoptimize(
         seed=cfg.seed,
         levers=tuple(cfg.levers),
         run_name=run_name,
+        proposer_errors=proposer_errors,
     )
 
     # Persist the run record (gated by the same flag that gates per-candidate

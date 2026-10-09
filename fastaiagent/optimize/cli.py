@@ -45,6 +45,16 @@ def optimize_cmd(
     judge: str = typer.Option(
         None, "--judge", help="Add an LLM judge (criteria string) as the selection scorer"
     ),
+    audit_judge: str = typer.Option(
+        None,
+        "--audit-judge",
+        help="A distinct LLM judge (criteria string) for the holdout guard only",
+    ),
+    levers: str = typer.Option(
+        "instructions",
+        "--levers",
+        help="Comma-separated levers to move: instructions, fewshot, memory",
+    ),
     proposer_model: str = typer.Option(
         None, "--proposer-model", help="Model id for the prompt proposer (default: env/config)"
     ),
@@ -53,7 +63,8 @@ def optimize_cmd(
         False, "--no-persist", help="Don't write per-candidate evals to local.db"
     ),
 ) -> None:
-    """Optimize an agent's system prompt against a dataset (prompt-only, P1)."""
+    """Optimize an agent against a dataset: its system prompt, and optionally its
+    few-shot examples and learned facts (``--levers``)."""
     if ctx.invoked_subcommand is not None:
         return
 
@@ -63,7 +74,6 @@ def optimize_cmd(
 
     target = _resolve_target(agent)
     scorer_list: list[Any] = [s.strip() for s in scorers.split(",") if s.strip()]
-    selection_judge = LLMJudge(criteria=judge) if judge else None
 
     proposer_llm = None
     if proposer_model:
@@ -71,15 +81,17 @@ def optimize_cmd(
 
         proposer_llm = LLMClient(model=proposer_model)
 
-    cfg = OptimizeConfig(
-        max_iterations=max_iterations,
-        patience=patience,
-        candidates_per_iteration=candidates,
-        seed=seed,
-        primary_metric=primary_metric,
-        selection_judge=selection_judge,
-    )
     try:
+        cfg = OptimizeConfig(
+            levers=tuple(lv.strip() for lv in levers.split(",") if lv.strip()),
+            max_iterations=max_iterations,
+            patience=patience,
+            candidates_per_iteration=candidates,
+            seed=seed,
+            primary_metric=primary_metric,
+            selection_judge=LLMJudge(criteria=judge) if judge else None,
+            audit_judge=LLMJudge(criteria=audit_judge, name="audit_judge") if audit_judge else None,
+        )
         report = run_optimize(
             target,
             dataset,
@@ -88,12 +100,16 @@ def optimize_cmd(
             proposer_llm=proposer_llm,
             persist=not no_persist,
         )
-    except ValueError as exc:
-        console.print(f"[red]{exc}[/red]")
+    except (ValueError, TypeError) as exc:
+        console.print(str(exc), style="red", markup=False)
         raise typer.Exit(1) from exc
 
-    console.print(report.summary())
+    # The winning prompt is written before anything is printed, and nothing is
+    # printed as Rich markup: the summary holds model-written rationales and
+    # "[lever]" tags, which markup ate — or raised on, after the paid run.
     if out:
         winning = report.best_candidate.system_prompt or target.system_prompt
         Path(out).write_text(str(winning))
-        console.print(f"[green]Wrote winning prompt → {out}[/green]")
+    console.print(report.summary(), markup=False, highlight=False)
+    if out:
+        console.print(f"Wrote winning prompt → {out}", style="green", markup=False)

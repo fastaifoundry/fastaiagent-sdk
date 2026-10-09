@@ -29,6 +29,9 @@ class TrajectoryPoint:
     # The eval_runs.run_id this candidate's dev eval produced (when persisted),
     # so the UI can drill from a trajectory row into the existing eval rows.
     eval_run_id: str | None = None
+    # Dev cases that raised instead of answering; they count as failures in
+    # ``dev_score``.
+    errored: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -40,6 +43,7 @@ class TrajectoryPoint:
             "rationale": self.rationale,
             "skipped": self.skipped,
             "eval_run_id": self.eval_run_id,
+            "errored": self.errored,
         }
 
 
@@ -66,6 +70,9 @@ class OptimizationReport:
     seed: int = 0
     levers: tuple[str, ...] = ()
     run_name: str | None = None
+    # Each time the prompt proposer could not run or its reply could not be read.
+    # ``stopped_reason == "proposer_failed"`` when that is why the run ended.
+    proposer_errors: list[str] = field(default_factory=list)
 
     @property
     def improved(self) -> bool:
@@ -82,20 +89,27 @@ class OptimizationReport:
         return apply_candidate(agent, self.best_candidate, allow_writable_memory=True)
 
     def summary(self) -> str:
+        def errored(n: int) -> str:
+            return f"  [{n} errored]" if n else ""
+
         lines = [
             f"Optimization — {self.agent_name} (stopped: {self.stopped_reason})",
             "=" * 60,
-            f"baseline   dev={self.baseline.score:.3f}",
+            f"baseline   dev={self.baseline.score:.3f}{errored(self.baseline.errored)}",
         ]
         for p in self.trajectory:
             if p.skipped:
-                lines.append(f" [{p.lever}] SKIPPED — {p.rationale}")
+                where = f" iter {p.iteration}" if p.iteration else ""
+                lines.append(f"{where} [{p.lever}] SKIPPED — {p.rationale}")
                 continue
             if p.iteration == 0:
                 continue
             delta = p.dev_score - self.baseline.score
             tag = "ACCEPT" if p.accepted else "reject"
-            line = f" iter {p.iteration} [{p.lever}]  dev={p.dev_score:.3f} ({delta:+.3f})  {tag}"
+            line = (
+                f" iter {p.iteration} [{p.lever}]  dev={p.dev_score:.3f} ({delta:+.3f})  "
+                f"{tag}{errored(p.errored)}"
+            )
             if p.accepted and p.rationale:
                 line += f"  — {p.rationale[:80]}"
             lines.append(line)
@@ -113,6 +127,15 @@ class OptimizationReport:
                 f"holdout     best={self.holdout_best.score:.3f} "
                 f"(baseline={self.holdout_baseline.score:.3f}, Δ{hd:+.3f}) → {verdict}"
             )
+            if self.holdout_best.errored or self.holdout_baseline.errored:
+                lines.append(
+                    f"            errored on holdout: baseline {self.holdout_baseline.errored}"
+                    f", best {self.holdout_best.errored} (counted as failures)"
+                )
+        if self.proposer_errors:
+            lines.append(
+                f"proposer failed {len(self.proposer_errors)}x — {self.proposer_errors[-1]}"
+            )
         return "\n".join(lines)
 
     def to_dict(self) -> dict[str, Any]:
@@ -129,6 +152,7 @@ class OptimizationReport:
             "holdout_baseline": self.holdout_baseline.score if self.holdout_baseline else None,
             "holdout_best": self.holdout_best.score if self.holdout_best else None,
             "run_id": self.run_id,
+            "proposer_errors": list(self.proposer_errors),
         }
 
     def persist_local(
@@ -194,7 +218,9 @@ class OptimizationReport:
                     len(self.trajectory),
                     timestamp,
                     timestamp,
-                    json.dumps({}),
+                    json.dumps(
+                        {"proposer_errors": self.proposer_errors} if self.proposer_errors else {}
+                    ),
                     pid,
                 ),
             )

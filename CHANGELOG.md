@@ -5,6 +5,104 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.85.0] - 2026-10-09 — AutoLLM's improvement is one you can trust
+
+Fixes from a live audit of AutoLLM (`fastaiagent.optimize`). Every finding was
+reproduced with a real model, real traces and a real `local.db`. Two of them made
+a reported improvement false. No wire change and no schema change.
+
+### Fixed
+
+- ⚠ **Few-shot demos no longer leak dev or holdout answers.** The few-shot lever
+  also takes demos from favorite traces, and never checked them against the scored
+  splits. An eval set curated from those same favorites — the documented
+  trace→eval path — handed the agent the answers it was then scored on. In the
+  audit, an agent that could not know any answer "won" +0.333 on holdout, and the
+  gain was exactly the leaked case. No demo now carries a dev or holdout input.
+- ⚠ **A candidate can no longer win by crashing on its hard cases.** A case that
+  raised — a guardrail block, `MaxIterationsError`, a provider error — was left
+  out of the score. In the audit, a prompt that answered 3 of 6 cases (3 were
+  blocked) scored **1.000**, and one that answered all 6 (4 correctly) scored
+  **0.667**. Errored cases now count as failures in dev and holdout scores.
+- **A proposer that can't run is reported.** An unknown model, an auth error, or a
+  reply that isn't the requested JSON used to become "no proposals", and the run
+  ended "stopped: patience … winner kept" with nothing logged.
+- **A proposer reply that is a bare JSON list no longer crashes the run.** It
+  raised `AttributeError` out of `optimize()` and nothing was saved; the list is
+  now read.
+- **The proposer sees at most 40 failing cases.** Every failing train case went
+  into one request: 2,000 cases made a ~335k-token prompt that failed every round.
+- **The audit judge can no longer be swapped out silently.** Judges are deduped
+  by name, so a selection judge in `scorers` stood in for an `audit_judge` of the
+  same default name (`llm_judge`, `g_eval`). The audit judge made no calls.
+- **`max_eval_runs` and `max_judge_calls` are hard caps.** `max_judge_calls`
+  counted only a `selection_judge`: a judge passed in `scorers` made 33 calls
+  under a cap of 4. The train split, the few-shot teacher pass and the holdout
+  guard were outside both caps, and `max_eval_runs=2` ran 3 evaluations.
+- **The CLI prints the summary as written.** Rich markup removed every `[lever]`
+  tag. A `[/…]` in a model-written rationale or an agent name raised
+  `MarkupError` after the paid run, before `--out` was written.
+- **A candidate is your agent with only the levers changed.** `apply_candidate` /
+  `report.apply_to()` rebuilt a plain `Agent`. That lost a subclass, the agent
+  path label and the `prompt_slug`, even when the prompt was unchanged.
+- **A baseline already at `target_score` stops at once**, with `target_score`
+  rather than `patience`. Train is scored only when the instructions lever needs
+  it.
+
+### Behaviour changes
+
+- Dev and holdout scores are lower when cases error. `CandidateScore.n` counts
+  every case in the split, and a new `CandidateScore.errored` says how many
+  errored. A flaky provider now costs a candidate points instead of winning it the
+  round.
+- New `stopped_reason` value `proposer_failed`, set when every round since the
+  last improvement failed to propose. New `OptimizationReport.proposer_errors`,
+  also persisted in `optimize_runs.metadata`. Failed rounds appear in the
+  trajectory as skipped steps.
+- `optimize()` raises `ValueError` before anything runs in two cases:
+  - an `audit_judge` shares its name with a different scorer in `scorers`;
+  - `max_eval_runs` / `max_judge_calls` are too small for the baseline plus the
+    holdout guard.
+  It warns when the same judge object is both in `scorers` and the
+  `audit_judge`.
+- `max_judge_calls` counts every model-backed scorer: `LLMJudge`/`GEval`,
+  `DecisionJudge`, and the built-in RAG, agent, session and safety metrics. Runs
+  that went over a cap before now stop at it.
+- `optimize()` raises `TypeError` for anything that isn't an `Agent` (a
+  `Supervisor` failed with `AttributeError: … no attribute 'memory'`).
+- A changed prompt drops the candidate's `prompt_slug`, since the registry prompt
+  it names is no longer the prompt the agent runs.
+
+### Added
+
+- CLI: `--levers` (e.g. `instructions,fewshot`) and `--audit-judge`.
+- `TrajectoryPoint.errored`. The summary shows `[N errored]` per candidate,
+  errored holdout counts, and proposer failures.
+
+### Docs and examples
+
+- `evaluation/optimization.md`:
+  - new sections "When a case errors" and "When the proposer fails";
+  - hard caps and what they count;
+  - the audit judge's naming rule;
+  - the CLI snippet runs as pasted;
+  - the UI section is called **AutoLLM**;
+  - the instructions lever *raises* for a callable prompt (it said "skipped").
+- `examples/autollm/README.md` gives the range of results across runs instead of
+  one run's numbers presented as the outcome.
+
+### Tests
+
+- 28 deterministic cases in `tests/test_optimize.py` covering every finding. They run
+  the real `optimize()` with `FunctionModel` agents, judges and proposers, real
+  guardrails and real favorite traces. 18 of them fail on 1.84.0; the rest pin
+  new helpers or a control.
+- 4 live cases in `tests/e2e/test_optimize_e2e.py` on `gpt-4o-mini`:
+  - a guardrail-blocked case counts against the candidate;
+  - a missing proposer model is reported;
+  - a judge in `scorers` stays under `max_judge_calls`;
+  - favorites curated into the eval set never leak into the holdout.
+
 ## [1.84.0] - 2026-10-09 — OpenAI's Decisions API, end to end
 
 Support for OpenAI's Decisions API (`POST /v1/decisions`, public beta since

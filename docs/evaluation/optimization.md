@@ -29,9 +29,11 @@ data, end to end in one SDK. A runnable, real-LLM walkthrough lives in
     ([curation](curation.md)), AutoLLM optimizes only on **agent-quality** failures,
     not infrastructure failures: a run that infra-errored (endpoint 500, timeout)
     and produced no usable output is dropped, not curated as a gold target, and a
-    candidate run that infra-fails *during* scoring is recorded as errored rather
-    than scored as a spurious miss. So the optimizer never chases a fault the agent
-    can't fix. Runnable walkthrough: `examples/80_curate_from_traces.py`.
+    case that errors *during* scoring is never shown to the prompt proposer as a
+    failure to fix. So the optimizer never chases a fault the agent can't fix — but
+    the errored case still counts against the candidate's score (see
+    [When a case errors](#when-a-case-errors)). Runnable walkthrough:
+    `examples/80_curate_from_traces.py`.
 
 ## Quickstart
 
@@ -58,12 +60,12 @@ a minutes-to-hours operation — prefer async in apps).
 
 ```
 split (seeded) → train / dev / holdout
-baseline scored on dev
+baseline scored on dev            (already at target_score → stop here)
 repeat (cycling active levers: instructions → fewshot → memory):
   propose N candidate variants of the active lever, on top of the current best
   score each on dev
   keep the best if it beats the current best by ≥ min_delta   (else → patience)
-  stop on: patience | max_iterations | target_score | budget
+  stop on: patience | max_iterations | target_score | budget | proposer_failed
 holdout guard: re-score the winner on the held-out split; revert to baseline
                if it regressed beyond holdout_regression_tol
 ```
@@ -98,13 +100,17 @@ was tuned against. By construction the winner is **never worse than baseline**.
 
 - **`instructions`** — rewrites the system prompt. The proposer reuses the
   failure analysis behind `harden()` but lives in `fastaiagent.optimize`;
-  `harden()` and the rest of the `eval` API are unchanged. (Skipped for agents
-  with a callable/dynamic `system_prompt`.)
+  `harden()` and the rest of the `eval` API are unchanged. The proposer is shown
+  up to 40 failing train cases per round. `optimize()` raises `ValueError` for an
+  agent with a callable (dynamic) `system_prompt` while this lever is active —
+  leave `"instructions"` out of `levers` for such an agent.
 - **`fewshot`** — bootstraps few-shot examples (DSPy `BootstrapFewShot`): gold
   `(input, expected_output)` pairs from the **train** split (plus
   `curate_from_traces(filter="favorites")`), filling any gap by running the agent
-  and metric-filtering its passing outputs. Demos are injected via a `FewShotBlock`
-  and never drawn from dev/holdout (no leakage).
+  and metric-filtering its passing outputs. Demos are injected via a `FewShotBlock`.
+  **No demo ever carries a dev or holdout input** — a favorite trace whose input is
+  a scored case is skipped, so an eval set curated from your favorites can't hand
+  the agent the answers it is scored on.
 - **`memory`** — tunes *which subset* of the agent's learned facts to inject,
   via a confidence/recency ablation. It reads the facts **where the agent's
   memory reads them**: a `Memory`'s `location` and `project_id` (its global
@@ -193,8 +199,8 @@ fa.OptimizeConfig(
     holdout_regression_tol=0.0, # revert if holdout drops more than this
     seed=0,                     # deterministic split
     primary_metric=None,        # scorer name to select on (default: overall pass-rate)
-    max_eval_runs=None,         # cost governor: cap candidate evaluations
-    max_judge_calls=None,       # cost governor: cap judge invocations
+    max_eval_runs=None,         # hard cap on evaluation passes (see Cost)
+    max_judge_calls=None,       # hard cap on model-backed scorer calls (see Cost)
     selection_judge=None,       # an LLM judge used *inside* the loop
     audit_judge=None,           # an LLM judge used *only* on the holdout guard
     levers=("instructions",),   # default: prompt only — add "fewshot" and/or "memory"
@@ -224,6 +230,14 @@ warning** — fine for a first pass, not for a number you'll quote. Judges are
 ordinary `Scorer`s; they're composed into the scorers list (and deduped, so a
 judge you already pass in `scorers` isn't billed twice).
 
+Because judges are deduped by **name**, an `audit_judge` must not share its name
+with a different scorer in `scorers` — results are keyed by name, so the holdout
+would be scored by that other scorer instead. `optimize()` raises `ValueError` up
+front when they clash: `LLMJudge` defaults to `"llm_judge"` and `GEval` to
+`"g_eval"`, so give the audit judge its own `name=`, as above. Passing the *same*
+judge object in `scorers` and as `audit_judge` makes it drive selection as well, and
+`optimize()` warns.
+
 ## Reading the report
 
 `OptimizationReport` mirrors `HardeningReport` (`.summary()`, `.to_dict()`) and
@@ -241,19 +255,64 @@ holdout     best=0.750 (baseline=0.600, Δ+0.150) → winner kept
 ```
 
 - `report.best_candidate.system_prompt` — the winning prompt.
-- `report.apply_to(agent)` — a fresh agent with it (the original is never mutated).
-- `report.trajectory` — every candidate scored, with lever attribution.
+- `report.apply_to(agent)` — a copy of your agent with the winning levers applied:
+  same class, tools, guardrails, middleware and agent path. The original is never
+  mutated. A changed prompt drops `prompt_slug`, since the registry prompt it names
+  is no longer what the agent runs.
+- `report.trajectory` — every candidate scored, with lever attribution and the
+  number of dev cases that `errored`.
 - `report.improved` — did the winner beat baseline and survive the holdout guard?
+- `report.stopped_reason` — `patience`, `max_iterations`, `target_score`, `budget`,
+  `proposer_failed` or `no_active_levers`, with `+reverted` appended when the
+  holdout guard reverted the winner.
+- `report.proposer_errors` — each time the prompt proposer could not run or its
+  reply could not be read.
+
+### When a case errors
+
+A case that raises instead of answering — a guardrail block, `MaxIterationsError`,
+a provider error — **counts as a failure** in the candidate's dev and holdout
+scores (score 0 on every metric). `evaluate()` leaves such a case out of its own
+pass rate, but selecting on that would let a candidate that crashes on its hard
+cases outscore one that answers them. The summary shows the count:
+
+```
+ iter 1 [instructions]  dev=0.500 (+0.500)  reject  [2 errored]
+```
+
+An errored case is still never shown to the prompt proposer as a failure to fix.
+A flaky provider therefore costs a candidate points rather than handing it a win:
+use a model client with retries for long runs.
+
+### When the proposer fails
+
+If the prompt proposer can't run — an unknown model, an auth error, a reply that
+isn't the requested JSON — the round is recorded as a skipped step, the error is
+logged as a warning and kept in `report.proposer_errors`, and a run that ends
+because of it stops with `proposer_failed`, not `patience`:
+
+```
+Optimization — capitals (stopped: proposer_failed)
+============================================================
+baseline   dev=0.000
+ iter 1 [instructions] SKIPPED — proposer failed: LLMProviderError: OpenAI API error 404 …
+ iter 2 [instructions] SKIPPED — proposer failed: LLMProviderError: OpenAI API error 404 …
+------------------------------------------------------------
+best        dev=0.000
+holdout     best=0.000 (baseline=0.000, Δ+0.000) → winner kept
+proposer failed 2x — LLMProviderError: OpenAI API error 404 …
+```
 
 ## Persistence & the UI
 
 When `optimize(..., persist=True)` (the default), the run is recorded to the
-local `local.db` and surfaces in `fastaiagent ui` under **Optimize Runs** — no
+local `local.db` and surfaces in `fastaiagent ui` under **AutoLLM** — no
 extra wiring. Two tables hold the record:
 
 - **`optimize_runs`** — one parent row per run: baseline/best dev scores, the
   holdout-guard scores, `stopped_reason`, `reverted`, the `seed`, the active
-  `levers`, and the winning `Candidate` as JSON (for reproducibility).
+  `levers`, the winning `Candidate` as JSON (for reproducibility), and any
+  `proposer_errors` in `metadata`.
 - **`optimize_iterations`** — one row per trajectory point: `iteration`, `lever`,
   `dev_score`, `accepted`/`skipped`, `rationale`, and an `eval_run_id`.
 
@@ -263,7 +322,7 @@ a real `aevaluate(persist=…)` call, so it already lands in `eval_runs` /
 eval run — optimize stores **no duplicate eval data**. In the UI you can follow:
 
 ```
-Optimize Runs → a run → trajectory row → its eval run → the per-case traces
+AutoLLM → a run → trajectory row → its eval run → the per-case traces
 ```
 
 The view is read-only and refresh-based (REST, no live streaming): open a run to
@@ -283,13 +342,22 @@ so `optimize(..., persist=False)` writes nothing to `optimize_runs` /
 
 ```sh
 fastaiagent optimize \
-  --agent myapp.py:agent \        # module:attr resolving to an Agent
+  --agent myapp.py:agent \
   --dataset cases.jsonl \
   --scorers exact_match \
   --max-iterations 5 \
-  --judge "is the answer correct and concise" \   # optional LLM selection judge
+  --levers instructions,fewshot \
+  --judge "is the answer correct and concise" \
+  --audit-judge "is the answer correct, complete and concise" \
   --out winning_prompt.txt
 ```
+
+- `--agent` is a `path/to/file.py:attr` or `pkg.module:attr` that resolves to an `Agent`.
+- `--levers` is a comma-separated subset of `instructions`, `fewshot` and `memory`
+  (default `instructions`).
+- `--judge` adds an LLM judge (a criteria string) as the selection scorer;
+  `--audit-judge` adds a distinct one used only on the holdout guard.
+- `--out` writes the winning system prompt before the summary is printed.
 
 ## When not to use it
 
@@ -300,10 +368,25 @@ fastaiagent optimize \
   `allow_writable_memory=True`. Other memory blocks are isolated automatically.
 - **Tool/retrieval-bound agents** — if quality is dominated by tool correctness
   rather than the prompt, fix the tools first.
+- **A `Supervisor`, `Swarm` or `Chain`** — `optimize()` takes an `Agent` and raises
+  `TypeError` for anything else. Optimize the agent behind each step.
 
 ## Cost
 
-The bill compounds: `iterations × candidates × dev-size × judge-calls`. Use
-`max_eval_runs` / `max_judge_calls` as hard governors, select on a cheap
-deterministic scorer and reserve the LLM judge for the holdout audit, and let
-`patience` / `min_delta` stop early on noise.
+The bill compounds: `iterations × candidates × dev-size × judge-calls`. Two hard
+caps bound it:
+
+- **`max_eval_runs`** counts every evaluation pass: the baseline, each train
+  re-score, each candidate, the few-shot teacher pass, and the holdout guard's
+  passes.
+- **`max_judge_calls`** counts one call per case for every model-backed scorer in
+  a pass — `LLMJudge`/`GEval`, `DecisionJudge`, and the built-in RAG, agent,
+  session and safety metrics — whether passed in `scorers` or as
+  `selection_judge`/`audit_judge`. A custom `Scorer` that calls a model itself
+  isn't counted.
+
+The loop holds back what the holdout guard needs, so the guard always runs and
+neither total ever passes its cap. Caps too small for the baseline plus the guard
+raise `ValueError` before anything runs. Select on a cheap deterministic scorer,
+reserve the LLM judge for the holdout audit, and let `patience` / `min_delta`
+stop early on noise.

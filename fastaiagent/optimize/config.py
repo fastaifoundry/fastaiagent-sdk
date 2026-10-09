@@ -31,8 +31,14 @@ class OptimizeConfig:
         max_iterations: hard cap on optimization rounds.
         patience: stop after this many consecutive non-improving rounds.
         target_score: stop early once the dev score reaches this.
-        max_eval_runs: hard cap on candidate evaluations (cost governor).
-        max_judge_calls: hard cap on judge invocations (cost governor).
+        max_eval_runs: hard cap on evaluation passes — every split scored (baseline,
+            train, candidates, the holdout guard) plus the few-shot teacher pass.
+            The loop holds back what the holdout guard needs, so the guard always
+            runs and the total never exceeds the cap.
+        max_judge_calls: hard cap on model-backed scorer calls — one per case for
+            every ``LLMJudge``/``GEval``, ``DecisionJudge`` or built-in RAG, agent,
+            session or safety metric in the run, whether passed in ``scorers`` or
+            as a judge below. Counted and capped the same way.
         splits: ``(train, dev, holdout)`` fractions, summing to 1.0.
         min_delta: dev improvement smaller than this counts as "no improvement".
         holdout_regression_tol: revert the winner if its holdout score drops more
