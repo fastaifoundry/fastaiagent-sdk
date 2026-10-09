@@ -68,7 +68,7 @@ export function SaveAsEvalDialog({
       toast.error("Dataset name is required");
       return;
     }
-    if (!/^[A-Za-z0-9_\-]+$/.test(datasetName)) {
+    if (!/^[A-Za-z0-9_-]+$/.test(datasetName)) {
       toast.error("Dataset name must match [A-Za-z0-9_-]+");
       return;
     }

@@ -101,6 +101,12 @@ for rec in report.recommendations:
 report.to_dict()
 ```
 
+The model is shown at most **40** failing cases or scenarios — enough to see the
+patterns, small enough for any context window — while `report.failure_count` is
+always the full total. If the analysis can't run (the model call fails, or its
+reply holds no list of recommendations), the report carries a single
+`(analysis failed)` recommendation with the reason, never an empty "nothing to fix".
+
 !!! note "v1 is recommend-only"
     `harden()` **never mutates your agent** — it returns recommendations for you
     to apply, then re-run `simulate()` / `evaluate()` to confirm the fixes. Auto-apply

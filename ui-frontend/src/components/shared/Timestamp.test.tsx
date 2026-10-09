@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { Timestamp } from "./Timestamp";
 import { formatDateTime } from "@/lib/format";
@@ -6,6 +6,17 @@ import { formatDateTime } from "@/lib/format";
 const ISO = "2026-08-27T21:44:53+00:00";
 
 describe("Timestamp", () => {
+  // The relative reading switches to a plain date after 7 days, so a fixed ISO
+  // against the real clock stopped reading "… ago" on 2026-09-03. Freeze the
+  // clock 15 minutes after ISO instead.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-08-27T21:59:53+00:00"));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("renders the absolute time, not a relative one", () => {
     render(<Timestamp iso={ISO} />);
     expect(screen.getByText(formatDateTime(ISO))).toBeInTheDocument();

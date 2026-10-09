@@ -97,4 +97,67 @@ describe("OptimizeRunDetailPage", () => {
     expect(links).toHaveLength(2);
     expect(links[1]).toHaveAttribute("href", "/evals/ev-1");
   });
+
+  it("shows the winning prompt next to the one the run started from", async () => {
+    const detail = fixture();
+    detail.run.metadata = { baseline_system_prompt: "You answer questions." };
+    mockFetch(detail);
+    renderDetail();
+
+    await waitFor(() => expect(screen.getByText("Winning prompt")).toBeInTheDocument());
+    expect(screen.getByText("better")).toBeInTheDocument();
+    expect(screen.getByText("Original prompt")).toBeInTheDocument();
+    expect(screen.getByText("You answer questions.")).toBeInTheDocument();
+    expect(screen.getByTitle("Copy winning prompt")).toBeInTheDocument();
+  });
+
+  it("says a reverted run keeps the original configuration", async () => {
+    const detail = fixture();
+    detail.run.reverted = 1;
+    detail.run.best_candidate = { system_prompt: null, fewshot_demos: null, fact_ids: null };
+    detail.run.metadata = { baseline_system_prompt: "You answer questions." };
+    mockFetch(detail);
+    renderDetail();
+
+    await waitFor(() =>
+      expect(screen.getByText(/regressed on the holdout and was reverted/i)).toBeInTheDocument()
+    );
+    expect(screen.queryByText("Winning prompt")).not.toBeInTheDocument();
+    expect(screen.getByText("Prompt (unchanged)")).toBeInTheDocument();
+  });
+
+  it("lists the few-shot examples and learned facts a winner selected", async () => {
+    const detail = fixture();
+    detail.run.best_candidate = {
+      system_prompt: null,
+      fewshot_demos: [
+        { input: "Capital of France?", output: "Paris" },
+        { input: "Capital of Japan?", output: "Tokyo" },
+      ],
+      fact_ids: [3, 7],
+    };
+    mockFetch(detail);
+    renderDetail();
+
+    await waitFor(() => expect(screen.getByText("2 few-shot examples")).toBeInTheDocument());
+    expect(screen.getByText("Capital of France?")).toBeInTheDocument();
+    expect(screen.getByText("Learned facts injected: #3, #7")).toBeInTheDocument();
+    expect(screen.getByText("System prompt: unchanged.")).toBeInTheDocument();
+  });
+
+  it("surfaces a proposer that could not run", async () => {
+    const detail = fixture();
+    detail.run.stopped_reason = "proposer_failed";
+    detail.run.best_candidate = { system_prompt: null };
+    detail.run.metadata = {
+      proposer_errors: ["LLMProviderError: model_not_found", "LLMProviderError: model_not_found"],
+    };
+    mockFetch(detail);
+    renderDetail();
+
+    await waitFor(() =>
+      expect(screen.getByText(/The prompt proposer failed 2 times/)).toBeInTheDocument()
+    );
+    expect(screen.getByText(/No candidate beat the baseline/)).toBeInTheDocument();
+  });
 });

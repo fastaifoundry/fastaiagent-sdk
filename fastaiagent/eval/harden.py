@@ -25,6 +25,11 @@ if TYPE_CHECKING:
 
 _VALID_TARGETS = ("instructions", "model", "tools", "guardrails", "memory")
 
+# How many failing cases harden() and the optimize proposer show their model. An
+# eval case renders to ~1.2k characters at most; unbounded, 2,000 failing cases
+# made a ~335k-token request that no model accepts.
+MAX_FAILURES_SHOWN = 40
+
 
 @dataclass
 class Recommendation:
@@ -74,9 +79,8 @@ class HardeningReport:
 def _failures_text(results: Any, *, max_cases: int | None = None) -> tuple[str, int]:
     """Render failing cases from SimulationResults or EvalResults → (text, count).
 
-    ``max_cases`` caps how many failing cases of an ``EvalResults`` are rendered;
-    ``count`` is still the total. Unbounded, a large split builds a prompt no model
-    can take (the optimize proposer, 1.85.0).
+    ``max_cases`` caps how many failing cases or scenarios are rendered; ``count``
+    is still the total. Unbounded, a large run builds a prompt no model can take.
     """
     # SimulationResults — has .results of items with .scenario_name / .verdicts.
     sim = getattr(results, "results", None)
@@ -89,6 +93,8 @@ def _failures_text(results: Any, *, max_cases: int | None = None) -> tuple[str, 
             if getattr(r, "passed", True):
                 continue
             count += 1
+            if max_cases is not None and len(blocks) >= max_cases:
+                continue
             failed = [v.criterion for v in r.verdicts if not v.passed]
             convo = _format_transcript(r.transcript)
             blocks.append(
@@ -143,7 +149,8 @@ def _failures_text(results: Any, *, max_cases: int | None = None) -> tuple[str, 
             for r in rlist:
                 if not getattr(r, "passed", True):
                     count += 1
-                    blocks.append(f"scorer '{name}' failed: {getattr(r, 'reason', '')}")
+                    if max_cases is None or len(blocks) < max_cases:
+                        blocks.append(f"scorer '{name}' failed: {getattr(r, 'reason', '')}")
         return "\n".join(blocks), count
 
     return str(results), 0
@@ -158,7 +165,7 @@ async def aharden(
 ) -> HardeningReport:
     """Analyse failures and recommend concrete fixes (async). See :func:`harden`."""
     agent_name = getattr(agent, "name", "agent")
-    failures, count = _failures_text(results)
+    failures, count = _failures_text(results, max_cases=MAX_FAILURES_SHOWN)
 
     if count == 0:
         return HardeningReport(agent_name=agent_name, failure_count=0, recommendations=[])
@@ -170,6 +177,8 @@ async def aharden(
     sp_text = sp if isinstance(sp, str) and sp else "(dynamic or no system prompt)"
     tools = [getattr(t, "name", "tool") for t in (getattr(agent, "tools", []) or [])]
     guards = [getattr(g, "name", "guardrail") for g in (getattr(agent, "guardrails", []) or [])]
+    shown = min(count, MAX_FAILURES_SHOWN)
+    heading = "Failing cases" if shown == count else f"Failing cases ({shown} of {count})"
 
     prompt = (
         f"An AI agent named '{agent_name}' failed some tests. Recommend specific, actionable "
@@ -177,7 +186,7 @@ async def aharden(
         f"Current system prompt:\n{sp_text}\n\n"
         f"Current tools: {tools or '(none)'}\n"
         f"Current guardrails: {guards or '(none)'}\n\n"
-        f"Failing cases:\n{failures}\n\n"
+        f"{heading}:\n{failures}\n\n"
         f"Give up to {max_recommendations} recommendations. Each targets exactly one of: "
         f"{', '.join(_VALID_TARGETS)}.\n"
         'Respond with JSON only: {"recommendations": [{"target": "instructions|model|tools|'
@@ -204,8 +213,25 @@ async def aharden(
             ],
         )
 
+    # The requested {"recommendations": [...]} object, or the bare list some models
+    # send instead — reading .get() off a list raised out of harden() (1.86.0).
+    items = data.get("recommendations") if isinstance(data, dict) else data
+    if not isinstance(items, list):
+        return HardeningReport(
+            agent_name=agent_name,
+            failure_count=count,
+            recommendations=[
+                Recommendation(
+                    target="instructions",
+                    recommendation="(analysis failed)",
+                    rationale="the reply had no list of recommendations",
+                )
+            ],
+        )
     recs: list[Recommendation] = []
-    for item in data.get("recommendations", [])[:max_recommendations]:
+    for item in items[:max_recommendations]:
+        if not isinstance(item, dict):
+            continue
         target = str(item.get("target", "instructions")).strip().lower()
         if target not in _VALID_TARGETS:
             target = "instructions"

@@ -5,6 +5,77 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.86.0] - 2026-10-10 — see the winning prompt; harden() holds up at scale
+
+The two follow-ups 1.85.0 left open. No wire change, no schema change.
+
+### Added
+
+- **The AutoLLM run page shows the winner.** A new Winner card shows:
+  - the winning system prompt next to the prompt the run started from, each with
+    a copy button;
+  - the few-shot examples and learned facts the winner selected;
+  - any proposer failures.
+
+  A reverted run, or one where nothing beat the baseline, says the agent keeps
+  its original configuration. Before this, the page showed only scores and
+  rationales, and the prompt you would ship was not shown at all.
+- `OptimizationReport.baseline_system_prompt` — the agent's own prompt when the
+  run started (`None` for a callable prompt). It is persisted in
+  `optimize_runs.metadata`, which the UI reads.
+
+### Fixed
+
+- **`harden()` shows its model at most 40 failing cases or scenarios.** Every one
+  went into a single request: 2,000 failing cases made a ~335k-token prompt that
+  no model accepts. `failure_count` is still the full total, and the prompt says
+  "(40 of N)". The optimize proposer (capped in 1.85.0) now uses the same limit.
+- **`harden()` reads a bare-list reply.** A reply that is a JSON list, or a list
+  item that isn't an object, raised `AttributeError` out of `harden()`.
+- **A reply with no list of recommendations is reported as a failed analysis.**
+  It returned zero recommendations — "nothing to fix" from an analysis that never
+  happened. It now returns the same `(analysis failed)` recommendation as a model
+  error.
+
+### Local UI tooling
+
+- **The frontend tests run in CI.** CI built the UI but never ran its tests, so
+  `Timestamp.test.tsx` failed unseen from 2026-09-03: it pinned a date and
+  expected "… ago", which the shared formatter turns into a plain date after 7
+  days. The test now freezes the clock, and the `build-wheel` job runs
+  `npm test` before the build.
+- **`npm run lint` works.** The script shipped with the Vite template in v0.8.0,
+  but eslint was never added, so it could not run. eslint 10 is now set up
+  (`eslint.config.js`: typescript-eslint, the two established React hook rules,
+  react-refresh). CI runs it as an advisory step, like the Python lint job.
+- Its first run found 6 errors and 7 warnings, all fixed with no behaviour
+  change:
+  - a `sortDesc` prop the cost tables never read;
+  - two needless regex escapes;
+  - two `any` casts, replaced by xyflow's `NodeTypes`/`EdgeTypes`;
+  - a redundant vitest type reference;
+  - three list pages whose memoised filter recomputed on every render, because
+    the empty fallback was a new array each time.
+
+### Docs
+
+- `evaluation/optimization.md`: what the run page shows (Summary, Winner,
+  Trajectory) and what `metadata` holds.
+- `evaluation/agent-hardening.md`: the 40-case cap and the `(analysis failed)`
+  outcome.
+- `ui/index.md`: the frontend test, lint and typecheck commands.
+
+### Tests
+
+- Four `harden()` cases in `tests/test_eval_agenteval.py`, on a recording
+  `FunctionModel`: the bounded failure block, capped simulation scenarios, a
+  bare-list reply, and a reply with no list. All fail on 1.85.0.
+- `tests/test_optimize_persist.py`: a real `optimize()` run, read back through
+  `GET /api/optimizes/{id}`, carries the winner and the original prompt. It fails
+  on 1.85.0.
+- Four UI cases in `OptimizeRunDetailPage.test.tsx`: winner next to original,
+  a reverted run, few-shot examples and facts, and proposer failures.
+
 ## [1.85.0] - 2026-10-09 — AutoLLM's improvement is one you can trust
 
 Fixes from a live audit of AutoLLM (`fastaiagent.optimize`). Every finding was

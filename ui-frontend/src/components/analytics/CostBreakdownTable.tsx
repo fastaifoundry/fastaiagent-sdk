@@ -5,7 +5,6 @@
  * differ only in column config. Sorted by cost (descending) on the
  * server, so we render rows in order.
  */
-import { useState } from "react";
 import {
   Table,
   TableBody,
@@ -49,7 +48,6 @@ export function CostBreakdownTable({
     period,
     chainName,
   });
-  const [sortDesc] = useState(true);
 
   return (
     <Card data-testid={`cost-breakdown-${groupBy}`}>
@@ -75,11 +73,11 @@ export function CostBreakdownTable({
             No spans in this window. Run an agent and refresh.
           </p>
         ) : groupBy === "model" ? (
-          <ModelTable rows={data.rows as CostByModelRow[]} sortDesc={sortDesc} />
+          <ModelTable rows={data.rows as CostByModelRow[]} />
         ) : groupBy === "agent" ? (
-          <AgentTable rows={data.rows as CostByAgentRow[]} sortDesc={sortDesc} />
+          <AgentTable rows={data.rows as CostByAgentRow[]} />
         ) : (
-          <NodeTable rows={data.rows as CostByNodeRow[]} sortDesc={sortDesc} />
+          <NodeTable rows={data.rows as CostByNodeRow[]} />
         )}
       </CardContent>
     </Card>
@@ -92,13 +90,7 @@ function fmtTokens(n: number): string {
   return String(n);
 }
 
-function ModelTable({
-  rows,
-  sortDesc: _sortDesc,
-}: {
-  rows: CostByModelRow[];
-  sortDesc: boolean;
-}) {
+function ModelTable({ rows }: { rows: CostByModelRow[] }) {
   return (
     <Table>
       <TableHeader>
@@ -131,12 +123,7 @@ function ModelTable({
   );
 }
 
-function AgentTable({
-  rows,
-}: {
-  rows: CostByAgentRow[];
-  sortDesc: boolean;
-}) {
+function AgentTable({ rows }: { rows: CostByAgentRow[] }) {
   return (
     <Table>
       <TableHeader>
@@ -169,12 +156,7 @@ function AgentTable({
   );
 }
 
-function NodeTable({
-  rows,
-}: {
-  rows: CostByNodeRow[];
-  sortDesc: boolean;
-}) {
+function NodeTable({ rows }: { rows: CostByNodeRow[] }) {
   return (
     <Table>
       <TableHeader>

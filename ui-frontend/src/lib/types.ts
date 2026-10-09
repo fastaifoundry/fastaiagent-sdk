@@ -359,6 +359,26 @@ export interface EvalCompareResponse {
 
 // --- Optimize runs (optimize_runs / optimize_iterations) ---
 
+/** The winning candidate as persisted (``Candidate.to_dict()``). A ``null``
+ *  lever means "unchanged from the agent". */
+export interface OptimizeCandidate {
+  id?: string;
+  parent_id?: string | null;
+  origin?: string;
+  rationale?: string;
+  system_prompt?: string | null;
+  fewshot_demos?: { input: unknown; output: unknown }[] | null;
+  fact_ids?: number[] | null;
+}
+
+export interface OptimizeRunMetadata {
+  /** The agent's own system prompt when the run started (1.86.0+). */
+  baseline_system_prompt?: string;
+  /** Each time the prompt proposer could not run (1.85.0+). */
+  proposer_errors?: string[];
+  [key: string]: unknown;
+}
+
 export interface OptimizeRunRow {
   run_id: string;
   run_name: string | null;
@@ -372,13 +392,13 @@ export interface OptimizeRunRow {
   seed: number | null;
   levers: string[] | null;
   config: Record<string, unknown> | null;
-  best_candidate: Record<string, unknown> | null;
+  best_candidate: OptimizeCandidate | null;
   baseline_eval_run_id: string | null;
   best_eval_run_id: string | null;
   iteration_count: number | null;
   started_at: string | null;
   finished_at: string | null;
-  metadata: Record<string, unknown> | null;
+  metadata: OptimizeRunMetadata | null;
 }
 
 export interface OptimizeIterationRow {

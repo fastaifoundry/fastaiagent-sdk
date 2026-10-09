@@ -311,8 +311,9 @@ extra wiring. Two tables hold the record:
 
 - **`optimize_runs`** — one parent row per run: baseline/best dev scores, the
   holdout-guard scores, `stopped_reason`, `reverted`, the `seed`, the active
-  `levers`, the winning `Candidate` as JSON (for reproducibility), and any
-  `proposer_errors` in `metadata`.
+  `levers`, the winning `Candidate` as JSON (for reproducibility), and in
+  `metadata` the agent's original system prompt (`baseline_system_prompt`) and any
+  `proposer_errors`.
 - **`optimize_iterations`** — one row per trajectory point: `iteration`, `lever`,
   `dev_score`, `accepted`/`skipped`, `rationale`, and an `eval_run_id`.
 
@@ -325,10 +326,17 @@ eval run — optimize stores **no duplicate eval data**. In the UI you can follo
 AutoLLM → a run → trajectory row → its eval run → the per-case traces
 ```
 
-The view is read-only and refresh-based (REST, no live streaming): open a run to
-see the `baseline → accepted/skipped steps → holdout-guarded winner` trajectory
-with per-iteration lever attribution, then click any row through to the eval that
-produced its score.
+The view is read-only and refresh-based (REST, no live streaming). Open a run to see:
+
+- **Summary** — baseline and best dev scores, the holdout score, and why the run
+  stopped.
+- **Winner** — the winning system prompt next to the prompt the run started from
+  (each with a copy button), the few-shot examples and learned facts it selected,
+  and any proposer failures. A reverted run, or one where nothing beat the
+  baseline, says the agent keeps its original configuration.
+- **Trajectory** — `baseline → accepted/skipped steps → holdout-guarded winner`
+  with per-iteration lever attribution; click any row through to the eval that
+  produced its score.
 
 Each run targets a single agent, so with several agents the list shows one row
 per run tagged by `agent_name`; an **agent filter** appears once more than one

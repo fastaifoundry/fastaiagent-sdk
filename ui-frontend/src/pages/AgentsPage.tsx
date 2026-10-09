@@ -12,7 +12,8 @@ import { formatCost, formatDurationMs, formatTimeAgo } from "@/lib/format";
 export function AgentsPage() {
   const agents = useAgents();
   const [query, setQuery] = useState("");
-  const allRows = agents.data?.agents ?? [];
+  // Memoised so the empty fallback is one array, not a new one each render.
+  const allRows = useMemo(() => agents.data?.agents ?? [], [agents.data?.agents]);
   // Client-side filter — /api/agents already returns the full list, so a
   // simple substring match on agent_name is all we need. No extra fetches,
   // no debounce, no round-trip.

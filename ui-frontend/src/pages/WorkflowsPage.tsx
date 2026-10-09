@@ -31,7 +31,11 @@ export function WorkflowsPage() {
   const [filter, setFilter] = useState<FilterType>("all");
   const [query, setQuery] = useState("");
   const workflows = useWorkflows(filter === "all" ? null : filter);
-  const allRows = workflows.data?.workflows ?? [];
+  // Memoised so the empty fallback is one array, not a new one each render.
+  const allRows = useMemo(
+    () => workflows.data?.workflows ?? [],
+    [workflows.data?.workflows]
+  );
   const rows = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return allRows;
