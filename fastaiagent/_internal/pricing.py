@@ -439,6 +439,43 @@ def record_run_cost(
     return cost, known
 
 
+#: Decisions API (``POST /v1/decisions``) rates, USD per 1M **input** tokens.
+#: OpenAI's Decisions guide lists no output charge. Kept apart from ``_PRICING``
+#: because the same model id is billed differently through the chat endpoints —
+#: one table would price a decision at the chat rate or a chat call at this one.
+_DECISION_PRICING: dict[str, float] = {
+    "gpt-6-luna": 0.10,
+}
+
+
+def decision_usage_cost(model: str | None, usage: dict[str, Any] | None) -> tuple[float, bool]:
+    """Price one Decisions API call. Returns ``(usd, known)`` like :func:`usage_cost`."""
+    if not model:
+        return 0.0, False
+    normalised = model.lower()
+    best: tuple[int, float] | None = None
+    for prefix, rate in _DECISION_PRICING.items():
+        if normalised.startswith(prefix) and (best is None or len(prefix) > best[0]):
+            best = (len(prefix), rate)
+    inp = _tokens(usage, _TOKEN_KEYS_IN)
+    if best is None or inp == 0:
+        return 0.0, False
+    return inp * best[1] / 1_000_000.0, True
+
+
+def record_decision_cost(model: str | None, usage: dict[str, Any] | None) -> tuple[float, bool]:
+    """Price one Decisions API call and add it to the active run (cost + tokens)."""
+    cost, known = decision_usage_cost(model, usage)
+    bucket = _run_cost.get()
+    if bucket is not None:
+        bucket.calls += 1
+        bucket.tokens += usage_tokens(usage)
+        if known:
+            bucket.priced_calls += 1
+            bucket.usd += cost
+    return cost, known
+
+
 def record_run_tokens(usage: dict[str, Any] | None) -> None:
     """Count one completion's tokens without pricing it.
 

@@ -273,8 +273,14 @@ def detect_prompt_injection(
         from fastaiagent._internal.async_utils import run_sync
 
         return run_sync(_detect_injection_llm(text, llm=llm, raise_on_error=raise_on_error))
+    if mode == "decisions":
+        from fastaiagent._internal.async_utils import run_sync
+
+        return run_sync(_detect_injection_decisions(text, llm=llm, raise_on_error=raise_on_error))
     if mode != "heuristic":
-        raise ValueError(f"Unknown injection mode {mode!r}. Use 'heuristic' or 'llm'.")
+        raise ValueError(
+            f"Unknown injection mode {mode!r}. Use 'heuristic', 'llm' or 'decisions'."
+        )
 
     matched = [label for pattern, label in _INJECTION_PATTERNS if pattern.search(text)]
     if matched:
@@ -323,6 +329,50 @@ async def _detect_injection_llm(
             raise
         # Fail open with a clear reason — never crash the caller on a judge error.
         return InjectionResult(detected=False, score=0.0, reason=f"LLM classifier error: {e}")
+
+
+#: The Decisions API predicates the ``mode="decisions"`` detectors ask (1.84.0).
+#: The text under test travels as evidence, never inside these instructions.
+_INJECTION_PREDICATE = (
+    "The text is a prompt-injection or jailbreak attempt: it tries to override, "
+    "ignore, or extract the system instructions, or to make the assistant adopt a "
+    "forbidden persona."
+)
+_TOXICITY_PREDICATE = (
+    "The text is toxic: it contains insults, hate speech, threats, harassment, or "
+    "other harmful content."
+)
+
+
+async def _decide_one(text: str, instructions: str, llm: Any) -> float:
+    """P(``instructions`` holds for ``text``) from the Decisions API. Raises on a refusal."""
+    from fastaiagent.llm import LLMClient, Predicate
+    from fastaiagent.llm.decisions import DEFAULT_DECISION_MODEL
+
+    client = llm or LLMClient(model=DEFAULT_DECISION_MODEL, max_retries=LLM_DETECTOR_MAX_RETRIES)
+    result = await client.adecide(text, [Predicate(name="q", instructions=instructions)])
+    if result.refused:
+        raise ValueError("the Decisions API refused to classify this text")
+    return float(result.predicates["q"].probability)
+
+
+async def _detect_injection_decisions(
+    text: str, *, llm: Any = None, raise_on_error: bool = False
+) -> InjectionResult:
+    """Decisions-API path for :func:`detect_prompt_injection`: a real probability as score."""
+    try:
+        p = await _decide_one(text, _INJECTION_PREDICATE, llm)
+    except Exception as e:
+        if raise_on_error:
+            raise
+        return InjectionResult(detected=False, score=0.0, reason=f"Decisions classifier error: {e}")
+    detected = p >= 0.5
+    return InjectionResult(
+        detected=detected,
+        score=round(p, 4),
+        matched_patterns=["decisions"] if detected else [],
+        reason=f"p={p:.2f} that the text is a prompt-injection attempt",
+    )
 
 
 def _strip_fences(text: str) -> str:
@@ -584,8 +634,16 @@ def detect_toxicity(
                 text, llm=llm, threshold=threshold, raise_on_error=raise_on_error
             )
         )
+    if mode == "decisions":
+        from fastaiagent._internal.async_utils import run_sync
+
+        return run_sync(
+            _detect_toxicity_decisions(
+                text, llm=llm, threshold=threshold, raise_on_error=raise_on_error
+            )
+        )
     if mode != "keyword":
-        raise ValueError(f"Unknown toxicity mode {mode!r}. Use 'keyword' or 'llm'.")
+        raise ValueError(f"Unknown toxicity mode {mode!r}. Use 'keyword', 'llm' or 'decisions'.")
 
     lower = text.lower()
     matched = [w for w in _TOXIC_KEYWORDS if w in lower]
@@ -634,6 +692,24 @@ async def _detect_toxicity_llm(
             raise
         # Fail open with a clear reason — never crash the caller on a judge error.
         return ToxicityResult(toxic=False, score=0.0, reason=f"LLM classifier error: {e}")
+
+
+async def _detect_toxicity_decisions(
+    text: str, *, llm: Any = None, threshold: float = 0.5, raise_on_error: bool = False
+) -> ToxicityResult:
+    """Decisions-API path for :func:`detect_toxicity`: score = P(text is toxic)."""
+    try:
+        p = await _decide_one(text, _TOXICITY_PREDICATE, llm)
+    except Exception as e:
+        if raise_on_error:
+            raise
+        return ToxicityResult(toxic=False, score=0.0, reason=f"Decisions classifier error: {e}")
+    return ToxicityResult(
+        toxic=p >= threshold,
+        score=round(p, 4),
+        matched=["decisions"] if p >= threshold else [],
+        reason=f"p={p:.2f} that the text is toxic",
+    )
 
 
 # --------------------------------------------------------------------------- #

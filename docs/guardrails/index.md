@@ -71,6 +71,9 @@ agent = Agent(guardrails=[no_prompt_injection()])
 
 # Opt into the LLM-classifier mode (costs a call, catches more)
 agent = Agent(guardrails=[no_prompt_injection(mode="llm")])
+
+# Or the Decisions API (1.84.0): a calibrated probability as the score
+agent = Agent(guardrails=[no_prompt_injection(mode="decisions")])
 ```
 
 ### openai_moderation()
@@ -100,12 +103,15 @@ agent = Agent(
 
 ### toxicity_check()
 
-Keyword-based detection of toxic or harmful language.
+Keyword-based detection of toxic or harmful language by default. `mode="llm"`
+asks a chat model for a 0..1 score, and `mode="decisions"` (1.84.0) uses the
+Decisions API's probability that the text is toxic. Either blocks at `threshold`.
 
 ```python
 from fastaiagent.guardrail import toxicity_check
 
 agent = Agent(guardrails=[toxicity_check()])
+agent = Agent(guardrails=[toxicity_check(mode="decisions", threshold=0.5)])
 ```
 
 ### cost_limit()
@@ -450,6 +456,62 @@ no_competitors = Guardrail(
 Unlike `classifier` above, this is not substring matching: the *description* is
 what lets the judge catch "the other vendor's offering" without the word
 "competitor" appearing anywhere.
+
+### Decisions API backend
+
+*New in 1.84.0.* `llm_judge`, `content_safety` and `topic` can ask
+[OpenAI's Decisions API](../llm/decisions.md) instead of a chat model. Set
+`config["backend"] = "decisions"`, the same key `pii` uses to choose its engine.
+The payload is sent as **evidence** and each check is a yes/no question, so the
+answer is a probability. There's no prompt for the payload to inject into, and
+no JSON verdict to parse.
+
+| Type | With `backend="decisions"` | Extra config |
+|---|---|---|
+| `llm_judge` | One predicate, `instructions`. PASS when its probability ≥ `threshold` | `instructions` (**required**: the condition a passing payload meets), `threshold` (0.5) |
+| `content_safety` | One predicate per hazard category. The probability is that category's score, and `threshold` / `thresholds` apply unchanged | — |
+| `topic` | One predicate per topic (a payload can be about several). A topic matches at `topic_threshold`; `mode` applies unchanged | `topic_threshold` (0.5) |
+
+```python
+polite = Guardrail(
+    name="polite",
+    guardrail_type=GuardrailType.llm_judge,
+    config={
+        "backend": "decisions",
+        "instructions": "The reply is polite to the customer.",
+        "threshold": 0.5,
+        "llm": {"model": "gpt-6-luna"},   # LLMClient kwargs; this is the default model
+    },
+)
+no_medical = Guardrail(
+    name="no-medical-advice",
+    guardrail_type=GuardrailType.topic,
+    config={"backend": "decisions", "topics": ["medical advice"], "mode": "deny"},
+)
+```
+
+**Nothing that can't decide ever passes clean.** Each of these raises, so the rule
+reports `errored=True` and `on_error` applies:
+
+- a **refusal** on any question;
+- an unknown `backend` value (a typo never silently falls back to `chat`);
+- `llm_judge` without `instructions`;
+- a threshold outside 0..1;
+- `backend="decisions"` on a type it doesn't cover. That includes `groundedness`,
+  because a single probability would drop its `unsupported_claims` evidence.
+
+The default `backend="chat"` (or no key) is unchanged, and so is its metadata. The
+decisions engine adds `backend: "decisions"` to the result metadata, and for
+`llm_judge` also the `probability` and `threshold`. Those are the only extra
+keys that reach the exported span.
+
+A rule the control plane distributes with `"backend": "decisions"` in its config
+runs as-is. Whether the plane lets you author one is the plane's decision.
+
+The builtins `no_prompt_injection(mode="decisions")` and
+`toxicity_check(mode="decisions")` ask a single predicate. Its probability becomes
+the result's `score`. See
+[`104_decision_guardrails_evals.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/104_decision_guardrails_evals.py).
 
 ### Detector-backed types
 

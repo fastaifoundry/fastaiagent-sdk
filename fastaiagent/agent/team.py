@@ -6,7 +6,10 @@ import json as _json
 import logging
 import time
 from collections.abc import AsyncGenerator, Callable, Sequence
+from contextvars import ContextVar
 from typing import Any
+
+from pydantic import BaseModel, Field
 
 from fastaiagent._internal.async_utils import run_sync
 from fastaiagent._internal.pricing import run_cost, start_run_cost, stop_run_cost
@@ -27,11 +30,44 @@ from fastaiagent.guardrail.guardrail import (
 )
 from fastaiagent.llm.client import LLMClient
 from fastaiagent.llm.message import SystemMessage, UserMessage
-from fastaiagent.llm.stream import StreamEvent, TextDelta, Usage
+from fastaiagent.llm.stream import HandoffEvent, StreamDone, StreamEvent, TextDelta, Usage
 from fastaiagent.tool.base import Tool
 from fastaiagent.tool.function import FunctionTool
 
 _log = logging.getLogger(__name__)
+
+# The Decisions-API review score of the most recent ``validation_mode="decisions"``
+# check in this task, so a routed run can report it on ``SupervisorRoute.reviews``.
+# A ContextVar, not instance state: one Supervisor may serve concurrent runs.
+_last_review: ContextVar[float | None] = ContextVar("_fastaiagent_last_review", default=None)
+
+ROUTING_MODES = ("tools", "decisions")
+_DEFAULT_ROUTING_INSTRUCTIONS = "Which team member should handle this request?"
+
+
+class SupervisorRoute(BaseModel):
+    """How ``Supervisor(routing="decisions")`` routed one request.
+
+    Attached to the run's :class:`~fastaiagent.agent.agent.AgentResult` as
+    ``result.route``.
+    """
+
+    #: The worker role that handled the request.
+    worker: str
+    #: The routing ``Choice``'s confidence, or ``None`` when it was refused.
+    confidence: float | None = None
+    #: The role the model chose before any fallback (``None`` on a refusal).
+    chosen: str | None = None
+    #: True when the request went to ``fallback_worker`` — refused, or below
+    #: ``routing_min_confidence``.
+    fallback: bool = False
+    #: The full Decisions result: the routing choice plus every
+    #: ``routing_questions`` answer (``answers.predicates["urgent"]`` …).
+    answers: Any = None
+    latency_ms: int = 0
+    cost_usd: float | None = None
+    #: Decisions API review scores, one per attempt (``validation_mode="decisions"``).
+    reviews: list[float | None] = Field(default_factory=list)
 
 
 # Default validation prompt — kept minimal so it's cheap and reliable across
@@ -52,6 +88,17 @@ task? Respond with strict JSON only, no prose:
 
 Use approved=false sparingly — only when the answer is clearly incomplete,
 incorrect, or off-topic."""
+
+# The criterion ``validation_mode="decisions"`` asks by default (1.84.0). A
+# statement whose probability is "approve"; the task and output are sent as
+# evidence. Deliberately judgeable from the two texts alone: a reviewer that has
+# not seen the worker's tool results cannot confirm "correct", and asking it to
+# scored good answers at 0.3-0.5 in live runs. Override with
+# ``validation_criteria=`` when the reviewer can check more.
+_DECISION_VALIDATION_PREDICATE = (
+    "The worker output directly addresses what the original task asks, stays on "
+    "topic, and is a complete reply rather than a partial or evasive one."
+)
 
 
 class Worker:
@@ -107,6 +154,16 @@ class Supervisor:
         validate_outputs: bool = False,
         validation_prompt: str | None = None,
         max_validation_retries_per_worker: int = 1,
+        validation_mode: str = "chat",
+        validation_llm: Any = None,
+        validation_threshold: float = 0.5,
+        validation_criteria: str | None = None,
+        routing: str = "tools",
+        router_llm: Any = None,
+        fallback_worker: str | None = None,
+        routing_min_confidence: float = 0.0,
+        routing_questions: dict[str, Any] | None = None,
+        routing_instructions: str | None = None,
     ):
         self.name = name
         self.llm = llm or LLMClient()
@@ -126,6 +183,215 @@ class Supervisor:
         if max_validation_retries_per_worker < 0:
             raise ValueError("max_validation_retries_per_worker must be >= 0")
         self.max_validation_retries_per_worker = max_validation_retries_per_worker
+        # 1.84.0: ``validation_mode="decisions"`` asks OpenAI's Decisions API one
+        # predicate — "the output completes the task" — instead of a chat call,
+        # and approves when its probability meets ``validation_threshold``.
+        # ``validation_llm`` defaults to ``LLMClient(model="gpt-6-luna")``.
+        if validation_mode not in ("chat", "decisions"):
+            raise ValueError(
+                f"validation_mode must be 'chat' or 'decisions', got {validation_mode!r}"
+            )
+        if not 0.0 <= validation_threshold <= 1.0:
+            raise ValueError("validation_threshold must be in 0..1")
+        self.validation_mode = validation_mode
+        self.validation_llm = validation_llm
+        self.validation_threshold = validation_threshold
+        # The statement the decisions review asks about (task + output are the
+        # evidence). ``validation_prompt`` is the chat-mode equivalent.
+        if validation_criteria is not None and not validation_criteria.strip():
+            raise ValueError("validation_criteria must be a non-empty statement")
+        self.validation_criteria = validation_criteria or _DECISION_VALIDATION_PREDICATE
+
+        # 1.84.0: two ways to pick a worker.
+        #   "tools"     (default) — the supervisor is a chat model that delegates
+        #               through ``delegate_to_<role>`` tool calls and writes the
+        #               final answer. For multi-step work: decompose, call
+        #               several workers, synthesise.
+        #   "decisions" — the supervisor is OpenAI's Decisions API. One
+        #               ``decide()`` call picks exactly ONE worker (a Choice
+        #               built from the workers' roles and descriptions), and the
+        #               worker's reply is the answer — no synthesis turn. For
+        #               single-hop routing (support queues, triage).
+        if routing not in ROUTING_MODES:
+            raise ValueError(f"routing must be 'tools' or 'decisions', got {routing!r}")
+        if not 0.0 <= routing_min_confidence <= 1.0:
+            raise ValueError("routing_min_confidence must be in 0..1")
+        self.routing = routing
+        self.router_llm = router_llm
+        self.fallback_worker = fallback_worker
+        self.routing_min_confidence = routing_min_confidence
+        self.routing_questions = dict(routing_questions or {})
+        self.routing_instructions = routing_instructions or _DEFAULT_ROUTING_INSTRUCTIONS
+        if routing == "decisions":
+            self._check_decision_routing()
+
+    # ------------------------------------------------------------------
+    # routing="decisions"
+    # ------------------------------------------------------------------
+
+    def _check_decision_routing(self) -> None:
+        """Refuse, at construction, a decision router that could not route."""
+        from fastaiagent.llm.decisions import normalize_questions
+
+        roles = [w.role for w in self.workers]
+        if len(roles) < 2:
+            raise ValueError("routing='decisions' needs at least 2 workers to choose between")
+        if len(set(roles)) != len(roles):
+            raise ValueError(f"routing='decisions' needs unique worker roles; got {roles}")
+        if self.fallback_worker not in roles:
+            # A refusal or a low-confidence route has to land somewhere, and
+            # guessing a specialist would be worse than saying so up front.
+            raise ValueError(
+                f"routing='decisions' needs fallback_worker= set to one of {roles} — where "
+                f"a refused or low-confidence route goes."
+            )
+        if "worker" in self.routing_questions:
+            raise ValueError("routing_questions may not use the name 'worker' (it is the route)")
+        if self.routing_questions:
+            # Validates every extra question (raises on an unusable one).
+            normalize_questions(self.routing_questions)
+        self._routing_choice()
+
+    def _routing_choice(self) -> Any:
+        from fastaiagent.llm.decisions import Choice, Option
+
+        return Choice(
+            name="worker",
+            instructions=self.routing_instructions,
+            options=[Option(value=w.role, description=w.description or None) for w in self.workers],
+        )
+
+    async def _route(self, input: str) -> tuple[Worker, SupervisorRoute]:
+        """One Decisions call: the routing Choice plus any ``routing_questions``."""
+        from fastaiagent.llm.decisions import DEFAULT_DECISION_MODEL, ChoiceAnswer
+
+        router = self.router_llm or LLMClient(model=DEFAULT_DECISION_MODEL)
+        questions: dict[str, Any] = {"worker": self._routing_choice(), **self.routing_questions}
+        start = time.monotonic()
+        result = await router.adecide(input, questions)
+        latency = int((time.monotonic() - start) * 1000)
+
+        answer = result.get("worker")
+        chosen = str(answer.choice) if isinstance(answer, ChoiceAnswer) else None
+        confidence = answer.confidence if isinstance(answer, ChoiceAnswer) else None
+        by_role = {w.role: w for w in self.workers}
+        if chosen in by_role and confidence is not None and confidence >= self.routing_min_confidence:
+            role, fallback = chosen, False
+        else:
+            role, fallback = str(self.fallback_worker), True
+        return by_role[role], SupervisorRoute(
+            worker=role,
+            confidence=confidence,
+            chosen=chosen,
+            fallback=fallback,
+            answers=result,
+            latency_ms=latency,
+            cost_usd=result.cost_usd,
+        )
+
+    def _routing_note(self, route: SupervisorRoute) -> str:
+        """The extra answers, as a short note for the worker (empty without them)."""
+        from fastaiagent.llm.decisions import ChoiceAnswer, PredicateAnswer, ScoreAnswer
+
+        parts: list[str] = []
+        for name in self.routing_questions:
+            a = route.answers.get(name) if route.answers is not None else None
+            if isinstance(a, PredicateAnswer):
+                parts.append(f"{name}: {'yes' if a.probability >= 0.5 else 'no'} (p={a.probability:.2f})")
+            elif isinstance(a, ChoiceAnswer):
+                parts.append(f"{name}: {a.choice}")
+            elif isinstance(a, ScoreAnswer):
+                parts.append(f"{name}: {a.level}")
+        return f"[Supervisor routing note] {'; '.join(parts)}" if parts else ""
+
+    def _routed_clone(self, worker: Worker) -> Agent:
+        """The worker clone a routed run executes.
+
+        Its path label carries the whole ``supervisor:<s>/worker:<role>`` itself,
+        and no parent path is set: a routed supervisor runs no agent of its own,
+        so the worker is the outermost runner of the execution and is the one
+        that writes the run-end checkpoint. Nested under a parent path it would
+        not, and a finished run would look resumable.
+        """
+        clone = self._build_worker_clone(worker)
+        clone._agent_path_label = f"supervisor:{self.name}/worker:{worker.role}"
+        return clone
+
+    async def _finish_routed(
+        self,
+        worker: Worker,
+        task: str,
+        first: AgentResult,
+        route: SupervisorRoute,
+        *,
+        context: RunContext[Any] | None,
+        execution_id: str | None,
+    ) -> AgentResult:
+        """Apply ``validate_outputs`` to a routed worker's result (same contract as tools)."""
+        result = first
+        if result.status == "paused" or not self.validate_outputs:
+            return result
+        current_task, last_feedback = task, ""
+        for attempt in range(1 + self.max_validation_retries_per_worker):
+            if attempt > 0:
+                result = await self._routed_clone(worker).arun(
+                    current_task, context=context, execution_id=execution_id
+                )
+                if result.status == "paused":
+                    return result
+            approved, feedback = await self._validate_worker_output(
+                worker_role=worker.role, task=task, output=result.output
+            )
+            route.reviews.append(_last_review.get())
+            if approved:
+                return result
+            last_feedback = feedback
+            current_task = f"{task}\n\n[Supervisor feedback]: {feedback or 'please revise.'}"
+        self._log_validation_warning(
+            worker_role=worker.role, task=task, output=result.output, feedback=last_feedback
+        )
+        return result
+
+    def _merge_route(self, result: AgentResult, route: SupervisorRoute, span: Any) -> AgentResult:
+        """Stamp the route on the result and span, and add the decisions' spend."""
+        from fastaiagent.llm.decisions import DecisionResult
+
+        extra_cost = route.cost_usd
+        extra_tokens = 0
+        if isinstance(route.answers, DecisionResult):
+            extra_tokens = int(route.answers.usage.get("total_tokens") or 0)
+        result.route = route
+        result.tokens_used += extra_tokens
+        if extra_cost is None:
+            result.cost_known = False
+        else:
+            result.cost += extra_cost
+        span.set_attribute("supervisor.routing", "decisions")
+        span.set_attribute("supervisor.route.worker", route.worker)
+        span.set_attribute("supervisor.route.fallback", route.fallback)
+        if route.confidence is not None:
+            span.set_attribute("supervisor.route.confidence", route.confidence)
+        return result
+
+    async def _arun_routed(
+        self,
+        input: str,
+        span: Any,
+        *,
+        context: RunContext[Any] | None,
+        execution_id: str | None,
+        **kwargs: Any,
+    ) -> AgentResult:
+        worker, route = await self._route(input)
+        note = self._routing_note(route)
+        task = f"{input}\n\n{note}" if note else input
+        first = await self._routed_clone(worker).arun(
+            task, context=context, execution_id=execution_id, **kwargs
+        )
+        result = await self._finish_routed(
+            worker, task, first, route, context=context, execution_id=execution_id
+        )
+        return self._merge_route(result, route, span)
 
     def _build_supervisor_prompt(self) -> str:
         worker_desc = "\n".join(f"- {w.role}: {w.description}" for w in self.workers)
@@ -184,6 +450,11 @@ class Supervisor:
         output is approved (fail-open) — the manager loop should not crash
         a working agent because the validator misbehaved.
         """
+        _last_review.set(None)
+        if self.validation_mode == "decisions":
+            return await self._validate_with_decision(
+                worker_role=worker_role, task=task, output=output
+            )
         prompt = self.validation_prompt.format(task=task, output=output)
         try:
             resp = await self.llm.acomplete(
@@ -219,6 +490,46 @@ class Supervisor:
         approved = bool(data.get("approved", True))
         feedback = str(data.get("feedback") or "").strip()
         return approved, feedback
+
+    async def _validate_with_decision(
+        self, *, worker_role: str, task: str, output: str
+    ) -> tuple[bool, str]:
+        """``validation_mode="decisions"``: one predicate on the Decisions API.
+
+        Same contract as the chat path, including fail-open: a failed call or a
+        refusal approves the output with a warning, because a misbehaving
+        validator must not stop a working team. The task and output travel as
+        evidence; only the fixed criterion is the question.
+        """
+        from fastaiagent.llm.decisions import DEFAULT_DECISION_MODEL, Predicate, PredicateAnswer
+
+        llm = self.validation_llm or LLMClient(model=DEFAULT_DECISION_MODEL)
+        try:
+            result = await llm.adecide(
+                f"Original task:\n{task}\n\nWorker output:\n{output}",
+                [Predicate(name="approved", instructions=self.validation_criteria)],
+            )
+        except Exception as err:
+            _log.warning(
+                "supervisor.validate (%s): Decisions call failed, accepting output: %s",
+                worker_role,
+                err,
+            )
+            return True, ""
+        answer = result[0]
+        if not isinstance(answer, PredicateAnswer):
+            _log.warning(
+                "supervisor.validate (%s): Decisions API refused, accepting output", worker_role
+            )
+            return True, ""
+        _last_review.set(answer.probability)
+        if answer.probability >= self.validation_threshold:
+            return True, ""
+        return False, (
+            f"A reviewer judged this output unlikely to be a complete, correct answer to "
+            f"the task (p={answer.probability:.2f}, needs {self.validation_threshold:.2f}). "
+            f"Revise it so it fully and correctly answers: {task}"
+        )
 
     def _log_validation_warning(
         self, *, worker_role: str, task: str, output: str, feedback: str
@@ -436,6 +747,13 @@ class Supervisor:
             if self._checkpointer is not None:
                 self._checkpointer.setup()
 
+            if self.routing == "decisions":
+                result = await self._arun_routed(
+                    input, span, context=context, execution_id=execution_id, **kwargs
+                )
+                span.set_attribute("supervisor.output", result.output)
+                return result
+
             agent = self._build_inner_agent(context=context)
             result = await agent.arun(input, context=context, execution_id=execution_id, **kwargs)
             span.set_attribute("supervisor.output", result.output)
@@ -498,6 +816,11 @@ class Supervisor:
                 "pass resume_value=Resume(...) to supervisor.resume()."
             )
 
+        if self.routing == "decisions":
+            return await self._aresume_routed(
+                store, execution_id, resume_value=resume_value, context=context, **kwargs
+            )
+
         # Recover the original supervisor input by walking the supervisor's
         # own earliest checkpoint and pulling the first user message.
         input_str = self._hydrate_input(store, execution_id)
@@ -519,6 +842,57 @@ class Supervisor:
         finally:
             if rv_token is not None:
                 _resume_value.reset(rv_token)
+
+    async def _aresume_routed(
+        self,
+        store: Checkpointer,
+        execution_id: str,
+        *,
+        resume_value: Resume | None,
+        context: RunContext[Any] | None,
+        **kwargs: Any,
+    ) -> AgentResult:
+        """Resume a routed run: the worker that holds state continues — no re-route.
+
+        Asking the router again could pick a different worker than the one that
+        paused, so the route is read back from the checkpoints instead. The
+        resumed result is returned as-is (``validate_outputs`` reviews fresh
+        attempts, not a resumed one).
+        """
+        from fastaiagent._internal.errors import ChainCheckpointError
+        from fastaiagent.trace.otel import get_tracer
+
+        paths = [cp.agent_path or "" for cp in store.list(execution_id, limit=500)]
+        worker = next(
+            (
+                w
+                for w in self.workers
+                if any(p.startswith(f"supervisor:{self.name}/worker:{w.role}") for p in paths)
+            ),
+            None,
+        )
+        if worker is None:
+            raise ChainCheckpointError(
+                f"Supervisor execution '{execution_id}' has no routed worker state to resume."
+            )
+        prefix = f"supervisor:{self.name}/worker:{worker.role}"
+        with get_tracer().start_as_current_span(f"supervisor.{self.name}") as span:
+            span.set_attribute("supervisor.name", self.name)
+            span.set_attribute("fastaiagent.runner.type", "supervisor")
+            span.set_attribute("fastaiagent.framework", "fastaiagent")
+            span.set_attribute("supervisor.routing", "decisions")
+            span.set_attribute("supervisor.route.worker", worker.role)
+            span.set_attribute("supervisor.resumed", True)
+            result = await self._routed_clone(worker).aresume(
+                execution_id,
+                resume_value=resume_value,
+                context=context,
+                agent_path_prefix=prefix,
+                **kwargs,
+            )
+            result.route = SupervisorRoute(worker=worker.role, chosen=worker.role)
+            span.set_attribute("supervisor.output", result.output)
+            return result
 
     def _hydrate_input(self, store: Checkpointer, execution_id: str) -> str | None:
         """Pull the original supervisor input from its earliest turn checkpoint."""
@@ -542,7 +916,17 @@ class Supervisor:
         Yields TextDelta for the supervisor's synthesis, and
         ToolCallStart/ToolCallEnd for worker delegations.
         Worker execution itself is not streamed.
+
+        With ``routing="decisions"`` there is no synthesis: the stream opens with
+        a :class:`~fastaiagent.llm.stream.HandoffEvent` naming the routed worker,
+        then streams that worker's own tokens. With ``validate_outputs`` the
+        reviewed reply arrives as one ``TextDelta`` (a rejected draft is never
+        streamed to the caller).
         """
+        if self.routing == "decisions":
+            async for event in self._astream_routed(input, context=context, **kwargs):
+                yield event
+            return
         agent = Agent(
             name=self.name,
             system_prompt=self.system_prompt,
@@ -551,6 +935,35 @@ class Supervisor:
             config=AgentConfig(max_iterations=self.max_delegation_rounds * 2),
         )
         async for event in agent.astream(input, context=context, **kwargs):
+            yield event
+
+    async def _astream_routed(
+        self, input: str, *, context: RunContext[Any] | None = None, **kwargs: Any
+    ) -> AsyncGenerator[StreamEvent, None]:
+        worker, route = await self._route(input)
+        yield HandoffEvent(
+            from_agent=self.name,
+            to_agent=worker.role,
+            reason=(
+                "fallback"
+                if route.fallback
+                else f"decisions: confidence {route.confidence:.2f}"
+                if route.confidence is not None
+                else "decisions"
+            ),
+        )
+        note = self._routing_note(route)
+        task = f"{input}\n\n{note}" if note else input
+        if self.validate_outputs:
+            first = await self._routed_clone(worker).arun(task, context=context, **kwargs)
+            result = await self._finish_routed(
+                worker, task, first, route, context=context, execution_id=None
+            )
+            if result.output:
+                yield TextDelta(text=result.output)
+            yield StreamDone()
+            return
+        async for event in self._routed_clone(worker).astream(task, context=context, **kwargs):
             yield event
 
     def stream(
@@ -643,4 +1056,15 @@ class Supervisor:
             "max_delegation_rounds": self.max_delegation_rounds,
             "validate_outputs": self.validate_outputs,
             "max_validation_retries_per_worker": self.max_validation_retries_per_worker,
+            # Only off the default, so an existing topology dict is unchanged.
+            **(
+                {"validation_mode": self.validation_mode}
+                if self.validation_mode != "chat"
+                else {}
+            ),
+            **(
+                {"routing": self.routing, "fallback_worker": self.fallback_worker}
+                if self.routing != "tools"
+                else {}
+            ),
         }

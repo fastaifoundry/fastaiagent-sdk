@@ -72,10 +72,10 @@ def _payload_errors(node: NodeConfig) -> list[str]:
                 f"Node '{node.id}' is a parallel node with no children. Pass agents=[<Agent>, ...]."
             )
     elif node.type == NodeType.condition:
-        if not node.config.get("conditions"):
+        if not node.config.get("conditions") and not node.config.get("decision"):
             errors.append(
                 f"Node '{node.id}' is a condition node with no conditions, so it "
-                f"decides nothing. Pass conditions=[...]."
+                f"decides nothing. Pass conditions=[...] or decision=Choice(...)."
             )
     return errors
 
@@ -144,6 +144,11 @@ def validate_chain(nodes: list[NodeConfig], edges: list[Edge]) -> list[str]:
             condition_specs = source_node.config.get("conditions", []) or []
             handles = {str(c.get("handle", "default")) for c in condition_specs}
             handles.add("default")
+            if source_node.config.get("decision"):
+                # A decision node returns one handle per Choice option.
+                from fastaiagent.chain.decision import decision_handles
+
+                handles |= decision_handles(source_node.config["decision"])
             covered: set[str] = {e.label for e in outs if e.label}
             uncovered = handles - covered - {"default"}
             if uncovered:

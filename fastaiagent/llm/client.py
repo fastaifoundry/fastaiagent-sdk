@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from fastaiagent._internal.async_utils import run_sync
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.errors import LLMError, LLMProviderError
+from fastaiagent.llm.decisions import DecisionResult
 from fastaiagent.llm.message import Message, MessageRole, ToolCall
 from fastaiagent.llm.stream import (
     StreamDone,
@@ -54,6 +55,15 @@ _replay_recorded_response: ContextVar[Any] = ContextVar(
 # return nondeterministic output. Set alongside the queue by ForkedReplay.
 _replay_on_miss: ContextVar[str] = ContextVar("_fastaiagent_replay_on_miss", default="live")
 
+# The Decisions API twin of ``_replay_recorded_response``: a list of
+# ``DecisionResult`` rebuilt from the original trace's Decisions API spans, in
+# capture order. ``adecide`` pops the front entry under determinism="recorded".
+# Kept as its own queue because a decision is not a chat completion — mixing them
+# would hand a decision's answers to the next ``acomplete`` and vice versa.
+_replay_recorded_decisions: ContextVar[Any] = ContextVar(
+    "_fastaiagent_replay_recorded_decisions", default=None
+)
+
 def _serialize_for_span(value: Any) -> str | None:
     """JSON-encode an arbitrary structure for span attributes, swallowing errors."""
     if value is None:
@@ -63,6 +73,50 @@ def _serialize_for_span(value: Any) -> str | None:
     except Exception:
         logger.debug("Failed to serialize value for span attribute", exc_info=True)
         return None
+
+
+#: ``gen_ai.operation.name`` of a Decisions API call. The OTel GenAI conventions
+#: name an operation after its API (``chat`` for ``/chat/completions``,
+#: ``embeddings`` for ``/embeddings``), so ``/decisions`` is ``decisions``.
+DECISIONS_OPERATION = "decisions"
+
+
+def decision_span_name(provider: str, model: str) -> str:
+    """Span name of one Decisions API call: ``llm.<provider>.decisions.<model>``."""
+    return f"llm.{provider}.{DECISIONS_OPERATION}.{model}"
+
+
+def stamp_decision_semconv(span: Any, *, provider: str, model: str) -> None:
+    """Request-side standard attributes, so any OTel / OpenInference backend reads
+    a Decisions call as an LLM call: OTel GenAI (``gen_ai.operation.name``,
+    ``gen_ai.provider.name``) and OpenInference (``openinference.span.kind="LLM"``,
+    ``llm.provider``, ``llm.model_name``). ``gen_ai.system`` /
+    ``gen_ai.request.model`` come from ``set_genai_attributes`` as on chat spans.
+    """
+    span.set_attribute("gen_ai.operation.name", DECISIONS_OPERATION)
+    span.set_attribute("gen_ai.provider.name", provider)
+    span.set_attribute("openinference.span.kind", "LLM")
+    span.set_attribute("llm.provider", provider)
+    span.set_attribute("llm.model_name", model)
+
+
+def is_decision_span(name: str | None, attributes: dict[str, Any] | None) -> bool:
+    """Whether a captured span is a Decisions API call (replay keys on this)."""
+    return (attributes or {}).get("gen_ai.operation.name") == DECISIONS_OPERATION and (
+        name or ""
+    ).startswith("llm.")
+
+
+def _decision_matches(recorded: DecisionResult, questions: list[Any]) -> bool:
+    """Whether a captured decision answers these questions (count, order, type, name)."""
+    if len(recorded.answers) != len(questions):
+        return False
+    for answer, question in zip(recorded.answers, questions, strict=True):
+        if answer.name != question.name:
+            return False
+        if answer.type != "refusal" and answer.type != question.type:
+            return False
+    return True
 
 
 def _validate_openai_client(client: Any) -> None:
@@ -687,6 +741,16 @@ class LLMClient:
                     output_tokens=recorded.usage.get("completion_tokens")
                     or recorded.usage.get("output_tokens"),
                     response_content=recorded.content,
+                    # Stamped so a rerun's own trace can be replayed again —
+                    # a tool-call-only turn has no content to carry it.
+                    response_tool_calls=_serialize_for_span(
+                        [
+                            {"id": tc.id, "name": tc.name, "arguments": tc.arguments}
+                            for tc in recorded.tool_calls
+                        ]
+                    )
+                    if recorded.tool_calls
+                    else None,
                     finish_reason=recorded.finish_reason or None,
                 )
                 return recorded
@@ -984,6 +1048,294 @@ class LLMClient:
             )
 
         return run_sync(_collect())
+
+    # ------------------------------------------------------------------
+    # Decisions API (POST /v1/decisions)
+    # ------------------------------------------------------------------
+
+    def decide(
+        self,
+        input: Any,
+        questions: Any,
+        *,
+        safety_identifier: str | None = None,
+    ) -> DecisionResult:
+        """Synchronous :meth:`adecide`."""
+        return run_sync(self.adecide(input, questions, safety_identifier=safety_identifier))
+
+    async def adecide(
+        self,
+        input: Any,
+        questions: Any,
+        *,
+        safety_identifier: str | None = None,
+    ) -> DecisionResult:
+        """Ask OpenAI's Decisions API fixed-answer questions about ``input``.
+
+        Args:
+            input: The shared evidence — a ``str``, an ``Image``, a list mixing
+                ``str`` and ``Image``, or a list of user ``Message`` objects.
+            questions: One or more ``Predicate`` / ``Choice`` / ``Score`` (or
+                their dict form). Answers come back in the same order.
+            safety_identifier: Optional opaque end-user id, passed through.
+
+        Returns:
+            A :class:`~fastaiagent.llm.decisions.DecisionResult`. Any single
+            answer may be a ``Refusal``; nothing here turns one into a score.
+
+        Raises:
+            ValueError: a question that cannot decide anything (no instructions,
+                fewer than two options/levels, repeated names).
+            LLMError: a provider that does not serve the endpoint, unsupported
+                input (PDF, files, non-user messages), or an unreadable reply.
+            LLMProviderError: a non-200 from the endpoint (429/5xx are retried
+                up to ``max_retries``).
+
+        The client's ``model`` is used as-is; the endpoint serves ``gpt-6-luna``
+        today, so build the client with ``LLMClient(model="gpt-6-luna")``.
+        """
+        from fastaiagent.llm.decisions import (
+            build_decision_input,
+            normalize_questions,
+            summarize_decision_input,
+        )
+        from fastaiagent.trace.otel import get_tracer
+        from fastaiagent.trace.span import set_fastaiagent_attributes, set_genai_attributes
+
+        qs = normalize_questions(questions)
+        self._check_decisions_supported()
+        body: dict[str, Any] = {
+            "model": self.model,
+            "input": build_decision_input(input, image_cap_mb=self._decision_image_cap_mb()),
+            "questions": [q.to_wire() for q in qs],
+        }
+        if safety_identifier is not None:
+            body["safety_identifier"] = safety_identifier
+
+        from opentelemetry.trace import SpanKind
+
+        tracer = get_tracer("fastaiagent.llm.client")
+        # ``llm.<provider>.decisions.<model>`` — provider, then the API, then the
+        # model, so it reads right next to chat spans (``llm.openai.gpt-5.1``).
+        # CLIENT kind: an outbound model call, per the OTel GenAI conventions.
+        with tracer.start_as_current_span(
+            decision_span_name(self.provider, self.model), kind=SpanKind.CLIENT
+        ) as span:
+            # No ``gen_ai.response.content`` here, ever: replay rebuilds a chat
+            # response from any span carrying it, and a decision is not one.
+            set_genai_attributes(span, system=self.provider, model=self.model)
+            # The endpoint is OpenAI's whatever the transport (a gateway shows
+            # ``gen_ai.system="custom"``), so the standard provider key says openai.
+            stamp_decision_semconv(span, provider="openai", model=self.model)
+            set_fastaiagent_attributes(
+                span,
+                **{
+                    "decision.input": summarize_decision_input(input),
+                    "decision.questions": _serialize_for_span(body["questions"]),
+                },
+            )
+
+            recorded = self._pop_recorded_decision(qs)
+            if recorded is not None:
+                span.set_attribute("replay.mode", "recorded")
+                self._stamp_decision(span, recorded)
+                return recorded
+
+            return await self._adecide_with_retries(span, body, qs)
+
+    async def _adecide_with_retries(
+        self, span: Any, body: dict[str, Any], questions: list[Any]
+    ) -> DecisionResult:
+        from fastaiagent._internal.pricing import record_decision_cost
+        from fastaiagent.llm.decisions import parse_decision
+        from fastaiagent.trace.span import set_fastaiagent_attributes
+
+        start = time.monotonic()
+        data: dict[str, Any] = {}
+        request_id: str | None = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                data, request_id = await self._post_decision(body)
+                break
+            except LLMProviderError as e:
+                if attempt < self.max_retries and self._should_retry(e.status_code):
+                    await asyncio.sleep(self._retry_delay(attempt))
+                    continue
+                raise
+
+        result = parse_decision(data, questions)
+        result.latency_ms = int((time.monotonic() - start) * 1000)
+        result.request_id = request_id
+        if request_id:
+            span.set_attribute("gen_ai.response.id", request_id)
+        if not result.model:
+            result.model = self.model
+        # Same run accumulator as completions, so ``AgentResult.cost`` and a
+        # ``cost_limit`` rule see decisions too — at the decisions rate.
+        cost, known = record_decision_cost(result.model, result.usage)
+        if known:
+            result.cost_usd = cost
+            set_fastaiagent_attributes(span, **{"cost.total_usd": cost})
+        self._stamp_decision(span, result)
+        return result
+
+    @staticmethod
+    def _stamp_decision(span: Any, result: DecisionResult) -> None:
+        from fastaiagent.trace.span import set_fastaiagent_attributes, set_genai_attributes
+
+        set_genai_attributes(
+            span,
+            input_tokens=result.usage.get("input_tokens"),
+            output_tokens=result.usage.get("output_tokens"),
+        )
+        # Response-side standard attributes (OTel GenAI + OpenInference).
+        if result.model:
+            span.set_attribute("gen_ai.response.model", result.model)
+        tokens_in = result.usage.get("input_tokens")
+        tokens_out = result.usage.get("output_tokens")
+        if tokens_in is not None:
+            span.set_attribute("llm.token_count.prompt", tokens_in)
+        if tokens_out is not None:
+            span.set_attribute("llm.token_count.completion", tokens_out)
+        if result.usage.get("total_tokens") is not None:
+            span.set_attribute("llm.token_count.total", result.usage["total_tokens"])
+        set_fastaiagent_attributes(
+            span,
+            **{
+                "decision.answers": _serialize_for_span(
+                    [a.model_dump(mode="json") for a in result.answers]
+                ),
+                "decision.refusals": len(result.refusals),
+            },
+        )
+
+    def _pop_recorded_decision(self, questions: list[Any]) -> DecisionResult | None:
+        """Serve the next captured decision under determinism="recorded"."""
+        queue = _replay_recorded_decisions.get()
+        if queue is None:
+            return None
+        if queue and _decision_matches(queue[0], questions):
+            result: DecisionResult = queue.pop(0)
+            return result
+        why = (
+            "ran out of captured decisions"
+            if not queue
+            else "reached a captured decision that answers different questions"
+        )
+        if _replay_on_miss.get() == "error":
+            from fastaiagent._internal.errors import ReplayError
+
+            raise ReplayError(
+                f"determinism='recorded' {why}: the rerun asks decisions the original "
+                f"trace did not. Use with_determinism('recorded', on_miss='live') to "
+                f"allow live calls."
+            )
+        logger.warning(
+            "determinism='recorded' %s; making a LIVE Decisions API call (billed). "
+            "Pass with_determinism('recorded', on_miss='error') to fail instead.",
+            why,
+        )
+        return None
+
+    def _check_decisions_supported(self) -> None:
+        if self._openai_client is not None:
+            return
+        if self.provider == "openai":
+            return
+        if self.provider == "custom":
+            if not self.base_url:
+                raise LLMError("decide() with provider='custom' needs a base_url.")
+            return
+        raise LLMError(
+            f"decide() calls OpenAI's Decisions API (POST /v1/decisions), which "
+            f"provider {self.provider!r} does not serve. Use "
+            f"LLMClient(provider='openai', model='gpt-6-luna'), provider='custom' "
+            f"with a base_url that serves /decisions, or pass openai_client=."
+        )
+
+    def _decision_image_cap_mb(self) -> float:
+        from fastaiagent.multimodal.format import _PROVIDER_IMAGE_LIMIT_MB
+
+        if self.max_image_size_mb is not None:
+            return float(self.max_image_size_mb)
+        return _PROVIDER_IMAGE_LIMIT_MB["openai"]
+
+    async def _post_decision(self, body: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
+        """POST the request; returns the JSON body and OpenAI's ``x-request-id``."""
+        if self._openai_client is not None:
+            return await self._decide_via_openai_client(body)
+
+        env_var, env_label = self._api_key_env()
+        api_key = self.api_key or os.environ.get(env_var, "")
+        if not api_key:
+            raise LLMProviderError(
+                f"No API key for provider '{self.provider}'. "
+                f"Set the api_key parameter or the {env_label} environment variable."
+            )
+        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
+        url = f"{self.base_url.rstrip('/')}/decisions"
+        async with self._new_async_client() as client:
+            resp = await client.post(url, json=body, headers=headers)
+        if resp.status_code != 200:
+            raise LLMProviderError(
+                f"OpenAI Decisions API error {resp.status_code}: {resp.text}",
+                status_code=resp.status_code,
+            )
+        try:
+            data: dict[str, Any] = resp.json()
+        except ValueError as e:
+            raise LLMProviderError(
+                f"OpenAI Decisions API returned non-JSON: {resp.text[:300]}",
+                status_code=resp.status_code,
+            ) from e
+        return data, resp.headers.get("x-request-id")
+
+    async def _decide_via_openai_client(
+        self, body: dict[str, Any]
+    ) -> tuple[dict[str, Any], str | None]:
+        """POST /decisions through the injected openai SDK client.
+
+        ``client.decisions.create`` exists from openai 3.26. Older clients (the
+        1.x/2.x most installs pin) still have the generic ``client.post``, which
+        reuses the client's base_url, auth (incl. Azure AD) and http_client — so
+        an injected client works without upgrading openai.
+        """
+        client = self._openai_client
+        resource = getattr(client, "decisions", None)
+
+        try:
+            if self._openai_client_is_async:
+                if resource is not None:
+                    raw = await resource.create(**body)
+                else:
+                    import httpx
+
+                    raw = await client.post("/decisions", cast_to=httpx.Response, body=body)
+            else:
+
+                def _call() -> Any:
+                    if resource is not None:
+                        return resource.create(**body)
+                    import httpx
+
+                    return client.post("/decisions", cast_to=httpx.Response, body=body)
+
+                raw = await asyncio.to_thread(_call)
+        except Exception as e:
+            status = getattr(e, "status_code", None)
+            if isinstance(status, int):
+                # Wrapped so the retry loop and callers see one error type.
+                raise LLMProviderError(
+                    f"OpenAI Decisions API error {status}: {e}", status_code=status
+                ) from e
+            raise
+
+        if hasattr(raw, "model_dump"):
+            # openai SDK models carry the request id as ``_request_id``.
+            dumped: dict[str, Any] = raw.model_dump()
+            return dumped, getattr(raw, "_request_id", None)
+        parsed: dict[str, Any] = raw.json()
+        return parsed, raw.headers.get("x-request-id")
 
     def _get_provider_fn(self) -> Any:
         providers = {

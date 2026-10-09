@@ -80,6 +80,28 @@ UNUSABLE: list[tuple[str, dict[str, Any], str]] = [
     ),
     ("classifier", {}, "no categories"),
     ("classifier", {"categories": {}}, "an empty category map"),
+    # ``backend`` (1.84.0) — every case raises before any model call.
+    ("llm_judge", {"backend": "decisions"}, "decisions engine with no condition to decide"),
+    ("llm_judge", {"backend": "decisions", "instructions": "  "}, "a blank condition"),
+    (
+        "llm_judge",
+        {"backend": "decisions", "instructions": "Polite.", "threshold": 2},
+        "a threshold no probability can reach",
+    ),
+    ("llm_judge", {"backend": "decisionz"}, "an engine that does not exist"),
+    ("topic", {"topics": ["ok"], "backend": "decisionz"}, "an engine that does not exist"),
+    ("topic", {"topics": [], "backend": "decisions"}, "decisions engine, no topics"),
+    (
+        "topic",
+        {"topics": ["ok"], "backend": "decisions", "topic_threshold": -1},
+        "a threshold every probability clears",
+    ),
+    ("content_safety", {"backend": "decisionz"}, "an engine that does not exist"),
+    (
+        "groundedness",
+        {"backend": "decisions", "context_key": "c", "answer_key": "a"},
+        "an engine that would drop the unsupported claims",
+    ),
     # NOTE: ``{"categories": {...}}`` with no ``blocked`` list used to live here.
     # It is no longer an unusable config — 1.64.0 made it *work* rather than
     # making it error, adopting the plane's reading that every detected category

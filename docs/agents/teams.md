@@ -245,6 +245,117 @@ most tasks. To override, pass `validation_prompt` with two named
 placeholders — `{task}` and `{output}`. The validator must return strict
 JSON: `{"approved": true}` or `{"approved": false, "feedback": "..."}`.
 
+### Reviewing workers with the Decisions API
+
+*New in 1.84.0.* `validation_mode="decisions"` replaces the review chat call with
+one [Decisions API](../llm/decisions.md) predicate: "the worker output is a
+complete, correct, and on-topic answer to the original task". The task and output
+are sent as evidence. The supervisor approves when the probability meets
+`validation_threshold`. Otherwise the worker retries with feedback that names
+the probability.
+
+```python
+supervisor = Supervisor(
+    name="manager",
+    llm=LLMClient(provider="openai", model="gpt-4o-mini"),
+    workers=[researcher, writer],
+    validate_outputs=True,
+    validation_mode="decisions",
+    validation_llm=LLMClient(model="gpt-6-luna"),   # the default
+    validation_threshold=0.5,                        # the default
+)
+```
+
+- **Same retry cap, audit row and fail-open behaviour** as the chat review. A
+  failed call, or a refusal, approves the output with a warning.
+- **Set the criterion with `validation_criteria=`**, a statement. The default is
+  "the worker output directly addresses what the original task asks, stays on
+  topic, and is a complete reply". `validation_prompt` is the chat-mode
+  equivalent and isn't used here.
+- **Ask what the reviewer can actually judge.** It sees the task and the output,
+  not the worker's tool results. A criterion like "the facts are correct" scores
+  good answers low and triggers needless retries, and a retry re-runs the
+  worker's tools.
+- **Bad settings fail at construction.** An unknown `validation_mode`, a blank
+  `validation_criteria`, or a threshold outside 0..1 raises `ValueError`.
+
+## Routing with the Decisions API — `routing="decisions"`
+
+*New in 1.84.0.* A `Supervisor` picks workers in one of two ways:
+
+| | `routing="tools"` (default) | `routing="decisions"` |
+|---|---|---|
+| Supervisor | a chat model (`llm=`) | OpenAI's [Decisions API](../llm/decisions.md) (`router_llm=`, default `gpt-6-luna`) |
+| How it picks | calls `delegate_to_<role>` tools, possibly several, in any order | one `decide()` call picks **exactly one** worker |
+| The answer | the supervisor's own synthesis of what the workers returned | the worker's reply, unchanged; no synthesis turn |
+| Best for | multi-step work: decompose, call several workers, combine | single-hop routing: support queues, triage, intake |
+
+Tool calls are the right mechanism when the supervisor has to *plan*. It writes
+each worker's sub-task as the tool argument, then writes the final answer. When
+the job is only "which queue owns this?", that's a classification. A chat model
+answering it costs a full turn, plus a synthesis turn that rewrites the worker's
+reply, and it can call no tool at all. `routing="decisions"` answers it with a
+probability:
+
+```python
+from fastaiagent.agent import Supervisor, Worker
+from fastaiagent.llm import LLMClient, Predicate, Score
+
+desk = Supervisor(
+    name="call-center",
+    workers=[complaints, products, general],      # Worker(role=..., description=..., agent=...)
+    routing="decisions",
+    router_llm=LLMClient(model="gpt-6-luna"),     # the default
+    fallback_worker="other",                      # where a refused / unsure route goes
+    routing_min_confidence=0.6,
+    routing_questions={                           # asked in the SAME request as the route
+        "urgent": Predicate(instructions="The customer needs an answer today."),
+        "mood": Score(instructions="How upset is the customer?", levels=["Calm", "Frustrated", "Angry"]),
+    },
+    validate_outputs=True,                        # optional review, as above
+    validation_mode="decisions",
+    validation_criteria="The agent's reply directly addresses what the customer asked and tells the customer the next step.",
+)
+result = desk.run("My order A1042 arrived broken — sort it out today!")
+result.output                    # the complaints worker's reply
+result.route.worker              # "complaint"
+result.route.confidence          # 0.99
+result.route.answers.predicates["urgent"].probability   # 0.99
+```
+
+- **The workers' `role`s and `description`s are the router's options.** Write
+  each description the way you'd brief a colleague on which queue owns what.
+- **A refusal, or a confidence below `routing_min_confidence`, goes to
+  `fallback_worker`.** The router never guesses a specialist. `fallback_worker`
+  is required, and the router needs at least two workers with distinct roles.
+- **`routing_questions` ride along in the same `decide()` call.** The worker gets
+  their answers as a short note after the task (`[Supervisor routing note]
+  urgent: yes (p=0.99); mood: Angry`), and they're on `result.route.answers`.
+- **`result.route`** is a `SupervisorRoute`: `worker`, `chosen`, `confidence`,
+  `fallback`, `answers`, `latency_ms`, `cost_usd` and `reviews` (one review score
+  per attempt). The routing call's cost and tokens are added to
+  `result.cost` / `result.tokens_used`.
+- **Streaming** opens with a `HandoffEvent` naming the worker, then streams the
+  worker's own tokens. With `validate_outputs`, the reviewed reply arrives as one
+  `TextDelta`, so a rejected draft is never streamed.
+- **Resume continues the worker that paused, with no re-route.** Asking the router
+  again could pick someone else.
+- **Tracing**: one `supervisor.<name>` span carries `supervisor.routing`,
+  `supervisor.route.worker`, `.confidence` and `.fallback`, with the
+  `llm.openai.decisions.gpt-6-luna` and worker spans nested under it.
+- **`llm=` isn't used for routing in this mode.**
+
+In the Local UI, a routed run reads as route → worker → review:
+
+![A routed supervisor trace: the Decisions route, the worker with its tools, the review](../ui/screenshots/decisions-02-supervisor-trace.png)
+
+![The route on the supervisor's root span](../ui/screenshots/decisions-03-route-attributes.png)
+
+See [`106_call_center_supervisor.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/106_call_center_supervisor.py).
+Its `--compare` flag runs the same tickets through both modes. The same routing
+as a Chain graph is in
+[`107_call_center_chain.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/107_call_center_chain.py).
+
 ## API Reference
 
 ### `Supervisor`
@@ -260,6 +371,16 @@ Supervisor(
     validate_outputs: bool = False,
     validation_prompt: str | None = None,
     max_validation_retries_per_worker: int = 1,
+    validation_mode: str = "chat",          # "decisions" — 1.84.0
+    validation_llm: LLMClient | None = None,  # decisions mode; default gpt-6-luna
+    validation_threshold: float = 0.5,      # decisions mode
+    validation_criteria: str | None = None, # decisions mode: the review statement
+    routing: str = "tools",                 # "decisions" — 1.84.0
+    router_llm: LLMClient | None = None,    # decisions routing; default gpt-6-luna
+    fallback_worker: str | None = None,     # required with routing="decisions"
+    routing_min_confidence: float = 0.0,
+    routing_questions: dict[str, Predicate | Choice | Score] | None = None,
+    routing_instructions: str | None = None,  # the routing Choice's question
 )
 ```
 

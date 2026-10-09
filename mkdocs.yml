@@ -85,6 +85,7 @@ nav:
           - "Trace a LangChain Agent in 2 Minutes": tutorials/trace-langchain.md
           - "Debug with Agent Replay": tutorials/debug-with-replay.md
           - "Memory, End to End": tutorials/memory-guide.md
+          - "Route a Call Centre with the Decisions API": tutorials/decision-routing.md
       - Templates:
           - flagships/index.md
           - "Deep Research Agent": flagships/deep-research-agent.md
@@ -139,6 +140,7 @@ nav:
       - LLM:
           - "Concepts & Mental Model": llm/concepts.md
           - "Providers": llm/providers.md
+          - "OpenAI Decisions API": llm/decisions.md
           - "Custom Providers": llm/custom-provider.md
       - Streaming: streaming/index.md
       - "Structured Output": structured-output/index.md

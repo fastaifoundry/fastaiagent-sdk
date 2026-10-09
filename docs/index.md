@@ -19,6 +19,7 @@ Works standalone or connected to the [FastAIAgent Platform](https://fastaiagent.
 | **Cyclic chain workflows** | Yes | LangGraph | No |
 | **Multi-turn agent simulation** | Yes | No | No |
 | **Built-in guardrails** | Yes | No | No |
+| **OpenAI Decisions API — route, guard and judge with probabilities, replayable** | Yes | No | No |
 | **Safety library (PII, prompt-injection, moderation)** | Yes | No | No |
 | **OTel-native tracing** | Yes | Proprietary | Proprietary |
 | **Fragment prompt composition** | Yes | No | No |
@@ -55,6 +56,7 @@ print(result.trace.summary())
 - **[Durability](durability/index.md)** — Pause for human approval, survive crashes, resume from any process. SQLite locally, Postgres in production.
 - **[Streaming](streaming/index.md)** — Real-time token delivery from LLM to your app
 - **[Structured Output](structured-output/index.md)** — Force LLM responses into typed JSON schemas
+- **[OpenAI Decisions API](llm/decisions.md)** — Fixed-answer questions that return probabilities, not text. They power guardrails, an eval judge, Chain routing, an agent tool, and a Supervisor that routes with the Decisions API ([call-centre walkthrough](tutorials/decision-routing.md))
 - **[Chains](chains/index.md)** — Directed graph workflows with cycles, typed state, and checkpointing
 - **[Guardrails](guardrails/index.md)** — Input/output/tool validation (code, regex, LLM judge)
 - **[Tracing](tracing/index.md)** — OTel-native tracing with local SQLite storage

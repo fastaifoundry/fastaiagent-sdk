@@ -1,6 +1,18 @@
 """LLM client abstraction with multi-provider support."""
 
 from fastaiagent.llm.client import LLMClient, LLMResponse
+from fastaiagent.llm.decisions import (
+    Choice,
+    ChoiceAnswer,
+    DecisionResult,
+    Level,
+    Option,
+    Predicate,
+    PredicateAnswer,
+    Refusal,
+    Score,
+    ScoreAnswer,
+)
 from fastaiagent.llm.message import (
     AssistantMessage,
     Message,
@@ -46,6 +58,17 @@ __all__ = [
     "Usage",
     "StreamDone",
     "Paused",
+    # Decisions API
+    "Predicate",
+    "Choice",
+    "Score",
+    "Option",
+    "Level",
+    "DecisionResult",
+    "PredicateAnswer",
+    "ChoiceAnswer",
+    "ScoreAnswer",
+    "Refusal",
     # Provider registry
     "ProviderPreset",
     "register_provider",

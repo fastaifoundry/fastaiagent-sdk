@@ -301,3 +301,11 @@ def noop_middleware():
         name = "noop"
 
     return _NoOp()
+
+
+@pytest.fixture
+def decisions_stub():
+    """An in-process ``POST /v1/decisions`` stand-in (``tests/_decisions_stub.py``)."""
+    from tests._decisions_stub import started_stub
+
+    yield from started_stub()

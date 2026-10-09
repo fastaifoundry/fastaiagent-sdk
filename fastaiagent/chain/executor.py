@@ -652,12 +652,18 @@ async def _execute_node(
         return {"output": output, "error": None}
 
     elif node.type == NodeType.condition:
+        decision = node.config.get("decision")
+        if decision:
+            # 1.84.0 — route on a Decisions API Choice (chain/decision.py).
+            from fastaiagent.chain.decision import run_decision_condition
+
+            return await run_decision_condition(decision, context, _render_template)
         conditions = node.config.get("conditions", [])
         if not conditions:
             raise ChainError(
                 f"Condition node '{node.id}' has no conditions, so it can only ever "
                 f"route one way and decides nothing. Pass conditions=[{{'expression': "
-                f"'...', 'handle': '...'}}, ...]."
+                f"'...', 'handle': '...'}}, ...] or decision=Choice(...)."
             )
         for cond in conditions:
             expr = cond.get("expression", "")

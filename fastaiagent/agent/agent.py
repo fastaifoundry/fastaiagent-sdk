@@ -294,6 +294,10 @@ class AgentResult(BaseModel):
     status: str = "completed"
     pending_interrupt: dict[str, Any] | None = None
     guardrails: list[GuardrailFiring] = Field(default_factory=list)
+    #: How a ``Supervisor(routing="decisions")`` routed this run — a
+    #: :class:`~fastaiagent.agent.team.SupervisorRoute` (which worker, the
+    #: confidence, whether it fell back, every answer). ``None`` everywhere else.
+    route: Any | None = None
 
     model_config = {"arbitrary_types_allowed": True}
 

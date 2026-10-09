@@ -226,6 +226,19 @@ The right pane is an inspector with four tabs:
 
 ![Trace detail](screenshots/03-trace-detail.png)
 
+#### Decisions API spans
+
+A call to [OpenAI's Decisions API](../llm/decisions.md) appears as
+`llm.<provider>.decisions.<model>` (e.g. `llm.openai.decisions.gpt-6-luna`), right
+next to chat spans such as `llm.openai.gpt-5.1`. Its **Attributes** tab carries the
+standard OTel GenAI and OpenInference keys, the questions asked, and every
+answer with its probabilities. Its cost appears per model under
+**Analytics → Cost breakdown**. The
+[call-centre walkthrough](../tutorials/decision-routing.md#7-end-to-end-in-the-local-ui)
+tours a routed run end to end.
+
+![A Decisions API span in the trace inspector](screenshots/decisions-04-decisions-span.png)
+
 #### About the Events tab
 
 A span's events are a list of `{name, timestamp, attributes}` records.

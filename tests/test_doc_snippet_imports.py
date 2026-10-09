@@ -245,7 +245,7 @@ _UNPARSEABLE_ALLOWLIST: dict[str, str] = {
     "docs/tools/mcp-server.md:5c431d3d455c": "as_mcp_server() signature listing",
     "docs/platform/index.md:e67d6d737b08": "platform API surface listing",
     "docs/agents/dynamic-instructions.md:51fb9f07f4e1": "callable type signature",
-    "docs/agents/teams.md:a1d6642e6b5a": "Supervisor() signature listing",
+    "docs/agents/teams.md:8ea39934b7b4": "Supervisor() signature listing",
     "docs/agents/teams.md:6a1a1fa678ab": "Worker() signature listing",
     "docs/testing/index.md:8596e8cc4d60": "TestModel() signature listing",
     "docs/internals/evaluation-system.md:1083e51a6e19": "evaluate() signature listing",

@@ -143,6 +143,15 @@ Notes:
   a notebook and an Azure ML `score.py` deployment** without per-request token
   management.
 
+## OpenAI Decisions API
+
+`LLMClient.decide()` / `adecide()` (1.84.0) call OpenAI's `POST /v1/decisions`.
+That works with `provider="openai"`, with `provider="custom"` behind a gateway
+that serves `/decisions`, and with an injected `openai_client`. With an injected
+client it uses `client.decisions.create` on openai ≥ 3.26, and the client's
+generic `post` on older versions, so no upgrade is needed. Every other provider
+raises `LLMError`. See [OpenAI Decisions API](decisions.md).
+
 ## Capability fallbacks
 
 When a preset declares a capability as missing, `LLMClient` does the safe

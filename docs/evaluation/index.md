@@ -417,6 +417,11 @@ results = evaluate(
 )
 ```
 
+`DecisionJudge` (1.84.0) is the probability-based alternative to `LLMJudge`. It
+asks [OpenAI's Decisions API](../llm/decisions.md) whether a criterion holds, so
+there's no verdict to parse. See
+[LLM judge → DecisionJudge](llm-judge.md#decisionjudge-decisions-api).
+
 ## ScorerResult
 
 | Field | Type | Description |

@@ -36,12 +36,16 @@ and **Supervisor** compose *multiple* agents with different control shapes.
 | **Agent** | One goal, open-ended path — let the tool-calling loop figure out the steps. | Model decides at runtime |
 | **Chain** | The steps are known and must be deterministic — routing, retry loops, HITL gates, one unified trace. | You draw the graph |
 | **Swarm** | Several specialists that hand off to each other; the *active* agent decides who goes next. No coordinator. | Peer-to-peer mesh |
-| **Supervisor** | A central agent delegates to worker agents and synthesizes their outputs. | Hub-and-spoke |
+| **Supervisor** | A central agent delegates to worker agents and synthesizes their outputs, or, with `routing="decisions"`, the Decisions API routes each request to exactly one worker. | Hub-and-spoke |
 
 Rule of thumb: start with a single **Agent**. Reach for a **Chain** when you
 need deterministic structure, a **Swarm** when routing belongs to the
 specialists, and a **Supervisor** when one LLM should orchestrate and combine
-workers.
+workers. When the supervisor's only job is to pick the one right worker (a
+support queue, triage), use `Supervisor(routing="decisions")`. OpenAI's
+[Decisions API](../llm/decisions.md) routes in a few hundred milliseconds,
+always lands on exactly one worker, and the worker's reply goes back
+unchanged. See [Teams](teams.md#routing-with-the-decisions-api-routingdecisions).
 
 ## The run loop
 

@@ -14,7 +14,7 @@ pip install fastaiagent
 
 Runs fully standalone, or connect to the [FastAIAgent Platform](https://fastaiagent.net) for hosted observability, prompt management, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.83.0)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.84.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -59,6 +59,31 @@ LLMClient(provider="openrouter", model="openai/gpt-4o-mini")    # OPENROUTER_API
 Custom internal LLM gateways register in five lines via
 `fastaiagent.llm.providers.register_provider`.
 See [docs/llm/providers](docs/llm/providers.md).
+
+## Classify, route and judge with OpenAI's Decisions API
+
+`llm.decide()` asks fixed-answer questions and returns probabilities rather than
+text. OpenAI's figure is about 10× faster than a chat call, and it bills input
+tokens only. The same engine backs guardrails (`backend="decisions"`), an eval
+judge (`DecisionJudge`), Chain routing (`decision=`), an agent tool
+(`decision_tool`), and a Supervisor that routes with the Decisions API
+(`Supervisor(routing="decisions")`). Decisions replay offline like any other
+call.
+
+```python
+from fastaiagent.llm import Choice, LLMClient, Predicate
+
+r = LLMClient(model="gpt-6-luna").decide(
+    "I was charged twice for my renewal.",
+    {"team": Choice(instructions="Which team?", options=["billing", "technical", "other"]),
+     "duplicate": Predicate(instructions="The customer reports a duplicate charge.")},
+)
+r.choices["team"].choice, r.predicates["duplicate"].probability   # ('billing', 1.0)
+```
+
+See [docs/llm/decisions](docs/llm/decisions.md) and
+[examples 102–107](examples/README.md#openai-decisions-api-1840). Example 106 is a
+call-centre desk routed by `gpt-6-luna` with `gpt-5.1` workers.
 
 ## Testing your agents — deterministic, no network
 

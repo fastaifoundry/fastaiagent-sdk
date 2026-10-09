@@ -145,6 +145,44 @@ GEval(name="q", criteria="quality", scale="0-1")      # 0.0 to 1.0
 GEval(name="q", criteria="quality", scale="1-5")      # 1 to 5, normalized to 0–1
 ```
 
+## DecisionJudge (Decisions API)
+
+*New in 1.84.0.* `DecisionJudge` asks [OpenAI's Decisions API](../llm/decisions.md)
+instead of a chat model. It gets a probability back, so there's no verdict to
+parse, no retry on an unreadable reply, and the score is calibrated rather than
+self-reported.
+
+- **Predicate** (default): `criteria` is a statement that should be true of a good
+  output, and the score is its probability.
+- **Score**: pass `levels`, worst first. The score is the expected level,
+  normalized to 0..1.
+
+```python
+from fastaiagent.eval import DecisionJudge
+
+judge = DecisionJudge("The actual output answers the input correctly.")
+judge.score(input="What is 2+2?", output="4", expected="4")   # score=1.00 passed=True
+judge.score(input="What is 2+2?", output="5", expected="4")   # score=0.00 passed=False
+
+graded = DecisionJudge(
+    "How correct is the actual output?",
+    levels=["Wrong", "Partially correct", "Correct"],
+    threshold=0.75,
+)
+```
+
+- `passed = score >= threshold` (default 0.5). It drops into `evaluate()`, the
+  pytest gates and `simulate()` anywhere an `LLMJudge` goes.
+- `llm` defaults to `LLMClient(model="gpt-6-luna")`.
+- `template` takes the same `{input}` / `{output}` / `{expected}` placeholders, and
+  their aliases, as `LLMJudge`. The rendered case is sent as **evidence**, never
+  mixed into the question.
+- A refusal or a failed call scores `0.0` with the reason spelled out, never a pass.
+- A judge that couldn't judge raises at construction. That covers empty criteria,
+  a single level, a template with no placeholder, and a threshold outside 0..1.
+- In `simulate()`, the judge is re-aimed at each success criterion. Failure
+  criteria are asked as "this undesirable condition occurred" predicates at 0.5.
+
 ## Combining with Other Scorers
 
 LLM judges work alongside built-in and custom scorers:

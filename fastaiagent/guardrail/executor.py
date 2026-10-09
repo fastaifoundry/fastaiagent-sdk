@@ -88,10 +88,15 @@ class GuardrailOutcome:
 #: Widening this is a deliberate act: ``tests/test_guardrail_topics.py`` pins the
 #: contents so a new entry has to be argued for, not typed.
 EXPORTABLE_DETAIL_KEYS: dict[GuardrailType, frozenset[str]] = {
-    GuardrailType.topic: frozenset({"mode", "matched", "topics"}),
+    # ``backend`` (1.84.0) is the engine name — ``"decisions"`` — and is present
+    # only off the default chat engine; rule-derived, like ``pii``'s.
+    GuardrailType.topic: frozenset({"mode", "matched", "topics", "backend"}),
     GuardrailType.content_safety: frozenset(
-        {"taxonomy", "scores", "thresholds", "tripped", "unscored"}
+        {"taxonomy", "scores", "thresholds", "tripped", "unscored", "backend"}
     ),
+    # Only the Decisions-API engine writes these (a probability and the rule's
+    # own threshold); the chat engine's ``llm_judge`` result carries no metadata.
+    GuardrailType.llm_judge: frozenset({"backend", "probability", "threshold"}),
     # ``unsupported_claims`` is payload-derived — see the ⚠ above.
     GuardrailType.groundedness: frozenset({"score", "threshold", "unsupported_claims"}),
     # Entity detection. Counts and entity names only — the same shape the plane's

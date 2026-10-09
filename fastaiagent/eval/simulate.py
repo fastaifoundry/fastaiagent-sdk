@@ -44,6 +44,7 @@ from fastaiagent.llm.message import AssistantMessage, Message, UserMessage
 
 if TYPE_CHECKING:
     from fastaiagent.agent.agent import Agent
+    from fastaiagent.eval.decision_judge import DecisionJudge
     from fastaiagent.eval.llm_judge import LLMJudge
     from fastaiagent.llm.client import LLMClient
 
@@ -421,23 +422,33 @@ def _pause_as_scenario_stop() -> Iterator[None]:
 async def _judge_transcript(
     scenario: Scenario,
     transcript: list[TranscriptTurn],
-    judge: LLMJudge | None,
+    judge: LLMJudge | DecisionJudge | None,
 ) -> tuple[bool, list[CriterionVerdict]]:
     """Judge the full transcript against success / failure criteria.
 
-    One :class:`LLMJudge` call per criterion (it returns one ``ScorerResult``).
-    Overall pass = every success criterion holds AND no failure criterion holds.
+    One judge call per criterion (it returns one ``ScorerResult``). Overall pass =
+    every success criterion holds AND no failure criterion holds.
+
+    An :class:`LLMJudge` lends only its ``llm``; a
+    :class:`~fastaiagent.eval.decision_judge.DecisionJudge` is re-aimed at each
+    criterion with its client, threshold and template kept.
     """
+    from fastaiagent.eval.decision_judge import DecisionJudge
     from fastaiagent.eval.llm_judge import LLMJudge
 
     judge_llm = getattr(judge, "_llm", None) if judge is not None else None
     transcript_text = _format_transcript(transcript)
 
+    def _for(criterion: str) -> LLMJudge | DecisionJudge:
+        if isinstance(judge, DecisionJudge):
+            return judge.with_criteria(criterion)
+        return LLMJudge(criteria=criterion, llm=judge_llm)
+
     verdicts: list[CriterionVerdict] = []
     overall = True
 
     for criterion in scenario.success_criteria:
-        j = LLMJudge(criteria=criterion, llm=judge_llm)
+        j = _for(criterion)
         res = await j.ascore(input=scenario.name, output=transcript_text)
         verdicts.append(
             CriterionVerdict(
@@ -450,11 +461,20 @@ async def _judge_transcript(
     for criterion in scenario.failure_criteria:
         # Phrase so the judge scores "did this bad thing happen?": passed
         # (score>=0.5) means the failure occurred → desired state is the inverse.
-        wrapped = (
-            f"whether this undesirable condition occurred: {criterion} "
-            "(score 1.0 if it clearly occurred, 0.0 if it did not)"
-        )
-        j = LLMJudge(criteria=wrapped, llm=judge_llm)
+        if isinstance(judge, DecisionJudge):
+            # Always a predicate at 0.5, whatever levels the judge grades success
+            # with: its probability is "the bad thing happened".
+            j = DecisionJudge(
+                f"This undesirable condition occurred in the conversation: {criterion}",
+                llm=judge._llm,
+                template=judge.template,
+            )
+        else:
+            wrapped = (
+                f"whether this undesirable condition occurred: {criterion} "
+                "(score 1.0 if it clearly occurred, 0.0 if it did not)"
+            )
+            j = LLMJudge(criteria=wrapped, llm=judge_llm)
         res = await j.ascore(input=scenario.name, output=transcript_text)
         failure_happened = res.passed
         verdicts.append(
@@ -474,7 +494,7 @@ async def _judge_transcript(
 async def _run_scenario(
     scenario: Scenario,
     agent: Agent | AgentAdapter,
-    judge: LLMJudge | None,
+    judge: LLMJudge | DecisionJudge | None,
 ) -> SimulationResult:
     """Drive one scenario end-to-end and judge the transcript."""
     from fastaiagent.trace import trace_context
@@ -553,7 +573,7 @@ async def asimulate(
     scenarios: Scenario | list[Scenario],
     agent: Agent | AgentAdapter,
     *,
-    judge: LLMJudge | None = None,
+    judge: LLMJudge | DecisionJudge | None = None,
     concurrency: int = 4,
     persist: bool = True,
     run_name: str | None = None,
@@ -592,7 +612,7 @@ def simulate(
     scenarios: Scenario | list[Scenario],
     agent: Agent | AgentAdapter,
     *,
-    judge: LLMJudge | None = None,
+    judge: LLMJudge | DecisionJudge | None = None,
     concurrency: int = 4,
     persist: bool = True,
     run_name: str | None = None,

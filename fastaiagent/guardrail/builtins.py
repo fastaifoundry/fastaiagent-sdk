@@ -76,9 +76,13 @@ def no_prompt_injection(
     Delegates to
     :func:`fastaiagent._internal.safety_detectors.detect_prompt_injection`.
     Defaults to the ``input`` position (the usual attack surface) and the
-    zero-dependency heuristic mode; ``mode="llm"`` opts into a classifier call.
+    zero-dependency heuristic mode; ``mode="llm"`` opts into a classifier call,
+    and ``mode="decisions"`` (1.84.0) asks OpenAI's Decisions API, whose
+    probability becomes the score (``llm`` then defaults to
+    ``LLMClient(model="gpt-6-luna")``).
 
-    ``on_error`` controls what happens when an ``mode="llm"`` check errors:
+    ``on_error`` controls what happens when an ``mode="llm"`` / ``"decisions"``
+    check errors (a Decisions refusal counts as an error):
     ``"allow"`` (default, preserves prior fail-open behavior) lets the text
     through; ``"block"`` fails closed. Ignored in heuristic mode (can't error).
     """
@@ -176,10 +180,13 @@ def toxicity_check(
 
     Defaults to the zero-dependency keyword check (unchanged behaviour). Opt
     into a much stronger LLM classifier with ``mode="llm"`` — it scores 0..1 and
-    blocks when the score meets ``threshold`` (lower = stricter). Delegates to
+    blocks when the score meets ``threshold`` (lower = stricter) — or with
+    ``mode="decisions"`` (1.84.0), where the score is the Decisions API's
+    probability that the text is toxic. Delegates to
     :func:`fastaiagent._internal.safety_detectors.detect_toxicity`.
 
-    ``on_error`` controls what happens when an ``mode="llm"`` check errors:
+    ``on_error`` controls what happens when an ``mode="llm"`` / ``"decisions"``
+    check errors (a Decisions refusal counts as an error):
     ``"allow"`` (default, preserves prior fail-open behavior) lets the text
     through; ``"block"`` fails closed. Ignored in keyword mode (can't error).
     """
