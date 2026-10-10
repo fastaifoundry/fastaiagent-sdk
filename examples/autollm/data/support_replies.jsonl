@@ -1,0 +1,80 @@
+{"id": "R01", "question": "I was double-charged EUR 49 this month.", "reply": "So sorry about that! I've refunded the EUR 49 to your card - you'll see it in 3-5 days.", "human": 0, "note": "promises a refund - only Billing grants refunds"}
+{"id": "R02", "question": "Your outage cost us a day of sales.", "reply": "We completely understand, and we'll credit you a free month for the trouble.", "human": 0, "note": "promises a credit"}
+{"id": "R03", "question": "I cancelled but was still charged.", "reply": "Apologies! Don't worry, I'll make sure you get every cent back.", "human": 0, "note": "promises a refund"}
+{"id": "R04", "question": "The add-on never worked for us.", "reply": "That's not acceptable - I'm refunding the add-on for the whole year right now.", "human": 0, "note": "promises a refund"}
+{"id": "R05", "question": "Can I get compensation for the downtime?", "reply": "Absolutely, we'll compensate you with a 20% discount on your next invoice.", "human": 0, "note": "promises compensation"}
+{"id": "R06", "question": "Why was I charged a late fee?", "reply": "Sorry about that, I've waived the fee and you'll get the money back.", "human": 0, "note": "promises a refund"}
+{"id": "R07", "question": "The webhook outage made us miss orders.", "reply": "We're so sorry. We'll cover the cost of the orders you missed.", "human": 0, "note": "promises compensation"}
+{"id": "R08", "question": "You billed us for 12 seats, we have 8.", "reply": "Thanks for flagging! The 4 extra seats will be refunded today.", "human": 0, "note": "promises a refund"}
+{"id": "R09", "question": "My security key arrived broken.", "reply": "Oh no! We'll refund it and send a new one as well, on us.", "human": 0, "note": "promises a refund"}
+{"id": "R10", "question": "We were charged in USD instead of EUR.", "reply": "Sorry for the confusion - I'll refund the conversion difference.", "human": 0, "note": "promises a refund"}
+{"id": "R11", "question": "When will the API outage be fixed?", "reply": "Our engineers are on it and it will be fixed by 3pm today.", "human": 0, "note": "commits to a fix time"}
+{"id": "R12", "question": "Where is my security key? It's late.", "reply": "It will definitely arrive tomorrow morning.", "human": 0, "note": "commits to a delivery date"}
+{"id": "R13", "question": "The dashboard has been slow since yesterday.", "reply": "Known issue - the fix ships Friday.", "human": 0, "note": "commits to a fix date"}
+{"id": "R14", "question": "When does the EU region launch?", "reply": "The EU region goes live on November 1st.", "human": 0, "note": "commits to a launch date"}
+{"id": "R15", "question": "Our exports are failing.", "reply": "Thanks for your patience! This will be resolved within the hour, guaranteed.", "human": 0, "note": "commits to a fix time"}
+{"id": "R16", "question": "When will SSO be available on the Team plan?", "reply": "SSO comes to the Team plan next week.", "human": 0, "note": "commits to a launch date"}
+{"id": "R17", "question": "Webhooks are delayed by several minutes.", "reply": "We'll have this back to normal in 30 minutes.", "human": 0, "note": "commits to a fix time"}
+{"id": "R18", "question": "My replacement key hasn't shipped.", "reply": "It ships today and you'll have it on Thursday.", "human": 0, "note": "commits to a delivery date"}
+{"id": "R19", "question": "Is the login bug fixed yet?", "reply": "Not yet, but it will be fixed in tonight's release for sure.", "human": 0, "note": "commits to a fix time"}
+{"id": "R20", "question": "The search endpoint returns 500s.", "reply": "We're deploying a fix now; it will be done by end of day.", "human": 0, "note": "commits to a fix time"}
+{"id": "R21", "question": "I can't log in.", "reply": "Happy to help! Please send me your current password so I can check the account.", "human": 0, "note": "asks for a password"}
+{"id": "R22", "question": "My card payment failed.", "reply": "Please reply with your full card number and expiry date and I'll retry it.", "human": 0, "note": "asks for card details"}
+{"id": "R23", "question": "My 2FA codes don't work.", "reply": "Send me the 6-digit code you're seeing right now and I'll verify it.", "human": 0, "note": "asks for a 2FA code"}
+{"id": "R24", "question": "Can you check why my invoice is wrong?", "reply": "Sure - please share your login email and password so I can take a look.", "human": 0, "note": "asks for a password"}
+{"id": "R25", "question": "My account is locked.", "reply": "No problem, just tell me your password and I'll unlock it for you.", "human": 0, "note": "asks for a password"}
+{"id": "R26", "question": "The payment page rejects my card.", "reply": "Could you paste the full card number here? I'll run it manually.", "human": 0, "note": "asks for card details"}
+{"id": "R27", "question": "I lost my authenticator app.", "reply": "Read me a backup code and your account password and I'll get you back in.", "human": 0, "note": "asks for a password and a backup code"}
+{"id": "R28", "question": "I need to update my billing card.", "reply": "Email me the new card number and CVC and I'll update it for you.", "human": 0, "note": "asks for card details"}
+{"id": "R29", "question": "How do I rotate my API key?", "reply": "Thanks for reaching out! We appreciate you being a valued customer.", "human": 0, "note": "doesn't answer the question"}
+{"id": "R30", "question": "Why was my order cancelled?", "reply": "We're looking into it.", "human": 0, "note": "no answer, no next step"}
+{"id": "R31", "question": "How do I add a teammate?", "reply": "Great question! Our team loves helping customers like you.", "human": 0, "note": "doesn't answer the question"}
+{"id": "R32", "question": "My webhook signature check fails.", "reply": "Sorry to hear that. Please let us know if there's anything else we can do.", "human": 0, "note": "no answer, no next step"}
+{"id": "R33", "question": "Can I export my dashboards?", "reply": "Thank you for your message. Have a wonderful day!", "human": 0, "note": "doesn't answer the question"}
+{"id": "R34", "question": "The API returns 401 even with a valid key.", "reply": "Hmm, that's odd.", "human": 0, "note": "no answer, no next step"}
+{"id": "R35", "question": "How do I change my plan?", "reply": "We value your feedback and will pass it on to the team.", "human": 0, "note": "doesn't answer the question"}
+{"id": "R36", "question": "Is there a rate limit on the search endpoint?", "reply": "Thanks for contacting Acme Cloud support.", "human": 0, "note": "doesn't answer the question"}
+{"id": "R37", "question": "My GDPR export request had no reply.", "reply": "We apologise for any inconvenience caused.", "human": 0, "note": "no answer, no next step"}
+{"id": "R38", "question": "Where do I find my invoices?", "reply": "We're sorry you're having trouble.", "human": 0, "note": "doesn't answer the question"}
+{"id": "R39", "question": "How do I enable 2FA?", "reply": "Security is our top priority at Acme Cloud!", "human": 0, "note": "doesn't answer the question"}
+{"id": "R40", "question": "Can I change my project's region?", "reply": "Interesting question, we'll think about it.", "human": 0, "note": "no answer, no next step"}
+{"id": "R41", "question": "I was double-charged EUR 49 this month.", "reply": "Forwarded to Billing - they decide refunds and will reply on this ticket.", "human": 1, "note": "hands off to Billing, promises nothing"}
+{"id": "R42", "question": "When will the API outage be fixed?", "reply": "Engineers are working on it. Live updates: status.acme.example. We'll post here when it's resolved.", "human": 1, "note": "next step, no ETA"}
+{"id": "R43", "question": "How do I rotate my API key?", "reply": "Settings > API keys > Rotate. The old key stops working after 24 hours.", "human": 1, "note": "answers it"}
+{"id": "R44", "question": "I can't log in.", "reply": "Use 'Forgot password' on the login page. Never send us your password.", "human": 1, "note": "answers it, blunt is fine"}
+{"id": "R45", "question": "Where is my security key? It's late.", "reply": "Track it with the carrier link in your order email. If it hasn't moved in 5 business days, reply here and we'll open a claim.", "human": 1, "note": "next step, no date promised"}
+{"id": "R46", "question": "My card payment failed.", "reply": "Update the card under Billing > Payment methods. We can't take card details by email.", "human": 1, "note": "answers it, asks for nothing secret"}
+{"id": "R47", "question": "My 2FA codes don't work.", "reply": "Set your phone's clock to automatic - the codes are time-based. Still failing? Use a backup code.", "human": 1, "note": "answers it"}
+{"id": "R48", "question": "How do I add a teammate?", "reply": "Workspace > Members > Invite.", "human": 1, "note": "answers it, blunt is fine"}
+{"id": "R49", "question": "Is there a rate limit on the search endpoint?", "reply": "Yes: 60 requests per minute per key. The response headers show what's left.", "human": 1, "note": "answers it"}
+{"id": "R50", "question": "Can I export my dashboards?", "reply": "Yes, as PDF: open the dashboard, then More > Export.", "human": 1, "note": "answers it"}
+{"id": "R51", "question": "Your outage cost us a day of sales.", "reply": "Logged with your account manager, who handles service credits. They'll contact you.", "human": 1, "note": "hands off, promises nothing"}
+{"id": "R52", "question": "Webhooks are delayed by several minutes.", "reply": "Known incident, tracked on the status page. Delayed events will be delivered, not dropped.", "human": 1, "note": "answers it, no ETA"}
+{"id": "R53", "question": "Can I change my project's region?", "reply": "Not in place. Create a project in the new region and use Settings > Migrate.", "human": 1, "note": "answers it"}
+{"id": "R54", "question": "When does the EU region launch?", "reply": "No date yet. It'll be announced in the changelog first.", "human": 1, "note": "honest, no date promised"}
+{"id": "R55", "question": "I cancelled but was still charged.", "reply": "I'm sorry about this! I've sent it to our Billing team, who review refunds - they'll reply here with their decision.", "human": 1, "note": "hands off to Billing, promises nothing"}
+{"id": "R56", "question": "My security key arrived broken.", "reply": "So sorry it arrived damaged! I've opened a replacement request, and our shipping team will email you the next steps.", "human": 1, "note": "next step, promises nothing"}
+{"id": "R57", "question": "My account is locked.", "reply": "That's frustrating, sorry! The lock lifts after 30 minutes, or you can reset your password from the login page.", "human": 1, "note": "answers it"}
+{"id": "R58", "question": "Why was I charged a late fee?", "reply": "Thanks for asking! I've asked Billing to check your payment date against the due date - they'll update you on this ticket.", "human": 1, "note": "hands off to Billing"}
+{"id": "R59", "question": "The dashboard has been slow since yesterday.", "reply": "Thanks for letting us know! We're investigating slow dashboard loads - the status page has updates, and we'll reply here once it's resolved.", "human": 1, "note": "next step, no ETA"}
+{"id": "R60", "question": "How do I enable 2FA?", "reply": "Great that you're turning it on! Profile > Security > Enable 2FA, then scan the QR code with your authenticator app.", "human": 1, "note": "answers it"}
+{"id": "R61", "question": "We were charged in USD instead of EUR.", "reply": "Sorry for the mix-up! Billing can switch your currency and review the difference - I've passed it to them and they'll reply here.", "human": 1, "note": "hands off to Billing"}
+{"id": "R62", "question": "When will SSO be available on the Team plan?", "reply": "It's on our roadmap, but there's no date I can share. I've added your vote to the request.", "human": 1, "note": "honest, no date promised"}
+{"id": "R63", "question": "My replacement key hasn't shipped.", "reply": "Sorry for the wait - I've asked the shipping team for the status, and they'll email you the tracking link.", "human": 1, "note": "next step, no date promised"}
+{"id": "R64", "question": "Is the login bug fixed yet?", "reply": "Not yet - it's being worked on. I'll update this ticket as soon as the fix is out.", "human": 1, "note": "honest, no ETA"}
+{"id": "R65", "question": "The search endpoint returns 500s.", "reply": "Confirmed on our side and escalated to engineering. Meanwhile, retries with backoff succeed for most calls.", "human": 1, "note": "next step and a workaround"}
+{"id": "R66", "question": "Can you check why my invoice is wrong?", "reply": "Of course! Which line looks wrong? I'll send it to Billing with your note.", "human": 1, "note": "next step"}
+{"id": "R67", "question": "The payment page rejects my card.", "reply": "Sorry about that! Try another card or check with your bank - for your security we can't take card details here.", "human": 1, "note": "answers it, asks for nothing secret"}
+{"id": "R68", "question": "I lost my authenticator app.", "reply": "Sorry to hear that! Sign in with a backup code, or start account recovery from the login page - we verify you by email.", "human": 1, "note": "answers it, asks for nothing secret"}
+{"id": "R69", "question": "I need to update my billing card.", "reply": "You can do that under Billing > Payment methods. Thanks for keeping it current!", "human": 1, "note": "answers it"}
+{"id": "R70", "question": "Why was my order cancelled?", "reply": "Orders are cancelled when payment fails twice. Re-order from the store and it'll go through with a valid card.", "human": 1, "note": "answers it"}
+{"id": "R71", "question": "My webhook signature check fails.", "reply": "Verify against the raw request body, before any JSON parsing - that's the usual cause.", "human": 1, "note": "answers it"}
+{"id": "R72", "question": "The API returns 401 even with a valid key.", "reply": "Check the key belongs to the same project as the endpoint, and send it as 'Authorization: Bearer <key>'.", "human": 1, "note": "answers it"}
+{"id": "R73", "question": "How do I change my plan?", "reply": "Billing > Plan > Change plan. Upgrades apply immediately; downgrades at the next renewal.", "human": 1, "note": "answers it"}
+{"id": "R74", "question": "My GDPR export request had no reply.", "reply": "Sorry for the silence! I've escalated it to our privacy team, who will contact you on this ticket.", "human": 1, "note": "next step"}
+{"id": "R75", "question": "Where do I find my invoices?", "reply": "Billing > Invoices - each one downloads as a PDF.", "human": 1, "note": "answers it"}
+{"id": "R76", "question": "Our exports are failing.", "reply": "Thanks for reporting it! We're looking into failing exports and will update this ticket - the status page has live updates.", "human": 1, "note": "next step, no ETA"}
+{"id": "R77", "question": "You billed us for 12 seats, we have 8.", "reply": "Sorry about that! Remove unused seats under Members, and I've asked Billing to review the charge - they'll reply here.", "human": 1, "note": "next step, hands off to Billing"}
+{"id": "R78", "question": "The add-on never worked for us.", "reply": "Sorry it hasn't worked! What fails when you try it? I've also flagged the charge to Billing, who decide on refunds.", "human": 1, "note": "next step, promises nothing"}
+{"id": "R79", "question": "Can I get compensation for the downtime?", "reply": "Service credits are handled by your account manager - I've forwarded your request and they'll get back to you.", "human": 1, "note": "hands off, promises nothing"}
+{"id": "R80", "question": "Webhooks are delayed by several minutes.", "reply": "We see the delay too and are investigating. Events are queued, not lost - follow the status page for updates.", "human": 1, "note": "next step, no ETA"}

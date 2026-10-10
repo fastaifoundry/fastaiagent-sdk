@@ -92,6 +92,7 @@ nav:
           - "Financial Extraction (worked example)": flagships/deep-research-financial-extraction.md
           - "Regression from Trace": flagships/regression-from-trace.md
           - "AutoLLM Closed Loop": flagships/autollm-closed-loop.md
+          - "Calibrate Your LLM Judge": flagships/judge-calibration.md
   - Build:
       - Agents:
           - "Concepts & Mental Model": agents/concepts.md
@@ -195,6 +196,7 @@ nav:
           - "Session Scoring": evaluation/session-scoring.md
           - "Agent Hardening & Scorecard": evaluation/agent-hardening.md
           - "AutoLLM": evaluation/optimization.md
+          - "AutoLLM Recipes": evaluation/autollm-recipes.md
           - "Trace Curation": evaluation/curation.md
       - Testing:
           - "Concepts & Mental Model": testing/concepts.md

@@ -88,6 +88,8 @@ examples/regression-from-trace/.fastaiagent-demo/
 
 # Hand-off files between the AutoLLM loop's steps. Re-created each run.
 examples/autollm-loop/out/
+# The calibrated judge prompt calibrate_judge.py saves for --try / --tune-agent.
+examples/autollm/out/
 
 # Article companion folders — prose + screenshots + per-run artifacts are
 # published externally (LinkedIn, blog, PDF), not tracked in the repo.
