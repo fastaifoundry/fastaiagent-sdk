@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 620" width="1200" height="620" role="img" aria-label="Between a fix and the future: a rerun saved with save_as_test becomes one JSONL line evaluate() reads, carrying input, expected_output, the rerun's trace_id, the failing source_trace_id, fork_step and the modifications; evaluate() runs the agent on it and scores it, and a pytest gate keeps it running.">
+  <title>Between a fix and the future: a rerun saved with save_as_test becomes one JSONL line evaluate() reads, carrying input, expected_output, the rerun's trace_id, the failing source_trace_id, fork_step and the modifications; evaluate() runs the agent on it and scores it, and a pytest gate keeps it running.</title>
+  <rect x="0" y="0" width="1200" height="620" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Between a fix and the future: the failure becomes a test</text>
+  <rect x="48" y="120" width="200" height="80" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="68" y="156" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#0b0b0b" text-anchor="start">the failure</text>
+  <text x="68" y="178" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">a production trace</text>
+  <polyline points="248,160 274,160" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="274,160 260.0,153.0 260.0,167.0" fill="#2a78d6"/>
+  <rect x="274" y="120" width="200" height="80" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="294" y="156" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#0b0b0b" text-anchor="start">fork + fix</text>
+  <text x="294" y="178" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">modify_prompt / tools</text>
+  <polyline points="474,160 500,160" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="500,160 486.0,153.0 486.0,167.0" fill="#2a78d6"/>
+  <rect x="500" y="120" width="200" height="80" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="520" y="156" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#0b0b0b" text-anchor="start">rerun, live</text>
+  <text x="520" y="178" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">a real answer</text>
+  <polyline points="700,160 726,160" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="726,160 712.0,153.0 712.0,167.0" fill="#2a78d6"/>
+  <rect x="726" y="120" width="200" height="80" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="746" y="156" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#0b0b0b" text-anchor="start">save_as_test</text>
+  <text x="746" y="178" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">one JSONL line</text>
+  <polyline points="926,160 952,160" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="952,160 938.0,153.0 938.0,167.0" fill="#2a78d6"/>
+  <rect x="952" y="120" width="200" height="80" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="972" y="156" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#0b0b0b" text-anchor="start">evaluate()</text>
+  <text x="972" y="178" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">scored, every run</text>
+  <rect x="48" y="240" width="640" height="186.0" rx="10" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="62" y="272" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="start">the saved case · regression_tests.jsonl</text>
+  <text x="62" y="291.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">input            'What is your refund policy?'</text>
+  <text x="62" y="311.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">expected_output  'Refunds are issued within 14 days.'</text>
+  <text x="62" y="331.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">trace_id         8b05b26f…   ← the rerun</text>
+  <text x="62" y="351.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">source_trace_id  09efdb5c…   ← the failure</text>
+  <text x="62" y="371.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">fixed_trace_id   8b05b26f…</text>
+  <text x="62" y="391.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">fork_step        0</text>
+  <text x="62" y="411.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">modifications    {'prompt': 'You are a support agent. …'}</text>
+  <rect x="720" y="240" width="432" height="190" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="740" y="276" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#0b0b0b" text-anchor="start">what evaluate() reads</text>
+  <text x="740" y="298" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">input and expected_output — the rest</text>
+  <text x="740" y="317" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">is the paper trail back to the bug.</text>
+  <text x="740" y="336" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">exact_match passed=True on the fix,</text>
+  <text x="740" y="355" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">passed=False with the old prompt.</text>
+  <text x="740" y="374" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">Any scorer works, including an</text>
+  <text x="740" y="393" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">LLM judge.</text>
+  <text x="48" y="490" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">Free and deterministic suites: rerun with determinism='recorded', on_miss='error' — no model, no bill, no drift.</text>
+  <text x="48" y="514" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">The regression-from-trace template runs this loop in CI against a real model; pytest --eval-baseline gates it.</text>
+  <text x="48" y="580" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="12" font-weight="400" fill="#8a8880" text-anchor="start">Code: trace/replay.py::ReplayResult.save_as_test · eval (evaluate) · examples/regression-from-trace/</text>
+</svg>

@@ -2,6 +2,12 @@
 
 The SDK provides OTel-native (OpenTelemetry) tracing that records every LLM call, tool execution, and chain step. Traces are stored locally in SQLite by default and can be exported to any OTel-compatible backend (Jaeger, Datadog, Grafana, etc.).
 
+!!! tip "Start from the mental model"
+    [Where a trace has to hold](trace-boundaries.md) explains tracing one
+    boundary at a time — how the tree is discovered, when a span is on disk,
+    what leaves the machine, how the plane queue works, how foreign spans land
+    — with a real run behind every claim.
+
 ## Quick Start
 
 Tracing is automatic — every agent and chain execution creates spans:
@@ -348,18 +354,18 @@ LLM calls emit `llm.{provider}.{model}` spans with standard GenAI attributes plu
 
 ### Payload Gating (`FASTAIAGENT_TRACE_PAYLOADS`)
 
-Payload-bearing attributes — LLM messages, LLM response content, tool arguments, tool results, and resolved system prompts — can contain sensitive data. They default to **captured** so replay reconstruction works out of the box, but you can turn them off globally:
+Payload-bearing attributes — LLM messages, LLM response content, tool arguments, tool results, and resolved system prompts — can contain sensitive data. They are always captured into `local.db`, so the Local UI and Replay work, and you decide whether they may **leave the machine**:
 
 ```bash
 export FASTAIAGENT_TRACE_PAYLOADS=0
 ```
 
-With payloads disabled:
-- Structural metadata (`agent.config`, `agent.tools`, `agent.guardrails`, `agent.llm.config`, `gen_ai.system`, `gen_ai.request.model`, token counts, finish reasons, `tool.name`/`tool.status`) is still captured — traces remain useful for monitoring and performance analysis.
-- Free-text payloads (messages, responses, prompts, tool args/results) are skipped.
-- Replay reconstruction still works for agent config and tool schemas, but reruns lose the original resolved prompt if your code relied on span-captured prompts.
+With payloads off:
+- Every span still lands in `local.db` in full.
+- Before a span reaches the platform, or any exporter registered with `add_exporter()`, the payload keys are stripped from its attributes, its exception events and its status description. Structural metadata (`agent.config`, `agent.tools`, `agent.guardrails`, `agent.llm.config`, `gen_ai.system`, `gen_ai.request.model`, token counts, finish reasons, `tool.name`/`tool.status`) is always exported.
+- A value other than `1`/`true`/`yes`/`on` or `0`/`false`/`no`/`off` fails closed: payloads stay local.
 
-Defaults to `1` (on). Set to `0` in production environments handling PII if you do not otherwise scrub traces at the exporter layer.
+Defaults to `1` (on). Set it to `0` wherever traces leave a machine that handles PII. To capture nothing at all, use `FASTAIAGENT_TRACE_ENABLED=0`. The behaviour is proved on [Where a trace has to hold](trace-boundaries.md#3-between-capture-and-egress-full-fidelity-in-filtered-out).
 
 ### Setting Attributes Programmatically
 

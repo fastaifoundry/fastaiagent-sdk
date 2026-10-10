@@ -5,6 +5,12 @@ reconstructs a past run from its trace, *what* it holds fixed versus re-runs,
 and where its boundaries are. Read it first, then use the
 [Replay reference](index.md) and [Fidelity Guarantees](guarantees.md) for depth.
 
+!!! tip "Then read it with a run behind every claim"
+    [Where a replay has to hold](replay-boundaries.md) walks the same model one
+    boundary at a time — the blueprint, the recorded queue, tools, the miss,
+    production state, the regression test — with a diagram, the rule, a proof
+    script and the code for each.
+
 ## Why replay exists
 
 When an agent misbehaves in production — hallucinates, calls the wrong tool,

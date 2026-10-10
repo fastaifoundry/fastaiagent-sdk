@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720" width="1200" height="720" role="img" aria-label="Between the model and the record: under recorded mode every captured model response is read from the trace's llm spans in start order into a queue held in a ContextVar; each acomplete call pops the front instead of calling the provider and marks its span replay.mode=recorded; a tool-call turn is served too, so the tool runs between the turns; Decisions API answers have their own queue.">
+  <title>Between the model and the record: under recorded mode every captured model response is read from the trace's llm spans in start order into a queue held in a ContextVar; each acomplete call pops the front instead of calling the provider and marks its span replay.mode=recorded; a tool-call turn is served too, so the tool runs between the turns; Decisions API answers have their own queue.</title>
+  <rect x="0" y="0" width="1200" height="720" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Between the model and the record: a queue of captured answers</text>
+  <rect x="48" y="120" width="420" height="166.5" rx="10" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="62" y="152" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="start">the original trace · llm spans by start_time</text>
+  <text x="62" y="171.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">① gen_ai.response.tool_calls</text>
+  <text x="62" y="191.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">     [lookup_order(order_id=1042)]</text>
+  <text x="62" y="211.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">     content: null  (a tool-only turn)</text>
+  <text x="62" y="231.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">② gen_ai.response.content</text>
+  <text x="62" y="251.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">     "Order 1042 was shipped on 12 …"</text>
+  <text x="62" y="271.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">     finish_reason: stop</text>
+  <polyline points="468,210 540,210" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="540,210 526.0,203.0 526.0,217.0" fill="#2a78d6"/>
+  <rect x="540" y="120" width="300" height="180" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="560" y="156" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#0b0b0b" text-anchor="start">the queue</text>
+  <text x="560" y="178" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">[①, ②] in a ContextVar,</text>
+  <text x="560" y="197" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">installed for the rerun only;</text>
+  <text x="560" y="216" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">Decisions answers: their</text>
+  <text x="560" y="235" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">own queue, never mixed</text>
+  <polyline points="840,210 900,210" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="900,210 886.0,203.0 886.0,217.0" fill="#2a78d6"/>
+  <rect x="900" y="120" width="252" height="180" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="920" y="156" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#0b0b0b" text-anchor="start">the rerun</text>
+  <text x="920" y="178" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">acomplete #1 pops ① →</text>
+  <text x="920" y="197" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">  the tool really runs</text>
+  <text x="920" y="216" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">acomplete #2 pops ② →</text>
+  <text x="920" y="235" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">  the answer, verbatim</text>
+  <text x="920" y="254" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">no provider call made</text>
+  <text x="48" y="350" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="start">The rerun's own trace, from the live run:</text>
+  <rect x="48" y="366" width="700" height="127.5" rx="10" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="62" y="398" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="start">trace of the recorded rerun</text>
+  <text x="62" y="417.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">agent.shipping            tokens_used=0 latency_ms=0</text>
+  <text x="62" y="437.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">    llm.openai.gpt-4.1-mini   replay.mode=recorded  finish=tool_calls</text>
+  <text x="62" y="457.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">    tool.lookup_order         status=ok   ← executed again</text>
+  <text x="62" y="477.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">    llm.openai.gpt-4.1-mini   replay.mode=recorded  finish=stop</text>
+  <rect x="790" y="366" width="362" height="150" rx="12" fill="#fdefe8" stroke="#eb6834" stroke-width="2"/>
+  <text x="810" y="402" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="start">a changed prompt, recorded</text>
+  <text x="810" y="422" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">the agent is given the new prompt,</text>
+  <text x="810" y="440" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">the model is never asked —</text>
+  <text x="810" y="458" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">the recorded answer comes back</text>
+  <text x="810" y="476" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">unchanged. To test a fix, go live.</text>
+  <text x="48" y="560" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">byte-identical output · identical with the original run · compare() → diverged_at=None</text>
+  <text x="48" y="600" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">Needs: the captured responses. A trace with none — a plane-fetched trace with payloads stripped — raises ReplayError.</text>
+  <text x="48" y="660" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="12" font-weight="400" fill="#8a8880" text-anchor="start">Code: trace/replay.py::_recorded_response_from_span / _all_llm_responses · llm/client.py::acomplete (_replay_recorded_response)</text>
+</svg>

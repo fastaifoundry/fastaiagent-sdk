@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720" width="1200" height="720" role="img" aria-label="Between the span and the disk: a span is written synchronously when it ends, so a child is on disk while its parent is still open; a tool error is a result the model sees; a model error ends the run with an ERROR root carrying the exception; a store that cannot be written drops the span and logs once, and the run still returns.">
+  <title>Between the span and the disk: a span is written synchronously when it ends, so a child is on disk while its parent is still open; a tool error is a result the model sees; a model error ends the run with an ERROR root carrying the exception; a store that cannot be written drops the span and logs once, and the run still returns.</title>
+  <rect x="0" y="0" width="1200" height="720" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Between the span and the disk: durable the moment it ends</text>
+  <text x="48" y="112" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">one run, in time →</text>
+  <line x1="48" y1="140" x2="1152" y2="140" stroke="#d6d4cc" stroke-width="2"/>
+  <line x1="60" y1="130" x2="60" y2="150" stroke="#52514e" stroke-width="2"/>
+  <text x="60" y="176" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#0b0b0b" text-anchor="start">root opens</text>
+  <line x1="250" y1="130" x2="250" y2="150" stroke="#52514e" stroke-width="2"/>
+  <text x="250" y="176" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#0b0b0b" text-anchor="middle">llm span ends</text>
+  <rect x="196" y="190" width="112" height="28" rx="8" fill="#e5f6ef" stroke="#1baf7a" stroke-width="1.5"/>
+  <text x="210" y="208.32" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#0b0b0b" text-anchor="start">row written</text>
+  <line x1="470" y1="130" x2="470" y2="150" stroke="#52514e" stroke-width="2"/>
+  <text x="470" y="176" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#0b0b0b" text-anchor="middle">tool runs — reads the store</text>
+  <rect x="416" y="190" width="112" height="28" rx="8" fill="#e5f6ef" stroke="#1baf7a" stroke-width="1.5"/>
+  <text x="430" y="208.32" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#0b0b0b" text-anchor="start">sees the llm row</text>
+  <line x1="700" y1="130" x2="700" y2="150" stroke="#52514e" stroke-width="2"/>
+  <text x="700" y="176" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#0b0b0b" text-anchor="middle">tool span ends</text>
+  <rect x="646" y="190" width="112" height="28" rx="8" fill="#e5f6ef" stroke="#1baf7a" stroke-width="1.5"/>
+  <text x="660" y="208.32" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#0b0b0b" text-anchor="start">row written</text>
+  <line x1="870" y1="130" x2="870" y2="150" stroke="#52514e" stroke-width="2"/>
+  <text x="870" y="176" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#0b0b0b" text-anchor="middle">llm span ends</text>
+  <rect x="816" y="190" width="112" height="28" rx="8" fill="#e5f6ef" stroke="#1baf7a" stroke-width="1.5"/>
+  <text x="830" y="208.32" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#0b0b0b" text-anchor="start">row written</text>
+  <line x1="1030" y1="130" x2="1030" y2="150" stroke="#52514e" stroke-width="2"/>
+  <text x="1030" y="176" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#0b0b0b" text-anchor="middle">root ends</text>
+  <rect x="976" y="190" width="112" height="28" rx="8" fill="#e5f6ef" stroke="#1baf7a" stroke-width="1.5"/>
+  <text x="990" y="208.32" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#0b0b0b" text-anchor="start">row written</text>
+  <text x="48" y="250" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">the write is one INSERT OR REPLACE, keyed by span_id, inside the span's own on_end — nothing is batched, nothing waits</text>
+  <rect x="48" y="290" width="340" height="190" rx="12" fill="#fdefe8" stroke="#eb6834" stroke-width="2"/>
+  <text x="68" y="326" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#0b0b0b" text-anchor="start">a tool raises</text>
+  <text x="68" y="349" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">tool.status = error</text>
+  <text x="68" y="369" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">tool.error = "Tool 'explode'</text>
+  <text x="68" y="389" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">  failed: …503"</text>
+  <text x="68" y="409" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">the model sees the error</text>
+  <text x="68" y="429" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">and the run finishes</text>
+  <rect x="430" y="290" width="340" height="190" rx="12" fill="#fdefe8" stroke="#eb6834" stroke-width="2"/>
+  <text x="450" y="326" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#0b0b0b" text-anchor="start">a model call raises</text>
+  <text x="450" y="349" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">the run raises</text>
+  <text x="450" y="369" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">root status = ERROR</text>
+  <text x="450" y="389" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">exception event on the root:</text>
+  <text x="450" y="409" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">  exception.message</text>
+  <text x="450" y="429" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">spans that ended are on disk</text>
+  <rect x="812" y="290" width="340" height="190" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="832" y="326" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#0b0b0b" text-anchor="start">the store can't be written</text>
+  <text x="832" y="349" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">on_end never raises</text>
+  <text x="832" y="369" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">the span is dropped</text>
+  <text x="832" y="389" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">one warning per error type</text>
+  <text x="832" y="409" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">the run returns its answer</text>
+  <text x="832" y="429" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">(an unwritable FASTAIAGENT_LOCAL_DB)</text>
+  <text x="48" y="520" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="start">What the page's proof printed:</text>
+  <rect x="48" y="536" width="1104" height="108.0" rx="10" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="62" y="568" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="start">proof_durable.py</text>
+  <text x="62" y="587.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">rows on disk while the tool was running:   llm.test.function-model [UNSET]</text>
+  <text x="62" y="607.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">tool failed, run finished: 'Order 1042 has shipped.'</text>
+  <text x="62" y="627.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">model failed, run raised: provider returned 503  →  agent.shipping [ERROR]  exception: provider returned 503</text>
+  <text x="48" y="690" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#8a8880" text-anchor="start">Code: trace/storage.py::LocalStorageProcessor.on_end / _write</text>
+</svg>

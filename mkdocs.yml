@@ -158,10 +158,12 @@ nav:
   - Observe:
       - Tracing:
           - "Concepts & Mental Model": tracing/concepts.md
+          - "Where a trace has to hold": tracing/trace-boundaries.md
           - tracing/index.md
           - "Capture any OTel / OpenInference framework": tracing/third-party-otel.md
       - Agent Replay:
           - "Concepts & Mental Model": replay/concepts.md
+          - "Where a replay has to hold": replay/replay-boundaries.md
           - replay/index.md
           - "Fidelity Guarantees": replay/guarantees.md
       - Durability:

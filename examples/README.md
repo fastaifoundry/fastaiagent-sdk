@@ -187,6 +187,8 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 - [`autollm/`](autollm/) — **AutoLLM**: eval-driven prompt optimization end to end (`optimize()` → holdout-guarded winner → persisted to the **AutoLLM** UI view). Real LLM, no mocks. *(A folder, not a snippet — see the Focused walkthroughs table above.)*
 
 ### Tracing & replay
+- [`tracing/proofs/`](tracing/proofs/) — five offline scripts behind [Where a trace has to hold](../docs/tracing/trace-boundaries.md): the tree, the write, egress, the plane queue, foreign spans. No API key; run in CI.
+- [`replay/proofs/`](replay/proofs/) — six offline scripts behind [Where a replay has to hold](../docs/replay/replay-boundaries.md): the blueprint, recorded mode, tools, the miss, isolation, the regression test. No API key; run in CI.
 - [`04_agent_replay.py`](04_agent_replay.py) — `Replay.fork_at(...).rerun()`
 - [`08_trace_langchain.py`](08_trace_langchain.py) — auto-trace LangChain agents
 - [`09_otel_export.py`](09_otel_export.py) — OpenTelemetry export
