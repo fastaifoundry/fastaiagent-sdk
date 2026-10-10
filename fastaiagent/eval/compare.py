@@ -80,8 +80,22 @@ def scorer_deltas(a: dict[str, Any], b: dict[str, Any]) -> list[dict[str, Any]]:
 def match_cases(
     cases_a: list[dict[str, Any]], cases_b: list[dict[str, Any]]
 ) -> list[tuple[dict[str, Any], dict[str, Any]]]:
-    """Align cases across two runs: by ``ordinal`` first, by ``input`` equality
-    as a fallback so reordered datasets still match. Unmatched cases drop."""
+    """Align cases across two runs: by ``ordinal`` when both runs hold the same
+    input there, by ``input`` equality otherwise, so reordered datasets still
+    match. Unmatched cases drop.
+
+    The input check matters: before 1.87.0 ``evaluate()`` stored ordinals in the
+    order its concurrent cases *finished*, so the same ordinal in two runs of one
+    dataset could hold different inputs — and a comparison paired them anyway.
+    """
+
+    def input_key(case: dict[str, Any]) -> str | None:
+        try:
+            return json.dumps(case.get("input"), sort_keys=True)
+        except (TypeError, ValueError):
+            logger.debug("Failed to serialize eval case input for comparison", exc_info=True)
+            return None
+
     index_b: dict[Any, dict[str, Any]] = {}
     for c in cases_b:
         key = c.get("ordinal")
@@ -89,22 +103,18 @@ def match_cases(
             index_b[key] = c
     by_input: dict[str, dict[str, Any]] = {}
     for c in cases_b:
-        try:
-            by_input[json.dumps(c.get("input"), sort_keys=True)] = c
-        except (TypeError, ValueError):
-            logger.debug("Failed to serialize eval case input for comparison index", exc_info=True)
+        key = input_key(c)
+        if key is not None:
+            by_input[key] = c
 
     pairs: list[tuple[dict[str, Any], dict[str, Any]]] = []
     for ca in cases_a:
+        a_key = input_key(ca)
         cb = index_b.get(ca.get("ordinal"))
-        if cb is None:
-            try:
-                cb = by_input.get(json.dumps(ca.get("input"), sort_keys=True))
-            except (TypeError, ValueError):
-                logger.debug(
-                    "Failed to serialize eval case input for comparison lookup", exc_info=True
-                )
-                cb = None
+        if cb is not None and a_key is not None and input_key(cb) != a_key:
+            cb = None  # same position, different case
+        if cb is None and a_key is not None:
+            cb = by_input.get(a_key)
         if cb is not None:
             pairs.append((ca, cb))
     return pairs

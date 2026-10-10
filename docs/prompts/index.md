@@ -208,6 +208,37 @@ the agent to a connected control plane and want it linked to the governed prompt
 as "Inline"), set `Agent(prompt_slug="support-agent")` instead. See
 [Referencing a governed prompt from a pushed agent](#referencing-a-governed-prompt-from-a-pushed-agent).
 
+### Which runs used this prompt
+
+Pass the `Prompt` itself — not a formatted string — and every model call the agent makes
+is stamped with the prompt it came from:
+
+```python
+prompt = reg.load("ticket-triage", alias="production")
+agent = Agent(name="triage", system_prompt=prompt, llm=LLMClient())
+agent.run("I was charged twice")
+# llm span: fastaiagent.prompt.name = "ticket-triage", fastaiagent.prompt.version = 2
+```
+
+That is what the Local UI's **Prompts** page reads: the list counts the traces that used each
+prompt, and the editor's lineage panel lists those traces and the eval runs scored with them.
+A prompt fetched from the control plane also stamps `fastaiagent.prompt.slug` and
+`fastaiagent.prompt.environment`, which the platform's Prompt Analytics reads.
+
+- **Every run path** stamps it: `run`/`arun`, `stream`/`astream`, `resume`/`aresume` and a
+  fork — and the offline `TestModel`/`FunctionModel` too. (Before 1.87.0 only `arun` did, and
+  only for control-plane prompts, so a local prompt's lineage panel stayed empty.)
+- **Only the agent's own calls.** An agent run inside another — a tool, a worker — stamps its
+  own prompt, or none, never its caller's.
+- **A formatted string is not linked.** `system_prompt=prompt.format(...)` is just text; the
+  run carries no prompt name. A prompt with `{{variables}}` has to be formatted, so its runs
+  are not linked today.
+- **A local prompt never links a pushed agent.** Only a control-plane prompt sets
+  `prompt_slug`: the plane has no slug for a prompt that lives in your `local.db`.
+- **A tuned prompt is a new version.** An [AutoLLM](../evaluation/optimization.md) winner
+  applied with `report.apply_to(agent)` carries no prompt name — it is no longer the
+  registry's text. Register it as a new version and load that, and its runs are linked again.
+
 ## Storage
 
 Prompts are stored as JSON files in the `.prompts/` directory by default:

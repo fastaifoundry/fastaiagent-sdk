@@ -5,6 +5,70 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.87.0] - 2026-10-10 — AutoLLM end to end: from bad traces to a shipped prompt
+
+Two runnable stories for AutoLLM, and three bugs that running them end to end
+surfaced — each invisible to the per-feature tests, each present since long
+before this release. No wire change, no schema change.
+
+### Fixed
+
+- ⚠ **A tuned stateless agent no longer remembers earlier runs.** The few-shot
+  and memory levers carry their block in a `ComposableMemory`; for an agent with
+  no memory its primary window was a real `AgentMemory`, so the candidate kept
+  every conversation. Eval cases bled into each other (a few-shot score depended
+  on case order), and `report.apply_to(agent)` shipped an agent that put one
+  user's request into the next user's prompt — a probe showed customer 2's prompt
+  carrying customer 1's card number. An agent that had no memory now gets a
+  window that keeps no conversation, and re-optimizing it keeps it that way.
+- **Eval runs keep dataset order, and comparisons pair the same case.**
+  `evaluate()` recorded concurrent cases in the order they *finished*, so a
+  case's stored `ordinal` was not its dataset position, and every comparison —
+  the UI compare page, `fastaiagent eval compare`, the regressed/improved lists of
+  the pytest `--eval-baseline` gate — could pair two different inputs (the
+  flagship's v1-vs-v2 compare paired 62 of 120 tickets wrongly). The gate's
+  pass/fail, a pass-rate delta, was right. Cases are now recorded in dataset
+  order, and comparisons pair by ordinal only when both runs hold the same input
+  there — so runs stored before this pair correctly too. (Since v0.8.0; the
+  compare tests ran with `concurrency=1`.)
+- **A registry prompt is traced on every run path.** An agent built from a
+  registry `Prompt` stamps `fastaiagent.prompt.name` and `.version` on each llm
+  span (plus `.slug`/`.environment` for a control-plane prompt), on `run`/`arun`,
+  `stream`/`astream`, `resume`/`aresume` and `afork`. Before: a *local* registry
+  prompt left no mark at all — so the Local UI's Prompts page ("linked traces")
+  and its lineage panel, which read `prompt.name`, were always empty — and only
+  `arun` stamped anything, so streamed and resumed runs were missing from the
+  platform's Prompt Analytics. LangChain's `prompt_from_registry` now stamps
+  `prompt.name` too, and the offline `TestModel`/`FunctionModel` spans carry the
+  same attributes. A local prompt still never sets `prompt_slug`.
+
+### Added
+
+- **[AutoLLM Closed Loop](docs/flagships/autollm-closed-loop.md)** —
+  `examples/autollm-loop/`. A support-triage agent whose prompt lives in the
+  registry: 120 tickets of traffic → traces stamped with the prompt version →
+  `curate_from_traces` → a labelled dataset in the Dataset Editor → a baseline
+  eval → `optimize()` (instructions + few-shot, holdout-guarded, `gpt-5` writing
+  prompts for `gpt-4.1-mini`) → the winner registered as v2 → a pytest gate
+  against v1 → the `production` alias moves. A real run: 56% → 96% on all 120,
+  holdout 0.633 → 0.967, three regressions named by the gate, ~$0.30.
+  `try_it.py` compares versions on tickets the loop never saw (v1 2/6, shipped
+  6/6); `switch_models.py` re-tunes the live prompt per model on the same
+  holdout and prices each from its traces (`gpt-4.1-nano` 0.867 → 0.933 at
+  $0.065 per 1k tickets).
+- **[Calibrate Your LLM Judge](docs/flagships/judge-calibration.md)** —
+  `examples/autollm/calibrate_judge.py`. The judge is tuned like an agent on 80
+  reviewer-labelled replies; as an `LLMJudge` on 20 unseen replies it agrees
+  with the reviewers 18/20 (naive 15/20). `--tune-agent` lets it select a
+  support agent's prompt while a different `GEval` audits the holdout
+  (0.800 → 1.000); `--try` shows both judges on any reply.
+- **[AutoLLM Recipes](docs/evaluation/autollm-recipes.md)** — which recipe fits
+  which situation, and re-tuning on a schedule with the CLI.
+- Docs: "Which runs used this prompt" in [Prompts](docs/prompts/index.md).
+- CI: no-LLM smoke steps for both examples; screenshot capture scripts
+  `scripts/capture-autollm-loop-screenshots.sh` and
+  `scripts/capture-judge-screenshots.sh`.
+
 ## [1.86.0] - 2026-10-10 — see the winning prompt; harden() holds up at scale
 
 The two follow-ups 1.85.0 left open. No wire change, no schema change.

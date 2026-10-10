@@ -218,6 +218,14 @@ jobs:
         # collide if both trees are collected together).
         working-directory: examples/regression-from-trace
         run: pytest tests/ -v --tb=short
+      - name: AutoLLM closed-loop example smoke (no LLM)
+        # The data, the scorer and load_agent() — the loop itself costs ~10 min
+        # of live calls, so CI checks what every step relies on instead.
+        working-directory: examples/autollm-loop
+        run: pytest tests/ -v --tb=short
+      - name: Judge-calibration example smoke (no LLM)
+        working-directory: examples/autollm
+        run: pytest tests/ -v --tb=short
       - name: Regression-from-trace template — full loop (real LLM)
         # Runs capture → fix → save_test → verify against real OpenAI to
         # catch regressions of any failure mode captured in the dataset.

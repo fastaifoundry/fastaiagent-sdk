@@ -6,6 +6,13 @@ change, applies it to a fresh agent, re-evaluates, keeps the best, and repeats �
 until the score stops improving or a budget runs out. A held-out split guards the
 winner against overfitting.
 
+!!! tip "Start from a recipe"
+    [AutoLLM Recipes](autollm-recipes.md) maps situations — a live agent breaking
+    rules only your labels know, a move to a cheaper model, a judge you can't
+    trust — to runnable examples. The [AutoLLM Closed Loop](../flagships/autollm-closed-loop.md)
+    flagship runs the whole thing end to end: traces → dataset → eval → AutoLLM →
+    registry version → CI gate → production.
+
 It tunes the **system prompt** by default, and can also tune **few-shot
 examples** and **which learned-memory facts to inject** when you opt in — greedy
 coordinate ascent, cycling the active levers one per round. The SDK's answer to
@@ -125,6 +132,13 @@ was tuned against. By construction the winner is **never worse than baseline**.
 The default is **prompt-only** (`levers=("instructions",)`) — the cheapest entry
 point (few-shot adds a bootstrap pass; memory needs `fastaiagent learn` to have
 run). Opt into more with e.g. `levers=("instructions", "fewshot", "memory")`.
+
+**A stateless agent stays stateless.** The few-shot and memory levers carry their
+examples and facts in a memory block. An agent built with no `memory` gets those
+blocks and nothing else — it keeps no conversation, during the run (each eval case
+is scored on its own) and after `report.apply_to(agent)` (one user's request never
+reaches the next user's prompt). Before 1.87.0 the wrapper kept a conversation
+window, so a tuned stateless agent remembered every earlier run.
 
 ### Memory-bearing agents
 

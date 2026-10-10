@@ -324,9 +324,13 @@ drifted between runs. Scorer chips are ringed with a primary border
 when that particular scorer flipped between A and B. Header stats
 show pass-rate delta and cost delta.
 
-Cases are matched between the two runs first by `ordinal`, with a
-fall-back to `input` equality — so a dataset with reordered cases
-still aligns correctly.
+Cases are matched between the two runs by `ordinal` (a case's position
+in the dataset) when both runs hold the same input there, and by `input`
+equality otherwise — so a dataset with reordered cases still aligns
+correctly. The same matching drives `fastaiagent eval compare` and the
+pytest `--eval-baseline` gate. (Before 1.87.0, `evaluate()` stored the
+order its concurrent cases *finished* in, and a comparison could pair two
+different cases; runs stored that way now pair by input.)
 
 ![Eval compare](screenshots/26-eval-compare.png)
 

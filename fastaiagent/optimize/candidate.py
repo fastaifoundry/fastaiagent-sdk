@@ -11,14 +11,39 @@ from __future__ import annotations
 import uuid
 import warnings
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+from fastaiagent.agent.memory import AgentMemory
+from fastaiagent.llm.message import Message
 
 if TYPE_CHECKING:
     from fastaiagent.agent.agent import Agent
-    from fastaiagent.agent.memory import AgentMemory, ComposableMemory, MemoryLike
+    from fastaiagent.agent.memory import ComposableMemory, MemoryLike
     from fastaiagent.agent.memory_simple import Memory
     from fastaiagent.eval.results import EvalResults
     from fastaiagent.eval.scorer import Scorer
+
+
+class _NoConversation(AgentMemory):
+    """The primary window of an agent that had no memory: it keeps nothing.
+
+    The few-shot and memory levers carry their block in a ``ComposableMemory``,
+    and a ``ComposableMemory`` needs a primary window. A real one turned a
+    stateless agent into one that remembered every earlier run: eval cases bled
+    into each other, and an applied winner put one user's request into the next
+    user's prompt (1.87.0). This window stores and returns nothing, so the agent
+    stays as stateless as it was.
+    """
+
+    def add(self, message: Message) -> None:
+        return None
+
+    def get_context(self, query: str = "", max_messages: int | None = None) -> list[Message]:
+        return []
+
+    def load(self, path: str | Path) -> None:
+        return None
 
 
 @dataclass
@@ -147,7 +172,7 @@ def _clone_memory_blocks(
     """
     if memory is None:
         return None
-    from fastaiagent.agent.memory import AgentMemory, ComposableMemory
+    from fastaiagent.agent.memory import ComposableMemory
     from fastaiagent.agent.memory_blocks import MemoryIsolationError
     from fastaiagent.agent.memory_simple import Memory
 
@@ -177,7 +202,11 @@ def _clone_memory_blocks(
             )
             new_blocks.append(b)
     primary = getattr(memory, "primary", None)
-    new_primary = AgentMemory(max_messages=getattr(primary, "max_messages", None))
+    new_primary = (
+        _NoConversation()
+        if isinstance(primary, _NoConversation)
+        else AgentMemory(max_messages=getattr(primary, "max_messages", None))
+    )
     return ComposableMemory(blocks=new_blocks, primary=new_primary)
 
 
@@ -262,16 +291,17 @@ def _inject_block(
     """Add ``block`` to ``memory``, replacing any existing block of the same name
     (so re-optimization doesn't stack). Wraps a plain ``AgentMemory`` / ``None``
     in a ``ComposableMemory`` as needed; a ``Memory`` puts it in every user's
-    memory and stays a ``Memory``.
+    memory and stays a ``Memory``. An agent with no memory gets a primary window
+    that keeps no conversation — it had none, and must not gain one.
     """
-    from fastaiagent.agent.memory import AgentMemory, ComposableMemory
+    from fastaiagent.agent.memory import ComposableMemory
     from fastaiagent.agent.memory_simple import Memory
 
     if isinstance(memory, Memory):
         memory._override_block(block, replace_name)
         return memory
     if memory is None:
-        return ComposableMemory(blocks=[block], primary=AgentMemory())
+        return ComposableMemory(blocks=[block], primary=_NoConversation())
     if isinstance(memory, ComposableMemory):
         optimized_name = f"{replace_name}.optimized"
 

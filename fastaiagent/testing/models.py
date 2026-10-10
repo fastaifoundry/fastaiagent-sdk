@@ -159,6 +159,11 @@ def _record_test_completion(
             response_tool_calls=response_tool_calls,
             finish_reason=response.finish_reason or None,
         )
+        # Attribute the call to the agent's registry prompt, as the real client
+        # does, so an offline run shows up in the prompt's lineage too.
+        from fastaiagent.prompt.provenance import stamp_prompt_provenance
+
+        stamp_prompt_provenance(span)
 
 
 DecisionsArg = Any  # DecisionResult | dict | list of either | callable(input, questions)

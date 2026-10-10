@@ -27,6 +27,18 @@ These examples are fully runnable with a real OpenAI model — **no mocks**:
   that company's answers (a held-out split from the same doc can't catch it); across
   companies the only way to win is a prompt that generalises. Excerpts are compact
   (TPM-friendly — never the whole report). *(Requires ≥ 1.38.0; needs a gpt-5* model.)*
+- **`calibrate_judge.py`** — *can you trust your LLM judge?* The judge is tuned like
+  an agent: 80 support replies your reviewers labelled pass/fail (with a one-line
+  note) are its dataset, agreement with them is its score. A naive "is this good
+  customer service?" judge passes a warm reply that promises a refund and fails a
+  blunt correct one; calibrated, it agrees with the reviewers on **18/20** replies
+  it never saw (naive: **15/20**). `--tune-agent` then lets the calibrated judge
+  select a support agent's prompt, with a different `GEval` judge auditing the
+  holdout (**0.800 → 1.000**). `--try "question" "reply"` shows both judges on any
+  reply. Docs: [Calibrate Your LLM Judge](../../docs/flagships/judge-calibration.md).
+
+For the whole loop — traces → dataset → eval → AutoLLM → registry → CI gate →
+production — see [`../autollm-loop/`](../autollm-loop/).
 
 ## What `agent.py` does
 

@@ -344,21 +344,25 @@ class Agent:
         # governed prompt (console shows the slug, not "Inline") instead of
         # inlining the resolved text and dropping the linkage.
         self.prompt_slug = prompt_slug
-        # Gap 4 provenance: if system_prompt is a control-plane registry Prompt,
-        # use its text at runtime and capture slug/version/environment so runs
-        # stamp the llm_call span for Prompt Analytics. Also auto-links
-        # prompt_slug (Gap 3) so the pushed definition references the slug.
+        # Gap 4 provenance: if system_prompt is a registry Prompt, use its text at
+        # runtime and capture its name/version so every run stamps the llm_call
+        # span — the Local UI's prompt lineage finds a prompt's traces by name.
+        # A control-plane prompt also carries slug/environment for Prompt
+        # Analytics and auto-links prompt_slug (Gap 3) so the pushed definition
+        # references the slug. A local prompt never links: the plane has no
+        # such slug, and a linked agent pushes system_prompt="".
         self._prompt_provenance: dict[str, Any] | None = None
         try:
             from fastaiagent.prompt.prompt import Prompt as _Prompt
 
             if isinstance(system_prompt, _Prompt):
+                self._prompt_provenance = {
+                    "name": system_prompt.name,
+                    "version": system_prompt.version,
+                }
                 if system_prompt.slug:
-                    self._prompt_provenance = {
-                        "slug": system_prompt.slug,
-                        "version": system_prompt.version,
-                        "environment": system_prompt.environment,
-                    }
+                    self._prompt_provenance["slug"] = system_prompt.slug
+                    self._prompt_provenance["environment"] = system_prompt.environment
                     if not self.prompt_slug:
                         self.prompt_slug = system_prompt.slug
                 self.system_prompt = system_prompt.template
@@ -680,34 +684,20 @@ class Agent:
                 "your application with aresume(run_id, resume_value=Resume(approved=..., "
                 "metadata={'resolver': ...}))."
             )
-        # Gap 4: make this run's registry-prompt provenance visible to the LLM
-        # client so it can stamp fastaiagent.prompt.* on the llm_call span.
-        # ContextVar → async-task-local; no LLM call-signature changes.
-        _prov_token = None
-        if self._prompt_provenance is not None:
-            from fastaiagent.prompt.provenance import set_prompt_provenance
-
-            _prov_token = set_prompt_provenance(self._prompt_provenance)
-        try:
-            if trace:
-                result = await self._arun_traced(
-                    input,
-                    context=context,
-                    execution_id=execution_id,
-                    messages=messages,
-                    metadata=metadata,
-                    **kwargs,
-                )
-            else:
-                result = await self._arun_core(
-                    input, context=context, execution_id=execution_id, messages=messages, **kwargs
-                )
-        finally:
-            if _prov_token is not None:
-                from fastaiagent.prompt.provenance import reset_prompt_provenance
-
-                reset_prompt_provenance(_prov_token)
-        return result
+        # Prompt provenance is bound in ``_arun_core``, which every non-streamed
+        # run passes through (arun, aresume, a fork); astream binds its own.
+        if trace:
+            return await self._arun_traced(
+                input,
+                context=context,
+                execution_id=execution_id,
+                messages=messages,
+                metadata=metadata,
+                **kwargs,
+            )
+        return await self._arun_core(
+            input, context=context, execution_id=execution_id, messages=messages, **kwargs
+        )
 
     async def _arun_traced(
         self,
@@ -868,6 +858,12 @@ class Agent:
         # (e.g. per-user) for this turn. Absent context → callable ids resolve
         # to "" → safe (no personal facts).
         rc_token = set_active_run_context(context)
+        # Which registry prompt this run uses, for the LLM client to stamp
+        # fastaiagent.prompt.* on each llm span. Bound even when None so an agent
+        # run inside another (a tool, a worker) never inherits its caller's prompt.
+        from fastaiagent.prompt.provenance import reset_prompt_provenance, set_prompt_provenance
+
+        pv_token = set_prompt_provenance(self._prompt_provenance)
         # Collect every guardrail firing for this run, whatever position it ran
         # at — the tool_call/tool_result ones happen inside the tool loop, which
         # is why this is run-scoped rather than a local list here.
@@ -1090,6 +1086,7 @@ class Agent:
             _agent_path.reset(ap_token)
             _execution_id.reset(exec_token)
             reset_active_run_context(rc_token)
+            reset_prompt_provenance(pv_token)
             stop_firing_collection(gf_token)
             stop_run_cost(rcost_token)
 
@@ -1158,7 +1155,12 @@ class Agent:
                     outcome["trace_id"] = format(span.get_span_context().trace_id, "032x")
             if outcome is not None:
                 outcome["execution_id"] = exec_id
-            async for event in self._astream_inner(
+            from fastaiagent.prompt.provenance import (
+                reset_prompt_provenance,
+                set_prompt_provenance,
+            )
+
+            inner = self._astream_inner(
                 input,
                 context=context,
                 execution_id=exec_id,
@@ -1167,8 +1169,23 @@ class Agent:
                 span=span,
                 outcome=outcome,
                 **kwargs,
-            ):
-                yield event
+            )
+            try:
+                while True:
+                    # Bind this run's prompt provenance (see _arun_core) around
+                    # each step, never across a yield: a generator runs in its
+                    # consumer's context, so a value held between yields would
+                    # stamp another stream advanced in the same task.
+                    pv_token = set_prompt_provenance(self._prompt_provenance)
+                    try:
+                        event = await inner.__anext__()
+                    except StopAsyncIteration:
+                        break
+                    finally:
+                        reset_prompt_provenance(pv_token)
+                    yield event
+            finally:
+                await inner.aclose()
 
     async def _astream_inner(
         self,

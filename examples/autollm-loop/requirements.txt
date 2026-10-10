@@ -1,0 +1,5 @@
+# 1.87.0: registry prompts stamp every trace (the Prompts page lineage), a
+# few-shot winner stays stateless, and eval compares pair the same ticket.
+fastaiagent[ui]>=1.87.0
+openai
+pytest

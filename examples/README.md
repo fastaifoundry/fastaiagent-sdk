@@ -28,6 +28,7 @@ subsystem: read them, run them, lift the pattern.
 | [`harness-migration/`](harness-migration/) | Wrap an existing **LangGraph / CrewAI / PydanticAI** agent with FastAIAgent's harness | `fastaiagent.integrations.{langchain,crewai,pydanticai}` — `enable()` auto-tracing + `with_guardrails()` + `kb_as_retriever()` / `kb_as_tool()` + `prompt_from_registry()` + `register_agent()` + cross-framework `fa.evaluate()` via `as_evaluable()` | gradual migration **from another framework** |
 | [`deep-research-agent/`](deep-research-agent/) | Open-Deep-Research-style long-horizon investigation: scope → parallel sub-researchers → write | `ScopeAgent` → `asyncio.gather` over plain `Agent` sub-researchers → writer, with structured `deep_research.*` spans, a tool budget, pluggable search backends (mock / Tavily / Brave / Serper) and `fastaiagent.template.kind` for UI badging | the **long-horizon research** shape |
 | [`regression-from-trace/`](regression-from-trace/) | A customer reports a bad answer: capture it, fix it, keep it fixed | The full `trace → Replay.fork_at() → swap the broken tool or prompt → rerun → save as a regression case → evaluate()` loop, in five runnable scripts | the **debug-to-regression-test** loop |
+| [`autollm-loop/`](autollm-loop/) | A live triage agent gets priorities wrong: turn its traffic into a better prompt version and ship it | `PromptRegistry` versions + aliases → traces stamped with the prompt version → `curate_from_traces` → Dataset Editor → `evaluate()` baseline → `optimize()` (instructions + few-shot, holdout-guarded) → new registry version → pytest `--eval-baseline` gate → alias move (1.87.0) | the **traces-to-better-prompt** loop |
 
 ### Focused walkthroughs
 
@@ -58,6 +59,7 @@ needs forking.
    - **Already on LangChain / CrewAI / PydanticAI** → [`harness-migration/`](harness-migration/)
    - **Long-horizon research over many sources** → [`deep-research-agent/`](deep-research-agent/)
    - **A reported bad answer you need to fix and keep fixed** → [`regression-from-trace/`](regression-from-trace/)
+   - **A prompt that's wrong in ways your labels know about** → [`autollm-loop/`](autollm-loop/)
 5. For specific features (RAG, OTel export, MCP, cyclic chains, etc.), grep the snippet table below.
 
 ### How to fork a template

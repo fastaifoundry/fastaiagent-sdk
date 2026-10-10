@@ -131,9 +131,10 @@ chain.invoke({"name": "world"})
 Returns a `ChatPromptTemplate` with `template_format="mustache"` so the
 registry's `{{var}}` syntax works natively. When the template is rendered
 inside a traced LangGraph run, the next `on_chat_model_start` /
-`on_llm_start` event tags the LLM span with
-`fastaiagent.prompt.slug` and `fastaiagent.prompt.version`, which the
-Prompt detail page's "Traces using this prompt" panel reads.
+`on_llm_start` event tags the LLM span with `fastaiagent.prompt.name`,
+`fastaiagent.prompt.slug` and `fastaiagent.prompt.version`. The Prompt detail
+page's lineage panel finds the run by `prompt.name` (before 1.87.0 only the slug
+was stamped, so LangChain runs never showed up there).
 
 ## 5. Knowledge base as a retriever
 
