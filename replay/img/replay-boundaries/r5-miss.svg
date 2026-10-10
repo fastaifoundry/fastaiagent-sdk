@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" width="1200" height="700" role="img" aria-label="Between the recording and the rerun: when a rerun makes more model calls than the trace captured the queue is empty; on_miss=error raises ReplayError before any provider call; on_miss=live, the default, logs a warning and makes a real billed call; compare walks both step lists in start order, root first, and reports the first step whose name or model output differs, or rerun_failed when the rerun's trace cannot be loaded.">
+  <title>Between the recording and the rerun: when a rerun makes more model calls than the trace captured the queue is empty; on_miss=error raises ReplayError before any provider call; on_miss=live, the default, logs a warning and makes a real billed call; compare walks both step lists in start order, root first, and reports the first step whose name or model output differs, or rerun_failed when the rerun's trace cannot be loaded.</title>
+  <rect x="0" y="0" width="1200" height="700" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Between the recording and the rerun: the miss, and the divergence</text>
+  <rect x="48" y="120" width="400" height="166.5" rx="10" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="62" y="152" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="start">a recording that ends early</text>
+  <text x="62" y="171.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">original run: the second model call</text>
+  <text x="62" y="191.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">raised 'provider returned 503'</text>
+  <text x="62" y="211.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">trace: agent.shipping [ERROR]</text>
+  <text x="62" y="231.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">       llm  ← ① tool_calls captured</text>
+  <text x="62" y="251.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">       tool.lookup_order</text>
+  <text x="62" y="271.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">captured model responses: 1</text>
+  <polyline points="448,230 510,230" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="510,230 496.0,223.0 496.0,237.0" fill="#2a78d6"/>
+  <rect x="510" y="120" width="300" height="200" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="530" y="156" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#0b0b0b" text-anchor="start">the rerun asks for ②</text>
+  <text x="530" y="178" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">the queue is installed but empty:</text>
+  <text x="530" y="197" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">replay is active, responses</text>
+  <text x="530" y="216" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">exhausted — the miss</text>
+  <polyline points="810,180 870,180" fill="none" stroke="#eb6834" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="870,180 856.0,173.0 856.0,187.0" fill="#eb6834"/>
+  <polyline points="810,270 870,270" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="870,270 856.0,263.0 856.0,277.0" fill="#1baf7a"/>
+  <rect x="870" y="130" width="282" height="92" rx="12" fill="#fdefe8" stroke="#eb6834" stroke-width="2"/>
+  <text x="890" y="166" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0b0b0b" text-anchor="start">on_miss="live" · default</text>
+  <text x="890" y="186" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">warning, then a real call —</text>
+  <text x="890" y="204" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">billed, nondeterministic</text>
+  <rect x="870" y="236" width="282" height="92" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="890" y="272" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0b0b0b" text-anchor="start">on_miss="error"</text>
+  <text x="890" y="292" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">ReplayError before any</text>
+  <text x="890" y="310" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">provider call — for suites</text>
+  <text x="48" y="380" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="start">compare(): where did the rerun leave the original?</text>
+  <rect x="48" y="400" width="1104" height="127.5" rx="10" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="62" y="432" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="start">live rerun with a French prompt, from the live run</text>
+  <text x="62" y="451.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">step 0  agent.shipping   'Order 1042 was shipped on 12 Sept…'  |  'La commande 1042 a été expédiée…'   ← diverged_at=0</text>
+  <text x="62" y="471.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">step 1  llm.openai…      (tool-call turn: no content)          |  (tool-call turn: no content)</text>
+  <text x="62" y="491.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">step 2  tool.lookup_order                                      |</text>
+  <text x="62" y="511.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">step 3  llm.openai…      'Order 1042 was shipped on 12 Sept…'  |  'La commande 1042 a été expédiée…'</text>
+  <text x="48" y="548" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">• steps are the spans in start order, root first — so a rerun whose final answer differs diverges at step 0</text>
+  <text x="48" y="570" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">• a rerun whose answer matches but whose path differs diverges at the first changed span name or model reply</text>
+  <text x="48" y="592" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">• compare_status='rerun_failed' when the rerun's trace can't be loaded: 'couldn't tell', not 'no divergence'</text>
+  <text x="48" y="660" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="12" font-weight="400" fill="#8a8880" text-anchor="start">Code: llm/client.py::acomplete (_replay_on_miss) · trace/replay.py::_first_divergence / compare</text>
+</svg>

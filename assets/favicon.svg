@@ -1,0 +1,15 @@
+<svg width="32" height="32" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .bg { fill: #e8f6fa }
+    .hex { fill: #0088aa }
+    .bolt { fill: #e8f6fa }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0a1a22 }
+      .hex { fill: #00d4ff }
+      .bolt { fill: #08080c }
+    }
+  </style>
+  <rect class="bg" width="120" height="120" rx="24"/>
+  <path class="hex" d="M60 14 L102 37 L102 83 L60 106 L18 83 L18 37 Z"/>
+  <path class="bolt" d="M64 20 L24 68 L60 68 L56 100 L96 52 L60 52 Z"/>
+</svg>

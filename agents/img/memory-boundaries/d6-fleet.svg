@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 660" width="1200" height="660" role="img" aria-label="Laptop to fleet: every process uses the same Memory API over one FactStore contract, backed by SQLite, Postgres or Redis; conversation windows stay in each process.">
+  <title>Laptop to fleet: every process uses the same Memory API over one FactStore contract, backed by SQLite, Postgres or Redis; conversation windows stay in each process.</title>
+  <rect x="0" y="0" width="1200" height="660" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Laptop to fleet — one Memory API, one contract, three stores</text>
+  <rect x="48" y="130" width="336" height="120" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="68" y="166" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">process 1</text>
+  <text x="68" y="192" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">windows for its own users</text>
+  <text x="68" y="215" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">Memory(location=…)</text>
+  <polyline points="216,250 216,318" fill="none" stroke="#52514e" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="216,318 223.0,304.0 209.0,304.0" fill="#52514e"/>
+  <rect x="432" y="130" width="336" height="120" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="452" y="166" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">process 2</text>
+  <text x="452" y="192" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">windows for its own users</text>
+  <text x="452" y="215" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">Memory(location=…)</text>
+  <polyline points="600,250 600,318" fill="none" stroke="#52514e" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="600,318 607.0,304.0 593.0,304.0" fill="#52514e"/>
+  <rect x="816" y="130" width="336" height="120" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="836" y="166" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">process 3</text>
+  <text x="836" y="192" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">windows for its own users</text>
+  <text x="836" y="215" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">Memory(location=…)</text>
+  <polyline points="984,250 984,318" fill="none" stroke="#52514e" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="984,318 991.0,304.0 977.0,304.0" fill="#52514e"/>
+  <rect x="48" y="318" width="1104" height="64" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="600" y="358" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="19" font-weight="600" fill="#0b0b0b" text-anchor="middle">FactStore contract: add · list_active (newest first) · supersede · delete</text>
+  <polyline points="216,382 216,460" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="216,460 223.0,446.0 209.0,446.0" fill="#1baf7a"/>
+  <rect x="129.95" y="413.75" width="172.1" height="20.25" rx="4" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="216" y="428" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="500" fill="#52514e" text-anchor="middle">location="sqlite"</text>
+  <path d="M48,476 L48,562 A168.0,16 0 0 0 384,562 L384,476" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <ellipse cx="216.0" cy="476" rx="168.0" ry="16" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <text x="216" y="518" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="21" font-weight="700" fill="#0b0b0b" text-anchor="middle">SQLite</text>
+  <text x="216" y="548" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="middle">local.db · indexed read</text>
+  <polyline points="600,382 600,460" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="600,460 607.0,446.0 593.0,446.0" fill="#1baf7a"/>
+  <rect x="537.2" y="413.75" width="125.6" height="20.25" rx="4" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="600" y="428" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="500" fill="#52514e" text-anchor="middle">postgres://…</text>
+  <path d="M432,476 L432,562 A168.0,16 0 0 0 768,562 L768,476" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <ellipse cx="600.0" cy="476" rx="168.0" ry="16" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <text x="600" y="518" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="21" font-weight="700" fill="#0b0b0b" text-anchor="middle">Postgres</text>
+  <text x="600" y="548" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="middle">partial indexes · pooled</text>
+  <polyline points="984,382 984,460" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="984,460 991.0,446.0 977.0,446.0" fill="#1baf7a"/>
+  <rect x="935.15" y="413.75" width="97.7" height="20.25" rx="4" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="984" y="428" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="500" fill="#52514e" text-anchor="middle">redis://…</text>
+  <path d="M816,476 L816,562 A168.0,16 0 0 0 1152,562 L1152,476" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <ellipse cx="984.0" cy="476" rx="168.0" ry="16" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <text x="984" y="518" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="21" font-weight="700" fill="#0b0b0b" text-anchor="middle">Redis</text>
+  <text x="984" y="548" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="middle">newest-first sorted sets</text>
+  <text x="48" y="626" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">Every process points at the same store. Windows never leave their process: keep a user on one process, or save()/load().</text>
+</svg>

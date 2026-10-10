@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" width="1200" height="600" role="img" aria-label="Where model-call bugs hide: a typical test makes one happy call to one provider, reads the content and trusts the dashboard; the bugs sit on the boundaries around that — a parameter one provider rejects, a tool turn with no content, a stream that never ends with StreamDone, a reply that is not JSON, a model the price table does not know, a 429 with retries off.">
+  <title>Where model-call bugs hide: a typical test makes one happy call to one provider, reads the content and trusts the dashboard; the bugs sit on the boundaries around that — a parameter one provider rejects, a tool turn with no content, a stream that never ends with StreamDone, a reply that is not JSON, a model the price table does not know, a 429 with retries off.</title>
+  <rect x="0" y="0" width="1200" height="600" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Where model-call bugs hide</text>
+  <rect x="330" y="190" width="540" height="220" rx="18" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="600" y="236" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#2a78d6" text-anchor="middle">A TYPICAL TEST</text>
+  <text x="600" y="274" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="middle">one provider, one happy call</text>
+  <text x="600" y="304" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="middle">content read, finish_reason ignored</text>
+  <text x="600" y="334" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="middle">the dashboard trusted</text>
+  <rect x="48" y="122" width="212.0" height="44" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="62" y="150" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">a rejected parameter</text>
+  <line x1="260.0" y1="144" x2="330" y2="230" stroke="#eb6834" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <rect x="48" y="272" width="258.0" height="44" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="62" y="300" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">a tool turn, content None</text>
+  <line x1="306.0" y1="294" x2="330" y2="300" stroke="#eb6834" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <rect x="48" y="422" width="276.4" height="44" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="62" y="450" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">a stream with no StreamDone</text>
+  <line x1="324.4" y1="444" x2="330" y2="380" stroke="#eb6834" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <rect x="912.4" y="122" width="239.6" height="44" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="926.4" y="150" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">a reply that isn't JSON</text>
+  <line x1="912.4" y1="144" x2="870" y2="230" stroke="#eb6834" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <rect x="967.6" y="272" width="184.39999999999998" height="44" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="981.6" y="300" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">an unpriced model</text>
+  <line x1="967.6" y1="294" x2="870" y2="300" stroke="#eb6834" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <rect x="921.6" y="422" width="230.39999999999998" height="44" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="935.6" y="450" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">a 429 with retries off</text>
+  <line x1="921.6" y1="444" x2="870" y2="380" stroke="#eb6834" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <text x="48" y="540" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">Each boundary has a proof script; test your own client on the same lines.</text>
+</svg>

@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 620" width="1200" height="620" role="img" aria-label="Two judges: the selection judge scores dev inside the loop and decides accept or reject; the audit judge scores only the holdout guard and is the number you report; two judges with the same name are refused up front; an unset audit judge falls back to the selection judge with a warning.">
+  <title>Two judges: the selection judge scores dev inside the loop and decides accept or reject; the audit judge scores only the holdout guard and is the number you report; two judges with the same name are refused up front; an unset audit judge falls back to the selection judge with a warning.</title>
+  <rect x="0" y="0" width="1200" height="620" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">The judge that picks doesn't grade — two judges</text>
+  <rect x="48" y="150" width="360" height="220" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="68" y="186" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">selection judge</text>
+  <text x="68" y="212" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">inside the loop</text>
+  <text x="68" y="235" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">scores dev → accept / reject</text>
+  <text x="68" y="258" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">composed into the scorers,</text>
+  <text x="68" y="281" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">deduped by name</text>
+  <rect x="792" y="150" width="360" height="220" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="812" y="186" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">audit judge</text>
+  <text x="812" y="212" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">the holdout guard only</text>
+  <text x="812" y="235" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">a different prompt —</text>
+  <text x="812" y="258" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">ideally a different model</text>
+  <text x="812" y="281" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">the number you report</text>
+  <rect x="490" y="200" width="220" height="46" rx="8" fill="#eaf2fc" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="504" y="229.12" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="start">dev · every round</text>
+  <rect x="490" y="290" width="220" height="46" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="504" y="319.12" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="start">holdout · at the end</text>
+  <polyline points="408,223 490,223" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="490,223 476.0,216.0 476.0,230.0" fill="#2a78d6"/>
+  <polyline points="792,313 710,313" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="710,313 724.0,320.0 724.0,306.0" fill="#1baf7a"/>
+  <circle cx="60" cy="430" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="423" x2="67" y2="437" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="437" x2="67" y2="423" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="436" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="600" fill="#eb6834" text-anchor="start">same name as a scorer in scorers → ValueError before anything runs</text>
+  <text x="78" y="462" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">(LLMJudge defaults to 'llm_judge', GEval to 'g_eval' — name the audit judge)</text>
+  <text x="60" y="504" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="400" fill="#eb6834" text-anchor="start">⚠</text>
+  <text x="78" y="504" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="600" fill="#eb6834" text-anchor="start">audit_judge unset → the selection judge audits itself — a warning, and a number not to quote</text>
+  <polyline points="50,548 57,556 71,539" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="78" y="554" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="600" fill="#1baf7a" text-anchor="start">a deterministic scorer needs no judge: set primary_metric and select on it</text>
+  <text x="48" y="600" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">Judge calibration example: a GEval on gpt-4.1 audited an agent the calibrated judge picked.</text>
+</svg>

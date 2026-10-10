@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 660" width="1200" height="660" role="img" aria-label="Where memory bugs hide: a typical test covers one user, one process, run() and one turn; memory breaks on the boundaries around that, and each boundary has its own test.">
+  <title>Where memory bugs hide: a typical test covers one user, one process, run() and one turn; memory breaks on the boundaries around that, and each boundary has its own test.</title>
+  <rect x="0" y="0" width="1200" height="660" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Where memory bugs hide — and what to test</text>
+  <text x="48" y="98" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" font-weight="400" fill="#52514e" text-anchor="start">A typical test covers the middle box. Memory breaks on the lines around it.</text>
+  <rect x="460" y="300" width="280" height="130" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="480" y="336" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">a typical test</text>
+  <text x="480" y="364" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="400" fill="#52514e" text-anchor="start">one user · one process</text>
+  <text x="480" y="388" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="400" fill="#52514e" text-anchor="start">run() · one turn</text>
+  <line x1="408" y1="200" x2="460" y2="365" stroke="#eb6834" stroke-width="2" stroke-dasharray="6 6"/>
+  <rect x="48" y="140" width="360" height="130" rx="12" fill="#fdefe8" stroke="#eb6834" stroke-width="2"/>
+  <text x="68" y="176" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">between users</text>
+  <text x="68" y="202" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">two users at once</text>
+  <text x="68" y="225" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">a caller with no user</text>
+  <line x1="792" y1="200" x2="740" y2="365" stroke="#eb6834" stroke-width="2" stroke-dasharray="6 6"/>
+  <rect x="792" y="140" width="360" height="130" rx="12" fill="#fdefe8" stroke="#eb6834" stroke-width="2"/>
+  <text x="812" y="176" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">between turns</text>
+  <text x="812" y="202" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">stream, resume and swarm too</text>
+  <text x="812" y="225" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">a blocked or failed turn</text>
+  <line x1="408" y1="370" x2="460" y2="365" stroke="#eb6834" stroke-width="2" stroke-dasharray="6 6"/>
+  <rect x="48" y="310" width="360" height="130" rx="12" fill="#fdefe8" stroke="#eb6834" stroke-width="2"/>
+  <text x="68" y="346" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">between who said it</text>
+  <text x="68" y="372" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">a chatty assistant's replies</text>
+  <text x="68" y="395" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">assert no reply became a fact</text>
+  <line x1="792" y1="370" x2="740" y2="365" stroke="#eb6834" stroke-width="2" stroke-dasharray="6 6"/>
+  <rect x="792" y="310" width="360" height="130" rx="12" fill="#fdefe8" stroke="#eb6834" stroke-width="2"/>
+  <text x="812" y="346" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">between processes</text>
+  <text x="812" y="372" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">write here, read in a new process</text>
+  <text x="812" y="395" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">delete, then search</text>
+  <line x1="408" y1="540" x2="460" y2="365" stroke="#eb6834" stroke-width="2" stroke-dasharray="6 6"/>
+  <rect x="48" y="480" width="360" height="130" rx="12" fill="#fdefe8" stroke="#eb6834" stroke-width="2"/>
+  <text x="68" y="516" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">laptop → fleet</text>
+  <text x="68" y="542" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">time the read at 50 and 5,000</text>
+  <text x="68" y="565" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">every store you deploy on</text>
+  <line x1="792" y1="540" x2="740" y2="365" stroke="#eb6834" stroke-width="2" stroke-dasharray="6 6"/>
+  <rect x="792" y="480" width="360" height="130" rx="12" fill="#fdefe8" stroke="#eb6834" stroke-width="2"/>
+  <text x="812" y="516" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">SDK ↔ plane</text>
+  <text x="812" y="542" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">stop the plane mid-session</text>
+  <text x="812" y="565" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">read what the agent says</text>
+</svg>

@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 660" width="1200" height="660" role="img" aria-label="One contract, three backends, and the plane: the same LocalKB code runs over FAISS, Chroma and Qdrant through the VectorStore protocol, and all three return the same cosine for the same pair; in 1.87.0 Chroma rejects FastEmbed's numpy float32 values; PlatformKB keeps the same search and as_tool surface with retrieval on the plane.">
+  <title>One contract, three backends, and the plane: the same LocalKB code runs over FAISS, Chroma and Qdrant through the VectorStore protocol, and all three return the same cosine for the same pair; in 1.87.0 Chroma rejects FastEmbed's numpy float32 values; PlatformKB keeps the same search and as_tool surface with retrieval on the plane.</title>
+  <rect x="0" y="0" width="1200" height="660" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">One contract, three backends — and the plane</text>
+  <rect x="48" y="120" width="1104" height="86" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="68" y="156" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">LocalKB — one lifecycle: add_documents · search · delete_by_source · search</text>
+  <text x="68" y="179" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">vector_store=&lt;any VectorStore&gt;; BM25 and SQLite stay as they are</text>
+  <polyline points="218,206 218,250" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="218,250 225.0,236.0 211.0,236.0" fill="#2a78d6"/>
+  <rect x="48" y="250" width="340" height="110" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="68" y="286" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">FaissVectorStore</text>
+  <text x="68" y="309" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">in-process · the default</text>
+  <text x="68" y="329" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">1.0 · 0.0 · −1.0 · 0.6</text>
+  <polyline points="600,206 600,250" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="600,250 607.0,236.0 593.0,236.0" fill="#2a78d6"/>
+  <rect x="430" y="250" width="340" height="110" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="450" y="286" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">ChromaVectorStore</text>
+  <text x="450" y="309" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">in-process, on disk, or HTTP</text>
+  <text x="450" y="329" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">1.0 · 0.0 · −1.0 · 0.6</text>
+  <polyline points="982,206 982,250" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="982,250 989.0,236.0 975.0,236.0" fill="#2a78d6"/>
+  <rect x="812" y="250" width="340" height="110" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="832" y="286" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">QdrantVectorStore</text>
+  <text x="832" y="309" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">in-memory or a server</text>
+  <text x="832" y="329" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">1.0 · 0.0 · −1.0 · 0.6</text>
+  <text x="48" y="400" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">VectorStore.search() returns a cosine in [-1, 1] on every backend — same, orthogonal, opposite, cos 0.6 — pinned by tests/test_kb_score_semantics_sweep.py</text>
+  <circle cx="60" cy="446" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="439" x2="67" y2="453" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="453" x2="67" y2="439" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="452" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#eb6834" text-anchor="start">1.87.0: Chroma refuses FastEmbed's vectors — numpy float32 inside Python lists; FAISS and Qdrant accept them</text>
+  <rect x="48" y="500" width="560" height="120" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="68" y="536" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">PlatformKB(kb_id)</text>
+  <text x="68" y="558" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">the same search() · asearch() · as_tool()</text>
+  <text x="68" y="577" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">retrieval runs on the plane; kb_id rides on the span,</text>
+  <text x="68" y="596" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">never stripped — payloads are</text>
+  <rect x="650" y="500" width="502" height="120" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="670" y="536" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">your own backend</text>
+  <text x="670" y="558" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">implement VectorStore, KeywordStore or MetadataStore</text>
+  <text x="670" y="577" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">(structural protocols: no base class to inherit)</text>
+  <text x="670" y="596" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">say in its docstring if its score is not a cosine</text>
+</svg>

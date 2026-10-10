@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 660" width="1200" height="660" role="img" aria-label="Two placeholders, two moments: register() stores the raw template; load() replaces each fragment reference with the fragment's text by regex; format() replaces each variable literally. An unknown fragment and an unfilled variable both stay in the text verbatim.">
+  <title>Two placeholders, two moments: register() stores the raw template; load() replaces each fragment reference with the fragment's text by regex; format() replaces each variable literally. An unknown fragment and an unfilled variable both stay in the text verbatim.</title>
+  <rect x="0" y="0" width="1200" height="660" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Two placeholders, two moments — and nothing is checked for you</text>
+  <rect x="48" y="120" width="560" height="120.0" rx="10" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="62" y="152" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="700" fill="#0b0b0b" text-anchor="start">register(name, template)</text>
+  <text x="62" y="174.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">"Hello {{name}}, welcome to {{company}}."</text>
+  <text x="62" y="196.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">"{{@tone}} {{@legal}}"</text>
+  <text x="62" y="218.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">variables: ['company', 'name']</text>
+  <polyline points="328,240.0 328,284.0" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="328,284.0 335.0,270.0 321.0,270.0" fill="#2a78d6"/>
+  <rect x="143.89999999999998" y="250.7" width="368.20000000000005" height="18.900000000000002" rx="4" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="328" y="264.0" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="500" fill="#52514e" text-anchor="middle">load()  —  regex: {{@x}} → the fragment's text</text>
+  <rect x="48" y="284.0" width="560" height="120.0" rx="10" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="62" y="316.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="700" fill="#0b0b0b" text-anchor="start">the Prompt</text>
+  <text x="62" y="338.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">"Hello {{name}}, welcome to {{company}}."</text>
+  <text x="62" y="360.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">"Be {{tone}} and concise. {{@legal}}"</text>
+  <text x="62" y="382.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">variables: ['company', 'name', 'tone']</text>
+  <polyline points="328,404.0 328,448.0" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="328,448.0 335.0,434.0 321.0,434.0" fill="#2a78d6"/>
+  <rect x="147.75" y="414.7" width="360.5" height="18.900000000000002" rx="4" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="328" y="428.0" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="500" fill="#52514e" text-anchor="middle">format(name=…, company=…)  —  literal replace</text>
+  <rect x="48" y="448.0" width="560" height="97.5" rx="10" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="62" y="480.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="700" fill="#0b0b0b" text-anchor="start">the text</text>
+  <text x="62" y="502.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">"Hello Dana, welcome to Acme."</text>
+  <text x="62" y="524.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">"Be {{tone}} and concise. {{@legal}}"</text>
+  <rect x="660" y="120" width="492" height="110" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="680" y="156" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">fragment: tone</text>
+  <text x="680" y="181" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">"Be {{tone}} and concise."</text>
+  <text x="680" y="203" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">a fragment may carry a variable of its own</text>
+  <circle cx="672" cy="290" r="14" fill="#fcfcfb"/>
+  <line x1="665" y1="283" x2="679" y2="297" stroke="#eb6834" stroke-width="3"/>
+  <line x1="665" y1="297" x2="679" y2="283" stroke="#eb6834" stroke-width="3"/>
+  <text x="690" y="296" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">{{@legal}}: no such fragment — stays in the text,</text>
+  <text x="690" y="318" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">a debug log, no error</text>
+  <circle cx="672" cy="362" r="14" fill="#fcfcfb"/>
+  <line x1="665" y1="355" x2="679" y2="369" stroke="#eb6834" stroke-width="3"/>
+  <line x1="665" y1="369" x2="679" y2="355" stroke="#eb6834" stroke-width="3"/>
+  <text x="690" y="368" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">{{tone}}: not passed to format() — stays in the text,</text>
+  <text x="690" y="390" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">no error, and the model reads it as written</text>
+  <polyline points="662,440 669,448 683,431" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="690" y="446" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#1baf7a" text-anchor="start">compare prompt.variables with what you pass</text>
+  <text x="660" y="510" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">Why two moments: a fragment is shared text and belongs</text>
+  <text x="660" y="530" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">to the registry; a variable is runtime data and belongs</text>
+  <text x="660" y="550" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">to the call. A fragment's variable is filled in the same</text>
+  <text x="660" y="570" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">format() pass because it was spliced in before it.</text>
+</svg>
