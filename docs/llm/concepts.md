@@ -167,6 +167,7 @@ Top-level `fastaiagent` exports `LLMClient`, `Message`, `StreamEvent`, and
 
 ## Next steps
 
+- [The Model Call Breaks at the Boundaries](llm-boundaries.md) — the six places a call goes wrong, each with a diagram and a proof you can run
 - [Providers](providers.md) — the supported provider table, env vars, capabilities
 - [Custom Providers](custom-provider.md) — register a preset for a gateway or new vendor
 - [Structured Output](../structured-output/index.md) — `output_type`, strict mode, retries

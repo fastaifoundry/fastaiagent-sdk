@@ -114,6 +114,7 @@ When connected, the registry resolves with `source="auto"` — **platform first
 
 ## Next steps
 
+- [A Prompt Breaks at the Boundaries](prompt-boundaries.md) — the six places a prompt goes wrong, each with a diagram and a proof you can run
 - [Prompt Registry](index.md) — the full API: fragments, versioning, aliases, diff, CLI, storage
 - [Agents](../agents/concepts.md) — where the resolved prompt is used (step 2 of the run loop)
 - [Platform Sync](../platform/index.md) — push prompts and agents to the control plane

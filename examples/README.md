@@ -45,6 +45,9 @@ needs forking.
 | [`agent-simulation/`](agent-simulation/) | Multi-turn scenario testing — a `SimulatedUser` persona drives the conversation, a judge scores the transcript against success / failure criteria (1.15.0) | `pytest scenario_test.py -v` |
 | [`autollm/`](autollm/) | **AutoLLM** (`fastaiagent.optimize`): eval-driven prompt optimization with a holdout-guarded winner, on three real tasks — sentiment, financial extraction, Dutch annual reports. Real LLM, no mocks (1.38.0) | `python agent.py` |
 | [`otel-openinference/`](otel-openinference/) | `enable_otel_capture()` — capture and render spans from **any** in-process OTel / OpenInference / OpenLLMetry instrumentor, not just the first-party harness (1.16.0) | `python capture.py` |
+| [`prompts/proofs/`](prompts/proofs/) | The proofs behind [A Prompt Breaks at the Boundaries](../docs/prompts/prompt-boundaries.md): placeholders, versions, fragments, lineage, an eval gate, the plane side | `python proof_1_placeholders.py` … |
+| [`kb/proofs/`](kb/proofs/) | The proofs behind [Retrieval Breaks at the Boundaries](../docs/knowledge-base/kb-boundaries.md): chunks, embedders, matchers, the tool call, restarts, three backends | `python proof_1_chunks.py` … |
+| [`llm/proofs/`](llm/proofs/) | The proofs behind [The Model Call Breaks at the Boundaries](../docs/llm/llm-boundaries.md): the wire, the parse, presets, streaming, structured output, the numbers | `python proof_1_wire.py` … |
 
 ### Recommended onboarding path
 

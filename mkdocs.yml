@@ -132,15 +132,18 @@ nav:
           - "Context & dependency injection": tools/context.md
       - Prompts:
           - "Concepts & Mental Model": prompts/concepts.md
+          - "Prompts at their boundaries": prompts/prompt-boundaries.md
           - prompts/index.md
       - Knowledge Base:
           - "Concepts & Mental Model": knowledge-base/concepts.md
+          - "Retrieval at its boundaries": knowledge-base/kb-boundaries.md
           - knowledge-base/index.md
           - "Platform KB": knowledge-base/platform-kb.md
           - Backends: knowledge-base/backends.md
           - "Custom Backend": knowledge-base/custom-backend.md
       - LLM:
           - "Concepts & Mental Model": llm/concepts.md
+          - "The model call at its boundaries": llm/llm-boundaries.md
           - "Providers": llm/providers.md
           - "OpenAI Decisions API": llm/decisions.md
           - "Custom Providers": llm/custom-provider.md

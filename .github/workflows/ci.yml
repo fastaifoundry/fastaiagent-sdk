@@ -226,6 +226,19 @@ jobs:
       - name: Judge-calibration example smoke (no LLM)
         working-directory: examples/autollm
         run: pytest tests/ -v --tb=short
+      - name: Boundary-page proofs — prompts (no LLM)
+        # The offline scripts quoted on docs/prompts/prompt-boundaries.md.
+        working-directory: examples/prompts
+        run: pytest tests/ -v --tb=short
+      - name: Boundary-page proofs — knowledge base (no LLM)
+        # FAISS, Chroma in-process, Qdrant in-memory and the local FastEmbed
+        # model, all from the [all] install above.
+        working-directory: examples/kb
+        run: pytest tests/ -v --tb=short
+      - name: Boundary-page proofs — LLM (no LLM)
+        # Wire shapes recorded from a local endpoint; nothing leaves the runner.
+        working-directory: examples/llm
+        run: pytest tests/ -v --tb=short
       - name: Tracing mental-model proofs (no LLM)
         # The scripts docs/tracing/trace-boundaries.md quotes; the test checks the
         # exact lines the page relies on.
