@@ -226,6 +226,27 @@ jobs:
       - name: Judge-calibration example smoke (no LLM)
         working-directory: examples/autollm
         run: pytest tests/ -v --tb=short
+      - name: Boundary-page proofs — prompts (no LLM)
+        # The offline scripts quoted on docs/prompts/prompt-boundaries.md.
+        working-directory: examples/prompts
+        run: pytest tests/ -v --tb=short
+      - name: Boundary-page proofs — knowledge base (no LLM)
+        # FAISS, Chroma in-process, Qdrant in-memory and the local FastEmbed
+        # model, all from the [all] install above.
+        working-directory: examples/kb
+        run: pytest tests/ -v --tb=short
+      - name: Boundary-page proofs — LLM (no LLM)
+        # Wire shapes recorded from a local endpoint; nothing leaves the runner.
+        working-directory: examples/llm
+        run: pytest tests/ -v --tb=short
+      - name: Tracing mental-model proofs (no LLM)
+        # The scripts docs/tracing/trace-boundaries.md quotes; the test checks the
+        # exact lines the page relies on.
+        working-directory: examples/tracing
+        run: pytest tests/ -v --tb=short
+      - name: Replay mental-model proofs (no LLM)
+        working-directory: examples/replay
+        run: pytest tests/ -v --tb=short
       - name: Regression-from-trace template — full loop (real LLM)
         # Runs capture → fix → save_test → verify against real OpenAI to
         # catch regressions of any failure mode captured in the dataset.

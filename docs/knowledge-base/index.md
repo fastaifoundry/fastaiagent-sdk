@@ -526,6 +526,7 @@ print(result.output)
 
 ## Next Steps
 
+- [Retrieval Breaks at the Boundaries](kb-boundaries.md) — chunks, embedders, matchers, the tool call, restarts and backends, each with a proof
 - [Backends](backends.md) — Pluggable vector, keyword, and metadata storage (Qdrant, Chroma, custom)
 - [Agents](../agents/index.md) — Build agents that use knowledge bases
 - [Tools](../tools/index.md) — Learn about tool types

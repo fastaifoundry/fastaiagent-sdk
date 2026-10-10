@@ -45,6 +45,9 @@ needs forking.
 | [`agent-simulation/`](agent-simulation/) | Multi-turn scenario testing — a `SimulatedUser` persona drives the conversation, a judge scores the transcript against success / failure criteria (1.15.0) | `pytest scenario_test.py -v` |
 | [`autollm/`](autollm/) | **AutoLLM** (`fastaiagent.optimize`): eval-driven prompt optimization with a holdout-guarded winner, on three real tasks — sentiment, financial extraction, Dutch annual reports. Real LLM, no mocks (1.38.0) | `python agent.py` |
 | [`otel-openinference/`](otel-openinference/) | `enable_otel_capture()` — capture and render spans from **any** in-process OTel / OpenInference / OpenLLMetry instrumentor, not just the first-party harness (1.16.0) | `python capture.py` |
+| [`prompts/proofs/`](prompts/proofs/) | The proofs behind [A Prompt Breaks at the Boundaries](../docs/prompts/prompt-boundaries.md): placeholders, versions, fragments, lineage, an eval gate, the plane side | `python proof_1_placeholders.py` … |
+| [`kb/proofs/`](kb/proofs/) | The proofs behind [Retrieval Breaks at the Boundaries](../docs/knowledge-base/kb-boundaries.md): chunks, embedders, matchers, the tool call, restarts, three backends | `python proof_1_chunks.py` … |
+| [`llm/proofs/`](llm/proofs/) | The proofs behind [The Model Call Breaks at the Boundaries](../docs/llm/llm-boundaries.md): the wire, the parse, presets, streaming, structured output, the numbers | `python proof_1_wire.py` … |
 
 ### Recommended onboarding path
 
@@ -187,6 +190,8 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 - [`autollm/`](autollm/) — **AutoLLM**: eval-driven prompt optimization end to end (`optimize()` → holdout-guarded winner → persisted to the **AutoLLM** UI view). Real LLM, no mocks. *(A folder, not a snippet — see the Focused walkthroughs table above.)*
 
 ### Tracing & replay
+- [`tracing/proofs/`](tracing/proofs/) — five offline scripts behind [Where a trace has to hold](../docs/tracing/trace-boundaries.md): the tree, the write, egress, the plane queue, foreign spans. No API key; run in CI.
+- [`replay/proofs/`](replay/proofs/) — six offline scripts behind [Where a replay has to hold](../docs/replay/replay-boundaries.md): the blueprint, recorded mode, tools, the miss, isolation, the regression test. No API key; run in CI.
 - [`04_agent_replay.py`](04_agent_replay.py) — `Replay.fork_at(...).rerun()`
 - [`08_trace_langchain.py`](08_trace_langchain.py) — auto-trace LangChain agents
 - [`09_otel_export.py`](09_otel_export.py) — OpenTelemetry export

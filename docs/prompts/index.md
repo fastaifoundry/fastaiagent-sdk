@@ -423,6 +423,7 @@ For contributors who need to understand the platform publish/fetch code paths, T
 
 ## Next Steps
 
+- [A Prompt Breaks at the Boundaries](prompt-boundaries.md) — placeholders, versions, fragments, lineage, evals and the plane, each with a proof
 - [Agents](../agents/index.md) — Use prompts with agents
 - [Platform Connection](../platform/index.md) — Connect to the platform
 - [Evaluation](../evaluation/index.md) — Test prompt variations with eval

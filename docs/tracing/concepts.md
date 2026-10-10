@@ -6,6 +6,11 @@ created, nested, stored, and drained. For the full API see the
 [Tracing reference](index.md); for contributor-level detail see
 [Tracing architecture](../internals/tracing-architecture.md).
 
+!!! tip "Then read it with a run behind every claim"
+    [Where a trace has to hold](trace-boundaries.md) walks the same model one
+    boundary at a time — nesting, the write, egress, the plane queue, foreign
+    spans — with a diagram, the rule, a proof script and the code for each.
+
 ## What it is
 
 Every agent run produces a **trace**: a tree of spans, one per unit of work —
@@ -79,19 +84,23 @@ Two namespaces: the OTel-standard `gen_ai.*` keys (model, temperature, token
 usage, finish reason) and the SDK's own `fastaiagent.*` keys (agent, chain,
 tool, checkpoint, guardrail, cost, framework).
 
-The design principle for privacy is **the skeleton always survives; only the
-flesh is optional.** Setting `FASTAIAGENT_TRACE_PAYLOADS=0` drops free-text
-content while structural metadata — provider, model, tool schemas, token counts
-— is always kept. A gated trace stays fully useful for monitoring, cost, and
-latency, and degrades gracefully for replay.
+The design principle for privacy is **capture in full, filter on the way
+out.** `local.db` always holds the complete span, because the Local UI and
+Replay reconstruct a run from it. `FASTAIAGENT_TRACE_PAYLOADS=0` is an *egress*
+switch: the payload-bearing keys are stripped from every span before it reaches
+the plane or any exporter registered with `add_exporter()`, while structural
+metadata — provider, model, tool schemas, token counts — always leaves. An
+exported trace with payloads off stays fully useful for monitoring, cost and
+latency.
 
-!!! warning "The flag does not remove everything"
-    `FASTAIAGENT_TRACE_PAYLOADS=0` gates the `gen_ai.*` payload attributes and
-    the resolved system prompt — but `agent.input` and `agent.output` are still
-    recorded. Verified on a live run: with the flag off, `gen_ai.request.messages`
-    and `gen_ai.response.content` disappeared while `agent.input` / `agent.output`
-    remained. If your input or final answer is sensitive, the flag alone is not
-    sufficient — use a redaction policy as well.
+!!! warning "The flag does not gate capture"
+    Until the egress model, `FASTAIAGENT_TRACE_PAYLOADS=0` dropped payloads at
+    capture time. It no longer does: `trace_payloads_enabled()` always returns
+    `True`, and only `export_payloads_enabled()` reads the flag. Verified on a
+    run with the flag set: `local.db` kept `agent.input` and
+    `gen_ai.request.messages`; the exporter received neither. To record nothing
+    at all, use the master switch `FASTAIAGENT_TRACE_ENABLED=0`. The proof is
+    on [Where a trace has to hold](trace-boundaries.md#3-between-capture-and-egress-full-fidelity-in-filtered-out).
 
 ### Redaction is a different knob
 
@@ -101,13 +110,11 @@ account numbers or emails starred out. It's off by default (zero overhead when
 no policy is installed) and applies at the storage boundary, before the row is
 written.
 
-!!! warning "Scope of capture-mode redaction"
-    Capture-mode redaction masks what is written to `local.db` — and therefore
-    what reaches the platform, since the platform drains *from* SQLite. It does
-    **not** currently mask spans handed to an OTel exporter registered via
-    `add_exporter()`: that exporter reads the span object directly, which is
-    never mutated. If you route traces to an external backend (OTLP, Datadog,
-    …), scrub at the exporter layer too.
+!!! note "Redaction reaches every exit"
+    Capture-mode redaction masks what is written to `local.db`. The same
+    policy is applied again on the way out — by the control-plane exporter and
+    by the wrapper around any exporter registered via `add_exporter()` — so a
+    third-party backend (OTLP, Datadog, …) receives masked values too.
 
 ### `local.db` is the substrate, and the queue
 

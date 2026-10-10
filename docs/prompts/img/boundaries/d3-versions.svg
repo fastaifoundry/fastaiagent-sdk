@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" width="1200" height="600" role="img" aria-label="Frozen rows, movable pointers: register() without a version adds a row (v1, v2, v3); the production alias is a pointer you move with set_alias; diff() compares two rows. register() with an explicit version that already exists replaces that row in place.">
+  <title>Frozen rows, movable pointers: register() without a version adds a row (v1, v2, v3); the production alias is a pointer you move with set_alias; diff() compares two rows. register() with an explicit version that already exists replaces that row in place.</title>
+  <rect x="0" y="0" width="1200" height="600" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Frozen rows, movable pointers — until you pass version= yourself</text>
+  <rect x="48" y="140" width="250" height="90" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="68" y="176" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">v1</text>
+  <text x="68" y="196" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">"Hello {{name}}!"</text>
+  <rect x="308" y="140" width="250" height="90" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="328" y="176" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">v2</text>
+  <text x="328" y="196" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">"Hi there, {{name}}! Welcome."</text>
+  <rect x="568" y="140" width="250" height="90" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="588" y="176" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">v3</text>
+  <text x="588" y="196" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">"Hey {{name}}."</text>
+  <rect x="48" y="300" width="180" height="44" rx="8" fill="#e5f6ef" stroke="#1baf7a" stroke-width="1.5"/>
+  <text x="62" y="328.12" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="start">production</text>
+  <polyline points="138,300 138,230" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="138,230 131.0,244.0 145.0,244.0" fill="#1baf7a"/>
+  <rect x="568" y="300" width="180" height="44" rx="8" fill="#eaf2fc" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="582" y="328.12" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="start">latest = load()</text>
+  <polyline points="658,300 658,230" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="658,230 651.0,244.0 665.0,244.0" fill="#2a78d6"/>
+  <polyline points="228,322 300,322 300,262 428,262 428,230" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round" stroke-dasharray="8 6"/>
+  <polygon points="428,230 421.0,244.0 435.0,244.0" fill="#1baf7a"/>
+  <rect x="293" y="347.75" width="591.5" height="20.25" rx="4" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="300" y="362" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="500" fill="#52514e" text-anchor="start">set_alias('greeting', 2, 'production') moves it; v1 stays for rollback</text>
+  <rect x="840" y="140" width="312" height="160" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="860" y="176" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">diff('greeting', 1, 2)</text>
+  <text x="860" y="198" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">--- greeting v1</text>
+  <text x="860" y="217" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">+++ greeting v2</text>
+  <text x="860" y="236" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">- Hello {{name}}!</text>
+  <text x="860" y="255" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">+ Hi there, {{name}}! Welcome.</text>
+  <text x="840" y="330" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">two whole templates, one line each —</text>
+  <text x="840" y="352" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">not a line-by-line diff</text>
+  <circle cx="60" cy="430" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="423" x2="67" y2="437" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="437" x2="67" y2="423" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="436" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">register(name, text, version=1) replaces row v1 in place — production now reads the new text</text>
+  <circle cx="60" cy="470" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="463" x2="67" y2="477" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="477" x2="67" y2="463" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="476" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">and list() then reports latest_version 1 while load() still returns v3 (1.87.0)</text>
+  <polyline points="50,520 57,528 71,511" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="78" y="526" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#1baf7a" text-anchor="start">register() without version= always adds a row. Keep it that way.</text>
+</svg>

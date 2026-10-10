@@ -132,15 +132,18 @@ nav:
           - "Context & dependency injection": tools/context.md
       - Prompts:
           - "Concepts & Mental Model": prompts/concepts.md
+          - "Prompts at their boundaries": prompts/prompt-boundaries.md
           - prompts/index.md
       - Knowledge Base:
           - "Concepts & Mental Model": knowledge-base/concepts.md
+          - "Retrieval at its boundaries": knowledge-base/kb-boundaries.md
           - knowledge-base/index.md
           - "Platform KB": knowledge-base/platform-kb.md
           - Backends: knowledge-base/backends.md
           - "Custom Backend": knowledge-base/custom-backend.md
       - LLM:
           - "Concepts & Mental Model": llm/concepts.md
+          - "The model call at its boundaries": llm/llm-boundaries.md
           - "Providers": llm/providers.md
           - "OpenAI Decisions API": llm/decisions.md
           - "Custom Providers": llm/custom-provider.md
@@ -158,10 +161,12 @@ nav:
   - Observe:
       - Tracing:
           - "Concepts & Mental Model": tracing/concepts.md
+          - "Where a trace has to hold": tracing/trace-boundaries.md
           - tracing/index.md
           - "Capture any OTel / OpenInference framework": tracing/third-party-otel.md
       - Agent Replay:
           - "Concepts & Mental Model": replay/concepts.md
+          - "Where a replay has to hold": replay/replay-boundaries.md
           - replay/index.md
           - "Fidelity Guarantees": replay/guarantees.md
       - Durability:

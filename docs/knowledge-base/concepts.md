@@ -145,6 +145,7 @@ apps; PlatformKB when the corpus is managed centrally and shared across agents.
 
 ## Next steps
 
+- [Retrieval Breaks at the Boundaries](kb-boundaries.md) — the six places retrieval goes wrong, each with a diagram and a proof you can run
 - [Knowledge Base reference](index.md) — the full API: ingestion, search modes, CRUD, persistence, `as_tool`
 - [Backends](backends.md) — swap FAISS/BM25/SQLite for Qdrant, Chroma, or your own
 - [Platform KB](platform-kb.md) — hosted retrieval with the same interface

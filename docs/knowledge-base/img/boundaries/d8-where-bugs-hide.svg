@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" width="1200" height="600" role="img" aria-label="Where retrieval bugs hide: a typical test adds one document, runs one query in one process on FAISS and eyeballs the top hit; the bugs sit on the boundaries around that — a rule split across chunks, an embedder that changed, a code the vector side can't see, a stale document retrieved perfectly, a delete another process can't see, a backend on another score scale.">
+  <title>Where retrieval bugs hide: a typical test adds one document, runs one query in one process on FAISS and eyeballs the top hit; the bugs sit on the boundaries around that — a rule split across chunks, an embedder that changed, a code the vector side can't see, a stale document retrieved perfectly, a delete another process can't see, a backend on another score scale.</title>
+  <rect x="0" y="0" width="1200" height="600" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Where retrieval bugs hide</text>
+  <rect x="330" y="190" width="540" height="220" rx="18" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="600" y="236" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#2a78d6" text-anchor="middle">A TYPICAL TEST</text>
+  <text x="600" y="274" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="middle">one document, one query</text>
+  <text x="600" y="304" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="middle">one process, FAISS</text>
+  <text x="600" y="334" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="middle">the top hit, eyeballed</text>
+  <rect x="48" y="122" width="267.2" height="44" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="62" y="150" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">a rule split across chunks</text>
+  <line x1="315.2" y1="144" x2="330" y2="230" stroke="#eb6834" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <rect x="48" y="272" width="248.79999999999998" height="44" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="62" y="300" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">a code vectors can't see</text>
+  <line x1="296.79999999999995" y1="294" x2="330" y2="300" stroke="#eb6834" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <rect x="48" y="422" width="258.0" height="44" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="62" y="450" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">a delete nobody else sees</text>
+  <line x1="306.0" y1="444" x2="330" y2="380" stroke="#eb6834" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <rect x="903.2" y="122" width="248.79999999999998" height="44" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="917.2" y="150" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">an embedder that changed</text>
+  <line x1="903.2" y1="144" x2="870" y2="230" stroke="#eb6834" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <rect x="875.6" y="272" width="276.4" height="44" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="889.6" y="300" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">a stale doc, retrieved fine</text>
+  <line x1="875.6" y1="294" x2="870" y2="300" stroke="#eb6834" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <rect x="884.8" y="422" width="267.2" height="44" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="898.8" y="450" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">a backend on another scale</text>
+  <line x1="884.8" y1="444" x2="870" y2="380" stroke="#eb6834" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <text x="48" y="540" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">Each boundary has a proof script; test your own retrieval on the same lines.</text>
+</svg>

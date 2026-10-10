@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 740" width="1200" height="740" role="img" aria-label="One replay: Replay.load reads a trace from local.db into steps; fork_at picks a step; modify_prompt, modify_input, modify_config, with_tools, with_tool_override and with_determinism set what changes; arerun rebuilds the agent from the root span with Agent.from_dict and runs it again from the top, producing a new trace; compare walks both traces for the first divergence; save_as_test writes the case evaluate() reads.">
+  <title>One replay: Replay.load reads a trace from local.db into steps; fork_at picks a step; modify_prompt, modify_input, modify_config, with_tools, with_tool_override and with_determinism set what changes; arerun rebuilds the agent from the root span with Agent.from_dict and runs it again from the top, producing a new trace; compare walks both traces for the first divergence; save_as_test writes the case evaluate() reads.</title>
+  <rect x="0" y="0" width="1200" height="740" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">One replay: load, fork, change one thing, run again, compare</text>
+  <path d="M48,146 L48,234 A110.0,16 0 0 0 268,234 L268,146" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <ellipse cx="158.0" cy="146" rx="110.0" ry="16" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <text x="158" y="170" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="19" font-weight="700" fill="#0b0b0b" text-anchor="middle">local.db</text>
+  <text x="158" y="196" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="middle">the trace of the run</text>
+  <text x="158" y="216" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="middle">you want back</text>
+  <polyline points="268,190 310,190" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="310,190 296.0,183.0 296.0,197.0" fill="#2a78d6"/>
+  <rect x="310" y="130" width="250" height="120" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="330" y="166" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#0b0b0b" text-anchor="start">Replay.load(trace_id)</text>
+  <text x="330" y="188" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">steps = the spans, in</text>
+  <text x="330" y="207" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">start order; summary(),</text>
+  <text x="330" y="226" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">inspect(i), fork_at(i)</text>
+  <polyline points="560,190 602,190" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="602,190 588.0,183.0 588.0,197.0" fill="#2a78d6"/>
+  <rect x="602" y="130" width="270" height="120" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="622" y="166" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#0b0b0b" text-anchor="start">ForkedReplay</text>
+  <text x="622" y="186" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">modify_prompt · modify_input</text>
+  <text x="622" y="204" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">modify_config · with_tools</text>
+  <text x="622" y="222" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">with_tool_override</text>
+  <text x="622" y="240" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">with_determinism(mode, on_miss)</text>
+  <polyline points="872,190 914,190" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="914,190 900.0,183.0 900.0,197.0" fill="#2a78d6"/>
+  <rect x="914" y="130" width="238" height="120" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="934" y="166" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#0b0b0b" text-anchor="start">rerun()</text>
+  <text x="934" y="188" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">Agent.from_dict(root span)</text>
+  <text x="934" y="207" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">+ your changes</text>
+  <text x="934" y="226" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">agent.arun(input) — from the top</text>
+  <rect x="48" y="290" width="1104" height="150" rx="14" fill="none" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="68" y="320" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="start">with_determinism — how the model is invoked during the rerun</text>
+  <rect x="68" y="338" width="340" height="88" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="88" y="374" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="start">"live"  (default)</text>
+  <text x="88" y="394" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">re-issued with the captured settings;</text>
+  <text x="88" y="412" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">real answer, may differ run to run</text>
+  <rect x="430" y="338" width="340" height="88" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="450" y="374" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="start">"recorded"</text>
+  <text x="450" y="394" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">captured responses served in order;</text>
+  <text x="450" y="412" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">no model call, byte-identical output</text>
+  <rect x="792" y="338" width="340" height="88" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="812" y="374" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="start">"deterministic"</text>
+  <text x="812" y="394" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">re-issued at temperature=0, seed=42;</text>
+  <text x="812" y="412" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">stable where the provider honours it</text>
+  <polyline points="1033,250 1033,290" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polyline points="600,440 600,480" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="600,480 607.0,466.0 593.0,466.0" fill="#2a78d6"/>
+  <rect x="48" y="480" width="340" height="120" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="68" y="516" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#0b0b0b" text-anchor="start">a new trace</text>
+  <text x="68" y="538" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">the rerun is a real run: its own</text>
+  <text x="68" y="557" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">trace_id, its own spans;</text>
+  <text x="68" y="576" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">llm spans carry replay.mode=recorded</text>
+  <rect x="430" y="480" width="340" height="120" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="450" y="516" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#0b0b0b" text-anchor="start">compare(result)</text>
+  <text x="450" y="538" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">walks both step lists in start order:</text>
+  <text x="450" y="557" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">first different span name or</text>
+  <text x="450" y="576" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">agent.output / gen_ai.response.content</text>
+  <rect x="812" y="480" width="340" height="120" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="832" y="516" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#0b0b0b" text-anchor="start">save_as_test(...)</text>
+  <text x="832" y="538" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">a JSONL line evaluate() reads:</text>
+  <text x="832" y="557" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">input · expected_output ·</text>
+  <text x="832" y="576" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">source_trace_id · fixed_trace_id</text>
+  <text x="48" y="640" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">A replay is a real execution, not a playback. What you override changes; everything else comes from the trace.</text>
+  <text x="48" y="680" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#8a8880" text-anchor="start">Code: trace/replay.py — Replay · ForkedReplay.arerun · compare · ReplayResult.save_as_test</text>
+</svg>

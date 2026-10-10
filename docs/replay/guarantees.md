@@ -39,10 +39,10 @@ semantic-convention attributes on the captured `llm.*` span:
 * `gen_ai.response.tool_calls` — tool invocations the original LLM
   requested (JSON-decoded into `ToolCall` instances)
 
-If `FASTAIAGENT_TRACE_PAYLOADS=0` was set on the original run, none
-of these attributes are present and `recorded` mode raises
-`ReplayError`. The fix is to enable payloads on the runs you intend
-to replay later.
+These attributes are always captured into `local.db`, whatever
+`FASTAIAGENT_TRACE_PAYLOADS` is set to — the flag governs export, not capture.
+A trace that carries none of them, such as one pulled from the platform after
+payloads were stripped on export, makes `recorded` mode raise `ReplayError`.
 
 **A turn that only calls tools is replayed too (1.84.0).** OpenAI sends `content:
 null` on such a turn, so its span has `gen_ai.response.tool_calls` and no

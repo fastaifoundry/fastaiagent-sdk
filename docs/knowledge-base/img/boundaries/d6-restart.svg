@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 640" width="1200" height="640" role="img" aria-label="The store is the source of truth: process A writes chunks and vectors to kb.sqlite and keeps FAISS and BM25 in memory; after a restart process B rebuilds both indexes from kb.sqlite with one probe embedding and no re-embedding, then deletes a source; process C sees the delete; persist=False leaves nothing on disk.">
+  <title>The store is the source of truth: process A writes chunks and vectors to kb.sqlite and keeps FAISS and BM25 in memory; after a restart process B rebuilds both indexes from kb.sqlite with one probe embedding and no re-embedding, then deletes a source; process C sees the delete; persist=False leaves nothing on disk.</title>
+  <rect x="0" y="0" width="1200" height="640" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">The store is the source of truth — indexes are rebuilt, not re-embedded</text>
+  <rect x="48" y="120" width="340" height="300" rx="18" fill="none" stroke="#8a8880" stroke-width="2" stroke-dasharray="10 8"/>
+  <text x="70" y="154" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#8a8880" text-anchor="start">PROCESS A · writes</text>
+  <rect x="72" y="172" width="292" height="96" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="92" y="208" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">indexes</text>
+  <text x="92" y="230" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">FAISS · BM25 in memory</text>
+  <text x="92" y="249" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">add() embeds 3 texts</text>
+  <path d="M72,306 L72,384 A146.0,16 0 0 0 364,384 L364,306" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <ellipse cx="218.0" cy="306" rx="146.0" ry="16" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <text x="218" y="338" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#0b0b0b" text-anchor="middle">kb.sqlite</text>
+  <text x="218" y="362" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="middle">chunks · vectors · metadata</text>
+  <rect x="430" y="120" width="340" height="300" rx="18" fill="none" stroke="#8a8880" stroke-width="2" stroke-dasharray="10 8"/>
+  <text x="452" y="154" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#8a8880" text-anchor="start">PROCESS B · after a restart</text>
+  <rect x="454" y="172" width="292" height="96" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="474" y="208" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">indexes</text>
+  <text x="474" y="230" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">rebuilt from kb.sqlite</text>
+  <text x="474" y="249" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">1 probe embedding, 0 re-embeds</text>
+  <path d="M454,306 L454,384 A146.0,16 0 0 0 746,384 L746,306" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <ellipse cx="600.0" cy="306" rx="146.0" ry="16" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <text x="600" y="338" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#0b0b0b" text-anchor="middle">kb.sqlite</text>
+  <text x="600" y="362" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="middle">chunks · vectors · metadata</text>
+  <rect x="812" y="120" width="340" height="300" rx="18" fill="none" stroke="#8a8880" stroke-width="2" stroke-dasharray="10 8"/>
+  <text x="834" y="154" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#8a8880" text-anchor="start">PROCESS C · after B</text>
+  <rect x="836" y="172" width="292" height="96" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="856" y="208" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">indexes</text>
+  <text x="856" y="230" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">rebuilt again: 2 chunks</text>
+  <text x="856" y="249" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">B's delete persisted</text>
+  <path d="M836,306 L836,384 A146.0,16 0 0 0 1128,384 L1128,306" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <ellipse cx="982.0" cy="306" rx="146.0" ry="16" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <text x="982" y="338" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#0b0b0b" text-anchor="middle">kb.sqlite</text>
+  <text x="982" y="362" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="middle">chunks · vectors · metadata</text>
+  <polyline points="194,268 194,290" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="194,290 201.0,276.0 187.0,276.0" fill="#2a78d6"/>
+  <rect x="233.2" y="271.6" width="53.6" height="16.200000000000003" rx="4" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="260" y="283" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12" font-weight="500" fill="#52514e" text-anchor="middle">writes</text>
+  <polyline points="576,290 576,268" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="576,268 569.0,282.0 583.0,282.0" fill="#1baf7a"/>
+  <rect x="609.9" y="271.6" width="60.2" height="16.200000000000003" rx="4" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="640" y="283" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12" font-weight="500" fill="#52514e" text-anchor="middle">rebuild</text>
+  <polyline points="958,290 958,268" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="958,268 951.0,282.0 965.0,282.0" fill="#1baf7a"/>
+  <polyline points="388,270 430,270" fill="none" stroke="#52514e" stroke-width="2.5" stroke-linejoin="round" stroke-dasharray="6 5"/>
+  <polygon points="430,270 416.0,263.0 416.0,277.0" fill="#52514e"/>
+  <rect x="378.9" y="242.6" width="60.2" height="16.200000000000003" rx="4" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="409" y="254" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12" font-weight="500" fill="#52514e" text-anchor="middle">restart</text>
+  <polyline points="770,270 812,270" fill="none" stroke="#52514e" stroke-width="2.5" stroke-linejoin="round" stroke-dasharray="6 5"/>
+  <polygon points="812,270 798.0,263.0 798.0,277.0" fill="#52514e"/>
+  <rect x="760.9" y="242.6" width="60.2" height="16.200000000000003" rx="4" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="791" y="254" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12" font-weight="500" fill="#52514e" text-anchor="middle">restart</text>
+  <text x="454" y="440" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">delete_by_source('errors.md') → 1 chunk, in kb.sqlite and both indexes</text>
+  <polyline points="50,490 57,498 71,481" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="78" y="496" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1baf7a" text-anchor="start">proof 5: A chunks=3 (3 embedded) → B 3, probe 1 → deleted 1 → C 2, probe 1</text>
+  <circle cx="60" cy="530" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="523" x2="67" y2="537" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="537" x2="67" y2="523" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="536" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#eb6834" text-anchor="start">persist=False: no kb.sqlite — the index dies with the process</text>
+  <circle cx="60" cy="570" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="563" x2="67" y2="577" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="577" x2="67" y2="563" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="576" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#eb6834" text-anchor="start">FAISS has no per-id delete: a delete re-embeds every surviving chunk (Qdrant and Chroma delete in place)</text>
+</svg>

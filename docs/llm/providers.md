@@ -200,4 +200,6 @@ to the right variable.
 ## Need a provider that isn't listed?
 
 See [Custom providers](custom-provider.md) for `register_provider()` —
-add an internal LLM gateway or a new vendor in five lines.
+add an internal LLM gateway or a new vendor in five lines. What a preset's
+capability flags do to the request body, with the body recorded, is in
+[The Model Call Breaks at the Boundaries](llm-boundaries.md#3-between-a-providers-name-and-the-code-that-serves-it-a-name-a-wire-a-set-of-flags).
