@@ -1,14 +1,53 @@
 # AutoLLM Closed Loop
 
-One agent and one prompt registry, taken through the whole loop: production
-traffic becomes traces, the traces become a labelled dataset, the dataset scores
-what's live, [AutoLLM](../evaluation/optimization.md) writes the next prompt, the
-prompt becomes a registry version, a CI gate decides, and one alias move ships it.
-Nothing is mocked: it runs against the OpenAI API in about ten minutes, and every
-step lands on a page of the Local UI.
+Your support-triage agent is live, and it is quietly wrong. It files a
+**EUR 740 double charge** in the same "soon" pile as a EUR 29 overage fee. It
+marks **every outage P1**, so a Free-tier hobby project sits in the urgent queue
+next to an Enterprise customer whose production is down. It files **GDPR
+requests** — which have a legal deadline — as "normal".
+
+Nobody wrote it a bad prompt. The prompt just doesn't know the **house rules**:
+they live in how your support leads label tickets, not in any document. Your
+labels know the better prompt. This example gets it out of them and into
+production, with nothing but the SDK:
+
+> traffic becomes **traces** → traces become a labelled **dataset** → the dataset
+> **scores** what's live → **AutoLLM** writes the next prompt → it becomes a
+> **registry version** → a **CI gate** decides → one **alias** move ships it.
+
+Nothing is mocked. It runs against the OpenAI API in about ten minutes for about
+$0.30, and every step lands on a page of the Local UI.
 
 Lives in [`examples/autollm-loop/`](https://github.com/fastaifoundry/fastaiagent-sdk/tree/main/examples/autollm-loop).
 Requires 1.87.0.
+
+## Try it yourself
+
+```sh
+git clone https://github.com/fastaifoundry/fastaiagent-sdk && cd fastaiagent-sdk/examples/autollm-loop
+pip install -r requirements.txt
+export OPENAI_API_KEY=sk-...
+./run_all.sh            # the whole loop, ~10 minutes
+python try_it.py        # v1 against the shipped version, on tickets it never saw
+fastaiagent ui          # every step, from this folder
+```
+
+`try_it.py` sends six **new** tickets — none of them among the 120 the loop
+learned from — to v1 and to the version the loop shipped, next to the answer
+the house rules give. From our run:
+
+```
+ticket                                                         v1             v2 (live)      house rule
+We were charged EUR 830 for a plan we downgraded from last m   billing P3     billing P1     billing P1 ✓
+You charged us EUR 15 twice for the same add-on.               billing P2     billing P3     billing P3 ✓
+Enterprise contract here: every call to our production API f   technical P1   technical P1   technical P1 ✓
+Our Team workspace can't reach the API at all since 10:00.     technical P1   technical P2   technical P2 ✓
+My hardware security key is now 6 business days late.          shipping P2    shipping P2    shipping P2 ✓
+Please send me every piece of personal data you hold on me (   account P3     account P2     account P2 ✓
+```
+
+v1 gets two of six; the shipped prompt gets all six — on tickets it was never
+tuned on. Pass your own: `python try_it.py "Team plan, the dashboard won't load"`.
 
 ## The agent
 
@@ -52,19 +91,13 @@ against 5 — so the rules can be learned rather than guessed.
 The agent never holds its prompt in code. Every step builds it from the
 registry, so the alias move in step 7 is the whole deployment.
 
-## Run it
-
-```sh
-cd examples/autollm-loop
-pip install -r requirements.txt
-export OPENAI_API_KEY=sk-...
-./run_all.sh            # the loop, from a clean slate
-fastaiagent ui          # from this folder: it reads ./.fastaiagent/local.db
-```
+## Models
 
 The agent runs on `gpt-4.1-mini`. The prompts are written by `gpt-5`: working out
 a house rule from labelled failures is induction, which is what reasoning models
-are good at. Override with `TRIAGE_MODEL` / `TRIAGE_PROPOSER_MODEL`.
+are good at. Override with `TRIAGE_MODEL` / `TRIAGE_PROPOSER_MODEL`. Steps run
+one at a time too — they share `./.fastaiagent/local.db`, so run them from the
+example folder.
 
 ## A real run
 

@@ -25,7 +25,7 @@ import triage  # noqa: E402
 
 from fastaiagent.testing import FunctionModel  # noqa: E402
 
-STEPS = sorted(p.name for p in _HERE.glob("0*.py"))
+STEPS = sorted(p.name for p in _HERE.glob("0*.py")) + ["try_it.py"]
 
 
 @pytest.mark.parametrize("script", STEPS)

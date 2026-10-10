@@ -1,11 +1,16 @@
 # AutoLLM closed loop — from bad traces to a better production prompt
 
-Your triage agent is live. Its prompt is in the registry, and every ticket it
-handles is traced. Some of its answers are wrong. This example turns those
-traces into a labelled dataset, lets [AutoLLM](../../docs/evaluation/optimization.md)
-write the next prompt, registers it as a new version, gates it like any other
-change, and ships it by moving one alias. No mocks: it runs against the OpenAI
-API, and every step shows up in the Local UI.
+Your triage agent is live, and quietly wrong: it files a EUR 740 double charge
+in the same pile as a EUR 29 overage fee, marks every Free-tier outage as urgent
+as an Enterprise one, and files GDPR requests as "normal". The prompt doesn't
+know the house rules — they live only in how your support leads label tickets.
+
+This example gets the rules out of the labels and into production: traffic
+becomes traces, traces become a labelled dataset,
+[AutoLLM](../../docs/evaluation/optimization.md) writes the next prompt, it
+becomes a registry version, a CI gate decides, and one alias move ships it. No
+mocks: it runs against the OpenAI API (~10 minutes, ~$0.30), and every step
+shows up in the Local UI.
 
 Requires `fastaiagent>=1.87.0`. Docs page: [AutoLLM Closed Loop](../../docs/flagships/autollm-closed-loop.md).
 
@@ -16,8 +21,12 @@ cd examples/autollm-loop
 pip install -r requirements.txt
 export OPENAI_API_KEY=sk-...
 ./run_all.sh            # ~10 minutes, from a clean slate
+python try_it.py        # v1 against the shipped version, on six tickets it never saw
 fastaiagent ui          # from this folder — it reads ./.fastaiagent/local.db
 ```
+
+`try_it.py` takes your own ticket too: `python try_it.py "Team plan, the dashboard won't load"`.
+On our run v1 got two of the six fresh tickets right and the shipped version got all six.
 
 Or one step at a time — they share `./.fastaiagent/local.db`, so run them from
 this folder:
@@ -35,6 +44,8 @@ this folder:
 
 `triage.py` holds what every step shares: `V1_PROMPT`, the `TriageMatch` scorer
 and `load_agent()`, which always builds the agent **from the registry**.
+`try_it.py` compares two versions on any ticket; `switch_models.py` re-tunes the
+live prompt for other models (see below).
 
 ## The house rules
 
