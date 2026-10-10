@@ -6,7 +6,10 @@ change, applies it to a fresh agent, re-evaluates, keeps the best, and repeats �
 until the score stops improving or a budget runs out. A held-out split guards the
 winner against overfitting.
 
-!!! tip "Start from a recipe"
+!!! tip "Start from the mental model, or a recipe"
+    [How AutoLLM works](autollm-how-it-works.md) explains the loop one diagram at a
+    time — the split, what the proposer sees, isolation, what counts as a failure,
+    the two judges, the budget — with a real run behind every claim.
     [AutoLLM Recipes](autollm-recipes.md) maps situations — a live agent breaking
     rules only your labels know, a move to a cheaper model, a judge you can't
     trust — to runnable examples. The [AutoLLM Closed Loop](../flagships/autollm-closed-loop.md)

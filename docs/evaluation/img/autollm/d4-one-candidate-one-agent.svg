@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 680" width="1200" height="680" role="img" aria-label="One candidate, one agent: your agent is never mutated; each candidate is a fresh copy with only its lever changed, same tools, guardrails and middleware, and its own isolated memory; a stateless agent stays stateless; memory that writes to an external store is refused unless you opt in.">
+  <title>One candidate, one agent: your agent is never mutated; each candidate is a fresh copy with only its lever changed, same tools, guardrails and middleware, and its own isolated memory; a stateless agent stays stateless; memory that writes to an external store is refused unless you opt in.</title>
+  <rect x="0" y="0" width="1200" height="680" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">One candidate, one agent — nothing leaks between them</text>
+  <rect x="48" y="170" width="290" height="230" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="68" y="206" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">your agent</text>
+  <text x="68" y="232" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">system prompt v1</text>
+  <text x="68" y="255" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">tools · guardrails · middleware</text>
+  <text x="68" y="278" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">memory — or none</text>
+  <text x="68" y="301" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start"></text>
+  <text x="68" y="324" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">the one you passed in</text>
+  <polyline points="50,428 57,436 71,419" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="80" y="434" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="600" fill="#1baf7a" text-anchor="start">never mutated</text>
+  <polyline points="338,285 400,285" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="400,285 386.0,278.0 386.0,292.0" fill="#2a78d6"/>
+  <rect x="400" y="150" width="232" height="210" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="420" y="186" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">candidate A</text>
+  <text x="420" y="211" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">prompt′</text>
+  <text x="420" y="233" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">same tools, guardrails,</text>
+  <text x="420" y="255" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">middleware</text>
+  <rect x="400" y="376" width="232" height="40" rx="8" fill="#e5f6ef" stroke="#1baf7a" stroke-width="1.5"/>
+  <text x="414" y="401.4" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#0b0b0b" text-anchor="start">fresh copy per evaluation</text>
+  <rect x="660" y="150" width="232" height="210" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="680" y="186" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">candidate B</text>
+  <text x="680" y="211" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">prompt′ + few-shot demos</text>
+  <text x="680" y="233" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">(a FewShotBlock)</text>
+  <text x="680" y="255" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start"></text>
+  <rect x="660" y="376" width="232" height="40" rx="8" fill="#e5f6ef" stroke="#1baf7a" stroke-width="1.5"/>
+  <text x="674" y="401.4" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#0b0b0b" text-anchor="start">fresh copy per evaluation</text>
+  <rect x="920" y="150" width="232" height="210" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="940" y="186" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">candidate C</text>
+  <text x="940" y="211" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">prompt′ + a facts subset</text>
+  <text x="940" y="233" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">(an allow-list over the</text>
+  <text x="940" y="255" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">same fact store)</text>
+  <rect x="920" y="376" width="232" height="40" rx="8" fill="#e5f6ef" stroke="#1baf7a" stroke-width="1.5"/>
+  <text x="934" y="401.4" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#0b0b0b" text-anchor="start">fresh copy per evaluation</text>
+  <polyline points="338,240 370,240 370,130 776,130 776,150" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="776,150 783.0,136.0 769.0,136.0" fill="#2a78d6"/>
+  <polyline points="370,130 1036,130 1036,150" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="1036,150 1043.0,136.0 1029.0,136.0" fill="#2a78d6"/>
+  <text x="400" y="460" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#0b0b0b" text-anchor="start">memory, per candidate</text>
+  <polyline points="402,490 409,498 423,481" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="432" y="496" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#1baf7a" text-anchor="start">each block is an isolated_copy(): shared handles, reset state</text>
+  <polyline points="402,520 409,528 423,511" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="432" y="526" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#1baf7a" text-anchor="start">an agent with no memory gets none — no conversation window (1.87.0)</text>
+  <circle cx="412" cy="552" r="14" fill="#fcfcfb"/>
+  <line x1="405" y1="545" x2="419" y2="559" stroke="#eb6834" stroke-width="3"/>
+  <line x1="405" y1="559" x2="419" y2="545" stroke="#eb6834" stroke-width="3"/>
+  <text x="432" y="558" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">VectorBlock · learn= · recall=&lt;store&gt;: write mid-run — refused unless</text>
+  <text x="432" y="580" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">allow_writable_memory=True</text>
+  <circle cx="412" cy="612" r="14" fill="#fcfcfb"/>
+  <line x1="405" y1="605" x2="419" y2="619" stroke="#eb6834" stroke-width="3"/>
+  <line x1="405" y1="619" x2="419" y2="605" stroke="#eb6834" stroke-width="3"/>
+  <text x="432" y="618" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">a changed prompt drops prompt_slug — it no longer names the registry text</text>
+  <text x="48" y="500" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">Supervisor, Swarm, Chain:</text>
+  <text x="48" y="522" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">TypeError — optimize the</text>
+  <text x="48" y="544" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">Agent behind each step</text>
+</svg>

@@ -37,6 +37,10 @@ These examples are fully runnable with a real OpenAI model — **no mocks**:
   holdout (**0.800 → 1.000**). `--try "question" "reply"` shows both judges on any
   reply. Docs: [Calibrate Your LLM Judge](../../docs/flagships/judge-calibration.md).
 
+- **`proofs/`** — four offline scripts behind
+  [How AutoLLM works](../../docs/evaluation/autollm-how-it-works.md): isolation, a
+  crash is not a pass, the two judges, the budget. No API key; run in CI.
+
 For the whole loop — traces → dataset → eval → AutoLLM → registry → CI gate →
 production — see [`../autollm-loop/`](../autollm-loop/).
 
