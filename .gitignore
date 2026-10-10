@@ -86,6 +86,9 @@ scripts/
 # (trace IDs, intermediate outputs). Re-created each run.
 examples/regression-from-trace/.fastaiagent-demo/
 
+# Hand-off files between the AutoLLM loop's steps. Re-created each run.
+examples/autollm-loop/out/
+
 # Article companion folders — prose + screenshots + per-run artifacts are
 # published externally (LinkedIn, blog, PDF), not tracked in the repo.
 examples/articles/

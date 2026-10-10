@@ -91,6 +91,7 @@ nav:
           - "Deep Research Agent": flagships/deep-research-agent.md
           - "Financial Extraction (worked example)": flagships/deep-research-financial-extraction.md
           - "Regression from Trace": flagships/regression-from-trace.md
+          - "AutoLLM Closed Loop": flagships/autollm-closed-loop.md
   - Build:
       - Agents:
           - "Concepts & Mental Model": agents/concepts.md

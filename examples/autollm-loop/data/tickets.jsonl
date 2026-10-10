@@ -1,0 +1,120 @@
+{"id": "T01", "ticket": "You charged our card EUR 740 twice this month for the same invoice. Please refund the duplicate.", "label": {"queue": "billing", "priority": "P1"}}
+{"id": "T02", "ticket": "Our annual renewal went through at EUR 1,980 but we cancelled in March. We want that money back.", "label": {"queue": "billing", "priority": "P1"}}
+{"id": "T03", "ticket": "Invoice INV-2291 bills us EUR 612 for seats we removed last quarter. We are disputing this charge.", "label": {"queue": "billing", "priority": "P1"}}
+{"id": "T04", "ticket": "We were billed EUR 899 for the Pro add-on that we never activated. Please reverse it.", "label": {"queue": "billing", "priority": "P1"}}
+{"id": "T05", "ticket": "Requesting a refund of EUR 2,400 - the migration service we paid for was never delivered.", "label": {"queue": "billing", "priority": "P1"}}
+{"id": "T06", "ticket": "Two payments of EUR 560 each left our account on 3 October for one subscription. One of them is wrong.", "label": {"queue": "billing", "priority": "P1"}}
+{"id": "T07", "ticket": "I was charged EUR 49 for a month I had already cancelled. Can I get that refunded?", "label": {"queue": "billing", "priority": "P3"}}
+{"id": "T08", "ticket": "Why did our bill go up from EUR 120 to EUR 135 this month? Nobody told us about a price change.", "label": {"queue": "billing", "priority": "P3"}}
+{"id": "T09", "ticket": "Please refund the EUR 29 overage fee, we stayed well under our usage limit.", "label": {"queue": "billing", "priority": "P3"}}
+{"id": "T10", "ticket": "We need a copy of last month's invoice with our new VAT number on it.", "label": {"queue": "billing", "priority": "P3"}}
+{"id": "T11", "ticket": "Charged EUR 310 for extra storage that we did not use. Please check and refund.", "label": {"queue": "billing", "priority": "P3"}}
+{"id": "T12", "ticket": "The EUR 75 support add-on shows up twice on my receipt. Refund one of them please.", "label": {"queue": "billing", "priority": "P3"}}
+{"id": "T13", "ticket": "I lost my phone and with it my authenticator app. I can't get past two-factor login anymore.", "label": {"queue": "account", "priority": "P2"}}
+{"id": "T14", "ticket": "Locked out after too many password attempts. How do I get back in?", "label": {"queue": "account", "priority": "P2"}}
+{"id": "T15", "ticket": "The password reset email never arrives. I've checked my spam folder twice.", "label": {"queue": "account", "priority": "P2"}}
+{"id": "T16", "ticket": "Our admin left the company and nobody can log in to the owner account now.", "label": {"queue": "account", "priority": "P2"}}
+{"id": "T17", "ticket": "I changed my email address in settings and now I can't sign in with either the old or the new one.", "label": {"queue": "account", "priority": "P2"}}
+{"id": "T18", "ticket": "The 2FA codes from my authenticator are always rejected, so I'm stuck at the login screen.", "label": {"queue": "account", "priority": "P2"}}
+{"id": "T19", "ticket": "Account locked: 'too many failed attempts'. It has been over an hour and it's still locked.", "label": {"queue": "account", "priority": "P2"}}
+{"id": "T20", "ticket": "I need to reset my password but the reset link says it has expired, every time.", "label": {"queue": "account", "priority": "P2"}}
+{"id": "T21", "ticket": "New phone, old authenticator gone. Please disable 2FA on my account so I can set it up again.", "label": {"queue": "account", "priority": "P2"}}
+{"id": "T22", "ticket": "I got an email about a login from Sao Paulo. I've never been to Brazil and it wasn't me.", "label": {"queue": "security", "priority": "P1"}}
+{"id": "T23", "ticket": "We accidentally pushed one of our Acme API keys to a public GitHub repository an hour ago.", "label": {"queue": "security", "priority": "P1"}}
+{"id": "T24", "ticket": "Someone added an unknown admin user to our workspace overnight. None of us did that.", "label": {"queue": "security", "priority": "P1"}}
+{"id": "T25", "ticket": "Our audit log shows API calls from an IP range we don't own.", "label": {"queue": "security", "priority": "P1"}}
+{"id": "T26", "ticket": "My password was changed yesterday and I didn't do it. I think my account was taken over.", "label": {"queue": "security", "priority": "P1"}}
+{"id": "T27", "ticket": "Received a login alert at 3am for my account from a device I don't own.", "label": {"queue": "security", "priority": "P1"}}
+{"id": "T28", "ticket": "An ex-employee's API token is still making requests to our project after we offboarded them.", "label": {"queue": "security", "priority": "P1"}}
+{"id": "T29", "ticket": "Production API returning 503 for all requests since 09:10. We're on the Enterprise plan.", "label": {"queue": "technical", "priority": "P1"}}
+{"id": "T30", "ticket": "Enterprise customer here - our webhooks stopped firing completely, orders aren't syncing.", "label": {"queue": "technical", "priority": "P1"}}
+{"id": "T31", "ticket": "Dashboard and API are both down for our whole team. Plan: Enterprise. Please escalate.", "label": {"queue": "technical", "priority": "P1"}}
+{"id": "T32", "ticket": "All our EU deployments time out. This is a production outage on an Enterprise account.", "label": {"queue": "technical", "priority": "P1"}}
+{"id": "T33", "ticket": "Since last night's maintenance our Enterprise workspace can't run any jobs at all.", "label": {"queue": "technical", "priority": "P1"}}
+{"id": "T34", "ticket": "We're an Enterprise customer and the database endpoint has been refusing connections for 40 minutes.", "label": {"queue": "technical", "priority": "P1"}}
+{"id": "T35", "ticket": "The API is returning 500 errors on every call. We're on the Team plan.", "label": {"queue": "technical", "priority": "P2"}}
+{"id": "T36", "ticket": "Our Free tier project has been completely down since this morning.", "label": {"queue": "technical", "priority": "P2"}}
+{"id": "T37", "ticket": "Team plan here - webhooks stopped working entirely about an hour ago.", "label": {"queue": "technical", "priority": "P2"}}
+{"id": "T38", "ticket": "Can't deploy anything, the build service is down for us. We use the Free plan.", "label": {"queue": "technical", "priority": "P2"}}
+{"id": "T39", "ticket": "Everything returns 503 for our Team workspace and our app is offline.", "label": {"queue": "technical", "priority": "P2"}}
+{"id": "T40", "ticket": "We're on the Free plan and the API has been unreachable for two hours.", "label": {"queue": "technical", "priority": "P2"}}
+{"id": "T41", "ticket": "How do I rotate the signing secret for webhooks?", "label": {"queue": "technical", "priority": "P3"}}
+{"id": "T42", "ticket": "Is there a way to set a custom timeout on the Python client?", "label": {"queue": "technical", "priority": "P3"}}
+{"id": "T43", "ticket": "The docs example for pagination seems to skip the last page. Minor, but thought you'd want to know.", "label": {"queue": "technical", "priority": "P3"}}
+{"id": "T44", "ticket": "Which regions can we deploy to if we want everything to stay in the EU?", "label": {"queue": "technical", "priority": "P3"}}
+{"id": "T45", "ticket": "Can I export my dashboards as PDF?", "label": {"queue": "technical", "priority": "P3"}}
+{"id": "T46", "ticket": "My hardware security key order is now 8 business days late.", "label": {"queue": "shipping", "priority": "P2"}}
+{"id": "T47", "ticket": "Ordered two security keys from your store. They're 7 working days past the delivery date.", "label": {"queue": "shipping", "priority": "P2"}}
+{"id": "T48", "ticket": "Tracking hasn't updated in 6 business days and the package is overdue.", "label": {"queue": "shipping", "priority": "P2"}}
+{"id": "T49", "ticket": "Our order of 20 security keys is 10 business days late and we have new hires waiting.", "label": {"queue": "shipping", "priority": "P2"}}
+{"id": "T50", "ticket": "Delivery of my security key is a week and a half overdue.", "label": {"queue": "shipping", "priority": "P2"}}
+{"id": "T51", "ticket": "My security key was supposed to arrive yesterday - any update?", "label": {"queue": "shipping", "priority": "P3"}}
+{"id": "T52", "ticket": "Package is 2 business days late, just checking on the status.", "label": {"queue": "shipping", "priority": "P3"}}
+{"id": "T53", "ticket": "Order #8812 shows 'delayed' - it was due three business days ago.", "label": {"queue": "shipping", "priority": "P3"}}
+{"id": "T54", "ticket": "The courier says my hardware key will arrive 4 working days later than promised. Is that right?", "label": {"queue": "shipping", "priority": "P3"}}
+{"id": "T55", "ticket": "Under the GDPR I request a full export of all the personal data you hold about me.", "label": {"queue": "account", "priority": "P2"}}
+{"id": "T56", "ticket": "Please delete my account and all associated personal data (right to erasure).", "label": {"queue": "account", "priority": "P2"}}
+{"id": "T57", "ticket": "Our DPO needs an export of all personal data stored for our workspace members.", "label": {"queue": "account", "priority": "P2"}}
+{"id": "T58", "ticket": "Remove all data about our former employee jan.devries@example.nl, as required by GDPR.", "label": {"queue": "account", "priority": "P2"}}
+{"id": "T59", "ticket": "I want to exercise my right of access - please send me a copy of my data.", "label": {"queue": "account", "priority": "P2"}}
+{"id": "T60", "ticket": "Delete everything you store about me and confirm it in writing.", "label": {"queue": "account", "priority": "P2"}}
+{"id": "T61", "ticket": "Our card was charged EUR 1,250 for a plan upgrade we turned down on the sales call.", "label": {"queue": "billing", "priority": "P1"}}
+{"id": "T62", "ticket": "Refund request: EUR 520 for an annual seat that was never assigned to anyone.", "label": {"queue": "billing", "priority": "P1"}}
+{"id": "T63", "ticket": "You billed EUR 3,100 for usage in September - our dashboard says we used a tenth of that.", "label": {"queue": "billing", "priority": "P1"}}
+{"id": "T64", "ticket": "We see a EUR 705 charge for 'professional services' that nobody here ordered.", "label": {"queue": "billing", "priority": "P1"}}
+{"id": "T65", "ticket": "The EUR 950 credit your sales rep promised never appeared on our invoice.", "label": {"queue": "billing", "priority": "P1"}}
+{"id": "T66", "ticket": "We were charged EUR 480 for seats after we downgraded. Can you refund that?", "label": {"queue": "billing", "priority": "P3"}}
+{"id": "T67", "ticket": "Small thing: a EUR 12 currency conversion fee appeared on our invoice.", "label": {"queue": "billing", "priority": "P3"}}
+{"id": "T68", "ticket": "Can you send our invoices to finance@ourcompany.example instead of to me?", "label": {"queue": "billing", "priority": "P3"}}
+{"id": "T69", "ticket": "Charged EUR 199 for the analytics add-on twice - please refund the second one.", "label": {"queue": "billing", "priority": "P3"}}
+{"id": "T70", "ticket": "Why is there a EUR 60 late fee on our account? We paid on time.", "label": {"queue": "billing", "priority": "P3"}}
+{"id": "T71", "ticket": "A phone update wiped my authenticator app and now I can't log in.", "label": {"queue": "account", "priority": "P2"}}
+{"id": "T72", "ticket": "I forgot my password and the reset page says my email isn't recognised.", "label": {"queue": "account", "priority": "P2"}}
+{"id": "T73", "ticket": "The account got locked after our intern typed the wrong password too many times.", "label": {"queue": "account", "priority": "P2"}}
+{"id": "T74", "ticket": "I can't sign in since our company changed its email domain.", "label": {"queue": "account", "priority": "P2"}}
+{"id": "T75", "ticket": "Lost access to 2FA - my backup codes were on a laptop that got replaced.", "label": {"queue": "account", "priority": "P2"}}
+{"id": "T76", "ticket": "Our API usage spiked 40x overnight from a key we thought we had revoked.", "label": {"queue": "security", "priority": "P1"}}
+{"id": "T77", "ticket": "There are webhooks in our account pointing to a domain we've never heard of.", "label": {"queue": "security", "priority": "P1"}}
+{"id": "T78", "ticket": "A teammate entered her password on a fake copy of your login page, and she just got a login alert.", "label": {"queue": "security", "priority": "P1"}}
+{"id": "T79", "ticket": "Login history shows a session from another country that is still active. That's not us.", "label": {"queue": "security", "priority": "P1"}}
+{"id": "T80", "ticket": "Someone downloaded our full customer export last night and none of us did that.", "label": {"queue": "security", "priority": "P1"}}
+{"id": "T81", "ticket": "We're on Enterprise and every request to the EU endpoint is timing out right now.", "label": {"queue": "technical", "priority": "P1"}}
+{"id": "T82", "ticket": "Enterprise plan: all our scheduled jobs have failed since 06:00, production is affected.", "label": {"queue": "technical", "priority": "P1"}}
+{"id": "T83", "ticket": "Full outage for us - the API answers 502 to every call. We have an Enterprise contract.", "label": {"queue": "technical", "priority": "P1"}}
+{"id": "T84", "ticket": "Enterprise account, production down: login tokens are rejected for all of our users.", "label": {"queue": "technical", "priority": "P1"}}
+{"id": "T85", "ticket": "Our Enterprise workspace dashboard won't load and the API returns 500s.", "label": {"queue": "technical", "priority": "P1"}}
+{"id": "T86", "ticket": "Team plan customer - every request to the EU endpoint is timing out right now.", "label": {"queue": "technical", "priority": "P2"}}
+{"id": "T87", "ticket": "We're on the Free tier and all our scheduled jobs have failed since 06:00.", "label": {"queue": "technical", "priority": "P2"}}
+{"id": "T88", "ticket": "Full outage for us - the API answers 502 to every call. We're on the Team plan.", "label": {"queue": "technical", "priority": "P2"}}
+{"id": "T89", "ticket": "Team workspace, production down: login tokens are rejected for all of our users.", "label": {"queue": "technical", "priority": "P2"}}
+{"id": "T90", "ticket": "Free plan here - the dashboard won't load and the API returns 500s.", "label": {"queue": "technical", "priority": "P2"}}
+{"id": "T91", "ticket": "Does the API support idempotency keys for POST requests?", "label": {"queue": "technical", "priority": "P3"}}
+{"id": "T92", "ticket": "What's the rate limit on the search endpoint?", "label": {"queue": "technical", "priority": "P3"}}
+{"id": "T93", "ticket": "The SDK changelog link in your docs returns a 404.", "label": {"queue": "technical", "priority": "P3"}}
+{"id": "T94", "ticket": "How do I filter webhook events by type?", "label": {"queue": "technical", "priority": "P3"}}
+{"id": "T95", "ticket": "Is there a Terraform provider for your platform?", "label": {"queue": "technical", "priority": "P3"}}
+{"id": "T96", "ticket": "My security key order is 5 business days late now.", "label": {"queue": "shipping", "priority": "P2"}}
+{"id": "T97", "ticket": "The keys we ordered for the whole team are 9 working days overdue.", "label": {"queue": "shipping", "priority": "P2"}}
+{"id": "T98", "ticket": "Still no security key - it's two full weeks past the promised date.", "label": {"queue": "shipping", "priority": "P2"}}
+{"id": "T99", "ticket": "Our hardware key shipment is 6 business days past its due date, stuck in customs.", "label": {"queue": "shipping", "priority": "P2"}}
+{"id": "T100", "ticket": "Order #9921 is 12 business days late. Please help.", "label": {"queue": "shipping", "priority": "P2"}}
+{"id": "T101", "ticket": "The security key I ordered is one business day late.", "label": {"queue": "shipping", "priority": "P3"}}
+{"id": "T102", "ticket": "Delivery was due Monday and it's Wednesday - 2 working days late. Any news?", "label": {"queue": "shipping", "priority": "P3"}}
+{"id": "T103", "ticket": "My hardware key order is 3 business days behind schedule.", "label": {"queue": "shipping", "priority": "P3"}}
+{"id": "T104", "ticket": "The courier now shows my key arriving tomorrow instead of today.", "label": {"queue": "shipping", "priority": "P3"}}
+{"id": "T105", "ticket": "My order is 4 business days late, should I be worried?", "label": {"queue": "shipping", "priority": "P3"}}
+{"id": "T106", "ticket": "Please provide all the personal data you process about me, per Article 15 GDPR.", "label": {"queue": "account", "priority": "P2"}}
+{"id": "T107", "ticket": "I'm leaving your service: erase my personal data completely.", "label": {"queue": "account", "priority": "P2"}}
+{"id": "T108", "ticket": "As our company's DPO I'm requesting deletion of all personal data for user id 4471.", "label": {"queue": "account", "priority": "P2"}}
+{"id": "T109", "ticket": "Send me an export of my profile data in a machine-readable format.", "label": {"queue": "account", "priority": "P2"}}
+{"id": "T110", "ticket": "Please stop processing my personal data and delete what you have.", "label": {"queue": "account", "priority": "P2"}}
+{"id": "T111", "ticket": "Duplicate invoice: we've been charged EUR 1,100 twice for the same quarter.", "label": {"queue": "billing", "priority": "P1"}}
+{"id": "T112", "ticket": "Please refund the EUR 250 we paid for a training session that got cancelled.", "label": {"queue": "billing", "priority": "P3"}}
+{"id": "T113", "ticket": "We found our admin password posted on a public paste site.", "label": {"queue": "security", "priority": "P1"}}
+{"id": "T114", "ticket": "Can't get into my account - it says my email isn't verified and the verification mail never comes.", "label": {"queue": "account", "priority": "P2"}}
+{"id": "T115", "ticket": "Enterprise customer: file uploads fail with a 500 for everyone, our business is blocked.", "label": {"queue": "technical", "priority": "P1"}}
+{"id": "T116", "ticket": "Team plan: file uploads fail with a 500 for everyone in our workspace.", "label": {"queue": "technical", "priority": "P2"}}
+{"id": "T117", "ticket": "Can I change the region of an existing project?", "label": {"queue": "technical", "priority": "P3"}}
+{"id": "T118", "ticket": "It's been 8 working days past the delivery date for my key.", "label": {"queue": "shipping", "priority": "P2"}}
+{"id": "T119", "ticket": "Delivery is a day late, no big deal, just wanted an ETA.", "label": {"queue": "shipping", "priority": "P3"}}
+{"id": "T120", "ticket": "What personal data do you have on me? I'd like a copy under GDPR.", "label": {"queue": "account", "priority": "P2"}}
