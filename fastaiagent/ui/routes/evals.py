@@ -229,8 +229,9 @@ def compare(
 ) -> dict[str, Any]:
     """Compare two eval runs case-by-case.
 
-    Cases are matched by ``ordinal`` first and by ``input`` as a fallback,
-    so runs that share a dataset but reordered cases still align. Each
+    Cases are matched by ``ordinal`` when both runs hold the same input there
+    and by ``input`` otherwise, so runs that share a dataset but reordered
+    cases still align. Each
     regressed / improved entry includes a ``scorer_deltas`` list so the UI
     can highlight *which scorer* changed on that case.
     """

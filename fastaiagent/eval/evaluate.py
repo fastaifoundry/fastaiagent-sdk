@@ -15,7 +15,7 @@ from fastaiagent._internal.pause import describe_pause
 from fastaiagent.eval.builtins import BUILTIN_SCORERS
 from fastaiagent.eval.dataset import Dataset
 from fastaiagent.eval.results import EvalCaseRecord, EvalResults
-from fastaiagent.eval.scorer import Scorer
+from fastaiagent.eval.scorer import Scorer, ScorerResult
 
 logger = logging.getLogger(__name__)
 
@@ -190,7 +190,14 @@ async def aevaluate(
     # Run evaluation
     sem = asyncio.Semaphore(concurrency)
 
-    async def eval_one(item: dict[str, Any]) -> None:
+    # Each case returns its record and scores instead of adding them as it
+    # finishes: cases run concurrently, so finishing order is not dataset order,
+    # and a case's stored ``ordinal`` is what run comparison pairs cases by.
+    # Recorded in completion order, two runs of one dataset paired different
+    # inputs (1.87.0).
+    async def eval_one(
+        item: dict[str, Any],
+    ) -> tuple[EvalCaseRecord, list[tuple[str, ScorerResult]]]:
         async with sem:
             input_text = item.get("input", str(item))
             expected = item.get("expected_output", item.get("expected"))
@@ -240,20 +247,19 @@ async def aevaluate(
                 # network/auth error) is NOT an agent-quality miss. Record the case
                 # as errored (non-signal) and do not score it — so it can't count as
                 # a failure the optimizer would try to "fix".
-                results.add_case(
-                    EvalCaseRecord(
-                        input=input_text,
-                        expected_output=expected,
-                        actual_output=None,
-                        trace_id=None,
-                        per_scorer={},
-                        error=_case_error(e),
-                    )
+                errored = EvalCaseRecord(
+                    input=input_text,
+                    expected_output=expected,
+                    actual_output=None,
+                    trace_id=None,
+                    per_scorer={},
+                    error=_case_error(e),
                 )
-                return
+                return errored, []
 
             # Score
             per_scorer: dict[str, dict[str, Any]] = {}
+            scored: list[tuple[str, ScorerResult]] = []
             # Caller kwargs win: someone passing ``cost=`` to ``evaluate()``
             # is overriding on purpose, and always could.
             score_kwargs = {**run_facts, **kwargs}
@@ -264,25 +270,27 @@ async def aevaluate(
                     expected=expected,
                     **score_kwargs,
                 )
-                results.add(scorer.name, result)
+                scored.append((scorer.name, result))
                 per_scorer[scorer.name] = {
                     "passed": bool(result.passed),
                     "score": float(result.score),
                     "reason": result.reason,
                 }
 
-            results.add_case(
-                EvalCaseRecord(
-                    input=input_text,
-                    expected_output=expected,
-                    actual_output=output_text,
-                    trace_id=trace_id,
-                    per_scorer=per_scorer,
-                )
+            record = EvalCaseRecord(
+                input=input_text,
+                expected_output=expected,
+                actual_output=output_text,
+                trace_id=trace_id,
+                per_scorer=per_scorer,
             )
+            return record, scored
 
-    tasks = [eval_one(item) for item in ds]
-    await asyncio.gather(*tasks)
+    # ``gather`` returns in the order the cases were given — the dataset's.
+    for record, scored in await asyncio.gather(*(eval_one(item) for item in ds)):
+        for scorer_name, result in scored:
+            results.add(scorer_name, result)
+        results.add_case(record)
 
     if persist:
         try:
