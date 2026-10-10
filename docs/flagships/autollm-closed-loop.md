@@ -150,6 +150,46 @@ plan-based outage priority, the 5-business-day cutoff, lockouts and GDPR to
 duplicate charge is P1") and its holdout landed at 0.90 instead of 0.97. The
 holdout number tells you a rule is off; reading the prompt tells you which.
 
+## Run it on a cheaper model
+
+A prompt is tuned to the model it was written for; move it to another model and
+it usually gets worse. So don't move the prompt — re-tune it. `switch_models.py`
+runs AutoLLM for each model on the same dataset and the same seed, so every
+model faces the same 30-ticket holdout, and it measures cost from the traces of
+each model's holdout eval:
+
+```sh
+python switch_models.py                                  # gpt-4.1, -mini, -nano
+python switch_models.py --models gpt-4.1-nano --ollama llama3.1:8b
+python switch_models.py --models gpt-4o-2024-05-13,gpt-5-mini   # a forced migration
+```
+
+From our run, starting from the shipped v2 (written for `gpt-4.1-mini`):
+
+```
+model                    holdout: live prompt → tuned   $ / 1k tickets  version
+gpt-4.1                                 1.000 → 1.000           1.1259  kept the live prompt
+gpt-4.1-mini                            0.967 → 0.967           0.2252  kept the live prompt
+gpt-4.1-nano                            0.867 → 0.933           0.0650  v3
+```
+
+- `gpt-4.1` is perfect on the holdout — at five times the cost of `-mini`.
+- `gpt-4.1-nano` runs the shipped prompt at 0.867. Re-tuned for nano, it gets
+  0.933 at **$0.065 per thousand tickets** — under a third of `-mini`'s cost and
+  1/17 of `gpt-4.1`'s.
+- Each model's winner is registered as its own version (`metadata.model`), so a
+  nano-specific prompt is `load_agent(version=3)` — not a fork of your code.
+
+Whether 0.933 at $0.065 beats 0.967 at $0.23 is a business decision; the table
+is what makes it one.
+
+A local model runs the same loop through Ollama (`--ollama <model tag>`), but
+plan for it: on our laptop an 8B model answered in about 13 seconds a ticket,
+so one re-tune — some 600 calls — is hours, not minutes. We didn't wait for one
+to finish, so there is no local row in the table. A forced migration is the same command with the old and
+the new model — OpenAI's `gpt-4o-2024-05-13` snapshot shuts down on
+October 23, 2026.
+
 ## The honest edges
 
 - **The gate is a regression check, not a generalisation estimate.** It scores
