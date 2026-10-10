@@ -6,6 +6,13 @@ change, applies it to a fresh agent, re-evaluates, keeps the best, and repeats �
 until the score stops improving or a budget runs out. A held-out split guards the
 winner against overfitting.
 
+!!! tip "Start from a recipe"
+    [AutoLLM Recipes](autollm-recipes.md) maps situations — a live agent breaking
+    rules only your labels know, a move to a cheaper model, a judge you can't
+    trust — to runnable examples. The [AutoLLM Closed Loop](../flagships/autollm-closed-loop.md)
+    flagship runs the whole thing end to end: traces → dataset → eval → AutoLLM →
+    registry version → CI gate → production.
+
 It tunes the **system prompt** by default, and can also tune **few-shot
 examples** and **which learned-memory facts to inject** when you opt in — greedy
 coordinate ascent, cycling the active levers one per round. The SDK's answer to
