@@ -374,13 +374,19 @@ def _build_handler() -> BaseCallbackHandler:
                 request_messages=_safe_json(payload),
             )
             # Lineage: if a registry-backed template was just rendered,
-            # tag the LLM span so the Prompt detail page can find it.
+            # tag the LLM span so the Prompt detail page can find it — it
+            # matches on ``prompt.name`` (before 1.87.0 only the slug was
+            # stamped, and the page never found a LangChain run).
             current = _pop_prompt_lineage()
             if current is not None:
                 slug, version = current
                 set_fastaiagent_attributes(
                     span,
-                    **{"prompt.slug": slug, "prompt.version": int(version)},
+                    **{
+                        "prompt.name": slug,
+                        "prompt.slug": slug,
+                        "prompt.version": int(version),
+                    },
                 )
 
         def on_llm_start(

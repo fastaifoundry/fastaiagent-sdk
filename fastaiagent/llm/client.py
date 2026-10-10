@@ -821,26 +821,17 @@ class LLMClient:
         raise LLMProviderError("Retries exhausted")  # unreachable — satisfies type checker
 
     def _set_prompt_provenance(self, span: Any) -> None:
-        """Attribute this call to a control-plane registry prompt, if one is in use.
+        """Attribute this call to the registry prompt in use, if any.
 
-        Provenance rides on a ContextVar the agent sets; a no-op otherwise. Shared
-        by the streamed and non-streamed paths so a streamed run is not missing
-        from Prompt Analytics for want of three attributes.
+        Provenance rides on a ContextVar the agent binds for each run (``arun``,
+        ``aresume``, ``astream``); see
+        :func:`~fastaiagent.prompt.provenance.stamp_prompt_provenance` for what
+        is stamped. Shared by the streamed and non-streamed paths.
         """
         try:
-            from fastaiagent.prompt.provenance import get_prompt_provenance
-            from fastaiagent.trace.span import set_fastaiagent_attributes
+            from fastaiagent.prompt.provenance import stamp_prompt_provenance
 
-            prov = get_prompt_provenance()
-            if prov and prov.get("slug"):
-                set_fastaiagent_attributes(
-                    span,
-                    **{
-                        "prompt.slug": prov.get("slug"),
-                        "prompt.version": prov.get("version"),
-                        "prompt.environment": prov.get("environment"),
-                    },
-                )
+            stamp_prompt_provenance(span)
         except Exception:  # pragma: no cover — provenance must never break a call
             logger.debug("Could not attach prompt provenance to the span", exc_info=True)
 
