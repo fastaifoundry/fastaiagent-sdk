@@ -126,6 +126,13 @@ The default is **prompt-only** (`levers=("instructions",)`) — the cheapest ent
 point (few-shot adds a bootstrap pass; memory needs `fastaiagent learn` to have
 run). Opt into more with e.g. `levers=("instructions", "fewshot", "memory")`.
 
+**A stateless agent stays stateless.** The few-shot and memory levers carry their
+examples and facts in a memory block. An agent built with no `memory` gets those
+blocks and nothing else — it keeps no conversation, during the run (each eval case
+is scored on its own) and after `report.apply_to(agent)` (one user's request never
+reaches the next user's prompt). Before 1.87.0 the wrapper kept a conversation
+window, so a tuned stateless agent remembered every earlier run.
+
 ### Memory-bearing agents
 
 Each candidate evaluation gets an **isolated copy** of the agent's memory
