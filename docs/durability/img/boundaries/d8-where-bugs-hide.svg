@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" width="1200" height="600" role="img" aria-label="Where durability bugs hide: a typical test pauses and resumes once, in one process, on SQLite, with a tool that has no side effects; the bugs sit on the boundaries around that — a resume from another process, a crash mid-tool, a side effect fired twice, a second resumer, a finished run resumed, a backend with a different claim.">
+  <title>Where durability bugs hide: a typical test pauses and resumes once, in one process, on SQLite, with a tool that has no side effects; the bugs sit on the boundaries around that — a resume from another process, a crash mid-tool, a side effect fired twice, a second resumer, a finished run resumed, a backend with a different claim.</title>
+  <rect x="0" y="0" width="1200" height="600" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Where durability bugs hide</text>
+  <rect x="330" y="190" width="540" height="220" rx="18" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="600" y="236" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#2a78d6" text-anchor="middle">A TYPICAL TEST</text>
+  <text x="600" y="274" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="middle">pause once, resume once</text>
+  <text x="600" y="304" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="middle">one process, SQLite</text>
+  <text x="600" y="334" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="middle">a tool with no side effects</text>
+  <rect x="48" y="122" width="294.79999999999995" height="44" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="62" y="150" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">a resume from another process</text>
+  <line x1="342.79999999999995" y1="144" x2="330" y2="230" stroke="#eb6834" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <rect x="48" y="272" width="313.2" height="44" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="62" y="300" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">a crash in the middle of a tool</text>
+  <line x1="361.2" y1="294" x2="330" y2="300" stroke="#eb6834" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <rect x="48" y="422" width="258.0" height="44" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="62" y="450" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">a side effect fired twice</text>
+  <line x1="306.0" y1="444" x2="330" y2="380" stroke="#eb6834" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <rect x="976.8" y="122" width="175.2" height="44" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="990.8" y="150" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">a second resumer</text>
+  <line x1="976.8" y1="144" x2="870" y2="230" stroke="#eb6834" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <rect x="912.4" y="272" width="239.6" height="44" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="926.4" y="300" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">a finished run, resumed</text>
+  <line x1="912.4" y1="294" x2="870" y2="300" stroke="#eb6834" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <rect x="866.4000000000001" y="422" width="285.59999999999997" height="44" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="880.4000000000001" y="450" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">a backend with another claim</text>
+  <line x1="866.4000000000001" y1="444" x2="870" y2="380" stroke="#eb6834" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <text x="48" y="540" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">Each boundary has a proof script; test your own durability on the same lines.</text>
+</svg>

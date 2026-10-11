@@ -48,6 +48,8 @@ needs forking.
 | [`prompts/proofs/`](prompts/proofs/) | The proofs behind [A Prompt Breaks at the Boundaries](../docs/prompts/prompt-boundaries.md): placeholders, versions, fragments, lineage, an eval gate, the plane side | `python proof_1_placeholders.py` … |
 | [`kb/proofs/`](kb/proofs/) | The proofs behind [Retrieval Breaks at the Boundaries](../docs/knowledge-base/kb-boundaries.md): chunks, embedders, matchers, the tool call, restarts, three backends | `python proof_1_chunks.py` … |
 | [`llm/proofs/`](llm/proofs/) | The proofs behind [The Model Call Breaks at the Boundaries](../docs/llm/llm-boundaries.md): the wire, the parse, presets, streaming, structured output, the numbers | `python proof_1_wire.py` … |
+| [`guardrails/proofs/`](guardrails/proofs/) | The proofs behind [A Guardrail Breaks at the Boundaries](../docs/guardrails/guardrail-boundaries.md): positions, actions, `on_error`, the trace, plane rules, round-trips | `python proof_1_positions.py` … |
+| [`durability/proofs/`](durability/proofs/) | The proofs behind [A Durable Run Breaks at the Boundaries](../docs/durability/durability-boundaries.md): rows, pause and resume across processes, crashes, side effects, the run-end marker, backends | `python proof_1_rows.py` … |
 
 ### Recommended onboarding path
 

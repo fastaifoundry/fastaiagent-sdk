@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 640" width="1200" height="640" role="img" aria-label="A rule leaves the process as a dict: config-based types come back whole; a builtin comes back armed by name; a custom fn and a parameterised builtin cannot travel and the restored rule errors at execution rather than passing; a foreign-framework proxy can honour block and warn and must block where it cannot rewrite or re-ask.">
+  <title>A rule leaves the process as a dict: config-based types come back whole; a builtin comes back armed by name; a custom fn and a parameterised builtin cannot travel and the restored rule errors at execution rather than passing; a foreign-framework proxy can honour block and warn and must block where it cannot rewrite or re-ask.</title>
+  <rect x="0" y="0" width="1200" height="640" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Beyond the agent loop — a round-trip, a rerun, a foreign runtime</text>
+  <rect x="48" y="130" width="250" height="100" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="68" y="166" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">Guardrail</text>
+  <text x="68" y="189" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">to_dict()</text>
+  <polyline points="298,180 360,180" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="360,180 346.0,173.0 346.0,187.0" fill="#2a78d6"/>
+  <path d="M360,136 L360,224 A125.0,16 0 0 0 610,224 L610,136" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <ellipse cx="485.0" cy="136" rx="125.0" ry="16" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <text x="485" y="170" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="19" font-weight="700" fill="#0b0b0b" text-anchor="middle">a dict</text>
+  <text x="485" y="196" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="middle">local.db · the plane · a replay</text>
+  <polyline points="610,180 672,180" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="672,180 658.0,173.0 658.0,187.0" fill="#2a78d6"/>
+  <rect x="672" y="130" width="480" height="100" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="692" y="166" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">Guardrail.from_dict()</text>
+  <text x="692" y="189" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">what comes back depends on the type</text>
+  <rect x="48" y="270" width="560" height="127.5" rx="10" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="62" y="302" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="start">proof 6: before → after a round-trip</text>
+  <text x="62" y="321.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">regex · pii · schema … (config)   same verdict</text>
+  <text x="62" y="341.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">no_pii() builtin                   armed by name: blocks</text>
+  <text x="62" y="361.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">cost_limit(1.0) builtin            errored: its budget never travelled</text>
+  <text x="62" y="381.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">custom fn                          errored: 'has no fn'</text>
+  <text x="48" y="440" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">Before 1.64.0 a restored code rule with no fn returned passed=True — a Replay rerun</text>
+  <text x="48" y="460" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">and Agent.from_dict ran with every such control silently off.</text>
+  <rect x="650" y="270" width="502" height="127.5" rx="10" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="664" y="302" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="start">harness_halts — a LangChain / CrewAI / PydanticAI proxy</text>
+  <text x="664" y="321.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">none · warned      continue</text>
+  <text x="664" y="341.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">blocked            stop</text>
+  <text x="664" y="361.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">masked · overridden   stop: cannot rewrite the payload</text>
+  <text x="664" y="381.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">reask              stop: cannot re-drive the model</text>
+  <text x="650" y="440" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">A proxy owns the verdict, not the payload or the loop;</text>
+  <text x="650" y="460" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">run_guardrail computes, emit_guardrail reports on its tracer.</text>
+  <polyline points="50,520 57,528 71,511" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="78" y="526" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1baf7a" text-anchor="start">a rule whose logic cannot travel says so by erroring — never by passing</text>
+  <circle cx="60" cy="560" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="553" x2="67" y2="567" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="567" x2="67" y2="553" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="566" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#eb6834" text-anchor="start">to_dict() never carries fn=, and never carries origin='plane'</text>
+</svg>

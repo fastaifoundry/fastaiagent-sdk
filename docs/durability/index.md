@@ -51,6 +51,7 @@ assert result.status == "completed"
 | Goal | Read |
 |---|---|
 | Get a paused-and-resumed chain running in 5 minutes | [Quickstart](quickstart.md) |
+| See where a resume goes wrong, with a proof you can run for each place | [A Durable Run Breaks at the Boundaries](durability-boundaries.md) |
 | Understand why side effects double-fire on resume — and how to fix it | [Side effects & idempotency](side-effects.md) |
 | Apply durability to common production shapes | [Patterns](patterns.md) |
 | Wire `interrupt()` into Agent / Swarm / Supervisor | [Multi-agent durability](multi-agent.md) |
