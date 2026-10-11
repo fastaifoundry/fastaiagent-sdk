@@ -19,9 +19,9 @@ DOC = (
     "9am to 5pm EST."
 )
 
-for size in (512, 120):
-    chunks = chunk_text(DOC, chunk_size=size, overlap=50, metadata={"source": "policy.md"})
-    print(f"\nchunk_size={size}, overlap=50 → {len(chunks)} chunk(s)")
+for size, ov in ((512, 50), (120, 0), (120, 50)):
+    chunks = chunk_text(DOC, chunk_size=size, overlap=ov, metadata={"source": "policy.md"})
+    print(f"\nchunk_size={size}, overlap={ov} → {len(chunks)} chunk(s)")
     for c in chunks:
         print(f"  #{c.index} [{c.start_char:3d}-{c.end_char:3d}] {c.content[:62]!r}…"
               if len(c.content) > 62 else f"  #{c.index} [{c.start_char:3d}-{c.end_char:3d}] {c.content!r}")
@@ -29,9 +29,10 @@ for size in (512, 120):
     print("  characters shared between neighbours:", shared or "n/a (one chunk)")
     print("  metadata on every chunk:", chunks[0].metadata)
 
-# A fact that straddles a seam is split in two.
-chunks = chunk_text(DOC, chunk_size=120, overlap=50)
-seam = [c for c in chunks if "30 days" in c.content]
-print("\n'within 30 days … full refund' lives in chunk", [c.index for c in seam],
-      "· 'unused … original packaging' lives in chunk",
-      [c.index for c in chunks if "original packaging" in c.content])
+# A rule that straddles a seam: split without overlap, whole with it.
+for ov in (0, 50):
+    chunks = chunk_text(DOC, chunk_size=120, overlap=ov)
+    both = [c.index for c in chunks if "30 days" in c.content and "original packaging" in c.content]
+    print(f"\noverlap={ov}: '30 days … full refund' + 'unused … original packaging' together in chunk(s)", both)
+print("offsets exact:", all(DOC[c.start_char:c.end_char] == c.content for c in chunks),
+      "· every chunk ≤ 120:", all(len(c.content) <= 120 for c in chunks))

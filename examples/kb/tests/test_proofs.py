@@ -1,8 +1,7 @@
 """The proof scripts behind docs/knowledge-base/kb-boundaries.md still say what the page quotes.
 
 Each offline script runs as a subprocess and its output is checked for the lines the
-page relies on. If the SDK's behaviour changes — including the two defects the page
-reports as they are — this fails before the page lies.
+page relies on. If the SDK's behaviour changes, this fails before the page lies.
 """
 
 from __future__ import annotations
@@ -18,7 +17,10 @@ PROOFS = Path(__file__).resolve().parent.parent / "proofs"
 EXPECTED = {
     "proof_1_chunks.py": [
         "characters shared between neighbours: [-2, -2, -2, -2]",
-        "'within 30 days … full refund' lives in chunk [0]",
+        "characters shared between neighbours: [44, 46, 27, 41, 44, 43, 47]",
+        "overlap=0: '30 days … full refund' + 'unused … original packaging' together in chunk(s) []",
+        "overlap=50: '30 days … full refund' + 'unused … original packaging' together in chunk(s) [1]",
+        "offsets exact: True · every chunk ≤ 120: True",
     ],
     "proof_2_embedder.py": [
         "Embedding dimension mismatch: stored=384, current embedder=128",
@@ -37,9 +39,8 @@ EXPECTED = {
         "faiss   {'same': 1.0, 'orthogonal': 0.0, 'opposite': -1.0, 'cos=0.6': 0.6}",
         "chroma  {'same': 1.0, 'orthogonal': 0.0, 'opposite': -1.0, 'cos=0.6': 0.6}",
         "qdrant  {'same': 1.0, 'orthogonal': 0.0, 'opposite': -1.0, 'cos=0.6': 0.6}",
-        # The 1.87.0 defect the page reports. When the backend converts the vectors
-        # itself this line disappears — update section 6 of the page then.
-        "chroma  ValueError from the backend",
+        "FastEmbed returns numpy.float32 values inside Python lists",
+        # Fixed in 1.88.0: Chroma takes FastEmbed's vectors as they come.
         "chroma  ChromaVectorStore top before delete: refunds.md · removed 1 · top after: errors.md",
     ],
 }

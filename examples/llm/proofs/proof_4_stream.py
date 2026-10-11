@@ -88,4 +88,4 @@ async def agent_events():
 
 seen = asyncio.run(agent_events())
 print("model turns:", calls["n"], "· events in order:", [type(e).__name__ for e in seen])
-print("StreamDone events inside the agent stream:", sum(isinstance(e, StreamDone) for e in seen))
+print("StreamDone events in the agent stream:", sum(isinstance(e, StreamDone) for e in seen), "· last event:", type(seen[-1]).__name__)

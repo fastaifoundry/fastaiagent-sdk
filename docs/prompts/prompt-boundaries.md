@@ -2,7 +2,7 @@
 
 *Six places a prompt goes wrong between the text you wrote and the model that read it, how FastAIAgent holds each one, and a proof you can run for every claim.*
 
-*Requires FastAIAgent 1.87.0+ · [Download this page as a PDF](img/boundaries/prompts-at-the-boundaries.pdf)*
+*Requires FastAIAgent 1.88.0+ · [Download this page as a PDF](img/boundaries/prompts-at-the-boundaries.pdf)*
 
 FastAIAgent already lets you *see* a prompt's history: every `register()` is a version row, an alias is a pointer you can read, and the Local UI's Prompts page lists the traces and eval runs that used each prompt (see [Prompt Registry](index.md)).
 
@@ -93,17 +93,18 @@ The fragment resolved at load and brought its own variable with it; the variable
 
 A version is a row; an alias is a pointer. The registry never moves a row for you, and it never moves a pointer for you either.
 
-![Frozen rows, movable pointers: register() without a version adds a row (v1, v2, v3); the production alias is a pointer you move with set_alias; diff() compares two rows. register() with an explicit version that already exists replaces that row in place](img/boundaries/d3-versions.svg)
-*Each `register()` adds a row. `production` points where you last pointed it. `diff()` prints two whole templates. Pass `version=` for a version that exists, and that row is replaced.*
+![Frozen rows, movable pointers: register() without a version adds a row (v1, v2, v3); the production alias is a pointer you move with set_alias; diff() compares two rows. register() with an explicit version that already exists is a no-op for the same text and refused for different text, so no row is ever rewritten](img/boundaries/d3-versions.svg)
+*Each `register()` adds a row. `production` points where you last pointed it. `diff()` prints two whole templates. An existing row is never rewritten, even when you name its number.*
 
 The rules:
 
 - **`register()` without `version=` always adds a row**, numbered one above the highest. The rows before it are untouched.
 - **An alias is a pointer you move**: `set_alias(name, version, "production")`. `load(name, alias="production")` follows it; `load(name)` returns the highest version. Registering v3 does not move `production` off v1.
 - **`diff(name, a, b)`** prints the two templates whole, one line each, under `---`/`+++` headers. Fragments show unresolved, as `{{@tone}}`.
-- **`register(name, text, version=1)` for an existing v1 replaces that row in place.** The storage writes with `INSERT OR REPLACE`. Whatever pointed at v1, now reads the new text, and `list()` reports the last version written as `latest_version` even when a higher one exists.
+- **An explicit `version=` never rewrites a row.** Re-registering the same template and metadata under an existing number is a no-op, so a seed script can run twice; different text under an existing number raises `ValueError` and names the next free version.
+- **`latest_version` is the highest version**, whatever order the rows were written in, so `list()` and `load()` always agree.
 
-Proof 2 registers three versions, pins an alias, then re-registers v1 explicitly:
+Proof 2 registers three versions, pins an alias, then tries to re-register v1 explicitly:
 
 ```
 ── versions accumulate, the alias stays put
@@ -119,15 +120,21 @@ list()                 : [{'name': 'greeting', 'latest_version': 3, 'versions': 
 + Hi there, {{name}}! Welcome.
 
 ── register(version=1) on an existing v1
-v1 now reads           : 'REPLACED {{name}}'
-production (→ v1) reads: 'REPLACED {{name}}'
-load() latest          : v 3
-list()                 : [{'name': 'greeting', 'latest_version': 1, 'versions': 3}]
+same text  → v 1 (a no-op)
+other text → ValueError: Prompt 'greeting' already has a version 1 with a different template. Versions are immutable: omit version= to add the next one (v4), or delete the prompt first if you really mean to rewrite its history.
+v1 still reads         : 'Hello {{name}}!'
+production (→ v1) reads: 'Hello {{name}}!'
+
+── seeding an older number keeps the latest right
+list()                 : [{'name': 'greeting', 'latest_version': 5, 'versions': 5}] · load() → v 5
 ```
 
-Auto-numbered versions are immutable in practice, and the alias is a safe way to ship one while you work on the next. The explicit `version=` path is the edge: it is meant for seeding a known number, and it will overwrite a row you thought was frozen. Treat `version=` as *write this row*, not *add this row*.
+A version is frozen, and an alias pinned to it serves the text it was pinned to, whatever is registered afterwards. The explicit `version=` path is for seeding a known number; it can add a row, never replace one.
 
-**Code:** `register`, `set_alias` and `diff` in [`prompt/registry.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/prompt/registry.py); `save_prompt` (the `INSERT OR REPLACE`), `load_prompt` and `set_alias` in [`prompt/storage.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/prompt/storage.py). The proof is [`proof_2_versions.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/prompts/proofs/proof_2_versions.py).
+!!! note "Changed in 1.88.0"
+    Until 1.88.0 the storage wrote versions with `INSERT OR REPLACE`, so `register(name, text, version=1)` on an existing v1 silently replaced it: `production` then served the new text, and `list()` reported 1 as the latest version while `load()` returned v3. A conflicting explicit version now raises, and the same text is a no-op.
+
+**Code:** `register`, `set_alias` and `diff` in [`prompt/registry.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/prompt/registry.py); `save_prompt`, `load_prompt` and `set_alias` in [`prompt/storage.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/prompt/storage.py). The proof is [`proof_2_versions.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/prompts/proofs/proof_2_versions.py); `TestVersionsAreFrozen` in [`tests/test_prompt.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/tests/test_prompt.py) pins it.
 
 ---
 
@@ -288,7 +295,7 @@ If you build or buy a prompt registry, test the boundaries:
 
 1. **Format with a variable missing.** Does it raise, or does the model read `{{tone}}`?
 2. **Edit a shared fragment**, then load a prompt that uses it. Did its version change? Does anything say it changed?
-3. **Register a version with an explicit number that exists.** Was the old row kept?
+3. **Register a version with an explicit number that exists**, with different text. Was the old row kept, and did anything tell you?
 4. **Run with the prompt object and with its formatted string.** Open the trace: which run names its prompt?
 5. **Evaluate two versions on the same dataset** before moving an alias. Who moves the alias, and is it on the record?
 6. **Push an agent built from a local prompt** and look at what was sent: text, or a reference?
@@ -301,7 +308,7 @@ The proof scripts behind this page run each of those checks.
 
 - **`format()` does not validate.** Missing variables and unknown fragments stay in the text. Check `prompt.variables` against your call.
 - **Fragments are not versioned.** A prompt version pins the template with its `{{@fragment}}` markers, not the fragment text. The span's `gen_ai.request.messages` is the record of what was sent.
-- **`register(version=n)` overwrites an existing row n**, and `list()` then reports that number as the latest. Let versions auto-number.
+- **An explicit `version=` cannot rewrite history.** To change what an existing number says, delete the prompt and register it again; otherwise let versions auto-number.
 - **`diff()` is two whole templates**, not a line-level diff. Pipe the templates through your own diff tool for a long prompt.
 - **A formatted prompt is not linked to its runs.** A prompt with variables has to be formatted, so its lineage panel stays empty today.
 - **The local registry has no environments, drafts or approvals.** An alias is the local stand-in for "production"; environments and governance are the plane's.

@@ -127,3 +127,38 @@ def test_localkb_with_chroma_backend(tmp_path: object) -> None:
     # With SimpleEmbedder + small corpus, both texts are candidates; just
     # confirm we got a result back from Chroma without error.
     assert results[0].chunk.content
+
+
+def test_vectors_holding_numpy_float32_are_accepted() -> None:
+    """FastEmbed returns Python lists of ``numpy.float32``. Chroma 1.x refuses that
+    shape, so until 1.88.0 ``LocalKB`` + FastEmbed + Chroma failed on its first
+    ``add()`` while FAISS and Qdrant took the same vectors. Every other test here
+    uses plain floats, which is why none of them saw it."""
+    np = pytest.importorskip("numpy")
+    store = ChromaVectorStore(collection=f"np-{uuid.uuid4().hex[:8]}", dimension=4)
+    vec = [np.float32(x) for x in (1.0, 0.0, 0.0, 0.0)]
+    store.add([_chunk("e1")], [vec])
+    (chunk, score), = store.search([np.float32(x) for x in (0.6, 0.8, 0.0, 0.0)], top_k=1)
+    assert chunk.content == "e1"
+    assert score == pytest.approx(0.6, abs=1e-5)
+
+
+def test_local_kb_with_a_float32_embedder_round_trips(tmp_path) -> None:
+    np = pytest.importorskip("numpy")
+
+    class Float32Embedder:
+        """The shape FastEmbed returns, without downloading a model."""
+
+        def embed(self, texts: list[str]) -> list[list[float]]:
+            return [[np.float32(v) for v in vec] for vec in _embed(texts)]
+
+    kb = LocalKB(
+        name="np",
+        path=str(tmp_path),
+        embedder=Float32Embedder(),
+        vector_store=ChromaVectorStore(collection=f"np-{uuid.uuid4().hex[:8]}", dimension=DIM),
+        persist=False,
+    )
+    kb.add("Items can be sent back within 30 days for a refund.")
+    kb.add("Support hours are Monday to Friday.")
+    assert kb.search("refund window", top_k=1)

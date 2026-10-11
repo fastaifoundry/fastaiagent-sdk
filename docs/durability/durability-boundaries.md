@@ -2,7 +2,7 @@
 
 *Six places a paused or crashed run goes wrong between one process and the next, how FastAIAgent holds each one, and a proof you can run for every claim.*
 
-*Requires FastAIAgent 1.87.0+ · [Download this page as a PDF](img/boundaries/durability-at-the-boundaries.pdf)*
+*Requires FastAIAgent 1.88.0+ · [Download this page as a PDF](img/boundaries/durability-at-the-boundaries.pdf)*
 
 FastAIAgent already lets you *see* a run's progress: every turn and every tool call is a checkpoint row, and the Local UI's [checkpoint inspector](../ui/checkpoint-inspector.md) shows them as a timeline with a state diff between any two (see [Durability](index.md)).
 
@@ -17,7 +17,7 @@ Seeing the rows is not the same as trusting a resume. Durability is a promise: a
 
 Those six boundaries are where durability goes wrong.
 
-This page explains how FastAIAgent's durability works, one boundary at a time. Each section has a diagram, the rule the SDK follows, a proof, and the code: the SDK source that implements the rule and the script that proves it. The proofs are in [`examples/durability/proofs/`](https://github.com/fastaifoundry/fastaiagent-sdk/tree/main/examples/durability/proofs) and run against the published SDK: a real agent on the SDK's own offline model, real SQLite and Postgres, and real child processes that are killed where it matters. They run in CI, so what this page quotes can't drift from what the SDK does. Every output below came out of one of those runs, and so did the defect one of them turned up.
+This page explains how FastAIAgent's durability works, one boundary at a time. Each section has a diagram, the rule the SDK follows, a proof, and the code: the SDK source that implements the rule and the script that proves it. The proofs are in [`examples/durability/proofs/`](https://github.com/fastaifoundry/fastaiagent-sdk/tree/main/examples/durability/proofs) and run against the published SDK: a real agent on the SDK's own offline model, real SQLite and Postgres, and real child processes that are killed where it matters. They run in CI, so what this page quotes can't drift from what the SDK does. Every output below came out of one of those runs. One of them turned up a defect in 1.87.0, fixed in 1.88.0; section 3 says what changed.
 
 ---
 
@@ -137,7 +137,7 @@ Two processes, one SQLite file. Five threads, one claim, one charge.
 
 A crash is a pause nobody asked for. The newest row says which step was in flight, and the rule is the same as for a pause: re-enter there, repeat nothing that was committed.
 
-![Between a crash and a rerun: a process killed inside a tool leaves the pre-tool row as the newest, and resume re-invokes the tool with the saved arguments without calling the model; a process killed waiting on the model leaves the turn row, and resume re-issues the model without re-running the tool; when two tools were asked for in one turn and the first paused, the sibling is not re-dispatched on resume and the model is told it did not run; a tool re-invoked after a crash that then pauses raises InterruptSignal out of resume in 1.87.0](img/boundaries/d4-crash.svg)
+![Between a crash and a rerun: a process killed inside a tool leaves the pre-tool row as the newest, and resume re-invokes the tool with the saved arguments without calling the model; a process killed waiting on the model leaves the turn row, and resume re-issues the model without re-running the tool; when two tools were asked for in one turn and the first paused, the sibling is not re-dispatched on resume and the model is told it did not run; a tool re-invoked after a crash that then pauses records the pause, and approving it finishes the run](img/boundaries/d4-crash.svg)
 *Killed inside the tool: the tool runs again from its saved arguments, the model is not called. Killed waiting on the model: the model is re-issued, the tool is not. A sibling tool call the pause left behind is not re-dispatched.*
 
 The rules:
@@ -145,6 +145,7 @@ The rules:
 - **A tool-boundary crash re-invokes the tool** with the saved arguments. The model is not re-called: the assistant's tool calls are already in the saved history.
 - **A turn-boundary crash re-issues the model** at that turn, with the saved history. The tool that ran before it is not run again.
 - **Sibling tool calls are not re-dispatched.** When a model asked for two tools in one turn and the first paused, resume answers the one it suspended on and tells the model the other did not run. Firing it on resume would run a side effect the model never saw a result for.
+- **A re-invoked tool may pause.** If the process died before the tool reached its `interrupt()`, crash recovery re-runs it and it pauses now. The pause is recorded exactly as the loop would record it, and the run resumes from it with a `Resume`.
 - **The re-entered step runs from the top.** That is why side effects need `@idempotent`, the next section.
 
 Proof 3 kills a real child process with `os._exit` inside the tool, then while waiting on the model, and resumes each run in the parent:
@@ -166,17 +167,22 @@ resume → status=completed model calls=1 charges=[] (the tool was not re-run)
 ── two tools in one turn; the first pauses
 status: paused · notify ran during the first pass: []
 resume → status: completed · notify ran on resume: []
-tool results the model was shown at the next turn: ['{"approved": true, "charge": 1}', '[no result: the agent was interrupted before this tool ran; it w…']
+tool results the model was shown at the next turn: ['{"approved": true, "charge": 1}', '[no result: the agent was interrupted before this tool ran; it was not run on resume]']
 
-── the edge: a tool re-invoked after a crash pauses
-resume → InterruptSignal escaped resume(): manager_approval — not a paused result; nothing checkpointed (1.87.0)
+── a tool re-invoked after a crash can pause
+child exit code: 2
+crash resume → status: paused · node: turn:0/tool:refund · pending: ['crash-then-pause']
+approve      → status: completed · charges: [{'order': '1042', 'amount': 50000}]
 ```
 
 The first resume made one model call, for the turn after the tool; the charge happened once. The second made one model call and no charge. The sibling `notify` never ran, and the model was told so in the tool result.
 
-The last case is a real edge in 1.87.0: when crash recovery re-invokes a tool and that tool calls `interrupt()`, the signal escapes `resume()` instead of becoming a paused result, and nothing is checkpointed. The tool loop converts that signal; the resume path's direct re-invocation does not yet. It is listed as open.
+The last case is a large refund killed before its tool reached `interrupt()`. Crash recovery re-ran the tool, the tool paused, and the pause was recorded with its pending row; approving it finished the run with one charge.
 
-**Code:** the three resume shapes are `Agent.aresume` in [`agent/agent.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/agent/agent.py); the sibling note is `balance_tool_messages` in [`llm/message.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/llm/message.py). The proof is [`proof_3_crash.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/durability/proofs/proof_3_crash.py); see [Resume shapes](../agents/durability.md#resume-shapes) and [Sibling tool calls](../chains/hitl.md#sibling-tool-calls-in-the-same-turn).
+!!! note "Changed in 1.88.0"
+    Until 1.88.0 that last case raised `InterruptSignal` out of `resume()`: the tool loop converted the signal into a recorded pause, but the resume path's direct re-invocation did not, so nothing was checkpointed and every later resume re-ran the tool and raised again.
+
+**Code:** the three resume shapes are `Agent.aresume` in [`agent/agent.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/agent/agent.py); the sibling note is `balance_tool_messages` in [`llm/message.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/llm/message.py). The proof is [`proof_3_crash.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/durability/proofs/proof_3_crash.py); [`tests/test_resume_crash_then_pause.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/tests/test_resume_crash_then_pause.py) pins the crash-then-pause case with a real killed process; see [Resume shapes](../agents/durability.md#resume-shapes) and [Sibling tool calls](../chains/hitl.md#sibling-tool-calls-in-the-same-turn).
 
 ---
 
@@ -321,7 +327,6 @@ The proof scripts behind this page run each of those checks.
 
 ## What durability still won't do for you
 
-- **A re-invoked tool that pauses during crash recovery raises** `InterruptSignal` out of `resume()` in 1.87.0 instead of pausing. Open.
 - **Writes are synchronous.** `aresume()` is async for symmetry; the store calls block.
 - **Resume needs the same tools.** A fresh agent must register the tools the paused run used, by name.
 - **A tool's error is not a failed run.** Only an exception that escapes the run writes a `failed` marker.

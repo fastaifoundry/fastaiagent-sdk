@@ -77,10 +77,11 @@ snapshot = [c for c in cp.list("siblings") if c.node_id == "turn:1" and c.step_t
 tool_msgs = [m for m in snapshot[-1].state_snapshot["messages"] if m.get("role") == "tool"] if snapshot else []
 print("tool results the model was shown at the next turn:", [str(m.get("content"))[:64] for m in tool_msgs])
 
-heading("the edge: a tool re-invoked after a crash pauses")
-print("child exit code:", crash_child("crash-then-pause", "tool", two_tools=False) if False else crash_child_amount("crash-then-pause"))
-try:
-    r = A.agent(cp).resume("crash-then-pause")
-    print("resume → status:", r.status)
-except Exception as e:
-    print(f"resume → {type(e).__name__} escaped resume(): {e} — not a paused result; nothing checkpointed (1.87.0)")
+heading("a tool re-invoked after a crash can pause")
+print("child exit code:", crash_child_amount("crash-then-pause"))
+A.charges.clear()
+r = A.agent(cp).resume("crash-then-pause")
+print("crash resume → status:", r.status, "· node:", r.pending_interrupt["node_id"],
+      "· pending:", [p.execution_id for p in cp.list_pending_interrupts() if p.execution_id == "crash-then-pause"])
+r = A.agent(cp).resume("crash-then-pause", resume_value=Resume(approved=True))
+print("approve      → status:", r.status, "· charges:", A.charges)

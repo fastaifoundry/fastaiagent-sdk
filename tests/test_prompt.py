@@ -282,3 +282,41 @@ class TestPromptRegistry:
                 )
             }
         assert {"prompts", "prompt_versions", "spans", "checkpoints"}.issubset(tables)
+
+
+class TestVersionsAreFrozen:
+    """An explicit ``version=`` never rewrites an existing row (1.88.0).
+
+    It used to: storage wrote with ``INSERT OR REPLACE``, so ``register(name, text,
+    version=1)`` on an existing v1 silently replaced it, an alias pinned to v1
+    served the new text, and ``list()`` then reported 1 as the latest version
+    while ``load()`` returned the real latest.
+    """
+
+    def test_a_conflicting_explicit_version_is_refused(self, temp_dir):
+        reg = PromptRegistry(path=str(temp_dir))
+        reg.register("greet", "Hello {{name}}!", version=1)
+        reg.set_alias("greet", version=1, alias="production")
+        with pytest.raises(ValueError, match="already has a version 1"):
+            reg.register("greet", "REPLACED {{name}}", version=1)
+        assert reg.load("greet", version=1).template == "Hello {{name}}!"
+        assert reg.load("greet", alias="production").template == "Hello {{name}}!"
+
+    def test_re_registering_the_same_text_is_a_no_op(self, temp_dir):
+        reg = PromptRegistry(path=str(temp_dir))
+        first = reg.register("greet", "Hello {{name}}!", version=1, metadata={"a": 1})
+        again = reg.register("greet", "Hello {{name}}!", version=1, metadata={"a": 1})
+        assert again.version == first.version == 1
+        assert reg.list() == [{"name": "greet", "latest_version": 1, "versions": 1}]
+
+    def test_latest_version_is_the_highest_not_the_last_written(self, temp_dir):
+        reg = PromptRegistry(path=str(temp_dir))
+        reg.register("greet", "five", version=5)
+        reg.register("greet", "two", version=2)
+        assert reg.list() == [{"name": "greet", "latest_version": 5, "versions": 2}]
+        assert reg.load("greet").version == 5
+        assert reg.register("greet", "six").version == 6
+
+    def test_auto_numbering_is_unchanged(self, temp_dir):
+        reg = PromptRegistry(path=str(temp_dir))
+        assert [reg.register("p", f"v{i}").version for i in range(3)] == [1, 2, 3]

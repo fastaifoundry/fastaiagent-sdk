@@ -10,7 +10,7 @@ from fastaiagent.agent import Agent
 from fastaiagent.agent.middleware import AgentMiddleware, MiddlewareContext
 from fastaiagent.llm.client import LLMResponse
 from fastaiagent.llm.message import Message, ToolCall
-from fastaiagent.llm.stream import TextDelta, ToolCallStart
+from fastaiagent.llm.stream import StreamDone, TextDelta, ToolCallStart
 from fastaiagent.tool.base import Tool
 from fastaiagent.tool.function import FunctionTool
 from tests.conftest import MockLLMClient
@@ -263,5 +263,7 @@ async def test_stop_agent_before_model_stops_streaming():
     async for event in agent.astream("hello", trace=False):
         events.append(event)
 
-    # No events should be yielded — the generator returns immediately
-    assert events == []
+    # No model events are yielded — the loop stops before the model is called.
+    # The run still *ends*, so since 1.88.0 the stream closes with its single
+    # end-of-stream marker: StopAgent is a deliberate stop, not a block or a pause.
+    assert events == [StreamDone()]

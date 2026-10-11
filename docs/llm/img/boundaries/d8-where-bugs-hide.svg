@@ -13,9 +13,9 @@
   <rect x="48" y="272" width="258.0" height="44" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
   <text x="62" y="300" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">a tool turn, content None</text>
   <line x1="306.0" y1="294" x2="330" y2="300" stroke="#eb6834" stroke-width="1.5" stroke-dasharray="6 5"/>
-  <rect x="48" y="422" width="276.4" height="44" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
-  <text x="62" y="450" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">a stream with no StreamDone</text>
-  <line x1="324.4" y1="444" x2="330" y2="380" stroke="#eb6834" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <rect x="48" y="422" width="285.59999999999997" height="44" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="62" y="450" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">a stream that ends in Paused</text>
+  <line x1="333.59999999999997" y1="444" x2="330" y2="380" stroke="#eb6834" stroke-width="1.5" stroke-dasharray="6 5"/>
   <rect x="912.4" y="122" width="239.6" height="44" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
   <text x="926.4" y="150" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">a reply that isn't JSON</text>
   <line x1="912.4" y1="144" x2="870" y2="230" stroke="#eb6834" stroke-width="1.5" stroke-dasharray="6 5"/>

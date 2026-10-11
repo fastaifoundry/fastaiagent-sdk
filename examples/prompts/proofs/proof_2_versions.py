@@ -3,8 +3,8 @@
 Offline: a registry on a scratch local.db, no model.
 
 Every register() without a version adds a row; an alias is a pointer you move by
-hand; diff() compares two rows. Then the edge: register() with an explicit
-version= that already exists replaces that row in place.
+hand; diff() compares two rows. An explicit version= that already exists is never
+rewritten: the same text is a no-op, different text is refused.
 """
 
 import _common
@@ -29,8 +29,15 @@ heading("diff(1, 2)")
 print(reg.diff("greeting", 1, 2))
 
 heading("register(version=1) on an existing v1")
-reg.register("greeting", "REPLACED {{name}}", version=1)
-print("v1 now reads           :", repr(reg.load("greeting", version=1).template))
+print("same text  → v", reg.register("greeting", "Hello {{name}}!", version=1).version, "(a no-op)")
+try:
+    reg.register("greeting", "REPLACED {{name}}", version=1)
+except ValueError as e:
+    print("other text → ValueError:", e)
+print("v1 still reads         :", repr(reg.load("greeting", version=1).template))
 print("production (→ v1) reads:", repr(reg.load("greeting", alias="production").template))
-print("load() latest          : v", reg.load("greeting").version)
-print("list()                 :", reg.list())
+
+heading("seeding an older number keeps the latest right")
+reg.register("greeting", "Hey there {{name}}", version=5)
+reg.register("greeting", "Hey {{name}}!", version=4)
+print("list()                 :", reg.list(), "· load() → v", reg.load("greeting").version)

@@ -1,7 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" width="1200" height="600" role="img" aria-label="Frozen rows, movable pointers: register() without a version adds a row (v1, v2, v3); the production alias is a pointer you move with set_alias; diff() compares two rows. register() with an explicit version that already exists replaces that row in place.">
-  <title>Frozen rows, movable pointers: register() without a version adds a row (v1, v2, v3); the production alias is a pointer you move with set_alias; diff() compares two rows. register() with an explicit version that already exists replaces that row in place.</title>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" width="1200" height="600" role="img" aria-label="Frozen rows, movable pointers: register() without a version adds a row (v1, v2, v3); the production alias is a pointer you move with set_alias; diff() compares two rows. register() with an explicit version that already exists is a no-op for the same text and refused for different text, so no row is ever rewritten.">
+  <title>Frozen rows, movable pointers: register() without a version adds a row (v1, v2, v3); the production alias is a pointer you move with set_alias; diff() compares two rows. register() with an explicit version that already exists is a no-op for the same text and refused for different text, so no row is ever rewritten.</title>
   <rect x="0" y="0" width="1200" height="600" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
-  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Frozen rows, movable pointers — until you pass version= yourself</text>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Frozen rows, movable pointers — even when you name the number</text>
   <rect x="48" y="140" width="250" height="90" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
   <text x="68" y="176" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">v1</text>
   <text x="68" y="196" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">"Hello {{name}}!"</text>
@@ -31,14 +31,12 @@
   <text x="860" y="255" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">+ Hi there, {{name}}! Welcome.</text>
   <text x="840" y="330" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">two whole templates, one line each —</text>
   <text x="840" y="352" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">not a line-by-line diff</text>
-  <circle cx="60" cy="430" r="14" fill="#fcfcfb"/>
-  <line x1="53" y1="423" x2="67" y2="437" stroke="#eb6834" stroke-width="3"/>
-  <line x1="53" y1="437" x2="67" y2="423" stroke="#eb6834" stroke-width="3"/>
-  <text x="78" y="436" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">register(name, text, version=1) replaces row v1 in place — production now reads the new text</text>
+  <polyline points="50,430 57,438 71,421" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="78" y="436" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#1baf7a" text-anchor="start">register(name, same text, version=1) on an existing v1 → a no-op: seed scripts can re-run</text>
   <circle cx="60" cy="470" r="14" fill="#fcfcfb"/>
   <line x1="53" y1="463" x2="67" y2="477" stroke="#eb6834" stroke-width="3"/>
   <line x1="53" y1="477" x2="67" y2="463" stroke="#eb6834" stroke-width="3"/>
-  <text x="78" y="476" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">and list() then reports latest_version 1 while load() still returns v3 (1.87.0)</text>
+  <text x="78" y="476" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">register(name, other text, version=1) → ValueError: production keeps the text it was pinned to</text>
   <polyline points="50,520 57,528 71,511" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-  <text x="78" y="526" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#1baf7a" text-anchor="start">register() without version= always adds a row. Keep it that way.</text>
+  <text x="78" y="526" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#1baf7a" text-anchor="start">latest_version is the highest row, so list() and load() always agree (both fixed in 1.88.0)</text>
 </svg>
