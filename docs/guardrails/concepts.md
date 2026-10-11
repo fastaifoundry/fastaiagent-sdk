@@ -292,6 +292,7 @@ without the runtime](../integrations/primitives-without-the-runtime.md).
 
 ## Next steps
 
+- [A Guardrail Breaks at the Boundaries](guardrail-boundaries.md) — the six places a control goes wrong, each with a diagram and a proof you can run
 - [Guardrails](index.md) — the full reference: all ten types, built-in factories, custom guardrails, serialization
 - [Actions, severity & floor](actions.md) — what a failure costs, plus the three model-backed and two detector-backed check types
 - [Guardrails & evals without the runtime](../integrations/primitives-without-the-runtime.md) — borrowing `run_guardrail` from a foreign framework

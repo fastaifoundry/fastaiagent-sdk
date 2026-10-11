@@ -239,6 +239,13 @@ jobs:
         # Wire shapes recorded from a local endpoint; nothing leaves the runner.
         working-directory: examples/llm
         run: pytest tests/ -v --tb=short
+      - name: Boundary-page proofs — guardrails (no LLM)
+        working-directory: examples/guardrails
+        run: pytest tests/ -v --tb=short
+      - name: Boundary-page proofs — durability (no LLM)
+        # Real child processes killed mid-tool and mid-model; SQLite only here.
+        working-directory: examples/durability
+        run: pytest tests/ -v --tb=short
       - name: Tracing mental-model proofs (no LLM)
         # The scripts docs/tracing/trace-boundaries.md quotes; the test checks the
         # exact lines the page relies on.

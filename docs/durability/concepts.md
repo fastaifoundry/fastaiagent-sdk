@@ -269,6 +269,7 @@ scope to one agent's subtree by matching the `agent_path` prefix.
 
 ## Next steps
 
+- [A Durable Run Breaks at the Boundaries](durability-boundaries.md) — the six places a resume goes wrong, each with a diagram and a proof you can run
 - [Durability reference](index.md) · [Quickstart](quickstart.md)
 - [Side effects & idempotency](side-effects.md) — patterns for `@idempotent`
 - [Multi-agent](multi-agent.md) — `agent_path` across Swarm/Supervisor
