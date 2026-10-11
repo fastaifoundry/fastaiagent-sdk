@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 680" width="1200" height="680" role="img" aria-label="Between a crash and a rerun: a process killed inside a tool leaves the pre-tool row as the newest, and resume re-invokes the tool with the saved arguments without calling the model; a process killed waiting on the model leaves the turn row, and resume re-issues the model without re-running the tool; when two tools were asked for in one turn and the first paused, the sibling is not re-dispatched on resume and the model is told it did not run; a tool re-invoked after a crash that then pauses raises InterruptSignal out of resume in 1.87.0.">
+  <title>Between a crash and a rerun: a process killed inside a tool leaves the pre-tool row as the newest, and resume re-invokes the tool with the saved arguments without calling the model; a process killed waiting on the model leaves the turn row, and resume re-issues the model without re-running the tool; when two tools were asked for in one turn and the first paused, the sibling is not re-dispatched on resume and the model is told it did not run; a tool re-invoked after a crash that then pauses raises InterruptSignal out of resume in 1.87.0.</title>
+  <rect x="0" y="0" width="1200" height="680" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Between a crash and a rerun — resume re-enters at the newest row</text>
+  <rect x="48" y="120" width="540" height="120" rx="12" fill="#fdefe8" stroke="#eb6834" stroke-width="2"/>
+  <text x="68" y="156" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">killed inside the tool (exit 2)</text>
+  <text x="68" y="178" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">newest row: turn:0/tool:refund · tool_call</text>
+  <text x="68" y="197" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">resume → the tool runs with its saved args</text>
+  <text x="68" y="216" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">model calls on resume: 1 (the next turn), charges: 1</text>
+  <rect x="612" y="120" width="540" height="120" rx="12" fill="#fdefe8" stroke="#eb6834" stroke-width="2"/>
+  <text x="632" y="156" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">killed waiting on the model (exit 3)</text>
+  <text x="632" y="178" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">newest row: turn:1 · llm_call</text>
+  <text x="632" y="197" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">resume → the model is re-issued at turn 1</text>
+  <text x="632" y="216" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">model calls on resume: 1, charges: 0 — the tool is not re-run</text>
+  <rect x="48" y="270" width="1104" height="108.0" rx="10" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="62" y="302" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="start">two tools in one turn; the first pauses</text>
+  <text x="62" y="321.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">turn 0: refund(1042, 50000) → pauses      notify(1042) → never dispatched</text>
+  <text x="62" y="341.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">resume: refund runs with the Resume; notify is NOT re-dispatched — resume re-enters at a row, never mid-turn</text>
+  <text x="62" y="361.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">the model is shown: 'the agent stopped before this tool ran, so it was not run' and may ask again</text>
+  <polyline points="50,420 57,428 71,411" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="78" y="426" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1baf7a" text-anchor="start">a row is written before the step, so every crash has a re-entry point; nothing committed is repeated</text>
+  <circle cx="60" cy="460" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="453" x2="67" y2="467" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="467" x2="67" y2="453" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="466" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#eb6834" text-anchor="start">the re-entered step runs from the top: wrap its side effects in @idempotent (next section)</text>
+  <circle cx="60" cy="500" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="493" x2="67" y2="507" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="507" x2="67" y2="493" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="506" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#eb6834" text-anchor="start">1.87.0: a tool re-invoked by crash recovery that then calls interrupt() raises InterruptSignal</text>
+  <text x="78" y="528" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#eb6834" text-anchor="start">out of resume() — no paused result, nothing checkpointed. Found by proof 3; open.</text>
+  <text x="48" y="600" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">Proof 3 kills a real child process with os._exit at each point and resumes in the parent.</text>
+</svg>

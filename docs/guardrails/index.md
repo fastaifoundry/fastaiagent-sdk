@@ -738,6 +738,7 @@ except GuardrailBlockedError as e:
 
 ## Next Steps
 
+- [A Guardrail Breaks at the Boundaries](guardrail-boundaries.md) — positions, actions, `on_error`, the trace, plane rules and round-trips, each with a proof
 - [Agents](../agents/index.md) — Attach guardrails to agents
 - [Tools](../tools/index.md) — Guard tool calls and results
 - [Platform Sync](../platform/index.md) — Push guardrails to the platform

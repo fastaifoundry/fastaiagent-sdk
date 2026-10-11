@@ -117,6 +117,7 @@ nav:
           - "Idempotency": chains/idempotency.md
       - Guardrails:
           - "Concepts & Mental Model": guardrails/concepts.md
+          - "Guardrails at their boundaries": guardrails/guardrail-boundaries.md
           - guardrails/index.md
           - "Actions, severity & floor": guardrails/actions.md
           - "Responsible AI (Trust Layer)": guardrails/responsible-ai.md
@@ -171,6 +172,7 @@ nav:
           - "Fidelity Guarantees": replay/guarantees.md
       - Durability:
           - "Concepts & Mental Model": durability/concepts.md
+          - "Durability at its boundaries": durability/durability-boundaries.md
           - durability/index.md
           - Quickstart: durability/quickstart.md
           - "Side effects & idempotency": durability/side-effects.md

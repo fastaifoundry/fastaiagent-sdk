@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 640" width="1200" height="640" role="img" aria-label="Between a resume and a side effect: a resumed tool runs again from the top, so a charge placed before the pause fires twice; @idempotent caches the result under the run's execution_id and key so the second pass returns the cached value; a new run is a new cache; outside a run there is no cache; a value that cannot be stored as JSON is refused.">
+  <title>Between a resume and a side effect: a resumed tool runs again from the top, so a charge placed before the pause fires twice; @idempotent caches the result under the run's execution_id and key so the second pass returns the cached value; a new run is a new cache; outside a run there is no cache; a value that cannot be stored as JSON is refused.</title>
+  <rect x="0" y="0" width="1200" height="640" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Between a resume and a side effect — the re-executed step</text>
+  <rect x="48" y="120" width="540" height="135.0" rx="10" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="62" y="152" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="700" fill="#0b0b0b" text-anchor="start">the tool, as written</text>
+  <text x="62" y="173.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">def refund(order, amount):</text>
+  <text x="62" y="194.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">    receipt = charge_card(order)      # side effect</text>
+  <text x="62" y="215.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">    decision = interrupt(...)        # pause here</text>
+  <text x="62" y="236.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">    return {approved, **receipt}</text>
+  <polyline points="588,200 640,200" fill="none" stroke="#eb6834" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="640,200 626.0,193.0 626.0,207.0" fill="#eb6834"/>
+  <rect x="640" y="120" width="512" height="150" rx="12" fill="#fdefe8" stroke="#eb6834" stroke-width="2"/>
+  <text x="660" y="156" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">paused, then resumed</text>
+  <text x="660" y="178" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">first pass:  charge_card → interrupt raises</text>
+  <text x="660" y="197" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">resume:      charge_card → interrupt returns</text>
+  <text x="660" y="216" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">plain function: fired 2× · @idempotent: fired 1×</text>
+  <path d="M48,326 L48,404 A150.0,16 0 0 0 348,404 L348,326" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <ellipse cx="198.0" cy="326" rx="150.0" ry="16" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <text x="198" y="356" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#0b0b0b" text-anchor="middle">idempotency_cache</text>
+  <text x="198" y="380" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="middle">(execution_id, key) → JSON result</text>
+  <text x="380" y="330" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">key = sha256(qualname + args + kwargs), or key_fn=</text>
+  <text x="380" y="349" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">a hit returns the stored JSON, the body never runs</text>
+  <text x="380" y="368" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">a new execution_id is a miss: fired 1× again</text>
+  <text x="380" y="387" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">outside any run: no cache, fired every time</text>
+  <circle cx="60" cy="470" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="463" x2="67" y2="477" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="477" x2="67" y2="463" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="476" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#eb6834" text-anchor="start">a return that is not JSON-serializable raises IdempotencyError inside the tool — refused, not silently uncached</text>
+  <polyline points="50,512 57,520 71,503" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="78" y="518" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1baf7a" text-anchor="start">the cached value comes back as plain data (dicts, lists); return plain data from idempotent functions</text>
+  <text x="48" y="590" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">Proof 4: the same tool paused and resumed, plain and wrapped: ['1042', '1042'] versus ['1042'].</text>
+</svg>
