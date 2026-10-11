@@ -43,6 +43,7 @@ from fastaiagent.chain.checkpoint import (
 from fastaiagent.chain.idempotent import _current_checkpointer
 from fastaiagent.chain.interrupt import (
     AlreadyResumed,
+    InterruptSignal,
     Resume,
     _agent_path,
     _execution_id,
@@ -60,7 +61,7 @@ from fastaiagent.guardrail.guardrail import (
 )
 from fastaiagent.llm.client import LLMClient
 from fastaiagent.llm.message import Message, SystemMessage, UserMessage
-from fastaiagent.llm.stream import Paused, StreamEvent, TextDelta, Usage
+from fastaiagent.llm.stream import Paused, StreamDone, StreamEvent, TextDelta, Usage
 from fastaiagent.llm.structured import OutputSpec
 from fastaiagent.multimodal.image import Image as MultimodalImage
 from fastaiagent.multimodal.pdf import PDF as MultimodalPDF  # noqa: N811
@@ -1347,6 +1348,13 @@ class Agent:
             if outcome is not None:
                 outcome["tokens_used"] = streamed_tokens
                 outcome["output"] = output
+            # The end-of-stream marker, once, after output guardrails and the
+            # memory write — so a consumer that sees it knows the run is done and
+            # was not blocked. The tool loop drops the per-turn ``StreamDone``s so
+            # a multi-turn run reads as one stream; until 1.88.0 nothing emitted
+            # the final one, and a consumer waiting for it waited forever. A
+            # paused run ends with ``Paused`` instead (returned above).
+            yield StreamDone()
         finally:
             _current_checkpointer.reset(cp_token)
             _agent_path.reset(ap_token)
@@ -1584,6 +1592,39 @@ class Agent:
                 # _record_agent_interrupt already wrote the new pending
                 # row. Bubble paused state up.
                 raise
+            except InterruptSignal as sig:
+                # The re-invoked tool paused. That is the normal case after a
+                # crash: the process died inside a tool that had not reached its
+                # ``interrupt()`` yet, so crash recovery re-runs it and it pauses
+                # now. The tool loop turns this signal into a recorded pause;
+                # until 1.88.0 this direct re-invocation did not, so the signal
+                # escaped ``resume()`` with nothing checkpointed and every later
+                # resume re-ran the tool and raised again. Record it exactly as
+                # the loop would — same node, same snapshot — and return a pause.
+                from fastaiagent.agent.executor import _record_agent_interrupt
+
+                susp = _record_agent_interrupt(
+                    checkpointer=store,
+                    execution_id=execution_id,
+                    agent_name=self.name,
+                    iteration=start_iteration,
+                    tool_name=tool_name,
+                    tool_call_id=tool_call_id,
+                    tool_args=tool_args,
+                    messages=messages,
+                    sig=sig,
+                )
+                return AgentResult(
+                    output="",
+                    execution_id=execution_id,
+                    status="paused",
+                    pending_interrupt={
+                        "reason": susp.reason,
+                        "context": susp.context,
+                        "node_id": susp.node_id,
+                        "agent_path": susp.agent_path,
+                    },
+                )
             if tool_result.success:
                 from fastaiagent.llm.message import ToolMessage
 

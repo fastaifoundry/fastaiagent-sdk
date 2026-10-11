@@ -2,7 +2,7 @@
 
 *Six places a model call goes wrong between your messages and the provider, how FastAIAgent holds each one, and a proof you can run for every claim.*
 
-*Requires FastAIAgent 1.87.0+ · [Download this page as a PDF](img/boundaries/llm-at-the-boundaries.pdf)*
+*Requires FastAIAgent 1.88.0+ · [Download this page as a PDF](img/boundaries/llm-at-the-boundaries.pdf)*
 
 FastAIAgent already lets you *see* every model call: each one is an `llm.<provider>.<model>` span with the request, the reply, the tokens and the cost (see [Tracing](../tracing/concepts.md)).
 
@@ -174,15 +174,15 @@ The client was asked for a `City` and for parallel tool calls. The gateway's fla
 
 A stream is not a different call; it is the same call delivered in pieces. The boundary is whether the pieces add up to what the whole would have been, and whether the trace knows the call happened at all.
 
-![One call, two shapes: astream yields TextDelta events, then Usage, then StreamDone, and ToolCallStart and ToolCallEnd with the arguments as a dict; stream folds those back into the LLMResponse complete returns; both leave the same llm span with usage; inside an agent the tool loop yields no StreamDone at all and Paused is the last event of a paused run](img/boundaries/d5-stream.svg)
-*`astream()` yields typed events; `stream()` folds them back into the response `complete()` returns; both leave the same span. An agent's stream has no `StreamDone` at all.*
+![One call, two shapes: astream yields TextDelta events, then Usage, then StreamDone, and ToolCallStart and ToolCallEnd with the arguments as a dict; stream folds those back into the LLMResponse complete returns; both leave the same llm span with usage; inside an agent the tool loop drops the per-turn StreamDone and the run ends with exactly one, after output guardrails and memory, while a paused run ends with Paused](img/boundaries/d5-stream.svg)
+*`astream()` yields typed events; `stream()` folds them back into the response `complete()` returns; both leave the same span. An agent's stream ends with one `StreamDone`, or with `Paused`.*
 
 The rules:
 
 - **`astream()` yields typed events**: `TextDelta` per piece of text, `ToolCallStart` and `ToolCallEnd` with the arguments as a dict, one `Usage`, and `StreamDone` last.
 - **`stream()` folds the events back** into an `LLMResponse` with the same `content`, `finish_reason` and normalized usage keys `complete()` gives.
 - **A streamed call leaves the same `llm.*` span**, with `gen_ai.usage.*` on it. Before 1.68.0 it left none, so a streamed run's token total was zero on the plane.
-- **Inside an agent, a tool loop looks like one stream.** `Agent.astream()` suppresses `StreamDone` between turns, and in 1.87.0 it yields none at the end either: the generator ends. A run that pauses for an approval ends with a `Paused` event instead.
+- **Inside an agent, a tool loop looks like one stream.** `Agent.astream()` drops each turn's `StreamDone` and yields exactly one at the end, after the output guardrails and the memory write, so a consumer that sees it knows the run finished and was not blocked. A run that pauses for an approval ends with a `Paused` event instead. A Swarm's stream also ends with one, however many hand-offs it took.
 - **`bedrock` has no streaming.**
 
 Proof 4 streams the same prompt it completes, on `gpt-4.1-mini`, and then streams a two-turn tool loop through an agent on the SDK's `FunctionModel`:
@@ -203,13 +203,16 @@ with a tool   : [('ToolCallStart', 'get_weather', None), ('ToolCallEnd', 'get_we
 {'gen_ai.request.model': 'gpt-4.1-mini', 'gen_ai.usage.input_tokens': 22, 'gen_ai.usage.output_tokens': 13}
 
 ── inside an agent, a tool loop is one stream (offline, FunctionModel)
-model turns: 2 · events in order: ['ToolCallStart', 'ToolCallEnd', 'Usage', 'TextDelta', 'Usage']
-StreamDone events inside the agent stream: 0
+model turns: 2 · events in order: ['ToolCallStart', 'ToolCallEnd', 'Usage', 'TextDelta', 'Usage', 'StreamDone']
+StreamDone events in the agent stream: 1 · last event: StreamDone
 ```
 
-Thirteen deltas joined to the same five numbers `complete()` returned, with the same usage. The streamed span carries the same tokens; it does not carry `finish_reason`. And the agent's stream, two model turns long, ended with its last `Usage` and no `StreamDone`: if your consumer waits for one, it waits forever.
+Thirteen deltas joined to the same five numbers `complete()` returned, with the same usage. The streamed span carries the same tokens; it does not carry `finish_reason`. And the agent's stream, two model turns long, carried no marker between the turns and exactly one at the end.
 
-**Code:** `astream`, `stream` and `_stream_openai` in [`llm/client.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/llm/client.py); the event types are [`llm/stream.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/llm/stream.py); the agent loop is `stream_tool_loop` in [`agent/executor.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/agent/executor.py). The proof is [`proof_4_stream.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/llm/proofs/proof_4_stream.py) (needs `OPENAI_API_KEY`); [`tests/test_streaming_llm_span.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/tests/test_streaming_llm_span.py) pins the span and [`tests/test_stream_memory_parity.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/tests/test_stream_memory_parity.py) the memory parity; see [Streaming](../streaming/index.md) and [`examples/12_streaming.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/12_streaming.py).
+!!! note "Changed in 1.88.0"
+    Until 1.88.0 the agent stream ended with its last `Usage` and no `StreamDone` at all: the tool loop dropped the per-turn markers and nothing emitted the final one, so a consumer that waited for it waited forever.
+
+**Code:** `astream`, `stream` and `_stream_openai` in [`llm/client.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/llm/client.py); the event types are [`llm/stream.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/llm/stream.py); the agent loop is `stream_tool_loop` in [`agent/executor.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/agent/executor.py). The proof is [`proof_4_stream.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/llm/proofs/proof_4_stream.py) (needs `OPENAI_API_KEY`); [`tests/test_streaming_llm_span.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/tests/test_streaming_llm_span.py) pins the span and [`tests/test_stream_memory_parity.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/tests/test_stream_memory_parity.py) the memory parity, [`tests/test_agent_stream_done.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/tests/test_agent_stream_done.py) the end marker; see [Streaming](../streaming/index.md) and [`examples/12_streaming.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/12_streaming.py).
 
 ---
 
@@ -295,7 +298,7 @@ The endpoint answered `429`, then `503`, then `200`; with two retries the call s
 
 ## Where model-call bugs hide
 
-![Where model-call bugs hide: a typical test makes one happy call to one provider, reads the content and trusts the dashboard; the bugs sit on the boundaries around that — a parameter one provider rejects, a tool turn with no content, a stream that never ends with StreamDone, a reply that is not JSON, a model the price table does not know, a 429 with retries off](img/boundaries/d8-where-bugs-hide.svg)
+![Where model-call bugs hide: a typical test makes one happy call to one provider, reads the content and trusts the dashboard; the bugs sit on the boundaries around that — a parameter one provider rejects, a tool turn with no content, a stream that ends in Paused rather than StreamDone, a reply that is not JSON, a model the price table does not know, a 429 with retries off](img/boundaries/d8-where-bugs-hide.svg)
 *A typical test makes one happy call to one provider, reads the content, and trusts the dashboard. Model calls break on the lines around that box.*
 
 If you build or buy a model client, test the boundaries:
@@ -319,7 +322,7 @@ The proof scripts behind this page run each of those checks.
 - **The price table is a list price**, not your contract. Override rates with `set_rate_overrides()`; an unpriced model stays `None`.
 - **Usage extras are not normalized.** The three keys are always there; whatever else the provider sent is there too, as it came.
 - **Capability flags are claims.** The call is the check.
-- **`Agent.astream()` ends without `StreamDone`.** Consume until the generator ends, not until a marker.
+- **A paused stream ends with `Paused`, not `StreamDone`.** A consumer should handle both.
 - **`bedrock` does not stream**, and only `openai`, `custom` and an injected OpenAI client support `decide()`.
 - **A preset registered in your code is invisible to `fastaiagent ui`.**
 

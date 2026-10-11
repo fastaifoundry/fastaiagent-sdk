@@ -112,6 +112,8 @@ v1 = reg.load("greeting", version=1)
 print(v1.template)  # "Hello {{name}}!"
 ```
 
+Re-registering the same template under an existing `version=` is a no-op; different text under an existing number raises `ValueError` rather than replacing the row (1.88.0). An alias pinned to a version therefore always serves the text it was pinned to.
+
 ### Auto-Incrementing Versions
 
 If you don't specify a version, it auto-increments:

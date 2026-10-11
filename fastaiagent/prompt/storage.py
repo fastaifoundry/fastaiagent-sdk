@@ -63,7 +63,7 @@ class SQLiteStorage:
         pid = project_id if project_id is not None else safe_get_project_id()
         now = _now_iso()
         existing = self._db.fetchone(
-            "SELECT created_at FROM prompts WHERE slug = ?",
+            "SELECT created_at, latest_version FROM prompts WHERE slug = ?",
             (prompt.name,),
         )
         if existing is None:
@@ -73,11 +73,17 @@ class SQLiteStorage:
                 (prompt.name, str(prompt.version), now, now, pid),
             )
         else:
+            # The highest version, not the last one written: seeding v1 after v3
+            # exists must not make ``list()`` report 1 while ``load()`` returns 3.
+            try:
+                known = int(existing["latest_version"])
+            except (TypeError, ValueError, KeyError):
+                known = prompt.version
             self._db.execute(
                 """UPDATE prompts
                    SET latest_version = ?, updated_at = ?
                    WHERE slug = ?""",
-                (str(prompt.version), now, prompt.name),
+                (str(max(known, prompt.version)), now, prompt.name),
             )
         self._db.execute(
             """INSERT OR REPLACE INTO prompt_versions

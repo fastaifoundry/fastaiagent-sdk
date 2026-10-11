@@ -124,7 +124,9 @@ The same feature exists at increasing strictness:
 those same events back into a normal `LLMResponse`. Inside an agent, the tool
 loop re-yields events to you as they arrive while accumulating text and usage,
 and deliberately **suppresses `StreamDone` between turns** so a multi-turn tool
-loop looks like one continuous stream.
+loop looks like one continuous stream, then yields exactly one at the end, after
+the output guardrails and the memory write (since 1.88.0). A paused run ends with
+`Paused` instead.
 
 ## Where the numbers come from — read this before trusting a dashboard
 

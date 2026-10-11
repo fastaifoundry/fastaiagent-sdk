@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from fastaiagent._internal.config import get_config
+from fastaiagent._internal.errors import PromptNotFoundError
 from fastaiagent.prompt.fragment import Fragment
 from fastaiagent.prompt.prompt import Prompt
 from fastaiagent.prompt.storage import SQLiteStorage
@@ -130,6 +131,26 @@ class PromptRegistry:
 
         if version is not None:
             new_version = version
+            # A version is a frozen row. Before 1.88.0 an explicit ``version=``
+            # that already existed was written with ``INSERT OR REPLACE``, so v1
+            # silently became new text and every alias pinned to it served that
+            # text. Re-registering the *same* template is a no-op (seed scripts
+            # re-run); a different template under an existing number is refused.
+            try:
+                existing_version = self._storage.load_prompt(name, version=version)
+            except PromptNotFoundError:
+                existing_version = None
+            if existing_version is not None:
+                if existing_version.template == template and existing_version.metadata == (
+                    metadata or {}
+                ):
+                    return existing_version
+                raise ValueError(
+                    f"Prompt {name!r} already has a version {version} with a different "
+                    "template. Versions are immutable: omit version= to add the next one "
+                    f"(v{self._storage.load_prompt(name).version + 1}), or delete the prompt "
+                    "first if you really mean to rewrite its history."
+                )
 
         prompt = Prompt(
             name=name,

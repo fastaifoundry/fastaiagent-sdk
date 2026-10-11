@@ -5,6 +5,75 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.88.0] - 2026-10-11 — the defects the boundary pages found
+
+Writing the seven "breaks at the boundaries" pages meant running every claim
+against the installed SDK, and six of those runs disagreed with the docs. All
+six are fixed here. Each was invisible to the existing tests, which exercised the
+path that worked. No wire change, no schema change.
+
+### Fixed
+
+- ⚠ **`chunk_overlap` overlaps.** It was accepted and stored and had no effect:
+  neighbouring chunks shared nothing (−2 characters, the seam itself) while the
+  docs promised a 50-character overlap, so a rule that straddled a seam was always
+  split in two. Every chunk after the first now starts with up to `chunk_overlap`
+  characters of the text before it, cut at a word; the seams are found at
+  `chunk_size − chunk_overlap` so no chunk exceeds `chunk_size`; `start_char` /
+  `end_char` are the chunk's exact slice of the source; the overlap is capped at
+  half of `chunk_size`; a short piece the overlap swallows whole is dropped rather
+  than indexed twice. **Re-ingest** a KB to get the overlap — an index keeps the
+  chunks it was built with. `chunk_overlap=0` behaves as before.
+- **The chunker no longer emits text twice.** When a part was longer than
+  `chunk_size`, the splitter did not clear what it had accumulated before it, so
+  that text was emitted again later, glued to the next short part: at the default
+  size, a short paragraph ahead of a long one came back stuck to an unrelated
+  closing paragraph. (Found while fixing the overlap.)
+- **Chroma accepts FastEmbed's vectors.** `LocalKB` with the default local
+  embedder and `ChromaVectorStore` failed on the first `add()`: FastEmbed returns
+  Python lists of `numpy.float32`, which Chroma 1.x refuses, while FAISS and
+  Qdrant accept them. The backend now converts to plain floats on add and on
+  query. The Chroma tests used `SimpleEmbedder`, which returns plain floats.
+- ⚠ **A prompt version is never rewritten.** `register(name, text, version=n)`
+  for an existing `n` wrote with `INSERT OR REPLACE`: v1 silently became the new
+  text, every alias pinned to it served that text, and `list()` then reported `n`
+  as the latest version while `load()` returned the real latest. Re-registering
+  the **same** template and metadata is now a no-op (seed scripts can re-run);
+  **different** text under an existing number raises `ValueError` naming the next
+  free version. `latest_version` is always the highest version. Behaviour change
+  for code that relied on the overwrite: delete the prompt first.
+- **`Agent.astream()` ends with `StreamDone`.** The tool loop drops each turn's
+  marker so a multi-turn run reads as one stream, and nothing emitted the final
+  one: a consumer waiting for it waited forever. Exactly one is now yielded at the
+  end of a completed run, after the output guardrails and the memory write. A
+  paused run still ends with `Paused`. A Swarm's stream ends with one too, however
+  many hand-offs it took. Additive: consumers see one more event.
+- **A tool re-invoked by crash recovery may pause.** When a process died inside
+  a tool before it reached `interrupt()`, `resume()` re-ran the tool, the tool
+  paused, and `InterruptSignal` escaped `resume()` with nothing checkpointed —
+  every later resume re-ran the tool and raised again. The pause is now recorded
+  exactly as the tool loop records one (same node, same snapshot, a pending row),
+  `resume()` returns `status="paused"`, and a `Resume` finishes the run.
+
+### Docs
+
+- The knowledge-base, prompts, LLM and durability boundary pages describe the
+  fixed behaviour, with a "Changed in 1.88.0" note where a section changed, and
+  their diagrams, PDFs and proof outputs are regenerated. The prompts reference
+  states the explicit-version rule; the LLM concepts and streaming reference state
+  where `StreamDone` arrives.
+
+### Tests
+
+- `tests/test_kb_chunk_overlap.py` (bound, exact offsets, real overlap, no
+  duplication, no loss), Chroma `numpy.float32` cases in `tests/test_kb_chroma.py`,
+  `TestVersionsAreFrozen` in `tests/test_prompt.py`, `tests/test_agent_stream_done.py`
+  (plain, tool loop, pause, Swarm, `stream()`), and
+  `tests/test_resume_crash_then_pause.py` (a child process killed with `os._exit`
+  inside the tool). 21 of them fail on 1.87.0. `test_stop_agent_before_model_stops_streaming`
+  now expects the stream to close with its single `StreamDone`: a `StopAgent` ends the run. The proof suites under
+  `examples/{kb,prompts,durability}/tests` now pin the fixed outputs.
+
 ## [1.87.0] - 2026-10-10 — AutoLLM end to end: from bad traces to a shipped prompt
 
 Two runnable stories for AutoLLM, and three bugs that running them end to end

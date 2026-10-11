@@ -1,8 +1,7 @@
 """The proof scripts behind docs/durability/durability-boundaries.md still say what the page quotes.
 
 Each script runs as a subprocess and its output is checked for the lines the page relies
-on, including the one edge the page reports as open. If the SDK's behaviour changes, this
-fails before the page lies.
+on. If the SDK's behaviour changes, this fails before the page lies.
 """
 
 from __future__ import annotations
@@ -33,9 +32,9 @@ EXPECTED = {
         "resume → status=completed model calls=1 charges=[] (the tool was not re-run)",
         "notify ran on resume: []",
         "[no result: the agent was interrupted before this tool ran",
-        # The 1.87.0 edge the page reports as open. When the resume path converts the
-        # signal into a pause, this line disappears — update section 3 of the page then.
-        "InterruptSignal escaped resume()",
+        # Fixed in 1.88.0: crash recovery that re-invokes a pausing tool records the pause.
+        "crash resume → status: paused · node: turn:0/tool:refund · pending: ['crash-then-pause']",
+        "approve      → status: completed · charges: [{'order': '1042', 'amount': 50000}]",
     ],
     "proof_4_side_effects.py": [
         "plain function         status=completed charge_card fired 2×",

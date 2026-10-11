@@ -25,32 +25,97 @@ def chunk_text(
     overlap: int = 50,
     metadata: dict[str, Any] | None = None,
 ) -> list[Chunk]:
-    """Recursively split text into chunks."""
+    """Recursively split text into chunks of at most ``chunk_size`` characters.
+
+    The splitter cuts at the coarsest seam that fits — paragraph, line, sentence,
+    word — and every chunk after the first then **starts with up to ``overlap``
+    characters of the text before it**, cut at a word boundary, so a fact that
+    straddles a seam appears whole in at least one chunk. To keep the
+    ``chunk_size`` bound, the seams are found at ``chunk_size - overlap``.
+    ``overlap`` is capped at half of ``chunk_size``.
+
+    Until 1.88.0 ``overlap`` was accepted and had no effect on the chunk text:
+    neighbouring chunks shared nothing, while the docs described a 50-character
+    overlap. An index built before 1.88.0 has no overlap until it is re-ingested.
+    """
     if not text.strip():
         return []
 
     separators = ["\n\n", "\n", ". ", " "]
-    chunks = _recursive_split(text, separators, chunk_size)
+    ov = max(0, min(overlap, chunk_size // 2))
+    if len(text) <= chunk_size or ov == 0:
+        pieces = _recursive_split(text, separators, chunk_size)
+        ov = 0
+    else:
+        pieces = _recursive_split(text, separators, chunk_size - ov)
 
-    result = []
+    result: list[Chunk] = []
     pos = 0
-    for i, chunk_text_item in enumerate(chunks):
-        start = text.find(chunk_text_item, max(0, pos - overlap))
-        if start == -1:
-            start = pos
-        end = start + len(chunk_text_item)
+    prev_start: int | None = None
+    prev_piece = ""
+    for i, piece in enumerate(pieces):
+        found = text.find(piece, pos)
+        content, start = piece, (found if found != -1 else pos)
+        end = start + len(piece)
+        if i > 0 and ov:
+            if found != -1 and prev_start is not None:
+                # The overlap is a real slice of the source, not a copy pasted in
+                # front: ``start_char``/``end_char`` stay true offsets.
+                ov_start = _word_start(text, max(prev_start, found - ov), found)
+                if ov_start < found:
+                    content, start = text[ov_start:end], ov_start
+            else:
+                # The piece could not be located verbatim (the splitter normalised
+                # whitespace inside it). Carry the previous piece's tail instead.
+                tail = prev_piece[-(ov - 1) :] if ov > 1 else ""
+                cut = tail.find(" ")
+                tail = tail[cut + 1 :] if cut != -1 else tail
+                if tail:
+                    content = f"{tail} {piece}"
         result.append(
             Chunk(
-                content=chunk_text_item,
+                content=content,
                 metadata=metadata or {},
                 index=i,
                 start_char=start,
                 end_char=end,
             )
         )
+        prev_start = found if found != -1 else None
+        prev_piece = piece
         pos = end
 
+    if ov:
+        # A short piece followed by its overlapping neighbour ends up wholly
+        # inside that neighbour ("Refund policy" then "Refund policy. Items …").
+        # Keeping it would index the same text twice and let it outrank the
+        # chunk that holds its context, so it is dropped and the rest reindexed.
+        kept = [
+            c
+            for c, nxt in zip(result, [*result[1:], None])
+            if nxt is None or not (nxt.start_char <= c.start_char and c.end_char <= nxt.end_char)
+        ]
+        for i, c in enumerate(kept):
+            c.index = i
+        result = kept
+
     return result
+
+
+def _word_start(text: str, at: int, limit: int) -> int:
+    """The first word start at or after ``at`` and before ``limit``, else ``limit``.
+
+    An overlap that began mid-word would hand the embedder a fragment like
+    ``"ithin 30 days"``; starting at the next word keeps it readable.
+    """
+    if at > 0 and not text[at - 1].isspace() and not text[at].isspace():
+        nxt = at
+        while nxt < limit and not text[nxt].isspace():
+            nxt += 1
+        at = nxt
+    while at < limit and text[at].isspace():
+        at += 1
+    return at
 
 
 def _recursive_split(text: str, separators: list[str], chunk_size: int) -> list[str]:
@@ -87,6 +152,12 @@ def _recursive_split(text: str, separators: list[str], chunk_size: int) -> list[
         else:
             if current:
                 chunks.append(current)
+            # ``current`` has been emitted; it must not carry into what follows.
+            # Before 1.88.0 the two long-part branches below left it set, so the
+            # text before a part longer than ``chunk_size`` was emitted a second
+            # time, glued to the next short part: a short paragraph ahead of a
+            # long one came back later stuck to an unrelated paragraph.
+            current = ""
             if len(part) > chunk_size and remaining_seps:
                 chunks.extend(_recursive_split(part, remaining_seps, chunk_size))
             elif len(part) > chunk_size:

@@ -4,7 +4,8 @@ Offline: FAISS, Chroma (in-process) and Qdrant (in-memory) — the real librarie
 no servers. The local FastEmbed model for the lifecycle half.
 
 One VectorStore contract: the same three reference vectors score the same on
-every backend. One LocalKB: the same lifecycle code runs over each of them.
+every backend. One LocalKB: the same lifecycle code, with FastEmbed's vectors as
+they come, runs over each of them.
 """
 
 import uuid
@@ -38,15 +39,6 @@ for name, make in BACKENDS.items():
 
 
 
-class PythonFloats:
-    """FastEmbed returns numpy float32 values inside Python lists; this hands on plain floats."""
-
-    def __init__(self, inner) -> None:
-        self.inner = inner
-
-    def embed(self, texts: list[str]) -> list[list[float]]:
-        return [[float(x) for x in v] for v in self.inner.embed(texts)]
-
 
 def lifecycle(name: str, emb) -> str:
     kb = LocalKB(name=f"kb-{name}", path=str(_common.KB_DIR), embedder=emb,
@@ -66,12 +58,7 @@ def lifecycle(name: str, emb) -> str:
 
 heading("the same LocalKB lifecycle over each backend, FastEmbed vectors as they come")
 emb = embedder()
+sample = emb.embed(["x"])[0][0]
+print(f"  (FastEmbed returns {type(sample).__module__}.{type(sample).__name__} values inside Python lists)")
 for name in BACKENDS:
-    try:
-        print(f"  {name:<7} {lifecycle(name, emb)}")
-    except ValueError as e:
-        print(f"  {name:<7} ValueError from the backend: {str(e)[:96]}…")
-
-heading("the same lifecycle, vectors converted to plain Python floats")
-for name in BACKENDS:
-    print(f"  {name:<7} {lifecycle(name, PythonFloats(emb))}")
+    print(f"  {name:<7} {lifecycle(name, emb)}")

@@ -2,7 +2,7 @@
 
 *Six places a knowledge base goes wrong between a document and the model's answer, how FastAIAgent holds each one, and a proof you can run for every claim.*
 
-*Requires FastAIAgent 1.87.0+ · [Download this page as a PDF](img/boundaries/retrieval-at-the-boundaries.pdf)*
+*Requires FastAIAgent 1.88.0+ · [Download this page as a PDF](img/boundaries/retrieval-at-the-boundaries.pdf)*
 
 FastAIAgent already lets you *see* retrieval: every search is a `retrieval.<kb>` span with the query, the backend, the ids that came back and how long it took, and the Local UI's [Knowledge Bases browser](../ui/kb.md) shows which agents hit which KB (see [Knowledge Base](index.md)).
 
@@ -17,7 +17,7 @@ Seeing what was retrieved is not the same as trusting it. A knowledge base sits 
 
 Those six boundaries are where retrieval goes wrong.
 
-This page explains how FastAIAgent's knowledge base works, one boundary at a time. Each section has a diagram, the rule the SDK follows, a proof, and the code: the SDK source that implements the rule and the script that proves it. The proofs are in [`examples/kb/proofs/`](https://github.com/fastaifoundry/fastaiagent-sdk/tree/main/examples/kb/proofs) and run against the published SDK: real FAISS, Chroma and Qdrant, the local FastEmbed model, and for one section a real model. The offline ones run in CI, so what this page quotes can't drift from what the SDK does. Every output and number below came out of one of those runs, and so did the two defects they turned up.
+This page explains how FastAIAgent's knowledge base works, one boundary at a time. Each section has a diagram, the rule the SDK follows, a proof, and the code: the SDK source that implements the rule and the script that proves it. The proofs are in [`examples/kb/proofs/`](https://github.com/fastaifoundry/fastaiagent-sdk/tree/main/examples/kb/proofs) and run against the published SDK: real FAISS, Chroma and Qdrant, the local FastEmbed model, and for one section a real model. The offline ones run in CI, so what this page quotes can't drift from what the SDK does. Every output and number below came out of one of those runs. Writing them turned up three defects in 1.87.0, all fixed in 1.88.0; where a section's behaviour changed, it says so.
 
 ---
 
@@ -50,41 +50,52 @@ The rest of this page is what that object has to get right.
 
 ---
 
-## 1 · Between a document and its chunks: nothing crosses a seam
+## 1 · Between a document and its chunks: the overlap carries a rule across the seam
 
 A vector stands for a span of text, and a whole document averages out to nothing in particular. So documents are cut into chunks, and where they are cut decides what can be found.
 
-![A document becomes chunks at the seams: the splitter tries paragraph, line, sentence and word boundaries in order and merges pieces up to chunk_size; at 120 characters the policy document becomes five chunks with start and end offsets; neighbours share no text, so chunk_overlap has no effect and a rule that straddles a seam is split across two chunks](img/boundaries/d2-chunks.svg)
-*The splitter tries the seams in order and merges pieces up to `chunk_size`. Every chunk keeps its offsets. Neighbours share nothing: a rule that straddles a seam lives in two chunks.*
+![A document becomes chunks at the seams: the splitter tries paragraph, line, sentence and word boundaries in order and merges pieces up to chunk_size minus the overlap; every chunk after the first then starts with up to chunk_overlap characters of the text before it, cut at a word; at 120 characters the policy document becomes eight chunks, each within 120 characters and with exact offsets, and a rule that straddles a seam is whole in one of them](img/boundaries/d2-chunks.svg)
+*The splitter cuts at the seams, then gives every chunk after the first the tail of the text before it. Each chunk still fits in `chunk_size` and points at its exact slice of the source.*
 
 The rules:
 
-- **The splitter is recursive.** It tries paragraph breaks, then lines, then sentences, then words, and merges the pieces up to `chunk_size` (512 characters by default), so a chunk ends at the coarsest seam that fits.
-- **Every chunk keeps its provenance**: `source`, its `index` in the document, and `start_char`/`end_char`.
-- **Nothing is carried across a seam.** `chunk_overlap` is accepted and stored, and the chunk text does not change with it: neighbouring chunks share zero characters. A rule that straddles a seam is split in two, and a query that needs both halves gets one of them.
+- **The splitter is recursive.** It tries paragraph breaks, then lines, then sentences, then words, and merges the pieces so a chunk ends at the coarsest seam that fits.
+- **Neighbours overlap.** Every chunk after the first starts with up to `chunk_overlap` characters (50 by default) of the text before it, cut at a word boundary, so a rule that straddles a seam is whole in at least one chunk. To keep the bound, the seams are found at `chunk_size − chunk_overlap`; the overlap is capped at half of `chunk_size`, and `chunk_overlap=0` keeps the seams disjoint.
+- **Every chunk fits and keeps its provenance**: at most `chunk_size` characters, its `source`, its `index`, and `start_char`/`end_char` that are its exact slice of the source.
+- **Each span is indexed once.** A short piece that its neighbour's overlap swallows whole is dropped rather than indexed twice.
 
-Proof 1 chunks a three-paragraph policy at 512 and at 120 characters and measures what neighbours share:
+Proof 1 chunks a three-paragraph policy at 512, then at 120 without and with overlap, and measures what neighbours share:
 
 ```
 chunk_size=512, overlap=50 → 1 chunk(s)
   #0 [  0-428] 'Refund policy. Items can be sent back within 30 days of purcha'…
-  characters shared between neighbours: n/a (one chunk)
 
-chunk_size=120, overlap=50 → 5 chunk(s)
+chunk_size=120, overlap=0 → 5 chunk(s)
   #0 [  0- 82] 'Refund policy. Items can be sent back within 30 days of purcha'…
   #1 [ 84-164] 'They must be unused and in their original packaging. Digital p'…
-  #2 [166-263] 'Shipping. Domestic orders ship in 3-5 business days. Internati'…
-  #3 [265-325] 'Express shipping can be chosen at checkout for an extra fee.'
-  #4 [327-428] 'Support. Email support@example.com or call 1-800-EXAMPLE. Hour'…
+  …
   characters shared between neighbours: [-2, -2, -2, -2]
+
+chunk_size=120, overlap=50 → 8 chunk(s)
+  #0 [  0- 82] 'Refund policy. Items can be sent back within 30 days of purcha'…
+  #1 [ 38-135] 'within 30 days of purchase for a full refund. They must be unu'…
+  #2 [ 89-164] 'must be unused and in their original packaging. Digital produc'…
+  #3 [137-217] 'Digital products are final.\n\nShipping. Domestic orders ship in'…
+  …
+  characters shared between neighbours: [44, 46, 27, 41, 44, 43, 47]
   metadata on every chunk: {'source': 'policy.md'}
 
-'within 30 days … full refund' lives in chunk [0] · 'unused … original packaging' lives in chunk [1]
+overlap=0: '30 days … full refund' + 'unused … original packaging' together in chunk(s) []
+overlap=50: '30 days … full refund' + 'unused … original packaging' together in chunk(s) [1]
+offsets exact: True · every chunk ≤ 120: True
 ```
 
-The seams are where you'd want them: a paragraph break, then a sentence. The shared count is −2, the two characters of the seam itself. So the overlap the reference pages describe is not what the splitter does in 1.87.0; the honest lever is `chunk_size`. Pick it for the unit of meaning you want back: a rule, a paragraph, a page.
+Without overlap the refund rule is split at a sentence seam, and a query that needs both halves gets one. With it, chunk 1 begins mid-sentence at a word, carries the whole rule, and still fits in 120 characters.
 
-**Code:** `chunk_text` and `_recursive_split` in [`kb/chunking.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/kb/chunking.py); PDF pages become one `Document` each in [`kb/document.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/kb/document.py). The proof is [`proof_1_chunks.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/kb/proofs/proof_1_chunks.py).
+!!! note "Changed in 1.88.0"
+    Until 1.88.0 `chunk_overlap` was accepted and did nothing: neighbours shared −2 characters, the seam itself. The same function had a second bug: when a part was longer than `chunk_size`, the text before it was emitted again later, glued to an unrelated paragraph. Both are fixed; an index built before 1.88.0 keeps its old chunks until you re-ingest it.
+
+**Code:** `chunk_text` and `_recursive_split` in [`kb/chunking.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/kb/chunking.py); PDF pages become one `Document` each in [`kb/document.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/kb/document.py). The proof is [`proof_1_chunks.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/kb/proofs/proof_1_chunks.py); [`tests/test_kb_chunk_overlap.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/tests/test_kb_chunk_overlap.py) pins the bound, the offsets and the overlap.
 
 ---
 
@@ -254,8 +265,8 @@ Three chunks cost three embeddings once. Every process after that paid one probe
 
 The same `LocalKB` runs on FAISS, Chroma or Qdrant. Only `vector_store=` changes. All three implement one protocol with one promise about the score, and a sweep checks it against real instances of each.
 
-![One contract, three backends, and the plane: the same LocalKB code runs over FAISS, Chroma and Qdrant through the VectorStore protocol, and all three return the same cosine for the same pair; in 1.87.0 Chroma rejects FastEmbed's numpy float32 values; PlatformKB keeps the same search and as_tool surface with retrieval on the plane](img/boundaries/d7-fleet.svg)
-*One lifecycle over three backends. The score contract holds on all three. The Chroma edge is a real defect this page found; the plane keeps the same interface.*
+![One contract, three backends, and the plane: the same LocalKB code runs over FAISS, Chroma and Qdrant through the VectorStore protocol, and all three return the same cosine for the same pair and accept FastEmbed's vectors as they come; PlatformKB keeps the same search and as_tool surface with retrieval on the plane](img/boundaries/d7-fleet.svg)
+*One lifecycle over three backends. The score contract holds on all three, and so does the lifecycle. The plane keeps the same interface.*
 
 The rules:
 
@@ -272,17 +283,16 @@ Proof 6 runs the three-vector contract and then the same lifecycle on each backe
   qdrant  {'same': 1.0, 'orthogonal': 0.0, 'opposite': -1.0, 'cos=0.6': 0.6}
 
 ── the same LocalKB lifecycle over each backend, FastEmbed vectors as they come
-  faiss   FaissVectorStore  top before delete: refunds.md · removed 1 · top after: errors.md
-  chroma  ValueError from the backend: Expected embeddings to be a list of floats or ints, a list of lists, a numpy array, or a list of…
-  qdrant  QdrantVectorStore top before delete: refunds.md · removed 1 · top after: errors.md
-
-── the same lifecycle, vectors converted to plain Python floats
+  (FastEmbed returns numpy.float32 values inside Python lists)
   faiss   FaissVectorStore  top before delete: refunds.md · removed 1 · top after: errors.md
   chroma  ChromaVectorStore top before delete: refunds.md · removed 1 · top after: errors.md
   qdrant  QdrantVectorStore top before delete: refunds.md · removed 1 · top after: errors.md
 ```
 
-The contract held on all three. The lifecycle did not: **in 1.87.0, `LocalKB` with the FastEmbed embedder and the Chroma backend fails on `add()`**, because FastEmbed returns `numpy.float32` values inside Python lists and Chroma's validation refuses them. FAISS and Qdrant accept the same vectors. Convert to plain floats and the three backends behave identically. The Chroma tests use the fallback embedder, which returns plain floats, which is why they never saw it.
+The contract held on all three, and the same lifecycle code ran unchanged on each, with the vectors exactly as the local embedder returns them.
+
+!!! note "Changed in 1.88.0"
+    Until 1.88.0 the Chroma line read `ValueError`: Chroma 1.x refuses a Python list of `numpy.float32`, which is what FastEmbed returns, while FAISS and Qdrant accept it. The Chroma backend now converts to plain floats on the way in. Its tests had used the fallback embedder, which returns plain floats, which is why they never saw it.
 
 **Code:** [`kb/backends/faiss.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/kb/backends/faiss.py), [`kb/backends/chroma.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/kb/backends/chroma.py) (the `upsert` in `add`) and [`kb/backends/qdrant.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/kb/backends/qdrant.py); the plane client is [`kb/platform.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/kb/platform.py). The proof is [`proof_6_backends.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/kb/proofs/proof_6_backends.py); the contract sweep is [`tests/test_kb_score_semantics_sweep.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/tests/test_kb_score_semantics_sweep.py); [`examples/28_kb_chroma.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/28_kb_chroma.py), [`29_kb_qdrant.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/29_kb_qdrant.py) and [`34_platform_kb.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/34_platform_kb.py) wire each one up. See [Backends](backends.md), [Custom Backend](custom-backend.md) and [Platform KB](platform-kb.md).
 
@@ -308,12 +318,11 @@ The proof scripts behind this page run each of those checks.
 
 ## What the knowledge base still won't do for you
 
-- **`chunk_overlap` has no effect on the chunk text** in 1.87.0. Choose `chunk_size` for the unit you want back.
+- **An index keeps the chunks it was built with.** A KB ingested before 1.88.0 has no overlap until you re-ingest it.
 - **`search()` takes a query and `top_k`, nothing else.** There is no metadata filter; keep separate KBs for separate domains and give the agent one tool per KB.
 - **A hybrid score is not a threshold.** It is a rank position when both sides return, and a cosine when one doesn't.
 - **A reopen checks the dimension, not the model.** Record which embedder built an index, and rebuild when you change it.
 - **A FAISS delete re-embeds the survivors.** Fine for a small corpus; use Qdrant or Chroma when deletes are frequent.
-- **Chroma rejects FastEmbed's vectors in 1.87.0.** Convert to plain floats, or use FAISS or Qdrant, until the backend converts them itself.
 - **No reranker locally.** `PlatformKB` runs the plane's reranking; `LocalKB` returns the fused order as is.
 - **`LocalKB` is synchronous.** The store protocols are sync; `PlatformKB` has `asearch()`.
 - **The KB does not know a document is stale.** That is what `doc_ids` in the trace and the [RAG metrics](../evaluation/rag-metrics.md) are for.

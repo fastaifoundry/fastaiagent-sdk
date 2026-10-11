@@ -84,6 +84,20 @@ _DEFAULT_SPACE = "l2"
 _COSINE_CONFIG: Any = {"hnsw": {"space": "cosine"}}
 
 
+def _plain_floats(vector: Any) -> list[float]:
+    """``vector`` as a list of built-in ``float``.
+
+    Chroma 1.x validates embeddings strictly: a list of lists of Python numbers,
+    or a numpy array — but **not** a Python list holding ``numpy.float32``
+    scalars, which is exactly what ``FastEmbedEmbedder`` (the default local
+    embedder) returns. Until 1.88.0 ``LocalKB`` + FastEmbed + Chroma failed on the
+    first ``add()`` while FAISS and Qdrant accepted the same vectors; the Chroma
+    tests never saw it because they use ``SimpleEmbedder``, which returns plain
+    floats. Converting here is lossless for float32 and costs one pass per vector.
+    """
+    return [float(x) for x in vector]
+
+
 class ChromaVectorStore:
     """Chroma-backed vector store.
 
@@ -274,7 +288,7 @@ class ChromaVectorStore:
         self._collection.upsert(
             ids=[c.id for c in chunks],
             documents=[c.content for c in chunks],
-            embeddings=[list(e) for e in embeddings],
+            embeddings=[_plain_floats(e) for e in embeddings],
             metadatas=[self._metadata_for(c) for c in chunks],
         )
 
@@ -282,7 +296,7 @@ class ChromaVectorStore:
         self, query_embedding: list[float], top_k: int
     ) -> list[tuple[Chunk, float]]:
         res = self._collection.query(
-            query_embeddings=[list(query_embedding)],
+            query_embeddings=[_plain_floats(query_embedding)],
             n_results=top_k,
         )
         ids = (res.get("ids") or [[]])[0]

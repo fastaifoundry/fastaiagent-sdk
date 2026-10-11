@@ -21,8 +21,10 @@ EXPECTED = {
     ],
     "proof_2_versions.py": [
         "production still v 1",
-        "v1 now reads           : 'REPLACED {{name}}'",
-        "'latest_version': 1, 'versions': 3",
+        "same text  → v 1 (a no-op)",
+        "other text → ValueError: Prompt 'greeting' already has a version 1 with a different template.",
+        "production (→ v1) reads: 'Hello {{name}}!'",
+        "list()                 : [{'name': 'greeting', 'latest_version': 5, 'versions': 5}] · load() → v 5",
     ],
     "proof_3_fragments.py": [
         "diff(1, 1)     : (no template changes)",
