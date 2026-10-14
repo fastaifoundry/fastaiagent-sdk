@@ -84,6 +84,12 @@ pytest --eval-fail-under "overall.pass_rate=0.9" \
 
 Infra failures (your agent raised) are recorded as *errored* — unscored,
 excluded from pass/fail, and counted — so an outage can't green a build.
+
+The session records one verdict, and it is the one the exit status enforces
+(*1.89.0*): `passed` when the session passed; `failed` for a missed threshold
+or a regression against the baseline; `invalid` for an infra-disqualified run
+or a baseline that could not be loaded. A malformed `--eval-fail-under` is a
+usage error before any test runs.
 See **[Agent CI](agent-ci.md)** for the full option list, threshold
 grammar, baselines, and a GitHub Actions recipe.
 

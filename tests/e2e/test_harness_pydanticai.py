@@ -211,6 +211,48 @@ def test_12_tool_capture() -> None:
     assert span.end_time > span.start_time
 
 
+@needs_openai
+def test_14_failed_run_stream_ends_error_and_does_not_leak() -> None:
+    """1.89.0 (P5): a ``run_stream`` that fails while opening (a real 404 for an
+    unknown model) ends its root span ERROR. Before, ``__aexit__`` never ran
+    for a failed ``__aenter__``, so the span stayed attached and never ended:
+    it was never exported and the next run nested under it."""
+    import asyncio
+    import uuid
+
+    from opentelemetry import trace as otel_trace
+    from pydantic_ai import Agent
+
+    from fastaiagent.integrations import pydanticai as pa
+
+    pa.enable()
+    sentinel = f"stream-fail-{uuid.uuid4().hex[:8]}"
+    agent = Agent("openai:gpt-4o-mini-ws1-nonexistent")
+
+    async def go() -> None:
+        async with agent.run_stream(sentinel) as result:
+            async for _ in result.stream_text():
+                pass
+
+    with pytest.raises(Exception):  # noqa: B017 — PydanticAI wraps the 404 its own way
+        asyncio.run(go())
+
+    current = otel_trace.get_current_span()
+    assert not current.get_span_context().is_valid, "the failed root is still attached"
+
+    def predicate(span) -> bool:
+        attrs = span.attributes or {}
+        return attrs.get("fastaiagent.framework") == "pydanticai" and sentinel in str(
+            attrs.get("pydanticai.agent.input") or ""
+        )
+
+    trace = _wait_for_root_span(predicate, timeout=10.0)
+    assert trace is not None, "the failed run_stream root was never ended, so never stored"
+    root = _root_pa_span(trace)
+    assert root.status == "ERROR", root.status
+    assert any(e.get("name") == "exception" for e in (root.events or []))
+
+
 def test_13_idempotent_enable() -> None:
     """Spec #13: enable() twice does not double-patch."""
     from pydantic_ai import Agent

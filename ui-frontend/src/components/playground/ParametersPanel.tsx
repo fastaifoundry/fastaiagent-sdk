@@ -1,7 +1,9 @@
+import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
+import { isValidMaxTokens, MAX_TOKENS_MAX, MAX_TOKENS_MIN } from "@/lib/playground-params";
 import type { PlaygroundParameters } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -78,6 +80,16 @@ function OptionalSlider({
 }
 
 export function ParametersPanel({ value, onChange }: Props) {
+  const [rawMaxTokens, setRawMaxTokens] = useState<string>(String(value.max_tokens));
+  // Follow external changes (a history entry restored, a reset) without
+  // clobbering what the user is typing.
+  useEffect(() => {
+    if (Number(rawMaxTokens) !== value.max_tokens) {
+      setRawMaxTokens(String(value.max_tokens));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value.max_tokens]);
+  const maxTokensValid = rawMaxTokens.trim() !== "" && isValidMaxTokens(Number(rawMaxTokens));
   return (
     <div className="space-y-4 text-sm">
       <p className="text-xs text-muted-foreground">
@@ -114,16 +126,24 @@ export function ParametersPanel({ value, onChange }: Props) {
         <Input
           id="param-max-tokens"
           type="number"
-          min={1}
-          max={200000}
-          value={value.max_tokens}
-          onChange={(e) =>
-            onChange({
-              ...value,
-              max_tokens: Number.parseInt(e.target.value, 10) || 1024,
-            })
-          }
+          min={MAX_TOKENS_MIN}
+          max={MAX_TOKENS_MAX}
+          value={rawMaxTokens}
+          aria-invalid={!maxTokensValid}
+          onChange={(e) => {
+            // Keep what was typed. Snapping a bad value to 1024 hid the
+            // mistake; sending it produced a 422 (1.89.0, P1).
+            const raw = e.target.value;
+            setRawMaxTokens(raw);
+            onChange({ ...value, max_tokens: Number(raw) });
+          }}
         />
+        {!maxTokensValid && (
+          <p className="text-[11px] text-destructive" role="alert">
+            max_tokens must be a whole number from {MAX_TOKENS_MIN} to{" "}
+            {MAX_TOKENS_MAX.toLocaleString()}.
+          </p>
+        )}
       </div>
     </div>
   );

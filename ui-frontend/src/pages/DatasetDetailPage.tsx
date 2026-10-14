@@ -121,8 +121,20 @@ export function DatasetDetailPage() {
   const handleRunEval = async () => {
     try {
       const result = await runEval.mutateAsync({ scorers: ["exact_match"] });
-      const tally = `${result.pass_count} pass / ${result.fail_count} fail`;
-      if (result.mode === "echo") {
+      const errored = result.errored_count ?? 0;
+      // Case counts. An errored case (the agent raised) is neither a pass nor
+      // a fail; it used to be counted as a pass (1.89.0).
+      const tally =
+        `${result.pass_count} passed · ${result.fail_count} failed` +
+        (errored ? ` · ${errored} errored` : "") +
+        " (cases)";
+      const scored = result.pass_count + result.fail_count;
+      if (errored > 0 && scored === 0) {
+        toast.error(`Every case errored — ${tally}`, {
+          description: "The agent raised on every case, so nothing was scored.",
+          duration: 10_000,
+        });
+      } else if (result.mode === "echo") {
         // No agent is registered, so this scored inputs against themselves.
         // Reporting it as a plain tally made a structurally-normal 0% look
         // like the model had failed every case.

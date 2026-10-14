@@ -248,9 +248,13 @@ export interface DatasetImportResult {
 
 export interface DatasetRunEvalResult {
   run_id: string;
+  /** Passed / scored cases; null when no case was scored. */
   pass_rate: number | null;
   pass_count: number;
   fail_count: number;
+  /** Cases whose agent raised: unscored, neither a pass nor a fail (1.89.0). */
+  errored_count?: number;
+  total_cases?: number;
   /**
    * "echo" when no agent ran: inputs are echoed back unchanged, so a case
    * passes only where expected_output equals input. A 0% pass rate is normal
@@ -499,20 +503,27 @@ export interface PromptListResponse {
   registry_is_local: boolean;
 }
 
-export interface PromptDetail {
+/** One prompt version, as every prompt endpoint returns it (1.89.0). */
+export interface PromptVersionDetail {
   slug: string;
-  latest_version: number;
+  version: number;
+  /** Fragments resolved: what a run sends. */
   template: string;
+  /** As stored, `{{@fragment}}` references intact: what the editor edits. */
+  template_raw: string;
+  fragments: string[];
   variables: string[];
   metadata: Record<string, unknown>;
+}
+
+export interface PromptDetail extends PromptVersionDetail {
+  latest_version: number;
   registry_is_local: boolean;
 }
 
-export interface PromptVersionRow {
-  slug: string;
+export interface PromptVersionRow extends Omit<PromptVersionDetail, "version"> {
+  /** The list endpoint has always returned the version as a string. */
   version: string;
-  template: string | null;
-  variables: string | null;
   created_at: string | null;
   created_by: string | null;
 }
@@ -1038,7 +1049,17 @@ export interface PlaygroundDoneMetadata {
 export type PlaygroundStreamEvent =
   | { event: "token"; text: string }
   | { event: "done"; metadata: PlaygroundDoneMetadata }
-  | { event: "error"; message: string; correlation_id?: string };
+  | {
+      event: "error";
+      /** Always a string (1.89.0): a 422's list `detail` crashed the page. */
+      message: string;
+      correlation_id?: string;
+      field_errors?: { field: string; message: string }[];
+      kind?: string;
+      provider_status?: number;
+      provider_message?: string;
+      hint?: string;
+    };
 
 export interface SaveAsEvalRequest {
   dataset_name: string;

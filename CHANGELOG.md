@@ -49,6 +49,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the plane, which it cannot recall. **Rotate any key that was passed in a
   guardrail `llm` dict, or rejected by OpenAI, on ≤ 1.88.0.**
 
+### Data integrity (Phase 2)
+
+- ⚠ **An Agent-CI session records the verdict it enforces (E1).** The pytest
+  plugin computed the threshold gate and the baseline check separately, OR-ed
+  both into the exit status and recorded only the first. A session that exited 1
+  on a regression or a missing baseline therefore recorded
+  `gate_outcome="passed"`, and the plane counts `passed` as promotion and
+  compliance evidence. Now one verdict drives both: a regression records
+  `failed`, an unloadable baseline records `invalid`, and the session prints
+  `fastaiagent eval verdict: … (recorded as gate_outcome=…)`.
+- ⚠ **`--eval-run-name X --eval-baseline X` no longer compares a session with
+  itself (E2).** The baseline is resolved before the session persists its run.
+  A name lookup now skips runs whose gate failed (`load_run(...,
+  accepted_only=True)`), so a regression cannot become the next baseline. When no
+  accepted run with the name exists yet, the session publishes it, gated on
+  thresholds only. A ratchet that regressed used to exit 0; it now exits 1.
+- ⚠ **Only runs with a recorded verdict are exported (E1b).** Every persisted
+  run was queued, and the payload defaulted `gate_outcome` to `passed`, so any
+  span flush before the gate (or a run nobody gated) reached the plane as
+  passing evidence. The plane keeps the first copy of a `run_id`, so the real
+  verdict was lost. A bare `evaluate()` is now exported only after
+  `record_gate_result()`; the CLI and pytest plugin record it automatically.
+  `eval export --dry-run` shows `null` for a run with no verdict. An older SDK
+  process sharing the same `local.db` can still send those runs.
+- `record_gate_result()` raises `ValueError` for an outcome other than `passed` /
+  `failed` / `invalid`; `VALID_GATE_OUTCOMES` is in `fastaiagent.eval.gate`. A
+  malformed `--eval-fail-under` is a pytest usage error instead of failing after
+  the run was persisted.
+- **A failed streamed LLM call is traced as ERROR (P5).** The streamed `llm.*`
+  span only recorded `LLMProviderError` and never set a status, so a failed
+  stream ended UNSET while the same failure through `complete()` ended ERROR. Any
+  exception now sets ERROR via a shared `mark_span_error`. The Playground's
+  `/stream` root now records what `/run`'s root does (an opaque 502, never the
+  provider's text). PydanticAI `run_stream` roots end ERROR, and a failure while
+  the stream opens no longer leaks an attached, never-ended span. A consumer that
+  stops early, or a cancelled stream, is not an error. The plane will see these
+  traces as failed.
+- **The Local UI prompt editor keeps fragments, metadata and authorship (P2,
+  P3).** It edited the *resolved* template, so "Save as new version" froze every
+  `{{@fragment}}` into a copy, and it sent `metadata: {}`, which wiped the
+  version's metadata on every save. It now edits the stored template; a new
+  version inherits the edited version's metadata (`PUT` takes `base_version`;
+  explicit `{}` clears); versions are labelled `created_by: "ui"`. All three
+  prompt endpoints return one shape: `template` (resolved), `template_raw`,
+  `fragments`, `variables` (a list; `/versions` returned a JSON string) and
+  `metadata`. Additive in Python: `PromptRegistry.load(...,
+  resolve_fragments=False)`, `.resolve_fragments()`, `register(...,
+  created_by=)`, `fragment_refs()`.
+- ⚠ **`eval curate --filter guardrail` selects the runs where a rule fired
+  (G8).** It matched an outcome of `'fail'`, which has never been written, so it
+  returned nothing from 1.22.0 on. It now matches `blocked`/`warned`/`filtered`
+  events (false positives excluded) and, for runs with no event rows, failed
+  guardrail spans. Errored checks are not selected. `GUARDRAIL_OUTCOMES` /
+  `FIRED_OUTCOMES` in `fastaiagent.ui.events` are the shared vocabulary.
+- **Run eval in the Local UI counts errored cases as errored (E5).** An errored
+  case has no verdicts and `all([])` is True, so it was counted as a pass. The
+  response adds `errored_count` and `total_cases`; `pass_rate` is over scored
+  cases and `null` when none was scored; the toast reads `N passed · M failed · K
+  errored (cases)`.
+- **PydanticAI: an agent with no system prompt works again under tracing.** The
+  integration previewed the system prompt by falling back to
+  `agent.system_prompt`, which in pydantic-ai 1.106 is a decorator method, and
+  iterated it. Every `run`, `run_sync` and `run_stream` of such an agent raised
+  `TypeError` once `fastaiagent.integrations.pydanticai.enable()` was on. The
+  integration also bound its tracer when `enable()` ran, so an `enable()` before
+  tracing was configured wrote to a stale provider; it now looks the tracer up
+  per run. Found while fixing P5; first offline tests for this integration.
+- **A 422 no longer crashes the Playground (P1).** FastAPI's 422 `detail` is a
+  list; the Playground rendered it and React took the page down with the form.
+  Elsewhere it showed `[object Object]`. Every error body now goes through one
+  normaliser (`ui-frontend/src/lib/api-error.ts`), the Playground shows field
+  errors, and `max_tokens` and the endpoint are checked as you type. Playground
+  422 responses no longer echo the submitted value (`input`), which could be the
+  token.
+
 ## [1.88.0] - 2026-10-11 — the defects the boundary pages found
 
 Writing the seven "breaks at the boundaries" pages meant running every claim

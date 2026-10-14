@@ -99,6 +99,10 @@ class GateReport:
         return lines
 
 
+#: Every verdict a gate can record, and the plane's ingest accepts.
+VALID_GATE_OUTCOMES: tuple[str, ...] = ("passed", "failed", "invalid")
+
+
 def parse_threshold(spec: str) -> Threshold:
     """Parse ``metric=value`` where metric is ``overall.pass_rate``,
     ``<scorer>.pass_rate``, ``<scorer>.avg_score``, or bare ``<scorer>``

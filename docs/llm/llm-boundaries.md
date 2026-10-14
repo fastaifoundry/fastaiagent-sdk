@@ -182,6 +182,7 @@ The rules:
 - **`astream()` yields typed events**: `TextDelta` per piece of text, `ToolCallStart` and `ToolCallEnd` with the arguments as a dict, one `Usage`, and `StreamDone` last.
 - **`stream()` folds the events back** into an `LLMResponse` with the same `content`, `finish_reason` and normalized usage keys `complete()` gives.
 - **A streamed call leaves the same `llm.*` span**, with `gen_ai.usage.*` on it. Before 1.68.0 it left none, so a streamed run's token total was zero on the plane.
+- **A failed stream ends ERROR, like a failed `complete()`** (*since 1.89.0*). Any exception, not only a provider error, records an `exception` event and sets the status to ERROR. Before, the span ended UNSET, so a trace whose only failure was a streamed call never showed as failed. A consumer that stops reading early, or a cancelled stream, is not a failure: its span ends without ERROR.
 - **Inside an agent, a tool loop looks like one stream.** `Agent.astream()` drops each turn's `StreamDone` and yields exactly one at the end, after the output guardrails and the memory write, so a consumer that sees it knows the run finished and was not blocked. A run that pauses for an approval ends with a `Paused` event instead. A Swarm's stream also ends with one, however many hand-offs it took.
 - **`bedrock` has no streaming.**
 

@@ -120,7 +120,7 @@ def test_guardrail_filter_marks_needs_review(isolated_local_db: Any) -> None:
     db.execute(
         "INSERT INTO guardrail_events (event_id, trace_id, guardrail_name, outcome, "
         "message, timestamp) VALUES (?,?,?,?,?,?)",
-        (uuid.uuid4().hex, tid, "no_pii", "fail", "PII detected", _now()),
+        (uuid.uuid4().hex, tid, "no_pii", "blocked", "PII detected", _now()),
     )
     db.close()
 
@@ -217,7 +217,7 @@ def test_mark_output_as_expected_override(isolated_local_db: Any) -> None:
     db.execute(
         "INSERT INTO guardrail_events (event_id, trace_id, guardrail_name, outcome, "
         "message, timestamp) VALUES (?,?,?,?,?,?)",
-        (uuid.uuid4().hex, tid, "g", "fail", "m", _now()),
+        (uuid.uuid4().hex, tid, "g", "blocked", "m", _now()),
     )
     db.close()
 

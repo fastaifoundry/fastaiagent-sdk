@@ -4,6 +4,7 @@ import type {
   PromptDetail,
   PromptLineage,
   PromptListResponse,
+  PromptVersionDetail,
   PromptVersionRow,
 } from "@/lib/types";
 
@@ -34,14 +35,7 @@ export function usePromptVersions(slug: string | undefined) {
 export function usePromptVersion(slug: string | undefined, version: string | null) {
   return useQuery({
     queryKey: ["prompt-version", slug, version],
-    queryFn: () =>
-      api.get<{
-        slug: string;
-        version: number;
-        template: string;
-        variables: string[];
-        metadata: Record<string, unknown>;
-      }>(`/prompts/${slug}/versions/${version}`),
+    queryFn: () => api.get<PromptVersionDetail>(`/prompts/${slug}/versions/${version}`),
     enabled: !!slug && !!version,
   });
 }
@@ -59,16 +53,21 @@ export function useUpdatePrompt() {
     mutationFn: ({
       slug,
       template,
+      baseVersion,
       metadata,
     }: {
       slug: string;
       template: string;
+      /** The version the edit started from; the server copies its metadata. */
+      baseVersion?: number;
+      /** Only when the user changed it: omitted means "inherit" (1.89.0). */
       metadata?: Record<string, unknown>;
     }) =>
-      api.put<{ slug: string; version: number; template: string }>(
-        `/prompts/${slug}`,
-        { template, metadata: metadata ?? {} }
-      ),
+      api.put<PromptVersionDetail>(`/prompts/${slug}`, {
+        template,
+        ...(baseVersion !== undefined ? { base_version: baseVersion } : {}),
+        ...(metadata !== undefined ? { metadata } : {}),
+      }),
   });
 }
 

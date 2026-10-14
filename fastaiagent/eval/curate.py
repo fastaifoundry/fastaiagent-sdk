@@ -15,6 +15,7 @@ answer to fix, so those cases are emitted with ``expected_output=""`` and
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -37,6 +38,48 @@ _VALID_DEDUP = {"none", "input"}
 _VALID_INFRA_MODES = {"agent", "trace"}
 # Span statuses that indicate a clean (non-error) span.
 _OK_STATUSES = {"OK", "UNSET"}
+
+
+def _fired_predicates() -> tuple[str, str]:
+    """SQL for "a guardrail fired": over ``guardrail_events``, and over spans.
+
+    Built from :data:`fastaiagent.ui.events.FIRED_OUTCOMES`, the values the
+    event writer produces, never a literal (1.89.0, G8: this filter matched
+    ``'fail'`` and so returned nothing since it shipped). A false positive
+    marked in the UI does not count, and neither does a check that errored:
+    that is an infrastructure failure, not a quality signal.
+    """
+    from fastaiagent.ui.events import FIRED_OUTCOMES
+
+    outcomes = ", ".join(f"'{o}'" for o in FIRED_OUTCOMES)
+    event_sql = f"outcome IN ({outcomes}) AND COALESCE(false_positive, 0) = 0"
+
+    def attr(key: str) -> str:
+        return (
+            f"CASE WHEN json_valid(g.attributes) "
+            f"THEN json_extract(g.attributes, '$.\"fastaiagent.guardrail.{key}\"') END"
+        )
+
+    span_sql = (
+        f"g.name LIKE 'guardrail.%' AND {attr('passed')} = 0 "
+        f"AND COALESCE({attr('errored')}, 0) = 0"
+    )
+    return event_sql, span_sql
+
+
+_EVENT_FIRED_SQL, _SPAN_FIRED_SQL = _fired_predicates()
+
+#: Traces where a rule fired. Event rows are authoritative when a trace has
+#: any (they carry the false-positive marks). A trace with none (it ran while
+#: the Local UI was off) falls back to its guardrail spans, which are written
+#: whenever tracing is on.
+_GUARDRAIL_FIRED_TRACES_SQL = (
+    f"SELECT trace_id FROM guardrail_events WHERE {_EVENT_FIRED_SQL} "
+    "UNION "
+    f"SELECT g.trace_id FROM spans g WHERE {_SPAN_FIRED_SQL} "
+    "AND g.trace_id NOT IN "
+    "(SELECT trace_id FROM guardrail_events WHERE trace_id IS NOT NULL)"
+)
 
 
 class CuratedDataset(list):
@@ -281,9 +324,7 @@ def _select_trace_ids(
     elif filter == "noted":
         where.append("s.trace_id IN (SELECT trace_id FROM trace_notes)")
     elif filter == "guardrail":
-        where.append(
-            "s.trace_id IN (SELECT DISTINCT trace_id FROM guardrail_events WHERE outcome = 'fail')"
-        )
+        where.append(f"s.trace_id IN ({_GUARDRAIL_FIRED_TRACES_SQL})")
     elif filter == "failed":
         # Best-effort: a trace is "failed" if any span carries an error status.
         # (The agent root span does not always get ERROR set on exception, so the
@@ -320,7 +361,7 @@ def _guardrail_reasons(db: Any, trace_ids: list[str]) -> dict[str, str]:
     wanted = set(trace_ids)
     rows = db.fetchall(
         "SELECT trace_id, guardrail_name, message FROM guardrail_events "
-        "WHERE outcome = 'fail' ORDER BY timestamp"
+        f"WHERE {_EVENT_FIRED_SQL} ORDER BY timestamp"
     )
     out: dict[str, str] = {}
     for r in rows:
@@ -330,6 +371,26 @@ def _guardrail_reasons(db: Any, trace_ids: list[str]) -> dict[str, str]:
         gname = r["guardrail_name"] or "guardrail"
         msg = (r["message"] or "").strip()
         out[tid] = f"guardrail '{gname}' fired" + (f": {msg}" if msg else "")
+    # Traces with no event rows (the Local UI was off when they ran): fall back
+    # to the guardrail spans, which are always written while tracing is on.
+    missing = wanted - set(out)
+    if missing:
+        spans = db.fetchall(
+            f"SELECT trace_id, name, attributes FROM spans g WHERE {_SPAN_FIRED_SQL} "
+            "ORDER BY start_time"
+        )
+        for r in spans:
+            tid = r["trace_id"]
+            if tid not in missing or tid in out:
+                continue
+            gname = (r["name"] or "").removeprefix("guardrail.") or "guardrail"
+            try:
+                action = json.loads(r["attributes"] or "{}").get(
+                    "fastaiagent.guardrail.action_taken"
+                )
+            except (TypeError, ValueError):
+                action = None
+            out[tid] = f"guardrail '{gname}' fired" + (f" ({action})" if action else "")
     return out
 
 

@@ -2,9 +2,18 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from pydantic import BaseModel
+
+#: A ``{{@name}}`` fragment reference. One pattern for finding and resolving.
+FRAGMENT_RE = re.compile(r"\{\{@(\w+)\}\}")
+
+
+def fragment_refs(template: str) -> list[str]:
+    """The fragment names ``template`` references, in first-use order, once each."""
+    return list(dict.fromkeys(FRAGMENT_RE.findall(template or "")))
 
 
 class Fragment(BaseModel):

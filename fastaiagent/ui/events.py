@@ -125,6 +125,18 @@ def log_guardrail_event(
             helper.close()
 
 
+#: Every value :func:`_outcome` writes to ``guardrail_events.outcome``. Readers
+#: that filter on outcome (curation, the UI) must use these, never a literal:
+#: ``eval curate --filter guardrail`` matched ``'fail'``, a value nothing has
+#: ever written, and returned nothing from 1.22.0 to 1.88.0.
+GUARDRAIL_OUTCOMES: tuple[str, ...] = ("passed", "blocked", "warned", "filtered", "errored")
+
+#: The outcomes that mean "the rule fired": it judged the payload and did
+#: something about it. ``errored`` (could not run) is an infrastructure signal,
+#: not a quality one, and is deliberately excluded.
+FIRED_OUTCOMES: tuple[str, ...] = ("blocked", "warned", "filtered")
+
+
 def _outcome(guardrail: Guardrail, result: GuardrailResult) -> str:
     # A check that couldn't run is reported distinctly so a fail-open (a
     # degraded pass) is never mistaken for a genuine pass. Whether it then

@@ -275,6 +275,11 @@ except LLMProviderError as e:
 
 > **Note:** Input guardrails raise `GuardrailBlockedError` before any streaming begins. Output guardrails raise after streaming completes. In both cases, your `except` block handles it normally.
 
+A failed stream is traced as a failure: its `llm.*` span ends with status ERROR
+and an `exception` event, the same as a failed `complete()` (*since 1.89.0*;
+before, it ended UNSET). Breaking out of the loop early, or cancelling the task,
+is not a failure and leaves no ERROR.
+
 ## Platform Compatibility
 
 The SDK's `StreamEvent` types (`TextDelta`, `ToolCallStart`, `ToolCallEnd`, `Usage`, `StreamDone`) align with the FastAIAgent Platform's streaming protocol. The same event types work in both local SDK streaming and platform streaming, making it straightforward to build clients that work with both.

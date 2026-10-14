@@ -69,16 +69,26 @@ bad runs as `needs_review`.)
 | `all` | with any agent span | output-as-expected |
 | `favorites` | starred in the Local UI (`trace_favorites`) | output-as-expected |
 | `noted` | with a note (`trace_notes`); the note is attached | output-as-expected |
-| `guardrail` | where a guardrail fired (`guardrail_events.outcome='fail'`) | needs-review |
-| `failed` | with an error-status span (best-effort, see note) | needs-review |
+| `guardrail` | where a guardrail fired: a `blocked`, `warned` or `filtered` event (false positives excluded), or, for a run with no event rows, a guardrail span that failed | needs-review |
+| `failed` | with an error-status span | needs-review |
 
 Modifiers: `agent=` (one agent's spans), `since_hours=` (time window),
 `limit=` (cap, most-recent first), `dedup_by="input"` (drop duplicate inputs).
 
-!!! note "`failed` is best-effort"
-    The agent root span does not always get an `ERROR` status set on exception, so
-    `failed` keys off any error-status span in the trace. The **`guardrail`**
-    filter is the more reliable failure signal.
+!!! warning "`guardrail` returned nothing before 1.89.0"
+    It matched an event outcome of `fail`, which the SDK has never written, so it
+    selected no traces from 1.22.0 to 1.88.0. It now selects any rule that judged
+    the payload and fired, including warn, mask, override and reask rules. A
+    check that **errored** (could not run) is not selected: that is an
+    infrastructure failure, not a quality signal. A firing you marked as a false
+    positive in the Local UI is excluded. Event rows exist only for runs made with
+    the Local UI enabled; other runs are matched on their guardrail spans, which
+    are written whenever tracing is on.
+
+!!! note "`failed` and streamed runs"
+    `failed` keys off any error-status span in the trace. Since 1.89.0 a failed
+    *streamed* model call also leaves an ERROR span; before, it ended UNSET, so a
+    run whose only failure was a streamed call was not selected.
 
 ## Python API
 

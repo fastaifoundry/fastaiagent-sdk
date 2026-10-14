@@ -273,6 +273,19 @@ log** under the correlation id shown beneath the error, so grep the terminal
 running `fastaiagent ui` for that id to see what actually went wrong. Keys are
 scrubbed from that log text before it is written (1.89.0).
 
+A failed **streamed** run is recorded as a failed trace, the same as a failed
+non-streamed one: the `playground.run` root ends with status ERROR, and the
+Traces page shows it as an error (*since 1.89.0*; it used to end UNSET, so the
+failure only showed in the response panel).
+
+**Invalid input is shown, not crashed on** (*fixed in 1.89.0*). A request the
+server rejects, such as `max_tokens` above 200,000 or an endpoint that isn't an
+`http(s)://` URL, shows each rejected field under the error. Before, any such
+rejection replaced the whole page with an error screen and lost the form. The
+form also checks `max_tokens` and the endpoint as you type and disables **Run**
+until they are valid. The server never echoes a rejected token back in its
+error response.
+
 ## When to use which
 
 | Scenario | Use |

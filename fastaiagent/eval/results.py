@@ -90,7 +90,19 @@ def record_gate_result(
         baseline: ``{run_id, pass_rate_delta, regressed_count}`` when a baseline
             comparison ran. This is what evidences "track regressions across
             versions" rather than merely "evals were run".
+
+    Raises:
+        ValueError: ``gate_outcome`` is not one of ``passed`` / ``failed`` /
+            ``invalid`` (1.89.0). This is the one thing not swallowed: the
+            plane rejects any other value with a 4xx, which is never retried,
+            so a typo would hold back every run batched with it.
     """
+    from fastaiagent.eval.gate import VALID_GATE_OUTCOMES
+
+    if gate_outcome not in VALID_GATE_OUTCOMES:
+        raise ValueError(
+            f"gate_outcome must be one of {VALID_GATE_OUTCOMES}, got {gate_outcome!r}"
+        )
     try:
         from fastaiagent._internal.config import get_config
         from fastaiagent.ui.db import init_local_db

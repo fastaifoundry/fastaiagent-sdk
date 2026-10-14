@@ -244,6 +244,32 @@ def _static_dir() -> Path | None:
     return candidate if candidate.exists() else None
 
 
+#: Routes whose request body can carry a credential (the Playground's ``api_key``).
+_CREDENTIAL_BODY_PREFIXES = ("/api/playground",)
+
+
+def _install_validation_error_handler(app: FastAPI) -> None:
+    """FastAPI's 422, minus the echoed value where a body can hold a key (1.89.0).
+
+    Each entry of a 422 ``detail`` carries ``input``: the value that failed,
+    which for the Playground can be the API key itself (a too-long token, or the
+    whole body when its shape is wrong). For those routes ``input`` is dropped.
+    Everything else keeps FastAPI's default response unchanged.
+    """
+    from fastapi.encoders import jsonable_encoder
+    from fastapi.exceptions import RequestValidationError
+
+    @app.exception_handler(RequestValidationError)
+    async def _validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+        errors = jsonable_encoder(exc.errors())
+        if request.url.path.startswith(_CREDENTIAL_BODY_PREFIXES):
+            errors = [
+                {k: v for k, v in e.items() if k != "input"} if isinstance(e, dict) else e
+                for e in errors
+            ]
+        return JSONResponse(status_code=422, content={"detail": errors})
+
+
 def build_app(
     *,
     db_path: str | None = None,
@@ -318,6 +344,8 @@ def build_app(
     # Added last → outermost → runs first: reject rebound Hosts before anything
     # else touches the request (security_audit_2 N16).
     app.add_middleware(_HostValidationMiddleware)
+
+    _install_validation_error_handler(app)
 
     for r in (
         auth.router,

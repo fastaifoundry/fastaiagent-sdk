@@ -112,7 +112,7 @@ The rules:
 
 - **A span is written when it ends, synchronously.** The storage processor's `on_end` runs one `INSERT OR REPLACE` keyed by `span_id`. Nothing is batched, so a child span is on disk while its parent is still open, and re-writing a span is idempotent.
 - **A tool that raises is a result, not a crash.** The error goes back to the model as the tool's result; the tool span carries `tool.status=error` and `tool.error`; the run finishes.
-- **A model call that raises ends the run.** The root is written with status `ERROR` and an `exception` event carrying the message, and every span that ended before it is already on disk.
+- **A model call that raises ends the run.** The root is written with status `ERROR` and an `exception` event carrying the message, and every span that ended before it is already on disk. Since 1.89.0 the same holds for a streamed call: its `llm.*` span ends ERROR too, where it used to end UNSET.
 - **The store can never fail the run.** OTel runs `on_end` inside whatever ended the span, so an exception there would surface in your agent. The SDK catches it, drops that span, and logs one warning per error type.
 - **A healthy span reads `UNSET`.** OpenTelemetry leaves a status unset unless something sets it; the Local UI shows those as OK.
 

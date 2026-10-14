@@ -620,8 +620,12 @@ class RunEvalBody(BaseModel):
 class RunEvalResult(BaseModel):
     run_id: str
     pass_rate: float | None
+    """Passed / scored cases; ``None`` when no case was scored (1.89.0)."""
     pass_count: int
     fail_count: int
+    errored_count: int = 0
+    """Cases whose agent raised: unscored, so neither a pass nor a fail."""
+    total_cases: int = 0
     # "echo" when no agent_name was given: the run scores the dataset against
     # an identity function, so a case only passes when expected_output equals
     # input. A 0% pass rate is the normal result for real data and must not be
@@ -688,15 +692,25 @@ def run_eval(
         dataset_name=f"{name}.jsonl",
         agent_name=body.agent_name or "editor-echo",
     )
-    pass_count = sum(1 for c in results.cases if all(s["passed"] for s in c.per_scorer.values()))
-    fail_count = len(results.cases) - pass_count
-    pass_rate = pass_count / len(results.cases) if results.cases else None
+    # Case outcomes, by the same rule the run page uses (1.89.0, E5). An errored
+    # case has no per-scorer verdicts, and ``all([])`` is True, so every case
+    # whose agent raised was counted as a pass.
+    from fastaiagent.eval.compare import case_outcome
+
+    outcomes = [case_outcome({"error": c.error, "per_scorer": c.per_scorer}) for c in results.cases]
+    pass_count = outcomes.count("passed")
+    fail_count = outcomes.count("failed")
+    errored_count = outcomes.count("errored")
+    scored = pass_count + fail_count
+    pass_rate = pass_count / scored if scored else None
     echo_mode = runner is None
     return RunEvalResult(
         run_id=run_id,
         pass_rate=pass_rate,
         pass_count=pass_count,
         fail_count=fail_count,
+        errored_count=errored_count,
+        total_cases=len(outcomes),
         mode="echo" if echo_mode else "agent",
         note=(
             "No agent was selected, so this run echoed each input back "

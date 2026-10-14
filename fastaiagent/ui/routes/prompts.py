@@ -102,16 +102,45 @@ def get_prompt(
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"Prompt '{slug}' not found")
     reg = _registry(request)
     try:
-        prompt = reg.load(slug)
+        payload = _version_payload(reg, slug, None)
     except PromptNotFoundError as e:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(e)) from e
     return {
-        "slug": prompt.name,
-        "latest_version": prompt.version,
-        "template": prompt.template,
-        "variables": prompt.variables,
-        "metadata": prompt.metadata,
+        **payload,
+        "latest_version": payload["version"],
         "registry_is_local": reg.is_local(),
+    }
+
+
+def _ordered_variables(template: str) -> list[str]:
+    import re
+
+    return list(dict.fromkeys(re.findall(r"\{\{(\w+)\}\}", template)))
+
+
+def _version_payload(reg: PromptRegistry, slug: str, version: int | None) -> dict[str, Any]:
+    """One shape for a prompt version, used by every prompt endpoint (1.89.0).
+
+    ``template`` is resolved (what a run sends: the Playground needs it);
+    ``template_raw`` is the stored text with its ``{{@fragment}}`` references,
+    which is what the editor must edit. Saving the resolved text back used to
+    replace each reference with a frozen copy of the fragment.
+
+    The raw version is loaded first and resolved at *that* version, so a
+    concurrent save can't mix two versions in one response.
+    """
+    from fastaiagent.prompt.registry import fragment_refs
+
+    raw = reg.load(slug, version=version, resolve_fragments=False)
+    resolved = reg.resolve_fragments(raw.template)
+    return {
+        "slug": raw.name,
+        "version": raw.version,
+        "template": resolved,
+        "template_raw": raw.template,
+        "fragments": fragment_refs(raw.template),
+        "variables": _ordered_variables(resolved),
+        "metadata": raw.metadata,
     }
 
 
@@ -121,12 +150,16 @@ def list_versions(
     slug: str,
     _user: str = Depends(require_session),
 ) -> dict[str, Any]:
+    import json
+
+    from fastaiagent.prompt.registry import fragment_refs
+
     ctx = get_context(request)
     db = ctx.db()
     pid_clause, pid_params = project_filter(ctx)
     try:
         rows = db.fetchall(
-            f"""SELECT slug, version, template, variables, created_at, created_by
+            f"""SELECT slug, version, template, metadata, created_at, created_by
                FROM prompt_versions
                WHERE slug = ? {pid_clause}
                ORDER BY CAST(version AS INTEGER) ASC""",
@@ -134,9 +167,36 @@ def list_versions(
         )
         if not rows:
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"Prompt '{slug}' not found")
-        return {"versions": rows}
     finally:
         db.close()
+    # The same shape as GET /{slug} and /versions/{v} (1.89.0): ``variables``
+    # used to be a JSON *string* here and ``template`` the raw text, while the
+    # other two endpoints returned a list and the resolved text.
+    reg = _registry(request)
+    versions = []
+    for row in rows:
+        raw = row["template"] or ""
+        resolved = reg.resolve_fragments(raw)
+        try:
+            metadata = json.loads(row.get("metadata") or "{}")
+        except (TypeError, ValueError):
+            metadata = {}
+        versions.append(
+            {
+                "slug": row["slug"],
+                # Stays the stored string this endpoint has always returned;
+                # only ``variables`` and ``template`` changed shape (D5).
+                "version": row["version"],
+                "template": resolved,
+                "template_raw": raw,
+                "fragments": fragment_refs(raw),
+                "variables": _ordered_variables(resolved),
+                "metadata": metadata,
+                "created_at": row["created_at"],
+                "created_by": row["created_by"],
+            }
+        )
+    return {"versions": versions}
 
 
 @router.get("/{slug}/versions/{version}")
@@ -148,16 +208,9 @@ def get_version(
 ) -> dict[str, Any]:
     reg = _registry(request)
     try:
-        prompt = reg.load(slug, version=int(version))
+        return _version_payload(reg, slug, int(version))
     except (PromptNotFoundError, ValueError) as e:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(e)) from e
-    return {
-        "slug": prompt.name,
-        "version": prompt.version,
-        "template": prompt.template,
-        "variables": prompt.variables,
-        "metadata": prompt.metadata,
-    }
 
 
 @router.get("/{slug}/diff")
@@ -178,7 +231,11 @@ def diff_versions(
 class EditRequest(BaseModel):
     template: str
     variables: list[str] | None = None
+    """Ignored: variables are derived from the template."""
     metadata: dict[str, Any] | None = None
+    """``None`` (omitted) inherits the base version's metadata; ``{}`` clears it."""
+    base_version: int | None = None
+    """The version this edit started from. Defaults to the latest."""
 
 
 @router.put("/{slug}")
@@ -201,18 +258,28 @@ def update_prompt(
     # fallback inside the storage layer can write a different project id
     # than the AppContext is filtering on, and the new version becomes
     # invisible to the editor that just saved it.
+    #
+    # Metadata (1.89.0): an omitted ``metadata`` inherits the base version's.
+    # Every editor save used to send ``{}``, which this route wrote verbatim,
+    # so each new version silently lost its owner, tags and the rest.
+    base = None
+    try:
+        base = reg.load(slug, version=body.base_version, resolve_fragments=False)
+    except PromptNotFoundError as e:
+        if body.base_version is not None:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                f"Prompt '{slug}' has no version {body.base_version} to edit from",
+            ) from e
+    metadata = body.metadata if body.metadata is not None else (base.metadata if base else {})
     prompt = reg.register(
         name=slug,
         template=body.template,
-        metadata=body.metadata or {},
+        metadata=metadata,
         project_id=ctx.project_id or None,
+        created_by="ui",
     )
-    return {
-        "slug": prompt.name,
-        "version": prompt.version,
-        "template": prompt.template,
-        "variables": prompt.variables,
-    }
+    return _version_payload(reg, slug, prompt.version)
 
 
 @router.delete("/{slug}")

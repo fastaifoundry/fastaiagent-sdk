@@ -59,3 +59,38 @@ def test_curate_real_agent_then_evaluate(isolated_local_db: Any, tmp_path: Any) 
         assert scores and all(0.0 <= s.score <= 1.0 for s in scores)
     finally:
         otel.reset()
+
+
+@pytest.mark.parametrize("ui_enabled", ["1", "0"], ids=["ui_on", "ui_off"])
+def test_curate_guardrail_filter_live(
+    isolated_local_db: Any, monkeypatch: pytest.MonkeyPatch, ui_enabled: str
+) -> None:
+    """G8 (1.89.0): a real warn-rule firing is curated, with the Local UI on (event
+    rows) and off (guardrail spans only). Before, the filter matched an outcome
+    nothing writes and returned nothing either way."""
+    from fastaiagent._internal.config import reset_config
+    from fastaiagent.eval import curate_from_traces
+    from fastaiagent.guardrail.builtins import no_pii
+
+    monkeypatch.setenv("FASTAIAGENT_UI_ENABLED", ui_enabled)
+    reset_config()
+    otel.reset()
+    try:
+        rule = no_pii()
+        rule.action = "warn"  # record and carry on: the run still finishes
+        agent = Agent(
+            name="e2e-pii",
+            system_prompt="Repeat the user's message back exactly, nothing else.",
+            llm=LLMClient(provider="openai", model="gpt-4o-mini"),
+            guardrails=[rule],
+        )
+        run = agent.run("Repeat exactly: my email is a@b.com")
+        assert "a@b.com" in run.output, "the model did not echo the email; rerun"
+
+        items = curate_from_traces(filter="guardrail", limit=None)
+        mine = [it for it in items if it["trace_id"] == run.trace_id]
+        assert mine, "the run where no_pii fired was not curated"
+        assert "guardrail 'no_pii' fired" in mine[0]["reason"]
+        assert mine[0]["needs_review"] is True
+    finally:
+        otel.reset()

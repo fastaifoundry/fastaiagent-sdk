@@ -182,12 +182,27 @@ def bucket_cases(
     return regressed, improved, unchanged_pass, unchanged_fail
 
 
-def load_run(run_ref: str, *, db_path: str | Path | None = None) -> dict[str, Any]:
+#: SQL true for a run whose recorded gate did not reject it. A run never gated
+#: counts as accepted; ``json_valid`` guards rows whose metadata is malformed.
+_ACCEPTED_SQL = (
+    "COALESCE(CASE WHEN json_valid(metadata) THEN json_extract(metadata, '$.gate_outcome') "
+    "END, 'passed') = 'passed'"
+)
+
+
+def load_run(
+    run_ref: str, *, db_path: str | Path | None = None, accepted_only: bool = False
+) -> dict[str, Any]:
     """Load one persisted eval run as ``{"run": {...}, "cases": [...]}``.
 
     ``run_ref`` is a ``run_id`` (exact) or a ``run_name`` (the most recent
     run with that name wins — so ``--eval-baseline main`` selects the last
     persisted run named ``main``). Raises :class:`EvalError` when not found.
+
+    ``accepted_only=True`` makes a *name* lookup skip runs whose recorded gate
+    was ``failed`` or ``invalid``, so a regression can never become the next
+    baseline just by being the newest run with that name (1.89.0). An exact
+    ``run_id`` is always honoured.
     """
     from fastaiagent._internal.config import get_config
     from fastaiagent.ui.db import init_local_db
@@ -199,12 +214,15 @@ def load_run(run_ref: str, *, db_path: str | Path | None = None) -> dict[str, An
     try:
         row = db.fetchone("SELECT * FROM eval_runs WHERE run_id = ?", (run_ref,))
         if row is None:
+            accepted = f" AND {_ACCEPTED_SQL}" if accepted_only else ""
             row = db.fetchone(
-                "SELECT * FROM eval_runs WHERE run_name = ? ORDER BY started_at DESC LIMIT 1",
+                f"SELECT * FROM eval_runs WHERE run_name = ?{accepted} "
+                "ORDER BY started_at DESC, rowid DESC LIMIT 1",
                 (run_ref,),
             )
         if row is None:
-            raise EvalError(f"Eval run {run_ref!r} not found (tried run_id, then latest run_name)")
+            which = "latest accepted run_name" if accepted_only else "latest run_name"
+            raise EvalError(f"Eval run {run_ref!r} not found (tried run_id, then {which})")
         cases = db.fetchall(
             "SELECT * FROM eval_cases WHERE run_id = ? ORDER BY ordinal",
             (row["run_id"],),

@@ -14,7 +14,7 @@ from typing import Any
 
 from fastaiagent._internal.errors import FragmentNotFoundError, PromptNotFoundError
 from fastaiagent._internal.storage import SQLiteHelper
-from fastaiagent.prompt.fragment import Fragment
+from fastaiagent.prompt.fragment import Fragment, fragment_refs
 from fastaiagent.prompt.prompt import Prompt
 from fastaiagent.ui.db import init_local_db
 
@@ -47,7 +47,7 @@ class SQLiteStorage:
     # --- Prompts ---------------------------------------------------------
 
     def save_prompt(
-        self, prompt: Prompt, *, project_id: str | None = None
+        self, prompt: Prompt, *, project_id: str | None = None, created_by: str = "code"
     ) -> None:
         """Persist a prompt + its version row.
 
@@ -95,10 +95,10 @@ class SQLiteStorage:
                 str(prompt.version),
                 prompt.template,
                 json.dumps(prompt.variables),
-                json.dumps([]),
+                json.dumps(fragment_refs(prompt.template)),
                 json.dumps(prompt.metadata),
                 now,
-                "code",
+                created_by,
                 pid,
             ),
         )

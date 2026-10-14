@@ -123,9 +123,40 @@ regressed=3 improved=0 unchanged_pass=17 unchanged_fail=0
 GATE: REGRESSION — overall pass-rate dropped 0.1500 vs baseline (tolerance 0.02)
 ```
 
-Baselines resolve by `run_id` first, then by `run_name` (latest wins), and
-live in the same `local.db` the Local UI reads — so every gated run is
-browsable at `/evals/<run_id>` and diffable at `/evals/compare`.
+Baselines resolve by `run_id` first, then by `run_name`: the latest
+**accepted** run with that name wins. A run whose gate recorded `failed` or
+`invalid` is skipped, so a regression cannot become the next baseline just by
+being the newest run named `main`. To accept a lower bar on purpose, publish a
+passing run or pass the baseline's exact `run_id`. Baselines live in the same
+`local.db` the Local UI reads, so every gated run is browsable at
+`/evals/<run_id>` and diffable at `/evals/compare`.
+
+**The session records the verdict it enforces** (*changed in 1.89.0*). A
+regression against the baseline records `gate_outcome="failed"`; a baseline
+that cannot be loaded records `invalid`, because nothing was compared. The
+recorded verdict and the exit status are one value, printed as the last line:
+
+```
+fastaiagent eval verdict: FAILED (recorded as gate_outcome=failed)
+```
+
+Before 1.89.0 such a session exited 1 but recorded `passed`, so a connected
+plane counted the regression as passing evidence.
+
+**A ratchet on one name.** You can publish and compare under the same name:
+
+```bash
+pytest --eval-run-name main --eval-baseline main
+```
+
+The baseline is resolved *before* the session persists its own run, so it is
+compared with the previous accepted `main`, never with itself. If no accepted
+`main` exists yet, this session publishes it, gated on thresholds alone, and
+says so:
+
+```
+baseline 'main' has no accepted run yet: this session publishes it (gated on thresholds only)
+```
 
 Runs also record git provenance (`git_sha`, `git_branch`, from the GitHub
 Actions env or `git rev-parse`) in `eval_runs.metadata`.

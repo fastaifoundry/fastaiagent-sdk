@@ -134,6 +134,31 @@ FASTAIAGENT_ATTRIBUTES = {
 FASTAI_ATTRIBUTES = FASTAIAGENT_ATTRIBUTES
 
 
+def mark_span_error(span: Any, exc: BaseException, *, description: str | None = None) -> None:
+    """Record ``exc`` on ``span`` and set its status to ERROR, as OTel's
+    ``use_span`` does for a span held as *current* (1.89.0).
+
+    For spans the SDK holds by hand: a streamed ``llm.*`` span (an async
+    generator cannot keep a span current across its ``yield``), and routes that
+    catch an exception inside the span and return normally. Before this, those
+    paths called ``record_exception`` alone, so a failed stream ended UNSET and a
+    trace whose only failure was a streamed call never showed as failed.
+
+    Call it for ``Exception`` only, never ``GeneratorExit`` or
+    ``CancelledError``: an abandoned or cancelled stream is not a failure.
+    Never raises.
+    """
+    try:
+        if not span.is_recording():
+            return
+        from opentelemetry.trace import Status, StatusCode
+
+        span.record_exception(exc)
+        span.set_status(Status(StatusCode.ERROR, description or f"{type(exc).__name__}: {exc}"))
+    except Exception:  # pragma: no cover — bookkeeping never breaks the caller
+        logger.debug("Could not mark span as errored", exc_info=True)
+
+
 def set_span_attributes(span: Any, **kwargs: Any) -> None:
     """Set attributes on a span, filtering out None values."""
     for key, value in kwargs.items():

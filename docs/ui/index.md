@@ -351,6 +351,22 @@ The editor lists versions on the left, with the template on the right
 creates a new version; the lineage panel below lists every trace and eval
 run using this prompt.
 
+Since 1.89.0 the editor:
+
+- **Edits the stored template.** `{{@fragment}}` references stay as written and
+  are listed under the template, so a later fragment edit still reaches the
+  saved version. Before, it edited the resolved text and froze each fragment
+  into a copy on save.
+- **Keeps metadata.** A new version inherits the metadata of the version you
+  edited. Before, every save wrote empty metadata.
+- **Labels its versions `ui`** in the versions list, where code-registered
+  versions say `code`.
+
+The REST API matches: every prompt endpoint returns `template` (resolved),
+`template_raw`, `fragments`, `variables` (a list) and `metadata`, and
+`PUT /api/prompts/{slug}` takes `base_version`. An omitted `metadata` inherits
+from that version, and `metadata: {}` clears it.
+
 When the registry lives outside the current project folder the editor is
 disabled and a banner explains why (the rule is "UI mutates only what's
 clearly local and personal"; external paths are owned by whoever runs that

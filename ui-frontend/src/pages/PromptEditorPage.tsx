@@ -57,10 +57,12 @@ export function PromptEditorPage() {
   const isLocal = prompt.data?.registry_is_local ?? false;
 
   // When the prompt first loads, select its latest version and seed the draft.
+  // The draft is the RAW template: seeding it from the resolved one and saving
+  // it back replaced every {{@fragment}} with a frozen copy (1.89.0).
   useEffect(() => {
     if (prompt.data && selectedVersion == null) {
       setSelectedVersion(String(prompt.data.latest_version));
-      setDraft(prompt.data.template);
+      setDraft(prompt.data.template_raw ?? prompt.data.template);
       setDirty(false);
     }
   }, [prompt.data, selectedVersion]);
@@ -68,17 +70,24 @@ export function PromptEditorPage() {
   // When the user picks a non-latest version, swap the editor contents.
   useEffect(() => {
     if (selectedDetail.data) {
-      setDraft(selectedDetail.data.template);
+      setDraft(selectedDetail.data.template_raw ?? selectedDetail.data.template);
       setDirty(false);
     }
   }, [selectedDetail.data]);
 
   const variables = useMemo(() => extractVars(draft), [draft]);
+  const fragments = selectedDetail.data?.fragments ?? prompt.data?.fragments ?? [];
 
   const handleSave = async () => {
     if (!slug || !draft.trim()) return;
     try {
-      const res = await updatePrompt.mutateAsync({ slug, template: draft });
+      // No metadata: the server inherits it from the version being edited.
+      // Sending {} wiped it on every save (1.89.0).
+      const res = await updatePrompt.mutateAsync({
+        slug,
+        template: draft,
+        baseVersion: selectedVersion != null ? Number(selectedVersion) : undefined,
+      });
       toast.success(`Saved as v${res.version}`);
       setDirty(false);
       setSelectedVersion(String(res.version));
@@ -236,12 +245,12 @@ export function PromptEditorPage() {
             ) : (
               <ul className="divide-y">
                 {(versions.data?.versions ?? []).map((v) => {
-                  const isActive = selectedVersion === v.version;
+                  const isActive = selectedVersion === String(v.version);
                   return (
                     <li key={v.version}>
                       <button
                         type="button"
-                        onClick={() => setSelectedVersion(v.version)}
+                        onClick={() => setSelectedVersion(String(v.version))}
                         className={cn(
                           "flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-sm transition-colors",
                           isActive
@@ -293,6 +302,22 @@ export function PromptEditorPage() {
                 readOnly={!isLocal}
                 placeholder="Enter prompt template. Use {{name}} for variables."
               />
+              {fragments.length > 0 && (
+                <p
+                  className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"
+                  data-testid="prompt-fragments"
+                >
+                  Fragments (kept as live references):
+                  {fragments.map((f) => (
+                    <span
+                      key={f}
+                      className="rounded border bg-muted/50 px-1.5 py-0.5 font-mono"
+                    >
+                      {`{{@${f}}}`}
+                    </span>
+                  ))}
+                </p>
+              )}
             </CardContent>
           </Card>
 

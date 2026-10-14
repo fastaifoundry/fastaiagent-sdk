@@ -44,7 +44,11 @@ and a header full of bulk affordances:
   `mode: "echo"` and says so). Agents are selectable once they're registered
   — start the UI with `fastaiagent ui --agent app.py:my_agent`. The
   resulting `run_id` is the same one Eval Runs would have produced —
-  clicking through deep-links into `/evals/{run_id}`.
+  clicking through deep-links into `/evals/{run_id}`. The result counts
+  **cases**: `pass_count`, `fail_count`, and `errored_count` for cases whose
+  agent raised, out of `total_cases`. `pass_rate` is passed over *scored*
+  cases, and `null` when nothing was scored. Before 1.89.0 an errored case
+  was counted as a pass.
 
 ## Case editor
 

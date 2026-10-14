@@ -183,8 +183,23 @@ Local UI.
 
 A run becomes exportable when its **gate verdict** is recorded, not when it is
 persisted: the plane requires `gate_outcome`, and the gate necessarily runs after
-persistence. Runs nobody gated still export with `thresholds: {}` — "evals ran,
-no gate demanded" is evidence too.
+persistence. The CLI (`fastaiagent eval run`) and the pytest plugin record the
+verdict for you; a pytest session with no gate options records `passed` with
+`thresholds: {}`, because "evals ran, no gate demanded" is evidence too. A bare
+`evaluate()` in Python is exported only once you call `record_gate_result()`
+(`evaluate` → `gate` → `record_gate_result`); until then
+`fastaiagent eval export --dry-run` shows `"gate_outcome": null` and marks the run
+*not exportable*.
+
+*Changed in 1.89.0.* Before, a run waiting for its verdict was sent with an
+invented `passed` whenever any span flush drained the outbox, and the plane keeps
+the first copy of a `run_id`, so the real verdict arriving later was discarded. A
+process running an older SDK against the same `local.db` can still send those
+runs; upgrade every process that shares the file.
+
+`record_gate_result()` raises `ValueError` for any outcome other than `passed`,
+`failed` or `invalid`. The plane would reject it with a 4xx, which is never
+retried, and the bad run would hold back every run batched with it.
 
 When export is off, runs are written `synced = 1` and never queued, so a disabled
 install never grows an outbox it cannot drain. Turning it on later ships only new

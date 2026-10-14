@@ -390,6 +390,62 @@ class TestRunEval:
         assert body["run_id"] in run_ids
 
 
+class TestRunEvalErrored:
+    """E5 (1.89.0): an errored case is neither a pass nor a fail.
+
+    An errored case has no per-scorer verdicts, and the route counted passes
+    with ``all(...)`` over them, which is True for an empty set: every case
+    whose agent raised was reported as a pass.
+    """
+
+    @pytest.fixture
+    def client_with_boom(self, temp_dir: Path) -> TestClient:
+        from fastaiagent import Agent
+        from fastaiagent.testing import FunctionModel
+
+        def responder(messages: list) -> str:
+            text = str(messages[-1].content if messages else "")
+            if "boom" in text:
+                raise RuntimeError("provider down")
+            return "match" if "good" in text else "nope"
+
+        fa_dir = temp_dir / ".fastaiagent"
+        fa_dir.mkdir(parents=True, exist_ok=True)
+        db_path = fa_dir / "local.db"
+        init_local_db(db_path).close()
+        agent = Agent(name="boom-bot", llm=FunctionModel(responder))
+        return TestClient(build_app(db_path=str(db_path), no_auth=True, runners=[agent]))
+
+    def _seed(self, c: TestClient, inputs: list[str]) -> None:
+        c.post("/api/datasets", json={"name": "mix"})
+        for text in inputs:
+            c.post("/api/datasets/mix/cases", json={"input": text, "expected_output": "match"})
+
+    def test_errored_cases_are_counted_apart(self, client_with_boom: TestClient) -> None:
+        c = client_with_boom
+        self._seed(c, ["good one", "bad one", "boom one"])
+        r = c.post(
+            "/api/datasets/mix/run-eval",
+            json={"agent_name": "boom-bot", "scorers": ["exact_match", "contains"]},
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert (body["pass_count"], body["fail_count"], body["errored_count"]) == (1, 1, 1)
+        assert body["total_cases"] == 3
+        assert body["pass_rate"] == pytest.approx(0.5), "the rate is over scored cases"
+
+    def test_all_errored_has_no_pass_rate(self, client_with_boom: TestClient) -> None:
+        c = client_with_boom
+        self._seed(c, ["boom a", "boom b"])
+        body = c.post(
+            "/api/datasets/mix/run-eval",
+            json={"agent_name": "boom-bot", "scorers": ["exact_match"]},
+        ).json()
+        assert body["pass_count"] == 0
+        assert body["errored_count"] == 2
+        assert body["pass_rate"] is None
+
+
 class TestRunEvalAgainstARegisteredAgent:
     """Before `fastaiagent ui --agent`, ctx.runners was always empty for a
     CLI-launched UI, so naming an agent 404'd and the only reachable mode

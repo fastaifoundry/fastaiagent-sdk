@@ -524,6 +524,19 @@ async def stream(
                     body.model,
                     _scrubbed_traceback(e, body),
                 )
+                # The root gets exactly what /run's root records — an
+                # HTTPException 502 with the opaque body — so both routes mark
+                # the trace failed, and the provider's text never reaches the
+                # root (the plane derives ``trace.error`` from it). 1.89.0, P5.
+                from fastaiagent.trace.span import mark_span_error
+
+                mark_span_error(
+                    span,
+                    HTTPException(
+                        status.HTTP_502_BAD_GATEWAY,
+                        {"error": "LLM call failed.", "correlation_id": correlation_id},
+                    ),
+                )
                 err = json.dumps(
                     {
                         "message": "LLM call failed.",

@@ -90,6 +90,11 @@ output guardrails are not supported on the streaming path because they'd
 need to buffer the full stream (defeating the purpose). If you need an
 output guardrail for a stream, fall back to `run_sync`.
 
+A `run_stream` that fails, including one that fails while the stream is
+opening (a 4xx on connect), ends its root span with status ERROR (*since
+1.89.0*). Before, a failure on open left the span attached and never ended, so
+it was never exported and the next run nested under it.
+
 ## 4. Prompt registry
 
 ```python

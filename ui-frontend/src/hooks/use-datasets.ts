@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, readCsrfCookie } from "@/lib/api";
+import { api, ApiError, readCsrfCookie } from "@/lib/api";
+import { normalizeErrorBody } from "@/lib/api-error";
 import type {
   CaseBody,
   DatasetCase,
@@ -116,14 +117,14 @@ async function postFormData<T>(path: string, fd: FormData): Promise<T> {
     headers,
   });
   if (!res.ok) {
-    let detail = res.statusText;
+    let body: unknown = null;
     try {
-      const body = await res.json();
-      detail = (body as { detail?: string }).detail ?? detail;
+      body = await res.json();
     } catch {
       /* ignore */
     }
-    throw new Error(detail);
+    const info = normalizeErrorBody(body, res.status, res.statusText);
+    throw new ApiError(res.status, info.message, body, info);
   }
   return (await res.json()) as T;
 }

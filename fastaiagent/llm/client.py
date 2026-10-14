@@ -989,8 +989,17 @@ class LLMClient:
                         streamed_tool_calls.clear()
                         await asyncio.sleep(self._retry_delay(attempt))
                         continue
-                    span.record_exception(e)
                     raise
+        except Exception as e:
+            # Any failure, not only a provider error: a refused connection or a
+            # malformed chunk failed the call just the same. ERROR, like
+            # ``acomplete``'s span gets from ``start_as_current_span`` (1.89.0).
+            # ``GeneratorExit`` (consumer stopped early) and ``CancelledError``
+            # are BaseException, so neither lands here.
+            from fastaiagent.trace.span import mark_span_error
+
+            mark_span_error(span, e)
+            raise
         finally:
             # Runs on exhaustion, on an exception, AND when a consumer abandons
             # the generator early (``GeneratorExit`` at the yield) — a streamed

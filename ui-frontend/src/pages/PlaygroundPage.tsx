@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ParametersPanel } from "@/components/playground/ParametersPanel";
+import { isValidMaxTokens } from "@/lib/playground-params";
 import {
   RunHistory,
   type PlaygroundHistoryEntry,
@@ -43,6 +44,8 @@ import {
 } from "@/hooks/use-playground";
 import { usePrompt, usePrompts, usePromptVersion } from "@/hooks/use-prompts";
 import { ApiError } from "@/lib/api";
+import type { ErrorInfo } from "@/lib/api-error";
+import { RunErrorPanel } from "@/components/playground/RunErrorPanel";
 import { formatCost, formatDurationMs, formatTokens } from "@/lib/format";
 import type {
   PlaygroundDoneMetadata,
@@ -79,6 +82,14 @@ function resolveTemplate(
 
 function uniqueId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** What the server accepts as an endpoint: an http(s) URL with a host. */
+const ENDPOINT_RE = /^https?:\/\/[^/\s]+/;
+
+/** A plain-message error, for the checks the page makes before any request. */
+function messageError(message: string): ErrorInfo {
+  return { message, fieldErrors: [] };
 }
 
 export function PlaygroundPage() {
@@ -216,10 +227,9 @@ export function PlaygroundPage() {
 
   const [response, setResponse] = useState<string>("");
   const [running, setRunning] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-  const [errorCorrelationId, setErrorCorrelationId] = useState<string | null>(
-    null,
-  );
+  // One normalised error (1.89.0, P1). It used to be the raw `detail`, which is
+  // a list for a 422 — rendering it crashed the page and lost the form.
+  const [errorInfo, setErrorInfo] = useState<ErrorInfo | null>(null);
   const [lastMetadata, setLastMetadata] =
     useState<PlaygroundDoneMetadata | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -234,21 +244,20 @@ export function PlaygroundPage() {
     }
     if (!credentialed) {
       const env = providerInfo?.env_var ?? `${provider.toUpperCase()}_API_KEY`;
-      setError(
-        `No API key found for provider '${provider}'. Set ${env} in your ` +
-          `environment and restart the UI, or paste a token for this run in ` +
-          `the Connection panel.`,
+      setErrorInfo(
+        messageError(
+          `No API key found for provider '${provider}'. Set ${env} in your ` +
+            `environment and restart the UI, or paste a token for this run in ` +
+            `the Connection panel.`,
+        ),
       );
-      setErrorCorrelationId(null);
       return;
     }
     if (!model.trim()) {
-      setError("Pick or type a model first.");
-      setErrorCorrelationId(null);
+      setErrorInfo(messageError("Pick or type a model first."));
       return;
     }
-    setError(null);
-    setErrorCorrelationId(null);
+    setErrorInfo(null);
     setResponse("");
     setLastMetadata(null);
     setActiveHistoryId(null);
@@ -283,8 +292,15 @@ export function PlaygroundPage() {
           metadata = ev.metadata;
           setLastMetadata(ev.metadata);
         } else if (ev.event === "error") {
-          setError(ev.message);
-          setErrorCorrelationId(ev.correlation_id ?? null);
+          setErrorInfo({
+            message: ev.message,
+            fieldErrors: ev.field_errors ?? [],
+            correlationId: ev.correlation_id,
+            kind: ev.kind,
+            providerStatus: ev.provider_status,
+            providerMessage: ev.provider_message,
+            hint: ev.hint,
+          });
           break;
         }
       }
@@ -310,9 +326,9 @@ export function PlaygroundPage() {
       if ((e as { name?: string }).name === "AbortError") {
         // User clicked Stop — keep whatever has streamed so far.
       } else if (e instanceof ApiError) {
-        setError(e.message);
+        setErrorInfo(e.info);
       } else {
-        setError(`Stream failed: ${(e as Error).message}`);
+        setErrorInfo(messageError(`Stream failed: ${(e as Error).message}`));
       }
     } finally {
       setRunning(false);
@@ -336,8 +352,15 @@ export function PlaygroundPage() {
   // A model that isn't in the suggestion list is fine (the combobox accepts
   // free text and LLMClient takes any id the upstream API knows), but an
   // *empty* one never is.
+  // A bad max_tokens or endpoint is caught here rather than sent: the server's
+  // 422 for it used to crash the page (1.89.0, P1).
+  const endpointValid = !baseUrl.trim() || ENDPOINT_RE.test(baseUrl.trim());
   const canRun =
-    Boolean(template.trim()) && Boolean(model.trim()) && credentialed;
+    Boolean(template.trim()) &&
+    Boolean(model.trim()) &&
+    credentialed &&
+    isValidMaxTokens(params.max_tokens) &&
+    endpointValid;
 
   const handleStop = () => {
     abortRef.current?.abort();
@@ -622,10 +645,17 @@ export function PlaygroundPage() {
                       autoComplete="off"
                       spellCheck={false}
                       className="font-mono text-xs"
+                      aria-invalid={!endpointValid}
                     />
-                    <p className="text-[11px] text-muted-foreground">
-                      Leave empty to use {provider}&apos;s default.
-                    </p>
+                    {endpointValid ? (
+                      <p className="text-[11px] text-muted-foreground">
+                        Leave empty to use {provider}&apos;s default.
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-destructive" role="alert">
+                        The endpoint must be an http:// or https:// URL.
+                      </p>
+                    )}
                   </div>
                   <div className="space-y-1">
                     <Label htmlFor="playground-api-key" className="text-xs">
@@ -718,7 +748,7 @@ export function PlaygroundPage() {
 
         {/* ─── RIGHT: Response ────────────────────────────────────────── */}
         <div className="space-y-4">
-          <Card className={cn(error && "border-destructive")}>
+          <Card className={cn(errorInfo && "border-destructive")}>
             <CardHeader>
               <CardTitle className="flex items-center justify-between text-sm">
                 <span>// RESPONSE</span>
@@ -731,20 +761,8 @@ export function PlaygroundPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {error ? (
-                <div className="space-y-1.5">
-                  <pre className="rounded-md border border-destructive bg-destructive/5 p-3 font-mono text-xs whitespace-pre-wrap text-destructive">
-                    {error}
-                  </pre>
-                  {errorCorrelationId && (
-                    <p className="text-xs text-muted-foreground">
-                      The provider&apos;s error is redacted here to avoid
-                      leaking account details. The full text is in the server
-                      log under correlation id{" "}
-                      <code className="font-mono">{errorCorrelationId}</code>.
-                    </p>
-                  )}
-                </div>
+              {errorInfo ? (
+                <RunErrorPanel info={errorInfo} />
               ) : (
                 <pre className="min-h-[160px] max-h-[480px] overflow-auto rounded-md border bg-muted/20 p-3 font-mono text-xs whitespace-pre-wrap">
                   {response || (

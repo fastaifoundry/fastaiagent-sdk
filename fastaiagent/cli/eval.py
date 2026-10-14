@@ -247,6 +247,13 @@ def export_evals_cmd(
         f"[dim]{len(payloads)} run(s). Case inputs/outputs are absent by design — "
         "the plane joins content via trace_id.[/dim]"
     )
+    ungated = [p["run_id"] for p in payloads if p.get("gate_outcome") is None]
+    if ungated:
+        console.print(
+            f"[yellow]Not exportable (no gate verdict recorded): {', '.join(ungated)}. "
+            "A run becomes evidence once record_gate_result() records its verdict; the "
+            "CLI and the pytest plugin record it for you.[/yellow]"
+        )
 
 
 @eval_app.command("curate")
@@ -272,6 +279,8 @@ def curate_cmd(
     Each agent.<name> span (root, or nested inside a chain/supervisor/swarm)
     becomes one case. Good filters (all/favorites/noted) use the captured output
     as expected_output; failure filters (guardrail/failed) mark cases needs_review.
+    ``guardrail`` selects runs where a rule fired (blocked, warned or filtered;
+    false positives and errored checks excluded).
     """
     from fastaiagent.eval.curate import curate_from_traces
     from fastaiagent.eval.dataset import Dataset
