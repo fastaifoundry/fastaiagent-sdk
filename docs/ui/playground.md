@@ -233,8 +233,11 @@ var.
     Token box empty.)
 
 **The token is deliberately transient.** It is not written to `local.db`, not
-saved to `localStorage`, not logged (the server logs only provider, model, and
-a correlation id), and not echoed in any response — a page reload clears it.
+saved to `localStorage`, and not echoed in any response — a page reload clears
+it. When a call fails, the server log records provider, model, a correlation id
+and the traceback, with the token and every provider key in the environment
+scrubbed out of it (since 1.89.0; earlier versions logged the raw traceback,
+which could carry a key the provider echoed back).
 That is the point: gateway tokens are usually short-lived and SSO-issued, so an
 env var read once at server start would mean restarting the UI on every
 rotation.
@@ -267,7 +270,8 @@ When a provider call fails, the UI shows a generic `LLM call failed.`
 rather than the provider's own error — those can carry request ids, account
 ids, and partial key prefixes. The full text is written to the **server
 log** under the correlation id shown beneath the error, so grep the terminal
-running `fastaiagent ui` for that id to see what actually went wrong.
+running `fastaiagent ui` for that id to see what actually went wrong. Keys are
+scrubbed from that log text before it is written (1.89.0).
 
 ## When to use which
 

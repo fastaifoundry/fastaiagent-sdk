@@ -387,6 +387,17 @@ judge_guard = Guardrail(
 )
 ```
 
+!!! warning "No credentials in `config[\"llm\"]` (changed in 1.89.0)"
+    `config` is serialized into traces and pushed to the control plane, so
+    `config["llm"]` takes only shareable `LLMClient` fields (`provider`,
+    `model`, `base_url`, sampling parameters). An `api_key`, `default_headers`
+    or any other field **raises `ValueError`** when the guardrail is built. The
+    judge resolves its key from the provider's environment variable
+    (`OPENAI_API_KEY`, …) on whichever machine runs the rule. A rule stored by
+    an older SDK with a key inside still loads: the key is dropped with a
+    warning. See
+    [Security posture](../security.md#credentials-in-traces-and-pushed-definitions).
+
 ### Classifier
 
 Keyword-based category detection with blocked category lists:

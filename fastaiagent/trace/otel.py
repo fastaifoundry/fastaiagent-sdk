@@ -140,11 +140,16 @@ def _filtered_status(span: Any) -> Any:
     if not export_payloads_enabled():
         return Status(status.status_code)
 
+    # Credentials never egress (1.89.0, P9): the description is ``str(e)`` for a
+    # span that recorded an exception, and that can carry a key.
+    from fastaiagent._internal.scrub import known_credential_values, scrub_secrets
+
+    clean = scrub_secrets(description, known_credential_values())
     policy = get_redaction_policy()
     if policy is not None and policy.mode in ("capture", "both") and policy._compiled:
-        masked = _walk_and_redact(description, policy)
-        if masked != description:
-            return Status(status.status_code, masked)
+        clean = _walk_and_redact(clean, policy)
+    if clean != description:
+        return Status(status.status_code, clean)
     return None
 
 
@@ -195,6 +200,8 @@ def _filtered_events(span: Any) -> Any:
     if not events:
         return None
 
+    from fastaiagent._internal.scrub import known_credential_values, scrub_secrets
+
     payloads_ok = export_payloads_enabled()
     policy = get_redaction_policy()
     masker = (
@@ -202,8 +209,11 @@ def _filtered_events(span: Any) -> Any:
         if (policy is not None and policy.mode in ("capture", "both") and policy._compiled)
         else None
     )
-    if payloads_ok and masker is None:
-        return None
+
+    # Credentials never egress, whatever the payload setting (1.89.0, P9): an
+    # exception message can carry a key a provider echoed back, or one user
+    # code formatted in. Only computed when a message would actually go out.
+    secrets = known_credential_values() if payloads_ok else []
 
     rebuilt = []
     changed = False
@@ -215,7 +225,14 @@ def _filtered_events(span: Any) -> Any:
             if not payloads_ok:
                 attrs.pop(key, None)
                 changed = True
-            elif masker is not None:
+                continue
+            value = attrs[key]
+            if isinstance(value, str):
+                clean = scrub_secrets(value, secrets)
+                if clean != value:
+                    attrs[key] = clean
+                    changed = True
+            if masker is not None:
                 attrs[key] = _walk_and_redact(attrs[key], masker)
                 changed = True
         rebuilt.append(Event(name=event.name, attributes=attrs, timestamp=event.timestamp))

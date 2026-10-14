@@ -32,6 +32,37 @@ from fastaiagent.llm.structured import OutputSpec, _strip_code_fences
 
 logger = logging.getLogger(__name__)
 
+
+def _parse_provider_error_body(text: str) -> tuple[str | None, str | None, str | None]:
+    """``(message, code, request_id)`` from a provider's error body, where present.
+
+    OpenAI, Anthropic and Gemini nest the details under ``error`` (Anthropic
+    adds a top-level ``request_id``; Gemini's ``status`` is its symbolic code).
+    Ollama sends ``{"error": "<text>"}``. Anything that is not JSON yields
+    ``(None, None, None)``. Called on text that is already scrubbed.
+    """
+    try:
+        data = _json.loads(text)
+    except (ValueError, TypeError):
+        return None, None, None
+    if not isinstance(data, dict):
+        return None, None, None
+    err = data.get("error")
+    request_id = data.get("request_id")
+    if isinstance(err, str):
+        return err, None, request_id if isinstance(request_id, str) else None
+    if not isinstance(err, dict):
+        return None, None, request_id if isinstance(request_id, str) else None
+    message = err.get("message")
+    code = err.get("status") if isinstance(err.get("status"), str) else None
+    code = code or err.get("code") or err.get("type")
+    return (
+        message if isinstance(message, str) else None,
+        str(code) if code is not None else None,
+        request_id if isinstance(request_id, str) else None,
+    )
+
+
 # Replay determinism: when a Replay rerun installs a *list* of recorded
 # responses in this ContextVar (one per captured ``llm.*`` span on the
 # original trace, in capture order), ``acomplete`` pops the front entry
@@ -558,9 +589,11 @@ class LLMClient:
             async with client.stream("POST", url, json=body, headers=headers) as resp:
                 if resp.status_code != 200:
                     body_text = await resp.aread()
-                    raise LLMProviderError(
-                        f"OpenAI API error {resp.status_code}: {body_text.decode()}",
-                        status_code=resp.status_code,
+                    raise self._provider_error(
+                        f"OpenAI API error {resp.status_code}",
+                        body_text.decode(errors="replace"),
+                        resp.status_code,
+                        resp.headers,
                     )
                 async for line in resp.aiter_lines():
                     if not line.startswith("data: "):
@@ -1268,16 +1301,20 @@ class LLMClient:
         async with self._new_async_client() as client:
             resp = await client.post(url, json=body, headers=headers)
         if resp.status_code != 200:
-            raise LLMProviderError(
-                f"OpenAI Decisions API error {resp.status_code}: {resp.text}",
-                status_code=resp.status_code,
+            raise self._provider_error(
+                f"OpenAI Decisions API error {resp.status_code}",
+                resp.text,
+                resp.status_code,
+                resp.headers,
             )
         try:
             data: dict[str, Any] = resp.json()
         except ValueError as e:
-            raise LLMProviderError(
-                f"OpenAI Decisions API returned non-JSON: {resp.text[:300]}",
-                status_code=resp.status_code,
+            raise self._provider_error(
+                "OpenAI Decisions API returned non-JSON",
+                resp.text[:300],
+                resp.status_code,
+                resp.headers,
             ) from e
         return data, resp.headers.get("x-request-id")
 
@@ -1316,8 +1353,8 @@ class LLMClient:
             status = getattr(e, "status_code", None)
             if isinstance(status, int):
                 # Wrapped so the retry loop and callers see one error type.
-                raise LLMProviderError(
-                    f"OpenAI Decisions API error {status}: {e}", status_code=status
+                raise self._provider_error(
+                    f"OpenAI Decisions API error {status}", str(e), status
                 ) from e
             raise
 
@@ -1521,6 +1558,49 @@ class LLMClient:
 
         return body, headers
 
+    def _credential_values(self) -> list[str]:
+        """Every credential this client could have sent: its own key, plus the
+        provider keys in the environment (the env var it fell back to among them)."""
+        from fastaiagent._internal.scrub import known_credential_values
+
+        values = known_credential_values()
+        if self.api_key:
+            values.insert(0, self.api_key)
+        return values
+
+    def _provider_error(
+        self,
+        prefix: str,
+        body: str,
+        status: int | None,
+        headers: Any = None,
+    ) -> LLMProviderError:
+        """An :class:`LLMProviderError` for a failed provider call, scrubbed (1.89.0).
+
+        A provider may echo the rejected key in its error body (OpenAI does:
+        ``"Incorrect API key provided: sk-…"``), and this message is copied into
+        span events, status descriptions, logs and the plane's ``trace.error``.
+        So it is cleaned here, where it is built, and every channel downstream
+        gets it already clean. The message keeps its ``"{prefix}: {body}"`` shape.
+        """
+        from fastaiagent._internal.scrub import scrub_secrets
+
+        clean = scrub_secrets(body or "", self._credential_values())
+        message, code, request_id = _parse_provider_error_body(clean)
+        if request_id is None and headers is not None:
+            try:
+                request_id = headers.get("x-request-id") or headers.get("request-id")
+            except Exception:  # pragma: no cover — headers of an unexpected type
+                request_id = None
+        return LLMProviderError(
+            f"{prefix}: {clean}",
+            status_code=status,
+            provider=self.provider,
+            provider_message=message,
+            provider_code=code,
+            request_id=request_id,
+        )
+
     def _api_key_env(self) -> tuple[str, str]:
         """Return (env_var, label) for API key resolution.
 
@@ -1550,9 +1630,11 @@ class LLMClient:
         async with self._new_async_client() as client:
             resp = await client.post(url, json=body, headers=headers)
             if resp.status_code != 200:
-                raise LLMProviderError(
-                    f"OpenAI API error {resp.status_code}: {resp.text}",
-                    status_code=resp.status_code,
+                raise self._provider_error(
+                    f"OpenAI API error {resp.status_code}",
+                    resp.text,
+                    resp.status_code,
+                    resp.headers,
                 )
             data = resp.json()
 
@@ -1708,9 +1790,11 @@ class LLMClient:
         async with self._new_async_client() as client:
             resp = await client.post(url, json=body, headers=headers)
             if resp.status_code != 200:
-                raise LLMProviderError(
-                    f"Anthropic API error {resp.status_code}: {resp.text}",
-                    status_code=resp.status_code,
+                raise self._provider_error(
+                    f"Anthropic API error {resp.status_code}",
+                    resp.text,
+                    resp.status_code,
+                    resp.headers,
                 )
             data = resp.json()
 
@@ -1808,9 +1892,11 @@ class LLMClient:
         async with self._new_async_client() as client:
             resp = await client.post(url, json=body)
             if resp.status_code != 200:
-                raise LLMProviderError(
-                    f"Ollama API error {resp.status_code}: {resp.text}",
-                    status_code=resp.status_code,
+                raise self._provider_error(
+                    f"Ollama API error {resp.status_code}",
+                    resp.text,
+                    resp.status_code,
+                    resp.headers,
                 )
             data = resp.json()
 
@@ -2016,9 +2102,11 @@ class LLMClient:
             async with client.stream("POST", url, json=body, headers=headers) as resp:
                 if resp.status_code != 200:
                     body_text = await resp.aread()
-                    raise LLMProviderError(
-                        f"Anthropic API error {resp.status_code}: {body_text.decode()}",
-                        status_code=resp.status_code,
+                    raise self._provider_error(
+                        f"Anthropic API error {resp.status_code}",
+                        body_text.decode(errors="replace"),
+                        resp.status_code,
+                        resp.headers,
                     )
 
                 event_type = ""
@@ -2131,9 +2219,11 @@ class LLMClient:
             async with client.stream("POST", url, json=body) as resp:
                 if resp.status_code != 200:
                     body_text = await resp.aread()
-                    raise LLMProviderError(
-                        f"Ollama API error {resp.status_code}: {body_text.decode()}",
-                        status_code=resp.status_code,
+                    raise self._provider_error(
+                        f"Ollama API error {resp.status_code}",
+                        body_text.decode(errors="replace"),
+                        resp.status_code,
+                        resp.headers,
                     )
 
                 async for line in resp.aiter_lines():

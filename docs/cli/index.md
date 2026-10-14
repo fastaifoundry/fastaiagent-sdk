@@ -90,6 +90,26 @@ fastaiagent traces export <trace_id> --format json
     only option. `traces export` takes `--format` (currently `json`) and writes
     to stdout; shell redirection is how you get a file.
 
+### `traces scrub-secrets`
+
+*New in 1.89.0.* Removes credentials that an SDK older than 1.89.0 may have
+written into `local.db`: a key inside a guardrail's `llm` config (in the root
+span's `agent.guardrails`), and a key a provider echoed back in an error
+message. Versions from 1.89.0 on never store either; see
+[Security posture](../security.md#credentials-in-traces-and-pushed-definitions).
+
+```bash
+fastaiagent traces scrub-secrets --dry-run   # report, write nothing
+fastaiagent traces scrub-secrets             # asks before rewriting
+fastaiagent traces scrub-secrets -y          # no prompt
+```
+
+The command scrubs exception text, keeps only the shareable fields of each
+guardrail `llm` config, and replaces any credential currently in your
+environment wherever it appears verbatim. It cannot recall spans that were
+already sent to the control plane, so it counts them separately: **rotate any
+key it reports there.**
+
 ## `fastaiagent replay`
 
 ```bash

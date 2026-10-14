@@ -20,7 +20,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastaiagent.guardrail.guardrail import Guardrail, GuardrailPosition, GuardrailType
+from fastaiagent.guardrail.guardrail import (
+    Guardrail,
+    GuardrailPosition,
+    GuardrailType,
+    rebuilt_config,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +115,10 @@ def guardrail_from_policy_rule(rule: dict[str, Any]) -> Guardrail | None:
     # coerced, so a rule from a plane that predates them (no key at all) and a
     # rule carrying an action this build has never heard of both land on
     # "block" — the safe reading for a safety control.
-    config = dict(rule.get("config") or {})
+    # A rule the plane stored from an SDK older than 1.89.0 may carry a
+    # credential in ``config["llm"]``; it is dropped (with a warning), not
+    # refused, so the rule still runs on this process's own key.
+    config = rebuilt_config(rule.get("config"), name)
     # ``override`` needs copy to substitute for the payload. The plane keeps the
     # tripwire message beside the rule rather than in its config, so carry it in
     # here where the action can reach it.

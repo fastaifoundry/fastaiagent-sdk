@@ -271,6 +271,13 @@ class LocalStorageProcessor:
                         "attributes": event_attrs,
                     }
                 )
+            # 1.89.0 (P9): an exception message can carry a credential: a
+            # provider echoing a rejected key, or user code formatting one in.
+            # Scrubbed before it is stored, so neither the UI nor the plane
+            # drain ever reads it.
+            from fastaiagent._internal.scrub import scrub_event_dicts
+
+            events = scrub_event_dicts(events)
 
         start_ns = span.start_time or 0
         end_ns = span.end_time or 0

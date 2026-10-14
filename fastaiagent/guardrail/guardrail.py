@@ -137,6 +137,22 @@ def stop_firing_collection(token: contextvars.Token[list[GuardrailFiring] | None
     _run_firings.reset(token)
 
 
+def rebuilt_config(config: dict[str, Any] | None, name: str) -> dict[str, Any]:
+    """A stored rule's ``config``, made safe to construct from.
+
+    A rule read back from a trace or the plane may have been written by an SDK
+    older than 1.89.0, with a credential in ``config["llm"]``. It must still
+    run, so the field is dropped with a warning instead of refused, and the
+    rule resolves its key from this process's environment.
+    """
+    config = dict(config or {})
+    if "llm" in config:
+        from fastaiagent._internal.scrub import allowlist_llm_config
+
+        config["llm"] = allowlist_llm_config(config["llm"], f"Guardrail {name!r} (rebuilt)")
+    return config
+
+
 class Guardrail:
     """A validation guardrail for agent input/output/tool calls.
 
@@ -163,6 +179,17 @@ class Guardrail:
         self.guardrail_type = guardrail_type
         self.position = position
         self.config = config or {}
+        if "llm" in self.config:
+            # 1.89.0 (S1): ``config`` is shareable — it is serialized into traces
+            # and pushed to the plane — so a credential in ``config["llm"]`` is
+            # refused here rather than stripped later. Rebuilds go through
+            # ``_rebuilt_config`` instead, which drops and warns.
+            from fastaiagent._internal.scrub import check_llm_config
+
+            self.config = {
+                **self.config,
+                "llm": check_llm_config(self.config["llm"], f"Guardrail {name!r}"),
+            }
         self.blocking = blocking
         self.description = description
         self.fn = fn  # for code guardrails with inline function
@@ -251,12 +278,25 @@ class Guardrail:
         return result
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize to canonical format."""
+        """Serialize to canonical format.
+
+        ``config["llm"]`` passes the shareable-field allowlist again, so a key
+        put into ``self.config`` *after* construction still never leaves the
+        process (1.89.0).
+        """
+        config = self.config
+        if isinstance(config.get("llm"), dict):
+            from fastaiagent._internal.scrub import allowlist_llm_config
+
+            config = {
+                **config,
+                "llm": allowlist_llm_config(config["llm"], f"Guardrail {self.name!r}"),
+            }
         return {
             "name": self.name,
             "guardrail_type": self.guardrail_type.value,
             "position": self.position.value,
-            "config": self.config,
+            "config": config,
             "blocking": self.blocking,
             "description": self.description,
             "on_error": self.on_error,
@@ -295,7 +335,7 @@ class Guardrail:
             name=data["name"],
             guardrail_type=guardrail_type,
             position=GuardrailPosition(data.get("position", "output")),
-            config=data.get("config", {}),
+            config=rebuilt_config(data.get("config", {}), data["name"]),
             blocking=data.get("blocking", True),
             description=data.get("description", ""),
             on_error=data.get("on_error", "block"),

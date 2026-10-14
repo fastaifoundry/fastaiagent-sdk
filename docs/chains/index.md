@@ -236,6 +236,9 @@ chain.connect("triage", "human")          # default: refusal or low confidence
 - **Boolean options route on `"True"` / `"False"` labels.** Use
   `Choice(options=[True, False])` for a yes/no gate.
 - **`decision=Choice(...)` is a shorthand** for `{"question": ...}`.
+- **`llm` takes shareable `LLMClient` fields only** (*changed in 1.89.0*). The
+  config is serialized with the chain, so an `api_key` or other credential
+  raises at `add_node`; the key comes from `OPENAI_API_KEY`.
 - **The node's result** is `{"matched": "<label>", "decision": {"choice",
   "confidence", "refused"}}`, available in `ChainResult.node_results`.
 - **It serialises.** The question is stored in its wire form and `llm` as kwargs,

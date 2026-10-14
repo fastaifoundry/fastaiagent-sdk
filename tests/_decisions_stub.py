@@ -28,6 +28,9 @@ from typing import Any
 
 INPUT_TOKENS = 100
 
+#: The key a stub-backed config authenticates with, via ``OPENAI_API_KEY``.
+STUB_KEY = "stub-key"
+
 
 class DecisionsStub:
     def __init__(self) -> None:
@@ -157,19 +160,23 @@ class DecisionsStub:
             self._server = None
 
     def llm_kwargs(self, **extra: Any) -> dict[str, Any]:
-        """``LLMClient`` kwargs pointing at this stub — also a guardrail ``config["llm"]``."""
+        """``LLMClient`` kwargs pointing at this stub — also a guardrail ``config["llm"]``.
+
+        No ``api_key``: a shareable config refuses credentials since 1.89.0, so
+        the key comes from ``OPENAI_API_KEY``, which the ``decisions_stub``
+        fixture sets to :data:`STUB_KEY` (``provider="custom"`` reads it).
+        """
         return {
             "provider": "custom",
             "model": "gpt-6-luna",
             "base_url": self.base_url,
-            "api_key": "stub-key",
             **extra,
         }
 
     def client(self, **extra: Any) -> Any:
         from fastaiagent.llm import LLMClient
 
-        return LLMClient(**self.llm_kwargs(**extra))
+        return LLMClient(**{"api_key": STUB_KEY, **self.llm_kwargs(**extra)})
 
 
 def started_stub() -> Iterator[DecisionsStub]:

@@ -403,8 +403,12 @@ def apply_event_export_policy(events: list[Any]) -> list[Any]:
     :data:`SENSITIVE_EVENT_ATTR_KEYS`. Returns a new list; ``events`` is never
     mutated, and non-dict entries are passed through untouched.
     """
+    from fastaiagent._internal.scrub import scrub_event_dicts
     from fastaiagent.trace.span import export_payloads_enabled
 
+    # Credentials never egress, whatever the payload setting (1.89.0, P9). Rows
+    # stored by 1.89.0+ are already clean; this covers older unsent rows.
+    events = scrub_event_dicts(events)
     payloads_ok = export_payloads_enabled()
     policy = get_redaction_policy()
     redacting = policy is not None and policy.mode in ("capture", "both")

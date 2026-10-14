@@ -54,6 +54,22 @@ from fastaiagent.ui.throttle import client_throttle_ip, get_llm_rate_limiter
 logger = logging.getLogger(__name__)
 
 
+def _scrubbed_traceback(exc: BaseException, body: Any) -> str:
+    """The traceback of a failed Playground call, with credentials removed.
+
+    Replaces ``exc_info=True`` (1.89.0): the formatted traceback includes the
+    exception message, and a provider may echo the submitted key in it. The
+    key typed into the form and the provider keys in the environment are
+    scrubbed, on top of the scrubbing ``LLMProviderError`` already does.
+    """
+    import traceback
+
+    from fastaiagent._internal.scrub import known_credential_values, scrub_secrets
+
+    text = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    return scrub_secrets(text, [getattr(body, "api_key", None), *known_credential_values()])
+
+
 def _llm_rate_key(request: Request, user: str) -> str:
     """Per-(IP, user) bucket for the LLM rate limiter (M5).
 
@@ -397,11 +413,11 @@ async def run(
             correlation_id = uuid.uuid4().hex
             logger.warning(
                 "Playground /run LLM call failed (correlation_id=%s, "
-                "provider=%s, model=%s)",
+                "provider=%s, model=%s)\n%s",
                 correlation_id,
                 body.provider,
                 body.model,
-                exc_info=True,
+                _scrubbed_traceback(e, body),
             )
             raise HTTPException(
                 status.HTTP_502_BAD_GATEWAY,
@@ -496,17 +512,17 @@ async def stream(
                         output_tokens = ev.completion_tokens
             except asyncio.CancelledError:  # client disconnected
                 raise
-            except Exception:
+            except Exception as e:
                 # Same redaction policy as /run: log server-side under a
                 # correlation id, return only the id over SSE.
                 correlation_id = uuid.uuid4().hex
                 logger.warning(
                     "Playground /stream LLM call failed (correlation_id=%s, "
-                    "provider=%s, model=%s)",
+                    "provider=%s, model=%s)\n%s",
                     correlation_id,
                     body.provider,
                     body.model,
-                    exc_info=True,
+                    _scrubbed_traceback(e, body),
                 )
                 err = json.dumps(
                     {

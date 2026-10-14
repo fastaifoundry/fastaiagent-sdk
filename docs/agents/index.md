@@ -403,6 +403,13 @@ except LLMProviderError as e:
     print(f"LLM error: {e}")
 ```
 
+`LLMProviderError` carries `status_code`, plus, since 1.89.0, `provider`,
+`provider_message` (the provider's own explanation), `provider_code` (for
+example `invalid_api_key`) and `request_id`. Each is `None` when the provider
+didn't send it. Its message is scrubbed of credentials, because a provider can
+echo a rejected key back (see
+[Security posture](../security.md#credentials-in-traces-and-pushed-definitions)).
+
 ---
 
 ## Middleware

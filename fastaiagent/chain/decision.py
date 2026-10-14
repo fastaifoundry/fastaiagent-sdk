@@ -23,7 +23,9 @@ chosen value is the handle, so edges are labelled with option values::
 No new node type: the edge-selection code and the topology every consumer reads
 are unchanged. The config is stored as plain JSON (the question in its wire form,
 the client as kwargs) so a chain still round-trips through ``to_dict`` — which is
-also why ``llm`` takes kwargs, not a live client.
+also why ``llm`` takes kwargs, not a live client. Since 1.89.0 those kwargs are
+shareable fields only: a credential is refused at ``add_node`` and the key comes
+from the provider's environment variable.
 
 Boolean options route on ``"True"`` / ``"False"`` labels.
 """
@@ -75,6 +77,10 @@ def normalize_decision_config(raw: Any, node_id: str) -> dict[str, Any]:
             f"(e.g. {{'model': 'gpt-6-luna'}}), not a client object — node config is "
             f"serialised with the chain."
         )
+    # 1.89.0 (S1): serialised with the chain means shareable, so no credential.
+    from fastaiagent._internal.scrub import check_llm_config
+
+    llm = check_llm_config(llm, f"Condition node {node_id!r} decision")
 
     min_conf = raw.get("min_confidence", 0.0)
     try:
@@ -93,6 +99,23 @@ def normalize_decision_config(raw: Any, node_id: str) -> dict[str, Any]:
         "input": template,
         "llm": dict(llm),
         "min_confidence": min_conf,
+    }
+
+
+def shareable_decision(decision: Any, node_id: str) -> Any:
+    """A stored or about-to-be-serialised decision config with ``llm`` allowlisted.
+
+    For configs that did not come through :func:`normalize_decision_config`: a
+    chain read back by ``from_dict`` (possibly written before 1.89.0), or a
+    config mutated after ``add_node``. Drops non-shareable fields with a warning.
+    """
+    if not isinstance(decision, dict) or not isinstance(decision.get("llm"), dict):
+        return decision
+    from fastaiagent._internal.scrub import allowlist_llm_config
+
+    return {
+        **decision,
+        "llm": allowlist_llm_config(decision["llm"], f"Condition node {node_id!r} decision"),
     }
 
 
@@ -135,4 +158,9 @@ async def run_decision_condition(
     }
 
 
-__all__ = ["decision_handles", "normalize_decision_config", "run_decision_condition"]
+__all__ = [
+    "decision_handles",
+    "normalize_decision_config",
+    "run_decision_condition",
+    "shareable_decision",
+]

@@ -153,7 +153,12 @@ With an injected `openai_client`, it uses `client.decisions.create` on openai
 (including Azure AD token refresh) and `http_client`.
 
 A non-200 raises `LLMProviderError` with OpenAI's message and `.status_code`.
-For example, a model your key can't use comes back as a 404 `model_not_found`.
+For example, a model your key can't use comes back as a 404 `model_not_found`
+(`.provider_code`). Since 1.89.0 the message is scrubbed of credentials before
+it is raised.
+
+A decision node's `llm` dict takes shareable `LLMClient` fields only. A key
+there raises at `add_node`; it comes from `OPENAI_API_KEY`.
 
 ## Cost
 

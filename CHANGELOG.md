@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.89.0] — unreleased
+
+<!-- Draft, built phase by phase on fix/1.89.0-audit-fixes; Phase 10 finalises it
+     and moves the ⚠ items to the top. -->
+
+### Security (Phase 1)
+
+- ⚠ **A guardrail's `llm` config no longer carries credentials anywhere (S1).**
+  `config["llm"]` on `llm_judge` / `content_safety` / `groundedness` / `topic`
+  rules (including `banned_topics(..., llm={...})` and `allowed_topics`), and a
+  Chain decision node's `decision["llm"]`, were copied verbatim by `to_dict()`.
+  A key put there reached the root span's `agent.guardrails` attribute, which
+  is not a payload key, and from there `local.db`, the plane and every OTLP
+  exporter, **even with `FASTAIAGENT_TRACE_PAYLOADS=0`**. It was also stored by
+  the plane through the agent push. These dicts now take an **allowlist** of
+  shareable `LLMClient` fields.
+  - **Breaking:** a credential (or any non-shareable field) in the dict
+    **raises `ValueError` at construction**. The error names the field and never
+    echoes its value. Supply the key through the provider's env var, or pass a
+    live `LLMClient(api_key=...)`, which keeps the rule local.
+  - A rule rebuilt from a trace or the plane (`Guardrail.from_dict`,
+    `from_policy`, `Chain.from_dict`) drops the field with a warning and
+    resolves its key from the environment, so rules stored by older SDKs still
+    run.
+  - Serialization applies the allowlist again.
+- ⚠ **Provider error text is scrubbed of keys (P9).** OpenAI echoes a rejected
+  key in its error body, and every `LLMProviderError` embedded that body. The
+  echo then reached span events, `local.db`, the server log and, with payloads
+  on, the plane's `trace.error`. Errors are now built through
+  `LLMClient._provider_error`, which replaces the client's key, the provider
+  keys in the environment, half-masked echoes and key-shaped strings with
+  `[REDACTED]`. As a fallback, exception text is scrubbed again when spans are
+  stored and exported, and the Playground logs a scrubbed traceback instead of
+  `exc_info=True`.
+- `LLMProviderError` gains `provider`, `provider_message`, `provider_code` and
+  `request_id` (keyword-only, default `None`; positional use is unchanged).
+- ⚠ **Gemini sends its key in the `x-goog-api-key` header** instead of `?key=`.
+  The URL, including httpx's request log line, no longer contains the key. A
+  gateway that only reads `?key=` must accept the header.
+- New `fastaiagent traces scrub-secrets [--dry-run] [-y]` cleans both kinds of
+  leak from rows written by earlier versions. It counts spans already sent to
+  the plane, which it cannot recall. **Rotate any key that was passed in a
+  guardrail `llm` dict, or rejected by OpenAI, on ≤ 1.88.0.**
+
 ## [1.88.0] - 2026-10-11 — the defects the boundary pages found
 
 Writing the seven "breaks at the boundaries" pages meant running every claim
