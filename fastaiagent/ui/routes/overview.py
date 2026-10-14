@@ -52,9 +52,12 @@ def overview(
         # successful span never sets a status) is *not* a failure — this mirrors
         # how the trace-detail page renders UNSET as OK. Treating ``!= 'OK'`` as
         # failing previously flagged every clean run as failed.
+        # And only the **root** span (1.89.0): a run that completed after a
+        # ``warn`` guardrail has an ERROR guardrail span under an UNSET root.
         failing_day = db.fetchone(
             f"""SELECT COUNT(DISTINCT trace_id) AS n FROM spans
-               WHERE status = 'ERROR' AND start_time >= ? {pid_clause} {np_clause}""",
+               WHERE status = 'ERROR' AND (parent_span_id IS NULL OR parent_span_id = '')
+                 AND start_time >= ? {pid_clause} {np_clause}""",
             (day_ago, *pid_params, *np_params),
         )
         runs_week = db.fetchone(
@@ -80,7 +83,7 @@ def overview(
         recent_traces = db.fetchall(
             f"""SELECT trace_id, {TraceStore.TRACE_NAME_SQL} AS name,
                       MIN(start_time) AS start_time,
-                      MIN(status) AS status
+                      {TraceStore.TRACE_STATUS_SQL} AS status
                FROM spans
                WHERE 1=1 {pid_clause} {np_clause}
                GROUP BY trace_id

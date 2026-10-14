@@ -62,6 +62,20 @@ export interface SpanRow {
   status: string;
   attributes: Record<string, unknown>;
   events: SpanEvent[];
+  /**
+   * 1.89.0 — for a ``guardrail.*`` span, what the check decided, joined from
+   * its local event row. A guardrail span's OTel status is ERROR for any
+   * non-pass verdict (a ``warn`` included), so read this, not ``status``.
+   */
+  guardrail?: SpanGuardrailVerdict | null;
+}
+
+export interface SpanGuardrailVerdict {
+  event_id: string;
+  outcome: string | null;
+  effect: GuardrailEffect | null;
+  blocking: boolean | null;
+  final_reason: string | null;
 }
 
 export interface SpanEvent {
@@ -680,6 +694,8 @@ export interface TraceScores {
     message: string | null;
     agent_name: string | null;
     timestamp: string | null;
+    /** 1.89.0 — shown as a suffix when the endpoint reports it. */
+    effect?: GuardrailEffect | null;
   }[];
   eval_cases: {
     case_id: string;
@@ -739,6 +755,53 @@ export interface GuardrailEvent {
   action_taken: string | null;
   severity: string | null;
   floor: boolean;
+  // 1.89.0 (local.db v25). All null on rows written before 1.89.0 ("legacy").
+  /** What the check did to the run, not just its verdict. */
+  effect: GuardrailEffect | null;
+  /** Why a rewrite or re-ask ended as a block (the caller refused it). */
+  final_reason: string | null;
+  latency_ms: number | null;
+  attempt: number | null;
+  /** Rows of one position pass share a batch. */
+  batch_id: string | null;
+  guardrail_span_id: string | null;
+  judged_ref: string | null;
+  /** The rule as it ran. */
+  rule: GuardrailRuleSnapshot | null;
+  blocking: boolean | null;
+  on_error: string | null;
+  origin: "local" | "plane" | string | null;
+}
+
+/**
+ * What a check did to the run (1.89.0):
+ * none — clean pass; warned — failed, recorded, run continued unchanged;
+ * rewritten — payload masked/overridden and used; reasked — model asked again;
+ * blocked — run stopped here; observed — observe-only rule, nothing enforced;
+ * unchecked — could not run, ``on_error=allow`` let it through.
+ */
+export type GuardrailEffect =
+  | "none"
+  | "warned"
+  | "rewritten"
+  | "reasked"
+  | "blocked"
+  | "observed"
+  | "unchecked";
+
+export interface GuardrailRuleSnapshot {
+  name?: string;
+  guardrail_type?: string;
+  position?: string;
+  /** ``llm`` is reduced to provider/model. */
+  config?: Record<string, unknown>;
+  blocking?: boolean;
+  description?: string | null;
+  on_error?: string | null;
+  action?: string | null;
+  severity?: string | null;
+  floor?: boolean;
+  origin?: string | null;
 }
 
 export interface GuardrailEventsPage {
@@ -746,6 +809,11 @@ export interface GuardrailEventsPage {
   total: number;
   page: number;
   page_size: number;
+  /**
+   * Only when ``total`` is 0: guardrail spans recorded before 1.89.0, when
+   * checks were not yet written as rows by default.
+   */
+  legacy_guardrail_spans?: number;
 }
 
 // Sprint 2 — Guardrail Event Detail
@@ -769,9 +837,16 @@ export interface GuardrailContextSpan {
 
 export interface GuardrailEventDetail {
   event: GuardrailEvent;
+  /**
+   * 1.89.0 — exactly the text the rule judged. ``recorded`` is false for a
+   * row written before 1.89.0 or one whose payload was purged.
+   */
+  judged: { text: string | null; recorded: boolean };
+  /** Compatibility: read from the parent span, which may hold rewritten text. */
   trigger: GuardrailTrigger;
   context: {
     spans: GuardrailContextSpan[];
+    /** Since 1.89.0, the other rows of the same position pass (batch). */
     sibling_events: GuardrailEvent[];
   };
 }
@@ -779,7 +854,8 @@ export interface GuardrailEventDetail {
 export interface FalsePositiveResponse {
   event_id: string;
   false_positive: boolean;
-  false_positive_at: string;
+  /** Null once the flag is cleared (1.89.0). */
+  false_positive_at: string | null;
 }
 
 export interface AgentSummary {
@@ -1217,6 +1293,25 @@ export interface AgentDepGuardrail {
   name: string | null;
   guardrail_type: string | null;
   position: string | null;
+  // 1.89.0 — absent on payloads from older servers.
+  action?: string | null;
+  blocking?: boolean | null;
+  on_error?: string | null;
+  severity?: string | null;
+  floor?: boolean | null;
+}
+
+/**
+ * 1.89.0 — a rule that ran for the agent (it has event rows) but that the
+ * agent does not declare, e.g. one distributed by a control plane.
+ */
+export interface AgentDepObservedGuardrail {
+  name: string;
+  position: string | null;
+  guardrail_type: string | null;
+  last_seen: string | null;
+  checks: number;
+  origin: string | null;
 }
 
 export interface AgentDepHandoff {
@@ -1230,6 +1325,7 @@ export interface AgentDependencies {
   knowledge_bases: AgentDepKB[];
   prompts: AgentDepPrompt[];
   guardrails: AgentDepGuardrail[];
+  observed_guardrails?: AgentDepObservedGuardrail[];
   model: { provider: string | null; model: string | null };
   sub_agents?: AgentDependencies[];
   peers?: AgentDepNode[];

@@ -816,32 +816,9 @@ def _run_guardrails(
     instead — they need the SDK's own agent loop. See
     ``docs/guardrails/actions.md``.
     """
-    if not guardrails:
-        return
+    from fastaiagent.integrations._guardrails import run_proxy_guardrails
 
-    from fastaiagent.guardrail.actions import harness_halts
-    from fastaiagent.integrations._registry import GuardrailBlocked
-
-    for g in guardrails:
-        result = g.execute(text)
-        reason = harness_halts(g, result)
-        if not result.passed:
-            try:
-                from fastaiagent.ui.events import log_guardrail_event
-
-                # Stamp framework on the metadata so the UI can show a
-                # framework badge on the guardrail event row.
-                merged_metadata = dict(result.metadata or {})
-                merged_metadata.setdefault("framework", "langchain")
-                merged_metadata.setdefault("side", side)
-                result.metadata = merged_metadata
-                log_guardrail_event(g, result, agent_name=agent_name, data=text)
-            except Exception:
-                # Logging is best-effort; never fail a guardrail check
-                # because the event store hiccupped.
-                pass
-        if reason is not None:
-            raise GuardrailBlocked(f"{side} blocked by {g.name}: {reason}")
+    run_proxy_guardrails(text, guardrails, side=side, agent_name=agent_name, framework="langchain")
 
 
 class _GuardedRunnable:

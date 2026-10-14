@@ -133,13 +133,20 @@ def test_guardrail_filter_marks_needs_review(isolated_local_db: Any) -> None:
     assert "no_pii" in it["reason"] and "PII detected" in it["reason"]
 
 
-def test_failed_filter_uses_error_status(isolated_local_db: Any) -> None:
+def test_failed_filter_uses_the_root_status(isolated_local_db: Any) -> None:
+    """A trace failed when its root span failed (1.89.0), as the plane reads it.
+
+    An ERROR child under an OK root, such as a ``warn`` guardrail span or a tool
+    error the agent recovered from, used to make the run "failed".
+    """
     db = _open_db()
     ok = uuid.uuid4().hex
     bad = uuid.uuid4().hex
+    recovered = uuid.uuid4().hex
     _span(db, ok, "agent.a", _agent_attrs("a", "fine", "ok"))
-    _span(db, bad, "agent.a", _agent_attrs("a", "boom", "partial"))
-    _span(db, bad, "tool.x", {"k": "v"}, parent="r", status="ERROR")
+    _span(db, bad, "agent.a", _agent_attrs("a", "boom", "partial"), status="ERROR")
+    _span(db, recovered, "agent.a", _agent_attrs("a", "warned", "answer"))
+    _span(db, recovered, "guardrail.tone", {"k": "v"}, parent="r", status="ERROR")
     db.close()
 
     items = curate_from_traces(filter="failed")

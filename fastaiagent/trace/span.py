@@ -383,7 +383,7 @@ def emit_guardrail(
     severity: str | None = None,
     floor: bool | None = None,
     detail: dict[str, Any] | None = None,
-) -> None:
+) -> str | None:
     """Open, stamp and close one guardrail-outcome child span in a single call.
 
     The convenience form of :func:`set_guardrail_attributes` for a runtime that
@@ -396,37 +396,80 @@ def emit_guardrail(
     a borrowing runtime keeps exactly one exporter. The span nests under
     whatever span is currently active, joining the caller's trace.
 
+    Returns the span id as 16 hex characters (1.89.0; it returned ``None``), or
+    ``None`` when no span could be emitted.
+
     Best-effort: a tracing failure is swallowed, never propagated into the
     caller's control flow.
     """
     try:
-        from opentelemetry.trace import Status, StatusCode
-
         with tracer.start_as_current_span(f"guardrail.{name}") as span:
-            set_guardrail_attributes(
+            _stamp_guardrail_outcome(
                 span,
                 name=name,
                 position=position,
                 passed=passed,
                 checks=checks,
                 errored=errored,
+                message=message,
                 action=action,
                 action_taken=action_taken,
                 severity=severity,
                 floor=floor,
                 detail=detail,
             )
-            if passed:
-                # A degraded pass (errored + on_error="allow") keeps an OK
-                # status — the run continued — but the errored attribute and
-                # the "error" check result keep it distinguishable.
-                span.set_status(Status(StatusCode.OK))
-            else:
-                span.set_status(
-                    Status(StatusCode.ERROR, message or f"Blocked by guardrail: {name}")
-                )
+            return _span_id_hex(span)
     except Exception:  # pragma: no cover - observability must never break a run
         logger.debug("Failed to emit guardrail span for %r", name, exc_info=True)
+        return None
+
+
+def _span_id_hex(span: Any) -> str | None:
+    try:
+        ctx = span.get_span_context()
+        return format(ctx.span_id, "016x") if ctx.span_id else None
+    except Exception:  # pragma: no cover
+        return None
+
+
+def _stamp_guardrail_outcome(
+    span: Any,
+    *,
+    name: str,
+    position: str,
+    passed: bool,
+    checks: str,
+    errored: bool = False,
+    message: str | None = None,
+    action: str | None = None,
+    action_taken: str | None = None,
+    severity: str | None = None,
+    floor: bool | None = None,
+    detail: dict[str, Any] | None = None,
+) -> None:
+    """Set a guardrail span's outcome attributes and status. Shared by every emitter."""
+    from opentelemetry.trace import Status, StatusCode
+
+    set_guardrail_attributes(
+        span,
+        name=name,
+        position=position,
+        passed=passed,
+        checks=checks,
+        errored=errored,
+        action=action,
+        action_taken=action_taken,
+        severity=severity,
+        floor=floor,
+        detail=detail,
+    )
+    if passed:
+        # A degraded pass (errored + on_error="allow") keeps an OK status — the
+        # run continued — but the errored attribute and the "error" check
+        # result keep it distinguishable.
+        span.set_status(Status(StatusCode.OK))
+    else:
+        span.set_status(Status(StatusCode.ERROR, message or f"Blocked by guardrail: {name}"))
 
 
 def emit_evaluation(

@@ -24,10 +24,7 @@ from __future__ import annotations
 import os
 import sys
 
-os.environ.setdefault("FASTAIAGENT_UI_ENABLED", "true")
-
-from fastaiagent import Agent, LLMClient  # noqa: E402
-
+from fastaiagent import Agent, LLMClient
 
 TERSE = (
     "You are a customer-support assistant. Reply in under 15 words. "

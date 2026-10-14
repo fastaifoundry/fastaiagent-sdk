@@ -170,8 +170,9 @@ class TestFiringsAreCollected:
     def test_it_works_whether_or_not_the_local_ui_is_on(self, monkeypatch, request, ui_on):
         """The case the finding is actually about.
 
-        ``log_guardrail_event`` sits behind ``ui_enabled``; the firing append
-        must **not**, or it closes nothing for an unconnected run — which is the
+        ``log_guardrail_event`` sat behind ``ui_enabled`` (until 1.89.0, when
+        it moved behind tracing); the firing append must **not** sit behind
+        either, or it closes nothing for an unconnected run — which is the
         whole finding. The discriminating half is ``ui_on=False``: an append
         hidden inside that gate would collect nothing there.
 
@@ -311,7 +312,18 @@ class TestFiringsAreCollected:
         fields = set(GuardrailFiring.model_fields)
         assert "metadata" not in fields
         assert "modified_data" not in fields
-        assert fields == {"name", "position", "action_taken", "passed", "errored", "message"}
+        # ``blocking`` and ``effect`` (1.89.0) are about the rule and the run,
+        # not the payload.
+        assert fields == {
+            "name",
+            "position",
+            "action_taken",
+            "passed",
+            "errored",
+            "message",
+            "blocking",
+            "effect",
+        }
 
 
 class TestAgentResultCarriesThem:

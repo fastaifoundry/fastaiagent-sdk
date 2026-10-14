@@ -17,7 +17,7 @@ from pathlib import Path
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
 
-CURRENT_SCHEMA_VERSION = 24
+CURRENT_SCHEMA_VERSION = 25
 
 # A migration step is either a SQL string or a callable that takes the
 # ``SQLiteHelper`` and runs whatever logic it needs (e.g., gated
@@ -713,6 +713,59 @@ def _v18_add_guardrail_action_columns(db: SQLiteHelper) -> None:
     _add_column_if_missing(db, "guardrail_events", "floor", "INTEGER DEFAULT 0")
 
 
+def _v25_guardrail_event_truth(db: SQLiteHelper) -> None:
+    """A guardrail event says what the check did to the run (1.89.0).
+
+    ``outcome`` described the verdict, not the run: a re-ask was ``blocked``, an
+    observe-only mask ``filtered`` though nothing was applied, and a rewrite the
+    caller then refused left no record of the block. The new columns:
+
+    * ``effect`` — what happened to the run (``none``, ``warned``,
+      ``rewritten``, ``reasked``, ``blocked``, ``observed``, ``unchecked``).
+      NULL on rows written before 1.89.0, which the UI shows as legacy.
+    * ``rule`` — a JSON snapshot of the rule as it ran (no credentials).
+    * ``latency_ms`` — the check's own duration.
+    * ``judged_ref`` — the text the rule judged, in ``guardrail_payloads``,
+      shared by every rule that judged the same text.
+    * ``guardrail_span_id`` — the rule's own span, for the trace view.
+    * ``batch_id`` / ``attempt`` — one position pass, and the re-ask attempt.
+    * ``final_reason`` — why a rewrite or re-ask ended in a block.
+
+    All nullable, so an older SDK's explicit-column INSERT still works on a v25
+    database. Nothing here is exported.
+    """
+    if not db.fetchone(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='guardrail_events'"
+    ):
+        return
+    for column, ddl in (
+        ("effect", "TEXT"),
+        ("rule", "TEXT"),
+        ("latency_ms", "INTEGER"),
+        ("judged_ref", "TEXT"),
+        ("guardrail_span_id", "TEXT"),
+        ("batch_id", "TEXT"),
+        ("attempt", "INTEGER"),
+        ("final_reason", "TEXT"),
+    ):
+        _add_column_if_missing(db, "guardrail_events", column, ddl)
+    db.execute(
+        """CREATE TABLE IF NOT EXISTS guardrail_payloads (
+            payload_id TEXT PRIMARY KEY,
+            text       TEXT NOT NULL,
+            created_at TEXT
+        )"""
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_guardrail_events_batch ON guardrail_events(batch_id)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_guardrail_events_span "
+        "ON guardrail_events(guardrail_span_id)"
+    )
+    db.execute("CREATE INDEX IF NOT EXISTS idx_guardrail_events_ts ON guardrail_events(timestamp)")
+
+
 _MIGRATIONS: dict[int, list[_Step]] = {
     1: [
         # Trace spans (moved from traces.db).
@@ -1148,6 +1201,11 @@ _MIGRATIONS: dict[int, list[_Step]] = {
         # 1.82.0: learned facts are marked learned, and the per-turn fact read
         # has matching indexes. See _v24_learned_memory_source_and_read_indexes.
         _v24_learned_memory_source_and_read_indexes,
+    ],
+    25: [
+        # 1.89.0: a guardrail event records what the check did to the run, the
+        # text it judged and the rule as it ran. See _v25_guardrail_event_truth.
+        _v25_guardrail_event_truth,
     ],
 }
 

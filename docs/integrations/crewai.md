@@ -92,6 +92,7 @@ guarded = ca.with_guardrails(
     input_guardrails=[no_pii(position="input")],
 )
 result = guarded.kickoff(inputs={"input": "..."})  # raises GuardrailBlocked on PII
+# Each check writes one guardrail_events row (framework=crewai) when tracing is on.
 ```
 
 Block-only semantics — see [Overview → Limitations](overview.md#limitations).

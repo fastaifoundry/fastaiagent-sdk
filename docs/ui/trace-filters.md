@@ -67,6 +67,13 @@ day and `until` to the end of the chosen "to" day, both as ISO 8601
 timestamps. **Clear range** in the picker drops both. Powered by
 `react-day-picker`.
 
+## Status is the root span's
+
+`status=ERROR` lists traces whose **root** span failed, and `status=OK` those
+whose root ended OK or UNSET (1.89.0). It used to match any span, so a run that
+completed after a `warn` guardrail, whose guardrail span is ERROR, was listed
+as failing. Home's *failing traces* count reads the root the same way.
+
 ## Duration and cost range filters
 
 Folded under **More filters** so the main bar stays clean. The toggle

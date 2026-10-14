@@ -68,7 +68,7 @@ you can see how your values were read.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `FASTAIAGENT_UI_ENABLED` | `0` | Enable the bundled UI via config. |
+| `FASTAIAGENT_UI_ENABLED` | `0` | *Deprecated; accepted and ignored since 1.89.0.* It used to switch on the guardrail event log in the agent's process. Guardrail events now follow `FASTAIAGENT_TRACE_ENABLED`, like spans. |
 | `FASTAIAGENT_UI_HOST` | `127.0.0.1` | UI bind host, used when `fastaiagent ui` is started without `--host`. Non-loopback needs `--insecure-bind`. |
 | `FASTAIAGENT_UI_PORT` | `7842` | UI bind port, used when `fastaiagent ui` is started without `--port`. |
 | `FASTAIAGENT_UI_ALLOWED_HOSTS` | loopback only | 🔒 Comma-separated extra `Host` values to accept (anti DNS-rebinding). Add your proxy hostname when fronting the UI. |

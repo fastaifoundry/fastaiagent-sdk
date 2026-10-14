@@ -349,6 +349,7 @@ def _rewritten_tool_arguments(
         rewritten = None
 
     if not isinstance(rewritten, dict):
+        outcome.refuse("the rewritten tool call is not an arguments object")
         raise GuardrailBlockedError(
             guardrail_name="tool_call",
             message=(
@@ -378,6 +379,7 @@ def _rewritten_tool_result(
     if isinstance(message_content, str):
         return rewritten, rewritten
 
+    outcome.refuse("a tool result with image/PDF parts cannot be rewritten")
     raise GuardrailBlockedError(
         guardrail_name="tool_result",
         message=(
@@ -395,6 +397,8 @@ async def _invoke_tool_with_span(
     context: Any | None,
     guardrails: list[Guardrail] | None,
     tool_call_record: dict[str, Any] | None = None,
+    *,
+    agent_name: str | None = None,
 ) -> tuple[str | list[Any], str]:
     """Execute a single tool call inside an OTel span.
 
@@ -448,7 +452,7 @@ async def _invoke_tool_with_span(
             if guardrails:
                 tc_data = json.dumps({"tool": tool_name, "arguments": arguments}, default=str)
                 tc_outcome = await execute_guardrails(
-                    guardrails, tc_data, GuardrailPosition.tool_call
+                    guardrails, tc_data, GuardrailPosition.tool_call, agent_name=agent_name
                 )
                 if tc_outcome.modified:
                     arguments = _rewritten_tool_arguments(arguments, tc_outcome)
@@ -459,7 +463,10 @@ async def _invoke_tool_with_span(
                 # Tool-result guardrail: validate output after execution
                 if guardrails:
                     tr_outcome = await execute_guardrails(
-                        guardrails, result_text, GuardrailPosition.tool_result
+                        guardrails,
+                        result_text,
+                        GuardrailPosition.tool_result,
+                        agent_name=agent_name,
                     )
                     if tr_outcome.modified:
                         message_content, result_text = _rewritten_tool_result(
@@ -556,6 +563,7 @@ async def execute_tool_loop(
             context=context,
             guardrails=guardrails,
             tool_call_record=record,
+            agent_name=agent_name,
         )
         return idx, ToolMessage(content=content, tool_call_id=tc.id), record
 
@@ -687,6 +695,7 @@ async def execute_tool_loop(
                             context=context,
                             guardrails=guardrails,
                             tool_call_record=_record,
+                            agent_name=agent_name,
                         )
                         return ToolResult(output=summary_text)
 
@@ -736,6 +745,7 @@ async def execute_tool_loop(
                         context=context,
                         guardrails=guardrails,
                         tool_call_record=tool_call_record,
+                        agent_name=agent_name,
                     )
             except InterruptSignal as sig:
                 # A tool inside this turn called interrupt(). Persist the
@@ -828,6 +838,7 @@ async def stream_tool_loop(
             arguments=tc.arguments,
             context=context,
             guardrails=guardrails,
+            agent_name=agent_name,
         )
         return idx, ToolMessage(content=content, tool_call_id=tc.id)
 
@@ -980,6 +991,7 @@ async def stream_tool_loop(
                             arguments=a,
                             context=context,
                             guardrails=guardrails,
+                            agent_name=agent_name,
                         )
                         return ToolResult(output=summary_text)
 
@@ -1009,6 +1021,7 @@ async def stream_tool_loop(
                         arguments=tc.arguments,
                         context=context,
                         guardrails=guardrails,
+                        agent_name=agent_name,
                     )
             except InterruptSignal as sig:
                 if checkpointer is not None and execution_id is not None:

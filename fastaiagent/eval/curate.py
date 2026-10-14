@@ -40,6 +40,15 @@ _VALID_INFRA_MODES = {"agent", "trace"}
 _OK_STATUSES = {"OK", "UNSET"}
 
 
+def _infra_error(span: Any) -> bool:
+    """An error-status span that signals infrastructure, not a guardrail verdict."""
+    if (span.status or "OK") in _OK_STATUSES:
+        return False
+    if (span.name or "").startswith("guardrail."):
+        return bool((span.attributes or {}).get("fastaiagent.guardrail.errored"))
+    return True
+
+
 def _fired_predicates() -> tuple[str, str]:
     """SQL for "a guardrail fired": over ``guardrail_events``, and over spans.
 
@@ -220,7 +229,9 @@ def curate_from_traces(
         # Trace-level infra signal (used only by exclude_infra_errors="trace").
         # The agent root span isn't always stamped ERROR on a downstream failure,
         # so "any span carries an error status" is the reliable trace-level cue.
-        trace_has_error = any((s.status or "OK") not in _OK_STATUSES for s in trace.spans)
+        # Except a guardrail span, whose status is its *verdict* (a ``warn`` rule
+        # that fired is ERROR): it counts only when the check could not run.
+        trace_has_error = any(_infra_error(s) for s in trace.spans)
         for span in agent_spans:
             n_spans += 1
             attrs = span.attributes or {}
@@ -344,12 +355,15 @@ def _select_trace_ids(
     elif filter == "guardrail":
         where.append(f"s.trace_id IN ({_GUARDRAIL_FIRED_TRACES_SQL})")
     elif filter == "failed":
-        # Best-effort: a trace is "failed" if any span carries an error status.
-        # (The agent root span does not always get ERROR set on exception, so the
-        # `guardrail` filter is the more reliable failure signal — see docs.)
+        # A trace is "failed" when its root span failed (1.89.0), as the plane
+        # and the Local UI read it. Any error-status span counted before, so a
+        # run that completed after a ``warn`` or ``mask`` guardrail (whose span
+        # is ERROR) was curated as a failure.
+        from fastaiagent.trace.storage import TraceStore
+
         where.append(
-            "s.trace_id IN (SELECT DISTINCT trace_id FROM spans "
-            "WHERE status NOT IN ('OK', 'UNSET'))"
+            "s.trace_id IN (SELECT trace_id FROM spans GROUP BY trace_id "
+            f"HAVING {TraceStore.TRACE_STATUS_SQL} NOT IN ('OK', 'UNSET'))"
         )
 
     sql = (

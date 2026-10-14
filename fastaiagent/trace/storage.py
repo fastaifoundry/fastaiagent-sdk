@@ -528,6 +528,16 @@ class TraceStore:
         "THEN name END), MIN(name))"
     )
 
+    #: A trace's status is its **root** span's status (1.89.0), with the same
+    #: fallback as :attr:`TRACE_NAME_SQL`. ``MIN(status)`` over every span made a
+    #: run that completed after a ``warn`` guardrail (an ERROR guardrail span
+    #: under an UNSET root) report ERROR, and a run whose only spans were OK and
+    #: UNSET report OK however its root ended. The plane reads the root too.
+    TRACE_STATUS_SQL = (
+        "COALESCE(MIN(CASE WHEN parent_span_id IS NULL OR parent_span_id = '' "
+        "THEN status END), MIN(status))"
+    )
+
     def list_traces(
         self,
         last_hours: float | None = 24,
@@ -592,7 +602,7 @@ class TraceStore:
         sql = f"""SELECT trace_id,
                       {self.TRACE_NAME_SQL} as name,
                       MIN(start_time) as start_time,
-                      MIN(status) as status,
+                      {self.TRACE_STATUS_SQL} as status,
                       COUNT(*) as span_count
                FROM spans
                {"WHERE " + " AND ".join(where) if where else ""}
@@ -620,10 +630,12 @@ class TraceStore:
                 f"""SELECT trace_id,
                           {self.TRACE_NAME_SQL} as name,
                           MIN(start_time) as start_time,
-                          MIN(status) as status,
+                          {self.TRACE_STATUS_SQL} as status,
                           COUNT(*) as span_count
                    FROM spans
-                   WHERE name LIKE ? OR attributes LIKE ?
+                   WHERE trace_id IN (
+                       SELECT trace_id FROM spans WHERE name LIKE ? OR attributes LIKE ?
+                   )
                    GROUP BY trace_id
                    ORDER BY start_time DESC
                    LIMIT 100""",

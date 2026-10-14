@@ -2,13 +2,15 @@
 
 The filter matched ``guardrail_events.outcome = 'fail'``. The event writer has
 never written ``'fail'`` (it writes passed / blocked / warned / filtered /
-errored), so from 1.22.0 to 1.88.0 the filter returned nothing. And event rows
-exist only with ``FASTAIAGENT_UI_ENABLED=1``, so even a correct value would
-have missed every run with the UI off.
+errored, and since 1.89.0 reasked), so from 1.22.0 to 1.88.0 the filter
+returned nothing. And until 1.89.0 event rows existed only with
+``FASTAIAGENT_UI_ENABLED=1``, so the filter must also find a run that has
+guardrail spans but no rows.
 
 The sweep drives the real writer: a real agent (``TestModel``) with a real
-guardrail, across action × verdict × blocking × run/astream × UI on/off, then
-asks the public ``curate_from_traces`` which traces it selects. A trace is
+guardrail, across action × verdict × blocking × run/astream × rows/legacy (the
+rows deleted, as for a run recorded before 1.89.0), then asks the public
+``curate_from_traces`` which traces it selects. A trace is
 selected exactly when the rule judged the payload and fired; a pass, or a check
 that errored (an infrastructure failure, not a quality signal), is not.
 """
@@ -27,7 +29,8 @@ from fastaiagent.guardrail.guardrail import GuardrailPosition
 #: Inlined rather than imported from ``fastaiagent.ui.events`` so this file
 #: fails on 1.88.0 by assertion, not ImportError. ``test_the_constant_matches``
 #: pins the two together.
-WRITTEN_OUTCOMES = {"passed", "blocked", "warned", "filtered", "errored"}
+# ``reasked`` since 1.89.0: a re-ask used to be written as ``blocked``.
+WRITTEN_OUTCOMES = {"passed", "blocked", "warned", "filtered", "errored", "reasked"}
 
 ACTIONS = ["block", "warn", "mask", "override", "reask"]
 VERDICTS = ["pass", "fail", "errored"]
@@ -52,13 +55,6 @@ def traced_db(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> Any:
         otel.reset()
         _project.reset_for_testing()
         reset_config()
-
-
-def _ui(monkeypatch: pytest.MonkeyPatch, on: bool) -> None:
-    from fastaiagent._internal.config import reset_config
-
-    monkeypatch.setenv("FASTAIAGENT_UI_ENABLED", "1" if on else "0")
-    reset_config()
 
 
 def _rule(action: str, verdict: str, blocking: bool) -> Guardrail:
@@ -119,7 +115,7 @@ def _trace_ids(db: Any) -> set[str]:
         return {r[0] for r in conn.execute("SELECT DISTINCT trace_id FROM spans")}
 
 
-@pytest.mark.parametrize("ui_on", [True, False], ids=["ui_on", "ui_off"])
+@pytest.mark.parametrize("record", ["rows", "legacy"])
 @pytest.mark.parametrize("path", ["run", "astream"])
 @pytest.mark.parametrize("blocking", [True, False], ids=["blocking", "non_blocking"])
 @pytest.mark.parametrize("verdict", VERDICTS)
@@ -131,27 +127,30 @@ def test_selected_exactly_when_a_rule_fired(
     verdict: str,
     blocking: bool,
     path: str,
-    ui_on: bool,
+    record: str,
 ) -> None:
     from fastaiagent.eval import curate_from_traces
 
-    _ui(monkeypatch, ui_on)
     _run(path, action, verdict, blocking)
     traces = _trace_ids(traced_db)
     assert len(traces) == 1, f"expected one traced run, got {traces}"
     (tid,) = traces
 
-    if ui_on:
-        with sqlite3.connect(traced_db) as conn:
-            written = {r[0] for r in conn.execute("SELECT outcome FROM guardrail_events")}
-        assert written, "the UI was on but no event row was written"
-        assert written <= WRITTEN_OUTCOMES, f"unknown outcome(s) written: {written}"
+    # 1.89.0: rows follow tracing, so they are always written here.
+    with sqlite3.connect(traced_db) as conn:
+        written = {r[0] for r in conn.execute("SELECT outcome FROM guardrail_events")}
+        if record == "legacy":
+            # A run recorded before 1.89.0 (with the UI flag off) has spans but
+            # no rows: curation must still find it through the guardrail spans.
+            conn.execute("DELETE FROM guardrail_events")
+    assert written, "tracing was on but no event row was written"
+    assert written <= WRITTEN_OUTCOMES, f"unknown outcome(s) written: {written}"
 
     items = curate_from_traces(filter="guardrail", limit=None)
     selected = {it["trace_id"] for it in items}
     should = verdict == "fail"
     assert (tid in selected) == should, (
-        f"{action}/{verdict}/blocking={blocking}/{path}/ui={ui_on}: "
+        f"{action}/{verdict}/blocking={blocking}/{path}/{record}: "
         f"{'missed a run where the rule fired' if should else 'selected a run where nothing fired'}"
     )
     if should:
@@ -166,7 +165,6 @@ def test_a_false_positive_is_not_selected(traced_db: Any, monkeypatch: pytest.Mo
     from fastaiagent.eval import curate_from_traces
     from fastaiagent.ui.server import build_app
 
-    _ui(monkeypatch, True)
     _run("run", "block", "fail", True)
     assert curate_from_traces(filter="guardrail", limit=None), "precondition: it fired"
 
@@ -185,4 +183,4 @@ def test_the_constant_matches_what_this_sweep_expects() -> None:
     from fastaiagent.ui.events import FIRED_OUTCOMES, GUARDRAIL_OUTCOMES
 
     assert set(GUARDRAIL_OUTCOMES) == WRITTEN_OUTCOMES
-    assert set(FIRED_OUTCOMES) == {"blocked", "warned", "filtered"}
+    assert set(FIRED_OUTCOMES) == {"blocked", "warned", "filtered", "reasked"}

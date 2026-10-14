@@ -1,11 +1,34 @@
 # Guardrail Event Detail
 
-Every guardrail firing produces a row in the `guardrail_events` table.
+Every guardrail check produces a row in the `guardrail_events` table of
+`local.db`, passes included.
 The list page at [/guardrails](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/docs/ui/index.md)
 has always shown the summary; the **detail page** at
 `/guardrail-events/{event_id}` shows the full story behind each event:
-*what triggered it*, *which rule matched*, *what happened next*, and the
-execution context the rule fired inside.
+*what the rule judged*, *which rule ran and how it was configured*, *what it
+did to the run*, and the execution context it ran inside.
+
+## When rows are written (1.89.0)
+
+**Whenever tracing is on** (`FASTAIAGENT_TRACE_ENABLED`, default on), in the
+process that runs the agent. The record is local capture, like spans, and it
+never leaves the machine.
+
+| Caller | Writes a row |
+|---|---|
+| An `Agent`, `Chain`, `Supervisor` or `Swarm` run | for every check, once |
+| The LangChain, CrewAI and PydanticAI proxies | for every check, once |
+| A bare `Guardrail.execute()` / `aexecute()` | only inside a recording span, so a check called from a web handler never creates `local.db` |
+| `log_guardrail_event(...)` called directly | whenever tracing is on |
+
+Before 1.89.0 rows were written only when `FASTAIAGENT_UI_ENABLED` was set in
+the **agent's** process, so the page was empty by default. That variable no
+longer affects anything. `FASTAIAGENT_TRACE_ENABLED=0` writes no rows (it used
+to write them with `UI_ENABLED=1`, `before` payloads included).
+
+The UI must read the same `local.db` the agent wrote
+(`FASTAIAGENT_LOCAL_DB`, or `fastaiagent ui --db`). An empty list says so, and
+counts the guardrail spans of traces recorded before 1.89.0, which have no rows.
 
 ![Guardrail events list with type / position / FP filters](screenshots/sprint2-6-guardrails-list-filters.png)
 
@@ -18,31 +41,81 @@ the Trace Detail page's *Scores* card), you land on a three-panel layout:
 
 | Panel | Contents |
 |---|---|
-| **1 — What triggered it** | The exact span content the guardrail evaluated. `position` decides whether this is the agent's input, the agent's output, a tool call, or a tool response. Falls back to a hint when payload tracing is disabled (`FASTAIAGENT_TRACE_PAYLOADS=0`). |
-| **2 — Which rule matched** | Guardrail name + type (`code` / `regex` / `llm_judge` / `schema` / `classifier` / `content_safety` / `groundedness` / `topic` / `pii` / `secrets`) + position. Rich metadata: PII categories for `no_pii`, `match` substring for regex rules, `judge_prompt` + `judge_response` for LLM-judge rules, the `matched` topic names for a `topic` rule, the entity kinds and counts — never the values — for a `pii` or `secrets` rule. |
-| **3 — What happened next** | For `blocked`: the error/fallback the agent received. For `filtered`: a side-by-side **before / after** diff of the rewritten content (set `metadata.before` and `metadata.after` on the result and the UI renders them automatically). For `errored`: an explanation that the check itself couldn't run, and whether the guardrail's [`on_error`](../guardrails/index.md#fail-policy-on_error) policy let the content through (`allow`) or blocked it (`block`). For `warned` / `passed`: explanatory text. |
+| **1 — What it judged** | Exactly the text the rule saw (1.89.0): the input after earlier input rewrites, the reply at that attempt, the `{"tool", "arguments"}` envelope of a tool call, or the raw tool result. When an earlier rule in the same pass rewrote it, the panel says so. Rows from before 1.89.0 fall back to the parent span's text, or say it was not recorded. |
+| **2 — Which rule ran** | Name, type, position, and how it was configured: action → what it did (`action_taken`) → its effect on the run, with `*` when they differ; severity, the floor badge, blocking or observe-only, `on_error`, origin (local or plane), latency and attempt. Then the evidence for its type: content-safety scores against thresholds, groundedness score and unsupported claims, schema violations, the judge's prompt and reply, the regex pattern, PII and secret kinds and counts (never the values), and all recorded metadata as a fallback. |
+| **3 — What happened to the run** | Read from the effect: the run stopped here (and why, when a rewrite or re-ask was refused); the payload was rewritten (a **before / after** diff); the model was re-asked (see the next attempt); a `warn` recorded and continued; an observe-only rule enforced nothing (its diff labelled *would have produced, not applied*); or the check could not run, and `on_error` let the content through unchecked or blocked it. |
+
+A **Mask secrets** switch applies the installed read-mode redaction policy to the
+judged text and the diff, as on Trace Detail.
 
 !!! note "The `errored` outcome"
     A model-judged guardrail whose LLM call fails is logged with an `errored`
     outcome (rather than silently passing), so you can see how often a check is
-    degrading instead of guarding. Whether it then allowed or blocked is
-    recorded in the result's `on_error` metadata.
+    degrading instead of guarding. Its effect says what happened next:
+    `unchecked` (on_error=allow let the payload through), `blocked` (fail
+    closed), or `observed` (an observe-only rule enforces nothing either way).
+
+## What a row says: outcome and effect (1.89.0)
+
+`action_taken` is the *resolved action*, the same value the guardrail span and
+the plane carry. It ignores `blocking`: an observe-only `mask` reports `masked`
+though nothing was applied. Each row now also records its **effect**, what the
+check did to the run:
+
+| Check | Effect | Outcome |
+|---|---|---|
+| clean pass | `none` | `passed` |
+| could not run, `on_error=allow`, blocking | `unchecked` | `errored` |
+| could not run, `on_error=block`, blocking | `blocked` | `errored` |
+| could not run, observe-only | `observed` | `errored` |
+| failed, `block` (or a `mask` with nothing to mask) | `blocked` | `blocked` |
+| failed, `warn` | `warned` | `warned` |
+| failed, `mask` / `override`, rewrite applied | `rewritten` | `filtered` |
+| failed, `reask`, the model was asked again | `reasked` | `reasked` |
+| failed, `reask` at a position with no model turn, or out of retries | `blocked` | `blocked` |
+| a rewrite or re-ask the caller could not apply (a streamed reply, multimodal input, a tool call that is no longer an arguments object, a tool result with image/PDF parts) | `blocked`, with `final_reason` | `blocked` |
+| failed, observe-only | `observed` | `warned` |
+| a framework proxy's `mask` / `override` / `reask` | `blocked`, with `final_reason` | `blocked` |
+
+What changed from 1.88.0: a re-ask was recorded as `blocked`, an observe-only
+mask as `filtered`, and a refused rewrite as `filtered` with no record of the
+block. A refused row is written when the check runs and updated in place when
+the caller refuses, so a crash keeps the evidence. The guardrail span is
+unchanged: same attributes, same status (ERROR for any verdict that is not a
+pass). The span tree colours a guardrail by what it did, not by that status.
+
+Rows from before 1.89.0 have no effect and keep their old meaning.
 
 ![Guardrail event detail (filtered) with before/after diff](screenshots/sprint2-8-guardrail-detail-filtered.png)
 
 Below the three panels, an **execution context** section shows up to 8
 spans from the same trace as a vertical timeline (with the triggering
 span highlighted) plus a list of *other guardrails that ran on the same
-content*. That sibling list is critical for debugging — it tells you
-whether a `blocked` outcome was unanimous across rules or a single
-opinionated rule overruling the rest.
+content* (the same position pass). That sibling list is critical for
+debugging — it tells you whether a `blocked` outcome was unanimous across
+rules or a single opinionated rule overruling the rest.
+
+## The list
+
+The list pages through every row (Prev / Next) and filters by rule, outcome,
+agent, type, position, false-positive flag and a time range. Two switches:
+
+- **Hide passes**, on by default: passes are recorded, but they would bury
+  everything else.
+- **Hide experiments**: leaves out checks from replay reruns and Playground
+  calls.
+
+The Action column reads `masked · observe-only` for a rule that enforced
+nothing, and `blocked (was masked) *` for a rewrite the run refused, with the
+reason on hover.
 
 ## Mark as false positive
 
 Top-right of the detail page is a **Flag · Mark as false positive**
 button. Click it and the event row's `false_positive` column flips to
 `1` plus a `false_positive_at` timestamp. Refresh the page — the flag
-persists. Toggle again to clear.
+persists. Toggle again to clear: since 1.89.0 that also clears
+`false_positive_at` (it used to keep the time it was cleared).
 
 ![Marked false positive — badge in header, button in active state](screenshots/sprint2-9-guardrail-false-positive.png)
 
@@ -64,11 +137,26 @@ still immutable. What changes is just *your view* of the event.
 GET   /api/guardrail-events
         ?rule=...&outcome=...&agent=...&type=...
         &position=...&false_positive=true|false
+        &hide_passes=true|false&exclude_experiments=true|false
         &since=...&until=...&page=...&page_size=...
-GET   /api/guardrail-events/{event_id}
+GET   /api/guardrail-events/{event_id}?redact=true|false
 PATCH /api/guardrail-events/{event_id}/false-positive
         body: {"false_positive": true|false, "note": "optional"}
 ```
+
+1.89.0 additions, all additive:
+
+- Each row carries `effect`, `final_reason`, `latency_ms`, `attempt`,
+  `batch_id`, `guardrail_span_id`, `judged_ref` and `rule` (the rule as it ran,
+  with a judge's `config.llm` reduced to provider and model), plus `blocking`,
+  `on_error` and `origin` read from it.
+- `outcome` can be `reasked`.
+- The list returns `legacy_guardrail_spans` when it is empty.
+- The detail adds `judged: {text, recorded}`; `trigger` is kept for older
+  clients.
+- Trace spans (`/api/traces/{id}` and `/api/traces/{id}/spans`) carry
+  `guardrail: {event_id, outcome, effect, blocking, final_reason}` on each
+  guardrail span.
 
 The list endpoint gained four new filters in Sprint 2: `type` and
 `position` (existing fields, now surfaced through the API and a pair of
@@ -80,9 +168,11 @@ and `outcome` accepts `filtered` — a rule that rewrote the payload and let the
 continue. Every row also carries `action`, `action_taken`, `severity` and `floor`.
 
 The detail endpoint joins the event row with:
+- the text it judged (`guardrail_payloads`)
 - the triggering span (read by `span_id`)
 - up to 8 surrounding spans on the same trace
-- every sibling event on the same `(trace_id, span_id)` pair
+- every sibling event of the same pass (`batch_id`; for rows from before 1.89.0,
+  the same `(trace_id, span_id)` pair)
 
 Every endpoint is project-scoped. Cross-project event ids return 404 so
 multi-project Postgres deployments stay isolated.
@@ -130,6 +220,29 @@ action said, and a `mask` that finds no span to redact degrades to a block. Both
 are safety behaviours, not faults — but a rule configured to `mask` that shows
 `blocked` is worth seeing at a glance.
 
+### v25 — what the check did to the run (1.89.0)
+
+```sql
+ALTER TABLE guardrail_events ADD COLUMN effect            TEXT;
+ALTER TABLE guardrail_events ADD COLUMN rule              TEXT;    -- JSON snapshot
+ALTER TABLE guardrail_events ADD COLUMN latency_ms        INTEGER;
+ALTER TABLE guardrail_events ADD COLUMN judged_ref        TEXT;    -- guardrail_payloads.payload_id
+ALTER TABLE guardrail_events ADD COLUMN guardrail_span_id TEXT;
+ALTER TABLE guardrail_events ADD COLUMN batch_id          TEXT;
+ALTER TABLE guardrail_events ADD COLUMN attempt           INTEGER;
+ALTER TABLE guardrail_events ADD COLUMN final_reason      TEXT;
+CREATE TABLE guardrail_payloads (payload_id TEXT PRIMARY KEY, text TEXT NOT NULL, created_at TEXT);
+```
+
+`guardrail_payloads` is content-addressed: every rule that judged the same text
+shares one row (the SHA-256 of the text after the capture-mode redaction policy,
+if one is installed). `FASTAIAGENT_TRACE_PAYLOADS` does not apply, because
+nothing here is exported. `fastaiagent traces purge` and deleting a trace in the
+UI remove a trace's rows and any payload no remaining row refers to; before
+1.89.0 `purge --older-than-days` removed no guardrail rows at all. The new
+columns are nullable, so an older SDK still writes to a v25 database, and its
+rows read as legacy. Nothing is backfilled.
+
 !!! note "`filtered` is now produced, not just rendered"
     The detail page has always known the `filtered` outcome and its before/after
     diff. Until the action spectrum shipped, no runtime code could write one —
@@ -155,7 +268,8 @@ the URL of each detail page.
 
 No agent runs and no API key is needed: every rule is a `regex` or `code` check,
 and the rows come from the runtime's own writer (`ui.events.log_guardrail_event`,
-reached through `Guardrail.execute`). Before 1.68.0 the example INSERTed rows
+reached through `Guardrail.execute` inside a span, which is when a bare call
+records). Before 1.68.0 the example INSERTed rows
 directly with a pre-v18 column list, so `action`, `action_taken`, `severity` and
 `floor` were always NULL — the `*` marker documented above could never appear on
 the very row the example exists to show.

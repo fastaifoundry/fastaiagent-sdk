@@ -460,30 +460,12 @@ def _run_guardrails(
     side: str,
     agent_name: str | None,
 ) -> None:
-    if not guardrails:
-        return
-    from fastaiagent.guardrail.actions import harness_halts
-    from fastaiagent.integrations._registry import GuardrailBlocked
+    # ``warn`` records and continues; the payload-rewriting actions and ``reask``
+    # need the SDK's own loop, so here they block. See
+    # fastaiagent.guardrail.actions.harness_halts.
+    from fastaiagent.integrations._guardrails import run_proxy_guardrails
 
-    for g in guardrails:
-        result = g.execute(text)
-        # ``warn`` records and continues; the payload-rewriting actions and
-        # ``reask`` need the SDK's own loop, so here they block. See
-        # fastaiagent.guardrail.actions.harness_halts.
-        reason = harness_halts(g, result)
-        if not result.passed:
-            try:
-                from fastaiagent.ui.events import log_guardrail_event
-
-                merged = dict(result.metadata or {})
-                merged.setdefault("framework", "pydanticai")
-                merged.setdefault("side", side)
-                result.metadata = merged
-                log_guardrail_event(g, result, agent_name=agent_name, data=text)
-            except Exception:
-                pass
-        if reason is not None:
-            raise GuardrailBlocked(f"{side} blocked by {g.name}: {reason}")
+    run_proxy_guardrails(text, guardrails, side=side, agent_name=agent_name, framework="pydanticai")
 
 
 class _GuardedAgent:

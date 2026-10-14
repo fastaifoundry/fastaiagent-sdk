@@ -414,7 +414,7 @@ class TestActionColumns:
         assert CURRENT_SCHEMA_VERSION >= 18
 
     def test_a_mask_rule_writes_a_filtered_row_with_a_diff(self, temp_dir: Path) -> None:
-        from fastaiagent._internal.config import get_config, reset_config
+        from fastaiagent._internal.config import reset_config
         from fastaiagent.guardrail.guardrail import (
             Guardrail,
             GuardrailPosition,
@@ -425,7 +425,6 @@ class TestActionColumns:
         db_path = temp_dir / "local.db"
         init_local_db(db_path).close()
         reset_config()
-        get_config().ui_enabled = True
 
         rule = Guardrail(
             name="mask-ssn",

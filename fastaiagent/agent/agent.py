@@ -184,6 +184,7 @@ def _apply_input_rewrite(original: AgentInput, outcome: GuardrailOutcome) -> tup
     if isinstance(original, str):
         return rewritten, rewritten
 
+    outcome.refuse("multimodal input cannot be rewritten faithfully")
     raise GuardrailBlockedError(
         guardrail_name="input",
         message=(
@@ -207,6 +208,7 @@ def _refuse_stream_rewrite(outcome: GuardrailOutcome) -> None:
     if not outcome.modified and outcome.reask is None:
         return
     what = "rewrite" if outcome.modified else "re-ask"
+    outcome.refuse(f"a streamed reply cannot be {'rewritten' if outcome.modified else 're-asked'}")
     raise GuardrailBlockedError(
         guardrail_name="output",
         message=(
@@ -542,7 +544,12 @@ class Agent:
 
         for attempt in range(attempts + 1):
             outcome = await execute_guardrails(
-                guardrails, output, GuardrailPosition.output, allow_reask=True
+                guardrails,
+                output,
+                GuardrailPosition.output,
+                allow_reask=True,
+                agent_name=self.name,
+                attempt=attempt + 1,
             )
 
             if outcome.modified:
@@ -556,6 +563,7 @@ class Agent:
                 # Out of retries. The rule asked us to try again and we did;
                 # the failure stands, so it costs what an unsatisfied guardrail
                 # always costs.
+                outcome.refuse(f"re-asked {attempts} time(s) without satisfying the rule")
                 raise GuardrailBlockedError(
                     guardrail_name="reask",
                     message=(
@@ -898,7 +906,7 @@ class Agent:
             guarded_input: AgentInput = input
             if eff_guardrails:
                 outcome = await execute_guardrails(
-                    eff_guardrails, input_text, GuardrailPosition.input
+                    eff_guardrails, input_text, GuardrailPosition.input, agent_name=self.name
                 )
                 if outcome.modified:
                     # A mask/override rewrote the input. We can only substitute
@@ -1216,7 +1224,7 @@ class Agent:
             guarded_input: AgentInput = input
             if eff_guardrails:
                 in_outcome = await execute_guardrails(
-                    eff_guardrails, input_text, GuardrailPosition.input
+                    eff_guardrails, input_text, GuardrailPosition.input, agent_name=self.name
                 )
                 if in_outcome.modified:
                     guarded_input, input_text = _apply_input_rewrite(input, in_outcome)
@@ -1321,7 +1329,11 @@ class Agent:
                 # ``allow_reask=True`` only so the refusal below can explain
                 # itself; nothing here can actually re-drive the model.
                 out_outcome = await execute_guardrails(
-                    eff_guardrails, output, GuardrailPosition.output, allow_reask=True
+                    eff_guardrails,
+                    output,
+                    GuardrailPosition.output,
+                    allow_reask=True,
+                    agent_name=self.name,
                 )
                 _refuse_stream_rewrite(out_outcome)
 

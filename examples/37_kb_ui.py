@@ -21,10 +21,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-os.environ.setdefault("FASTAIAGENT_UI_ENABLED", "true")
-
-from fastaiagent import Agent, LLMClient  # noqa: E402
-from fastaiagent.kb import LocalKB  # noqa: E402
+from fastaiagent import Agent, LLMClient
+from fastaiagent.kb import LocalKB
 
 _DOCS = {
     "refund-policy.md": (

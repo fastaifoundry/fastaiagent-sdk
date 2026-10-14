@@ -61,18 +61,20 @@ def test_curate_real_agent_then_evaluate(isolated_local_db: Any, tmp_path: Any) 
         otel.reset()
 
 
-@pytest.mark.parametrize("ui_enabled", ["1", "0"], ids=["ui_on", "ui_off"])
+@pytest.mark.parametrize("record", ["rows", "legacy"])
 def test_curate_guardrail_filter_live(
-    isolated_local_db: Any, monkeypatch: pytest.MonkeyPatch, ui_enabled: str
+    isolated_local_db: Any, monkeypatch: pytest.MonkeyPatch, record: str
 ) -> None:
-    """G8 (1.89.0): a real warn-rule firing is curated, with the Local UI on (event
-    rows) and off (guardrail spans only). Before, the filter matched an outcome
-    nothing writes and returned nothing either way."""
-    from fastaiagent._internal.config import reset_config
+    """G8 (1.89.0): a real warn-rule firing is curated, from its event row, and
+    from its guardrail span alone (a run recorded before 1.89.0 has no row).
+    Before, the filter matched an outcome nothing writes and returned nothing
+    either way."""
+    import sqlite3
+
+    from fastaiagent._internal.config import get_config, reset_config
     from fastaiagent.eval import curate_from_traces
     from fastaiagent.guardrail.builtins import no_pii
 
-    monkeypatch.setenv("FASTAIAGENT_UI_ENABLED", ui_enabled)
     reset_config()
     otel.reset()
     try:
@@ -86,6 +88,9 @@ def test_curate_guardrail_filter_live(
         )
         run = agent.run("Repeat exactly: my email is a@b.com")
         assert "a@b.com" in run.output, "the model did not echo the email; rerun"
+        if record == "legacy":
+            with sqlite3.connect(get_config().local_db_path) as conn:
+                conn.execute("DELETE FROM guardrail_events")
 
         items = curate_from_traces(filter="guardrail", limit=None)
         mine = [it for it in items if it["trace_id"] == run.trace_id]

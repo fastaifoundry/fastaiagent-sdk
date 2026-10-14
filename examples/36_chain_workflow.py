@@ -17,10 +17,8 @@ from __future__ import annotations
 
 import os
 
-os.environ.setdefault("FASTAIAGENT_UI_ENABLED", "true")
-
-from fastaiagent import Agent, LLMClient  # noqa: E402
-from fastaiagent.chain import Chain  # noqa: E402
+from fastaiagent import Agent, LLMClient
+from fastaiagent.chain import Chain
 
 
 def main() -> None:

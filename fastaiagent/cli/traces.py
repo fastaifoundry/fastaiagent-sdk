@@ -222,26 +222,27 @@ def purge_traces(
                 console.print("[yellow]Aborted.[/yellow]")
                 raise typer.Exit(code=1)
 
-        # Delete in order: attachments → events → spans (FK-clean).
+        # Delete in order: attachments → guardrail events → spans. The
+        # guardrail rows go by the trace ids collected above: selecting them
+        # through ``spans`` after the spans were gone removed none (1.89.0),
+        # leaving judged payloads, which can hold PII, behind.
+        from fastaiagent.ui.events import delete_guardrail_events
+
         if attachments:
             db.execute(
                 f"DELETE FROM trace_attachments{scope_clause}",
                 scope_params,
             )
+        delete_guardrail_events(
+            db,
+            [r["trace_id"] for r in affected],
+            orphans_before=cutoff,
+            everything=cutoff is None,
+        )
         db.execute(
             f"DELETE FROM spans{scope_clause}",
             scope_params,
         )
-        # Other per-trace tables that should track the same scope.
-        for tbl in ("guardrail_events",):
-            try:
-                db.execute(
-                    f"DELETE FROM {tbl}{scope_clause}",
-                    scope_params,
-                )
-            except Exception:
-                # Tables that don't exist on older schemas — skip.
-                pass
 
     console.print(
         f"[green]\N{CHECK MARK} Deleted {n_traces} {what}{also}.[/green]"

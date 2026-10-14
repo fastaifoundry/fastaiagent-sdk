@@ -670,6 +670,20 @@ def _agent_kbs_payload(agent: Any, kb_root: str | None) -> list[dict[str, Any]]:
     return out
 
 
+def _guardrail_entry(d: dict[str, Any]) -> dict[str, Any]:
+    """One declared rule for the dependency payload (action fields since 1.89.0)."""
+    return {
+        "name": d.get("name"),
+        "guardrail_type": d.get("guardrail_type"),
+        "position": d.get("position"),
+        "action": d.get("action"),
+        "blocking": d.get("blocking"),
+        "on_error": d.get("on_error"),
+        "severity": d.get("severity"),
+        "floor": d.get("floor"),
+    }
+
+
 def _agent_guardrails_payload(agent: Any) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for g in getattr(agent, "guardrails", []) or []:
@@ -677,11 +691,58 @@ def _agent_guardrails_payload(agent: Any) -> list[dict[str, Any]]:
             d = g.to_dict()
         except Exception:  # noqa: BLE001
             d = {"name": getattr(g, "name", "guardrail")}
+        out.append(_guardrail_entry(d))
+    return out
+
+
+def _observed_guardrails(
+    db: Any, name: str, project_id: str, declared: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Rules that ran for this agent but that it does not declare (1.89.0).
+
+    Plane-distributed rules are deliberately absent from ``agent.guardrails``
+    (they must not be pushed back as the agent's own), and so are rules a
+    runtime adds. The local event rows saw them run.
+    """
+    seen = {(d.get("name"), d.get("position")) for d in declared}
+    pid_clause = "AND project_id = ?" if project_id else ""
+    try:
+        rows = db.fetchall(
+            f"""SELECT guardrail_name, position, guardrail_type,
+                       MAX(timestamp) AS last_seen, COUNT(*) AS checks
+                FROM guardrail_events
+                WHERE agent_name = ? {pid_clause}
+                GROUP BY guardrail_name, position, guardrail_type
+                ORDER BY last_seen DESC""",
+            (name, *((project_id,) if project_id else ())),
+        )
+    except Exception:  # noqa: BLE001
+        return []
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        if (r.get("guardrail_name"), r.get("position")) in seen:
+            continue
+        origin = None
+        latest = db.fetchone(
+            f"""SELECT rule FROM guardrail_events
+                WHERE agent_name = ? AND guardrail_name = ? AND position = ? {pid_clause}
+                  AND rule IS NOT NULL
+                ORDER BY timestamp DESC LIMIT 1""",
+            (name, r["guardrail_name"], r.get("position"), *((project_id,) if project_id else ())),
+        )
+        if latest:
+            try:
+                origin = (json.loads(latest.get("rule") or "{}") or {}).get("origin")
+            except (json.JSONDecodeError, TypeError, AttributeError):
+                origin = None
         out.append(
             {
-                "name": d.get("name"),
-                "guardrail_type": d.get("guardrail_type"),
-                "position": d.get("position"),
+                "name": r["guardrail_name"],
+                "position": r.get("position"),
+                "guardrail_type": r.get("guardrail_type"),
+                "last_seen": r.get("last_seen"),
+                "checks": int(r.get("checks") or 0),
+                "origin": origin,
             }
         )
     return out
@@ -780,6 +841,7 @@ def _build_agent_payload(
     """
     name = getattr(agent, "name", "")
     used_by_name = _used_tools_for_agent(db, name, project_id)
+    guardrails = _agent_guardrails_payload(agent)
     return {
         "agent": {
             "name": name,
@@ -790,7 +852,8 @@ def _build_agent_payload(
         "tools": _agent_tools_payload(agent, used_by_name),
         "knowledge_bases": _agent_kbs_payload(agent, kb_root),
         "prompts": _extract_prompts_from_agent(agent),
-        "guardrails": _agent_guardrails_payload(agent),
+        "guardrails": guardrails,
+        "observed_guardrails": _observed_guardrails(db, name, project_id, guardrails),
         "model": _agent_model_payload(agent),
     }
 
@@ -905,13 +968,7 @@ def _degraded_from_spans(
     if isinstance(raw_g, str):
         try:
             for g in json.loads(raw_g) or []:
-                guardrails.append(
-                    {
-                        "name": g.get("name"),
-                        "guardrail_type": g.get("guardrail_type"),
-                        "position": g.get("position"),
-                    }
-                )
+                guardrails.append(_guardrail_entry(g))
         except json.JSONDecodeError:
             pass
 
@@ -928,6 +985,7 @@ def _degraded_from_spans(
         "knowledge_bases": [],
         "prompts": [],
         "guardrails": guardrails,
+        "observed_guardrails": _observed_guardrails(db, name, project_id, guardrails),
         "model": {"provider": provider, "model": model},
         "unresolved": True,
     }

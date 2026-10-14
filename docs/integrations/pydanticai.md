@@ -83,7 +83,8 @@ except GuardrailBlocked as e:
 ```
 
 Block-only semantics — see [Overview → Limitations](overview.md#limitations).
-Wraps `run`, `run_sync`, and `run_stream`.
+Wraps `run`, `run_sync`, and `run_stream`. Each check writes one
+`guardrail_events` row (`framework=pydanticai`) whenever tracing is on.
 
 For `run_stream`: input guardrails fire before the inner async cm opens;
 output guardrails are not supported on the streaming path because they'd

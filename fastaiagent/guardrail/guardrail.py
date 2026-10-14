@@ -95,11 +95,21 @@ class GuardrailFiring(BaseModel):
     name: str
     position: str
     action_taken: str
-    """``none`` | ``blocked`` | ``warned`` | ``masked`` | ``overridden`` | ``reask``."""
+    """``none`` | ``blocked`` | ``warned`` | ``masked`` | ``overridden`` | ``reask``.
+
+    The *resolved action*. On an observe-only rule (``blocking=False``) it is
+    what the rule would have done; nothing was applied. :attr:`effect` says what
+    happened to the run."""
 
     passed: bool
     errored: bool
     message: str | None = None
+    blocking: bool = True
+    """False for an observe-only rule (1.89.0)."""
+    effect: str = "none"
+    """What the check did to the run (1.89.0): ``none`` | ``warned`` |
+    ``rewritten`` | ``reasked`` | ``blocked`` | ``observed`` | ``unchecked``.
+    See :data:`fastaiagent.guardrail.actions.EFFECTS`."""
 
     def fired(self) -> bool:
         """True when this rule did something other than pass cleanly."""
@@ -135,6 +145,44 @@ def collected_firings() -> list[GuardrailFiring]:
 def stop_firing_collection(token: contextvars.Token[list[GuardrailFiring] | None]) -> None:
     """End the collection scope opened by :func:`start_firing_collection`."""
     _run_firings.reset(token)
+
+
+def record_firing(
+    guardrail: Guardrail,
+    result: GuardrailResult,
+    *,
+    effect: str | None = None,
+    allow_reask: bool = False,
+) -> GuardrailFiring | None:
+    """Append this check to the run being collected, if any. Never raises.
+
+    Deliberately not gated on tracing: this is how a caller with no UI and no
+    plane sees that a ``warn`` or ``mask`` rule fired.
+    """
+    firings = _run_firings.get()
+    if firings is None:
+        return None
+    try:
+        from fastaiagent.guardrail.actions import effect_of
+
+        firing = GuardrailFiring(
+            name=guardrail.name,
+            position=getattr(guardrail.position, "value", str(guardrail.position)),
+            action_taken=result.action_taken,
+            passed=result.passed,
+            errored=result.errored,
+            message=result.message,
+            blocking=bool(guardrail.blocking),
+            effect=effect or effect_of(guardrail, result, allow_reask=allow_reask),
+        )
+        firings.append(firing)
+        return firing
+    except Exception:
+        # Bookkeeping never fails the check it is bookkeeping for.
+        logging.getLogger(__name__).debug(
+            "Failed to record guardrail firing for %r", guardrail.name, exc_info=True
+        )
+        return None
 
 
 def rebuilt_config(config: dict[str, Any] | None, name: str) -> dict[str, Any]:
@@ -225,7 +273,33 @@ class Guardrail:
         return run_sync(self.aexecute(data))
 
     async def aexecute(self, data: str | dict[str, Any]) -> GuardrailResult:
-        """Execute the guardrail asynchronously."""
+        """Execute the guardrail asynchronously, and record it.
+
+        A bare call (outside :func:`~fastaiagent.guardrail.executor.execute_guardrails`)
+        adds its firing to the run being collected, if any, and writes a local
+        event row when tracing is on **and** a span is recording (1.89.0). The
+        span gate keeps a bare check in, say, a web handler from creating
+        ``local.db``. The SDK runtime and the framework proxies call
+        :meth:`_acheck` and record themselves, once.
+        """
+        result = await self._acheck(data)
+        record_firing(self, result)
+
+        from fastaiagent.ui.events import bare_call_recording, log_guardrail_event
+
+        if bare_call_recording():
+            try:
+                log_guardrail_event(self, result, data=data)
+            except Exception:
+                # Best-effort: an event store that is locked, read-only or full
+                # must never fail the check it records.
+                logging.getLogger(__name__).debug(
+                    "Failed to log guardrail event for %r", self.name, exc_info=True
+                )
+        return result
+
+    async def _acheck(self, data: str | dict[str, Any]) -> GuardrailResult:
+        """Run the check and time it. Records nothing (1.89.0)."""
         import time
 
         from fastaiagent.guardrail.implementations import run_guardrail
@@ -233,48 +307,6 @@ class Guardrail:
         start = time.monotonic()
         result = await run_guardrail(self, data)
         result.execution_time_ms = int((time.monotonic() - start) * 1000)
-
-        # Record the firing for whoever is collecting this run. Before the
-        # ``ui_enabled`` gate below on purpose — this is the path that makes a
-        # non-blocking outcome visible when there is no UI and no plane.
-        firings = _run_firings.get()
-        if firings is not None:
-            try:
-                firings.append(
-                    GuardrailFiring(
-                        name=self.name,
-                        position=getattr(self.position, "value", str(self.position)),
-                        action_taken=result.action_taken,
-                        passed=result.passed,
-                        errored=result.errored,
-                        message=result.message,
-                    )
-                )
-            except Exception:
-                # Same rule as the event logger below: bookkeeping never fails
-                # the check it is bookkeeping for.
-                logging.getLogger(__name__).debug(
-                    "Failed to record guardrail firing for %r", self.name, exc_info=True
-                )
-
-        from fastaiagent._internal.config import get_config
-
-        if get_config().ui_enabled:
-            from fastaiagent.ui.events import log_guardrail_event
-
-            try:
-                log_guardrail_event(self, result, data=data)
-            except Exception:
-                # Logging is best-effort; never fail a guardrail check because the
-                # event store hiccupped. ``log_guardrail_event`` is try/*finally*
-                # with no ``except``, so a locked or read-only ``local.db``, a full
-                # disk, or metadata that would not serialize used to propagate out
-                # of here and abort the whole agent run — turning an observability
-                # problem into an outage. The three framework integrations already
-                # guarded this call; the SDK's own runtime did not.
-                logging.getLogger(__name__).debug(
-                    "Failed to log guardrail event for %r", self.name, exc_info=True
-                )
         return result
 
     def to_dict(self) -> dict[str, Any]:

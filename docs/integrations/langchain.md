@@ -142,9 +142,11 @@ The wrapper is a `_GuardedRunnable` that proxies every other attribute
 to the wrapped object, so consumer code keeps working unchanged.
 Overridden methods: `invoke`, `ainvoke`, `stream`, `astream`, `batch`.
 
-**Block-only semantics**: a failing blocking guardrail logs a
-`guardrail_events` row tagged `framework=langchain` *and* raises
-`GuardrailBlocked`.
+**Block-only semantics**: a failing blocking guardrail raises
+`GuardrailBlocked`. Every check, passes included, writes **one**
+`guardrail_events` row tagged `framework=langchain` whenever tracing is on
+(1.89.0; failures used to be written twice). A `mask`, `override` or `reask`
+rule, which the wrapper cannot honour, is recorded as `blocked` with the reason.
 There is no redaction — see the [Limitations section](overview.md#limitations).
 
 **Streaming**: input guardrails run before the stream opens; output

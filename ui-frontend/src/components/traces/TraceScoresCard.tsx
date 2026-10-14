@@ -2,17 +2,12 @@ import { Link } from "react-router-dom";
 import { ExternalLink, Shield, TrendingUp } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useTraceScores } from "@/hooks/use-analytics";
+import { effectSuffix, outcomeMeta, TONE_CHIP } from "@/lib/guardrail";
 import { cn } from "@/lib/utils";
 
 interface Props {
   traceId: string;
 }
-
-const OUTCOME_CLASS: Record<string, string> = {
-  passed: "bg-fa-success/10 text-fa-success",
-  blocked: "bg-destructive/10 text-destructive",
-  warned: "bg-fa-warning/10 text-fa-warning",
-};
 
 /**
  * Scores surface for a single trace — aggregates guardrail events and eval
@@ -41,8 +36,8 @@ export function TraceScoresCard({ traceId }: Props) {
             </div>
             <ul className="space-y-1.5">
               {guardrails.map((g) => {
-                const outcome = (g.outcome ?? "").toLowerCase();
-                const cls = OUTCOME_CLASS[outcome] ?? "bg-muted text-muted-foreground";
+                const meta = outcomeMeta(g.outcome);
+                const suffix = effectSuffix(g.outcome, g.effect);
                 return (
                   <li key={g.event_id}>
                     <Link
@@ -53,12 +48,18 @@ export function TraceScoresCard({ traceId }: Props) {
                         <span
                           className={cn(
                             "inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-mono uppercase",
-                            cls
+                            TONE_CHIP[meta.tone]
                           )}
+                          data-tone={meta.tone}
                         >
                           <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                          {outcome || "unknown"}
+                          {meta.label}
                         </span>
+                        {suffix && (
+                          <span className="font-mono text-[11px] text-muted-foreground">
+                            · {suffix}
+                          </span>
+                        )}
                         <span className="font-mono text-xs">{g.guardrail_name}</span>
                         {g.message && (
                           <span className="truncate text-xs text-muted-foreground">

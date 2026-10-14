@@ -424,9 +424,10 @@ edges. See [Agent Dependency Graph](agent-dependencies.md).
 
 Click any row on `/guardrails` (or any guardrail badge in the *Scores*
 card on a Trace Detail) to open the event's detail page. Three panels
-break down *what triggered it*, *which rule matched*, and *what
-happened next* — with a before/after diff for filtered events and an
-LLM judge prompt+response for `llm_judge` rules. The execution-context
+break down *what the rule judged* (the exact text, since 1.89.0), *which
+rule ran and how it was configured* (with the evidence for its type, such as
+an LLM judge's prompt and reply), and *what it did to the run* — with a
+before/after diff for rewritten payloads. The execution-context
 section below shows the surrounding span timeline plus other
 guardrails that ran on the same content. **Mark as false positive**
 flips a flag stored on the event row that persists across refreshes
@@ -437,9 +438,18 @@ and feeds the new `FP: yes / FP: no` filter on the list page. See
 
 ### Guardrail events
 
-Every guardrail firing — name, type, position, outcome pill (passed /
-blocked / warned), score, agent, message. Filter by rule / outcome / agent.
+Every guardrail check — name, type, position, outcome pill (passed /
+blocked / warned / filtered / re-asked / errored), what it did to the run,
+score, agent, message. Rows are recorded whenever tracing is on (1.89.0; it
+used to need `FASTAIAGENT_UI_ENABLED` in the agent's process). Filter by rule /
+outcome / agent / type / position / time range; passes are hidden by default.
 Click the ↗ icon to jump to the parent trace.
+
+In a trace's span tree a guardrail span is coloured by what it did (pass,
+warned, rewrote, re-asked, blocked, observe-only, could not run), not by its
+OTel status, which is ERROR for any failed verdict, a `warn` included. A trace
+is failing when its **root** span failed, in the Traces status filter and on
+Home alike.
 
 ![Guardrail events](screenshots/10-guardrails.png)
 

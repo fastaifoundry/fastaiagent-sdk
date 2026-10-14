@@ -290,6 +290,52 @@ def harness_halts(guardrail: Guardrail, result: GuardrailResult) -> str | None:
     return result.message or f"Blocked by guardrail: {guardrail.name}"
 
 
+#: What a guardrail check did to the run, as opposed to what its verdict was
+#: (1.89.0). Recorded on the local event row and on ``GuardrailFiring``; never
+#: on the wire, where ``action_taken`` keeps its existing meaning.
+EFFECTS: tuple[str, ...] = (
+    "none",  # a clean pass
+    "warned",  # failed, recorded, the run carried on unchanged
+    "rewritten",  # failed, and the payload the run used was masked or overridden
+    "reasked",  # failed, and the model was asked again
+    "blocked",  # the run stopped here
+    "observed",  # observe-only rule: whatever it found, nothing was enforced
+    "unchecked",  # could not run, and on_error=allow let the payload through
+)
+
+
+def effect_of(guardrail: Guardrail, result: GuardrailResult, *, allow_reask: bool = False) -> str:
+    """What this check did to the run.
+
+    ``action_taken`` is the *resolved action*, the same on both sides of the
+    wire. It ignores ``blocking``: an observe-only ``mask`` reports ``masked``
+    though nothing was applied. This reads the two together. ``allow_reask`` is
+    True only where the caller can re-drive the model (the agent's output path),
+    as for :func:`~fastaiagent.guardrail.executor.execute_guardrails`.
+
+    A rewrite or re-ask the caller later refuses becomes ``blocked`` through
+    :meth:`~fastaiagent.guardrail.executor.GuardrailOutcome.refuse`, which this
+    function cannot see.
+    """
+    blocking = bool(getattr(guardrail, "blocking", True))
+    if result.errored:
+        if not blocking:
+            return "observed"
+        return "unchecked" if result.passed else "blocked"
+    if result.passed:
+        return "none"
+    if not blocking:
+        return "observed"
+    taken = result.action_taken
+    if taken == "warned":
+        return "warned"
+    if taken in ("masked", "overridden") and result.rewrote_payload():
+        return "rewritten"
+    if taken == "reask":
+        return "reasked" if allow_reask else "blocked"
+    return "blocked"
+
+
 def degrade_to_block(result: GuardrailResult, reason: str) -> GuardrailResult:
     """Turn a payload-rewriting outcome into a block, saying why.
 

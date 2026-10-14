@@ -69,8 +69,8 @@ bad runs as `needs_review`.)
 | `all` | with any agent span | output-as-expected |
 | `favorites` | starred in the Local UI (`trace_favorites`) | output-as-expected |
 | `noted` | with a note (`trace_notes`); the note is attached | output-as-expected |
-| `guardrail` | where a guardrail fired: a `blocked`, `warned` or `filtered` event (false positives excluded), or, for a run with no event rows, a guardrail span that failed | needs-review |
-| `failed` | with an error-status span | needs-review |
+| `guardrail` | where a guardrail fired: a `blocked`, `warned`, `filtered` or `reasked` event (false positives excluded), or, for a run with no event rows, a guardrail span that failed | needs-review |
+| `failed` | whose root span failed | needs-review |
 
 Modifiers: `agent=` (one agent's spans), `since_hours=` (time window),
 `limit=` (cap, most-recent first), `dedup_by="input"` (drop duplicate inputs),
@@ -92,14 +92,16 @@ Modifiers: `agent=` (one agent's spans), `since_hours=` (time window),
     the payload and fired, including warn, mask, override and reask rules. A
     check that **errored** (could not run) is not selected: that is an
     infrastructure failure, not a quality signal. A firing you marked as a false
-    positive in the Local UI is excluded. Event rows exist only for runs made with
-    the Local UI enabled; other runs are matched on their guardrail spans, which
-    are written whenever tracing is on.
+    positive in the Local UI is excluded. Event rows are written whenever tracing
+    is on (1.89.0); runs recorded before then, which have rows only if the Local
+    UI flag was set, are matched on their guardrail spans.
 
-!!! note "`failed` and streamed runs"
-    `failed` keys off any error-status span in the trace. Since 1.89.0 a failed
-    *streamed* model call also leaves an ERROR span; before, it ended UNSET, so a
-    run whose only failure was a streamed call was not selected.
+!!! note "`failed` reads the root span (1.89.0)"
+    `failed` selects traces whose **root** span failed, as the Local UI and the
+    plane read a run. It used to key off any error-status span, so a run that
+    completed after a `warn` or `mask` guardrail (whose span is ERROR), or after
+    a tool error the agent recovered from, was curated as a failure. A run that
+    fails on a streamed model call ends with an ERROR root, so it is selected.
 
 ## Python API
 

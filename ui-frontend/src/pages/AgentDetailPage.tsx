@@ -9,6 +9,7 @@ import { TableSkeleton } from "@/components/shared/LoadingSkeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { TracesTable } from "@/components/traces/TracesTable";
 import { AgentToolsSection } from "@/components/agents/AgentToolsSection";
+import { AgentGuardrailsSection } from "@/components/agents/AgentGuardrailsSection";
 import {
   IncludeExperimentsToggle,
   ProductionOnlyNote,
@@ -156,11 +157,15 @@ export function AgentDetailPage() {
       <Tabs defaultValue="tools" className="w-full">
         <TabsList>
           <TabsTrigger value="tools">Tools</TabsTrigger>
+          <TabsTrigger value="guardrails">Guardrails</TabsTrigger>
           <TabsTrigger value="dependencies">Dependencies</TabsTrigger>
           <TabsTrigger value="runs">Run history</TabsTrigger>
         </TabsList>
         <TabsContent value="tools">
           <AgentToolsSection data={tools.data} />
+        </TabsContent>
+        <TabsContent value="guardrails">
+          <AgentGuardrailsSection agentName={name} />
         </TabsContent>
         <TabsContent value="dependencies">
           <Suspense

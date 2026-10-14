@@ -61,4 +61,53 @@ describe("SpanTree", () => {
     render(<SpanTree tree={failing} selectedSpanId={null} onSelect={() => {}} />);
     expect(screen.getByText("err")).toBeInTheDocument();
   });
+
+  // 1.89.0 — a guardrail span is coloured by what the check did, never by
+  // its OTel status (ERROR for any non-pass verdict, a warn included).
+  it("shows a fail-open guardrail span with status OK as unchecked, not green", () => {
+    const child = span("g", "guardrail.no_pii", 10, 20);
+    child.span.status = "OK";
+    child.span.attributes = {
+      "fastaiagent.guardrail.passed": true,
+      "fastaiagent.guardrail.errored": true,
+    };
+    const root = span("root", "agent.example", 0, 100, [child]);
+    render(<SpanTree tree={root} selectedSpanId={null} onSelect={() => {}} />);
+    const chip = screen.getByTestId("guardrail-verdict");
+    expect(chip).toHaveTextContent(/unchecked/i);
+    expect(chip.className).not.toMatch(/fa-success/);
+    expect(screen.queryByText("err")).not.toBeInTheDocument();
+  });
+
+  it("shows a warn guardrail span with status ERROR as warned, with no err chip", () => {
+    const child = span("g", "guardrail.tone", 10, 20);
+    child.span.status = "ERROR";
+    child.span.attributes = {
+      "fastaiagent.guardrail.passed": false,
+      "fastaiagent.guardrail.action_taken": "warned",
+    };
+    const root = span("root", "agent.example", 0, 100, [child]);
+    render(<SpanTree tree={root} selectedSpanId={null} onSelect={() => {}} />);
+    expect(screen.getByTestId("guardrail-verdict")).toHaveTextContent(/warned/i);
+    expect(screen.queryByText("err")).not.toBeInTheDocument();
+  });
+
+  it("prefers the event row's effect over the span attributes", () => {
+    const child = span("g", "guardrail.no_pii", 10, 20);
+    child.span.status = "ERROR";
+    child.span.attributes = {
+      "fastaiagent.guardrail.passed": false,
+      "fastaiagent.guardrail.action_taken": "masked",
+    };
+    child.span.guardrail = {
+      event_id: "e1",
+      outcome: "warned",
+      effect: "observed",
+      blocking: false,
+      final_reason: null,
+    };
+    render(<SpanTree tree={child} selectedSpanId={null} onSelect={() => {}} />);
+    expect(screen.getByTestId("guardrail-verdict")).toHaveTextContent(/observed/i);
+    expect(screen.queryByText("err")).not.toBeInTheDocument();
+  });
 });

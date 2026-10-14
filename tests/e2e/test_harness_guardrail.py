@@ -20,11 +20,8 @@ import pytest
 pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 
-# Force the SDK to write guardrail events into local.db for the duration
-# of this module — otherwise ``log_guardrail_event`` no-ops because the
-# UI server isn't running. This must happen *before* any SDK import so
-# the in-process ``SDKConfig`` snapshot picks the override up.
-os.environ.setdefault("FASTAIAGENT_UI_ENABLED", "1")
+# Guardrail events are recorded whenever tracing is on (1.89.0); this module
+# no longer needs FASTAIAGENT_UI_ENABLED, and deliberately does not set it.
 
 HAS_OPENAI = bool(os.environ.get("OPENAI_API_KEY"))
 
@@ -166,11 +163,15 @@ def test_22_langchain_output_block_logs_event(app_client: TestClient) -> None:
     resp = app_client.get("/api/guardrail-events?page_size=50")
     assert resp.status_code == 200, resp.text
     events = resp.json().get("rows") or []
-    assert any(
-        e.get("guardrail_name") == "block_output_sentinel"
-        and e.get("agent_name") == "harness-test-lc-out"
+    mine = [
+        e
         for e in events
-    ), events[:3]
+        if e.get("guardrail_name") == "block_output_sentinel"
+        and e.get("agent_name") == "harness-test-lc-out"
+    ]
+    # Exactly one row for one check (1.89.0): the proxy used to write two.
+    assert len(mine) == 1, mine
+    assert mine[0]["effect"] == "blocked" and mine[0]["metadata"]["framework"] == "langchain"
 
 
 @needs_openai

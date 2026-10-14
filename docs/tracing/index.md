@@ -205,9 +205,15 @@ Returned by `list_traces()` and `search()`:
 | `trace_id` | `str` | Unique trace identifier |
 | `name` | `str` | Root span name. Falls back to the lexicographically smallest span name only when the trace has no root span. |
 | `start_time` | `str` | ISO timestamp |
-| `status` | `str` | OK, ERROR, UNSET |
+| `status` | `str` | The root span's status: OK, ERROR, UNSET. Falls back to the lowest span status only when the trace has no root span. |
 | `span_count` | `int` | Number of spans |
 | `duration_ms` | `int` | Total duration |
+
+!!! note "`status` became the root span's in 1.89.0"
+    It was `MIN(status)` over every span. A run that completed after a `warn`
+    guardrail (an ERROR guardrail span under an UNSET root) reported ERROR, and
+    so did `fastaiagent traces list`. `search()` now also reports each matching
+    trace as a whole, not only the spans that matched the query.
 
 !!! note "`name` became the root span in 1.68.0"
     It was the smallest span name in the trace, full stop — so a swarm whose

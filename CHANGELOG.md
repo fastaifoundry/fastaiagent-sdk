@@ -260,6 +260,110 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Docs: "distributed guardrails never gate a rerun" was false for
   domain-wide rules, and now says so.
 
+### Guardrails tell the truth (Phase 5)
+
+- ⚠ **Guardrail events are recorded whenever tracing is on.** Rows were written
+  only when `FASTAIAGENT_UI_ENABLED` was set in the *agent's* process, so the
+  Guardrail Events page was empty by default (and an example claimed
+  `fastaiagent ui` set the flag; nothing did). The record is local capture now,
+  like spans, and never leaves the machine.
+  - `FASTAIAGENT_UI_ENABLED` / `config.ui_enabled` are accepted and ignored.
+  - `FASTAIAGENT_TRACE_ENABLED=0` writes no rows (it used to write them, with
+    `before` payloads, under `UI_ENABLED=1`).
+  - A bare `Guardrail.execute()` writes a row only inside a recording span, so a
+    check in a web handler never creates `local.db`.
+  - Rows for one position pass are written in one transaction through a cached
+    connection; each used to open a connection and take the migration lock.
+- ⚠ **A row says what the check did to the run.** A re-ask was recorded as
+  `blocked`, an observe-only `mask` as `filtered` (nothing was applied), and a
+  rewrite the run then refused as `filtered` with no record of the block.
+  - New `effect` (`none`, `warned`, `rewritten`, `reasked`, `blocked`,
+    `observed`, `unchecked`).
+  - `outcome` gains `reasked` (`FIRED_OUTCOMES` too, so curation selects it).
+    An observe-only failure is `warned`.
+  - A refused rewrite or re-ask is updated in place to `blocked` with
+    `final_reason`. The cases are a streamed reply, multimodal input, a tool
+    call that is no longer an arguments object, a tool result with image/PDF
+    parts, and re-ask retries exhausted.
+  - `GuardrailBlockedError.results` now reports `action_taken="blocked"` for
+    such a refused rule, via `degrade_to_block`, which finally has callers.
+  - `GuardrailFiring` gains `blocking` and `effect` (additive), and
+    `GuardrailOutcome` gains `records` and `refuse()`.
+- **The text a rule judged is stored.** "What triggered it" read the parent
+  span. That held the text after a rewrite, or nothing when the run was
+  blocked, and the page told users to set `FASTAIAGENT_TRACE_PAYLOADS`, which
+  is an export switch. Rows now point at a content-addressed
+  `guardrail_payloads` table, which stores each distinct judged text once and
+  applies the capture-mode redaction policy. Rows also store the rule as it ran
+  (a judge's `config.llm` reduced to provider and model), its latency, the
+  re-ask attempt and its span.
+- **Tool-position rows name their agent.** They read `agent.name` off the tool
+  span, which has none. `execute_guardrails(..., agent_name=, attempt=)`.
+- **Framework proxies record each check once.** LangChain, CrewAI and
+  PydanticAI logged every failure twice. A `mask` / `override` / `reask` they
+  cannot honour is recorded as `blocked` with the reason. All three now share
+  one runner.
+- ⚠ **A trace fails when its root span fails.** A guardrail span is ERROR for
+  any verdict that is not a pass, a `warn` included (unchanged; the wire is
+  pinned). These read any span (or `MIN(status)`), so a run that completed
+  after a `warn` was failing:
+  - the Traces `?status=` filter;
+  - Home's failing count and recent traces;
+  - `TraceStore.list_traces()` / `search()` and `fastaiagent traces list`;
+  - `eval curate --filter failed`.
+
+  They read the root now, as the plane does. `search()` also reports each
+  matching trace whole. `exclude_infra_errors="trace"` no longer counts a
+  guardrail verdict as an infrastructure error.
+- **`traces purge --older-than-days` removes guardrail rows.** It deleted the
+  spans first and then selected guardrail rows through them, so it removed none,
+  and rows with no trace were never purged. It now deletes by trace id and
+  removes old rows with no trace. Purge and UI trace delete also
+  garbage-collect judged payloads.
+- **A Supervisor's `result.guardrails` includes its workers' firings.**
+- **Local UI:**
+  - Guardrail spans are coloured by what they did, not by OTel status. Span
+    rows carry `guardrail: {event_id, outcome, effect, blocking, final_reason}`.
+  - The Guardrail Events list:
+    - pages through rows (it showed the first 100);
+    - filters by time;
+    - hides passes by default, and can hide experiments;
+    - labels observe-only and refused rows;
+    - explains an empty list, counting pre-1.89.0 guardrail spans.
+  - The event detail page:
+    - shows the judged text, and the rule's configuration and evidence by
+      type;
+    - tells what happened from the effect;
+    - has a Mask secrets switch.
+  - Clearing a false positive clears its timestamp.
+  - The agent dependency graph keeps the same rule at two positions as two
+    nodes, adds the rule's action fields and draws **observed** rules (e.g.
+    plane-distributed); a new Guardrails tab.
+- **local.db v25** (`_v25_guardrail_event_truth`): eight nullable columns on
+  `guardrail_events`, the `guardrail_payloads` table, three indexes. An older
+  SDK still writes to a v25 database; its rows read as legacy. No backfill.
+- Examples drop their `FASTAIAGENT_UI_ENABLED` setdefaults. Docs updated:
+  - guardrail events, actions and concepts (span status is the verdict; run
+    status is the root);
+  - trace filters, agent dependencies, tracing, curation;
+  - the integrations pages and the env/config references.
+- Tests:
+  - `tests/integration/test_guardrail_event_truth_sweep.py` covers position ×
+    action × blocking × check state × run/astream × tracing, the UI flag, and
+    Supervisor firings: 656 cells.
+  - `tests/test_guardrail_span_wire_pin.py` pins all 80 guardrail spans
+    against a fixture generated **on v1.88.0**, and passes on both.
+  - Also new: `test_guardrail_effect.py`, `test_ui_events_v25.py`,
+    `test_ui_trace_status_root.py`, `test_guardrail_proxy_events.py`,
+    `test_traces_purge_guardrail_rows.py`, and the live
+    `tests/e2e/test_guardrail_ui_truth_e2e.py`.
+  - The G8 curation sweep now covers runs with no event rows (recorded before
+    1.89.0) explicitly.
+  - On 1.88.0, 543 of the 704 new tests fail. The ones that pass are by
+    design:
+    - the wire pin, which must pass on both;
+    - the 160 tracing-off sweep cells, which pin behaviour that already held.
+
 ## [1.88.0] - 2026-10-11 — the defects the boundary pages found
 
 Writing the seven "breaks at the boundaries" pages meant running every claim

@@ -67,4 +67,45 @@ describe("TraceScoresCard", () => {
     expect(screen.getByText(/exact_match pass/)).toBeInTheDocument();
     expect(screen.getByText(/in smoke/)).toBeInTheDocument();
   });
+
+  it("shows errored as an amber could-not-run, maps reasked, and adds the effect", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          trace_id: "t-3",
+          guardrail_events: [
+            {
+              event_id: "e1",
+              guardrail_name: "judge",
+              outcome: "errored",
+              score: null,
+              message: "LLM call failed",
+              timestamp: new Date().toISOString(),
+              effect: "unchecked",
+            },
+            {
+              event_id: "e2",
+              guardrail_name: "on_topic",
+              outcome: "reasked",
+              score: null,
+              message: null,
+              timestamp: new Date().toISOString(),
+            },
+          ],
+          eval_cases: [],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      )
+    );
+
+    renderWithProviders(<TraceScoresCard traceId="t-3" />);
+
+    await screen.findByText("judge");
+    const errored = screen.getByText("could not run");
+    expect(errored).toHaveAttribute("data-tone", "warning");
+    expect(errored.className).toMatch(/fa-warning/);
+    expect(errored.className).not.toMatch(/destructive/);
+    expect(screen.getByText("· unchecked")).toBeInTheDocument();
+    expect(screen.getByText("re-asked")).toHaveAttribute("data-tone", "warning");
+  });
 });

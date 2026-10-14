@@ -35,17 +35,14 @@ Run:
 
 from __future__ import annotations
 
-import os
 import sqlite3
 import sys
 from pathlib import Path
 
-# Guardrail events are written only when the Local UI event log is enabled
-# (``SDKConfig.ui_enabled``) — users who never open the UI pay nothing for it.
-# This demo exists to populate that UI, so switch it on before anything reads
-# the config. ``fastaiagent ui`` sets the same flag for its own process.
-os.environ.setdefault("FASTAIAGENT_UI_ENABLED", "1")
-
+# Guardrail events are recorded whenever tracing is on (1.89.0;
+# ``FASTAIAGENT_TRACE_ENABLED``, default on). A bare ``Guardrail.execute()``
+# records only inside a recording span, which is why the checks below run
+# inside one.
 from fastaiagent._internal.config import get_config, reset_config  # noqa: E402
 from fastaiagent.guardrail import no_pii  # noqa: E402
 from fastaiagent.guardrail.guardrail import (  # noqa: E402
@@ -123,7 +120,7 @@ def _events_since(db_path: Path, watermark: int) -> list[tuple[str, ...]]:
 
 
 def main() -> int:
-    reset_config()  # pick up FASTAIAGENT_UI_ENABLED set above
+    reset_config()  # pick up FASTAIAGENT_LOCAL_DB from the environment
     db_path = Path(get_config().local_db_path)
     watermark = _max_event_rowid(db_path)
 
@@ -199,7 +196,7 @@ def main() -> int:
     rows = _events_since(db_path, watermark)
     if not rows:
         print(f"No guardrail events were written to {db_path}.")
-        print("Check that FASTAIAGENT_UI_ENABLED is not set to 0 in your environment.")
+        print("Check that FASTAIAGENT_TRACE_ENABLED is not set to 0 in your environment.")
         return 1
 
     print(f"Wrote {len(rows)} guardrail events to {db_path}\n")

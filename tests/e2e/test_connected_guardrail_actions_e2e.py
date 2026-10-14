@@ -411,8 +411,7 @@ def test_the_mask_lands_a_filtered_event_with_a_before_after_diff(plane: _Rules)
     )
     _connect_and_refresh()
 
-    get_config().ui_enabled = True
-    _agent(LEAK).run("what is on file?")
+    _agent(LEAK).run("what is on file?")  # rows follow tracing (1.89.0)
 
     with SQLiteHelper(get_config().local_db_path) as db:
         rows = db.fetchall(

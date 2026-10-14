@@ -24,6 +24,7 @@ from fastaiagent.chain.interrupt import (
 )
 from fastaiagent.checkpointers import Checkpointer, SQLiteCheckpointer
 from fastaiagent.guardrail.guardrail import (
+    _run_firings,
     collected_firings,
     start_firing_collection,
     stop_firing_collection,
@@ -634,6 +635,12 @@ class Supervisor:
                 )
                 for attempt in range(attempts):
                     result = await _invoke_worker(current_task)
+                    # The worker's run collected its own firings (and shadowed
+                    # ours while it ran). ``result.guardrails`` is documented as
+                    # every guardrail that executed, so hand them up (1.89.0).
+                    supervisor_firings = _run_firings.get()
+                    if supervisor_firings is not None and result.guardrails:
+                        supervisor_firings.extend(result.guardrails)
                     if result.status == "paused":
                         pi = result.pending_interrupt or {}
                         raise _AgentInterrupted(
