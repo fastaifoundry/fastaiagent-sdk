@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 660" width="1200" height="660" role="img" aria-label="A rule authored on the control plane arrives through GET /policy as a dict and is rebuilt by guardrail_from_policy_rule onto the same runners a local rule uses, marked origin=plane; a code rule or an unknown implementation type is skipped, never passed; the plane's tool position maps to tool_call; an unknown action coerces to block; a plane rule is never echoed back in to_dict; the shared conformance fixture pins that the detectors agree.">
+  <title>A rule authored on the control plane arrives through GET /policy as a dict and is rebuilt by guardrail_from_policy_rule onto the same runners a local rule uses, marked origin=plane; a code rule or an unknown implementation type is skipped, never passed; the plane's tool position maps to tool_call; an unknown action coerces to block; a plane rule is never echoed back in to_dict; the shared conformance fixture pins that the detectors agree.</title>
+  <rect x="0" y="0" width="1200" height="660" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Authored on the plane, enforced at the edge</text>
+  <rect x="48" y="120" width="420" height="230" rx="16" fill="none" stroke="#1baf7a" stroke-width="2" stroke-dasharray="10 8"/>
+  <text x="70" y="150" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1baf7a" text-anchor="start">CONTROL PLANE</text>
+  <rect x="70" y="166" width="376" height="127.5" rx="10" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="84" y="198" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="start">GET /public/v1/policy → guardrail_rules[]</text>
+  <text x="84" y="217.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">{"name": "no-ssn-in-tools",</text>
+  <text x="84" y="237.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start"> "implementation_type": "regex",</text>
+  <text x="84" y="257.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start"> "guardrail_type": "tool",</text>
+  <text x="84" y="277.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start"> "action": "redact-and-notify", "floor": true, …}</text>
+  <polyline points="468,240 530,240" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="530,240 516.0,233.0 516.0,247.0" fill="#1baf7a"/>
+  <rect x="455.7" y="254.6" width="86.60000000000001" height="16.200000000000003" rx="4" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="499" y="266" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12" font-weight="500" fill="#52514e" text-anchor="middle">from_policy</text>
+  <rect x="530" y="170" width="310" height="150" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="550" y="206" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">Guardrail(origin='plane')</text>
+  <text x="550" y="228" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">type=regex · position=tool_call</text>
+  <text x="550" y="247" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">action='block' (unknown → block)</text>
+  <text x="550" y="266" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">severity=high · floor=True</text>
+  <polyline points="840,245 900,245" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="900,245 886.0,238.0 886.0,252.0" fill="#2a78d6"/>
+  <rect x="900" y="170" width="252" height="150" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="920" y="206" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">the agent's gates</text>
+  <text x="920" y="228" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">enforced beside the</text>
+  <text x="920" y="247" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">agent's own rules —</text>
+  <text x="920" y="266" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">same executor</text>
+  <circle cx="60" cy="400" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="393" x2="67" y2="407" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="407" x2="67" y2="393" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="406" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#eb6834" text-anchor="start">implementation_type 'code' or unknown → None: skipped and logged, never a pass</text>
+  <circle cx="60" cy="440" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="433" x2="67" y2="447" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="447" x2="67" y2="433" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="446" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#eb6834" text-anchor="start">never pushed back: to_dict()['guardrails'] lists the local rules only — a domain rule stays domain-wide</text>
+  <polyline points="50,486 57,494 71,477" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="78" y="492" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1baf7a" text-anchor="start">tests/data/guardrail_conformance.json, byte-identical in both repos: 26/26 cases agree</text>
+  <polyline points="50,526 57,534 71,517" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="78" y="532" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1baf7a" text-anchor="start">a managed approval policy is the other direction: a tool call pauses the run for the app to resolve</text>
+  <text x="48" y="600" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">Proof 5 contacts no plane: it builds the rule from the plane's own shape and runs the shared fixture.</text>
+</svg>

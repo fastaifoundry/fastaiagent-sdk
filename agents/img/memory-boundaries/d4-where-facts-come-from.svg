@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 620" width="1200" height="620" role="img" aria-label="Where facts come from: your code, learn= reading the user's messages only, and the offline learn command write to the fact store; the model's replies are never mined.">
+  <title>Where facts come from: your code, learn= reading the user's messages only, and the offline learn command write to the fact store; the model's replies are never mined.</title>
+  <rect x="0" y="0" width="1200" height="620" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Where facts come from — and the text that never becomes one</text>
+  <rect x="48" y="150" width="230" height="116" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="68" y="186" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">the user</text>
+  <text x="68" y="212" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">“Biscuit is allergic</text>
+  <text x="68" y="235" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">to chicken.”</text>
+  <rect x="48" y="330" width="230" height="116" rx="12" fill="#fdefe8" stroke="#eb6834" stroke-width="2"/>
+  <text x="68" y="366" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">the model's reply</text>
+  <text x="68" y="392" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">“Try our Turkey</text>
+  <text x="68" y="415" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">Formula!”</text>
+  <rect x="330" y="130" width="280" height="92" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="350" y="166" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">persist() · update()</text>
+  <text x="350" y="192" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">your code · confidence 1.0</text>
+  <rect x="330" y="262" width="280" height="116" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="350" y="298" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">learn=</text>
+  <text x="350" y="324" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">the user's messages only</text>
+  <text x="350" y="347" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">0.6 · newest 200 per user</text>
+  <rect x="330" y="410" width="280" height="92" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="350" y="446" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">fastaiagent learn</text>
+  <text x="350" y="472" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">past traces, offline · 1.0</text>
+  <polyline points="278,208 304,208 304,304 330,304" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="330,304 316.0,297.0 316.0,311.0" fill="#2a78d6"/>
+  <polyline points="278,388 304,388 304,344 330,344" fill="none" stroke="#eb6834" stroke-width="2.5" stroke-linejoin="round" stroke-dasharray="8 6"/>
+  <polygon points="330,344 316.0,337.0 316.0,351.0" fill="#eb6834"/>
+  <circle cx="304" cy="366" r="15" fill="#fcfcfb"/>
+  <line x1="296" y1="358" x2="312" y2="374" stroke="#eb6834" stroke-width="3"/>
+  <line x1="296" y1="374" x2="312" y2="358" stroke="#eb6834" stroke-width="3"/>
+  <text x="48" y="482" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#eb6834" text-anchor="start">never mined</text>
+  <path d="M660,216 L660,384 A110.0,16 0 0 0 880,384 L880,216" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <ellipse cx="770.0" cy="216" rx="110.0" ry="16" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <text x="770" y="252" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="middle">fact store</text>
+  <text x="770" y="290" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="17" font-weight="400" fill="#52514e" text-anchor="middle">user:dana</text>
+  <text x="770" y="313" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="17" font-weight="400" fill="#52514e" text-anchor="middle">agent:pet-shop</text>
+  <polyline points="610,176 660,240" fill="none" stroke="#52514e" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="660,240 656.9,224.7 645.9,233.3" fill="#52514e"/>
+  <polyline points="610,320 660,320" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="660,320 646.0,313.0 646.0,327.0" fill="#2a78d6"/>
+  <polyline points="610,456 660,384" fill="none" stroke="#52514e" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="660,384 646.3,391.5 657.8,399.5" fill="#52514e"/>
+  <rect x="920" y="220" width="232" height="120.0" rx="10" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="934" y="252" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="700" fill="#0b0b0b" text-anchor="start">Learned facts (user):</text>
+  <text x="934" y="274.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">- a greyhound, Pepper</text>
+  <text x="934" y="296.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">- works night shifts</text>
+  <text x="934" y="318.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">- prefers email</text>
+  <polyline points="880,300 920,300" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="920,300 906.0,293.0 906.0,307.0" fill="#1baf7a"/>
+  <text x="920" y="374.0" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">each fact once</text>
+  <text x="920" y="397.0" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">newest 50 per turn</text>
+  <text x="920" y="420.0" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">no user id in the prompt</text>
+  <text x="330" y="570" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">The cap deletes the oldest learned facts. Facts you persisted are never pruned.</text>
+</svg>

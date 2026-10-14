@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 690" width="1200" height="690" role="img" aria-label="The bill has a ceiling: max_eval_runs and max_judge_calls are hard caps; every evaluation pass spends one run and one judge call per case per model-backed scorer; the loop holds back what the holdout guard needs; a round starts only if it fits; caps too small for the baseline and the guard raise before anything runs.">
+  <title>The bill has a ceiling: max_eval_runs and max_judge_calls are hard caps; every evaluation pass spends one run and one judge call per case per model-backed scorer; the loop holds back what the holdout guard needs; a round starts only if it fits; caps too small for the baseline and the guard raise before anything runs.</title>
+  <rect x="0" y="0" width="1200" height="690" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">The bill has a ceiling — two hard caps and a reserve</text>
+  <rect x="48" y="130" width="560" height="210.0" rx="10" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="62" y="162" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="700" fill="#0b0b0b" text-anchor="start">the ledger</text>
+  <text x="62" y="184.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">max_eval_runs    1 per evaluation pass</text>
+  <text x="62" y="206.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">max_judge_calls  cases × model-backed scorers, per pass</text>
+  <text x="62" y="228.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start"></text>
+  <text x="62" y="250.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">reserve          2 runs + 2 × holdout calls,</text>
+  <text x="62" y="272.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">                 held back for the guard</text>
+  <text x="62" y="294.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start"></text>
+  <text x="62" y="316.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">a round starts only if it fits — reserve included</text>
+  <rect x="650" y="130" width="502" height="236" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="670" y="166" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">what spends a pass</text>
+  <text x="670" y="192" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">the baseline on dev</text>
+  <text x="670" y="215" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">a train re-score when the best changes</text>
+  <text x="670" y="238" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">every candidate on dev</text>
+  <text x="670" y="261" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">the few-shot teacher pass</text>
+  <text x="670" y="284" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">the holdout guard: baseline, then winner</text>
+  <circle cx="60" cy="420" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="413" x2="67" y2="427" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="427" x2="67" y2="413" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="426" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="600" fill="#eb6834" text-anchor="start">caps too small for the baseline + the guard → ValueError before a single call</text>
+  <polyline points="50,466 57,474 71,457" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="78" y="472" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="600" fill="#1baf7a" text-anchor="start">stops early on noise: patience rounds without a gain of ≥ min_delta</text>
+  <polyline points="50,506 57,514 71,497" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="78" y="512" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="600" fill="#1baf7a" text-anchor="start">a judge passed in scorers is counted like one passed as a judge</text>
+  <rect x="48" y="548" width="1104" height="97.5" rx="10" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="62" y="580" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="700" fill="#0b0b0b" text-anchor="start">what it costs, roughly</text>
+  <text x="62" y="602.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">iterations × candidates × dev size × (1 + model-backed scorers)   — select on a cheap scorer,</text>
+  <text x="62" y="624.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">reserve the judge for the audit</text>
+</svg>

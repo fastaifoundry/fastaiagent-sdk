@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 660" width="1200" height="660" role="img" aria-label="Between a laptop and a fleet, and the plane: SQLite claims a pause with a select and delete under one lock, Postgres with delete returning under MVCC, and both give one winner among five racing resumers; a connected checkpointer keeps an outbox of un-acked rows, replicated to the plane in the background and marked synced only after a 2xx, with nothing sent while disconnected and a poison row quarantined rather than stranding the queue; the plane serves a checkpoint back and the SDK resumes locally.">
+  <title>Between a laptop and a fleet, and the plane: SQLite claims a pause with a select and delete under one lock, Postgres with delete returning under MVCC, and both give one winner among five racing resumers; a connected checkpointer keeps an outbox of un-acked rows, replicated to the plane in the background and marked synced only after a 2xx, with nothing sent while disconnected and a poison row quarantined rather than stranding the queue; the plane serves a checkpoint back and the SDK resumes locally.</title>
+  <rect x="0" y="0" width="1200" height="660" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Between a laptop and a fleet, and the plane</text>
+  <rect x="48" y="120" width="340" height="130" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="68" y="156" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">SQLiteCheckpointer</text>
+  <text x="68" y="178" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">one file · one process at a time</text>
+  <text x="68" y="197" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">claim: SELECT + DELETE under a lock</text>
+  <text x="68" y="216" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">race of 5 → 1 completed, 4 AlreadyResumed</text>
+  <rect x="430" y="120" width="340" height="130" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="450" y="156" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">PostgresCheckpointer</text>
+  <text x="450" y="178" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">many workers · a schema per app</text>
+  <text x="450" y="197" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">claim: DELETE … RETURNING (MVCC)</text>
+  <text x="450" y="216" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">race of 5 → 1 completed, 4 AlreadyResumed</text>
+  <rect x="812" y="120" width="340" height="130" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="832" y="156" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">your own backend</text>
+  <text x="832" y="178" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">the Checkpointer protocol: ~12 methods</text>
+  <text x="832" y="197" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">ReplicatedCheckpointer is optional</text>
+  <text x="832" y="216" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">and separate, so nothing breaks</text>
+  <rect x="48" y="290" width="1104" height="190" rx="16" fill="none" stroke="#2a78d6" stroke-width="2" stroke-dasharray="10 8"/>
+  <text x="70" y="320" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#2a78d6" text-anchor="start">THE OUTBOX — when connected</text>
+  <rect x="70" y="340" width="230" height="42" rx="8" fill="#e5f6ef" stroke="#1baf7a" stroke-width="1.5"/>
+  <text x="84" y="366.04" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#0b0b0b" text-anchor="start">write locally, synced=0</text>
+  <polyline points="300,361 340,361" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="340,361 326.0,354.0 326.0,368.0" fill="#2a78d6"/>
+  <rect x="340" y="340" width="350" height="42" rx="8" fill="#eaf2fc" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="354" y="366.04" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#0b0b0b" text-anchor="start">background drain → POST /checkpoints/ingest</text>
+  <polyline points="690,361 730,361" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="730,361 716.0,354.0 716.0,368.0" fill="#2a78d6"/>
+  <rect x="730" y="340" width="180" height="42" rx="8" fill="#e5f6ef" stroke="#1baf7a" stroke-width="1.5"/>
+  <text x="744" y="366.04" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#0b0b0b" text-anchor="start">2xx → synced=1</text>
+  <polyline points="910,361 950,361" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="950,361 936.0,354.0 936.0,368.0" fill="#1baf7a"/>
+  <rect x="950" y="340" width="180" height="42" rx="8" fill="#ffffff" stroke="#d6d4cc" stroke-width="1.5"/>
+  <text x="964" y="366.04" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#0b0b0b" text-anchor="start">the plane serves</text>
+  <text x="70" y="420" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">no age or count bound: an un-acked row for a paused run is never dropped · a payload refusal is quarantined,</text>
+  <text x="70" y="438" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">not left to strand the queue · disconnected: fetch_unsynced() shows the rows, nothing leaves the machine</text>
+  <polyline points="50,520 57,528 71,511" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="78" y="526" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1baf7a" text-anchor="start">restore_from_plane() pulls the latest row down so a normal resume proceeds on a machine that never ran it</text>
+  <circle cx="60" cy="560" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="553" x2="67" y2="567" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="567" x2="67" y2="553" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="566" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#eb6834" text-anchor="start">the plane serves and records; it never executes a step and never resolves a pause</text>
+  <text x="48" y="620" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">Proof 6 ran both backends offline: five rows waited un-acked, none was sent, mark_synced emptied the outbox.</text>
+</svg>

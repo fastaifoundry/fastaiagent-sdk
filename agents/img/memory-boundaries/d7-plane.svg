@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 690" width="1200" height="690" role="img" aria-label="Plane facts: a curator approves facts on the plane; each user's Memory reads them with a GET and injects each once; the SDK has no path to write facts back.">
+  <title>Plane facts: a curator approves facts on the plane; each user's Memory reads them with a GET and injects each once; the SDK has no path to write facts back.</title>
+  <rect x="0" y="0" width="1200" height="690" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Plane facts — curated centrally, read at the edge, never written back</text>
+  <rect x="48" y="130" width="420" height="400" rx="16" fill="#ffffff" stroke="#8a8880" stroke-width="2"/>
+  <text x="72" y="168" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">Enterprise plane</text>
+  <rect x="72" y="190" width="372" height="46" rx="8" fill="#ffffff" stroke="#d6d4cc" stroke-width="1.5"/>
+  <text x="86" y="219.48" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="400" fill="#0b0b0b" text-anchor="start">a curator adds a fact</text>
+  <polyline points="258,236 258,270" fill="none" stroke="#52514e" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="258,270 265.0,256.0 251.0,256.0" fill="#52514e"/>
+  <rect x="72" y="270" width="372" height="120" rx="10" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="90" y="302" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="19" font-weight="700" fill="#0b0b0b" text-anchor="start">approved facts</text>
+  <text x="90" y="334" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">Refunds: 5 business days</text>
+  <text x="90" y="357" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">Support: 09:00–17:00 CET</text>
+  <rect x="72" y="414" width="372" height="46" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="86" y="443.12" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="start">same fact again → 409, refused</text>
+  <text x="72" y="500" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">case and spacing ignored</text>
+  <rect x="732" y="130" width="420" height="400" rx="16" fill="#ffffff" stroke="#2a78d6" stroke-width="2.5"/>
+  <text x="756" y="168" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="19" font-weight="700" fill="#0b0b0b" text-anchor="start">Memory(plane_agent_id=…)</text>
+  <rect x="756" y="196" width="372" height="130" rx="10" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="774" y="228" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="19" font-weight="700" fill="#0b0b0b" text-anchor="start">alice</text>
+  <text x="774" y="260" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="16" font-weight="400" fill="#0b0b0b" text-anchor="start">Curated facts (agent:…):</text>
+  <text x="774" y="288" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">- Refunds: 5 business days</text>
+  <text x="774" y="312" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">own window · each fact once</text>
+  <rect x="756" y="346" width="372" height="130" rx="10" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="774" y="378" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="19" font-weight="700" fill="#0b0b0b" text-anchor="start">bob</text>
+  <text x="774" y="410" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="16" font-weight="400" fill="#0b0b0b" text-anchor="start">Curated facts (agent:…):</text>
+  <text x="774" y="438" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">- Refunds: 5 business days</text>
+  <text x="774" y="462" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">own window · each fact once</text>
+  <polyline points="468,300 732,300" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="732,300 718.0,293.0 718.0,307.0" fill="#1baf7a"/>
+  <rect x="508.68" y="272.8" width="182.64" height="21.6" rx="4" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="600" y="288" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="16" font-weight="500" fill="#52514e" text-anchor="middle">GET /memory/facts</text>
+  <text x="600" y="330" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="middle">no question sent when</text>
+  <text x="600" y="350" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="middle">trace payloads are off</text>
+  <polyline points="732,440 468,440" fill="none" stroke="#8a8880" stroke-width="2.5" stroke-linejoin="round" stroke-dasharray="8 6"/>
+  <polygon points="468,440 482.0,447.0 482.0,433.0" fill="#8a8880"/>
+  <circle cx="600" cy="440" r="16" fill="#fcfcfb"/>
+  <line x1="591" y1="431" x2="609" y2="449" stroke="#eb6834" stroke-width="3.5"/>
+  <line x1="591" y1="449" x2="609" y2="431" stroke="#eb6834" stroke-width="3.5"/>
+  <text x="600" y="482" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#eb6834" text-anchor="middle">no write path</text>
+  <rect x="48" y="560" width="1104" height="104" rx="12" fill="#fdefe8" stroke="#eb6834" stroke-width="2"/>
+  <text x="68" y="596" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">Plane unreachable</text>
+  <text x="68" y="622" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">the last facts fetched · one retry every 30 s · one warning — and a model with no facts may invent policy</text>
+</svg>

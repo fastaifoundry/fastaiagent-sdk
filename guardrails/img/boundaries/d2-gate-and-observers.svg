@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 640" width="1200" height="640" role="img" aria-label="At one position the executor runs the blocking rules first, in order, and the first failure raises GuardrailBlockedError before any observer runs; the non-blocking rules run after, in parallel, and an observer that fails or crashes is recorded as a failure that never stops the run; every firing lands on AgentResult.guardrails.">
+  <title>At one position the executor runs the blocking rules first, in order, and the first failure raises GuardrailBlockedError before any observer runs; the non-blocking rules run after, in parallel, and an observer that fails or crashes is recorded as a failure that never stops the run; every firing lands on AgentResult.guardrails.</title>
+  <rect x="0" y="0" width="1200" height="640" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">At one gate: the blocking rules first, in order; the observers after, in parallel</text>
+  <rect x="48" y="130" width="230" height="44" rx="8" fill="#ffffff" stroke="#d6d4cc" stroke-width="1.5"/>
+  <text x="62" y="157.76" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#0b0b0b" text-anchor="start">payload at the gate</text>
+  <polyline points="278,152 320,152" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="320,152 306.0,145.0 306.0,159.0" fill="#2a78d6"/>
+  <rect x="320" y="120" width="230" height="96" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="340" y="156" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">gate 1 · blocking</text>
+  <text x="340" y="179" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">runs, waits</text>
+  <polyline points="550,168 590,168" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="590,168 576.0,161.0 576.0,175.0" fill="#2a78d6"/>
+  <rect x="590" y="120" width="230" height="96" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="610" y="156" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">gate 2 · blocking</text>
+  <text x="610" y="178" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">judges what gate 1</text>
+  <text x="610" y="197" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">handed on</text>
+  <circle cx="332" cy="250" r="14" fill="#fcfcfb"/>
+  <line x1="325" y1="243" x2="339" y2="257" stroke="#eb6834" stroke-width="3"/>
+  <line x1="325" y1="257" x2="339" y2="243" stroke="#eb6834" stroke-width="3"/>
+  <text x="350" y="256" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#eb6834" text-anchor="start">the first failure raises GuardrailBlockedError; nothing after it runs</text>
+  <polyline points="820,168 870,168" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="870,168 856.0,161.0 856.0,175.0" fill="#2a78d6"/>
+  <rect x="870" y="110" width="282" height="220" rx="14" fill="none" stroke="#1baf7a" stroke-width="2" stroke-dasharray="8 6"/>
+  <text x="890" y="140" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#1baf7a" text-anchor="start">OBSERVERS · in parallel</text>
+  <rect x="890" y="156" width="242" height="66" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="910" y="192" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#0b0b0b" text-anchor="start">watch-a · fails</text>
+  <text x="910" y="212" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">recorded, run continues</text>
+  <rect x="890" y="236" width="242" height="80" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="910" y="272" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#0b0b0b" text-anchor="start">watch-b · crashes</text>
+  <text x="910" y="292" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">errored=True, passed=False,</text>
+  <text x="910" y="310" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">action_taken=blocked</text>
+  <rect x="48" y="350" width="560" height="156.0" rx="10" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="62" y="382" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="700" fill="#0b0b0b" text-anchor="start">proof 1</text>
+  <text x="62" y="403.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">ran, in order : ['input:gate', 'input:watch-a', 'input:watch-b']</text>
+  <text x="62" y="424.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">run status    : completed</text>
+  <text x="62" y="445.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">firings       : gate none · watch-a blocked · watch-b blocked, errored</text>
+  <text x="62" y="466.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start"></text>
+  <text x="62" y="487.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">the gate fails:  ran, in order : ['input:gate']   → raised</text>
+  <text x="650" y="380" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">An observer's failure is a failure on the record,</text>
+  <text x="650" y="400" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">not a pass. What it cannot do is halt. 'Does not</text>
+  <text x="650" y="420" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">stop the run' and 'passes the payload' are</text>
+  <text x="650" y="440" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">different things; only the first is true.</text>
+  <polyline points="50,580 57,588 71,571" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="78" y="586" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1baf7a" text-anchor="start">a tool call fires tool_call before the tool and tool_result after it, for every call in the loop</text>
+</svg>

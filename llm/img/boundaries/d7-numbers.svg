@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 660" width="1200" height="660" role="img" aria-label="The numbers: latency is measured client-side and includes network time and retry backoff; cost comes from a local price table by longest prefix and is None for an unknown model and a known zero for local providers; retries are off by default and fire only on 429 and 5xx with exponential backoff; the span carries a summary of the request, never image bytes, and payload keys are stripped on export.">
+  <title>The numbers: latency is measured client-side and includes network time and retry backoff; cost comes from a local price table by longest prefix and is None for an unknown model and a known zero for local providers; retries are off by default and fire only on 429 and 5xx with exponential backoff; the span carries a summary of the request, never image bytes, and payload keys are stripped on export.</title>
+  <rect x="0" y="0" width="1200" height="660" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Where the numbers come from — read this before trusting a dashboard</text>
+  <rect x="48" y="120" width="540" height="150" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="68" y="156" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">latency_ms</text>
+  <text x="68" y="179" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">wall-clock around the call, measured here</text>
+  <text x="68" y="199" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">includes network time and retry backoff:</text>
+  <text x="68" y="219" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">3046 ms for 429 → 503 → 200 with max_retries=2</text>
+  <rect x="612" y="120" width="540" height="150" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="632" y="156" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">cost</text>
+  <text x="632" y="178" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">a local table, longest prefix wins — not the provider's bill</text>
+  <text x="632" y="197" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">gpt-4o-mini-2024-07-18 → 0.75 / 1M+1M · my-private-finetune → None</text>
+  <text x="632" y="216" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">ollama · lmstudio · vllm → a known zero; set_rate_overrides()</text>
+  <rect x="48" y="300" width="540" height="150" rx="12" fill="#fdefe8" stroke="#eb6834" stroke-width="2"/>
+  <text x="68" y="336" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">retries</text>
+  <text x="68" y="359" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">off by default (max_retries=0)</text>
+  <text x="68" y="379" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">429 and 5xx only, backoff 1 s · 2 s · 4 s … capped at 30 s</text>
+  <text x="68" y="399" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">a connection error or a 400 is not retried</text>
+  <rect x="612" y="300" width="540" height="150" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="632" y="336" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">the span</text>
+  <text x="632" y="358" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">to_openai_format() for spans: an image is {type, size_bytes: 68}</text>
+  <text x="632" y="377" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">to_provider_dict() for the wire: a 114-char data URL</text>
+  <text x="632" y="396" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">export, payloads off: request.messages and response.content dropped</text>
+  <circle cx="60" cy="500" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="493" x2="67" y2="507" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="507" x2="67" y2="493" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="506" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#eb6834" text-anchor="start">the HTTP timeout is a fixed 120 s, not a constructor argument</text>
+  <circle cx="60" cy="540" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="533" x2="67" y2="547" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="547" x2="67" y2="533" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="546" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#eb6834" text-anchor="start">usage carries what the provider sent: the three normalized keys always, plus provider extras</text>
+  <polyline points="50,586 57,594 71,577" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="78" y="592" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1baf7a" text-anchor="start">cost is set on the span only when known, so a dashboard can tell 'unknown' from '$0.00'</text>
+</svg>
