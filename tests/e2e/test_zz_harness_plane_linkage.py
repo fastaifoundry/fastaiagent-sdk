@@ -54,25 +54,6 @@ CLOSED_PORT_BASE_URL = "http://127.0.0.1:9/v1"
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture(scope="module", autouse=True)
-def _langchain_v0_globals() -> None:
-    """Reconcile a third-party version clash, not a mock.
-
-    ``langchain>=1`` removed the module-level ``verbose`` / ``debug`` /
-    ``llm_cache`` globals that ``langchain-core~=0.3`` still probes in
-    ``langchain_core.globals``; without them, constructing or invoking any
-    LangChain chat model raises ``AttributeError``. No fastaiagent behaviour is
-    stubbed — this only restores what langchain-core expects.
-    """
-    try:
-        import langchain
-    except ImportError:  # pragma: no cover - langchain not installed
-        return
-    for attr in ("verbose", "debug", "llm_cache"):
-        if not hasattr(langchain, attr):
-            setattr(langchain, attr, None if attr == "llm_cache" else False)
-
-
 def _trace_store():
     from fastaiagent.trace.storage import TraceStore
 

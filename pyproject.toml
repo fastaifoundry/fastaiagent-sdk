@@ -56,7 +56,14 @@ dependencies = [
 [project.optional-dependencies]
 openai = ["openai>=1.0,<3"]
 anthropic = ["anthropic>=0.20,<1"]
-langchain = ["langchain-core>=0.3,<1", "langgraph>=0.2,<1"]
+# Both LangChain lines are supported (1.89.0): 0.x (core 0.3 / langgraph 0.x)
+# and 1.x. The integration uses only the langchain_core callback, prompt and
+# retriever surface, which is the same on both. ``langgraph`` is here for users,
+# not the SDK. The ``langchain-lines`` CI job tests each line. Drop the 0.x floor
+# in the first release after upstream ends 0.x support (December 2026).
+# ``langchain`` itself is deliberately NOT in the extra: on 0.x it drags in
+# SQLAlchemy, requests and text-splitters the integration never uses.
+langchain = ["langchain-core>=0.3,<2", "langgraph>=0.2,<2"]
 crewai = ["crewai>=1.0,<2"]
 # pydantic-ai >=1.105 is required: earlier 1.x imports anthropic's pre-rename
 # `UserLocation`, which current `anthropic` ships as `BetaUserLocationParam`
@@ -129,8 +136,16 @@ dev = [
     # ``langchain-openai`` / ``langchain-anthropic`` in ``dev`` keeps
     # ``pip install -e .[all,dev]`` (the CI install line) sufficient
     # to run the harness suite without per-test importorskips.
-    "langchain-openai>=0.2,<1",
-    "langchain-anthropic>=0.2,<1",
+    "langchain-openai>=0.2,<2",
+    "langchain-anthropic>=0.2,<2",
+    # Test-only: ``langchain.agents.create_agent`` for the 1.x harness e2e.
+    "langchain>=0.3,<2",
+    # The caps of the ``openai`` / ``anthropic`` extras, mirrored. The 0.x
+    # langchain-openai/-anthropic used to cap these implicitly; their 1.x
+    # releases allow openai 3.x / anthropic 1.x, which the SDK's own extras do
+    # not support yet, so the plain ``.[dev]`` test job must not pick them.
+    "openai>=1.0,<3",
+    "anthropic>=0.20,<1",
     # Test-only: drives the live ``tests/e2e/test_openinference_capture_e2e.py``
     # drift check for ``enable_otel_capture()`` against a real OpenInference
     # instrumentor. Not a runtime dependency of the SDK.

@@ -56,26 +56,7 @@ def _plane_would_link_to(span_name: str, attrs: dict) -> str:
     return f"{derived!r}  (prefix-stripped from the span name — generic!)"
 
 
-def _langchain_compat() -> None:
-    """Reconcile a LangChain-ecosystem version clash.
-
-    ``langchain>=1`` removed the module-level ``verbose`` / ``debug`` /
-    ``llm_cache`` globals that ``langchain-core~=0.3`` still probes in
-    ``langchain_core.globals``. With both installed, constructing *or* invoking
-    any chat model raises ``AttributeError``. Restoring the three attributes is
-    a no-op when the installed versions already agree.
-    """
-    try:
-        import langchain
-    except ImportError:
-        return
-    for attr in ("verbose", "debug", "llm_cache"):
-        if not hasattr(langchain, attr):
-            setattr(langchain, attr, None if attr == "llm_cache" else False)
-
-
 def main() -> int:
-    _langchain_compat()
     if not os.environ.get("OPENAI_API_KEY"):
         print("OPENAI_API_KEY is not set — skipping example.")
         return 0
@@ -90,10 +71,16 @@ def main() -> int:
 
     try:
         from langchain_openai import ChatOpenAI
-        from langgraph.prebuilt import create_react_agent
     except ImportError:
-        print('langgraph is not installed. Install with: pip install "fastaiagent[langchain]"')
+        print(
+            "LangChain is not installed. Install with: "
+            'pip install "fastaiagent[langchain]" langchain langchain-openai'
+        )
         return 0
+    try:
+        from langchain.agents import create_agent  # LangChain 1.x
+    except ImportError:  # LangChain 0.x
+        from langgraph.prebuilt import create_react_agent as create_agent
 
     import fastaiagent as fa
     from fastaiagent.integrations import langchain as lc
@@ -102,9 +89,7 @@ def main() -> int:
     try:
         lc.enable()
 
-        graph = create_react_agent(
-            ChatOpenAI(model="gpt-4o-mini", temperature=0), tools=[]
-        )
+        graph = create_agent(ChatOpenAI(model="gpt-4o-mini", temperature=0), tools=[])
 
         # 1. name the run so the root span carries agent.name
         guarded = lc.with_guardrails(graph, name=AGENT_NAME)

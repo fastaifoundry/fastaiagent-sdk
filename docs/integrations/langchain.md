@@ -7,8 +7,13 @@ callback ABI — chains, LLM / chat-model calls, tool calls, retrievers
 graph topology.
 
 ```bash
-pip install "fastaiagent[langchain]"  # bumps to langchain-core>=0.3, langgraph>=0.2
+pip install "fastaiagent[langchain]" langchain langchain-openai
 ```
+
+The extra installs `langchain-core` and `langgraph`, and works with both
+LangChain lines, 0.x and 1.x (see [Version compatibility](#version-compatibility)).
+It does not install `langchain` itself or a provider package: add the ones your
+agent uses, as above.
 
 ## 1. Auto-tracing
 
@@ -18,21 +23,33 @@ from fastaiagent.integrations import langchain as lc
 
 lc.enable()  # idempotent — safe to call multiple times
 
-from langgraph.prebuilt import create_react_agent
-from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
+from langchain_openai import ChatOpenAI
+
+try:
+    from langchain.agents import create_agent  # LangChain 1.x
+except ImportError:  # LangChain 0.x
+    from langgraph.prebuilt import create_react_agent as create_agent
 
 @tool
 def echo(text: str) -> str:
     """Echo input back."""
     return f"echo: {text}"
 
-graph = create_react_agent(ChatOpenAI(model="gpt-4o-mini"), tools=[echo])
+graph = create_agent(ChatOpenAI(model="gpt-4o-mini"), tools=[echo])
 result = graph.invoke(
     {"messages": [HumanMessage(content="...")]},
     config={"callbacks": [lc.get_callback_handler()]},
 )
 ```
+
+!!! note "Both builders trace the same way"
+    `create_agent` (LangChain 1.x) and `create_react_agent` (LangGraph, both
+    lines; deprecated on 1.x) give the same root span, `agent.name`, LLM and tool
+    spans, cost and tokens. `create_agent` emits fewer `node.chain` spans, because
+    its model and middleware nodes don't trace, and its nodes are named
+    `model` and `tools` rather than `agent` and `tools`.
 
 After `enable()`, our `FastAIAgentCallbackHandler` is registered via
 `langchain_core.tracers.context.register_configure_hook`, so it auto-
@@ -46,8 +63,8 @@ test fixtures.
 
 | Span | Captures |
 |---|---|
-| `langgraph.{name}` / `langchain.{name}` (root) | inputs, outputs, `fastaiagent.framework=langchain`, `framework.version` |
-| `node.{node_name}` | state in / state out |
+| `langchain.chain` (root) | inputs, outputs, `fastaiagent.framework=langchain`, `framework.version` |
+| `node.chain` (one per traced graph node) | state in / state out |
 | `llm.{provider}.{model}` | full messages JSON, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, computed `fastaiagent.cost.total_usd`, response content |
 | `tool.{tool_name}` | tool args, tool output (truncated at 10 KB), latency |
 | `retrieval.{retriever_name}` | query, document count, first 200 chars of each doc, `top_k` |
@@ -56,6 +73,22 @@ LangGraph node spans arrive as standard child `on_chain_start` events
 from the compiled `Pregel`, so we get them for free. Conditional-edge
 evaluation has no callback — that's a documented LangGraph limitation,
 not a harness one.
+
+**Span names.** LangGraph and LCEL pass the run's name in a keyword argument
+rather than the serialized object, so on both lines the root span is named
+`langchain.chain` and each node span `node.chain`. (Before 1.89.0 these docs
+said `langgraph.{name}` / `node.{node_name}`, which no LangChain version
+produced.) Name a run with `agent_name(...)` or `with_guardrails(name=...)`:
+that sets `agent.name` on the root, which the Local UI and the control plane
+read.
+
+**Streamed calls are priced too** (*since 1.89.0*). A streamed call
+(`.stream()`, LangGraph `stream_mode="messages"`, `astream_events`, and the v3
+`stream_events(version="v3")` protocol) ends without the `llm_output` the
+handler read the model from, so it carried tokens but no
+`fastaiagent.cost.total_usd`, and a connected plane priced those calls itself.
+The handler now takes the model from the response message, or from the call's
+start, and prices every streamed call.
 
 ## 2. Eval
 
@@ -197,11 +230,37 @@ A pragmatic migration order:
 There is no automatic LangGraph → FastAIAgent code conversion (too
 fragile, too version-dependent across LangGraph releases).
 
+## Version compatibility
+
+*Changed in 1.89.0.* The `[langchain]` extra supports both LangChain lines:
+
+| Line | `langchain-core` | `langgraph` | Agent builder |
+|---|---|---|---|
+| 0.x | `>=0.3,<1` | `>=0.2,<1` | `langgraph.prebuilt.create_react_agent` |
+| 1.x | `>=1,<2` | `>=1,<2` | `langchain.agents.create_agent` (or `create_react_agent`, deprecated) |
+
+The integration uses only the `langchain_core` callback, prompt and retriever
+surface, which is the same on both lines. CI tests each line in its own job,
+and the live harness runs on 1.x.
+
+- **Fresh installs resolve 1.x.** Before 1.89.0 the extra capped both
+  packages below 1, so installing it beside `langchain>=1` failed to resolve,
+  or silently downgraded `langchain-core` under it.
+- **Not ready for 1.x?** Pin it yourself: `pip install "fastaiagent[langchain]"
+  "langchain-core<1" "langgraph<1"`. A lock refresh (`uv lock --upgrade`,
+  `poetry update`) can otherwise move you to 1.x, which changes *your* LangChain
+  code (for example, `AgentExecutor` is gone in 1.x).
+- **0.x support ends** in the first release after upstream ends 0.x support
+  (December 2026).
+
 ## Examples
 
 - `examples/08_trace_langchain.py`
 - `examples/57_eval_langchain.py`
 - `examples/59_register_external_agent.py`
+
+The examples use `create_agent` on 1.x and fall back to `create_react_agent`
+on 0.x.
 
 ## Linking traces to a control-plane agent
 

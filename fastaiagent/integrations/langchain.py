@@ -202,9 +202,41 @@ def _extract_response_text(response: Any) -> str:
                 continue
             msg = getattr(gen, "message", None)
             if msg is not None and hasattr(msg, "content"):
-                content = msg.content
-                chunks.append(content if isinstance(content, str) else str(content))
+                chunks.append(_content_text(msg.content))
     return "\n".join(chunks)
+
+
+def _content_text(content: Any) -> str:
+    """The text of a message's ``content``: a string, or a list of content blocks.
+
+    Chat models increasingly return ``[{"type": "text", "text": "..."}, ...]``
+    (with tool-use or reasoning blocks beside the text). ``str()`` of that list
+    is its repr, which is what evaluations used to score (1.89.0). Text blocks
+    are joined; non-text blocks are dropped; anything else falls back to str().
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict) and block.get("type") == "text":
+                parts.append(str(block.get("text", "")))
+        if parts or not content:
+            return "".join(parts)
+    return str(content)
+
+
+def _response_metadata_model(response: Any) -> str | None:
+    """The model name a chat message reports in ``response_metadata``, if any."""
+    for gen_list in getattr(response, "generations", []) or []:
+        for gen in gen_list:
+            meta = getattr(getattr(gen, "message", None), "response_metadata", None) or {}
+            model = meta.get("model_name") or meta.get("model")
+            if model:
+                return str(model)
+    return None
 
 
 def _model_name_from_serialized(serialized: dict[str, Any] | None) -> str:
@@ -263,6 +295,9 @@ def _build_handler() -> BaseCallbackHandler:
         def __init__(self) -> None:
             super().__init__()
             self._runs: dict[UUID, Any] = {}
+            # The model each LLM run named at start, for pricing at end: a
+            # streamed call's LLMResult has no ``llm_output`` (1.89.0).
+            self._llm_models: dict[UUID, str] = {}
 
         # -- lifecycle helpers ------------------------------------------------
         def _start(self, run_id: UUID, name: str, parent_run_id: UUID | None = None) -> Any:
@@ -279,6 +314,7 @@ def _build_handler() -> BaseCallbackHandler:
             return span
 
         def _end(self, run_id: UUID) -> None:
+            self._llm_models.pop(run_id, None)
             span = self._runs.pop(run_id, None)
             if span is None:
                 return
@@ -365,6 +401,9 @@ def _build_handler() -> BaseCallbackHandler:
             provider = _provider_from_serialized(serialized)
             span = self._start(run_id, f"llm.{provider}.{model}", parent_run_id=parent_run_id)
             inv = invocation_params or {}
+            start_model = inv.get("model_name") or inv.get("model") or model
+            if start_model and start_model != "unknown":
+                self._llm_models[run_id] = str(start_model)
             set_genai_attributes(
                 span,
                 system=provider,
@@ -437,9 +476,19 @@ def _build_handler() -> BaseCallbackHandler:
                 return
             in_toks, out_toks = _extract_token_usage(response)
             response_text = _extract_response_text(response)
-            # Pull model from response if the start callback couldn't.
+            # The model that priced the call. A completed call reports it in
+            # ``llm_output``; a STREAMED one (``.stream()``, LangGraph
+            # ``stream_mode="messages"``, ``astream_events``, v3) has no
+            # ``llm_output`` at all, so cost was never set on any streamed
+            # call and the plane priced it instead (1.89.0). Then the
+            # message's own metadata; then the model named at start.
             llm_output = getattr(response, "llm_output", None) or {}
-            model = llm_output.get("model_name") or llm_output.get("model")
+            model = (
+                llm_output.get("model_name")
+                or llm_output.get("model")
+                or _response_metadata_model(response)
+                or self._llm_models.get(run_id)
+            )
             set_genai_attributes(
                 span,
                 model=model,
@@ -622,15 +671,14 @@ def _default_output_mapper(result: Any) -> str:
         if msgs:
             last = msgs[-1]
             if hasattr(last, "content"):
-                content = last.content
-                return content if isinstance(content, str) else str(content)
+                return _content_text(last.content)
         for key in _OUTPUT_KEYS:
             if key in result and result[key] is not None:
                 value = result[key]
                 return value if isinstance(value, str) else str(value)
     raw_result: Any = result
     if hasattr(raw_result, "content"):
-        return str(raw_result.content)
+        return _content_text(raw_result.content)
     return str(raw_result)
 
 
@@ -735,10 +783,8 @@ def _extract_input_text(graph_input: Any) -> str:
         if msgs:
             last: Any = msgs[-1]
             content = getattr(last, "content", None)
-            if isinstance(content, str):
-                return content
             if content is not None:
-                return str(content)
+                return _content_text(content)
         for key in ("input", "query", "question", "text"):
             if key in graph_input and graph_input[key] is not None:
                 value = graph_input[key]

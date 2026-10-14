@@ -124,6 +124,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   422 responses no longer echo the submitted value (`input`), which could be the
   token.
 
+### LangChain 1.x (Phase 3)
+
+- ⚠ **The `[langchain]` extra supports LangChain 1.x as well as 0.x.** It was
+  capped at `langchain-core<1, langgraph<1`, so `pip install
+  "fastaiagent[langchain]" "langchain>=1"` failed to resolve (or downgraded
+  `langchain-core` under `langchain` 1.x, which then broke every chat model).
+  The extra is now `langchain-core>=0.3,<2`, `langgraph>=0.2,<2`. **Fresh
+  installs resolve 1.x**, and a lock refresh can move an existing project to
+  1.x, which changes *your* LangChain code (`AgentExecutor` is gone in 1.x);
+  pin `langchain-core<1` yourself if you are not ready. The integration uses only
+  the `langchain_core` callback, prompt and retriever surface, unchanged on both
+  lines; the 0.x floor is dropped after upstream ends 0.x (December 2026).
+  `langchain` itself is still not in the extra. The `dev` extra mirrors the
+  `openai<3` / `anthropic<1` caps, which the 0.x provider packages used to
+  impose implicitly.
+- **Streamed LangChain calls are priced.** A streamed call (`.stream()`,
+  LangGraph `stream_mode="messages"`, `astream_events`, v3 `stream_events`)
+  ends without `llm_output`, which is where the handler read the model, so it
+  carried tokens but no `fastaiagent.cost.total_usd`, on both lines, and a
+  connected plane priced those calls itself. The model now comes from the
+  response message or the call's start. The plane will show SDK-priced cost for
+  these runs.
+- **Content-block output is read as text.** A message whose `content` is a list
+  of blocks (`[{"type": "text", "text": ...}]`) came back from `as_evaluable` as
+  the list's repr, which evaluations then scored.
+- Docs: the span names were documented as `langgraph.{name}` / `node.{node}`;
+  every LangChain version produces `langchain.chain` / `node.chain`. Examples
+  use `create_agent` on 1.x with a `create_react_agent` fallback on 0.x; the
+  `_langchain_compat` shims that patched a mismatched install are gone.
+- CI: a `langchain-lines` job runs the offline suite on each line, asserts the
+  line it resolved, and fails on any LangChain skip; the e2e gate asserts it
+  runs on 1.x. New `tests/test_langchain_handler.py` and the live
+  `tests/e2e/test_harness_langchain_create_agent.py`; 5 fail on 1.88.0.
+
 ## [1.88.0] - 2026-10-11 — the defects the boundary pages found
 
 Writing the seven "breaks at the boundaries" pages meant running every claim
