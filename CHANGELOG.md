@@ -321,6 +321,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   removes old rows with no trace. Purge and UI trace delete also
   garbage-collect judged payloads.
 - **A Supervisor's `result.guardrails` includes its workers' firings.**
+- **The guardrail span wraps the check (B1, its own commit).** It was opened
+  after the check, so it lasted about 0 ms (the plane records that as every SDK
+  guardrail's execution time) and a judge's LLM call was its sibling. It now
+  lasts as long as the check and the judge's call is its child. Keys, values and
+  status are unchanged (the wire pin holds). `emit_guardrail` returns the span
+  id.
 - **Local UI:**
   - Guardrail spans are coloured by what they did, not by OTel status. Span
     rows carry `guardrail: {event_id, outcome, effect, blocking, final_reason}`.

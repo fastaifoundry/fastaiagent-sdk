@@ -283,6 +283,11 @@ one deliberate exception: a *degraded pass* (`errored=true` with
 `on_error="allow"`) keeps an `OK` status, because the run did continue. The
 `errored` attribute is what tells a fail-open apart from a genuine pass.
 
+The span **wraps the check** (1.89.0; it used to be opened after the check
+finished). Its duration is the check's real latency, and a model call the check
+makes, such as an `llm_judge`'s, is its child rather than its sibling. Keys,
+values and status are unchanged.
+
 So a guardrail span's status is not the run's. **Whether a run failed is its
 root span's status**: an agent's root ends ERROR when a guardrail halted it, and
 UNSET when it completed, warned or not. The Local UI and `TraceStore.list_traces`
