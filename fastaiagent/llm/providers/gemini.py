@@ -375,6 +375,7 @@ async def astream_gemini(
     prompt_tokens = 0
     completion_tokens = 0
     seen_tool_index = 0
+    finish_reason = ""
 
     async with client._new_async_client() as h:
         async with h.stream("POST", url, json=body, headers=headers) as resp:
@@ -409,6 +410,14 @@ async def astream_gemini(
                 candidates = chunk.get("candidates") or []
                 if candidates:
                     cand0 = candidates[0]
+                    if raw_finish := cand0.get("finishReason"):
+                        # Same mapping as a non-streamed call.
+                        finish_reason = {
+                            "STOP": "stop",
+                            "MAX_TOKENS": "length",
+                            "SAFETY": "content_filter",
+                            "RECITATION": "content_filter",
+                        }.get(raw_finish, str(raw_finish).lower())
                     parts = (cand0.get("content") or {}).get("parts") or []
                     for part in parts:
                         if "text" in part:
@@ -435,7 +444,7 @@ async def astream_gemini(
 
     if prompt_tokens or completion_tokens:
         yield Usage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens)
-    yield StreamDone()
+    yield StreamDone(finish_reason=finish_reason)
 
 
 # Re-exports for convenience. Callers should import these from this module

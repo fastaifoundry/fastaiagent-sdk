@@ -415,6 +415,7 @@ class Chain:
                 except (TypeError, ValueError):
                     logger.debug("Failed to serialize chain output for trace", exc_info=True)
                 span.set_attribute("chain.execution_id", raw.get("execution_id") or "")
+                span.set_attribute("chain.status", str(raw.get("status", "completed")))
                 # Read inside the ``with`` — the span context is only valid
                 # while the span is current.
                 trace_id = trace_id_of(span)
@@ -539,6 +540,21 @@ class Chain:
         with get_tracer().start_as_current_span(f"chain.{self.name}") as span:
             span.set_attribute("chain.name", self.name)
             span.set_attribute("chain.resumed_execution_id", execution_id)
+            # Same link a fresh run stamps, so one query on ``chain.execution_id``
+            # finds the run and every resume of it (each resume is its own trace).
+            span.set_attribute("chain.execution_id", execution_id)
+            if start_node:
+                span.set_attribute("chain.resume.node_id", start_node)
+            if resume_value is not None:
+                meta = resume_value.metadata or {}
+                resolver = meta.get("resolver") or meta.get("approver")
+                reason = meta.get("reason")
+                span.set_attribute("chain.resume.approved", bool(resume_value.approved))
+                if resolver:
+                    span.set_attribute("chain.resume.resolver", str(resolver))
+                if reason:
+                    # Payload: registered in ``SENSITIVE_ATTR_KEYS``.
+                    span.set_attribute("chain.resume.reason", str(reason))
             span.set_attribute("fastaiagent.runner.type", "chain")
             span.set_attribute("fastaiagent.framework", "fastaiagent")
             trace_id = trace_id_of(span)
@@ -578,6 +594,14 @@ class Chain:
                     status="completed",
                     state_snapshot=raw.get("final_state"),
                 )
+            # What the resumed run produced, as a fresh run records it.
+            try:
+                import json as _json
+
+                span.set_attribute("chain.output", _json.dumps(raw.get("output"), default=str))
+            except (TypeError, ValueError):
+                logger.debug("Failed to serialize chain output for trace", exc_info=True)
+            span.set_attribute("chain.status", str(raw.get("status", "completed")))
 
         return ChainResult(
             output=raw["output"],

@@ -1,28 +1,12 @@
 import { Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCost, formatDurationMs, formatTimeAgo } from "@/lib/format";
-
-export interface PlaygroundHistoryEntry {
-  id: string;
-  timestamp: string;
-  model: string;
-  provider: string;
-  response: string;
-  latency_ms: number;
-  cost_usd: number | null;
-  tokens: { input: number; output: number };
-  trace_id: string | null;
-  /** False when the trace went to a store this UI doesn't read (1.89.0). */
-  trace_in_ui_db?: boolean;
-  // Captured config so re-loading restores the input panel exactly.
-  prompt_template: string;
-  system_prompt: string | null;
-  variables: Record<string, string>;
-}
+import type { PlaygroundHistoryEntry } from "@/lib/playground-run";
 
 interface Props {
   entries: PlaygroundHistoryEntry[];
   activeId: string | null;
+  /** Restores the run's form and shows its response (1.89.0, P10d). */
   onSelect: (entry: PlaygroundHistoryEntry) => void;
 }
 
@@ -40,18 +24,35 @@ export function RunHistory({ entries, activeId, onSelect }: Props) {
       {entries.map((entry) => {
         const preview = entry.response.slice(0, 50);
         const isActive = activeId === entry.id;
+        const { metadata } = entry;
         return (
           <li key={entry.id}>
             <button
               type="button"
               onClick={() => onSelect(entry)}
+              title="Restore this run's prompt, model and parameters"
               className={cn(
                 "flex w-full flex-col gap-1 px-3 py-2 text-left transition-colors",
                 isActive ? "bg-primary/10 text-primary" : "hover:bg-muted/50",
               )}
             >
               <div className="flex items-center justify-between text-xs">
-                <span className="font-mono">{entry.model}</span>
+                <span className="flex items-center gap-1.5">
+                  <span className="font-mono">{metadata.model}</span>
+                  {metadata.truncated && (
+                    <span
+                      className="rounded bg-amber-500/15 px-1 text-[10px] text-amber-700 dark:text-amber-300"
+                      data-testid="history-truncated"
+                    >
+                      truncated
+                    </span>
+                  )}
+                  {entry.request.prompt_ref && (
+                    <span className="rounded border px-1 font-mono text-[10px] text-muted-foreground">
+                      {entry.request.prompt_ref.slug}
+                    </span>
+                  )}
+                </span>
                 <span className="flex items-center gap-1 text-muted-foreground">
                   <Clock className="h-3 w-3" />
                   {formatTimeAgo(entry.timestamp)}
@@ -61,10 +62,10 @@ export function RunHistory({ entries, activeId, onSelect }: Props) {
                 {preview || "(empty)"}
               </div>
               <div className="flex gap-3 text-[10px] text-muted-foreground tabular-nums">
-                <span>{formatDurationMs(entry.latency_ms)}</span>
-                <span>{formatCost(entry.cost_usd)}</span>
+                <span>{formatDurationMs(metadata.latency_ms)}</span>
+                <span>{formatCost(metadata.cost_usd)}</span>
                 <span>
-                  {entry.tokens.input}+{entry.tokens.output} tok
+                  {metadata.tokens.input}+{metadata.tokens.output} tok
                 </span>
               </div>
             </button>

@@ -172,13 +172,12 @@ def test_localkb_delete_by_source(tmp_path: Path) -> None:
     kb.add("First", metadata={"source": "file-a.txt"})
     kb.add("Second", metadata={"source": "file-a.txt"})
     kb.add("Third", metadata={"source": "file-b.txt"})
-    # Actual "source" propagation comes from the Document object; the add(text)
-    # path stashes metadata but does not set Document.source. Verify the
-    # metadata fallback path instead by checking chunks remain retrievable
-    # after no-op delete on a non-existent source.
-    removed = kb.delete_by_source("non-existent-source")
-    assert removed == 0
-    assert kb.status()["chunk_count"] >= 3
+    # A metadata["source"] given with raw text is kept on its chunks (1.89.0);
+    # before, the empty Document.source overwrote it and nothing matched.
+    assert kb.delete_by_source("non-existent-source") == 0
+    assert kb.delete_by_source("file-a.txt") == 2
+    assert kb.status()["chunk_count"] == 1
+    assert [c.metadata["source"] for c in kb._chunks] == ["file-b.txt"]  # noqa: SLF001
 
 
 @pytest.mark.parametrize("search_type", ["vector", "keyword", "hybrid"])

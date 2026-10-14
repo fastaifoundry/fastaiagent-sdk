@@ -27,7 +27,7 @@ import {
   useKbSearch,
 } from "@/hooks/use-kb";
 import { formatTimeAgo } from "@/lib/format";
-import type { KbSearchHit } from "@/lib/types";
+import type { KbSearchHit, KbSearchType } from "@/lib/types";
 import { Timestamp } from "@/components/shared/Timestamp";
 
 export function KbDetailPage() {
@@ -95,7 +95,12 @@ export function KbDetailPage() {
           <DocumentsTab name={name!} />
         </TabsContent>
         <TabsContent value="search">
-          <SearchTab name={name!} />
+          <SearchTab
+            name={name!}
+            searchTypes={data.search_types}
+            defaultType={data.search_type}
+            hasEmbeddings={data.has_embeddings}
+          />
         </TabsContent>
         <TabsContent value="lineage">
           <LineageTab name={name!} />
@@ -189,15 +194,28 @@ function DocumentsTab({ name }: { name: string }) {
   );
 }
 
-function SearchTab({ name }: { name: string }) {
+interface SearchTabProps {
+  name: string;
+  /** How this KB can be searched (1.89.0). Absent from an older server. */
+  searchTypes?: KbSearchType[];
+  defaultType?: KbSearchType;
+  hasEmbeddings?: boolean;
+}
+
+function SearchTab({ name, searchTypes, defaultType, hasEmbeddings }: SearchTabProps) {
   const [query, setQuery] = useState("");
   const [topK, setTopK] = useState(5);
+  // null = the KB's default. A keyword-only KB used to be searched (and
+  // labelled) "hybrid", which also loaded an embedder for nothing.
+  const [searchType, setSearchType] = useState<KbSearchType | null>(null);
   const search = useKbSearch(name);
+  const types = searchTypes ?? [];
+  const chosen = searchType ?? defaultType ?? null;
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!query.trim()) return;
-    search.mutate({ query, top_k: topK });
+    search.mutate({ query, top_k: topK, ...(chosen ? { search_type: chosen } : {}) });
   }
 
   return (
@@ -232,14 +250,40 @@ function SearchTab({ name }: { name: string }) {
               onChange={(e) => setTopK(Number(e.target.value))}
             />
           </div>
+          {types.length > 0 && (
+            <div className="w-32">
+              <Label htmlFor="search_type" className="mb-1 text-xs">
+                Search type
+              </Label>
+              <select
+                id="search_type"
+                value={chosen ?? ""}
+                onChange={(e) => setSearchType(e.target.value as KbSearchType)}
+                className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+              >
+                {types.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <Button type="submit" disabled={search.isPending || !query.trim()}>
             <Play className="mr-1.5 h-3.5 w-3.5" />
             {search.isPending ? "Searching…" : "Run"}
           </Button>
         </form>
 
+        {hasEmbeddings === false && (
+          <p className="text-xs text-muted-foreground" data-testid="kb-keyword-only">
+            No chunk in this KB has an embedding, so only keyword search is
+            available.
+          </p>
+        )}
+
         {search.isError && (
-          <p className="text-xs text-destructive">
+          <p className="text-xs text-destructive" role="alert">
             {search.error instanceof Error ? search.error.message : "Search failed"}
           </p>
         )}

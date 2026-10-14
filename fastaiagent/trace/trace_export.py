@@ -57,7 +57,6 @@ def build_export_payload(
     execution_id: str | None = None
     runner_type = "agent"
     runner_name: str | None = None
-    durable = False
 
     for row in span_rows:
         try:
@@ -122,7 +121,6 @@ def build_export_payload(
             execution_id = (
                 attr(attrs, "chain.execution_id") or attr(attrs, "agent.execution_id") or None
             )
-            durable = execution_id is not None
 
         if cost:
             total_cost += cost
@@ -143,7 +141,7 @@ def build_export_payload(
         "workflow_type": runner_type,
         "runner": runner_name,
         "execution_id": execution_id,
-        "durable": durable,
+        "durable": False,
     }
 
     # Checkpoints (metadata always, full state only when asked).
@@ -174,6 +172,9 @@ def build_export_payload(
                 payload["node_output"] = _maybe_load(cp.get("node_output"))
                 payload["interrupt_context"] = _maybe_load(cp.get("interrupt_context"))
             checkpoints.append(payload)
+    # Durable means checkpoints exist. Every agent root carries an execution
+    # id since 1.89.0 (resume linking), checkpointer or not.
+    trace_payload["durable"] = bool(checkpoints)
 
     # Multimodal attachment metadata (always) + bytes (opt-in).
     attachments: list[dict[str, Any]] = []

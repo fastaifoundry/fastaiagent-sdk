@@ -79,6 +79,17 @@ response = client.chat.completions.create(
 - Tool calls + finish reason
 - Latency
 
+**Sync and async clients, streamed or not** (*since 1.89.0*; `AsyncOpenAI`
+was not traced). With `stream=True`, the span lasts until the stream ends:
+usage (pass `stream_options={"include_usage": True}`), content, tool calls and
+finish reason are recorded, and an error part-way through ends the span ERROR
+before it is re-raised. Before, the span closed as soon as `create` returned
+the stream, with no usage or content, and a mid-stream failure never reached
+the trace. Closing a stream early ends the span cleanly. The stream object you
+get back is the client's own, so its helpers keep working;
+`client.chat.completions.stream(...)` goes through `create` and is covered.
+Exception text on these spans is scrubbed of credentials.
+
 ## Anthropic SDK auto-tracing
 
 ```python
@@ -96,7 +107,12 @@ client.messages.create(
 ```
 
 Same span shape as the OpenAI integration — `gen_ai.system="anthropic"`
-and the rest mirrors.
+and the rest mirrors. The same streaming rules apply (*since 1.89.0*):
+`AsyncAnthropic` is traced, a `stream=True` span stays open until the stream
+ends and records usage from `message_start`/`message_delta`, and a mid-stream
+failure ends it ERROR. `client.messages.stream(...)` (sync and async, as a
+context manager) is traced too; its span opens when the `with` block enters
+and follows the same contract.
 
 ## Disabling
 

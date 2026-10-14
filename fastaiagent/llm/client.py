@@ -949,6 +949,7 @@ class LLMClient:
         text_parts: list[str] = []
         streamed_tool_calls: list[dict[str, Any]] = []
         usage_seen: dict[str, int] | None = None
+        finish_seen = ""
 
         try:
             for attempt in range(self.max_retries + 1):
@@ -978,6 +979,8 @@ class LLMClient:
                                     "arguments": event.arguments,
                                 }
                             )
+                        elif isinstance(event, StreamDone):
+                            finish_seen = event.finish_reason
                         yield event
                     return
                 except LLMProviderError as e:
@@ -1017,6 +1020,9 @@ class LLMClient:
                     response_tool_calls=_serialize_for_span(streamed_tool_calls)
                     if streamed_tool_calls
                     else None,
+                    # A streamed span recorded no finish reason (1.89.0), so a
+                    # reply cut off at max_tokens looked complete in the trace.
+                    finish_reason=finish_seen or None,
                 )
                 if usage_seen is not None:
                     from fastaiagent._internal.pricing import usage_cost
@@ -1048,8 +1054,11 @@ class LLMClient:
             usage_data: dict[str, int] = {}
             # Accumulate tool call args per call_id
             pending_tools: dict[str, dict[str, Any]] = {}
+            provider_finish = ""
 
             async for event in self.astream(messages, tools=tools, **kwargs):
+                if isinstance(event, StreamDone):
+                    provider_finish = event.finish_reason
                 if isinstance(event, TextDelta):
                     content_parts.append(event.text)
                 elif isinstance(event, ToolCallStart):
@@ -1071,7 +1080,9 @@ class LLMClient:
                     }
 
             content = "".join(content_parts) or None
-            finish = "tool_calls" if tool_calls else "stop"
+            # The provider's own reason when it gave one (1.89.0): this was
+            # hard-coded, so a truncated reply reported "stop".
+            finish = provider_finish or ("tool_calls" if tool_calls else "stop")
             return LLMResponse(
                 content=content,
                 tool_calls=tool_calls,
@@ -2042,9 +2053,12 @@ class LLMClient:
         else:
             chunk_source = self._aiter_openai_sse_chunks(body, headers)
 
+        finish_reason = ""
         async for chunk in chunk_source:
             choices = chunk.get("choices", [])
             delta = choices[0].get("delta", {}) if choices else {}
+            if choices and choices[0].get("finish_reason"):
+                finish_reason = str(choices[0]["finish_reason"])
 
             # Text content
             if text := delta.get("content"):
@@ -2090,7 +2104,7 @@ class LLMClient:
                 arguments=args,
             )
 
-        yield StreamDone()
+        yield StreamDone(finish_reason=finish_reason)
 
     async def _stream_anthropic(
         self, messages: list[Message], tools: list[dict[str, Any]] | None = None, **kwargs: Any
@@ -2106,6 +2120,7 @@ class LLMClient:
         current_tool_input_str = ""
         prompt_tokens = 0
         completion_tokens = 0
+        finish_reason = ""
 
         async with self._new_async_client() as client:
             async with client.stream("POST", url, json=body, headers=headers) as resp:
@@ -2171,10 +2186,17 @@ class LLMClient:
                     elif event_type == "message_delta":
                         delta_usage = data.get("usage", {})
                         completion_tokens = delta_usage.get("output_tokens", 0)
+                        stop_reason = (data.get("delta") or {}).get("stop_reason") or ""
+                        if stop_reason:
+                            # Same mapping as a non-streamed call.
+                            finish_reason = {
+                                "end_turn": "stop",
+                                "tool_use": "tool_calls",
+                            }.get(stop_reason, stop_reason)
 
         if prompt_tokens or completion_tokens:
             yield Usage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens)
-        yield StreamDone()
+        yield StreamDone(finish_reason=finish_reason)
 
     async def _stream_ollama(
         self, messages: list[Message], tools: list[dict[str, Any]] | None = None, **kwargs: Any
@@ -2223,6 +2245,7 @@ class LLMClient:
         url = f"{self.base_url.rstrip('/')}/api/chat"
         prompt_tokens = 0
         completion_tokens = 0
+        finish_reason = ""
 
         async with self._new_async_client() as client:
             async with client.stream("POST", url, json=body) as resp:
@@ -2249,6 +2272,7 @@ class LLMClient:
                     if chunk.get("done"):
                         prompt_tokens = chunk.get("prompt_eval_count", 0)
                         completion_tokens = chunk.get("eval_count", 0)
+                        finish_reason = str(chunk.get("done_reason") or "")
 
                         # Tool calls in final message
                         if raw_tcs := msg.get("tool_calls"):
@@ -2262,7 +2286,7 @@ class LLMClient:
 
         if prompt_tokens or completion_tokens:
             yield Usage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens)
-        yield StreamDone()
+        yield StreamDone(finish_reason=finish_reason)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to canonical format."""

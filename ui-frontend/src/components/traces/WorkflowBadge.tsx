@@ -1,4 +1,13 @@
-import { Bot, GitBranch, Network, Ruler, Shield, UsersRound } from "lucide-react";
+import {
+  Bot,
+  FlaskConical,
+  GitBranch,
+  Library,
+  Network,
+  Ruler,
+  Shield,
+  UsersRound,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { RunnerType } from "@/lib/types";
@@ -47,6 +56,18 @@ const META: Record<
     label: "evaluator",
     icon: Ruler,
     chip: "bg-fa-success/10 text-fa-success",
+  },
+  // 1.89.0: a Playground run's root (`playground.run`) and a KB search's
+  // retrieval root. Both fell through to the agent badge.
+  playground: {
+    label: "playground",
+    icon: FlaskConical,
+    chip: "bg-muted text-foreground",
+  },
+  retrieval: {
+    label: "retrieval",
+    icon: Library,
+    chip: "bg-fa-info/10 text-fa-info",
   },
 };
 

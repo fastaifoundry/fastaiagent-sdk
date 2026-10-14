@@ -1,7 +1,9 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type {
+  PromptAliasesResponse,
   PromptDetail,
+  PromptDiffResponse,
   PromptLineage,
   PromptListResponse,
   PromptVersionDetail,
@@ -68,6 +70,38 @@ export function useUpdatePrompt() {
         ...(baseVersion !== undefined ? { base_version: baseVersion } : {}),
         ...(metadata !== undefined ? { metadata } : {}),
       }),
+  });
+}
+
+/** `GET /prompts/{slug}/diff?a=&b=` (1.89.0): a unified diff plus both templates. */
+export function usePromptDiff(slug: string | undefined, a: number | null, b: number | null) {
+  return useQuery({
+    queryKey: ["prompt-diff", slug, a, b],
+    queryFn: () =>
+      api.get<PromptDiffResponse>(
+        `/prompts/${encodeURIComponent(slug!)}/diff?a=${a}&b=${b}`
+      ),
+    enabled: !!slug && a != null && b != null && a !== b,
+  });
+}
+
+/** Point an alias at a version, or move it (1.89.0). */
+export function useSetPromptAlias() {
+  return useMutation({
+    mutationFn: ({ slug, alias, version }: { slug: string; alias: string; version: number }) =>
+      api.put<PromptAliasesResponse>(
+        `/prompts/${encodeURIComponent(slug)}/aliases/${encodeURIComponent(alias)}`,
+        { version }
+      ),
+  });
+}
+
+export function useDeletePromptAlias() {
+  return useMutation({
+    mutationFn: ({ slug, alias }: { slug: string; alias: string }) =>
+      api.delete<PromptAliasesResponse>(
+        `/prompts/${encodeURIComponent(slug)}/aliases/${encodeURIComponent(alias)}`
+      ),
   });
 }
 

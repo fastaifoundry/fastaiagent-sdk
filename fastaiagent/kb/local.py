@@ -171,7 +171,9 @@ class LocalKB:
         - If path_or_text is a directory, all supported files (.txt, .md, .pdf)
           are ingested recursively.
         - If path_or_text is a file path, the file is ingested.
-        - Otherwise it is treated as raw text content.
+        - Otherwise it is treated as raw text content. A ``metadata["source"]``
+          given with raw text is kept on its chunks, so
+          ``delete_by_source(that_source)`` removes them.
         """
         if len(path_or_text) <= 255:
             try:
@@ -205,11 +207,18 @@ class LocalKB:
         """Add documents to the KB. Returns number of chunks created."""
         new_chunks: list[Chunk] = []
         for doc in docs:
+            # A non-empty ``Document.source`` (a file or directory ingest) wins;
+            # otherwise keep the caller's ``metadata["source"]``. Before 1.89.0
+            # the empty ``Document.source`` of ``add(text, metadata={"source":
+            # ...})`` overwrote it, so ``delete_by_source`` found nothing.
+            # ``Document.source`` itself is left alone: the metadata store keys
+            # document rows on it, and same-source texts would replace each other.
+            source = doc.source or doc.metadata.get("source", "")
             chunks = chunk_text(
                 doc.content,
                 chunk_size=self.chunk_size,
                 overlap=self.chunk_overlap,
-                metadata={**doc.metadata, "source": doc.source},
+                metadata={**doc.metadata, "source": source},
             )
             new_chunks.extend(chunks)
 

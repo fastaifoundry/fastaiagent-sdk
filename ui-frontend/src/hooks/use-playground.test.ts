@@ -51,6 +51,39 @@ describe("parseSseMessage", () => {
     });
   });
 
+  it("keeps the truncation, unfilled and prompt fields on done (1.89.0)", () => {
+    const raw =
+      'event: done\ndata: {"metadata":{"model":"m","provider":"openai",' +
+      '"latency_ms":1,"tokens":{"input":1,"output":5},"cost_usd":null,' +
+      '"trace_id":"abc","finish_reason":"length","truncated":true,"max_tokens":5,' +
+      '"unfilled_variables":["topic"],' +
+      '"prompt":{"slug":"greet","version":2,"attributed":true,"modified":false}}}';
+    const parsed = parseSseMessage(raw);
+    expect(parsed && "metadata" in parsed && parsed.metadata).toMatchObject({
+      finish_reason: "length",
+      truncated: true,
+      max_tokens: 5,
+      unfilled_variables: ["topic"],
+      prompt: { slug: "greet", version: 2, attributed: true },
+    });
+  });
+
+  it("keeps the provider fields on an error event (1.89.0, P8)", () => {
+    const raw =
+      'event: error\ndata: {"message":"LLM call failed.","correlation_id":"c1",' +
+      '"kind":"bad_request","provider_status":400,' +
+      '"provider_message":"`top_p` is deprecated for this model.","hint":"Switch top_p off."}';
+    expect(parseSseMessage(raw)).toEqual({
+      event: "error",
+      message: "LLM call failed.",
+      correlation_id: "c1",
+      kind: "bad_request",
+      provider_status: 400,
+      provider_message: "`top_p` is deprecated for this model.",
+      hint: "Switch top_p off.",
+    });
+  });
+
   it("keeps the correlation id on an error event", () => {
     const raw =
       'event: error\ndata: {"message":"LLM call failed.",' +

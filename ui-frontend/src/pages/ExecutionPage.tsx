@@ -1,21 +1,31 @@
-import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, RefreshCw } from "lucide-react";
+import { Link, useLocation, useParams } from "react-router-dom";
+import { ArrowLeft, ExternalLink, RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/shared/EmptyState";
+import type { ResumedState } from "@/components/approvals/ApprovalActions";
 import { CheckpointTimeline } from "@/components/executions/CheckpointTimeline";
+import { ExecutionOutcomeCard } from "@/components/executions/ExecutionOutcomeCard";
 import { IdempotencyCacheCard } from "@/components/executions/IdempotencyCacheCard";
 import { useExecution } from "@/hooks/use-execution";
 
 export function ExecutionPage() {
   const { execution_id } = useParams<{ execution_id: string }>();
   const { data, isLoading, isFetching, refetch, error } = useExecution(execution_id);
+  // Set by ApprovalActions after a resume: the resumed run's trace.
+  const resumed = (useLocation().state ?? null) as ResumedState | null;
 
   if (!execution_id) return null;
 
   const checkpoints = data?.checkpoints ?? [];
   const latest = checkpoints[checkpoints.length - 1];
+  // 1.89.0: the server says whether the pause still waits. An older server
+  // doesn't (undefined), and then the latest checkpoint is all we have.
+  const stillWaiting =
+    data?.pending_interrupt !== undefined
+      ? data.pending_interrupt !== null
+      : latest?.status === "interrupted";
 
   return (
     <div className="space-y-5">
@@ -86,10 +96,30 @@ export function ExecutionPage() {
         </Card>
       ) : null}
 
+      {resumed?.resumedTraceId && (
+        <Card className="border-fa-success/40 bg-fa-success/5" data-testid="resumed-banner">
+          <CardContent className="flex items-center justify-between gap-3 py-3 text-sm">
+            <span>
+              Resumed{resumed.approved === false ? " (rejected)" : resumed.approved ? " (approved)" : ""}.
+            </span>
+            <Link
+              to={`/traces/${resumed.resumedTraceId}`}
+              className="inline-flex items-center gap-1 text-primary hover:underline"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              View trace
+            </Link>
+          </CardContent>
+        </Card>
+      )}
+
       {data && checkpoints.length > 0 && (
         <>
+          <ExecutionOutcomeCard detail={data} />
+
           {latest &&
-          (latest.status === "interrupted" || latest.status === "failed") ? (
+          ((latest.status === "interrupted" && stillWaiting) ||
+            latest.status === "failed") ? (
             <Card className="border-amber-500/40 bg-amber-500/5">
               <CardContent className="flex items-center justify-between gap-3 py-4">
                 <div className="text-sm">
@@ -115,7 +145,7 @@ export function ExecutionPage() {
             </Card>
           ) : null}
 
-          <CheckpointTimeline checkpoints={checkpoints} />
+          <CheckpointTimeline checkpoints={checkpoints} resolution={data.resolution} />
           <IdempotencyCacheCard executionId={execution_id} />
         </>
       )}

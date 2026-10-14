@@ -217,6 +217,19 @@ deleted = kb.delete_by_source("docs/faq.md")
 print(f"Removed {deleted} chunks")
 ```
 
+A file or directory ingest uses the file path as the source. For raw text,
+give it one in the metadata:
+
+```python
+kb.add("Refunds take 5 days.", metadata={"source": "faq.md"})
+kb.delete_by_source("faq.md")  # removes those chunks
+```
+
+Before 1.89.0 a raw text's metadata `source` was overwritten by the empty
+document source, so `delete_by_source("faq.md")` removed nothing and the
+Local UI listed the chunks under no source. When a document has its own
+source (a file or directory ingest), that path still wins over the metadata.
+
 ### Update a Chunk
 
 ```python

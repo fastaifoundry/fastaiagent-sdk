@@ -20,6 +20,8 @@ therefore leaked open.
 from __future__ import annotations
 
 import contextlib
+import functools
+import inspect
 import json
 import threading
 from collections.abc import Callable
@@ -361,7 +363,7 @@ def _build_handler() -> BaseCallbackHandler:
                 # The framework's own serialization names this span generically
                 # ("langchain.chain"), which carries no agent identity. Stamp the
                 # caller's name so the plane can resolve the trace to an agent.
-                stamp_agent_name(span, "langchain")
+                _stamp_root_name(span, kwargs.get("metadata"))
             if trace_payloads_enabled():
                 span.set_attribute("input", _safe_json(inputs))
 
@@ -769,6 +771,43 @@ def disable() -> None:
     _enabled = False
 
 
+#: LangChain run-metadata key carrying the ``with_guardrails(name=...)`` name, for
+#: runs the caller drives after the wrapper's call has returned
+#: (``stream_events(version="v3")``), where the ``agent_name`` ContextVar is no
+#: longer set when the root run starts.
+_AGENT_NAME_METADATA = "fastaiagent.agent_name"
+
+
+def _stamp_root_name(span: Any, metadata: Any) -> None:
+    """``stamp_agent_name``, falling back to the name carried in run metadata."""
+    from fastaiagent.integrations._identity import get_agent_name
+
+    carried = metadata.get(_AGENT_NAME_METADATA) if isinstance(metadata, dict) else None
+    if carried and not get_agent_name():
+        token = set_agent_name(str(carried))
+        try:
+            stamp_agent_name(span, "langchain")
+        finally:
+            reset_agent_name(token)
+        return
+    stamp_agent_name(span, "langchain")
+
+
+def _with_name_metadata(name: str | None, args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
+    """``(args, kwargs)`` with ``name`` added to the call's ``config`` metadata."""
+    if not name:
+        return args, kwargs
+    if args:
+        config, rest = args[0], args[1:]
+    else:
+        config, rest = kwargs.get("config"), ()
+    config = dict(config or {})
+    config["metadata"] = {**(config.get("metadata") or {}), _AGENT_NAME_METADATA: name}
+    if args:
+        return (config, *rest), kwargs
+    return args, {**kwargs, "config": config}
+
+
 def _extract_input_text(graph_input: Any) -> str:
     """Pull the text content out of a LangGraph/LangChain invocation input.
 
@@ -821,10 +860,46 @@ def _run_guardrails(
     run_proxy_guardrails(text, guardrails, side=side, agent_name=agent_name, framework="langchain")
 
 
+_runnable_registered = False
+
+
+def _register_as_runnable() -> None:
+    """Make ``_GuardedRunnable`` a virtual subclass of LangChain's ``Runnable``.
+
+    So ``coerce_to_runnable`` accepts the guarded proxy *as itself*:
+    ``x | guarded``, ``RunnableSequence(..., guarded, ...)``,
+    ``RunnableParallel(a=guarded)`` and a LangGraph node keep it as one step,
+    and the chain calls its guarded ``invoke`` / ``transform`` / ``batch``.
+    Before 1.89.0 those raised ``TypeError`` (the proxy was not a Runnable).
+    It is registered with ``Runnable`` only, never with ``RunnableSequence``,
+    so a sequence never flattens the guard away.
+    """
+    global _runnable_registered
+    if _runnable_registered:
+        return
+    try:
+        from langchain_core.runnables import Runnable
+    except ImportError:  # pragma: no cover - with_guardrails requires langchain_core
+        return
+    Runnable.register(_GuardedRunnable)
+    _runnable_registered = True
+
+
 class _GuardedRunnable:
     """Proxy that wraps a LangChain ``Runnable`` with input / output
     guardrails. Forwards every other attribute access to the wrapped
     object so consumers see the original interface.
+
+    Builder methods keep the guard (1.89.0). A method of the wrapped runnable
+    that returns a *new* Runnable (``with_config``, ``bind``, ``with_retry``,
+    ``with_fallbacks``, ``with_listeners``, ``with_types``,
+    ``configurable_*``, ``copy``, ``bind_tools``, ``with_structured_output``,
+    ...) returns it wrapped again with the same guardrails and name, so the
+    guard sits outside the retry, the fallbacks or the alternatives.
+    Composition (``|``, ``pipe``, ``pick``, ``assign``, ``map``, ``as_tool``)
+    uses the guarded proxy itself as the step, so the guard stays at that
+    step's own input and output. Before 1.89.0 every builder returned an
+    unguarded runnable through ``__getattr__``.
     """
 
     def __init__(
@@ -839,11 +914,87 @@ class _GuardedRunnable:
         self._fastaiagent_name = name
         self._input_guardrails = list(input_guardrails or [])
         self._output_guardrails = list(output_guardrails or [])
+        _register_as_runnable()
 
     def __getattr__(self, item: str) -> Any:
         # ``__getattr__`` only fires for misses, so methods we override
         # below take precedence.
-        return getattr(self._wrapped, item)
+        attr = getattr(self._wrapped, item)
+        if item.startswith("_") or not inspect.ismethod(attr):
+            return attr
+
+        @functools.wraps(attr)
+        def derived(*args: Any, **kwargs: Any) -> Any:
+            return self._guard_derived(item, attr(*args, **kwargs))
+
+        return derived
+
+    def _rewrap(self, runnable: Any) -> _GuardedRunnable:
+        return _GuardedRunnable(
+            runnable,
+            name=self._fastaiagent_name,
+            input_guardrails=self._input_guardrails,
+            output_guardrails=self._output_guardrails,
+        )
+
+    def _guard_derived(self, method: str, result: Any) -> Any:
+        """A method's result, guarded again when it is a Runnable built from the wrapped one."""
+        try:
+            from langchain_core.runnables import Runnable
+            from langchain_core.tools import BaseTool
+        except ImportError:  # pragma: no cover - with_guardrails requires langchain_core
+            return result
+        if result is self._wrapped:
+            return self
+        if isinstance(result, _GuardedRunnable) or not isinstance(result, Runnable):
+            return result
+        if isinstance(result, BaseTool):
+            # A tool must stay a BaseTool, which the guarded proxy is not.
+            from fastaiagent.integrations._registry import GuardrailBlocked
+
+            raise GuardrailBlocked(
+                f"{method}() returned a tool built from the guarded runnable, and it cannot "
+                f"be guarded as one. Call .as_tool() on the guarded runnable instead."
+            )
+        return self._rewrap(result)
+
+    # -- composition: the guarded proxy is the step ---------------------------
+
+    def __or__(self, other: Any) -> Any:
+        from langchain_core.runnables.base import RunnableSequence, coerce_to_runnable
+
+        return RunnableSequence(self, coerce_to_runnable(other))
+
+    def __ror__(self, other: Any) -> Any:
+        from langchain_core.runnables.base import RunnableSequence, coerce_to_runnable
+
+        return RunnableSequence(coerce_to_runnable(other), self)
+
+    def pipe(self, *others: Any, name: str | None = None) -> Any:
+        from langchain_core.runnables import Runnable
+
+        return Runnable.pipe(self, *others, name=name)  # type: ignore[arg-type]
+
+    def pick(self, keys: Any) -> Any:
+        from langchain_core.runnables import Runnable
+
+        return Runnable.pick(self, keys)  # type: ignore[arg-type]
+
+    def assign(self, **kwargs: Any) -> Any:
+        from langchain_core.runnables import Runnable
+
+        return Runnable.assign(self, **kwargs)  # type: ignore[arg-type]
+
+    def map(self) -> Any:
+        from langchain_core.runnables import Runnable
+
+        return Runnable.map(self)  # type: ignore[arg-type]
+
+    def as_tool(self, *args: Any, **kwargs: Any) -> Any:
+        """A tool whose calls go through this guarded runnable."""
+        from langchain_core.runnables import Runnable
+
+        return Runnable.as_tool(self, *args, **kwargs)  # type: ignore[arg-type]
 
     def _check_input(self, graph_input: Any) -> None:
         _run_guardrails(
@@ -865,11 +1016,20 @@ class _GuardedRunnable:
     def _named(self) -> Any:
         """Publish the agent name for the root span opened inside the
         delegated call, so the control plane can link the trace."""
+        from fastaiagent.integrations._identity import get_agent_name
+
+        previous = get_agent_name()
         token = set_agent_name(self._fastaiagent_name)
         try:
             yield
         finally:
-            reset_agent_name(token)
+            try:
+                reset_agent_name(token)
+            except ValueError:
+                # A generator step resumed in another context: a streamed chain
+                # runs each step's ``next()`` through ``context.run``. Restore
+                # the previous value in this one instead.
+                set_agent_name(previous)
 
     def invoke(self, input: Any, *args: Any, **kwargs: Any) -> Any:
         self._check_input(input)
@@ -895,7 +1055,7 @@ class _GuardedRunnable:
                 chunks.append(chunk)
                 yield chunk
         if self._output_guardrails:
-            self._check_output(chunks[-1] if chunks else "")
+            self._check_output(_stream_output(chunks))
 
     async def astream(self, input: Any, *args: Any, **kwargs: Any) -> Any:
         self._check_input(input)
@@ -905,16 +1065,440 @@ class _GuardedRunnable:
                 chunks.append(chunk)
                 yield chunk
         if self._output_guardrails:
-            self._check_output(chunks[-1] if chunks else "")
+            self._check_output(_stream_output(chunks))
 
     def batch(self, inputs: list[Any], *args: Any, **kwargs: Any) -> list[Any]:
         for i in inputs:
             self._check_input(i)
         with self._named():
             outs: list[Any] = self._wrapped.batch(inputs, *args, **kwargs)
-        for o in outs:
-            self._check_output(o)
+        self._check_outputs(outs)
         return outs
+
+    # -- the rest of the Runnable call surface (1.89.0) -----------------------
+    #
+    # Until 1.89.0 only the five methods above were overridden. Everything else
+    # fell through ``__getattr__`` to the wrapped runnable, so ``abatch``,
+    # ``astream_events``, ``stream_events``, ``astream_log``, ``transform``,
+    # ``atransform`` and the ``*_as_completed`` batches ran with no guardrail and
+    # no ``agent.name`` stamp, and said nothing. Each one now checks its input
+    # before the call and its output after it. Where the output cannot be
+    # determined and output guardrails are set, the call fails closed with
+    # ``GuardrailBlocked``: a guardrail that could not run never reads as a pass.
+
+    def _check_outputs(self, outs: list[Any]) -> None:
+        for o in outs:
+            if isinstance(o, BaseException):
+                # ``return_exceptions=True``: a failed item has no output to judge.
+                continue
+            self._check_output(o)
+
+    def _cannot_check_output(self, method: str, why: str) -> None:
+        """Fail closed: output guardrails are set, but this call has no output to give them."""
+        self._cannot_check("output", method, why)
+
+    def _cannot_check(self, side: str, method: str, why: str) -> None:
+        """Fail closed: ``side`` guardrails are set, but this call has no text to give them."""
+        rails = self._input_guardrails if side == "input" else self._output_guardrails
+        if not rails:
+            return
+        from fastaiagent.integrations._registry import GuardrailBlocked
+
+        names = ", ".join(getattr(g, "name", "?") for g in rails)
+        raise GuardrailBlocked(
+            f"{side} guardrails ({names}) could not run on {method}(): {why}. "
+            f"The call is blocked rather than reported as passed."
+        )
+
+    # -- the legacy model call methods (1.89.0) ---------------------------------
+    #
+    # Chat models and LLMs still carry the pre-Runnable call methods. They fell
+    # through ``__getattr__`` and called the model with no guardrail. Each now
+    # checks every prompt's text before the call and every generation's text
+    # after it, and returns what the model returned. Where a prompt or a result
+    # has no text the wrapper can read, the call fails closed.
+
+    def _legacy_texts(self, side: str, method: str, values: list[Any]) -> list[str]:
+        texts = [_legacy_text(v) for v in values]
+        if any(t is None for t in texts):
+            self._cannot_check(
+                side,
+                method,
+                f"its {side} has no text the wrapper can read; use invoke() / ainvoke(), "
+                f"which the guard covers",
+            )
+        return [t for t in texts if t is not None]
+
+    def _legacy_before(self, method: str, args: tuple[Any, ...], kwargs: dict[str, Any]) -> None:
+        if not self._input_guardrails:
+            return
+        if args:
+            first = args[0]
+        else:
+            key = next((k for k in _LEGACY_FIRST_ARG if k in kwargs), None)
+            if key is None:
+                self._cannot_check("input", method, "no prompt argument was found")
+                return
+            first = kwargs[key]
+        many = method in _LEGACY_BATCHED
+        prompts = list(first) if many and isinstance(first, (list, tuple)) else [first]
+        for text in self._legacy_texts("input", method, prompts):
+            self._check_input(text)
+
+    def _legacy_after(self, method: str, result: Any) -> None:
+        if not self._output_guardrails:
+            return
+        generations = getattr(result, "generations", None)
+        if isinstance(generations, list):
+            values = [g for per_prompt in generations for g in per_prompt]
+        else:
+            values = [result]
+        for text in self._legacy_texts("output", method, values):
+            self._check_output(text)
+
+    def _legacy_call(self, method: str, args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
+        inner = self._wrapped if method == "__call__" else getattr(self._wrapped, method)
+        self._legacy_before(method, args, kwargs)
+        with self._named():
+            result = inner(*args, **kwargs)
+        self._legacy_after(method, result)
+        return result
+
+    async def _legacy_acall(
+        self, method: str, args: tuple[Any, ...], kwargs: dict[str, Any]
+    ) -> Any:
+        inner = getattr(self._wrapped, method)
+        self._legacy_before(method, args, kwargs)
+        with self._named():
+            result = await inner(*args, **kwargs)
+        self._legacy_after(method, result)
+        return result
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        if not callable(self._wrapped):
+            raise TypeError(f"'{type(self._wrapped).__name__}' object is not callable")
+        return self._legacy_call("__call__", args, kwargs)
+
+    def generate(self, *args: Any, **kwargs: Any) -> Any:
+        return self._legacy_call("generate", args, kwargs)
+
+    async def agenerate(self, *args: Any, **kwargs: Any) -> Any:
+        return await self._legacy_acall("agenerate", args, kwargs)
+
+    def generate_prompt(self, *args: Any, **kwargs: Any) -> Any:
+        return self._legacy_call("generate_prompt", args, kwargs)
+
+    async def agenerate_prompt(self, *args: Any, **kwargs: Any) -> Any:
+        return await self._legacy_acall("agenerate_prompt", args, kwargs)
+
+    def predict(self, *args: Any, **kwargs: Any) -> Any:
+        return self._legacy_call("predict", args, kwargs)
+
+    async def apredict(self, *args: Any, **kwargs: Any) -> Any:
+        return await self._legacy_acall("apredict", args, kwargs)
+
+    def predict_messages(self, *args: Any, **kwargs: Any) -> Any:
+        return self._legacy_call("predict_messages", args, kwargs)
+
+    async def apredict_messages(self, *args: Any, **kwargs: Any) -> Any:
+        return await self._legacy_acall("apredict_messages", args, kwargs)
+
+    def call_as_llm(self, *args: Any, **kwargs: Any) -> Any:
+        return self._legacy_call("call_as_llm", args, kwargs)
+
+    async def abatch(self, inputs: list[Any], *args: Any, **kwargs: Any) -> list[Any]:
+        for i in inputs:
+            self._check_input(i)
+        with self._named():
+            outs: list[Any] = await self._wrapped.abatch(inputs, *args, **kwargs)
+        self._check_outputs(outs)
+        return outs
+
+    def batch_as_completed(self, inputs: list[Any], *args: Any, **kwargs: Any) -> Any:
+        for i in inputs:
+            self._check_input(i)
+        with self._named():
+            for idx, out in self._wrapped.batch_as_completed(inputs, *args, **kwargs):
+                if not isinstance(out, BaseException):
+                    self._check_output(out)
+                yield idx, out
+
+    async def abatch_as_completed(self, inputs: list[Any], *args: Any, **kwargs: Any) -> Any:
+        for i in inputs:
+            self._check_input(i)
+        with self._named():
+            async for idx, out in self._wrapped.abatch_as_completed(inputs, *args, **kwargs):
+                if not isinstance(out, BaseException):
+                    self._check_output(out)
+                yield idx, out
+
+    def stream_events(self, input: Any, *args: Any, **kwargs: Any) -> Any:
+        """``stream_events`` with guardrails.
+
+        ``version="v3"`` (LangChain 1.x) returns a run stream the caller drives
+        through its projections, so there is no point at which the wrapper sees
+        the final output: with output guardrails set it fails closed before
+        anything runs. Other versions are an event iterator, handled like
+        :meth:`astream_events`.
+        """
+        inner = self._wrapped.stream_events  # AttributeError where it does not exist
+        if kwargs.get("version") == "v3":
+            self._cannot_check_output("stream_events", _V3_WHY)
+            self._check_input(input)
+            # The run starts when the caller pumps it, after this returns, so the
+            # name travels in the run's metadata as well as the ContextVar.
+            args, kwargs = _with_name_metadata(self._fastaiagent_name, args, kwargs)
+            with self._named():
+                return inner(input, *args, **kwargs)
+        return self._sync_events(inner, input, args, kwargs)
+
+    def astream_events(self, input: Any, *args: Any, **kwargs: Any) -> Any:
+        """``astream_events`` with guardrails.
+
+        Every event is yielded. With output guardrails set, the root run's end
+        event (``on_chain_end``, ``on_chat_model_end``, ...) is held back until its
+        output passes, so a blocked output never reaches the caller as a final
+        event. A stream whose root end event never arrives (an ``include_*`` /
+        ``exclude_*`` filter removed it) fails closed. ``version="v3"`` returns
+        an awaitable run stream; see :meth:`stream_events`.
+        """
+        inner = self._wrapped.astream_events
+        if kwargs.get("version") == "v3":
+            return self._v3_async(inner, input, args, kwargs)
+        return self._async_events(inner, input, args, kwargs)
+
+    async def _v3_async(
+        self, inner: Any, input: Any, args: tuple[Any, ...], kwargs: dict[str, Any]
+    ) -> Any:
+        self._cannot_check_output("astream_events", _V3_WHY)
+        self._check_input(input)
+        args, kwargs = _with_name_metadata(self._fastaiagent_name, args, kwargs)
+        with self._named():
+            return await inner(input, *args, **kwargs)
+
+    def _sync_events(
+        self, inner: Any, input: Any, args: tuple[Any, ...], kwargs: dict[str, Any]
+    ) -> Any:
+        self._check_input(input)
+        root = _RootEventTracker(kwargs)
+        with self._named():
+            for event in inner(input, *args, **kwargs):
+                if self._output_guardrails and root.is_final(event):
+                    self._check_output(root.output)
+                yield event
+        if not root.seen:
+            self._cannot_check_output("stream_events", _NO_ROOT_END_WHY)
+
+    async def _async_events(
+        self, inner: Any, input: Any, args: tuple[Any, ...], kwargs: dict[str, Any]
+    ) -> Any:
+        self._check_input(input)
+        root = _RootEventTracker(kwargs)
+        with self._named():
+            async for event in inner(input, *args, **kwargs):
+                if self._output_guardrails and root.is_final(event):
+                    self._check_output(root.output)
+                yield event
+        if not root.seen:
+            self._cannot_check_output("astream_events", _NO_ROOT_END_WHY)
+
+    async def astream_log(self, input: Any, *args: Any, **kwargs: Any) -> Any:
+        """``astream_log`` with guardrails: the patches are folded into the run
+        log, and its ``final_output`` is checked once the stream ends."""
+        self._check_input(input)
+        log: Any = None
+        with self._named():
+            async for patch in self._wrapped.astream_log(input, *args, **kwargs):
+                if self._output_guardrails:
+                    log = _fold_run_log(log, patch)
+                yield patch
+        if not self._output_guardrails:
+            return
+        state = getattr(log, "state", None)
+        if not isinstance(state, dict) or state.get("final_output") is None:
+            self._cannot_check_output("astream_log", "the run log has no final_output")
+            return
+        self._check_output(state["final_output"])
+
+    def transform(self, input: Any, *args: Any, **kwargs: Any) -> Any:
+        """``transform`` with guardrails. With input guardrails set, the input
+        iterator is read to the end and checked before the wrapped runnable
+        starts, so input streaming is traded for the check."""
+        if self._input_guardrails:
+            parts = list(input)
+            self._check_input(_stream_output(parts))
+            input = iter(parts)
+        chunks: list[Any] = []
+        with self._named():
+            for chunk in self._wrapped.transform(input, *args, **kwargs):
+                chunks.append(chunk)
+                yield chunk
+        if self._output_guardrails:
+            self._check_output(_stream_output(chunks))
+
+    async def atransform(self, input: Any, *args: Any, **kwargs: Any) -> Any:
+        if self._input_guardrails:
+            parts = [part async for part in input]
+            self._check_input(_stream_output(parts))
+            input = _aiter_list(parts)
+        chunks: list[Any] = []
+        with self._named():
+            async for chunk in self._wrapped.atransform(input, *args, **kwargs):
+                chunks.append(chunk)
+                yield chunk
+        if self._output_guardrails:
+            self._check_output(_stream_output(chunks))
+
+
+_V3_WHY = (
+    "version='v3' returns a run stream that the caller drives through its "
+    "projections, so the wrapper never sees the final output. Use invoke(), "
+    "stream(), or astream_events(version='v2'), or wrap without output_guardrails"
+)
+_NO_ROOT_END_WHY = (
+    "the root run's end event was not in the stream, so its final output is "
+    "unknown (an include_*/exclude_* filter removes it). Drop the filter and "
+    "filter the events yourself"
+)
+
+#: Legacy methods whose first argument is a *list* of prompts, one generation list each.
+_LEGACY_BATCHED = frozenset({"generate", "agenerate", "generate_prompt", "agenerate_prompt"})
+#: Keyword names the legacy methods give their first argument.
+_LEGACY_FIRST_ARG = ("messages", "prompts", "text", "message", "prompt")
+
+
+def _legacy_text(value: Any) -> str | None:
+    """The text of one legacy prompt or result; ``None`` when it has none we can read.
+
+    A string; a ``PromptValue`` (``to_string()``); a message (its content); a
+    list of messages or ``(role, text)`` pairs (their texts, joined); a
+    ``Generation`` (its message's content, else its ``text``).
+    """
+    if isinstance(value, str):
+        return value
+    message = getattr(value, "message", None)
+    if message is not None and hasattr(message, "content"):
+        return _content_text(message.content)
+    if hasattr(value, "content"):
+        return _content_text(value.content)
+    to_string = getattr(value, "to_string", None)
+    if callable(to_string):
+        text = to_string()
+        return text if isinstance(text, str) else None
+    if isinstance(getattr(value, "text", None), str):
+        return str(value.text)
+    if isinstance(value, (list, tuple)):
+        parts: list[str] = []
+        for item in value:
+            if isinstance(item, (list, tuple)) and len(item) == 2 and isinstance(item[1], str):
+                parts.append(item[1])
+                continue
+            text = _legacy_text(item)
+            if text is None:
+                return None
+            parts.append(text)
+        return "\n".join(parts)
+    return None
+
+
+_EVENT_FILTERS = (
+    "include_names",
+    "include_types",
+    "include_tags",
+    "exclude_names",
+    "exclude_types",
+    "exclude_tags",
+)
+
+
+class _RootEventTracker:
+    """Find the root run's final output in an ``astream_events`` stream.
+
+    v2 events carry ``parent_ids``, empty for the root run. v1 events do not;
+    there the first event is the root's start, unless a filter hid it, in
+    which case the root is unknown and the caller fails closed.
+    """
+
+    def __init__(self, kwargs: dict[str, Any]) -> None:
+        self._filtered = any(kwargs.get(k) is not None for k in _EVENT_FILTERS)
+        self._root_run_id: Any = None
+        self._first = True
+        self.seen = False
+        self.output: Any = None
+
+    def is_final(self, event: Any) -> bool:
+        """True for the root run's end event carrying an output; records it."""
+        if not isinstance(event, dict):
+            return False
+        run_id = event.get("run_id")
+        if "parent_ids" in event:
+            is_root = event.get("parent_ids") == []
+        else:
+            if self._first and not self._filtered:
+                self._root_run_id = run_id
+            is_root = run_id is not None and run_id == self._root_run_id
+        self._first = False
+        data = event.get("data")
+        if (
+            is_root
+            and str(event.get("event", "")).endswith("_end")
+            and isinstance(data, dict)
+            and "output" in data
+        ):
+            self.seen = True
+            self.output = data["output"]
+            return True
+        return False
+
+
+def _stream_output(chunks: list[Any]) -> Any:
+    """The output a list of streamed chunks adds up to, for the output check.
+
+    Strings concatenate and LangChain message chunks / ``AddableDict`` add up
+    the way LangChain aggregates a stream itself. Anything else (a LangGraph
+    ``values`` state, a ``(message, metadata)`` tuple) is judged by its last
+    chunk. Before 1.89.0 the last chunk was always used, and a chat model's
+    last chunk is an empty usage delta, so its output check saw "".
+    """
+    if not chunks:
+        return ""
+    if all(isinstance(c, str) for c in chunks):
+        return "".join(chunks)
+    try:
+        from langchain_core.messages import BaseMessageChunk
+        from langchain_core.runnables.utils import AddableDict
+    except ImportError:  # pragma: no cover - the wrapper requires langchain_core
+        return chunks[-1]
+    for kind in (BaseMessageChunk, AddableDict):
+        if all(isinstance(c, kind) for c in chunks):
+            total = chunks[0]
+            try:
+                for c in chunks[1:]:
+                    total = total + c
+            except Exception:
+                return chunks[-1]
+            return total
+    return chunks[-1]
+
+
+def _fold_run_log(log: Any, patch: Any) -> Any:
+    """Accumulate ``astream_log`` output into a ``RunLog``.
+
+    ``diff=True`` (the default) yields ``RunLogPatch`` objects, folded here the
+    way LangChain folds them; ``diff=False`` yields the whole ``RunLog`` each time.
+    """
+    if hasattr(patch, "state"):
+        return patch
+    if log is None:
+        from langchain_core.tracers.log_stream import RunLog
+
+        log = RunLog(state=None)  # type: ignore[arg-type]
+    return log + patch
+
+
+async def _aiter_list(items: list[Any]) -> Any:
+    for item in items:
+        yield item
 
 
 def with_guardrails(

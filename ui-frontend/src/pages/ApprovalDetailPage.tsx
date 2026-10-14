@@ -4,11 +4,16 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { JsonViewer } from "@/components/shared/JsonViewer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ApprovalActions } from "@/components/approvals/ApprovalActions";
-import { usePendingForExecution } from "@/hooks/use-execution";
+import { Timestamp } from "@/components/shared/Timestamp";
+import { useExecution, usePendingForExecution } from "@/hooks/use-execution";
 
 export function ApprovalDetailPage() {
   const { execution_id } = useParams<{ execution_id: string }>();
   const { data: pending, isLoading, error } = usePendingForExecution(execution_id);
+  // Once resolved, say who decided and when (1.89.0), not only "may have
+  // already been resumed".
+  const execution = useExecution(!pending && !isLoading ? execution_id : undefined);
+  const resolution = execution.data?.resolution ?? null;
 
   if (!execution_id) {
     return null;
@@ -23,7 +28,9 @@ export function ApprovalDetailPage() {
             ? `Suspended at ${pending.node_id} · ${pending.reason}`
             : isLoading
               ? "Loading…"
-              : "No pending interrupt for this execution."
+              : resolution
+                ? "This approval has been resolved."
+                : "No pending interrupt for this execution."
         }
       >
         <Link
@@ -91,7 +98,57 @@ export function ApprovalDetailPage() {
         </>
       )}
 
-      {!pending && !isLoading && !error && (
+      {!pending && !isLoading && !error && resolution && (
+        <Card data-testid="approval-resolved">
+          <CardContent className="space-y-2 py-6 text-center text-sm">
+            <p>
+              {resolution.approved === false
+                ? "Rejected"
+                : resolution.approved === true
+                  ? "Approved"
+                  : "Resolved"}
+              {resolution.resolver ? (
+                <>
+                  {" "}by <span className="font-medium">{resolution.resolver}</span>
+                </>
+              ) : null}
+              {resolution.at ? (
+                <>
+                  {" "}
+                  <Timestamp iso={resolution.at} />
+                </>
+              ) : null}
+              .
+            </p>
+            {resolution.reason && (
+              <p className="text-xs text-muted-foreground">
+                Reason: {resolution.reason}
+              </p>
+            )}
+            <p className="text-xs">
+              <Link
+                to={`/executions/${execution_id}`}
+                className="text-primary hover:underline"
+              >
+                View the execution&apos;s outcome
+              </Link>
+              {resolution.trace_id && (
+                <>
+                  {" · "}
+                  <Link
+                    to={`/traces/${resolution.trace_id}`}
+                    className="text-primary hover:underline"
+                  >
+                    resumed run&apos;s trace
+                  </Link>
+                </>
+              )}
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {!pending && !isLoading && !error && !resolution && (
         <Card>
           <CardContent className="py-8 text-center text-sm text-muted-foreground">
             No pending interrupt for execution{" "}

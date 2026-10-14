@@ -99,6 +99,11 @@ why the rerun still reaches its tools (they're driven by the recorded tool
 calls) while the model's words are fixed. Whether a tool then runs is the
 tool policy's call.
 
+There are two queues by role (*since 1.89.0*): the agent's turns, and the
+model calls its guardrails make (an `llm_judge`, say). A judge never takes an
+agent turn, and an agent never receives a judge's verdict. Decisions API
+answers have a third.
+
 ## Our approach, in context
 
 Most tools in this space offer one of two things. Observability platforms let

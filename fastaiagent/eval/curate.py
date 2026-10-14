@@ -351,7 +351,11 @@ def _select_trace_ids(
     if filter == "favorites":
         where.append("s.trace_id IN (SELECT trace_id FROM trace_favorites)")
     elif filter == "noted":
-        where.append("s.trace_id IN (SELECT trace_id FROM trace_notes)")
+        # A blank note is no note (1.89.0): the Local UI stored an empty row
+        # when a note was cleared, and every such trace was curated as noted.
+        where.append(
+            "s.trace_id IN (SELECT trace_id FROM trace_notes WHERE TRIM(COALESCE(note, '')) <> '')"
+        )
     elif filter == "guardrail":
         where.append(f"s.trace_id IN ({_GUARDRAIL_FIRED_TRACES_SQL})")
     elif filter == "failed":
@@ -384,7 +388,11 @@ def _notes_map(db: Any, trace_ids: list[str]) -> dict[str, str]:
         return {}
     wanted = set(trace_ids)
     rows = db.fetchall("SELECT trace_id, note FROM trace_notes")
-    return {r["trace_id"]: r["note"] for r in rows if r["trace_id"] in wanted and r["note"]}
+    return {
+        r["trace_id"]: r["note"]
+        for r in rows
+        if r["trace_id"] in wanted and (r["note"] or "").strip()
+    }
 
 
 def _guardrail_reasons(db: Any, trace_ids: list[str]) -> dict[str, str]:

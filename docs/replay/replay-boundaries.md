@@ -127,6 +127,7 @@ The rules:
 - **Each model call pops the front.** `acomplete` checks the queue first; when it has an entry, it returns it, marks the span `replay.mode=recorded`, and never calls the provider. A multi-turn tool loop replays turn by turn.
 - **A tool-only turn is served too.** OpenAI sends `content: null` on a turn that only calls tools. Those spans are in the queue since 1.84.0, so the rerun reaches the tool between the two turns, and runs it if you allowed it (section 3). Before that, a recorded rerun jumped to the final answer and never reached a tool.
 - **Decisions API answers have their own queue**, never handed to a chat turn or the reverse.
+- **So do guardrail model calls** (*since 1.89.0*). An `llm_judge` or other model-backed guardrail is served from the original's guardrail recordings, never from the agent's turns; a judge with no recording is a miss under `on_miss`. Before, a judge added in the rerun took the agent's turn. See [Guarantees](guarantees.md#guardrail-model-calls-have-their-own-queue-1890).
 - **A changed prompt cannot change a recorded answer.** The rebuilt agent is given the new prompt, but the model is never asked. To test a fix, use live mode.
 - **It needs the captured responses.** A trace with none, such as one pulled from the plane with payloads stripped, raises `ReplayError`.
 

@@ -11,6 +11,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from fastaiagent._internal.errors import ReplayError
+from fastaiagent.trace import _replay_roles as _roles
 from fastaiagent.trace.storage import SpanData, TraceData, TraceStore
 
 _log = logging.getLogger(__name__)
@@ -847,15 +848,39 @@ class ForkedReplay:
                     f"(gen_ai.response.content). determinism='recorded' requires "
                     f"FASTAIAGENT_TRACE_PAYLOADS=1 (the default) on the original run."
                 )
-            token = _replay_recorded_response.set(list(recorded_queue))
+            # 1.89.0: a guardrail's own model call (an llm_judge, say) is served
+            # from the guardrail recordings, never from the agent's turns. See
+            # fastaiagent.trace._replay_roles.
+            responses: Any
+            decisions: Any
+            if _roles.role_tracking_available():
+                responses = _roles.RoleQueue(
+                    _roles.split_by_role(self._trace.spans, _recorded_response_from_span)
+                )
+                decisions = _roles.RoleQueue(
+                    _roles.split_by_role(self._trace.spans, _recorded_decision_from_span)
+                )
+            else:
+                _log.warning(
+                    "Replay of trace %s: tracing is off, so a guardrail's model call cannot "
+                    "be told from the agent's. Recorded responses are served from one shared "
+                    "queue, and a guardrail that is not in the original trace takes an "
+                    "agent turn.",
+                    self._trace.trace_id,
+                )
+                responses = list(recorded_queue)
+                decisions = self._all_decisions()
+            token = _replay_recorded_response.set(responses)
             # Decisions API answers replay from their own queue (installed even
             # when empty, so a rerun that asks a decision the original never did
             # is a miss governed by ``on_miss`` — not a silent live call).
-            decisions_token = _replay_recorded_decisions.set(self._all_decisions())
+            decisions_token = _replay_recorded_decisions.set(decisions)
             miss_token = _replay_on_miss.set(self._on_miss)
+            roles_token = _roles.start_tracking()
             try:
                 return await self._arun_unpaused(agent, new_input)
             finally:
+                _roles.stop_tracking(roles_token)
                 _replay_on_miss.reset(miss_token)
                 _replay_recorded_decisions.reset(decisions_token)
                 _replay_recorded_response.reset(token)

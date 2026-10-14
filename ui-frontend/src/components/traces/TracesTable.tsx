@@ -1,6 +1,13 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Copy, GitCompareArrows, MessagesSquare, Star, Trash2 } from "lucide-react";
+import {
+  Copy,
+  GitCompareArrows,
+  MessagesSquare,
+  Star,
+  StickyNote,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
@@ -245,6 +252,13 @@ export function TracesTable({ rows, hideBulkSelect }: Props) {
                     >
                       {row.source}
                     </Badge>
+                  )}
+                  {row.noted && (
+                    <StickyNote
+                      data-testid="trace-noted"
+                      aria-label="Has a note"
+                      className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                    />
                   )}
                 </div>
               </TableCell>

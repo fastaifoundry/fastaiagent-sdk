@@ -44,9 +44,15 @@ class Usage:
 
 @dataclass
 class StreamDone:
-    """End-of-stream marker."""
+    """End-of-stream marker.
 
-    pass
+    ``finish_reason`` (1.89.0) is the provider's own value, as on
+    :class:`LLMResponse` (OpenAI ``length``, Anthropic ``max_tokens`` mapped
+    the same way as a non-streamed call); ``""`` when the provider sent none.
+    A streamed reply cut off at the token limit used to look complete.
+    """
+
+    finish_reason: str = ""
 
 
 @dataclass

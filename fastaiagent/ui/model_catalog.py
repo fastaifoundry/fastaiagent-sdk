@@ -375,6 +375,20 @@ def has_api_key(provider: str, overrides: dict[str, dict[str, Any]] | None = Non
     return bool(os.environ.get(env_var))
 
 
+def requires_endpoint(provider: str) -> bool:
+    """The provider has no default endpoint, so a call needs a base URL (1.89.0).
+
+    ``custom`` and ``azure`` were listed with ``has_key: true`` (they read
+    ``OPENAI_API_KEY``) and failed at call time with an opaque transport error.
+    Bedrock signs requests against an AWS region, not a base URL.
+    """
+    if provider in LOCAL_PROVIDERS or provider == "bedrock":
+        return False
+    from fastaiagent.llm.client import LLMClient
+
+    return not LLMClient._default_base_url(provider)
+
+
 def build_catalog(db_path: str | None = None) -> list[dict[str, Any]]:
     """Rows for ``GET /api/playground/models``.
 
@@ -395,6 +409,7 @@ def build_catalog(db_path: str | None = None) -> list[dict[str, Any]]:
                 "models": list(models),
                 "has_key": has_api_key(provider, overrides),
                 "env_var": env_var_for(provider, overrides) or None,
+                "requires_endpoint": requires_endpoint(provider),
             }
         )
 
@@ -416,6 +431,7 @@ def build_catalog(db_path: str | None = None) -> list[dict[str, Any]]:
                 "models": models,
                 "has_key": has_api_key(preset.key, overrides),
                 "env_var": env_var_for(preset.key, overrides) or None,
+                "requires_endpoint": requires_endpoint(preset.key),
             }
         )
 
@@ -436,4 +452,5 @@ __all__ = [
     "has_api_key",
     "load_overrides",
     "read_catalog_file",
+    "requires_endpoint",
 ]

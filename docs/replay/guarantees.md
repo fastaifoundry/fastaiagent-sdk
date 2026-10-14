@@ -98,6 +98,31 @@ forked.with_determinism("recorded")                    # default: on_miss="live"
 `on_miss="error"` raises before any provider call, so a recorded suite
 can never quietly spend tokens or return drifted output.
 
+#### Guardrail model calls have their own queue (1.89.0)
+
+A model-backed guardrail (`llm_judge`, `content_safety`, `groundedness`,
+`topic`) makes its own model call, and before 1.89.0 that call popped the same
+queue as the agent:
+
+- a judge present in the rerun but not the original **took the agent's
+  turn**: an input judge was handed the recorded tool-call turn, read it as a
+  failing verdict, and blocked the rerun;
+- a judge present in the original but not the rerun **handed its verdict to
+  the agent**, which answered `{"verdict": "PASS", …}`.
+
+Now the recordings are split by role. A guardrail's call is served from the
+original's guardrail recordings and the agent from its own turns. A judge in
+the rerun with no recording is a miss under `on_miss`; a judge in the
+original but not the rerun leaves its recording unused.
+
+Recordings are told apart by span ancestry: a call under a `guardrail.*`
+span is the guardrail's (the guardrail span wraps its check since 1.89.0). In
+older traces the judge's span is a sibling, so a call counts as a guardrail's
+when the trace has guardrail spans and the request has the SDK guardrail
+shape (a system message, then a user message starting `<<DATA>>` or
+`<<CONTEXT>>`). This needs tracing on during the rerun; with tracing off the
+rerun falls back to one shared queue and logs a warning.
+
 ## Known fidelity gaps
 
 These are documented limitations to set expectations. Each is tracked

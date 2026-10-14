@@ -109,6 +109,7 @@ def get_prompt(
         **payload,
         "latest_version": payload["version"],
         "registry_is_local": reg.is_local(),
+        "aliases": reg.aliases(slug),
     }
 
 
@@ -173,6 +174,9 @@ def list_versions(
     # used to be a JSON *string* here and ``template`` the raw text, while the
     # other two endpoints returned a list and the resolved text.
     reg = _registry(request)
+    by_version: dict[int, list[str]] = {}
+    for alias, v in reg.aliases(slug).items():
+        by_version.setdefault(v, []).append(alias)
     versions = []
     for row in rows:
         raw = row["template"] or ""
@@ -194,6 +198,7 @@ def list_versions(
                 "metadata": metadata,
                 "created_at": row["created_at"],
                 "created_by": row["created_by"],
+                "aliases": sorted(by_version.get(int(row["version"]), [])),
             }
         )
     return {"versions": versions}
@@ -223,9 +228,79 @@ def diff_versions(
 ) -> dict[str, Any]:
     reg = _registry(request)
     try:
-        return {"diff": reg.diff(slug, a, b)}
+        side_a = reg.load(slug, version=a, resolve_fragments=False)
+        side_b = reg.load(slug, version=b, resolve_fragments=False)
+        return {
+            "diff": reg.diff(slug, a, b),
+            # The stored templates (fragment references intact), for a
+            # side-by-side view (1.89.0).
+            "a": _side(side_a),
+            "b": _side(side_b),
+        }
     except PromptNotFoundError as e:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(e)) from e
+
+
+def _side(prompt: Any) -> dict[str, Any]:
+    return {"version": prompt.version, "template": prompt.template, "metadata": prompt.metadata}
+
+
+_ALIAS_RE = r"^[A-Za-z0-9_.-]{1,64}$"
+
+
+class AliasBody(BaseModel):
+    version: int
+
+
+@router.put("/{slug}/aliases/{alias}")
+def set_alias(
+    request: Request,
+    slug: str,
+    alias: str,
+    body: AliasBody,
+    _user: str = Depends(require_session),
+) -> dict[str, Any]:
+    """Point an alias (``production``, ``staging``) at a version (1.89.0).
+
+    Agents load ``reg.load(slug, alias="production")``; moving the alias
+    promotes or rolls back a prompt without a code change.
+    """
+    import re
+
+    if not re.match(_ALIAS_RE, alias):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "alias must be 1-64 characters of letters, digits, '_', '.' or '-'",
+        )
+    reg = _registry(request)
+    if not reg.is_local():
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "This registry is external. Set aliases from the environment that owns it.",
+        )
+    try:
+        reg.set_alias(slug, body.version, alias)
+    except PromptNotFoundError as e:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(e)) from e
+    return {"slug": slug, "aliases": reg.aliases(slug)}
+
+
+@router.delete("/{slug}/aliases/{alias}")
+def delete_alias(
+    request: Request,
+    slug: str,
+    alias: str,
+    _user: str = Depends(require_session),
+) -> dict[str, Any]:
+    reg = _registry(request)
+    if not reg.is_local():
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "This registry is external. Remove aliases from the environment that owns it.",
+        )
+    if not reg.delete_alias(slug, alias):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Alias '{alias}' not found for '{slug}'")
+    return {"slug": slug, "aliases": reg.aliases(slug)}
 
 
 class EditRequest(BaseModel):

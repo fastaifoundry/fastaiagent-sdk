@@ -258,6 +258,39 @@ delegate tools to scope the resume to a worker's subtree (so the
 worker doesn't accidentally pick up a sibling supervisor pre-tool
 checkpoint as "latest").
 
+### A resume is its own, linked trace
+
+Since 1.89.0 each resume opens one root `agent.<name>` span around the
+re-invoked tool and the continued loop. Before, it opened none: the model
+calls it made were stored as orphan `llm.*` traces, the re-invoked tool ran
+outside any agent, and the result's `trace_id` was `None`.
+
+The resume is a **new trace**, linked to the original by attributes, not by
+parentage:
+
+| Attribute | Value |
+|---|---|
+| `agent.execution_id` | the execution's id, on every run of it (the original carries it too) |
+| `agent.resumed_execution_id` | set only on a resume |
+| `agent.resume.node_id` | where it re-entered |
+| `agent.resume.kind` | `approval`, `interrupt`, `tool_boundary` or `turn_boundary` |
+| `agent.resume.approved` | with a `resume_value` |
+| `agent.resume.resolver` | `Resume.metadata["resolver"]`, else `["approver"]` |
+| `agent.resume.reason` | `Resume.metadata["reason"]`; a payload key, held back on export under `FASTAIAGENT_TRACE_PAYLOADS=0` |
+| `agent.status` | `completed` or `paused` |
+
+To find every trace of one execution, match `agent.execution_id` (or
+`chain.`/`swarm.`/`supervisor.execution_id`). `result.trace_id` names the
+resume's trace even when it pauses again. A refused resume (`AlreadyResumed`,
+`ChainCheckpointError`) opens no span. Pass `trace=False` to skip the span.
+`afork` works the same way and stamps `agent.forked_execution_id`,
+`agent.fork.of_execution` and `agent.fork.checkpoint_id`; a fork without
+`input` used to open no span either.
+
+On a connected plane, a paused-then-resumed run is therefore two traces, both
+rooted at `agent.<name>`, instead of one agent trace plus agent-less `llm.*`
+traces.
+
 ## `Agent.afork`
 
 ```python
@@ -589,9 +622,15 @@ Without either, resume returns `503`.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/api/executions/{execution_id}` | Full checkpoint history. Returns `404` on unknown id. |
+| `GET` | `/api/executions/{execution_id}` | Full checkpoint history, plus (*since 1.89.0*) the outcome: `pending_interrupt`, `checkpoints[].interrupt_state` (`pending`/`resolved`), `runs` (each trace that ran it: `run`/`resume`/`fork`, with status, output and resume details), `resolution` (decision, resolver, reason, time, trace) and `final_output`. Returns `404` on unknown id. |
 | `GET` | `/api/pending-interrupts` | List of pending rows (paginated by `?limit=`). |
-| `POST` | `/api/executions/{execution_id}/resume` | Atomic resume. Body: `{"approved": bool, "metadata": {...}, "reason": "?"}`. Returns `409` on `AlreadyResumed`, `503` if no runner is registered for this `chain_name`. |
+| `POST` | `/api/executions/{execution_id}/resume` | Atomic resume. Body: `{"approved": bool, "metadata": {...}, "reason": "?"}`. `reason` is stored as `metadata.reason` (*since 1.89.0*; it was echoed and dropped); with auth on and no `metadata.resolver`, the signed-in user is the resolver. Returns the resumed run's `trace_id`. `409` on `AlreadyResumed`, `503` if no runner is registered for this `chain_name`. |
+
+Before 1.89.0 the execution page could not tell a pause that was still
+waiting from one already decided: every `interrupted` checkpoint looked
+pending forever. It now marks each pause *waiting* or *resolved*, and an
+Outcome card shows the decision, who made it and why, the final output, and a
+link to each run's trace.
 | `GET` | `/api/overview` | Home dashboard counts; includes `pending_approvals_count` and `failed_executions_count`. |
 
 ## CLI

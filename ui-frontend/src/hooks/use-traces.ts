@@ -1,9 +1,10 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type {
   CompareTracesResponse,
   TraceDetail,
   TraceFilters,
+  TraceNote,
   TracesPage,
   SpanTreeNode,
 } from "@/lib/types";
@@ -17,6 +18,8 @@ function buildQuery(filters: TraceFilters): string {
   if (filters.runner_type) params.set("runner_type", filters.runner_type);
   if (filters.framework) params.set("framework", filters.framework);
   if (filters.exclude_experiments) params.set("exclude_experiments", "true");
+  if (filters.source) params.set("source", filters.source);
+  if (filters.noted) params.set("noted", "true");
   if (filters.since) params.set("since", filters.since);
   if (filters.until) params.set("until", filters.until);
   if (filters.min_duration_ms != null) params.set("min_duration_ms", String(filters.min_duration_ms));
@@ -64,6 +67,36 @@ export function useDeleteTrace() {
   return useMutation({
     mutationFn: (traceId: string) =>
       api.delete<{ deleted: number }>(`/traces/${traceId}`),
+  });
+}
+
+/**
+ * Save a trace's note (1.89.0). An empty note deletes it, so the "noted"
+ * filter and `curate_from_traces(filter="noted")` stay meaningful.
+ */
+export function useSaveTraceNote(traceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (note: string) =>
+      api.post<{ status: string; note: TraceNote | null }>(
+        `/traces/${traceId}/notes`,
+        { note }
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["trace", traceId] });
+      qc.invalidateQueries({ queryKey: ["traces"] });
+    },
+  });
+}
+
+export function useDeleteTraceNote(traceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.delete<{ deleted: number }>(`/traces/${traceId}/notes`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["trace", traceId] });
+      qc.invalidateQueries({ queryKey: ["traces"] });
+    },
   });
 }
 

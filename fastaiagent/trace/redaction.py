@@ -66,6 +66,10 @@ SENSITIVE_ATTR_KEYS: frozenset[str] = frozenset(
         # (``fastaiagent.decision.questions`` / ``.answers``) are developer-authored
         # structure and probabilities, exported like guardrail scores.
         "fastaiagent.decision.input",
+        # The Playground root's resolved prompt and reply (1.89.0): the span the
+        # trace page opens on, so its Input/Output tabs show the call.
+        "fastaiagent.playground.input",
+        "fastaiagent.playground.output",
         # Foreign-OTel normalization targets. ``trace.normalize`` writes the
         # consolidated prompt/completion text onto these keys for every span
         # captured from LangChain / CrewAI / PydanticAI / OpenLLMetry before it
@@ -107,6 +111,12 @@ SENSITIVE_ATTR_KEYS: frozenset[str] = frozenset(
         # Chain payloads — ``Chain.aexecute`` writes JSON-serialized state.
         "chain.input",
         "chain.output",
+        # The free-text reason a resolver gave when resuming a paused run
+        # (``Resume.metadata["reason"]``), stamped on the resumed run's root span
+        # since 1.89.0. A human's note about the request — payload, not structure.
+        # The ``.approved`` / ``.resolver`` / ``.kind`` siblings stay clear.
+        "agent.resume.reason",
+        "chain.resume.reason",
         # Swarm / Supervisor payloads — the prompt that entered the topology and
         # the model's final answer out of it. Structural siblings
         # (``swarm.name``, ``swarm.agent_count``, ``swarm.handoff_count``,

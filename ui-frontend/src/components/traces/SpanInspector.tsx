@@ -27,6 +27,8 @@ const INPUT_KEYS = new Set([
   "tool.args",
   "retrieval.query",
   "memory.query",
+  // A Playground run's root: the resolved prompt it sent (1.89.0).
+  "fastaiagent.playground.input",
   "input",
 ]);
 
@@ -48,6 +50,7 @@ const OUTPUT_KEYS = new Set([
   "memory.message_count",
   "memory.action",
   "memory.detail",
+  "fastaiagent.playground.output",
   "output",
 ]);
 

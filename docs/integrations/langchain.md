@@ -140,7 +140,40 @@ guarded = lc.with_guardrails(
 
 The wrapper is a `_GuardedRunnable` that proxies every other attribute
 to the wrapped object, so consumer code keeps working unchanged.
-Overridden methods: `invoke`, `ainvoke`, `stream`, `astream`, `batch`.
+
+**Every way of calling it is guarded** (*since 1.89.0*): `invoke`, `ainvoke`,
+`stream`, `astream`, `batch`, `abatch`, `batch_as_completed`,
+`abatch_as_completed`, `astream_events`, `stream_events`, `astream_log`,
+`transform` and `atransform`. Before, only the first five were; the others
+passed straight to the wrapped runnable with no check and no `agent.name`,
+and said nothing.
+
+**Builders keep the guard.** `with_config`, `bind`, `with_retry`,
+`with_fallbacks`, `with_listeners`, `with_types`, `configurable_*`,
+`bind_tools`, `with_structured_output` and the rest return a runnable guarded
+with the same rails and name (they returned an unguarded one). The guard sits
+outside retries and fallbacks, so a fallback never answers for a blocked call
+and a retry never re-runs one.
+
+**It composes.** The guarded runnable is a LangChain `Runnable`: use it with
+`|`, `pipe`, `pick`, `assign`, `map`, `RunnableSequence`, `RunnableParallel`,
+as a LangGraph node, or turn it into a tool with `.as_tool()` (these raised
+`TypeError` before). Inside a chain the guard stays at that step's own input
+and output, so a later step cannot hide what the guarded step produced. A
+builder that would return a tool raises `GuardrailBlocked`; call `.as_tool()`
+on the guarded runnable instead.
+
+**Legacy model calls are guarded too.** `generate`, `agenerate`,
+`generate_prompt`, `agenerate_prompt`, and on LangChain 0.x `predict`,
+`apredict`, `predict_messages`, `apredict_messages`, `call_as_llm` and
+`__call__`: every prompt is checked before the call and every generation
+after it, and the return type is unchanged. A prompt or result with no
+readable text fails closed with `GuardrailBlocked`; use `invoke()`.
+
+Reaching into internals (`.first`, `.bound`, `.steps`) bypasses the guard.
+
+A bare chat model wrapped directly gets no `agent.name` on its span; wrap a
+chain or graph to have one.
 
 **Block-only semantics**: a failing blocking guardrail raises
 `GuardrailBlocked`. Every check, passes included, writes **one**
@@ -149,9 +182,24 @@ Overridden methods: `invoke`, `ainvoke`, `stream`, `astream`, `batch`.
 rule, which the wrapper cannot honour, is recorded as `blocked` with the reason.
 There is no redaction — see the [Limitations section](overview.md#limitations).
 
-**Streaming**: input guardrails run before the stream opens; output
-guardrails buffer the entire stream and check the final chunk. If you
-want zero-latency streaming, only pass `input_guardrails`.
+**Streaming**: input guardrails run before the stream opens. Output
+guardrails check the whole streamed text (or the final state, for a
+LangGraph `values` stream) once it ends. Before 1.89.0 they checked only the
+last chunk, which for a chat model is an empty usage delta, so a streamed
+reply was never really checked. `astream_events` yields every event but
+holds back the root run's end event until its output passes.
+
+When the output cannot be determined, a call with output guardrails **fails
+closed** with `GuardrailBlocked`, rather than returning unchecked output:
+
+- an `include_*`/`exclude_*` filter on `astream_events` that hides the root run;
+- `astream_events(version="v3")` / `stream_events(version="v3")`, which return
+  a run stream the caller drives;
+- an `astream_log` with no final output.
+
+`transform` with input guardrails reads the whole input first. `batch` and
+`abatch` with `return_exceptions=True` skip exception items. If you want
+zero-latency streaming, only pass `input_guardrails`.
 
 ## 4. Prompt registry
 

@@ -416,6 +416,11 @@ class Swarm:
                 input if isinstance(input, str) else _input_summary_text(normalize_input(input))
             )
             span.set_attribute("swarm.input", swarm_input_text)
+            # Chosen here so the root span can name the run its checkpoints and
+            # any resume of it are filed under (``_arun_swarm`` would otherwise
+            # pick it, after the span had nothing to say).
+            execution_id = execution_id or str(uuid.uuid4())
+            span.set_attribute("swarm.execution_id", execution_id)
 
             result = await self._arun_swarm(
                 input, context=context, execution_id=execution_id, **kwargs
@@ -708,6 +713,7 @@ class Swarm:
         with get_tracer().start_as_current_span(f"swarm.{self.name}") as span:
             span.set_attribute("swarm.name", self.name)
             span.set_attribute("swarm.resumed_execution_id", execution_id)
+            span.set_attribute("swarm.execution_id", execution_id)
             span.set_attribute("fastaiagent.runner.type", "swarm")
             span.set_attribute("fastaiagent.framework", "fastaiagent")
             result = await self._aresume_inner(

@@ -1,12 +1,7 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
+  AlertTriangle,
   ChevronDown,
   ChevronRight,
   ImageIcon,
@@ -24,7 +19,9 @@ import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -32,24 +29,41 @@ import { Textarea } from "@/components/ui/textarea";
 import { ParametersPanel } from "@/components/playground/ParametersPanel";
 import { PlaygroundTraceLink } from "@/components/playground/PlaygroundTraceLink";
 import { isValidMaxTokens } from "@/lib/playground-params";
-import {
-  RunHistory,
-  type PlaygroundHistoryEntry,
-} from "@/components/playground/RunHistory";
+import { RunHistory } from "@/components/playground/RunHistory";
 import { SaveAsEvalDialog } from "@/components/playground/SaveAsEvalDialog";
 import { VariableForm } from "@/components/playground/VariableForm";
 import {
   streamPlayground,
   usePlaygroundModels,
 } from "@/hooks/use-playground";
-import { usePrompt, usePrompts, usePromptVersion } from "@/hooks/use-prompts";
+import {
+  usePrompt,
+  usePrompts,
+  usePromptVersion,
+  usePromptVersions,
+} from "@/hooks/use-prompts";
 import { ApiError } from "@/lib/api";
 import type { ErrorInfo } from "@/lib/api-error";
 import { RunErrorPanel } from "@/components/playground/RunErrorPanel";
 import { formatCost, formatDurationMs, formatTokens } from "@/lib/format";
+import {
+  extractVars,
+  resolveTemplate,
+  sameRequest,
+  snapshotImage,
+  unfilledVariables,
+  type PlaygroundHistoryEntry,
+  type PlaygroundRunSnapshot,
+} from "@/lib/playground-run";
+import {
+  applySamplingRule,
+  resolveSamplingRule,
+  ruleLimits,
+} from "@/lib/sampling-rules";
 import type {
   PlaygroundDoneMetadata,
   PlaygroundParameters,
+  PlaygroundPromptRef,
   PlaygroundProviderInfo,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -62,23 +76,8 @@ const DEFAULT_PARAMS: PlaygroundParameters = {
   top_p: null,
 };
 
-const VAR_RE = /\{\{(\w+)\}\}/g;
-
-function extractVars(template: string): string[] {
-  const matches = template.matchAll(VAR_RE);
-  return Array.from(new Set(Array.from(matches, (m) => m[1])));
-}
-
-function resolveTemplate(
-  template: string,
-  values: Record<string, string>,
-): string {
-  let out = template;
-  for (const [key, value] of Object.entries(values)) {
-    out = out.split(`{{${key}}}`).join(value);
-  }
-  return out;
-}
+/** The version picker's value for an alias; a plain number is a version. */
+const ALIAS_PREFIX = "alias:";
 
 function uniqueId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -92,27 +91,49 @@ function messageError(message: string): ErrorInfo {
   return { message, fieldErrors: [] };
 }
 
+const varList = (names: string[]) => names.map((n) => `{{${n}}}`).join(", ");
+
 export function PlaygroundPage() {
-  // ─── URL params: pre-fill from "Test in Playground" button on PromptEditorPage
+  // ─── URL params: pre-fill from "Test in Playground" on PromptEditorPage.
+  // `?alias=production` picks the version the alias points at (1.89.0).
   const [search, setSearch] = useSearchParams();
   const initialPromptSlug = search.get("prompt");
   const initialPromptVersion = search.get("version");
+  const initialPromptAlias = search.get("alias");
 
   const prompts = usePrompts();
   const models = usePlaygroundModels();
 
-  // ─── Selected prompt + version
+  // ─── Selected prompt + version (or alias)
   const [selectedSlug, setSelectedSlug] = useState<string | null>(
     initialPromptSlug,
   );
-  const [selectedVersion, setSelectedVersion] = useState<string | null>(
-    initialPromptVersion,
+  const [versionChoice, setVersionChoice] = useState<string | null>(
+    initialPromptAlias
+      ? `${ALIAS_PREFIX}${initialPromptAlias}`
+      : initialPromptVersion,
   );
+  // Seed the template once the picked version loads. Only an explicit pick
+  // seeds: a reactive seed overwrote a template restored from history.
+  const seedPending = useRef<boolean>(Boolean(initialPromptSlug));
 
   const promptDetail = usePrompt(selectedSlug ?? undefined);
+  const promptVersions = usePromptVersions(selectedSlug ?? undefined);
+  const aliases = useMemo(
+    () => promptDetail.data?.aliases ?? {},
+    [promptDetail.data],
+  );
+  const choiceAlias = versionChoice?.startsWith(ALIAS_PREFIX)
+    ? versionChoice.slice(ALIAS_PREFIX.length)
+    : null;
+  const choiceVersion: number | null = choiceAlias
+    ? (aliases[choiceAlias] ?? null)
+    : versionChoice
+      ? Number(versionChoice)
+      : null;
   const versionDetail = usePromptVersion(
     selectedSlug ?? undefined,
-    selectedVersion,
+    choiceVersion != null ? String(choiceVersion) : null,
   );
 
   // ─── Editable state — seeded from selection but freely edited
@@ -122,16 +143,42 @@ export function PlaygroundPage() {
   const [variables, setVariables] = useState<Record<string, string>>({});
   const [previewOpen, setPreviewOpen] = useState<boolean>(true);
 
-  // Seed the editor when a prompt is selected. Non-latest version load
-  // updates the template too so the user sees what they picked.
   useEffect(() => {
-    if (selectedVersion && versionDetail.data) {
-      setTemplate(versionDetail.data.template);
-    } else if (promptDetail.data && !selectedVersion) {
-      setTemplate(promptDetail.data.template);
-      setSelectedVersion(String(promptDetail.data.latest_version));
+    if (!selectedSlug || !promptDetail.data) return;
+    // No version picked, or an alias the prompt doesn't have: the latest.
+    if (versionChoice == null || (choiceAlias && !(choiceAlias in aliases))) {
+      setVersionChoice(String(promptDetail.data.latest_version));
+      return;
     }
-  }, [versionDetail.data, promptDetail.data, selectedVersion]);
+    if (
+      seedPending.current &&
+      versionDetail.data &&
+      versionDetail.data.version === choiceVersion
+    ) {
+      setTemplate(versionDetail.data.template);
+      seedPending.current = false;
+    }
+  }, [
+    selectedSlug,
+    promptDetail.data,
+    versionDetail.data,
+    versionChoice,
+    choiceAlias,
+    choiceVersion,
+    aliases,
+  ]);
+
+  // Sent with the run so the server can attribute it to the prompt (P10c).
+  const promptRef: PlaygroundPromptRef | null = selectedSlug
+    ? {
+        slug: selectedSlug,
+        ...(choiceAlias
+          ? { alias: choiceAlias }
+          : choiceVersion != null
+            ? { version: choiceVersion }
+            : {}),
+      }
+    : null;
 
   // ─── Provider / model
   const [provider, setProvider] = useState<string>("openai");
@@ -141,6 +188,14 @@ export function PlaygroundPage() {
     (p) => p.provider === provider,
   );
 
+  // ─── Connection: endpoint + per-run token.
+  // Component state only — deliberately never written to localStorage or sent
+  // anywhere but the run request, so a reload clears the token.
+  const [baseUrl, setBaseUrl] = useState<string>("");
+  const [apiKey, setApiKey] = useState<string>("");
+  const [connOpen, setConnOpen] = useState<boolean>(false);
+  const hasToken = apiKey.trim().length > 0;
+
   // Switching provider must repoint the model too. Leaving a stale
   // `gpt-4o-mini` selected while provider flipped to `anthropic` sent a
   // mismatched pair the provider rejects with a 404.
@@ -148,6 +203,8 @@ export function PlaygroundPage() {
     setProvider(next);
     const info = providers.find((p) => p.provider === next);
     setModel(info?.models[0] ?? "");
+    // custom/azure have no default endpoint: open where it is set (P10i).
+    if (info?.requires_endpoint) setConnOpen(true);
   };
 
   // First time we get models, default to a provider that has a key.
@@ -164,21 +221,20 @@ export function PlaygroundPage() {
     }
   }, [models.data]);  // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ─── Parameters
+  // ─── Parameters, and what the model accepts (P7: hints, never a block)
   const [params, setParams] = useState<PlaygroundParameters>(DEFAULT_PARAMS);
   const [paramsOpen, setParamsOpen] = useState<boolean>(false);
-
-  // ─── Connection: endpoint + per-run token.
-  // Component state only — deliberately never written to localStorage or sent
-  // anywhere but the run request, so a reload clears the token.
-  const [baseUrl, setBaseUrl] = useState<string>("");
-  const [apiKey, setApiKey] = useState<string>("");
-  const [connOpen, setConnOpen] = useState<boolean>(false);
-  const hasToken = apiKey.trim().length > 0;
+  const rule = useMemo(
+    () => resolveSamplingRule(models.data?.sampling_rules, provider, model),
+    [models.data, provider, model],
+  );
+  const sentParams = useMemo(() => applySamplingRule(params, rule), [params, rule]);
 
   // A token supplied here stands in for the server's env var, so a provider
   // with no configured key is still runnable.
   const credentialed = Boolean(providerInfo?.has_key) || hasToken;
+  const endpointMissing =
+    Boolean(providerInfo?.requires_endpoint) && !baseUrl.trim();
 
   // Anything other than a loopback origin means the token would cross the
   // network, and the local UI serves plain HTTP.
@@ -193,11 +249,15 @@ export function PlaygroundPage() {
   const [imageMediaType, setImageMediaType] = useState<string | null>(null);
   const [imageName, setImageName] = useState<string | null>(null);
 
+  const setImage = (b64: string | null, type: string | null, name: string | null) => {
+    setImageBase64(b64);
+    setImageMediaType(type);
+    setImageName(name);
+  };
+
   const handleImagePick = (file: File | null) => {
     if (!file) {
-      setImageBase64(null);
-      setImageMediaType(null);
-      setImageName(null);
+      setImage(null, null, null);
       return;
     }
     if (
@@ -211,9 +271,7 @@ export function PlaygroundPage() {
       const result = reader.result as string;
       // result is "data:<mime>;base64,<payload>" — strip the prefix.
       const comma = result.indexOf(",");
-      setImageBase64(result.slice(comma + 1));
-      setImageMediaType(file.type);
-      setImageName(file.name);
+      setImage(result.slice(comma + 1), file.type, file.name);
     };
     reader.readAsDataURL(file);
   };
@@ -224,20 +282,42 @@ export function PlaygroundPage() {
     () => resolveTemplate(template, variables),
     [template, variables],
   );
+  const unfilledNow = useMemo(
+    () => unfilledVariables(template, variables),
+    [template, variables],
+  );
+
+  // The request the form would send now, in the shape a run keeps (P6).
+  const formSnapshot: PlaygroundRunSnapshot = {
+    provider,
+    model,
+    prompt_template: template,
+    variables,
+    system_prompt: systemPrompt || null,
+    parameters: sentParams,
+    base_url: baseUrl.trim() || null,
+    prompt_ref: promptRef,
+    resolved_prompt: resolvedPrompt,
+    image: snapshotImage(imageBase64, imageMediaType, imageName),
+  };
 
   const [response, setResponse] = useState<string>("");
   const [running, setRunning] = useState<boolean>(false);
   // One normalised error (1.89.0, P1). It used to be the raw `detail`, which is
   // a list for a 422 — rendering it crashed the page and lost the form.
   const [errorInfo, setErrorInfo] = useState<ErrorInfo | null>(null);
-  const [lastMetadata, setLastMetadata] =
-    useState<PlaygroundDoneMetadata | null>(null);
+  // Set when Run was pressed with unfilled {{vars}}: warn, don't block (D10).
+  const [unfilledWarning, setUnfilledWarning] = useState<string[] | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const [history, setHistory] = useState<PlaygroundHistoryEntry[]>([]);
   const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
+  // Everything under the response reads the run, never the form.
+  const activeRun = history.find((h) => h.id === activeHistoryId) ?? null;
+  const shownMetadata: PlaygroundDoneMetadata | null = activeRun?.metadata ?? null;
+  const formChanged = activeRun ? !sameRequest(activeRun.request, formSnapshot) : false;
 
-  const handleRun = useCallback(async () => {
+  const handleRun = async (force = false) => {
     if (!template.trim()) {
       toast.error("Template is empty");
       return;
@@ -257,11 +337,22 @@ export function PlaygroundPage() {
       setErrorInfo(messageError("Pick or type a model first."));
       return;
     }
+    if (!force && unfilledNow.length > 0) {
+      setUnfilledWarning(unfilledNow);
+      return;
+    }
+    setUnfilledWarning(null);
     setErrorInfo(null);
     setResponse("");
-    setLastMetadata(null);
     setActiveHistoryId(null);
     setRunning(true);
+
+    // Captured before streaming: the history entry, the Response card and
+    // "Save as eval case" all read this, whatever the form becomes.
+    const snapshot: PlaygroundRunSnapshot = {
+      ...formSnapshot,
+      variables: { ...variables },
+    };
 
     const ac = new AbortController();
     abortRef.current = ac;
@@ -277,11 +368,12 @@ export function PlaygroundPage() {
           prompt_template: template,
           variables,
           system_prompt: systemPrompt || undefined,
-          parameters: params,
+          parameters: sentParams,
           image_b64: imageBase64 ?? undefined,
           image_media_type: imageMediaType ?? undefined,
           base_url: baseUrl.trim() || undefined,
           api_key: apiKey.trim() || undefined,
+          prompt_ref: promptRef ?? undefined,
         },
         ac.signal,
       )) {
@@ -290,7 +382,6 @@ export function PlaygroundPage() {
           setResponse(collected);
         } else if (ev.event === "done") {
           metadata = ev.metadata;
-          setLastMetadata(ev.metadata);
         } else if (ev.event === "error") {
           setErrorInfo({
             message: ev.message,
@@ -308,17 +399,9 @@ export function PlaygroundPage() {
         const entry: PlaygroundHistoryEntry = {
           id: uniqueId(),
           timestamp: new Date().toISOString(),
-          model: metadata.model,
-          provider: metadata.provider,
+          request: snapshot,
           response: collected,
-          latency_ms: metadata.latency_ms,
-          cost_usd: metadata.cost_usd,
-          tokens: metadata.tokens,
-          trace_id: metadata.trace_id,
-          trace_in_ui_db: metadata.trace_in_ui_db,
-          prompt_template: template,
-          system_prompt: systemPrompt || null,
-          variables,
+          metadata,
         };
         setHistory((prev) => [entry, ...prev].slice(0, 25));
         setActiveHistoryId(entry.id);
@@ -335,20 +418,7 @@ export function PlaygroundPage() {
       setRunning(false);
       abortRef.current = null;
     }
-  }, [
-    template,
-    provider,
-    model,
-    variables,
-    systemPrompt,
-    params,
-    imageBase64,
-    imageMediaType,
-    providerInfo,
-    credentialed,
-    baseUrl,
-    apiKey,
-  ]);
+  };
 
   // A model that isn't in the suggestion list is fine (the combobox accepts
   // free text and LLMClient takes any id the upstream API knows), but an
@@ -361,40 +431,61 @@ export function PlaygroundPage() {
     Boolean(model.trim()) &&
     credentialed &&
     isValidMaxTokens(params.max_tokens) &&
-    endpointValid;
+    endpointValid &&
+    !endpointMissing;
 
   const handleStop = () => {
     abortRef.current?.abort();
   };
 
+  // Restore the form exactly as the run sent it (P10d). Never the token.
   const handleHistorySelect = (entry: PlaygroundHistoryEntry) => {
-    setTemplate(entry.prompt_template);
-    setSystemPrompt(entry.system_prompt ?? "");
-    setVariables(entry.variables);
+    const r = entry.request;
+    seedPending.current = false;
+    setProvider(r.provider);
+    setModel(r.model);
+    setParams(r.parameters);
+    setSystemPrompt(r.system_prompt ?? "");
+    setBaseUrl(r.base_url ?? "");
+    setTemplate(r.prompt_template);
+    setVariables(r.variables);
+    setSelectedSlug(r.prompt_ref?.slug ?? null);
+    setVersionChoice(
+      r.prompt_ref?.alias
+        ? `${ALIAS_PREFIX}${r.prompt_ref.alias}`
+        : r.prompt_ref?.version != null
+          ? String(r.prompt_ref.version)
+          : null,
+    );
+    if (r.image?.b64) {
+      setImage(r.image.b64, r.image.media_type, r.image.name);
+    } else {
+      setImage(null, null, null);
+      if (r.image) {
+        toast.info(`${r.image.name} was over 5 MB and was not kept. Attach it again.`);
+      }
+    }
     setResponse(entry.response);
+    setErrorInfo(null);
+    setUnfilledWarning(null);
     setActiveHistoryId(entry.id);
-    setLastMetadata({
-      model: entry.model,
-      provider: entry.provider,
-      latency_ms: entry.latency_ms,
-      tokens: entry.tokens,
-      cost_usd: entry.cost_usd,
-      trace_id: entry.trace_id,
-      trace_in_ui_db: entry.trace_in_ui_db,
-    });
   };
 
   // Strip URL params after they've been consumed so a refresh stays put.
   useEffect(() => {
-    if (initialPromptSlug || initialPromptVersion) {
+    if (initialPromptSlug || initialPromptVersion || initialPromptAlias) {
       const next = new URLSearchParams(search);
       next.delete("prompt");
       next.delete("version");
+      next.delete("alias");
       setSearch(next, { replace: true });
     }
     // Run once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const versionRows = promptVersions.data?.versions ?? [];
+  const aliasNames = Object.keys(aliases).sort();
 
   return (
     <div className="space-y-5">
@@ -411,52 +502,83 @@ export function PlaygroundPage() {
               <CardTitle className="text-sm">// PROMPT</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_140px]">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_170px]">
                 <div className="space-y-1">
                   <Label htmlFor="playground-prompt" className="text-xs">
                     Prompt
                   </Label>
-                  <Select
-                    value={selectedSlug ?? ""}
-                    onValueChange={(v) => {
-                      setSelectedSlug(v);
-                      setSelectedVersion(null);
-                      setVariables({});
-                    }}
-                  >
-                    <SelectTrigger id="playground-prompt" className="w-full">
-                      <SelectValue placeholder="Select a prompt…" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(prompts.data?.rows ?? []).map((p) => (
-                        <SelectItem key={p.name} value={p.name}>
-                          {p.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex items-center gap-1">
+                    <Select
+                      value={selectedSlug ?? ""}
+                      onValueChange={(v) => {
+                        seedPending.current = true;
+                        setSelectedSlug(v);
+                        setVersionChoice(null);
+                        setVariables({});
+                      }}
+                    >
+                      <SelectTrigger id="playground-prompt" className="w-full">
+                        <SelectValue placeholder="Select a prompt…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(prompts.data?.rows ?? []).map((p) => (
+                          <SelectItem key={p.name} value={p.name}>
+                            {p.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {selectedSlug && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedSlug(null);
+                          setVersionChoice(null);
+                        }}
+                        title="Detach from the registry prompt (the template stays)"
+                        aria-label="Detach prompt"
+                        className="text-muted-foreground hover:text-foreground"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="space-y-1">
                   <Label htmlFor="playground-version" className="text-xs">
                     Version
                   </Label>
+                  {/* Real versions (they need not be 1..latest) plus aliases. */}
                   <Select
-                    value={selectedVersion ?? ""}
-                    onValueChange={setSelectedVersion}
+                    value={versionChoice ?? ""}
+                    onValueChange={(v) => {
+                      seedPending.current = true;
+                      setVersionChoice(v);
+                    }}
                     disabled={!selectedSlug || !promptDetail.data}
                   >
                     <SelectTrigger id="playground-version" className="w-full">
                       <SelectValue placeholder="latest" />
                     </SelectTrigger>
                     <SelectContent>
-                      {Array.from(
-                        { length: promptDetail.data?.latest_version ?? 0 },
-                        (_, i) => String(i + 1),
-                      ).map((v) => (
-                        <SelectItem key={v} value={v}>
-                          v{v}
-                        </SelectItem>
-                      ))}
+                      <SelectGroup>
+                        <SelectLabel>Versions</SelectLabel>
+                        {versionRows.map((v) => (
+                          <SelectItem key={v.version} value={String(v.version)}>
+                            v{v.version}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                      {aliasNames.length > 0 && (
+                        <SelectGroup>
+                          <SelectLabel>Aliases</SelectLabel>
+                          {aliasNames.map((a) => (
+                            <SelectItem key={a} value={`${ALIAS_PREFIX}${a}`}>
+                              {a} → v{aliases[a]}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
@@ -504,6 +626,7 @@ export function PlaygroundPage() {
                   variables={detectedVars}
                   values={variables}
                   onChange={setVariables}
+                  unfilled={unfilledNow}
                 />
               </div>
 
@@ -532,7 +655,7 @@ export function PlaygroundPage() {
               <CardTitle className="text-sm">// MODEL</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-[140px_1fr]">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-[170px_1fr]">
                 <div className="space-y-1">
                   <Label htmlFor="playground-provider" className="text-xs">
                     Provider
@@ -550,13 +673,20 @@ export function PlaygroundPage() {
                           title={
                             !p.has_key && p.env_var
                               ? `Set ${p.env_var} to enable`
-                              : undefined
+                              : p.requires_endpoint
+                                ? "No default endpoint: set one in the Connection panel"
+                                : undefined
                           }
                         >
                           {p.provider}
                           {!p.has_key && (
                             <span className="ml-1 text-[10px] text-muted-foreground">
                               (no key)
+                            </span>
+                          )}
+                          {p.has_key && p.requires_endpoint && (
+                            <span className="ml-1 text-[10px] text-muted-foreground">
+                              (needs endpoint)
                             </span>
                           )}
                         </SelectItem>
@@ -601,9 +731,14 @@ export function PlaygroundPage() {
                   <ChevronRight className="h-3 w-3" />
                 )}
                 Parameters
+                {ruleLimits(rule) && (
+                  <span className="text-amber-700 dark:text-amber-300">
+                    (limited for this model)
+                  </span>
+                )}
               </button>
               {paramsOpen && (
-                <ParametersPanel value={params} onChange={setParams} />
+                <ParametersPanel value={params} onChange={setParams} rule={rule} />
               )}
 
               <button
@@ -624,6 +759,8 @@ export function PlaygroundPage() {
                       .join(" + ")}
                     )
                   </span>
+                ) : endpointMissing ? (
+                  <span className="text-destructive">(endpoint needed)</span>
                 ) : (
                   "(default)"
                 )}
@@ -632,8 +769,8 @@ export function PlaygroundPage() {
                 <div className="space-y-3 rounded-md border bg-muted/20 p-3">
                   <p className="text-xs text-muted-foreground">
                     For models behind an AI gateway or proxy. Both apply to
-                    this run only — the token is never saved, logged, or sent
-                    anywhere but the call itself, and a page reload clears it.
+                    this run only. The token is never saved or kept with a
+                    run, and a page reload clears it.
                   </p>
                   <div className="space-y-1">
                     <Label htmlFor="playground-base-url" className="text-xs">
@@ -647,15 +784,19 @@ export function PlaygroundPage() {
                       autoComplete="off"
                       spellCheck={false}
                       className="font-mono text-xs"
-                      aria-invalid={!endpointValid}
+                      aria-invalid={!endpointValid || endpointMissing}
                     />
-                    {endpointValid ? (
-                      <p className="text-[11px] text-muted-foreground">
-                        Leave empty to use {provider}&apos;s default.
-                      </p>
-                    ) : (
+                    {!endpointValid ? (
                       <p className="text-[11px] text-destructive" role="alert">
                         The endpoint must be an http:// or https:// URL.
+                      </p>
+                    ) : endpointMissing ? (
+                      <p className="text-[11px] text-destructive">
+                        {provider} has no default endpoint. Enter its base URL.
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-muted-foreground">
+                        Leave empty to use {provider}&apos;s default.
                       </p>
                     )}
                   </div>
@@ -733,14 +874,40 @@ export function PlaygroundPage() {
             </CardContent>
           </Card>
 
+          {unfilledWarning && (
+            <div
+              className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-xs text-amber-900 dark:text-amber-200"
+              role="alert"
+              data-testid="unfilled-warning"
+            >
+              <span>
+                Not filled: <span className="font-mono">{varList(unfilledWarning)}</span>.
+                The model would see the placeholders as written.
+              </span>
+              <span className="flex gap-2">
+                <Button size="sm" variant="ghost" onClick={() => setUnfilledWarning(null)}>
+                  Cancel
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => handleRun(true)}>
+                  Run anyway
+                </Button>
+              </span>
+            </div>
+          )}
+
           <div className="flex items-center justify-end gap-2">
+            {endpointMissing && (
+              <span className="text-xs text-muted-foreground" data-testid="run-blocked-reason">
+                {provider} needs an Endpoint (Connection panel).
+              </span>
+            )}
             {running ? (
               <Button onClick={handleStop} variant="destructive">
                 <Square className="mr-1.5 h-3.5 w-3.5" />
                 Stop
               </Button>
             ) : (
-              <Button onClick={handleRun} disabled={!canRun}>
+              <Button onClick={() => handleRun()} disabled={!canRun}>
                 <Play className="mr-1.5 h-3.5 w-3.5" />
                 Run
               </Button>
@@ -763,6 +930,29 @@ export function PlaygroundPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
+              {shownMetadata?.truncated && (
+                <p
+                  className="flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-xs text-amber-900 dark:text-amber-200"
+                  data-testid="truncated-banner"
+                >
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  Cut off at max_tokens (
+                  {shownMetadata.max_tokens ?? activeRun?.request.parameters.max_tokens}
+                  ). Raise max_tokens to get the rest.
+                </p>
+              )}
+              {shownMetadata?.unfilled_variables &&
+                shownMetadata.unfilled_variables.length > 0 && (
+                  <p
+                    className="text-xs text-amber-700 dark:text-amber-300"
+                    data-testid="sent-unfilled"
+                  >
+                    Sent with unfilled variables:{" "}
+                    <span className="font-mono">
+                      {varList(shownMetadata.unfilled_variables)}
+                    </span>
+                  </p>
+                )}
               {errorInfo ? (
                 <RunErrorPanel info={errorInfo} />
               ) : (
@@ -775,15 +965,15 @@ export function PlaygroundPage() {
                 </pre>
               )}
 
-              {lastMetadata && (
+              {shownMetadata && (
                 <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                   <span className="font-mono">
-                    {lastMetadata.provider}/{lastMetadata.model}
+                    {shownMetadata.provider}/{shownMetadata.model}
                   </span>
-                  <span>{formatDurationMs(lastMetadata.latency_ms)}</span>
+                  <span>{formatDurationMs(shownMetadata.latency_ms)}</span>
                   <span className="tabular-nums">
-                    in {formatTokens(lastMetadata.tokens.input)} ·
-                    out {formatTokens(lastMetadata.tokens.output)}
+                    in {formatTokens(shownMetadata.tokens.input)} ·
+                    out {formatTokens(shownMetadata.tokens.output)}
                   </span>
                   <span
                     title={
@@ -794,23 +984,37 @@ export function PlaygroundPage() {
                     }
                     className="cursor-help border-b border-dotted border-muted-foreground/50"
                   >
-                    ~{formatCost(lastMetadata.cost_usd)} est.
+                    ~{formatCost(shownMetadata.cost_usd)} est.
                   </span>
+                  {shownMetadata.prompt && (
+                    <span
+                      data-testid="prompt-attribution"
+                      title={
+                        shownMetadata.prompt.attributed
+                          ? "Sent as stored: the run is in this prompt's lineage."
+                          : "The template was edited, so the run is not attributed to the version."
+                      }
+                    >
+                      {shownMetadata.prompt.attributed ? "attributed to " : "modified from "}
+                      <span className="font-mono">
+                        {shownMetadata.prompt.slug}
+                        {shownMetadata.prompt.version != null &&
+                          ` v${shownMetadata.prompt.version}`}
+                      </span>
+                    </span>
+                  )}
                   <PlaygroundTraceLink
-                    traceId={lastMetadata.trace_id}
-                    inUiDb={lastMetadata.trace_in_ui_db}
+                    traceId={shownMetadata.trace_id}
+                    inUiDb={shownMetadata.trace_in_ui_db}
                   />
                 </div>
               )}
 
               <div className="flex justify-end">
                 <SaveAsEvalDialog
-                  resolvedInput={resolvedPrompt}
-                  actualOutput={response}
-                  systemPrompt={systemPrompt || null}
-                  model={lastMetadata?.model ?? model}
-                  provider={lastMetadata?.provider ?? provider}
-                  disabled={!response || running}
+                  run={activeRun}
+                  formChanged={formChanged}
+                  disabled={running}
                 />
               </div>
             </CardContent>

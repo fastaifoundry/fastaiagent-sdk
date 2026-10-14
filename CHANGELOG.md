@@ -677,6 +677,144 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `claude-sonnet-4-6`.
   - Frontend: vitest 346 (was 332).
 
+### Playground, prompts, approvals, KB and traces (Phase 9)
+
+**Playground**
+- ⚠ **A failed call says why** (P8, D1). Every failure read `LLM call failed.`.
+  - The 502 detail (and `/stream`'s `error` event) now adds:
+    - `kind`: `auth`, `not_found`, `bad_request`, `rate_limited`, `provider_error`, `connection`, `timeout`, `config` or `internal`;
+    - `provider_status`;
+    - the provider's own message, after scrubbing every key, stripping request and org ids, and truncating to 400 characters;
+    - a `hint`.
+  - New `fastaiagent.ui.llm_errors`.
+  - Error codes, exception class names and the traceback are never shown, and the root span keeps the opaque message.
+  - `FASTAIAGENT_UI_PROVIDER_ERRORS=redacted` restores the opaque response.
+- **Sampling rules** (P7, D4). New `fastaiagent.llm.param_rules`.
+  - It records which models take `temperature` / `top_p` only at their default, not at all, or not both. These were measured against the live APIs on 2026-10-14: Claude opus-4-7/4-8 and the Claude 5 family; gpt-5, gpt-5-mini, gpt-5-nano and o4-mini; o1 and o3; and older Claude's "not both".
+  - `/models` returns the table as `sampling_rules`, and the parameter controls follow it.
+  - It never blocks a call; it feeds the failure hint.
+- ⚠ **Streams record how they ended** (P10f, D5).
+  - `StreamDone.finish_reason` is new, so a streamed span records `gen_ai.response.finish_reason`.
+  - `stream()` returns the provider's reason. It returned `stop` whatever happened.
+  - New `fastaiagent.llm.finish` (`normalize_finish_reason`, `is_truncated`).
+  - The Playground reports `finish_reason`, `truncated` and `max_tokens`, with a banner when a reply was cut off.
+- **Save as eval case saves the run** (P6). It sent the current form, so editing the prompt after a run paired the old output with a new input.
+  - The run's image is saved next to the dataset, and the case input is text plus image.
+  - `metadata` keeps the sampling parameters, the registry prompt and the trace id.
+- **Registry prompts are attributed** (P10c, D9). New `prompt_ref` on `/run` and `/stream`.
+  - **Unchanged template:** fragments are resolved and the LLM span carries `fastaiagent.prompt.name`/`version`, so the run shows in that version's lineage.
+  - **Edited template:** marked `modified`, with no attribution.
+- **Other Playground fixes:**
+  - Unfilled variables are named before the run and in the response (P10e).
+  - The root span is a readable run (P10g): `runner.type=playground`, with `playground.input`/`output` (payload keys) and the truncation, unfilled-variable and prompt-base attributes.
+  - The `custom` provider needs an endpoint before Run (P10i).
+  - History restores the whole run (P10d).
+
+**Prompts**
+- ⚠ `set_alias` refuses a version that does not exist (`PromptNotFoundError`). It stored the alias, and every `load(alias=...)` failed afterwards.
+- New `PromptRegistry.aliases()` and `delete_alias()`, and the UI routes `PUT`/`DELETE /api/prompts/{slug}/aliases/{alias}` (P10a). The editor shows alias chips, the Playground's version picker lists aliases, and `?alias=` is honoured.
+- ⚠ `diff()` is a unified diff with two lines of context (P10b). It listed every line of both versions. `/diff` also returns both templates, and the editor has a Compare versions panel.
+
+**Approvals: a resumed run is a run (A1, D7, D8)**
+- `Agent.resume`/`aresume` called the agent loop directly, so a resume opened no `agent.<name>` span. Its model calls were stored as orphan `llm.*` traces, the re-invoked tool ran outside any agent, and `result.trace_id` was `None`. The no-input `fork` had the same hole.
+- Every resume and fork now opens one root `agent.<name>` span, as a **new trace** linked by attributes:
+  - `agent.execution_id` and `agent.resumed_execution_id`;
+  - `agent.resume.node_id` and `agent.resume.kind`;
+  - with a decision: `agent.resume.approved`, `agent.resume.resolver` (from `metadata["resolver"]`, else `["approver"]`) and `agent.resume.reason` (a payload key).
+- A refused resume opens no span.
+- Every agent root now carries `agent.execution_id` and `agent.status`. Swarm and Supervisor roots carry their execution ids, and `Chain.resume` stamps `chain.execution_id`, `chain.resume.*`, `chain.output` and `chain.status`.
+- A Swarm or Supervisor resume nests its agent's span the way a fresh run does.
+- New additive `trace: bool = True` on `resume`, `aresume`, `fork` and `afork`.
+- `GET /api/executions/{id}` adds `pending_interrupt`, `checkpoints[].interrupt_state` (`pending`/`resolved`), `runs`, `resolution` and `final_output`. Every interrupted row looked like it was waiting forever.
+- `POST …/resume` keeps the top-level `reason` (it was dropped), records the signed-in user as the resolver when auth is on, and returns the resumed run's `trace_id`.
+- Trace export's `durable` now means checkpoints exist. It read "has an execution id", which every agent root has now.
+
+**Knowledge bases (D11, D12)**
+- ⚠ `LocalKB.add(text, metadata={"source": ...})` keeps that source on its chunks, so `delete_by_source(...)` removes them. Before, the empty `Document.source` overwrote it and nothing matched. A non-empty `Document.source` (file or directory ingest) still wins.
+- The UI's KB search uses the search type the KB supports:
+  - keyword when it stores no embeddings, so no embedder is loaded; hybrid otherwise;
+  - `search_type` selects one, and vector or hybrid on a keyword-only KB returns 400;
+  - a failed open returns 422, not 500.
+- UI KB searches are traced as `fastaiagent.source=kb_search`. They stay local, are kept out of production views, and are badged RETRIEVAL.
+
+**Traces (D13, D16)**
+- ⚠ `GET /api/traces` counts `total` after the agent, thread, runner, duration, cost and token filters. It counted before them, so the count and the pages disagreed.
+- New filters: `production_only` and `noted`. Rows have a `noted` column.
+- `runner_type` accepts `playground`, `retrieval`, `llm`, `tool`, `embedding`, `reranker`, `guardrail` and `evaluator`.
+- Trace detail adds `source` and `note`.
+- Trace notes are capped at 20,000 characters. An empty note deletes the note, and there is a new `DELETE /api/traces/{id}/notes`.
+- `curate_from_traces(filter="noted")` ignores blank notes.
+- The `source` filter matches a source stamped on any span of the trace, the same as Phase 4's production filter.
+
+**Local UI**
+- **Playground:**
+  - errors show the kind, status, scrubbed provider message, hint and correlation id;
+  - the Parameters panel follows the sampling rules for any typed model id;
+  - providers that need an endpoint are marked, and Run waits for one;
+  - unfilled variables are highlighted, with **Run anyway**;
+  - a truncation banner, and a chip on the history entry;
+  - history entries are snapshots that restore the whole run;
+  - Save as eval case uses the selected run's snapshot, and is disabled for a stopped run;
+  - the version picker lists aliases, honours `?alias=`, and shows attributed or modified.
+- **Prompts:**
+  - alias chips and an Aliases card to point or remove;
+  - `?alias=`/`?version=` links;
+  - a Compare versions panel with the coloured unified diff and both templates.
+- **Traces:**
+  - Playground and Retrieval badges and runner chips;
+  - a Source box and a Noted filter (`?production_only=true` maps to Hide experiments);
+  - a Note card;
+  - source in the detail subtitle;
+  - Playground input/output in the inspector;
+  - Open in Replay is disabled where there is no agent root.
+- **KB:** a search-type selector limited to what the KB supports, showing the type used.
+- **Executions and approvals:**
+  - an Outcome card (decision, resolver, reason, time, final output, each run's trace);
+  - the checkpoint timeline says waiting or resolved;
+  - the decision form sends `reason` and refreshes approvals, execution and traces, with a Resumed banner;
+  - a decided approval shows who decided and when.
+
+**Integrations**
+- **LangChain `with_guardrails` guards the whole Runnable surface.**
+  - `abatch`, `astream_events`, `stream_events`, `astream_log`, `transform`, `atransform`, `batch_as_completed` and `abatch_as_completed` passed straight through, unchecked and with no `agent.name`.
+  - Builders (`with_config`, `bind`, `with_retry`, `with_fallbacks`, `bind_tools`, `with_structured_output`, …) returned an **unguarded** runnable. They now return a guarded one with the same rails, and the guard sits outside retries and fallbacks.
+  - The guarded runnable is now a LangChain `Runnable`, so `|`, `pipe`, `pick`, `assign`, `map`, `as_tool`, sequences, parallels and LangGraph nodes accept it, and the guard stays at that step. These raised `TypeError` before.
+  - `stream`/`astream` check the whole streamed text. They checked the last chunk, which is an empty usage delta for a chat model.
+  - `astream_events` holds back the root end event until it passes.
+  - Where the output cannot be determined, the call fails closed with `GuardrailBlocked`: a filtered event stream, `version="v3"`, or an `astream_log` with no final output.
+  - `batch` no longer judges `return_exceptions` items.
+  - The legacy model call methods are guarded too. That is `generate`, `agenerate`, `generate_prompt` and `agenerate_prompt`, plus on 0.x `predict`, `apredict`, `predict_messages`, `apredict_messages`, `call_as_llm` and `__call__`. They called the model unguarded.
+    - Each prompt and each generation is checked, and the return type is unchanged.
+    - A prompt or result with no readable text fails closed.
+  - Streaming a chain with a guarded step no longer fails with a ContextVar `ValueError`.
+- **OpenAI and Anthropic auto-tracing of streamed calls.**
+  - With `stream=True`, the span stays open until the stream ends, with usage, content, tool calls and finish reason. A mid-stream failure ends it ERROR, with the exception recorded and credentials scrubbed.
+  - Before, the span closed when `create` returned, so a mid-stream failure never reached the trace.
+  - `AsyncOpenAI`, `AsyncAnthropic` and Anthropic's `messages.stream(...)` are now traced.
+
+**Recorded replay**
+- **Guardrail model calls no longer consume agent turns.** Under `with_determinism("recorded")`, every captured model response went into one queue, and a guardrail's judge call popped it like an agent turn:
+  - a judge present only in the rerun took the agent's turn (an input judge read the recorded tool-call turn as a failing verdict and blocked the rerun);
+  - one present only in the original handed its verdict to the agent, which answered with it.
+- Recordings are now split by role, by span ancestry (`guardrail.*`), or for pre-1.89 traces by the SDK guardrail request shape. A judge with no recording is a miss under `on_miss`. With tracing off, the rerun falls back to the single queue and warns. The Decisions queue is split the same way.
+
+**Tests**
+- New test files:
+  - `test_ui_playground_truth.py`: 47 tests, 45 of which fail on 1.88.0. The 2 that pass are controls (redacted mode, rules never block).
+  - `test_kb_source_and_search_type.py` and `test_ui_traces_notes_and_totals.py`: 61 tests, 55 of which fail on 1.88.0.
+  - `test_resume_run_span_sweep.py`: agent, chain, swarm, supervisor and routed supervisor × sync/async × approved/rejected × tracing on/off.
+  - `test_ui_execution_outcome.py`.
+  - `test_replay_recorded_roles.py`: 12 tests, 7 of which fail on 1.88.0. The rest are controls whose queue order happened to line up.
+  - `test_langchain_guarded_surface.py`: 84 tests on LangChain 1.x, 37 of which fail on 1.88.0 (34 on 0.x).
+  - `test_langchain_guarded_builders.py`: 370 tests, 287 of which fail on 1.88.0, on both 0.x and 1.x.
+  - `test_auto_tracer_streaming.py`: 44 tests, 39 of which fail on 1.88.0.
+  - `test_langchain_guarded_legacy.py`: 60 tests on 0.x, 42 of which fail on 1.88.0; 28 on 1.x, 18 of which fail. Methods a line lacks are skipped.
+  - Frontend: vitest 416 (was 346).
+- The completeness sweep's false "delegated" exemptions for `agent.resume`, `agent.fork` and `supervisor.resume` are now real cases. Across these files and the completeness sweep, 46 tests fail on 1.88.0.
+- Live checks:
+  - **Playground:** 20/20 on OpenAI `gpt-4o-mini`, OpenAI `gpt-5.1` and Anthropic `claude-haiku-4-5`. They cover truncation on `/run` and `/stream`, auth and not-found failures with no key anywhere, and the hints for `claude-haiku-5-5` temperature, `claude-opus-4-8` top_p, `claude-haiku-4-5` both, and `gpt-5-mini` temperature.
+  - **Resume:** `tests/e2e/test_resume_run_span_e2e.py` passes approved and rejected on `gpt-4o-mini`, `gpt-5.1` and `claude-haiku-4-5` (6/6).
+
 ## [1.88.0] - 2026-10-11 — the defects the boundary pages found
 
 Writing the seven "breaks at the boundaries" pages meant running every claim

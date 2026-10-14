@@ -31,6 +31,16 @@ describe("WorkflowBadge", () => {
     expect(screen.getByTitle("support-pipeline")).toBeInTheDocument();
   });
 
+  it("renders playground and retrieval roots as themselves (1.89.0)", () => {
+    // A Playground run and a KB search used to read as AGENT in the list.
+    for (const type of ["playground", "retrieval"] as const) {
+      const { unmount } = render(<WorkflowBadge type={type} />);
+      expect(screen.getByText(type)).toBeInTheDocument();
+      expect(screen.queryByText("agent")).toBeNull();
+      unmount();
+    }
+  });
+
   it("renders distinct badges for OpenInference root kinds", () => {
     // emit_guardrail / emit_evaluation can produce a trace ROOT span. Before
     // these entries existed they fell through to META.agent and a standalone

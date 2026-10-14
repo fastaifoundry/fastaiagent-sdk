@@ -303,21 +303,44 @@ class PromptRegistry:
         return self._storage.list_prompts()
 
     def diff(self, name: str, version_a: int, version_b: int) -> str:
-        """Show diff between two versions of a prompt."""
+        """A unified line diff between two versions' stored templates.
+
+        Since 1.89.0 a line diff (``difflib.unified_diff``): it printed both
+        whole templates as one ``-``/``+`` pair, so a one-word change in a long
+        prompt meant comparing two pages by eye. ``{{@fragment}}`` references
+        are compared as written.
+        """
+        import difflib
+
         a = self._storage.load_prompt(name, version=version_a)
         b = self._storage.load_prompt(name, version=version_b)
 
-        lines = [
-            f"--- {name} v{version_a}",
-            f"+++ {name} v{version_b}",
-        ]
-        if a.template != b.template:
-            lines.append(f"- {a.template}")
-            lines.append(f"+ {b.template}")
-        else:
-            lines.append("  (no template changes)")
-        return "\n".join(lines)
+        header = [f"--- {name} v{version_a}", f"+++ {name} v{version_b}"]
+        if a.template == b.template:
+            return "\n".join([*header, "  (no template changes)"])
+        body = list(
+            difflib.unified_diff(
+                a.template.splitlines(),
+                b.template.splitlines(),
+                lineterm="",
+                n=2,
+            )
+        )
+        # difflib's own ---/+++ lines name nothing; keep ours.
+        return "\n".join([*header, *body[2:]])
 
     def set_alias(self, name: str, version: int, alias: str) -> None:
-        """Set an alias (e.g., 'production') for a specific version."""
+        """Set an alias (e.g., 'production') for a specific version.
+
+        Raises :class:`PromptNotFoundError` when the prompt or the version does
+        not exist (1.89.0; an alias to a missing version used to be accepted).
+        """
         self._storage.set_alias(name, version, alias)
+
+    def aliases(self, name: str) -> dict[str, int]:
+        """``{alias: version}`` for a prompt (1.89.0)."""
+        return self._storage.list_aliases(name)
+
+    def delete_alias(self, name: str, alias: str) -> bool:
+        """Remove an alias; ``False`` when it did not exist (1.89.0)."""
+        return self._storage.delete_alias(name, alias)

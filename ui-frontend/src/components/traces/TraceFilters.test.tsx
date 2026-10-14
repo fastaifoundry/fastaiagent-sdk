@@ -120,6 +120,40 @@ describe("TraceFiltersBar (Sprint 3)", () => {
     );
   });
 
+  it("filters by source, with the SDK's sources suggested (1.89.0)", () => {
+    mockEmptyFetch();
+    const { container } = renderWithProviders(<HostedFilterBar />);
+    const input = screen.getByLabelText("Source");
+    const options = Array.from(
+      container.querySelectorAll("#trace-source-options option")
+    ).map((o) => o.getAttribute("value"));
+    expect(options).toEqual(expect.arrayContaining(["playground", "replay", "kb_search"]));
+
+    fireEvent.change(input, { target: { value: "kb_search" } });
+    expect(screen.getByTestId("filters-state").textContent).toContain('"source":"kb_search"');
+    fireEvent.change(input, { target: { value: "" } });
+    expect(screen.getByTestId("filters-state").textContent).toContain('"source":null');
+  });
+
+  it("the Noted chip keeps only traces with a note (1.89.0)", () => {
+    mockEmptyFetch();
+    renderWithProviders(<HostedFilterBar />);
+    const chip = screen.getByRole("button", { name: "Noted" });
+    fireEvent.click(chip);
+    expect(chip).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("filters-state").textContent).toContain('"noted":true');
+  });
+
+  it("offers Playground and Retrieval runner chips (1.89.0)", () => {
+    mockEmptyFetch();
+    renderWithProviders(<HostedFilterBar />);
+    fireEvent.click(screen.getByRole("button", { name: "Playground" }));
+    expect(screen.getByTestId("filters-state").textContent).toContain(
+      '"runner_type":"playground"'
+    );
+    expect(screen.getByRole("button", { name: "Retrieval" })).toBeInTheDocument();
+  });
+
   it("clears all active filters when the Clear button is pressed", () => {
     mockEmptyFetch();
     renderWithProviders(

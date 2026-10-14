@@ -94,7 +94,7 @@ Replies disagree as much as requests. The point of the parse step is that your c
 
 The rules:
 
-- **One finish-reason vocabulary**: `stop`, `tool_calls`, `length`. Anthropic's `end_turn` and `tool_use`, Gemini's `STOP`, are translated.
+- **One finish-reason vocabulary for the common cases**: `stop` and `tool_calls`. Anthropic's `end_turn` and `tool_use`, Gemini's `STOP`, are translated. Rarer reasons pass through as the provider names them (`length` from OpenAI, `max_tokens` from Anthropic, `content_filter`); `fastaiagent.llm.finish.normalize_finish_reason()` folds them into `stop`, `length`, `tool_calls`, `content_filter`, `refusal` or `other` (*since 1.89.0*).
 - **One pair of usage keys**: `prompt_tokens` and `completion_tokens`, plus `total_tokens`. Anthropic's `input_tokens` and Gemini's `promptTokenCount` are renamed. An OpenAI-compatible provider's extra fields are kept as they came.
 - **Tool-call arguments are a `dict`.** OpenAI sends them as a JSON string; the parser decodes it, so no caller parses JSON.
 - **`content` is `None` on a tool turn** that carries no text, on every provider.
@@ -184,6 +184,7 @@ The rules:
 - **A streamed call leaves the same `llm.*` span**, with `gen_ai.usage.*` on it. Before 1.68.0 it left none, so a streamed run's token total was zero on the plane.
 - **A failed stream ends ERROR, like a failed `complete()`** (*since 1.89.0*). Any exception, not only a provider error, records an `exception` event and sets the status to ERROR. Before, the span ended UNSET, so a trace whose only failure was a streamed call never showed as failed. A consumer that stops reading early, or a cancelled stream, is not a failure: its span ends without ERROR.
 - **Inside an agent, a tool loop looks like one stream.** `Agent.astream()` drops each turn's `StreamDone` and yields exactly one at the end, after the output guardrails and the memory write, so a consumer that sees it knows the run finished and was not blocked. A run that pauses for an approval ends with a `Paused` event instead. A Swarm's stream also ends with one, however many hand-offs it took.
+- **A stream knows how it ended** (*since 1.89.0*). `StreamDone.finish_reason` carries the provider's reason, the streamed span records `gen_ai.response.finish_reason`, and `stream()` returns it. Before, a streamed span had none and `stream()` reported `stop` whatever happened, so a reply cut off at `max_tokens` looked complete. `stop` and `tool_calls` are translated as for `complete()`; other reasons arrive as the provider names them (`length` from OpenAI, `max_tokens` from Anthropic). `fastaiagent.llm.finish.is_truncated(reason)` answers "was it cut off?" for any of them.
 - **`bedrock` has no streaming.**
 
 Proof 4 streams the same prompt it completes, on `gpt-4.1-mini`, and then streams a two-turn tool loop through an agent on the SDK's `FunctionModel`:
@@ -201,14 +202,14 @@ with a tool   : [('ToolCallStart', 'get_weather', None), ('ToolCallEnd', 'get_we
 
 ── both paths leave the same llm span
 {'gen_ai.request.model': 'gpt-4.1-mini', 'gen_ai.usage.input_tokens': 22, 'gen_ai.usage.output_tokens': 13, 'gen_ai.response.finish_reason': 'stop'}
-{'gen_ai.request.model': 'gpt-4.1-mini', 'gen_ai.usage.input_tokens': 22, 'gen_ai.usage.output_tokens': 13}
+{'gen_ai.request.model': 'gpt-4.1-mini', 'gen_ai.usage.input_tokens': 22, 'gen_ai.usage.output_tokens': 13, 'gen_ai.response.finish_reason': 'stop'}
 
 ── inside an agent, a tool loop is one stream (offline, FunctionModel)
 model turns: 2 · events in order: ['ToolCallStart', 'ToolCallEnd', 'Usage', 'TextDelta', 'Usage', 'StreamDone']
 StreamDone events in the agent stream: 1 · last event: StreamDone
 ```
 
-Thirteen deltas joined to the same five numbers `complete()` returned, with the same usage. The streamed span carries the same tokens; it does not carry `finish_reason`. And the agent's stream, two model turns long, carried no marker between the turns and exactly one at the end.
+Thirteen deltas joined to the same five numbers `complete()` returned, with the same usage. The streamed span carries the same tokens and the same `finish_reason`. And the agent's stream, two model turns long, carried no marker between the turns and exactly one at the end.
 
 !!! note "Changed in 1.88.0"
     Until 1.88.0 the agent stream ended with its last `Usage` and no `StreamDone` at all: the tool loop dropped the per-turn markers and nothing emitted the final one, so a consumer that waited for it waited forever.

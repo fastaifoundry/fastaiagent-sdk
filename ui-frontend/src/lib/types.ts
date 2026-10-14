@@ -5,14 +5,17 @@
 // Root-span classifications the trace list can show. The first four are
 // runners; "guardrail" / "evaluator" are OpenInference span kinds that reach
 // us as a trace root when a foreign runtime emits a standalone check or score
-// (fastaiagent.emit_guardrail / emit_evaluation).
+// (fastaiagent.emit_guardrail / emit_evaluation). "playground" is a Playground
+// run's root and "retrieval" a KB search's (1.89.0): both read as AGENT before.
 export type RunnerType =
   | "agent"
   | "chain"
   | "swarm"
   | "supervisor"
   | "guardrail"
-  | "evaluator";
+  | "evaluator"
+  | "playground"
+  | "retrieval";
 
 // The multi-step workflow topologies — a strict subset of RunnerType.
 export type WorkflowRunnerType = "chain" | "swarm" | "supervisor";
@@ -43,6 +46,14 @@ export interface TraceRow {
   // Whether this trace is starred (present in trace_favorites). Drives the
   // filled star in the Traces list.
   favorited?: boolean;
+  // Has a non-blank note: what curate_from_traces(filter="noted") reads (1.89.0).
+  noted?: boolean;
+}
+
+/** A trace's note (1.89.0). An empty note is no note: saving one deletes it. */
+export interface TraceNote {
+  text: string;
+  updated_at: string | null;
 }
 
 export interface TracesPage {
@@ -103,6 +114,9 @@ export interface TraceDetail {
   runner_type: RunnerType;
   runner_name: string | null;
   spans: SpanRow[];
+  /** `fastaiagent.source` (playground, replay, kb_search, eval…); null = production. */
+  source?: string | null;
+  note?: TraceNote | null;
 }
 
 export interface ReplayStep {
@@ -933,6 +947,8 @@ export interface PromptVersionDetail {
 export interface PromptDetail extends PromptVersionDetail {
   latest_version: number;
   registry_is_local: boolean;
+  /** `{alias: version}`, e.g. `{production: 3}` (1.89.0). */
+  aliases?: Record<string, number>;
 }
 
 export interface PromptVersionRow extends Omit<PromptVersionDetail, "version"> {
@@ -940,6 +956,27 @@ export interface PromptVersionRow extends Omit<PromptVersionDetail, "version"> {
   version: string;
   created_at: string | null;
   created_by: string | null;
+  /** Aliases pointing at this version (1.89.0). */
+  aliases?: string[];
+}
+
+/** One side of `GET /api/prompts/{slug}/diff`: the stored template. */
+export interface PromptDiffSide {
+  version: number;
+  template: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface PromptDiffResponse {
+  /** A unified diff ("--- slug vA" / "+++ slug vB"), or "(no template changes)". */
+  diff: string;
+  a: PromptDiffSide;
+  b: PromptDiffSide;
+}
+
+export interface PromptAliasesResponse {
+  slug: string;
+  aliases: Record<string, number>;
 }
 
 export interface PromptLineage {
@@ -1271,6 +1308,10 @@ export interface TraceFilters {
   framework?: string | null;
   /** 1.89.0: hide replay, Playground, learn and eval traces. */
   exclude_experiments?: boolean;
+  /** 1.89.0: `fastaiagent.source` on the trace (playground, replay, kb_search…). */
+  source?: string | null;
+  /** 1.89.0: only traces with a note. */
+  noted?: boolean;
   since?: string;
   until?: string;
   min_duration_ms?: number;
@@ -1452,7 +1493,14 @@ export interface KbDetail {
   size_bytes: number;
   last_updated: string;
   metadata_keys: string[];
+  /** 1.89.0: whether any chunk has an embedding. Without, only keyword search works. */
+  has_embeddings?: boolean;
+  search_types?: KbSearchType[];
+  /** The default search type: hybrid with embeddings, keyword without. */
+  search_type?: KbSearchType;
 }
+
+export type KbSearchType = "keyword" | "vector" | "hybrid";
 
 export interface KbDocumentRow {
   source: string;
@@ -1527,10 +1575,52 @@ export interface PlaygroundProviderInfo {
   models: string[];
   has_key: boolean;
   env_var: string | null;
+  /** 1.89.0: no default endpoint (custom, azure), so a run needs a base URL. */
+  requires_endpoint?: boolean;
+}
+
+/** How a model treats one sampling parameter (`fastaiagent.llm.param_rules`). */
+export type ParamSupport = "free" | "default_only" | "unsupported";
+
+export interface SamplingRule {
+  temperature: ParamSupport;
+  top_p: ParamSupport;
+  /** Temperature and top_p cannot both be sent. */
+  exclusive: boolean;
+  default_temperature: number;
+  default_top_p: number;
+  note: string;
+}
+
+/** One row of the server's rule table; the longest matching prefix wins. */
+export interface SamplingRuleRow extends SamplingRule {
+  provider: string;
+  model_prefix: string;
 }
 
 export interface PlaygroundModelsResponse {
   providers: PlaygroundProviderInfo[];
+  /** 1.89.0. Hints only: the server never blocks a call on them. */
+  sampling_rules?: SamplingRuleRow[];
+}
+
+/** The registry prompt a run was loaded from (1.89.0, P10c). */
+export interface PlaygroundPromptRef {
+  slug: string;
+  version?: number;
+  alias?: string;
+}
+
+/**
+ * What the server made of `prompt_ref`: `attributed` when the template was
+ * sent unchanged (the run shows in the prompt's lineage), `modified` when it
+ * was edited first.
+ */
+export interface PlaygroundPromptSummary {
+  slug: string;
+  version: number | null;
+  attributed: boolean;
+  modified: boolean;
 }
 
 /**
@@ -1559,9 +1649,23 @@ export interface PlaygroundRunRequest {
   base_url?: string;
   /** Per-request credential. Never persisted client- or server-side. */
   api_key?: string;
+  /** 1.89.0: set when the template came from the registry. */
+  prompt_ref?: PlaygroundPromptRef;
 }
 
-export interface PlaygroundRunResponse {
+/** Fields `/run` and the stream's `done` event both add in 1.89.0. */
+export interface PlaygroundRunOutcome {
+  /** The provider's raw stop reason (`stop`, `length`, `max_tokens`, …). */
+  finish_reason?: string | null;
+  /** The output was cut off at `max_tokens`. */
+  truncated?: boolean;
+  max_tokens?: number | null;
+  /** `{{vars}}` sent unfilled. */
+  unfilled_variables?: string[];
+  prompt?: PlaygroundPromptSummary | null;
+}
+
+export interface PlaygroundRunResponse extends PlaygroundRunOutcome {
   response: string;
   model: string;
   provider: string;
@@ -1574,10 +1678,9 @@ export interface PlaygroundRunResponse {
    * reads, so a link to it would 404. Absent (older server) = true.
    */
   trace_in_ui_db?: boolean;
-  finish_reason: string | null;
 }
 
-export interface PlaygroundDoneMetadata {
+export interface PlaygroundDoneMetadata extends PlaygroundRunOutcome {
   model: string;
   provider: string;
   latency_ms: number;
@@ -1610,6 +1713,13 @@ export interface SaveAsEvalRequest {
   system_prompt?: string;
   model?: string;
   provider?: string;
+  // 1.89.0: the run's own snapshot, not the current form.
+  image_b64?: string;
+  image_media_type?: string;
+  image_name?: string;
+  parameters?: Partial<PlaygroundParameters>;
+  prompt?: { slug: string; version: number | null };
+  trace_id?: string;
 }
 
 export interface SaveAsEvalResponse {
