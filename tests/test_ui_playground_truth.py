@@ -202,6 +202,45 @@ def test_a_refused_connection_names_the_endpoint(env: Any) -> None:
     assert f"127.0.0.1:{port}" in detail["hint"]
 
 
+def test_a_stream_dropped_mid_reply_is_a_connection_failure(env: Any, provider: Any) -> None:
+    """It fell through to 'internal' with no hint (httpx.RemoteProtocolError)."""
+    client, _ = env
+    provider.script(Reply(events=openai_stream("Hel", "lo", " there"), cut_after=2))
+    r = client.post("/api/playground/stream", json=_body(provider))
+    (_, detail) = [e for e in _sse_events(r.text) if e[0] == "error"][0]
+    assert detail["kind"] == "connection", detail
+    assert "closed the connection" in detail["hint"]
+
+
+def test_a_symlinked_db_path_is_the_same_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, provider: Any
+) -> None:
+    """`ui start --db` stores the resolved path; a symlinked one must still match."""
+    from fastaiagent._internal.config import reset_config
+    from fastaiagent.trace import otel
+    from fastaiagent.ui.server import build_app
+
+    real = tmp_path / "real"
+    real.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(real, target_is_directory=True)
+    monkeypatch.setenv("FASTAIAGENT_LOCAL_DB", str(real / "local.db"))
+    reset_config()
+    otel.reset()
+    app = build_app(db_path=str(link / "local.db"), auth_path=tmp_path / "a.json", no_auth=True)
+    provider.script(
+        Reply(body={"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]})
+    )
+    try:
+        with TestClient(app) as client:
+            r = client.post("/api/playground/run", json=_body(provider))
+        assert r.status_code == 200, r.text
+        assert r.json()["trace_in_ui_db"] is True
+    finally:
+        otel.reset()
+        reset_config()
+
+
 def test_redacted_mode_restores_the_opaque_message(
     env: Any, provider: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -490,6 +529,7 @@ def test_an_edited_prompt_is_marked_modified_not_attributed(env: Any, provider: 
         ),
     )
     assert r.json()["prompt"]["attributed"] is False and r.json()["prompt"]["modified"] is True
+    assert r.json()["prompt"]["version"] == v, "'modified from greeter' must name the version"
     root = next(s for s in _spans(db) if s["name"] == "playground.run")
     assert root["attributes"]["fastaiagent.playground.prompt.base"] == f"greeter@v{v}"
     llm = next(s for s in _spans(db) if s["name"].startswith("llm."))

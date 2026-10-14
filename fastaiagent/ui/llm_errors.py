@@ -163,6 +163,12 @@ def describe_llm_failure(
     for e in chain:
         if isinstance(e, httpx.TimeoutException):
             return LLMFailure("timeout", None, None, "The provider did not answer in time.")
+        if isinstance(e, httpx.RemoteProtocolError):
+            # The peer closed the connection mid-reply (a dropped stream).
+            where = base_url or "The provider"
+            return LLMFailure(
+                "connection", None, None, f"{where} closed the connection before the reply ended."
+            )
         if isinstance(e, (httpx.ConnectError, httpx.UnsupportedProtocol, httpx.NetworkError)):
             where = base_url or "the provider"
             hint = f"Could not connect to {where}."

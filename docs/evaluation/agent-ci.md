@@ -180,6 +180,8 @@ fastaiagent eval verdict: FAILED (recorded as gate_outcome=failed)
 Before 1.89.0 such a session exited 1 but recorded `passed`, so a connected
 plane counted the regression as passing evidence.
 
+![Three pytest sessions in the Local UI: the main baseline PASSED, a regression against it FAILED, and a session whose baseline does not exist INVALID](../ui/screenshots/189-ws1-03-eval-runs-gates.png)
+
 **A ratchet on one name.** You can publish and compare under the same name:
 
 ```bash

@@ -288,4 +288,32 @@ describe("PlaygroundPage", () => {
     expect(runButton()).toBeEnabled();
     expect(screen.queryByTestId("run-blocked-reason")).toBeNull();
   });
+
+  it("lets a provider with no server key be picked, and runs it with a token", async () => {
+    // It was a disabled option, so a gateway token could never be used with it.
+    // jsdom has no scrollIntoView, which the Radix select calls on open.
+    Element.prototype.scrollIntoView ??= () => {};
+    const bodies = stubServer({
+      providers: [
+        { provider: "ollama", models: ["llama3.2"], has_key: true, env_var: null, requires_endpoint: false },
+        { ...OPENAI, has_key: false },
+      ],
+    });
+    renderPage();
+    const trigger = await screen.findByRole("combobox", { name: "Provider" });
+    await waitFor(() => expect(trigger).toHaveTextContent("ollama"));
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    const option = await screen.findByRole("option", { name: /openai/ });
+    expect(option).not.toHaveAttribute("data-disabled");
+    fireEvent.click(option);
+    await waitFor(() => expect(trigger).toHaveTextContent("openai"));
+
+    fireEvent.change(template(), { target: { value: "hi" } });
+    expect(runButton()).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Token"), { target: { value: "gw-token" } });
+    expect(runButton()).toBeEnabled();
+    fireEvent.click(runButton());
+    await waitFor(() => expect(bodies["/api/playground/stream"]).toHaveLength(1));
+    expect(bodies["/api/playground/stream"][0]).toMatchObject({ provider: "openai", api_key: "gw-token" });
+  });
 });

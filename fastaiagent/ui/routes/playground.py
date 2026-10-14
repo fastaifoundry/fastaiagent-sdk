@@ -338,6 +338,7 @@ def _prompt_context(
     if not unchanged:
         return template, None, {
             "playground.prompt.base": f"{ref.slug}@v{version}",
+            "playground.prompt.version": version,
             "playground.prompt.modified": True,
         }
     return template, {"name": ref.slug, "version": version}, root
@@ -636,7 +637,9 @@ def _trace_in_ui_db(request: Request) -> bool:
     ui_db = _db_path(request)
     if not ui_db:
         return True
-    return os.path.abspath(get_config().resolved_trace_db_path) == os.path.abspath(ui_db)
+    # realpath, not abspath: `ui start --db` stores the resolved path, and a
+    # symlinked one (macOS /tmp, /var) must still compare equal.
+    return os.path.realpath(get_config().resolved_trace_db_path) == os.path.realpath(ui_db)
 
 
 @router.post("/stream")

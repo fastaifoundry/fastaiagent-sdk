@@ -86,6 +86,8 @@ collection card to re-read doc counts.
 
 ![Search playground](screenshots/18-kb-search.png)
 
+![A keyword-only KB: the selector offers keyword alone, the note says why, and the result reports search_type = keyword](screenshots/189-playground-06-kb-keyword-search.png)
+
 ### Lineage
 
 Scans the `spans` table for `retrieval.<kb_name>` spans (emitted

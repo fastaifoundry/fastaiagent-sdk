@@ -51,8 +51,10 @@ Two-panel layout. Left: configuration. Right: response.
 - **Resolved preview**: collapsible read-only block showing the exact final
   prompt the LLM will see.
 - **Provider + model**: populated from the `/api/playground/models`
-  endpoint. Providers without an API key in your environment are disabled
-  with a tooltip telling you which env var to set. The provider list covers
+  endpoint. A provider with no API key in the server's environment is
+  marked *(no key)*; picking it opens the Connection panel, and **Run**
+  waits for a token there (*since 1.89.0*; it used to be a disabled option,
+  so a gateway token could never be used with it). The provider list covers
   every built-in (`openai`, `anthropic`, `ollama`) plus every preset
   registered with `fastaiagent.llm.providers.register_provider` (12 ship
   in the box — Gemini, Groq, OpenRouter, DeepSeek, Together, Fireworks,
@@ -117,6 +119,8 @@ Two-panel layout. Left: configuration. Right: response.
     `length` from OpenAI, `max_tokens` from Anthropic) and `truncated`, and
     the LLM span records `gen_ai.response.finish_reason` on streamed calls
     too.
+
+    ![A reply cut off at max_tokens 12: the banner, the run marked modified from support-reply because the template was edited, and the truncated chip in History](screenshots/189-playground-04-truncated-modified.png)
 
     Cost is shown as `~$x est.` because it is computed from **public list
     prices** (`compute_cost_usd()`). It cannot know about negotiated or
@@ -388,10 +392,12 @@ provider at a different variable name with `env_var` in
 
 ## API key handling
 
-API keys are never entered in the UI. The Playground reads them from your
-environment (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`) the same way every
-other SDK call does. The provider dropdown disables options with no key
-configured and tells you which variable to set.
+Provider API keys are never entered in the UI. The Playground reads them
+from your environment (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`) the same way
+every other SDK call does. A provider with no key configured is marked
+*(no key)* and names the variable to set; it can still run with a one-off
+token from the Connection panel (see
+[Models behind an AI gateway](#models-behind-an-ai-gateway)).
 
 ## When a call fails
 
@@ -406,7 +412,7 @@ looked the same. Now the error says why:
 | `bad_request` | 400 / 422 | for a refused sampling setting, the rule (e.g. *accepts only its default temperature (1): turn Temperature off*) |
 | `rate_limited` | 429 | wait and run again |
 | `provider_error` | 5xx | the provider failed on its side |
-| `connection` | nothing answered | *Could not connect to {endpoint}*; for Ollama, LM Studio and vLLM, *is the server running?* |
+| `connection` | nothing answered, or the connection dropped mid-reply | *Could not connect to {endpoint}*; for Ollama, LM Studio and vLLM, *is the server running?*; for a dropped stream, *{endpoint} closed the connection before the reply ended* |
 | `timeout` | no answer in time | |
 | `config` | the SDK refused before calling (e.g. no endpoint) | |
 | `internal` | anything else | |
@@ -419,10 +425,14 @@ provider's error code, exception class names and the traceback are never
 shown. The correlation id is still there: the scrubbed traceback is in the
 **server log** under it.
 
+![A 401 from the provider: Authentication failed (HTTP 401), the provider's message with the echoed key replaced by [REDACTED], the hint and the correlation id](screenshots/189-playground-01-auth-error.png)
+
 Providers with no default endpoint (`custom`, `azure`) are marked
 *(needs endpoint)*; picking one opens the Connection panel, and **Run** stays
 disabled until you set one. The server refuses such a run with a 400 too (it
 used to fail at call time with a transport error).
+
+![The custom provider picked with no endpoint: the Connection panel asks for a base URL and Run is disabled](screenshots/189-playground-02-custom-needs-endpoint.png)
 
 To go back to the opaque message (a UI exposed to people who should not see
 provider responses), start the UI with
@@ -433,6 +443,8 @@ non-streamed one: the `playground.run` root ends with status ERROR, and the
 Traces page shows it as an error (*since 1.89.0*; it used to end UNSET, so the
 failure only showed in the response panel).
 
+![A stream dropped part-way: the Traces list filtered to Error shows the playground.run trace as ERROR, badged playground](screenshots/189-ws1-07-failed-stream-trace.png)
+
 **Invalid input is shown, not crashed on** (*fixed in 1.89.0*). A request the
 server rejects, such as `max_tokens` above 200,000 or an endpoint that isn't an
 `http(s)://` URL, shows each rejected field under the error. Before, any such
@@ -440,6 +452,8 @@ rejection replaced the whole page with an error screen and lost the form. The
 form also checks `max_tokens` and the endpoint as you type and disables **Run**
 until they are valid. The server never echoes a rejected token back in its
 error response.
+
+![max_tokens 0 and an ftp:// endpoint, each flagged as you type, with Run disabled and the form intact](screenshots/189-ws1-05-playground-invalid-input.png)
 
 ## When to use which
 

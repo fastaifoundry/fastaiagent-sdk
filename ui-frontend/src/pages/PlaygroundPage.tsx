@@ -203,8 +203,9 @@ export function PlaygroundPage() {
     setProvider(next);
     const info = providers.find((p) => p.provider === next);
     setModel(info?.models[0] ?? "");
-    // custom/azure have no default endpoint: open where it is set (P10i).
-    if (info?.requires_endpoint) setConnOpen(true);
+    // custom/azure have no default endpoint, and a provider with no server
+    // key needs a token: open the panel where either is set (P10i).
+    if (info?.requires_endpoint || !info?.has_key) setConnOpen(true);
   };
 
   // First time we get models, default to a provider that has a key.
@@ -669,10 +670,9 @@ export function PlaygroundPage() {
                         <SelectItem
                           key={p.provider}
                           value={p.provider}
-                          disabled={!p.has_key}
                           title={
-                            !p.has_key && p.env_var
-                              ? `Set ${p.env_var} to enable`
+                            !p.has_key
+                              ? `No server key${p.env_var ? ` (${p.env_var})` : ""}: enter a token in the Connection panel`
                               : p.requires_endpoint
                                 ? "No default endpoint: set one in the Connection panel"
                                 : undefined
@@ -684,7 +684,7 @@ export function PlaygroundPage() {
                               (no key)
                             </span>
                           )}
-                          {p.has_key && p.requires_endpoint && (
+                          {p.requires_endpoint && (
                             <span className="ml-1 text-[10px] text-muted-foreground">
                               (needs endpoint)
                             </span>

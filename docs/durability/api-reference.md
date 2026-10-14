@@ -291,6 +291,12 @@ On a connected plane, a paused-then-resumed run is therefore two traces, both
 rooted at `agent.<name>`, instead of one agent trace plus agent-less `llm.*`
 traces.
 
+In the Local UI, approving from `/approvals/{execution_id}` lands on the
+execution page, whose **Outcome** card shows the decision, the reason, the
+final output and both runs, each linked to its trace:
+
+![An approval resolved in the UI: Resumed (approved), the Outcome card with the reason, the final output and the paused and resumed runs, and the timeline's interrupt marked resolved](../ui/screenshots/189-playground-09-execution-outcome.png)
+
 ## `Agent.afork`
 
 ```python

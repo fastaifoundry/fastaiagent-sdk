@@ -37,6 +37,8 @@ recomputed when the link is opened.
 
 ![Guardrail events list with type / position / FP filters](screenshots/sprint2-6-guardrails-list-filters.png)
 
+![Rows recorded with FASTAIAGENT_UI_ENABLED unset: a blocked input, a mask that rewrote, a warn, and an observe-only mask (masked · observe-only), passes hidden](screenshots/189-guardrail-01-events-list.png)
+
 ## Three panels
 
 When you click a row on the Guardrails list (or follow the badge from
@@ -90,6 +92,8 @@ unchanged: same attributes, same status (ERROR for any verdict that is not a
 pass). The span tree colours a guardrail by what it did, not by that status.
 
 Rows from before 1.89.0 have no effect and keep their old meaning.
+
+![A blocked input: exactly the text the rule judged, block → blocked → blocked, Run stopped here, and the regex pattern from the rule as it ran](screenshots/189-guardrail-02-blocked-event.png)
 
 ![Guardrail event detail (filtered) with before/after diff](screenshots/sprint2-8-guardrail-detail-filtered.png)
 

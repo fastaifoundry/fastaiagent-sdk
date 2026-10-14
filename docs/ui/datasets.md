@@ -65,6 +65,8 @@ and a header full of bulk affordances:
     same scorer twice, no target chosen, an image a row points at that cannot
     be loaded) is a `422` that says why, and nothing runs. Judge-backed runs
     share the Playground's per-minute LLM rate limit. Runs are synchronous.
+
+    ![Run eval on a registered gpt-4o-mini agent with contains and an llm_judge: the warnings say one row has no expected_output (n/a there) and about five judge calls, and the result counts cases and checks](screenshots/189-eval-07-run-eval-result.png)
 - **Fields the editor does not show are kept** (*1.89.0*). A row's
   `expected_trajectory`, `context`, `source_trace_id` and any other field
   appear read-only under "Other fields". Before 1.89.0 adding, editing or

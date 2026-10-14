@@ -307,6 +307,8 @@ highlighting where they diverged. Tool calls whose outcome changed are
 listed with what the rerun did with each tool. A rerun that blocked a tool
 call says so: its answer does not show that call's effect.
 
+![A recorded rerun with refund_order blocked: the tool chip, the blocked-call warning, the local-only note and the outputs side by side](screenshots/189-replay-05-rerun-blocked.png)
+
 A rerun's trace is marked `fastaiagent.source = "replay"`. It is **not
 exported** and **not counted** in Analytics, Overview or Agents, and its Trace
 Detail page links back to the trace it replays. A **Save as regression test**
@@ -353,6 +355,10 @@ allowed rate, why a run was invalid, the baseline with a compare link, and the
 git commit and branch. A **Scorer configuration** card lists each scorer's
 settings (a judge's criteria, scale, threshold, provider and model; never a
 key), and a **Hardening** card shows a saved `harden()` report.
+
+![A live gpt-4o-mini run: 5/5 cases, checks 9/9 · 1 n/a, agent and eval cost priced, contains 4/4 · 1 n/a, and the Agent CI gate with its threshold](screenshots/189-eval-02-run-cases-first.png)
+
+![The same agent with a judge model that does not exist: every case errored, helpfulness 0/0 · 5 errored, and the gate INVALID with the reason](screenshots/189-eval-04-judge-outage-invalid.png)
 
 Each case row expands to show the input, a side-by-side **expected vs actual**
 diff (an "Identical" panel when they match), images and PDFs as thumbnails,
@@ -648,6 +654,8 @@ per-node cost breakdown.
     [Tracing → provenance](../tracing/index.md#where-a-trace-came-from-provenance).
 
 ![Analytics](screenshots/13-analytics.png)
+
+![Analytics with one replay rerun left out: "Excludes 1 experiment trace (replay 1)" and the Include experiments toggle](screenshots/189-replay-03-analytics-excludes.png)
 
 ### Thread view
 

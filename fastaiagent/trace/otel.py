@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
@@ -11,6 +12,9 @@ if TYPE_CHECKING:
     from opentelemetry.sdk.trace.export import SpanExporter
 
 _provider: Any = None
+# Threads that asked for the provider at once each built their own (1.89.0):
+# exporters attach to one, so the others' spans were never exported.
+_provider_lock = threading.Lock()
 
 # Whether the SDK's provider should try to become OTel's *global* provider.
 # Turned off by ``connect(export_traces=False)`` so a foreign runtime that owns
@@ -64,23 +68,26 @@ def get_tracer_provider() -> Any:
     then builds the real provider on the next call, with no ``reset()`` needed.
     """
     global _provider
-    if _provider is None:
-        if not tracing_enabled():
-            from opentelemetry.trace import NoOpTracerProvider
+    if _provider is not None:
+        return _provider
+    if not tracing_enabled():
+        from opentelemetry.trace import NoOpTracerProvider
 
-            return NoOpTracerProvider()
+        return NoOpTracerProvider()
 
-        from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace import TracerProvider
 
-        from fastaiagent.trace.storage import LocalStorageProcessor
+    from fastaiagent.trace.storage import LocalStorageProcessor
 
-        _provider = TracerProvider()
-        _provider.add_span_processor(LocalStorageProcessor())
+    with _provider_lock:
+        if _provider is None:
+            provider: Any = TracerProvider()
+            provider.add_span_processor(LocalStorageProcessor())
+            if _claim_global:
+                from opentelemetry import trace as otel_trace
 
-        if _claim_global:
-            from opentelemetry import trace as otel_trace
-
-            otel_trace.set_tracer_provider(_provider)
+                otel_trace.set_tracer_provider(provider)
+            _provider = provider
     return _provider
 
 
@@ -300,10 +307,11 @@ def add_exporter(exporter: SpanExporter) -> None:
 def reset() -> None:
     """Reset the tracer provider (for testing)."""
     global _provider, _claim_global
-    _claim_global = True
-    if _provider is not None:
-        try:
-            _provider.shutdown()
-        except Exception:
-            logger.debug("Failed to shutdown tracer provider", exc_info=True)
-    _provider = None
+    with _provider_lock:
+        _claim_global = True
+        if _provider is not None:
+            try:
+                _provider.shutdown()
+            except Exception:
+                logger.debug("Failed to shutdown tracer provider", exc_info=True)
+        _provider = None

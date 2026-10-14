@@ -91,6 +91,13 @@ Fragments are resolved at load time — the returned prompt has fragments replac
 - **Single update point**: Change the "tone" fragment once, every prompt that uses it picks up the change on next load
 - **Composability**: Mix and match fragments for different agent personas
 
+The Local UI's prompt editor edits the stored template, so `{{@tone}}` stays a
+live reference when you save a new version (*since 1.89.0*; it used to save the
+resolved text, freezing a copy of every fragment). The new version keeps the
+edited version's metadata and is labelled `ui`.
+
+![The prompt editor holding {{@tone}} as written, with the Fragments (kept as live references) line under the template](../ui/screenshots/189-ws1-01-prompt-editor-raw.png)
+
 ## Versioning
 
 Every `register()` call with the same name creates a new version. Versions are immutable — once created, they never change.
@@ -197,6 +204,8 @@ changed line in a long prompt was hard to find. The Local UI's **Compare
 versions** panel shows the same diff, coloured, next to both templates
 (`GET /api/prompts/{slug}/diff?a=1&b=2` returns `diff` plus `a` and `b` with
 each version's template).
+
+![The prompt editor: production and staging chips on v1 and v2, the Aliases card, and Compare versions showing the v1 → v2 diff above both templates](../ui/screenshots/189-playground-05-prompt-aliases-compare.png)
 
 ## Listing Prompts
 

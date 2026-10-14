@@ -5,10 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.89.0] — unreleased
+## [1.89.0] - 2026-10-14 — numbers, verdicts and traces you can trust
 
-<!-- Draft, built phase by phase on fix/1.89.0-audit-fixes; Phase 10 finalises it
-     and moves the ⚠ items to the top. -->
+The fixes from the 2026-10 audit of the Local UI, evals, guardrails, replay and
+the Playground, plus a credential leak (S1) and LangChain 1.x support. No wire
+change: every new attribute is an additive key on the open span envelope, and
+the guardrail span is pinned byte-for-byte to 1.88.0. `local.db` migrates v24 →
+v26 on first open (additive, nullable columns; older SDKs keep writing to it).
+What the Enterprise plane sees differently is listed in the phase sections.
+
+### Upgrading from 1.88 — behaviour changes at a glance
+
+Each line is detailed in its phase section below.
+
+- **Security.**
+  - A guardrail's `llm` config no longer carries credentials anywhere (S1).
+  - Provider error text is scrubbed of keys (P9).
+  - Gemini sends its key in a header, not the URL.
+- **Agent CI and eval export.**
+  - A pytest gate records the verdict it enforces (E1).
+  - A run is never its own baseline (E2).
+  - Only gated runs are exported (E1b).
+  - `curate --filter guardrail` finds the runs where a rule fired (G8).
+- **LangChain.** The `[langchain]` extra accepts LangChain 1.x.
+  - `with_guardrails` now guards every call path, builder and composition; they failed open.
+  - Output that can't be checked fails closed.
+- **Replay.**
+  - A rerun runs only the tools you give it.
+  - A rerun and a Playground call are local experiments: not exported, and not counted in Analytics.
+  - In recorded mode, a guardrail judge never takes the agent's turn.
+- **Guardrails.**
+  - Events are recorded whenever tracing is on.
+  - A row says what the check did (`effect`).
+  - A trace fails only when its root span fails.
+- **Evals.**
+  - A check that could not run is `errored`, and one that doesn't apply is `skipped`; neither is a fail or a pass.
+  - A case has one outcome.
+  - New gate semantics, with **invalid** (exit 3) for errored or unmeasured gated scorers.
+  - Eval traces are labelled `eval.score`.
+  - The UI's Run eval runs a real agent; echo must be asked for.
+- **Playground and prompts.**
+  - Failures say why.
+  - Streams report how they ended, so truncation shows, and `stream()` returns the provider's finish reason.
+  - `set_alias` refuses a missing version.
+  - `diff()` is a unified diff.
+- **Approvals.** Each resume or fork is its own agent-rooted trace, linked by `agent.execution_id`, which every agent root now carries.
+- **KB and traces.**
+  - `LocalKB.add(metadata={"source": …})` keeps the source.
+  - `GET /api/traces` counts `total` after every filter.
 
 ### Security (Phase 1)
 
@@ -814,6 +858,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Live checks:
   - **Playground:** 20/20 on OpenAI `gpt-4o-mini`, OpenAI `gpt-5.1` and Anthropic `claude-haiku-4-5`. They cover truncation on `/run` and `/stream`, auth and not-found failures with no key anywhere, and the hints for `claude-haiku-5-5` temperature, `claude-opus-4-8` top_p, `claude-haiku-4-5` both, and `gpt-5-mini` temperature.
   - **Resume:** `tests/e2e/test_resume_run_span_e2e.py` passes approved and rejected on `gpt-4o-mini`, `gpt-5.1` and `claude-haiku-4-5` (6/6).
+
+### Found at the release gates (Phase 10)
+
+- **One tracer provider per process.** Threads that asked for the provider at the same moment each built their own: 8 threads gave 8 providers on 1.88.0. Every provider stored spans locally, but an exporter (the plane's included) attaches to one, so the other threads' spans were never exported, and OTel logged "Overriding of current TracerProvider is not allowed". `evaluate(concurrency>1)` hit it on its first call. The provider is now created under a lock.
+- **Playground:**
+  - `ui start --db` through a symlinked path (any macOS `/tmp` or `/var` path) said the trace was "written to another store" and hid the trace link; the paths are now compared resolved.
+  - A stream that drops mid-reply is a `connection` failure with a hint. It was `internal` with none.
+  - "modified from" names the version (`support-reply v1`).
+  - A provider with no server key can be picked and run with a Connection token. It was a disabled option.
+- **Tests:**
+  - `test_tracer_provider_concurrency.py`: 7 tests, all failing on the Phase 9 commit (16 threads gave 16 providers, and an exporter lost 15 of 16 spans).
+  - Three new Playground cases and one vitest, each failing on the Phase 9 commit.
+- **Playwright:** five new capture scripts with assertions, all passing (208 assertions in total, and no console errors):
+  - `capture-ws1-integrity.sh`
+  - `capture-replay-isolation.sh`
+  - `capture-guardrail-truth-screenshots.sh`
+  - `capture-eval-ui-screenshots.sh`
+  - `capture-playground-fixes-screenshots.sh`
+
+  The docs screenshots are regenerated, and 34 new `189-*` shots are added.
 
 ## [1.88.0] - 2026-10-11 — the defects the boundary pages found
 

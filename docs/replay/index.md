@@ -46,9 +46,12 @@ modifications** dialog (renamed in v1.14.1 from "Rerun from this
 step", which overpromised partial replay). The Tool tab now requires
 a **tool name** alongside the JSON response so the override is wired
 through `with_tool_override` for real — pre-v1.14.1 it was silently
-dropped for agent reruns.
+dropped for agent reruns. Since 1.89.0, when the trace recorded the agent's
+tools, the Tool tab lists each one with **Block / Stub / Live** instead; every
+tool starts blocked, and the name field is only the fallback for a trace with
+no tool list.
 
-![Fork-and-rerun dialog with tool-name + JSON response fields and the corrected "Rerun with modifications" button](../ui/screenshots/0_3_audit-rerun-dialog.png)
+![Fork-and-rerun dialog: the Tools tab lists lookup_order as blocked, Live disabled because the UI process has no implementation, and the "Rerun with modifications" button](../ui/screenshots/0_3_audit-rerun-dialog.png)
 
 ## Where Do Trace IDs Come From?
 
