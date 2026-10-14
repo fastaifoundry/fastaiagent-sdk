@@ -16,7 +16,7 @@ class ExactMatch(Scorer):
         self, input: str, output: str, expected: str | None = None, **kw: Any
     ) -> ScorerResult:
         if expected is None:
-            return ScorerResult(score=0.0, passed=False, reason="No expected output")
+            return ScorerResult.not_applicable("No expected output")
         passed = output.strip() == expected.strip()
         return ScorerResult(score=1.0 if passed else 0.0, passed=passed)
 
@@ -28,7 +28,7 @@ class Contains(Scorer):
         self, input: str, output: str, expected: str | None = None, **kw: Any
     ) -> ScorerResult:
         if expected is None:
-            return ScorerResult(score=0.0, passed=False, reason="No expected output")
+            return ScorerResult.not_applicable("No expected output")
         passed = expected.lower() in output.lower()
         return ScorerResult(score=1.0 if passed else 0.0, passed=passed)
 
@@ -97,7 +97,10 @@ class Latency(Scorer):
     def score(
         self, input: str, output: str, expected: str | None = None, **kw: Any
     ) -> ScorerResult:
-        latency_ms = kw.get("latency_ms", 0)
+        latency_ms = kw.get("latency_ms")
+        if latency_ms is None:
+            # Called outside evaluate() with no timing: 0ms was a free pass.
+            return ScorerResult.not_applicable("No latency_ms supplied")
         passed = latency_ms <= self.max_ms
         return ScorerResult(
             score=1.0 if passed else 0.0,
@@ -120,7 +123,9 @@ class CostUnder(Scorer):
     ollama model, a private fine-tune, a bedrock/azure deployment id) yields
     ``cost_known=False``. Certifying that run as under budget would be the
     §2.4 shape the guardrail sweep exists to prevent: a check that could not
-    check anything returning a clean verdict. It fails, and says why.
+    check anything returning a clean verdict. It is **errored** (1.89.0; it
+    was a fail before the state existed), and says why. No ``cost`` at all
+    (a direct call outside ``evaluate()``) is skipped, not "$0.0000".
     """
 
     name = "cost_under"
@@ -131,22 +136,20 @@ class CostUnder(Scorer):
     def score(
         self, input: str, output: str, expected: str | None = None, **kw: Any
     ) -> ScorerResult:
-        cost = kw.get("cost", 0.0)
+        cost = kw.get("cost")
         # Absent entirely -> an old caller passing ``cost=`` by hand, which has
         # always meant "here is the cost". Present and False -> the run really
         # could not be priced.
         cost_known = kw.get("cost_known", True)
         if not cost_known:
-            return ScorerResult(
-                score=0.0,
-                passed=False,
-                reason=(
-                    f"Cost: unknown (max: ${self.max_usd:.4f}) — no rate for this "
-                    "model, so the run could not be priced. An unpriced run is "
-                    "not a free one; set a rate via set_rate_overrides() or the "
-                    "models.json 'pricing' block to gate on it."
-                ),
+            return ScorerResult.error(
+                f"Cost: unknown (max: ${self.max_usd:.4f}) — no rate for this "
+                "model, so the run could not be priced. An unpriced run is "
+                "not a free one; set a rate via set_rate_overrides() or the "
+                "models.json 'pricing' block to gate on it."
             )
+        if cost is None:
+            return ScorerResult.not_applicable("No cost supplied")
         passed = cost <= self.max_usd
         return ScorerResult(
             score=1.0 if passed else 0.0,

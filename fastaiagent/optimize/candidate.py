@@ -116,10 +116,14 @@ class CandidateScore:
         errored = int(getattr(results, "errored_count", 0) or 0)
         per_metric: dict[str, float] = {}
         passed = total = 0
-        for name, rlist in results.scores.items():
-            n_metric = len(rlist) + errored
-            if not n_metric:
+        for name, all_results in results.scores.items():
+            # A verdict that does not apply (no expected output, no trajectory)
+            # is not a 0 (1.89.0). An errored one still is: selection must not
+            # reward a candidate whose judge could not run on it.
+            rlist = [r for r in all_results if not r.skipped]
+            if not rlist:
                 continue
+            n_metric = len(rlist) + errored
             per_metric[name] = round(sum(r.score for r in rlist) / n_metric, 4)
             passed += sum(1 for r in rlist if r.passed)
             total += n_metric

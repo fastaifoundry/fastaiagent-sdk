@@ -1,6 +1,7 @@
 """CLI commands for evaluation."""
 
 from pathlib import Path
+from typing import Any
 
 import typer
 from rich.console import Console
@@ -67,6 +68,7 @@ def run_eval(
             concurrency=concurrency,
             persist=not no_persist and db is None,
             run_name=run_name,
+            run_kind="cli",
         )
         if not no_persist and db is not None:
             results.run_id = results.persist_local(
@@ -101,11 +103,33 @@ def run_eval(
     table.add_column("avg_score", justify="right")
     table.add_column("pass_rate", justify="right")
     table.add_column("n", justify="right")
+    table.add_column("errored", justify="right")
+    table.add_column("n/a", justify="right")
+
+    def fmt(v: float | None) -> str:
+        return "-" if v is None else f"{v:.4f}"
+
     for m in scorecard.metrics:
-        table.add_row(m.name, f"{m.avg_score:.4f}", f"{m.pass_rate:.4f}", str(m.n))
-    table.add_row("overall", "-", f"{scorecard.overall_pass_rate:.4f}", str(report.scored))
-    if report.errored:
-        table.add_row("[yellow]errored (unscored)[/yellow]", "-", "-", str(report.errored))
+        table.add_row(
+            m.name, fmt(m.avg_score), fmt(m.pass_rate), str(m.n), str(m.errored), str(m.skipped)
+        )
+    table.add_row(
+        "overall (checks)",
+        "-",
+        fmt(scorecard.overall_pass_rate),
+        str(sum(m.n for m in scorecard.metrics)),
+        str(scorecard.checks_errored),
+        str(scorecard.checks_skipped),
+    )
+    if scorecard.cases:
+        table.add_row(
+            "cases",
+            "-",
+            fmt(scorecard.cases.get("pass_rate")),
+            str(scorecard.cases.get("passed", 0) + scorecard.cases.get("failed", 0)),
+            str(scorecard.cases.get("errored", 0)),
+            "-",
+        )
     console.print(table)
     for line in report.describe():
         console.print(f"[dim]{line}[/dim]")
@@ -125,6 +149,7 @@ def run_eval(
                 "errored": report.errored,
                 "error_rate": report.error_rate,
                 "max_error_rate": report.max_error_rate,
+                "invalid_reasons": report.invalid_reasons,
             },
         }
         Path(json_out).parent.mkdir(parents=True, exist_ok=True)
@@ -169,12 +194,23 @@ def compare_evals(
     table = Table(title="Eval run comparison")
     table.add_column("metric")
     table.add_column("value", justify="right")
-    table.add_row("baseline pass_rate", f"{comparison.run_a.get('pass_rate') or 0.0:.4f}")
-    table.add_row("current pass_rate", f"{comparison.run_b.get('pass_rate') or 0.0:.4f}")
+
+    def rate(value: Any) -> str:
+        return f"{value:.4f}" if isinstance(value, (int, float)) else "n/a"
+
+    table.add_row("baseline pass_rate (checks)", rate(comparison.run_a.get("pass_rate")))
+    table.add_row("current pass_rate (checks)", rate(comparison.run_b.get("pass_rate")))
     table.add_row("delta", f"{comparison.pass_rate_delta:+.4f}")
+    if comparison.case_pass_rate_delta is not None:
+        table.add_row("cases pass_rate delta", f"{comparison.case_pass_rate_delta:+.4f}")
     table.add_row("regressed cases", str(len(comparison.regressed)))
     table.add_row("improved cases", str(len(comparison.improved)))
     table.add_row("unchanged pass/fail", f"{comparison.unchanged_pass}/{comparison.unchanged_fail}")
+    table.add_row("errored (either run)", str(len(comparison.errored)))
+    table.add_row(
+        "only in baseline / current", f"{len(comparison.only_in_a)}/{len(comparison.only_in_b)}"
+    )
+    table.add_row("score drift", str(len(comparison.drifted)))
     console.print(table)
     for line in comparison.describe():
         console.print(f"[dim]{line}[/dim]")

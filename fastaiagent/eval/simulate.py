@@ -86,14 +86,21 @@ class CriterionVerdict:
     kind: str  # "success" | "failure"
     passed: bool  # True == the desired state holds (criterion met / failure absent)
     reason: str | None = None
+    errored: bool = False
+    """The judge could not run on this criterion (1.89.0). ``passed`` is then
+    False whatever the kind: an errored *failure* criterion used to be inverted
+    into "the failure did not happen", a pass."""
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "criterion": self.criterion,
             "kind": self.kind,
             "passed": self.passed,
             "reason": self.reason,
         }
+        if self.errored:
+            out["errored"] = True
+        return out
 
 
 class SimulatedUser:
@@ -227,7 +234,7 @@ class SimulationResults:
             if r.error:
                 lines.append(f"    ! {r.error}")
             for v in r.verdicts:
-                mark = "✓" if v.passed else "✗"
+                mark = "!" if v.errored else ("✓" if v.passed else "✗")
                 lines.append(f"    {mark} ({v.kind}) {v.criterion}")
         lines.append("-" * 50)
         lines.append(
@@ -236,7 +243,7 @@ class SimulationResults:
         if self.errored_count:
             lines.append(
                 f"errored: {self.errored_count}/{len(self.results)} scenarios did not "
-                f"finish (not judged, counted as not passed)"
+                f"finish or could not be judged (no verdict, counted as not passed)"
             )
         return "\n".join(lines)
 
@@ -271,6 +278,7 @@ class SimulationResults:
         """
         from fastaiagent._internal.config import get_config
         from fastaiagent._internal.project import safe_get_project_id
+        from fastaiagent.eval.results import _without_credentials
         from fastaiagent.ui.db import init_local_db
 
         resolved = Path(db_path) if db_path is not None else Path(get_config().local_db_path)
@@ -297,7 +305,9 @@ class SimulationResults:
                     self.pass_rate,
                     timestamp,
                     timestamp,
-                    json.dumps({}),
+                    # D15 (1.89.0): the denominator stays every scenario; the
+                    # errored ones are counted here so the UI can show them.
+                    json.dumps({"errored_count": self.errored_count}),
                     pid,
                 ),
             )
@@ -320,11 +330,16 @@ class SimulationResults:
                                 "failure": r.failure_criteria,
                             }
                         ),
-                        json.dumps([v.to_dict() for v in r.verdicts]),
+                        json.dumps(
+                            [
+                                {**v.to_dict(), "reason": _without_credentials(v.reason)}
+                                for v in r.verdicts
+                            ]
+                        ),
                         json.dumps([t.to_dict() for t in r.transcript]),
                         r.trace_id,
                         pid,
-                        r.error,
+                        _without_credentials(r.error),
                     ),
                 )
         finally:
@@ -452,10 +467,14 @@ async def _judge_transcript(
         res = await j.ascore(input=scenario.name, output=transcript_text)
         verdicts.append(
             CriterionVerdict(
-                criterion=criterion, kind="success", passed=res.passed, reason=res.reason
+                criterion=criterion,
+                kind="success",
+                passed=res.passed and not res.errored,
+                reason=res.reason,
+                errored=res.errored,
             )
         )
-        if not res.passed:
+        if not res.passed or res.errored:
             overall = False
 
     for criterion in scenario.failure_criteria:
@@ -476,6 +495,19 @@ async def _judge_transcript(
             )
             j = LLMJudge(criteria=wrapped, llm=judge_llm)
         res = await j.ascore(input=scenario.name, output=transcript_text)
+        if res.errored:
+            # Not asked is not "it did not happen" (1.89.0): never inverted.
+            verdicts.append(
+                CriterionVerdict(
+                    criterion=criterion,
+                    kind="failure",
+                    passed=False,
+                    reason=res.reason,
+                    errored=True,
+                )
+            )
+            overall = False
+            continue
         failure_happened = res.passed
         verdicts.append(
             CriterionVerdict(
@@ -498,11 +530,15 @@ async def _run_scenario(
 ) -> SimulationResult:
     """Drive one scenario end-to-end and judge the transcript."""
     from fastaiagent.trace import trace_context
+    from fastaiagent.trace.provenance import provenance_scope
     from fastaiagent.trace.span import set_fastaiagent_attributes
 
     run_agent = _make_agent_runner(agent)
 
-    with trace_context(f"simulation.{scenario.name}") as span:
+    # A simulated conversation is an experiment, not production traffic
+    # (1.89.0): every span is stamped fastaiagent.source=simulation, so
+    # Analytics, curation and learning leave it out. It is still exported.
+    with provenance_scope("simulation"), trace_context(f"simulation.{scenario.name}") as span:
         set_fastaiagent_attributes(
             span,
             **{
@@ -549,6 +585,11 @@ async def _run_scenario(
         passed = False
         if error is None:
             passed, verdicts = await _judge_transcript(scenario, transcript, judge)
+            errored = [v.criterion for v in verdicts if v.errored]
+            if errored:
+                # Like a pause (1.78.0): not judged, so not a verdict either way.
+                passed = False
+                error = f"judge could not run on {len(errored)} criteria: " + "; ".join(errored)
 
         ctx = span.get_span_context()
         root_trace_id = format(ctx.trace_id, "032x")

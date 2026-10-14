@@ -17,6 +17,7 @@ import re
 from typing import Any
 
 from fastaiagent._internal.async_utils import run_sync
+from fastaiagent._internal.safety_detectors import judge_field
 from fastaiagent.eval.scorer import Scorer, ScorerResult
 
 
@@ -85,14 +86,14 @@ class TaskCompletion(Scorer):
                 ]
             )
             data = json.loads(_strip_fences(resp.content or ""))
-            score_val = float(data.get("score", 0.0))
+            score_val = judge_field(data, "score", "number")
             return ScorerResult(
                 score=score_val,
                 passed=score_val >= self.threshold,
                 reason=str(data.get("reasoning", "")),
             )
         except Exception as e:
-            return ScorerResult(score=0.0, passed=False, reason=f"Task-completion check error: {e}")
+            return ScorerResult.error(f"Task-completion check error: {e}")
 
 
 class Hallucination(Scorer):
@@ -130,8 +131,15 @@ class Hallucination(Scorer):
 
         context = _resolve_context(kw)
         if not context:
-            return ScorerResult(score=0.0, passed=False, reason="No context provided")
-        res = await score_groundedness(output, context, llm=self._llm)
+            return ScorerResult.not_applicable("No context provided")
+        try:
+            res = await score_groundedness(output, context, llm=self._llm, raise_on_error=True)
+        except Exception as e:
+            return ScorerResult.error(f"Hallucination check error: {e}")
+        if res.errored:
+            return ScorerResult.error(
+                f"Hallucination check could not verify {res.errored} of {res.total} claim(s)"
+            )
         reason = f"Grounded claims: {res.supported}/{res.total}" if res.total else res.reason
         return ScorerResult(score=res.score, passed=res.score >= self.threshold, reason=reason)
 
@@ -183,13 +191,11 @@ class ReflectionQuality(Scorer):
                 ]
             )
             data = json.loads(_strip_fences(resp.content or ""))
-            score_val = float(data.get("score", 0.0))
+            score_val = judge_field(data, "score", "number")
             return ScorerResult(
                 score=score_val,
                 passed=score_val >= self.threshold,
                 reason=str(data.get("reasoning", "")),
             )
         except Exception as e:
-            return ScorerResult(
-                score=0.0, passed=False, reason=f"Reflection-quality check error: {e}"
-            )
+            return ScorerResult.error(f"Reflection-quality check error: {e}")

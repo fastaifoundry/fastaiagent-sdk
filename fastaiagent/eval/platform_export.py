@@ -144,6 +144,61 @@ def _jload(value: Any) -> Any:
         return None
 
 
+def case_outcome(case: dict[str, Any]) -> str:
+    from fastaiagent.eval.compare import case_outcome as _outcome
+
+    return _outcome(case)
+
+
+def exportable_reason(reason: Any) -> str | None:
+    """A scorer's ``reason`` as it may leave the machine (1.89.0).
+
+    A judge's reason routinely quotes the case ("the actual output of '$10.00'
+    …"), so it is customer content: withheld (``None``) when
+    ``FASTAIAGENT_TRACE_PAYLOADS=0``, and otherwise scrubbed of credentials,
+    the same as provider errors. Applied to every path that sends a reason to
+    the plane (the Agent-CI export, ``EvalResults.publish()``).
+    """
+    if reason is None:
+        return None
+    from fastaiagent.trace.span import export_payloads_enabled
+
+    if not export_payloads_enabled():
+        return None
+    from fastaiagent._internal.scrub import known_credential_values, scrub_secrets
+
+    return scrub_secrets(str(reason), known_credential_values())
+
+
+def exportable_error(error: Any) -> str | None:
+    """A case's error text as it may leave the machine.
+
+    Stays truthy (the plane counts errored cases by it), but is scrubbed, and
+    withheld when payloads are off: an exception message can quote the input.
+    """
+    if not error:
+        return None
+    from fastaiagent.trace.span import export_payloads_enabled
+
+    if not export_payloads_enabled():
+        return "errored (detail withheld: FASTAIAGENT_TRACE_PAYLOADS=0)"
+    from fastaiagent._internal.scrub import known_credential_values, scrub_secrets
+
+    return scrub_secrets(str(error), known_credential_values())
+
+
+def _exportable_per_scorer(per: Any) -> Any:
+    """``per_scorer`` with every ``reason`` passed through :func:`exportable_reason`."""
+    if not isinstance(per, dict):
+        return per or None
+    out: dict[str, Any] = {}
+    for name, entry in per.items():
+        if isinstance(entry, dict) and "reason" in entry:
+            entry = {**entry, "reason": exportable_reason(entry.get("reason"))}
+        out[name] = entry
+    return out or None
+
+
 class EvalRunStore:
     """The ``eval_runs`` / ``eval_cases`` tables viewed as an outbox."""
 
@@ -177,16 +232,21 @@ class EvalRunStore:
         cases: list[EvalCasePayload] = []
         errored = 0
         for c in case_rows:
-            if c.get("error"):
+            per_scorer = _jload(c.get("per_scorer")) or None
+            # 1.89.0 (D11): a case whose outcome is errored, whatever the cause
+            # (the agent, a scorer that could not run, or no scorer applying).
+            if case_outcome({"error": c.get("error"), "per_scorer": per_scorer}) == "errored":
                 errored += 1
             cases.append(
                 EvalCasePayload(
                     case_id=c.get("case_id"),
                     ordinal=c.get("ordinal"),
-                    # NOTE: per_scorer only — no input/expected/actual, ever.
-                    per_scorer=_jload(c.get("per_scorer")) or None,
+                    # NOTE: per_scorer only — no input/expected/actual, ever. A
+                    # judge's reason can quote the case, so it is scrubbed of
+                    # credentials and withheld when payloads are off (1.89.0).
+                    per_scorer=_exportable_per_scorer(per_scorer),
                     trace_id=c.get("trace_id"),
-                    error=c.get("error"),
+                    error=exportable_error(c.get("error")),
                 )
             )
         total = len(cases)

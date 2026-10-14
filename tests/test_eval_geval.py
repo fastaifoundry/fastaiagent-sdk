@@ -182,20 +182,21 @@ def test_unknown_mode_raises() -> None:
 
 def test_llm_mode_empty_turns_short_circuits() -> None:
     # mode="llm" but empty turns → deterministic early return, no LLM call
+    # 1.89.0: nothing to evaluate is "does not apply" (skipped), not a pass.
     r = ConversationCoherence(mode="llm").score(input="", output="", turns=[])
-    assert r.score == 1.0 and r.passed is True and r.reason == "No turns to evaluate"
-    assert KnowledgeRetention().score(input="", output="", turns=[]).score == 1.0
-    assert ConversationRelevancy().score(input="", output="", turns=[]).score == 1.0
+    assert r.outcome == "skipped" and r.passed is False and r.reason == "No turns to evaluate"
+    assert KnowledgeRetention().score(input="", output="", turns=[]).outcome == "skipped"
+    assert ConversationRelevancy().score(input="", output="", turns=[]).outcome == "skipped"
 
 
 def test_role_adherence_requires_role() -> None:
     r = RoleAdherence().score(input="", output="", turns=[{"role": "user", "content": "hi"}])
-    assert r.score == 0.0 and r.passed is False and r.reason == "No role specified"
+    assert r.outcome == "skipped" and r.passed is False and r.reason == "No role specified"
 
 
 def test_goal_completion_llm_no_goal_short_circuits() -> None:
     r = GoalCompletion(mode="llm").score(input="", output="x")
-    assert r.passed is False and r.reason == "No goal specified"
+    assert r.outcome == "skipped" and r.passed is False and r.reason == "No goal specified"
 
 
 # --- exports -------------------------------------------------------------- #

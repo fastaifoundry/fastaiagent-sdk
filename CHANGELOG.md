@@ -370,6 +370,152 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - the wire pin, which must pass on both;
     - the 160 tracing-off sweep cells, which pin behaviour that already held.
 
+### Eval numbers you can trust (Phase 6)
+
+- ⚠ **A check that could not run is not a fail, and one that does not apply is
+  not a pass.** `ScorerResult` gains `errored`, `skipped`, `details` and an
+  `outcome` property (`passed` / `failed` / `errored` / `skipped`), with
+  `ScorerResult.error()` and `ScorerResult.not_applicable()`. An errored or
+  skipped result is forced to `passed=False, score=0.0`, so code that reads
+  only `passed` fails closed. Rates count verdicts only; errored and skipped
+  are reported beside them.
+  - **Errored**: a judge call that failed; a verdict still unparseable after the
+    retry; a refusal; a scorer that raised; a run `CostUnder` could not price
+    (was a fail); an embedder that failed (`SemanticSimilarity` raised).
+  - **Skipped**: no expected output (`exact_match`, `contains`, the similarity
+    scorers), no expected trajectory / tool calls / steps, no context, no turns,
+    no goal, no role, no `cost` or `latency_ms` on a direct call. Several of
+    these read as a pass, or as a 0.0 verdict.
+  - **A judge reply with no verdict field is errored.** `{}` (or only a
+    `reasoning`) read as the field's default in 14 scorers: `PromptInjection`
+    "no injection detected", `Faithfulness` / `Hallucination` /
+    `ContextRecall` "no claims", the rest a score of 0. New
+    `_internal.safety_detectors.judge_field()` raises instead. The
+    `no_prompt_injection(mode="llm")`, `toxicity_check(mode="llm")` and
+    `grounded()` guardrails share those detectors, so they now report
+    could-not-run and apply `on_error` where they passed (CLAUDE.md §2.4). The
+    plane's own judge parsers already refused such a reply.
+- ⚠ **Cases first, checks second.** A case (one dataset row) now has one
+  outcome: errored if the agent raised; else failed if any verdict failed; else
+  errored if a scorer could not run, or if nothing applied; else passed. Before,
+  a case nothing checked was a pass.
+  - `EvalResults.case_counts` / `case_pass_rate` / `check_counts`;
+    `Scorecard.cases` / `checks_errored` / `checks_skipped`;
+    `MetricSummary.errored` / `skipped`, with `None` rates when `n == 0`.
+  - `summary()` prints `(N scored, E errored, S skipped)` per scorer and a
+    `cases:` line.
+  - `overall.pass_rate` keeps its meaning, now over applicable verdicts. For a
+    run with no errored or skipped verdicts it is the same number as before.
+- ⚠ **Gate semantics.**
+  - New `cases.pass_rate` metric.
+  - `overall.avg_score` raises: it silently gated on the pass rate.
+  - A run is **invalid** (CLI exit 3) when a gated scorer errored beyond
+    `max_error_rate` (with it unset, any error counts), or a scorer named in a
+    threshold applied to no case.
+  - A judge outage therefore turns CI red as INVALID instead of a quality
+    FAILED (exit 1).
+  - `GateReport.invalid_reasons` says why; the CLI `--json` carries it.
+- **`evaluate()` scores what the agent did.**
+  - The `AgentResult`'s tool calls reach the trajectory scorers, and a row's
+    `expected_trajectory`, `expected_tool_calls`, `expected_steps`, `context`
+    and `contexts` are forwarded per case. A row's own value beats a run-wide
+    kwarg.
+  - Every trajectory scorer used to compare two empty lists and pass.
+  - With an expectation but no record (a plain-string `agent_fn`), the result
+    is errored.
+  - `details` holds tool names only, never arguments.
+- **A raising scorer no longer loses the run.** It is one errored verdict and
+  the other scorers still run. In `evaluate()` it aborted the run with nothing
+  persisted; in the pytest plugin the case never reached the session run.
+  - Scoring is shared by both: new `eval/_scoring.score_case`.
+  - Unknown scorer names, `regex_match` without a pattern, and two scorers with
+    one name raise `EvalError` before any agent call. Same-named scorers used to
+    overwrite each other.
+  - The Local UI's run-eval returns `422` for these (was `500`).
+- **The pytest plugin** fails an errored case with its own message ("scorer
+  could not run, or none applied") and still records it, so a 5-case suite
+  persists 5 cases. Reasons in the message are scrubbed of credentials.
+- **Simulation** (E13): a *failure* criterion's result was inverted
+  unconditionally, so a judge that errored meant "the failure did not happen",
+  a pass.
+  - `CriterionVerdict.errored` is never inverted.
+  - A scenario with an errored criterion gets
+    `error="judge could not run on K criteria: …"` and is not passed.
+  - The denominator still counts every scenario (D15).
+    `Scorecard.from_simulation(...).errored` and `sim_runs.metadata.errored_count`
+    report the errored ones.
+  - Simulation spans are stamped `fastaiagent.source=simulation`.
+  - The UI API accepts `?outcome=errored`, and `failed` no longer includes
+    errored scenarios.
+- **Compare puts every case somewhere** (E14). `compare_runs` silently dropped
+  cases it could not pair, every pair where either side errored, and all but
+  one row of a repeated input.
+  - New `compare_cases` / `align_cases`. `RunComparison` gains `errored` (with
+    the side), `only_in_a`, `only_in_b`, `drifted` (outcome unchanged, a score
+    moved ≥ 0.1), `case_pass_rate_delta` and `pass_rate_comparable`.
+  - `scorer_deltas` gains outcomes and scores.
+  - `describe()` warns when a run predates 1.89.0's rates (D12).
+  - The CLI table and the UI compare API carry all of these; `bucket_cases`
+    keeps its old shape.
+- **The run record tells the truth.**
+  - `agent_version` is a SHA-256 fingerprint of the agent's definition (D19); it
+    was always NULL.
+  - `started_at` / `finished_at` are the run's own times; both were the save
+    time.
+  - New `kind`: `evaluate`, `cli`, `pytest`, `optimize`, `ui` or `ui-echo`.
+  - `metadata.scorer_config` holds each scorer's `describe()` (provider and
+    model, never a key).
+  - `pass_rate` is NULL when nothing applied (D13).
+  - An image or PDF in a case is stored as a descriptor
+    (`type`, `media_type`, `size_bytes`, `sha256`, `media_idx`), not as its
+    `repr` with the raw bytes, plus a thumbnail row in the new
+    `eval_case_media` table.
+  - Judge reasons and case errors are scrubbed of credentials before they reach
+    `local.db`, for evals and simulations alike.
+- **What reaches the plane** (no new top-level keys, D11):
+  - `pass_*` count applicable checks.
+  - `errored_count` counts errored cases, including scorer-errored ones.
+  - `per_scorer` entries add `errored` / `skipped` / `details` only when set.
+  - The judge `reason` is scrubbed of credentials and **withheld when
+    `FASTAIAGENT_TRACE_PAYLOADS=0`**. So is a case's error text.
+  - `EvalResults.publish()` sends its three legacy keys, scrubbed, and omits
+    skipped verdicts.
+- AutoLLM's `CandidateScore` ignores skipped verdicts (a metric with none
+  applicable is dropped); errored still scores 0. `harden()` only shows the
+  model real fails. `EvalResults.compare()` averages verdicts only.
+- **local.db v26** (`_v26_eval_case_metrics`):
+  - nine nullable `eval_runs` columns (`kind`, `summary_version`, the case
+    counts and rate, `check_error_count`, `check_skip_count`);
+  - `eval_cases.scoring_trace_id`;
+  - the `eval_case_media` table and two indexes.
+  - Legacy runs get their case columns and an inferred `kind` backfilled from
+    `eval_cases`; their `pass_*` values are not rewritten (`summary_version`
+    NULL marks them).
+  - A row an older SDK writes into a v26 database reads through a fallback
+    that computes the case columns from its cases.
+- Docs: evaluation concepts (new "Four outcomes, cases and checks"), Agent CI,
+  the evaluation reference, LLM judge, trajectory and session scoring, pytest,
+  hardening, simulation, CLI, connected eval export, UI datasets, guardrail
+  boundaries, and internals.
+- Tests:
+  - `test_scorer_could_not_run_sweep.py` runs every `Scorer` subclass through
+    an outage, a `{}` reply and missing inputs; it fails when a scorer is added
+    without a row.
+  - Also new: `test_judge_reply_without_verdict.py` (detectors and guardrails),
+    `test_eval_case_metrics.py` (the worked example from the plan),
+    `test_eval_trajectory_capture.py`, `test_eval_scorer_guard.py`,
+    `test_db_migration_v26.py`, `test_pytest_plugin_errored_verdicts.py`,
+    `test_simulate_judge_errored.py`, `test_eval_export_reasons.py`,
+    `test_eval_multimodal_persist.py`, `test_eval_compare_buckets.py`,
+    `test_eval_run_record.py`, `test_optimize_candidate_verdicts.py` and
+    `test_cli_eval_case_metrics.py`.
+  - Live: `tests/e2e/test_eval_numbers_e2e.py` runs gpt-4o-mini through
+    evaluate/aevaluate, a judge outage, the CLI (exit 3), simulate and the
+    pytest plugin.
+  - On 1.88.0, 161 of the 166 new tests fail. The 5 that pass are by design:
+    three completeness guards, and two controls for behaviour that did not
+    change.
+
 ## [1.88.0] - 2026-10-11 — the defects the boundary pages found
 
 Writing the seven "breaks at the boundaries" pages meant running every claim

@@ -6,13 +6,20 @@ import asyncio
 import logging
 import time
 from collections.abc import Callable
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from fastaiagent._internal.async_utils import run_sync
-from fastaiagent._internal.errors import EvalError
 from fastaiagent._internal.pause import describe_pause
-from fastaiagent.eval.builtins import BUILTIN_SCORERS
+from fastaiagent.eval._scoring import (
+    agent_fingerprint,
+    resolve_scorers,
+    row_facts,
+    score_case,
+    scorer_config,
+    trajectory_facts,
+)
 from fastaiagent.eval.dataset import Dataset
 from fastaiagent.eval.results import EvalCaseRecord, EvalResults
 from fastaiagent.eval.scorer import Scorer, ScorerResult
@@ -109,6 +116,7 @@ def evaluate(
     run_name: str | None = None,
     dataset_name: str | None = None,
     agent_name: str | None = None,
+    run_kind: str = "evaluate",
     **kwargs: Any,
 ) -> EvalResults:
     """Evaluate an agent function against a dataset with scorers.
@@ -134,6 +142,7 @@ def evaluate(
             run_name=run_name,
             dataset_name=dataset_name,
             agent_name=agent_name,
+            run_kind=run_kind,
             **kwargs,
         )
     )
@@ -148,9 +157,21 @@ async def aevaluate(
     run_name: str | None = None,
     dataset_name: str | None = None,
     agent_name: str | None = None,
+    run_kind: str = "evaluate",
     **kwargs: Any,
 ) -> EvalResults:
-    """Async evaluation."""
+    """Async evaluation.
+
+    ``run_kind`` is recorded on the run (``evaluate``; the CLI, the pytest
+    plugin, AutoLLM and the Local UI pass their own) so views can tell a CI run
+    from an optimizer's candidate.
+
+    A scorer that raises, or cannot run, is recorded as errored for that case
+    instead of aborting the run (1.89.0). The agent's ``tool_calls`` reach the
+    trajectory scorers, and a dataset row's ``expected_trajectory``,
+    ``expected_tool_calls``, ``expected_steps``, ``context`` and ``contexts``
+    are forwarded per case.
+    """
     # Resolve dataset
     resolved_dataset_name: str | None = dataset_name
     if isinstance(dataset, str):
@@ -168,24 +189,15 @@ async def aevaluate(
     else:
         ds = dataset
 
-    # Resolve scorers
-    resolved_scorers: list[Scorer] = []
-    for s in scorers or ["exact_match"]:
-        if isinstance(s, str):
-            cls = BUILTIN_SCORERS.get(s)
-            if cls:
-                resolved_scorers.append(cls())
-            else:
-                available = ", ".join(sorted(BUILTIN_SCORERS.keys()))
-                raise EvalError(
-                    f"Unknown scorer '{s}'. "
-                    f"Available built-in scorers: {available}. "
-                    f"Or pass a Scorer instance directly."
-                )
-        else:
-            resolved_scorers.append(s)
+    # Resolve scorers: unknown names, built-ins that need arguments and
+    # duplicate names raise here, before any agent call (1.89.0).
+    resolved_scorers = resolve_scorers(scorers)
 
     results = EvalResults()
+    results.started_at = datetime.now(tz=timezone.utc).isoformat()
+    results.kind = run_kind
+    results.agent_version = agent_fingerprint(agent_fn)
+    results.scorer_config = scorer_config(resolved_scorers)
 
     # Run evaluation
     sem = asyncio.Semaphore(concurrency)
@@ -257,25 +269,23 @@ async def aevaluate(
                 )
                 return errored, []
 
-            # Score
-            per_scorer: dict[str, dict[str, Any]] = {}
-            scored: list[tuple[str, ScorerResult]] = []
-            # Caller kwargs win: someone passing ``cost=`` to ``evaluate()``
-            # is overriding on purpose, and always could.
-            score_kwargs = {**run_facts, **kwargs}
-            for scorer in resolved_scorers:
-                result = scorer.score(
-                    input=input_text,
-                    output=output_text,
-                    expected=expected,
-                    **score_kwargs,
-                )
-                scored.append((scorer.name, result))
-                per_scorer[scorer.name] = {
-                    "passed": bool(result.passed),
-                    "score": float(result.score),
-                    "reason": result.reason,
-                }
+            # Score. Caller kwargs win over run facts: someone passing ``cost=``
+            # to ``evaluate()`` is overriding on purpose, and always could. A
+            # dataset row's own expectations (expected_trajectory, context, …)
+            # win over a run-wide kwarg of the same name (1.89.0).
+            score_kwargs = {
+                **run_facts,
+                **trajectory_facts(output),
+                **kwargs,
+                **row_facts(item),
+            }
+            per_scorer, scored = score_case(
+                resolved_scorers,
+                input=input_text,
+                output=output_text,
+                expected=expected,
+                score_kwargs=score_kwargs,
+            )
 
             record = EvalCaseRecord(
                 input=input_text,
@@ -291,6 +301,7 @@ async def aevaluate(
         for scorer_name, result in scored:
             results.add(scorer_name, result)
         results.add_case(record)
+    results.finished_at = datetime.now(tz=timezone.utc).isoformat()
 
     if persist:
         try:

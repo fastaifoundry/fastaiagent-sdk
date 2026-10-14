@@ -180,12 +180,15 @@ Each `agent.<name>` span (root, or nested inside a chain/supervisor/swarm) becom
 one case. See [Trace Curation](../evaluation/curation.md).
 
 `--agent` accepts `path/to/file.py:attr` or `pkg.module:attr` (a callable, or any
-object with a `.run` method). Thresholds use `<scorer|overall>.<pass_rate|avg_score>=v`;
-a bare scorer name means its `pass_rate`.
+object with a `.run` method). Thresholds use `<scorer>.<pass_rate|avg_score>=v`,
+`overall.pass_rate=v` (the checks rate) or `cases.pass_rate=v` (the cases rate,
+1.89.0); a bare scorer name means its `pass_rate`. `overall.avg_score` is
+refused.
 
 **Exit codes:** `0` gate passed · `1` quality gate failed (threshold miss or
-regression) · `3` run invalid (infra error rate exceeded, or nothing scored).
-`2` is reserved for usage errors.
+regression) · `3` run invalid (infra error rate exceeded, nothing scored, a
+gated scorer could not run or applied to no case, or a threshold that is not a
+metric). `2` is reserved for usage errors.
 
 For gating your existing pytest suite — with baselines and regression detection —
 see [Agent CI](../evaluation/agent-ci.md).

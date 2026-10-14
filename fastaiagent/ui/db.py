@@ -17,7 +17,7 @@ from pathlib import Path
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
 
-CURRENT_SCHEMA_VERSION = 25
+CURRENT_SCHEMA_VERSION = 26
 
 # A migration step is either a SQL string or a callable that takes the
 # ``SQLiteHelper`` and runs whatever logic it needs (e.g., gated
@@ -766,6 +766,124 @@ def _v25_guardrail_event_truth(db: SQLiteHelper) -> None:
     db.execute("CREATE INDEX IF NOT EXISTS idx_guardrail_events_ts ON guardrail_events(timestamp)")
 
 
+def _v26_eval_case_metrics(db: SQLiteHelper) -> None:
+    """Case-level eval numbers, the run's kind, and multimodal media (1.89.0).
+
+    ``eval_runs.pass_*`` counted **verdicts** (one per scorer per case), and
+    every reader showed it as if it were cases: a 5-case run with one agent
+    error read "83%, 20 passed". The case columns hold case outcomes; the
+    ``pass_*`` columns now count applicable verdicts only. Rows written before
+    1.89.0 keep their ``pass_*`` values (``summary_version`` NULL marks them) and
+    have their case columns backfilled here from ``eval_cases``.
+
+    ``kind`` says what produced a run (evaluate, cli, pytest, optimize, ui,
+    ui-echo), backfilled where it can be inferred. ``eval_case_media`` holds a
+    thumbnail per image/PDF in a case, which is now stored as a descriptor
+    instead of its bytes. ``eval_cases.scoring_trace_id`` links a case to the
+    trace of its judge calls.
+    """
+    tables = {r["name"] for r in db.fetchall("SELECT name FROM sqlite_master WHERE type='table'")}
+    if "eval_runs" in tables:
+        for column, ddl in (
+            ("kind", "TEXT"),
+            ("summary_version", "INTEGER"),
+            ("case_count", "INTEGER"),
+            ("case_pass_count", "INTEGER"),
+            ("case_fail_count", "INTEGER"),
+            ("case_error_count", "INTEGER"),
+            ("case_pass_rate", "REAL"),
+            ("check_error_count", "INTEGER"),
+            ("check_skip_count", "INTEGER"),
+        ):
+            _add_column_if_missing(db, "eval_runs", column, ddl)
+        columns = {r["name"] for r in db.fetchall("PRAGMA table_info(eval_runs)")}
+        if "started_at" in columns:
+            db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_eval_runs_kind_started "
+                "ON eval_runs(kind, started_at)"
+            )
+    if "eval_cases" in tables:
+        _add_column_if_missing(db, "eval_cases", "scoring_trace_id", "TEXT")
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_eval_cases_scoring_trace "
+            "ON eval_cases(scoring_trace_id)"
+        )
+    db.execute(
+        """CREATE TABLE IF NOT EXISTS eval_case_media (
+            case_id    TEXT NOT NULL,
+            idx        INTEGER NOT NULL,
+            media_type TEXT,
+            size_bytes INTEGER,
+            sha256     TEXT,
+            thumbnail  BLOB,
+            meta       TEXT,
+            project_id TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (case_id, idx)
+        )"""
+    )
+    if "eval_runs" in tables and "eval_cases" in tables:
+        _backfill_eval_case_metrics(db, tables)
+
+
+def _backfill_eval_case_metrics(db: SQLiteHelper, tables: set[str]) -> None:
+    """Fill the case columns (and ``kind`` where inferable) of pre-1.89.0 runs."""
+    import json as _json
+
+    from fastaiagent.eval.compare import summarize_cases
+
+    runs = db.fetchall(
+        "SELECT run_id, run_name, agent_name FROM eval_runs WHERE case_count IS NULL"
+    )
+    if not runs:
+        return
+    optimize_ids: set[str] = set()
+    if "optimize_iterations" in tables:
+        optimize_ids |= {
+            r["eval_run_id"]
+            for r in db.fetchall("SELECT eval_run_id FROM optimize_iterations")
+            if r.get("eval_run_id")
+        }
+    if "optimize_runs" in tables:
+        cols = {r["name"] for r in db.fetchall("PRAGMA table_info(optimize_runs)")}
+        for col in ("baseline_eval_run_id", "best_eval_run_id"):
+            if col in cols:
+                optimize_ids |= {
+                    r[col] for r in db.fetchall(f"SELECT {col} FROM optimize_runs") if r.get(col)
+                }
+    for run in runs:
+        cases = []
+        for c in db.fetchall(
+            "SELECT error, per_scorer FROM eval_cases WHERE run_id = ?", (run["run_id"],)
+        ):
+            try:
+                per = _json.loads(c.get("per_scorer") or "{}")
+            except (ValueError, TypeError):
+                per = {}
+            cases.append({"error": c.get("error"), "per_scorer": per})
+        s = summarize_cases(cases)
+        kind = None
+        if run.get("agent_name") == "editor-echo":
+            kind = "ui-echo"
+        elif run["run_id"] in optimize_ids:
+            kind = "optimize"
+        elif (run.get("run_name") or "").startswith("pytest::"):
+            kind = "pytest"
+        db.execute(
+            """UPDATE eval_runs SET case_count = ?, case_pass_count = ?, case_fail_count = ?,
+                   case_error_count = ?, case_pass_rate = ?, kind = COALESCE(kind, ?)
+               WHERE run_id = ?""",
+            (
+                s["case_count"],
+                s["case_pass_count"],
+                s["case_fail_count"],
+                s["case_error_count"],
+                s["case_pass_rate"],
+                kind,
+                run["run_id"],
+            ),
+        )
+
+
 _MIGRATIONS: dict[int, list[_Step]] = {
     1: [
         # Trace spans (moved from traces.db).
@@ -1206,6 +1324,11 @@ _MIGRATIONS: dict[int, list[_Step]] = {
         # 1.89.0: a guardrail event records what the check did to the run, the
         # text it judged and the rule as it ran. See _v25_guardrail_event_truth.
         _v25_guardrail_event_truth,
+    ],
+    26: [
+        # 1.89.0: case-level eval numbers, run kinds and case media. See
+        # _v26_eval_case_metrics.
+        _v26_eval_case_metrics,
     ],
 }
 

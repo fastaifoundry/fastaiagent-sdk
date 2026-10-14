@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from fastaiagent._internal.async_utils import run_sync
+from fastaiagent.eval.scorer import verdict_outcome
 
 if TYPE_CHECKING:
     from fastaiagent.agent.agent import Agent
@@ -113,7 +114,9 @@ def _failures_text(results: Any, *, max_cases: int | None = None) -> tuple[str, 
             # feed it to the proposer (it would chase a fault the agent can't fix).
             if getattr(c, "error", None):
                 continue
-            failed = [n for n, d in (c.per_scorer or {}).items() if not d.get("passed", True)]
+            # Only real fails (1.89.0): an errored or skipped verdict is not a
+            # quality failure for the proposer to chase.
+            failed = [n for n, d in (c.per_scorer or {}).items() if verdict_outcome(d) == "failed"]
             if not failed:
                 continue
             count += 1
@@ -132,7 +135,7 @@ def _failures_text(results: Any, *, max_cases: int | None = None) -> tuple[str, 
             reasons = [
                 d["reason"]
                 for n, d in (c.per_scorer or {}).items()
-                if not d.get("passed", True) and d.get("reason")
+                if verdict_outcome(d) == "failed" and d.get("reason")
             ]
             tail = f"; failed scorers: {failed}"
             if reasons:
@@ -147,7 +150,7 @@ def _failures_text(results: Any, *, max_cases: int | None = None) -> tuple[str, 
         count = 0
         for name, rlist in scores.items():
             for r in rlist:
-                if not getattr(r, "passed", True):
+                if verdict_outcome(r) == "failed":
                     count += 1
                     if max_cases is None or len(blocks) < max_cases:
                         blocks.append(f"scorer '{name}' failed: {getattr(r, 'reason', '')}")

@@ -66,7 +66,6 @@ from typing import Any
 import pytest
 
 from fastaiagent._internal.pause import describe_pause
-from fastaiagent.eval.builtins import BUILTIN_SCORERS
 from fastaiagent.eval.dataset import Dataset
 from fastaiagent.eval.evaluate import infer_agent_name
 from fastaiagent.eval.results import EvalCaseRecord, EvalResults
@@ -138,19 +137,14 @@ def dataset(
 
 
 def _resolve_scorers(scorers: list[Scorer | str] | None) -> list[Scorer]:
-    """Mirror ``aevaluate``'s scorer resolution but expose a clean error."""
-    out: list[Scorer] = []
-    for s in scorers or ["exact_match"]:
-        if isinstance(s, str):
-            cls = BUILTIN_SCORERS.get(s)
-            if cls is None:
-                pytest.fail(
-                    f"Unknown scorer '{s}'. Available: {', '.join(sorted(BUILTIN_SCORERS))}."
-                )
-            out.append(cls())
-        else:
-            out.append(s)
-    return out
+    """``aevaluate``'s scorer resolution (shared, 1.89.0), as a clean test failure."""
+    from fastaiagent._internal.errors import EvalError
+    from fastaiagent.eval._scoring import resolve_scorers
+
+    try:
+        return resolve_scorers(scorers)
+    except EvalError as e:
+        pytest.fail(str(e))
 
 
 def _format_failure(case_record: EvalCaseRecord) -> str:
@@ -161,11 +155,15 @@ def _format_failure(case_record: EvalCaseRecord) -> str:
         f"  actual:   {case_record.actual_output!r}",
         "  scorers:",
     ]
+    from fastaiagent._internal.scrub import known_credential_values, scrub_secrets
+    from fastaiagent.eval.scorer import verdict_outcome
+
+    secrets = known_credential_values()
     for name, info in (case_record.per_scorer or {}).items():
-        passed = info.get("passed")
         score = info.get("score")
-        reason = info.get("reason")
-        lines.append(f"    - {name}: passed={passed} score={score} reason={reason}")
+        # Test output lands in CI logs: no credential in a judge's reason (1.89.0).
+        reason = scrub_secrets(str(info.get("reason")), secrets)
+        lines.append(f"    - {name}: {verdict_outcome(info)} score={score} reason={reason}")
     return "\n".join(lines)
 
 
@@ -312,7 +310,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     if persisted.cases:
         try:
             collector.run_id = persisted.persist_local(
-                run_name=run_name, agent_name=_session_agent_name(collector)
+                run_name=run_name, agent_name=_session_agent_name(collector), kind="pytest"
             )
         except Exception as e:  # pragma: no cover — non-fatal
             collector.persist_error = str(e)
@@ -614,19 +612,21 @@ def evaluate_one(request: pytest.FixtureRequest):  # type: ignore[no-untyped-def
             output_text = str(output)
         trace_id = getattr(output, "trace_id", None)
 
+        from fastaiagent.eval._scoring import row_facts, score_case, trajectory_facts
+
         scorer_objs = _resolve_scorers(scorers)
-        per_scorer: dict[str, dict[str, Any]] = {}
-        scorer_results: dict[str, ScorerResult] = {}
-        all_passed = True
-        for scorer in scorer_objs:
-            result = scorer.score(input=str(in_text), output=output_text, expected=exp)
-            scorer_results[scorer.name] = result
-            per_scorer[scorer.name] = {
-                "passed": bool(result.passed),
-                "score": float(result.score),
-                "reason": result.reason,
-            }
-            all_passed = all_passed and bool(result.passed)
+        # The shared guard (1.89.0): a scorer that raises is recorded as errored
+        # for this case, and the case is still added to the session run (it was
+        # lost). The agent's tool calls and the row's expectations reach the
+        # scorers, as in ``evaluate()``.
+        per_scorer, scored = score_case(
+            scorer_objs,
+            input=str(in_text),
+            output=output_text,
+            expected=exp,
+            score_kwargs={**trajectory_facts(output), **row_facts(eval_case)},
+        )
+        scorer_results: dict[str, ScorerResult] = dict(scored)
 
         record = EvalCaseRecord(
             input=in_text,
@@ -645,8 +645,16 @@ def evaluate_one(request: pytest.FixtureRequest):  # type: ignore[no-untyped-def
                 )
             )
 
-        if assert_pass and not all_passed:
+        from fastaiagent.eval.compare import case_outcome
+
+        outcome = case_outcome({"error": None, "per_scorer": per_scorer})
+        if assert_pass and outcome == "failed":
             pytest.fail(_format_failure(record))
+        if assert_pass and outcome == "errored":
+            pytest.fail(
+                "fastaiagent eval case errored (scorer could not run, or none applied):\n"
+                + _format_failure(record).split("\n", 1)[1]
+            )
         return record
 
     return _run

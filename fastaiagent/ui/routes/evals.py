@@ -112,23 +112,49 @@ def _run_with_aggregates(
     out = dict(run)
     out["cost_usd"] = round(cost, 6)
     out["avg_latency_ms"] = round(latency, 2)
-    out["case_count"] = (out.get("pass_count") or 0) + (out.get("fail_count") or 0)
+    if out.get("case_count") is None:
+        # A row written by an SDK older than 1.89.0 into this database has no
+        # case columns: count its stored cases. ``case_count`` used to be
+        # pass_count + fail_count, which counted verdicts, not cases.
+        out.update(_case_columns(db, run["run_id"], project_id=project_id))
     return out
 
 
+def _case_columns(db: Any, run_id: str, *, project_id: str = "") -> dict[str, Any]:
+    from fastaiagent.eval.compare import summarize_cases
+
+    pid_extra = "AND project_id = ?" if project_id else ""
+    rows = db.fetchall(
+        f"SELECT error, per_scorer FROM eval_cases WHERE run_id = ? {pid_extra}",
+        (run_id, *((project_id,) if project_id else ())),
+    )
+    cases = []
+    for r in rows:
+        try:
+            per = json.loads(r.get("per_scorer") or "{}")
+        except (ValueError, TypeError):
+            per = {}
+        cases.append({"error": r.get("error"), "per_scorer": per})
+    s = summarize_cases(cases)
+    return {k: v for k, v in s.items() if k.startswith("case_")}
+
+
 def _scorer_summary(cases: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
-    """Per-scorer {pass, fail} counts across a run's cases."""
+    """Per-scorer {pass, fail, errored, skipped} counts across a run's cases.
+
+    ``errored`` and ``skipped`` (1.89.0) were counted as fails.
+    """
+    from fastaiagent.eval.scorer import verdict_outcome
+
+    keys = {"passed": "pass", "failed": "fail", "errored": "errored", "skipped": "skipped"}
     summary: dict[str, dict[str, int]] = {}
     for case in cases:
         per = case.get("per_scorer") or {}
         if not isinstance(per, dict):
             continue
         for scorer, result in per.items():
-            bucket = summary.setdefault(scorer, {"pass": 0, "fail": 0})
-            if isinstance(result, dict) and result.get("passed"):
-                bucket["pass"] += 1
-            else:
-                bucket["fail"] += 1
+            bucket = summary.setdefault(scorer, {"pass": 0, "fail": 0, "errored": 0, "skipped": 0})
+            bucket[keys[verdict_outcome(result)]] += 1
     return summary
 
 
@@ -260,28 +286,32 @@ def compare(
                 )
             ]
 
-        from fastaiagent.eval.compare import bucket_cases
+        from fastaiagent.eval.compare import compare_runs
 
         run_a = get_run(a)
         run_b = get_run(b)
-        cases_a = get_cases(a)
-        cases_b = get_cases(b)
 
         # Matching (ordinal-first, input fallback) + bucketing live in
         # fastaiagent.eval.compare, shared with the pytest plugin and CLI.
-        regressed, improved, unchanged_pass, unchanged_fail = bucket_cases(cases_a, cases_b)
+        cmp = compare_runs(
+            {"run": run_a, "cases": get_cases(a)}, {"run": run_b, "cases": get_cases(b)}
+        )
 
         return {
             "run_a": run_a,
             "run_b": run_b,
-            "regressed": regressed,
-            "improved": improved,
-            "unchanged_pass": unchanged_pass,
-            "unchanged_fail": unchanged_fail,
-            "pass_rate_delta": round(
-                (run_b.get("pass_rate") or 0.0) - (run_a.get("pass_rate") or 0.0),
-                4,
-            ),
+            "regressed": cmp.regressed,
+            "improved": cmp.improved,
+            "unchanged_pass": cmp.unchanged_pass,
+            "unchanged_fail": cmp.unchanged_fail,
+            # 1.89.0: what used to be dropped silently.
+            "errored": cmp.errored,
+            "only_in_a": cmp.only_in_a,
+            "only_in_b": cmp.only_in_b,
+            "drifted": cmp.drifted,
+            "case_pass_rate_delta": cmp.case_pass_rate_delta,
+            "pass_rate_comparable": cmp.pass_rate_comparable,
+            "pass_rate_delta": cmp.pass_rate_delta,
             "cost_delta_usd": round(
                 (run_b.get("cost_usd") or 0.0) - (run_a.get("cost_usd") or 0.0),
                 6,

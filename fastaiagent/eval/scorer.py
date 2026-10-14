@@ -3,17 +3,91 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
+
+#: What one scorer said about one case (1.89.0).
+VerdictOutcome = Literal["passed", "failed", "errored", "skipped"]
 
 
 class ScorerResult(BaseModel):
-    """Result of scoring a single evaluation case."""
+    """Result of scoring a single evaluation case.
+
+    Three states besides a verdict exist since 1.89.0, so that a scorer that
+    could not judge never reads as a judgement (the same contract as a
+    guardrail's ``errored``):
+
+    * ``errored``: the check could not run: the judge call failed, its verdict
+      was unparseable after a retry, the model refused, or the scorer raised.
+    * ``skipped``: the check does not apply to this case: no expected output,
+      no expected trajectory, no retrieved context.
+    * a verdict: ``passed`` with ``score``.
+
+    An errored or skipped result is forced to ``passed=False, score=0.0``, so a
+    reader that ignores the new fields fails closed. Rates exclude both: see
+    :attr:`outcome`.
+    """
 
     score: float = 0.0
     passed: bool = False
     reason: str | None = None
+    errored: bool = False
+    skipped: bool = False
+    details: dict[str, Any] | None = None
+    """Non-content extras: a judge's ``raw_score``/``scale``/``threshold``, a
+    trajectory's tool names. Never the case's text."""
+
+    @model_validator(mode="after")
+    def _not_a_verdict_never_passes(self) -> ScorerResult:
+        if self.errored or self.skipped:
+            self.passed = False
+            self.score = 0.0
+        return self
+
+    @property
+    def outcome(self) -> VerdictOutcome:
+        if self.errored:
+            return "errored"
+        if self.skipped:
+            return "skipped"
+        return "passed" if self.passed else "failed"
+
+    @classmethod
+    def error(cls, reason: str, **details: Any) -> ScorerResult:
+        """The check could not run. ``reason`` says why; it is not a verdict."""
+        return cls(errored=True, reason=reason, details=details or None)
+
+    @classmethod
+    def not_applicable(cls, reason: str, **details: Any) -> ScorerResult:
+        """The check does not apply to this case (a missing input)."""
+        return cls(skipped=True, reason=reason, details=details or None)
+
+    def stored(self) -> dict[str, Any]:
+        """The per-case record: ``{passed, score, reason}``, plus ``errored``,
+        ``skipped`` and ``details`` only when they are not at their defaults,
+        so a run with none of them stores exactly what 1.88.0 did."""
+        out: dict[str, Any] = {"passed": self.passed, "score": self.score, "reason": self.reason}
+        if self.errored:
+            out["errored"] = True
+        if self.skipped:
+            out["skipped"] = True
+        if self.details:
+            out["details"] = self.details
+        return out
+
+
+def verdict_outcome(entry: Any) -> VerdictOutcome:
+    """The outcome of a stored ``per_scorer`` entry (a dict) or a ``ScorerResult``."""
+    if isinstance(entry, ScorerResult):
+        return entry.outcome
+    if isinstance(entry, dict):
+        if entry.get("errored"):
+            return "errored"
+        if entry.get("skipped"):
+            return "skipped"
+        return "passed" if entry.get("passed") else "failed"
+    return "passed" if entry else "failed"
 
 
 class Scorer:
@@ -25,6 +99,14 @@ class Scorer:
         self, input: str, output: str, expected: str | None = None, **kwargs: Any
     ) -> ScorerResult:
         raise NotImplementedError
+
+    def describe(self) -> dict[str, Any]:
+        """How this scorer was configured, for the run record (1.89.0).
+
+        Stays local (persisted under ``metadata["scorer_config"]``); never keys,
+        headers or other credentials. Subclasses add their own fields.
+        """
+        return {"type": type(self).__name__}
 
     @classmethod
     def from_platform(cls, name: str) -> Scorer:

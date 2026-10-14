@@ -8,6 +8,7 @@ import re
 from typing import Any
 
 from fastaiagent._internal.async_utils import run_sync
+from fastaiagent._internal.safety_detectors import judge_field
 from fastaiagent.eval.scorer import Scorer, ScorerResult
 
 logger = logging.getLogger(__name__)
@@ -83,9 +84,16 @@ class Faithfulness(Scorer):
 
         context = _resolve_context(kw)
         if not context:
-            return ScorerResult(score=0.0, passed=False, reason="No context provided")
+            return ScorerResult.not_applicable("No context provided")
 
-        res = await score_groundedness(output, context, llm=self._llm)
+        try:
+            res = await score_groundedness(output, context, llm=self._llm, raise_on_error=True)
+        except Exception as e:
+            return ScorerResult.error(f"Claim extraction error: {e}")
+        if res.errored:
+            # A failed verification counted as "unsupported" and quietly lowered
+            # the score; it is a check that could not run (1.89.0).
+            return ScorerResult.error(f"Could not verify {res.errored} of {res.total} claim(s)")
         return ScorerResult(
             score=res.score,
             passed=res.score >= self.threshold,
@@ -140,16 +148,15 @@ class AnswerRelevancy(Scorer):
                 ]
             )
             raw = _strip_code_fences(response.content or "")
-            data = json.loads(raw)
-            score_val = float(data.get("score", 0))
-            reasoning = data.get("reasoning", "")
+            score_val = judge_field(raw, "score", "number")
+            reasoning = json.loads(raw).get("reasoning", "")
             return ScorerResult(
                 score=score_val,
                 passed=score_val >= self.threshold,
                 reason=reasoning,
             )
         except Exception as e:
-            return ScorerResult(score=0.0, passed=False, reason=f"Relevancy check error: {e}")
+            return ScorerResult.error(f"Relevancy check error: {e}")
 
 
 class ContextPrecision(Scorer):
@@ -189,12 +196,13 @@ class ContextPrecision(Scorer):
 
         chunks = _resolve_contexts_list(kw)
         if not chunks:
-            return ScorerResult(score=0.0, passed=False, reason="No contexts provided")
+            return ScorerResult.not_applicable("No contexts provided")
 
         llm = self._llm or LLMClient()
 
         # Judge each chunk's relevance
         relevance: list[bool] = []
+        failed = 0
         for chunk in chunks:
             try:
                 resp = await llm.acomplete(
@@ -208,12 +216,15 @@ class ContextPrecision(Scorer):
                         ),
                     ]
                 )
-                raw = _strip_code_fences(resp.content or "")
-                data = json.loads(raw)
-                relevance.append(bool(data.get("relevant", False)))
+                relevance.append(judge_field(resp.content or "", "relevant", "bool"))
             except Exception:
                 logger.debug("Failed to evaluate context relevance for chunk", exc_info=True)
+                failed += 1
                 relevance.append(False)
+
+        if failed:
+            # An unjudged chunk is not an irrelevant one (1.89.0).
+            return ScorerResult.error(f"Could not judge {failed} of {len(chunks)} context chunk(s)")
 
         # Average Precision
         total_relevant = sum(relevance)
@@ -273,9 +284,9 @@ class ContextRecall(Scorer):
 
         context = _resolve_context(kw)
         if not context:
-            return ScorerResult(score=0.0, passed=False, reason="No context provided")
+            return ScorerResult.not_applicable("No context provided")
         if not expected:
-            return ScorerResult(score=0.0, passed=False, reason="No expected output provided")
+            return ScorerResult.not_applicable("No expected output provided")
 
         llm = self._llm or LLMClient()
 
@@ -292,16 +303,15 @@ class ContextRecall(Scorer):
                     ),
                 ]
             )
-            raw = _strip_code_fences(extract_resp.content or "")
-            claims_data = json.loads(raw)
-            claims = claims_data.get("claims", [])
+            claims = judge_field(extract_resp.content or "", "claims", "list")
             if not claims:
                 return ScorerResult(score=1.0, passed=True, reason="No claims in expected")
         except Exception as e:
-            return ScorerResult(score=0.0, passed=False, reason=f"Claim extraction error: {e}")
+            return ScorerResult.error(f"Claim extraction error: {e}")
 
         # Step 2: Check each claim against context
         found = 0
+        failed = 0
         for claim in claims:
             try:
                 resp = await llm.acomplete(
@@ -315,16 +325,18 @@ class ContextRecall(Scorer):
                         ),
                     ]
                 )
-                raw = _strip_code_fences(resp.content or "")
-                data = json.loads(raw)
-                if data.get("present", False):
+                if judge_field(resp.content or "", "present", "bool"):
                     found += 1
             except Exception:
                 logger.debug(
                     "Failed to check claim presence in context recall scorer",
                     exc_info=True,
                 )
+                failed += 1
                 continue
+
+        if failed:
+            return ScorerResult.error(f"Could not check {failed} of {len(claims)} claim(s)")
 
         score_val = found / len(claims)
         return ScorerResult(

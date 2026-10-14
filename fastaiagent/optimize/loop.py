@@ -291,6 +291,7 @@ async def aoptimize(
             persist=persist,
             run_name=f"{run_name or 'optimize'}:{candidate.id[:8]}:{split}",
             agent_name=agent.name,
+            run_kind="optimize",
         )
         budget.spend(1, split_cost(split, judge))
         return CandidateScore.from_eval(

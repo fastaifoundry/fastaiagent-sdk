@@ -218,9 +218,10 @@ def test_run_detail_scorer_summary(app_env):
     assert r.status_code == 200
     body = r.json()
     summary = body["run"]["scorer_summary"]
+    # errored / skipped (1.89.0) used to be counted as fails.
     assert summary == {
-        "exact_match": {"pass": 2, "fail": 1},
-        "style": {"pass": 3, "fail": 0},
+        "exact_match": {"pass": 2, "fail": 1, "errored": 0, "skipped": 0},
+        "style": {"pass": 3, "fail": 0, "errored": 0, "skipped": 0},
     }
     assert body["total_cases"] == 3
     assert len(body["cases"]) == 3

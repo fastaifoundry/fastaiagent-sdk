@@ -95,7 +95,11 @@ RoleAdherence(role="a formal banking assistant", llm=llm).score(input="", output
 ConversationRelevancy(llm=llm).score(input="", output="", turns=turns)
 ```
 
-`RoleAdherence` returns `score=0.0` with reason `"No role specified"` when no role is given.
+`RoleAdherence` returns a **skipped** result (`outcome == "skipped"`, `passed=False`, reason
+`"No role specified"`) when no role is given. Likewise every session scorer is skipped when
+there are no `turns`, and `GoalCompletion` when there is no `goal`: the check does not apply,
+so it counts toward no rate (1.89.0; these used to read as a pass or a 0.0 verdict). A judge
+call that fails, or a reply with no `score` field, is **errored**.
 
 ## Using these scorers
 

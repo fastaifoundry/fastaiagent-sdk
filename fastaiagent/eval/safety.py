@@ -16,6 +16,7 @@ from fastaiagent._internal.safety_detectors import (
     DEFAULT_PII_ENTITIES,
     detect_pii,
     detect_prompt_injection,
+    judge_field,
     moderate_text,
 )
 from fastaiagent.eval.scorer import Scorer, ScorerResult
@@ -96,7 +97,14 @@ class PromptInjection(Scorer):
     def score(
         self, input: str, output: str, expected: str | None = None, **kw: Any
     ) -> ScorerResult:
-        res = detect_prompt_injection(output, mode=self.mode, llm=self._llm)
+        try:
+            # raise_on_error: in llm mode a failed classifier used to fail
+            # *open* (not detected), so an outage scored as clean (1.89.0).
+            res = detect_prompt_injection(
+                output, mode=self.mode, llm=self._llm, raise_on_error=True
+            )
+        except Exception as e:
+            return ScorerResult.error(f"Prompt-injection check error: {e}")
         if res.detected:
             return ScorerResult(score=0.0, passed=False, reason=res.reason)
         return ScorerResult(score=1.0, passed=True, reason="No injection detected")
@@ -126,7 +134,7 @@ class OpenAIModeration(Scorer):
         try:
             res = moderate_text(output, client=self._client, model=self.model)
         except Exception as e:
-            return ScorerResult(score=0.0, passed=False, reason=f"Moderation error: {e}")
+            return ScorerResult.error(f"Moderation error: {e}")
         if res.flagged:
             return ScorerResult(score=0.0, passed=False, reason=res.reason)
         return ScorerResult(score=1.0, passed=True, reason="No categories flagged")
@@ -182,7 +190,7 @@ class Toxicity(Scorer):
                 ]
             )
             data = json.loads(_strip_code_fences(response.content or "{}"))
-            score_val = float(data.get("score", 0))
+            score_val = judge_field(data, "score", "number")
             reasoning = data.get("reasoning", "")
             return ScorerResult(
                 score=score_val,
@@ -190,7 +198,7 @@ class Toxicity(Scorer):
                 reason=reasoning,
             )
         except Exception as e:
-            return ScorerResult(score=0.0, passed=False, reason=f"Toxicity check error: {e}")
+            return ScorerResult.error(f"Toxicity check error: {e}")
 
 
 class Bias(Scorer):
@@ -243,7 +251,7 @@ class Bias(Scorer):
                 ]
             )
             data = json.loads(_strip_code_fences(response.content or "{}"))
-            score_val = float(data.get("score", 0))
+            score_val = judge_field(data, "score", "number")
             reasoning = data.get("reasoning", "")
             return ScorerResult(
                 score=score_val,
@@ -251,4 +259,4 @@ class Bias(Scorer):
                 reason=reasoning,
             )
         except Exception as e:
-            return ScorerResult(score=0.0, passed=False, reason=f"Bias check error: {e}")
+            return ScorerResult.error(f"Bias check error: {e}")

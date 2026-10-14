@@ -80,8 +80,12 @@ def get_run(
     _user: str = Depends(require_session),
     outcome: str | None = Query(
         default=None,
-        pattern="^(passed|failed)$",
-        description="Filter scenarios by overall outcome.",
+        pattern="^(passed|failed|errored)$",
+        description=(
+            "Filter scenarios by overall outcome. ``errored`` (1.89.0) is a "
+            "scenario that did not finish or could not be judged; ``failed`` no "
+            "longer includes those."
+        ),
     ),
 ) -> dict[str, Any]:
     ctx = get_context(request)
@@ -105,9 +109,13 @@ def get_run(
         all_cases = [_unpack(c) for c in case_rows]
 
         def keep(case: dict[str, Any]) -> bool:
+            if outcome == "errored":
+                return bool(case.get("error"))
             if outcome:
                 want = 1 if outcome == "passed" else 0
                 if int(case.get("passed") or 0) != want:
+                    return False
+                if outcome == "failed" and case.get("error"):
                     return False
             return True
 

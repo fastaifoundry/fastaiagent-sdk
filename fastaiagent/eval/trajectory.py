@@ -1,10 +1,41 @@
-"""Trajectory evaluation scorers."""
+"""Trajectory evaluation scorers.
+
+Three states (1.89.0), so a trajectory scorer never reports a verdict it did not
+reach. Before, every one returned **pass 1.0** when there was nothing to
+compare, and ``evaluate()`` never passed the agent's tool calls at all, so
+``tool_usage_accuracy`` read 1.00 on every case of every run:
+
+* **no expectation** (``expected_trajectory`` / ``expected_tool_calls`` /
+  ``expected_steps`` absent) → skipped: the check does not apply;
+* **no record of what the agent did** (``actual_*`` absent, e.g. ``agent_fn``
+  returned a plain string) → errored: the check could not run;
+* **an observed empty list** (the agent called no tool) → a real verdict.
+
+``evaluate()`` fills the ``actual_*`` keys from ``AgentResult.tool_calls``, and
+a dataset row may carry the ``expected_*`` keys per case.
+"""
 
 from __future__ import annotations
 
 from typing import Any
 
 from fastaiagent.eval.scorer import Scorer, ScorerResult
+
+#: Why an ``actual_*`` key is missing, and what to do about it.
+NO_RECORD = (
+    "agent_fn returned no tool-call record — return an AgentResult "
+    "(agent.run / agent.arun) to score trajectories"
+)
+
+
+def _names(calls: list[Any]) -> list[str]:
+    out: list[str] = []
+    for c in calls:
+        if isinstance(c, dict):
+            out.append(str(c.get("name", "?")))
+        else:
+            out.append(str(c))
+    return out
 
 
 class ToolUsageAccuracy(Scorer):
@@ -15,10 +46,12 @@ class ToolUsageAccuracy(Scorer):
     def score(
         self, input: str, output: str, expected: str | None = None, **kw: Any
     ) -> ScorerResult:
-        actual = kw.get("actual_trajectory", [])
-        expected_traj = kw.get("expected_trajectory", [])
+        expected_traj = kw.get("expected_trajectory")
         if not expected_traj:
-            return ScorerResult(score=1.0, passed=True, reason="No expected trajectory")
+            return ScorerResult.not_applicable("No expected trajectory")
+        if "actual_trajectory" not in kw:
+            return ScorerResult.error(NO_RECORD)
+        actual = list(kw["actual_trajectory"] or [])
 
         expected_tools = set(expected_traj)
         actual_tools = set(actual)
@@ -29,6 +62,7 @@ class ToolUsageAccuracy(Scorer):
             score=score,
             passed=score >= 0.5,
             reason=f"Correct tools: {correct}/{len(expected_tools)}",
+            details={"expected": list(expected_traj), "actual": actual},
         )
 
 
@@ -40,16 +74,27 @@ class StepEfficiency(Scorer):
     def score(
         self, input: str, output: str, expected: str | None = None, **kw: Any
     ) -> ScorerResult:
-        actual_steps = kw.get("actual_steps", 0)
-        expected_steps = kw.get("expected_steps", actual_steps)
+        if kw.get("expected_steps") is None:
+            return ScorerResult.not_applicable("No expected step count")
+        if "actual_steps" not in kw:
+            return ScorerResult.error(NO_RECORD)
+        actual_steps = int(kw["actual_steps"] or 0)
+        expected_steps = int(kw["expected_steps"])
         if actual_steps == 0:
-            return ScorerResult(score=1.0, passed=True)
+            # Took no step at all: nothing was wasted.
+            return ScorerResult(
+                score=1.0,
+                passed=True,
+                reason=f"Steps: 0 (expected: {expected_steps})",
+                details={"expected": expected_steps, "actual": 0},
+            )
 
         score = min(expected_steps / actual_steps, 1.0)
         return ScorerResult(
             score=score,
             passed=score >= 0.5,
             reason=f"Steps: {actual_steps} (expected: {expected_steps})",
+            details={"expected": expected_steps, "actual": actual_steps},
         )
 
 
@@ -61,15 +106,20 @@ class PathCorrectness(Scorer):
     def score(
         self, input: str, output: str, expected: str | None = None, **kw: Any
     ) -> ScorerResult:
-        actual = kw.get("actual_trajectory", [])
-        expected_traj = kw.get("expected_trajectory", [])
+        expected_traj = kw.get("expected_trajectory")
         if not expected_traj:
-            return ScorerResult(score=1.0, passed=True)
+            return ScorerResult.not_applicable("No expected trajectory")
+        if "actual_trajectory" not in kw:
+            return ScorerResult.error(NO_RECORD)
+        actual = list(kw["actual_trajectory"] or [])
 
-        lcs_len = self._lcs_length(actual, expected_traj)
+        lcs_len = self._lcs_length(actual, list(expected_traj))
         score = lcs_len / max(len(expected_traj), 1)
         return ScorerResult(
-            score=score, passed=score >= 0.5, reason=f"Path LCS: {lcs_len}/{len(expected_traj)}"
+            score=score,
+            passed=score >= 0.5,
+            reason=f"Path LCS: {lcs_len}/{len(expected_traj)}",
+            details={"expected": list(expected_traj), "actual": actual},
         )
 
     @staticmethod
@@ -93,9 +143,11 @@ class CycleEfficiency(Scorer):
     def score(
         self, input: str, output: str, expected: str | None = None, **kw: Any
     ) -> ScorerResult:
-        actual = kw.get("actual_trajectory", [])
+        if "actual_trajectory" not in kw:
+            return ScorerResult.error(NO_RECORD)
+        actual = list(kw["actual_trajectory"] or [])
         if not actual:
-            return ScorerResult(score=1.0, passed=True)
+            return ScorerResult(score=1.0, passed=True, reason="No tool calls: no cycles")
 
         # Count repeated consecutive tool calls
         cycles = 0
@@ -105,7 +157,10 @@ class CycleEfficiency(Scorer):
 
         score = 1.0 - (cycles / max(len(actual), 1))
         return ScorerResult(
-            score=max(score, 0.0), passed=score >= 0.5, reason=f"Cycles: {cycles}/{len(actual)}"
+            score=max(score, 0.0),
+            passed=score >= 0.5,
+            reason=f"Cycles: {cycles}/{len(actual)}",
+            details={"actual": actual},
         )
 
 
@@ -135,11 +190,12 @@ class ToolCallCorrectness(Scorer):
     def score(
         self, input: str, output: str, expected: str | None = None, **kw: Any
     ) -> ScorerResult:
-        actual = list(kw.get("actual_tool_calls", []))
-        expected_calls = kw.get("expected_tool_calls", [])
-
+        expected_calls = kw.get("expected_tool_calls")
         if not expected_calls:
-            return ScorerResult(score=1.0, passed=True, reason="No expected tool calls")
+            return ScorerResult.not_applicable("No expected tool calls")
+        if "actual_tool_calls" not in kw:
+            return ScorerResult.error(NO_RECORD)
+        actual = list(kw["actual_tool_calls"] or [])
 
         # Greedy matching: for each expected call, find a matching actual call
         remaining = list(actual)
@@ -155,8 +211,10 @@ class ToolCallCorrectness(Scorer):
                     break
 
         score = matched / len(expected_calls)
+        # Tool names only in details: arguments can carry case content.
         return ScorerResult(
             score=round(score, 4),
             passed=score >= 0.5,
             reason=f"Correct calls: {matched}/{len(expected_calls)} (name+args match)",
+            details={"expected": _names(expected_calls), "actual": _names(actual)},
         )

@@ -53,9 +53,9 @@ def test_a_v24_database_migrates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 
     init_local_db(path).close()
 
-    assert CURRENT_SCHEMA_VERSION == 25
+    assert CURRENT_SCHEMA_VERSION >= 25
     with sqlite3.connect(path) as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 25
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == CURRENT_SCHEMA_VERSION
         indexes = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='index'")}
     cols = _columns(path, "guardrail_events")
     for c in (

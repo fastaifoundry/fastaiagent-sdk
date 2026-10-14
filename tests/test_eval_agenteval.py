@@ -84,9 +84,10 @@ def test_scorecard_from_simulation_ducktyped() -> None:
     assert round(sc.overall_pass_rate, 2) == 0.67
 
 
-def test_scorecard_empty_is_zero() -> None:
+def test_scorecard_empty_has_no_rate() -> None:
+    """1.89.0: with no verdict there is no rate (it read 0.0, as if all failed)."""
     sc = Scorecard.from_eval_results(EvalResults(scores={}))
-    assert sc.overall_pass_rate == 0.0
+    assert sc.overall_pass_rate is None
     assert sc.metrics == []
 
 

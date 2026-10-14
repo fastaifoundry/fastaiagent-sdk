@@ -48,7 +48,10 @@ and a header full of bulk affordances:
   **cases**: `pass_count`, `fail_count`, and `errored_count` for cases whose
   agent raised, out of `total_cases`. `pass_rate` is passed over *scored*
   cases, and `null` when nothing was scored. Before 1.89.0 an errored case
-  was counted as a pass.
+  was counted as a pass. A scorer list the eval cannot use (an unknown name,
+  `regex_match` without a pattern, the same scorer twice) is rejected with a
+  `422` that says why; it used to be a `500`. The run is recorded with
+  `kind` `ui` (a real agent) or `ui-echo` (the echo check).
 
 ## Case editor
 

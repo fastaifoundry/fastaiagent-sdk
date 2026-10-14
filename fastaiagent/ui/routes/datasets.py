@@ -677,15 +677,23 @@ def run_eval(
     # (test fixtures override db_path; the eval framework's default-
     # persist path uses the global config and would land in the wrong
     # file under TestClient).
-    results = evaluate(
-        agent_fn=agent_fn,
-        dataset=list(dataset),
-        scorers=body.scorers,
-        run_name=body.run_name or f"editor-{name}",
-        dataset_name=f"{name}.jsonl",
-        agent_name=body.agent_name or "editor-echo",
-        persist=False,
-    )
+    from fastaiagent._internal.errors import EvalError
+
+    try:
+        results = evaluate(
+            agent_fn=agent_fn,
+            dataset=list(dataset),
+            scorers=body.scorers,
+            run_name=body.run_name or f"editor-{name}",
+            dataset_name=f"{name}.jsonl",
+            agent_name=body.agent_name or "editor-echo",
+            persist=False,
+            run_kind="ui" if runner is not None else "ui-echo",
+        )
+    except EvalError as e:
+        # An unknown scorer, one that needs arguments, or two with one name:
+        # the request is wrong, not the server (1.89.0; it was a 500).
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e)) from e
     run_id = results.persist_local(
         db_path=ctx.db_path,
         run_name=body.run_name or f"editor-{name}",
