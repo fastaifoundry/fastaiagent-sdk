@@ -18,8 +18,15 @@ For a single Agent:
   (likely hallucination).
 - Every **knowledge base** referenced via `LocalKB.as_tool()` — name,
   backend (FAISS / Qdrant / Chroma), chunk count.
-- Every **guardrail** with its type (`code` / `regex` / `llm_judge` / …)
-  and position (`input` / `output` / `tool_call` / `tool_result`).
+- Every **guardrail** with its type (`code` / `regex` / `llm_judge` / …),
+  position (`input` / `output` / `tool_call` / `tool_result`), action, and
+  whether it is blocking or observe-only. The same rule at two positions is two
+  nodes (1.89.0; `no_pii` on input and on output collapsed into one).
+- **Observed** guardrails, drawn dashed (1.89.0): rules that ran for this agent
+  but that it does not declare, such as rules distributed by the plane. They
+  are found in the local guardrail event record, so they show up only after a
+  run. The agent's **Guardrails** tab lists declared and observed rules, each
+  linking to its events.
 - The **system prompt** as a single node, with `{{variables}}` extracted
   off the template so you can see at a glance what the prompt expects to
   be filled with.
@@ -99,7 +106,13 @@ Response shape (single agent):
     }
   ],
   "guardrails": [
-    {"name": "no_pii", "guardrail_type": "regex", "position": "output"}
+    {"name": "no_pii", "guardrail_type": "regex", "position": "output",
+     "action": "mask", "blocking": true, "on_error": "block",
+     "severity": null, "floor": false}
+  ],
+  "observed_guardrails": [
+    {"name": "domain-no-ssn", "position": "output", "guardrail_type": "regex",
+     "last_seen": "2026-10-14T10:02:11+00:00", "checks": 12, "origin": "plane"}
   ],
   "sub_agents": []
 }

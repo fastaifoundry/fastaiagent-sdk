@@ -12,8 +12,13 @@ import { TraceComparePicker } from "@/components/traces/TraceComparePicker";
 import { TraceScoresCard } from "@/components/traces/TraceScoresCard";
 import { TraceSummaryBar } from "@/components/traces/TraceSummaryBar";
 import { ExportTraceDialog } from "@/components/traces/ExportTraceDialog";
+import { ReplayOriginBanner } from "@/components/replay/ReplayOriginBanner";
 import { useTrace, useTraceSpans } from "@/hooks/use-traces";
-import type { SpanRow } from "@/lib/types";
+import { TraceNotesCard } from "@/components/traces/TraceNotesCard";
+import type { RunnerType, SpanRow } from "@/lib/types";
+
+const REPLAYABLE_RUNNERS = new Set<RunnerType>(["agent", "chain", "swarm", "supervisor"]);
+const UNREPLAYABLE_SOURCES = new Set(["playground", "kb_search"]);
 
 export function TraceDetailPage() {
   const { traceId } = useParams<{ traceId: string }>();
@@ -57,13 +62,19 @@ export function TraceDetailPage() {
     );
   }
 
+  // Replay needs an agent-type root; a Playground run or a KB search has none
+  // (1.89.0). The button used to open a replay that rebuilt a default agent.
+  const replayable =
+    REPLAYABLE_RUNNERS.has(trace.data.runner_type) &&
+    !UNREPLAYABLE_SOURCES.has(trace.data.source ?? "");
+
   return (
     <div className="space-y-5">
       <PageHeader
         title={trace.data.name || "Trace"}
         description={`Detailed view of ${trace.data.span_count} span${
           trace.data.span_count === 1 ? "" : "s"
-        }`}
+        }${trace.data.source ? ` · source: ${trace.data.source}` : ""}`}
       >
         <Link to="/traces">
           <Button variant="ghost" size="sm">
@@ -106,13 +117,26 @@ export function TraceDetailPage() {
         </label>
         <ExportTraceDialog traceId={trace.data.trace_id} />
         <TraceComparePicker pinnedTraceId={trace.data.trace_id} />
-        <Link to={`/traces/${trace.data.trace_id}/replay`}>
-          <Button size="sm">
+        {replayable ? (
+          <Link to={`/traces/${trace.data.trace_id}/replay`}>
+            <Button size="sm">
+              <Play className="mr-1.5 h-3.5 w-3.5" />
+              Open in Replay
+            </Button>
+          </Link>
+        ) : (
+          <Button
+            size="sm"
+            disabled
+            title="Replay rebuilds a run from its agent, chain, swarm or supervisor root. This trace has none."
+          >
             <Play className="mr-1.5 h-3.5 w-3.5" />
             Open in Replay
           </Button>
-        </Link>
+        )}
       </PageHeader>
+
+      <ReplayOriginBanner spans={trace.data.spans} />
 
       <TraceSummaryBar trace={trace.data} duration_ms={durationMs} />
 
@@ -134,6 +158,8 @@ export function TraceDetailPage() {
       </div>
 
       <TraceScoresCard traceId={trace.data.trace_id} />
+
+      <TraceNotesCard traceId={trace.data.trace_id} note={trace.data.note} />
     </div>
   );
 }

@@ -69,16 +69,39 @@ bad runs as `needs_review`.)
 | `all` | with any agent span | output-as-expected |
 | `favorites` | starred in the Local UI (`trace_favorites`) | output-as-expected |
 | `noted` | with a note (`trace_notes`); the note is attached | output-as-expected |
-| `guardrail` | where a guardrail fired (`guardrail_events.outcome='fail'`) | needs-review |
-| `failed` | with an error-status span (best-effort, see note) | needs-review |
+| `guardrail` | where a guardrail fired: a `blocked`, `warned`, `filtered` or `reasked` event (false positives excluded), or, for a run with no event rows, a guardrail span that failed | needs-review |
+| `failed` | whose root span failed | needs-review |
 
 Modifiers: `agent=` (one agent's spans), `since_hours=` (time window),
-`limit=` (cap, most-recent first), `dedup_by="input"` (drop duplicate inputs).
+`limit=` (cap, most-recent first), `dedup_by="input"` (drop duplicate inputs),
+`include_experiments=True` (see below).
 
-!!! note "`failed` is best-effort"
-    The agent root span does not always get an `ERROR` status set on exception, so
-    `failed` keys off any error-status span in the trace. The **`guardrail`**
-    filter is the more reliable failure signal.
+!!! note "Experiments are not curated (1.89.0)"
+    Every filter leaves out replay reruns, Playground calls and other traces
+    with a non-production `fastaiagent.source`
+    ([provenance](../tracing/index.md#where-a-trace-came-from-provenance)).
+    Before 1.89.0 a rerun of a failed run was curated as a second failure,
+    and its output, which is the rerun's and not the user's, could become a
+    gold answer. Pass `include_experiments=True` (CLI `--include-experiments`)
+    to curate them anyway. Trace ids passed in `trace_ids=` are never
+    filtered.
+
+!!! warning "`guardrail` returned nothing before 1.89.0"
+    It matched an event outcome of `fail`, which the SDK has never written, so it
+    selected no traces from 1.22.0 to 1.88.0. It now selects any rule that judged
+    the payload and fired, including warn, mask, override and reask rules. A
+    check that **errored** (could not run) is not selected: that is an
+    infrastructure failure, not a quality signal. A firing you marked as a false
+    positive in the Local UI is excluded. Event rows are written whenever tracing
+    is on (1.89.0); runs recorded before then, which have rows only if the Local
+    UI flag was set, are matched on their guardrail spans.
+
+!!! note "`failed` reads the root span (1.89.0)"
+    `failed` selects traces whose **root** span failed, as the Local UI and the
+    plane read a run. It used to key off any error-status span, so a run that
+    completed after a `warn` or `mask` guardrail (whose span is ERROR), or after
+    a tool error the agent recovered from, was curated as a failure. A run that
+    fails on a streamed model call ends with an ERROR root, so it is selected.
 
 ## Python API
 
@@ -97,7 +120,7 @@ print(results.summary())
 
 `Dataset.from_traces(**kwargs)` accepts `filter`, `agent`, `since_hours`,
 `limit`, `trace_ids`, `mark_output_as_expected`, `db_path`, `dedup_by`,
-`exclude_infra_errors` (see `curate_from_traces`). `Dataset.to_jsonl(path, append=False)` writes the items in
+`exclude_infra_errors`, `include_experiments` (see `curate_from_traces`). `Dataset.to_jsonl(path, append=False)` writes the items in
 the same line format as `ReplayResult.save_as_test`, so curated and
 replay-saved cases interleave in one file.
 
@@ -120,7 +143,7 @@ fastaiagent eval curate --filter all --dedup-by input --out all.jsonl
 
 Flags: `--out/-o` (required), `--filter/-f`, `--agent`, `--since` (hours),
 `--limit`, `--append/--no-append`, `--output-as-expected/--needs-review`,
-`--dedup-by`, `--db`.
+`--dedup-by`, `--db`, `--include-experiments`.
 
 ## Item shape
 

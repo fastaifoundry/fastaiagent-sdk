@@ -33,6 +33,26 @@ def _unpack(row: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _with_counts(db: Any, run: dict[str, Any]) -> dict[str, Any]:
+    """Add ``errored_count`` and ``judged_count`` (1.89.0, D15).
+
+    ``pass_rate`` keeps every scenario in its denominator, so an errored one
+    (did not finish, or could not be judged) counts as not passed; these say
+    how many there were. Counted from the cases, so rows written before
+    1.89.0 get them too.
+    """
+    row = db.fetchone(
+        "SELECT COUNT(*) AS n, SUM(CASE WHEN error IS NOT NULL AND error != '' "
+        "THEN 1 ELSE 0 END) AS e FROM sim_cases WHERE run_id = ?",
+        (run["run_id"],),
+    )
+    n = int((row or {}).get("n") or 0)
+    errored = int((row or {}).get("e") or 0)
+    run["errored_count"] = errored
+    run["judged_count"] = n - errored
+    return run
+
+
 @router.get("")
 def list_runs(
     request: Request,
@@ -64,7 +84,7 @@ def list_runs(
             tuple(params) + (page_size, (page - 1) * page_size),
         )
         return {
-            "rows": [_unpack(r) for r in rows],
+            "rows": [_with_counts(db, _unpack(r)) for r in rows],
             "total": total,
             "page": page,
             "page_size": page_size,
@@ -80,8 +100,12 @@ def get_run(
     _user: str = Depends(require_session),
     outcome: str | None = Query(
         default=None,
-        pattern="^(passed|failed)$",
-        description="Filter scenarios by overall outcome.",
+        pattern="^(passed|failed|errored)$",
+        description=(
+            "Filter scenarios by overall outcome. ``errored`` (1.89.0) is a "
+            "scenario that did not finish or could not be judged; ``failed`` no "
+            "longer includes those."
+        ),
     ),
 ) -> dict[str, Any]:
     ctx = get_context(request)
@@ -105,15 +129,19 @@ def get_run(
         all_cases = [_unpack(c) for c in case_rows]
 
         def keep(case: dict[str, Any]) -> bool:
+            if outcome == "errored":
+                return bool(case.get("error"))
             if outcome:
                 want = 1 if outcome == "passed" else 0
                 if int(case.get("passed") or 0) != want:
+                    return False
+                if outcome == "failed" and case.get("error"):
                     return False
             return True
 
         filtered = [c for c in all_cases if keep(c)]
         return {
-            "run": _unpack(run_row),
+            "run": _with_counts(db, _unpack(run_row)),
             "cases": filtered,
             "total_cases": len(all_cases),
         }

@@ -105,10 +105,31 @@ class LLMError(FastAIAgentError):
 
 
 class LLMProviderError(LLMError):
-    """Error from an LLM provider."""
+    """Error from an LLM provider.
 
-    def __init__(self, message: str = "", status_code: int | None = None):
+    Since 1.89.0 the message built from a provider's response body is scrubbed
+    of credentials (a provider may echo a rejected key back). The structured
+    fields are parsed from that already-scrubbed body: ``provider_message`` is
+    the provider's own explanation, ``provider_code`` its error code or type,
+    and ``request_id`` its request id. Each is ``None`` when the provider did
+    not send it.
+    """
+
+    def __init__(
+        self,
+        message: str = "",
+        status_code: int | None = None,
+        *,
+        provider: str | None = None,
+        provider_message: str | None = None,
+        provider_code: str | None = None,
+        request_id: str | None = None,
+    ):
         self.status_code = status_code
+        self.provider = provider
+        self.provider_message = provider_message
+        self.provider_code = provider_code
+        self.request_id = request_id
         super().__init__(message)
 
 

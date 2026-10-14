@@ -130,8 +130,11 @@ assert results.results[0].passed
 - `.results` — a `SimulationResult` per scenario (`transcript`, `passed`,
   per-criterion `verdicts`, root `trace_id`, and `error` — why the scenario could
   not finish, or `None`).
-- `.summary()` — a printable pass/fail table; scenarios that could not finish show
-  as `ERROR` and are counted in `.errored_count`.
+- `.summary()` — a printable pass/fail table; scenarios that could not finish, or
+  could not be judged, show as `ERROR` and are counted in `.errored_count`.
+  `.pass_rate` keeps every scenario in its denominator, so an errored scenario
+  counts as not passed; `Scorecard.from_simulation(results).errored` reports
+  how many there were.
 - `.persist_local() -> run_id` — writes one `sim_runs` row + one `sim_cases`
   row per scenario to the Local UI DB (done automatically when `persist=True`).
 - `.export(path)` — dump the full results (transcripts + verdicts) to JSON.
@@ -154,3 +157,23 @@ errors the same way and the other scenarios still run. The error is persisted in
     Before 1.78.0 the paused turn was recorded as an empty reply, the simulated user
     answered the silence, and the judge scored a conversation that never happened.
     An agent with no checkpointer made the whole `simulate()` call raise.
+
+### When the judge cannot run
+
+If the judge cannot answer a criterion (the call fails, or its reply holds no
+verdict), that criterion's verdict has `errored=True` and `passed=False`, whether
+it is a success or a failure criterion. The scenario is not passed, and its
+`error` reads `judge could not run on K criteria: …`. `?outcome=errored` in the
+Local UI's simulation API lists those scenarios; `?outcome=failed` no longer
+includes them.
+
+!!! warning "Changed in 1.89.0"
+    A failure criterion's result used to be inverted unconditionally: anything
+    other than "the failure happened" counted as a pass, including a judge that
+    had errored. A scenario could pass on its failure criteria while the judge
+    was down.
+
+Every span of a simulated conversation carries `fastaiagent.source=simulation`,
+so Analytics, curation and `learn` leave it out of production numbers. It is
+still exported to a connected plane. The judge's reasons and the scenario's
+error are scrubbed of credentials before they are stored.

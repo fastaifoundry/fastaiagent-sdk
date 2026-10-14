@@ -74,7 +74,7 @@ a client always wins over them.
 
 | Field | Env | Default | What reads it |
 |---|---|---|---|
-| `ui_enabled` | `FASTAIAGENT_UI_ENABLED` | `False` | Opt-in flag for embedding the bundled UI. |
+| `ui_enabled` | `FASTAIAGENT_UI_ENABLED` | `False` | *Deprecated; read by nothing since 1.89.0.* Guardrail events, which it used to switch on, follow `trace_enabled`. Kept so existing code that sets it keeps working. |
 | `ui_host` | `FASTAIAGENT_UI_HOST` | `127.0.0.1` | `fastaiagent ui` when started without `--host`. |
 | `ui_port` | `FASTAIAGENT_UI_PORT` | `7842` | `fastaiagent ui` when started without `--port`. |
 

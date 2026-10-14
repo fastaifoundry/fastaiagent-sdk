@@ -47,6 +47,7 @@ you can see how your values were read.
 | `FASTAIAGENT_TRACE_ENABLED` | `1` | 🔒 Master switch. Off disables tracing entirely — **no local capture** (no rows in `local.db`, no attachment bytes, no foreign-span capture) and therefore no export. |
 | `FASTAIAGENT_TRACE_PAYLOADS` | `1` | 🔒 Off keeps prompts/outputs/tool-args **local only** — they stay in `local.db` (UI/Replay still work) but are stripped before spans reach the plane or any `add_exporter` target. Local capture is always full fidelity. |
 | `FASTAIAGENT_EXPORT_EVALS` | `1` | 🔒 Off stops Agent-CI verdicts (metadata) from being pushed to the plane. |
+| `FASTAIAGENT_EXPORT_EXPERIMENTS` | `0` | 🔒 On exports replay reruns and Playground calls to the plane and to `add_exporter` sinks. Off (the default, since 1.89.0) keeps them local: a rerun is not a run of the agent. `connect(export_experiments=...)` wins over it. |
 | `FASTAIAGENT_EXPORT_CHECKPOINTS` | `1` | 🔒 Off stops checkpoint **state** replication to the plane. Local durability (SQLite/Postgres) is untouched — same-machine resume still works; you lose cross-machine/runner resume, plane disaster-recovery, and console state visibility. |
 | `FASTAIAGENT_RESTORE_FROM_PLANE` | `1` | 🔒 Off stops a resume from pulling a run's state back from the plane when this machine has none. Keep it on for cross-machine resume and disaster recovery; turn it **off** to honour an erasure request, so a run whose local checkpoints were deliberately deleted is not resurrected. Deployment-wide by design — there is no per-call argument. |
 
@@ -67,11 +68,17 @@ you can see how your values were read.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `FASTAIAGENT_UI_ENABLED` | `0` | Enable the bundled UI via config. |
+| `FASTAIAGENT_UI_ENABLED` | `0` | *Deprecated; accepted and ignored since 1.89.0.* It used to switch on the guardrail event log in the agent's process. Guardrail events now follow `FASTAIAGENT_TRACE_ENABLED`, like spans. |
 | `FASTAIAGENT_UI_HOST` | `127.0.0.1` | UI bind host, used when `fastaiagent ui` is started without `--host`. Non-loopback needs `--insecure-bind`. |
 | `FASTAIAGENT_UI_PORT` | `7842` | UI bind port, used when `fastaiagent ui` is started without `--port`. |
 | `FASTAIAGENT_UI_ALLOWED_HOSTS` | loopback only | 🔒 Comma-separated extra `Host` values to accept (anti DNS-rebinding). Add your proxy hostname when fronting the UI. |
 | `FASTAIAGENT_UI_TRUST_PROXY` | `0` | 🔒 On makes the login/LLM rate limiters trust the first `X-Forwarded-For` hop. Set **only** behind a real reverse proxy; otherwise clients could spoof it to dodge throttling. |
+
+## Replay
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `FASTAIAGENT_REPLAY_TOOL_POLICY` | `block` | 🔒 What a replay rerun does with tools you did not supply: `block` (they return an error), `error` (the rerun raises), or `live` (function tools run the implementation registered in the process, the behaviour before 1.89.0). **Not a boolean.** Anything else logs a warning and stays `block`. `with_tool_policy(...)` and `replay fork --tools` win over it; the Local UI's fork dialog sets every tool explicitly, so it ignores it. REST and MCP tools run only when named in `allow` / `--allow-tool`, whatever this says. See [Replay guarantees](../replay/guarantees.md#tools-a-rerun-runs-only-what-you-supply). |
 
 ## Multimodal
 

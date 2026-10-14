@@ -117,8 +117,8 @@ only, so a re-send is free:
 | `dataset_name` | string? | the dataset the cases came from |
 | `agent_name` | string? | **resolved to a real plane agent at ingest** — this is what makes the run *evidence for a specific system*. Inferred from the callable (`agent.run` → `Agent.name`); `null` when a suite spans several agents |
 | `started_at` / `finished_at` | ISO 8601? | evidence freshness / control decay |
-| `pass_count` / `fail_count` / `pass_rate` | int/int/float? | the scored result |
-| `errored_count` / `error_rate` | int/float? | infra failures — **unscored**, never counted as quality misses |
+| `pass_count` / `fail_count` / `pass_rate` | int/int/float? | the scored result: **checks** (applicable scorer verdicts) passed / failed, and passed over passed + failed. Since 1.89.0 an errored or skipped verdict is in neither count; `pass_rate` is `null` when no verdict applied |
+| `errored_count` / `error_rate` | int/float? | **cases** whose outcome is errored — **unscored**, never counted as quality misses. Since 1.89.0 that includes a case whose scorer could not run, or that no scorer applied to, not only a case whose agent raised |
 | `gate_outcome` | `passed`\|`failed`\|`invalid` | **required**. `invalid` = infra disqualified the run |
 | `thresholds` | object? | what the gate demanded, keyed `<metric>.<field>`. `{}` = evals ran, no gate demanded |
 | `scorers` | string[]? | scorer names used |
@@ -133,9 +133,9 @@ only, so a re-send is free:
 |---|---|---|
 | `case_id` | string? | SDK-generated; the row key |
 | `ordinal` | int? | position in the dataset |
-| `per_scorer` | object? | `{scorer: {passed, score, reason}}`. Empty for an errored case |
+| `per_scorer` | object? | `{scorer: {passed, score, reason}}`, plus `errored: true` (the check could not run), `skipped: true` (it did not apply) and `details` (non-content extras, e.g. a judge's `raw_score`) only when set (1.89.0). Empty for a case whose agent raised. `reason` is scrubbed of credentials, and `null` when `FASTAIAGENT_TRACE_PAYLOADS=0` |
 | `trace_id` | string? | **the join key** — lets the plane corroborate this verdict against a trace it ingested independently |
-| `error` | string? | infra failure detail; presence means the case was never scored |
+| `error` | string? | infra failure detail; presence means the case was never scored. Scrubbed of credentials; with `FASTAIAGENT_TRACE_PAYLOADS=0` it is the fixed text `errored (detail withheld: FASTAIAGENT_TRACE_PAYLOADS=0)` |
 
 !!! warning "Never on the wire"
     `input`, `expected_output`, `actual_output`. A test freezes the exact payload
@@ -183,8 +183,23 @@ Local UI.
 
 A run becomes exportable when its **gate verdict** is recorded, not when it is
 persisted: the plane requires `gate_outcome`, and the gate necessarily runs after
-persistence. Runs nobody gated still export with `thresholds: {}` — "evals ran,
-no gate demanded" is evidence too.
+persistence. The CLI (`fastaiagent eval run`) and the pytest plugin record the
+verdict for you; a pytest session with no gate options records `passed` with
+`thresholds: {}`, because "evals ran, no gate demanded" is evidence too. A bare
+`evaluate()` in Python is exported only once you call `record_gate_result()`
+(`evaluate` → `gate` → `record_gate_result`); until then
+`fastaiagent eval export --dry-run` shows `"gate_outcome": null` and marks the run
+*not exportable*.
+
+*Changed in 1.89.0.* Before, a run waiting for its verdict was sent with an
+invented `passed` whenever any span flush drained the outbox, and the plane keeps
+the first copy of a `run_id`, so the real verdict arriving later was discarded. A
+process running an older SDK against the same `local.db` can still send those
+runs; upgrade every process that shares the file.
+
+`record_gate_result()` raises `ValueError` for any outcome other than `passed`,
+`failed` or `invalid`. The plane would reject it with a 4xx, which is never
+retried, and the bad run would hold back every run batched with it.
 
 When export is off, runs are written `synced = 1` and never queued, so a disabled
 install never grows an outbox it cannot drain. Turning it on later ships only new

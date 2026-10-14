@@ -19,13 +19,28 @@ import {
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
-import type { ExecutionCheckpoint } from "@/hooks/use-execution";
+import type { ExecutionCheckpoint, ExecutionResolution } from "@/hooks/use-execution";
 import { JsonViewer } from "@/components/shared/JsonViewer";
 import { StateDiff } from "./StateDiff";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface Props {
   checkpoints: ExecutionCheckpoint[];
+  /** Who resolved the pause (1.89.0), shown on resolved interrupt rows. */
+  resolution?: ExecutionResolution | null;
+}
+
+/** " · approved by alice" — whatever of it is known. */
+function resolvedBy(resolution: ExecutionResolution | null | undefined): string {
+  if (!resolution) return "";
+  const verb =
+    resolution.approved === true
+      ? "approved"
+      : resolution.approved === false
+        ? "rejected"
+        : "resolved";
+  if (resolution.resolver) return ` · ${verb} by ${resolution.resolver}`;
+  return resolution.approved == null ? "" : ` · ${verb}`;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -101,7 +116,7 @@ function ageText(iso: string | null): string | null {
   return `${Math.round(diff / 86_400_000)}d ago`;
 }
 
-export function CheckpointTimeline({ checkpoints }: Props) {
+export function CheckpointTimeline({ checkpoints, resolution }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const toggle = (id: string) => {
@@ -180,13 +195,29 @@ export function CheckpointTimeline({ checkpoints }: Props) {
                     </span>
                   </button>
                   {cp.status === "interrupted" && cp.interrupt_reason ? (
-                    <div className="mt-1 ml-0 text-[11px] text-fa-warning">
-                      Interrupt:{" "}
-                      <span className="font-mono">{cp.interrupt_reason}</span>
-                      {ageText(cp.created_at)
-                        ? ` — waiting ${ageText(cp.created_at)}`
-                        : ""}
-                    </div>
+                    cp.interrupt_state === "resolved" ? (
+                      <div
+                        className="mt-1 ml-0 text-[11px] text-muted-foreground"
+                        data-testid="interrupt-resolved"
+                      >
+                        Interrupt:{" "}
+                        <span className="font-mono">{cp.interrupt_reason}</span>
+                        {" — resolved"}
+                        {resolvedBy(resolution)}
+                      </div>
+                    ) : (
+                      // "pending", or an older server that doesn't say.
+                      <div
+                        className="mt-1 ml-0 text-[11px] text-fa-warning"
+                        data-testid="interrupt-waiting"
+                      >
+                        Interrupt:{" "}
+                        <span className="font-mono">{cp.interrupt_reason}</span>
+                        {ageText(cp.created_at)
+                          ? ` — waiting ${ageText(cp.created_at)}`
+                          : " — waiting"}
+                      </div>
+                    )
                   ) : null}
                   {cp.sync_error ? (
                     <div

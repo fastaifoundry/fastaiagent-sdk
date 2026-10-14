@@ -1,4 +1,6 @@
 import { useMemo } from "react";
+import { Link } from "react-router-dom";
+import { ExternalLink } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { JsonViewer } from "@/components/shared/JsonViewer";
 import { AttachmentGallery } from "@/components/multimodal/AttachmentGallery";
@@ -6,6 +8,8 @@ import { MixedContentView } from "./MixedContentView";
 import { EventsPane } from "./EventsPane";
 import { TraceStatusBadge } from "./TraceStatusBadge";
 import { formatDurationMs } from "@/lib/format";
+import { guardrailSpanVerdict, TONE_CHIP } from "@/lib/guardrail";
+import { cn } from "@/lib/utils";
 import type { SpanRow } from "@/lib/types";
 
 interface Props {
@@ -23,6 +27,8 @@ const INPUT_KEYS = new Set([
   "tool.args",
   "retrieval.query",
   "memory.query",
+  // A Playground run's root: the resolved prompt it sent (1.89.0).
+  "fastaiagent.playground.input",
   "input",
 ]);
 
@@ -44,6 +50,7 @@ const OUTPUT_KEYS = new Set([
   "memory.message_count",
   "memory.action",
   "memory.detail",
+  "fastaiagent.playground.output",
   "output",
 ]);
 
@@ -104,6 +111,10 @@ export function SpanInspector({ span }: Props) {
 
   const duration =
     new Date(span.end_time).getTime() - new Date(span.start_time).getTime();
+  // A guardrail span's OTel status is ERROR for any non-pass verdict, so the
+  // header shows what the check did instead (1.89.0).
+  const verdict = guardrailSpanVerdict(span);
+  const eventId = span.guardrail?.event_id;
 
   return (
     <div className="flex flex-col rounded-md border bg-card">
@@ -114,9 +125,46 @@ export function SpanInspector({ span }: Props) {
             <span className="font-mono">{span.span_id.slice(0, 10)}…</span>
             <span>·</span>
             <span>{formatDurationMs(duration)}</span>
+            {verdict && (
+              <>
+                <span>·</span>
+                <span
+                  className="font-mono"
+                  title="A guardrail span's OTel status is ERROR for any verdict that is not a pass, a warn included."
+                >
+                  otel {span.status || "UNSET"}
+                </span>
+              </>
+            )}
           </div>
         </div>
-        <TraceStatusBadge status={span.status} />
+        {verdict ? (
+          <div
+            data-testid="guardrail-verdict-header"
+            className="flex shrink-0 flex-col items-end gap-1"
+          >
+            <span
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 font-mono text-xs uppercase",
+                TONE_CHIP[verdict.tone]
+              )}
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-current" />
+              {verdict.label}
+            </span>
+            {eventId && (
+              <Link
+                to={`/guardrail-events/${eventId}`}
+                className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+              >
+                <ExternalLink className="h-3 w-3" />
+                Open guardrail event
+              </Link>
+            )}
+          </div>
+        ) : (
+          <TraceStatusBadge status={span.status} />
+        )}
       </div>
       <Tabs defaultValue="input" className="flex-1">
         <TabsList className="mx-4 mt-3">

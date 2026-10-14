@@ -15,6 +15,7 @@ answer to fix, so those cases are emitted with ``expected_output=""`` and
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -37,6 +38,57 @@ _VALID_DEDUP = {"none", "input"}
 _VALID_INFRA_MODES = {"agent", "trace"}
 # Span statuses that indicate a clean (non-error) span.
 _OK_STATUSES = {"OK", "UNSET"}
+
+
+def _infra_error(span: Any) -> bool:
+    """An error-status span that signals infrastructure, not a guardrail verdict."""
+    if (span.status or "OK") in _OK_STATUSES:
+        return False
+    if (span.name or "").startswith("guardrail."):
+        return bool((span.attributes or {}).get("fastaiagent.guardrail.errored"))
+    return True
+
+
+def _fired_predicates() -> tuple[str, str]:
+    """SQL for "a guardrail fired": over ``guardrail_events``, and over spans.
+
+    Built from :data:`fastaiagent.ui.events.FIRED_OUTCOMES`, the values the
+    event writer produces, never a literal (1.89.0, G8: this filter matched
+    ``'fail'`` and so returned nothing since it shipped). A false positive
+    marked in the UI does not count, and neither does a check that errored:
+    that is an infrastructure failure, not a quality signal.
+    """
+    from fastaiagent.ui.events import FIRED_OUTCOMES
+
+    outcomes = ", ".join(f"'{o}'" for o in FIRED_OUTCOMES)
+    event_sql = f"outcome IN ({outcomes}) AND COALESCE(false_positive, 0) = 0"
+
+    def attr(key: str) -> str:
+        return (
+            f"CASE WHEN json_valid(g.attributes) "
+            f"THEN json_extract(g.attributes, '$.\"fastaiagent.guardrail.{key}\"') END"
+        )
+
+    span_sql = (
+        f"g.name LIKE 'guardrail.%' AND {attr('passed')} = 0 "
+        f"AND COALESCE({attr('errored')}, 0) = 0"
+    )
+    return event_sql, span_sql
+
+
+_EVENT_FIRED_SQL, _SPAN_FIRED_SQL = _fired_predicates()
+
+#: Traces where a rule fired. Event rows are authoritative when a trace has
+#: any (they carry the false-positive marks). A trace with none (it ran while
+#: the Local UI was off) falls back to its guardrail spans, which are written
+#: whenever tracing is on.
+_GUARDRAIL_FIRED_TRACES_SQL = (
+    f"SELECT trace_id FROM guardrail_events WHERE {_EVENT_FIRED_SQL} "
+    "UNION "
+    f"SELECT g.trace_id FROM spans g WHERE {_SPAN_FIRED_SQL} "
+    "AND g.trace_id NOT IN "
+    "(SELECT trace_id FROM guardrail_events WHERE trace_id IS NOT NULL)"
+)
 
 
 class CuratedDataset(list):
@@ -84,6 +136,7 @@ def curate_from_traces(
     db_path: str | Path | None = None,
     dedup_by: str = "none",
     exclude_infra_errors: str = "agent",
+    include_experiments: bool = False,
 ) -> CuratedDataset:
     """Build eval dataset item dicts from captured agent traces.
 
@@ -106,6 +159,11 @@ def curate_from_traces(
             additionally drops any run whose trace carries an error-status span.
             The ``guardrail`` / ``failed`` filters are unaffected (they
             intentionally surface bad runs as ``needs_review``).
+        include_experiments: also curate replay, Playground, learn and eval
+            traces. Off by default (1.89.0): a replay's output is a
+            counterfactual, not a gold answer, and curating it fed a modified
+            run back in as ground truth. Explicit ``trace_ids`` are always
+            honoured.
 
     Returns:
         A list of item dicts ready for :class:`~fastaiagent.eval.Dataset`.
@@ -136,7 +194,12 @@ def curate_from_traces(
             truncated = 0
         else:
             selected, truncated = _select_trace_ids(
-                db, filter=filter, agent=agent, since_hours=since_hours, limit=limit
+                db,
+                filter=filter,
+                agent=agent,
+                since_hours=since_hours,
+                limit=limit,
+                include_experiments=include_experiments,
             )
         notes = _notes_map(db, selected) if filter == "noted" else {}
         reasons = _guardrail_reasons(db, selected) if filter == "guardrail" else {}
@@ -166,7 +229,9 @@ def curate_from_traces(
         # Trace-level infra signal (used only by exclude_infra_errors="trace").
         # The agent root span isn't always stamped ERROR on a downstream failure,
         # so "any span carries an error status" is the reliable trace-level cue.
-        trace_has_error = any((s.status or "OK") not in _OK_STATUSES for s in trace.spans)
+        # Except a guardrail span, whose status is its *verdict* (a ``warn`` rule
+        # that fired is ERROR): it counts only when the check could not run.
+        trace_has_error = any(_infra_error(s) for s in trace.spans)
         for span in agent_spans:
             n_spans += 1
             attrs = span.attributes or {}
@@ -261,10 +326,17 @@ def _select_trace_ids(
     agent: str | None,
     since_hours: float | None,
     limit: int | None,
+    include_experiments: bool = False,
 ) -> tuple[list[str], int]:
     """Return (trace_ids ordered most-recent-first, truncated_count)."""
     where = ["s.name LIKE 'agent.%'"]
     params: list[Any] = []
+    if not include_experiments:
+        from fastaiagent.trace.provenance import non_production_filter
+
+        np_clause, np_params = non_production_filter(column="s.trace_id")
+        where.append(np_clause.removeprefix("AND "))
+        params.extend(np_params)
 
     if since_hours is not None:
         cutoff = (datetime.now(tz=timezone.utc) - timedelta(hours=since_hours)).isoformat()
@@ -279,18 +351,23 @@ def _select_trace_ids(
     if filter == "favorites":
         where.append("s.trace_id IN (SELECT trace_id FROM trace_favorites)")
     elif filter == "noted":
-        where.append("s.trace_id IN (SELECT trace_id FROM trace_notes)")
-    elif filter == "guardrail":
+        # A blank note is no note (1.89.0): the Local UI stored an empty row
+        # when a note was cleared, and every such trace was curated as noted.
         where.append(
-            "s.trace_id IN (SELECT DISTINCT trace_id FROM guardrail_events WHERE outcome = 'fail')"
+            "s.trace_id IN (SELECT trace_id FROM trace_notes WHERE TRIM(COALESCE(note, '')) <> '')"
         )
+    elif filter == "guardrail":
+        where.append(f"s.trace_id IN ({_GUARDRAIL_FIRED_TRACES_SQL})")
     elif filter == "failed":
-        # Best-effort: a trace is "failed" if any span carries an error status.
-        # (The agent root span does not always get ERROR set on exception, so the
-        # `guardrail` filter is the more reliable failure signal — see docs.)
+        # A trace is "failed" when its root span failed (1.89.0), as the plane
+        # and the Local UI read it. Any error-status span counted before, so a
+        # run that completed after a ``warn`` or ``mask`` guardrail (whose span
+        # is ERROR) was curated as a failure.
+        from fastaiagent.trace.storage import TraceStore
+
         where.append(
-            "s.trace_id IN (SELECT DISTINCT trace_id FROM spans "
-            "WHERE status NOT IN ('OK', 'UNSET'))"
+            "s.trace_id IN (SELECT trace_id FROM spans GROUP BY trace_id "
+            f"HAVING {TraceStore.TRACE_STATUS_SQL} NOT IN ('OK', 'UNSET'))"
         )
 
     sql = (
@@ -311,7 +388,11 @@ def _notes_map(db: Any, trace_ids: list[str]) -> dict[str, str]:
         return {}
     wanted = set(trace_ids)
     rows = db.fetchall("SELECT trace_id, note FROM trace_notes")
-    return {r["trace_id"]: r["note"] for r in rows if r["trace_id"] in wanted and r["note"]}
+    return {
+        r["trace_id"]: r["note"]
+        for r in rows
+        if r["trace_id"] in wanted and (r["note"] or "").strip()
+    }
 
 
 def _guardrail_reasons(db: Any, trace_ids: list[str]) -> dict[str, str]:
@@ -320,7 +401,7 @@ def _guardrail_reasons(db: Any, trace_ids: list[str]) -> dict[str, str]:
     wanted = set(trace_ids)
     rows = db.fetchall(
         "SELECT trace_id, guardrail_name, message FROM guardrail_events "
-        "WHERE outcome = 'fail' ORDER BY timestamp"
+        f"WHERE {_EVENT_FIRED_SQL} ORDER BY timestamp"
     )
     out: dict[str, str] = {}
     for r in rows:
@@ -330,6 +411,26 @@ def _guardrail_reasons(db: Any, trace_ids: list[str]) -> dict[str, str]:
         gname = r["guardrail_name"] or "guardrail"
         msg = (r["message"] or "").strip()
         out[tid] = f"guardrail '{gname}' fired" + (f": {msg}" if msg else "")
+    # Traces with no event rows (the Local UI was off when they ran): fall back
+    # to the guardrail spans, which are always written while tracing is on.
+    missing = wanted - set(out)
+    if missing:
+        spans = db.fetchall(
+            f"SELECT trace_id, name, attributes FROM spans g WHERE {_SPAN_FIRED_SQL} "
+            "ORDER BY start_time"
+        )
+        for r in spans:
+            tid = r["trace_id"]
+            if tid not in missing or tid in out:
+                continue
+            gname = (r["name"] or "").removeprefix("guardrail.") or "guardrail"
+            try:
+                action = json.loads(r["attributes"] or "{}").get(
+                    "fastaiagent.guardrail.action_taken"
+                )
+            except (TypeError, ValueError):
+                action = None
+            out[tid] = f"guardrail '{gname}' fired" + (f" ({action})" if action else "")
     return out
 
 

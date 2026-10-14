@@ -316,8 +316,9 @@ async def _detect_injection_llm(
                 UserMessage(prompt),
             ]
         )
-        data = json.loads(_strip_fences(response.content or "{}"))
-        detected = bool(data.get("injection", False))
+        raw = response.content or "{}"
+        detected = judge_field(raw, "injection", "bool")
+        data = json.loads(_strip_fences(raw))
         return InjectionResult(
             detected=detected,
             score=1.0 if detected else 0.0,
@@ -380,6 +381,42 @@ def _strip_fences(text: str) -> str:
     text = re.sub(r"^```(?:json)?\s*\n?", "", text)
     text = re.sub(r"\n?```\s*$", "", text)
     return text.strip()
+
+
+def judge_field(raw: str | dict[str, Any], key: str, kind: str) -> Any:
+    """``key`` from a judge's JSON reply, or raise ``ValueError`` (1.89.0).
+
+    ``raw`` is the reply text, or the reply already parsed. ``kind`` is
+    ``"bool"``, ``"number"`` or ``"list"``. A reply that parses but
+    lacks the verdict field (``{}``, ``{"reasoning": "..."}``) used to read as
+    the field's default: "no injection", toxicity 0.0, "no claims". That is a
+    verdict the judge never gave; every caller treats the raise as
+    could-not-run. Booleans also accept ``"true"``/``"false"``; numbers accept
+    numeric strings.
+    """
+    import json
+
+    data = raw if isinstance(raw, dict) else json.loads(_strip_fences(raw))
+    if not isinstance(data, dict) or key not in data:
+        raise ValueError(f"judge reply has no {key!r} field")
+    value = data[key]
+    if kind == "bool":
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str) and value.strip().lower() in ("true", "false"):
+            return value.strip().lower() == "true"
+    elif kind == "number":
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return float(value)
+        if isinstance(value, str):
+            try:
+                return float(value)
+            except ValueError:
+                pass
+    elif kind == "list":
+        if isinstance(value, list):
+            return value
+    raise ValueError(f"judge reply field {key!r} is not a {kind}: {value!r}"[:200])
 
 
 # --------------------------------------------------------------------------- #
@@ -679,8 +716,9 @@ async def _detect_toxicity_llm(
                 UserMessage(prompt),
             ]
         )
-        data = json.loads(_strip_fences(response.content or "{}"))
-        score = float(data.get("toxicity", 0.0))
+        raw = response.content or "{}"
+        score = judge_field(raw, "toxicity", "number")
+        data = json.loads(_strip_fences(raw))
         return ToxicityResult(
             toxic=score >= threshold,
             score=round(score, 4),
@@ -725,6 +763,10 @@ class GroundednessResult:
     supported: int
     total: int
     reason: str
+    errored: int = 0
+    """Claims whose verification call failed (1.89.0). They count as unsupported
+    in ``score``, as before; an eval scorer reads this to report errored instead
+    of a quietly lower score."""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -748,8 +790,6 @@ async def score_groundedness(
     failure so the caller's ``on_error`` policy governs it; the default (used by
     eval scorers) keeps today's behavior of returning a ``0.0`` score on error.
     """
-    import json
-
     from fastaiagent.llm import LLMClient, SystemMessage, UserMessage
 
     client = llm or LLMClient(max_retries=LLM_DETECTOR_MAX_RETRIES)
@@ -767,8 +807,7 @@ async def score_groundedness(
                 ),
             ]
         )
-        raw = _strip_fences(extract_resp.content or "")
-        claims = json.loads(raw).get("claims", [])
+        claims = judge_field(extract_resp.content or "", "claims", "list")
         if not claims:
             return GroundednessResult(score=1.0, supported=0, total=0, reason="No claims extracted")
     except Exception as e:
@@ -780,6 +819,7 @@ async def score_groundedness(
 
     # Step 2: Verify each claim against the context.
     supported = 0
+    errored = 0
     for claim in claims:
         try:
             verify_resp = await client.acomplete(
@@ -794,10 +834,10 @@ async def score_groundedness(
                     ),
                 ]
             )
-            raw = _strip_fences(verify_resp.content or "")
-            if json.loads(raw).get("supported", False):
+            if judge_field(verify_resp.content or "", "supported", "bool"):
                 supported += 1
         except Exception:
+            errored += 1
             continue
 
     score_val = supported / len(claims)
@@ -806,6 +846,7 @@ async def score_groundedness(
         supported=supported,
         total=len(claims),
         reason=f"Supported claims: {supported}/{len(claims)}",
+        errored=errored,
     )
 
 

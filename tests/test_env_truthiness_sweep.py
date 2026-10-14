@@ -137,6 +137,9 @@ _NOT_BOOLEAN_ALLOWLIST: dict[str, str] = {
     # is deliberate so a typo can never silently fail-closed a production gate.
     # It warns on an unrecognised value (see client._log/connect).
     "FASTAIAGENT_GOVERNANCE_FAIL_MODE": "enum: open | closed",
+    # An enum (1.89.0). An unrecognised value warns and falls back to "block",
+    # the safe policy: a typo never lets a rerun run tools for real.
+    "FASTAIAGENT_REPLAY_TOOL_POLICY": "enum: block | error | live",
     # Free-form strings / paths / ints, never compared to a boolean literal.
     "FASTAIAGENT_API_KEY": "credential",
     "FASTAIAGENT_TARGET": "URL",

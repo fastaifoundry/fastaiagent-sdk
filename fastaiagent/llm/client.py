@@ -32,6 +32,37 @@ from fastaiagent.llm.structured import OutputSpec, _strip_code_fences
 
 logger = logging.getLogger(__name__)
 
+
+def _parse_provider_error_body(text: str) -> tuple[str | None, str | None, str | None]:
+    """``(message, code, request_id)`` from a provider's error body, where present.
+
+    OpenAI, Anthropic and Gemini nest the details under ``error`` (Anthropic
+    adds a top-level ``request_id``; Gemini's ``status`` is its symbolic code).
+    Ollama sends ``{"error": "<text>"}``. Anything that is not JSON yields
+    ``(None, None, None)``. Called on text that is already scrubbed.
+    """
+    try:
+        data = _json.loads(text)
+    except (ValueError, TypeError):
+        return None, None, None
+    if not isinstance(data, dict):
+        return None, None, None
+    err = data.get("error")
+    request_id = data.get("request_id")
+    if isinstance(err, str):
+        return err, None, request_id if isinstance(request_id, str) else None
+    if not isinstance(err, dict):
+        return None, None, request_id if isinstance(request_id, str) else None
+    message = err.get("message")
+    code = err.get("status") if isinstance(err.get("status"), str) else None
+    code = code or err.get("code") or err.get("type")
+    return (
+        message if isinstance(message, str) else None,
+        str(code) if code is not None else None,
+        request_id if isinstance(request_id, str) else None,
+    )
+
+
 # Replay determinism: when a Replay rerun installs a *list* of recorded
 # responses in this ContextVar (one per captured ``llm.*`` span on the
 # original trace, in capture order), ``acomplete`` pops the front entry
@@ -558,9 +589,11 @@ class LLMClient:
             async with client.stream("POST", url, json=body, headers=headers) as resp:
                 if resp.status_code != 200:
                     body_text = await resp.aread()
-                    raise LLMProviderError(
-                        f"OpenAI API error {resp.status_code}: {body_text.decode()}",
-                        status_code=resp.status_code,
+                    raise self._provider_error(
+                        f"OpenAI API error {resp.status_code}",
+                        body_text.decode(errors="replace"),
+                        resp.status_code,
+                        resp.headers,
                     )
                 async for line in resp.aiter_lines():
                     if not line.startswith("data: "):
@@ -916,6 +949,7 @@ class LLMClient:
         text_parts: list[str] = []
         streamed_tool_calls: list[dict[str, Any]] = []
         usage_seen: dict[str, int] | None = None
+        finish_seen = ""
 
         try:
             for attempt in range(self.max_retries + 1):
@@ -945,6 +979,8 @@ class LLMClient:
                                     "arguments": event.arguments,
                                 }
                             )
+                        elif isinstance(event, StreamDone):
+                            finish_seen = event.finish_reason
                         yield event
                     return
                 except LLMProviderError as e:
@@ -956,8 +992,17 @@ class LLMClient:
                         streamed_tool_calls.clear()
                         await asyncio.sleep(self._retry_delay(attempt))
                         continue
-                    span.record_exception(e)
                     raise
+        except Exception as e:
+            # Any failure, not only a provider error: a refused connection or a
+            # malformed chunk failed the call just the same. ERROR, like
+            # ``acomplete``'s span gets from ``start_as_current_span`` (1.89.0).
+            # ``GeneratorExit`` (consumer stopped early) and ``CancelledError``
+            # are BaseException, so neither lands here.
+            from fastaiagent.trace.span import mark_span_error
+
+            mark_span_error(span, e)
+            raise
         finally:
             # Runs on exhaustion, on an exception, AND when a consumer abandons
             # the generator early (``GeneratorExit`` at the yield) — a streamed
@@ -975,6 +1020,9 @@ class LLMClient:
                     response_tool_calls=_serialize_for_span(streamed_tool_calls)
                     if streamed_tool_calls
                     else None,
+                    # A streamed span recorded no finish reason (1.89.0), so a
+                    # reply cut off at max_tokens looked complete in the trace.
+                    finish_reason=finish_seen or None,
                 )
                 if usage_seen is not None:
                     from fastaiagent._internal.pricing import usage_cost
@@ -1006,8 +1054,11 @@ class LLMClient:
             usage_data: dict[str, int] = {}
             # Accumulate tool call args per call_id
             pending_tools: dict[str, dict[str, Any]] = {}
+            provider_finish = ""
 
             async for event in self.astream(messages, tools=tools, **kwargs):
+                if isinstance(event, StreamDone):
+                    provider_finish = event.finish_reason
                 if isinstance(event, TextDelta):
                     content_parts.append(event.text)
                 elif isinstance(event, ToolCallStart):
@@ -1029,7 +1080,9 @@ class LLMClient:
                     }
 
             content = "".join(content_parts) or None
-            finish = "tool_calls" if tool_calls else "stop"
+            # The provider's own reason when it gave one (1.89.0): this was
+            # hard-coded, so a truncated reply reported "stop".
+            finish = provider_finish or ("tool_calls" if tool_calls else "stop")
             return LLMResponse(
                 content=content,
                 tool_calls=tool_calls,
@@ -1268,16 +1321,20 @@ class LLMClient:
         async with self._new_async_client() as client:
             resp = await client.post(url, json=body, headers=headers)
         if resp.status_code != 200:
-            raise LLMProviderError(
-                f"OpenAI Decisions API error {resp.status_code}: {resp.text}",
-                status_code=resp.status_code,
+            raise self._provider_error(
+                f"OpenAI Decisions API error {resp.status_code}",
+                resp.text,
+                resp.status_code,
+                resp.headers,
             )
         try:
             data: dict[str, Any] = resp.json()
         except ValueError as e:
-            raise LLMProviderError(
-                f"OpenAI Decisions API returned non-JSON: {resp.text[:300]}",
-                status_code=resp.status_code,
+            raise self._provider_error(
+                "OpenAI Decisions API returned non-JSON",
+                resp.text[:300],
+                resp.status_code,
+                resp.headers,
             ) from e
         return data, resp.headers.get("x-request-id")
 
@@ -1316,8 +1373,8 @@ class LLMClient:
             status = getattr(e, "status_code", None)
             if isinstance(status, int):
                 # Wrapped so the retry loop and callers see one error type.
-                raise LLMProviderError(
-                    f"OpenAI Decisions API error {status}: {e}", status_code=status
+                raise self._provider_error(
+                    f"OpenAI Decisions API error {status}", str(e), status
                 ) from e
             raise
 
@@ -1521,6 +1578,49 @@ class LLMClient:
 
         return body, headers
 
+    def _credential_values(self) -> list[str]:
+        """Every credential this client could have sent: its own key, plus the
+        provider keys in the environment (the env var it fell back to among them)."""
+        from fastaiagent._internal.scrub import known_credential_values
+
+        values = known_credential_values()
+        if self.api_key:
+            values.insert(0, self.api_key)
+        return values
+
+    def _provider_error(
+        self,
+        prefix: str,
+        body: str,
+        status: int | None,
+        headers: Any = None,
+    ) -> LLMProviderError:
+        """An :class:`LLMProviderError` for a failed provider call, scrubbed (1.89.0).
+
+        A provider may echo the rejected key in its error body (OpenAI does:
+        ``"Incorrect API key provided: sk-…"``), and this message is copied into
+        span events, status descriptions, logs and the plane's ``trace.error``.
+        So it is cleaned here, where it is built, and every channel downstream
+        gets it already clean. The message keeps its ``"{prefix}: {body}"`` shape.
+        """
+        from fastaiagent._internal.scrub import scrub_secrets
+
+        clean = scrub_secrets(body or "", self._credential_values())
+        message, code, request_id = _parse_provider_error_body(clean)
+        if request_id is None and headers is not None:
+            try:
+                request_id = headers.get("x-request-id") or headers.get("request-id")
+            except Exception:  # pragma: no cover — headers of an unexpected type
+                request_id = None
+        return LLMProviderError(
+            f"{prefix}: {clean}",
+            status_code=status,
+            provider=self.provider,
+            provider_message=message,
+            provider_code=code,
+            request_id=request_id,
+        )
+
     def _api_key_env(self) -> tuple[str, str]:
         """Return (env_var, label) for API key resolution.
 
@@ -1550,9 +1650,11 @@ class LLMClient:
         async with self._new_async_client() as client:
             resp = await client.post(url, json=body, headers=headers)
             if resp.status_code != 200:
-                raise LLMProviderError(
-                    f"OpenAI API error {resp.status_code}: {resp.text}",
-                    status_code=resp.status_code,
+                raise self._provider_error(
+                    f"OpenAI API error {resp.status_code}",
+                    resp.text,
+                    resp.status_code,
+                    resp.headers,
                 )
             data = resp.json()
 
@@ -1708,9 +1810,11 @@ class LLMClient:
         async with self._new_async_client() as client:
             resp = await client.post(url, json=body, headers=headers)
             if resp.status_code != 200:
-                raise LLMProviderError(
-                    f"Anthropic API error {resp.status_code}: {resp.text}",
-                    status_code=resp.status_code,
+                raise self._provider_error(
+                    f"Anthropic API error {resp.status_code}",
+                    resp.text,
+                    resp.status_code,
+                    resp.headers,
                 )
             data = resp.json()
 
@@ -1808,9 +1912,11 @@ class LLMClient:
         async with self._new_async_client() as client:
             resp = await client.post(url, json=body)
             if resp.status_code != 200:
-                raise LLMProviderError(
-                    f"Ollama API error {resp.status_code}: {resp.text}",
-                    status_code=resp.status_code,
+                raise self._provider_error(
+                    f"Ollama API error {resp.status_code}",
+                    resp.text,
+                    resp.status_code,
+                    resp.headers,
                 )
             data = resp.json()
 
@@ -1947,9 +2053,12 @@ class LLMClient:
         else:
             chunk_source = self._aiter_openai_sse_chunks(body, headers)
 
+        finish_reason = ""
         async for chunk in chunk_source:
             choices = chunk.get("choices", [])
             delta = choices[0].get("delta", {}) if choices else {}
+            if choices and choices[0].get("finish_reason"):
+                finish_reason = str(choices[0]["finish_reason"])
 
             # Text content
             if text := delta.get("content"):
@@ -1995,7 +2104,7 @@ class LLMClient:
                 arguments=args,
             )
 
-        yield StreamDone()
+        yield StreamDone(finish_reason=finish_reason)
 
     async def _stream_anthropic(
         self, messages: list[Message], tools: list[dict[str, Any]] | None = None, **kwargs: Any
@@ -2011,14 +2120,17 @@ class LLMClient:
         current_tool_input_str = ""
         prompt_tokens = 0
         completion_tokens = 0
+        finish_reason = ""
 
         async with self._new_async_client() as client:
             async with client.stream("POST", url, json=body, headers=headers) as resp:
                 if resp.status_code != 200:
                     body_text = await resp.aread()
-                    raise LLMProviderError(
-                        f"Anthropic API error {resp.status_code}: {body_text.decode()}",
-                        status_code=resp.status_code,
+                    raise self._provider_error(
+                        f"Anthropic API error {resp.status_code}",
+                        body_text.decode(errors="replace"),
+                        resp.status_code,
+                        resp.headers,
                     )
 
                 event_type = ""
@@ -2074,10 +2186,17 @@ class LLMClient:
                     elif event_type == "message_delta":
                         delta_usage = data.get("usage", {})
                         completion_tokens = delta_usage.get("output_tokens", 0)
+                        stop_reason = (data.get("delta") or {}).get("stop_reason") or ""
+                        if stop_reason:
+                            # Same mapping as a non-streamed call.
+                            finish_reason = {
+                                "end_turn": "stop",
+                                "tool_use": "tool_calls",
+                            }.get(stop_reason, stop_reason)
 
         if prompt_tokens or completion_tokens:
             yield Usage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens)
-        yield StreamDone()
+        yield StreamDone(finish_reason=finish_reason)
 
     async def _stream_ollama(
         self, messages: list[Message], tools: list[dict[str, Any]] | None = None, **kwargs: Any
@@ -2126,14 +2245,17 @@ class LLMClient:
         url = f"{self.base_url.rstrip('/')}/api/chat"
         prompt_tokens = 0
         completion_tokens = 0
+        finish_reason = ""
 
         async with self._new_async_client() as client:
             async with client.stream("POST", url, json=body) as resp:
                 if resp.status_code != 200:
                     body_text = await resp.aread()
-                    raise LLMProviderError(
-                        f"Ollama API error {resp.status_code}: {body_text.decode()}",
-                        status_code=resp.status_code,
+                    raise self._provider_error(
+                        f"Ollama API error {resp.status_code}",
+                        body_text.decode(errors="replace"),
+                        resp.status_code,
+                        resp.headers,
                     )
 
                 async for line in resp.aiter_lines():
@@ -2150,6 +2272,7 @@ class LLMClient:
                     if chunk.get("done"):
                         prompt_tokens = chunk.get("prompt_eval_count", 0)
                         completion_tokens = chunk.get("eval_count", 0)
+                        finish_reason = str(chunk.get("done_reason") or "")
 
                         # Tool calls in final message
                         if raw_tcs := msg.get("tool_calls"):
@@ -2163,7 +2286,7 @@ class LLMClient:
 
         if prompt_tokens or completion_tokens:
             yield Usage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens)
-        yield StreamDone()
+        yield StreamDone(finish_reason=finish_reason)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to canonical format."""

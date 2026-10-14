@@ -22,6 +22,7 @@ a clear message.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -74,6 +75,189 @@ def _replication_state(db: Any, execution_id: str) -> dict[str, dict[str, Any]]:
         r["checkpoint_id"]: {"synced": bool(r["synced"]), "sync_error": r["sync_error"]}
         for r in rows
         if r["checkpoint_id"]
+    }
+
+
+#: Root-span attributes that link a trace to an execution (decision D7: every
+#: resume is its own trace, tied back by id rather than by parentage).
+_EXECUTION_ID_KEYS = (
+    "agent.execution_id",
+    "agent.resumed_execution_id",
+    "chain.execution_id",
+    "chain.resumed_execution_id",
+    "swarm.execution_id",
+    "swarm.resumed_execution_id",
+    "supervisor.execution_id",
+    "supervisor.resumed_execution_id",
+)
+_RESUMED_KEYS = (
+    "agent.resumed_execution_id",
+    "chain.resumed_execution_id",
+    "swarm.resumed_execution_id",
+    "supervisor.resumed_execution_id",
+)
+_OUTPUT_KEYS = ("agent.output", "chain.output", "swarm.output", "supervisor.output")
+#: The first checkpoint is written after the run's root span opened (the span
+#: wraps the guardrails and the first model call), so the span scan starts this
+#: far before it. The scan is a bound on work, not on correctness: execution
+#: ids are matched exactly.
+_RUN_SCAN_MARGIN = timedelta(hours=24)
+_OUTPUT_MAX = 2000
+
+
+def _pending_row(db: Any, execution_id: str) -> dict[str, Any] | None:
+    """The run's ``pending_interrupts`` row, or ``None`` when nothing waits."""
+    row = db.fetchone(
+        """SELECT execution_id, chain_name, node_id, reason, context, agent_path, created_at
+           FROM pending_interrupts WHERE execution_id = ? LIMIT 1""",
+        (execution_id,),
+    )
+    if row is None:
+        return None
+    raw = row["context"]
+    try:
+        context = json.loads(raw or "{}") if isinstance(raw, str) else raw
+    except json.JSONDecodeError:
+        context = raw
+    return {
+        "execution_id": row["execution_id"],
+        "chain_name": row["chain_name"],
+        "node_id": row["node_id"],
+        "reason": row["reason"],
+        "context": context,
+        "agent_path": row["agent_path"],
+        "created_at": row["created_at"],
+    }
+
+
+def _interrupt_states(rows: list[Any], pending: dict[str, Any] | None) -> list[str | None]:
+    """Per checkpoint: ``"pending"`` / ``"resolved"`` for an ``interrupted`` row.
+
+    An ``interrupted`` row is still waiting only while a pending row exists AND
+    nothing ran after it on the same ``agent_path`` — a later step there means
+    someone resumed it. Until 1.89.0 the UI showed every ``interrupted`` row as
+    "waiting", forever, because it had nothing else to go on.
+    """
+    from fastaiagent.chain.checkpoint import is_run_end
+
+    states: list[str | None] = []
+    for i, cp in enumerate(rows):
+        if cp.status != "interrupted":
+            states.append(None)
+            continue
+        ran_after = any(
+            (later.agent_path or "") == (cp.agent_path or "") and not is_run_end(later)
+            for later in rows[i + 1 :]
+        )
+        states.append("pending" if pending is not None and not ran_after else "resolved")
+    return states
+
+
+def _scan_start(rows: list[Any]) -> str:
+    first = min((cp.created_at for cp in rows if cp.created_at), default="")
+    try:
+        return (datetime.fromisoformat(first) - _RUN_SCAN_MARGIN).isoformat()
+    except ValueError:
+        return ""
+
+
+def _runs(db: Any, execution_id: str, since: str) -> list[dict[str, Any]]:
+    """Every trace that ran this execution — the run, each resume, a fork.
+
+    One entry per trace. A Swarm or Supervisor nests agents that carry the same
+    id, so the topmost matching span of each trace speaks for it; the resume
+    details are read from whichever span in that trace carries them.
+    """
+    clauses = " OR ".join(f"json_extract(attributes, '$.\"{k}\"') = ?" for k in _EXECUTION_ID_KEYS)
+    try:
+        rows = db.fetchall(
+            f"""SELECT trace_id, span_id, parent_span_id, name, start_time, end_time,
+                       status, attributes
+                FROM spans WHERE start_time >= ? AND ({clauses})
+                ORDER BY start_time ASC""",
+            (since, *([execution_id] * len(_EXECUTION_ID_KEYS))),
+        )
+    except Exception:
+        # No spans table yet (tracing never ran here) — the page still renders.
+        return []
+    by_trace: dict[str, list[dict[str, Any]]] = {}
+    for r in rows:
+        try:
+            attrs = json.loads(r["attributes"] or "{}")
+        except json.JSONDecodeError:
+            attrs = {}
+        by_trace.setdefault(r["trace_id"], []).append({**r, "attrs": attrs})
+
+    runs: list[dict[str, Any]] = []
+    for trace_id, spans in by_trace.items():
+        ids = {s["span_id"] for s in spans}
+        top = next((s for s in spans if s["parent_span_id"] not in ids), spans[0])
+        attrs = top["attrs"]
+        merged: dict[str, Any] = {}
+        for s in spans:
+            for k, v in s["attrs"].items():
+                merged.setdefault(k, v)
+        if any(merged.get(k) == execution_id for k in _RESUMED_KEYS):
+            role = "resume"
+        elif merged.get("agent.forked_execution_id") == execution_id:
+            role = "fork"
+        else:
+            role = "run"
+        resume: dict[str, Any] | None = None
+        for prefix in ("agent.resume.", "chain.resume."):
+            if f"{prefix}approved" in merged or f"{prefix}node_id" in merged:
+                resume = {
+                    "approved": merged.get(f"{prefix}approved"),
+                    "resolver": merged.get(f"{prefix}resolver"),
+                    "reason": merged.get(f"{prefix}reason"),
+                    "node_id": merged.get(f"{prefix}node_id"),
+                    "kind": merged.get(f"{prefix}kind"),
+                }
+                break
+        if (top.get("status") or "").upper() == "ERROR":
+            run_status = "failed"
+        else:
+            run_status = str(attrs.get("agent.status") or attrs.get("chain.status") or "completed")
+        output = next((attrs[k] for k in _OUTPUT_KEYS if attrs.get(k) is not None), None)
+        if isinstance(output, str) and len(output) > _OUTPUT_MAX:
+            output = output[:_OUTPUT_MAX]
+        runs.append(
+            {
+                "trace_id": trace_id,
+                "role": role,
+                "name": top.get("name"),
+                "started_at": top.get("start_time"),
+                "ended_at": top.get("end_time"),
+                "status": run_status,
+                "output": output,
+                "resume": resume,
+            }
+        )
+    runs.sort(key=lambda r: r["started_at"] or "")
+    return runs
+
+
+def _hitl_resolution(db: Any, execution_id: str) -> dict[str, Any] | None:
+    """The newest ``resolved`` HITL row — recorded only when connected."""
+    try:
+        row = db.fetchone(
+            """SELECT status, resolver, node, occurred_at FROM hitl_events
+               WHERE run_id = ? AND event_type = 'resolved'
+               ORDER BY occurred_at DESC, created_at DESC LIMIT 1""",
+            (execution_id,),
+        )
+    except Exception:
+        return None
+    if row is None:
+        return None
+    return {
+        "approved": row["status"] == "approved",
+        "resolver": row["resolver"],
+        "reason": None,
+        "node_id": row["node"],
+        "at": row["occurred_at"],
+        "trace_id": None,
+        "source": "hitl_events",
     }
 
 
@@ -131,9 +315,39 @@ def get_execution(
         repl_db = ctx.db()
         try:
             replication = _replication_state(repl_db, execution_id)
+            pending = _pending_row(repl_db, execution_id)
+            runs = _runs(repl_db, execution_id, _scan_start(rows))
+            hitl = _hitl_resolution(repl_db, execution_id)
         finally:
             repl_db.close()
         quarantined = sum(1 for v in replication.values() if v.get("sync_error"))
+        # The newest run is the one still waiting when a pause outlived it.
+        if (
+            runs
+            and pending is not None
+            and (pending["created_at"] or "") >= (runs[-1]["started_at"] or "")
+        ):
+            if runs[-1]["status"] == "completed":
+                runs[-1]["status"] = "paused"
+        resolution: dict[str, Any] | None = None
+        for run in reversed(runs):
+            if run["resume"] is not None and run["resume"].get("approved") is not None:
+                resolution = {
+                    **run["resume"],
+                    "at": run["started_at"],
+                    "trace_id": run["trace_id"],
+                    "source": "trace",
+                }
+                break
+        if resolution is None:
+            resolution = hitl
+        final = next((r for r in reversed(runs) if r["status"] == "completed"), None)
+        states = _interrupt_states(rows, pending)
+        checkpoints = []
+        for cp, state in zip(rows, states):
+            row = _checkpoint_row_to_dict(cp, replication)
+            row["interrupt_state"] = state
+            checkpoints.append(row)
         return {
             "execution_id": execution_id,
             "chain_name": latest.chain_name,
@@ -144,7 +358,14 @@ def get_execution(
             "latest_state_snapshot": latest.state_snapshot,
             # >0 means the plane's copy of this run is incomplete (audit D2).
             "quarantined_count": quarantined,
-            "checkpoints": [_checkpoint_row_to_dict(cp, replication) for cp in rows],
+            "checkpoints": checkpoints,
+            # What the page needs to say what happened, not only what is stored
+            # (1.89.0): the pause still waiting (or null), every trace that ran
+            # this execution, who resolved the pause and how, and the answer.
+            "pending_interrupt": pending,
+            "runs": runs,
+            "resolution": resolution,
+            "final_output": final["output"] if final is not None else None,
         }
     finally:
         store.close()
@@ -262,7 +483,10 @@ async def resume_execution(
 
     Looks up the runner by the checkpoint's ``chain_name`` in the registry
     the server was built with. Calls its ``aresume(...)``. Returns the
-    ``ChainResult`` / ``AgentResult`` dict plus the original ``execution_id``.
+    ``ChainResult`` / ``AgentResult`` dict plus the original ``execution_id``,
+    the resumed run's ``trace_id``, and the ``reason`` / ``resolver`` it ran with.
+    A top-level ``reason`` is folded into ``metadata["reason"]``; with auth on and
+    no ``metadata["resolver"]``, the signed-in user is the resolver.
     """
     ctx = get_context(request)
     # Project-scope guard: 404 cross-project resume attempts before they
@@ -301,7 +525,17 @@ async def resume_execution(
 
     from fastaiagent import Resume
 
-    resume_value = Resume(approved=body.approved, metadata=body.metadata)
+    # The reason travels in the metadata, which is where the runner reads it (and
+    # stamps it on the resumed run's span). Until 1.89.0 a top-level ``reason``
+    # was echoed back in the response and dropped. And the resolver is the person
+    # signed in to this UI (decision D8) — no one else could have clicked it —
+    # unless the caller named one. With ``--no-auth`` there is no one to name.
+    metadata = dict(body.metadata or {})
+    if body.reason and not metadata.get("reason"):
+        metadata["reason"] = body.reason
+    if not ctx.no_auth and not metadata.get("resolver"):
+        metadata["resolver"] = _user
+    resume_value = Resume(approved=body.approved, metadata=metadata)
     aresume = getattr(runner, "aresume", None)
     if aresume is None:
         raise HTTPException(
@@ -333,5 +567,8 @@ async def resume_execution(
         "execution_id": execution_id,
         "chain_name": chain_name,
         "result": result_dict,
-        "reason": body.reason,
+        "reason": metadata.get("reason"),
+        "resolver": metadata.get("resolver"),
+        # The resumed run's own trace (a new one per resume — decision D7).
+        "trace_id": getattr(result, "trace_id", None),
     }

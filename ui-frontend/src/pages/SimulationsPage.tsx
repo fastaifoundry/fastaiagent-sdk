@@ -64,6 +64,12 @@ export function SimulationsPage() {
                 <TableHead>Agent</TableHead>
                 <TableHead className="w-[110px]">Scenarios</TableHead>
                 <TableHead className="w-[200px]">Pass rate</TableHead>
+                <TableHead
+                  className="w-[90px]"
+                  title="Scenarios that did not finish, or that the judge could not run on"
+                >
+                  Errored
+                </TableHead>
                 <TableHead className="w-[120px]">Started</TableHead>
               </TableRow>
             </TableHeader>
@@ -87,8 +93,25 @@ export function SimulationsPage() {
                     <PassRateBar
                       passRate={row.pass_rate}
                       passCount={row.pass_count}
-                      failCount={row.fail_count}
+                      // The rate is over all scenarios, so the fraction is too. Not
+                      // fail_count: it excludes errored scenarios since 1.89.0.
+                      failCount={
+                        row.scenario_count != null
+                          ? Math.max(0, row.scenario_count - (row.pass_count ?? 0))
+                          : row.fail_count
+                      }
+                      title="Passed / all scenarios. An errored scenario counts as not passed."
                     />
+                  </TableCell>
+                  <TableCell
+                    className="font-mono text-xs tabular-nums"
+                    data-testid={`sim-errored-${row.run_id}`}
+                  >
+                    {row.errored_count ? (
+                      row.errored_count
+                    ) : (
+                      <span className="text-muted-foreground">{row.errored_count ?? "—"}</span>
+                    )}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     <Timestamp iso={row.started_at} />

@@ -27,39 +27,23 @@ from urllib.error import URLError
 from urllib.request import urlopen
 
 
-def _langchain_compat() -> None:
-    """Reconcile a LangChain-ecosystem version clash.
-
-    ``langchain>=1`` removed the module-level ``verbose`` / ``debug`` /
-    ``llm_cache`` globals that ``langchain-core~=0.3`` still probes in
-    ``langchain_core.globals``. With both installed, constructing *or* invoking
-    any chat model raises ``AttributeError``. Restoring the three attributes is
-    a no-op when the installed versions already agree.
-    """
-    try:
-        import langchain
-    except ImportError:
-        return
-    for attr in ("verbose", "debug", "llm_cache"):
-        if not hasattr(langchain, attr):
-            setattr(langchain, attr, None if attr == "llm_cache" else False)
-
-
 def main() -> int:
-    _langchain_compat()
     if not os.environ.get("OPENAI_API_KEY"):
         print("OPENAI_API_KEY is not set — skipping example.")
         return 0
 
     try:
         from langchain_openai import ChatOpenAI
-        from langgraph.prebuilt import create_react_agent
     except ImportError:
         print(
-            'LangChain / LangGraph are not installed. Install with: '
-            'pip install "fastaiagent[langchain]" langchain-openai langgraph'
+            "LangChain is not installed. Install with: "
+            'pip install "fastaiagent[langchain]" langchain langchain-openai'
         )
         return 0
+    try:
+        from langchain.agents import create_agent  # LangChain 1.x
+    except ImportError:  # LangChain 0.x
+        from langgraph.prebuilt import create_react_agent as create_agent
 
     from fastaiagent.integrations import langchain as lc
     from fastaiagent.integrations._registry import (
@@ -70,7 +54,7 @@ def main() -> int:
 
     name = f"example-59-agent-{uuid.uuid4().hex[:6]}"
 
-    graph = create_react_agent(ChatOpenAI(model="gpt-4o-mini"), tools=[])
+    graph = create_agent(ChatOpenAI(model="gpt-4o-mini"), tools=[])
     lc.register_agent(graph, name=name)
 
     # Attach the harness layers. In real usage you'd pass ``agent=name``

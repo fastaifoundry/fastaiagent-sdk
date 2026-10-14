@@ -170,8 +170,9 @@ class TestFiringsAreCollected:
     def test_it_works_whether_or_not_the_local_ui_is_on(self, monkeypatch, request, ui_on):
         """The case the finding is actually about.
 
-        ``log_guardrail_event`` sits behind ``ui_enabled``; the firing append
-        must **not**, or it closes nothing for an unconnected run — which is the
+        ``log_guardrail_event`` sat behind ``ui_enabled`` (until 1.89.0, when
+        it moved behind tracing); the firing append must **not** sit behind
+        either, or it closes nothing for an unconnected run — which is the
         whole finding. The discriminating half is ``ui_on=False``: an append
         hidden inside that gate would collect nothing there.
 
@@ -266,37 +267,37 @@ class TestFiringsAreCollected:
         assert firings[0].passed is True, "on_error='allow' degrades to a pass"
         assert firings[0].fired() is True, "a degraded pass must not read as clean"
 
-    def test_an_unrunnable_regex_is_still_a_verdict_not_an_error(self):
-        """Pinned, not endorsed.
+    @pytest.mark.parametrize(("on_error", "passed"), [("allow", True), ("block", False)])
+    def test_an_unrunnable_regex_could_not_run(self, on_error, passed):
+        """Row **#11**, closed in 1.89.0.
 
-        A malformed pattern yields ``passed=False, errored=False`` — a genuine
-        block verdict rather than a check that could not run, so ``on_error``
-        never gets consulted. The plane calls the same case an error. That is
-        the open half of row **#11**, "needs agreement": recorded here so the
-        next session sees the current behaviour instead of rediscovering it,
-        and so a change to it fails loudly rather than silently.
-
-        This test found its own premise wrong — it was written asserting
-        ``errored is True``.
+        A malformed pattern yielded ``passed=False, errored=False``, a block
+        verdict on a check that never ran, so ``on_error`` was never consulted,
+        while the plane's runner called the same rule an error. The SDK now
+        raises too: the firing is ``errored`` and ``on_error`` decides, the
+        same outcome class on both sides (CLAUDE.md §2).
         """
         g = Guardrail(
             name="broken",
             guardrail_type=GuardrailType.regex,
             position=GuardrailPosition.input,
             config={"pattern": "(unclosed", "should_match": True},
-            on_error="allow",
+            on_error=on_error,
         )
 
         token = start_firing_collection()
         try:
-            asyncio.run(g.aexecute("anything"))
+            try:
+                asyncio.run(g.aexecute("anything"))
+            except Exception:  # on_error="block" refuses the run
+                pass
             firings = collected_firings()
         finally:
             stop_firing_collection(token)
 
-        assert firings[0].errored is False
-        assert firings[0].passed is False
-        assert firings[0].action_taken == "blocked"
+        assert firings[0].errored is True
+        assert firings[0].passed is passed
+        assert "invalid pattern" in (firings[0].message or "")
         assert firings[0].fired() is True, "however it is classified, it must be visible"
 
     def test_the_record_carries_no_payload(self):
@@ -311,7 +312,18 @@ class TestFiringsAreCollected:
         fields = set(GuardrailFiring.model_fields)
         assert "metadata" not in fields
         assert "modified_data" not in fields
-        assert fields == {"name", "position", "action_taken", "passed", "errored", "message"}
+        # ``blocking`` and ``effect`` (1.89.0) are about the rule and the run,
+        # not the payload.
+        assert fields == {
+            "name",
+            "position",
+            "action_taken",
+            "passed",
+            "errored",
+            "message",
+            "blocking",
+            "effect",
+        }
 
 
 class TestAgentResultCarriesThem:

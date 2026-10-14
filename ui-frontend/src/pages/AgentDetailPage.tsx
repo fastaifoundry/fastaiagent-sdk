@@ -9,6 +9,11 @@ import { TableSkeleton } from "@/components/shared/LoadingSkeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { TracesTable } from "@/components/traces/TracesTable";
 import { AgentToolsSection } from "@/components/agents/AgentToolsSection";
+import { AgentGuardrailsSection } from "@/components/agents/AgentGuardrailsSection";
+import {
+  IncludeExperimentsToggle,
+  ProductionOnlyNote,
+} from "@/components/shared/ExperimentsNote";
 import { useAgent, useAgentTools } from "@/hooks/use-agents";
 import { useTraces } from "@/hooks/use-traces";
 import { formatCost, formatDurationMs, formatTimeAgo } from "@/lib/format";
@@ -63,6 +68,7 @@ export function AgentDetailPage() {
             Back
           </Button>
         </Link>
+        <IncludeExperimentsToggle />
         <Button
           variant="outline"
           size="sm"
@@ -104,6 +110,8 @@ export function AgentDetailPage() {
         Last run {formatTimeAgo(summary.last_run)} · {summary.error_count}{" "}
         error{summary.error_count === 1 ? "" : "s"} tracked.
       </p>
+      {/* Applies to the stats above; the trace list below is the raw record. */}
+      <ProductionOnlyNote className="-mt-3" />
 
       {(summary.workflows ?? []).length > 0 ? (
         <div>
@@ -149,11 +157,15 @@ export function AgentDetailPage() {
       <Tabs defaultValue="tools" className="w-full">
         <TabsList>
           <TabsTrigger value="tools">Tools</TabsTrigger>
+          <TabsTrigger value="guardrails">Guardrails</TabsTrigger>
           <TabsTrigger value="dependencies">Dependencies</TabsTrigger>
           <TabsTrigger value="runs">Run history</TabsTrigger>
         </TabsList>
         <TabsContent value="tools">
           <AgentToolsSection data={tools.data} />
+        </TabsContent>
+        <TabsContent value="guardrails">
+          <AgentGuardrailsSection agentName={name} />
         </TabsContent>
         <TabsContent value="dependencies">
           <Suspense

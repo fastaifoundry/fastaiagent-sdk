@@ -90,6 +90,26 @@ fastaiagent traces export <trace_id> --format json
     only option. `traces export` takes `--format` (currently `json`) and writes
     to stdout; shell redirection is how you get a file.
 
+### `traces scrub-secrets`
+
+*New in 1.89.0.* Removes credentials that an SDK older than 1.89.0 may have
+written into `local.db`: a key inside a guardrail's `llm` config (in the root
+span's `agent.guardrails`), and a key a provider echoed back in an error
+message. Versions from 1.89.0 on never store either; see
+[Security posture](../security.md#credentials-in-traces-and-pushed-definitions).
+
+```bash
+fastaiagent traces scrub-secrets --dry-run   # report, write nothing
+fastaiagent traces scrub-secrets             # asks before rewriting
+fastaiagent traces scrub-secrets -y          # no prompt
+```
+
+The command scrubs exception text, keeps only the shareable fields of each
+guardrail `llm` config, and replaces any credential currently in your
+environment wherever it appears verbatim. It cannot recall spans that were
+already sent to the control plane, so it counts them separately: **rotate any
+key it reports there.**
+
 ## `fastaiagent replay`
 
 ```bash
@@ -104,10 +124,32 @@ fastaiagent replay fork <trace_id> --step 3 --prompt "New system prompt" \
     --output rerun.json
 
 fastaiagent replay fork <trace_id> --input "Try a different question"
+
+# Recorded model turns; run the read-only lookup, stub the charge
+fastaiagent replay fork <trace_id> --mode recorded --on-miss error \
+    --allow-tool lookup_order --stub 'charge_card="charged 0.00"'
 ```
 
 `replay fork` is the CLI surface for
 `Replay.load(trace_id).fork_at(step).modify_prompt(...).modify_input(...).rerun()`.
+
+A rerun runs only the tools you give it (1.89.0). Every other tool is blocked,
+and the result reports `tool_dispositions` and `blocked_tool_calls`. See
+[Replay guarantees](../replay/guarantees.md#tools-a-rerun-runs-only-what-you-supply).
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--step N` | `0` | Fork at this step. |
+| `--prompt TEXT` / `--input TEXT` | none | Modify the system prompt / the input. |
+| `--mode` | `live` | `live`, `recorded` or `deterministic`: how the model is called. |
+| `--on-miss` | `live` | `recorded` mode: `live` or `error` when the rerun asks for more model turns than were recorded. |
+| `--tools` | `block` (or `FASTAIAGENT_REPLAY_TOOL_POLICY`) | `block`, `error` or `live`: what to do with tools you did not `--stub` or `--allow-tool`. |
+| `--allow-tool NAME` | none | Run this tool for real. Repeatable. Required for REST and MCP tools. |
+| `--stub NAME=JSON` | none | This tool returns `JSON` (or the bare string) instead of running. Repeatable. |
+| `--db PATH` | the configured store | The `local.db` holding the trace to fork. |
+| `--rerun-db PATH` | the configured store | Write the rerun's trace to this `local.db` instead. |
+| `--export / --no-export` | `--no-export` | Export the rerun to the platform. A rerun is local-only by default. |
+| `--output PATH` | print | Write the result JSON here. |
 
 ## `fastaiagent eval`
 
@@ -138,12 +180,15 @@ Each `agent.<name>` span (root, or nested inside a chain/supervisor/swarm) becom
 one case. See [Trace Curation](../evaluation/curation.md).
 
 `--agent` accepts `path/to/file.py:attr` or `pkg.module:attr` (a callable, or any
-object with a `.run` method). Thresholds use `<scorer|overall>.<pass_rate|avg_score>=v`;
-a bare scorer name means its `pass_rate`.
+object with a `.run` method). Thresholds use `<scorer>.<pass_rate|avg_score>=v`,
+`overall.pass_rate=v` (the checks rate) or `cases.pass_rate=v` (the cases rate,
+1.89.0); a bare scorer name means its `pass_rate`. `overall.avg_score` is
+refused.
 
 **Exit codes:** `0` gate passed · `1` quality gate failed (threshold miss or
-regression) · `3` run invalid (infra error rate exceeded, or nothing scored).
-`2` is reserved for usage errors.
+regression) · `3` run invalid (infra error rate exceeded, nothing scored, a
+gated scorer could not run or applied to no case, or a threshold that is not a
+metric). `2` is reserved for usage errors.
 
 For gating your existing pytest suite — with baselines and regression detection —
 see [Agent CI](../evaluation/agent-ci.md).

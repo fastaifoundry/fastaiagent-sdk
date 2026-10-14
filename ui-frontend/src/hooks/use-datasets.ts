@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, readCsrfCookie } from "@/lib/api";
+import { api, ApiError, readCsrfCookie } from "@/lib/api";
+import { normalizeErrorBody } from "@/lib/api-error";
 import type {
   CaseBody,
   DatasetCase,
@@ -8,6 +9,8 @@ import type {
   DatasetImportResult,
   DatasetRunEvalResult,
   DatasetSummary,
+  RunEvalBody,
+  RunEvalOptions,
 } from "@/lib/types";
 
 /**
@@ -116,14 +119,14 @@ async function postFormData<T>(path: string, fd: FormData): Promise<T> {
     headers,
   });
   if (!res.ok) {
-    let detail = res.statusText;
+    let body: unknown = null;
     try {
-      const body = await res.json();
-      detail = (body as { detail?: string }).detail ?? detail;
+      body = await res.json();
     } catch {
       /* ignore */
     }
-    throw new Error(detail);
+    const info = normalizeErrorBody(body, res.status, res.statusText);
+    throw new ApiError(res.status, info.message, body, info);
   }
   return (await res.json()) as T;
 }
@@ -166,16 +169,34 @@ export function useImportJsonl(name: string) {
   });
 }
 
+/**
+ * What the Run eval dialog can offer for this dataset: registered agents,
+ * the scorer catalog with per-dataset availability, judge models with a key,
+ * and what the rows carry. Fetched only while the dialog is open.
+ */
+export function useRunEvalOptions(name: string, enabled: boolean) {
+  return useQuery({
+    queryKey: [...datasetKeys.detail(name), "run-eval-options"] as const,
+    queryFn: () =>
+      api.get<RunEvalOptions>(
+        `/datasets/${encodeURIComponent(name)}/run-eval/options`
+      ),
+    enabled: enabled && !!name,
+  });
+}
+
+/** Runs synchronously on the server: the request lasts as long as the eval. */
 export function useRunEval(name: string) {
+  const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: {
-      agent_name?: string | null;
-      scorers?: string[];
-      run_name?: string;
-    }) =>
+    mutationFn: (body: RunEvalBody) =>
       api.post<DatasetRunEvalResult>(
         `/datasets/${encodeURIComponent(name)}/run-eval`,
         body
       ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["evals"] });
+      qc.invalidateQueries({ queryKey: ["eval-trend"] });
+    },
   });
 }

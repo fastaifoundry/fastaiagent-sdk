@@ -10,12 +10,21 @@ interface ApprovalActionsProps {
   disabled?: boolean;
 }
 
+/** State handed to the execution page after a resume: the resumed run's trace. */
+export interface ResumedState {
+  resumedTraceId?: string | null;
+  approved?: boolean;
+}
+
 /** Approve / Reject buttons + reason textarea.
  *
  * Approve calls ``POST /api/executions/:id/resume`` with
- * ``{"approved": true, "metadata": {"reason": <text>}}``. Reject sends
- * ``approved: false``. After either succeeds, navigates to
- * ``/executions/:id`` so the operator can verify the run completed.
+ * ``{"approved": true, "reason": <text>, "metadata": {"reason": <text>}}``.
+ * Reject sends ``approved: false``. The reason goes top-level too (1.89.0):
+ * the route dropped it when it came only in metadata on older servers, and
+ * the server folds it into ``metadata.reason`` either way. After either
+ * succeeds, navigates to ``/executions/:id`` with the resumed run's trace so
+ * the operator can verify what the run did.
  */
 export function ApprovalActions({ executionId, disabled }: ApprovalActionsProps) {
   const [reason, setReason] = useState("");
@@ -25,12 +34,15 @@ export function ApprovalActions({ executionId, disabled }: ApprovalActionsProps)
 
   const onClick = async (approved: boolean) => {
     setError(null);
+    const text = reason.trim();
     try {
-      await resume.mutateAsync({
+      const res = await resume.mutateAsync({
         approved,
-        metadata: reason ? { reason } : {},
+        metadata: text ? { reason: text } : {},
+        ...(text ? { reason: text } : {}),
       });
-      navigate(`/executions/${executionId}`);
+      const state: ResumedState = { resumedTraceId: res?.trace_id ?? null, approved };
+      navigate(`/executions/${executionId}`, { state });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       setError(message);

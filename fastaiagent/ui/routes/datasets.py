@@ -20,7 +20,7 @@ import unicodedata
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import (
     APIRouter,
@@ -125,6 +125,12 @@ class CaseRow(BaseModel):
     expected_output: Any | None = None
     tags: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    extra: dict[str, Any] = Field(default_factory=dict)
+    """Every other field of the row, kept as it is (1.89.0):
+    ``expected_trajectory``, ``expected_tool_calls``, ``expected_steps``,
+    ``context``, a replay's ``source_trace_id``, curation fields. The file is
+    rewritten on every add, edit or delete, and these were dropped from every
+    row each time."""
 
 
 class DatasetSummary(BaseModel):
@@ -157,6 +163,9 @@ class CaseBody(BaseModel):
     expected: Any | None = None
     tags: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    extra: dict[str, Any] | None = None
+    """The row's other fields. ``None`` (the default) keeps the existing row's
+    on an edit; a dict replaces them."""
 
 
 def _normalise_case(raw: dict[str, Any], index: int) -> CaseRow:
@@ -179,7 +188,23 @@ def _normalise_case(raw: dict[str, Any], index: int) -> CaseRow:
         expected_output=expected,
         tags=[str(t) for t in tags],
         metadata=metadata,
+        extra={k: v for k, v in raw.items() if k not in _MODELLED_KEYS},
     )
+
+
+#: Row keys the editor models; everything else is carried in ``extra``.
+_MODELLED_KEYS = frozenset({"input", "expected_output", "expected", "tags", "metadata"})
+_EXTRA_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]{0,63}$")
+
+
+def _clean_extra(extra: dict[str, Any]) -> dict[str, Any]:
+    bad = [k for k in extra if k in _MODELLED_KEYS or not _EXTRA_KEY.match(str(k))]
+    if bad:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"extra cannot set {', '.join(sorted(map(str, bad)))}: use the case's own fields",
+        )
+    return extra
 
 
 def _looks_multimodal(value: Any) -> bool:
@@ -224,7 +249,7 @@ def _serialise_case(case: CaseRow) -> dict[str, Any]:
     Always emits ``expected_output`` (matches Playground's existing
     write format), drops empty tags/metadata to keep files tidy.
     """
-    record: dict[str, Any] = {"input": case.input}
+    record: dict[str, Any] = {**case.extra, "input": case.input}
     if case.expected_output is not None:
         record["expected_output"] = case.expected_output
     if case.tags:
@@ -353,14 +378,18 @@ def get_dataset(
 # ---------------------------------------------------------------------------
 
 
-def _case_from_body(body: CaseBody, index: int) -> CaseRow:
+def _case_from_body(
+    body: CaseBody, index: int, *, keep_extra: dict[str, Any] | None = None
+) -> CaseRow:
     expected = body.expected_output if body.expected_output is not None else body.expected
+    extra = _clean_extra(body.extra) if body.extra is not None else dict(keep_extra or {})
     return CaseRow(
         index=index,
         input=body.input,
         expected_output=expected,
         tags=body.tags,
         metadata=body.metadata,
+        extra=extra,
     )
 
 
@@ -398,7 +427,7 @@ def update_case(
             status.HTTP_404_NOT_FOUND,
             f"case index {index} out of range (have {len(cases)} cases)",
         )
-    updated = _case_from_body(body, index)
+    updated = _case_from_body(body, index, keep_extra=cases[index].extra)
     cases[index] = updated
     _atomic_write(path, cases)
     return updated
@@ -613,23 +642,162 @@ def get_image(
 
 class RunEvalBody(BaseModel):
     agent_name: str | None = None
-    scorers: list[str] = Field(default_factory=lambda: ["exact_match"])
+    mode: Literal["agent", "echo"] | None = None
+    """``echo`` runs the dataset against an identity function: a *dataset
+    check*, not a model evaluation. Since 1.89.0 it happens only when asked
+    for (D18); with no agent and no mode the request is refused."""
+    scorers: list[str | dict[str, Any]] = Field(
+        default_factory=lambda: list[str | dict[str, Any]](["exact_match"])
+    )
+    """Names, or specs (see :mod:`fastaiagent.eval.scorer_specs`)."""
     run_name: str | None = None
 
 
 class RunEvalResult(BaseModel):
     run_id: str
     pass_rate: float | None
+    """Passed / scored cases; ``None`` when no case was scored (1.89.0)."""
     pass_count: int
     fail_count: int
-    # "echo" when no agent_name was given: the run scores the dataset against
-    # an identity function, so a case only passes when expected_output equals
+    errored_count: int = 0
+    """Cases that could not be judged: the agent raised, a scorer could not
+    run, or no scorer applied. Neither a pass nor a fail."""
+    total_cases: int = 0
+    # "echo" for a dataset check: the run scores the dataset against an
+    # identity function, so a case only passes when expected_output equals
     # input. A 0% pass rate is the normal result for real data and must not be
     # read as a failing eval — hence surfacing the mode instead of leaving the
     # caller to infer it. "agent" means a registered runner produced the
     # outputs and the pass rate is meaningful.
     mode: str = "agent"
     note: str | None = None
+    kind: str = "ui"
+    cases: dict[str, Any] = Field(default_factory=dict)
+    """``{passed, failed, errored, pass_rate}`` (1.89.0)."""
+    checks: dict[str, Any] = Field(default_factory=dict)
+    """``{passed, failed, errored, skipped, pass_rate}``: scorer verdicts."""
+
+
+def _runner_kind(runner: Any) -> str:
+    cls = type(runner).__name__.lower()
+    for kind in ("chain", "supervisor", "swarm"):
+        if kind in cls:
+            return kind
+    return "agent"
+
+
+def _dataset_features(rows: list[Any]) -> dict[str, Any]:
+    """What the rows carry, so the dialog can warn before a run (1.89.0)."""
+
+    def has(row: Any, *keys: str) -> bool:
+        return isinstance(row, dict) and any(row.get(k) not in (None, "", []) for k in keys)
+
+    def media(value: Any) -> bool:
+        if isinstance(value, dict):
+            return value.get("type") in ("image", "pdf") or any(media(v) for v in value.values())
+        if isinstance(value, list):
+            return any(media(v) for v in value)
+        return False
+
+    return {
+        "rows": len(rows),
+        "with_expected_output": sum(has(r, "expected_output", "expected") for r in rows),
+        "with_expected_trajectory": sum(has(r, "expected_trajectory") for r in rows),
+        "with_expected_tool_calls": sum(has(r, "expected_tool_calls") for r in rows),
+        "with_expected_steps": sum(has(r, "expected_steps") for r in rows),
+        "with_context": sum(has(r, "context", "contexts") for r in rows),
+        "multimodal": sum(media(r.get("input")) for r in rows if isinstance(r, dict)),
+    }
+
+
+def _read_rows(path: Path) -> list[Any]:
+    rows: list[Any] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rows.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return rows
+
+
+@router.get("/{name}/run-eval/options")
+def run_eval_options(
+    request: Request,
+    name: str,
+    _user: str = Depends(require_session),
+) -> dict[str, Any]:
+    """What a Run eval dialog can offer for this dataset (1.89.0).
+
+    ``agents`` are the registered runners (a Chain is listed, unsupported:
+    it has no ``run``); ``scorers`` the catalog, each with whether it can run
+    here and why not; ``judge_models`` the models with a key on this server;
+    ``dataset_features`` what the rows carry.
+    """
+    from fastaiagent.eval.scorer_specs import CATALOG
+    from fastaiagent.ui.model_catalog import build_catalog
+
+    ctx = get_context(request)
+    path = _dataset_path(ctx.db_path, name)
+    _ensure_exists(path)
+    features = _dataset_features(_read_rows(path))
+
+    agents = []
+    for agent_name, runner in sorted(ctx.runners.items()):
+        kind = _runner_kind(runner)
+        supported = callable(getattr(runner, "run", None)) and kind != "chain"
+        agents.append(
+            {
+                "name": agent_name,
+                "kind": kind,
+                "supported": supported,
+                "reason": None if supported else "a Chain has no run(); evaluate its agents",
+            }
+        )
+
+    judge_models = [
+        {"provider": row["provider"], "model": m}
+        for row in build_catalog(ctx.db_path)
+        if row.get("has_key")
+        for m in row.get("models", [])
+    ]
+    feature_key = {
+        "expected_output": "with_expected_output",
+        "expected_trajectory": "with_expected_trajectory",
+        "expected_tool_calls": "with_expected_tool_calls",
+        "expected_steps": "with_expected_steps",
+        "context": "with_context",
+    }
+    scorers = []
+    for entry in CATALOG.values():
+        reasons: list[str] = []
+        if entry.judge and not judge_models:
+            reasons.append("no judge model has an API key on this server")
+        if entry.needs_agent and not any(a["supported"] for a in agents):
+            reasons.append("needs a registered agent: it measures the agent's run")
+        for need in entry.needs:
+            if features.get(feature_key[need], 0) == 0:
+                reasons.append(f"no row has {need}")
+        rows_missing = {
+            need: features["rows"] - features.get(feature_key[need], 0) for need in entry.needs
+        }
+        scorers.append(
+            {
+                **entry.to_dict(),
+                "available": not reasons,
+                "unavailable_reason": "; ".join(reasons) or None,
+                "rows_missing": rows_missing,
+            }
+        )
+    return {
+        "agents": agents,
+        "scorers": scorers,
+        "judge_models": judge_models,
+        "dataset_features": features,
+        "echo_available": True,
+    }
 
 
 @router.post("/{name}/run-eval", response_model=RunEvalResult)
@@ -641,22 +809,39 @@ def run_eval(
 ) -> RunEvalResult:
     """Run the eval framework against this dataset and return the run_id.
 
-    The agent function is ``lambda x: x`` when no ``agent_name`` is
-    provided — useful for sanity-checking the dataset itself (every
-    case should "pass" against ``exact_match`` only when its
-    ``expected_output`` equals its ``input``). Real agents are
-    selected from the registered runners on ``app.state.context``.
+    Pick a registered agent (``agent_name``), or ``mode="echo"`` for a dataset
+    check: the inputs are echoed back, so ``exact_match`` passes only where
+    ``expected_output`` equals ``input``. Scorers are names or specs. Every
+    invalid request is a 422 with a readable reason (1.89.0); an agent that is
+    not registered stays a 404.
     """
+    from fastaiagent._internal.errors import EvalError
     from fastaiagent.eval import evaluate
     from fastaiagent.eval.dataset import Dataset
+    from fastaiagent.eval.scorer import Scorer
+    from fastaiagent.eval.scorer_specs import CATALOG, build_scorer, judge_provider, parse_spec
+    from fastaiagent.ui.model_catalog import has_api_key, load_overrides
 
     ctx = get_context(request)
     path = _dataset_path(ctx.db_path, name)
     _ensure_exists(path)
-    dataset = Dataset.from_jsonl(path)
 
+    echo_mode = body.mode == "echo"
     runner = None
-    if body.agent_name:
+    if echo_mode:
+        if body.agent_name:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "mode 'echo' runs no agent; leave agent_name empty or choose mode 'agent'",
+            )
+    else:
+        if not body.agent_name:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "Pick an agent to evaluate, or mode 'echo' for a dataset check (the inputs "
+                "echoed back, which tests the dataset, not a model). Register agents with "
+                "`fastaiagent ui --agent app.py:my_agent`.",
+            )
         runner = ctx.runners.get(body.agent_name)
         if runner is None:
             raise HTTPException(
@@ -664,47 +849,119 @@ def run_eval(
                 f"agent '{body.agent_name}' is not registered with this server "
                 "(pass it via build_app(runners=[...]))",
             )
+        if not callable(getattr(runner, "run", None)) or _runner_kind(runner) == "chain":
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                f"'{body.agent_name}' is a {_runner_kind(runner)} with no run(); "
+                "evaluate one of its agents instead",
+            )
+
+    # Build every scorer before any agent call: a bad spec or a judge with no
+    # key is the request's fault, and nothing should run (or be billed) first.
+    overrides = load_overrides(ctx.db_path)
+    uses_judge = False
+    try:
+        scorers: list[Scorer | str] = []
+        for raw in body.scorers:
+            spec = parse_spec(raw)
+            scorer = build_scorer(raw)  # validates; never calls a model
+            entry = CATALOG.get(getattr(spec, "name", "") or "")
+            if echo_mode and entry is not None and entry.needs_agent:
+                raise EvalError(
+                    f"Scorer '{entry.name}' needs an agent: it measures the agent's run, "
+                    "and a dataset check runs none"
+                )
+            provider = judge_provider(spec)
+            if provider is not None:
+                uses_judge = True
+                if not has_api_key(provider, overrides):
+                    raise EvalError(
+                        f"No API key on this server for the judge's provider '{provider}'. "
+                        "Set its key and restart the UI, or pick another judge model."
+                    )
+            scorers.append(scorer)
+    except EvalError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e)) from e
+    if uses_judge:
+        from fastaiagent.ui.routes.playground import _enforce_llm_rate_limit
+
+        _enforce_llm_rate_limit(request, _user)
+
+    try:
+        dataset = Dataset.from_jsonl(path)
+    except Exception as e:
+        # An image or PDF a row points at that cannot be loaded (a missing
+        # file, an unreachable URL) is the dataset's problem: say which, not 500.
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"The dataset could not be loaded: {type(e).__name__}: {e}"[:500],
+        ) from e
 
     def echo(x: Any) -> Any:
         return x
 
     agent_fn = runner.run if runner is not None else echo
+    kind = "ui-echo" if echo_mode else "ui"
+    run_name = body.run_name or (f"dataset-check-{name}" if echo_mode else f"editor-{name}")
+    agent_name = body.agent_name or "editor-echo"
     # Run with persist=False so we can persist into the AppContext's DB
     # (test fixtures override db_path; the eval framework's default-
     # persist path uses the global config and would land in the wrong
     # file under TestClient).
-    results = evaluate(
-        agent_fn=agent_fn,
-        dataset=list(dataset),
-        scorers=body.scorers,
-        run_name=body.run_name or f"editor-{name}",
-        dataset_name=f"{name}.jsonl",
-        agent_name=body.agent_name or "editor-echo",
-        persist=False,
-    )
+    try:
+        results = evaluate(
+            agent_fn=agent_fn,
+            dataset=list(dataset),
+            scorers=scorers,
+            run_name=run_name,
+            dataset_name=f"{name}.jsonl",
+            agent_name=agent_name,
+            persist=False,
+            run_kind=kind,
+        )
+    except EvalError as e:
+        # Two scorers with one name: the request is wrong, not the server.
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e)) from e
     run_id = results.persist_local(
         db_path=ctx.db_path,
-        run_name=body.run_name or f"editor-{name}",
+        run_name=run_name,
         dataset_name=f"{name}.jsonl",
-        agent_name=body.agent_name or "editor-echo",
+        agent_name=agent_name,
     )
-    pass_count = sum(1 for c in results.cases if all(s["passed"] for s in c.per_scorer.values()))
-    fail_count = len(results.cases) - pass_count
-    pass_rate = pass_count / len(results.cases) if results.cases else None
-    echo_mode = runner is None
+    # Case outcomes, by the same rule the run page uses (1.89.0, E5). An errored
+    # case has no per-scorer verdicts, and ``all([])`` is True, so every case
+    # whose agent raised was counted as a pass.
+    from fastaiagent.eval.compare import case_outcome
+
+    outcomes = [case_outcome({"error": c.error, "per_scorer": c.per_scorer}) for c in results.cases]
+    pass_count = outcomes.count("passed")
+    fail_count = outcomes.count("failed")
+    errored_count = outcomes.count("errored")
+    scored = pass_count + fail_count
+    pass_rate = pass_count / scored if scored else None
+    checks = results.check_counts
+    rated = checks["passed"] + checks["failed"]
     return RunEvalResult(
         run_id=run_id,
         pass_rate=pass_rate,
         pass_count=pass_count,
         fail_count=fail_count,
+        errored_count=errored_count,
+        total_cases=len(outcomes),
         mode="echo" if echo_mode else "agent",
+        kind=kind,
+        cases={
+            "passed": pass_count,
+            "failed": fail_count,
+            "errored": errored_count,
+            "pass_rate": pass_rate,
+        },
+        checks={**checks, "pass_rate": checks["passed"] / rated if rated else None},
         note=(
-            "No agent was selected, so this run echoed each input back "
-            "unchanged. It checks the dataset loads and scores, not model "
-            "quality — cases pass only where expected_output equals input. "
-            "To evaluate a real agent, register one — start the UI with "
-            "`fastaiagent ui --agent app.py:my_agent` (or use "
-            "build_app(runners=[...])) — then pass agent_name."
+            "A dataset check: each input was echoed back unchanged. It tests "
+            "that the dataset loads and scores, not model quality — cases pass "
+            "only where expected_output equals input. Dataset checks are left "
+            "out of the trend and the Home headline."
             if echo_mode
             else None
         ),

@@ -1,5 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api, readCsrfCookie } from "@/lib/api";
+import { normalizeErrorBody, type ErrorInfo } from "@/lib/api-error";
 import type {
   PlaygroundModelsResponse,
   PlaygroundRunRequest,
@@ -59,14 +60,15 @@ export async function* streamPlayground(
   });
 
   if (!res.ok) {
-    let message = res.statusText;
+    let payload: unknown = null;
     try {
-      const payload = (await res.json()) as { detail?: string };
-      message = payload.detail ?? message;
+      payload = await res.json();
     } catch {
       /* swallow */
     }
-    yield { event: "error", message };
+    // A 422's `detail` is a list; yielding it as `message` crashed the page
+    // (1.89.0, P1). The normaliser always produces a string message.
+    yield errorEvent(normalizeErrorBody(payload, res.status, res.statusText));
     return;
   }
 
@@ -122,16 +124,25 @@ function parseSseMessage(raw: string): PlaygroundStreamEvent | null {
       // Provider errors are redacted server-side and logged under a fresh
       // correlation id. Keep the id — without it the user is told "LLM call
       // failed." with no way to find the matching server log line.
-      return {
-        event: "error",
-        message: String(payload.message ?? "stream error"),
-        ...(payload.correlation_id
-          ? { correlation_id: String(payload.correlation_id) }
-          : {}),
-      };
+      const info = normalizeErrorBody({ detail: payload }, undefined, "stream error");
+      return errorEvent(info);
     }
   } catch {
     return null;
   }
   return null;
+}
+
+/** The SSE `error` event for an {@link ErrorInfo}; extra fields only when present. */
+function errorEvent(info: ErrorInfo): PlaygroundStreamEvent {
+  return {
+    event: "error",
+    message: info.message,
+    ...(info.correlationId ? { correlation_id: info.correlationId } : {}),
+    ...(info.fieldErrors.length ? { field_errors: info.fieldErrors } : {}),
+    ...(info.kind ? { kind: info.kind } : {}),
+    ...(info.providerStatus !== undefined ? { provider_status: info.providerStatus } : {}),
+    ...(info.providerMessage ? { provider_message: info.providerMessage } : {}),
+    ...(info.hint ? { hint: info.hint } : {}),
+  };
 }

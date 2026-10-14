@@ -60,12 +60,23 @@ test("0_3_audit — rerun-with-modifications dialog opens with corrected copy", 
     page.getByRole("button", { name: /^Rerun from this step$/ })
   ).toHaveCount(0);
 
-  // Switch to the Tool tab to capture the new two-field shape
-  // ("Tool name" + "Tool response override (JSON)") instead of the
-  // pre-v1.14.1 single-textarea that silently did nothing.
+  // 1.89.0: the trace records the agent's tools, so the Tools tab lists each
+  // one with Block / Stub / Live instead of the free-form "Tool name" field
+  // (which is now only the fallback for a trace with no tool list). Every
+  // tool starts blocked, and Live is disabled because this UI process has no
+  // implementation of lookup_order.
   await page.getByRole("tab", { name: /^Tool/ }).click();
-  await expect(page.getByLabel("Tool name")).toBeVisible();
-  await expect(page.getByLabel(/Tool response override/)).toBeVisible();
+  const row = page.getByTestId("fork-tool-lookup_order");
+  await expect(row).toBeVisible();
+  await expect(row.getByRole("button", { name: "Block lookup_order" })).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+  await expect(row.getByRole("button", { name: "Live lookup_order" })).toBeDisabled();
+  await expect(page.getByTestId("fork-tool-summary")).toContainText(
+    "Tools: 1 blocked · 0 stubbed · 0 live"
+  );
+  await expect(page.getByLabel("Tool name")).toHaveCount(0);
 
   await page.screenshot(SHOT("0_3_audit-rerun-dialog"));
 });

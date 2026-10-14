@@ -6,9 +6,10 @@ handler and prints the spans that call wrote to the local trace store.
 Note what the span is *called*. Invoking a chat model directly fires
 ``on_chat_model_start``, which the handler names ``llm.{provider}.{model}`` —
 so this run produces ``llm.openai.gpt-4.1``, not ``langchain.*``. A
-``langchain.{name}`` span only appears for a root ``on_chain_start``, i.e.
+``langchain.chain`` span only appears for a root ``on_chain_start``, i.e.
 when you invoke an actual LangChain *chain* (``prompt | llm``, an LCEL
-runnable, an AgentExecutor). This example invokes the model on its own.
+runnable, a LangGraph graph). This example invokes the model on its own.
+Works on LangChain 0.x and 1.x.
 
 Requirements:
     pip install "fastaiagent[langchain]" langchain langchain-openai
@@ -32,24 +33,6 @@ def _missing_dep_message(name: str) -> str:
         f"Optional dependency '{name}' is not installed. "
         "Install with: pip install \"fastaiagent[langchain]\" langchain langchain-openai"
     )
-
-
-def _langchain_compat() -> None:
-    """Reconcile a LangChain-ecosystem version clash.
-
-    ``langchain>=1`` removed the module-level ``verbose`` / ``debug`` /
-    ``llm_cache`` globals that ``langchain-core~=0.3`` still probes in
-    ``langchain_core.globals``. With both installed, constructing *or* invoking
-    any chat model raises ``AttributeError``. Restoring the three attributes is
-    a no-op when the installed versions already agree.
-    """
-    try:
-        import langchain
-    except ImportError:
-        return
-    for attr in ("verbose", "debug", "llm_cache"):
-        if not hasattr(langchain, attr):
-            setattr(langchain, attr, None if attr == "llm_cache" else False)
 
 
 def _max_span_rowid(db_path: Path) -> int:
@@ -87,7 +70,6 @@ def _spans_since(db_path: Path, watermark: int) -> list[tuple[str, str]]:
 
 
 def main() -> int:
-    _langchain_compat()
     if not os.environ.get("OPENAI_API_KEY"):
         print("OPENAI_API_KEY is not set — skipping example.")
         return 0

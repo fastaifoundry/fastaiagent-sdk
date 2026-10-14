@@ -1,0 +1,1362 @@
+{
+ "input/block/blocking/clean": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "block",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"pass\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "input/block/blocking/errored_allow": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "block",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "input/block/blocking/errored_block": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "block",
+   "fastaiagent.guardrail.action_taken": "blocked",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "rule errored (on_error=block): detector down",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "input/block/blocking/fail": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "block",
+   "fastaiagent.guardrail.action_taken": "blocked",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"block\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "Pattern matched: SECRET",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "input/block/observer/clean": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "block",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"pass\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "input/block/observer/errored_allow": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "block",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "input/block/observer/errored_block": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "block",
+   "fastaiagent.guardrail.action_taken": "blocked",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "rule errored (on_error=block): detector down",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "input/block/observer/fail": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "block",
+   "fastaiagent.guardrail.action_taken": "blocked",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"block\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "Pattern matched: SECRET",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "input/mask/blocking/clean": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "mask",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"pass\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "input/mask/blocking/errored_allow": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "mask",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "input/mask/blocking/errored_block": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "mask",
+   "fastaiagent.guardrail.action_taken": "blocked",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "rule errored (on_error=block): detector down",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "input/mask/blocking/fail": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "mask",
+   "fastaiagent.guardrail.action_taken": "masked",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"block\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "Pattern matched: SECRET",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "input/mask/observer/clean": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "mask",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"pass\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "input/mask/observer/errored_allow": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "mask",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "input/mask/observer/errored_block": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "mask",
+   "fastaiagent.guardrail.action_taken": "blocked",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "rule errored (on_error=block): detector down",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "input/mask/observer/fail": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "mask",
+   "fastaiagent.guardrail.action_taken": "masked",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"block\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "Pattern matched: SECRET",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "input/override/blocking/clean": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "override",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"pass\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "input/override/blocking/errored_allow": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "override",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "input/override/blocking/errored_block": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "override",
+   "fastaiagent.guardrail.action_taken": "blocked",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "rule errored (on_error=block): detector down",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "input/override/blocking/fail": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "override",
+   "fastaiagent.guardrail.action_taken": "overridden",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"block\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "Pattern matched: SECRET",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "input/override/observer/clean": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "override",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"pass\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "input/override/observer/errored_allow": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "override",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "input/override/observer/errored_block": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "override",
+   "fastaiagent.guardrail.action_taken": "blocked",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "rule errored (on_error=block): detector down",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "input/override/observer/fail": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "override",
+   "fastaiagent.guardrail.action_taken": "overridden",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"block\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "Pattern matched: SECRET",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "input/reask/blocking/clean": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "reask",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"pass\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "input/reask/blocking/errored_allow": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "reask",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "input/reask/blocking/errored_block": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "reask",
+   "fastaiagent.guardrail.action_taken": "blocked",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "rule errored (on_error=block): detector down",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "input/reask/blocking/fail": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "reask",
+   "fastaiagent.guardrail.action_taken": "reask",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"block\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "Pattern matched: SECRET",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "input/reask/observer/clean": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "reask",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"pass\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "input/reask/observer/errored_allow": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "reask",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "input/reask/observer/errored_block": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "reask",
+   "fastaiagent.guardrail.action_taken": "blocked",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "rule errored (on_error=block): detector down",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "input/reask/observer/fail": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "reask",
+   "fastaiagent.guardrail.action_taken": "reask",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"block\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "Pattern matched: SECRET",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "input/warn/blocking/clean": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "warn",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"pass\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "input/warn/blocking/errored_allow": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "warn",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "input/warn/blocking/errored_block": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "warn",
+   "fastaiagent.guardrail.action_taken": "blocked",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "rule errored (on_error=block): detector down",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "input/warn/blocking/fail": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "warn",
+   "fastaiagent.guardrail.action_taken": "warned",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"block\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "Pattern matched: SECRET",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "input/warn/observer/clean": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "warn",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"pass\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "input/warn/observer/errored_allow": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "warn",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "input/warn/observer/errored_block": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "warn",
+   "fastaiagent.guardrail.action_taken": "blocked",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "rule errored (on_error=block): detector down",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "input/warn/observer/fail": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "warn",
+   "fastaiagent.guardrail.action_taken": "warned",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"block\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "input",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "Pattern matched: SECRET",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "output/block/blocking/clean": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "block",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"pass\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "output/block/blocking/errored_allow": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "block",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "output/block/blocking/errored_block": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "block",
+   "fastaiagent.guardrail.action_taken": "blocked",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "rule errored (on_error=block): detector down",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "output/block/blocking/fail": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "block",
+   "fastaiagent.guardrail.action_taken": "blocked",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"block\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "Pattern matched: SECRET",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "output/block/observer/clean": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "block",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"pass\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "output/block/observer/errored_allow": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "block",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "output/block/observer/errored_block": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "block",
+   "fastaiagent.guardrail.action_taken": "blocked",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "rule errored (on_error=block): detector down",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "output/block/observer/fail": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "block",
+   "fastaiagent.guardrail.action_taken": "blocked",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"block\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "Pattern matched: SECRET",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "output/mask/blocking/clean": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "mask",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"pass\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "output/mask/blocking/errored_allow": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "mask",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "output/mask/blocking/errored_block": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "mask",
+   "fastaiagent.guardrail.action_taken": "blocked",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "rule errored (on_error=block): detector down",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "output/mask/blocking/fail": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "mask",
+   "fastaiagent.guardrail.action_taken": "masked",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"block\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "Pattern matched: SECRET",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "output/mask/observer/clean": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "mask",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"pass\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "output/mask/observer/errored_allow": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "mask",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "output/mask/observer/errored_block": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "mask",
+   "fastaiagent.guardrail.action_taken": "blocked",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "rule errored (on_error=block): detector down",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "output/mask/observer/fail": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "mask",
+   "fastaiagent.guardrail.action_taken": "masked",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"block\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "Pattern matched: SECRET",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "output/override/blocking/clean": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "override",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"pass\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "output/override/blocking/errored_allow": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "override",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "output/override/blocking/errored_block": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "override",
+   "fastaiagent.guardrail.action_taken": "blocked",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "rule errored (on_error=block): detector down",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "output/override/blocking/fail": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "override",
+   "fastaiagent.guardrail.action_taken": "overridden",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"block\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "Pattern matched: SECRET",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "output/override/observer/clean": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "override",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"pass\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "output/override/observer/errored_allow": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "override",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "output/override/observer/errored_block": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "override",
+   "fastaiagent.guardrail.action_taken": "blocked",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "rule errored (on_error=block): detector down",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "output/override/observer/fail": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "override",
+   "fastaiagent.guardrail.action_taken": "overridden",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"block\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "Pattern matched: SECRET",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "output/reask/blocking/clean": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "reask",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"pass\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "output/reask/blocking/errored_allow": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "reask",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "output/reask/blocking/errored_block": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "reask",
+   "fastaiagent.guardrail.action_taken": "blocked",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "rule errored (on_error=block): detector down",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "output/reask/blocking/fail": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "reask",
+   "fastaiagent.guardrail.action_taken": "reask",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"block\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "Pattern matched: SECRET",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "output/reask/observer/clean": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "reask",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"pass\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "output/reask/observer/errored_allow": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "reask",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "output/reask/observer/errored_block": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "reask",
+   "fastaiagent.guardrail.action_taken": "blocked",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "rule errored (on_error=block): detector down",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "output/reask/observer/fail": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "reask",
+   "fastaiagent.guardrail.action_taken": "reask",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"block\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "Pattern matched: SECRET",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "output/warn/blocking/clean": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "warn",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"pass\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "output/warn/blocking/errored_allow": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "warn",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "output/warn/blocking/errored_block": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "warn",
+   "fastaiagent.guardrail.action_taken": "blocked",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "rule errored (on_error=block): detector down",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "output/warn/blocking/fail": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "warn",
+   "fastaiagent.guardrail.action_taken": "warned",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"block\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "Pattern matched: SECRET",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "output/warn/observer/clean": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "warn",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"pass\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "output/warn/observer/errored_allow": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "warn",
+   "fastaiagent.guardrail.action_taken": "none",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": true,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": null,
+  "name": "guardrail.rule",
+  "status": "OK"
+ },
+ "output/warn/observer/errored_block": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "warn",
+   "fastaiagent.guardrail.action_taken": "blocked",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"error\"}]",
+   "fastaiagent.guardrail.errored": true,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "rule errored (on_error=block): detector down",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ },
+ "output/warn/observer/fail": {
+  "attributes": {
+   "fastaiagent.guardrail.action": "warn",
+   "fastaiagent.guardrail.action_taken": "warned",
+   "fastaiagent.guardrail.checks": "[{\"name\": \"rule\", \"result\": \"block\"}]",
+   "fastaiagent.guardrail.errored": false,
+   "fastaiagent.guardrail.floor": false,
+   "fastaiagent.guardrail.name": "rule",
+   "fastaiagent.guardrail.passed": false,
+   "fastaiagent.guardrail.position": "output",
+   "openinference.span.kind": "GUARDRAIL",
+   "span_type": "guardrail"
+  },
+  "description": "Pattern matched: SECRET",
+  "name": "guardrail.rule",
+  "status": "ERROR"
+ }
+}

@@ -5,14 +5,17 @@
 // Root-span classifications the trace list can show. The first four are
 // runners; "guardrail" / "evaluator" are OpenInference span kinds that reach
 // us as a trace root when a foreign runtime emits a standalone check or score
-// (fastaiagent.emit_guardrail / emit_evaluation).
+// (fastaiagent.emit_guardrail / emit_evaluation). "playground" is a Playground
+// run's root and "retrieval" a KB search's (1.89.0): both read as AGENT before.
 export type RunnerType =
   | "agent"
   | "chain"
   | "swarm"
   | "supervisor"
   | "guardrail"
-  | "evaluator";
+  | "evaluator"
+  | "playground"
+  | "retrieval";
 
 // The multi-step workflow topologies — a strict subset of RunnerType.
 export type WorkflowRunnerType = "chain" | "swarm" | "supervisor";
@@ -35,13 +38,22 @@ export interface TraceRow {
   // span. Free-text — any value the harness or a custom instrumentation
   // has stamped survives a trip through the API as-is.
   framework?: string | null;
-  // Where the run originated, from ``fastaiagent.source`` on the root span.
-  // Prompt Playground runs are stamped "playground", so experiments can be
-  // told apart from real traffic (and filtered via ?source=).
+  // Where the run originated, from ``fastaiagent.source`` on any span of the
+  // trace: "replay", "playground", "learn", "eval", "simulation", "optimize",
+  // "kb_search". Null = production. Filter via ?source= or
+  // ?exclude_experiments=true (1.89.0).
   source?: string | null;
   // Whether this trace is starred (present in trace_favorites). Drives the
   // filled star in the Traces list.
   favorited?: boolean;
+  // Has a non-blank note: what curate_from_traces(filter="noted") reads (1.89.0).
+  noted?: boolean;
+}
+
+/** A trace's note (1.89.0). An empty note is no note: saving one deletes it. */
+export interface TraceNote {
+  text: string;
+  updated_at: string | null;
 }
 
 export interface TracesPage {
@@ -61,6 +73,20 @@ export interface SpanRow {
   status: string;
   attributes: Record<string, unknown>;
   events: SpanEvent[];
+  /**
+   * 1.89.0 — for a ``guardrail.*`` span, what the check decided, joined from
+   * its local event row. A guardrail span's OTel status is ERROR for any
+   * non-pass verdict (a ``warn`` included), so read this, not ``status``.
+   */
+  guardrail?: SpanGuardrailVerdict | null;
+}
+
+export interface SpanGuardrailVerdict {
+  event_id: string;
+  outcome: string | null;
+  effect: GuardrailEffect | null;
+  blocking: boolean | null;
+  final_reason: string | null;
 }
 
 export interface SpanEvent {
@@ -88,6 +114,9 @@ export interface TraceDetail {
   runner_type: RunnerType;
   runner_name: string | null;
   spans: SpanRow[];
+  /** `fastaiagent.source` (playground, replay, kb_search, eval…); null = production. */
+  source?: string | null;
+  note?: TraceNote | null;
 }
 
 export interface ReplayStep {
@@ -100,12 +129,67 @@ export interface ReplayStep {
   timestamp: string;
 }
 
+/** What a rerun did with one tool (1.89.0). */
+export type ToolDisposition =
+  | "blocked"
+  | "live"
+  | "stub"
+  | "override"
+  | "no_function";
+
+export type ReplayDeterminism = "live" | "recorded" | "deterministic";
+export type ReplayOnMiss = "live" | "error";
+export type ReplayToolPolicy = "block" | "error" | "live";
+
+/**
+ * One of the original agent's tools, and what a rerun could do with it
+ * (``GET /api/replay/{trace_id}`` → ``tools``, 1.89.0).
+ */
+export interface ReplayToolChoice {
+  name: string;
+  tool_type: string;
+  origin: string | null;
+  replay_class: string | null;
+  /** This process has the function (a registered runner's tool, or the registry). */
+  live_available: boolean;
+  /** A REST/MCP tool whose endpoint the trace recorded; Live calls it for real. */
+  endpoint_from_trace: boolean;
+  /** Its auth headers were redacted, so a live call from the trace can't authenticate. */
+  credentials_redacted: boolean;
+}
+
+export interface ReplayPayload {
+  steps: ReplayStep[];
+  tools?: ReplayToolChoice[];
+}
+
 export interface RerunResult {
   fork_id: string;
   new_trace_id: string | null;
   new_output: unknown;
   original_output: unknown;
   steps_executed: number;
+  // 1.89.0 — optional so an older server's payload still type-checks.
+  source?: "replay";
+  determinism?: ReplayDeterminism;
+  tool_policy?: ReplayToolPolicy;
+  tool_dispositions?: Record<string, ToolDisposition>;
+  /** Calls the rerun's model made to a blocked tool, by name. */
+  blocked_tool_calls?: Record<string, number>;
+  /** Whether the rerun's spans may leave the machine (off by default). */
+  exported?: boolean;
+}
+
+/** One aligned tool call whose outcome changed between the runs (1.89.0). */
+export interface ToolDiff {
+  original_step: number | null;
+  new_step: number | null;
+  name: string;
+  original_status: string | null;
+  new_status: string | null;
+  original_result: unknown;
+  new_result: unknown;
+  disposition: ToolDisposition | string | null;
 }
 
 export interface ComparisonResult {
@@ -130,6 +214,19 @@ export interface ComparisonResult {
    * case.
    */
   compare_status?: "ok" | "rerun_failed";
+  // 1.89.0, all additive. ``diverged_at`` indexes ``original_steps``; only
+  // the run's own turns are aligned (memory and nested spans are skipped).
+  /** The same divergence, as an index into ``new_steps``. */
+  new_diverged_at?: number | null;
+  /** ``original_steps`` left out of the alignment (memory, nested spans). */
+  skipped_steps?: number[];
+  new_skipped_steps?: number[];
+  /** ``[original_index, new_index]`` pairs, in order; null where one side ran fewer turns. */
+  aligned?: [number | null, number | null][];
+  /** Aligned tool calls whose status or result differ. */
+  tool_diffs?: ToolDiff[];
+  /** Index into ``original_steps`` of the first tool call that differs. */
+  tools_diverged_at?: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -220,6 +317,12 @@ export interface DatasetCase {
   expected_output: unknown | null;
   tags: string[];
   metadata: Record<string, unknown>;
+  /**
+   * Every row field the editor does not model (1.89.0): expected_trajectory,
+   * expected_tool_calls, expected_steps, context, source_trace_id... Shown
+   * read-only; a save that omits it keeps it.
+   */
+  extra: Record<string, unknown>;
 }
 
 export interface DatasetDetail {
@@ -232,6 +335,8 @@ export interface CaseBody {
   expected_output?: unknown;
   tags?: string[];
   metadata?: Record<string, unknown>;
+  /** Omit to keep the row's other fields on an edit; a dict replaces them. */
+  extra?: Record<string, unknown>;
 }
 
 export interface DatasetImageUploadResult {
@@ -248,9 +353,13 @@ export interface DatasetImportResult {
 
 export interface DatasetRunEvalResult {
   run_id: string;
+  /** Passed / scored cases; null when no case was scored. */
   pass_rate: number | null;
   pass_count: number;
   fail_count: number;
+  /** Cases whose agent raised: unscored, neither a pass nor a fail (1.89.0). */
+  errored_count?: number;
+  total_cases?: number;
   /**
    * "echo" when no agent ran: inputs are echoed back unchanged, so a case
    * passes only where expected_output equals input. A 0% pass rate is normal
@@ -258,6 +367,138 @@ export interface DatasetRunEvalResult {
    */
   mode?: "echo" | "agent";
   note?: string | null;
+  /** "ui" for an agent run, "ui-echo" for a dataset check (1.89.0). */
+  kind?: "ui" | "ui-echo";
+  /** Case outcomes (1.89.0). */
+  cases?: RunEvalCaseCounts;
+  /** Scorer verdicts across all cases (1.89.0). */
+  checks?: RunEvalCheckCounts;
+}
+
+export interface RunEvalCaseCounts {
+  passed: number;
+  failed: number;
+  errored: number;
+  pass_rate: number | null;
+}
+
+export interface RunEvalCheckCounts {
+  passed: number;
+  failed: number;
+  errored: number;
+  skipped: number;
+  pass_rate: number | null;
+}
+
+// Run eval dialog (1.89.0): GET /datasets/{name}/run-eval/options
+
+export interface RunEvalAgentOption {
+  name: string;
+  kind: "agent" | "supervisor" | "swarm" | "chain";
+  supported: boolean;
+  reason: string | null;
+}
+
+export type ScorerFamily = "deterministic" | "llm" | "trajectory" | "rag";
+
+/** A row field a scorer reads. */
+export type ScorerNeed =
+  | "expected_output"
+  | "expected_trajectory"
+  | "expected_tool_calls"
+  | "expected_steps"
+  | "context";
+
+export interface ScorerParam {
+  name: string;
+  type: "string" | "number" | "integer";
+  required: boolean;
+  default: string | number | null;
+  minimum: number | null;
+  maximum: number | null;
+  description: string;
+}
+
+export interface ScorerOption {
+  name: string;
+  family: ScorerFamily;
+  description: string;
+  params: ScorerParam[];
+  needs: ScorerNeed[];
+  /** Calls a model, so it takes a judge model. */
+  judge: boolean;
+  /** Reads the agent's tool calls: a dataset check cannot feed it. */
+  needs_agent: boolean;
+  available: boolean;
+  unavailable_reason: string | null;
+  /** Per needed field, how many rows lack it. */
+  rows_missing: Partial<Record<ScorerNeed, number>>;
+}
+
+export interface JudgeModelOption {
+  provider: string;
+  model: string;
+}
+
+export interface DatasetFeatures {
+  rows: number;
+  with_expected_output: number;
+  with_expected_trajectory: number;
+  with_expected_tool_calls: number;
+  with_expected_steps: number;
+  with_context: number;
+  /** Rows whose input carries an image or a PDF. */
+  multimodal: number;
+}
+
+export interface RunEvalOptions {
+  agents: RunEvalAgentOption[];
+  scorers: ScorerOption[];
+  /** Only models whose provider has a key on the server. */
+  judge_models: JudgeModelOption[];
+  dataset_features: DatasetFeatures;
+  echo_available: boolean;
+}
+
+export type JudgeScale = "binary" | "0-1" | "1-5" | "1-10";
+
+export interface BuiltinScorerSpec {
+  type: "builtin";
+  name: string;
+  params?: Record<string, string | number>;
+  /** Only for scorers with `judge: true`; the server default when omitted. */
+  model?: JudgeModelOption;
+}
+
+export interface LLMJudgeScorerSpec {
+  type: "llm_judge";
+  name?: string;
+  criteria: string;
+  scale: JudgeScale;
+  threshold: number;
+  model?: JudgeModelOption;
+}
+
+export interface GEvalScorerSpec {
+  type: "geval";
+  name?: string;
+  criteria: string;
+  evaluation_steps?: string[];
+  rubric?: [number, string][];
+  scale: JudgeScale;
+  threshold: number;
+  model?: JudgeModelOption;
+}
+
+export type ScorerSpec = BuiltinScorerSpec | LLMJudgeScorerSpec | GEvalScorerSpec;
+
+export interface RunEvalBody {
+  /** Required unless mode is "echo"; must be absent when it is. */
+  agent_name?: string;
+  mode?: "agent" | "echo";
+  /** A plain string is the built-in of that name. */
+  scorers: (string | ScorerSpec)[];
+  run_name?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -271,6 +512,69 @@ export interface FilterPreset {
   created_at: string;
 }
 
+/** What produced an eval run (1.89.0). `null` = recorded before kinds existed. */
+export type EvalRunKind = "evaluate" | "cli" | "pytest" | "optimize" | "ui" | "ui-echo";
+
+/** The Agent-CI gate's verdict on a run. */
+export type EvalGateOutcome = "passed" | "failed" | "invalid";
+
+/** One threshold the gate checked, with the value the run reached. */
+export interface EvalGateCheck {
+  metric: string;
+  field: string;
+  minimum: number;
+  /** `null` when the metric was not present in the run (the gate fails it). */
+  actual: number | null;
+  passed: boolean;
+}
+
+/** The Agent-CI evidence recorded on a run; every part is optional. */
+export interface EvalGate {
+  outcome: EvalGateOutcome | string | null;
+  thresholds?: Record<string, number> | null;
+  checks?: EvalGateCheck[] | null;
+  error?: {
+    errored?: number;
+    scored?: number;
+    error_rate?: number;
+    max_error_rate?: number | null;
+  } | null;
+  invalid_reasons?: string[] | null;
+  baseline?: {
+    run_id?: string;
+    run_name?: string;
+    pass_rate_delta?: number | null;
+    case_pass_rate_delta?: number | null;
+    regressed_count?: number;
+    errored_count?: number;
+    unmatched_count?: number;
+    tolerance?: number | null;
+    pass_rate_comparable?: boolean;
+  } | null;
+  git_sha?: string | null;
+  git_branch?: string | null;
+}
+
+/** `metadata.hardening`: the recommendations `harden()` made for this run. */
+export interface EvalHardening {
+  created_at?: string | null;
+  model?: string | null;
+  failure_count?: number | null;
+  recommendations?: { target?: string; recommendation?: string; rationale?: string }[];
+}
+
+/** `metadata.scorer_config`: how each scorer was configured. Never keys. */
+export type EvalScorerConfig = Record<string, { type?: string; [key: string]: unknown }>;
+
+export interface EvalRunMetadata {
+  gate_outcome?: EvalGateOutcome | string;
+  git_branch?: string;
+  git_sha?: string;
+  scorer_config?: EvalScorerConfig;
+  hardening?: EvalHardening;
+  [key: string]: unknown;
+}
+
 export interface EvalRunRow {
   run_id: string;
   run_name: string | null;
@@ -280,16 +584,69 @@ export interface EvalRunRow {
   scorers: string[] | null;
   started_at: string | null;
   finished_at: string | null;
+  /** Checks (verdicts) that passed. Before 1.89.0 errored/skipped counted as fails. */
   pass_count: number | null;
   fail_count: number | null;
+  /**
+   * The **checks** rate: passed verdicts / (passed + failed verdicts). What
+   * `overall.pass_rate` and `--eval-fail-under` gate. `null` = no verdict applied.
+   */
   pass_rate: number | null;
-  metadata: Record<string, unknown> | null;
-  // Added in 0.9.3 — aggregated from eval_cases.trace_id → spans.
+  metadata: EvalRunMetadata | null;
+  // 1.89.0
+  kind?: EvalRunKind | string | null;
+  /** 2 for runs written by 1.89.0+; `null` for runs stored under the old rules. */
+  summary_version?: number | null;
+  case_count?: number | null;
+  case_pass_count?: number | null;
+  case_fail_count?: number | null;
+  case_error_count?: number | null;
+  /** The **cases** rate: passed cases / (passed + failed cases). The headline. */
+  case_pass_rate?: number | null;
+  check_error_count?: number | null;
+  check_skip_count?: number | null;
+  /** The agent's spend, from its traces. `null` when no case was traced. */
+  agent_cost_usd?: number | null;
+  /** False when some case had no trace, so the sum may be partial. */
+  agent_cost_known?: boolean;
+  /** The judges' spend, from the scoring traces. */
+  eval_cost_usd?: number | null;
+  eval_cost_known?: boolean;
+  /** Alias of the agent cost (0 when unknown). */
   cost_usd?: number;
   avg_latency_ms?: number;
-  case_count?: number;
+  traced_case_count?: number;
   // Only set on the run-detail response.
-  scorer_summary?: Record<string, { pass: number; fail: number }>;
+  scorer_summary?: Record<
+    string,
+    { pass: number; fail: number; errored?: number; skipped?: number }
+  >;
+  gate?: EvalGate | null;
+}
+
+/**
+ * One scorer's stored verdict on one case. `errored` (the check could not
+ * run) and `skipped` (the check does not apply) appear only when set; both
+ * carry `passed: false, score: 0` as a placeholder that is never a score.
+ */
+export interface EvalVerdict {
+  passed: boolean;
+  score: number;
+  reason?: string | null;
+  errored?: boolean;
+  skipped?: boolean;
+  details?: Record<string, unknown> | null;
+}
+
+/** A single verdict's outcome. */
+export type EvalVerdictOutcome = "passed" | "failed" | "errored" | "skipped";
+
+/** Mirrors `verdict_outcome` (fastaiagent/eval/scorer.py). */
+export function evalVerdictOutcome(v: EvalVerdict | null | undefined): EvalVerdictOutcome {
+  if (!v) return "failed";
+  if (v.errored) return "errored";
+  if (v.skipped) return "skipped";
+  return v.passed ? "passed" : "failed";
 }
 
 export interface EvalCaseRow {
@@ -300,25 +657,37 @@ export interface EvalCaseRow {
   expected_output: unknown;
   actual_output: unknown;
   trace_id: string | null;
-  per_scorer: Record<string, { passed: boolean; score: number; reason?: string | null }>;
+  per_scorer: Record<string, EvalVerdict>;
   /**
    * Infrastructure failure (provider 500, timeout, auth) — the agent never
    * produced an output, so the case was NOT scored and `per_scorer` is empty.
    * Errored is its own outcome: excluded from pass/fail, never a quality miss.
    */
   error?: string | null;
+  /** The trace of this case's judge calls (1.89.0). */
+  scoring_trace_id?: string | null;
 }
 
 /** A case's overall outcome. `errored` is infra, not agent quality. */
 export type EvalCaseOutcome = "passed" | "failed" | "errored";
 
-/** Mirrors the backend's `_case_outcome` (fastaiagent/eval/compare.py). */
+/**
+ * Mirrors the backend's `case_outcome_detail` (fastaiagent/eval/compare.py).
+ * First match wins:
+ *   1. the agent errored (`error` set)            → errored
+ *   2. any applicable verdict failed               → failed
+ *   3. any verdict errored (check could not run)   → errored
+ *   4. no verdict passed (all n/a, or none at all) → errored ("unscored")
+ *   5.                                             → passed
+ */
 export function evalCaseOutcome(c: Pick<EvalCaseRow, "error" | "per_scorer">): EvalCaseOutcome {
   if (c.error) return "errored";
-  const per = c.per_scorer ?? {};
-  const verdicts = Object.values(per);
-  if (verdicts.length === 0) return "passed";
-  return verdicts.every((v) => v?.passed) ? "passed" : "failed";
+  const per = c.per_scorer && typeof c.per_scorer === "object" ? c.per_scorer : {};
+  const outcomes = Object.values(per).map(evalVerdictOutcome);
+  if (outcomes.includes("failed")) return "failed";
+  if (outcomes.includes("errored")) return "errored";
+  if (!outcomes.includes("passed")) return "errored";
+  return "passed";
 }
 
 export interface EvalRunDetail {
@@ -333,17 +702,43 @@ export interface EvalCaseFilters {
   q?: string;
 }
 
+/** List filters for `GET /api/evals`. */
+export interface EvalRunFilters {
+  dataset?: string | null;
+  agent?: string | null;
+  /** Comma-separated run kinds. */
+  kind?: string | null;
+  exclude_kind?: string | null;
+  q?: string | null;
+  /** Comma-separated gate outcomes: passed, failed, invalid, none (never gated). */
+  gate?: string | null;
+  page?: number;
+  page_size?: number;
+}
+
 export interface EvalScorerDelta {
   scorer: string;
   passed_before: boolean;
   passed_after: boolean;
   changed: boolean;
+  // 1.89.0: `null` when the scorer did not run on that side.
+  outcome_before?: EvalVerdictOutcome | null;
+  outcome_after?: EvalVerdictOutcome | null;
+  /** `null` for an errored or skipped verdict, never its placeholder 0. */
+  score_before?: number | null;
+  score_after?: number | null;
+  score_delta?: number | null;
 }
 
 export interface EvalComparePair {
   a: EvalCaseRow;
   b: EvalCaseRow;
   scorer_deltas: EvalScorerDelta[];
+}
+
+export interface EvalCompareErroredPair extends EvalComparePair {
+  /** Which run's case errored. */
+  side: "a" | "b" | "both";
 }
 
 export interface EvalCompareResponse {
@@ -353,8 +748,37 @@ export interface EvalCompareResponse {
   improved: EvalComparePair[];
   unchanged_pass: number;
   unchanged_fail: number;
-  pass_rate_delta: number;
+  /** Checks-rate delta; `null` when either side has no checks rate. Read `pass_rate_comparable`. */
+  pass_rate_delta: number | null;
   cost_delta_usd: number;
+  // 1.89.0
+  errored?: EvalCompareErroredPair[];
+  only_in_a?: EvalCaseRow[];
+  only_in_b?: EvalCaseRow[];
+  /** Pairs whose outcome held while a score moved; lists only the moved scorers. */
+  drifted?: EvalComparePair[];
+  case_pass_rate_delta?: number | null;
+  pass_rate_comparable?: boolean;
+  agent_cost_delta_usd?: number | null;
+  eval_cost_delta_usd?: number | null;
+}
+
+/** A case value's image/PDF stored as a descriptor, its bytes kept out (1.89.0). */
+export interface EvalMediaDescriptor {
+  type: "image" | "pdf";
+  media_type?: string;
+  size_bytes?: number;
+  sha256?: string;
+  media_idx: number;
+  source_url?: string | null;
+  source_path?: string | null;
+  detail?: string | null;
+}
+
+/** Raw bytes in a case value, stored as their size only. */
+export interface EvalBytesDescriptor {
+  type: "bytes";
+  size_bytes: number;
 }
 
 // --- Optimize runs (optimize_runs / optimize_iterations) ---
@@ -441,6 +865,10 @@ export interface SimulationRunRow {
   started_at: string | null;
   finished_at: string | null;
   metadata: Record<string, unknown> | null;
+  /** Scenarios that did not finish or could not be judged (1.89.0). */
+  errored_count?: number;
+  /** Scenarios that reached a verdict. */
+  judged_count?: number;
 }
 
 export interface TranscriptTurn {
@@ -455,6 +883,8 @@ export interface CriterionVerdict {
   kind: "success" | "failure";
   passed: boolean;
   reason: string | null;
+  /** The judge could not run on this criterion (1.89.0). */
+  errored?: boolean;
 }
 
 export interface SimulationCase {
@@ -467,6 +897,8 @@ export interface SimulationCase {
   per_criterion: CriterionVerdict[];
   transcript: TranscriptTurn[];
   trace_id: string | null;
+  /** Why the scenario did not finish or could not be judged (1.89.0). */
+  error?: string | null;
 }
 
 export interface SimulationRunDetail {
@@ -499,22 +931,52 @@ export interface PromptListResponse {
   registry_is_local: boolean;
 }
 
-export interface PromptDetail {
+/** One prompt version, as every prompt endpoint returns it (1.89.0). */
+export interface PromptVersionDetail {
   slug: string;
-  latest_version: number;
+  version: number;
+  /** Fragments resolved: what a run sends. */
   template: string;
+  /** As stored, `{{@fragment}}` references intact: what the editor edits. */
+  template_raw: string;
+  fragments: string[];
   variables: string[];
   metadata: Record<string, unknown>;
-  registry_is_local: boolean;
 }
 
-export interface PromptVersionRow {
-  slug: string;
+export interface PromptDetail extends PromptVersionDetail {
+  latest_version: number;
+  registry_is_local: boolean;
+  /** `{alias: version}`, e.g. `{production: 3}` (1.89.0). */
+  aliases?: Record<string, number>;
+}
+
+export interface PromptVersionRow extends Omit<PromptVersionDetail, "version"> {
+  /** The list endpoint has always returned the version as a string. */
   version: string;
-  template: string | null;
-  variables: string | null;
   created_at: string | null;
   created_by: string | null;
+  /** Aliases pointing at this version (1.89.0). */
+  aliases?: string[];
+}
+
+/** One side of `GET /api/prompts/{slug}/diff`: the stored template. */
+export interface PromptDiffSide {
+  version: number;
+  template: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface PromptDiffResponse {
+  /** A unified diff ("--- slug vA" / "+++ slug vB"), or "(no template changes)". */
+  diff: string;
+  a: PromptDiffSide;
+  b: PromptDiffSide;
+}
+
+export interface PromptAliasesResponse {
+  slug: string;
+  aliases: Record<string, number>;
 }
 
 export interface PromptLineage {
@@ -531,8 +993,17 @@ export interface EvalRunsPage {
 
 export interface EvalTrendPoint {
   started_at: string;
-  pass_rate: number;
+  run_id?: string;
+  run_name?: string | null;
+  kind?: string | null;
   dataset_name: string | null;
+  /** The line this point belongs to: the dataset, or the run name for pytest. */
+  series?: string | null;
+  /** Cases rate; `null` when no case reached a verdict. */
+  case_pass_rate?: number | null;
+  /** Checks rate. */
+  pass_rate: number | null;
+  gate_outcome?: string | null;
 }
 
 export interface AnalyticsPoint {
@@ -546,6 +1017,17 @@ export interface AnalyticsPoint {
   p99_ms: number | null;
 }
 
+/**
+ * Traces with a non-production source (replay, Playground, learn, eval…),
+ * reported apart from production so excluding them never hides spend
+ * (1.89.0).
+ */
+export interface ExperimentsSummary {
+  trace_count: number;
+  cost_usd: number;
+  by_source: Record<string, { trace_count: number; cost_usd: number }>;
+}
+
 export interface AnalyticsSummary {
   trace_count: number;
   error_count: number;
@@ -554,6 +1036,9 @@ export interface AnalyticsSummary {
   p50_ms: number | null;
   p95_ms: number | null;
   p99_ms: number | null;
+  // 1.89.0
+  experiments?: ExperimentsSummary;
+  experiments_included?: boolean;
 }
 
 export interface AnalyticsAgent {
@@ -586,18 +1071,44 @@ export interface TraceScores {
     message: string | null;
     agent_name: string | null;
     timestamp: string | null;
+    /** 1.89.0 — shown as a suffix when the endpoint reports it. */
+    effect?: GuardrailEffect | null;
   }[];
   eval_cases: {
     case_id: string;
     run_id: string;
     ordinal: number;
-    per_scorer: Record<string, { passed: boolean; score: number; reason?: string | null }>;
+    per_scorer: Record<string, EvalVerdict>;
     run_name: string | null;
     dataset_name: string | null;
     started_at: string | null;
     input: unknown;
     expected_output: unknown;
     actual_output: unknown;
+  }[];
+  /** 1.89.0: this trace IS the judges' scoring of these eval cases. */
+  eval_scoring?: {
+    case_id: string;
+    run_id: string;
+    ordinal: number;
+    per_scorer: Record<string, EvalVerdict>;
+    /** The agent trace of the case that was scored. */
+    trace_id: string | null;
+    run_name: string | null;
+    dataset_name: string | null;
+    started_at: string | null;
+  }[];
+  /** 1.89.0: this trace is a simulated conversation. */
+  simulation_cases?: {
+    case_id: string;
+    run_id: string;
+    ordinal: number;
+    scenario_name: string | null;
+    passed: number | boolean;
+    per_criterion: CriterionVerdict[];
+    error: string | null;
+    run_name: string | null;
+    started_at: string | null;
   }[];
 }
 
@@ -645,6 +1156,53 @@ export interface GuardrailEvent {
   action_taken: string | null;
   severity: string | null;
   floor: boolean;
+  // 1.89.0 (local.db v25). All null on rows written before 1.89.0 ("legacy").
+  /** What the check did to the run, not just its verdict. */
+  effect: GuardrailEffect | null;
+  /** Why a rewrite or re-ask ended as a block (the caller refused it). */
+  final_reason: string | null;
+  latency_ms: number | null;
+  attempt: number | null;
+  /** Rows of one position pass share a batch. */
+  batch_id: string | null;
+  guardrail_span_id: string | null;
+  judged_ref: string | null;
+  /** The rule as it ran. */
+  rule: GuardrailRuleSnapshot | null;
+  blocking: boolean | null;
+  on_error: string | null;
+  origin: "local" | "plane" | string | null;
+}
+
+/**
+ * What a check did to the run (1.89.0):
+ * none — clean pass; warned — failed, recorded, run continued unchanged;
+ * rewritten — payload masked/overridden and used; reasked — model asked again;
+ * blocked — run stopped here; observed — observe-only rule, nothing enforced;
+ * unchecked — could not run, ``on_error=allow`` let it through.
+ */
+export type GuardrailEffect =
+  | "none"
+  | "warned"
+  | "rewritten"
+  | "reasked"
+  | "blocked"
+  | "observed"
+  | "unchecked";
+
+export interface GuardrailRuleSnapshot {
+  name?: string;
+  guardrail_type?: string;
+  position?: string;
+  /** ``llm`` is reduced to provider/model. */
+  config?: Record<string, unknown>;
+  blocking?: boolean;
+  description?: string | null;
+  on_error?: string | null;
+  action?: string | null;
+  severity?: string | null;
+  floor?: boolean;
+  origin?: string | null;
 }
 
 export interface GuardrailEventsPage {
@@ -652,6 +1210,11 @@ export interface GuardrailEventsPage {
   total: number;
   page: number;
   page_size: number;
+  /**
+   * Only when ``total`` is 0: guardrail spans recorded before 1.89.0, when
+   * checks were not yet written as rows by default.
+   */
+  legacy_guardrail_spans?: number;
 }
 
 // Sprint 2 — Guardrail Event Detail
@@ -675,9 +1238,16 @@ export interface GuardrailContextSpan {
 
 export interface GuardrailEventDetail {
   event: GuardrailEvent;
+  /**
+   * 1.89.0 — exactly the text the rule judged. ``recorded`` is false for a
+   * row written before 1.89.0 or one whose payload was purged.
+   */
+  judged: { text: string | null; recorded: boolean };
+  /** Compatibility: read from the parent span, which may hold rewritten text. */
   trigger: GuardrailTrigger;
   context: {
     spans: GuardrailContextSpan[];
+    /** Since 1.89.0, the other rows of the same position pass (batch). */
     sibling_events: GuardrailEvent[];
   };
 }
@@ -685,7 +1255,8 @@ export interface GuardrailEventDetail {
 export interface FalsePositiveResponse {
   event_id: string;
   false_positive: boolean;
-  false_positive_at: string;
+  /** Null once the flag is cleared (1.89.0). */
+  false_positive_at: string | null;
 }
 
 export interface AgentSummary {
@@ -709,6 +1280,14 @@ export interface ForkModifications {
    * calling the original tool.
    */
   tool_overrides?: Record<string, unknown>;
+  /** 1.89.0: how the rerun calls the LLM. */
+  determinism?: ReplayDeterminism;
+  /** 1.89.0: ``recorded`` only — what to do when the rerun makes more LLM calls than recorded. */
+  on_miss?: ReplayOnMiss;
+  /** 1.89.0: what the rerun does with tools you did not stub or allow. */
+  tool_policy?: ReplayToolPolicy;
+  /** 1.89.0: tools that run live under any policy. */
+  allow_tools?: string[];
   /**
    * @deprecated since v1.14.1 — was a no-op for agent reruns
    * (silently routed to modify_state which the agent path ignored).
@@ -727,6 +1306,12 @@ export interface TraceFilters {
   runner_type?: RunnerType | null;
   runner_name?: string | null;
   framework?: string | null;
+  /** 1.89.0: hide replay, Playground, learn and eval traces. */
+  exclude_experiments?: boolean;
+  /** 1.89.0: `fastaiagent.source` on the trace (playground, replay, kb_search…). */
+  source?: string | null;
+  /** 1.89.0: only traces with a note. */
+  noted?: boolean;
   since?: string;
   until?: string;
   min_duration_ms?: number;
@@ -850,6 +1435,8 @@ export interface CostBreakdownResponse {
   period: string;
   chain_name?: string | null;
   rows: CostByModelRow[] | CostByAgentRow[] | CostByNodeRow[];
+  /** 1.89.0: the experiment traces in this period, whether or not they are in ``rows``. */
+  experiments?: ExperimentsSummary;
 }
 
 export type ToolOrigin =
@@ -906,7 +1493,14 @@ export interface KbDetail {
   size_bytes: number;
   last_updated: string;
   metadata_keys: string[];
+  /** 1.89.0: whether any chunk has an embedding. Without, only keyword search works. */
+  has_embeddings?: boolean;
+  search_types?: KbSearchType[];
+  /** The default search type: hybrid with embeddings, keyword without. */
+  search_type?: KbSearchType;
 }
+
+export type KbSearchType = "keyword" | "vector" | "hybrid";
 
 export interface KbDocumentRow {
   source: string;
@@ -981,10 +1575,52 @@ export interface PlaygroundProviderInfo {
   models: string[];
   has_key: boolean;
   env_var: string | null;
+  /** 1.89.0: no default endpoint (custom, azure), so a run needs a base URL. */
+  requires_endpoint?: boolean;
+}
+
+/** How a model treats one sampling parameter (`fastaiagent.llm.param_rules`). */
+export type ParamSupport = "free" | "default_only" | "unsupported";
+
+export interface SamplingRule {
+  temperature: ParamSupport;
+  top_p: ParamSupport;
+  /** Temperature and top_p cannot both be sent. */
+  exclusive: boolean;
+  default_temperature: number;
+  default_top_p: number;
+  note: string;
+}
+
+/** One row of the server's rule table; the longest matching prefix wins. */
+export interface SamplingRuleRow extends SamplingRule {
+  provider: string;
+  model_prefix: string;
 }
 
 export interface PlaygroundModelsResponse {
   providers: PlaygroundProviderInfo[];
+  /** 1.89.0. Hints only: the server never blocks a call on them. */
+  sampling_rules?: SamplingRuleRow[];
+}
+
+/** The registry prompt a run was loaded from (1.89.0, P10c). */
+export interface PlaygroundPromptRef {
+  slug: string;
+  version?: number;
+  alias?: string;
+}
+
+/**
+ * What the server made of `prompt_ref`: `attributed` when the template was
+ * sent unchanged (the run shows in the prompt's lineage), `modified` when it
+ * was edited first.
+ */
+export interface PlaygroundPromptSummary {
+  slug: string;
+  version: number | null;
+  attributed: boolean;
+  modified: boolean;
 }
 
 /**
@@ -1013,9 +1649,23 @@ export interface PlaygroundRunRequest {
   base_url?: string;
   /** Per-request credential. Never persisted client- or server-side. */
   api_key?: string;
+  /** 1.89.0: set when the template came from the registry. */
+  prompt_ref?: PlaygroundPromptRef;
 }
 
-export interface PlaygroundRunResponse {
+/** Fields `/run` and the stream's `done` event both add in 1.89.0. */
+export interface PlaygroundRunOutcome {
+  /** The provider's raw stop reason (`stop`, `length`, `max_tokens`, …). */
+  finish_reason?: string | null;
+  /** The output was cut off at `max_tokens`. */
+  truncated?: boolean;
+  max_tokens?: number | null;
+  /** `{{vars}}` sent unfilled. */
+  unfilled_variables?: string[];
+  prompt?: PlaygroundPromptSummary | null;
+}
+
+export interface PlaygroundRunResponse extends PlaygroundRunOutcome {
   response: string;
   model: string;
   provider: string;
@@ -1023,22 +1673,38 @@ export interface PlaygroundRunResponse {
   tokens: { input: number; output: number };
   cost_usd: number | null;
   trace_id: string | null;
-  finish_reason: string | null;
+  /**
+   * 1.89.0: false when the trace went to a different store than this UI
+   * reads, so a link to it would 404. Absent (older server) = true.
+   */
+  trace_in_ui_db?: boolean;
 }
 
-export interface PlaygroundDoneMetadata {
+export interface PlaygroundDoneMetadata extends PlaygroundRunOutcome {
   model: string;
   provider: string;
   latency_ms: number;
   tokens: { input: number; output: number };
   cost_usd: number | null;
   trace_id: string | null;
+  /** See {@link PlaygroundRunResponse.trace_in_ui_db}. */
+  trace_in_ui_db?: boolean;
 }
 
 export type PlaygroundStreamEvent =
   | { event: "token"; text: string }
   | { event: "done"; metadata: PlaygroundDoneMetadata }
-  | { event: "error"; message: string; correlation_id?: string };
+  | {
+      event: "error";
+      /** Always a string (1.89.0): a 422's list `detail` crashed the page. */
+      message: string;
+      correlation_id?: string;
+      field_errors?: { field: string; message: string }[];
+      kind?: string;
+      provider_status?: number;
+      provider_message?: string;
+      hint?: string;
+    };
 
 export interface SaveAsEvalRequest {
   dataset_name: string;
@@ -1047,6 +1713,13 @@ export interface SaveAsEvalRequest {
   system_prompt?: string;
   model?: string;
   provider?: string;
+  // 1.89.0: the run's own snapshot, not the current form.
+  image_b64?: string;
+  image_media_type?: string;
+  image_name?: string;
+  parameters?: Partial<PlaygroundParameters>;
+  prompt?: { slug: string; version: number | null };
+  trace_id?: string;
 }
 
 export interface SaveAsEvalResponse {
@@ -1094,6 +1767,25 @@ export interface AgentDepGuardrail {
   name: string | null;
   guardrail_type: string | null;
   position: string | null;
+  // 1.89.0 — absent on payloads from older servers.
+  action?: string | null;
+  blocking?: boolean | null;
+  on_error?: string | null;
+  severity?: string | null;
+  floor?: boolean | null;
+}
+
+/**
+ * 1.89.0 — a rule that ran for the agent (it has event rows) but that the
+ * agent does not declare, e.g. one distributed by a control plane.
+ */
+export interface AgentDepObservedGuardrail {
+  name: string;
+  position: string | null;
+  guardrail_type: string | null;
+  last_seen: string | null;
+  checks: number;
+  origin: string | null;
 }
 
 export interface AgentDepHandoff {
@@ -1107,6 +1799,7 @@ export interface AgentDependencies {
   knowledge_bases: AgentDepKB[];
   prompts: AgentDepPrompt[];
   guardrails: AgentDepGuardrail[];
+  observed_guardrails?: AgentDepObservedGuardrail[];
   model: { provider: string | null; model: string | null };
   sub_agents?: AgentDependencies[];
   peers?: AgentDepNode[];

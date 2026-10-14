@@ -100,15 +100,15 @@ async def test_tool_result_guardrail_non_blocking_logs_event(tmp_path: Path) -> 
         guardrails=[guard],
     )
 
+    # Rows follow tracing (1.89.0), not the UI flag.
     cfg = get_config()
-    prev_enabled, prev_path = cfg.ui_enabled, cfg.local_db_path
-    cfg.ui_enabled = True
+    prev_path = cfg.local_db_path
     cfg.local_db_path = str(db_file)
     try:
         result = await agent.arun("go", trace=False)
         assert result.output == "all done"  # completed despite the warning
     finally:
-        cfg.ui_enabled, cfg.local_db_path = prev_enabled, prev_path
+        cfg.local_db_path = prev_path
 
     db = init_local_db(db_file)
     try:

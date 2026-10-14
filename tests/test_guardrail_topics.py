@@ -546,7 +546,9 @@ async def test_the_detail_lands_on_the_span_for_a_topic_rule(
             return False
 
     class _Tracer:
-        def start_as_current_span(self, name: str) -> Any:
+        # The OTel signature: the runtime passes record_exception /
+        # set_status_on_exception (1.89.0, the span wraps the check).
+        def start_as_current_span(self, name: str, **_kwargs: Any) -> Any:
             captured["span_name"] = name
             return _Span()
 

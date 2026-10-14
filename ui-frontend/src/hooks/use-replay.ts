@@ -3,15 +3,14 @@ import { api } from "@/lib/api";
 import type {
   ComparisonResult,
   ForkModifications,
+  ReplayPayload,
   RerunResult,
-  ReplayStep,
 } from "@/lib/types";
 
 export function useReplay(traceId: string | undefined) {
   return useQuery({
     queryKey: ["replay", traceId],
-    queryFn: () =>
-      api.get<{ steps: ReplayStep[] }>(`/replay/${traceId}`),
+    queryFn: () => api.get<ReplayPayload>(`/replay/${traceId}`),
     enabled: !!traceId,
   });
 }

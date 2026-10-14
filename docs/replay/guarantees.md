@@ -49,8 +49,9 @@ null` on such a turn, so its span has `gen_ai.response.tool_calls` and no
 `gen_ai.response.content`. Before 1.84.0 those spans were skipped. A recorded
 rerun of any tool-using agent jumped straight to the captured final answer, never
 ran a tool, and still matched the original output. Now the tool-call turn is
-served in order, so **the rerun really executes the agent's tools**. Use
-`with_tool_override(...)` to stub any tool with side effects.
+served in order, so the rerun reaches the agent's tools. What it does with them
+is the [tool policy](#tools-a-rerun-runs-only-what-you-supply): by default
+(1.89.0) it blocks them.
 
 ### Decisions API calls (1.84.0)
 
@@ -97,6 +98,31 @@ forked.with_determinism("recorded")                    # default: on_miss="live"
 `on_miss="error"` raises before any provider call, so a recorded suite
 can never quietly spend tokens or return drifted output.
 
+#### Guardrail model calls have their own queue (1.89.0)
+
+A model-backed guardrail (`llm_judge`, `content_safety`, `groundedness`,
+`topic`) makes its own model call, and before 1.89.0 that call popped the same
+queue as the agent:
+
+- a judge present in the rerun but not the original **took the agent's
+  turn**: an input judge was handed the recorded tool-call turn, read it as a
+  failing verdict, and blocked the rerun;
+- a judge present in the original but not the rerun **handed its verdict to
+  the agent**, which answered `{"verdict": "PASS", …}`.
+
+Now the recordings are split by role. A guardrail's call is served from the
+original's guardrail recordings and the agent from its own turns. A judge in
+the rerun with no recording is a miss under `on_miss`; a judge in the
+original but not the rerun leaves its recording unused.
+
+Recordings are told apart by span ancestry: a call under a `guardrail.*`
+span is the guardrail's (the guardrail span wraps its check since 1.89.0). In
+older traces the judge's span is a sibling, so a call counts as a guardrail's
+when the trace has guardrail spans and the request has the SDK guardrail
+shape (a system message, then a user message starting `<<DATA>>` or
+`<<CONTEXT>>`). This needs tracing on during the rerun; with tracing off the
+rerun falls back to one shared queue and logs a warning.
+
 ## Known fidelity gaps
 
 These are documented limitations to set expectations. Each is tracked
@@ -113,22 +139,71 @@ For most regression-test scenarios this is fine: the final answer is
 what you're testing. If you need per-chunk fidelity, file an issue —
 granular streaming capture is on the deferred-follow-up list.
 
-### Tool execution is rerun, not recorded
+### Tools: a rerun runs only what you supply
 
-`recorded` mode skips the LLM call but **does not** skip tool calls.
-If the LLM's recorded response includes a tool invocation, that tool
-will execute live during rerun. Two ways to handle this:
+No determinism mode records tools: `recorded` skips the LLM call, not the
+tool calls the recorded turns ask for. Before 1.89.0 a rerun ran each of
+them for real. A function tool ran the implementation registered in the
+process, and a REST or MCP tool called the endpoint recorded in the trace. A
+rerun of a refund agent refunded again.
 
-* **`with_tool_override(name, stub)`** — replace a single tool with
-  a deterministic stand-in. Other tools keep their reconstructed
-  implementations. Multiple calls compose.
-* **`with_tools([...])`** — full replacement. All tools come from
-  the list you pass; nothing is reconstructed from the trace.
+**Since 1.89.0 a rerun runs only the tools you supply or allow.** Every other
+tool is **blocked**. The model gets an error result that names the tool and
+how to allow it, and the rerun counts the call:
 
 ```python
-forked.with_tool_override("search_kb", deterministic_stub)
-forked.with_tool_override("create_ticket", another_stub)
+rerun = forked.rerun()
+rerun.tool_dispositions    # {"lookup_order": "blocked", "charge_card": "blocked"}
+rerun.blocked_tool_calls   # {"charge_card": 1}: the answer does not show its effect
 ```
+
+A rerun that blocked a call also logs a warning. To give the rerun its tools:
+
+| Call | What the rerun runs | Disposition |
+|---|---|---|
+| `with_tool_override(name, fn_or_tool)` | your function or tool, in place of the original | `override` |
+| `with_tool_stub(name, returns=...)` | a stub that returns `returns` | `stub` |
+| `with_tool_policy("live", allow=[...])` | the implementation registered in this process, for every function tool (or only those named in `allow`, under any policy) | `live` |
+| `with_tools([...])` | exactly the list you pass; nothing is rebuilt from the trace | `override` |
+
+```python
+forked = (
+    Replay.load(trace_id)
+    .fork_at(0)
+    .with_determinism("recorded", on_miss="error")
+    .with_tool_policy("block", allow=["lookup_order"])   # the read-only lookup runs
+    .with_tool_stub("charge_card", returns="charged 0.00 (stub)")
+)
+```
+
+Further rules:
+
+* **`live` needs the function in this process.** In a fresh process a
+  function tool has no implementation, so it gets disposition `no_function`
+  and returns "No function attached to this tool".
+* **REST and MCP tools run only when named in `allow`.** Their endpoint was
+  rebuilt from the trace, so `with_tool_policy("live")` alone does not call it.
+  A REST tool whose auth headers were redacted from the trace is never called:
+  its header holds the placeholder `[redacted]`, not the credential. Pass the
+  live tool with `with_tool_override`. A `RESTTool` rebuilt anywhere else
+  refuses such a header too, before any request.
+* **`with_tool_policy("error")`** blocks the same tools and raises
+  `ReplayError` instead of answering. In `recorded` mode it raises before
+  anything runs, when a recorded turn calls a tool the rerun was not given.
+* **The default policy** can be set per process with
+  `FASTAIAGENT_REPLAY_TOOL_POLICY` (`block`, `error` or `live`).
+* **Overrides never touch the global registry.** A callable you pass is
+  wrapped as `FunctionTool(..., register=False)`. If you pass the tool the
+  registry already holds under that name, `with_tool_override` warns: you
+  probably meant a stand-in. Build stand-ins with
+  `FunctionTool(..., register=False)` or `@tool(..., register=False)`.
+  Tools built during a rerun register into a private overlay, not the
+  process-wide registry.
+
+**`@idempotent` does not protect a rerun.** Its cache is keyed by execution
+and lives in the checkpointer. A rerun is a new execution and has no
+checkpointer, so an allowed `@idempotent` function runs its body again. Allow
+a tool as `live` only when running it again is harmless.
 
 #### Pauses and governance during a rerun
 
@@ -139,17 +214,20 @@ its platform `agent_id`**. Two consequences:
   `ReplayError` naming what it paused on; override that tool with
   `with_tool_override(...)` to replay past it. (Before 1.78.0 the bare
   `InterruptSignal` escaped `arerun()`.)
-* **A rerun is not governed.** Managed approval policies never gate it. Rebuilt
-  tools have no function unless you supply one, so a real side-effecting tool
-  only runs in a rerun when you pass it in through `with_tool_override` /
-  `with_tools` — an explicit, local choice.
+* **A rerun is not governed by approval policies.** It has no `agent_id` and
+  never registers to get one, so managed approval policies never gate it.
+  Domain-wide plane guardrails still run on a connected rerun: they are
+  enforced at the edge, like local rules. A real side-effecting tool runs in a
+  rerun only when you supply or allow it (see above): an explicit, local choice.
 
 #### Marking tools with `replay_class`
 
-Rather than override tools by hand on every rerun, declare each tool's
-replay-safety class once at definition time. The central Replay engine reads it
-(off the `fastaiagent.tool.replay_class` span attribute) to decide, per call,
-whether to re-execute or inject the recorded output:
+Declare each tool's replay-safety class once at definition time. It is
+recorded on every tool span as `fastaiagent.tool.replay_class`. **The SDK's
+rerun does not act on it:** it blocks every tool you did not supply or allow,
+whatever its class. The local UI shows the class beside each tool when you
+pick what a rerun may run. The control plane's central Replay engine reads it
+to decide, per call, whether to re-execute or inject the recorded output:
 
 | `replay_class` | Replay behavior |
 |----------------|-----------------|
@@ -198,6 +276,27 @@ This replaces the v1.13 behavior of hardcoding `diverged_at` to the
 fork point — which was misleading because the actual divergence often
 happens later than where the user asked to fork.
 
+**Only the run's own turns are aligned (1.89.0).** That means the root span
+and its direct children, minus `memory.*` spans. A rerun has no memory, so
+before 1.89.0 the missing `memory.*` spans shifted every later index, and a
+byte-identical recorded rerun of a memory agent "diverged" at step 1. The
+indices still point into the full step lists:
+
+| Field | What it holds |
+|---|---|
+| `diverged_at` / `new_diverged_at` | the first differing turn, as an index into `original_steps` / `new_steps` |
+| `aligned` | `(original_index, new_index)` pairs; `None` where one run had fewer turns |
+| `skipped_steps` / `new_skipped_steps` | steps left out of the alignment (memory, nested spans) |
+| `tool_diffs` | aligned tool calls whose status or result differ, with the rerun's disposition (`blocked`, `stub`, `live`, …) |
+| `tools_diverged_at` | the first of those, as an index into `original_steps` |
+
+Tool differences are kept apart from `diverged_at`. A recorded rerun whose
+tool was blocked still reports the model's turns as identical. The blocked
+call shows up in `tool_diffs`.
+
+`compare()` reads the rerun from the store it was written to: the `store=`
+argument, then `with_trace_db`, then the default store.
+
 ```python
 comp = forked.compare(rerun_result)
 assert comp.compare_status == "ok"
@@ -212,6 +311,47 @@ When the rerun trace can't be loaded (e.g., `Agent.arun` failed),
 `compare_status` is set to `"rerun_failed"` and `diverged_at` stays
 `None` — so UIs can distinguish "matched everything" from "couldn't
 tell".
+
+## A rerun is an experiment, not a production run (1.89.0)
+
+Before 1.89.0 a rerun's trace looked like any other run of the agent. It was
+exported to the platform as a production run, it counted in the local UI's
+Analytics, Overview and Agents pages, and eval curation and memory learning
+could pick it up. A rerun also pushed its agent definition to the platform,
+which could overwrite the real agent's registration with the rebuilt copy.
+
+Now every span a rerun writes carries `fastaiagent.source = "replay"`. The
+rerun's root also carries where it came from:
+
+| Root attribute | Value |
+|---|---|
+| `fastaiagent.replay.source_trace_id` | the trace it replays |
+| `fastaiagent.replay.fork_step` | the step it forked at |
+| `fastaiagent.replay.determinism` / `.on_miss` | the determinism mode |
+| `fastaiagent.replay.tool_policy` / `.tool_overrides` | the tool policy, and the names of overridden tools |
+| `fastaiagent.replay.modifications` | what was modified, as kinds only (`prompt`, `input`, …), never the new text |
+| `fastaiagent.replay.surface` | `python`, `cli` or `ui` |
+
+Each `tool.<name>` span of the rerun carries
+`fastaiagent.replay.tool_disposition`.
+
+What follows from that:
+
+* **Not exported by default.** The rows are written already marked as sent,
+  so no exporter ships them, including an older SDK sharing the same
+  `local.db`. `rerun.exported` says which applied. Opt in per rerun with
+  `forked.with_export()`, or for every experiment with
+  `fa.connect(export_experiments=True)` or `FASTAIAGENT_EXPORT_EXPERIMENTS=1`.
+  An exported rerun keeps its `fastaiagent.source` attribute.
+* **Never registered.** A rerun does not push its agent definition, whether
+  or not it is exported.
+* **Left out of production views.** Analytics, Overview, Agents,
+  `list_traces(exclude_sources=True)`, `fastaiagent eval curate` and
+  `fastaiagent learn` exclude experiment traces unless you ask for them
+  ([Tracing → provenance](../tracing/index.md#where-a-trace-came-from-provenance)).
+* **A store of its own, if you want one.**
+  `forked.with_trace_db("experiments.db")` writes the rerun there instead of
+  the default store. `compare()` finds it there.
 
 ## Saving a rerun as a regression test
 

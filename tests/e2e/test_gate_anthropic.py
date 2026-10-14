@@ -109,7 +109,10 @@ class TestQualityGateAnthropic:
 
         replay = gate_state["anthropic_replay"]
         fork_point = min(2, len(replay.steps()) - 1)
-        forked = replay.fork_at(step=fork_point)
+        # 1.89.0: a rerun blocks tools unless allowed; lookup_order only reads.
+        forked = replay.fork_at(step=fork_point).with_tool_policy(
+            "live", allow=["lookup_order"]
+        )
         assert isinstance(forked, ForkedReplay)
 
         forked.modify_prompt(

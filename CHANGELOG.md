@@ -5,6 +5,881 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.89.0] - 2026-10-14 — numbers, verdicts and traces you can trust
+
+The fixes from the 2026-10 audit of the Local UI, evals, guardrails, replay and
+the Playground, plus a credential leak (S1) and LangChain 1.x support. No wire
+change: every new attribute is an additive key on the open span envelope, and
+the guardrail span is pinned byte-for-byte to 1.88.0. `local.db` migrates v24 →
+v26 on first open (additive, nullable columns; older SDKs keep writing to it).
+What the Enterprise plane sees differently is listed in the phase sections.
+
+### Upgrading from 1.88 — behaviour changes at a glance
+
+Each line is detailed in its phase section below.
+
+- **Security.**
+  - A guardrail's `llm` config no longer carries credentials anywhere (S1).
+  - Provider error text is scrubbed of keys (P9).
+  - Gemini sends its key in a header, not the URL.
+- **Agent CI and eval export.**
+  - A pytest gate records the verdict it enforces (E1).
+  - A run is never its own baseline (E2).
+  - Only gated runs are exported (E1b).
+  - `curate --filter guardrail` finds the runs where a rule fired (G8).
+- **LangChain.** The `[langchain]` extra accepts LangChain 1.x.
+  - `with_guardrails` now guards every call path, builder and composition; they failed open.
+  - Output that can't be checked fails closed.
+- **Replay.**
+  - A rerun runs only the tools you give it.
+  - A rerun and a Playground call are local experiments: not exported, and not counted in Analytics.
+  - In recorded mode, a guardrail judge never takes the agent's turn.
+- **Guardrails.**
+  - Events are recorded whenever tracing is on.
+  - A row says what the check did (`effect`).
+  - A trace fails only when its root span fails.
+- **Evals.**
+  - A check that could not run is `errored`, and one that doesn't apply is `skipped`; neither is a fail or a pass.
+  - A case has one outcome.
+  - New gate semantics, with **invalid** (exit 3) for errored or unmeasured gated scorers.
+  - Eval traces are labelled `eval.score`.
+  - The UI's Run eval runs a real agent; echo must be asked for.
+- **Playground and prompts.**
+  - Failures say why.
+  - Streams report how they ended, so truncation shows, and `stream()` returns the provider's finish reason.
+  - `set_alias` refuses a missing version.
+  - `diff()` is a unified diff.
+- **Approvals.** Each resume or fork is its own agent-rooted trace, linked by `agent.execution_id`, which every agent root now carries.
+- **KB and traces.**
+  - `LocalKB.add(metadata={"source": …})` keeps the source.
+  - `GET /api/traces` counts `total` after every filter.
+
+### Security (Phase 1)
+
+- ⚠ **A guardrail's `llm` config no longer carries credentials anywhere (S1).**
+  `config["llm"]` on `llm_judge` / `content_safety` / `groundedness` / `topic`
+  rules (including `banned_topics(..., llm={...})` and `allowed_topics`), and a
+  Chain decision node's `decision["llm"]`, were copied verbatim by `to_dict()`.
+  A key put there reached the root span's `agent.guardrails` attribute, which
+  is not a payload key, and from there `local.db`, the plane and every OTLP
+  exporter, **even with `FASTAIAGENT_TRACE_PAYLOADS=0`**. It was also stored by
+  the plane through the agent push. These dicts now take an **allowlist** of
+  shareable `LLMClient` fields.
+  - **Breaking:** a credential (or any non-shareable field) in the dict
+    **raises `ValueError` at construction**. The error names the field and never
+    echoes its value. Supply the key through the provider's env var, or pass a
+    live `LLMClient(api_key=...)`, which keeps the rule local.
+  - A rule rebuilt from a trace or the plane (`Guardrail.from_dict`,
+    `from_policy`, `Chain.from_dict`) drops the field with a warning and
+    resolves its key from the environment, so rules stored by older SDKs still
+    run.
+  - Serialization applies the allowlist again.
+- ⚠ **Provider error text is scrubbed of keys (P9).** OpenAI echoes a rejected
+  key in its error body, and every `LLMProviderError` embedded that body. The
+  echo then reached span events, `local.db`, the server log and, with payloads
+  on, the plane's `trace.error`. Errors are now built through
+  `LLMClient._provider_error`, which replaces the client's key, the provider
+  keys in the environment, half-masked echoes and key-shaped strings with
+  `[REDACTED]`. As a fallback, exception text is scrubbed again when spans are
+  stored and exported, and the Playground logs a scrubbed traceback instead of
+  `exc_info=True`.
+- `LLMProviderError` gains `provider`, `provider_message`, `provider_code` and
+  `request_id` (keyword-only, default `None`; positional use is unchanged).
+- ⚠ **Gemini sends its key in the `x-goog-api-key` header** instead of `?key=`.
+  The URL, including httpx's request log line, no longer contains the key. A
+  gateway that only reads `?key=` must accept the header.
+- New `fastaiagent traces scrub-secrets [--dry-run] [-y]` cleans both kinds of
+  leak from rows written by earlier versions. It counts spans already sent to
+  the plane, which it cannot recall. **Rotate any key that was passed in a
+  guardrail `llm` dict, or rejected by OpenAI, on ≤ 1.88.0.**
+
+### Data integrity (Phase 2)
+
+- ⚠ **An Agent-CI session records the verdict it enforces (E1).** The pytest
+  plugin computed the threshold gate and the baseline check separately, OR-ed
+  both into the exit status and recorded only the first. A session that exited 1
+  on a regression or a missing baseline therefore recorded
+  `gate_outcome="passed"`, and the plane counts `passed` as promotion and
+  compliance evidence. Now one verdict drives both: a regression records
+  `failed`, an unloadable baseline records `invalid`, and the session prints
+  `fastaiagent eval verdict: … (recorded as gate_outcome=…)`.
+- ⚠ **`--eval-run-name X --eval-baseline X` no longer compares a session with
+  itself (E2).** The baseline is resolved before the session persists its run.
+  A name lookup now skips runs whose gate failed (`load_run(...,
+  accepted_only=True)`), so a regression cannot become the next baseline. When no
+  accepted run with the name exists yet, the session publishes it, gated on
+  thresholds only. A ratchet that regressed used to exit 0; it now exits 1.
+- ⚠ **Only runs with a recorded verdict are exported (E1b).** Every persisted
+  run was queued, and the payload defaulted `gate_outcome` to `passed`, so any
+  span flush before the gate (or a run nobody gated) reached the plane as
+  passing evidence. The plane keeps the first copy of a `run_id`, so the real
+  verdict was lost. A bare `evaluate()` is now exported only after
+  `record_gate_result()`; the CLI and pytest plugin record it automatically.
+  `eval export --dry-run` shows `null` for a run with no verdict. An older SDK
+  process sharing the same `local.db` can still send those runs.
+- `record_gate_result()` raises `ValueError` for an outcome other than `passed` /
+  `failed` / `invalid`; `VALID_GATE_OUTCOMES` is in `fastaiagent.eval.gate`. A
+  malformed `--eval-fail-under` is a pytest usage error instead of failing after
+  the run was persisted.
+- **A failed streamed LLM call is traced as ERROR (P5).** The streamed `llm.*`
+  span only recorded `LLMProviderError` and never set a status, so a failed
+  stream ended UNSET while the same failure through `complete()` ended ERROR. Any
+  exception now sets ERROR via a shared `mark_span_error`. The Playground's
+  `/stream` root now records what `/run`'s root does (an opaque 502, never the
+  provider's text). PydanticAI `run_stream` roots end ERROR, and a failure while
+  the stream opens no longer leaks an attached, never-ended span. A consumer that
+  stops early, or a cancelled stream, is not an error. The plane will see these
+  traces as failed.
+- **The Local UI prompt editor keeps fragments, metadata and authorship (P2,
+  P3).** It edited the *resolved* template, so "Save as new version" froze every
+  `{{@fragment}}` into a copy, and it sent `metadata: {}`, which wiped the
+  version's metadata on every save. It now edits the stored template; a new
+  version inherits the edited version's metadata (`PUT` takes `base_version`;
+  explicit `{}` clears); versions are labelled `created_by: "ui"`. All three
+  prompt endpoints return one shape: `template` (resolved), `template_raw`,
+  `fragments`, `variables` (a list; `/versions` returned a JSON string) and
+  `metadata`. Additive in Python: `PromptRegistry.load(...,
+  resolve_fragments=False)`, `.resolve_fragments()`, `register(...,
+  created_by=)`, `fragment_refs()`.
+- ⚠ **`eval curate --filter guardrail` selects the runs where a rule fired
+  (G8).** It matched an outcome of `'fail'`, which has never been written, so it
+  returned nothing from 1.22.0 on. It now matches `blocked`/`warned`/`filtered`
+  events (false positives excluded) and, for runs with no event rows, failed
+  guardrail spans. Errored checks are not selected. `GUARDRAIL_OUTCOMES` /
+  `FIRED_OUTCOMES` in `fastaiagent.ui.events` are the shared vocabulary.
+- **Run eval in the Local UI counts errored cases as errored (E5).** An errored
+  case has no verdicts and `all([])` is True, so it was counted as a pass. The
+  response adds `errored_count` and `total_cases`; `pass_rate` is over scored
+  cases and `null` when none was scored; the toast reads `N passed · M failed · K
+  errored (cases)`.
+- **PydanticAI: an agent with no system prompt works again under tracing.** The
+  integration previewed the system prompt by falling back to
+  `agent.system_prompt`, which in pydantic-ai 1.106 is a decorator method, and
+  iterated it. Every `run`, `run_sync` and `run_stream` of such an agent raised
+  `TypeError` once `fastaiagent.integrations.pydanticai.enable()` was on. The
+  integration also bound its tracer when `enable()` ran, so an `enable()` before
+  tracing was configured wrote to a stale provider; it now looks the tracer up
+  per run. Found while fixing P5; first offline tests for this integration.
+- **A 422 no longer crashes the Playground (P1).** FastAPI's 422 `detail` is a
+  list; the Playground rendered it and React took the page down with the form.
+  Elsewhere it showed `[object Object]`. Every error body now goes through one
+  normaliser (`ui-frontend/src/lib/api-error.ts`), the Playground shows field
+  errors, and `max_tokens` and the endpoint are checked as you type. Playground
+  422 responses no longer echo the submitted value (`input`), which could be the
+  token.
+
+### LangChain 1.x (Phase 3)
+
+- ⚠ **The `[langchain]` extra supports LangChain 1.x as well as 0.x.** It was
+  capped at `langchain-core<1, langgraph<1`, so `pip install
+  "fastaiagent[langchain]" "langchain>=1"` failed to resolve (or downgraded
+  `langchain-core` under `langchain` 1.x, which then broke every chat model).
+  The extra is now `langchain-core>=0.3,<2`, `langgraph>=0.2,<2`. **Fresh
+  installs resolve 1.x**, and a lock refresh can move an existing project to
+  1.x, which changes *your* LangChain code (`AgentExecutor` is gone in 1.x);
+  pin `langchain-core<1` yourself if you are not ready. The integration uses only
+  the `langchain_core` callback, prompt and retriever surface, unchanged on both
+  lines; the 0.x floor is dropped after upstream ends 0.x (December 2026).
+  `langchain` itself is still not in the extra. The `dev` extra mirrors the
+  `openai<3` / `anthropic<1` caps, which the 0.x provider packages used to
+  impose implicitly.
+- **Streamed LangChain calls are priced.** A streamed call (`.stream()`,
+  LangGraph `stream_mode="messages"`, `astream_events`, v3 `stream_events`)
+  ends without `llm_output`, which is where the handler read the model, so it
+  carried tokens but no `fastaiagent.cost.total_usd`, on both lines, and a
+  connected plane priced those calls itself. The model now comes from the
+  response message or the call's start. The plane will show SDK-priced cost for
+  these runs.
+- **Content-block output is read as text.** A message whose `content` is a list
+  of blocks (`[{"type": "text", "text": ...}]`) came back from `as_evaluable` as
+  the list's repr, which evaluations then scored.
+- Docs: the span names were documented as `langgraph.{name}` / `node.{node}`;
+  every LangChain version produces `langchain.chain` / `node.chain`. Examples
+  use `create_agent` on 1.x with a `create_react_agent` fallback on 0.x; the
+  `_langchain_compat` shims that patched a mismatched install are gone.
+- CI: a `langchain-lines` job runs the offline suite on each line, asserts the
+  line it resolved, and fails on any LangChain skip; the e2e gate asserts it
+  runs on 1.x. New `tests/test_langchain_handler.py` and the live
+  `tests/e2e/test_harness_langchain_create_agent.py`; 5 fail on 1.88.0.
+
+### Replay isolation and provenance (Phase 4)
+
+- ⚠ **A replay rerun runs only the tools you give it.** A rerun rebuilt every
+  function tool from the process's tool registry, which is the live
+  implementation, and every REST/MCP tool from the trace. So it charged the card,
+  sent the email or called the refund endpoint again, in Python, the CLI and
+  the Local UI alike. Now every tool you did not supply is **blocked**: the
+  model gets an error result naming the tool, and the call is counted in
+  `ReplayResult.blocked_tool_calls` and logged.
+  - **Breaking:** a rerun that relied on its tools running must say so, with
+    `with_tool_policy("live", allow=["lookup_order"])`, `with_tool_override(name,
+    fn)` or the new `with_tool_stub(name, returns=...)`. For the old behaviour
+    everywhere, set `FASTAIAGENT_REPLAY_TOOL_POLICY=live`. REST and MCP tools
+    still run only when named in `allow`, whatever the policy.
+  - A REST tool whose auth headers were redacted from the trace is never
+    called live. `RESTTool` itself now refuses to send the `[redacted]`
+    placeholder as a header, before any request (D15).
+  - `with_tool_policy("error")` raises instead; in recorded mode it raises
+    before anything runs.
+  - `with_tool_override` wraps a callable as `FunctionTool(...,
+    register=False)` and warns when given the tool the registry already holds.
+    Tools built during a rerun register into a private overlay. New
+    `FunctionTool(..., register=False)` / `@tool(..., register=False)` keep a
+    stand-in out of the global registry, where it replaced the real tool.
+  - `ReplayResult` adds `tool_dispositions`, `blocked_tool_calls`,
+    `source_trace_id`, `determinism`, `exported` and `trace_db_path`.
+- ⚠ **A rerun or a Playground call is an experiment, not a production run.**
+  Both produced traces indistinguishable from real runs. They were exported to
+  the plane as runs of the agent, and counted in Analytics, Overview, Agents,
+  eval curation and memory learning. A rerun also pushed its rebuilt agent
+  definition, which could overwrite the real one on the plane.
+  - Every span started inside a new `provenance_scope(source)` carries
+    `fastaiagent.source`: `replay`, `playground` and `learn` for now. A rerun's
+    root also carries `fastaiagent.replay.*` (source trace, fork step,
+    determinism, tool policy, the *kinds* of modification, the surface). Each
+    tool span carries its disposition.
+  - **Not exported by default:** `replay` and `playground` rows are written
+    already marked as sent, so no drain ships them (including an older SDK on
+    the same store) and `add_exporter` sinks drop them. Opt in with
+    `connect(export_experiments=True)`, `FASTAIAGENT_EXPORT_EXPERIMENTS=1` or
+    `ForkedReplay.with_export()`.
+  - **Never registered:** auto-registration is suppressed inside a rerun.
+  - **Left out of production views**, which say what they left out:
+    - the Local UI's Analytics, Overview and Agents report experiment traces and
+      their cost by source, and have an **Include experiments** toggle;
+    - `TraceStore.list_traces(exclude_sources=True)`;
+    - `fastaiagent eval curate` and `curate_from_traces` (`--include-experiments`
+      / `include_experiments=True`; explicit `trace_ids` are never filtered);
+    - `fastaiagent learn` (`--include-experiments`).
+  - The Traces list shows a source badge and a **Hide experiments** filter
+    (`exclude_experiments=true`). Its `source` filter moved to SQL, so `total`
+    now counts the filtered traces instead of the page.
+  - `non_production_filter()` / `is_non_production()` in
+    `fastaiagent.trace` let your own queries do the same.
+- **`compare()` aligns the run's own turns (1.89.0).** It walked every span by
+  index. A memory agent's rerun has no `memory.*` spans, so a byte-identical
+  recorded rerun "diverged" at step 1. It now aligns the root and its direct
+  children, minus `memory.*`. `diverged_at` is still an index into
+  `original_steps`. New: `new_diverged_at`, `aligned`, `skipped_steps`,
+  `new_skipped_steps`, and `tool_diffs` / `tools_diverged_at` for tool calls
+  whose status or result changed (a blocked tool does not move `diverged_at`).
+  `compare()` reads the rerun from the store it was written to.
+- **`ForkedReplay.with_trace_db(path)`** writes a rerun to another store.
+- **`fastaiagent replay fork`** gains `--mode`, `--on-miss`, `--tools`,
+  `--allow-tool`, `--stub NAME=JSON`, `--db`, `--rerun-db` and
+  `--export/--no-export`, and prints what happened to each tool.
+- **`fastaiagent ui --db X` binds the whole process to X.** It scoped the UI's
+  routes only. A Playground trace went to the configured store, so its link
+  404'd; a rerun landed where compare could not see it; and resuming an
+  approval looked for its checkpoint in the wrong file (409). It now sets the
+  tracer and the checkpointers to X, overriding a conflicting
+  `FASTAIAGENT_TRACE_DB_PATH` / `FASTAIAGENT_CHECKPOINT_DB_PATH` with a note.
+  An app embedding `build_app(db_path=...)` with split stores gets a warning,
+  and the Playground response says `trace_in_ui_db`.
+- **Local UI:**
+  - The fork dialog sets the determinism mode and on-miss, and Block / Stub /
+    Live per tool. Live is disabled where it cannot work.
+  - The rerun shows per-tool chips, a blocked-calls warning and a local-only
+    note.
+  - The diff lists changed tool calls.
+  - Trace Detail links a rerun to the trace it replays.
+  - **Save as regression test** writes to `.fastaiagent/datasets/` (the
+    directory the Datasets page reads), not next to `local.db` (D17).
+- Examples and the replay proofs say what they allow. New
+  `examples/replay/proofs/proof_provenance.py`; `docs/replay/replay-boundaries.md`
+  gains a seventh section.
+- Tests:
+  - `tests/integration/test_replay_isolation_sweep.py` covers five surfaces ×
+    three modes, plus a connected case.
+  - Also new: `test_provenance.py`, `test_replay_tool_policy.py`,
+    `test_replay_compare_alignment.py`, `test_ui_db_binds_process.py`,
+    `test_rest_tool_redacted_headers.py`, and the live
+    `tests/e2e/test_replay_isolation_live.py`.
+  - 56 of the 58 new tests fail on 1.88.0, including all 16 sweep cells. Two
+    pass, by design:
+    - the control: a REST tool with real headers still sends;
+    - a docs-truth cell that pins behaviour that already held. A connected
+      rerun still runs the plane's domain-wide guardrails, and no approval
+      policy gates it.
+- Docs: "distributed guardrails never gate a rerun" was false for
+  domain-wide rules, and now says so.
+
+### Guardrails tell the truth (Phase 5)
+
+- ⚠ **Guardrail events are recorded whenever tracing is on.** Rows were written
+  only when `FASTAIAGENT_UI_ENABLED` was set in the *agent's* process, so the
+  Guardrail Events page was empty by default (and an example claimed
+  `fastaiagent ui` set the flag; nothing did). The record is local capture now,
+  like spans, and never leaves the machine.
+  - `FASTAIAGENT_UI_ENABLED` / `config.ui_enabled` are accepted and ignored.
+  - `FASTAIAGENT_TRACE_ENABLED=0` writes no rows (it used to write them, with
+    `before` payloads, under `UI_ENABLED=1`).
+  - A bare `Guardrail.execute()` writes a row only inside a recording span, so a
+    check in a web handler never creates `local.db`.
+  - Rows for one position pass are written in one transaction through a cached
+    connection; each used to open a connection and take the migration lock.
+- ⚠ **A row says what the check did to the run.** A re-ask was recorded as
+  `blocked`, an observe-only `mask` as `filtered` (nothing was applied), and a
+  rewrite the run then refused as `filtered` with no record of the block.
+  - New `effect` (`none`, `warned`, `rewritten`, `reasked`, `blocked`,
+    `observed`, `unchecked`).
+  - `outcome` gains `reasked` (`FIRED_OUTCOMES` too, so curation selects it).
+    An observe-only failure is `warned`.
+  - A refused rewrite or re-ask is updated in place to `blocked` with
+    `final_reason`. The cases are a streamed reply, multimodal input, a tool
+    call that is no longer an arguments object, a tool result with image/PDF
+    parts, and re-ask retries exhausted.
+  - `GuardrailBlockedError.results` now reports `action_taken="blocked"` for
+    such a refused rule, via `degrade_to_block`, which finally has callers.
+  - `GuardrailFiring` gains `blocking` and `effect` (additive), and
+    `GuardrailOutcome` gains `records` and `refuse()`.
+- **The text a rule judged is stored.** "What triggered it" read the parent
+  span. That held the text after a rewrite, or nothing when the run was
+  blocked, and the page told users to set `FASTAIAGENT_TRACE_PAYLOADS`, which
+  is an export switch. Rows now point at a content-addressed
+  `guardrail_payloads` table, which stores each distinct judged text once and
+  applies the capture-mode redaction policy. Rows also store the rule as it ran
+  (a judge's `config.llm` reduced to provider and model), its latency, the
+  re-ask attempt and its span.
+- **Tool-position rows name their agent.** They read `agent.name` off the tool
+  span, which has none. `execute_guardrails(..., agent_name=, attempt=)`.
+- **Framework proxies record each check once.** LangChain, CrewAI and
+  PydanticAI logged every failure twice. A `mask` / `override` / `reask` they
+  cannot honour is recorded as `blocked` with the reason. All three now share
+  one runner.
+- ⚠ **A trace fails when its root span fails.** A guardrail span is ERROR for
+  any verdict that is not a pass, a `warn` included (unchanged; the wire is
+  pinned). These read any span (or `MIN(status)`), so a run that completed
+  after a `warn` was failing:
+  - the Traces `?status=` filter;
+  - Home's failing count and recent traces;
+  - `TraceStore.list_traces()` / `search()` and `fastaiagent traces list`;
+  - `eval curate --filter failed`.
+
+  They read the root now, as the plane does. `search()` also reports each
+  matching trace whole. `exclude_infra_errors="trace"` no longer counts a
+  guardrail verdict as an infrastructure error.
+- **`traces purge --older-than-days` removes guardrail rows.** It deleted the
+  spans first and then selected guardrail rows through them, so it removed none,
+  and rows with no trace were never purged. It now deletes by trace id and
+  removes old rows with no trace. Purge and UI trace delete also
+  garbage-collect judged payloads.
+- **A Supervisor's `result.guardrails` includes its workers' firings.**
+- **The guardrail span wraps the check (B1, its own commit).** It was opened
+  after the check, so it lasted about 0 ms (the plane records that as every SDK
+  guardrail's execution time) and a judge's LLM call was its sibling. It now
+  lasts as long as the check and the judge's call is its child. Keys, values and
+  status are unchanged (the wire pin holds). `emit_guardrail` returns the span
+  id.
+- **Local UI:**
+  - Guardrail spans are coloured by what they did, not by OTel status. Span
+    rows carry `guardrail: {event_id, outcome, effect, blocking, final_reason}`.
+  - The Guardrail Events list:
+    - pages through rows (it showed the first 100);
+    - filters by time;
+    - hides passes by default, and can hide experiments;
+    - labels observe-only and refused rows;
+    - explains an empty list, counting pre-1.89.0 guardrail spans.
+  - The event detail page:
+    - shows the judged text, and the rule's configuration and evidence by
+      type;
+    - tells what happened from the effect;
+    - has a Mask secrets switch.
+  - Clearing a false positive clears its timestamp.
+  - The agent dependency graph keeps the same rule at two positions as two
+    nodes, adds the rule's action fields and draws **observed** rules (e.g.
+    plane-distributed); a new Guardrails tab.
+- **local.db v25** (`_v25_guardrail_event_truth`): eight nullable columns on
+  `guardrail_events`, the `guardrail_payloads` table, three indexes. An older
+  SDK still writes to a v25 database; its rows read as legacy. No backfill.
+- Examples drop their `FASTAIAGENT_UI_ENABLED` setdefaults. Docs updated:
+  - guardrail events, actions and concepts (span status is the verdict; run
+    status is the root);
+  - trace filters, agent dependencies, tracing, curation;
+  - the integrations pages and the env/config references.
+- Tests:
+  - `tests/integration/test_guardrail_event_truth_sweep.py` covers position ×
+    action × blocking × check state × run/astream × tracing, the UI flag, and
+    Supervisor firings: 656 cells.
+  - `tests/test_guardrail_span_wire_pin.py` pins all 80 guardrail spans
+    against a fixture generated **on v1.88.0**, and passes on both.
+  - Also new: `test_guardrail_effect.py`, `test_ui_events_v25.py`,
+    `test_ui_trace_status_root.py`, `test_guardrail_proxy_events.py`,
+    `test_traces_purge_guardrail_rows.py`, and the live
+    `tests/e2e/test_guardrail_ui_truth_e2e.py`.
+  - The G8 curation sweep now covers runs with no event rows (recorded before
+    1.89.0) explicitly.
+  - On 1.88.0, 543 of the 704 new tests fail. The ones that pass are by
+    design:
+    - the wire pin, which must pass on both;
+    - the 160 tracing-off sweep cells, which pin behaviour that already held.
+
+### Eval numbers you can trust (Phase 6)
+
+- ⚠ **A check that could not run is not a fail, and one that does not apply is
+  not a pass.** `ScorerResult` gains `errored`, `skipped`, `details` and an
+  `outcome` property (`passed` / `failed` / `errored` / `skipped`), with
+  `ScorerResult.error()` and `ScorerResult.not_applicable()`. An errored or
+  skipped result is forced to `passed=False, score=0.0`, so code that reads
+  only `passed` fails closed. Rates count verdicts only; errored and skipped
+  are reported beside them.
+  - **Errored**: a judge call that failed; a verdict still unparseable after the
+    retry; a refusal; a scorer that raised; a run `CostUnder` could not price
+    (was a fail); an embedder that failed (`SemanticSimilarity` raised).
+  - **Skipped**: no expected output (`exact_match`, `contains`, the similarity
+    scorers), no expected trajectory / tool calls / steps, no context, no turns,
+    no goal, no role, no `cost` or `latency_ms` on a direct call. Several of
+    these read as a pass, or as a 0.0 verdict.
+  - **A judge reply with no verdict field is errored.** `{}` (or only a
+    `reasoning`) read as the field's default in 14 scorers: `PromptInjection`
+    "no injection detected", `Faithfulness` / `Hallucination` /
+    `ContextRecall` "no claims", the rest a score of 0. New
+    `_internal.safety_detectors.judge_field()` raises instead. The
+    `no_prompt_injection(mode="llm")`, `toxicity_check(mode="llm")` and
+    `grounded()` guardrails share those detectors, so they now report
+    could-not-run and apply `on_error` where they passed (CLAUDE.md §2.4). The
+    plane's own judge parsers already refused such a reply.
+- ⚠ **Cases first, checks second.** A case (one dataset row) now has one
+  outcome: errored if the agent raised; else failed if any verdict failed; else
+  errored if a scorer could not run, or if nothing applied; else passed. Before,
+  a case nothing checked was a pass.
+  - `EvalResults.case_counts` / `case_pass_rate` / `check_counts`;
+    `Scorecard.cases` / `checks_errored` / `checks_skipped`;
+    `MetricSummary.errored` / `skipped`, with `None` rates when `n == 0`.
+  - `summary()` prints `(N scored, E errored, S skipped)` per scorer and a
+    `cases:` line.
+  - `overall.pass_rate` keeps its meaning, now over applicable verdicts. For a
+    run with no errored or skipped verdicts it is the same number as before.
+- ⚠ **Gate semantics.**
+  - New `cases.pass_rate` metric.
+  - `overall.avg_score` raises: it silently gated on the pass rate.
+  - A run is **invalid** (CLI exit 3) when a gated scorer errored beyond
+    `max_error_rate` (with it unset, any error counts), or a scorer named in a
+    threshold applied to no case.
+  - A judge outage therefore turns CI red as INVALID instead of a quality
+    FAILED (exit 1).
+  - `GateReport.invalid_reasons` says why; the CLI `--json` carries it.
+- **`evaluate()` scores what the agent did.**
+  - The `AgentResult`'s tool calls reach the trajectory scorers, and a row's
+    `expected_trajectory`, `expected_tool_calls`, `expected_steps`, `context`
+    and `contexts` are forwarded per case. A row's own value beats a run-wide
+    kwarg.
+  - Every trajectory scorer used to compare two empty lists and pass.
+  - With an expectation but no record (a plain-string `agent_fn`), the result
+    is errored.
+  - `details` holds tool names only, never arguments.
+- **A raising scorer no longer loses the run.** It is one errored verdict and
+  the other scorers still run. In `evaluate()` it aborted the run with nothing
+  persisted; in the pytest plugin the case never reached the session run.
+  - Scoring is shared by both: new `eval/_scoring.score_case`.
+  - Unknown scorer names, `regex_match` without a pattern, and two scorers with
+    one name raise `EvalError` before any agent call. Same-named scorers used to
+    overwrite each other.
+  - The Local UI's run-eval returns `422` for these (was `500`).
+- **The pytest plugin** fails an errored case with its own message ("scorer
+  could not run, or none applied") and still records it, so a 5-case suite
+  persists 5 cases. Reasons in the message are scrubbed of credentials.
+- **Simulation** (E13): a *failure* criterion's result was inverted
+  unconditionally, so a judge that errored meant "the failure did not happen",
+  a pass.
+  - `CriterionVerdict.errored` is never inverted.
+  - A scenario with an errored criterion gets
+    `error="judge could not run on K criteria: …"` and is not passed.
+  - The denominator still counts every scenario (D15).
+    `Scorecard.from_simulation(...).errored` and `sim_runs.metadata.errored_count`
+    report the errored ones.
+  - Simulation spans are stamped `fastaiagent.source=simulation`.
+  - The UI API accepts `?outcome=errored`, and `failed` no longer includes
+    errored scenarios.
+  - A scripted `SimulatedUser` kept a cursor that never reset. Running one
+    `Scenario` twice (a baseline, then a candidate) gave the second run an empty
+    conversation, which was then judged; concurrent runs shared the cursor. The
+    script position now comes from the transcript. A run with no conversation
+    is errored (`no conversation: …`) and never sent to the judge.
+- **Compare puts every case somewhere** (E14). `compare_runs` silently dropped
+  cases it could not pair, every pair where either side errored, and all but
+  one row of a repeated input.
+  - New `compare_cases` / `align_cases`. `RunComparison` gains `errored` (with
+    the side), `only_in_a`, `only_in_b`, `drifted` (outcome unchanged, a score
+    moved ≥ 0.1), `case_pass_rate_delta` and `pass_rate_comparable`.
+  - `scorer_deltas` gains outcomes and scores.
+  - `describe()` warns when a run predates 1.89.0's rates (D12).
+  - The CLI table and the UI compare API carry all of these; `bucket_cases`
+    keeps its old shape.
+- **The run record tells the truth.**
+  - `agent_version` is a SHA-256 fingerprint of the agent's definition (D19); it
+    was always NULL.
+  - `started_at` / `finished_at` are the run's own times; both were the save
+    time.
+  - New `kind`: `evaluate`, `cli`, `pytest`, `optimize`, `ui` or `ui-echo`.
+  - `metadata.scorer_config` holds each scorer's `describe()` (provider and
+    model, never a key).
+  - `pass_rate` is NULL when nothing applied (D13).
+  - An image or PDF in a case is stored as a descriptor
+    (`type`, `media_type`, `size_bytes`, `sha256`, `media_idx`), not as its
+    `repr` with the raw bytes, plus a thumbnail row in the new
+    `eval_case_media` table.
+  - Judge reasons and case errors are scrubbed of credentials before they reach
+    `local.db`, for evals and simulations alike.
+- **What reaches the plane** (no new top-level keys, D11):
+  - `pass_*` count applicable checks.
+  - `errored_count` counts errored cases, including scorer-errored ones.
+  - `per_scorer` entries add `errored` / `skipped` / `details` only when set.
+  - The judge `reason` is scrubbed of credentials and **withheld when
+    `FASTAIAGENT_TRACE_PAYLOADS=0`**. So is a case's error text.
+  - `EvalResults.publish()` sends its three legacy keys, scrubbed, and omits
+    skipped verdicts.
+- AutoLLM's `CandidateScore` ignores skipped verdicts (a metric with none
+  applicable is dropped); errored still scores 0. `harden()` only shows the
+  model real fails. `EvalResults.compare()` averages verdicts only.
+- **local.db v26** (`_v26_eval_case_metrics`):
+  - nine nullable `eval_runs` columns (`kind`, `summary_version`, the case
+    counts and rate, `check_error_count`, `check_skip_count`);
+  - `eval_cases.scoring_trace_id`;
+  - the `eval_case_media` table and two indexes.
+  - Legacy runs get their case columns and an inferred `kind` backfilled from
+    `eval_cases`; their `pass_*` values are not rewritten (`summary_version`
+    NULL marks them).
+  - A row an older SDK writes into a v26 database reads through a fallback
+    that computes the case columns from its cases.
+- Docs: evaluation concepts (new "Four outcomes, cases and checks"), Agent CI,
+  the evaluation reference, LLM judge, trajectory and session scoring, pytest,
+  hardening, simulation, CLI, connected eval export, UI datasets, guardrail
+  boundaries, and internals.
+- Tests:
+  - `test_scorer_could_not_run_sweep.py` runs every `Scorer` subclass through
+    an outage, a `{}` reply and missing inputs; it fails when a scorer is added
+    without a row.
+  - Also new: `test_judge_reply_without_verdict.py` (detectors and guardrails),
+    `test_eval_case_metrics.py` (the worked example from the plan),
+    `test_eval_trajectory_capture.py`, `test_eval_scorer_guard.py`,
+    `test_db_migration_v26.py`, `test_pytest_plugin_errored_verdicts.py`,
+    `test_simulate_judge_errored.py`, `test_eval_export_reasons.py`,
+    `test_eval_multimodal_persist.py`, `test_eval_compare_buckets.py`,
+    `test_eval_run_record.py`, `test_optimize_candidate_verdicts.py` and
+    `test_cli_eval_case_metrics.py`.
+  - Live: `tests/e2e/test_eval_numbers_e2e.py` runs gpt-4o-mini through
+    evaluate/aevaluate, a judge outage, the CLI (exit 3), simulate and the
+    pytest plugin.
+  - On 1.88.0, 161 of the 166 new tests fail. The 5 that pass are by design:
+    three completeness guards, and two controls for behaviour that did not
+    change.
+
+### Eval numbers on screen (Phase 7)
+
+- **Costs that were $0.00 or "—" are real.** Cost lives on the `llm.*` spans
+  under an agent or workflow span, and three views priced the parent span
+  itself:
+  - **Eval runs** showed "—" for every run. They now split **agent cost** (each
+    case's agent trace) from **eval cost** (the judges' calls), each with a
+    `*_known` flag; an unpriced call makes it partial, a run with nothing
+    traced shows "—", never `$0.00`. `cost_usd` stays as the agent cost.
+  - **Agents** showed `$0.00` for every agent. Each priced call is credited to
+    its nearest enclosing agent span, so a worker's calls are not charged to
+    the lead as well.
+  - **Workflows** likewise.
+  - New `fastaiagent/ui/trace_cost.py` holds the one roll-up rule.
+- **Trace tokens were counted twice.** The Traces list and detail added the
+  root's `agent.tokens_used` roll-up and every call's tokens (§12 A1).
+- ⚠ **Eval traces are labelled and grouped** (E3 + D10).
+  - Each scored case gets one root `eval.score` trace: an `eval.scorer` child
+    per scorer (name, outcome, score, passed; never the reason), with the
+    judge's `llm.*` call beneath. It is stored as
+    `eval_cases.scoring_trace_id`. Judge calls were loose root traces.
+  - A case's agent trace is stamped `fastaiagent.source=eval` (`optimize` for
+    AutoLLM), with `fastaiagent.eval.run_id` and `case_ordinal` on its root.
+    So Analytics, Overview, Agents, curation and `learn` leave eval runs out of
+    production numbers; "Include experiments" brings them back.
+  - Both are still exported: the plane checks eval verdicts against them.
+  - `evaluate()` and the pytest plugin fix the run id before the first case,
+    so every span carries the id the run is stored under.
+- **Agent-CI evidence on the run** (E10). `record_gate_result(..., report=,
+  baseline_detail=)` keeps each threshold with its actual value, the error-rate
+  bound and why a run was invalid in the run's metadata; the run detail API
+  returns them as `run.gate`. Local only: the wire's `baseline` object keeps
+  its three keys.
+- **Runs list:** paging, plus `kind`, `exclude_kind`, `gate` (`passed`,
+  `failed`, `invalid`, `none`) and `q` filters.
+- **Trend and Overview read cases first** (E8, D14). Trend points carry the
+  case pass rate, kind, series and gate outcome, and leave dataset checks
+  (`ui-echo`) and AutoLLM candidates out unless `include=all`. Overview adds
+  `eval_case_pass_rate_7d` (the latest run per dataset), counted / excluded
+  runs and gated runs that failed or were invalid; `avg_pass_rate_last_7d`
+  stays.
+- **`harden()` saves its report on the run** (D16): `metadata["hardening"]`,
+  local only; `persist=False` skips it. The analysis is an `eval.harden` trace
+  stamped `source=eval`.
+- **A trace says what it is.** `/api/traces/{id}/scores` adds `eval_scoring`
+  (this trace is the judging of case N of run X) and `simulation_cases`.
+  Simulation runs report `errored_count` and `judged_count`.
+- `GET /api/evals/{run}/cases/{case}/media/{idx}` serves a case image's
+  thumbnail.
+- **A regex guardrail with a pattern that does not compile reports
+  could-not-run** (`on_error` decides). It was a plain fail, while the plane's
+  runner raised on the same rule: two outcome classes for one rule (CLAUDE.md
+  §2). The ReDoS timeout stays a fail on purpose. New unusable-config sweep
+  row. This closes the open half of guardrail audit row #11.
+- **Smaller truths in the API**:
+  - The compare route's checks delta is `null`, not `0.0`, when a run has no
+    checks rate.
+  - `gate=` takes several values (`failed,invalid`).
+  - Overview counts gate failures only for the runs its headline counts.
+  - `SimulationResults.fail_count` and `sim_runs.fail_count` no longer include
+    errored scenarios (they are not judged); `pass_rate` still counts them as
+    not passed (D15).
+- **Local UI** (cases first, checks second):
+  - **Run detail:**
+    - Tiles: Cases passed, Failed, Errored (from the run, not the filtered
+      list), Checks (`16/20 · 4 n/a · 1 errored`), Agent cost / Eval cost,
+      Started with duration.
+    - Scorer chips with errored and n/a counts.
+    - Banners for a dataset check and for a pre-1.89.0 run.
+    - The Agent CI panel, a scorer configuration card and a hardening card.
+    - Per case, a verdict table: outcome, score (none for errored or n/a),
+      full reason, a link to the judges' trace, and trajectory tool lists.
+    - Image / PDF thumbnails; an "Identical" panel when expected equals actual.
+  - **Runs list:** paging, kind chips, gate and name filters kept in the URL,
+    errored / gate / branch / agent-cost columns.
+  - **Trend:** one line per dataset on the cases rate, nulls skipped rather than
+    drawn as 0, and a toggle for dataset checks and AutoLLM runs.
+  - **Compare:** cases / checks / agent cost / eval cost deltas, plus Errored,
+    Unmatched and Score drift sections.
+  - **Overview:** the cases headline and a "gated runs failed or invalid"
+    attention item. An invalid (outage) run is left out of the headline and the
+    trend line: on the live demo, one judge outage turned a 75% headline into
+    a 0% "below 70%" alarm.
+  - **Simulations:** an Errored tile, badge and filter, and the hardening card.
+  - **Trace scores:** "scoring for case #N of run X" and "simulated
+    conversation".
+  - **Guardrail Events:** filters are written to the URL (a Phase 5 leftover).
+  - The UI's `evalCaseOutcome` scored a case with no verdict at all as passed;
+    it now mirrors the five-rule order.
+  - The Local UI's Content-Security-Policy allows same-origin `blob:` workers
+    (`worker-src 'self' blob:`): the diff viewer's worker was blocked, so every
+    case expand logged a CSP violation and large diffs ran on the main thread.
+    `script-src` stays `'self'`.
+- Tests:
+  - `test_ui_eval_numbers.py` covers cost (agents, workflows, eval runs),
+    tokens, list filters, trend, Overview, gate evidence and the wire guard,
+    trace scores, media, harden persistence and compare's null delta.
+  - `test_eval_scoring_spans.py` covers scoring roots and eval / optimize
+    stamping across evaluate, aevaluate and the pytest plugin, with tracing
+    off, and production views leaving eval traces out.
+  - Also extended: the simulation scripted-user tests, the regex
+    unusable-config row, guardrail observability #11 and the CSP header.
+  - Live: `test_eval_numbers_e2e.py` adds real agent and eval costs on
+    gpt-4o-mini (8 tests).
+  - Frontend: vitest 332 (was 267).
+  - On 1.88.0, all 20 new backend tests fail.
+
+### Run eval from the Local UI (Phase 8)
+
+- ⚠ **Run eval evaluates a real agent with real scorers** (E9). The Datasets
+  page could only post `{"scorers": ["exact_match"]}` with no agent, so every
+  UI run was an echo of the inputs.
+  - New `GET /api/datasets/{name}/run-eval/options`: the registered agents (a
+    Chain listed as unsupported), the scorer catalog with whether each can run
+    on this dataset and why not, judge models with a key, and what the rows
+    carry.
+  - `POST /run-eval` takes scorer **specs** as well as names: built-ins with
+    parameters, `llm_judge` and `geval` with their judge model. Trajectory and
+    RAG scorers are offered when the rows carry their expectations (per-row
+    `context` reaches scorers since Phase 6).
+  - New `fastaiagent.eval.scorer_specs` (`build_scorer`, `parse_spec`,
+    `CATALOG`): everything is validated before any agent call, and every
+    refusal is a 422 with a readable reason.
+  - The refusals: an unknown scorer, a bad parameter, a regex that does not
+    compile, a judge model with no key, duplicate names, a Chain, echo with an
+    agent, no target, and an unloadable image (it was a 500).
+  - Judge-backed runs go through the Playground's LLM rate limit.
+  - The response adds `kind`, `cases` and `checks`.
+- ⚠ **Echo is a dataset check you ask for** (D18): `mode: "echo"`, recorded
+  as `kind: ui-echo` with run name `dataset-check-<name>`. A request with no
+  agent and no mode is a 422; it used to echo silently, and its 0% read like a
+  failing eval.
+- **Editing a dataset no longer deletes fields.** Every add, edit or delete
+  rewrote the JSONL with `input`, `expected_output`, `tags` and `metadata`
+  only, so `expected_trajectory`, `expected_tool_calls`, `expected_steps`,
+  `context` and a replay's `source_trace_id` were dropped from every row. Rows
+  now keep them (`CaseRow.extra`); an edit keeps the row's own unless it sends
+  `extra`. Import and the editor's Duplicate keep them too.
+- **Local UI:** a Run eval dialog with target, grouped scorers and their
+  parameter forms (criteria, scale, threshold, judge model, G-Eval steps and
+  rubric), warnings (rows missing a scorer's input, image rows under text
+  scorers, the judge-call count) and the result inline. The case editor shows
+  a row's other fields read-only.
+- Scorers that measure an agent's run (the trajectory scorers, `latency`,
+  `cost_under`) are refused in a dataset check and unavailable when no
+  runnable agent is registered.
+- Tests:
+  - `test_ui_run_eval_dialog.py`: 19 tests. On 1.88.0 all fail except the
+    404 for an unregistered agent, which is unchanged.
+  - The live e2e adds a registered agent with an `llm_judge` spec through the
+    route. Every live eval test now runs once per provider target: OpenAI
+    `gpt-4o-mini`, OpenAI `gpt-5.1` and Anthropic `claude-haiku-4-5` (25 tests,
+    all pass). `FASTAIAGENT_E2E_EVAL_TARGETS` overrides them; it was also run on
+    `claude-sonnet-4-6`.
+  - Frontend: vitest 346 (was 332).
+
+### Playground, prompts, approvals, KB and traces (Phase 9)
+
+**Playground**
+- ⚠ **A failed call says why** (P8, D1). Every failure read `LLM call failed.`.
+  - The 502 detail (and `/stream`'s `error` event) now adds:
+    - `kind`: `auth`, `not_found`, `bad_request`, `rate_limited`, `provider_error`, `connection`, `timeout`, `config` or `internal`;
+    - `provider_status`;
+    - the provider's own message, after scrubbing every key, stripping request and org ids, and truncating to 400 characters;
+    - a `hint`.
+  - New `fastaiagent.ui.llm_errors`.
+  - Error codes, exception class names and the traceback are never shown, and the root span keeps the opaque message.
+  - `FASTAIAGENT_UI_PROVIDER_ERRORS=redacted` restores the opaque response.
+- **Sampling rules** (P7, D4). New `fastaiagent.llm.param_rules`.
+  - It records which models take `temperature` / `top_p` only at their default, not at all, or not both. These were measured against the live APIs on 2026-10-14: Claude opus-4-7/4-8 and the Claude 5 family; gpt-5, gpt-5-mini, gpt-5-nano and o4-mini; o1 and o3; and older Claude's "not both".
+  - `/models` returns the table as `sampling_rules`, and the parameter controls follow it.
+  - It never blocks a call; it feeds the failure hint.
+- ⚠ **Streams record how they ended** (P10f, D5).
+  - `StreamDone.finish_reason` is new, so a streamed span records `gen_ai.response.finish_reason`.
+  - `stream()` returns the provider's reason. It returned `stop` whatever happened.
+  - New `fastaiagent.llm.finish` (`normalize_finish_reason`, `is_truncated`).
+  - The Playground reports `finish_reason`, `truncated` and `max_tokens`, with a banner when a reply was cut off.
+- **Save as eval case saves the run** (P6). It sent the current form, so editing the prompt after a run paired the old output with a new input.
+  - The run's image is saved next to the dataset, and the case input is text plus image.
+  - `metadata` keeps the sampling parameters, the registry prompt and the trace id.
+- **Registry prompts are attributed** (P10c, D9). New `prompt_ref` on `/run` and `/stream`.
+  - **Unchanged template:** fragments are resolved and the LLM span carries `fastaiagent.prompt.name`/`version`, so the run shows in that version's lineage.
+  - **Edited template:** marked `modified`, with no attribution.
+- **Other Playground fixes:**
+  - Unfilled variables are named before the run and in the response (P10e).
+  - The root span is a readable run (P10g): `runner.type=playground`, with `playground.input`/`output` (payload keys) and the truncation, unfilled-variable and prompt-base attributes.
+  - The `custom` provider needs an endpoint before Run (P10i).
+  - History restores the whole run (P10d).
+
+**Prompts**
+- ⚠ `set_alias` refuses a version that does not exist (`PromptNotFoundError`). It stored the alias, and every `load(alias=...)` failed afterwards.
+- New `PromptRegistry.aliases()` and `delete_alias()`, and the UI routes `PUT`/`DELETE /api/prompts/{slug}/aliases/{alias}` (P10a). The editor shows alias chips, the Playground's version picker lists aliases, and `?alias=` is honoured.
+- ⚠ `diff()` is a unified diff with two lines of context (P10b). It listed every line of both versions. `/diff` also returns both templates, and the editor has a Compare versions panel.
+
+**Approvals: a resumed run is a run (A1, D7, D8)**
+- `Agent.resume`/`aresume` called the agent loop directly, so a resume opened no `agent.<name>` span. Its model calls were stored as orphan `llm.*` traces, the re-invoked tool ran outside any agent, and `result.trace_id` was `None`. The no-input `fork` had the same hole.
+- Every resume and fork now opens one root `agent.<name>` span, as a **new trace** linked by attributes:
+  - `agent.execution_id` and `agent.resumed_execution_id`;
+  - `agent.resume.node_id` and `agent.resume.kind`;
+  - with a decision: `agent.resume.approved`, `agent.resume.resolver` (from `metadata["resolver"]`, else `["approver"]`) and `agent.resume.reason` (a payload key).
+- A refused resume opens no span.
+- Every agent root now carries `agent.execution_id` and `agent.status`. Swarm and Supervisor roots carry their execution ids, and `Chain.resume` stamps `chain.execution_id`, `chain.resume.*`, `chain.output` and `chain.status`.
+- A Swarm or Supervisor resume nests its agent's span the way a fresh run does.
+- New additive `trace: bool = True` on `resume`, `aresume`, `fork` and `afork`.
+- `GET /api/executions/{id}` adds `pending_interrupt`, `checkpoints[].interrupt_state` (`pending`/`resolved`), `runs`, `resolution` and `final_output`. Every interrupted row looked like it was waiting forever.
+- `POST …/resume` keeps the top-level `reason` (it was dropped), records the signed-in user as the resolver when auth is on, and returns the resumed run's `trace_id`.
+- Trace export's `durable` now means checkpoints exist. It read "has an execution id", which every agent root has now.
+
+**Knowledge bases (D11, D12)**
+- ⚠ `LocalKB.add(text, metadata={"source": ...})` keeps that source on its chunks, so `delete_by_source(...)` removes them. Before, the empty `Document.source` overwrote it and nothing matched. A non-empty `Document.source` (file or directory ingest) still wins.
+- The UI's KB search uses the search type the KB supports:
+  - keyword when it stores no embeddings, so no embedder is loaded; hybrid otherwise;
+  - `search_type` selects one, and vector or hybrid on a keyword-only KB returns 400;
+  - a failed open returns 422, not 500.
+- UI KB searches are traced as `fastaiagent.source=kb_search`. They stay local, are kept out of production views, and are badged RETRIEVAL.
+
+**Traces (D13, D16)**
+- ⚠ `GET /api/traces` counts `total` after the agent, thread, runner, duration, cost and token filters. It counted before them, so the count and the pages disagreed.
+- New filters: `production_only` and `noted`. Rows have a `noted` column.
+- `runner_type` accepts `playground`, `retrieval`, `llm`, `tool`, `embedding`, `reranker`, `guardrail` and `evaluator`.
+- Trace detail adds `source` and `note`.
+- Trace notes are capped at 20,000 characters. An empty note deletes the note, and there is a new `DELETE /api/traces/{id}/notes`.
+- `curate_from_traces(filter="noted")` ignores blank notes.
+- The `source` filter matches a source stamped on any span of the trace, the same as Phase 4's production filter.
+
+**Local UI**
+- **Playground:**
+  - errors show the kind, status, scrubbed provider message, hint and correlation id;
+  - the Parameters panel follows the sampling rules for any typed model id;
+  - providers that need an endpoint are marked, and Run waits for one;
+  - unfilled variables are highlighted, with **Run anyway**;
+  - a truncation banner, and a chip on the history entry;
+  - history entries are snapshots that restore the whole run;
+  - Save as eval case uses the selected run's snapshot, and is disabled for a stopped run;
+  - the version picker lists aliases, honours `?alias=`, and shows attributed or modified.
+- **Prompts:**
+  - alias chips and an Aliases card to point or remove;
+  - `?alias=`/`?version=` links;
+  - a Compare versions panel with the coloured unified diff and both templates.
+- **Traces:**
+  - Playground and Retrieval badges and runner chips;
+  - a Source box and a Noted filter (`?production_only=true` maps to Hide experiments);
+  - a Note card;
+  - source in the detail subtitle;
+  - Playground input/output in the inspector;
+  - Open in Replay is disabled where there is no agent root.
+- **KB:** a search-type selector limited to what the KB supports, showing the type used.
+- **Executions and approvals:**
+  - an Outcome card (decision, resolver, reason, time, final output, each run's trace);
+  - the checkpoint timeline says waiting or resolved;
+  - the decision form sends `reason` and refreshes approvals, execution and traces, with a Resumed banner;
+  - a decided approval shows who decided and when.
+
+**Integrations**
+- **LangChain `with_guardrails` guards the whole Runnable surface.**
+  - `abatch`, `astream_events`, `stream_events`, `astream_log`, `transform`, `atransform`, `batch_as_completed` and `abatch_as_completed` passed straight through, unchecked and with no `agent.name`.
+  - Builders (`with_config`, `bind`, `with_retry`, `with_fallbacks`, `bind_tools`, `with_structured_output`, …) returned an **unguarded** runnable. They now return a guarded one with the same rails, and the guard sits outside retries and fallbacks.
+  - The guarded runnable is now a LangChain `Runnable`, so `|`, `pipe`, `pick`, `assign`, `map`, `as_tool`, sequences, parallels and LangGraph nodes accept it, and the guard stays at that step. These raised `TypeError` before.
+  - `stream`/`astream` check the whole streamed text. They checked the last chunk, which is an empty usage delta for a chat model.
+  - `astream_events` holds back the root end event until it passes.
+  - Where the output cannot be determined, the call fails closed with `GuardrailBlocked`: a filtered event stream, `version="v3"`, or an `astream_log` with no final output.
+  - `batch` no longer judges `return_exceptions` items.
+  - The legacy model call methods are guarded too. That is `generate`, `agenerate`, `generate_prompt` and `agenerate_prompt`, plus on 0.x `predict`, `apredict`, `predict_messages`, `apredict_messages`, `call_as_llm` and `__call__`. They called the model unguarded.
+    - Each prompt and each generation is checked, and the return type is unchanged.
+    - A prompt or result with no readable text fails closed.
+  - Streaming a chain with a guarded step no longer fails with a ContextVar `ValueError`.
+- **OpenAI and Anthropic auto-tracing of streamed calls.**
+  - With `stream=True`, the span stays open until the stream ends, with usage, content, tool calls and finish reason. A mid-stream failure ends it ERROR, with the exception recorded and credentials scrubbed.
+  - Before, the span closed when `create` returned, so a mid-stream failure never reached the trace.
+  - `AsyncOpenAI`, `AsyncAnthropic` and Anthropic's `messages.stream(...)` are now traced.
+
+**Recorded replay**
+- **Guardrail model calls no longer consume agent turns.** Under `with_determinism("recorded")`, every captured model response went into one queue, and a guardrail's judge call popped it like an agent turn:
+  - a judge present only in the rerun took the agent's turn (an input judge read the recorded tool-call turn as a failing verdict and blocked the rerun);
+  - one present only in the original handed its verdict to the agent, which answered with it.
+- Recordings are now split by role, by span ancestry (`guardrail.*`), or for pre-1.89 traces by the SDK guardrail request shape. A judge with no recording is a miss under `on_miss`. With tracing off, the rerun falls back to the single queue and warns. The Decisions queue is split the same way.
+
+**Tests**
+- New test files:
+  - `test_ui_playground_truth.py`: 47 tests, 45 of which fail on 1.88.0. The 2 that pass are controls (redacted mode, rules never block).
+  - `test_kb_source_and_search_type.py` and `test_ui_traces_notes_and_totals.py`: 61 tests, 55 of which fail on 1.88.0.
+  - `test_resume_run_span_sweep.py`: agent, chain, swarm, supervisor and routed supervisor × sync/async × approved/rejected × tracing on/off.
+  - `test_ui_execution_outcome.py`.
+  - `test_replay_recorded_roles.py`: 12 tests, 7 of which fail on 1.88.0. The rest are controls whose queue order happened to line up.
+  - `test_langchain_guarded_surface.py`: 84 tests on LangChain 1.x, 37 of which fail on 1.88.0 (34 on 0.x).
+  - `test_langchain_guarded_builders.py`: 370 tests, 287 of which fail on 1.88.0, on both 0.x and 1.x.
+  - `test_auto_tracer_streaming.py`: 44 tests, 39 of which fail on 1.88.0.
+  - `test_langchain_guarded_legacy.py`: 60 tests on 0.x, 42 of which fail on 1.88.0; 28 on 1.x, 18 of which fail. Methods a line lacks are skipped.
+  - Frontend: vitest 416 (was 346).
+- The completeness sweep's false "delegated" exemptions for `agent.resume`, `agent.fork` and `supervisor.resume` are now real cases. Across these files and the completeness sweep, 46 tests fail on 1.88.0.
+- Live checks:
+  - **Playground:** 20/20 on OpenAI `gpt-4o-mini`, OpenAI `gpt-5.1` and Anthropic `claude-haiku-4-5`. They cover truncation on `/run` and `/stream`, auth and not-found failures with no key anywhere, and the hints for `claude-haiku-5-5` temperature, `claude-opus-4-8` top_p, `claude-haiku-4-5` both, and `gpt-5-mini` temperature.
+  - **Resume:** `tests/e2e/test_resume_run_span_e2e.py` passes approved and rejected on `gpt-4o-mini`, `gpt-5.1` and `claude-haiku-4-5` (6/6).
+
+### Found at the release gates (Phase 10)
+
+- **One tracer provider per process.** Threads that asked for the provider at the same moment each built their own: 8 threads gave 8 providers on 1.88.0. Every provider stored spans locally, but an exporter (the plane's included) attaches to one, so the other threads' spans were never exported, and OTel logged "Overriding of current TracerProvider is not allowed". `evaluate(concurrency>1)` hit it on its first call. The provider is now created under a lock.
+- **Spans that share a start time load parents first.** Spans are stored when they end, so on a tie a child was stored before its parent. Windows' coarse clock makes ties common, and there `get_trace` named a child span as the trace's root, and Replay's steps came out of order. An identical recorded rerun was reported as diverging, and the recorded-response queue could be out of order. Ties now resolve parent first, then in stored order. Found by the Windows CI cell; reproduced on any OS by giving a trace one start time.
+- **Playground:**
+  - `ui start --db` through a symlinked path (any macOS `/tmp` or `/var` path) said the trace was "written to another store" and hid the trace link; the paths are now compared resolved.
+  - A stream that drops mid-reply is a `connection` failure with a hint. It was `internal` with none.
+  - "modified from" names the version (`support-reply v1`).
+  - A provider with no server key can be picked and run with a Connection token. It was a disabled option.
+- **Tests:**
+  - `test_tracer_provider_concurrency.py`: 7 tests, all failing on the Phase 9 commit (16 threads gave 16 providers, and an exporter lost 15 of 16 spans).
+  - Three new Playground cases and one vitest, each failing on the Phase 9 commit.
+- **Playwright:** five new capture scripts with assertions, all passing (208 assertions in total, and no console errors):
+  - `capture-ws1-integrity.sh`
+  - `capture-replay-isolation.sh`
+  - `capture-guardrail-truth-screenshots.sh`
+  - `capture-eval-ui-screenshots.sh`
+  - `capture-playground-fixes-screenshots.sh`
+
+  The docs screenshots are regenerated, and 34 new `189-*` shots are added.
+
 ## [1.88.0] - 2026-10-11 — the defects the boundary pages found
 
 Writing the seven "breaks at the boundaries" pages meant running every claim

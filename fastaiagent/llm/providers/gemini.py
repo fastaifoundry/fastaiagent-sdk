@@ -300,8 +300,13 @@ def _build_request(
     *,
     stream: bool,
     **kwargs: Any,
-) -> tuple[str, dict[str, Any]]:
-    """Return (url, body) for a Gemini generateContent request."""
+) -> tuple[str, dict[str, Any], dict[str, str]]:
+    """Return (url, body, headers) for a Gemini generateContent request.
+
+    The key travels in the ``x-goog-api-key`` header, not a ``?key=`` query
+    parameter (1.89.0): a URL is written to logs — httpx's own INFO line
+    ``HTTP Request: POST …`` included — and into connection-error messages.
+    """
     api_key = _api_key(client)
     system_text, contents = _convert_messages(messages)
 
@@ -327,9 +332,10 @@ def _build_request(
         body["generationConfig"] = gen_cfg
 
     method = "streamGenerateContent" if stream else "generateContent"
-    suffix = "?alt=sse&" if stream else "?"
-    url = f"{_base_url(client)}/models/{client.model}:{method}{suffix}key={api_key}"
-    return url, body
+    suffix = "?alt=sse" if stream else ""
+    url = f"{_base_url(client)}/models/{client.model}:{method}{suffix}"
+    headers = {"Content-Type": "application/json", "x-goog-api-key": api_key}
+    return url, body, headers
 
 
 async def acomplete_gemini(
@@ -339,13 +345,12 @@ async def acomplete_gemini(
     **kwargs: Any,
 ) -> LLMResponse:
     """Non-streaming Gemini call. Returns a normalised :class:`LLMResponse`."""
-    url, body = _build_request(client, messages, tools, stream=False, **kwargs)
+    url, body, headers = _build_request(client, messages, tools, stream=False, **kwargs)
     async with client._new_async_client() as h:
-        resp = await h.post(url, json=body, headers={"Content-Type": "application/json"})
+        resp = await h.post(url, json=body, headers=headers)
         if resp.status_code != 200:
-            raise LLMProviderError(
-                f"Gemini API error {resp.status_code}: {resp.text}",
-                status_code=resp.status_code,
+            raise client._provider_error(
+                f"Gemini API error {resp.status_code}", resp.text, resp.status_code, resp.headers
             )
         data = resp.json()
 
@@ -365,16 +370,15 @@ async def astream_gemini(
     fire ``ToolCallStart`` / ``ToolCallEnd`` whole-shot for ``functionCall``
     blocks (Gemini doesn't stream function-call args incrementally).
     """
-    url, body = _build_request(client, messages, tools, stream=True, **kwargs)
+    url, body, headers = _build_request(client, messages, tools, stream=True, **kwargs)
 
     prompt_tokens = 0
     completion_tokens = 0
     seen_tool_index = 0
+    finish_reason = ""
 
     async with client._new_async_client() as h:
-        async with h.stream(
-            "POST", url, json=body, headers={"Content-Type": "application/json"}
-        ) as resp:
+        async with h.stream("POST", url, json=body, headers=headers) as resp:
             if resp.status_code != 200:
                 # Drain so error text is informative.
                 err_bytes = b""
@@ -382,9 +386,11 @@ async def astream_gemini(
                     err_bytes += chunk
                     if len(err_bytes) > 4096:
                         break
-                raise LLMProviderError(
-                    f"Gemini stream error {resp.status_code}: {err_bytes.decode(errors='replace')}",
-                    status_code=resp.status_code,
+                raise client._provider_error(
+                    f"Gemini stream error {resp.status_code}",
+                    err_bytes.decode(errors="replace"),
+                    resp.status_code,
+                    resp.headers,
                 )
 
             async for line in resp.aiter_lines():
@@ -404,6 +410,14 @@ async def astream_gemini(
                 candidates = chunk.get("candidates") or []
                 if candidates:
                     cand0 = candidates[0]
+                    if raw_finish := cand0.get("finishReason"):
+                        # Same mapping as a non-streamed call.
+                        finish_reason = {
+                            "STOP": "stop",
+                            "MAX_TOKENS": "length",
+                            "SAFETY": "content_filter",
+                            "RECITATION": "content_filter",
+                        }.get(raw_finish, str(raw_finish).lower())
                     parts = (cand0.get("content") or {}).get("parts") or []
                     for part in parts:
                         if "text" in part:
@@ -430,7 +444,7 @@ async def astream_gemini(
 
     if prompt_tokens or completion_tokens:
         yield Usage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens)
-    yield StreamDone()
+    yield StreamDone(finish_reason=finish_reason)
 
 
 # Re-exports for convenience. Callers should import these from this module

@@ -134,13 +134,17 @@ def test_gated_eval_run_reaches_the_plane(tmp_path, monkeypatch) -> None:
         assert not (_BANNED & set(payload)), "run payload leaks case content"
         for case in payload["cases"]:
             assert not (_BANNED & set(case)), "case payload leaks content"
-        assert payload["gate_outcome"] == "passed"
+        # No verdict yet, so not evidence yet: 1.89.0 stopped defaulting this to
+        # "passed", which let an early drain beat the real verdict to the plane.
+        assert payload["gate_outcome"] is None
 
         record_gate_result(
             results.run_id,
             gate_outcome=report.outcome,
             thresholds={"overall.pass_rate": 0.9},
         )
+        gated = build_payloads(run_id=results.run_id, db_path=db_path)[0]
+        assert gated["gate_outcome"] == report.outcome
 
         assert _drain_until_synced(db_path, results.run_id) == 1, (
             "local run never acked — the plane did not confirm the push"

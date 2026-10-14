@@ -10,11 +10,14 @@ from typing import Any
 
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.errors import PromptNotFoundError
-from fastaiagent.prompt.fragment import Fragment
+from fastaiagent.prompt.fragment import FRAGMENT_RE as _FRAGMENT_RE
+from fastaiagent.prompt.fragment import Fragment, fragment_refs
 from fastaiagent.prompt.prompt import Prompt
 from fastaiagent.prompt.storage import SQLiteStorage
 
 logger = logging.getLogger(__name__)
+
+__all__ = ["PromptRegistry", "fragment_refs"]
 
 _DEFAULT_CACHE_TTL = 300  # 5 minutes
 
@@ -115,8 +118,13 @@ class PromptRegistry:
         metadata: dict[str, Any] | None = None,
         version: int | None = None,
         project_id: str | None = None,
+        *,
+        created_by: str = "code",
     ) -> Prompt:
         """Register a new prompt (creates a new version).
+
+        ``created_by`` is recorded on the version row: ``"code"`` for calls
+        like this one, ``"ui"`` for the Local UI's editor (1.89.0).
 
         ``project_id`` is forwarded to the storage layer so callers like
         the Local UI can stamp rows with the *active* project rather than
@@ -158,7 +166,7 @@ class PromptRegistry:
             version=new_version,
             metadata=metadata or {},
         )
-        self._storage.save_prompt(prompt, project_id=project_id)
+        self._storage.save_prompt(prompt, project_id=project_id, created_by=created_by)
         return prompt
 
     def delete(
@@ -183,12 +191,26 @@ class PromptRegistry:
         self._fragments[name] = fragment
         return fragment
 
-    def load(self, name: str, version: int | None = None, alias: str | None = None) -> Prompt:
-        """Load a prompt from local storage, resolving {{@fragment}} references."""
-        prompt = self._storage.load_prompt(name, version=version, alias=alias)
+    def load(
+        self,
+        name: str,
+        version: int | None = None,
+        alias: str | None = None,
+        *,
+        resolve_fragments: bool = True,
+    ) -> Prompt:
+        """Load a prompt from local storage, resolving {{@fragment}} references.
 
-        # Resolve fragment references
-        resolved_template = self._resolve_fragments(prompt.template)
+        ``resolve_fragments=False`` returns the template as stored, with its
+        ``{{@fragment}}`` references intact. An editor must start from that
+        text: saving the resolved text back replaced the reference with a copy,
+        so later edits to the fragment no longer reached the prompt (1.89.0).
+        """
+        prompt = self._storage.load_prompt(name, version=version, alias=alias)
+        if not resolve_fragments:
+            return prompt
+
+        resolved_template = self.resolve_fragments(prompt.template)
         if resolved_template != prompt.template:
             prompt = Prompt(
                 name=prompt.name,
@@ -251,8 +273,10 @@ class PromptRegistry:
 
         return _connection.is_connected
 
-    def _resolve_fragments(self, template: str) -> str:
-        """Replace {{@fragment_name}} with fragment content."""
+    def resolve_fragments(self, template: str) -> str:
+        """Replace {{@fragment_name}} with fragment content.
+
+        An unknown fragment is left as written, so the gap stays visible."""
 
         def replacer(match: re.Match[str]) -> str:
             frag_name = match.group(1)
@@ -268,29 +292,55 @@ class PromptRegistry:
                 logger.debug("Failed to resolve prompt fragment %r", frag_name, exc_info=True)
                 return match.group(0)  # leave unresolved
 
-        result: str = re.sub(r"\{\{@(\w+)\}\}", replacer, template)
+        result: str = _FRAGMENT_RE.sub(replacer, template)
         return result
+
+    # Kept for callers of the pre-1.89.0 private name.
+    _resolve_fragments = resolve_fragments
 
     def list(self) -> list[dict[str, Any]]:
         """List all registered prompts."""
         return self._storage.list_prompts()
 
     def diff(self, name: str, version_a: int, version_b: int) -> str:
-        """Show diff between two versions of a prompt."""
+        """A unified line diff between two versions' stored templates.
+
+        Since 1.89.0 a line diff (``difflib.unified_diff``): it printed both
+        whole templates as one ``-``/``+`` pair, so a one-word change in a long
+        prompt meant comparing two pages by eye. ``{{@fragment}}`` references
+        are compared as written.
+        """
+        import difflib
+
         a = self._storage.load_prompt(name, version=version_a)
         b = self._storage.load_prompt(name, version=version_b)
 
-        lines = [
-            f"--- {name} v{version_a}",
-            f"+++ {name} v{version_b}",
-        ]
-        if a.template != b.template:
-            lines.append(f"- {a.template}")
-            lines.append(f"+ {b.template}")
-        else:
-            lines.append("  (no template changes)")
-        return "\n".join(lines)
+        header = [f"--- {name} v{version_a}", f"+++ {name} v{version_b}"]
+        if a.template == b.template:
+            return "\n".join([*header, "  (no template changes)"])
+        body = list(
+            difflib.unified_diff(
+                a.template.splitlines(),
+                b.template.splitlines(),
+                lineterm="",
+                n=2,
+            )
+        )
+        # difflib's own ---/+++ lines name nothing; keep ours.
+        return "\n".join([*header, *body[2:]])
 
     def set_alias(self, name: str, version: int, alias: str) -> None:
-        """Set an alias (e.g., 'production') for a specific version."""
+        """Set an alias (e.g., 'production') for a specific version.
+
+        Raises :class:`PromptNotFoundError` when the prompt or the version does
+        not exist (1.89.0; an alias to a missing version used to be accepted).
+        """
         self._storage.set_alias(name, version, alias)
+
+    def aliases(self, name: str) -> dict[str, int]:
+        """``{alias: version}`` for a prompt (1.89.0)."""
+        return self._storage.list_aliases(name)
+
+    def delete_alias(self, name: str, alias: str) -> bool:
+        """Remove an alias; ``False`` when it did not exist (1.89.0)."""
+        return self._storage.delete_alias(name, alias)

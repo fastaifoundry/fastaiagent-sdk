@@ -56,20 +56,37 @@ so you can verify chunking behavior.
 
 ### Search playground
 
-Type a query, pick a `top_k`, click **Run**:
+Type a query, pick a `top_k` and a search type, click **Run**:
 
 - The UI POSTs to `POST /api/kb/<name>/search` with
-  `{"query": "...", "top_k": N}`.
+  `{"query": "...", "top_k": N, "search_type": "hybrid"}`.
 - The server instantiates a real `LocalKB(name, path)` and calls
   `.search()` — the same call your agent makes at runtime.
 - Results come back as ranked chunks with scores. Metadata is
   shown in a collapsible JSON viewer.
+
+**The search type is the one the KB supports** (*since 1.89.0*). A KB built
+without embeddings (`search_type="keyword"`) is searched with BM25, and no
+embedder or model is loaded. A KB with stored embeddings defaults to hybrid,
+and the selector offers keyword and vector too. Asking for vector or hybrid on
+a keyword-only KB is a 400 that says so, and the response reports the
+`search_type` actually used. Before, the UI always opened the KB with the
+default (vector-capable) settings, which loaded an embedding model for a
+keyword-only KB, and a KB built with a different embedder failed with a 500;
+that is now a 422 with the reason.
+
+**A search from this tab is traced** as `fastaiagent.source=kb_search`: it
+shows in Traces with a **RETRIEVAL** badge, is never exported, and is hidden by
+the **Hide experiments** filter, so poking at a KB does not count as agent
+traffic.
 
 This is **one request, one response** — no WebSocket, no streaming.
 Click **Run** again for a new query; click **Refresh** on the
 collection card to re-read doc counts.
 
 ![Search playground](screenshots/18-kb-search.png)
+
+![A keyword-only KB: the selector offers keyword alone, the note says why, and the result reports search_type = keyword](screenshots/189-playground-06-kb-keyword-search.png)
 
 ### Lineage
 
@@ -102,10 +119,10 @@ an authenticated session (unless the server was started with
 | Method | Path                                         | Purpose                                      |
 |--------|----------------------------------------------|----------------------------------------------|
 | GET    | `/api/kb`                                    | List collections + counts                    |
-| GET    | `/api/kb/{name}`                             | Collection detail + sample metadata keys     |
+| GET    | `/api/kb/{name}`                             | Collection detail, sample metadata keys, `has_embeddings`, `search_types`, default `search_type` |
 | GET    | `/api/kb/{name}/documents?page=&page_size=`  | Paginated document list grouped by source    |
 | GET    | `/api/kb/{name}/chunks?source=...`           | All chunks belonging to a source             |
-| POST   | `/api/kb/{name}/search`                      | `{query, top_k}` → ranked results            |
+| POST   | `/api/kb/{name}/search`                      | `{query, top_k, search_type?}` → ranked results + `search_type` used |
 | GET    | `/api/kb/{name}/lineage`                     | Agents + recent traces that retrieved        |
 
 ## Not in scope (by design)

@@ -88,6 +88,50 @@ def prune_acked(
     store.close()
 
 
+@traces_app.command("scrub-secrets")
+def scrub_secrets_cmd(
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Report what would change without writing anything."
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt."),
+) -> None:
+    """Remove credentials from spans an older SDK stored in local.db.
+
+    Since 1.89.0 a guardrail's ``llm`` config never carries a key, and a
+    provider error that echoes one is scrubbed before it is stored. Rows
+    written earlier can still hold one, in ``agent.guardrails`` or in an
+    exception event. This rewrites them in place.
+
+    It cannot recall what was already sent to the plane. When the report
+    counts already-sent spans, rotate the keys involved.
+    """
+    from fastaiagent._internal.config import get_config
+    from fastaiagent.trace.secret_scrub import scrub_stored_spans
+
+    db_path = get_config().resolved_trace_db_path
+    preview = scrub_stored_spans(db_path, dry_run=True)
+    if preview.spans_changed == 0:
+        console.print(f"[green]✓[/green] No credentials found in {preview.spans_scanned} span(s).")
+        return
+    console.print(
+        f"{preview.spans_changed} span(s) in {preview.traces_changed} trace(s) of {db_path} "
+        f"hold a credential."
+    )
+    if preview.already_sent:
+        console.print(
+            f"[yellow]{preview.already_sent} of them were already sent to the control plane. "
+            f"Scrubbing local.db cannot recall those copies: rotate the keys involved.[/yellow]"
+        )
+    if dry_run:
+        console.print("[dim]Dry run: nothing written.[/dim]")
+        return
+    if not yes and not typer.confirm("Scrub them now?"):
+        console.print("[dim]Aborted.[/dim]")
+        raise typer.Exit(code=1)
+    report = scrub_stored_spans(db_path)
+    console.print(f"[green]✓[/green] Scrubbed {report.spans_changed} span(s).")
+
+
 @traces_app.command("purge")
 def purge_traces(
     older_than_days: int | None = typer.Option(
@@ -178,26 +222,27 @@ def purge_traces(
                 console.print("[yellow]Aborted.[/yellow]")
                 raise typer.Exit(code=1)
 
-        # Delete in order: attachments → events → spans (FK-clean).
+        # Delete in order: attachments → guardrail events → spans. The
+        # guardrail rows go by the trace ids collected above: selecting them
+        # through ``spans`` after the spans were gone removed none (1.89.0),
+        # leaving judged payloads, which can hold PII, behind.
+        from fastaiagent.ui.events import delete_guardrail_events
+
         if attachments:
             db.execute(
                 f"DELETE FROM trace_attachments{scope_clause}",
                 scope_params,
             )
+        delete_guardrail_events(
+            db,
+            [r["trace_id"] for r in affected],
+            orphans_before=cutoff,
+            everything=cutoff is None,
+        )
         db.execute(
             f"DELETE FROM spans{scope_clause}",
             scope_params,
         )
-        # Other per-trace tables that should track the same scope.
-        for tbl in ("guardrail_events",):
-            try:
-                db.execute(
-                    f"DELETE FROM {tbl}{scope_clause}",
-                    scope_params,
-                )
-            except Exception:
-                # Tables that don't exist on older schemas — skip.
-                pass
 
     console.print(
         f"[green]\N{CHECK MARK} Deleted {n_traces} {what}{also}.[/green]"

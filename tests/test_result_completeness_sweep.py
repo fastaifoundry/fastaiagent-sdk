@@ -111,6 +111,85 @@ def _swarm_resume(tmp_path):
     return swarm.resume(exec_id)
 
 
+def _refund_agent(checkpointer=None) -> Agent:
+    """An agent whose one tool pauses on ``interrupt()``."""
+    from fastaiagent import FunctionTool, interrupt
+    from fastaiagent.llm.message import ToolCall
+    from fastaiagent.testing import FunctionModel
+
+    def refund(order: str) -> str:
+        decision = interrupt(reason="manager_approval", context={"order": order})
+        return "refunded" if decision.approved else "declined"
+
+    def responder(messages):
+        if any(m.role.value == "tool" for m in messages):
+            return _reply("refund done")
+        return LLMResponse(
+            content=None,
+            tool_calls=[ToolCall(id="c1", name="refund", arguments={"order": "1"})],
+            finish_reason="tool_calls",
+            usage=dict(USAGE),
+        )
+
+    return Agent(
+        name="refunder",
+        llm=FunctionModel(responder),
+        tools=[FunctionTool(name="refund", fn=refund)],
+        checkpointer=checkpointer,
+    )
+
+
+def _agent_resume(tmp_path):
+    """``Agent.resume`` called the loop directly and opened no span: it returned
+    ``trace_id=None``. Until 1.89.0 this registry listed it as "delegated to
+    arun", which it never was."""
+    from fastaiagent import Resume
+
+    agent = _refund_agent(SQLiteCheckpointer(db_path=str(tmp_path / "cp.db")))
+    exec_id = str(uuid.uuid4())
+    assert agent.run("refund 1", execution_id=exec_id).status == "paused"
+    return agent.resume(exec_id, resume_value=Resume(approved=True))
+
+
+def _agent_fork(tmp_path):
+    """The no-input fork re-runs the restored conversation through the loop
+    directly — the same missing span as ``resume``."""
+    cp = SQLiteCheckpointer(db_path=str(tmp_path / "cp.db"))
+    agent = Agent(name="forker", llm=MockLLMClient([_reply("forked reply")]), checkpointer=cp)
+    exec_id = str(uuid.uuid4())
+    agent.run("hi", execution_id=exec_id)
+    return agent.fork(exec_id)
+
+
+def _supervisor_resume(tmp_path):
+    from fastaiagent import Resume
+    from fastaiagent.llm.message import ToolCall
+    from fastaiagent.testing import FunctionModel
+
+    # No checkpointer of its own: the supervisor's owns the worker's pause.
+    worker = _refund_agent()
+
+    def boss(messages):
+        if any(m.role.value == "tool" for m in messages):
+            return _reply("boss done")
+        return LLMResponse(
+            content=None,
+            tool_calls=[ToolCall(id="s1", name="delegate_to_refunds", arguments={"task": "go"})],
+            finish_reason="tool_calls",
+            usage=dict(USAGE),
+        )
+
+    sup = Supervisor(
+        name="boss",
+        llm=FunctionModel(boss),
+        workers=[Worker(agent=worker, role="refunds", description="refunds")],
+        checkpointer=SQLiteCheckpointer(db_path=str(tmp_path / "sup.db")),
+    )
+    exec_id = str(uuid.uuid4())
+    assert sup.run("refund it", execution_id=exec_id).status == "paused"
+    return sup.resume(exec_id, resume_value=Resume(approved=True))
+
+
 # Every result-producing entry point this sweep covers. A path is a name and
 # a zero-or-tmp_path callable that produces the result.
 PATH_RUNNERS = {
@@ -123,10 +202,13 @@ PATH_RUNNERS = {
     "swarm.resume": _swarm_resume,
     "supervisor.run": lambda: _supervisor().run("hi"),
     "supervisor.stream": lambda: _supervisor().stream("hi"),
+    "supervisor.resume": _supervisor_resume,
+    "agent.resume": _agent_resume,
+    "agent.fork": _agent_fork,
     "chain.execute": lambda: _chain().execute({"message": "hi"}),
 }
 
-_NEEDS_TMP_PATH = {"swarm.resume"}
+_NEEDS_TMP_PATH = {"swarm.resume", "agent.resume", "agent.fork", "supervisor.resume"}
 
 
 def _run(coro):
@@ -173,12 +255,11 @@ def test_registry_covers_the_public_surface() -> None:
             if hasattr(cls, entry):
                 surface.add(f"{topology}.{entry}")
     surface.update({"agent.arun", "swarm.arun"})
-    # These delegate their result wholesale to a path that IS covered:
-    # ``Agent.fork``/``Agent.resume`` return from ``Agent.arun``, and
-    # ``Supervisor.resume`` returns from its inner agent's ``arun``. Listed
-    # explicitly so a change that stops delegating becomes a visible decision.
-    delegated = {"agent.fork", "agent.resume", "supervisor.resume"}
-    uncovered = surface - set(PATH_RUNNERS) - delegated
+    # Nothing is exempt. Until 1.89.0 ``agent.fork``, ``agent.resume`` and
+    # ``supervisor.resume`` were listed here as "delegated to arun" — and the
+    # first two never were: they called the loop directly, opened no span and
+    # returned ``trace_id=None``. The exemption is what hid it, so each now runs.
+    uncovered = surface - set(PATH_RUNNERS)
     assert not uncovered, (
         f"new result-producing entry point(s) with no sweep coverage: {sorted(uncovered)}"
     )

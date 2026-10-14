@@ -106,6 +106,69 @@ describe("ReplayDiffView", () => {
     expect(screen.getByText("Output")).toBeInTheDocument();
   });
 
+  it("renders tool_diffs with both statuses, results and the disposition (1.89.0)", () => {
+    const withTools: ComparisonResult = {
+      original_steps: original,
+      new_steps: original,
+      diverged_at: null,
+      tools_diverged_at: 1,
+      tool_diffs: [
+        {
+          original_step: 1,
+          new_step: 1,
+          name: "lookup_order",
+          original_status: "ok",
+          new_status: "error",
+          original_result: { status: "shipped" },
+          new_result: "blocked: a rerun runs only tools you supply",
+          disposition: "blocked",
+        },
+      ],
+    };
+    renderWithProviders(
+      <ReplayDiffView comparison={withTools} originalOutput={null} newOutput={null} />
+    );
+    // The model's answers match, but the tool call did not.
+    expect(screen.queryByText(/diverged at step/i)).not.toBeInTheDocument();
+    expect(screen.getByText("tools differ at step 1")).toBeInTheDocument();
+
+    const diff = screen.getByTestId("tool-diff-lookup_order");
+    expect(diff).toHaveTextContent("step 1 → 1");
+    expect(diff).toHaveTextContent("blocked");
+    expect(diff).toHaveTextContent("Original · ok");
+    expect(diff).toHaveTextContent("Rerun · error");
+    expect(diff).toHaveTextContent('"status": "shipped"');
+    expect(diff).toHaveTextContent("blocked: a rerun runs only tools you supply");
+    expect(screen.getByText(/First tool call that changed/)).toBeInTheDocument();
+  });
+
+  it("uses the server's alignment when present, skipping memory steps", () => {
+    const withMemory: ReplayStep[] = [
+      step(0, "agent.support-bot", {}, {}),
+      step(1, "memory.load", {}, {}),
+      step(2, "llm.chat", { prompt: "p" }, { text: "Refunds take 14 days." }),
+    ];
+    const aligned: ComparisonResult = {
+      original_steps: withMemory,
+      new_steps: rerun,
+      diverged_at: 2,
+      new_diverged_at: 1,
+      skipped_steps: [1],
+      new_skipped_steps: [],
+      aligned: [
+        [0, 0],
+        [2, 1],
+      ],
+    };
+    renderWithProviders(
+      <ReplayDiffView comparison={aligned} originalOutput={null} newOutput={null} />
+    );
+    // memory.load is not paired against the rerun's llm.chat.
+    expect(screen.queryByText("memory.load")).not.toBeInTheDocument();
+    expect(screen.getByText(/1 memory\/nested step not compared/)).toBeInTheDocument();
+    expect(screen.getAllByText("llm.chat")).toHaveLength(2);
+  });
+
   it("handles identical runs without crashing", () => {
     const identical: ComparisonResult = {
       original_steps: original,

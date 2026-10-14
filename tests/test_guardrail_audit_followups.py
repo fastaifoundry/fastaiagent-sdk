@@ -306,15 +306,13 @@ class TestGuardrailEventMetadataHonoursTheRedactionPolicy:
     def _write_event(tmp_path, monkeypatch, *, data: str) -> list[dict]:
         """Write one `filtered` event and read the stored metadata back.
 
-        ``ui_enabled`` has to be forced on: it is off by default, and
-        ``log_guardrail_event`` returns early without it — which would make every
-        assertion below pass over an empty table.
+        Rows are written whenever tracing is on (1.89.0); the ``stored``
+        assertion below guards against an empty table making every check here
+        pass vacuously.
         """
-        from fastaiagent._internal.config import get_config
         from fastaiagent.ui.db import init_local_db
         from fastaiagent.ui.events import log_guardrail_event
 
-        monkeypatch.setattr(get_config(), "ui_enabled", True, raising=False)
         db = str(tmp_path / "local.db")
 
         rule = Guardrail(

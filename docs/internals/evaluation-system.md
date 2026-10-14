@@ -21,7 +21,10 @@ evaluate(agent_fn, dataset, scorers, concurrency=4)
             │
             ├── Call agent_fn(input) → output
             │
-            ├── Score with each scorer(input, output, expected) → ScorerResult
+            ├── Score with each scorer(input, output, expected, **facts) → ScorerResult
+            │     (facts: latency/cost, the AgentResult's tool calls, the row's
+            │      expected_trajectory/… and context; eval/_scoring.score_case,
+            │      shared with the pytest plugin; a raise becomes errored)
             │
             └── Aggregate into EvalResults
                     │
@@ -185,7 +188,18 @@ class ScorerResult(BaseModel):
     score: float = 0.0       # Typically 0.0–1.0
     passed: bool = False     # Whether the item passed the scorer's threshold
     reason: str | None = None  # Human-readable explanation
+    errored: bool = False    # 1.89.0: the check could not run
+    skipped: bool = False    # 1.89.0: the check does not apply to this case
+    details: dict | None = None  # non-content extras
+
+    @property
+    def outcome(self) -> Literal["passed", "failed", "errored", "skipped"]: ...
 ```
+
+A validator forces `passed=False, score=0.0` when `errored` or `skipped` is
+set, so a reader that ignores the new fields fails closed (the same contract
+as `GuardrailResult.errored`). The shared case rule is
+`eval.compare.case_outcome`; the UI's `evalCaseOutcome` mirrors it.
 
 ### The `@Scorer.code()` Decorator
 
@@ -356,6 +370,12 @@ LLMJudge(
 4. Normalize the raw score from `scale` into 0-1 and return
    `ScorerResult(score=normalized, passed=score >= threshold, reason=reasoning)`
 
+A call that fails, or a reply with no readable verdict after one retry, returns
+`ScorerResult.error(...)`. The other model-backed scorers read their verdict
+field through `_internal.safety_detectors.judge_field`, which raises when the
+field is missing or the wrong type; each turns that raise into an errored
+result.
+
 ### Template Rendering — `render_judge_template`
 
 The template is a de-facto wire contract: the control plane serves `prompt_template` verbatim to
@@ -426,13 +446,18 @@ class EvalResults:
 ```
 Evaluation Results
 ==================================================
-contains_keyword: avg=0.75 pass_rate=75% (4 cases)
-exact_match: avg=0.50 pass_rate=50% (4 cases)
+contains_keyword: avg=0.75 pass_rate=75% (4 scored)
+exact_match: avg=0.50 pass_rate=50% (4 scored)
+cases: 2 passed, 2 failed, 0 errored (pass_rate=50%)
 ```
 
-Computed as:
-- `avg_score = sum(r.score for r in results) / len(results)`
-- `pass_rate = sum(1 for r in results if r.passed) / len(results)`
+Computed over the **applicable** verdicts only (1.89.0):
+- `rated = [r for r in results if r.outcome in ("passed", "failed")]`
+- `avg_score = sum(r.score for r in rated) / len(rated)`
+- `pass_rate = sum(1 for r in rated if r.passed) / len(rated)`
+
+Errored and skipped counts are printed beside the rate. The `cases` line comes
+from `EvalResults.case_counts` (`eval.compare.summarize_cases`).
 
 **`export(path, format="json")`** — Writes results to a JSON file:
 ```json

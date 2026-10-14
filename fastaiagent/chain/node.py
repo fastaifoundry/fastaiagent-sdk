@@ -52,12 +52,19 @@ class NodeConfig(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
     def to_dict(self) -> dict[str, Any]:
+        config = self.config
+        if "decision" in config:
+            # 1.89.0 (S1): a decision's ``llm`` is shareable fields only, even
+            # if a key was put into the config after ``add_node``.
+            from fastaiagent.chain.decision import shareable_decision
+
+            config = {**config, "decision": shareable_decision(config["decision"], self.id)}
         d: dict[str, Any] = {
             "id": self.id,
             "type": self.type.value,
             "label": self.name,
             "position": self.position,
-            "config": self.config,
+            "config": config,
         }
         if self.agent_name:
             d["config"]["agent_name"] = self.agent_name
@@ -68,6 +75,12 @@ class NodeConfig(BaseModel):
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> NodeConfig:
         config = data.get("config", {})
+        if "decision" in config:
+            # A chain stored before 1.89.0 may carry a key in ``decision["llm"]``:
+            # dropped with a warning so the chain still loads (S1).
+            from fastaiagent.chain.decision import shareable_decision
+
+            config = {**config, "decision": shareable_decision(config["decision"], data["id"])}
         return cls(
             id=data["id"],
             type=NodeType(data.get("type", "agent")),

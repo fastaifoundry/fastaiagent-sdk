@@ -27,7 +27,7 @@ FastAIAgent uses optional dependencies to keep the core package lightweight.
 |-------|-------------|-----------------|
 | `openai` | OpenAI SDK auto-tracing | `pip install "fastaiagent[openai]"` |
 | `anthropic` | Anthropic SDK auto-tracing | `pip install "fastaiagent[anthropic]"` |
-| `langchain` | LangChain auto-tracing | `pip install "fastaiagent[langchain]"` |
+| `langchain` | LangChain / LangGraph auto-tracing (LangChain 0.x and 1.x) | `pip install "fastaiagent[langchain]"` |
 | `crewai` | CrewAI auto-tracing | `pip install "fastaiagent[crewai]"` |
 | `pdf` | Local PDF decoding — text, page count, page rendering (pypdfium2) | `pip install "fastaiagent[pdf]"` |
 | `kb` | Local knowledge base (FastEmbed + faiss + `pdf`) | `pip install "fastaiagent[kb]"` |

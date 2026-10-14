@@ -58,6 +58,7 @@ from __future__ import annotations
 
 import inspect
 import logging
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -66,7 +67,6 @@ from typing import Any
 import pytest
 
 from fastaiagent._internal.pause import describe_pause
-from fastaiagent.eval.builtins import BUILTIN_SCORERS
 from fastaiagent.eval.dataset import Dataset
 from fastaiagent.eval.evaluate import infer_agent_name
 from fastaiagent.eval.results import EvalCaseRecord, EvalResults
@@ -138,19 +138,14 @@ def dataset(
 
 
 def _resolve_scorers(scorers: list[Scorer | str] | None) -> list[Scorer]:
-    """Mirror ``aevaluate``'s scorer resolution but expose a clean error."""
-    out: list[Scorer] = []
-    for s in scorers or ["exact_match"]:
-        if isinstance(s, str):
-            cls = BUILTIN_SCORERS.get(s)
-            if cls is None:
-                pytest.fail(
-                    f"Unknown scorer '{s}'. Available: {', '.join(sorted(BUILTIN_SCORERS))}."
-                )
-            out.append(cls())
-        else:
-            out.append(s)
-    return out
+    """``aevaluate``'s scorer resolution (shared, 1.89.0), as a clean test failure."""
+    from fastaiagent._internal.errors import EvalError
+    from fastaiagent.eval._scoring import resolve_scorers
+
+    try:
+        return resolve_scorers(scorers)
+    except EvalError as e:
+        pytest.fail(str(e))
 
 
 def _format_failure(case_record: EvalCaseRecord) -> str:
@@ -161,11 +156,15 @@ def _format_failure(case_record: EvalCaseRecord) -> str:
         f"  actual:   {case_record.actual_output!r}",
         "  scorers:",
     ]
+    from fastaiagent._internal.scrub import known_credential_values, scrub_secrets
+    from fastaiagent.eval.scorer import verdict_outcome
+
+    secrets = known_credential_values()
     for name, info in (case_record.per_scorer or {}).items():
-        passed = info.get("passed")
         score = info.get("score")
-        reason = info.get("reason")
-        lines.append(f"    - {name}: passed={passed} score={score} reason={reason}")
+        # Test output lands in CI logs: no credential in a judge's reason (1.89.0).
+        reason = scrub_secrets(str(info.get("reason")), secrets)
+        lines.append(f"    - {name}: {verdict_outcome(info)} score={score} reason={reason}")
     return "\n".join(lines)
 
 
@@ -189,12 +188,17 @@ class _CollectedCase:
 class _SessionCollector:
     cases: list[_CollectedCase] = field(default_factory=list)
     run_id: str | None = None  # set at sessionfinish once persisted
+    # Fixed at session start so every case's agent and scoring spans carry the
+    # id the run is persisted under (1.89.0).
+    session_run_id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    run_name: str | None = None
     gate_lines: list[str] = field(default_factory=list)
     gate_failed: bool = False
     persist_error: str | None = None
     # Set when a --eval-baseline comparison ran; travels to the plane as evidence
     # of regression tracking (Part D).
     baseline_summary: dict[str, Any] | None = None
+    baseline_detail: dict[str, Any] | None = None
 
     def build_results(self, *, persisted_only: bool = False) -> EvalResults:
         results = EvalResults()
@@ -262,7 +266,21 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    config.stash[_COLLECTOR_KEY] = _SessionCollector()
+    collector = _SessionCollector()
+    collector.run_name = config.getoption("--eval-run-name", None) or (
+        f"pytest::{config.rootpath.name}"
+    )
+    config.stash[_COLLECTOR_KEY] = collector
+    # A malformed threshold used to raise inside sessionfinish, after the run was
+    # persisted, leaving a run with no verdict. Refuse it up front instead.
+    from fastaiagent._internal.errors import EvalError
+    from fastaiagent.eval.gate import parse_threshold
+
+    for spec in config.getoption("--eval-fail-under", default=None) or []:
+        try:
+            parse_threshold(spec)
+        except EvalError as e:
+            raise pytest.UsageError(f"--eval-fail-under: {e}") from e
 
 
 def _gating_requested(config: pytest.Config) -> bool:
@@ -287,14 +305,25 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     from fastaiagent.eval.gate import gate as run_gate
 
     all_results = collector.build_results()
+    run_name = config.getoption("--eval-run-name") or f"pytest::{config.rootpath.name}"
+
+    # Resolve the baseline BEFORE persisting this session (E2, 1.89.0): with
+    # ``--eval-run-name main --eval-baseline main`` a lookup after the persist
+    # found this session's own run and compared it with itself.
+    baseline_ref = config.getoption("--eval-baseline")
+    baseline_snapshot, baseline_state = (
+        _resolve_baseline(collector, baseline_ref, run_name) if baseline_ref else (None, None)
+    )
 
     # Persist one aggregated run (best-effort, never fails the session).
-    run_name = config.getoption("--eval-run-name") or f"pytest::{config.rootpath.name}"
     persisted = collector.build_results(persisted_only=True)
     if persisted.cases:
         try:
             collector.run_id = persisted.persist_local(
-                run_name=run_name, agent_name=_session_agent_name(collector)
+                run_id=collector.session_run_id,
+                run_name=run_name,
+                agent_name=_session_agent_name(collector),
+                kind="pytest",
             )
         except Exception as e:  # pragma: no cover — non-fatal
             collector.persist_error = str(e)
@@ -314,29 +343,49 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     )
     collector.gate_lines.extend(report.describe())
 
-    baseline_ref = config.getoption("--eval-baseline")
+    baseline_verdict: str | None = None
     if baseline_ref and report.outcome != "invalid":
-        collector.gate_failed |= _apply_baseline_gate(
-            collector, all_results, baseline_ref, float(config.getoption("--eval-tolerance"))
-        )
+        if baseline_state == "bootstrap":
+            collector.gate_lines.append(
+                f"baseline {baseline_ref!r} has no accepted run yet: this session publishes it "
+                f"(gated on thresholds only)"
+            )
+        elif baseline_snapshot is None:
+            baseline_verdict = "unavailable"
+        else:
+            tolerance = float(config.getoption("--eval-tolerance"))
+            baseline_verdict = _apply_baseline_gate(
+                collector, all_results, baseline_snapshot, tolerance
+            )
 
+    # ONE verdict (E1, 1.89.0): it is both what gets recorded for the plane and
+    # what sets the exit status. They used to be computed separately, so a
+    # regression exited 1 while recording ``passed``.
+    outcome = _session_outcome(report.outcome, baseline_verdict)
     _record_gate(
         collector,
-        outcome=report.outcome,
+        outcome=outcome,
         thresholds={
             f"{t.threshold.metric}.{t.threshold.field}": t.threshold.minimum for t in report.checks
         },
         baseline=collector.baseline_summary,
+        report=report,
     )
 
     if report.outcome == "invalid":
         collector.gate_lines.append(
             "GATE: INVALID — infra failures disqualify this run (not an agent regression)"
         )
-        collector.gate_failed = True
+    elif baseline_verdict == "unavailable":
+        collector.gate_lines.append(
+            "GATE: INVALID — the baseline could not be loaded, so nothing was compared"
+        )
     elif report.outcome == "failed":
         collector.gate_lines.append("GATE: FAILED — quality threshold(s) missed")
-        collector.gate_failed = True
+    collector.gate_failed = outcome != "passed"
+    collector.gate_lines.append(
+        f"fastaiagent eval verdict: {outcome.upper()} (recorded as gate_outcome={outcome})"
+    )
 
     if collector.gate_failed and session.exitstatus in (0, 5):
         session.exitstatus = 1
@@ -365,6 +414,7 @@ def _record_gate(
     outcome: str,
     thresholds: dict[str, Any] | None = None,
     baseline: dict[str, Any] | None = None,
+    report: Any = None,
 ) -> None:
     """Attach the verdict to the persisted run and offer it to the plane."""
     if not collector.run_id:
@@ -372,17 +422,63 @@ def _record_gate(
     from fastaiagent.eval.results import record_gate_result
 
     record_gate_result(
-        collector.run_id, gate_outcome=outcome, thresholds=thresholds, baseline=baseline
+        collector.run_id,
+        gate_outcome=outcome,
+        thresholds=thresholds,
+        baseline=baseline,
+        report=report,
+        baseline_detail=collector.baseline_detail,
     )
+
+
+def _session_outcome(gate_outcome: str, baseline: str | None) -> str:
+    """The session's one verdict: ``invalid`` | ``failed`` | ``passed``.
+
+    ``baseline`` is ``"passed"`` | ``"regressed"`` | ``"unavailable"``, or None
+    when no comparison ran. A baseline that could not be loaded means nothing
+    was compared, so the run *could not be gated*: ``invalid``, never a quality
+    ``failed`` (CLAUDE.md §2.4).
+    """
+    if gate_outcome == "invalid" or baseline == "unavailable":
+        return "invalid"
+    if gate_outcome == "failed" or baseline == "regressed":
+        return "failed"
+    return "passed"
+
+
+def _resolve_baseline(
+    collector: _SessionCollector, baseline_ref: str, run_name: str
+) -> tuple[dict[str, Any] | None, str]:
+    """Load the baseline before this session persists: ``(snapshot, state)``.
+
+    ``state`` is ``"found"``, ``"bootstrap"`` (the session publishes the
+    baseline it names, and none has been accepted yet) or ``"unavailable"``.
+
+    A *name* lookup skips runs whose gate failed (D3), so a regression cannot
+    become the next baseline by being the newest run with that name.
+    """
+    from fastaiagent.eval.compare import load_run
+
+    try:
+        return load_run(baseline_ref, accepted_only=True), "found"
+    except Exception as e:
+        if baseline_ref == run_name:
+            # The ratchet's first run, or the first after only rejected runs:
+            # gate on thresholds alone and publish. Without this the name could
+            # never acquire an accepted run, and every session would be invalid.
+            return None, "bootstrap"
+        collector.gate_lines.append(f"baseline comparison failed: {e} (gate fails)")
+        return None, "unavailable"
 
 
 def _apply_baseline_gate(
     collector: _SessionCollector,
     results: EvalResults,
-    baseline_ref: str,
+    baseline: dict[str, Any],
     tolerance: float,
-) -> bool:
-    """Compare vs the persisted baseline; returns True when the gate fails."""
+) -> str:
+    """Compare vs the already-loaded baseline: ``"passed"`` | ``"regressed"`` |
+    ``"unavailable"`` (the comparison itself failed)."""
     from fastaiagent.eval.compare import compare_runs
     from fastaiagent.eval.results import Scorecard
 
@@ -403,10 +499,10 @@ def _apply_baseline_gate(
                 for i, c in enumerate(collector.cases)
             ],
         }
-        comparison = compare_runs(baseline_ref, current)
+        comparison = compare_runs(baseline, current)
     except Exception as e:
         collector.gate_lines.append(f"baseline comparison failed: {e} (gate fails)")
-        return True
+        return "unavailable"
 
     collector.gate_lines.extend(comparison.describe())
     # Kept for the plane: a pass-rate alone evidences "evals ran"; the delta vs a
@@ -416,14 +512,24 @@ def _apply_baseline_gate(
         "pass_rate_delta": comparison.pass_rate_delta,
         "regressed_count": len(comparison.regressed),
     }
+    # Local only (the wire's baseline object keeps its three keys): what the
+    # Local UI's Agent-CI panel shows beside it (1.89.0).
+    collector.baseline_detail = {
+        "run_name": comparison.run_a.get("run_name"),
+        "tolerance": tolerance,
+        "case_pass_rate_delta": comparison.case_pass_rate_delta,
+        "errored_count": len(comparison.errored),
+        "unmatched_count": len(comparison.only_in_a) + len(comparison.only_in_b),
+        "pass_rate_comparable": comparison.pass_rate_comparable,
+    }
     drop = -comparison.pass_rate_delta
     if drop > tolerance:
         collector.gate_lines.append(
             f"GATE: REGRESSION — overall pass-rate dropped {drop:.4f} "
-            f"vs baseline (tolerance {tolerance})"
+            f"vs baseline {comparison.run_a.get('run_id')} (tolerance {tolerance})"
         )
-        return True
-    return False
+        return "regressed"
+    return "passed"
 
 
 def pytest_terminal_summary(terminalreporter: Any, exitstatus: int, config: pytest.Config) -> None:
@@ -494,11 +600,24 @@ def evaluate_one(request: pytest.FixtureRequest):  # type: ignore[no-untyped-def
                 "or @dataset(...) on the test, or pass input= explicitly."
             )
 
+        from fastaiagent.eval._scoring import EvalSpanContext, agent_scope
+
+        span_ctx = (
+            EvalSpanContext(
+                run_id=collector.session_run_id,
+                run_name=collector.run_name,
+                kind="pytest",
+                case_ordinal=len(collector.cases),
+            )
+            if collector is not None
+            else None
+        )
         sig = inspect.signature(agent_fn)
         error: str | None = None
         output: Any = None
         try:
-            output = agent_fn(in_text) if len(sig.parameters) >= 1 else agent_fn()
+            with agent_scope(span_ctx):
+                output = agent_fn(in_text) if len(sig.parameters) >= 1 else agent_fn()
         except Exception as e:
             # Infra failure: the agent never produced an output. Recorded as
             # errored (unscored) so it can't masquerade as a quality miss in
@@ -536,19 +655,23 @@ def evaluate_one(request: pytest.FixtureRequest):  # type: ignore[no-untyped-def
             output_text = str(output)
         trace_id = getattr(output, "trace_id", None)
 
+        from fastaiagent.eval._scoring import row_facts, score_case, trajectory_facts
+
         scorer_objs = _resolve_scorers(scorers)
-        per_scorer: dict[str, dict[str, Any]] = {}
-        scorer_results: dict[str, ScorerResult] = {}
-        all_passed = True
-        for scorer in scorer_objs:
-            result = scorer.score(input=str(in_text), output=output_text, expected=exp)
-            scorer_results[scorer.name] = result
-            per_scorer[scorer.name] = {
-                "passed": bool(result.passed),
-                "score": float(result.score),
-                "reason": result.reason,
-            }
-            all_passed = all_passed and bool(result.passed)
+        # The shared guard (1.89.0): a scorer that raises is recorded as errored
+        # for this case, and the case is still added to the session run (it was
+        # lost). The agent's tool calls and the row's expectations reach the
+        # scorers, as in ``evaluate()``.
+        per_scorer, scored, scoring_trace_id = score_case(
+            scorer_objs,
+            input=str(in_text),
+            output=output_text,
+            expected=exp,
+            score_kwargs={**trajectory_facts(output), **row_facts(eval_case)},
+            span_context=span_ctx,
+            subject_trace_id=trace_id,
+        )
+        scorer_results: dict[str, ScorerResult] = dict(scored)
 
         record = EvalCaseRecord(
             input=in_text,
@@ -556,6 +679,7 @@ def evaluate_one(request: pytest.FixtureRequest):  # type: ignore[no-untyped-def
             actual_output=output_text,
             trace_id=trace_id,
             per_scorer=per_scorer,
+            scoring_trace_id=scoring_trace_id,
         )
         if collector is not None:
             collector.cases.append(
@@ -567,8 +691,16 @@ def evaluate_one(request: pytest.FixtureRequest):  # type: ignore[no-untyped-def
                 )
             )
 
-        if assert_pass and not all_passed:
+        from fastaiagent.eval.compare import case_outcome
+
+        outcome = case_outcome({"error": None, "per_scorer": per_scorer})
+        if assert_pass and outcome == "failed":
             pytest.fail(_format_failure(record))
+        if assert_pass and outcome == "errored":
+            pytest.fail(
+                "fastaiagent eval case errored (scorer could not run, or none applied):\n"
+                + _format_failure(record).split("\n", 1)[1]
+            )
         return record
 
     return _run

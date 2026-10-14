@@ -305,6 +305,8 @@ def test_cost_under_on_an_unpriced_model_does_not_report_free(stub) -> None:
     scores = results.cases[0].per_scorer["cost_under"]
     assert scores["passed"] is False, "an unknown cost passed a budget gate as if free"
     assert "unknown" in (scores["reason"] or "").lower(), scores["reason"]
+    # 1.89.0: could not price is could-not-run, not a budget breach.
+    assert scores.get("errored") is True, scores
 
 
 def test_latency_gate_can_fail(stub) -> None:

@@ -8,9 +8,23 @@ describe("PassRateBar", () => {
     expect(screen.getByText("75%")).toBeInTheDocument();
   });
 
-  it("renders 0% for null without exploding", () => {
-    render(<PassRateBar passRate={null} />);
+  // A null rate means no verdict applied: "—", never a 0% that reads as all-fail.
+  it("renders — for a null rate, with no coloured fill", () => {
+    const { container } = render(<PassRateBar passRate={null} />);
+    expect(screen.getByText("—")).toBeInTheDocument();
+    expect(screen.queryByText("0%")).toBeNull();
+    expect(container.querySelector(".bg-destructive")).toBeNull();
+  });
+
+  it("still renders a real 0% as 0%", () => {
+    render(<PassRateBar passRate={0} passCount={0} failCount={3} />);
     expect(screen.getByText("0%")).toBeInTheDocument();
+    expect(screen.getByText("(0/3)")).toBeInTheDocument();
+  });
+
+  it("carries a hover title when given one", () => {
+    const { container } = render(<PassRateBar passRate={0.5} title="Checks 80%" />);
+    expect(container.firstElementChild).toHaveAttribute("title", "Checks 80%");
   });
 
   it("colors healthy rates green", () => {

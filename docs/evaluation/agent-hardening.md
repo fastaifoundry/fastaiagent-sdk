@@ -103,7 +103,20 @@ report.to_dict()
 
 The model is shown at most **40** failing cases or scenarios — enough to see the
 patterns, small enough for any context window — while `report.failure_count` is
-always the full total. If the analysis can't run (the model call fails, or its
+always the full total.
+
+**The report is saved on the run** (*1.89.0*). When the results were
+persisted (they have a `run_id`, which `evaluate()` and `simulate()` set by
+default), `harden()` writes the report into that run's
+`metadata["hardening"]` (`created_at`, `model`, `failure_count`,
+`recommendations`), and the run's page in the Local UI shows it. It stays
+local; the eval export never sends it. Pass `persist=False` to skip that. The
+analysis call is recorded as one `eval.harden` trace, stamped
+`fastaiagent.source=eval` so it is not counted as a run of your agent.
+
+Only real failures count (*1.89.0*): a verdict that
+**errored** (the judge could not run) or was **skipped** (it did not apply) is
+not a quality failure, so it is never handed to the model as something to fix. If the analysis can't run (the model call fails, or its
 reply holds no list of recommendations), the report carries a single
 `(analysis failed)` recommendation with the reason, never an empty "nothing to fix".
 

@@ -60,11 +60,17 @@ async def demo():
             fork_step = min(1, len(steps) - 1)
             print(f"\nStep 3: Forking from step [{fork_step}]...\n")
 
-            forked = replay.fork_at(fork_step)
+            # A rerun blocks every tool unless you allow it (1.89.0). The
+            # read-only lookups run again; create_ticket stays blocked, so
+            # the rerun cannot open a real ticket.
+            forked = replay.fork_at(fork_step).with_tool_policy(
+                "live", allow=["search_kb", "lookup_account", "check_order_status"]
+            )
             forked.modify_input({"email": "bob@startup.io"})
 
             forked_result = forked.rerun()
             print(f"   Forked result: steps_executed={forked_result.steps_executed}")
+            print(f"   Tools: {forked_result.tool_dispositions}")
             print(f"   Original trace: {trace_id}")
 
             # ─── Step 4: Compare ─────────────────────────────────────────────

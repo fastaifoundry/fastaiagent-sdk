@@ -2,6 +2,12 @@ import { useMemo } from "react";
 import { Activity, Bot, Brain, ChevronRight, Database, Shield, Sparkles, Wrench } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDurationMs } from "@/lib/format";
+import {
+  guardrailSpanVerdict,
+  TONE_BAR,
+  TONE_CHIP,
+  TONE_TEXT,
+} from "@/lib/guardrail";
 import type { SpanRow, SpanTreeNode } from "@/lib/types";
 
 interface Props {
@@ -75,7 +81,12 @@ export function SpanTree({ tree, selectedSpanId, onSelect }: Props) {
           );
           const Icon = iconFor(span.name);
           const active = span.span_id === selectedSpanId;
-          const errored = (span.status || "OK").toUpperCase() === "ERROR";
+          // A guardrail span's OTel status is ERROR for any non-pass verdict
+          // (a `warn` that let the run finish included), so it is coloured by
+          // what the check did instead. Every other span keeps its status.
+          const verdict = guardrailSpanVerdict(span);
+          const errored =
+            !verdict && (span.status || "OK").toUpperCase() === "ERROR";
           return (
             <button
               key={span.span_id}
@@ -98,7 +109,11 @@ export function SpanTree({ tree, selectedSpanId, onSelect }: Props) {
                 <Icon
                   className={cn(
                     "h-3.5 w-3.5 shrink-0",
-                    errored ? "text-destructive" : "text-muted-foreground"
+                    verdict
+                      ? TONE_TEXT[verdict.tone]
+                      : errored
+                        ? "text-destructive"
+                        : "text-muted-foreground"
                   )}
                 />
                 <span className="truncate font-mono text-xs">{span.name}</span>
@@ -107,13 +122,24 @@ export function SpanTree({ tree, selectedSpanId, onSelect }: Props) {
                     err
                   </span>
                 )}
+                {verdict && verdict.tone !== "success" && (
+                  <span
+                    data-testid="guardrail-verdict"
+                    className={cn(
+                      "ml-1 shrink-0 rounded px-1 py-0.5 text-[10px] font-semibold uppercase",
+                      TONE_CHIP[verdict.tone]
+                    )}
+                  >
+                    {verdict.label}
+                  </span>
+                )}
               </div>
               <div className="relative flex items-center gap-2 min-w-0">
                 <div className="relative h-2 flex-1 rounded-full bg-muted">
                   <div
                     className={cn(
                       "absolute h-2 rounded-full",
-                      barColor(span.name),
+                      verdict ? TONE_BAR[verdict.tone] : barColor(span.name),
                       errored && "bg-destructive/60"
                     )}
                     style={{ left: `${offsetPct}%`, width: `${widthPct}%` }}

@@ -30,11 +30,18 @@ class CaptureServer:
     served from a queue (one per request); when the queue drains it returns 200,
     so a default server is a happy-path platform. ``set_status_sequence([...])``
     scripts transient failures (e.g. ``[500, 500, 200]`` to drive a retry).
+
+    ``set_response_sequence([...])`` (1.89.0) scripts whole responses — status,
+    body and content type — so the same real socket can stand in for an LLM
+    provider: an error body that echoes a key, or an SSE stream
+    (``content_type="text/event-stream"`` with ``data: ...`` lines). Scripted
+    responses are served before any scripted status codes.
     """
 
     def __init__(self) -> None:
         self.requests: list[dict[str, Any]] = []
         self._status_codes: list[int] = []
+        self._responses: list[tuple[int, bytes, str]] = []
         self._lock = threading.Lock()
         self._server: HTTPServer | None = None
         self._thread: threading.Thread | None = None
@@ -42,6 +49,36 @@ class CaptureServer:
     def set_status_sequence(self, codes: list[int]) -> None:
         with self._lock:
             self._status_codes = list(codes)
+
+    def set_response_sequence(
+        self, responses: list[tuple[int, Any] | tuple[int, Any, str]]
+    ) -> None:
+        """Serve these ``(status, body[, content_type])`` responses in order.
+
+        A ``dict``/``list`` body is sent as JSON; ``str``/``bytes`` as given.
+        The content type defaults to ``application/json``.
+        """
+        scripted: list[tuple[int, bytes, str]] = []
+        for entry in responses:
+            status, body = entry[0], entry[1]
+            content_type = entry[2] if len(entry) > 2 else "application/json"  # type: ignore[misc]
+            if isinstance(body, (dict, list)):
+                raw = json.dumps(body).encode()
+            elif isinstance(body, str):
+                raw = body.encode()
+            else:
+                raw = bytes(body)
+            scripted.append((status, raw, content_type))
+        with self._lock:
+            self._responses = scripted
+
+    def _next_response(self) -> tuple[int, bytes, str]:
+        with self._lock:
+            if self._responses:
+                return self._responses.pop(0)
+            code = self._status_codes.pop(0) if self._status_codes else 200
+        payload = b'{"ingested": 0}' if 200 <= code < 300 else b'{"error": "scripted failure"}'
+        return code, payload, "application/json"
 
     def _next_status(self) -> int:
         with self._lock:
@@ -74,12 +111,9 @@ class CaptureServer:
                     capture.requests.append(
                         {"path": self.path, "headers": dict(self.headers), "body": body}
                     )
-                code = capture._next_status()
-                payload = (
-                    b'{"ingested": 0}' if 200 <= code < 300 else b'{"error": "scripted failure"}'
-                )
+                code, payload, content_type = capture._next_response()
                 self.send_response(code)
-                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Type", content_type)
                 self.send_header("Content-Length", str(len(payload)))
                 self.end_headers()
                 self.wfile.write(payload)
@@ -304,8 +338,13 @@ def noop_middleware():
 
 
 @pytest.fixture
-def decisions_stub():
-    """An in-process ``POST /v1/decisions`` stand-in (``tests/_decisions_stub.py``)."""
-    from tests._decisions_stub import started_stub
+def decisions_stub(monkeypatch: pytest.MonkeyPatch):
+    """An in-process ``POST /v1/decisions`` stand-in (``tests/_decisions_stub.py``).
 
+    Sets ``OPENAI_API_KEY`` to the stub key: a guardrail or decision config
+    carries no credential since 1.89.0, so the key comes from the environment.
+    """
+    from tests._decisions_stub import STUB_KEY, started_stub
+
+    monkeypatch.setenv("OPENAI_API_KEY", STUB_KEY)
     yield from started_stub()

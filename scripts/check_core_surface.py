@@ -103,6 +103,32 @@ with check("a mask with nothing to redact fails closed core-only"):
     assert degraded.action_taken == "blocked", f"expected a block, got {degraded!r}"
     assert halts(no_span, degraded) is True
 
+with check("an agent's guardrail check is recorded locally core-only (1.89.0)"):
+    import os
+    import sqlite3
+    import tempfile
+
+    os.environ["FASTAIAGENT_LOCAL_DB"] = os.path.join(tempfile.mkdtemp(), "local.db")
+    from fastaiagent._internal.config import reset_config
+    from fastaiagent.testing import TestModel
+
+    reset_config()
+    recorded = fastaiagent.Agent(
+        name="core-recorder",
+        llm=TestModel(response="nothing sensitive here"),
+        guardrails=[
+            Guardrail(
+                name="no-ssn-out",
+                guardrail_type=GuardrailType.regex,
+                config={"pattern": r"\d{3}-\d{2}-\d{4}", "should_match": False},
+            )
+        ],
+    ).run("hi")
+    assert [f.name for f in recorded.guardrails] == ["no-ssn-out"]
+    with sqlite3.connect(os.environ["FASTAIAGENT_LOCAL_DB"]) as conn:
+        rows = conn.execute("SELECT guardrail_name, effect FROM guardrail_events").fetchall()
+    assert rows == [("no-ssn-out", "none")], rows
+
 with check("the run-scoped guardrail context slot works core-only"):
     import fastaiagent as _fa
 

@@ -84,4 +84,18 @@ describe("TracesTable", () => {
     const threadLink = screen.getByRole("link", { name: /session-demo/i });
     expect(threadLink).toHaveAttribute("href", "/threads/session-demo");
   });
+
+  it("badges rows with a non-production source and leaves the rest alone (1.89.0)", () => {
+    renderWithProviders(
+      <TracesTable
+        rows={[
+          { ...SAMPLE[0], source: "replay" },
+          { ...SAMPLE[1], source: null },
+        ]}
+      />
+    );
+    const badges = screen.getAllByTestId("trace-source-badge");
+    expect(badges).toHaveLength(1);
+    expect(badges[0]).toHaveTextContent("replay");
+  });
 });

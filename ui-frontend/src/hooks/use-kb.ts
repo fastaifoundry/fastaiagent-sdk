@@ -7,6 +7,7 @@ import type {
   KbLineageResponse,
   KbListResponse,
   KbSearchResponse,
+  KbSearchType,
 } from "@/lib/types";
 
 export function useKbCollections() {
@@ -64,7 +65,9 @@ export function useKbLineage(name: string | undefined) {
 export function useKbSearch(name: string | undefined) {
   return useMutation({
     mutationKey: ["kb", name, "search"],
-    mutationFn: (payload: { query: string; top_k: number }) =>
+    // ``search_type`` omitted = the KB's default (1.89.0): hybrid with
+    // embeddings, keyword without.
+    mutationFn: (payload: { query: string; top_k: number; search_type?: KbSearchType }) =>
       api.post<KbSearchResponse>(
         `/kb/${encodeURIComponent(name!)}/search`,
         payload

@@ -153,8 +153,9 @@ toxicity_check(mode="llm", on_error="allow")   # fail open: an error passes thro
 
 Either way the outcome is **visible**: the result carries `errored=True`, the
 trace span records a `guardrail.errored` attribute and an `"error"` check
-result, and the Local UI logs the event with an `errored` outcome — so you can
-see exactly how often a guardrail is degrading instead of guarding. Guardrail
+result, and the Local UI logs the event (whenever tracing is on) with an
+`errored` outcome — so you can see exactly how often a guardrail is degrading
+instead of guarding. Guardrail
 LLM calls also get a small automatic retry, so a single transient blip doesn't
 trip the policy at all.
 
@@ -276,10 +277,23 @@ so `fastaiagent.guardrail.*` is ours, and it rides *under* the standard kind.
 Anything that understands OpenInference recognizes the span as a guardrail;
 anything that understands FastAIAgent additionally reads the verdict.
 
-The span status follows the verdict — `OK` on pass, `ERROR` on block — with one
-deliberate exception: a *degraded pass* (`errored=true` with `on_error="allow"`)
-keeps an `OK` status, because the run did continue. The `errored` attribute is
-what tells a fail-open apart from a genuine pass.
+The span status follows the verdict — `OK` on pass, `ERROR` for **any** verdict
+that is not a pass, a `warn` or `mask` that let the run continue included — with
+one deliberate exception: a *degraded pass* (`errored=true` with
+`on_error="allow"`) keeps an `OK` status, because the run did continue. The
+`errored` attribute is what tells a fail-open apart from a genuine pass.
+
+The span **wraps the check** (1.89.0; it used to be opened after the check
+finished). Its duration is the check's real latency, and a model call the check
+makes, such as an `llm_judge`'s, is its child rather than its sibling. Keys,
+values and status are unchanged.
+
+So a guardrail span's status is not the run's. **Whether a run failed is its
+root span's status**: an agent's root ends ERROR when a guardrail halted it, and
+UNSET when it completed, warned or not. The Local UI and `TraceStore.list_traces`
+read the root (1.89.0), as the plane does; they used to read any span, which
+made every warned run look failed. The Local UI colours a guardrail span by
+what it did, not by its status.
 
 !!! note "Legacy `span_type` marker"
     Guardrail spans also carry `span_type="guardrail"` alongside the standard

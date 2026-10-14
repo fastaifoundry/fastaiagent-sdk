@@ -91,8 +91,15 @@ indistinguishable from a genuine pass.
     Before this, a run with the Local UI off and no plane attached returned the
     same clean string whether or not a rule had fired. The one outcome class
     designed *not* to stop the run was the one you could not observe. It is
-    populated regardless of `FASTAIAGENT_UI_ENABLED` — an unconnected run is
-    the case it exists for.
+    populated whether or not tracing is on — an unconnected run is the case it
+    exists for.
+
+Each `GuardrailFiring` also carries `blocking` and `effect` (1.89.0): what the
+check did to the run (`none`, `warned`, `rewritten`, `reasked`, `blocked`,
+`observed`, `unchecked`). `action_taken` stays the *resolved action*, so an
+observe-only `mask` reports `masked` while its effect is `observed`. A rewrite
+the run could not apply (a streamed reply, multimodal input) reports effect
+`blocked`. A `Supervisor`'s result includes its workers' firings.
 
 `GuardrailFiring` deliberately carries no `metadata` and no `modified_data`. A
 `pii` rule's `metadata["matches"]` holds the matched value itself, and neither
@@ -428,7 +435,9 @@ whatever you give it; the allowlist is the SDK runtime's own discipline, so
 apply the same judgement to what you pass.
 
 In the Local UI a rewriting rule shows as **`✎ filtered`** with a before/after
-diff, distinct from a block.
+diff, distinct from a block. A `reask` shows as **re-asked** (1.89.0; it was
+recorded as a block), and an observe-only rule as observe-only, whatever its
+action. See [what a row says](../ui/guardrail-events.md#what-a-row-says-outcome-and-effect-1890).
 
 ## Foreign frameworks
 

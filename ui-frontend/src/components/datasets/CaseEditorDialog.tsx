@@ -43,6 +43,14 @@ function inputAsText(input: DatasetCaseInput | undefined): string {
     .join("\n");
 }
 
+function compactJson(value: unknown): string {
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return String(value);
+  }
+}
+
 function imagePartsOf(input: DatasetCaseInput | undefined): DatasetCaseInputPart[] {
   if (!Array.isArray(input)) return [];
   return input.filter((p) => p.type === "image" || p.type === "pdf");
@@ -69,6 +77,8 @@ export function CaseEditorDialog({
   initial,
 }: Props) {
   const isEditing = !!caseToEdit;
+  // Never sent back: a save without `extra` keeps the row's own (1.89.0).
+  const otherFields = Object.entries(caseToEdit?.extra ?? {});
   const seedInput = caseToEdit?.input ?? initial?.input;
   const seedExpected = caseToEdit?.expected_output ?? initial?.expected_output;
 
@@ -271,6 +281,29 @@ export function CaseEditorDialog({
               placeholder='{"source": "production_trace_abc"}'
             />
           </details>
+
+          {otherFields.length > 0 && (
+            <div className="rounded-md border bg-card p-3" data-testid="case-other-fields">
+              <div className="text-xs uppercase tracking-widest text-muted-foreground">
+                Other fields
+                <span className="ml-2 text-[10px] normal-case tracking-normal">
+                  Read-only here; kept as they are on save. Edit the JSONL to change them.
+                </span>
+              </div>
+              <dl className="mt-2 space-y-1">
+                {otherFields.map(([key, value]) => (
+                  <div key={key} className="grid grid-cols-[minmax(0,10rem)_1fr] gap-2 text-xs">
+                    <dt className="truncate font-mono text-muted-foreground" title={key}>
+                      {key}
+                    </dt>
+                    <dd className="max-h-24 overflow-y-auto break-all font-mono">
+                      {compactJson(value)}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          )}
 
           {error && (
             <div className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-600">

@@ -21,7 +21,10 @@ import pytest
 from fastaiagent.guardrail.actions import ACTIONS, ACTIONS_TAKEN
 from fastaiagent.guardrail.guardrail import GuardrailPosition, GuardrailType
 
-_PAGE = Path(__file__).resolve().parents[1] / "ui-frontend/src/pages/GuardrailsPage.tsx"
+_UI = Path(__file__).resolve().parents[1] / "ui-frontend/src"
+_PAGE = _UI / "pages/GuardrailsPage.tsx"
+# 1.89.0: the shared guardrail vocabulary moved out of the page.
+_VOCAB = _UI / "lib/guardrail.ts"
 
 pytestmark = pytest.mark.skipif(
     not _PAGE.is_file(),
@@ -29,20 +32,26 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+def _src() -> str:
+    return "\n".join(p.read_text() for p in (_PAGE, _VOCAB) if p.is_file())
+
+
 def _string_array(name: str) -> list[str]:
     """Pull a `const NAME = [...]` string array out of the TSX source."""
-    src = _PAGE.read_text()
-    match = re.search(rf"const {name}(?:\s*:\s*[^=]+)?\s*=\s*\[(.*?)\]", src, re.DOTALL)
-    assert match, f"{name} not found in {_PAGE.name} — was it renamed?"
+    match = re.search(rf"const {name}(?:\s*:\s*[^=]+)?\s*=\s*\[(.*?)\]", _src(), re.DOTALL)
+    assert match, f"{name} not found in the UI source — was it renamed?"
     return re.findall(r'"([^"]+)"', match.group(1))
+
+
+def _record_body(name: str) -> str:
+    match = re.search(rf"const {name}\s*:\s*Record<[^>]*>\s*=\s*\{{(.*?)\n\}};", _src(), re.DOTALL)
+    assert match, f"{name} not found in the UI source — was it renamed?"
+    return match.group(1)
 
 
 def _record_keys(name: str) -> list[str]:
     """Pull the keys of a `const NAME: Record<...> = { ... }` object."""
-    src = _PAGE.read_text()
-    match = re.search(rf"const {name}\s*:\s*Record<[^>]*>\s*=\s*\{{(.*?)\n\}};", src, re.DOTALL)
-    assert match, f"{name} not found in {_PAGE.name} — was it renamed?"
-    return re.findall(r"^\s*([a-z_]+):", match.group(1), re.MULTILINE)
+    return re.findall(r"^\s*([a-z_]+):", _record_body(name), re.MULTILINE)
 
 
 def test_the_type_filter_offers_every_implementation_type() -> None:
@@ -69,20 +78,22 @@ def test_every_action_maps_to_the_outcome_it_produces_when_fulfilled() -> None:
         f"ACTION_FULFILLED does not cover every action: missing {sorted(set(ACTIONS) - set(fulfilled))}"
     )
 
-    src = _PAGE.read_text()
-    match = re.search(r"const ACTION_FULFILLED\s*:\s*Record<[^>]*>\s*=\s*\{(.*?)\n\};", src, re.DOTALL)
-    assert match
-    values = re.findall(r':\s*"([^"]+)"', match.group(1))
+    values = re.findall(r':\s*"([^"]+)"', _record_body("ACTION_FULFILLED"))
     unknown = set(values) - set(ACTIONS_TAKEN)
     assert not unknown, f"ACTION_FULFILLED maps to outcomes the SDK never emits: {sorted(unknown)}"
 
 
-def test_the_outcome_filter_covers_every_outcome_the_runtime_writes() -> None:
-    """Including ``filtered``, which nothing could produce before 1.57.0."""
-    from fastaiagent.ui.events import _outcome
+def test_the_ui_renders_every_outcome_the_runtime_writes() -> None:
+    """Including ``filtered`` (1.57.0) and ``reasked`` (1.89.0)."""
+    from fastaiagent.ui.events import GUARDRAIL_OUTCOMES
 
     known = set(_record_keys("OUTCOME_META"))
-    assert {"passed", "blocked", "warned", "errored", "filtered"} <= known, sorted(known)
-    # And the writer only ever produces outcomes the UI knows how to render.
-    assert _outcome.__module__  # import guard; the values themselves are asserted above
+    assert set(GUARDRAIL_OUTCOMES) <= known, sorted(set(GUARDRAIL_OUTCOMES) - known)
+
+
+def test_the_ui_renders_every_effect() -> None:
+    """What a check did to the run (1.89.0): every value has a label."""
+    from fastaiagent.guardrail.actions import EFFECTS
+
+    assert set(_record_keys("EFFECT_META")) == set(EFFECTS)
 

@@ -69,8 +69,16 @@ def track_agent(agent: Agent) -> None:
 
     Called from ``Agent.__init__``. Cheap, additive, and never raises — a
     tracking failure must not break agent construction.
+
+    Not inside a provenance scope that suppresses registration (a replay
+    rebuilds the agent it replays, and must not push that copy, with its
+    modified prompt and stub tools, over the real definition; 1.89.0).
     """
     try:
+        from fastaiagent.trace.provenance import registration_suppressed
+
+        if registration_suppressed():
+            return
         _agent_registry.add(agent)
     except Exception:  # pragma: no cover - defensive
         logger.debug("Could not track agent for registration", exc_info=True)
@@ -242,8 +250,16 @@ def auto_register_async(agent: Agent) -> None:
     possible in the traced run; the platform trace exporter batches spans, so
     this quick POST typically lands before the run's trace is ingested (giving
     it an ``agent_id``). No-op when disconnected, opted out, or already pushed.
+
+    Also a no-op inside a provenance scope that suppresses registration: a
+    replay must not push the rebuilt agent, and must not get an ``agent_id``
+    stamped back, which would switch on governance gating for the rerun.
     """
     from fastaiagent.client import _connection
+    from fastaiagent.trace.provenance import registration_suppressed
+
+    if registration_suppressed():
+        return
 
     if not _connection.is_connected or not getattr(_connection, "auto_register", True):
         # Not auto-registering — nudge the user once so silence never hides it.

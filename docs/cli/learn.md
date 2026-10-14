@@ -5,7 +5,8 @@ Extract durable facts from past traces and re-inject them via `PersistentFactBlo
 ```
 fastaiagent learn [--scope SCOPE] [--scope-id ID] [--agent NAME] [--window N]
                   [--max-traces N] [--max-facts N] [--model NAME] [--provider NAME]
-                  [--dry-run] [--reprocess] [--allow-personal] [--attribute-all]
+                  [--dry-run] [--reprocess] [--include-experiments]
+                  [--allow-personal] [--attribute-all]
 fastaiagent learn list [--scope SCOPE] [--scope-id ID] [--limit N]
                        [--show-superseded]
 fastaiagent learn supersede OLD_ID NEW_ID
@@ -30,7 +31,8 @@ Which traces it reads:
 
 - only those that **started within `--window` hours**;
 - with `--agent`, only traces in which **that agent ran** — at the root, or as a child span inside a swarm, chain or supervisor. Without it, every agent's traces in the window are read and every fact is filed under the one `--scope-id`;
-- never its **own** extraction calls (they run under a `learn.extract` root span);
+- never its **own** extraction calls (they run under a `learn.extract` root span, stamped `fastaiagent.source=learn`);
+- not **experiments**: replay reruns, Playground calls and other traces with a non-production `fastaiagent.source` ([provenance](../tracing/index.md#where-a-trace-came-from-provenance)). A rerun is not something a user said. `--include-experiments` reads them too;
 - not traces **already mined** for this scope and id — a re-run only reads new traces, and a trace that yielded nothing isn't billed again. `--reprocess` mines them again. A trace whose extraction failed isn't recorded, so the next run retries it;
 - at most `--max-traces` of them.
 
@@ -47,6 +49,7 @@ The summary reports **new** facts separately from facts that were already known.
 | `--window` / `--last-hours` | `24` | Only traces that started within this many hours. |
 | `--max-traces` | `100` | Mine at most this many traces per run, newest first. |
 | `--reprocess` | off | Mine traces again even if an earlier run already did for this scope and id. |
+| `--include-experiments` | off | Also mine replay reruns, Playground calls and other non-production traces (1.89.0). |
 | `--max-facts` | `10` | Cap per trace. |
 | `--model` | `gpt-4o-mini` | Extractor LLM — cheap + fast recommended. |
 | `--provider` | `openai` | Any provider supported by `LLMClient`. |

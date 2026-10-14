@@ -1,4 +1,6 @@
-fastaiagent>=1.6.1
+# 1.89.0 is the first release whose [langchain] extra admits LangChain 1.x,
+# which langchain_example.py / eval_suite.py use (create_agent).
+fastaiagent>=1.89.0
 python-dotenv>=1.0.0
 
 # All three framework deps are OPTIONAL — uncomment the ones you actually

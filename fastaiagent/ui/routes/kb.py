@@ -7,13 +7,14 @@ lineage endpoints. No mutations — add / delete / re-index stay in code.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import re
 import sqlite3
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
@@ -25,7 +26,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/kb", tags=["kb"])
 
 _DEFAULT_KB_DIR = ".fastaiagent/kb"
-_LOCALKB_CACHE: dict[tuple[str, str], Any] = {}
+#: Keyed on ``(root, name, search_type)``: one KB opened two ways is two entries.
+_LOCALKB_CACHE: dict[tuple[str, str, str], Any] = {}
 # Collection names are user-visible directory names. Restrict to a portable
 # slug so a path-traversal segment (``../``) or a NUL byte cannot reach
 # ``_collection_db`` and walk outside the KB root. Real KB names in the
@@ -182,7 +184,14 @@ async def get_collection(
                     logger.debug("Failed to parse KB chunk metadata JSON", exc_info=True)
     except sqlite3.Error:
         logger.warning("Failed to read KB metadata sample from %s", name, exc_info=True)
+    has_embeddings = _has_embeddings(db_path)
+    search_types = _search_types(has_embeddings)
     return {
+        # How the search box can query this KB (1.89.0). ``search_type`` is
+        # what a search without one uses: hybrid with embeddings, else keyword.
+        "has_embeddings": has_embeddings,
+        "search_types": search_types,
+        "search_type": "hybrid" if has_embeddings else "keyword",
         "name": name,
         "path": str(db_path.parent),
         "chunk_count": info["chunk_count"],
@@ -296,23 +305,74 @@ async def list_chunks_for_document(
 class SearchRequest(BaseModel):
     query: str = Field(min_length=1, max_length=4096)
     top_k: int = Field(default=5, ge=1, le=50)
+    search_type: Literal["keyword", "vector", "hybrid"] | None = Field(
+        default=None,
+        description=(
+            "How to search. Omitted: ``hybrid`` when the KB stores embeddings, "
+            "else ``keyword``. ``vector``/``hybrid`` on a KB without "
+            "embeddings is a 400."
+        ),
+    )
 
 
-def _get_kb(name: str) -> Any:
-    """Instantiate (and cache) a LocalKB for read-only search."""
+def _has_embeddings(db_path: Path) -> bool:
+    """Does any chunk of this KB store an embedding? Read-only, no model load."""
+    try:
+        with contextlib.closing(_open_readonly(db_path)) as conn:
+            row = conn.execute(
+                "SELECT 1 FROM chunks WHERE embedding IS NOT NULL "
+                "AND embedding NOT IN ('', '[]') LIMIT 1"
+            ).fetchone()
+            return row is not None
+    except sqlite3.Error:
+        logger.debug("Could not check KB embeddings in %s", db_path, exc_info=True)
+        return False
+
+
+def _search_types(has_embeddings: bool) -> list[str]:
+    """The search types a KB supports: keyword always, vector/hybrid with embeddings."""
+    return ["keyword", "vector", "hybrid"] if has_embeddings else ["keyword"]
+
+
+def _get_kb(name: str, search_type: str | None = None) -> tuple[Any, str]:
+    """Instantiate (and cache) a LocalKB for search; returns ``(kb, search_type)``.
+
+    The search type follows what the KB actually holds (1.89.0). The UI used
+    to open every KB as ``hybrid``: a keyword-only KB then built the default
+    embedder (a model load) for nothing and the response called a pure BM25
+    search "hybrid". A KB with no stored embedding opens as ``keyword``, so no
+    embedder is built.
+    """
     root = _kb_root()
     db_path = _collection_db(root, name)
     if not db_path.is_file():
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"KB '{name}' not found")
-    key = (str(root.resolve()), name)
+    has_embeddings = _has_embeddings(db_path)
+    if search_type is None:
+        search_type = "hybrid" if has_embeddings else "keyword"
+    elif search_type not in _search_types(has_embeddings):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"KB '{name}' stores no embeddings, so it cannot run a "
+            f"{search_type} search. Use search_type='keyword'.",
+        )
+    key = (str(root.resolve()), name, search_type)
     cached = _LOCALKB_CACHE.get(key)
     if cached is not None:
-        return cached
+        return cached, search_type
     from fastaiagent.kb.local import LocalKB
 
-    kb = LocalKB(name=name, path=str(root))
+    try:
+        kb = LocalKB(name=name, path=str(root), search_type=cast(Any, search_type))
+    except ValueError as exc:
+        # e.g. the KB was embedded with another embedder than the default one
+        # the UI builds (dimension mismatch). Keyword search still works.
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"Could not open KB '{name}' for a {search_type} search: {exc}",
+        ) from exc
     _LOCALKB_CACHE[key] = kb
-    return kb
+    return kb, search_type
 
 
 @router.post("/{name}/search")
@@ -322,9 +382,15 @@ async def search_collection(
     body: SearchRequest = Body(...),
     _username: str = Depends(require_session),
 ) -> dict[str, Any]:
-    kb = _get_kb(name)
+    from fastaiagent.trace.provenance import provenance_scope
+
+    kb, search_type = _get_kb(name, body.search_type)
     try:
-        results = kb.search(body.query, top_k=body.top_k)
+        # A search typed into the UI is not a production retrieval: its trace
+        # is stamped ``fastaiagent.source=kb_search`` (local-only, kept out of
+        # Analytics and production views).
+        with provenance_scope("kb_search"):
+            results = kb.search(body.query, top_k=body.top_k)
     except Exception as exc:  # noqa: BLE001 — surface backend errors to the UI
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -346,7 +412,7 @@ async def search_collection(
     return {
         "query": body.query,
         "top_k": body.top_k,
-        "search_type": getattr(kb, "search_type", "hybrid"),
+        "search_type": search_type,
         "results": rows,
     }
 

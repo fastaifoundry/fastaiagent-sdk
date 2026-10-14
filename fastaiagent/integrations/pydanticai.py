@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import contextlib
 import functools
+import logging
 from typing import Any
 
 from fastaiagent.integrations._identity import (
@@ -34,6 +35,8 @@ from fastaiagent.integrations._identity import (
     set_agent_name,
     stamp_agent_name,
 )
+
+logger = logging.getLogger(__name__)
 
 _INSTALL_HINT = 'pydantic-ai is required. Install with: pip install "fastaiagent[pydanticai]"'
 
@@ -166,11 +169,13 @@ def _install_method_patches() -> None:
         trace_payloads_enabled,
     )
 
-    tracer = get_tracer("fastaiagent.integrations.pydanticai")
-
     def _open_root(agent: Any) -> Any:
         name = _agent_name(agent)
         bare = _bare_model(_model_name(agent))
+        # Looked up per run, not bound when the patches are installed: an
+        # ``enable()`` that ran before tracing was configured (or before the
+        # provider was rebuilt) kept writing to the old provider (1.89.0).
+        tracer = get_tracer("fastaiagent.integrations.pydanticai")
         span = tracer.start_span(f"pydanticai.agent.{name}")
         set_fastaiagent_attributes(
             span,
@@ -183,16 +188,27 @@ def _install_method_patches() -> None:
         provider = _provider_from_model(_model_name(agent))
         set_genai_attributes(span, system=provider, model=bare)
         if trace_payloads_enabled():
-            sysprompts = getattr(agent, "_system_prompts", None) or getattr(
-                agent, "system_prompt", None
-            )
-            if sysprompts:
-                preview = (
-                    sysprompts
-                    if isinstance(sysprompts, str)
-                    else " | ".join(str(s) for s in sysprompts)
-                )[:200]
-                span.set_attribute("pydanticai.agent.system_prompt", preview)
+            # ``agent.system_prompt`` is a *decorator method* in current
+            # pydantic-ai, not text. An agent created without a system prompt
+            # has empty ``_system_prompts``, so this used to iterate that bound
+            # method, raise TypeError, and fail every run of such an agent:
+            # tracing broke the user's call (1.89.0). Text only, and a preview
+            # that cannot be built is skipped, never raised.
+            try:
+                sysprompts = getattr(agent, "_system_prompts", None)
+                if not sysprompts:
+                    fallback = getattr(agent, "system_prompt", None)
+                    sysprompts = fallback if isinstance(fallback, (str, list, tuple)) else None
+                if sysprompts:
+                    preview = (
+                        sysprompts
+                        if isinstance(sysprompts, str)
+                        else " | ".join(str(s) for s in sysprompts if isinstance(s, str))
+                    )[:200]
+                    if preview:
+                        span.set_attribute("pydanticai.agent.system_prompt", preview)
+            except Exception:  # pragma: no cover — a preview never fails the run
+                logger.debug("Could not read the PydanticAI system prompt", exc_info=True)
         return span
 
     if not _patched(Agent.run_sync):
@@ -277,7 +293,24 @@ def _install_method_patches() -> None:
                     span.set_attribute("pydanticai.agent.input", str(self._args[0])[:1_000])
                 inner = original_run_stream(self._agent, *self._args, **self._kwargs)
                 self._inner = inner
-                self._run_result = await inner.__aenter__()
+                try:
+                    self._run_result = await inner.__aenter__()
+                except BaseException as e:
+                    # Opening the stream failed (a 4xx on connect). ``__aexit__``
+                    # never runs for a failed ``__aenter__``, so this span used
+                    # to stay attached as *current* and never end: the next run
+                    # nested under it, and it never exported (1.89.0).
+                    if isinstance(e, Exception):
+                        from fastaiagent.trace.span import mark_span_error
+
+                        mark_span_error(span, e)
+                    try:
+                        token.__exit__(None, None, None)
+                    finally:
+                        span.end()
+                        self._span = None
+                        self._token = None
+                    raise
                 return self._run_result
 
             async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> Any:
@@ -287,9 +320,12 @@ def _install_method_patches() -> None:
                 finally:
                     if self._span is not None:
                         try:
-                            if exc is not None:
-                                self._span.record_exception(exc)
-                            else:
+                            if isinstance(exc, Exception):
+                                # ERROR, not just an exception event (1.89.0).
+                                from fastaiagent.trace.span import mark_span_error
+
+                                mark_span_error(self._span, exc)
+                            elif exc is None:
                                 _stamp_usage_and_cost(self._span, self._run_result)
                         except Exception:
                             pass
@@ -424,30 +460,12 @@ def _run_guardrails(
     side: str,
     agent_name: str | None,
 ) -> None:
-    if not guardrails:
-        return
-    from fastaiagent.guardrail.actions import harness_halts
-    from fastaiagent.integrations._registry import GuardrailBlocked
+    # ``warn`` records and continues; the payload-rewriting actions and ``reask``
+    # need the SDK's own loop, so here they block. See
+    # fastaiagent.guardrail.actions.harness_halts.
+    from fastaiagent.integrations._guardrails import run_proxy_guardrails
 
-    for g in guardrails:
-        result = g.execute(text)
-        # ``warn`` records and continues; the payload-rewriting actions and
-        # ``reask`` need the SDK's own loop, so here they block. See
-        # fastaiagent.guardrail.actions.harness_halts.
-        reason = harness_halts(g, result)
-        if not result.passed:
-            try:
-                from fastaiagent.ui.events import log_guardrail_event
-
-                merged = dict(result.metadata or {})
-                merged.setdefault("framework", "pydanticai")
-                merged.setdefault("side", side)
-                result.metadata = merged
-                log_guardrail_event(g, result, agent_name=agent_name, data=text)
-            except Exception:
-                pass
-        if reason is not None:
-            raise GuardrailBlocked(f"{side} blocked by {g.name}: {reason}")
+    run_proxy_guardrails(text, guardrails, side=side, agent_name=agent_name, framework="pydanticai")
 
 
 class _GuardedAgent:

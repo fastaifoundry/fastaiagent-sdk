@@ -1,9 +1,12 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type {
+  PromptAliasesResponse,
   PromptDetail,
+  PromptDiffResponse,
   PromptLineage,
   PromptListResponse,
+  PromptVersionDetail,
   PromptVersionRow,
 } from "@/lib/types";
 
@@ -34,14 +37,7 @@ export function usePromptVersions(slug: string | undefined) {
 export function usePromptVersion(slug: string | undefined, version: string | null) {
   return useQuery({
     queryKey: ["prompt-version", slug, version],
-    queryFn: () =>
-      api.get<{
-        slug: string;
-        version: number;
-        template: string;
-        variables: string[];
-        metadata: Record<string, unknown>;
-      }>(`/prompts/${slug}/versions/${version}`),
+    queryFn: () => api.get<PromptVersionDetail>(`/prompts/${slug}/versions/${version}`),
     enabled: !!slug && !!version,
   });
 }
@@ -59,15 +55,52 @@ export function useUpdatePrompt() {
     mutationFn: ({
       slug,
       template,
+      baseVersion,
       metadata,
     }: {
       slug: string;
       template: string;
+      /** The version the edit started from; the server copies its metadata. */
+      baseVersion?: number;
+      /** Only when the user changed it: omitted means "inherit" (1.89.0). */
       metadata?: Record<string, unknown>;
     }) =>
-      api.put<{ slug: string; version: number; template: string }>(
-        `/prompts/${slug}`,
-        { template, metadata: metadata ?? {} }
+      api.put<PromptVersionDetail>(`/prompts/${slug}`, {
+        template,
+        ...(baseVersion !== undefined ? { base_version: baseVersion } : {}),
+        ...(metadata !== undefined ? { metadata } : {}),
+      }),
+  });
+}
+
+/** `GET /prompts/{slug}/diff?a=&b=` (1.89.0): a unified diff plus both templates. */
+export function usePromptDiff(slug: string | undefined, a: number | null, b: number | null) {
+  return useQuery({
+    queryKey: ["prompt-diff", slug, a, b],
+    queryFn: () =>
+      api.get<PromptDiffResponse>(
+        `/prompts/${encodeURIComponent(slug!)}/diff?a=${a}&b=${b}`
+      ),
+    enabled: !!slug && a != null && b != null && a !== b,
+  });
+}
+
+/** Point an alias at a version, or move it (1.89.0). */
+export function useSetPromptAlias() {
+  return useMutation({
+    mutationFn: ({ slug, alias, version }: { slug: string; alias: string; version: number }) =>
+      api.put<PromptAliasesResponse>(
+        `/prompts/${encodeURIComponent(slug)}/aliases/${encodeURIComponent(alias)}`,
+        { version }
+      ),
+  });
+}
+
+export function useDeletePromptAlias() {
+  return useMutation({
+    mutationFn: ({ slug, alias }: { slug: string; alias: string }) =>
+      api.delete<PromptAliasesResponse>(
+        `/prompts/${encodeURIComponent(slug)}/aliases/${encodeURIComponent(alias)}`
       ),
   });
 }

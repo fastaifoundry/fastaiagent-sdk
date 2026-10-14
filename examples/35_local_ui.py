@@ -18,13 +18,12 @@ from __future__ import annotations
 
 import os
 
-# Turn on guardrail event logging so the UI's Guardrails page has data.
-os.environ.setdefault("FASTAIAGENT_UI_ENABLED", "true")
-
-from fastaiagent import Agent, LLMClient  # noqa: E402
-from fastaiagent.eval import evaluate  # noqa: E402
-from fastaiagent.guardrail.builtins import no_pii  # noqa: E402
-from fastaiagent.prompt import PromptRegistry  # noqa: E402
+# Guardrail checks are recorded for the UI's Guardrails page whenever tracing
+# is on (the default since 1.89.0); nothing to switch on.
+from fastaiagent import Agent, LLMClient
+from fastaiagent.eval import evaluate
+from fastaiagent.guardrail.builtins import no_pii
+from fastaiagent.prompt import PromptRegistry
 
 
 def _build_agent() -> Agent:

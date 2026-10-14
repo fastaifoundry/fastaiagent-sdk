@@ -98,14 +98,51 @@ result = scorer.score(
 # score = 0/1 = 0.0 (wrong arguments)
 ```
 
-## Using these scorers
+## Using these scorers in `evaluate()`
 
 Trajectory scorers compare the agent's **actual** tool calls against an
-**expected** sequence — both arrive through keyword arguments. Note that
-`evaluate()`'s dataset loop does **not** capture an agent's tool calls or
-forward a per-row `expected_trajectory`, so call `.score(...)` directly with the
-trajectory you collected from the run (e.g. from `AgentResult` or the tool-call
-span names in the trace):
+**expected** sequence. Since 1.89.0 `evaluate()` fills in both:
+
+- **Actual**: when `agent_fn` returns an `AgentResult` (`agent.run`,
+  `agent.arun`), its `tool_calls` become `actual_trajectory` (tool names),
+  `actual_tool_calls` (names and arguments) and `actual_steps` (the count).
+- **Expected**: a dataset row's own `expected_trajectory`,
+  `expected_tool_calls` and `expected_steps` are forwarded to the scorers for
+  that row. A run-wide `evaluate(..., expected_trajectory=[...])` still works
+  and applies to rows that carry none.
+
+```python
+from fastaiagent.eval import evaluate
+from fastaiagent.eval.trajectory import PathCorrectness, ToolUsageAccuracy
+
+results = evaluate(
+    agent.run,
+    [
+        {"input": "Where is order A17?", "expected_trajectory": ["lookup_order"]},
+        {"input": "Refund order A17", "expected_trajectory": ["lookup_order", "issue_refund"]},
+        {"input": "What are your opening hours?"},  # no expectation: skipped
+    ],
+    scorers=[ToolUsageAccuracy(), PathCorrectness()],
+)
+```
+
+What each row gets:
+
+| The row | `agent_fn` returns | Outcome |
+|---|---|---|
+| has an expectation | an `AgentResult` | a real verdict (an empty tool list against an expectation fails) |
+| has no expectation | anything | **skipped**: the check does not apply |
+| has an expectation | a plain string or dict | **errored**: there is no record of what the agent did |
+
+Before 1.89.0 `evaluate()` passed neither side, so every trajectory scorer
+compared two empty lists and **passed**: an agent that called the wrong tool,
+or none, scored 1.0. A trajectory result's `details` carries the tool names
+only, never the arguments, which can hold case content.
+
+## Calling them directly
+
+Pass the trajectory you collected yourself, e.g. from `AgentResult.tool_calls`
+or the tool-call span names in a trace:
 
 ```python
 from fastaiagent.eval import ToolUsageAccuracy, PathCorrectness

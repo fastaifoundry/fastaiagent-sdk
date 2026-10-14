@@ -8,9 +8,10 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from fastaiagent.trace.normalize import _SPAN_KIND_MAP
+from fastaiagent.trace.provenance import non_production_filter
 from fastaiagent.ui.deps import get_context, project_filter, require_session
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,9 @@ class TraceRow(BaseModel):
     # filled star in the Traces list — without it the toggle is write-only and
     # the UI shows no state.
     favorited: bool = False
+    # Whether this trace has a (non-blank) note in ``trace_notes`` (1.89.0).
+    # Noted traces are what ``curate_from_traces(filter="noted")`` reads.
+    noted: bool = False
 
 
 class TracesPage(BaseModel):
@@ -65,6 +69,11 @@ class SpanRow(BaseModel):
     status: str
     attributes: dict[str, Any]
     events: list[dict[str, Any]]
+    guardrail: dict[str, Any] | None = None
+    """For a ``guardrail.*`` span: what the check decided, from its local event
+    row (1.89.0): ``event_id``, ``outcome``, ``effect``, ``blocking``,
+    ``final_reason``. A guardrail span's OTel status is ERROR for any verdict
+    that is not a pass, a ``warn`` included; this says what it did."""
 
 
 class SpanTreeNode(BaseModel):
@@ -97,8 +106,6 @@ def _summarize_trace(spans: list[dict[str, Any]]) -> dict[str, Any]:
     """Aggregate a trace's span rows into the fields the UI card needs."""
     agent_name: str | None = None
     thread_id: str | None = None
-    total_cost = 0.0
-    total_tokens = 0
     start_time = ""
     end_time = ""
     root_name = ""
@@ -141,6 +148,15 @@ def _summarize_trace(spans: list[dict[str, Any]]) -> dict[str, Any]:
                 runner_type = "swarm"
             elif span_name.startswith("supervisor."):
                 runner_type = "supervisor"
+            elif span_name.startswith("playground."):
+                # A Prompt Playground run (1.89.0). Traces written before the
+                # Playground root stamped ``fastaiagent.runner.type`` fell
+                # through to the "agent" default and were badged AGENT.
+                runner_type = "playground"
+            elif span_name.startswith("retrieval."):
+                # A KB search span. It stamps ``runner.type=retrieval`` itself;
+                # the prefix covers a span that lost the attribute.
+                runner_type = "retrieval"
             elif span_name.startswith("agent."):
                 runner_type = "agent"
         if runner_name is None and runner_type:
@@ -149,34 +165,6 @@ def _summarize_trace(spans: list[dict[str, Any]]) -> dict[str, Any]:
             agent_name = attr(attrs, "agent.name")
         if thread_id is None:
             thread_id = attr(attrs, "thread.id") or attr(attrs, "agent.thread_id")
-        from fastaiagent.ui.attrs import attr, trace_cost_usd
-
-        reported_cost = trace_cost_usd(attrs)
-        input_tokens = int(attrs.get("gen_ai.usage.input_tokens") or 0)
-        output_tokens = int(attrs.get("gen_ai.usage.output_tokens") or 0)
-        # The SDK's root agent span also carries a rolled-up total.
-        agent_total = attr(attrs, "agent.tokens_used")
-        if agent_total is not None:
-            try:
-                total_tokens += int(agent_total)
-            except (TypeError, ValueError):
-                logger.debug(
-                    "Failed to parse agent.tokens_used: %r",
-                    agent_total,
-                    exc_info=True,
-                )
-        else:
-            total_tokens += input_tokens + output_tokens
-        if reported_cost is not None:
-            total_cost += reported_cost
-        elif input_tokens or output_tokens:
-            from fastaiagent.ui.pricing import compute_cost_usd
-
-            estimated = compute_cost_usd(
-                attrs.get("gen_ai.request.model"), input_tokens, output_tokens
-            )
-            if estimated is not None:
-                total_cost += estimated
         if not start_time or (sp.get("start_time") and sp["start_time"] < start_time):
             start_time = sp.get("start_time", "")
         if sp.get("end_time", "") > end_time:
@@ -184,11 +172,17 @@ def _summarize_trace(spans: list[dict[str, Any]]) -> dict[str, Any]:
         if not sp.get("parent_span_id") and not root_name:
             root_name = sp.get("name") or ""
             status = sp.get("status") or status
+    # Per-call spans are the truth; the root's agent.tokens_used roll-up is
+    # used only when no span carries per-call numbers. Both used to be added,
+    # so every agent trace reported twice its tokens (1.89.0).
+    from fastaiagent.ui.trace_cost import rollup_spans
+
+    rollup = rollup_spans(spans)
     return {
         "agent_name": agent_name,
         "thread_id": thread_id,
-        "total_cost_usd": total_cost if total_cost else None,
-        "total_tokens": total_tokens or None,
+        "total_cost_usd": rollup.cost_usd or None,
+        "total_tokens": rollup.tokens,
         "start_time": start_time,
         "end_time": end_time,
         "root_name": root_name,
@@ -225,6 +219,56 @@ def _fts_query(q: str) -> str:
     return " ".join('"' + t.replace('"', '""') + '"' for t in tokens)
 
 
+#: A trace "has a note" only when the note is not blank. A blank row (written
+#: before 1.89.0, when saving an empty note stored it) is no note.
+_NOTED_SQL = (
+    "EXISTS (SELECT 1 FROM trace_notes tn WHERE tn.trace_id = spans.trace_id "
+    "AND TRIM(COALESCE(tn.note, '')) <> '')"
+)
+
+#: How many trace ids one ``IN (...)`` span fetch binds; under SQLite's
+#: historical 999-variable limit with room for the project filter.
+_SPAN_FETCH_BATCH = 400
+
+
+def _any_span_attr_equals(keys: tuple[str, ...]) -> str:
+    """SQL: some span of the trace has one of ``keys`` equal to the bound value.
+
+    Binds one ``?`` per key. A cheap SQL **superset** of the Python check in
+    ``list_traces`` (the summary reads the first span carrying the key, and a
+    match there implies a match here), so it narrows the candidates before
+    the per-trace summary and never drops a trace that check would keep.
+    """
+    ors = " OR ".join(f"json_extract(f.attributes, '$.\"{k}\"') = ?" for k in keys)
+    return (
+        "EXISTS (SELECT 1 FROM spans f WHERE f.trace_id = spans.trace_id "
+        f"AND CASE WHEN json_valid(f.attributes) THEN ({ors}) END)"
+    )
+
+
+def _attr_variants(key: str) -> tuple[str, ...]:
+    """The prefix variants :func:`fastaiagent.ui.attrs.attr` reads."""
+    return (f"fastaiagent.{key}", key, f"fastai.{key}")
+
+
+def _spans_by_trace(
+    db: Any, trace_ids: list[str], pid_clause: str, pid_params: tuple[Any, ...]
+) -> dict[str, list[dict[str, Any]]]:
+    """Every span of ``trace_ids``, grouped by trace, each list in start order."""
+    out: dict[str, list[dict[str, Any]]] = {tid: [] for tid in trace_ids}
+    for i in range(0, len(trace_ids), _SPAN_FETCH_BATCH):
+        chunk = trace_ids[i : i + _SPAN_FETCH_BATCH]
+        placeholders = ",".join("?" * len(chunk))
+        rows = db.fetchall(
+            f"SELECT * FROM spans WHERE trace_id IN ({placeholders}) {pid_clause} "
+            "ORDER BY start_time",
+            (*chunk, *pid_params),
+        )
+        for r in rows:
+            out.setdefault(r["trace_id"], []).append(r)
+    return out
+
+
 @router.get("/traces", response_model=TracesPage)
 def list_traces(
     request: Request,
@@ -235,8 +279,15 @@ def list_traces(
     thread_id: str | None = Query(default=None),
     runner_type: str | None = Query(
         default=None,
-        pattern="^(agent|chain|swarm|supervisor)$",
-        description="Filter by root runner type (agent|chain|swarm|supervisor).",
+        pattern=(
+            "^(agent|chain|swarm|supervisor|playground|retrieval"
+            "|llm|tool|embedding|reranker|guardrail|evaluator)$"
+        ),
+        description=(
+            "Filter by the trace's runner type, as the list's ``runner_type`` "
+            "column reports it (agent, chain, swarm, supervisor, playground, "
+            "retrieval, …)."
+        ),
     ),
     runner_name: str | None = Query(
         default=None,
@@ -269,6 +320,28 @@ def list_traces(
             "``?source=playground`` separates experiments from real traffic."
         ),
     ),
+    exclude_experiments: bool = Query(
+        default=False,
+        description=(
+            "Hide replay, Playground, learn and eval traces. The list shows "
+            "everything by default: it is the raw record."
+        ),
+    ),
+    production_only: bool = Query(
+        default=False,
+        description=(
+            "The Traces page's Production filter: the same as "
+            "``exclude_experiments`` (either one hides experiments)."
+        ),
+    ),
+    noted: bool | None = Query(
+        default=None,
+        description=(
+            "``true``: only traces with a non-blank note; ``false``: only "
+            'traces without one. The notes ``curate_from_traces(filter="noted")`` '
+            "reads."
+        ),
+    ),
     min_duration_ms: int | None = Query(default=None),
     max_duration_ms: int | None = Query(default=None),
     min_cost: float | None = Query(default=None),
@@ -294,8 +367,17 @@ def list_traces(
             clauses.append("spans.start_time <= ?")
             params.append(until)
         if trace_status:
-            clauses.append("spans.status = ?")
-            params.append(trace_status)
+            # The trace's status is its root span's (1.89.0). Matching any span
+            # listed a run that completed after a ``warn`` guardrail (an ERROR
+            # guardrail span) as failing. ``OK`` includes ``UNSET``, as the
+            # status badge renders it.
+            wanted = ("OK", "UNSET") if trace_status == "OK" else (trace_status,)
+            clauses.append(
+                "EXISTS (SELECT 1 FROM spans AS root WHERE root.trace_id = spans.trace_id "
+                "AND (root.parent_span_id IS NULL OR root.parent_span_id = '') "
+                f"AND root.status IN ({','.join('?' * len(wanted))}))"
+            )
+            params.extend(wanted)
         if framework:
             # Push the framework filter into SQL so pagination / count
             # reflect the filtered set instead of the unfiltered total.
@@ -318,6 +400,36 @@ def list_traces(
             )
             params.append(framework)
             params.append(f'%"fastaiagent.framework": "{framework}"%')
+        if source:
+            # In SQL (1.89.0), like ``framework``: filtering after the query
+            # left ``total`` counting every trace, so the page said "4 traces"
+            # over a list of 2. Any span of the trace may carry the source.
+            clauses.append(
+                """EXISTS (
+                    SELECT 1 FROM spans src
+                    WHERE src.trace_id = spans.trace_id
+                      AND src.attributes LIKE '%fastaiagent.source%'
+                      AND CASE WHEN json_valid(src.attributes)
+                          THEN json_extract(src.attributes, '$."fastaiagent.source"') END = ?
+                )"""
+            )
+            params.append(source)
+        if exclude_experiments or production_only:
+            np_clause, np_params = non_production_filter(column="spans.trace_id")
+            clauses.append(np_clause.removeprefix("AND "))
+            params.extend(np_params)
+        if noted is not None:
+            clauses.append(_NOTED_SQL if noted else f"NOT {_NOTED_SQL}")
+        # Narrow the candidates for the per-trace filters below in SQL. These
+        # are supersets of the Python checks, never stricter than them.
+        if agent:
+            keys = _attr_variants("agent.name")
+            clauses.append(_any_span_attr_equals(keys))
+            params.extend([agent] * len(keys))
+        if thread_id:
+            keys = _attr_variants("thread.id") + _attr_variants("agent.thread_id")
+            clauses.append(_any_span_attr_equals(keys))
+            params.extend([thread_id] * len(keys))
 
         # Search path. Prefer FTS5 (v6+) — it's an index lookup, scales
         # to millions of spans. Fall back to LIKE on the JSON blob for
@@ -345,7 +457,8 @@ def list_traces(
                    EXISTS(
                        SELECT 1 FROM trace_favorites tf
                        WHERE tf.trace_id = spans.trace_id
-                   ) AS is_fav
+                   ) AS is_fav,
+                   {_NOTED_SQL} AS is_noted
                FROM spans
                {join_sql}
                {where_sql}
@@ -353,72 +466,95 @@ def list_traces(
                ORDER BY is_fav DESC, latest DESC""",
             tuple(params),
         )
-        total = len(trace_rows)
+
+        def keep(summary: dict[str, Any], duration: int | None) -> bool:
+            """The filters that need the per-trace summary (cost, runner, …)."""
+            if agent and summary["agent_name"] != agent:
+                return False
+            if thread_id and summary["thread_id"] != thread_id:
+                return False
+            if runner_type and summary["runner_type"] != runner_type:
+                return False
+            if runner_name and summary["runner_name"] != runner_name:
+                return False
+            if min_duration_ms is not None and (duration is None or duration < min_duration_ms):
+                return False
+            if max_duration_ms is not None and (duration is None or duration > max_duration_ms):
+                return False
+            cost = summary["total_cost_usd"]
+            if min_cost is not None and (cost is None or cost < min_cost):
+                return False
+            if max_cost is not None and (cost is None or cost > max_cost):
+                return False
+            tokens = summary["total_tokens"]
+            if min_tokens is not None and (tokens is None or tokens < min_tokens):
+                return False
+            return True
+
+        summary_filtered = bool(
+            agent
+            or thread_id
+            or runner_type
+            or runner_name
+            or min_duration_ms is not None
+            or max_duration_ms is not None
+            or min_cost is not None
+            or max_cost is not None
+            or min_tokens is not None
+        )
         offset = (page - 1) * page_size
-        paginated = trace_rows[offset : offset + page_size]
+        # Without a summary filter SQL already decided the set: count it and
+        # summarise only the page. With one, ``total`` is counted after the
+        # filter (1.89.0). It was counted before, so "12 traces" headed a page
+        # of 3, and a later page could come back empty while matches remained.
+        if summary_filtered:
+            candidates = trace_rows
+        else:
+            candidates = trace_rows[offset : offset + page_size]
 
         out: list[TraceRow] = []
+        matched = 0
         # Reuse the outer project filter so the inner per-trace SELECT is
         # also scoped — defense in depth even though the outer query has
         # already narrowed the trace_ids to this project.
         inner_pid_clause, inner_pid_params = project_filter(ctx)
-        for row in paginated:
-            spans = db.fetchall(
-                f"SELECT * FROM spans WHERE trace_id = ? {inner_pid_clause} ORDER BY start_time",
-                (row["trace_id"], *inner_pid_params),
+        for start in range(0, len(candidates), _SPAN_FETCH_BATCH):
+            batch = candidates[start : start + _SPAN_FETCH_BATCH]
+            spans_by_trace = _spans_by_trace(
+                db, [r["trace_id"] for r in batch], inner_pid_clause, inner_pid_params
             )
-            summary = _summarize_trace(spans)
-
-            if agent and summary["agent_name"] != agent:
-                continue
-            if thread_id and summary["thread_id"] != thread_id:
-                continue
-            if runner_type and summary["runner_type"] != runner_type:
-                continue
-            if runner_name and summary["runner_name"] != runner_name:
-                continue
-            if source and summary["source"] != source:
-                continue
-            if framework and summary["framework"] != framework:
-                continue
-            duration = _ms(summary["start_time"], summary["end_time"])
-            if min_duration_ms is not None and (duration is None or duration < min_duration_ms):
-                continue
-            if max_duration_ms is not None and (duration is None or duration > max_duration_ms):
-                continue
-            if min_cost is not None and (
-                summary["total_cost_usd"] is None or summary["total_cost_usd"] < min_cost
-            ):
-                continue
-            if max_cost is not None and (
-                summary["total_cost_usd"] is None or summary["total_cost_usd"] > max_cost
-            ):
-                continue
-            if min_tokens is not None and (
-                summary["total_tokens"] is None or summary["total_tokens"] < min_tokens
-            ):
-                continue
-
-            out.append(
-                TraceRow(
-                    trace_id=row["trace_id"],
-                    name=summary["root_name"] or row["trace_id"],
-                    start_time=summary["start_time"],
-                    end_time=summary["end_time"] or None,
-                    status=summary["status"],
-                    span_count=len(spans),
-                    duration_ms=duration,
-                    agent_name=summary["agent_name"],
-                    thread_id=summary["thread_id"],
-                    total_cost_usd=summary["total_cost_usd"],
-                    total_tokens=summary["total_tokens"],
-                    runner_type=summary["runner_type"],
-                    runner_name=summary["runner_name"],
-                    framework=summary["framework"],
-                    source=summary["source"],
-                    favorited=bool(row["is_fav"]),
+            for row in batch:
+                spans = spans_by_trace.get(row["trace_id"], [])
+                summary = _summarize_trace(spans)
+                duration = _ms(summary["start_time"], summary["end_time"])
+                if summary_filtered:
+                    if not keep(summary, duration):
+                        continue
+                    matched += 1
+                    if not (offset < matched <= offset + page_size):
+                        continue
+                out.append(
+                    TraceRow(
+                        trace_id=row["trace_id"],
+                        name=summary["root_name"] or row["trace_id"],
+                        start_time=summary["start_time"],
+                        end_time=summary["end_time"] or None,
+                        status=summary["status"],
+                        span_count=len(spans),
+                        duration_ms=duration,
+                        agent_name=summary["agent_name"],
+                        thread_id=summary["thread_id"],
+                        total_cost_usd=summary["total_cost_usd"],
+                        total_tokens=summary["total_tokens"],
+                        runner_type=summary["runner_type"],
+                        runner_name=summary["runner_name"],
+                        framework=summary["framework"],
+                        source=summary["source"],
+                        favorited=bool(row["is_fav"]),
+                        noted=bool(row["is_noted"]),
+                    )
                 )
-            )
+        total = matched if summary_filtered else len(trace_rows)
         return TracesPage(rows=out, total=total, page=page, page_size=page_size)
     finally:
         db.close()
@@ -698,7 +834,8 @@ def get_trace_scores(
     try:
         guardrail_rows = db.fetchall(
             f"""SELECT event_id, guardrail_name, guardrail_type, position,
-                      outcome, score, message, agent_name, timestamp
+                      outcome, score, message, agent_name, timestamp,
+                      effect, final_reason
                FROM guardrail_events
                WHERE trace_id = ? {pid_clause}
                ORDER BY timestamp""",
@@ -725,10 +862,40 @@ def get_trace_scores(
                             key,
                             exc_info=True,
                         )
+        # 1.89.0: this trace may be the *scoring* of an eval case (its judge
+        # calls), or a simulated conversation; both used to be unexplained.
+        scoring_rows = db.fetchall(
+            f"""SELECT c.case_id, c.run_id, c.ordinal, c.per_scorer, c.trace_id,
+                      r.run_name, r.dataset_name, r.started_at
+               FROM eval_cases c
+               LEFT JOIN eval_runs r ON c.run_id = r.run_id
+               WHERE c.scoring_trace_id = ? {pid_clause_c}""",
+            (trace_id, *pid_params),
+        )
+        for row in scoring_rows:
+            try:
+                row["per_scorer"] = json.loads(row.get("per_scorer") or "{}")
+            except json.JSONDecodeError:
+                row["per_scorer"] = {}
+        sim_rows = db.fetchall(
+            f"""SELECT c.case_id, c.run_id, c.ordinal, c.scenario_name, c.passed,
+                      c.per_criterion, c.error, r.run_name, r.started_at
+               FROM sim_cases c
+               LEFT JOIN sim_runs r ON c.run_id = r.run_id
+               WHERE c.trace_id = ? {pid_clause_c}""",
+            (trace_id, *pid_params),
+        )
+        for row in sim_rows:
+            try:
+                row["per_criterion"] = json.loads(row.get("per_criterion") or "[]")
+            except json.JSONDecodeError:
+                row["per_criterion"] = []
         return {
             "trace_id": trace_id,
             "guardrail_events": guardrail_rows,
             "eval_cases": eval_rows,
+            "eval_scoring": scoring_rows,
+            "simulation_cases": sim_rows,
         }
     finally:
         db.close()
@@ -837,7 +1004,10 @@ def get_trace(
             )
         if not rows:
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"Trace '{trace_id}' not found")
-        spans = [_maybe_redact_span(_row_to_span(r), redact) for r in rows]
+        spans = _enrich(
+            [_maybe_redact_span(_row_to_span(r), redact) for r in rows],
+            _guardrail_verdicts(db, trace_id),
+        )
         summary = _summarize_trace(rows)
         return {
             "trace_id": trace_id,
@@ -857,6 +1027,11 @@ def get_trace(
             # on the detail payload too, so the FA/LC/CA badge can show on the
             # trace page — not just the Traces list. Harmless extra JSON key.
             "framework": summary["framework"],
+            # Where the run came from (``fastaiagent.source``: playground,
+            # replay, kb_search, …), as the list row reports it (1.89.0).
+            "source": summary["source"],
+            # The trace's note, ``{"text", "updated_at"}``, or None (1.89.0).
+            "note": _read_note(db, trace_id),
             "spans": [s.model_dump() for s in spans],
         }
     finally:
@@ -895,7 +1070,7 @@ def get_spans(
                     continue
                 redacted = _read_redact(parsed)
                 r["attributes"] = json.dumps(redacted, default=str)
-        return {"tree": _build_tree(rows).model_dump()}
+        return {"tree": _build_tree(rows, _guardrail_verdicts(db, trace_id)).model_dump()}
     finally:
         db.close()
 
@@ -1093,6 +1268,11 @@ def _delete_traces(db: Any, trace_ids: list[str], ctx: Any | None = None) -> int
         # Detach eval cases but keep the run — evals aren't owned by traces.
         db.execute("UPDATE eval_cases SET trace_id = NULL WHERE trace_id = ?", (tid,))
         deleted += 1
+    if deleted:
+        # Judged payloads no remaining event refers to (1.89.0).
+        from fastaiagent.ui.events import gc_guardrail_payloads
+
+        gc_guardrail_payloads(db)
     return deleted
 
 
@@ -1128,8 +1308,28 @@ def bulk_delete_traces(
         db.close()
 
 
+#: The longest note the UI accepts. A note is a reviewer's annotation, not a
+#: payload store; the cap keeps one request from writing an unbounded row.
+NOTE_MAX_LENGTH = 20_000
+
+
 class NoteRequest(BaseModel):
-    note: str
+    note: str = Field(max_length=NOTE_MAX_LENGTH)
+
+
+def _read_note(db: Any, trace_id: str) -> dict[str, Any] | None:
+    """``{"text", "updated_at"}`` for the trace's note, or None when it has none.
+
+    A blank row (stored before 1.89.0, when saving an empty note kept it) reads
+    as no note, as it does for the ``noted`` filter and for curation.
+    """
+    row = db.fetchone(
+        "SELECT note, updated_at FROM trace_notes WHERE trace_id = ?",
+        (trace_id,),
+    )
+    if not row or not (row.get("note") or "").strip():
+        return None
+    return {"text": row["note"], "updated_at": row.get("updated_at")}
 
 
 @router.post("/traces/{trace_id}/notes")
@@ -1138,13 +1338,22 @@ def set_note(
     trace_id: str,
     body: NoteRequest,
     _user: str = Depends(require_session),
-) -> dict[str, str]:
+) -> dict[str, Any]:
+    """Create or replace the trace's note. An empty or blank note deletes it.
+
+    Returns ``{"status": "ok", "note": {"text", "updated_at"} | None}``.
+    """
     ctx = get_context(request)
     db = ctx.db()
     try:
         # N9: only annotate a trace owned by the caller's project.
         if not _trace_in_project(db, ctx, trace_id):
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"Trace '{trace_id}' not found")
+        if not body.note.strip():
+            # Saving an empty note used to store an empty row, which
+            # ``curate_from_traces(filter="noted")`` then counted as noted.
+            db.execute("DELETE FROM trace_notes WHERE trace_id = ?", (trace_id,))
+            return {"status": "ok", "note": None}
         now = datetime.now(tz=timezone.utc).isoformat()
         db.execute(
             """INSERT INTO trace_notes (trace_id, note, updated_at)
@@ -1154,7 +1363,27 @@ def set_note(
                  updated_at = excluded.updated_at""",
             (trace_id, body.note, now),
         )
-        return {"status": "ok"}
+        return {"status": "ok", "note": {"text": body.note, "updated_at": now}}
+    finally:
+        db.close()
+
+
+@router.delete("/traces/{trace_id}/notes")
+def delete_note(
+    request: Request,
+    trace_id: str,
+    _user: str = Depends(require_session),
+) -> dict[str, Any]:
+    """Remove the trace's note. ``{"deleted": false}`` when it had none."""
+    ctx = get_context(request)
+    db = ctx.db()
+    try:
+        # N9: only touch a trace owned by the caller's project.
+        if not _trace_in_project(db, ctx, trace_id):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"Trace '{trace_id}' not found")
+        had_note = _read_note(db, trace_id) is not None
+        db.execute("DELETE FROM trace_notes WHERE trace_id = ?", (trace_id,))
+        return {"deleted": had_note}
     finally:
         db.close()
 
@@ -1201,8 +1430,47 @@ def _row_to_span(row: dict[str, Any]) -> SpanRow:
     )
 
 
-def _build_tree(rows: list[dict[str, Any]]) -> SpanTreeNode:
-    spans = [_row_to_span(r) for r in rows]
+def _guardrail_verdicts(db: Any, trace_id: str) -> dict[str, dict[str, Any]]:
+    """``{guardrail_span_id: verdict}`` from this trace's local event rows.
+
+    A local-only join: it tells an observe-only or ``warn`` check from a block
+    without putting a new attribute on the span (the wire stays as it is).
+    """
+    try:
+        rows = db.fetchall(
+            "SELECT event_id, guardrail_span_id, outcome, effect, final_reason, rule "
+            "FROM guardrail_events WHERE trace_id = ? AND guardrail_span_id IS NOT NULL",
+            (trace_id,),
+        )
+    except Exception:
+        return {}  # a database older than v25
+    out: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        try:
+            rule = json.loads(r.get("rule") or "{}")
+        except (json.JSONDecodeError, TypeError):
+            rule = {}
+        out[r["guardrail_span_id"]] = {
+            "event_id": r["event_id"],
+            "outcome": r.get("outcome"),
+            "effect": r.get("effect"),
+            "blocking": rule.get("blocking") if isinstance(rule, dict) else None,
+            "final_reason": r.get("final_reason"),
+        }
+    return out
+
+
+def _enrich(spans: list[SpanRow], verdicts: dict[str, dict[str, Any]]) -> list[SpanRow]:
+    if verdicts:
+        for span in spans:
+            span.guardrail = verdicts.get(span.span_id)
+    return spans
+
+
+def _build_tree(
+    rows: list[dict[str, Any]], verdicts: dict[str, dict[str, Any]] | None = None
+) -> SpanTreeNode:
+    spans = _enrich([_row_to_span(r) for r in rows], verdicts or {})
     by_id = {s.span_id: SpanTreeNode(span=s, children=[]) for s in spans}
     root: SpanTreeNode | None = None
     for span in spans:

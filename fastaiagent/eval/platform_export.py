@@ -48,6 +48,14 @@ if TYPE_CHECKING:  # pragma: no cover
 
 logger = logging.getLogger(__name__)
 
+#: SQL true for a run with a recorded gate verdict: the only runs that are
+#: evidence, and so the only ones ever sent (E1b, 1.89.0). ``json_valid`` guards
+#: malformed metadata, on which ``json_extract`` would raise.
+_HAS_VERDICT = (
+    "CASE WHEN json_valid(metadata) THEN json_extract(metadata, '$.gate_outcome') END "
+    "IN ('passed', 'failed', 'invalid')"
+)
+
 # One-shot transparency notice: state the contract the first time anything
 # actually leaves the machine, then stay quiet. Repeated notices become wallpaper.
 _contract_logged = False
@@ -111,7 +119,9 @@ class EvalRunPayload(BaseModel):
     pass_rate: float | None = None
     errored_count: int = 0
     error_rate: float | None = None
-    gate_outcome: str = "passed"
+    gate_outcome: str | None = None
+    """``passed`` | ``failed`` | ``invalid``. ``None`` only in a dry-run preview
+    of a run with no recorded verdict: such a run is never sent (1.89.0)."""
     thresholds: dict[str, Any] | None = None
     scorers: list[str] | None = None
     git_sha: str | None = None
@@ -132,6 +142,61 @@ def _jload(value: Any) -> Any:
         return json.loads(value)
     except json.JSONDecodeError:
         return None
+
+
+def case_outcome(case: dict[str, Any]) -> str:
+    from fastaiagent.eval.compare import case_outcome as _outcome
+
+    return _outcome(case)
+
+
+def exportable_reason(reason: Any) -> str | None:
+    """A scorer's ``reason`` as it may leave the machine (1.89.0).
+
+    A judge's reason routinely quotes the case ("the actual output of '$10.00'
+    …"), so it is customer content: withheld (``None``) when
+    ``FASTAIAGENT_TRACE_PAYLOADS=0``, and otherwise scrubbed of credentials,
+    the same as provider errors. Applied to every path that sends a reason to
+    the plane (the Agent-CI export, ``EvalResults.publish()``).
+    """
+    if reason is None:
+        return None
+    from fastaiagent.trace.span import export_payloads_enabled
+
+    if not export_payloads_enabled():
+        return None
+    from fastaiagent._internal.scrub import known_credential_values, scrub_secrets
+
+    return scrub_secrets(str(reason), known_credential_values())
+
+
+def exportable_error(error: Any) -> str | None:
+    """A case's error text as it may leave the machine.
+
+    Stays truthy (the plane counts errored cases by it), but is scrubbed, and
+    withheld when payloads are off: an exception message can quote the input.
+    """
+    if not error:
+        return None
+    from fastaiagent.trace.span import export_payloads_enabled
+
+    if not export_payloads_enabled():
+        return "errored (detail withheld: FASTAIAGENT_TRACE_PAYLOADS=0)"
+    from fastaiagent._internal.scrub import known_credential_values, scrub_secrets
+
+    return scrub_secrets(str(error), known_credential_values())
+
+
+def _exportable_per_scorer(per: Any) -> Any:
+    """``per_scorer`` with every ``reason`` passed through :func:`exportable_reason`."""
+    if not isinstance(per, dict):
+        return per or None
+    out: dict[str, Any] = {}
+    for name, entry in per.items():
+        if isinstance(entry, dict) and "reason" in entry:
+            entry = {**entry, "reason": exportable_reason(entry.get("reason"))}
+        out[name] = entry
+    return out or None
 
 
 class EvalRunStore:
@@ -167,16 +232,21 @@ class EvalRunStore:
         cases: list[EvalCasePayload] = []
         errored = 0
         for c in case_rows:
-            if c.get("error"):
+            per_scorer = _jload(c.get("per_scorer")) or None
+            # 1.89.0 (D11): a case whose outcome is errored, whatever the cause
+            # (the agent, a scorer that could not run, or no scorer applying).
+            if case_outcome({"error": c.get("error"), "per_scorer": per_scorer}) == "errored":
                 errored += 1
             cases.append(
                 EvalCasePayload(
                     case_id=c.get("case_id"),
                     ordinal=c.get("ordinal"),
-                    # NOTE: per_scorer only — no input/expected/actual, ever.
-                    per_scorer=_jload(c.get("per_scorer")) or None,
+                    # NOTE: per_scorer only — no input/expected/actual, ever. A
+                    # judge's reason can quote the case, so it is scrubbed of
+                    # credentials and withheld when payloads are off (1.89.0).
+                    per_scorer=_exportable_per_scorer(per_scorer),
                     trace_id=c.get("trace_id"),
-                    error=c.get("error"),
+                    error=exportable_error(c.get("error")),
                 )
             )
         total = len(cases)
@@ -200,7 +270,11 @@ class EvalRunStore:
             pass_rate=row.get("pass_rate"),
             errored_count=errored,
             error_rate=round(errored / total, 4) if total else 0.0,
-            gate_outcome=str(meta.get("gate_outcome") or "passed"),
+            # No default: a run with no recorded verdict is not evidence, and is
+            # never fetched for sending (``_HAS_VERDICT``). Defaulting to
+            # "passed" made every early drain report an invented pass, and the
+            # plane keeps the first copy of a run_id.
+            gate_outcome=meta.get("gate_outcome") or None,
             thresholds=meta.get("thresholds"),
             scorers=_jload(row.get("scorers")) or None,
             git_sha=meta.get("git_sha"),
@@ -214,12 +288,13 @@ class EvalRunStore:
     def fetch_unsynced(self, limit: int, project_id: str | None = None) -> list[EvalRunPayload]:
         if project_id is None:
             rows = self._db.fetchall(
-                "SELECT * FROM eval_runs WHERE synced = 0 ORDER BY started_at LIMIT ?",
+                f"SELECT * FROM eval_runs WHERE synced = 0 AND {_HAS_VERDICT} "
+                "ORDER BY started_at LIMIT ?",
                 (limit,),
             )
         else:
             rows = self._db.fetchall(
-                "SELECT * FROM eval_runs WHERE synced = 0 AND project_id = ? "
+                f"SELECT * FROM eval_runs WHERE synced = 0 AND project_id = ? AND {_HAS_VERDICT} "
                 "ORDER BY started_at LIMIT ?",
                 (project_id, limit),
             )
@@ -237,10 +312,13 @@ class EvalRunStore:
 
     def count_unsynced(self, project_id: str | None = None) -> int:
         if project_id is None:
-            row = self._db.fetchone("SELECT COUNT(*) AS n FROM eval_runs WHERE synced = 0")
+            row = self._db.fetchone(
+                f"SELECT COUNT(*) AS n FROM eval_runs WHERE synced = 0 AND {_HAS_VERDICT}"
+            )
         else:
             row = self._db.fetchone(
-                "SELECT COUNT(*) AS n FROM eval_runs WHERE synced = 0 AND project_id = ?",
+                "SELECT COUNT(*) AS n FROM eval_runs WHERE synced = 0 AND project_id = ? "
+                f"AND {_HAS_VERDICT}",
                 (project_id,),
             )
         return int((row or {}).get("n") or 0)
@@ -263,7 +341,8 @@ class EvalRunStore:
         abandoned = 0
         cutoff = (datetime.now(tz=timezone.utc) - timedelta(days=max_age_days)).isoformat()
         aged = self._db.fetchall(
-            "SELECT run_id FROM eval_runs WHERE synced = 0 AND project_id = ? AND started_at < ?",
+            "SELECT run_id FROM eval_runs WHERE synced = 0 AND project_id = ? AND started_at < ? "
+            f"AND {_HAS_VERDICT}",
             (project_id, cutoff),
         )
         if aged:
@@ -275,7 +354,7 @@ class EvalRunStore:
         if excess > 0:
             oldest = self._db.fetchall(
                 "SELECT run_id FROM eval_runs WHERE synced = 0 AND project_id = ? "
-                "ORDER BY started_at ASC LIMIT ?",
+                f"AND {_HAS_VERDICT} ORDER BY started_at ASC LIMIT ?",
                 (project_id, excess),
             )
             ids = [r["run_id"] for r in oldest]
@@ -474,7 +553,8 @@ def build_payloads(
             rows = store._db.fetchall("SELECT * FROM eval_runs WHERE run_id = ?", (run_id,))
         elif unsynced_only:
             rows = store._db.fetchall(
-                "SELECT * FROM eval_runs WHERE synced = 0 ORDER BY started_at DESC LIMIT ?",
+                f"SELECT * FROM eval_runs WHERE synced = 0 AND {_HAS_VERDICT} "
+                "ORDER BY started_at DESC LIMIT ?",
                 (limit,),
             )
         else:

@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   ExternalLink,
+  Info,
   Play,
   RefreshCw,
   Search,
@@ -28,29 +29,80 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { StatCard } from "@/components/shared/StatCard";
 import { TableSkeleton } from "@/components/shared/LoadingSkeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { AgentCiPanel } from "@/components/evals/AgentCiPanel";
 import { CaseDiffCard } from "@/components/evals/CaseDiffCard";
+import { EvalRunHeadline } from "@/components/evals/EvalRunHeadline";
+import { HardeningCard } from "@/components/evals/HardeningCard";
 import { PassRateBar } from "@/components/evals/PassRateBar";
+import { ScorerConfigCard } from "@/components/evals/ScorerConfigCard";
+import { VerdictBadge } from "@/components/evals/VerdictTable";
 import { useEvalRun } from "@/hooks/use-evals";
-import { formatDateTime,
-  formatCost, formatDurationMs } from "@/lib/format";
+import { caseCounts, caseValueText, formatRate, isEchoRun } from "@/lib/evalDisplay";
 import { cn } from "@/lib/utils";
-import { evalCaseOutcome } from "@/lib/types";
-import type { EvalCaseFilters, EvalCaseOutcome, EvalCaseRow } from "@/lib/types";
+import { evalCaseOutcome, evalVerdictOutcome } from "@/lib/types";
+import type { EvalCaseFilters, EvalCaseOutcome, EvalCaseRow, EvalRunRow } from "@/lib/types";
 
-function stringifyShort(value: unknown, max = 120): string {
-  if (value == null) return "—";
-  if (typeof value === "string") {
-    return value.length > max ? `${value.slice(0, max)}…` : value;
-  }
-  try {
-    const s = JSON.stringify(value);
-    return s.length > max ? `${s.slice(0, max)}…` : s;
-  } catch {
-    return String(value);
-  }
+const CASE_OUTCOME_CHIP: Record<EvalCaseOutcome, string> = {
+  passed: "bg-fa-success/10 text-fa-success",
+  failed: "bg-destructive/10 text-destructive",
+  // Neutral: an errored case says nothing about the agent's quality.
+  errored: "bg-muted text-muted-foreground",
+};
+
+function Banner({ children, testId }: { children: ReactNode; testId: string }) {
+  return (
+    <div
+      className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
+      data-testid={testId}
+    >
+      <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+      <div>{children}</div>
+    </div>
+  );
+}
+
+function ScorerChips({ summary }: { summary: NonNullable<EvalRunRow["scorer_summary"]> }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs" data-testid="scorer-chips">
+      <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
+        Scorers
+      </span>
+      {Object.entries(summary).map(([scorer, counts]) => {
+        const judged = counts.pass + counts.fail;
+        const rate = judged > 0 ? counts.pass / judged : null;
+        const extra = [
+          counts.errored ? `${counts.errored} errored` : null,
+          counts.skipped ? `${counts.skipped} n/a` : null,
+        ].filter(Boolean);
+        return (
+          <span
+            key={scorer}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 font-mono",
+              rate == null
+                ? "border-border text-muted-foreground"
+                : rate >= 0.9
+                ? "border-fa-success/50 text-fa-success"
+                : rate >= 0.7
+                ? "border-fa-warning/50 text-fa-warning"
+                : "border-destructive/50 text-destructive"
+            )}
+            title={[`${counts.pass}/${judged} passed`, ...extra].join(" · ")}
+          >
+            {scorer}
+            <span className="tabular-nums opacity-80">
+              {counts.pass}/{judged}
+            </span>
+            {extra.length > 0 && (
+              <span className="tabular-nums text-muted-foreground">· {extra.join(" · ")}</span>
+            )}
+          </span>
+        );
+      })}
+    </div>
+  );
 }
 
 export function EvalRunDetailPage() {
@@ -84,9 +136,9 @@ export function EvalRunDetailPage() {
   }
 
   const { run, cases, total_cases } = query.data;
-  // Errored = infra failure, never scored. Surfaced separately so the pass/fail
-  // tiles' denominator isn't silently short by cases that were never scored.
-  const erroredCount = cases.filter((c) => evalCaseOutcome(c) === "errored").length;
+  // From the run row, not the (filtered) case list on screen.
+  const counts = caseCounts(run);
+  const meta = run.metadata ?? {};
 
   return (
     <div className="space-y-5">
@@ -118,51 +170,30 @@ export function EvalRunDetailPage() {
         </Button>
       </PageHeader>
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-6">
-        <StatCard label="Pass rate" value={`${Math.round((run.pass_rate ?? 0) * 100)}%`} />
-        <StatCard label="Passed" value={String(run.pass_count ?? 0)} />
-        <StatCard label="Failed" value={String(run.fail_count ?? 0)} />
-        <StatCard
-          label="Avg latency"
-          value={formatDurationMs(run.avg_latency_ms ?? 0)}
-        />
-        <StatCard label="Total cost" value={formatCost(run.cost_usd ?? 0)} />
-        <StatCard
-          label="Started"
-          value={formatDateTime(run.started_at ?? "")}
-        />
-      </div>
+      {isEchoRun(run) && (
+        <Banner testId="echo-banner">
+          <strong className="font-medium text-foreground">
+            Dataset check — not a model evaluation.
+          </strong>{" "}
+          No agent ran: each input was echoed back, so a case passes only where its expected
+          output equals its input.
+        </Banner>
+      )}
+      {run.summary_version == null && (
+        <Banner testId="legacy-banner">
+          This run was stored before 1.89. Its checks numbers follow the old rules, which counted
+          checks that could not run or did not apply as failures. The case numbers are recomputed
+          from its cases.
+        </Banner>
+      )}
+
+      <EvalRunHeadline run={run} />
 
       {run.scorer_summary && Object.keys(run.scorer_summary).length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
-            Scorers
-          </span>
-          {Object.entries(run.scorer_summary).map(([scorer, counts]) => {
-            const total = counts.pass + counts.fail;
-            const rate = total > 0 ? counts.pass / total : 0;
-            return (
-              <span
-                key={scorer}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 font-mono",
-                  rate >= 0.9
-                    ? "border-fa-success/50 text-fa-success"
-                    : rate >= 0.7
-                    ? "border-fa-warning/50 text-fa-warning"
-                    : "border-destructive/50 text-destructive"
-                )}
-                title={`${counts.pass}/${total} passed`}
-              >
-                {scorer}
-                <span className="tabular-nums opacity-80">
-                  {counts.pass}/{total}
-                </span>
-              </span>
-            );
-          })}
-        </div>
+        <ScorerChips summary={run.scorer_summary} />
       )}
+
+      {run.gate && <AgentCiPanel gate={run.gate} runId={run.run_id} />}
 
       <Card>
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -171,12 +202,12 @@ export function EvalRunDetailPage() {
             <span className="ml-2 text-xs font-normal text-muted-foreground">
               {cases.length} of {total_cases} shown
             </span>
-            {erroredCount > 0 && (
+            {counts.errored > 0 && (
               <span
                 className="ml-2 rounded-md bg-muted px-2 py-0.5 text-xs font-normal text-muted-foreground"
-                title="Infrastructure failures — unscored, excluded from pass/fail"
+                title="No verdict: the agent failed, a check could not run, or no check applied. Left out of the cases rate."
               >
-                {erroredCount} errored
+                {counts.errored} errored
               </span>
             )}
           </CardTitle>
@@ -249,6 +280,7 @@ export function EvalRunDetailPage() {
                 <TableRow className="hover:bg-transparent">
                   <TableHead className="w-[30px]" />
                   <TableHead className="w-[50px]">#</TableHead>
+                  <TableHead className="w-[90px]">Case</TableHead>
                   <TableHead>Input</TableHead>
                   <TableHead>Expected</TableHead>
                   <TableHead>Actual</TableHead>
@@ -278,14 +310,18 @@ export function EvalRunDetailPage() {
           {cases.length > 0 && (
             <div className="border-t p-3">
               <PassRateBar
-                passRate={run.pass_rate}
-                passCount={run.pass_count}
-                failCount={run.fail_count}
+                passRate={run.case_pass_rate}
+                passCount={counts.passed}
+                failCount={counts.failed}
+                title={`Cases ${formatRate(run.case_pass_rate)} · Checks ${formatRate(run.pass_rate)}`}
               />
             </div>
           )}
         </CardContent>
       </Card>
+
+      <ScorerConfigCard config={meta.scorer_config} />
+      <HardeningCard hardening={meta.hardening} />
     </div>
   );
 }
@@ -301,7 +337,9 @@ function CaseRow({
   expanded: boolean;
   onToggle: () => void;
 }) {
-  const errored = evalCaseOutcome(case_) === "errored";
+  const outcome = evalCaseOutcome(case_);
+  // The agent itself failed: no scorer ran.
+  const agentErrored = !!case_.error;
   return (
     <>
       <TableRow>
@@ -322,25 +360,37 @@ function CaseRow({
         <TableCell className="font-mono text-xs text-muted-foreground">
           {case_.ordinal}
         </TableCell>
-        <TableCell
-          className="max-w-[200px] truncate font-mono text-xs"
-          title={stringifyShort(case_.input, 2000)}
-        >
-          {stringifyShort(case_.input)}
+        <TableCell>
+          <span
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 font-mono text-xs",
+              CASE_OUTCOME_CHIP[outcome]
+            )}
+            data-testid={`case-outcome-${case_.case_id}`}
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-current" />
+            {outcome}
+          </span>
         </TableCell>
         <TableCell
           className="max-w-[200px] truncate font-mono text-xs"
-          title={stringifyShort(case_.expected_output, 2000)}
+          title={caseValueText(case_.input, 2000)}
         >
-          {stringifyShort(case_.expected_output)}
+          {caseValueText(case_.input)}
         </TableCell>
         <TableCell
           className="max-w-[200px] truncate font-mono text-xs"
-          title={stringifyShort(case_.actual_output, 2000)}
+          title={caseValueText(case_.expected_output, 2000)}
         >
-          {stringifyShort(case_.actual_output)}
+          {caseValueText(case_.expected_output)}
         </TableCell>
-        {errored && (
+        <TableCell
+          className="max-w-[200px] truncate font-mono text-xs"
+          title={caseValueText(case_.actual_output, 2000)}
+        >
+          {caseValueText(case_.actual_output)}
+        </TableCell>
+        {agentErrored && (
           <TableCell
             colSpan={scorerNames.length || 1}
             className="text-xs"
@@ -348,38 +398,30 @@ function CaseRow({
           >
             {/* Neutral, not destructive: an infra failure is NOT an agent-quality
                 miss, and colouring it red would read as one. */}
-            <span className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2 py-0.5 font-mono text-muted-foreground">
-              <span className="h-1.5 w-1.5 rounded-full bg-current" />
-              errored
-            </span>
-            <span className="ml-2 truncate align-middle text-muted-foreground/80">
+            <span className="truncate align-middle text-muted-foreground/80">
               {case_.error}
             </span>
           </TableCell>
         )}
-        {!errored && scorerNames.map((name) => {
-          const score = case_.per_scorer?.[name];
-          if (!score)
+        {!agentErrored && scorerNames.map((name) => {
+          const verdict = case_.per_scorer?.[name];
+          if (!verdict)
             return (
               <TableCell key={name} className="text-xs text-muted-foreground">
                 —
               </TableCell>
             );
+          const vo = evalVerdictOutcome(verdict);
+          const showScore = vo === "passed" || vo === "failed";
           return (
-            <TableCell key={name}>
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-mono",
-                  score.passed
-                    ? "bg-fa-success/10 text-fa-success"
-                    : "bg-destructive/10 text-destructive"
+            <TableCell key={name} title={verdict.reason ?? undefined}>
+              <span className="inline-flex items-center gap-1.5">
+                <VerdictBadge outcome={vo} />
+                {showScore && typeof verdict.score === "number" && (
+                  <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                    {verdict.score.toFixed(2)}
+                  </span>
                 )}
-              >
-                <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                {score.passed ? "pass" : "fail"}
-                <span className="tabular-nums opacity-70">
-                  {(score.score ?? 0).toFixed(2)}
-                </span>
               </span>
             </TableCell>
           );
@@ -410,7 +452,7 @@ function CaseRow({
       {expanded && (
         <TableRow className="hover:bg-transparent">
           <TableCell
-            colSpan={6 + scorerNames.length}
+            colSpan={7 + scorerNames.length}
             className="bg-muted/30 p-4"
           >
             <CaseDiffCard case_={case_} />

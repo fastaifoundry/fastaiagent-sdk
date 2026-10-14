@@ -70,7 +70,11 @@ Under the small call is a simple, deterministic loop:
 
 1. **Resolve scorers.** Each string is looked up in the `BUILTIN_SCORERS`
    registry and instantiated; a `Scorer` instance is used as-is. So
-   `"exact_match"` and `ExactMatch()` are the same thing.
+   `"exact_match"` and `ExactMatch()` are the same thing. Three mistakes raise
+   `EvalError` here, before any agent call: an unknown name, a built-in that
+   needs arguments (`"regex_match"` needs a pattern, so pass
+   `RegexMatch(pattern=…)`), and two scorers with the same name, whose verdicts
+   would otherwise overwrite each other.
 2. **Run cases concurrently.** An `asyncio.Semaphore(concurrency)` bounds how
    many cases run at once. For each case it calls `agent_fn(input)` to get the
    output. An `async def` callable is awaited directly; a **synchronous** one is
@@ -79,20 +83,71 @@ Under the small call is a simple, deterministic loop:
    thread-safe, and frameworks that refuse to run synchronously inside a live
    event loop (CrewAI ≥1.15, for one) work correctly.
 3. **Score each case.** Every resolved scorer's `score()` returns a
-   `ScorerResult(score, passed, reason)` — a numeric `score` plus a boolean
-   `passed` (each scorer decides its own pass condition) and an optional reason.
+   `ScorerResult` with one of four outcomes (see
+   [below](#four-outcomes-cases-and-checks)). Each scorer receives the case's
+   input, output and expected output, the run's `latency_ms` and `cost`, the
+   tool calls the agent made (when `agent_fn` returns an `AgentResult`), and the
+   row's own `expected_trajectory`, `expected_tool_calls`, `expected_steps`,
+   `context` and `contexts`. A scorer that raises is recorded as **errored** for
+   that case; the other scorers and cases still run.
 4. **Roll up.** Per scorer, results aggregate into a `MetricSummary(name,
-   avg_score, pass_rate, n)` — `avg_score` is the mean score, `pass_rate` the
-   fraction of cases that passed. That's what `summary()` prints.
+   avg_score, pass_rate, n, errored, skipped)`. `n` counts the verdicts that
+   applied; `avg_score` and `pass_rate` are over those `n` only. The run also
+   gets **case** counts: passed, failed and errored cases. That's what
+   `summary()` prints.
 5. **Persist.** With `persist=True`, the run and per-case rows are written to
-   `local.db` so the Local UI can show it and `compare()` can diff runs.
+   `local.db` so the Local UI can show it and `compare()` can diff runs. The
+   run records its real start and finish times, what produced it (`kind`), and
+   a fingerprint of the agent's definition (`agent_version`).
 
 The key idea: a scorer is just a pure function `(output, expected, context) →
 ScorerResult`. Code scorers compute that directly; LLM-Judge/G-Eval compute it
 by asking a model — G-Eval builds a rubric from your steps + scale (optionally
-with Auto-CoT) and parses the model's verdict **fail-closed** (an ambiguous
-answer scores as a fail). Same contract either way, which is why you can mix
-free and paid scorers in one `scorers=[...]` list.
+with Auto-CoT) and parses the model's verdict. Same contract either way, which
+is why you can mix free and paid scorers in one `scorers=[...]` list.
+
+## Four outcomes, cases and checks
+
+A scorer on one case returns one of four outcomes (`ScorerResult.outcome`):
+
+| Outcome | Meaning | Example |
+|---|---|---|
+| `passed` | A verdict: the check held | `exact_match` on an equal answer |
+| `failed` | A verdict: the check did not hold | the judge scored below threshold |
+| `errored` | The check **could not run** | the judge call failed, its reply had no verdict, the scorer raised, the run could not be priced |
+| `skipped` | The check **does not apply** to this case | no expected output, no `expected_trajectory`, no retrieved context |
+
+Errored and skipped are not verdicts, so no rate counts them: they are
+reported beside it. An errored or skipped result always has `passed=False,
+score=0.0`, so code that reads only `passed` fails closed. Build them with
+`ScorerResult.error(reason)` and `ScorerResult.not_applicable(reason)` in your
+own scorers.
+
+A **case** (one dataset row) then has one outcome. The first rule that matches
+wins:
+
+1. **errored**: the agent raised or paused;
+2. **failed**: any verdict failed (a fail stays a fail even if another scorer errored);
+3. **errored**: a scorer could not run;
+4. **errored**: nothing applied (every verdict skipped). Nothing checked the case, so it did not pass;
+5. **passed**.
+
+That gives two rates, and they answer different questions:
+
+- **Cases pass rate** (`cases.pass_rate`): passed cases over passed + failed
+  cases. "How many of my examples did the agent get right?"
+- **Checks pass rate** (`overall.pass_rate`, stored as `eval_runs.pass_rate`):
+  passed verdicts over passed + failed verdicts, across scorers. "How many of
+  the individual checks held?"
+
+A worked example: 5 cases, 6 scorers. One case's agent raised. One scorer
+(`tool_usage_accuracy`) had no expected trajectory on any row. 16 of the 20
+applicable checks passed, spread over 3 cases. Result: **cases 1 passed, 3
+failed, 1 errored (25%)**, checks 16 / 20 (80%), 4 not applicable. Before
+1.89.0 the same run read "83%, 20 passed, 4 failed".
+
+For a run with no errored or skipped verdicts, the checks rate is exactly
+the number earlier releases called the pass rate.
 
 ## Scorer families — and when to reach for each
 
@@ -126,9 +181,12 @@ safe → Safety.
 ## Two ways to score: dataset loop vs. direct
 
 - **Dataset loop** — `evaluate(...)` calls `agent_fn` on each case and applies
-  the scorers. This is the common path for input/output scorers.
-- **Direct** — trajectory and session scorers judge a *process*, so you call
-  them directly with the trajectory/turns, e.g.
+  the scorers. This is the common path for input/output scorers, and for
+  trajectory scorers when `agent_fn` returns an `AgentResult` (`agent.run`):
+  put `expected_trajectory` on each row and the agent's own tool calls are
+  compared with it.
+- **Direct** — session scorers judge a conversation, so you call them directly
+  with the turns; trajectory scorers can be called directly too, e.g.
   `ToolUsageAccuracy().score(actual_trajectory=..., expected_trajectory=...)`.
   See [Trajectory Scoring](trajectory-scoring.md) and [Session Scoring](session-scoring.md).
 

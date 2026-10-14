@@ -45,7 +45,9 @@ export SPRINT2_BLOCKED_EVENT_ID SPRINT2_FILTERED_EVENT_ID SPRINT2_WARNED_EVENT_I
 echo "▸ event ids — blocked=$SPRINT2_BLOCKED_EVENT_ID filtered=$SPRINT2_FILTERED_EVENT_ID warned=$SPRINT2_WARNED_EVENT_ID"
 
 echo "▸ starting FastAPI on port 7845 (--no-auth, snapshot DB, project=sprint2-demo)"
-python scripts/_sprint2_ui_server.py \
+# 1.89.0: the Playground reports a trace written to another store instead of
+# linking to a 404, so the server must write its traces to the UI's database.
+FASTAIAGENT_LOCAL_DB="$TMP_DB" python scripts/_sprint2_ui_server.py \
     --db "$TMP_DB" --host 127.0.0.1 --port 7845 \
     --project-id sprint2-demo &
 SERVER_PID=$!

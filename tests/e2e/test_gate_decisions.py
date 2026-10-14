@@ -317,7 +317,11 @@ class TestReplay:
             assert "billing" in str(result.output).lower()
 
             rerun = asyncio.run(
-                Replay.load(result.trace_id).fork_at(step=0).with_determinism("recorded", on_miss="error").arerun()
+                Replay.load(result.trace_id)
+                .fork_at(step=0)
+                .with_determinism("recorded", on_miss="error")
+                .with_tool_policy("live", allow=["route_ticket_live"])
+                .arerun()
             )
             served = [
                 s

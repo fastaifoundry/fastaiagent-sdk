@@ -2,9 +2,14 @@
  * Guardrail Event Detail page (/guardrail-events/:eventId).
  *
  * Three panels — *what triggered it*, *which rule matched*, *what happened
- * next* — plus a conversation-context section underneath. The "Mark as
- * false positive" button toggles a flag stored on the event row so devs
- * can curate signal vs. noise without ever hand-editing the DB.
+ * next* — then the evidence the check recorded and a conversation-context
+ * section underneath. The "Mark as false positive" button toggles a flag
+ * stored on the event row so devs can curate signal vs. noise without ever
+ * hand-editing the DB.
+ *
+ * 1.89.0 — Panel 1 shows exactly the text the rule judged (``judged``), and
+ * the narrative reads what the check did to the run (``effect``) together
+ * with ``blocking`` / ``on_error`` / ``final_reason``, not the verdict alone.
  *
  * Sprint 2 / Feature 3.
  */
@@ -16,7 +21,9 @@ import {
   ChevronLeft,
   CircleSlash,
   ExternalLink,
+  EyeOff,
   Flag,
+  PenLine,
   RefreshCw,
   Shield,
 } from "lucide-react";
@@ -24,74 +31,69 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
 import { TableSkeleton } from "@/components/shared/LoadingSkeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { GuardrailEvidence } from "@/components/guardrails/GuardrailEvidence";
 import {
   useGuardrailEvent,
   useMarkFalsePositive,
 } from "@/hooks/use-guardrails";
 import { ApiError } from "@/lib/api";
-import type { GuardrailContextSpan, GuardrailEvent } from "@/lib/types";
+import {
+  actionDiverged,
+  EFFECT_META,
+  guardrailNarrative,
+  outcomeMeta,
+  TONE_BORDER,
+  TONE_CHIP,
+  type GuardrailTone,
+} from "@/lib/guardrail";
+import type {
+  GuardrailContextSpan,
+  GuardrailEvent,
+  GuardrailEventDetail,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Timestamp } from "@/components/shared/Timestamp";
 
-const OUTCOME_META: Record<
-  string,
-  { label: string; className: string; icon: React.ComponentType<{ className?: string }> }
-> = {
-  passed: {
-    label: "✓ passed",
-    className: "bg-fa-success/10 text-fa-success border-fa-success/40",
-    icon: Shield,
-  },
-  blocked: {
-    label: "🚫 blocked",
-    className: "bg-destructive/10 text-destructive border-destructive/40",
-    icon: CircleSlash,
-  },
-  warned: {
-    label: "⚠ warned",
-    className: "bg-fa-warning/10 text-fa-warning border-fa-warning/40",
-    icon: AlertTriangle,
-  },
-  filtered: {
-    label: "✎ filtered",
-    className: "bg-fa-warning/10 text-fa-warning border-fa-warning/40",
-    icon: AlertTriangle,
-  },
-  errored: {
-    label: "⚠ errored",
-    className: "bg-fa-warning/10 text-fa-warning border-fa-warning/40",
-    icon: AlertTriangle,
-  },
+const TONE_ICON: Record<GuardrailTone, React.ComponentType<{ className?: string }>> = {
+  success: Shield,
+  warning: AlertTriangle,
+  danger: CircleSlash,
+  info: PenLine,
+  neutral: Shield,
 };
 
-function OutcomeBadge({ outcome }: { outcome: string | null }) {
-  const meta =
-    OUTCOME_META[(outcome ?? "").toLowerCase()] ?? {
-      label: outcome ?? "—",
-      className: "bg-muted text-muted-foreground",
-      icon: Shield,
-    };
-  const Icon = meta.icon;
+function ToneBadge({ label, tone }: { label: string; tone: GuardrailTone }) {
+  const Icon = TONE_ICON[tone];
   return (
     <span
       className={cn(
         "inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 font-mono text-xs uppercase",
-        meta.className,
+        TONE_CHIP[tone],
+        TONE_BORDER[tone],
       )}
     >
       <Icon className="h-3 w-3" />
-      {meta.label}
+      {label}
     </span>
   );
+}
+
+function OutcomeBadge({ outcome }: { outcome: string | null }) {
+  const meta = outcomeMeta(outcome);
+  return <ToneBadge label={meta.label} tone={meta.tone} />;
 }
 
 export function GuardrailEventDetailPage() {
   const { eventId } = useParams<{ eventId: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const detail = useGuardrailEvent(eventId);
+  // Read-mode redaction of the judged text and the before/after diff; the
+  // backend honors it only when a read-mode RedactionPolicy is installed.
+  const [redact, setRedact] = useState(false);
+  const detail = useGuardrailEvent(eventId, redact);
   const mark = useMarkFalsePositive();
   const [busy, setBusy] = useState(false);
 
@@ -106,7 +108,8 @@ export function GuardrailEventDetailPage() {
     );
   }
 
-  const { event, trigger, context } = detail.data;
+  const { event, context } = detail.data;
+  const effectMeta = event.effect ? EFFECT_META[event.effect] : null;
 
   const handleToggleFalsePositive = async () => {
     if (!eventId) return;
@@ -154,6 +157,23 @@ export function GuardrailEventDetailPage() {
           />
           Refresh
         </Button>
+        <label
+          className="ml-1 flex items-center gap-2 rounded-md border px-2.5 py-1 text-xs font-mono"
+          title={
+            "Sends ?redact=true to the guardrail event API. Honored only when a " +
+            "RedactionPolicy(mode in {read, both}) is installed via " +
+            "fastaiagent.trace.set_redaction_policy(...). See docs/security.md."
+          }
+        >
+          <EyeOff className="h-3.5 w-3.5 text-muted-foreground" />
+          <span>Mask secrets</span>
+          <Switch
+            checked={redact}
+            onCheckedChange={setRedact}
+            aria-label="Toggle guardrail event redaction"
+            size="sm"
+          />
+        </label>
         <Button
           variant={event.false_positive ? "default" : "outline"}
           size="sm"
@@ -171,6 +191,12 @@ export function GuardrailEventDetailPage() {
         <CardContent className="space-y-2 pt-6">
           <div className="flex flex-wrap items-center gap-3 text-sm">
             <OutcomeBadge outcome={event.outcome} />
+            {effectMeta && (
+              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                effect
+                <ToneBadge label={effectMeta.label} tone={effectMeta.tone} />
+              </span>
+            )}
             {event.false_positive && (
               <span className="inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-2 py-0.5 font-mono text-xs uppercase text-primary">
                 <Flag className="h-3 w-3" />
@@ -214,16 +240,8 @@ export function GuardrailEventDetailPage() {
           <CardHeader>
             <CardTitle className="text-sm">// 1 — WHAT TRIGGERED IT</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2">
-            <div className="text-xs text-muted-foreground">
-              <span className="font-mono uppercase">{trigger.content_type}</span>
-              {trigger.span_name && (
-                <> · from span <span className="font-mono">{trigger.span_name}</span></>
-              )}
-            </div>
-            <pre className="max-h-64 overflow-auto rounded-md border bg-muted/20 p-2 font-mono text-xs whitespace-pre-wrap">
-              {trigger.text ?? "(no payload captured — set FASTAIAGENT_TRACE_PAYLOADS=1)"}
-            </pre>
+          <CardContent>
+            <TriggerDetail detail={detail.data} />
           </CardContent>
         </Card>
 
@@ -245,6 +263,16 @@ export function GuardrailEventDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ─── Evidence ──────────────────────────────────────────────── */}
+      <Card data-testid="panel-evidence">
+        <CardHeader>
+          <CardTitle className="text-sm">// EVIDENCE</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <GuardrailEvidence event={event} />
+        </CardContent>
+      </Card>
 
       {/* ─── Context section ───────────────────────────────────────── */}
       <Card>
@@ -294,27 +322,80 @@ export function GuardrailEventDetailPage() {
   );
 }
 
+/**
+ * Panel 1. ``judged`` is exactly what the rule saw (1.89.0). Older rows fall
+ * back to the parent span's payload, which may hold the text after a rewrite;
+ * with neither, say so rather than guess.
+ */
+function TriggerDetail({ detail }: { detail: GuardrailEventDetail }) {
+  const { event, trigger, context } = detail;
+  const judged = detail.judged ?? { text: null, recorded: false };
+
+  // An earlier rule in the same pass rewrote the payload this rule judged.
+  const rewrittenBy = event.batch_id
+    ? context.sibling_events.find(
+        (s) =>
+          s.batch_id === event.batch_id &&
+          (s.outcome ?? "").toLowerCase() === "filtered" &&
+          !!s.timestamp &&
+          !!event.timestamp &&
+          s.timestamp < event.timestamp,
+      )
+    : undefined;
+
+  let source: "judged" | "span" | null = null;
+  let text: string | null = null;
+  if (judged.recorded) {
+    source = "judged";
+    text = judged.text ?? "";
+  } else if (trigger.text != null) {
+    source = "span";
+    text = trigger.text;
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="text-xs text-muted-foreground">
+        <span className="font-mono uppercase">{trigger.content_type}</span>
+        {source === "judged" && <> · exactly the text the rule judged</>}
+        {source === "span" && trigger.span_name && (
+          <> · from span <span className="font-mono">{trigger.span_name}</span></>
+        )}
+      </div>
+      {rewrittenBy && (
+        <p className="text-xs text-fa-info" data-testid="judged-after-rewrite">
+          Judged after{" "}
+          <Link
+            to={`/guardrail-events/${rewrittenBy.event_id}`}
+            className="font-mono hover:underline"
+          >
+            {rewrittenBy.guardrail_name}
+          </Link>{" "}
+          rewrote it.
+        </p>
+      )}
+      {source == null ? (
+        <p className="text-xs text-muted-foreground" data-testid="judged-not-recorded">
+          Not recorded — this event predates 1.89.0.
+        </p>
+      ) : (
+        <pre className="max-h-64 overflow-auto rounded-md border bg-muted/20 p-2 font-mono text-xs whitespace-pre-wrap">
+          {text || "(empty)"}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 function RuleDetail({ event }: { event: GuardrailEvent }) {
-  const md = event.metadata ?? {};
-  const judgePrompt = (md as Record<string, unknown>).judge_prompt;
-  const judgeResponse = (md as Record<string, unknown>).judge_response;
-  const matched = (md as Record<string, unknown>).match;
-  const piiTypes = (md as Record<string, unknown>).pii_types;
-  // A `topic` rule reports which of the operator's named topics the judge found,
-  // in the operator's own wording, plus the polarity that turned that into a
-  // verdict. Without the polarity an empty list is unreadable: it is a clean pass
-  // for a blocklist and the whole reason an on-topic gate blocked.
-  const topicMode = (md as Record<string, unknown>).mode;
-  const topicMatched = (md as Record<string, unknown>).matched;
-  const topicsAsked = (md as Record<string, unknown>).topics;
-  // `pii` / `secrets` report which entity kinds were found and how many of each —
-  // never the matched values. There is nothing here to reveal that the payload
-  // panel above does not already show, which is the point.
-  const entityCounts = (md as Record<string, unknown>).counts;
-  const entityFound = (md as Record<string, unknown>).found;
-  const piiBackend = (md as Record<string, unknown>).backend;
-  const isEntityRule =
-    event.guardrail_type === "pii" || event.guardrail_type === "secrets";
+  const diverged = actionDiverged(event);
+  const chain = [
+    event.action,
+    event.action_taken,
+    event.effect ? EFFECT_META[event.effect].label : null,
+  ];
+  const showChain = chain.some((c) => c != null);
+  const blocking = event.blocking;
 
   return (
     <ul className="space-y-1.5 text-sm">
@@ -330,101 +411,112 @@ function RuleDetail({ event }: { event: GuardrailEvent }) {
         <span className="text-muted-foreground">position:</span>{" "}
         <span className="font-mono">{event.position ?? "—"}</span>
       </li>
+      {showChain && (
+        <li data-testid="rule-action-chain">
+          <span className="text-muted-foreground">action → taken → effect:</span>{" "}
+          <span
+            className={cn("font-mono", diverged && "text-fa-warning")}
+            title={
+              diverged
+                ? (event.final_reason ??
+                  "The configured action and what the check did differ")
+                : undefined
+            }
+          >
+            {chain.map((c) => c ?? "—").join(" → ")}
+            {diverged && " *"}
+          </span>
+        </li>
+      )}
+      {event.final_reason && (
+        <li>
+          <span className="text-muted-foreground">final reason:</span>{" "}
+          <span className="font-mono">{event.final_reason}</span>
+        </li>
+      )}
+      <li>
+        <span className="text-muted-foreground">severity:</span>{" "}
+        <span className="font-mono">{event.severity ?? "—"}</span>
+        {event.floor && (
+          <span
+            className="ml-1.5 rounded-sm bg-primary/10 px-1 py-px text-[9px] uppercase text-primary"
+            title="Organisation baseline — only a domain admin may change this rule"
+          >
+            floor
+          </span>
+        )}
+      </li>
+      {blocking != null && (
+        <li>
+          <span className="text-muted-foreground">mode:</span>{" "}
+          <span className="font-mono">{blocking ? "blocking" : "observe-only"}</span>
+        </li>
+      )}
+      {event.on_error && (
+        <li>
+          <span className="text-muted-foreground">on_error:</span>{" "}
+          <span className="font-mono">{event.on_error}</span>
+        </li>
+      )}
+      {event.origin && (
+        <li>
+          <span className="text-muted-foreground">origin:</span>{" "}
+          <span className="font-mono">{event.origin}</span>
+        </li>
+      )}
+      {event.latency_ms != null && (
+        <li>
+          <span className="text-muted-foreground">latency:</span>{" "}
+          <span className="font-mono">{event.latency_ms} ms</span>
+        </li>
+      )}
+      {event.attempt != null && (
+        <li>
+          <span className="text-muted-foreground">attempt:</span>{" "}
+          <span className="font-mono">{event.attempt}</span>
+        </li>
+      )}
       {event.score != null && (
         <li>
           <span className="text-muted-foreground">score:</span>{" "}
           <span className="font-mono">{event.score.toFixed(2)}</span>
         </li>
       )}
-      {Array.isArray(piiTypes) && piiTypes.length > 0 && (
-        <li>
-          <span className="text-muted-foreground">pii types:</span>{" "}
-          <span className="font-mono">{(piiTypes as string[]).join(", ")}</span>
-        </li>
+      {event.rule?.description && (
+        <li className="text-xs text-muted-foreground">{event.rule.description}</li>
       )}
-      {isEntityRule && Array.isArray(entityFound) && (
-        <li>
-          <span className="text-muted-foreground">found:</span>{" "}
-          {entityFound.length > 0 ? (
-            <span className="font-mono text-fa-warning">
-              {(entityFound as string[]).join(", ")}
-            </span>
-          ) : (
-            <span className="font-mono text-muted-foreground">none</span>
-          )}
-        </li>
-      )}
-      {isEntityRule && entityCounts != null && typeof entityCounts === "object" && (
-        <li>
-          <span className="text-muted-foreground">counts:</span>{" "}
-          <span className="font-mono">
-            {Object.entries(entityCounts as Record<string, number>)
-              .map(([k, n]) => `${k} ×${n}`)
-              .join(", ") || "—"}
-          </span>
-        </li>
-      )}
-      {event.guardrail_type === "pii" && typeof piiBackend === "string" && (
-        <li>
-          <span className="text-muted-foreground">backend:</span>{" "}
-          <span className="font-mono">{piiBackend}</span>
-        </li>
-      )}
-      {typeof topicMode === "string" && (
-        <li>
-          <span className="text-muted-foreground">mode:</span>{" "}
-          <span className="font-mono">
-            {topicMode === "deny" ? "deny (blocklist)" : "allow (on-topic gate)"}
-          </span>
-        </li>
-      )}
-      {Array.isArray(topicMatched) && (
-        <li>
-          <span className="text-muted-foreground">topics matched:</span>{" "}
-          {topicMatched.length > 0 ? (
-            <span className="font-mono text-fa-warning">
-              {(topicMatched as string[]).join(", ")}
-            </span>
-          ) : (
-            <span className="font-mono text-muted-foreground">none</span>
-          )}
-        </li>
-      )}
-      {Array.isArray(topicsAsked) && topicsAsked.length > 0 && (
-        <li>
-          <span className="text-muted-foreground">topics checked:</span>{" "}
-          <span className="font-mono">{(topicsAsked as string[]).join(", ")}</span>
-        </li>
-      )}
-      {typeof matched === "string" && matched && (
-        <li>
-          <span className="text-muted-foreground">matched:</span>{" "}
-          <span className="font-mono text-fa-warning">{matched}</span>
-        </li>
-      )}
-      {typeof judgePrompt === "string" && judgePrompt && (
-        <li className="space-y-1">
-          <span className="text-muted-foreground">judge prompt:</span>
-          <pre className="max-h-32 overflow-auto rounded-md border bg-muted/20 p-2 font-mono text-xs whitespace-pre-wrap">
-            {judgePrompt}
-          </pre>
-        </li>
-      )}
-      {typeof judgeResponse === "string" && judgeResponse && (
-        <li className="space-y-1">
-          <span className="text-muted-foreground">judge response:</span>
-          <pre className="max-h-32 overflow-auto rounded-md border bg-muted/20 p-2 font-mono text-xs whitespace-pre-wrap">
-            {judgeResponse}
-          </pre>
-        </li>
-      )}
-      {Object.keys(md).length === 0 && (
+      {event.effect == null && (
         <li className="text-xs text-muted-foreground">
-          No additional metadata — the guardrail only emitted its
-          name + outcome.
+          Recorded before 1.89.0 — the rule's mode, on_error and effect were not stored.
         </li>
       )}
     </ul>
+  );
+}
+
+function DiffColumn({
+  label,
+  value,
+  className,
+}: {
+  label: string;
+  value: unknown;
+  className: string;
+}) {
+  return (
+    <div>
+      <div className="mb-1 text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
+        {label}
+      </div>
+      <pre
+        className={cn(
+          "max-h-40 overflow-auto rounded-md border p-2 font-mono text-xs whitespace-pre-wrap",
+          className,
+        )}
+      >
+        {String(value ?? "(unavailable)")}
+      </pre>
+    </div>
   );
 }
 
@@ -432,96 +524,59 @@ function OutcomeDetail({ event }: { event: GuardrailEvent }) {
   const md = event.metadata ?? {};
   const before = (md as Record<string, unknown>).before;
   const after = (md as Record<string, unknown>).after;
+  const narrative = guardrailNarrative(event);
+  const outcome = (event.outcome ?? "").toLowerCase();
 
-  if (event.outcome === "blocked") {
-    return (
-      <div className="space-y-2 text-sm">
-        <p>
-          The guardrail <span className="font-mono">blocked</span> this content.
-          The agent's chain halted at this step and propagated the block to the
-          caller (or fell back to the configured handler, if any).
-        </p>
-        {event.message && (
-          <pre className="rounded-md border border-destructive/40 bg-destructive/5 p-2 font-mono text-xs whitespace-pre-wrap text-destructive">
-            {event.message}
-          </pre>
-        )}
-      </div>
-    );
-  }
+  // A rewrite that was applied shows before/after; one that was not (an
+  // observe-only rule, a rewrite the caller refused) shows what it would
+  // have produced.
+  const hasDiff = typeof before === "string" && typeof after === "string";
+  const applied =
+    event.effect === "rewritten" || (event.effect == null && outcome === "filtered");
+  const showDiff = hasDiff || applied;
 
-  if (
-    event.outcome === "filtered" ||
-    (typeof before === "string" && typeof after === "string")
-  ) {
-    return (
-      <div className="space-y-2">
-        <p className="text-sm">
-          The guardrail <span className="font-mono">rewrote</span> the content
-          before it continued.
-        </p>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <div>
-            <div className="mb-1 text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
-              before
-            </div>
-            <pre className="max-h-40 overflow-auto rounded-md border border-destructive/30 bg-destructive/5 p-2 font-mono text-xs whitespace-pre-wrap">
-              {String(before ?? "(unavailable)")}
-            </pre>
-          </div>
-          <div>
-            <div className="mb-1 text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
-              after
-            </div>
-            <pre className="max-h-40 overflow-auto rounded-md border border-fa-success/30 bg-fa-success/5 p-2 font-mono text-xs whitespace-pre-wrap">
-              {String(after ?? "(unavailable)")}
-            </pre>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (event.outcome === "warned") {
-    return (
-      <p className="text-sm">
-        The guardrail <span className="font-mono">warned</span> but did not
-        block — content passed through unchanged with a warning logged.
-      </p>
-    );
-  }
-
-  if (event.outcome === "errored") {
-    const onError = (md as Record<string, unknown>).on_error;
-    const failedOpen = onError === "allow";
-    return (
-      <div className="space-y-2 text-sm">
-        <p>
-          The check <span className="font-mono">could not run</span> (e.g. a
-          model-judged detector's LLM call failed). Its outcome reflects the
-          guardrail's{" "}
-          <span className="font-mono">on_error={String(onError ?? "block")}</span>{" "}
-          policy, not a real verdict:{" "}
-          {failedOpen ? (
-            <>content was <span className="font-mono">allowed through</span> (fail open).</>
-          ) : (
-            <>content was <span className="font-mono">blocked</span> (fail closed).</>
-          )}
-        </p>
-        {event.message && (
-          <pre className="rounded-md border border-fa-warning/40 bg-fa-warning/5 p-2 font-mono text-xs whitespace-pre-wrap">
-            {event.message}
-          </pre>
-        )}
-      </div>
-    );
-  }
+  const messageClass =
+    narrative.tone === "danger"
+      ? "border-destructive/40 bg-destructive/5 text-destructive"
+      : "border-fa-warning/40 bg-fa-warning/5";
+  const showMessage =
+    !!event.message &&
+    (outcome === "blocked" || outcome === "errored" || event.effect === "blocked");
 
   return (
-    <p className="text-sm">
-      The guardrail <span className="font-mono">passed</span> — content was
-      allowed without modification.
-    </p>
+    <div className="space-y-2 text-sm" data-testid="outcome-narrative">
+      {narrative.lines.map((line, i) => (
+        <p key={i} className={cn(i > 0 && "text-muted-foreground")}>
+          {line}
+        </p>
+      ))}
+      {showMessage && (
+        <pre
+          className={cn(
+            "rounded-md border p-2 font-mono text-xs whitespace-pre-wrap",
+            messageClass,
+          )}
+        >
+          {event.message}
+        </pre>
+      )}
+      {showDiff && (
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <DiffColumn
+            label="before"
+            value={before}
+            className="border-destructive/30 bg-destructive/5"
+          />
+          <DiffColumn
+            label={applied ? "after" : "would have produced (not applied)"}
+            value={after}
+            className={
+              applied ? "border-fa-success/30 bg-fa-success/5" : "border-dashed bg-muted/20"
+            }
+          />
+        </div>
+      )}
+    </div>
   );
 }
 

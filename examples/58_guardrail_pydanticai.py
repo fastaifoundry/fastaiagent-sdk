@@ -8,8 +8,7 @@ no redaction — that's by design (decision A in the harness spec).
 
 Run:
     pip install "fastaiagent[pydanticai,ui]"
-    OPENAI_API_KEY=sk-... FASTAIAGENT_UI_ENABLED=1 \\
-        python examples/58_guardrail_pydanticai.py
+    OPENAI_API_KEY=sk-... python examples/58_guardrail_pydanticai.py
 """
 
 from __future__ import annotations
@@ -23,10 +22,8 @@ def main() -> int:
         print("OPENAI_API_KEY is not set — skipping example.")
         return 0
 
-    # Guardrail events only persist when the UI is enabled. Set the
-    # env var here so this example is self-contained — in real usage
-    # users typically set it in their shell.
-    os.environ.setdefault("FASTAIAGENT_UI_ENABLED", "1")
+    # Guardrail events are recorded whenever tracing is on (the default since
+    # 1.89.0), so there is nothing to switch on here.
 
     try:
         from pydantic_ai import Agent

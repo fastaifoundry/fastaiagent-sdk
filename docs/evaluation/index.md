@@ -23,7 +23,8 @@ results = evaluate(
 print(results.summary())
 # Evaluation Results
 # ==================================================
-# exact_match: avg=1.00 pass_rate=100% (2 cases)
+# exact_match: avg=1.00 pass_rate=100% (2 scored)
+# cases: 2 passed, 0 failed, 0 errored (pass_rate=100%)
 ```
 
 ## The evaluate() Function
@@ -257,12 +258,16 @@ scorer = CostUnder(max_usd=0.05)
 scorer.score(input="q", output="answer", cost=0.03)  # passed=True
 ```
 
-!!! warning "Unknown cost fails the gate — it is not treated as free"
+!!! warning "Unknown cost is not treated as free"
     When the model has no rate in the pricing table (a private fine-tune, a
     bedrock or azure deployment id), the run cannot be priced and `cost_known`
-    is `False`. `CostUnder` then **fails** and says so, rather than certifying a
-    run it never priced. Give the model a rate with `set_rate_overrides()` or
-    the `pricing` block of `models.json` to gate on it properly.
+    is `False`. `CostUnder` then reports **errored** (could not run) and says
+    so, rather than certifying a run it never priced; a gate on it is invalid
+    (exit 3). Before 1.89.0 it reported a fail. Give the model a rate with
+    `set_rate_overrides()` or the `pricing` block of `models.json` to gate on it
+    properly. A direct `.score()` call with no `cost` at all is skipped, and so
+    is `Latency` with no `latency_ms`; inside `evaluate()` both are always
+    supplied.
 
     **Self-hosted providers are the exception**, and they are a known zero
     rather than an unknown: `ollama`, `lmstudio` and `vllm` run on hardware you
@@ -298,11 +303,17 @@ Available names (resolved by `evaluate()` automatically):
 - **Agent metrics:** `task_completion`, `hallucination`, `reflection_quality`
 - **Similarity:** `semantic_similarity`, `bleu`, `rouge`, `levenshtein`
 
-> **Trajectory and session scorers are not string-resolvable.** They need
-> per-call trajectory/turn data that `evaluate()`'s dataset loop does not
-> forward automatically, so instantiate them directly (e.g. `ToolUsageAccuracy()`)
-> and call `.score(...)`. See [Trajectory Scoring](trajectory-scoring.md) and
+> **Trajectory and session scorers are not string-resolvable**: pass an
+> instance (e.g. `ToolUsageAccuracy()`). Since 1.89.0 `evaluate()` gives
+> trajectory scorers the agent's own tool calls (when `agent_fn` returns an
+> `AgentResult`) and each row's `expected_trajectory`; see
+> [Trajectory Scoring](trajectory-scoring.md). Session scorers take
+> conversation turns: call `.score(turns=...)` directly; see
 > [Session Scoring](session-scoring.md).
+>
+> A dataset row's `expected_trajectory`, `expected_tool_calls`,
+> `expected_steps`, `context` and `contexts` reach every scorer for that row,
+> so RAG scorers can be driven per case too.
 
 ## Custom Code Scorers
 
@@ -345,7 +356,20 @@ def simple(input, output, expected=None):
 @Scorer.code("scored")
 def scored(input, output, expected=None):
     return len(output) / 100  # Score based on length
+
+# Not a verdict (1.89.0): could not run, or does not apply to this case
+@Scorer.code("needs_context")
+def needs_context(input, output, expected=None, context=None):
+    if not context:
+        return ScorerResult.not_applicable("No context on this row")
+    try:
+        return ScorerResult(score=check(output, context), passed=True)
+    except TimeoutError as e:
+        return ScorerResult.error(f"checker timed out: {e}")
 ```
+
+A scorer that **raises** is recorded as errored for that case, and the run
+carries on; it used to abort the whole run with nothing persisted.
 
 ## EvalResults
 
@@ -357,9 +381,15 @@ results = evaluate(agent_fn=my_fn, dataset=data, scorers=[ExactMatch(), Contains
 print(results.summary())
 # Evaluation Results
 # ==================================================
-# exact_match: avg=0.80 pass_rate=80% (10 cases)
-# contains: avg=0.95 pass_rate=95% (10 cases)
+# exact_match: avg=0.80 pass_rate=80% (10 scored)
+# contains: avg=0.95 pass_rate=95% (10 scored)
+# cases: 8 passed, 2 failed, 0 errored (pass_rate=80%)
 ```
+
+A scorer's rate covers its **verdicts** only; errored and skipped results are
+counted beside it (`(8 scored, 1 errored, 1 skipped)`). The `cases` line counts
+dataset rows: a row passes only when every check that applied to it passed.
+See [Four outcomes, cases and checks](concepts.md#four-outcomes-cases-and-checks).
 
 ### Accessing Scores
 
@@ -429,6 +459,16 @@ there's no verdict to parse. See
 | `score` | `float` | Numeric score (0.0-1.0) |
 | `passed` | `bool` | Whether the test case passed |
 | `reason` | `str \| None` | Explanation of the score |
+| `errored` | `bool` | The check could not run (*1.89.0*) |
+| `skipped` | `bool` | The check does not apply to this case (*1.89.0*) |
+| `details` | `dict \| None` | Non-content extras, e.g. a judge's `raw_score`, a trajectory's tool names |
+| `outcome` | property | `"passed"`, `"failed"`, `"errored"` or `"skipped"` |
+
+An errored or skipped result always has `passed=False` and `score=0.0`.
+Build them with `ScorerResult.error(reason)` and
+`ScorerResult.not_applicable(reason)`. In `local.db` a case's stored verdict
+adds `errored`, `skipped` or `details` only when set, so a run without them is
+stored exactly as before.
 
 ## CLI Commands
 
@@ -450,7 +490,9 @@ fastaiagent eval curate --filter failed -o cases/regressions.jsonl
 ```
 
 Exit codes: `0` gate passed · `1` quality gate failed · `3` run invalid
-(infra error rate exceeded). See **[Agent CI](agent-ci.md)** for the
+(infra error rate exceeded, a gated scorer could not run, or nothing scored).
+`--fail-under "cases.pass_rate=0.8"` gates on cases instead of checks. See
+**[Agent CI](agent-ci.md)** for the
 pytest-native gate, baselines, and the GitHub Actions recipe.
 
 The equivalent Python API:

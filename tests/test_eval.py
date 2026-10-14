@@ -340,5 +340,6 @@ class TestToolCallCorrectness:
             actual_tool_calls=[{"name": "search", "arguments": {}}],
             expected_tool_calls=[],
         )
-        assert r.score == 1.0
-        assert r.passed is True
+        # 1.89.0: no expectation is "does not apply", not a pass.
+        assert r.skipped is True and r.outcome == "skipped"
+        assert r.passed is False

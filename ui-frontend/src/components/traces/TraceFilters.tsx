@@ -17,6 +17,17 @@ const RANGES: { label: string; hours: number | null }[] = [
   { label: "All", hours: null },
 ];
 
+/** Sources the SDK stamps (`fastaiagent.source`); any other value works too. */
+const SOURCES: { value: string; label: string }[] = [
+  { value: "playground", label: "Playground" },
+  { value: "replay", label: "Replay" },
+  { value: "kb_search", label: "KB search" },
+  { value: "eval", label: "Eval" },
+  { value: "learn", label: "Learn" },
+  { value: "simulation", label: "Simulation" },
+  { value: "optimize", label: "Optimize" },
+];
+
 interface Props {
   filters: F;
   onChange: (next: F) => void;
@@ -87,6 +98,9 @@ export function TraceFiltersBar({ filters, onChange }: Props) {
     !!filters.thread_id ||
     !!filters.runner_type ||
     !!filters.framework ||
+    !!filters.exclude_experiments ||
+    !!filters.source ||
+    !!filters.noted ||
     !!filters.since ||
     !!filters.until ||
     filters.min_duration_ms != null ||
@@ -100,6 +114,8 @@ export function TraceFiltersBar({ filters, onChange }: Props) {
     { value: "chain", label: "Chain" },
     { value: "swarm", label: "Swarm" },
     { value: "supervisor", label: "Supervisor" },
+    { value: "playground", label: "Playground" },
+    { value: "retrieval", label: "Retrieval" },
   ];
 
   return (
@@ -195,6 +211,67 @@ export function TraceFiltersBar({ filters, onChange }: Props) {
           // root span.
         />
 
+        {/* The list is the raw record, so it shows experiments by default;
+            this chip hides replay, Playground, learn and eval traces. */}
+        <button
+          type="button"
+          aria-pressed={!!filters.exclude_experiments}
+          onClick={() =>
+            onChange({
+              ...filters,
+              exclude_experiments: filters.exclude_experiments ? undefined : true,
+              page: 1,
+            })
+          }
+          title="Hide replay, Playground, learn and eval traces"
+          className={cn(
+            "h-9 rounded-md border px-2.5 text-xs font-mono font-medium transition-colors",
+            filters.exclude_experiments
+              ? "border-primary bg-primary text-primary-foreground"
+              : "bg-card text-muted-foreground hover:text-foreground hover:bg-muted"
+          )}
+        >
+          Hide experiments
+        </button>
+
+        {/* Where the run came from (``fastaiagent.source`` on the trace).
+            Free text with suggestions: any value a caller stamped works. */}
+        <Input
+          value={filters.source ?? ""}
+          onChange={(e) =>
+            onChange({ ...filters, source: e.target.value.trim() || null, page: 1 })
+          }
+          list="trace-source-options"
+          placeholder="Source"
+          aria-label="Source"
+          className="w-36"
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <datalist id="trace-source-options">
+          {SOURCES.map((s) => (
+            <option key={s.value} value={s.value}>
+              {s.label}
+            </option>
+          ))}
+        </datalist>
+
+        <button
+          type="button"
+          aria-pressed={!!filters.noted}
+          onClick={() =>
+            onChange({ ...filters, noted: filters.noted ? undefined : true, page: 1 })
+          }
+          title="Only traces with a note (what curate_from_traces(filter='noted') reads)"
+          className={cn(
+            "h-9 rounded-md border px-2.5 text-xs font-mono font-medium transition-colors",
+            filters.noted
+              ? "border-primary bg-primary text-primary-foreground"
+              : "bg-card text-muted-foreground hover:text-foreground hover:bg-muted"
+          )}
+        >
+          Noted
+        </button>
 
         <Input
           value={filters.thread_id ?? ""}

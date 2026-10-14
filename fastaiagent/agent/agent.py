@@ -6,7 +6,8 @@ import json
 import logging
 import time
 import uuid
-from collections.abc import AsyncGenerator, Callable, Sequence
+from collections.abc import AsyncGenerator, Callable, Coroutine, Iterator, Sequence
+from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any
 
@@ -184,6 +185,7 @@ def _apply_input_rewrite(original: AgentInput, outcome: GuardrailOutcome) -> tup
     if isinstance(original, str):
         return rewritten, rewritten
 
+    outcome.refuse("multimodal input cannot be rewritten faithfully")
     raise GuardrailBlockedError(
         guardrail_name="input",
         message=(
@@ -207,6 +209,7 @@ def _refuse_stream_rewrite(outcome: GuardrailOutcome) -> None:
     if not outcome.modified and outcome.reask is None:
         return
     what = "rewrite" if outcome.modified else "re-ask"
+    outcome.refuse(f"a streamed reply cannot be {'rewritten' if outcome.modified else 're-asked'}")
     raise GuardrailBlockedError(
         guardrail_name="output",
         message=(
@@ -542,7 +545,12 @@ class Agent:
 
         for attempt in range(attempts + 1):
             outcome = await execute_guardrails(
-                guardrails, output, GuardrailPosition.output, allow_reask=True
+                guardrails,
+                output,
+                GuardrailPosition.output,
+                allow_reask=True,
+                agent_name=self.name,
+                attempt=attempt + 1,
             )
 
             if outcome.modified:
@@ -556,6 +564,7 @@ class Agent:
                 # Out of retries. The rule asked us to try again and we did;
                 # the failure stands, so it costs what an unsatisfied guardrail
                 # always costs.
+                outcome.refuse(f"re-asked {attempts} time(s) without satisfying the rule")
                 raise GuardrailBlockedError(
                     guardrail_name="reask",
                     message=(
@@ -708,9 +717,44 @@ class Agent:
         execution_id: str | None = None,
         messages: list[Message] | None = None,
         metadata: dict[str, Any] | None = None,
+        extra: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> AgentResult:
         """Execute with OTel tracing."""
+        # The id is chosen HERE, not in ``_arun_core``, so the root span can name
+        # it: ``agent.execution_id`` is what links a run to its checkpoints and to
+        # every resume of it (each resume is its own trace — decision D7).
+        exec_id = execution_id or str(uuid.uuid4())
+        with self._open_run_span(
+            input, context, execution_id=exec_id, metadata=metadata, extra=extra
+        ) as span:
+            result = await self._arun_core(
+                input,
+                context=context,
+                execution_id=exec_id,
+                messages=messages,
+                **kwargs,
+            )
+            self._close_run_span(span, result)
+            return result
+
+    @contextmanager
+    def _open_run_span(
+        self,
+        input: AgentInput,
+        context: RunContext[Any] | None,
+        *,
+        execution_id: str,
+        metadata: dict[str, Any] | None = None,
+        extra: dict[str, Any] | None = None,
+    ) -> Iterator[Any]:
+        """Open the ``agent.<name>`` root span every non-streamed run gets.
+
+        Shared by :meth:`arun`, :meth:`aresume` and a fork, so a resumed run is
+        stamped exactly like a fresh one plus its ``extra`` link attributes.
+        Until 1.89.0 only ``arun`` opened it: a resume's LLM calls were emitted
+        as orphan ``llm.*`` roots and the result carried no ``trace_id``.
+        """
         from fastaiagent.trace.otel import get_tracer
         from fastaiagent.trace.span import set_metadata_attributes, trace_id_of
 
@@ -718,6 +762,10 @@ class Agent:
         with tracer.start_as_current_span(f"agent.{self.name}") as span:
             span.set_attribute("agent.name", self.name)
             span.set_attribute("fastaiagent.framework", "fastaiagent")
+            span.set_attribute("agent.execution_id", execution_id)
+            for key, value in (extra or {}).items():
+                if value is not None:
+                    span.set_attribute(key, value)
             # Developer-supplied run tags (MLflow-style) → fastaiagent.meta.*
             # on the root span, tagging the whole trace. Open OTel map, no wire
             # change. The developer owns keys/values/PII.
@@ -797,24 +845,22 @@ class Agent:
                 # Callable system_prompt that needs context — best-effort only.
                 logger.debug("Failed to resolve system prompt for trace", exc_info=True)
 
-            result = await self._arun_core(
-                input,
-                context=context,
-                execution_id=execution_id,
-                messages=messages,
-                **kwargs,
-            )
+            yield span
 
-            # Captured locally unconditionally (N3 egress model — privacy is
-            # enforced at export, not capture).
-            span.set_attribute("agent.output", result.output)
-            span.set_attribute("agent.tokens_used", result.tokens_used)
-            span.set_attribute("agent.latency_ms", result.latency_ms)
+    @staticmethod
+    def _close_run_span(span: Any, result: AgentResult) -> None:
+        """Stamp a finished (or paused) run onto its root span and its result."""
+        from fastaiagent.trace.span import trace_id_of
 
-            # Set trace_id on result
-            ctx = span.get_span_context()
-            result.trace_id = trace_id_of(ctx)
-            return result
+        # Captured locally unconditionally (N3 egress model — privacy is
+        # enforced at export, not capture).
+        span.set_attribute("agent.output", result.output)
+        span.set_attribute("agent.tokens_used", result.tokens_used)
+        span.set_attribute("agent.latency_ms", result.latency_ms)
+        # ``completed`` or ``paused`` — a paused run is still a successful span,
+        # and without this a reader could not tell the two apart.
+        span.set_attribute("agent.status", result.status)
+        result.trace_id = trace_id_of(span.get_span_context())
 
     async def _arun_core(
         self,
@@ -898,7 +944,7 @@ class Agent:
             guarded_input: AgentInput = input
             if eff_guardrails:
                 outcome = await execute_guardrails(
-                    eff_guardrails, input_text, GuardrailPosition.input
+                    eff_guardrails, input_text, GuardrailPosition.input, agent_name=self.name
                 )
                 if outcome.modified:
                     # A mask/override rewrote the input. We can only substitute
@@ -1152,6 +1198,9 @@ class Agent:
                 span.set_attribute("fastaiagent.framework", "fastaiagent")
                 span.set_attribute("agent.input", input_text)
                 span.set_attribute("agent.streamed", True)
+                # Same link ``arun`` stamps: the run's checkpoints and any
+                # resume of it are found by this id.
+                span.set_attribute("agent.execution_id", exec_id)
                 if outcome is not None:
                     outcome["trace_id"] = format(span.get_span_context().trace_id, "032x")
             if outcome is not None:
@@ -1216,7 +1265,7 @@ class Agent:
             guarded_input: AgentInput = input
             if eff_guardrails:
                 in_outcome = await execute_guardrails(
-                    eff_guardrails, input_text, GuardrailPosition.input
+                    eff_guardrails, input_text, GuardrailPosition.input, agent_name=self.name
                 )
                 if in_outcome.modified:
                     guarded_input, input_text = _apply_input_rewrite(input, in_outcome)
@@ -1321,7 +1370,11 @@ class Agent:
                 # ``allow_reask=True`` only so the refusal below can explain
                 # itself; nothing here can actually re-drive the model.
                 out_outcome = await execute_guardrails(
-                    eff_guardrails, output, GuardrailPosition.output, allow_reask=True
+                    eff_guardrails,
+                    output,
+                    GuardrailPosition.output,
+                    allow_reask=True,
+                    agent_name=self.name,
                 )
                 _refuse_stream_rewrite(out_outcome)
 
@@ -1367,6 +1420,7 @@ class Agent:
         *,
         resume_value: Resume | None = None,
         context: RunContext[Any] | None = None,
+        trace: bool = True,
         **kwargs: Any,
     ) -> AgentResult:
         """Synchronous resume wrapper around :meth:`aresume`."""
@@ -1375,6 +1429,7 @@ class Agent:
                 execution_id,
                 resume_value=resume_value,
                 context=context,
+                trace=trace,
                 **kwargs,
             )
         )
@@ -1386,6 +1441,7 @@ class Agent:
         resume_value: Resume | None = None,
         context: RunContext[Any] | None = None,
         agent_path_prefix: str | None = None,
+        trace: bool = True,
         **kwargs: Any,
     ) -> AgentResult:
         """Resume a paused or crashed agent run.
@@ -1416,6 +1472,19 @@ class Agent:
         recently. Passing the agent's own path prefix
         (e.g. ``"supervisor:planner/worker:worker_b"``) scopes resume to
         the worker's own subtree.
+
+        ``trace`` (default ``True``) opens an ``agent.<name>`` root span around
+        the re-invoked tool and the continued loop — a **new trace per resume**,
+        linked to the run by ``agent.execution_id`` and
+        ``agent.resumed_execution_id``, and described by ``agent.resume.node_id``,
+        ``agent.resume.kind`` (``approval`` / ``interrupt`` / ``tool_boundary`` /
+        ``turn_boundary``) and, with a ``resume_value``, ``agent.resume.approved``,
+        ``agent.resume.resolver`` (``metadata["resolver"]`` or ``["approver"]``)
+        and ``agent.resume.reason`` (``metadata["reason"]``, a payload key). The
+        result's ``trace_id`` names it, including when the run pauses again. A
+        claim that fails (:class:`AlreadyResumed`, ``ChainCheckpointError``)
+        opens no span. Before 1.89.0 a resume opened none at all: its LLM calls
+        were orphan ``llm.*`` traces and the result's ``trace_id`` was ``None``.
         """
         from fastaiagent._internal.errors import ChainCheckpointError
 
@@ -1522,6 +1591,71 @@ class Agent:
         # it in memory at the end of the run. The saved messages already carry
         # any multimodal content; memory only needs the text.
         original_input = _resumed_input_text(messages)
+
+        def continuation() -> Coroutine[Any, Any, AgentResult]:
+            return self._resume_from(
+                latest,
+                store=store,
+                execution_id=execution_id,
+                messages=messages,
+                original_input=original_input,
+                start_iteration=start_iteration,
+                is_tool_boundary=is_tool_boundary,
+                resume_value=resume_value,
+                context=context,
+                **kwargs,
+            )
+
+        if not trace:
+            return await continuation()
+
+        # The claim above has been won (or there was none to win), so this IS a
+        # run now — open its root span. Everything before this point can still
+        # refuse, and a refused resume is not a run.
+        from fastaiagent import governance
+
+        if resume_value is not None:
+            kind = (
+                "approval" if latest.interrupt_reason == governance.APPROVAL_REASON else "interrupt"
+            )
+        else:
+            kind = "tool_boundary" if is_tool_boundary else "turn_boundary"
+        link: dict[str, Any] = {
+            "agent.resumed_execution_id": execution_id,
+            "agent.resume.node_id": latest.node_id,
+            "agent.resume.kind": kind,
+        }
+        if resume_value is not None:
+            meta = resume_value.metadata or {}
+            resolver = meta.get("resolver") or meta.get("approver")
+            reason = meta.get("reason")
+            link["agent.resume.approved"] = bool(resume_value.approved)
+            link["agent.resume.resolver"] = str(resolver) if resolver else None
+            link["agent.resume.reason"] = str(reason) if reason else None
+        with self._open_run_span(
+            original_input, context, execution_id=execution_id, extra=link
+        ) as span:
+            result = await continuation()
+            self._close_run_span(span, result)
+            return result
+
+    async def _resume_from(
+        self,
+        latest: Checkpoint,
+        *,
+        store: Checkpointer,
+        execution_id: str,
+        messages: list[Message],
+        original_input: str,
+        start_iteration: int,
+        is_tool_boundary: bool,
+        resume_value: Resume | None,
+        context: RunContext[Any] | None,
+        **kwargs: Any,
+    ) -> AgentResult:
+        """Continue a claimed resume from ``latest``. Split out of :meth:`aresume`
+        only so its root span wraps the tool re-invocation and the loop."""
+        from fastaiagent._internal.errors import ChainCheckpointError
 
         if not is_tool_boundary:
             # Pure turn-boundary resume — re-issue LLM at this iteration.
@@ -1695,6 +1829,7 @@ class Agent:
         checkpoint_id: str | None = None,
         input: AgentInput | None = None,
         context: RunContext[Any] | None = None,
+        trace: bool = True,
         **kwargs: Any,
     ) -> AgentResult:
         """Fork an agent run from a saved checkpoint into a NEW execution.
@@ -1778,7 +1913,7 @@ class Agent:
         # it is no longer part of. Same rule ``write_run_end`` documents.
         try:
             result = await self._fork_branch(
-                base, fork_id, input=input, context=context, **kwargs
+                base, fork_id, input=input, context=context, trace=trace, **kwargs
             )
         except BaseException as exc:
             write_run_end_once(
@@ -1809,13 +1944,30 @@ class Agent:
         *,
         input: AgentInput | None,
         context: RunContext[Any] | None,
+        trace: bool = True,
         **kwargs: Any,
     ) -> AgentResult:
         """Run one forked branch. Split out of :meth:`afork` only so the marker
-        above wraps both of its shapes."""
+        above wraps both of its shapes.
+
+        Both shapes are traced as a run of the fork id, linked back to the source
+        by ``agent.forked_execution_id`` / ``agent.fork.of_execution`` /
+        ``agent.fork.checkpoint_id``. Until 1.89.0 the no-input shape called the
+        loop directly and opened no span at all."""
+        link: dict[str, Any] = {
+            "agent.forked_execution_id": fork_id,
+            "agent.fork.of_execution": base.execution_id,
+            "agent.fork.checkpoint_id": base.checkpoint_id or None,
+        }
         if input is not None:
             # Counterfactual input: re-run with the new request under the fork id.
-            return await self.arun(input, context=context, execution_id=fork_id, **kwargs)
+            if not trace:
+                return await self.arun(
+                    input, context=context, execution_id=fork_id, trace=False, **kwargs
+                )
+            return await self._arun_traced(
+                input, context=context, execution_id=fork_id, extra=link, **kwargs
+            )
 
         # No input change: re-run the restored conversation forward.
         from fastaiagent.agent.executor import _deserialize_messages
@@ -1831,14 +1983,26 @@ class Agent:
         messages = balance_tool_messages(messages, note=FORK_SKIPPED_NOTE)
         start_iteration = int(base.state_snapshot.get("turn", 0))
         original_input = _resumed_input_text(messages)
-        return await self._arun_core(
-            original_input,
-            context=context,
-            execution_id=fork_id,
-            _resumed_messages=messages,
-            _start_iteration=start_iteration,
-            **kwargs,
-        )
+        if not trace:
+            return await self._arun_core(
+                original_input,
+                context=context,
+                execution_id=fork_id,
+                _resumed_messages=messages,
+                _start_iteration=start_iteration,
+                **kwargs,
+            )
+        with self._open_run_span(original_input, context, execution_id=fork_id, extra=link) as span:
+            result = await self._arun_core(
+                original_input,
+                context=context,
+                execution_id=fork_id,
+                _resumed_messages=messages,
+                _start_iteration=start_iteration,
+                **kwargs,
+            )
+            self._close_run_span(span, result)
+            return result
 
     def fork(
         self,
@@ -1847,6 +2011,7 @@ class Agent:
         checkpoint_id: str | None = None,
         input: AgentInput | None = None,
         context: RunContext[Any] | None = None,
+        trace: bool = True,
         **kwargs: Any,
     ) -> AgentResult:
         """Sync wrapper for :meth:`afork`."""
@@ -1856,6 +2021,7 @@ class Agent:
                 checkpoint_id=checkpoint_id,
                 input=input,
                 context=context,
+                trace=trace,
                 **kwargs,
             )
         )

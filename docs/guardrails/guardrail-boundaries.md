@@ -158,9 +158,10 @@ A check can fail in two ways that look alike from outside: it ran and found some
 The rules:
 
 - **A runner that raises becomes `errored=True`** at one choke point, and `on_error` decides: `allow` passes (fail open), `block` fails (fail closed). The result is never mistaken for a real verdict.
-- **A configuration that cannot check anything errors.** An empty schema, an empty pattern, no entities, no topics, a mistyped mode, a backend that does not exist, a groundedness rule with no context: all report that they could not run, never "no PII found". This invariant was broken in three consecutive releases, once per type; the sweep that holds it fails when a new type ships without that case.
+- **A configuration that cannot check anything errors.** An empty schema, an empty pattern, a pattern that does not compile (1.89.0; it was a plain fail, while the plane's runner raised), no entities, no topics, a mistyped mode, a backend that does not exist, a groundedness rule with no context: all report that they could not run, never "no PII found". This invariant was broken in three consecutive releases, once per type; the sweep that holds it fails when a new type ships without that case.
 - **An errored check blocks whatever its action.** A `mask` with nothing known about the payload has nothing to mask.
 - **A missing slot is not a pass.** A `groundedness` rule reads its context from the run-scoped slot `fa.guardrail_context(context=…)`; without it the rule errors.
+- **A judge reply with no verdict in it is not a pass** (1.89.0). When the LLM classifier behind `no_prompt_injection(mode="llm")`, `toxicity_check(mode="llm")` or `grounded(...)` replies with valid JSON that lacks the verdict field (`{}`, or only a `reasoning`), the check raises and `on_error` decides. Before 1.89.0 the missing field read as its default: "no injection", toxicity 0.0, "no claims to check". The plane's `topic` judge already refused such a reply.
 
 Proof 3 runs a crashing check under both policies, then ten unusable configurations through the real runners:
 

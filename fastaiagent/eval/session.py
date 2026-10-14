@@ -16,6 +16,7 @@ import json
 from typing import Any
 
 from fastaiagent._internal.async_utils import run_sync
+from fastaiagent._internal.safety_detectors import judge_field
 from fastaiagent.eval.scorer import Scorer, ScorerResult
 
 
@@ -47,14 +48,14 @@ async def _judge_score(
     try:
         resp = await llm.acomplete([SystemMessage(system_prompt), UserMessage(user_prompt)])
         data = json.loads(_strip_fences(resp.content or "{}"))
-        score_val = float(data.get("score", 0.0))
+        score_val = judge_field(data, "score", "number")
         return ScorerResult(
             score=score_val,
             passed=score_val >= threshold,
             reason=str(data.get("reasoning", "")),
         )
     except Exception as e:
-        return ScorerResult(score=0.0, passed=False, reason=f"Session judge error: {e}")
+        return ScorerResult.error(f"Session judge error: {e}")
 
 
 class ConversationCoherence(Scorer):
@@ -84,7 +85,7 @@ class ConversationCoherence(Scorer):
 
         turns = kw.get("turns", [])
         if not turns:
-            return ScorerResult(score=1.0, passed=True, reason="No turns to evaluate")
+            return ScorerResult.not_applicable("No turns to evaluate")
 
         contents = [
             t.get("content", "") if isinstance(t, dict) else str(t) for t in turns
@@ -127,7 +128,7 @@ class ConversationCoherence(Scorer):
                     penalties += 1.0
 
         if total_checks == 0:
-            return ScorerResult(score=1.0, passed=True, reason="No checks applicable")
+            return ScorerResult.not_applicable("No checks applicable (a single turn)")
 
         score = max(1.0 - (penalties / total_checks), 0.0)
         return ScorerResult(
@@ -143,7 +144,7 @@ class ConversationCoherence(Scorer):
 
         turns = kw.get("turns", [])
         if not turns:
-            return ScorerResult(score=1.0, passed=True, reason="No turns to evaluate")
+            return ScorerResult.not_applicable("No turns to evaluate")
         llm = self._llm or LLMClient()
         prompt = (
             "Evaluate the coherence of this multi-turn conversation. A coherent "
@@ -187,7 +188,7 @@ class GoalCompletion(Scorer):
 
         goal = kw.get("goal", expected)
         if not goal:
-            return ScorerResult(score=0.0, passed=False, reason="No goal specified")
+            return ScorerResult.not_applicable("No goal specified")
 
         output_lower = output.lower()
         goal_lower = goal.lower()
@@ -266,7 +267,7 @@ class GoalCompletion(Scorer):
 
         goal = kw.get("goal", expected)
         if not goal:
-            return ScorerResult(score=0.0, passed=False, reason="No goal specified")
+            return ScorerResult.not_applicable("No goal specified")
         turns = kw.get("turns", [])
         convo = _format_turns(turns) if turns else f"assistant: {output}"
         llm = self._llm or LLMClient()
@@ -312,7 +313,7 @@ class KnowledgeRetention(Scorer):
 
         turns = kw.get("turns", [])
         if not turns:
-            return ScorerResult(score=1.0, passed=True, reason="No turns to evaluate")
+            return ScorerResult.not_applicable("No turns to evaluate")
         llm = self._llm or LLMClient()
         prompt = (
             "Across this conversation, does the assistant correctly retain and reuse "
@@ -360,10 +361,10 @@ class RoleAdherence(Scorer):
 
         role = kw.get("role", self.role)
         if not role:
-            return ScorerResult(score=0.0, passed=False, reason="No role specified")
+            return ScorerResult.not_applicable("No role specified")
         turns = kw.get("turns", [])
         if not turns:
-            return ScorerResult(score=1.0, passed=True, reason="No turns to evaluate")
+            return ScorerResult.not_applicable("No turns to evaluate")
         llm = self._llm or LLMClient()
         prompt = (
             f"The assistant is supposed to act strictly as: {role}.\n"
@@ -406,7 +407,7 @@ class ConversationRelevancy(Scorer):
 
         turns = kw.get("turns", [])
         if not turns:
-            return ScorerResult(score=1.0, passed=True, reason="No turns to evaluate")
+            return ScorerResult.not_applicable("No turns to evaluate")
         llm = self._llm or LLMClient()
         prompt = (
             "Are the assistant's responses relevant and responsive to what the user asked "

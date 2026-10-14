@@ -6,6 +6,9 @@ import type {
   GuardrailEventsPage,
 } from "@/lib/types";
 
+/** Rows per page on the events list. */
+export const GUARDRAIL_EVENTS_PAGE_SIZE = 50;
+
 interface Filters {
   rule?: string | null;
   outcome?: string | null;
@@ -15,6 +18,10 @@ interface Filters {
   false_positive?: boolean | null;
   since?: string;
   until?: string;
+  /** Leave out clean passes (1.89.0). */
+  hide_passes?: boolean;
+  /** Leave out replay, Playground and other non-production checks (1.89.0). */
+  exclude_experiments?: boolean;
   page?: number;
   page_size?: number;
 }
@@ -31,8 +38,10 @@ function buildQuery(f: Filters): string {
   }
   if (f.since) params.set("since", f.since);
   if (f.until) params.set("until", f.until);
+  if (f.hide_passes) params.set("hide_passes", "true");
+  if (f.exclude_experiments) params.set("exclude_experiments", "true");
   params.set("page", String(f.page ?? 1));
-  params.set("page_size", String(f.page_size ?? 100));
+  params.set("page_size", String(f.page_size ?? GUARDRAIL_EVENTS_PAGE_SIZE));
   return params.toString() ? `?${params.toString()}` : "";
 }
 
@@ -44,12 +53,16 @@ export function useGuardrailEvents(filters: Filters = {}) {
   });
 }
 
-export function useGuardrailEvent(eventId: string | undefined) {
+export function useGuardrailEvent(eventId: string | undefined, redact: boolean = false) {
+  // ``?redact=true`` applies read-mode redaction to the judged text and the
+  // before/after diff, as the trace API does (honored only when a
+  // ``RedactionPolicy(mode in {"read", "both"})`` is installed).
+  const suffix = redact ? "?redact=true" : "";
   return useQuery({
-    queryKey: ["guardrail-event", eventId],
+    queryKey: ["guardrail-event", eventId, redact],
     queryFn: () =>
       api.get<GuardrailEventDetail>(
-        `/guardrail-events/${encodeURIComponent(eventId!)}`,
+        `/guardrail-events/${encodeURIComponent(eventId!)}${suffix}`,
       ),
     enabled: !!eventId,
   });

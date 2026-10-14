@@ -189,7 +189,7 @@ reproduced centrally:
 | Call | Emits | Why |
 |---|---|---|
 | `banned_topics([...])` | `topic` | The default. Round-trips to the console. |
-| `banned_topics([...], llm={"model": "gpt-4o-mini"})` | `topic` | Kwargs serialise, so the plane can rebuild the same judge. |
+| `banned_topics([...], llm={"model": "gpt-4o-mini"})` | `topic` | Kwargs serialise, so the plane can rebuild the same judge. Shareable fields only: an `api_key` in the dict raises (1.89.0), and the key comes from the env var. |
 | `banned_topics([...], mode="keyword")` | `code` | A substring match with no judge — there is nothing to distribute. |
 | `banned_topics([...], llm=LLMClient(...))` | `code` | A live client cannot be serialised into a stored config. |
 

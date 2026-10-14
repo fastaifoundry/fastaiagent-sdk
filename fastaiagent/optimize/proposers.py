@@ -228,7 +228,11 @@ async def bootstrap_demos(
             # selection seam; the loop's accept/reject still goes solely through
             # score_candidate (CONTRACT 1).
             results = await aevaluate(
-                agent.arun, Dataset.from_list(no_gold), run_scorers, persist=False
+                agent.arun,
+                Dataset.from_list(no_gold),
+                run_scorers,
+                persist=False,
+                run_kind="optimize",
             )
             for case in results.cases:
                 per = case.per_scorer or {}

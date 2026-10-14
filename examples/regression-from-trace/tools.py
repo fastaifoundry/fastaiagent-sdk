@@ -83,5 +83,7 @@ def buggy_lookup_order_tool() -> FunctionTool:
 
 def fixed_lookup_order_tool() -> FunctionTool:
     """The tool to override with in ``fix.py``. Keep the same ``name=``
-    so :meth:`ForkedReplay.with_tool_override` swaps it cleanly."""
-    return FunctionTool(name="lookup_order", fn=_lookup_order_fixed)
+    so :meth:`ForkedReplay.with_tool_override` swaps it cleanly.
+    ``register=False`` keeps this stand-in out of the global tool registry,
+    where it would replace the app's own ``lookup_order``."""
+    return FunctionTool(name="lookup_order", fn=_lookup_order_fixed, register=False)

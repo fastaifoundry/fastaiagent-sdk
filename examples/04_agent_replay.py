@@ -86,7 +86,10 @@ if __name__ == "__main__":
     # ── Step 4: Fork at step 2 ───────────────────────────────────────────
     fork_point = min(2, len(replay.steps()) - 1)
     print(f"Step 4: Forking at step {fork_point}...")
-    forked = replay.fork_at(step=fork_point)
+    # v1.89: a rerun runs only the tools you supply or allow; every other
+    # tool is blocked and returns an error. lookup_order only reads, so it
+    # is safe to run again for real.
+    forked = replay.fork_at(step=fork_point).with_tool_policy("live", allow=["lookup_order"])
     print()
 
     # ── Step 5: Modify the prompt ────────────────────────────────────────
@@ -104,6 +107,7 @@ if __name__ == "__main__":
     print(f"  Original output: {rerun_result.original_output}")
     print(f"  New output:      {rerun_result.new_output}")
     print(f"  Rerun trace ID:  {rerun_result.trace_id}")
+    print(f"  Tools:           {rerun_result.tool_dispositions}")
     print()
 
     # ── Step 7: Compare ──────────────────────────────────────────────────
@@ -124,7 +128,11 @@ if __name__ == "__main__":
     # regression tests where you need byte-identical output across runs.
     # See docs/replay/guarantees.md for the per-provider matrix.
     print("Step 8: Replaying with determinism='recorded' (no LLM call)...")
-    recorded_fork = replay.fork_at(step=0).with_determinism("recorded")
+    recorded_fork = (
+        replay.fork_at(step=0)
+        .with_determinism("recorded")
+        .with_tool_policy("live", allow=["lookup_order"])
+    )
     recorded = recorded_fork.rerun()
     print(f"  Recorded rerun output: {str(recorded.new_output)[:120]}...")
     print(

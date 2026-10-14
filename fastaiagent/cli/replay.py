@@ -35,31 +35,92 @@ def fork_and_rerun(
         "--output",
         help=(
             "Write the rerun result to this JSON file "
-            "(fields: trace_id, original_output, new_output). "
+            "(fields: trace_id, original_output, new_output, tool_dispositions, …). "
             "If omitted, prints to stdout."
         ),
+    ),
+    mode: str = typer.Option(
+        "live", "--mode", help="live | recorded | deterministic (how the model is called)."
+    ),
+    on_miss: str = typer.Option(
+        "live", "--on-miss", help="recorded mode: live | error when the rerun asks more."
+    ),
+    tools: str | None = typer.Option(
+        None,
+        "--tools",
+        help=(
+            "block | error | live: what to do with tools you did not --stub or "
+            "--allow-tool. Default: block, or FASTAIAGENT_REPLAY_TOOL_POLICY."
+        ),
+    ),
+    allow_tool: list[str] = typer.Option(
+        [], "--allow-tool", help="Run this tool live (repeatable). Required for REST/MCP tools."
+    ),
+    stub: list[str] = typer.Option(
+        [], "--stub", help="NAME=JSON: this tool returns JSON instead of running (repeatable)."
+    ),
+    db: str | None = typer.Option(None, "--db", help="local.db holding the trace to fork."),
+    rerun_db: str | None = typer.Option(
+        None, "--rerun-db", help="Write the rerun's trace to this local.db."
+    ),
+    export: bool = typer.Option(
+        False, "--export/--no-export", help="Export the rerun to the plane (off by default)."
     ),
 ) -> None:
     """Fork a past trace at a step, optionally modify it, and rerun it.
 
     This is the CLI surface for ``Replay.load(trace_id).fork_at(step)
     .modify_prompt(...).modify_input(...).rerun()``.
-    """
-    from fastaiagent.trace.replay import Replay
 
-    replay = Replay.load(trace_id)
+    Since 1.89.0 a rerun runs only the tools you give it: every other tool is
+    blocked (``--tools block``, the default). Use ``--stub NAME=JSON`` or
+    ``--allow-tool NAME`` per tool, or ``--tools live`` for the old behaviour.
+    The rerun is not exported unless you pass ``--export``.
+    """
+    from fastaiagent._internal.errors import ReplayError
+    from fastaiagent.trace.replay import Replay
+    from fastaiagent.trace.storage import TraceStore
+
+    stubs: dict[str, object] = {}
+    for item in stub:
+        name, sep, raw = item.partition("=")
+        if not sep or not name:
+            raise typer.BadParameter(f"--stub expects NAME=JSON, got {item!r}")
+        try:
+            stubs[name] = json.loads(raw)
+        except json.JSONDecodeError:
+            stubs[name] = raw  # a bare string is a fine canned result
+
+    replay = Replay.load(trace_id, store=TraceStore(db_path=db) if db else None)
     forked = replay.fork_at(step)
+    forked._surface = "cli"
     if prompt is not None:
         forked.modify_prompt(prompt)
     if input is not None:
         forked.modify_input({"input": input})
-    result = forked.rerun()
+    try:
+        forked.with_determinism(mode, on_miss=on_miss)  # type: ignore[arg-type]
+        forked.with_tool_policy(tools or forked._tool_policy, allow=allow_tool)  # type: ignore[arg-type]
+        for name, value in stubs.items():
+            forked.with_tool_stub(name, value)
+        if rerun_db:
+            forked.with_trace_db(rerun_db)
+        if export:
+            forked.with_export(True)
+        result = forked.rerun()
+    except ReplayError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
 
     payload = {
         "trace_id": result.trace_id,
         "original_output": result.original_output,
         "new_output": result.new_output,
         "steps_executed": result.steps_executed,
+        "determinism": result.determinism,
+        "tool_dispositions": result.tool_dispositions,
+        "blocked_tool_calls": result.blocked_tool_calls,
+        "exported": result.exported,
     }
     if output is None:
         console.print(payload)

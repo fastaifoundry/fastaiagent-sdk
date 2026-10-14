@@ -74,7 +74,8 @@ test("06 — Eval runs list", async ({ page }) => {
 test("07 — Eval run detail", async ({ page }) => {
   await page.goto("/evals");
   await page.getByText("support-smoke").click();
-  await expect(page.getByText(/Pass rate/i).first()).toBeVisible();
+  // 1.89.0: the headline is the cases rate; the single "Pass rate" tile is gone.
+  await expect(page.getByText(/Cases passed/i).first()).toBeVisible();
   // Scope to the card title — the row header also contains "Cases". An exact
   // text match no longer works: the title carries "N of M shown" (and an
   // errored count) in sibling spans, so its text is not just "Cases".

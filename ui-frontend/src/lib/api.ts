@@ -6,15 +6,22 @@
  * because `credentials: "include"` is set on every request.
  */
 
+import { normalizeErrorBody, type ErrorInfo } from "@/lib/api-error";
+
 export class ApiError extends Error {
   status: number;
   body?: unknown;
+  /** The normalised body: field errors, correlation id, provider details. */
+  info: ErrorInfo;
 
-  constructor(status: number, message: string, body?: unknown) {
-    super(message);
+  constructor(status: number, message: string, body?: unknown, info?: ErrorInfo) {
+    // Always a string, whatever shape `detail` had (1.89.0, P1).
+    const resolved = info ?? normalizeErrorBody(body, status, message);
+    super(typeof message === "string" && message ? message : resolved.message);
     this.name = "ApiError";
     this.status = status;
     this.body = body;
+    this.info = resolved;
   }
 }
 
@@ -76,9 +83,10 @@ async function request<T>(
     } catch {
       /* swallow */
     }
-    const detail =
-      (payload as { detail?: string } | null)?.detail ?? res.statusText;
-    throw new ApiError(res.status, detail, payload);
+    // `detail` is a string, a list (FastAPI 422) or an object; `new Error()`
+    // turned the last two into "[object Object]".
+    const info = normalizeErrorBody(payload, res.status, res.statusText);
+    throw new ApiError(res.status, info.message, payload, info);
   }
 
   // 204 No Content

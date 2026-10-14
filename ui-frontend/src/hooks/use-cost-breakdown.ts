@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { useIncludeExperiments } from "@/stores/preferences-store";
 import type {
   CostBreakdownResponse,
   CostGroupBy,
@@ -18,11 +19,13 @@ export function useCostBreakdown({
   chainName,
   agent,
 }: Params) {
+  const includeExperiments = useIncludeExperiments();
   const qs = new URLSearchParams({ group_by: groupBy, period });
   if (chainName) qs.set("chain_name", chainName);
   if (agent) qs.set("agent", agent);
+  qs.set("include_experiments", String(includeExperiments));
   return useQuery({
-    queryKey: ["cost-breakdown", groupBy, period, chainName, agent],
+    queryKey: ["cost-breakdown", groupBy, period, chainName, agent, includeExperiments],
     queryFn: () =>
       api.get<CostBreakdownResponse>(`/analytics/costs?${qs.toString()}`),
     enabled: groupBy !== "node" || !!chainName,

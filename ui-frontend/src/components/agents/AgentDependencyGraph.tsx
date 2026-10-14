@@ -48,12 +48,14 @@ import type {
   AgentDepGuardrail,
   AgentDepKB,
   AgentDepNode,
+  AgentDepObservedGuardrail,
   AgentDepPrompt,
   AgentDepTool,
   AgentDependencies,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { formatDurationMs } from "@/lib/format";
+import { guardrailEventsHref } from "@/lib/guardrail";
 
 // ---------------------------------------------------------------------------
 // Node renderers — small, self-contained. Each takes a typed payload from
@@ -68,6 +70,8 @@ interface NodeBaseData {
   subtitle?: string;
   badge?: string;
   warn?: boolean;
+  /** Drawn dashed: inferred from runs rather than declared (observed rules). */
+  dashed?: boolean;
   payload?: unknown;
 }
 
@@ -86,9 +90,11 @@ function NodeShell({
         "rounded-md border bg-card px-3 py-2 shadow-sm transition-colors",
         "min-w-[160px] max-w-[220px]",
         data.warn ? "border-fa-warning" : "hover:border-primary/50",
+        data.dashed && "border-dashed",
         className,
       )}
       data-node-kind={data.kind}
+      data-observed={data.dashed ? "true" : undefined}
     >
       <Handle type="target" position={Position.Top} className="!opacity-0" />
       <div className="flex items-center gap-1.5">
@@ -103,6 +109,7 @@ function NodeShell({
               data.warn
                 ? "bg-fa-warning/10 text-fa-warning"
                 : "bg-muted text-muted-foreground",
+              data.dashed && "border border-dashed border-muted-foreground/50",
             )}
           >
             {data.badge}
@@ -189,6 +196,90 @@ interface BuiltGraph {
   edges: RFEdge[];
 }
 
+/** A guardrail node's payload: the rule plus where it applies. */
+interface GuardrailNodePayload {
+  agent: string;
+  name: string | null;
+  guardrail_type: string | null;
+  position: string | null;
+  /** Ran for the agent without being declared on it (e.g. plane-distributed). */
+  observed: boolean;
+  declared?: AgentDepGuardrail;
+  seen?: AgentDepObservedGuardrail;
+}
+
+type AddNode = (
+  id: string,
+  type: NodeKind,
+  title: string,
+  subtitle?: string,
+  badge?: string,
+  warn?: boolean,
+  payload?: unknown,
+  dashed?: boolean,
+) => void;
+
+/**
+ * One node per rule. The id carries position and index: the same rule name
+ * declared at input and at output (two ``no_pii``) is two rules, and
+ * collapsing them by name hid one.
+ */
+function addGuardrailNodes(
+  deps: AgentDependencies,
+  parentId: string,
+  addNode: AddNode,
+  addEdge: (from: string, to: string) => void,
+) {
+  const agent = deps.agent.name;
+  const declared = deps.guardrails;
+  declared.forEach((gr, index) => {
+    const id = `guardrail:${agent}:${gr.position}:${gr.name}:${index}`;
+    const payload: GuardrailNodePayload = {
+      agent,
+      name: gr.name,
+      guardrail_type: gr.guardrail_type,
+      position: gr.position,
+      observed: false,
+      declared: gr,
+    };
+    addNode(
+      id,
+      "guardrail",
+      gr.name ?? "guardrail",
+      [gr.guardrail_type, gr.blocking === false ? "observe-only" : gr.action]
+        .filter(Boolean)
+        .join(" · ") || undefined,
+      gr.position ?? undefined,
+      false,
+      payload,
+    );
+    addEdge(parentId, id);
+  });
+  (deps.observed_guardrails ?? []).forEach((gr, i) => {
+    const index = declared.length + i;
+    const id = `guardrail:${agent}:${gr.position}:${gr.name}:${index}`;
+    const payload: GuardrailNodePayload = {
+      agent,
+      name: gr.name,
+      guardrail_type: gr.guardrail_type,
+      position: gr.position,
+      observed: true,
+      seen: gr,
+    };
+    addNode(
+      id,
+      "guardrail",
+      gr.name,
+      [gr.guardrail_type, gr.position, gr.origin].filter(Boolean).join(" · ") || undefined,
+      "observed",
+      false,
+      payload,
+      true,
+    );
+    addEdge(parentId, id);
+  });
+}
+
 function buildGraph(deps: AgentDependencies): BuiltGraph {
   const nodes: RFNode[] = [];
   const edges: RFEdge[] = [];
@@ -202,14 +293,15 @@ function buildGraph(deps: AgentDependencies): BuiltGraph {
     marginy: 20,
   });
 
-  const addNode = (
-    id: string,
-    type: NodeKind,
-    title: string,
-    subtitle?: string,
-    badge?: string,
-    warn?: boolean,
-    payload?: unknown,
+  const addNode: AddNode = (
+    id,
+    type,
+    title,
+    subtitle,
+    badge,
+    warn,
+    payload,
+    dashed,
   ) => {
     g.setNode(id, { width: NODE_W, height: NODE_H });
     nodes.push({
@@ -222,6 +314,7 @@ function buildGraph(deps: AgentDependencies): BuiltGraph {
         subtitle,
         badge,
         warn,
+        dashed,
         payload,
       } as unknown as Record<string, unknown>,
     });
@@ -319,20 +412,8 @@ function buildGraph(deps: AgentDependencies): BuiltGraph {
     addEdge(centerId, id);
   }
 
-  // Guardrails.
-  for (const gr of deps.guardrails) {
-    const id = `guardrail:${deps.agent.name}:${gr.name}`;
-    addNode(
-      id,
-      "guardrail",
-      gr.name ?? "guardrail",
-      gr.guardrail_type ?? undefined,
-      gr.position ?? undefined,
-      false,
-      gr,
-    );
-    addEdge(centerId, id);
-  }
+  // Guardrails — declared, then observed.
+  addGuardrailNodes(deps, centerId, addNode, addEdge);
 
   // Sub-agents (Supervisor workers). Each sub-agent gets its own subtree.
   for (const sub of deps.sub_agents ?? []) {
@@ -384,19 +465,7 @@ function buildGraph(deps: AgentDependencies): BuiltGraph {
       addNode(id, "prompt", p.name, undefined, undefined, false, p);
       addEdge(subId, id);
     }
-    for (const gr of sub.guardrails) {
-      const id = `guardrail:${sub.agent.name}:${gr.name}`;
-      addNode(
-        id,
-        "guardrail",
-        gr.name ?? "guardrail",
-        gr.guardrail_type ?? undefined,
-        gr.position ?? undefined,
-        false,
-        gr,
-      );
-      addEdge(subId, id);
-    }
+    addGuardrailNodes(sub, subId, addNode, addEdge);
   }
 
   // Swarm peers — flat siblings of the centre, with handoff edges drawn
@@ -468,6 +537,12 @@ function DetailPanel({
       )}`;
     if (kind === "agent" && (payload as AgentDepNode)?.name)
       return `/agents/${encodeURIComponent((payload as AgentDepNode).name)}`;
+    if (kind === "guardrail" && (payload as GuardrailNodePayload)?.name)
+      return guardrailEventsHref(
+        (payload as GuardrailNodePayload).agent,
+        (payload as GuardrailNodePayload).name,
+        (payload as GuardrailNodePayload).position,
+      );
     return null;
   };
 
@@ -492,7 +567,7 @@ function DetailPanel({
             <PromptDetail prompt={data.payload as AgentDepPrompt} />
           )}
           {data.kind === "guardrail" && (
-            <GuardrailDetail guardrail={data.payload as AgentDepGuardrail} />
+            <GuardrailDetail guardrail={data.payload as GuardrailNodePayload} />
           )}
           {data.kind === "worker" && (
             <WorkerDetail worker={data.payload as AgentDependencies} />
@@ -610,17 +685,40 @@ function PromptDetail({ prompt }: { prompt: AgentDepPrompt }) {
   );
 }
 
-function GuardrailDetail({ guardrail }: { guardrail: AgentDepGuardrail }) {
+function GuardrailDetail({ guardrail }: { guardrail: GuardrailNodePayload }) {
+  const d = guardrail.declared;
+  const seen = guardrail.seen;
+  const field = (label: string, value: unknown) =>
+    value == null ? null : (
+      <li>
+        <span className="text-muted-foreground">{label}:</span>{" "}
+        <span className="font-mono">{String(value)}</span>
+      </li>
+    );
   return (
     <ul className="space-y-1.5">
-      <li>
-        <span className="text-muted-foreground">type:</span>{" "}
-        <span className="font-mono">{guardrail.guardrail_type ?? "—"}</span>
-      </li>
-      <li>
-        <span className="text-muted-foreground">position:</span>{" "}
-        <span className="font-mono">{guardrail.position ?? "—"}</span>
-      </li>
+      {field("type", guardrail.guardrail_type ?? "—")}
+      {field("position", guardrail.position ?? "—")}
+      {d && (
+        <>
+          {field("action", d.action)}
+          {d.blocking != null && field("mode", d.blocking ? "blocking" : "observe-only")}
+          {field("on_error", d.on_error)}
+          {field("severity", d.severity)}
+          {d.floor && field("floor", "yes")}
+        </>
+      )}
+      {seen && (
+        <>
+          <li className="text-xs text-muted-foreground">
+            Observed: this rule ran for the agent but is not declared on it
+            (e.g. distributed by a control plane).
+          </li>
+          {field("origin", seen.origin)}
+          {field("checks", seen.checks)}
+          {field("last seen", seen.last_seen)}
+        </>
+      )}
     </ul>
   );
 }

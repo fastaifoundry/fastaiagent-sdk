@@ -150,6 +150,7 @@ The rules:
 - **A fragment is one row, updated in place.** `register_fragment()` on an existing name upserts; there is no fragment version history in the store.
 - **Every prompt that references it changes on its next `load()`.** The prompt's version does not change; `diff(name, 1, 1)` reports no change, because the stored template still says `{{@tone}}`.
 - **The trace keeps the truth.** Each `llm.*` span records the messages actually sent in `gen_ai.request.messages`. Two runs at `prompt.version = 1` can carry two different system prompts, and the span shows which.
+- **The Local UI editor keeps the reference live** (*fixed in 1.89.0*). It edits the stored template, `{{@tone}}` included, and saves it back as written. Before 1.89.0 it edited the *resolved* text, so "Save as new version" replaced the reference with a frozen copy and later fragment edits no longer reached that version. `reg.load(name, resolve_fragments=False)` returns the stored template the same way.
 
 Proof 3 edits a fragment between two loads of the same v1, then runs both through an agent on the SDK's `TestModel` and reads the spans:
 

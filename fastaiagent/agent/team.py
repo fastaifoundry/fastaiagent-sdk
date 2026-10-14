@@ -24,6 +24,7 @@ from fastaiagent.chain.interrupt import (
 )
 from fastaiagent.checkpointers import Checkpointer, SQLiteCheckpointer
 from fastaiagent.guardrail.guardrail import (
+    _run_firings,
     collected_firings,
     start_firing_collection,
     stop_firing_collection,
@@ -634,6 +635,12 @@ class Supervisor:
                 )
                 for attempt in range(attempts):
                     result = await _invoke_worker(current_task)
+                    # The worker's run collected its own firings (and shadowed
+                    # ours while it ran). ``result.guardrails`` is documented as
+                    # every guardrail that executed, so hand them up (1.89.0).
+                    supervisor_firings = _run_firings.get()
+                    if supervisor_firings is not None and result.guardrails:
+                        supervisor_firings.extend(result.guardrails)
                     if result.status == "paused":
                         pi = result.pending_interrupt or {}
                         raise _AgentInterrupted(
@@ -729,6 +736,20 @@ class Supervisor:
         ``checkpointer`` on the Supervisor to get crash- and interrupt-
         recovery via :meth:`resume`.
         """
+        return await self._arun_spanned(
+            input, context=context, execution_id=execution_id, resumed=None, **kwargs
+        )
+
+    async def _arun_spanned(
+        self,
+        input: str,
+        *,
+        context: RunContext[Any] | None,
+        execution_id: str | None,
+        resumed: str | None,
+        **kwargs: Any,
+    ) -> AgentResult:
+        """The run itself; ``resumed`` names the execution a resume continues."""
         from fastaiagent.trace.otel import get_tracer
 
         tracer = get_tracer()
@@ -743,6 +764,9 @@ class Supervisor:
             span.set_attribute("fastaiagent.runner.type", "supervisor")
             span.set_attribute("fastaiagent.framework", "fastaiagent")
             span.set_attribute("supervisor.input", input)
+            if resumed:
+                span.set_attribute("supervisor.resumed", True)
+                span.set_attribute("supervisor.resumed_execution_id", resumed)
 
             if self._checkpointer is not None:
                 self._checkpointer.setup()
@@ -751,12 +775,17 @@ class Supervisor:
                 result = await self._arun_routed(
                     input, span, context=context, execution_id=execution_id, **kwargs
                 )
-                span.set_attribute("supervisor.output", result.output)
-                return result
-
-            agent = self._build_inner_agent(context=context)
-            result = await agent.arun(input, context=context, execution_id=execution_id, **kwargs)
+            else:
+                agent = self._build_inner_agent(context=context)
+                result = await agent.arun(
+                    input, context=context, execution_id=execution_id, **kwargs
+                )
             span.set_attribute("supervisor.output", result.output)
+            # Read off the result rather than chosen up front: with no id given,
+            # each ``validate_outputs`` retry of a routed worker picks its own,
+            # and choosing one here would make them share it.
+            if result.execution_id:
+                span.set_attribute("supervisor.execution_id", result.execution_id)
             return result
 
     def resume(
@@ -833,10 +862,11 @@ class Supervisor:
         # during this resumed run can pick it up via _resume_value.
         rv_token = _resume_value.set(resume_value) if resume_value is not None else None
         try:
-            return await self.arun(
+            return await self._arun_spanned(
                 input_str,
                 context=context,
                 execution_id=execution_id,
+                resumed=execution_id,
                 **kwargs,
             )
         finally:
@@ -883,6 +913,8 @@ class Supervisor:
             span.set_attribute("supervisor.routing", "decisions")
             span.set_attribute("supervisor.route.worker", worker.role)
             span.set_attribute("supervisor.resumed", True)
+            span.set_attribute("supervisor.resumed_execution_id", execution_id)
+            span.set_attribute("supervisor.execution_id", execution_id)
             result = await self._routed_clone(worker).aresume(
                 execution_id,
                 resume_value=resume_value,

@@ -345,11 +345,62 @@ calls always verify and cannot be disabled.
 restrict destination IPs — if you wrap a public-internet-touching
 tool around your agent, run it under an egress proxy.
 
+## Credentials in traces and pushed definitions
+
+*Changed in 1.89.0.* A credential never leaves the process through anything
+the SDK serializes or records.
+
+**Shareable rule configs take no credentials.** A model-backed guardrail's
+`config["llm"]` (`llm_judge`, `content_safety`, `groundedness`, `topic`, and
+`banned_topics(..., llm={...})`) and a Chain decision node's `decision["llm"]`
+are serialized into the root span's `agent.guardrails`, into the agent
+definition pushed to the plane, and back out to every agent the plane
+distributes the rule to. They accept only shareable `LLMClient` fields
+(`provider`, `model`, `base_url`, sampling parameters and similar). Anything
+else, such as `api_key` or `default_headers`, **raises `ValueError` when the
+rule is built**, and the error names the field but never echoes its value.
+
+The process that runs the rule supplies its own key:
+
+- **From the environment.** The rule's client resolves the provider's env var
+  (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …), like every `LLMClient`.
+- **From a live client,** where the API accepts one:
+  `banned_topics([...], llm=LLMClient(api_key=...))` keeps the rule local, and
+  it is never serialized.
+
+A rule rebuilt from a stored trace or from the plane (Replay, `from_policy`,
+`Guardrail.from_dict`, `Chain.from_dict`) may have been written by an older SDK
+with a key inside. It still loads: the field is dropped with a warning, and the
+rule uses this process's env key. Serialization applies the same allowlist
+again, so a key added to `config` after construction is still not carried out.
+
+**Provider error text is scrubbed where it is built.** A provider may echo a
+rejected key in its error body; OpenAI does (`"Incorrect API key provided:
+sk-…"`). `LLMProviderError` messages have the client's key, the provider keys
+in the environment, half-masked echoes (`sk-proj-****abcd`) and key-shaped
+strings replaced by `[REDACTED]`. The provider's explanation stays readable, and
+is also available as `provider_message`, `provider_code` and `request_id`. As a
+fallback for exceptions the SDK did not build, exception text is scrubbed again
+when a span is stored and when it is exported (plane, `add_exporter` sinks,
+status descriptions), and the Playground's failure log line carries a scrubbed
+traceback.
+
+**Gemini** receives its key in the `x-goog-api-key` header rather than a
+`?key=` query parameter, so the key no longer appears in request URLs, httpx's
+request log line or connection errors.
+
+**Rows written before 1.89.0** may still hold a key, locally and on the plane.
+Find local ones with `fastaiagent traces scrub-secrets --dry-run` and clean them
+with `fastaiagent traces scrub-secrets`. A span that was already sent to the
+plane cannot be recalled, so **rotate any key that was passed in a guardrail's
+`llm` dict, or rejected by OpenAI, on an older version.**
+
 ## Secret handling guidance
 
 * **API keys** for LLM providers belong in environment variables
   (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, etc.) not in source. The
-  `LLMClient` resolves them on construction. Tests that hit real
+  `LLMClient` resolves them on construction. Never put a key in a guardrail
+  or decision `llm` dict; since 1.89.0 that is refused (see above). Tests that hit real
   providers must be wrapped in `zsh -lc 'python …'` so the keys from
   `~/.zshrc` reach the subprocess.
 * **Trace payloads** can echo secrets the agent saw. Install a

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   ChevronLeft,
   ExternalLink,
@@ -7,13 +7,16 @@ import {
   Play,
   RefreshCw,
   Save,
+  Tag,
   Trash2,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { TableSkeleton } from "@/components/shared/LoadingSkeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
@@ -21,67 +24,136 @@ import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { RegistryExternalBanner } from "@/components/prompts/RegistryGate";
 import {
   useDeletePrompt,
+  useDeletePromptAlias,
   usePrompt,
   usePromptLineage,
   usePromptVersion,
   usePromptVersions,
+  useSetPromptAlias,
   useUpdatePrompt,
 } from "@/hooks/use-prompts";
 import { ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Timestamp } from "@/components/shared/Timestamp";
+import { PromptComparePanel } from "@/components/prompts/PromptComparePanel";
 
 function extractVars(template: string): string[] {
   const matches = template.matchAll(/\{\{(\w+)\}\}/g);
   return Array.from(new Set(Array.from(matches, (m) => m[1])));
 }
 
+/** The server's alias rule (`PUT /prompts/{slug}/aliases/{alias}`). */
+const ALIAS_RE = /^[A-Za-z0-9_.-]{1,64}$/;
+
 export function PromptEditorPage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  // `?alias=production` or `?version=2` opens that version (1.89.0).
+  const [search] = useSearchParams();
+  const urlAlias = search.get("alias");
+  const urlVersion = search.get("version");
 
   const prompt = usePrompt(slug);
   const versions = usePromptVersions(slug);
   const lineage = usePromptLineage(slug);
   const updatePrompt = useUpdatePrompt();
   const deletePrompt = useDeletePrompt();
+  const setAlias = useSetPromptAlias();
+  const deleteAlias = useDeletePromptAlias();
 
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
+  // The alias the version was opened by, kept while that version stays selected.
+  const [selectedAlias, setSelectedAlias] = useState<string | null>(null);
   const selectedDetail = usePromptVersion(slug, selectedVersion);
 
   const [draft, setDraft] = useState("");
   const [dirty, setDirty] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [newAlias, setNewAlias] = useState("");
 
   const isLocal = prompt.data?.registry_is_local ?? false;
+  const aliases = prompt.data?.aliases ?? {};
 
-  // When the prompt first loads, select its latest version and seed the draft.
+  // When the prompt first loads, select its latest version (or the one the URL
+  // names) and seed the draft. The draft is the RAW template: seeding it from
+  // the resolved one and saving it back replaced every {{@fragment}} with a
+  // frozen copy (1.89.0).
   useEffect(() => {
     if (prompt.data && selectedVersion == null) {
-      setSelectedVersion(String(prompt.data.latest_version));
-      setDraft(prompt.data.template);
+      const byAlias = urlAlias ? prompt.data.aliases?.[urlAlias] : undefined;
+      if (byAlias != null) {
+        setSelectedVersion(String(byAlias));
+        setSelectedAlias(urlAlias);
+      } else if (urlVersion && /^\d+$/.test(urlVersion)) {
+        setSelectedVersion(urlVersion);
+      } else {
+        setSelectedVersion(String(prompt.data.latest_version));
+      }
+      setDraft(prompt.data.template_raw ?? prompt.data.template);
       setDirty(false);
     }
-  }, [prompt.data, selectedVersion]);
+  }, [prompt.data, selectedVersion, urlAlias, urlVersion]);
+
+  const selectVersion = (version: string) => {
+    setSelectedVersion(version);
+    setSelectedAlias(null);
+  };
+
+  const refreshAliases = () => {
+    queryClient.invalidateQueries({ queryKey: ["prompt", slug] });
+    queryClient.invalidateQueries({ queryKey: ["prompt-versions", slug] });
+  };
+
+  const handleSetAlias = async () => {
+    const name = newAlias.trim();
+    if (!slug || !selectedVersion || !ALIAS_RE.test(name)) return;
+    try {
+      await setAlias.mutateAsync({ slug, alias: name, version: Number(selectedVersion) });
+      toast.success(`${name} → v${selectedVersion}`);
+      setNewAlias("");
+      refreshAliases();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Could not set the alias");
+    }
+  };
+
+  const handleRemoveAlias = async (name: string) => {
+    if (!slug) return;
+    try {
+      await deleteAlias.mutateAsync({ slug, alias: name });
+      toast.success(`Removed alias ${name}`);
+      if (selectedAlias === name) setSelectedAlias(null);
+      refreshAliases();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Could not remove the alias");
+    }
+  };
 
   // When the user picks a non-latest version, swap the editor contents.
   useEffect(() => {
     if (selectedDetail.data) {
-      setDraft(selectedDetail.data.template);
+      setDraft(selectedDetail.data.template_raw ?? selectedDetail.data.template);
       setDirty(false);
     }
   }, [selectedDetail.data]);
 
   const variables = useMemo(() => extractVars(draft), [draft]);
+  const fragments = selectedDetail.data?.fragments ?? prompt.data?.fragments ?? [];
 
   const handleSave = async () => {
     if (!slug || !draft.trim()) return;
     try {
-      const res = await updatePrompt.mutateAsync({ slug, template: draft });
+      // No metadata: the server inherits it from the version being edited.
+      // Sending {} wiped it on every save (1.89.0).
+      const res = await updatePrompt.mutateAsync({
+        slug,
+        template: draft,
+        baseVersion: selectedVersion != null ? Number(selectedVersion) : undefined,
+      });
       toast.success(`Saved as v${res.version}`);
       setDirty(false);
-      setSelectedVersion(String(res.version));
+      selectVersion(String(res.version));
       queryClient.invalidateQueries({ queryKey: ["prompt", slug] });
       queryClient.invalidateQueries({ queryKey: ["prompt-versions", slug] });
       queryClient.invalidateQueries({ queryKey: ["prompts"] });
@@ -138,7 +210,11 @@ export function PromptEditorPage() {
         {slug && (
           <Link
             to={`/playground?prompt=${encodeURIComponent(slug)}${
-              selectedVersion ? `&version=${selectedVersion}` : ""
+              selectedAlias
+                ? `&alias=${encodeURIComponent(selectedAlias)}`
+                : selectedVersion
+                  ? `&version=${selectedVersion}`
+                  : ""
             }`}
           >
             <Button variant="outline" size="sm">
@@ -236,12 +312,12 @@ export function PromptEditorPage() {
             ) : (
               <ul className="divide-y">
                 {(versions.data?.versions ?? []).map((v) => {
-                  const isActive = selectedVersion === v.version;
+                  const isActive = selectedVersion === String(v.version);
                   return (
                     <li key={v.version}>
                       <button
                         type="button"
-                        onClick={() => setSelectedVersion(v.version)}
+                        onClick={() => selectVersion(String(v.version))}
                         className={cn(
                           "flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-sm transition-colors",
                           isActive
@@ -249,7 +325,18 @@ export function PromptEditorPage() {
                             : "hover:bg-muted/50"
                         )}
                       >
-                        <span className="font-mono">v{v.version}</span>
+                        <span className="flex flex-wrap items-center gap-1">
+                          <span className="font-mono">v{v.version}</span>
+                          {(v.aliases ?? []).map((a) => (
+                            <span
+                              key={a}
+                              data-testid="version-alias-chip"
+                              className="rounded border border-primary/40 bg-primary/5 px-1 font-mono text-[10px] text-primary"
+                            >
+                              {a}
+                            </span>
+                          ))}
+                        </span>
                         <span className="text-xs text-muted-foreground">
                           <Timestamp iso={v.created_at} /> · {v.created_by ?? "unknown"}
                         </span>
@@ -293,8 +380,119 @@ export function PromptEditorPage() {
                 readOnly={!isLocal}
                 placeholder="Enter prompt template. Use {{name}} for variables."
               />
+              {fragments.length > 0 && (
+                <p
+                  className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"
+                  data-testid="prompt-fragments"
+                >
+                  Fragments (kept as live references):
+                  {fragments.map((f) => (
+                    <span
+                      key={f}
+                      className="rounded border bg-muted/50 px-1.5 py-0.5 font-mono"
+                    >
+                      {`{{@${f}}}`}
+                    </span>
+                  ))}
+                </p>
+              )}
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-1.5 text-sm">
+                <Tag className="h-3.5 w-3.5" />
+                Aliases
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <p className="text-xs text-muted-foreground">
+                Code loads an alias with{" "}
+                <code className="font-mono">
+                  registry.load(&quot;{slug}&quot;, alias=&quot;production&quot;)
+                </code>
+                . Moving the alias promotes or rolls back the prompt without a
+                code change.
+              </p>
+              {Object.keys(aliases).length === 0 ? (
+                <p className="text-xs text-muted-foreground">No aliases yet.</p>
+              ) : (
+                <ul className="flex flex-wrap gap-2" data-testid="alias-list">
+                  {Object.entries(aliases)
+                    .sort(([a], [b]) => a.localeCompare(b))
+                    .map(([name, version]) => (
+                      <li
+                        key={name}
+                        className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-mono text-xs"
+                      >
+                        <button
+                          type="button"
+                          className="hover:text-primary"
+                          onClick={() => {
+                            setSelectedVersion(String(version));
+                            setSelectedAlias(name);
+                          }}
+                          title={`Open v${version}`}
+                        >
+                          {name} → v{version}
+                        </button>
+                        {isLocal && (
+                          <button
+                            type="button"
+                            aria-label={`Remove alias ${name}`}
+                            onClick={() => handleRemoveAlias(name)}
+                            disabled={deleteAlias.isPending}
+                            className="text-muted-foreground hover:text-destructive"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                </ul>
+              )}
+              {isLocal && selectedVersion && (
+                <form
+                  className="flex flex-wrap items-center gap-2"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleSetAlias();
+                  }}
+                >
+                  <Input
+                    value={newAlias}
+                    onChange={(e) => setNewAlias(e.target.value)}
+                    placeholder="production"
+                    aria-label="Alias name"
+                    aria-invalid={newAlias !== "" && !ALIAS_RE.test(newAlias.trim())}
+                    className="h-8 w-44 font-mono text-xs"
+                  />
+                  <Button
+                    type="submit"
+                    size="sm"
+                    variant="outline"
+                    disabled={!ALIAS_RE.test(newAlias.trim()) || setAlias.isPending}
+                  >
+                    Point at v{selectedVersion}
+                  </Button>
+                  {newAlias !== "" && !ALIAS_RE.test(newAlias.trim()) && (
+                    <span className="text-[11px] text-destructive">
+                      Letters, digits, &apos;_&apos;, &apos;.&apos; or &apos;-&apos;, up to 64.
+                    </span>
+                  )}
+                </form>
+              )}
+            </CardContent>
+          </Card>
+
+          {slug && (versions.data?.versions.length ?? 0) >= 2 && (
+            <PromptComparePanel
+              slug={slug}
+              versions={(versions.data?.versions ?? []).map((v) => Number(v.version))}
+              selected={selectedVersion != null ? Number(selectedVersion) : null}
+            />
+          )}
 
           <Card>
             <CardHeader>

@@ -25,6 +25,44 @@ export interface ExecutionCheckpoint {
    *  was refused. `synced` is true alongside it, because the outbox has
    *  stopped retrying — the two together mean "we gave up on this one". */
   sync_error: string | null;
+  /**
+   * 1.89.0, on `interrupted` rows only: "pending" while the pause still waits,
+   * "resolved" once someone resumed it. Absent from an older server.
+   */
+  interrupt_state?: "pending" | "resolved" | null;
+}
+
+/** How a resumed run was resolved, read from its trace (1.89.0). */
+export interface ExecutionResume {
+  node_id: string | null;
+  kind: string | null;
+  approved: boolean | null;
+  resolver: string | null;
+  reason: string | null;
+}
+
+/** One trace that ran this execution: the run, each resume, a fork. */
+export interface ExecutionRun {
+  trace_id: string;
+  role: "run" | "resume" | "fork";
+  name: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  status: "completed" | "paused" | "failed" | string;
+  /** Up to 2000 characters. */
+  output: unknown;
+  resume: ExecutionResume | null;
+}
+
+/** Who resolved the pause, and how. `source` says where it was read from. */
+export interface ExecutionResolution {
+  approved: boolean | null;
+  resolver: string | null;
+  reason: string | null;
+  node_id?: string | null;
+  at: string | null;
+  trace_id: string | null;
+  source: "trace" | "hitl_events" | string;
 }
 
 export interface ExecutionDetail {
@@ -38,6 +76,11 @@ export interface ExecutionDetail {
   /** >0 means the plane's copy of this run is incomplete. */
   quarantined_count?: number;
   checkpoints: ExecutionCheckpoint[];
+  // 1.89.0: what happened, not only what is stored.
+  pending_interrupt?: PendingInterrupt | null;
+  runs?: ExecutionRun[];
+  resolution?: ExecutionResolution | null;
+  final_output?: unknown;
 }
 
 export function useExecution(executionId: string | undefined) {

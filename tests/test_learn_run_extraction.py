@@ -153,3 +153,33 @@ def test_cli_user_scope_needs_a_scope_id(db):
     out = _cli(["--scope", "user", "--allow-personal", "--agent", "alpha", "--attribute-all"])
     assert out.exit_code == 2
     assert "needs --scope-id" in out.output
+
+
+def _replay_an_alpha_run(db: Path) -> str:
+    """A real replay rerun of one alpha trace; returns the rerun's trace id."""
+    from fastaiagent.trace.replay import Replay
+
+    store = TraceStore(db_path=str(db))
+    original = store.list_traces(last_hours=None, agent_name="alpha", limit=1)[0]
+    rerun = Replay.load(original.trace_id, store=store).fork_at(0)
+    rerun = rerun.modify_input("alpha question REPLAYED").with_determinism("recorded").rerun()
+    reset_tracer()
+    return str(rerun.trace_id)
+
+
+def test_replays_are_not_mined_by_default(db):
+    """1.89.0: a replay's output is counterfactual. Mining it stored facts that
+    never happened (the audit found 10 of them from one session)."""
+    _replay_an_alpha_run(db)
+    extractor = _extractor()
+    _run(db, extractor, agent_name="alpha")
+    mined = [c["messages"][-1].content or "" for c in extractor.calls]
+    assert len(mined) == 2, "only the two real alpha runs should be mined"
+    assert not any("REPLAYED" in m for m in mined)
+
+
+def test_include_experiments_mines_replays_too(db):
+    _replay_an_alpha_run(db)
+    extractor = _extractor()
+    _run(db, extractor, agent_name="alpha", include_experiments=True)
+    assert any("REPLAYED" in (c["messages"][-1].content or "") for c in extractor.calls)

@@ -40,7 +40,9 @@ results = evaluate(
     scorers=["exact_match", "contains"]
 )
 print(results.summary())
-# exact_match: avg=0.92 pass_rate=92% (100 cases)
+# exact_match: avg=0.92 pass_rate=92% (100 scored)
+# contains: avg=0.97 pass_rate=97% (100 scored)
+# cases: 90 passed, 10 failed, 0 errored (pass_rate=90%)
 ```
 
 ### 2. Replace MLflow Tracing

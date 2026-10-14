@@ -120,7 +120,7 @@ def test_guardrail_filter_marks_needs_review(isolated_local_db: Any) -> None:
     db.execute(
         "INSERT INTO guardrail_events (event_id, trace_id, guardrail_name, outcome, "
         "message, timestamp) VALUES (?,?,?,?,?,?)",
-        (uuid.uuid4().hex, tid, "no_pii", "fail", "PII detected", _now()),
+        (uuid.uuid4().hex, tid, "no_pii", "blocked", "PII detected", _now()),
     )
     db.close()
 
@@ -133,13 +133,20 @@ def test_guardrail_filter_marks_needs_review(isolated_local_db: Any) -> None:
     assert "no_pii" in it["reason"] and "PII detected" in it["reason"]
 
 
-def test_failed_filter_uses_error_status(isolated_local_db: Any) -> None:
+def test_failed_filter_uses_the_root_status(isolated_local_db: Any) -> None:
+    """A trace failed when its root span failed (1.89.0), as the plane reads it.
+
+    An ERROR child under an OK root, such as a ``warn`` guardrail span or a tool
+    error the agent recovered from, used to make the run "failed".
+    """
     db = _open_db()
     ok = uuid.uuid4().hex
     bad = uuid.uuid4().hex
+    recovered = uuid.uuid4().hex
     _span(db, ok, "agent.a", _agent_attrs("a", "fine", "ok"))
-    _span(db, bad, "agent.a", _agent_attrs("a", "boom", "partial"))
-    _span(db, bad, "tool.x", {"k": "v"}, parent="r", status="ERROR")
+    _span(db, bad, "agent.a", _agent_attrs("a", "boom", "partial"), status="ERROR")
+    _span(db, recovered, "agent.a", _agent_attrs("a", "warned", "answer"))
+    _span(db, recovered, "guardrail.tone", {"k": "v"}, parent="r", status="ERROR")
     db.close()
 
     items = curate_from_traces(filter="failed")
@@ -217,7 +224,7 @@ def test_mark_output_as_expected_override(isolated_local_db: Any) -> None:
     db.execute(
         "INSERT INTO guardrail_events (event_id, trace_id, guardrail_name, outcome, "
         "message, timestamp) VALUES (?,?,?,?,?,?)",
-        (uuid.uuid4().hex, tid, "g", "fail", "m", _now()),
+        (uuid.uuid4().hex, tid, "g", "blocked", "m", _now()),
     )
     db.close()
 
@@ -365,3 +372,40 @@ def test_real_agent_contract_with_testmodel(isolated_local_db: Any) -> None:
         assert it["trace_id"]
     finally:
         otel.reset()
+
+
+# --------------------------------------------------------------------------- #
+# Experiments (1.89.0)
+# --------------------------------------------------------------------------- #
+
+
+def _seed_real_and_replay() -> tuple[str, str]:
+    db = _open_db()
+    real, rerun = uuid.uuid4().hex, uuid.uuid4().hex
+    _span(db, real, "agent.support", _agent_attrs("support", "real q", "real a"))
+    _span(
+        db,
+        rerun,
+        "agent.support",
+        _agent_attrs("support", "replayed q", "replayed a", **{"fastaiagent.source": "replay"}),
+    )
+    db.close()
+    return real, rerun
+
+
+def test_experiments_are_not_curated_by_default(isolated_local_db: Any) -> None:
+    """A replay's output is counterfactual; curating it as gold fed a modified
+    run back in as ground truth (the audit took 16 of 17 cases from replays)."""
+    real, rerun = _seed_real_and_replay()
+    assert {it["trace_id"] for it in curate_from_traces(limit=None)} == {real}
+
+
+def test_include_experiments_curates_them_too(isolated_local_db: Any) -> None:
+    real, rerun = _seed_real_and_replay()
+    got = {it["trace_id"] for it in curate_from_traces(limit=None, include_experiments=True)}
+    assert got == {real, rerun}
+
+
+def test_explicit_trace_ids_are_always_honoured(isolated_local_db: Any) -> None:
+    _, rerun = _seed_real_and_replay()
+    assert [it["trace_id"] for it in curate_from_traces(trace_ids=[rerun])] == [rerun]

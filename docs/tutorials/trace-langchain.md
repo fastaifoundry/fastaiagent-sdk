@@ -41,8 +41,8 @@ response = llm.invoke(
 Traces are stored locally in SQLite. View them:
 
 ```bash
-fastaiagent traces list --last 24h
-fastaiagent replay <trace_id>
+fastaiagent traces list --last-hours 24
+fastaiagent replay show <trace_id>
 ```
 
 ## What the Handler Hooks
@@ -50,9 +50,15 @@ fastaiagent replay <trace_id>
 The callback handler subclasses `langchain_core.callbacks.BaseCallbackHandler`
 and instruments:
 
-- `on_llm_start` / `on_llm_end` — `langchain.llm.<model>` span
-- `on_tool_start` / `on_tool_end` — `langchain.tool.<name>` span
+- `on_chain_start` / `on_chain_end` — a `langchain.chain` root span, and a
+  `node.chain` span per traced graph node
+- `on_llm_start` / `on_chat_model_start` / `on_llm_end` — an
+  `llm.<provider>.<model>` span with tokens and cost, streamed calls included
+- `on_tool_start` / `on_tool_end` — a `tool.<name>` span
 - `on_llm_error` / `on_tool_error` — closes the matching open span on failure
+
+The extra works with LangChain 0.x and 1.x; see
+[Version compatibility](../integrations/langchain.md#version-compatibility).
 
 Spans land in `.fastaiagent/local.db` and are visible through
 `fastaiagent traces list` and the replay/export CLI commands.

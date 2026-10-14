@@ -91,6 +91,13 @@ Fragments are resolved at load time — the returned prompt has fragments replac
 - **Single update point**: Change the "tone" fragment once, every prompt that uses it picks up the change on next load
 - **Composability**: Mix and match fragments for different agent personas
 
+The Local UI's prompt editor edits the stored template, so `{{@tone}}` stays a
+live reference when you save a new version (*since 1.89.0*; it used to save the
+resolved text, freezing a copy of every fragment). The new version keeps the
+edited version's metadata and is labelled `ui`.
+
+![The prompt editor holding {{@tone}} as written, with the Fragments (kept as live references) line under the template](../ui/screenshots/189-ws1-01-prompt-editor-raw.png)
+
 ## Versioning
 
 Every `register()` call with the same name creates a new version. Versions are immutable — once created, they never change.
@@ -141,7 +148,23 @@ print(prod_prompt.version)  # 1
 
 staging_prompt = reg.load("greeting", alias="staging")
 print(staging_prompt.version)  # 2
+
+reg.aliases("greeting")                   # {"production": 1, "staging": 2}
+reg.delete_alias("greeting", "staging")   # True; False if there was none
 ```
+
+`set_alias` refuses a version that does not exist with `PromptNotFoundError`
+(*since 1.89.0*; it used to store the alias, and every `load(alias=...)`
+failed afterwards).
+
+In the Local UI, each version in the editor shows its aliases as chips, and
+you can point an alias at a version or remove it from there. The Playground's
+version picker lists the aliases next to the versions, and
+`/playground?prompt=greeting&alias=production` opens the aliased version. The
+routes are `PUT /api/prompts/{slug}/aliases/{alias}` with `{"version": 2}` and
+`DELETE /api/prompts/{slug}/aliases/{alias}`; alias names are 1–64 letters,
+digits, `_`, `.` or `-`. Like the editor, they are read-only when the
+registry lives outside the project directory.
 
 ### Deployment Workflow
 
@@ -157,20 +180,32 @@ After testing v2:
 
 ## Diff
 
-Compare two versions side by side:
+Compare two versions:
 
 ```python
 diff = reg.diff("greeting", version_a=1, version_b=2)
 print(diff)
 ```
 
-Output:
+Output, a unified diff with two lines of context:
 ```
 --- greeting v1
 +++ greeting v2
-- Hello {{name}}!
-+ Hi there, {{name}}! Welcome.
+@@ -1,3 +1,3 @@
+ You are a greeter.
+-Hello {{name}}!
++Hi there, {{name}}! Welcome.
+ Keep it short.
 ```
+
+Identical templates print `(no template changes)` under the header. Before
+1.89.0 the diff listed every line of both versions with no context, so one
+changed line in a long prompt was hard to find. The Local UI's **Compare
+versions** panel shows the same diff, coloured, next to both templates
+(`GET /api/prompts/{slug}/diff?a=1&b=2` returns `diff` plus `a` and `b` with
+each version's template).
+
+![The prompt editor: production and staging chips on v1 and v2, the Aliases card, and Compare versions showing the v1 → v2 diff above both templates](../ui/screenshots/189-playground-05-prompt-aliases-compare.png)
 
 ## Listing Prompts
 

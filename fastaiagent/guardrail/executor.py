@@ -4,16 +4,25 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from fastaiagent._internal.errors import GuardrailBlockedError
-from fastaiagent.guardrail.actions import halts
-from fastaiagent.guardrail.guardrail import GuardrailPosition, GuardrailResult, GuardrailType
+from fastaiagent.guardrail.actions import degrade_to_block, effect_of, halts
+from fastaiagent.guardrail.guardrail import (
+    GuardrailPosition,
+    GuardrailResult,
+    GuardrailType,
+    record_firing,
+)
 
 if TYPE_CHECKING:
     from fastaiagent.guardrail.guardrail import Guardrail
+    from fastaiagent.ui.events import EventBatch, GuardrailEventRecord
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -37,6 +46,39 @@ class GuardrailOutcome:
     """The first rule that asked to re-prompt the model, if any. Only the agent's
     output path can honour it — every other position has no model turn to redo,
     so ``halts()`` blocks there instead."""
+    records: list[GuardrailEventRecord] = field(default_factory=list)
+    """One record per check run here, with its effect and local event id (1.89.0)."""
+
+    def refuse(self, reason: str) -> None:
+        """The caller cannot use this outcome's rewrite or re-ask, and will block.
+
+        Call immediately before raising. Every rewritten or re-asked check is
+        recorded as ``blocked`` with ``reason``: its result (so
+        ``GuardrailBlockedError.results`` tells the truth), its firing on
+        ``AgentResult.guardrails``, and its local event row. The guardrail span
+        already emitted is unchanged. Best-effort: never raises.
+        """
+        try:
+            event_ids: list[str] = []
+            for record in self.records:
+                if record.effect not in ("rewritten", "reasked"):
+                    continue
+                record.effect = "blocked"
+                record.outcome = "blocked"
+                if record.result is not None:
+                    degrade_to_block(record.result, reason)
+                if record.firing is not None:
+                    record.firing.effect = "blocked"
+                if record.event_id:
+                    event_ids.append(record.event_id)
+            if event_ids:
+                from fastaiagent.ui.events import finalize_guardrail_events
+
+                finalize_guardrail_events(
+                    event_ids, effect="blocked", outcome="blocked", final_reason=reason
+                )
+        except Exception:
+            _log.debug("Could not record a refused guardrail outcome", exc_info=True)
 
     def __iter__(self) -> Iterator[GuardrailResult]:
         return iter(self.results)
@@ -136,23 +178,10 @@ def _exportable_detail(guardrail: Guardrail, result: GuardrailResult) -> dict[st
     return detail or None
 
 
-def _emit_guardrail_span(guardrail: Guardrail, result: GuardrailResult) -> None:
-    """Emit one child span carrying a guardrail's outcome.
-
-    Emitted on **pass and block** so the console shows green passes too. The
-    span nests under whatever span is currently active (the agent/turn span),
-    since OTel context propagates through ``await``. Best-effort — a tracing
-    failure must never break guardrail execution.
-
-    This is the **SDK runtime's** emit half: it pairs the compute done by
-    ``guardrail.aexecute`` with the SDK's own tracer. A foreign runtime that
-    borrows :func:`fastaiagent.run_guardrail` calls
-    :func:`fastaiagent.emit_guardrail` with *its* tracer instead — same span
-    shape, its own exporter.
-    """
+def _stamp_span(span: Any, guardrail: Guardrail, result: GuardrailResult) -> None:
+    """Set a guardrail span's outcome attributes and status. Best-effort."""
     try:
-        from fastaiagent.trace.otel import get_tracer
-        from fastaiagent.trace.span import emit_guardrail
+        from fastaiagent.trace.span import _stamp_guardrail_outcome
 
         if result.errored:
             check_result = "error"
@@ -160,13 +189,12 @@ def _emit_guardrail_span(guardrail: Guardrail, result: GuardrailResult) -> None:
             check_result = "pass"
         else:
             check_result = "block"
-        checks = json.dumps([{"name": guardrail.name, "result": check_result}])
-        emit_guardrail(
-            get_tracer("fastaiagent.guardrail"),
+        _stamp_guardrail_outcome(
+            span,
             name=guardrail.name,
             position=guardrail.position.value,
             passed=result.passed,
-            checks=checks,
+            checks=json.dumps([{"name": guardrail.name, "result": check_result}]),
             errored=result.errored,
             message=result.message,
             action=result.action,
@@ -176,7 +204,97 @@ def _emit_guardrail_span(guardrail: Guardrail, result: GuardrailResult) -> None:
             detail=_exportable_detail(guardrail, result),
         )
     except Exception:  # pragma: no cover - observability must never break a run
-        pass
+        _log.debug("Failed to stamp guardrail span for %r", guardrail.name, exc_info=True)
+
+
+async def _check_in_span(
+    guardrail: Guardrail, data: str | dict[str, Any], *, contain: bool = False
+) -> tuple[GuardrailResult, str | None]:
+    """Run one check inside its own guardrail span; return ``(result, span_id)``.
+
+    Emitted on **pass and block** so the console shows green passes too. The
+    span nests under whatever span is currently active (the agent/turn span),
+    since OTel context propagates through ``await``.
+
+    Since 1.89.0 the span **wraps the check** (it used to be opened after it):
+    its duration is the check's real latency, and a model call the check makes
+    (a judge's) is its child, not its sibling. Keys, values and status are
+    unchanged, and set by the same helper as :func:`fastaiagent.emit_guardrail`,
+    which a foreign runtime that borrows :func:`fastaiagent.run_guardrail` calls
+    with *its* tracer instead.
+
+    ``contain`` turns an exception from the check into an errored, blocked
+    result (the observe-only path, which used to get it from ``gather``).
+    """
+    from fastaiagent.trace.otel import get_tracer
+    from fastaiagent.trace.span import _span_id_hex
+
+    async def check() -> GuardrailResult:
+        try:
+            return await guardrail._acheck(data)
+        except Exception as e:
+            if not contain:
+                raise
+            return GuardrailResult(
+                passed=False, message=str(e), errored=True, action_taken="blocked"
+            )
+
+    # Observability must never break the check: if the span cannot be opened,
+    # the check still runs, untraced.
+    try:
+        cm = get_tracer("fastaiagent.guardrail").start_as_current_span(
+            f"guardrail.{guardrail.name}", record_exception=False, set_status_on_exception=False
+        )
+        span = cm.__enter__()
+    except Exception:
+        _log.debug("Could not open guardrail span for %r", guardrail.name, exc_info=True)
+        return await check(), None
+    try:
+        result = await check()
+        _stamp_span(span, guardrail, result)
+        return result, _span_id_hex(span)
+    finally:
+        try:
+            cm.__exit__(None, None, None)
+        except Exception:  # pragma: no cover - observability must never break a run
+            _log.debug("Could not close guardrail span for %r", guardrail.name, exc_info=True)
+
+
+def _record(
+    outcome: GuardrailOutcome,
+    batch: EventBatch | None,
+    guardrail: Guardrail,
+    result: GuardrailResult,
+    *,
+    judged: Any,
+    span_id: str | None,
+    allow_reask: bool,
+) -> None:
+    """Record one check: the run's firing list, the local event row, and the
+    record ``refuse()`` can later rewrite. Never raises."""
+    from fastaiagent.ui.events import GuardrailEventRecord, event_outcome
+
+    try:
+        effect = effect_of(guardrail, result, allow_reask=allow_reask)
+        firing = record_firing(guardrail, result, effect=effect)
+        event_id = (
+            batch.add(guardrail, result, data=judged, effect=effect, guardrail_span_id=span_id)
+            if batch is not None
+            else ""
+        )
+        outcome.records.append(
+            GuardrailEventRecord(
+                event_id=event_id,
+                guardrail_name=guardrail.name,
+                position=guardrail.position.value,
+                effect=effect,
+                outcome=event_outcome(guardrail, result, effect),
+                firing=firing,
+                result=result,
+            )
+        )
+    except Exception:
+        _log.debug("Could not record guardrail %r", guardrail.name, exc_info=True)
 
 
 async def execute_guardrails(
@@ -185,6 +303,8 @@ async def execute_guardrails(
     position: GuardrailPosition,
     *,
     allow_reask: bool = False,
+    agent_name: str | None = None,
+    attempt: int | None = None,
 ) -> GuardrailOutcome:
     """Execute guardrails for a given position.
 
@@ -206,6 +326,12 @@ async def execute_guardrails(
 
     Each guardrail that runs emits one child span (on pass and block) carrying
     its outcome, so connected traces show a per-span CHECKS row.
+
+    Each check is also recorded once (1.89.0): on the run's
+    ``AgentResult.guardrails``, on :attr:`GuardrailOutcome.records`, and, when
+    tracing is on, as a local event row with the text it judged. ``agent_name``
+    names the agent on those rows (the current span may be a tool span) and
+    ``attempt`` numbers a re-ask.
     """
     # Filter guardrails by position
     applicable = [g for g in guardrails if g.position == position]
@@ -217,12 +343,41 @@ async def execute_guardrails(
 
     outcome = GuardrailOutcome(results=[], data=data)
 
+    from fastaiagent.ui.events import EventBatch, recording_enabled
+
+    batch = EventBatch(agent_name=agent_name, attempt=attempt) if recording_enabled() else None
+    try:
+        await _run_position(outcome, blocking, non_blocking, batch, allow_reask=allow_reask)
+    finally:
+        # A block still records: the rows are flushed on the way out.
+        if batch is not None:
+            batch.flush()
+    return outcome
+
+
+async def _run_position(
+    outcome: GuardrailOutcome,
+    blocking: list[Guardrail],
+    non_blocking: list[Guardrail],
+    batch: EventBatch | None,
+    *,
+    allow_reask: bool,
+) -> None:
     # Run blocking guardrails sequentially
     for guardrail in blocking:
-        result = await guardrail.aexecute(outcome.data)
+        judged = outcome.data
+        # The span closes before any raise below, so blocks are traced too.
+        result, span_id = await _check_in_span(guardrail, judged)
         outcome.results.append(result)
-        # Emit the span before raising so blocks are traced too.
-        _emit_guardrail_span(guardrail, result)
+        _record(
+            outcome,
+            batch,
+            guardrail,
+            result,
+            judged=judged,
+            span_id=span_id,
+            allow_reask=allow_reask,
+        )
         if result.rewrote_payload():
             # The next rule judges what the caller will actually use, not what
             # the model originally produced.
@@ -254,17 +409,19 @@ async def execute_guardrails(
     # stands after the blocking rules, but their own rewrites are recorded as
     # evidence and never applied: an observe-only rule does not change the run.
     if non_blocking:
-        tasks = [g.aexecute(outcome.data) for g in non_blocking]
-        parallel_results = await asyncio.gather(*tasks, return_exceptions=True)
-        for guardrail, r in zip(non_blocking, parallel_results):
-            if isinstance(r, GuardrailResult):
-                outcome.results.append(r)
-                _emit_guardrail_span(guardrail, r)
-            elif isinstance(r, Exception):
-                failed = GuardrailResult(
-                    passed=False, message=str(r), errored=True, action_taken="blocked"
-                )
-                outcome.results.append(failed)
-                _emit_guardrail_span(guardrail, failed)
-
-    return outcome
+        judged = outcome.data
+        # Each task gets its own span (gather copies the context per task).
+        checked = await asyncio.gather(
+            *(_check_in_span(g, judged, contain=True) for g in non_blocking)
+        )
+        for guardrail, (result, span_id) in zip(non_blocking, checked):
+            outcome.results.append(result)
+            _record(
+                outcome,
+                batch,
+                guardrail,
+                result,
+                judged=judged,
+                span_id=span_id,
+                allow_reask=allow_reask,
+            )

@@ -11,6 +11,7 @@ import { SpanTree } from "@/components/traces/SpanTree";
 import { TraceSummaryBar } from "@/components/traces/TraceSummaryBar";
 import { ReplayDiffView } from "@/components/replay/ReplayDiffView";
 import { ReplayForkDialog } from "@/components/replay/ReplayForkDialog";
+import { RerunToolSummary } from "@/components/replay/RerunToolSummary";
 import { SaveAsTestDialog } from "@/components/replay/SaveAsTestDialog";
 import { useTrace, useTraceSpans } from "@/hooks/use-traces";
 import { useCompareFork, useReplay } from "@/hooks/use-replay";
@@ -179,6 +180,8 @@ export function AgentReplayPage() {
             </Button>
           </div>
 
+          <RerunToolSummary result={rerun} />
+
           {comparison ? (
             <ReplayDiffView
               comparison={comparison}
@@ -201,6 +204,7 @@ export function AgentReplayPage() {
         open={forkDialogOpen}
         onOpenChange={setForkDialogOpen}
         onRerunComplete={(_, result) => setRerun(result)}
+        tools={replay.data?.tools}
       />
 
       {rerun && (

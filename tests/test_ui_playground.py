@@ -678,3 +678,36 @@ class TestEnvKeyNeverFollowsACustomEndpoint:
             },
         )
         assert r.status_code != 400, r.text
+
+
+class TestValidationErrorsDoNotEchoTheKey:
+    """1.89.0: each 422 entry carried ``input``, the value that failed — for the
+    Playground that can be the token itself. The UI never reads it."""
+
+    KEY = "tok-must-not-come-back-0123456789"
+
+    @pytest.mark.parametrize("route", ["/api/playground/run", "/api/playground/stream"])
+    def test_a_malformed_token_is_not_echoed(self, client: TestClient, route: str) -> None:
+        r = client.post(
+            route,
+            json={
+                "provider": "custom",
+                "model": "m",
+                "prompt_template": "hi",
+                "variables": {},
+                "base_url": "https://gateway.example/v1",
+                "api_key": {"nested": self.KEY},
+                "parameters": {"max_tokens": 999_999},
+            },
+        )
+        assert r.status_code == 422
+        assert self.KEY not in r.text
+        detail = r.json()["detail"]
+        assert isinstance(detail, list) and detail, "the 422 shape must stay a list"
+        locs = {tuple(e["loc"]) for e in detail}
+        assert ("body", "parameters", "max_tokens") in locs
+
+    def test_other_routes_keep_fastapis_default(self, client: TestClient) -> None:
+        r = client.post("/api/datasets", json={"name": 123})
+        assert r.status_code == 422
+        assert r.json()["detail"][0]["input"] == 123

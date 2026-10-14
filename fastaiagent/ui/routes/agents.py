@@ -7,8 +7,9 @@ import logging
 import re
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
+from fastaiagent.trace.provenance import non_production_filter
 from fastaiagent.ui.deps import get_context, project_filter, require_session
 
 logger = logging.getLogger(__name__)
@@ -18,6 +19,7 @@ router = APIRouter(prefix="/api/agents", tags=["agents"])
 
 def _aggregate(
     spans: list[dict[str, Any]],
+    costs: dict[str, float] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Bucket root spans by agent name, computing per-agent stats."""
     from fastaiagent.ui.attrs import attr, trace_cost_usd
@@ -68,19 +70,14 @@ def _aggregate(
                 bucket["total_duration_ms"] += int((b - a).total_seconds() * 1000)
             except (ValueError, TypeError):
                 logger.debug("Failed to compute agent span duration from timestamps", exc_info=True)
-        reported_cost = trace_cost_usd(attrs)
-        if reported_cost is not None:
-            bucket["total_cost_usd"] += reported_cost
+        if costs is not None:
+            # The model calls under this agent span (1.89.0): the span itself
+            # carries no cost, so every agent read $0.00.
+            bucket["total_cost_usd"] += costs.get(span.get("span_id") or "", 0.0)
         else:
-            from fastaiagent.ui.pricing import compute_cost_usd
-
-            est = compute_cost_usd(
-                attrs.get("gen_ai.request.model"),
-                attrs.get("gen_ai.usage.input_tokens"),
-                attrs.get("gen_ai.usage.output_tokens"),
-            )
-            if est is not None:
-                bucket["total_cost_usd"] += est
+            reported_cost = trace_cost_usd(attrs)
+            if reported_cost is not None:
+                bucket["total_cost_usd"] += reported_cost
         if start > bucket["last_run"]:
             bucket["last_run"] = start
     return by_agent
@@ -172,21 +169,46 @@ def _empty_agent_summary(name: str) -> dict[str, Any]:
     }
 
 
+def _agent_span_rows(db: Any, ctx: Any, *, include_experiments: bool) -> list[dict[str, Any]]:
+    """Every ``agent.*`` span, minus experiment traces unless asked for (1.89.0).
+
+    A replay rerun used to count as a run of the agent: its latency, cost and
+    errors went into the agent's numbers.
+    """
+    pid_clause, pid_params = project_filter(ctx)
+    np_clause, np_params = non_production_filter(include=include_experiments)
+    rows: list[dict[str, Any]] = db.fetchall(
+        f"SELECT * FROM spans WHERE name LIKE 'agent.%' {pid_clause} {np_clause}",
+        (*pid_params, *np_params),
+    )
+    return rows
+
+
+def _costs(db: Any, ctx: Any, rows: list[dict[str, Any]]) -> dict[str, float]:
+    from fastaiagent.ui.trace_cost import costs_by_anchor
+
+    return costs_by_anchor(db, rows, project_id=getattr(ctx, "project_id", "") or "")
+
+
+_INCLUDE_EXPERIMENTS = Query(
+    default=False,
+    description="Count replay, Playground, learn and eval traces as production.",
+)
+
+
 @router.get("")
-def list_agents(request: Request, _user: str = Depends(require_session)) -> dict[str, Any]:
+def list_agents(
+    request: Request,
+    _user: str = Depends(require_session),
+    include_experiments: bool = _INCLUDE_EXPERIMENTS,
+) -> dict[str, Any]:
     ctx = get_context(request)
     db = ctx.db()
     try:
         # Scan every agent.* span, not just root spans. With workflow
         # wrappers (chain/swarm/supervisor), agents always run as children.
-        if ctx.project_id:
-            rows = db.fetchall(
-                "SELECT * FROM spans WHERE name LIKE 'agent.%' AND project_id = ?",
-                (ctx.project_id,),
-            )
-        else:
-            rows = db.fetchall("SELECT * FROM spans WHERE name LIKE 'agent.%'")
-        by_agent = _aggregate(rows)
+        rows = _agent_span_rows(db, ctx, include_experiments=include_experiments)
+        by_agent = _aggregate(rows, _costs(db, ctx, rows))
         agents = [_format(b) for b in by_agent.values()]
 
         # Surface registered runners that haven't produced spans yet so the
@@ -247,20 +269,19 @@ def get_agent(
     request: Request,
     name: str,
     _user: str = Depends(require_session),
+    include_experiments: bool = _INCLUDE_EXPERIMENTS,
 ) -> dict[str, Any]:
     ctx = get_context(request)
     db = ctx.db()
     try:
-        if ctx.project_id:
-            rows = db.fetchall(
-                "SELECT * FROM spans WHERE name LIKE 'agent.%' AND project_id = ?",
-                (ctx.project_id,),
-            )
-        else:
-            rows = db.fetchall("SELECT * FROM spans WHERE name LIKE 'agent.%'")
-        by_agent = _aggregate(rows)
+        rows = _agent_span_rows(db, ctx, include_experiments=include_experiments)
+        by_agent = _aggregate(rows, _costs(db, ctx, rows))
         if name in by_agent:
             payload = _format(by_agent[name])
+        elif name in _aggregate(_agent_span_rows(db, ctx, include_experiments=True)):
+            # It has only run as an experiment (a replay, an eval case). A
+            # zero-stat summary, not a 404: the trace links still lead here.
+            payload = _empty_agent_summary(name)
         elif name in _registered_agent_names(ctx.runners):
             # Registered via `fastaiagent ui --agent` (or build_app(runners=...))
             # but hasn't run yet. ``list_agents`` already surfaces these, so
@@ -340,10 +361,13 @@ def get_agent_tools(
                 )
         else:
             # ── latest agent.<name> root span with agent.tools JSON ──
+            # Never a replay's agent span: its tool list holds the rerun's stubs
+            # and blocked stand-ins, not the agent's real tools (1.89.0).
+            np_clause, np_params = non_production_filter()
             agent_rows = db.fetchall(
-                f"SELECT attributes FROM spans WHERE name = ? {pid_clause} "
+                f"SELECT attributes FROM spans WHERE name = ? {pid_clause} {np_clause} "
                 "ORDER BY start_time DESC LIMIT 1",
-                (f"agent.{name}", *pid_params),
+                (f"agent.{name}", *pid_params, *np_params),
             )
             if agent_rows:
                 try:
@@ -375,9 +399,10 @@ def get_agent_tools(
         # in those traces. Simpler than a recursive CTE and correct for the
         # one-level nesting we ship today.
         tool_agg: dict[str, dict[str, Any]] = {}
+        used_np_clause, used_np_params = non_production_filter()
         trace_rows = db.fetchall(
-            f"SELECT DISTINCT trace_id FROM spans WHERE name = ? {pid_clause}",
-            (f"agent.{name}", *pid_params),
+            f"SELECT DISTINCT trace_id FROM spans WHERE name = ? {pid_clause} {used_np_clause}",
+            (f"agent.{name}", *pid_params, *used_np_params),
         )
         trace_ids = [r["trace_id"] for r in trace_rows if r.get("trace_id")]
         if trace_ids:
@@ -647,6 +672,20 @@ def _agent_kbs_payload(agent: Any, kb_root: str | None) -> list[dict[str, Any]]:
     return out
 
 
+def _guardrail_entry(d: dict[str, Any]) -> dict[str, Any]:
+    """One declared rule for the dependency payload (action fields since 1.89.0)."""
+    return {
+        "name": d.get("name"),
+        "guardrail_type": d.get("guardrail_type"),
+        "position": d.get("position"),
+        "action": d.get("action"),
+        "blocking": d.get("blocking"),
+        "on_error": d.get("on_error"),
+        "severity": d.get("severity"),
+        "floor": d.get("floor"),
+    }
+
+
 def _agent_guardrails_payload(agent: Any) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for g in getattr(agent, "guardrails", []) or []:
@@ -654,11 +693,58 @@ def _agent_guardrails_payload(agent: Any) -> list[dict[str, Any]]:
             d = g.to_dict()
         except Exception:  # noqa: BLE001
             d = {"name": getattr(g, "name", "guardrail")}
+        out.append(_guardrail_entry(d))
+    return out
+
+
+def _observed_guardrails(
+    db: Any, name: str, project_id: str, declared: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Rules that ran for this agent but that it does not declare (1.89.0).
+
+    Plane-distributed rules are deliberately absent from ``agent.guardrails``
+    (they must not be pushed back as the agent's own), and so are rules a
+    runtime adds. The local event rows saw them run.
+    """
+    seen = {(d.get("name"), d.get("position")) for d in declared}
+    pid_clause = "AND project_id = ?" if project_id else ""
+    try:
+        rows = db.fetchall(
+            f"""SELECT guardrail_name, position, guardrail_type,
+                       MAX(timestamp) AS last_seen, COUNT(*) AS checks
+                FROM guardrail_events
+                WHERE agent_name = ? {pid_clause}
+                GROUP BY guardrail_name, position, guardrail_type
+                ORDER BY last_seen DESC""",
+            (name, *((project_id,) if project_id else ())),
+        )
+    except Exception:  # noqa: BLE001
+        return []
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        if (r.get("guardrail_name"), r.get("position")) in seen:
+            continue
+        origin = None
+        latest = db.fetchone(
+            f"""SELECT rule FROM guardrail_events
+                WHERE agent_name = ? AND guardrail_name = ? AND position = ? {pid_clause}
+                  AND rule IS NOT NULL
+                ORDER BY timestamp DESC LIMIT 1""",
+            (name, r["guardrail_name"], r.get("position"), *((project_id,) if project_id else ())),
+        )
+        if latest:
+            try:
+                origin = (json.loads(latest.get("rule") or "{}") or {}).get("origin")
+            except (json.JSONDecodeError, TypeError, AttributeError):
+                origin = None
         out.append(
             {
-                "name": d.get("name"),
-                "guardrail_type": d.get("guardrail_type"),
-                "position": d.get("position"),
+                "name": r["guardrail_name"],
+                "position": r.get("position"),
+                "guardrail_type": r.get("guardrail_type"),
+                "last_seen": r.get("last_seen"),
+                "checks": int(r.get("checks") or 0),
+                "origin": origin,
             }
         )
     return out
@@ -757,6 +843,7 @@ def _build_agent_payload(
     """
     name = getattr(agent, "name", "")
     used_by_name = _used_tools_for_agent(db, name, project_id)
+    guardrails = _agent_guardrails_payload(agent)
     return {
         "agent": {
             "name": name,
@@ -767,7 +854,8 @@ def _build_agent_payload(
         "tools": _agent_tools_payload(agent, used_by_name),
         "knowledge_bases": _agent_kbs_payload(agent, kb_root),
         "prompts": _extract_prompts_from_agent(agent),
-        "guardrails": _agent_guardrails_payload(agent),
+        "guardrails": guardrails,
+        "observed_guardrails": _observed_guardrails(db, name, project_id, guardrails),
         "model": _agent_model_payload(agent),
     }
 
@@ -882,13 +970,7 @@ def _degraded_from_spans(
     if isinstance(raw_g, str):
         try:
             for g in json.loads(raw_g) or []:
-                guardrails.append(
-                    {
-                        "name": g.get("name"),
-                        "guardrail_type": g.get("guardrail_type"),
-                        "position": g.get("position"),
-                    }
-                )
+                guardrails.append(_guardrail_entry(g))
         except json.JSONDecodeError:
             pass
 
@@ -905,6 +987,7 @@ def _degraded_from_spans(
         "knowledge_bases": [],
         "prompts": [],
         "guardrails": guardrails,
+        "observed_guardrails": _observed_guardrails(db, name, project_id, guardrails),
         "model": {"provider": provider, "model": model},
         "unresolved": True,
     }

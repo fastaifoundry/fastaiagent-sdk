@@ -354,17 +354,31 @@ class TestActionFailureContainment:
 
 class TestEventLoggingIsBestEffort:
     def test_a_broken_event_store_does_not_fail_the_check(self, monkeypatch, tmp_path):
-        """``log_guardrail_event`` is ``try``/*finally* with no ``except``, so a
-        locked or unwritable ``local.db`` used to abort the agent run — turning an
-        observability problem into an outage."""
+        """A locked or unwritable ``local.db`` used to abort the agent run, turning
+        an observability problem into an outage.
+
+        Driven through ``execute_guardrails``, the path that records since
+        1.89.0 (a bare ``execute()`` outside a span records nothing, so it would
+        pass without testing anything).
+        """
+        import asyncio
+
         from fastaiagent._internal.config import get_config
+        from fastaiagent.guardrail.executor import execute_guardrails
+        from fastaiagent.guardrail.guardrail import (
+            collected_firings,
+            start_firing_collection,
+            stop_firing_collection,
+        )
+        from fastaiagent.ui import events
 
         config = get_config()
-        monkeypatch.setattr(config, "ui_enabled", True, raising=False)
         # A directory where a file is expected: init_local_db cannot open it.
         unwritable = tmp_path / "blocked.db"
         unwritable.mkdir()
         monkeypatch.setattr(config, "local_db_path", str(unwritable), raising=False)
+        monkeypatch.setattr(config, "trace_enabled", True, raising=False)
+        events._reset_writers()
 
         rule = Guardrail(
             name="ok",
@@ -373,9 +387,17 @@ class TestEventLoggingIsBestEffort:
             config={"pattern": "nope"},
         )
 
-        result = rule.execute("clean text")
+        token = start_firing_collection()
+        try:
+            outcome = asyncio.run(
+                execute_guardrails([rule], "clean text", GuardrailPosition.output)
+            )
+            firings = collected_firings()
+        finally:
+            stop_firing_collection(token)
 
-        assert result.passed is True, "a broken event store must not change the verdict"
+        assert outcome.results[0].passed is True, "a broken event store must not change the verdict"
+        assert [f.name for f in firings] == ["ok"], "the firing is recorded in memory regardless"
 
     def test_unserializable_metadata_does_not_cost_the_event(self, tmp_path):
         """A ``code`` guardrail may return anything in ``metadata``. Without

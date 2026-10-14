@@ -146,12 +146,10 @@ async def _complete_and_parse(llm: Any, messages: list[Any]) -> tuple[float, str
 
 
 def _unparseable_result(exc: _UnparseableVerdictError) -> ScorerResult:
-    """Failure result for an unreadable verdict — quotes the reply so it's diagnosable."""
-    return ScorerResult(
-        score=0.0,
-        passed=False,
-        reason=f"Judge verdict unparseable after retry: {exc.raw[:200]!r}",
-    )
+    """An unreadable verdict is not a verdict: errored (1.89.0; it was a fail).
+
+    Quotes the reply so it's diagnosable."""
+    return ScorerResult.error(f"Judge verdict unparseable after retry: {exc.raw[:200]!r}")
 
 
 def _parse_scale(scale: str) -> tuple[float, float]:
@@ -293,6 +291,21 @@ class LLMJudge(Scorer):
                 stacklevel=2,
             )
 
+    def describe(self) -> dict[str, Any]:
+        """The judge's configuration (1.89.0). Provider and model only: never a key."""
+        llm = self._llm
+        return {
+            "type": type(self).__name__,
+            "criteria": self.criteria,
+            "mode": "geval" if self._geval_mode else "single",
+            "scale": self.scale,
+            "threshold": self.threshold,
+            "evaluation_steps": self.evaluation_steps,
+            "rubric": self.rubric,
+            "provider": getattr(llm, "provider", None) if llm is not None else None,
+            "model": getattr(llm, "model", None) if llm is not None else None,
+        }
+
     @property
     def _geval_mode(self) -> bool:
         """G-Eval activates when steps/rubric are supplied, or a subclass forces it."""
@@ -343,12 +356,19 @@ class LLMJudge(Scorer):
         except _UnparseableVerdictError as e:
             return _unparseable_result(e)
         except Exception as e:
-            return ScorerResult(score=0.0, passed=False, reason=f"Judge error: {e}")
+            # The judge could not be asked: not a verdict (1.89.0; it was a fail).
+            return ScorerResult.error(f"Judge error: {e}")
 
         score_val = _normalize_to_unit(raw, self.scale)
         return ScorerResult(
-            score=score_val, passed=score_val >= self.threshold, reason=reasoning
+            score=score_val,
+            passed=score_val >= self.threshold,
+            reason=reasoning,
+            details=self._details(raw),
         )
+
+    def _details(self, raw: float) -> dict[str, Any]:
+        return {"raw_score": raw, "scale": self.scale, "threshold": self.threshold}
 
     async def _ascore_geval(
         self, input: str, output: str, expected: str | None = None, **kwargs: Any
@@ -385,13 +405,14 @@ class LLMJudge(Scorer):
         except _UnparseableVerdictError as e:
             return _unparseable_result(e)
         except Exception as e:
-            return ScorerResult(score=0.0, passed=False, reason=f"Judge error: {e}")
+            return ScorerResult.error(f"Judge error: {e}")
 
         score_val = _normalize_to_unit(raw, self.scale)
         return ScorerResult(
             score=score_val,
             passed=score_val >= self.threshold,
             reason=reasoning,
+            details=self._details(raw),
         )
 
     async def _ensure_steps(self, llm: Any) -> list[str] | None:

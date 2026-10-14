@@ -198,7 +198,6 @@ def test_validate_outputs_exhausted_retries_logs_warning(
     row tagged supervisor.validate / outcome=warned."""
     db_path = tmp_path / "local.db"
     monkeypatch.setenv("FASTAIAGENT_LOCAL_DB", str(db_path))
-    monkeypatch.setenv("FASTAIAGENT_UI_ENABLED", "true")
 
     from fastaiagent._internal.config import get_config
 

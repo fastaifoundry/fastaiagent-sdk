@@ -63,11 +63,15 @@ class SemanticSimilarity(Scorer):
         self, input: str, output: str, expected: str | None = None, **kw: Any
     ) -> ScorerResult:
         if expected is None:
-            return ScorerResult(score=0.0, passed=False, reason="No expected output")
+            return ScorerResult.not_applicable("No expected output")
 
-        embedder = self._get_embedder()
-        vecs = embedder.embed([output, expected])
-        similarity = _cosine_similarity(vecs[0], vecs[1])
+        try:
+            embedder = self._get_embedder()
+            vecs = embedder.embed([output, expected])
+            similarity = _cosine_similarity(vecs[0], vecs[1])
+        except Exception as e:
+            # The embedding call failed: not a low similarity (1.89.0).
+            return ScorerResult.error(f"Embedding error: {e}")
         similarity = max(0.0, min(1.0, similarity))
 
         return ScorerResult(
@@ -100,7 +104,7 @@ class BLEUScore(Scorer):
         self, input: str, output: str, expected: str | None = None, **kw: Any
     ) -> ScorerResult:
         if expected is None:
-            return ScorerResult(score=0.0, passed=False, reason="No expected output")
+            return ScorerResult.not_applicable("No expected output")
 
         out_tokens = output.lower().split()
         ref_tokens = expected.lower().split()
@@ -185,7 +189,7 @@ class ROUGEScore(Scorer):
         self, input: str, output: str, expected: str | None = None, **kw: Any
     ) -> ScorerResult:
         if expected is None:
-            return ScorerResult(score=0.0, passed=False, reason="No expected output")
+            return ScorerResult.not_applicable("No expected output")
 
         out_tokens = output.lower().split()
         ref_tokens = expected.lower().split()
@@ -265,7 +269,7 @@ class LevenshteinDistance(Scorer):
         self, input: str, output: str, expected: str | None = None, **kw: Any
     ) -> ScorerResult:
         if expected is None:
-            return ScorerResult(score=0.0, passed=False, reason="No expected output")
+            return ScorerResult.not_applicable("No expected output")
 
         a, b = output.lower(), expected.lower()
         max_len = max(len(a), len(b))

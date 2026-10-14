@@ -66,6 +66,10 @@ SENSITIVE_ATTR_KEYS: frozenset[str] = frozenset(
         # (``fastaiagent.decision.questions`` / ``.answers``) are developer-authored
         # structure and probabilities, exported like guardrail scores.
         "fastaiagent.decision.input",
+        # The Playground root's resolved prompt and reply (1.89.0): the span the
+        # trace page opens on, so its Input/Output tabs show the call.
+        "fastaiagent.playground.input",
+        "fastaiagent.playground.output",
         # Foreign-OTel normalization targets. ``trace.normalize`` writes the
         # consolidated prompt/completion text onto these keys for every span
         # captured from LangChain / CrewAI / PydanticAI / OpenLLMetry before it
@@ -107,6 +111,12 @@ SENSITIVE_ATTR_KEYS: frozenset[str] = frozenset(
         # Chain payloads — ``Chain.aexecute`` writes JSON-serialized state.
         "chain.input",
         "chain.output",
+        # The free-text reason a resolver gave when resuming a paused run
+        # (``Resume.metadata["reason"]``), stamped on the resumed run's root span
+        # since 1.89.0. A human's note about the request — payload, not structure.
+        # The ``.approved`` / ``.resolver`` / ``.kind`` siblings stay clear.
+        "agent.resume.reason",
+        "chain.resume.reason",
         # Swarm / Supervisor payloads — the prompt that entered the topology and
         # the model's final answer out of it. Structural siblings
         # (``swarm.name``, ``swarm.agent_count``, ``swarm.handoff_count``,
@@ -403,8 +413,12 @@ def apply_event_export_policy(events: list[Any]) -> list[Any]:
     :data:`SENSITIVE_EVENT_ATTR_KEYS`. Returns a new list; ``events`` is never
     mutated, and non-dict entries are passed through untouched.
     """
+    from fastaiagent._internal.scrub import scrub_event_dicts
     from fastaiagent.trace.span import export_payloads_enabled
 
+    # Credentials never egress, whatever the payload setting (1.89.0, P9). Rows
+    # stored by 1.89.0+ are already clean; this covers older unsent rows.
+    events = scrub_event_dicts(events)
     payloads_ok = export_payloads_enabled()
     policy = get_redaction_policy()
     redacting = policy is not None and policy.mode in ("capture", "both")

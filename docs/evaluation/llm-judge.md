@@ -72,10 +72,25 @@ scoring `0.0`, the judge:
 1. parses the reply as JSON (tolerating ```json code fences);
 2. falls back to a regex scan for `"score"` / `"reasoning"` if that fails;
 3. retries **once**, handing the model its own reply back and demanding bare JSON;
-4. only then returns `score=0.0, passed=False` with a `reason` that quotes the unparseable reply.
+4. only then reports the case **errored**, with a `reason` that quotes the unparseable reply.
 
 A transport/LLM error reports a different `reason` (`Judge error: …`) than an unreadable verdict
-(`Judge verdict unparseable after retry: …`), so the two are distinguishable in results.
+(`Judge verdict unparseable after retry: …`). Both are **errored**, not failed (1.89.0): the judge
+was never asked, or never answered, so there is no verdict to count. An errored result has
+`errored=True`, `passed=False` and `score=0.0`, and it stays out of every pass rate. A gate on
+this judge's metric reports the run **invalid** (CLI exit 3), not failed, unless you allow the
+outage with `max_error_rate`. See [Four outcomes](concepts.md#four-outcomes-cases-and-checks).
+
+Before 1.89.0 both read as a fail scoring `0.0`, so a provider outage looked like the agent
+getting every answer wrong.
+
+The other model-backed scorers (RAG, safety, session and agent metrics) follow the same rule,
+and so does a reply that parses as JSON but has no verdict field in it (`{}`): that used to
+read as the field's default, for example "no injection detected" or "no claims, fully
+faithful".
+
+The `reason` is scrubbed of credentials before it is stored in `local.db` or sent to the
+plane, and it is not sent at all when `FASTAIAGENT_TRACE_PAYLOADS=0`.
 
 ### Scale and threshold
 

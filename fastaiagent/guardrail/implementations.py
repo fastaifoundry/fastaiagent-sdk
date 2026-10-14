@@ -391,7 +391,12 @@ async def _run_regex(guardrail: Guardrail, data: str | dict[str, Any]) -> Guardr
             ),
         )
     except _regex.error as e:
-        return GuardrailResult(passed=False, message=f"Invalid regex: {e}")
+        # A pattern that does not compile checked nothing: could-not-run, so
+        # ``on_error`` decides (1.89.0). It was a plain fail, while the plane's
+        # runner raised on the same rule: the same rule, two outcome classes
+        # (CLAUDE.md §2). A timeout above stays a fail on purpose: an input
+        # crafted to time out must not become an ``allow``.
+        raise ValueError(f"regex guardrail {guardrail.name!r} has an invalid pattern: {e}") from e
 
     if should_match:
         passed = match is not None

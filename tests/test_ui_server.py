@@ -386,6 +386,11 @@ class TestMediumBatch:
         assert r.headers["X-Frame-Options"] == "DENY"
         assert r.headers["X-Content-Type-Options"] == "nosniff"
         assert "frame-ancestors 'none'" in r.headers["Content-Security-Policy"]
+        csp = r.headers["Content-Security-Policy"]
+        # 1.89.0: the diff viewer's Blob-URL worker may start; scripts stay
+        # same-origin only, so only our own code can create one.
+        assert "worker-src 'self' blob:" in csp
+        assert "script-src 'self';" in csp and "unsafe-eval" not in csp
 
     # ----- M4 — CSRF double-submit token -----
 

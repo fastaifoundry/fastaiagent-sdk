@@ -16,14 +16,22 @@ Every `simulate()` run, newest first, with:
 - the run name (or id) and the agent under test,
 - the scenario count,
 - a **pass-rate bar** (green ≥ 90%, amber ≥ 70%, red otherwise),
+- how many scenarios **errored** (*1.89.0*): did not finish, or could not be
+  judged,
 - when it started.
 
 Click a row to open the detail.
 
 ## Detail page (`/simulations/{run_id}`)
 
-A header strip with pass rate, passed / failed counts, and start time, then one
-**card per scenario**. Each card shows PASS / FAIL at a glance; expand it to see:
+A header strip with Passed, Failed (judged), **Errored**, the pass rate (of all
+scenarios: an errored one counts as not passed) and start time, then one
+**card per scenario**. Each card shows PASS / FAIL, or a neutral **ERRORED**
+badge with the reason (the agent paused, no conversation happened, or the
+judge could not run on some criteria); filter the cards by outcome, errored
+included. A criterion the judge could not answer reads "could not run" rather
+than a pass or a fail. A saved `harden()` report shows as a card. Expand a
+scenario to see:
 
 - **per-criterion chips** — green when the desired state holds (success
   criterion met, or failure criterion absent), red otherwise; hover for the

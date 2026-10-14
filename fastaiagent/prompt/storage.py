@@ -14,7 +14,7 @@ from typing import Any
 
 from fastaiagent._internal.errors import FragmentNotFoundError, PromptNotFoundError
 from fastaiagent._internal.storage import SQLiteHelper
-from fastaiagent.prompt.fragment import Fragment
+from fastaiagent.prompt.fragment import Fragment, fragment_refs
 from fastaiagent.prompt.prompt import Prompt
 from fastaiagent.ui.db import init_local_db
 
@@ -47,7 +47,7 @@ class SQLiteStorage:
     # --- Prompts ---------------------------------------------------------
 
     def save_prompt(
-        self, prompt: Prompt, *, project_id: str | None = None
+        self, prompt: Prompt, *, project_id: str | None = None, created_by: str = "code"
     ) -> None:
         """Persist a prompt + its version row.
 
@@ -95,10 +95,10 @@ class SQLiteStorage:
                 str(prompt.version),
                 prompt.template,
                 json.dumps(prompt.variables),
-                json.dumps([]),
+                json.dumps(fragment_refs(prompt.template)),
                 json.dumps(prompt.metadata),
                 now,
-                "code",
+                created_by,
                 pid,
             ),
         )
@@ -201,11 +201,39 @@ class SQLiteStorage:
         )
         if prompt_row is None:
             raise PromptNotFoundError(f"Prompt '{name}' not found")
+        # An alias pointing at a version that does not exist was accepted,
+        # and every load through it then failed (1.89.0).
+        version_row = self._db.fetchone(
+            "SELECT 1 FROM prompt_versions WHERE slug = ? AND version = ?",
+            (name, str(version)),
+        )
+        if version_row is None:
+            raise PromptNotFoundError(f"Version {version} not found for prompt '{name}'")
         self._db.execute(
             """INSERT OR REPLACE INTO prompt_aliases (slug, alias, version)
                VALUES (?, ?, ?)""",
             (name, alias, str(version)),
         )
+
+    def list_aliases(self, name: str) -> dict[str, int]:
+        """``{alias: version}`` for a prompt (1.89.0)."""
+        rows = self._db.fetchall(
+            "SELECT alias, version FROM prompt_aliases WHERE slug = ? ORDER BY alias",
+            (name,),
+        )
+        return {r["alias"]: int(r["version"]) for r in rows}
+
+    def delete_alias(self, name: str, alias: str) -> bool:
+        """Remove one alias; ``False`` when it did not exist (1.89.0)."""
+        existing = self._db.fetchone(
+            "SELECT 1 FROM prompt_aliases WHERE slug = ? AND alias = ?", (name, alias)
+        )
+        if existing is None:
+            return False
+        self._db.execute(
+            "DELETE FROM prompt_aliases WHERE slug = ? AND alias = ?", (name, alias)
+        )
+        return True
 
     def list_prompts(self) -> list[dict[str, Any]]:
         rows = self._db.fetchall(

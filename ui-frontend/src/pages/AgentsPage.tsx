@@ -6,6 +6,10 @@ import { Input } from "@/components/ui/input";
 import { TableSkeleton } from "@/components/shared/LoadingSkeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { DirectoryCard } from "@/components/shared/DirectoryCard";
+import {
+  IncludeExperimentsToggle,
+  ProductionOnlyNote,
+} from "@/components/shared/ExperimentsNote";
 import { useAgents } from "@/hooks/use-agents";
 import { formatCost, formatDurationMs, formatTimeAgo } from "@/lib/format";
 
@@ -48,6 +52,7 @@ export function AgentsPage() {
             aria-label="Search agents"
           />
         </div>
+        <IncludeExperimentsToggle />
         <Button
           variant="outline"
           size="sm"
@@ -60,6 +65,9 @@ export function AgentsPage() {
           Refresh
         </Button>
       </PageHeader>
+
+      {/* The agents endpoints report no experiments summary to quote. */}
+      <ProductionOnlyNote className="-mt-2" />
 
       {agents.isLoading ? (
         <TableSkeleton rows={4} />

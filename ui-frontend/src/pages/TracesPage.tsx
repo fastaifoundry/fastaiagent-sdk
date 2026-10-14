@@ -37,6 +37,8 @@ const VALID_RUNNERS: RunnerType[] = [
   "supervisor",
   "guardrail",
   "evaluator",
+  "playground",
+  "retrieval",
 ];
 // Backend regex for ``framework`` query param: leading letter then
 // letters / digits / [_.-]. Mirroring it on the client lets us reject
@@ -70,12 +72,28 @@ function paramsToFilters(sp: URLSearchParams): TraceFilters {
   if (fw && FRAMEWORK_PATTERN.test(fw)) {
     out.framework = fw;
   }
+  // ``production_only`` is the server's other name for the same filter.
+  if (
+    sp.get("exclude_experiments") === "true" ||
+    sp.get("production_only") === "true"
+  ) {
+    out.exclude_experiments = true;
+  }
+  // ``fastaiagent.source`` is free text; the server applies the same rule.
+  const src = sp.get("source");
+  if (src && FRAMEWORK_PATTERN.test(src)) {
+    out.source = src;
+  }
+  if (sp.get("noted") === "true") {
+    out.noted = true;
+  }
   return out;
 }
 
 function filtersToParams(filters: TraceFilters): URLSearchParams {
   const sp = new URLSearchParams();
-  for (const key of [...STR_KEYS, "runner_type", "framework"] as const) {
+  if (filters.noted) sp.set("noted", "true");
+  for (const key of [...STR_KEYS, "runner_type", "framework", "source"] as const) {
     const v = (filters as Record<string, unknown>)[key];
     if (typeof v === "string" && v) sp.set(key, v);
   }
@@ -84,6 +102,7 @@ function filtersToParams(filters: TraceFilters): URLSearchParams {
     const v = (filters as Record<string, unknown>)[key];
     if (typeof v === "number" && Number.isFinite(v)) sp.set(key, String(v));
   }
+  if (filters.exclude_experiments) sp.set("exclude_experiments", "true");
   return sp;
 }
 

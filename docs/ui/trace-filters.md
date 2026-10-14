@@ -67,6 +67,13 @@ day and `until` to the end of the chosen "to" day, both as ISO 8601
 timestamps. **Clear range** in the picker drops both. Powered by
 `react-day-picker`.
 
+## Status is the root span's
+
+`status=ERROR` lists traces whose **root** span failed, and `status=OK` those
+whose root ended OK or UNSET (1.89.0). It used to match any span, so a run that
+completed after a `warn` guardrail, whose guardrail span is ERROR, was listed
+as failing. Home's *failing traces* count reads the root the same way.
+
 ## Duration and cost range filters
 
 Folded under **More filters** so the main bar stays clean. The toggle
@@ -134,6 +141,31 @@ GET  /api/traces?q=…&status=…&since=…&until=…&min_duration_ms=…&max_du
 `q` uses FTS5 when the v6 schema is present, otherwise falls back to
 LIKE-on-JSON. `max_cost` is new in Sprint 3.
 
+Since 1.89.0:
+
+- **`total` is the number of traces the filters keep.** The agent, thread,
+  runner, duration, cost and token filters were applied after counting, so
+  the count said 240 while the pages ran out at 12. Now the count and every
+  page agree. With none of those filters, the list keeps its fast path:
+  count in SQL, summarise one page.
+- **The list shows everything by default**, Playground, replay, eval and
+  KB-search runs included. The **Hide experiments** chip
+  (`exclude_experiments=true`; `production_only=true` is the same, in the
+  API and in the URL) hides those experiments. The **Source** box
+  (`source=<value>`) keeps traces with that `fastaiagent.source` on any
+  span; it suggests `playground`, `replay`, `kb_search`, `eval`, `learn`,
+  `simulation` and `optimize`, and takes any other value.
+- **Runner chips** include **Playground** and **Retrieval** (a KB search), so
+  those runs no longer show as AGENT. `runner_type` also accepts `llm`,
+  `tool`, `embedding`, `reranker`, `guardrail` and `evaluator` for traces
+  whose root is one of those.
+- **Noted** (`noted=true`) keeps traces with a note, `noted=false` those
+  without; noted traces show a note icon in the list.
+
+![The Traces list with a replay rerun badged replay, beside the Hide experiments chip, the Source box and the Noted chip](screenshots/189-replay-01-traces-source-badge.png)
+
+![Runner badges: Playground runs and a KB search (retrieval, badged kb_search)](screenshots/189-playground-07-traces-badges.png)
+
 ```
 GET    /api/filter-presets                    → FilterPreset[]
 POST   /api/filter-presets                    → 201 FilterPreset
@@ -144,6 +176,28 @@ DELETE /api/filter-presets/{id}               → 204
 All preset endpoints are project-scoped via the standard `AppContext`
 plumbing — same-Postgres-multi-project setups can't see across
 projects.
+
+## Trace notes and trace detail
+
+Add a note to any trace from the **Note** card on its detail page: what went
+wrong, what to try, why it matters. Notes stay in `local.db` (`trace_notes`)
+and are never exported.
+
+- At most 20,000 characters, with a counter.
+- Saving an empty note removes it, as does
+  `DELETE /api/traces/{id}/notes`. (An empty note used to be stored, and the
+  trace still counted as noted.)
+- `GET /api/traces/{id}` returns `note: {text, updated_at}` or `null`, and
+  `source`, which the page shows in its subtitle.
+- `curate_from_traces(filter="noted")` turns noted traces into eval cases,
+  with the note on each case; blank notes no longer count.
+
+![The Noted filter: one trace left, with its note icon](screenshots/189-playground-08-noted-filter.png)
+
+The inspector's Input and Output tabs show a Playground run's prompt and
+reply. **Open in Replay** is disabled for Playground and KB-search traces,
+and for any trace without an agent, chain, swarm or supervisor root: Replay
+rebuilds from that root.
 
 ## Schema additions
 

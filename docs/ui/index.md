@@ -47,7 +47,7 @@ Opening browser...
 | `--port` | `7842` | Pick anything you like. |
 | `--no-auth` | off | Skip login entirely. Intended for throwaway containers, not everyday use. |
 | `--no-open` | off | Don't launch the browser. |
-| `--db PATH` | `./.fastaiagent/local.db` | Override the local DB path. Also settable via `FASTAIAGENT_LOCAL_DB`. |
+| `--db PATH` | `./.fastaiagent/local.db` | Override the local DB path. Also settable via `FASTAIAGENT_LOCAL_DB`. Since 1.89.0 it binds the **whole process**: the tracer, checkpointers and every other store use `PATH` too, so a Playground run's trace, a replay rerun and a resumed approval all land where the UI reads. A conflicting `FASTAIAGENT_TRACE_DB_PATH` / `FASTAIAGENT_CHECKPOINT_DB_PATH` is overridden, with a note. |
 | `--auth-file PATH` | `./.fastaiagent/auth.json` | Override the credentials file. |
 | `--agent SPEC` | none | Register an agent with the server. Repeatable. See below. |
 
@@ -73,7 +73,7 @@ What it unlocks:
 | Without `--agent` | With it |
 |---|---|
 | **Approvals** show pending interrupts but Approve/Reject returns 503 | Approve/Reject resumes the real run |
-| **Run eval** can only echo inputs back (a dataset sanity check) | Evaluates the real agent; result reports `mode: "agent"` |
+| **Run eval** offers only a dataset check (inputs echoed back) | Evaluates the real agent with the scorers you pick, judges included; result reports `mode: "agent"` |
 | **Agents** lists only agents that have already run; tools come from the last run's span | Registered agents appear immediately, with their current tools and `replay_class` |
 
 On startup it prints what it loaded:
@@ -144,8 +144,17 @@ seeded snapshot DB — they stay in sync with the code via
 
 Home leads with **what needs attention**, not with what exists. A ranked strip
 calls out failed or interrupted executions, failing traces (naming the agents
-behind them), runs blocked waiting on a human approval, and eval pass rates
-that have dropped below 70% — each one linking to the page that owns the fix.
+behind them), runs blocked waiting on a human approval, an eval **cases**
+pass rate below 70%, and gated eval runs that failed or were invalid — each
+one linking to the page that owns the fix.
+
+The eval headline (*1.89.0*) is the **cases** pass rate of the latest run per
+dataset over the last 7 days. Dataset checks (the echo agent), AutoLLM
+candidate runs and **invalid** runs (an outage: the gate could not judge them)
+are left out and counted beside it ("N datasets · X counted, Y left out"); an
+invalid run shows up in the "gated eval runs failed or were invalid" item
+instead, so an outage never reads as a quality drop. It used to average the checks rate of every run, so one echo
+check at 0% could drag the headline under the warning line.
 
 When nothing is wrong it collapses to a single line, so an all-clear takes one
 glance rather than six.
@@ -271,37 +280,92 @@ The fork dialog has four tabs for the four kinds of modification:
 
 - **Prompt** — override the system prompt at the forked step.
 - **Input** — provide a new input JSON at this span.
-- **Tool response** — inject a canned tool return value.
+- **Tools** — Block, Stub or Live for each of the agent's tools (below).
 - **LLM params** — change temperature / max tokens.
+
+It also sets how the rerun calls the model (**live**, **recorded** or
+**deterministic**, and in recorded mode whether running out of recorded turns
+is an error), and what it does with each of the agent's tools (1.89.0):
+
+- **Block** *(default)*: the tool is not run. The model gets an error result
+  that names the tool.
+- **Stub**: the tool returns the value you type.
+- **Live**: the tool really runs. That is possible only when the UI process
+  has its function (a tool of an agent registered with `--agent`, or one in
+  the process's tool registry), or for a REST or MCP tool whose endpoint is
+  in the trace. A REST tool whose credentials were redacted from the trace
+  cannot run live: its call could not authenticate.
+
+Each tool shows its `replay_class`. See
+[Replay guarantees](../replay/guarantees.md#tools-a-rerun-runs-only-what-you-supply).
 
 ![Fork dialog](screenshots/05-replay-fork-dialog.png)
 
 After rerun completes, a side-by-side comparison panel appears below with
 the original vs. new output and a step-by-step comparison of both traces,
-highlighting where they diverged. A **Save as regression test** button
-appends the case to `./.fastaiagent/regression_tests.jsonl` so
-`evaluate()` can pick it up.
+highlighting where they diverged. Tool calls whose outcome changed are
+listed with what the rerun did with each tool. A rerun that blocked a tool
+call says so: its answer does not show that call's effect.
+
+![A recorded rerun with refund_order blocked: the tool chip, the blocked-call warning, the local-only note and the outputs side by side](screenshots/189-replay-05-rerun-blocked.png)
+
+A rerun's trace is marked `fastaiagent.source = "replay"`. It is **not
+exported** and **not counted** in Analytics, Overview or Agents, and its Trace
+Detail page links back to the trace it replays. A **Save as regression test**
+button appends the case to `.fastaiagent/datasets/regression_tests.jsonl`
+(the directory the Datasets page reads) so `evaluate()` can pick it up.
 
 ### Eval runs
 
-A pass-rate trend chart at the top (runs over time, grouped by dataset) plus
-a table of every run with dataset, scorers, pass-rate bar, **total cost**
-(derived from the traces each case ran on), **avg latency**, and started-ago.
+Every number on these pages reads **cases first, checks second** (*1.89.0*):
+a case is one dataset row and passes only when every check that applied to it
+passed; a check is one scorer's verdict on one case. A check that **could not
+run** (errored: a judge outage, a scorer that raised) or **does not apply**
+(n/a: no expected output, no expected trajectory) is shown beside the rates,
+never inside them. See
+[Four outcomes, cases and checks](../evaluation/concepts.md#four-outcomes-cases-and-checks).
+
+A quality trend chart at the top: one line per dataset (or per pytest run
+name), the cases pass rate over time, with the checks rate and gate outcome in
+the tooltip. Dataset checks and AutoLLM candidate runs are left out (a toggle
+brings them back), and an invalid run leaves a gap rather than a dip. Below it, the runs table: cases pass rate (checks rate on
+hover), errored cases, gate badge, git branch, **agent cost**, avg latency and
+started-ago. Filter by kind (All / Evals / Pytest / UI / AutoLLM / Dataset
+checks), by gate outcome or by name; filters live in the URL, and the list
+pages.
 
 ![Eval runs](screenshots/24-evals-list.png)
 
-Click a run to see per-case results. The header shows a row of **scorer
-chips** — each chip colored by pass-rate (green ≥90%, amber 70–89%, red
-<70%) with the raw pass/total count right-aligned — so you see which
-scorer is dragging the run down at a glance. Above the cases table, a
-filter bar lets you narrow down by outcome (passed/failed), by scorer,
-or by substring match on input/expected/actual.
+Click a run to see per-case results. The headline tiles:
 
-Each case row has a chevron — click it and the row expands in-place to
-show the input, a side-by-side **expected vs actual** diff powered by
-`react-diff-viewer-continued`, the per-scorer chips (with reasons on
-hover), and **Trace** + **Replay** buttons to open the originating
-trace.
+| Tile | Shows |
+|---|---|
+| **Cases passed** | the cases rate, and passed / judged cases |
+| **Failed** / **Errored** | failed cases, and cases that could not be judged (agent error, a scorer that could not run, or nothing applied) |
+| **Checks** | e.g. `16/20 · 4 n/a · 1 errored`: the rate `--eval-fail-under overall.pass_rate` gates |
+| **Agent cost** / **Eval cost** | the agent's calls, and the judges' calls, kept apart. "—" when not traced; "partial" when a call could not be priced |
+| **Started** | with the run's duration and average case latency |
+
+**Scorer chips** carry pass / total plus errored and n/a counts. A banner marks
+a **dataset check** (an echo run: not a model evaluation), and a run stored
+before 1.89.0, whose stored rate counted errored and skipped checks as
+failures. When the run was gated, the **Agent CI** panel shows the gate
+outcome, each threshold with its actual value, errored cases against the
+allowed rate, why a run was invalid, the baseline with a compare link, and the
+git commit and branch. A **Scorer configuration** card lists each scorer's
+settings (a judge's criteria, scale, threshold, provider and model; never a
+key), and a **Hardening** card shows a saved `harden()` report.
+
+![A live gpt-4o-mini run: 5/5 cases, checks 9/9 · 1 n/a, agent and eval cost priced, contains 4/4 · 1 n/a, and the Agent CI gate with its threshold](screenshots/189-eval-02-run-cases-first.png)
+
+![The same agent with a judge model that does not exist: every case errored, helpfulness 0/0 · 5 errored, and the gate INVALID with the reason](screenshots/189-eval-04-judge-outage-invalid.png)
+
+Each case row expands to show the input, a side-by-side **expected vs actual**
+diff (an "Identical" panel when they match), images and PDFs as thumbnails,
+and a **verdict table**: per scorer, its outcome, its score (none for errored
+or n/a), the full reason, and a link to the judges' trace for that case.
+Trajectory scorers show the expected and actual tool lists. **Trace** and
+**Replay** buttons open the case's agent trace.
 
 ![Eval run detail](screenshots/25-eval-detail.png)
 
@@ -310,12 +374,22 @@ trace.
 From any run detail page, click **Compare with…** (or visit
 `/evals/compare` directly) to pick two runs and see what changed.
 
-The compare page groups cases into four buckets:
+The compare page puts every case in one bucket:
 
 - **Regressed** — passed in A, failed in B. Red card.
 - **Improved** — failed in A, passed in B. Green card.
 - **Unchanged pass** / **Unchanged fail** — counted but not expanded,
   so the page stays focused on what actually changed.
+- **Errored** (*1.89.0*) — a pair where either side could not be judged, with
+  which side; neither a regression nor an improvement.
+- **Unmatched** (*1.89.0*) — cases only in the baseline or only in the
+  current run. Both used to be dropped without a word.
+- **Score drift** (*1.89.0*) — same outcome, but a scorer's score moved by
+  0.1 or more.
+
+The header shows the deltas for the cases rate, the checks rate, agent cost
+and eval cost, and warns when one run was stored before 1.89.0, whose checks
+rate is not like for like.
 
 Each regressed / improved case renders as a `CaseDiffCard` with two
 side-by-side diffs: **expected vs actual (B)** on top, and **actual
@@ -351,6 +425,22 @@ The editor lists versions on the left, with the template on the right
 creates a new version; the lineage panel below lists every trace and eval
 run using this prompt.
 
+Since 1.89.0 the editor:
+
+- **Edits the stored template.** `{{@fragment}}` references stay as written and
+  are listed under the template, so a later fragment edit still reaches the
+  saved version. Before, it edited the resolved text and froze each fragment
+  into a copy on save.
+- **Keeps metadata.** A new version inherits the metadata of the version you
+  edited. Before, every save wrote empty metadata.
+- **Labels its versions `ui`** in the versions list, where code-registered
+  versions say `code`.
+
+The REST API matches: every prompt endpoint returns `template` (resolved),
+`template_raw`, `fragments`, `variables` (a list) and `metadata`, and
+`PUT /api/prompts/{slug}` takes `base_version`. An omitted `metadata` inherits
+from that version, and `metadata: {}` clears it.
+
 When the registry lives outside the current project folder the editor is
 disabled and a banner explains why (the rule is "UI mutates only what's
 clearly local and personal"; external paths are owned by whoever runs that
@@ -365,8 +455,8 @@ choose a model, click **Run**, watch the response stream back. Edit the
 template inline for one-off experiments, attach an image for vision
 models, or click **Save as eval case** to append the input/output pair
 to a JSONL dataset. Every run emits a trace tagged
-`fastaiagent.source = "playground"` so playground experiments share the
-same observability surface as production runs. See
+`fastaiagent.source = "playground"`. You can open it in Traces, but it is
+not exported and not counted in Analytics, Overview or Agents (1.89.0). See
 [Prompt Playground](playground.md).
 
 ![Prompt Playground](screenshots/sprint2-3-playground-streamed-response.png)
@@ -386,9 +476,10 @@ edges. See [Agent Dependency Graph](agent-dependencies.md).
 
 Click any row on `/guardrails` (or any guardrail badge in the *Scores*
 card on a Trace Detail) to open the event's detail page. Three panels
-break down *what triggered it*, *which rule matched*, and *what
-happened next* — with a before/after diff for filtered events and an
-LLM judge prompt+response for `llm_judge` rules. The execution-context
+break down *what the rule judged* (the exact text, since 1.89.0), *which
+rule ran and how it was configured* (with the evidence for its type, such as
+an LLM judge's prompt and reply), and *what it did to the run* — with a
+before/after diff for rewritten payloads. The execution-context
 section below shows the surrounding span timeline plus other
 guardrails that ran on the same content. **Mark as false positive**
 flips a flag stored on the event row that persists across refreshes
@@ -399,9 +490,18 @@ and feeds the new `FP: yes / FP: no` filter on the list page. See
 
 ### Guardrail events
 
-Every guardrail firing — name, type, position, outcome pill (passed /
-blocked / warned), score, agent, message. Filter by rule / outcome / agent.
+Every guardrail check — name, type, position, outcome pill (passed /
+blocked / warned / filtered / re-asked / errored), what it did to the run,
+score, agent, message. Rows are recorded whenever tracing is on (1.89.0; it
+used to need `FASTAIAGENT_UI_ENABLED` in the agent's process). Filter by rule /
+outcome / agent / type / position / time range; passes are hidden by default.
 Click the ↗ icon to jump to the parent trace.
+
+In a trace's span tree a guardrail span is coloured by what it did (pass,
+warned, rewrote, re-asked, blocked, observe-only, could not run), not by its
+OTel status, which is ERROR for any failed verdict, a `warn` included. A trace
+is failing when its **root** span failed, in the Traces status filter and on
+Home alike.
 
 ![Guardrail events](screenshots/10-guardrails.png)
 
@@ -543,7 +643,19 @@ per-node cost breakdown.
     pricing. Local models (e.g. Ollama) show `$0.00`, and actual billing may
     differ under your provider agreement.
 
+!!! note "Experiments are counted separately (1.89.0)"
+    Analytics, Overview and Agents count production runs only. Replay reruns,
+    Playground calls and other traces with a non-production
+    `fastaiagent.source` are left out, and a note says how many were left out
+    and what they cost, by source. The money was really spent, so it is
+    reported, not hidden. Turn on **Include experiments** to count them in.
+    Traces lists everything, with a source badge; **Hide experiments**
+    filters them out. See
+    [Tracing → provenance](../tracing/index.md#where-a-trace-came-from-provenance).
+
 ![Analytics](screenshots/13-analytics.png)
+
+![Analytics with one replay rerun left out: "Excludes 1 experiment trace (replay 1)" and the Include experiments toggle](screenshots/189-replay-03-analytics-excludes.png)
 
 ### Thread view
 

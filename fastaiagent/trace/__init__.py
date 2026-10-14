@@ -2,6 +2,10 @@
 
 from fastaiagent.trace.otel import add_exporter, get_tracer, reset
 from fastaiagent.trace.otel_capture import disable_otel_capture, enable_otel_capture
+from fastaiagent.trace.provenance import (
+    non_production_filter,
+    provenance_scope,
+)
 from fastaiagent.trace.redaction import (
     SENSITIVE_ATTR_KEYS,
     RedactionPolicy,
@@ -22,6 +26,9 @@ __all__ = [
     "trace_context",
     "get_tracer",
     "add_exporter",
+    # Provenance (1.89.0): mark a block as an experiment; exclude experiments.
+    "provenance_scope",
+    "non_production_filter",
     "reset",
     # OpenInference emitters — stamp attributes on a span you own, or emit a
     # whole child span on your own tracer (see fastaiagent.emit_guardrail).

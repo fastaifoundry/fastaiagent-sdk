@@ -128,14 +128,13 @@ class DecisionJudge(Scorer):
         try:
             result = await self._client().adecide(evidence, [self.question])
         except Exception as e:
-            return ScorerResult(score=0.0, passed=False, reason=f"Decision judge error: {e}")
+            # Not asked, so not a verdict: errored (1.89.0; it was a fail).
+            return ScorerResult.error(f"Decision judge error: {e}")
 
         answer = result[0]
         if isinstance(answer, Refusal):
-            return ScorerResult(
-                score=0.0,
-                passed=False,
-                reason="Decision judge refused to answer this case; it was not scored.",
+            return ScorerResult.error(
+                "Decision judge refused to answer this case; it was not scored."
             )
         if isinstance(answer, PredicateAnswer):
             score = answer.probability
@@ -148,8 +147,27 @@ class DecisionJudge(Scorer):
                 f"confidence {answer.confidence:.2f})"
             )
         else:  # pragma: no cover — parse_decision already matched type to question
-            return ScorerResult(score=0.0, passed=False, reason=f"Unexpected answer {answer!r}")
-        return ScorerResult(score=score, passed=score >= self.threshold, reason=reason)
+            return ScorerResult.error(f"Unexpected answer {answer!r}")
+        return ScorerResult(
+            score=score,
+            passed=score >= self.threshold,
+            reason=reason,
+            details={"threshold": self.threshold},
+        )
+
+    def describe(self) -> dict[str, Any]:
+        """The judge's configuration (1.89.0). Provider and model only: never a key."""
+        llm = self._llm
+        return {
+            "type": type(self).__name__,
+            "criteria": self.criteria,
+            "levels": self.levels,
+            "threshold": self.threshold,
+            "provider": getattr(llm, "provider", None) if llm is not None else None,
+            "model": (
+                getattr(llm, "model", DEFAULT_DECISION_MODEL) if llm else DEFAULT_DECISION_MODEL
+            ),
+        }
 
 
 __all__ = ["DecisionJudge"]

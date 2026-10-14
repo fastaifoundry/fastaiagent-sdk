@@ -426,6 +426,7 @@ class FunctionTool(Tool):
         max_retries: int = 0,
         retry_delay: float = 0.5,
         output_type: Any | None = None,
+        register: bool = True,
     ):
         self.fn = fn
         self._context_param_name: str | None = None
@@ -458,9 +459,11 @@ class FunctionTool(Tool):
             output_type=output_type,
         )
 
-        # Auto-register callable-backed tools so ForkedReplay.arerun can rebind
-        # them by name after reconstruction from span attributes.
-        if fn is not None:
+        # Auto-register callable-backed tools so ``Agent.from_dict`` can rebind
+        # them by name. ``register=False`` (1.89.0) keeps a tool out of the
+        # last-write-wins registry: a replay stub registered globally took over
+        # the real tool for every later ``Agent.from_dict`` and rerun.
+        if fn is not None and register:
             from fastaiagent.tool.registry import ToolRegistry
 
             ToolRegistry.register(self)
@@ -572,6 +575,7 @@ def tool(
     max_retries: int = 0,
     retry_delay: float = 0.5,
     output_type: Any | None = None,
+    register: bool = True,
 ) -> Callable[..., Any]:
     """Decorator to create a FunctionTool from a function.
 
@@ -607,6 +611,7 @@ def tool(
             max_retries=max_retries,
             retry_delay=retry_delay,
             output_type=output_type,
+            register=register,
         )
 
     return decorator

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import {
   ChevronLeft,
   Copy,
@@ -27,12 +27,8 @@ import {
   ConfirmDeleteCaseDialog,
 } from "@/components/datasets/CaseEditorDialog";
 import { CaseImportDialog } from "@/components/datasets/CaseImportDialog";
-import {
-  useAddCase,
-  useDataset,
-  useDeleteCase,
-  useRunEval,
-} from "@/hooks/use-datasets";
+import { RunEvalDialog } from "@/components/datasets/RunEvalDialog";
+import { useAddCase, useDataset, useDeleteCase } from "@/hooks/use-datasets";
 import type { DatasetCase, DatasetCaseInput } from "@/lib/types";
 
 function previewInput(input: DatasetCaseInput): {
@@ -66,21 +62,20 @@ function truncate(s: string, n: number): string {
 
 /**
  * Dataset detail page: cases table + per-row actions, case editor
- * modal, import/export, and a one-click "Run eval" against the
- * currently registered echo agent.
+ * modal, import/export, and "Run eval" (a dialog: agent or dataset check,
+ * scorers with their parameters, the run's numbers inline).
  */
 export function DatasetDetailPage() {
   const { name = "" } = useParams<{ name: string }>();
-  const navigate = useNavigate();
   const { data, isLoading, error, refetch } = useDataset(name);
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [caseToEdit, setCaseToEdit] = useState<DatasetCase | undefined>();
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
+  const [runEvalOpen, setRunEvalOpen] = useState(false);
 
   const add = useAddCase(name);
   const del = useDeleteCase(name);
-  const runEval = useRunEval(name);
 
   const openCreate = () => {
     setCaseToEdit(undefined);
@@ -99,6 +94,8 @@ export function DatasetDetailPage() {
         expected_output: c.expected_output ?? undefined,
         tags: c.tags,
         metadata: c.metadata,
+        // The row's other fields (trajectory, context...) are part of the case.
+        extra: c.extra,
       });
       toast.success(`Duplicated case #${c.index}`);
     } catch (e) {
@@ -115,29 +112,6 @@ export function DatasetDetailPage() {
       toast.error(e instanceof Error ? e.message : "Delete failed");
     } finally {
       setConfirmDelete(null);
-    }
-  };
-
-  const handleRunEval = async () => {
-    try {
-      const result = await runEval.mutateAsync({ scorers: ["exact_match"] });
-      const tally = `${result.pass_count} pass / ${result.fail_count} fail`;
-      if (result.mode === "echo") {
-        // No agent is registered, so this scored inputs against themselves.
-        // Reporting it as a plain tally made a structurally-normal 0% look
-        // like the model had failed every case.
-        toast.warning(`Dataset check — ${tally}`, {
-          description:
-            result.note ??
-            "No agent selected, so inputs were echoed back. This validates the dataset, not model quality.",
-          duration: 10_000,
-        });
-      } else {
-        toast.success(`Eval kicked off — ${tally}`);
-      }
-      navigate(`/evals/${result.run_id}`);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Run failed");
     }
   };
 
@@ -193,8 +167,8 @@ export function DatasetDetailPage() {
         <Button
           variant="outline"
           size="sm"
-          onClick={handleRunEval}
-          disabled={runEval.isPending || data.cases.length === 0}
+          onClick={() => setRunEvalOpen(true)}
+          disabled={data.cases.length === 0}
         >
           <Play className="mr-1.5 h-3.5 w-3.5" />
           Run eval
@@ -295,6 +269,11 @@ export function DatasetDetailPage() {
         open={editorOpen}
         onOpenChange={setEditorOpen}
         caseToEdit={caseToEdit}
+      />
+      <RunEvalDialog
+        datasetName={data.name}
+        open={runEvalOpen}
+        onOpenChange={setRunEvalOpen}
       />
       <ConfirmDeleteCaseDialog
         open={confirmDelete !== null}

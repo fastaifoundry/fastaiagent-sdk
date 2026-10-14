@@ -51,9 +51,10 @@ trace  ──▶  root agent.<name> span  ──▶  Agent.from_dict(...)  ─�
 ## What's held fixed vs. re-run
 
 A replay is a *real execution*, not a playback. By default (`"live"` mode) it
-reconstructs the agent from the trace and runs it again — re-issuing LLM calls
-and re-executing tools. What you override with `modify_*` / `with_tools`
-changes; everything else is taken from the trace.
+reconstructs the agent from the trace and runs it again, re-issuing LLM calls.
+Tools run only when you supply or allow them (1.89.0): every other tool is
+blocked. What you override with `modify_*` / `with_tools` changes; everything
+else is taken from the trace.
 
 The **determinism mode** controls how faithful the reproduction is:
 
@@ -71,12 +72,19 @@ The **determinism mode** controls how faithful the reproduction is:
     output **byte-identically with no HTTP call to the provider** — the response
     came from the trace's `gen_ai.response.content`.
 
-!!! warning "Tools re-execute; the LLM is what gets recorded"
-    `"recorded"` skips the *LLM* call, not tool calls — a tool the recorded
-    response invokes still runs live during a rerun. For tools with side
-    effects, override them for the rerun (`with_tool_override("charge_card", stub)`)
-    or mark them with a `replay_class` that the central Replay engine honors.
-    See [Fidelity Guarantees](guarantees.md).
+!!! warning "The LLM is what gets recorded, not the tools"
+    `"recorded"` skips the *LLM* call, not tool calls. Since 1.89.0 a rerun
+    blocks every tool you did not supply: the model gets an error result and
+    `ReplayResult.blocked_tool_calls` counts the call. Run a tool for real with
+    `with_tool_policy("live", allow=["lookup_order"])`, or replace it with
+    `with_tool_override(...)` / `with_tool_stub(...)`. Before 1.89.0 a rerun
+    ran every tool it could rebuild, side effects included. See
+    [Fidelity Guarantees](guarantees.md#tools-a-rerun-runs-only-what-you-supply).
+
+!!! note "A rerun is not a production run"
+    A rerun's trace is marked `fastaiagent.source = "replay"`, is not
+    exported, and is left out of Analytics, eval curation and memory learning.
+    See [Fidelity Guarantees](guarantees.md#a-rerun-is-an-experiment-not-a-production-run-1890).
 
 ### How `recorded` mode substitutes the model
 
@@ -86,9 +94,15 @@ from the trace, orders them by start time, and installs that list in a
 `ContextVar`. During the rerun, `LLMClient` checks that queue first: if it's
 non-empty it **pops the next recorded response and returns it instead of calling
 the provider**. So a multi-turn tool loop replays each turn's exact model output
-in order, no network involved. The agent loop otherwise runs normally — which is
-why tools still execute (they're driven by the recorded tool calls) but the
-model's words are fixed.
+in order, no network involved. The agent loop otherwise runs normally, which is
+why the rerun still reaches its tools (they're driven by the recorded tool
+calls) while the model's words are fixed. Whether a tool then runs is the
+tool policy's call.
+
+There are two queues by role (*since 1.89.0*): the agent's turns, and the
+model calls its guardrails make (an `llm_judge`, say). A judge never takes an
+agent turn, and an agent never receives a judge's verdict. Decisions API
+answers have a third.
 
 ## Our approach, in context
 

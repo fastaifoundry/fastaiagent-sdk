@@ -69,6 +69,11 @@ logger = logging.getLogger(__name__)
 #                 from upload previews
 #   connect-src   'self'    — every API call goes to /api on the same
 #                 origin; no cross-origin XHR
+#   worker-src    'self' blob: — the diff viewer computes large diffs in a
+#                 Worker built from a Blob URL. Only our own scripts can
+#                 create one (script-src stays 'self'); without it every
+#                 case expand logged a CSP violation and the diff ran on the
+#                 main thread (1.89.0)
 #   frame-src     'self'    — only the inline attachment iframe
 #   frame-ancestors 'none'  — refuse to be embedded anywhere (clickjack
 #                 defence; X-Frame-Options is the legacy mirror)
@@ -81,6 +86,7 @@ _CSP = (
     "img-src 'self' data: blob:; "
     "font-src 'self' data:; "
     "connect-src 'self'; "
+    "worker-src 'self' blob:; "
     "frame-src 'self'; "
     "frame-ancestors 'none'; "
     "base-uri 'self'; "
@@ -244,6 +250,32 @@ def _static_dir() -> Path | None:
     return candidate if candidate.exists() else None
 
 
+#: Routes whose request body can carry a credential (the Playground's ``api_key``).
+_CREDENTIAL_BODY_PREFIXES = ("/api/playground",)
+
+
+def _install_validation_error_handler(app: FastAPI) -> None:
+    """FastAPI's 422, minus the echoed value where a body can hold a key (1.89.0).
+
+    Each entry of a 422 ``detail`` carries ``input``: the value that failed,
+    which for the Playground can be the API key itself (a too-long token, or the
+    whole body when its shape is wrong). For those routes ``input`` is dropped.
+    Everything else keeps FastAPI's default response unchanged.
+    """
+    from fastapi.encoders import jsonable_encoder
+    from fastapi.exceptions import RequestValidationError
+
+    @app.exception_handler(RequestValidationError)
+    async def _validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+        errors = jsonable_encoder(exc.errors())
+        if request.url.path.startswith(_CREDENTIAL_BODY_PREFIXES):
+            errors = [
+                {k: v for k, v in e.items() if k != "input"} if isinstance(e, dict) else e
+                for e in errors
+            ]
+        return JSONResponse(status_code=422, content={"detail": errors})
+
+
 def build_app(
     *,
     db_path: str | None = None,
@@ -278,6 +310,19 @@ def build_app(
 
     # Eagerly ensure the schema exists so every route can assume it's there.
     init_local_db(resolved_db).close()
+
+    # An embedder pointing the UI at one store while the tracer writes to
+    # another: say so once, and let routes say where a trace went (1.89.0).
+    # ``fastaiagent ui --db`` binds the whole process, so it never splits.
+    trace_db = get_config().resolved_trace_db_path
+    if os.path.abspath(trace_db) != os.path.abspath(resolved_db):
+        logger.warning(
+            "The Local UI reads %s, but this process writes traces to %s: Playground "
+            "and replay traces will not appear in this UI. Set FASTAIAGENT_LOCAL_DB to "
+            "the same path, or start the UI with `fastaiagent ui --db`.",
+            resolved_db,
+            trace_db,
+        )
 
     runner_map: dict[str, Any] = {}
     if runners is not None:
@@ -318,6 +363,8 @@ def build_app(
     # Added last → outermost → runs first: reject rebound Hosts before anything
     # else touches the request (security_audit_2 N16).
     app.add_middleware(_HostValidationMiddleware)
+
+    _install_validation_error_handler(app)
 
     for r in (
         auth.router,

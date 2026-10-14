@@ -471,3 +471,55 @@ def test_kick_drains_the_db_the_run_was_written_to(isolated_local_db, capture_se
         time.sleep(0.05)
     assert _synced(other_db, run_id) == 1, "run in a custom DB was never drained"
     assert _eval_requests(capture_server)
+
+
+# ── E1b (1.89.0): a run is evidence only once a verdict is recorded ───────────
+#
+# ``persist_local`` queued every run (synced=0) and the payload defaulted
+# ``gate_outcome`` to "passed", so any drain before the gate — or a run nobody
+# ever gated — reached the plane as passing evidence. The plane keeps the first
+# copy of a run_id, so the real verdict arriving later was discarded.
+
+
+def test_an_ungated_run_is_not_exported(isolated_local_db, capture_server):
+    _connect(capture_server.url)
+    results = evaluate(_agent, DATASET, scorers=["exact_match"], persist=False, concurrency=1)
+    run_id = results.persist_local(db_path=isolated_local_db, run_name="notebook")
+
+    EvalRunExporter().export([])
+
+    assert _eval_requests(capture_server) == [], "a run with no verdict reached the plane"
+    store = EvalRunStore(db_path=isolated_local_db)
+    try:
+        assert store.count_unsynced() == 0, "an ungated run counts as waiting to send"
+    finally:
+        store.close()
+    assert build_payloads(run_id=run_id, db_path=isolated_local_db)[0]["gate_outcome"] is None
+
+
+def test_the_first_export_carries_the_real_verdict(isolated_local_db, capture_server):
+    """Drain *between* persist and gate: the plane must still get ``failed``."""
+    import time
+
+    _connect(capture_server.url)
+    results = evaluate(_agent, DATASET, scorers=["exact_match"], persist=False, concurrency=1)
+    run_id = results.persist_local(db_path=isolated_local_db, run_name="ci")
+    EvalRunExporter().export([])  # a span flush lands before the gate
+
+    record_gate_result(run_id, gate_outcome="failed", thresholds={}, db_path=isolated_local_db)
+    deadline = time.time() + 10
+    while time.time() < deadline and _synced(isolated_local_db, run_id) == 0:
+        time.sleep(0.05)
+
+    sent = [run for r in _eval_requests(capture_server) for run in r["body"]["runs"]]
+    assert [run["gate_outcome"] for run in sent if run["run_id"] == run_id] == ["failed"]
+
+
+@pytest.mark.parametrize("bad", ["pass", "PASSED", "ok", ""])
+def test_record_gate_result_rejects_an_unknown_outcome(isolated_local_db, bad):
+    """The plane 422s an unknown value, a 4xx is never retried, and it would sit
+    in the batch with up to 199 good runs until they all aged out."""
+    results = evaluate(_agent, DATASET, scorers=["exact_match"], persist=False, concurrency=1)
+    run_id = results.persist_local(db_path=isolated_local_db, run_name="typo")
+    with pytest.raises(ValueError):
+        record_gate_result(run_id, gate_outcome=bad, db_path=isolated_local_db)
