@@ -862,6 +862,7 @@ Each line is detailed in its phase section below.
 ### Found at the release gates (Phase 10)
 
 - **One tracer provider per process.** Threads that asked for the provider at the same moment each built their own: 8 threads gave 8 providers on 1.88.0. Every provider stored spans locally, but an exporter (the plane's included) attaches to one, so the other threads' spans were never exported, and OTel logged "Overriding of current TracerProvider is not allowed". `evaluate(concurrency>1)` hit it on its first call. The provider is now created under a lock.
+- **Spans that share a start time load parents first.** Spans are stored when they end, so on a tie a child was stored before its parent. Windows' coarse clock makes ties common, and there `get_trace` named a child span as the trace's root, and Replay's steps came out of order. An identical recorded rerun was reported as diverging, and the recorded-response queue could be out of order. Ties now resolve parent first, then in stored order. Found by the Windows CI cell; reproduced on any OS by giving a trace one start time.
 - **Playground:**
   - `ui start --db` through a symlinked path (any macOS `/tmp` or `/var` path) said the trace was "written to another store" and hid the trace link; the paths are now compared resolved.
   - A stream that drops mid-reply is a `connection` failure with a hint. It was `internal` with none.

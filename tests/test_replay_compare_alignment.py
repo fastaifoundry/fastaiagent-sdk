@@ -65,6 +65,47 @@ def test_a_memory_agents_recorded_rerun_does_not_diverge(traced_db: Path) -> Non
     assert all(replay.steps()[i].span_name.startswith("memory.") for i in comparison.skipped_steps)
 
 
+def _coarse_clock(db: Path, trace_id: str) -> None:
+    """Give every span of a trace one start time, as Windows' clock often does."""
+    import sqlite3
+
+    with sqlite3.connect(db) as conn:
+        first = conn.execute(
+            "SELECT MIN(start_time) FROM spans WHERE trace_id = ?", (trace_id,)
+        ).fetchone()[0]
+        conn.execute("UPDATE spans SET start_time = ? WHERE trace_id = ?", (first, trace_id))
+
+
+def test_tied_start_times_keep_parents_first_and_do_not_diverge(traced_db: Path) -> None:
+    """Failed on Windows CI: the tie fell to write order, children first."""
+    import fastaiagent as fa
+    from fastaiagent.agent.memory import AgentMemory
+    from fastaiagent.testing import TestModel
+    from fastaiagent.trace.replay import Replay
+    from fastaiagent.trace.storage import TraceStore
+
+    agent = fa.Agent(
+        name="mem-agent",
+        system_prompt="s",
+        llm=TestModel(response="hello there"),
+        memory=AgentMemory(),
+    )
+    original = agent.run("hi")
+    _coarse_clock(traced_db, original.trace_id)
+    trace = TraceStore.default().get_trace(original.trace_id)
+    assert trace.name == "agent.mem-agent", "a child span was taken as the root"
+    ids = [s.span_id for s in trace.spans]
+    for s in trace.spans:
+        if s.parent_span_id in ids:
+            assert ids.index(s.parent_span_id) < ids.index(s.span_id), "child before parent"
+
+    forked = Replay.load(original.trace_id).fork_at(0).with_determinism("recorded")
+    rerun = forked.rerun()
+    _coarse_clock(traced_db, rerun.trace_id)
+    comparison = forked.compare(rerun)
+    assert comparison.diverged_at is None, "an identical recorded rerun reported a divergence"
+
+
 def test_a_blocked_tool_shows_in_tool_diffs_not_in_diverged_at(traced_db: Path) -> None:
     import fastaiagent as fa
     from fastaiagent.testing import FunctionModel

@@ -98,6 +98,29 @@ class TraceData(BaseModel):
         )
 
 
+def _parents_first(spans: list[SpanData]) -> list[SpanData]:
+    """Order spans by start time, a parent before its children on a tie (1.89.0).
+
+    Spans are stored when they end, so a child is written before its parent.
+    Where the clock is coarse (Windows), a parent and its child often share a
+    start time, and the tie fell to write order: the child came first, so the
+    trace's "root" was a child and Replay's steps came out of order. ``spans``
+    arrives ordered by ``(start_time, rowid)``; the stable sort keeps that order
+    for everything but the tie it fixes.
+    """
+    by_id = {s.span_id: s for s in spans}
+
+    def depth(span: SpanData) -> int:
+        d, seen, parent = 0, set(), span.parent_span_id
+        while parent and parent in by_id and parent not in seen:
+            seen.add(parent)
+            d += 1
+            parent = by_id[parent].parent_span_id
+        return d
+
+    return sorted(spans, key=lambda s: (s.start_time or "", depth(s)))
+
+
 class TraceSummary(BaseModel):
     """Summary of a trace for listing."""
 
@@ -484,7 +507,7 @@ class TraceStore:
     def get_trace(self, trace_id: str) -> TraceData:
         """Get a complete trace with all its spans."""
         rows = self._db.fetchall(
-            "SELECT * FROM spans WHERE trace_id = ? ORDER BY start_time",
+            "SELECT * FROM spans WHERE trace_id = ? ORDER BY start_time, rowid",
             (trace_id,),
         )
         if not rows:
@@ -496,7 +519,7 @@ class TraceStore:
                 f"tracing was enabled when the agent ran (trace=True)."
             )
 
-        spans = [self._row_to_span(row) for row in rows]
+        spans = _parents_first([self._row_to_span(row) for row in rows])
 
         root = spans[0] if spans else SpanData(span_id="", trace_id=trace_id)
         return TraceData(
