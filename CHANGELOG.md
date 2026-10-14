@@ -447,6 +447,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Simulation spans are stamped `fastaiagent.source=simulation`.
   - The UI API accepts `?outcome=errored`, and `failed` no longer includes
     errored scenarios.
+  - A scripted `SimulatedUser` kept a cursor that never reset. Running one
+    `Scenario` twice (a baseline, then a candidate) gave the second run an empty
+    conversation, which was then judged; concurrent runs shared the cursor. The
+    script position now comes from the transcript. A run with no conversation
+    is errored (`no conversation: …`) and never sent to the judge.
 - **Compare puts every case somewhere** (E14). `compare_runs` silently dropped
   cases it could not pair, every pair where either side errored, and all but
   one row of a repeated input.
@@ -515,6 +520,113 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - On 1.88.0, 161 of the 166 new tests fail. The 5 that pass are by design:
     three completeness guards, and two controls for behaviour that did not
     change.
+
+### Eval numbers on screen (Phase 7)
+
+- **Costs that were $0.00 or "—" are real.** Cost lives on the `llm.*` spans
+  under an agent or workflow span, and three views priced the parent span
+  itself:
+  - **Eval runs** showed "—" for every run. They now split **agent cost** (each
+    case's agent trace) from **eval cost** (the judges' calls), each with a
+    `*_known` flag; an unpriced call makes it partial, a run with nothing
+    traced shows "—", never `$0.00`. `cost_usd` stays as the agent cost.
+  - **Agents** showed `$0.00` for every agent. Each priced call is credited to
+    its nearest enclosing agent span, so a worker's calls are not charged to
+    the lead as well.
+  - **Workflows** likewise.
+  - New `fastaiagent/ui/trace_cost.py` holds the one roll-up rule.
+- **Trace tokens were counted twice.** The Traces list and detail added the
+  root's `agent.tokens_used` roll-up and every call's tokens (§12 A1).
+- ⚠ **Eval traces are labelled and grouped** (E3 + D10).
+  - Each scored case gets one root `eval.score` trace: an `eval.scorer` child
+    per scorer (name, outcome, score, passed; never the reason), with the
+    judge's `llm.*` call beneath. It is stored as
+    `eval_cases.scoring_trace_id`. Judge calls were loose root traces.
+  - A case's agent trace is stamped `fastaiagent.source=eval` (`optimize` for
+    AutoLLM), with `fastaiagent.eval.run_id` and `case_ordinal` on its root.
+    So Analytics, Overview, Agents, curation and `learn` leave eval runs out of
+    production numbers; "Include experiments" brings them back.
+  - Both are still exported: the plane checks eval verdicts against them.
+  - `evaluate()` and the pytest plugin fix the run id before the first case,
+    so every span carries the id the run is stored under.
+- **Agent-CI evidence on the run** (E10). `record_gate_result(..., report=,
+  baseline_detail=)` keeps each threshold with its actual value, the error-rate
+  bound and why a run was invalid in the run's metadata; the run detail API
+  returns them as `run.gate`. Local only: the wire's `baseline` object keeps
+  its three keys.
+- **Runs list:** paging, plus `kind`, `exclude_kind`, `gate` (`passed`,
+  `failed`, `invalid`, `none`) and `q` filters.
+- **Trend and Overview read cases first** (E8, D14). Trend points carry the
+  case pass rate, kind, series and gate outcome, and leave dataset checks
+  (`ui-echo`) and AutoLLM candidates out unless `include=all`. Overview adds
+  `eval_case_pass_rate_7d` (the latest run per dataset), counted / excluded
+  runs and gated runs that failed or were invalid; `avg_pass_rate_last_7d`
+  stays.
+- **`harden()` saves its report on the run** (D16): `metadata["hardening"]`,
+  local only; `persist=False` skips it. The analysis is an `eval.harden` trace
+  stamped `source=eval`.
+- **A trace says what it is.** `/api/traces/{id}/scores` adds `eval_scoring`
+  (this trace is the judging of case N of run X) and `simulation_cases`.
+  Simulation runs report `errored_count` and `judged_count`.
+- `GET /api/evals/{run}/cases/{case}/media/{idx}` serves a case image's
+  thumbnail.
+- **A regex guardrail with a pattern that does not compile reports
+  could-not-run** (`on_error` decides). It was a plain fail, while the plane's
+  runner raised on the same rule: two outcome classes for one rule (CLAUDE.md
+  §2). The ReDoS timeout stays a fail on purpose. New unusable-config sweep
+  row. This closes the open half of guardrail audit row #11.
+- **Smaller truths in the API**:
+  - The compare route's checks delta is `null`, not `0.0`, when a run has no
+    checks rate.
+  - `gate=` takes several values (`failed,invalid`).
+  - Overview counts gate failures only for the runs its headline counts.
+  - `SimulationResults.fail_count` and `sim_runs.fail_count` no longer include
+    errored scenarios (they are not judged); `pass_rate` still counts them as
+    not passed (D15).
+- **Local UI** (cases first, checks second):
+  - **Run detail:**
+    - Tiles: Cases passed, Failed, Errored (from the run, not the filtered
+      list), Checks (`16/20 · 4 n/a · 1 errored`), Agent cost / Eval cost,
+      Started with duration.
+    - Scorer chips with errored and n/a counts.
+    - Banners for a dataset check and for a pre-1.89.0 run.
+    - The Agent CI panel, a scorer configuration card and a hardening card.
+    - Per case, a verdict table: outcome, score (none for errored or n/a),
+      full reason, a link to the judges' trace, and trajectory tool lists.
+    - Image / PDF thumbnails; an "Identical" panel when expected equals actual.
+  - **Runs list:** paging, kind chips, gate and name filters kept in the URL,
+    errored / gate / branch / agent-cost columns.
+  - **Trend:** one line per dataset on the cases rate, nulls skipped rather than
+    drawn as 0, and a toggle for dataset checks and AutoLLM runs.
+  - **Compare:** cases / checks / agent cost / eval cost deltas, plus Errored,
+    Unmatched and Score drift sections.
+  - **Overview:** the cases headline and a "gated runs failed or invalid"
+    attention item. An invalid (outage) run is left out of the headline and the
+    trend line: on the live demo, one judge outage turned a 75% headline into
+    a 0% "below 70%" alarm.
+  - **Simulations:** an Errored tile, badge and filter, and the hardening card.
+  - **Trace scores:** "scoring for case #N of run X" and "simulated
+    conversation".
+  - **Guardrail Events:** filters are written to the URL (a Phase 5 leftover).
+  - The UI's `evalCaseOutcome` scored a case with no verdict at all as passed;
+    it now mirrors the five-rule order.
+  - The Local UI's Content-Security-Policy allows same-origin `blob:` workers
+    (`worker-src 'self' blob:`): the diff viewer's worker was blocked, so every
+    case expand logged a CSP violation and large diffs ran on the main thread.
+    `script-src` stays `'self'`.
+- Tests:
+  - `test_ui_eval_numbers.py` covers cost (agents, workflows, eval runs),
+    tokens, list filters, trend, Overview, gate evidence and the wire guard,
+    trace scores, media, harden persistence and compare's null delta.
+  - `test_eval_scoring_spans.py` covers scoring roots and eval / optimize
+    stamping across evaluate, aevaluate and the pytest plugin, with tracing
+    off, and production views leaving eval traces out.
+  - Also extended: the simulation scripted-user tests, the regex
+    unusable-config row, guardrail observability #11 and the CSP header.
+  - Live: `test_eval_numbers_e2e.py` adds real agent and eval costs on
+    gpt-4o-mini (8 tests).
+  - Frontend: vitest 332 (was 267).
+  - On 1.88.0, all 20 new backend tests fail.
 
 ## [1.88.0] - 2026-10-11 — the defects the boundary pages found
 

@@ -14,7 +14,9 @@ import {
   ExperimentsNote,
   IncludeExperimentsToggle,
 } from "@/components/shared/ExperimentsNote";
+import { GateBadge } from "@/components/evals/AgentCiPanel";
 import { api } from "@/lib/api";
+import { formatRate, KIND_LABEL } from "@/lib/evalDisplay";
 import { useIncludeExperiments } from "@/stores/preferences-store";
 
 interface OverviewPayload {
@@ -25,7 +27,14 @@ interface OverviewPayload {
   experiments_included?: boolean;
   failing_traces_last_24h: number;
   eval_runs_last_7d: number;
+  /** Legacy: checks rate averaged over every run kind. Not shown. */
   avg_pass_rate_last_7d: number;
+  // 1.89.0: cases rate over the latest run per dataset, quality runs only.
+  eval_case_pass_rate_7d?: number | null;
+  eval_datasets_7d?: number;
+  eval_runs_counted_7d?: number;
+  eval_runs_excluded_7d?: number;
+  eval_gate_failures_7d?: number;
   pending_approvals_count: number;
   failed_executions_count: number;
   recent_traces: { trace_id: string; name: string; start_time: string; status: string }[];
@@ -33,8 +42,11 @@ interface OverviewPayload {
     run_id: string;
     run_name: string;
     dataset_name: string;
-    pass_rate: number;
+    pass_rate: number | null;
     started_at: string;
+    kind?: string | null;
+    case_pass_rate?: number | null;
+    gate_outcome?: string | null;
   }[];
   prompt_changes_last_7d: { slug: string; version: string; created_at: string }[];
   agents_with_errors: { agent_name: string; error_count: number }[];
@@ -45,7 +57,17 @@ interface OverviewPayload {
  * given rate reads the same in both products: ≥85% good, ≥70% watch, below
  * that a failure. Always carries the number, never colour alone.
  */
-function ScoreChip({ value }: { value: number }) {
+function ScoreChip({ value, title }: { value: number | null | undefined; title?: string }) {
+  if (typeof value !== "number") {
+    return (
+      <span
+        className="shrink-0 rounded-full bg-muted px-2 py-0.5 font-mono text-[10.5px] font-medium text-muted-foreground"
+        title={title ?? "No case reached a verdict"}
+      >
+        —
+      </span>
+    );
+  }
   const pct = Math.round(value * 100);
   const tone =
     value >= 0.85
@@ -56,6 +78,7 @@ function ScoreChip({ value }: { value: number }) {
   return (
     <span
       className={`shrink-0 rounded-full px-2 py-0.5 font-mono text-[10.5px] font-medium ${tone}`}
+      title={title}
     >
       {pct}%
     </span>
@@ -100,9 +123,17 @@ export function OverviewPage() {
         />
         <StatCard label="Eval runs (7d)" value={String(data?.eval_runs_last_7d ?? "—")} />
         <StatCard
-          label="Avg pass rate (7d)"
-          value={
-            data ? `${Math.round((data.avg_pass_rate_last_7d ?? 0) * 100)}%` : "—"
+          label="Eval cases passed (7d)"
+          value={formatRate(data?.eval_case_pass_rate_7d)}
+          title="Cases pass rate, averaged over the latest valid run of each dataset. Dataset checks, AutoLLM candidate runs and invalid (outage) runs are left out."
+          hint={
+            data
+              ? `${data.eval_datasets_7d ?? 0} dataset${data.eval_datasets_7d === 1 ? "" : "s"} · ${
+                  data.eval_runs_counted_7d ?? 0
+                } counted${
+                  data.eval_runs_excluded_7d ? `, ${data.eval_runs_excluded_7d} left out` : ""
+                }`
+              : undefined
           }
         />
       </div>
@@ -172,7 +203,18 @@ export function OverviewPage() {
                   >
                     {r.run_name || r.run_id}
                   </Link>
-                  <ScoreChip value={r.pass_rate ?? 0} />
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    {r.kind && KIND_LABEL[r.kind] && r.kind !== "evaluate" && (
+                      <span className="font-mono text-[10.5px] text-muted-foreground">
+                        {KIND_LABEL[r.kind]}
+                      </span>
+                    )}
+                    {r.gate_outcome && <GateBadge outcome={r.gate_outcome} />}
+                    <ScoreChip
+                      value={r.case_pass_rate}
+                      title={`Cases ${formatRate(r.case_pass_rate)} · Checks ${formatRate(r.pass_rate)}`}
+                    />
+                  </span>
                 </li>
               ))}
             </ul>

@@ -5,6 +5,10 @@ const CLEAN: AttentionInput = {
   failing_traces_last_24h: 0,
   eval_runs_last_7d: 0,
   avg_pass_rate_last_7d: 0,
+  eval_case_pass_rate_7d: null,
+  eval_datasets_7d: 0,
+  eval_runs_counted_7d: 0,
+  eval_gate_failures_7d: 0,
   pending_approvals_count: 0,
   failed_executions_count: 0,
   agents_with_errors: [],
@@ -21,23 +25,44 @@ describe("buildAttention", () => {
     expect(buildAttention(undefined)).toEqual([]);
   });
 
-  it("does NOT flag a 0% pass rate when no evals ran", () => {
-    // A 0% average over zero runs is an empty dataset, not a regression —
-    // flagging it would make an idle project look broken.
-    expect(at({ eval_runs_last_7d: 0, avg_pass_rate_last_7d: 0 })).toEqual([]);
+  it("does NOT flag a null cases rate (no case reached a verdict)", () => {
+    // Nothing judged is not a regression — flagging it would make an idle
+    // project look broken.
+    expect(at({ eval_runs_last_7d: 3, eval_case_pass_rate_7d: null })).toEqual([]);
   });
 
-  it("flags a low pass rate once runs exist", () => {
-    const items = at({ eval_runs_last_7d: 4, avg_pass_rate_last_7d: 0.5 });
+  it("flags a low cases rate", () => {
+    const items = at({ eval_runs_last_7d: 4, eval_case_pass_rate_7d: 0.5, eval_datasets_7d: 2 });
     expect(items).toHaveLength(1);
     expect(items[0].key).toBe("low-pass-rate");
     expect(items[0].title).toContain("50%");
+    expect(items[0].detail).toContain("2 datasets");
     expect(items[0].to).toBe("/evals");
   });
 
-  it("does not flag a pass rate at or above the floor", () => {
-    expect(at({ eval_runs_last_7d: 4, avg_pass_rate_last_7d: 0.7 })).toEqual([]);
-    expect(at({ eval_runs_last_7d: 4, avg_pass_rate_last_7d: 0.95 })).toEqual([]);
+  it("ignores the legacy checks average for the warning", () => {
+    // avg_pass_rate_last_7d counted dataset checks and AutoLLM candidates.
+    expect(
+      at({ eval_runs_last_7d: 4, avg_pass_rate_last_7d: 0.1, eval_case_pass_rate_7d: 0.95 })
+    ).toEqual([]);
+  });
+
+  it("does not flag a cases rate at or above the floor", () => {
+    expect(at({ eval_runs_last_7d: 4, eval_case_pass_rate_7d: 0.7 })).toEqual([]);
+    expect(at({ eval_runs_last_7d: 4, eval_case_pass_rate_7d: 0.95 })).toEqual([]);
+  });
+
+  it("flags gated runs that failed or were invalid, linking to the filtered list", () => {
+    const items = at({ eval_gate_failures_7d: 2 });
+    expect(items).toHaveLength(1);
+    expect(items[0].key).toBe("gate-failures");
+    expect(items[0].title).toBe("2 gated eval runs failed or were invalid");
+    expect(items[0].to).toBe("/evals?gate=failed,invalid");
+  });
+
+  it("uses singular wording for one failed gate", () => {
+    const [item] = at({ eval_gate_failures_7d: 1 });
+    expect(item.title).toBe("1 gated eval run failed or was invalid");
   });
 
   it("ranks critical above warning", () => {
@@ -103,9 +128,10 @@ describe("buildAttention", () => {
       failing_traces_last_24h: 1,
       pending_approvals_count: 1,
       eval_runs_last_7d: 2,
-      avg_pass_rate_last_7d: 0.1,
+      eval_case_pass_rate_7d: 0.1,
+      eval_gate_failures_7d: 1,
     });
-    expect(items).toHaveLength(4);
+    expect(items).toHaveLength(5);
     for (const item of items) {
       expect(item.to).toMatch(/^\//);
       expect(item.cta.length).toBeGreaterThan(0);

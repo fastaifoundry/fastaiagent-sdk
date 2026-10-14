@@ -49,12 +49,18 @@ def _workflow_name(attrs: dict[str, Any], runner_type: str, span_name: str) -> s
     return span_name or "unknown"
 
 
+def _costs(db: Any, ctx: Any, rows: list[dict[str, Any]]) -> dict[str, float]:
+    from fastaiagent.ui.trace_cost import costs_by_anchor
+
+    return costs_by_anchor(db, rows, project_id=getattr(ctx, "project_id", "") or "")
+
+
 def _aggregate(
     spans: list[dict[str, Any]],
+    costs: dict[str, float] | None = None,
 ) -> dict[tuple[str, str], dict[str, Any]]:
     """Bucket by (runner_type, workflow_name)."""
     from fastaiagent.ui.attrs import attr, trace_cost_usd
-    from fastaiagent.ui.pricing import compute_cost_usd
 
     by_wf: dict[tuple[str, str], dict[str, Any]] = {}
     for span in spans:
@@ -100,17 +106,14 @@ def _aggregate(
         except (ValueError, TypeError):
             logger.debug("Failed to compute workflow span duration from timestamps", exc_info=True)
 
-        reported_cost = trace_cost_usd(attrs)
-        if reported_cost is not None:
-            bucket["total_cost_usd"] += reported_cost
+        if costs is not None:
+            # The model calls under this workflow span (1.89.0): the span
+            # itself carries no cost, so every workflow read $0.00.
+            bucket["total_cost_usd"] += costs.get(span.get("span_id") or "", 0.0)
         else:
-            est = compute_cost_usd(
-                attrs.get("gen_ai.request.model"),
-                attrs.get("gen_ai.usage.input_tokens"),
-                attrs.get("gen_ai.usage.output_tokens"),
-            )
-            if est is not None:
-                bucket["total_cost_usd"] += est
+            reported_cost = trace_cost_usd(attrs)
+            if reported_cost is not None:
+                bucket["total_cost_usd"] += reported_cost
         if start > bucket["last_run"]:
             bucket["last_run"] = start
 
@@ -245,7 +248,7 @@ def list_workflows(
             )
             params = (ctx.project_id,) if ctx.project_id else ()
             rows = db.fetchall(sql, params)
-        by_wf = _aggregate(rows)
+        by_wf = _aggregate(rows, _costs(db, ctx, rows))
         workflows = [_format(b) for b in by_wf.values()]
 
         # Surface runners registered via ``build_app(runners=[...])`` that
@@ -291,7 +294,7 @@ def get_workflow(
                 "SELECT * FROM spans WHERE parent_span_id IS NULL AND name LIKE ?",
                 (f"{runner_type}.%",),
             )
-        by_wf = _aggregate(rows)
+        by_wf = _aggregate(rows, _costs(db, ctx, rows))
         key = (runner_type, name)
         if key in by_wf:
             return _format(by_wf[key])

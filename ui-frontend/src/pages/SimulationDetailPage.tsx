@@ -10,13 +10,34 @@ import { EmptyState } from "@/components/shared/EmptyState";
 import { SimulationTranscriptView } from "@/components/simulations/SimulationTranscriptView";
 import { useSimulationRun } from "@/hooks/use-simulations";
 import { formatDateTime } from "@/lib/format";
+import { formatRate } from "@/lib/evalDisplay";
 import { cn } from "@/lib/utils";
-import type { CriterionVerdict, SimulationCase } from "@/lib/types";
+import { HardeningCard } from "@/components/evals/HardeningCard";
+import type {
+  CriterionVerdict,
+  EvalCaseOutcome,
+  EvalHardening,
+  SimulationCase,
+  SimulationRunRow,
+} from "@/lib/types";
+
+/**
+ * Passed / failed among judged scenarios, and errored (not finished or not
+ * judged). Not read from `fail_count`: it includes errored scenarios on rows
+ * written before 1.89.0 and excludes them after.
+ */
+function simCounts(run: SimulationRunRow) {
+  const passed = run.pass_count ?? 0;
+  const errored = run.errored_count ?? 0;
+  const judged = run.judged_count ?? Math.max(0, (run.scenario_count ?? 0) - errored);
+  return { passed, errored, failed: Math.max(0, judged - passed), judged };
+}
 
 export function SimulationDetailPage() {
   const { runId } = useParams<{ runId: string }>();
   const [expanded, setExpanded] = useState<string | null>(null);
-  const query = useSimulationRun(runId);
+  const [outcome, setOutcome] = useState<EvalCaseOutcome | null>(null);
+  const query = useSimulationRun(runId, { outcome });
 
   if (query.isLoading && !query.data) return <TableSkeleton rows={8} />;
   if (query.error || !query.data) {
@@ -29,6 +50,7 @@ export function SimulationDetailPage() {
   }
 
   const { run, cases, total_cases } = query.data;
+  const counts = simCounts(run);
 
   return (
     <div className="space-y-5">
@@ -59,18 +81,56 @@ export function SimulationDetailPage() {
         </Button>
       </PageHeader>
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+        <StatCard label="Passed" value={String(counts.passed)} hint={`of ${counts.judged} judged`} />
+        <StatCard
+          label="Failed"
+          value={String(counts.failed)}
+          hint="judged"
+          title="Scenarios the judge ran on and failed"
+        />
+        <StatCard
+          label="Errored"
+          value={String(counts.errored)}
+          hint="could not run"
+          title="Scenarios that did not finish, or that the judge could not run on"
+        />
         <StatCard
           label="Pass rate"
-          value={`${Math.round((run.pass_rate ?? 0) * 100)}%`}
+          value={formatRate(run.pass_rate)}
+          hint="of all scenarios"
+          title="Passed / all scenarios. An errored scenario counts as not passed."
         />
-        <StatCard label="Passed" value={String(run.pass_count ?? 0)} />
-        <StatCard label="Failed" value={String(run.fail_count ?? 0)} />
         <StatCard label="Started" value={formatDateTime(run.started_at ?? "")} />
       </div>
 
+      <div className="flex items-center gap-2">
+        <select
+          aria-label="Outcome"
+          value={outcome ?? ""}
+          onChange={(e) => setOutcome((e.target.value || null) as EvalCaseOutcome | null)}
+          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+        >
+          <option value="">All outcomes</option>
+          <option value="passed">Passed</option>
+          <option value="failed">Failed</option>
+          <option value="errored">Errored (could not run)</option>
+        </select>
+        <span className="text-xs text-muted-foreground">
+          {cases.length} of {total_cases} shown
+        </span>
+      </div>
+
+      <HardeningCard
+        hardening={(run.metadata as { hardening?: EvalHardening } | null)?.hardening}
+      />
+
       {cases.length === 0 ? (
-        <EmptyState title="No scenarios" description="This run has no cases." />
+        outcome ? (
+          <EmptyState title="No scenarios match" description="Pick another outcome to see more." />
+        ) : (
+          <EmptyState title="No scenarios" description="This run has no cases." />
+        )
       ) : (
         <div className="space-y-3">
           {cases.map((c) => (
@@ -94,15 +154,19 @@ function CriterionChip({ verdict }: { verdict: CriterionVerdict }) {
     <span
       className={cn(
         "inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs",
-        verdict.passed
+        verdict.errored
+          ? "bg-muted text-muted-foreground"
+          : verdict.passed
           ? "bg-fa-success/10 text-fa-success"
           : "bg-destructive/10 text-destructive"
       )}
       title={verdict.reason ?? undefined}
+      data-errored={verdict.errored ? "true" : undefined}
     >
       <span className="h-1.5 w-1.5 rounded-full bg-current" />
       <span className="font-mono opacity-70">{verdict.kind}</span>
       {verdict.criterion}
+      {verdict.errored && <span className="font-mono">· could not run</span>}
     </span>
   );
 }
@@ -116,34 +180,45 @@ function ScenarioCard({
   expanded: boolean;
   onToggle: () => void;
 }) {
-  const passed = case_.passed === 1;
+  const errored = !!case_.error;
+  const passed = !errored && case_.passed === 1;
   return (
     <Card>
       <CardHeader
         className="cursor-pointer flex-row items-center justify-between gap-3 py-3"
         onClick={onToggle}
       >
-        <div className="flex items-center gap-2">
-          {expanded ? (
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-          ) : (
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-          )}
-          <CardTitle className="text-sm">
-            {case_.scenario_name ?? `Scenario ${case_.ordinal}`}
-          </CardTitle>
-          <span
-            className={cn(
-              "rounded-md px-2 py-0.5 text-xs font-mono",
-              passed
-                ? "bg-fa-success/10 text-fa-success"
-                : "bg-destructive/10 text-destructive"
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            {expanded ? (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
             )}
-          >
-            {passed ? "PASS" : "FAIL"}
-          </span>
+            <CardTitle className="text-sm">
+              {case_.scenario_name ?? `Scenario ${case_.ordinal}`}
+            </CardTitle>
+            <span
+              className={cn(
+                "rounded-md px-2 py-0.5 text-xs font-mono",
+                errored
+                  ? "bg-muted text-muted-foreground"
+                  : passed
+                  ? "bg-fa-success/10 text-fa-success"
+                  : "bg-destructive/10 text-destructive"
+              )}
+              data-testid={`scenario-badge-${case_.case_id}`}
+            >
+              {errored ? "ERRORED" : passed ? "PASS" : "FAIL"}
+            </span>
+          </div>
+          {errored && (
+            <p className="ml-6 mt-1 truncate text-xs text-muted-foreground" title={case_.error ?? ""}>
+              {case_.error}
+            </p>
+          )}
         </div>
-        <span className="text-xs text-muted-foreground">
+        <span className="shrink-0 text-xs text-muted-foreground">
           {case_.transcript.length} turns
         </span>
       </CardHeader>

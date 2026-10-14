@@ -63,6 +63,31 @@ def _git_provenance() -> dict[str, str]:
     return out
 
 
+def _gate_evidence(report: Any) -> dict[str, Any]:
+    checks = []
+    for c in getattr(report, "checks", []) or []:
+        t = c.threshold
+        checks.append(
+            {
+                "metric": t.metric,
+                "field": t.field,
+                "minimum": t.minimum,
+                "actual": c.actual,
+                "passed": c.passed,
+            }
+        )
+    return {
+        "gate_checks": checks,
+        "gate_error": {
+            "errored": getattr(report, "errored", 0),
+            "scored": getattr(report, "scored", 0),
+            "error_rate": getattr(report, "error_rate", 0.0),
+            "max_error_rate": getattr(report, "max_error_rate", None),
+        },
+        "gate_invalid_reasons": list(getattr(report, "invalid_reasons", []) or []),
+    }
+
+
 def record_gate_result(
     run_id: str,
     *,
@@ -70,8 +95,16 @@ def record_gate_result(
     thresholds: dict[str, Any] | None = None,
     baseline: dict[str, Any] | None = None,
     db_path: str | Path | None = None,
+    report: Any = None,
+    baseline_detail: dict[str, Any] | None = None,
 ) -> None:
     """Attach a gate verdict to an already-persisted run, then offer it for export.
+
+    ``report`` (a :class:`~fastaiagent.eval.gate.GateReport`, 1.89.0) adds the
+    evidence the Local UI's Agent-CI panel shows: each threshold with its
+    actual value (``gate_checks``), the error-rate bound (``gate_error``) and
+    why a run was invalid (``gate_invalid_reasons``). Local only: the export
+    reads ``thresholds``, never these.
 
     ``persist_local()`` necessarily runs *before* the gate — the gate scores the
     persisted results — so the verdict can't be written in the same INSERT. This
@@ -123,6 +156,10 @@ def record_gate_result(
                 meta["thresholds"] = thresholds
             if baseline is not None:
                 meta["baseline"] = baseline
+            if report is not None:
+                meta.update(_gate_evidence(report))
+            if baseline_detail is not None:
+                meta["gate_baseline"] = baseline_detail
             db.execute(
                 "UPDATE eval_runs SET metadata = ? WHERE run_id = ?",
                 (json.dumps(meta, default=str), run_id),
@@ -157,6 +194,8 @@ class EvalCaseRecord:
     # is excluded from failure analysis — so an infra failure can't masquerade as
     # an agent-quality miss the optimizer would try to "fix".
     error: str | None = None
+    # The trace of this case's judge calls: one ``eval.score`` root (1.89.0).
+    scoring_trace_id: str | None = None
 
 
 def _scrubbed_reason(reason: str | None) -> str | None:
@@ -269,6 +308,8 @@ class EvalResults:
         # Populated by ``persist_local()`` (or ``evaluate()`` when persist=True)
         # so callers can deep-link into the Local UI at /evals/<run_id>.
         self.run_id: str | None = None
+        # Where ``persist_local()`` wrote it, so ``harden()`` can annotate it.
+        self.db_path: str | None = None
         # 1.89.0: what ``evaluate()`` knows about the run, for the run record.
         self.started_at: str | None = None
         self.finished_at: str | None = None
@@ -502,8 +543,9 @@ class EvalResults:
                 db.execute(
                     """INSERT INTO eval_cases
                        (case_id, run_id, ordinal, input, expected_output,
-                        actual_output, trace_id, per_scorer, error, project_id)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        actual_output, trace_id, per_scorer, error, project_id,
+                        scoring_trace_id)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         case_id,
                         run_id,
@@ -515,6 +557,7 @@ class EvalResults:
                         json.dumps(_stored_per_scorer(case.per_scorer), default=str),
                         _without_credentials(case.error),
                         pid,
+                        case.scoring_trace_id,
                     ),
                 )
                 for idx, item in enumerate(media):
@@ -540,6 +583,7 @@ class EvalResults:
         # Stash on self so callers who hold a reference can deep-link into
         # the UI without threading the return value through their code.
         self.run_id = run_id
+        self.db_path = str(resolved)
         return run_id
 
     def compare(self, other: EvalResults) -> str:

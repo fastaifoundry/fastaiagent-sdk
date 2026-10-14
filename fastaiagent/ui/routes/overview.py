@@ -16,6 +16,69 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["overview"])
 
+#: Run kinds that measure an agent's quality. A dataset check (``ui-echo``)
+#: runs an echo agent, and an AutoLLM candidate (``optimize``) is an
+#: experiment; neither belongs in the headline.
+_QUALITY_KINDS = ("evaluate", "cli", "pytest", "ui")
+
+
+def _eval_week(
+    db: Any, week_ago: str, pid_clause: str, pid_params: Any, project_id: str
+) -> dict[str, Any]:
+    """The last week's eval health, cases first (D14, 1.89.0).
+
+    ``avg_pass_rate_last_7d`` averaged the checks rate of every run, dataset
+    checks and AutoLLM candidates included. This takes the **latest** run per
+    dataset among quality kinds and averages their case pass rates. A run whose
+    recorded gate is ``invalid`` (an outage) is skipped: counted in
+    ``eval_gate_failures_7d`` and ``eval_runs_excluded_7d``, not in the rate.
+    """
+    rows = db.fetchall(
+        f"""SELECT run_id, dataset_name, run_name, kind, started_at, case_pass_rate,
+                  case_count, metadata
+           FROM eval_runs WHERE started_at >= ? {pid_clause}
+           ORDER BY started_at DESC""",
+        (week_ago, *pid_params),
+    )
+    latest: dict[str, float] = {}
+    counted = excluded = gate_failures = 0
+    for r in rows:
+        try:
+            meta = json.loads(r.get("metadata") or "{}")
+        except (TypeError, ValueError):
+            meta = {}
+        kind = r.get("kind")
+        if kind is not None and kind not in _QUALITY_KINDS:
+            excluded += 1
+            continue
+        outcome = meta.get("gate_outcome") if isinstance(meta, dict) else None
+        if outcome in ("failed", "invalid"):
+            gate_failures += 1
+        if outcome == "invalid":
+            # An outage is not a quality reading: it is reported as a gate
+            # failure above and must not drag the headline (nor raise the
+            # below-70% alarm); the dataset's last valid run stands.
+            excluded += 1
+            continue
+        counted += 1
+        rate = r.get("case_pass_rate")
+        if rate is None and r.get("case_count") is None:
+            from fastaiagent.ui.routes.evals import _case_columns
+
+            rate = _case_columns(db, r["run_id"], project_id=project_id)["case_pass_rate"]
+        key = r.get("dataset_name") or r.get("run_name") or r["run_id"]
+        if rate is not None and key not in latest:
+            latest[key] = float(rate)
+    return {
+        "eval_case_pass_rate_7d": (
+            round(sum(latest.values()) / len(latest), 4) if latest else None
+        ),
+        "eval_datasets_7d": len(latest),
+        "eval_runs_counted_7d": counted,
+        "eval_runs_excluded_7d": excluded,
+        "eval_gate_failures_7d": gate_failures,
+    }
+
 
 @router.get("/overview")
 def overview(
@@ -92,13 +155,17 @@ def overview(
             (*pid_params, *np_params),
         )
         recent_runs = db.fetchall(
-            f"""SELECT run_id, run_name, dataset_name, pass_rate, started_at
+            f"""SELECT run_id, run_name, dataset_name, pass_rate, started_at,
+                      kind, case_pass_rate,
+                      CASE WHEN json_valid(metadata)
+                           THEN json_extract(metadata, '$.gate_outcome') END AS gate_outcome
                FROM eval_runs
                {where_for_recent}
                ORDER BY started_at DESC
                LIMIT 5""",
             (ctx.project_id,) if ctx.project_id else (),
         )
+        eval_week = _eval_week(db, week_ago, pid_clause, pid_params, ctx.project_id)
         prompt_changes = db.fetchall(
             f"""SELECT slug, version, created_at
                FROM prompt_versions
@@ -146,6 +213,7 @@ def overview(
             "failing_traces_last_24h": failing_day["n"] if failing_day else 0,
             "eval_runs_last_7d": runs_week["n"] if runs_week else 0,
             "avg_pass_rate_last_7d": (avg_pass["pr"] or 0.0) if avg_pass else 0.0,
+            **eval_week,
             "pending_approvals_count": (pending_approvals["n"] if pending_approvals else 0),
             "failed_executions_count": (failed_executions["n"] if failed_executions else 0),
             "recent_traces": recent_traces,

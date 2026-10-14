@@ -58,6 +58,7 @@ from __future__ import annotations
 
 import inspect
 import logging
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -187,12 +188,17 @@ class _CollectedCase:
 class _SessionCollector:
     cases: list[_CollectedCase] = field(default_factory=list)
     run_id: str | None = None  # set at sessionfinish once persisted
+    # Fixed at session start so every case's agent and scoring spans carry the
+    # id the run is persisted under (1.89.0).
+    session_run_id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    run_name: str | None = None
     gate_lines: list[str] = field(default_factory=list)
     gate_failed: bool = False
     persist_error: str | None = None
     # Set when a --eval-baseline comparison ran; travels to the plane as evidence
     # of regression tracking (Part D).
     baseline_summary: dict[str, Any] | None = None
+    baseline_detail: dict[str, Any] | None = None
 
     def build_results(self, *, persisted_only: bool = False) -> EvalResults:
         results = EvalResults()
@@ -260,7 +266,11 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    config.stash[_COLLECTOR_KEY] = _SessionCollector()
+    collector = _SessionCollector()
+    collector.run_name = config.getoption("--eval-run-name", None) or (
+        f"pytest::{config.rootpath.name}"
+    )
+    config.stash[_COLLECTOR_KEY] = collector
     # A malformed threshold used to raise inside sessionfinish, after the run was
     # persisted, leaving a run with no verdict. Refuse it up front instead.
     from fastaiagent._internal.errors import EvalError
@@ -310,7 +320,10 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     if persisted.cases:
         try:
             collector.run_id = persisted.persist_local(
-                run_name=run_name, agent_name=_session_agent_name(collector), kind="pytest"
+                run_id=collector.session_run_id,
+                run_name=run_name,
+                agent_name=_session_agent_name(collector),
+                kind="pytest",
             )
         except Exception as e:  # pragma: no cover — non-fatal
             collector.persist_error = str(e)
@@ -356,6 +369,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
             f"{t.threshold.metric}.{t.threshold.field}": t.threshold.minimum for t in report.checks
         },
         baseline=collector.baseline_summary,
+        report=report,
     )
 
     if report.outcome == "invalid":
@@ -400,6 +414,7 @@ def _record_gate(
     outcome: str,
     thresholds: dict[str, Any] | None = None,
     baseline: dict[str, Any] | None = None,
+    report: Any = None,
 ) -> None:
     """Attach the verdict to the persisted run and offer it to the plane."""
     if not collector.run_id:
@@ -407,7 +422,12 @@ def _record_gate(
     from fastaiagent.eval.results import record_gate_result
 
     record_gate_result(
-        collector.run_id, gate_outcome=outcome, thresholds=thresholds, baseline=baseline
+        collector.run_id,
+        gate_outcome=outcome,
+        thresholds=thresholds,
+        baseline=baseline,
+        report=report,
+        baseline_detail=collector.baseline_detail,
     )
 
 
@@ -492,6 +512,16 @@ def _apply_baseline_gate(
         "pass_rate_delta": comparison.pass_rate_delta,
         "regressed_count": len(comparison.regressed),
     }
+    # Local only (the wire's baseline object keeps its three keys): what the
+    # Local UI's Agent-CI panel shows beside it (1.89.0).
+    collector.baseline_detail = {
+        "run_name": comparison.run_a.get("run_name"),
+        "tolerance": tolerance,
+        "case_pass_rate_delta": comparison.case_pass_rate_delta,
+        "errored_count": len(comparison.errored),
+        "unmatched_count": len(comparison.only_in_a) + len(comparison.only_in_b),
+        "pass_rate_comparable": comparison.pass_rate_comparable,
+    }
     drop = -comparison.pass_rate_delta
     if drop > tolerance:
         collector.gate_lines.append(
@@ -570,11 +600,24 @@ def evaluate_one(request: pytest.FixtureRequest):  # type: ignore[no-untyped-def
                 "or @dataset(...) on the test, or pass input= explicitly."
             )
 
+        from fastaiagent.eval._scoring import EvalSpanContext, agent_scope
+
+        span_ctx = (
+            EvalSpanContext(
+                run_id=collector.session_run_id,
+                run_name=collector.run_name,
+                kind="pytest",
+                case_ordinal=len(collector.cases),
+            )
+            if collector is not None
+            else None
+        )
         sig = inspect.signature(agent_fn)
         error: str | None = None
         output: Any = None
         try:
-            output = agent_fn(in_text) if len(sig.parameters) >= 1 else agent_fn()
+            with agent_scope(span_ctx):
+                output = agent_fn(in_text) if len(sig.parameters) >= 1 else agent_fn()
         except Exception as e:
             # Infra failure: the agent never produced an output. Recorded as
             # errored (unscored) so it can't masquerade as a quality miss in
@@ -619,12 +662,14 @@ def evaluate_one(request: pytest.FixtureRequest):  # type: ignore[no-untyped-def
         # for this case, and the case is still added to the session run (it was
         # lost). The agent's tool calls and the row's expectations reach the
         # scorers, as in ``evaluate()``.
-        per_scorer, scored = score_case(
+        per_scorer, scored, scoring_trace_id = score_case(
             scorer_objs,
             input=str(in_text),
             output=output_text,
             expected=exp,
             score_kwargs={**trajectory_facts(output), **row_facts(eval_case)},
+            span_context=span_ctx,
+            subject_trace_id=trace_id,
         )
         scorer_results: dict[str, ScorerResult] = dict(scored)
 
@@ -634,6 +679,7 @@ def evaluate_one(request: pytest.FixtureRequest):  # type: ignore[no-untyped-def
             actual_output=output_text,
             trace_id=trace_id,
             per_scorer=per_scorer,
+            scoring_trace_id=scoring_trace_id,
         )
         if collector is not None:
             collector.cases.append(

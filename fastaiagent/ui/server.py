@@ -69,6 +69,11 @@ logger = logging.getLogger(__name__)
 #                 from upload previews
 #   connect-src   'self'    — every API call goes to /api on the same
 #                 origin; no cross-origin XHR
+#   worker-src    'self' blob: — the diff viewer computes large diffs in a
+#                 Worker built from a Blob URL. Only our own scripts can
+#                 create one (script-src stays 'self'); without it every
+#                 case expand logged a CSP violation and the diff ran on the
+#                 main thread (1.89.0)
 #   frame-src     'self'    — only the inline attachment iframe
 #   frame-ancestors 'none'  — refuse to be embedded anywhere (clickjack
 #                 defence; X-Frame-Options is the legacy mirror)
@@ -81,6 +86,7 @@ _CSP = (
     "img-src 'self' data: blob:; "
     "font-src 'self' data:; "
     "connect-src 'self'; "
+    "worker-src 'self' blob:; "
     "frame-src 'self'; "
     "frame-ancestors 'none'; "
     "base-uri 'self'; "

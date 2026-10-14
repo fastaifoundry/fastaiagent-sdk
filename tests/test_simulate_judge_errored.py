@@ -98,6 +98,7 @@ def test_errored_scenarios_keep_the_denominator(tmp_path: Path) -> None:
     results = good
     results.results.extend(bad.results)
     assert (results.pass_count, results.errored_count, len(results.results)) == (1, 1, 2)
+    assert results.fail_count == 0, "an errored scenario was not judged, so it did not fail"
     assert results.pass_rate == 0.5, "D15: errored stays in the denominator"
     assert "could not be judged" in results.summary()
     sc = Scorecard.from_simulation(results)
@@ -138,6 +139,56 @@ def test_ui_filters_errored_scenarios(tmp_path: Path) -> None:
     assert errored.status_code == 200, errored.text
     assert len(errored.json()["cases"]) == 1
     assert failed.json()["cases"] == [], "an errored scenario is not a failed one"
+
+
+def test_the_same_scenario_runs_twice() -> None:
+    """A scripted user's cursor never reset: the second run of one Scenario (a
+    baseline, then a candidate) had an empty conversation, which was judged."""
+    ok = LLMJudge(llm=TestModel(response=json.dumps({"score": 1.0, "reasoning": "ok"})))
+    scenario = Scenario(
+        name="twice",
+        user=SimulatedUser(script=["hello", "and then?"]),
+        success_criteria=["The agent replied."],
+        max_turns=4,
+    )
+    first = simulate(scenario, _agent(), judge=ok, persist=False).results[0]
+    second = simulate(scenario, _agent(), judge=ok, persist=False).results[0]
+    assert [t.content for t in first.transcript if t.role == "user"] == ["hello", "and then?"]
+    assert [t.role for t in second.transcript] == [t.role for t in first.transcript]
+    assert second.passed is True and second.error is None
+
+
+def test_concurrent_runs_of_one_scenario_each_get_the_full_script() -> None:
+    ok = LLMJudge(llm=TestModel(response=json.dumps({"score": 1.0, "reasoning": "ok"})))
+    scenario = Scenario(
+        name="shared",
+        user=SimulatedUser(script=["one", "two"]),
+        success_criteria=["The agent replied."],
+        max_turns=4,
+    )
+    results = simulate([scenario, scenario, scenario], _agent(), judge=ok, persist=False)
+    assert all(len(r.transcript) == 4 for r in results.results), [
+        len(r.transcript) for r in results.results
+    ]
+
+
+def test_no_conversation_is_errored_not_judged() -> None:
+    asked: list[Any] = []
+
+    def judge_fn(messages: Any) -> str:
+        asked.append(messages)
+        return json.dumps({"score": 0.0, "reasoning": "nothing happened"})
+
+    scenario = Scenario(
+        name="silent",
+        user=SimulatedUser(script=[]),
+        success_criteria=[],
+        failure_criteria=["The agent was rude."],
+    )
+    r = simulate(scenario, _agent(), judge=LLMJudge(llm=FunctionModel(judge_fn)), persist=False)
+    res = r.results[0]
+    assert res.passed is False and res.error and res.error.startswith("no conversation")
+    assert asked == [], "an empty transcript was sent to the judge"
 
 
 def test_simulation_spans_are_stamped(isolated_local_db: Path) -> None:

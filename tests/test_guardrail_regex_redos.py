@@ -29,10 +29,13 @@ async def test_normal_match_and_nonmatch():
 
 
 @pytest.mark.asyncio
-async def test_invalid_regex_fails_closed():
-    r = await impl._run_regex(_gr(pattern="(", should_match=True), "x")
-    assert not r.passed
-    assert "Invalid regex" in r.message
+async def test_invalid_regex_could_not_run():
+    """1.89.0: a pattern that does not compile raises, so the rule reports
+    errored and ``on_error`` decides, as the plane's runner does. It was a
+    plain fail, a verdict on a check that never ran."""
+    gr = SimpleNamespace(config={"pattern": "(", "should_match": True}, name="bad-pattern")
+    with pytest.raises(ValueError, match="invalid pattern"):
+        await impl._run_regex(gr, "x")
 
 
 @pytest.mark.asyncio

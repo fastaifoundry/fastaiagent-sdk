@@ -30,6 +30,11 @@ The UI must read the same `local.db` the agent wrote
 (`FASTAIAGENT_LOCAL_DB`, or `fastaiagent ui --db`). An empty list says so, and
 counts the guardrail spans of traces recorded before 1.89.0, which have no rows.
 
+The list's filters, time range, "hide passes", "hide experiments" and page are
+kept in the URL (*1.89.0*), so a filtered view survives a refresh and can be
+shared; a quick range such as the last 24 hours is stored as `range=24h` and
+recomputed when the link is opened.
+
 ![Guardrail events list with type / position / FP filters](screenshots/sprint2-6-guardrails-list-filters.png)
 
 ## Three panels

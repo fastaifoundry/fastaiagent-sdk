@@ -144,8 +144,17 @@ seeded snapshot DB — they stay in sync with the code via
 
 Home leads with **what needs attention**, not with what exists. A ranked strip
 calls out failed or interrupted executions, failing traces (naming the agents
-behind them), runs blocked waiting on a human approval, and eval pass rates
-that have dropped below 70% — each one linking to the page that owns the fix.
+behind them), runs blocked waiting on a human approval, an eval **cases**
+pass rate below 70%, and gated eval runs that failed or were invalid — each
+one linking to the page that owns the fix.
+
+The eval headline (*1.89.0*) is the **cases** pass rate of the latest run per
+dataset over the last 7 days. Dataset checks (the echo agent), AutoLLM
+candidate runs and **invalid** runs (an outage: the gate could not judge them)
+are left out and counted beside it ("N datasets · X counted, Y left out"); an
+invalid run shows up in the "gated eval runs failed or were invalid" item
+instead, so an outage never reads as a quality drop. It used to average the checks rate of every run, so one echo
+check at 0% could drag the headline under the warning line.
 
 When nothing is wrong it collapses to a single line, so an all-clear takes one
 glance rather than six.
@@ -306,24 +315,51 @@ button appends the case to `.fastaiagent/datasets/regression_tests.jsonl`
 
 ### Eval runs
 
-A pass-rate trend chart at the top (runs over time, grouped by dataset) plus
-a table of every run with dataset, scorers, pass-rate bar, **total cost**
-(derived from the traces each case ran on), **avg latency**, and started-ago.
+Every number on these pages reads **cases first, checks second** (*1.89.0*):
+a case is one dataset row and passes only when every check that applied to it
+passed; a check is one scorer's verdict on one case. A check that **could not
+run** (errored: a judge outage, a scorer that raised) or **does not apply**
+(n/a: no expected output, no expected trajectory) is shown beside the rates,
+never inside them. See
+[Four outcomes, cases and checks](../evaluation/concepts.md#four-outcomes-cases-and-checks).
+
+A quality trend chart at the top: one line per dataset (or per pytest run
+name), the cases pass rate over time, with the checks rate and gate outcome in
+the tooltip. Dataset checks and AutoLLM candidate runs are left out (a toggle
+brings them back), and an invalid run leaves a gap rather than a dip. Below it, the runs table: cases pass rate (checks rate on
+hover), errored cases, gate badge, git branch, **agent cost**, avg latency and
+started-ago. Filter by kind (All / Evals / Pytest / UI / AutoLLM / Dataset
+checks), by gate outcome or by name; filters live in the URL, and the list
+pages.
 
 ![Eval runs](screenshots/24-evals-list.png)
 
-Click a run to see per-case results. The header shows a row of **scorer
-chips** — each chip colored by pass-rate (green ≥90%, amber 70–89%, red
-<70%) with the raw pass/total count right-aligned — so you see which
-scorer is dragging the run down at a glance. Above the cases table, a
-filter bar lets you narrow down by outcome (passed/failed), by scorer,
-or by substring match on input/expected/actual.
+Click a run to see per-case results. The headline tiles:
 
-Each case row has a chevron — click it and the row expands in-place to
-show the input, a side-by-side **expected vs actual** diff powered by
-`react-diff-viewer-continued`, the per-scorer chips (with reasons on
-hover), and **Trace** + **Replay** buttons to open the originating
-trace.
+| Tile | Shows |
+|---|---|
+| **Cases passed** | the cases rate, and passed / judged cases |
+| **Failed** / **Errored** | failed cases, and cases that could not be judged (agent error, a scorer that could not run, or nothing applied) |
+| **Checks** | e.g. `16/20 · 4 n/a · 1 errored`: the rate `--eval-fail-under overall.pass_rate` gates |
+| **Agent cost** / **Eval cost** | the agent's calls, and the judges' calls, kept apart. "—" when not traced; "partial" when a call could not be priced |
+| **Started** | with the run's duration and average case latency |
+
+**Scorer chips** carry pass / total plus errored and n/a counts. A banner marks
+a **dataset check** (an echo run: not a model evaluation), and a run stored
+before 1.89.0, whose stored rate counted errored and skipped checks as
+failures. When the run was gated, the **Agent CI** panel shows the gate
+outcome, each threshold with its actual value, errored cases against the
+allowed rate, why a run was invalid, the baseline with a compare link, and the
+git commit and branch. A **Scorer configuration** card lists each scorer's
+settings (a judge's criteria, scale, threshold, provider and model; never a
+key), and a **Hardening** card shows a saved `harden()` report.
+
+Each case row expands to show the input, a side-by-side **expected vs actual**
+diff (an "Identical" panel when they match), images and PDFs as thumbnails,
+and a **verdict table**: per scorer, its outcome, its score (none for errored
+or n/a), the full reason, and a link to the judges' trace for that case.
+Trajectory scorers show the expected and actual tool lists. **Trace** and
+**Replay** buttons open the case's agent trace.
 
 ![Eval run detail](screenshots/25-eval-detail.png)
 
@@ -332,12 +368,22 @@ trace.
 From any run detail page, click **Compare with…** (or visit
 `/evals/compare` directly) to pick two runs and see what changed.
 
-The compare page groups cases into four buckets:
+The compare page puts every case in one bucket:
 
 - **Regressed** — passed in A, failed in B. Red card.
 - **Improved** — failed in A, passed in B. Green card.
 - **Unchanged pass** / **Unchanged fail** — counted but not expanded,
   so the page stays focused on what actually changed.
+- **Errored** (*1.89.0*) — a pair where either side could not be judged, with
+  which side; neither a regression nor an improvement.
+- **Unmatched** (*1.89.0*) — cases only in the baseline or only in the
+  current run. Both used to be dropped without a word.
+- **Score drift** (*1.89.0*) — same outcome, but a scorer's score moved by
+  0.1 or more.
+
+The header shows the deltas for the cases rate, the checks rate, agent cost
+and eval cost, and warns when one run was stored before 1.89.0, whose checks
+rate is not like for like.
 
 Each regressed / improved case renders as a `CaseDiffCard` with two
 side-by-side diffs: **expected vs actual (B)** on top, and **actual

@@ -165,17 +165,89 @@ async def aharden(
     *,
     llm: LLMClient | None = None,
     max_recommendations: int = 6,
+    persist: bool = True,
 ) -> HardeningReport:
     """Analyse failures and recommend concrete fixes (async). See :func:`harden`."""
+    report, model = await _analyse(agent, results, llm=llm, max_recommendations=max_recommendations)
+    if persist:
+        _persist_report(results, report, model)
+    return report
+
+
+def _persist_report(results: Any, report: HardeningReport, model: str | None) -> None:
+    """Merge the report into the analysed run's ``metadata["hardening"]`` (D16).
+
+    Only for a run that was persisted (``results.run_id``), into the database
+    it was written to. Local only: the eval export never reads this key.
+    Best-effort: a write failure never loses the report the caller holds.
+    """
+    run_id = getattr(results, "run_id", None)
+    if not run_id:
+        return
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    from fastaiagent.eval.simulate import SimulationResults
+
+    table = "sim_runs" if isinstance(results, SimulationResults) else "eval_runs"
+    try:
+        from fastaiagent._internal.config import get_config
+        from fastaiagent._internal.scrub import known_credential_values, scrub_secrets
+        from fastaiagent.ui.db import init_local_db
+
+        path = getattr(results, "db_path", None) or get_config().local_db_path
+        db = init_local_db(Path(path))
+        try:
+            row = db.fetchone(f"SELECT metadata FROM {table} WHERE run_id = ?", (run_id,))
+            if row is None:
+                return
+            try:
+                meta = json.loads(row["metadata"] or "{}")
+            except json.JSONDecodeError:
+                meta = {}
+            secrets = known_credential_values()
+            meta["hardening"] = {
+                "created_at": datetime.now(tz=timezone.utc).isoformat(),
+                "model": model,
+                "failure_count": report.failure_count,
+                "recommendations": [
+                    {
+                        "target": r.target,
+                        "recommendation": scrub_secrets(r.recommendation, secrets),
+                        "rationale": scrub_secrets(r.rationale, secrets),
+                    }
+                    for r in report.recommendations
+                ],
+            }
+            db.execute(
+                f"UPDATE {table} SET metadata = ? WHERE run_id = ?",
+                (json.dumps(meta, default=str), run_id),
+            )
+        finally:
+            db.close()
+    except Exception:  # pragma: no cover - never lose the report over a write
+        import logging
+
+        logging.getLogger(__name__).debug("Could not persist the hardening report", exc_info=True)
+
+
+async def _analyse(
+    agent: Agent | Any,
+    results: Any,
+    *,
+    llm: LLMClient | None,
+    max_recommendations: int,
+) -> tuple[HardeningReport, str | None]:
     agent_name = getattr(agent, "name", "agent")
     failures, count = _failures_text(results, max_cases=MAX_FAILURES_SHOWN)
 
     if count == 0:
-        return HardeningReport(agent_name=agent_name, failure_count=0, recommendations=[])
+        return HardeningReport(agent_name=agent_name, failure_count=0, recommendations=[]), None
 
     from fastaiagent.llm import LLMClient, SystemMessage, UserMessage
 
     client = llm or LLMClient()
+    model = getattr(client, "model", None)
     sp = getattr(agent, "system_prompt", None)
     sp_text = sp if isinstance(sp, str) and sp else "(dynamic or no system prompt)"
     tools = [getattr(t, "name", "tool") for t in (getattr(agent, "tools", []) or [])]
@@ -196,12 +268,15 @@ async def aharden(
         'guardrails|memory", "recommendation": "<what to change>", "rationale": "<why>"}]}'
     )
     try:
-        resp = await client.acomplete(
-            [
-                SystemMessage("You are an expert AI-agent debugger. Respond with JSON only."),
-                UserMessage(prompt),
-            ]
-        )
+        # One root eval.harden span, stamped source=eval (D16): the analysis
+        # call is an experiment, not a run of the agent.
+        with _harden_span(results):
+            resp = await client.acomplete(
+                [
+                    SystemMessage("You are an expert AI-agent debugger. Respond with JSON only."),
+                    UserMessage(prompt),
+                ]
+            )
         raw = (resp.content or "").strip()
         raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw).strip()
         data = json.loads(raw)
@@ -214,7 +289,7 @@ async def aharden(
                     target="instructions", recommendation="(analysis failed)", rationale=str(e)
                 )
             ],
-        )
+        ), model
 
     # The requested {"recommendations": [...]} object, or the bare list some models
     # send instead — reading .get() off a list raised out of harden() (1.86.0).
@@ -230,7 +305,7 @@ async def aharden(
                     rationale="the reply had no list of recommendations",
                 )
             ],
-        )
+        ), model
     recs: list[Recommendation] = []
     for item in items[:max_recommendations]:
         if not isinstance(item, dict):
@@ -246,7 +321,30 @@ async def aharden(
                 target=target, recommendation=rec, rationale=str(item.get("rationale", ""))
             )
         )
-    return HardeningReport(agent_name=agent_name, failure_count=count, recommendations=recs)
+    return HardeningReport(agent_name=agent_name, failure_count=count, recommendations=recs), model
+
+
+def _harden_span(results: Any) -> Any:
+    import contextlib
+
+    try:
+        from opentelemetry import context as otel_context
+
+        from fastaiagent.trace.otel import get_tracer
+        from fastaiagent.trace.provenance import provenance_scope
+
+        stack = contextlib.ExitStack()
+        run_id = getattr(results, "run_id", None)
+        attrs = {"fastaiagent.eval.run_id": run_id} if run_id else {}
+        stack.enter_context(provenance_scope("eval", attributes=attrs))
+        stack.enter_context(
+            get_tracer("fastaiagent.eval").start_as_current_span(
+                "eval.harden", context=otel_context.Context()
+            )
+        )
+        return stack
+    except Exception:  # pragma: no cover - tracing is bookkeeping
+        return contextlib.nullcontext()
 
 
 def harden(
@@ -255,6 +353,7 @@ def harden(
     *,
     llm: LLMClient | None = None,
     max_recommendations: int = 6,
+    persist: bool = True,
 ) -> HardeningReport:
     """Analyse failures from a ``simulate()`` / ``evaluate()`` run and recommend fixes.
 
@@ -264,6 +363,9 @@ def harden(
             :class:`~fastaiagent.eval.results.EvalResults` from a prior run.
         llm: Optional ``LLMClient`` for the analysis (default constructed if omitted).
         max_recommendations: Cap on the number of recommendations.
+        persist: When ``results`` was persisted (it has a ``run_id``), save the
+            report onto that run as ``metadata["hardening"]`` so the Local UI
+            shows it (1.89.0). Local only; never exported.
 
     Returns:
         A :class:`HardeningReport`. **v1 is recommend-only** — it never mutates the agent.
@@ -274,7 +376,9 @@ def harden(
         report = harden(agent, results)
         print(report.summary())
     """
-    return run_sync(aharden(agent, results, llm=llm, max_recommendations=max_recommendations))
+    return run_sync(
+        aharden(agent, results, llm=llm, max_recommendations=max_recommendations, persist=persist)
+    )
 
 
 __all__ = ["harden", "aharden", "HardeningReport", "Recommendation"]

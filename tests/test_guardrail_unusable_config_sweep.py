@@ -73,6 +73,7 @@ UNUSABLE: list[tuple[str, dict[str, Any], str]] = [
     ("groundedness", {}, "no context to score the answer against"),
     ("regex", {}, "no pattern"),
     ("regex", {"pattern": ""}, "an empty pattern matches at every position"),
+    ("regex", {"pattern": "(unclosed"}, "a pattern that does not compile (the plane raises too)"),
     (
         "regex",
         {"pattern": "", "should_match": True},

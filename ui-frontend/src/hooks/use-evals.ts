@@ -1,33 +1,36 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type {
   EvalCaseFilters,
   EvalCompareResponse,
   EvalRunDetail,
+  EvalRunFilters,
   EvalRunsPage,
   EvalTrendPoint,
 } from "@/lib/types";
 
-interface Filters {
-  dataset?: string | null;
-  agent?: string | null;
-  page?: number;
-  page_size?: number;
-}
+/** Rows per page on the eval runs list. */
+export const EVAL_RUNS_PAGE_SIZE = 50;
 
-function buildQuery(f: Filters): string {
+function buildQuery(f: EvalRunFilters): string {
   const params = new URLSearchParams();
   if (f.dataset) params.set("dataset", f.dataset);
   if (f.agent) params.set("agent", f.agent);
+  if (f.kind) params.set("kind", f.kind);
+  if (f.exclude_kind) params.set("exclude_kind", f.exclude_kind);
+  if (f.q) params.set("q", f.q);
+  if (f.gate) params.set("gate", f.gate);
   params.set("page", String(f.page ?? 1));
   params.set("page_size", String(f.page_size ?? 100));
   return params.toString() ? `?${params.toString()}` : "";
 }
 
-export function useEvalRuns(filters: Filters = {}) {
+export function useEvalRuns(filters: EvalRunFilters = {}) {
   return useQuery({
     queryKey: ["evals", filters],
     queryFn: () => api.get<EvalRunsPage>(`/evals${buildQuery(filters)}`),
+    // Keep the current page on screen while the next one loads.
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -63,12 +66,20 @@ export function useEvalCompare(a: string | undefined, b: string | undefined) {
   });
 }
 
-export function useEvalTrend(dataset?: string | null) {
+/**
+ * Quality over time. Dataset checks (ui-echo) and AutoLLM candidate runs are
+ * left out unless `includeAll` (the API's `include=all`).
+ */
+export function useEvalTrend(dataset?: string | null, includeAll = false) {
   return useQuery({
-    queryKey: ["eval-trend", dataset ?? null],
+    queryKey: ["eval-trend", dataset ?? null, includeAll],
     queryFn: () => {
-      const q = dataset ? `?dataset=${encodeURIComponent(dataset)}` : "";
+      const p = new URLSearchParams();
+      if (dataset) p.set("dataset", dataset);
+      if (includeAll) p.set("include", "all");
+      const q = p.toString() ? `?${p.toString()}` : "";
       return api.get<{ points: EvalTrendPoint[] }>(`/evals/trend${q}`);
     },
+    placeholderData: keepPreviousData,
   });
 }

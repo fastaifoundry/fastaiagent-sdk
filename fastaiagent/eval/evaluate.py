@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import uuid
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
@@ -13,7 +14,9 @@ from typing import Any
 from fastaiagent._internal.async_utils import run_sync
 from fastaiagent._internal.pause import describe_pause
 from fastaiagent.eval._scoring import (
+    EvalSpanContext,
     agent_fingerprint,
+    agent_scope,
     resolve_scorers,
     row_facts,
     score_case,
@@ -198,6 +201,9 @@ async def aevaluate(
     results.kind = run_kind
     results.agent_version = agent_fingerprint(agent_fn)
     results.scorer_config = scorer_config(resolved_scorers)
+    # Known before any case runs, so every agent and scoring span can carry it
+    # and the persisted run has the same id (1.89.0).
+    run_id = uuid.uuid4().hex
 
     # Run evaluation
     sem = asyncio.Semaphore(concurrency)
@@ -208,11 +214,15 @@ async def aevaluate(
     # Recorded in completion order, two runs of one dataset paired different
     # inputs (1.87.0).
     async def eval_one(
+        ordinal: int,
         item: dict[str, Any],
     ) -> tuple[EvalCaseRecord, list[tuple[str, ScorerResult]]]:
         async with sem:
             input_text = item.get("input", str(item))
             expected = item.get("expected_output", item.get("expected"))
+            span_ctx = EvalSpanContext(
+                run_id=run_id, run_name=run_name, kind=run_kind, case_ordinal=ordinal
+            )
 
             trace_id: str | None = None
             # What the run cost and how long it took. Collected here because
@@ -224,7 +234,8 @@ async def aevaluate(
             call_started = time.monotonic()
             # Call agent
             try:
-                output = await _call_agent_fn(agent_fn, input_text)
+                with agent_scope(span_ctx):
+                    output = await _call_agent_fn(agent_fn, input_text)
                 # A paused run (approval policy / interrupt()) has no answer yet:
                 # its ``output`` is "". Scoring that graded a run that never
                 # finished as a wrong answer; it is errored (unscored) instead.
@@ -279,12 +290,14 @@ async def aevaluate(
                 **kwargs,
                 **row_facts(item),
             }
-            per_scorer, scored = score_case(
+            per_scorer, scored, scoring_trace_id = score_case(
                 resolved_scorers,
                 input=input_text,
                 output=output_text,
                 expected=expected,
                 score_kwargs=score_kwargs,
+                span_context=span_ctx,
+                subject_trace_id=trace_id,
             )
 
             record = EvalCaseRecord(
@@ -293,11 +306,12 @@ async def aevaluate(
                 actual_output=output_text,
                 trace_id=trace_id,
                 per_scorer=per_scorer,
+                scoring_trace_id=scoring_trace_id,
             )
             return record, scored
 
     # ``gather`` returns in the order the cases were given — the dataset's.
-    for record, scored in await asyncio.gather(*(eval_one(item) for item in ds)):
+    for record, scored in await asyncio.gather(*(eval_one(i, item) for i, item in enumerate(ds))):
         for scorer_name, result in scored:
             results.add(scorer_name, result)
         results.add_case(record)
@@ -306,6 +320,7 @@ async def aevaluate(
     if persist:
         try:
             run_id = results.persist_local(
+                run_id=run_id,
                 run_name=run_name,
                 dataset_name=resolved_dataset_name,
                 # Fall back to the callable's own agent so connected runs attach

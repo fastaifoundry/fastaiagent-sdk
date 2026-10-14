@@ -358,6 +358,69 @@ export interface FilterPreset {
   created_at: string;
 }
 
+/** What produced an eval run (1.89.0). `null` = recorded before kinds existed. */
+export type EvalRunKind = "evaluate" | "cli" | "pytest" | "optimize" | "ui" | "ui-echo";
+
+/** The Agent-CI gate's verdict on a run. */
+export type EvalGateOutcome = "passed" | "failed" | "invalid";
+
+/** One threshold the gate checked, with the value the run reached. */
+export interface EvalGateCheck {
+  metric: string;
+  field: string;
+  minimum: number;
+  /** `null` when the metric was not present in the run (the gate fails it). */
+  actual: number | null;
+  passed: boolean;
+}
+
+/** The Agent-CI evidence recorded on a run; every part is optional. */
+export interface EvalGate {
+  outcome: EvalGateOutcome | string | null;
+  thresholds?: Record<string, number> | null;
+  checks?: EvalGateCheck[] | null;
+  error?: {
+    errored?: number;
+    scored?: number;
+    error_rate?: number;
+    max_error_rate?: number | null;
+  } | null;
+  invalid_reasons?: string[] | null;
+  baseline?: {
+    run_id?: string;
+    run_name?: string;
+    pass_rate_delta?: number | null;
+    case_pass_rate_delta?: number | null;
+    regressed_count?: number;
+    errored_count?: number;
+    unmatched_count?: number;
+    tolerance?: number | null;
+    pass_rate_comparable?: boolean;
+  } | null;
+  git_sha?: string | null;
+  git_branch?: string | null;
+}
+
+/** `metadata.hardening`: the recommendations `harden()` made for this run. */
+export interface EvalHardening {
+  created_at?: string | null;
+  model?: string | null;
+  failure_count?: number | null;
+  recommendations?: { target?: string; recommendation?: string; rationale?: string }[];
+}
+
+/** `metadata.scorer_config`: how each scorer was configured. Never keys. */
+export type EvalScorerConfig = Record<string, { type?: string; [key: string]: unknown }>;
+
+export interface EvalRunMetadata {
+  gate_outcome?: EvalGateOutcome | string;
+  git_branch?: string;
+  git_sha?: string;
+  scorer_config?: EvalScorerConfig;
+  hardening?: EvalHardening;
+  [key: string]: unknown;
+}
+
 export interface EvalRunRow {
   run_id: string;
   run_name: string | null;
@@ -367,16 +430,69 @@ export interface EvalRunRow {
   scorers: string[] | null;
   started_at: string | null;
   finished_at: string | null;
+  /** Checks (verdicts) that passed. Before 1.89.0 errored/skipped counted as fails. */
   pass_count: number | null;
   fail_count: number | null;
+  /**
+   * The **checks** rate: passed verdicts / (passed + failed verdicts). What
+   * `overall.pass_rate` and `--eval-fail-under` gate. `null` = no verdict applied.
+   */
   pass_rate: number | null;
-  metadata: Record<string, unknown> | null;
-  // Added in 0.9.3 — aggregated from eval_cases.trace_id → spans.
+  metadata: EvalRunMetadata | null;
+  // 1.89.0
+  kind?: EvalRunKind | string | null;
+  /** 2 for runs written by 1.89.0+; `null` for runs stored under the old rules. */
+  summary_version?: number | null;
+  case_count?: number | null;
+  case_pass_count?: number | null;
+  case_fail_count?: number | null;
+  case_error_count?: number | null;
+  /** The **cases** rate: passed cases / (passed + failed cases). The headline. */
+  case_pass_rate?: number | null;
+  check_error_count?: number | null;
+  check_skip_count?: number | null;
+  /** The agent's spend, from its traces. `null` when no case was traced. */
+  agent_cost_usd?: number | null;
+  /** False when some case had no trace, so the sum may be partial. */
+  agent_cost_known?: boolean;
+  /** The judges' spend, from the scoring traces. */
+  eval_cost_usd?: number | null;
+  eval_cost_known?: boolean;
+  /** Alias of the agent cost (0 when unknown). */
   cost_usd?: number;
   avg_latency_ms?: number;
-  case_count?: number;
+  traced_case_count?: number;
   // Only set on the run-detail response.
-  scorer_summary?: Record<string, { pass: number; fail: number }>;
+  scorer_summary?: Record<
+    string,
+    { pass: number; fail: number; errored?: number; skipped?: number }
+  >;
+  gate?: EvalGate | null;
+}
+
+/**
+ * One scorer's stored verdict on one case. `errored` (the check could not
+ * run) and `skipped` (the check does not apply) appear only when set; both
+ * carry `passed: false, score: 0` as a placeholder that is never a score.
+ */
+export interface EvalVerdict {
+  passed: boolean;
+  score: number;
+  reason?: string | null;
+  errored?: boolean;
+  skipped?: boolean;
+  details?: Record<string, unknown> | null;
+}
+
+/** A single verdict's outcome. */
+export type EvalVerdictOutcome = "passed" | "failed" | "errored" | "skipped";
+
+/** Mirrors `verdict_outcome` (fastaiagent/eval/scorer.py). */
+export function evalVerdictOutcome(v: EvalVerdict | null | undefined): EvalVerdictOutcome {
+  if (!v) return "failed";
+  if (v.errored) return "errored";
+  if (v.skipped) return "skipped";
+  return v.passed ? "passed" : "failed";
 }
 
 export interface EvalCaseRow {
@@ -387,25 +503,37 @@ export interface EvalCaseRow {
   expected_output: unknown;
   actual_output: unknown;
   trace_id: string | null;
-  per_scorer: Record<string, { passed: boolean; score: number; reason?: string | null }>;
+  per_scorer: Record<string, EvalVerdict>;
   /**
    * Infrastructure failure (provider 500, timeout, auth) — the agent never
    * produced an output, so the case was NOT scored and `per_scorer` is empty.
    * Errored is its own outcome: excluded from pass/fail, never a quality miss.
    */
   error?: string | null;
+  /** The trace of this case's judge calls (1.89.0). */
+  scoring_trace_id?: string | null;
 }
 
 /** A case's overall outcome. `errored` is infra, not agent quality. */
 export type EvalCaseOutcome = "passed" | "failed" | "errored";
 
-/** Mirrors the backend's `_case_outcome` (fastaiagent/eval/compare.py). */
+/**
+ * Mirrors the backend's `case_outcome_detail` (fastaiagent/eval/compare.py).
+ * First match wins:
+ *   1. the agent errored (`error` set)            → errored
+ *   2. any applicable verdict failed               → failed
+ *   3. any verdict errored (check could not run)   → errored
+ *   4. no verdict passed (all n/a, or none at all) → errored ("unscored")
+ *   5.                                             → passed
+ */
 export function evalCaseOutcome(c: Pick<EvalCaseRow, "error" | "per_scorer">): EvalCaseOutcome {
   if (c.error) return "errored";
-  const per = c.per_scorer ?? {};
-  const verdicts = Object.values(per);
-  if (verdicts.length === 0) return "passed";
-  return verdicts.every((v) => v?.passed) ? "passed" : "failed";
+  const per = c.per_scorer && typeof c.per_scorer === "object" ? c.per_scorer : {};
+  const outcomes = Object.values(per).map(evalVerdictOutcome);
+  if (outcomes.includes("failed")) return "failed";
+  if (outcomes.includes("errored")) return "errored";
+  if (!outcomes.includes("passed")) return "errored";
+  return "passed";
 }
 
 export interface EvalRunDetail {
@@ -420,17 +548,43 @@ export interface EvalCaseFilters {
   q?: string;
 }
 
+/** List filters for `GET /api/evals`. */
+export interface EvalRunFilters {
+  dataset?: string | null;
+  agent?: string | null;
+  /** Comma-separated run kinds. */
+  kind?: string | null;
+  exclude_kind?: string | null;
+  q?: string | null;
+  /** Comma-separated gate outcomes: passed, failed, invalid, none (never gated). */
+  gate?: string | null;
+  page?: number;
+  page_size?: number;
+}
+
 export interface EvalScorerDelta {
   scorer: string;
   passed_before: boolean;
   passed_after: boolean;
   changed: boolean;
+  // 1.89.0: `null` when the scorer did not run on that side.
+  outcome_before?: EvalVerdictOutcome | null;
+  outcome_after?: EvalVerdictOutcome | null;
+  /** `null` for an errored or skipped verdict, never its placeholder 0. */
+  score_before?: number | null;
+  score_after?: number | null;
+  score_delta?: number | null;
 }
 
 export interface EvalComparePair {
   a: EvalCaseRow;
   b: EvalCaseRow;
   scorer_deltas: EvalScorerDelta[];
+}
+
+export interface EvalCompareErroredPair extends EvalComparePair {
+  /** Which run's case errored. */
+  side: "a" | "b" | "both";
 }
 
 export interface EvalCompareResponse {
@@ -440,8 +594,37 @@ export interface EvalCompareResponse {
   improved: EvalComparePair[];
   unchanged_pass: number;
   unchanged_fail: number;
-  pass_rate_delta: number;
+  /** Checks-rate delta; `null` when either side has no checks rate. Read `pass_rate_comparable`. */
+  pass_rate_delta: number | null;
   cost_delta_usd: number;
+  // 1.89.0
+  errored?: EvalCompareErroredPair[];
+  only_in_a?: EvalCaseRow[];
+  only_in_b?: EvalCaseRow[];
+  /** Pairs whose outcome held while a score moved; lists only the moved scorers. */
+  drifted?: EvalComparePair[];
+  case_pass_rate_delta?: number | null;
+  pass_rate_comparable?: boolean;
+  agent_cost_delta_usd?: number | null;
+  eval_cost_delta_usd?: number | null;
+}
+
+/** A case value's image/PDF stored as a descriptor, its bytes kept out (1.89.0). */
+export interface EvalMediaDescriptor {
+  type: "image" | "pdf";
+  media_type?: string;
+  size_bytes?: number;
+  sha256?: string;
+  media_idx: number;
+  source_url?: string | null;
+  source_path?: string | null;
+  detail?: string | null;
+}
+
+/** Raw bytes in a case value, stored as their size only. */
+export interface EvalBytesDescriptor {
+  type: "bytes";
+  size_bytes: number;
 }
 
 // --- Optimize runs (optimize_runs / optimize_iterations) ---
@@ -528,6 +711,10 @@ export interface SimulationRunRow {
   started_at: string | null;
   finished_at: string | null;
   metadata: Record<string, unknown> | null;
+  /** Scenarios that did not finish or could not be judged (1.89.0). */
+  errored_count?: number;
+  /** Scenarios that reached a verdict. */
+  judged_count?: number;
 }
 
 export interface TranscriptTurn {
@@ -542,6 +729,8 @@ export interface CriterionVerdict {
   kind: "success" | "failure";
   passed: boolean;
   reason: string | null;
+  /** The judge could not run on this criterion (1.89.0). */
+  errored?: boolean;
 }
 
 export interface SimulationCase {
@@ -554,6 +743,8 @@ export interface SimulationCase {
   per_criterion: CriterionVerdict[];
   transcript: TranscriptTurn[];
   trace_id: string | null;
+  /** Why the scenario did not finish or could not be judged (1.89.0). */
+  error?: string | null;
 }
 
 export interface SimulationRunDetail {
@@ -625,8 +816,17 @@ export interface EvalRunsPage {
 
 export interface EvalTrendPoint {
   started_at: string;
-  pass_rate: number;
+  run_id?: string;
+  run_name?: string | null;
+  kind?: string | null;
   dataset_name: string | null;
+  /** The line this point belongs to: the dataset, or the run name for pytest. */
+  series?: string | null;
+  /** Cases rate; `null` when no case reached a verdict. */
+  case_pass_rate?: number | null;
+  /** Checks rate. */
+  pass_rate: number | null;
+  gate_outcome?: string | null;
 }
 
 export interface AnalyticsPoint {
@@ -701,13 +901,37 @@ export interface TraceScores {
     case_id: string;
     run_id: string;
     ordinal: number;
-    per_scorer: Record<string, { passed: boolean; score: number; reason?: string | null }>;
+    per_scorer: Record<string, EvalVerdict>;
     run_name: string | null;
     dataset_name: string | null;
     started_at: string | null;
     input: unknown;
     expected_output: unknown;
     actual_output: unknown;
+  }[];
+  /** 1.89.0: this trace IS the judges' scoring of these eval cases. */
+  eval_scoring?: {
+    case_id: string;
+    run_id: string;
+    ordinal: number;
+    per_scorer: Record<string, EvalVerdict>;
+    /** The agent trace of the case that was scored. */
+    trace_id: string | null;
+    run_name: string | null;
+    dataset_name: string | null;
+    started_at: string | null;
+  }[];
+  /** 1.89.0: this trace is a simulated conversation. */
+  simulation_cases?: {
+    case_id: string;
+    run_id: string;
+    ordinal: number;
+    scenario_name: string | null;
+    passed: number | boolean;
+    per_criterion: CriterionVerdict[];
+    error: string | null;
+    run_name: string | null;
+    started_at: string | null;
   }[];
 }
 

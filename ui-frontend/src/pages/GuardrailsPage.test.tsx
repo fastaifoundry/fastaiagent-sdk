@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { useLocation } from "react-router-dom";
 import { renderWithProviders } from "@/test/utils";
 import { GuardrailsPage } from "./GuardrailsPage";
 import type { GuardrailEvent } from "@/lib/types";
@@ -62,6 +63,11 @@ function mockEvents(total: number, extra: Record<string, unknown> = {}, rowsOver
 
 function urls(spy: ReturnType<typeof mockEvents>): URL[] {
   return spy.mock.calls.map(([input]) => new URL(String(input), "http://localhost"));
+}
+
+function LocationProbe() {
+  const loc = useLocation();
+  return <div data-testid="location">{loc.search}</div>;
 }
 
 describe("GuardrailsPage", () => {
@@ -140,6 +146,52 @@ describe("GuardrailsPage", () => {
     await screen.findByTestId("guardrail-row-e0");
     expect(urls(spy)[0].searchParams.get("agent")).toBe("support");
     expect(urls(spy)[0].searchParams.get("rule")).toBe("no_pii");
+  });
+
+  it("writes filter changes and the page to the URL", async () => {
+    mockEvents(120);
+    renderWithProviders(
+      <>
+        <GuardrailsPage />
+        <LocationProbe />
+      </>,
+      { route: "/guardrails?agent=support" }
+    );
+    await screen.findByTestId("guardrail-row-e0");
+    const search = () => new URLSearchParams(screen.getByTestId("location").textContent ?? "");
+
+    fireEvent.change(screen.getByDisplayValue("All outcomes"), { target: { value: "blocked" } });
+    await waitFor(() => expect(search().get("outcome")).toBe("blocked"));
+    expect(search().get("agent")).toBe("support");
+
+    fireEvent.click(screen.getByRole("button", { name: "24h" }));
+    await waitFor(() => expect(search().get("range")).toBe("24h"));
+
+    fireEvent.click(screen.getByRole("switch", { name: "Hide passes" }));
+    await waitFor(() => expect(search().get("hide_passes")).toBe("false"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide experiments" }));
+    await waitFor(() => expect(search().get("exclude_experiments")).toBe("true"));
+
+    await screen.findByTestId("guardrail-row-e0");
+    fireEvent.click(screen.getByRole("button", { name: /Next/ }));
+    await waitFor(() => expect(search().get("page")).toBe("2"));
+  });
+
+  it("restores filters and page from a shared URL", async () => {
+    const spy = mockEvents(120);
+    renderWithProviders(<GuardrailsPage />, {
+      route: "/guardrails?outcome=errored&range=7d&hide_passes=false&exclude_experiments=true&fp=yes&page=2",
+    });
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    const first = urls(spy)[0].searchParams;
+    expect(first.get("outcome")).toBe("errored");
+    expect(first.has("since")).toBe(true);
+    expect(first.has("hide_passes")).toBe(false);
+    expect(first.get("exclude_experiments")).toBe("true");
+    expect(first.get("false_positive")).toBe("true");
+    expect(first.get("page")).toBe("2");
+    expect(screen.getByRole("button", { name: "7d" }).className).toMatch(/bg-primary/);
   });
 
   it("shows an observe-only mask and a refused rewrite in the Action cell", async () => {

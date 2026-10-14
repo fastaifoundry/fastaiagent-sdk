@@ -89,27 +89,102 @@ function emptyFilters(): Filters {
   };
 }
 
-export function GuardrailsPage() {
-  // security_review_1.md L2 — SPA navigation via React Router instead
-  // of ``window.location.assign`` (which forces a full reload AND would
-  // become an open-redirect risk if ``row.event_id`` ever started
-  // accepting external input).
-  const navigate = useNavigate();
-  // The agent page links here as ``/guardrails?agent=…&rule=…``.
-  const [params] = useSearchParams();
-  const [filters, setFilters] = useState<Filters>(() => ({
+/** The URL keys this page owns; anything else in the query string is kept. */
+const URL_KEYS = [
+  "rule",
+  "agent",
+  "outcome",
+  "position",
+  "type",
+  "fp",
+  "range",
+  "since",
+  "until",
+  "hide_passes",
+  "exclude_experiments",
+  "page",
+];
+
+/** Read filters, page and quick range from the URL (agent page links use agent/rule). */
+function fromParams(params: URLSearchParams): { filters: Filters; page: number; range: string } {
+  const fp = params.get("fp");
+  const filters: Filters = {
     ...emptyFilters(),
     rule: params.get("rule") || null,
     agent: params.get("agent") || null,
     outcome: params.get("outcome") || null,
     position: params.get("position") || null,
     type: params.get("type") || null,
-  }));
-  const [page, setPage] = useState(1);
+    false_positive: fp === "yes" ? true : fp === "no" ? false : null,
+    hide_passes: params.get("hide_passes") !== "false",
+    exclude_experiments: params.get("exclude_experiments") === "true",
+  };
+  let range = "All";
+  const since = params.get("since");
+  const until = params.get("until");
+  const quick = RANGES.find((r) => r.label === params.get("range") && r.hours != null);
+  if (since || until) {
+    filters.since = since || undefined;
+    filters.until = until || undefined;
+    range = "Custom";
+  } else if (quick) {
+    // A quick range is relative: it starts from now when the link is opened.
+    filters.since = new Date(Date.now() - quick.hours! * 3600_000).toISOString();
+    range = quick.label;
+  }
+  const page = Math.max(1, Number(params.get("page")) || 1);
+  return { filters, page, range };
+}
+
+function toParams(base: URLSearchParams, f: Filters, page: number, range: string): URLSearchParams {
+  const next = new URLSearchParams(base);
+  for (const k of URL_KEYS) next.delete(k);
+  const set = (k: string, v: string | null | undefined) => {
+    if (v) next.set(k, v);
+  };
+  set("rule", f.rule);
+  set("agent", f.agent);
+  set("outcome", f.outcome);
+  set("position", f.position);
+  set("type", f.type);
+  if (f.false_positive != null) next.set("fp", f.false_positive ? "yes" : "no");
+  if (range === "Custom") {
+    set("since", f.since);
+    set("until", f.until);
+  } else if (range !== "All") {
+    next.set("range", range);
+  }
+  if (!f.hide_passes) next.set("hide_passes", "false");
+  if (f.exclude_experiments) next.set("exclude_experiments", "true");
+  if (page > 1) next.set("page", String(page));
+  return next;
+}
+
+export function GuardrailsPage() {
+  // security_review_1.md L2 — SPA navigation via React Router instead
+  // of ``window.location.assign`` (which forces a full reload AND would
+  // become an open-redirect risk if ``row.event_id`` ever started
+  // accepting external input).
+  const navigate = useNavigate();
+  // Filters and page live in the URL too, so a filtered view can be shared
+  // and survives a refresh. The agent page links here as ``?agent=…&rule=…``.
+  const [params, setParams] = useSearchParams();
+  const [initial] = useState(() => fromParams(params));
+  const [filters, setFiltersState] = useState<Filters>(initial.filters);
+  const [page, setPageState] = useState(initial.page);
+  const [quickRange, setQuickRangeState] = useState<string>(initial.range);
+
+  /** Set filters, page and range together, and write them to the URL. */
+  const commit = (f: Filters, p: number, range: string) => {
+    setFiltersState(f);
+    setPageState(p);
+    setQuickRangeState(range);
+    setParams(toParams(params, f, p, range), { replace: true });
+  };
+  const setPage = (p: number) => commit(filters, p, quickRange);
   // Every filter change starts again from page 1.
-  const update = (patch: Partial<Filters>) => {
-    setFilters({ ...filters, ...patch });
-    setPage(1);
+  const update = (patch: Partial<Filters>, range: string = quickRange) => {
+    commit({ ...filters, ...patch }, 1, range);
   };
 
   const events = useGuardrailEvents({
@@ -147,13 +222,14 @@ export function GuardrailsPage() {
     filters.exclude_experiments;
 
   const isCustomRange = !!(filters.since && filters.until);
-  const [quickRange, setQuickRange] = useState<string>("All");
   const setRange = (label: string, hours: number | null) => {
-    setQuickRange(label);
-    update({
-      since: hours == null ? undefined : new Date(Date.now() - hours * 3600_000).toISOString(),
-      until: undefined,
-    });
+    update(
+      {
+        since: hours == null ? undefined : new Date(Date.now() - hours * 3600_000).toISOString(),
+        until: undefined,
+      },
+      label
+    );
   };
 
   return (
@@ -273,8 +349,7 @@ export function GuardrailsPage() {
             until={filters.until}
             active={isCustomRange}
             onApply={({ since, until }) => {
-              setQuickRange(since || until ? "Custom" : "All");
-              update({ since, until });
+              update({ since, until }, since || until ? "Custom" : "All");
             }}
           />
         </div>
@@ -315,9 +390,7 @@ export function GuardrailsPage() {
             variant="ghost"
             size="sm"
             onClick={() => {
-              setQuickRange("All");
-              setFilters({ ...emptyFilters(), hide_passes: filters.hide_passes });
-              setPage(1);
+              commit({ ...emptyFilters(), hide_passes: filters.hide_passes }, 1, "All");
             }}
           >
             <X className="mr-1 h-3.5 w-3.5" />

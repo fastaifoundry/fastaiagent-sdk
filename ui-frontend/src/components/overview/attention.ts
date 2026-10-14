@@ -28,7 +28,18 @@ export interface AttentionItem {
 export interface AttentionInput {
   failing_traces_last_24h: number;
   eval_runs_last_7d: number;
-  avg_pass_rate_last_7d: number;
+  /** Legacy (checks rate over every run kind); no longer read here. */
+  avg_pass_rate_last_7d?: number;
+  /**
+   * 1.89.0: the cases rate, averaged over the latest run per dataset among
+   * quality runs (dataset checks and AutoLLM candidates left out). `null` =
+   * no case reached a verdict.
+   */
+  eval_case_pass_rate_7d?: number | null;
+  eval_datasets_7d?: number;
+  eval_runs_counted_7d?: number;
+  /** Gated quality runs (same kinds as the headline) whose gate failed or was invalid. */
+  eval_gate_failures_7d?: number;
   pending_approvals_count: number;
   failed_executions_count: number;
   agents_with_errors: { agent_name: string; error_count: number }[];
@@ -98,18 +109,38 @@ export function buildAttention(data: AttentionInput | undefined): AttentionItem[
     });
   }
 
-  // Only meaningful if something actually ran — a 0% pass rate over zero runs
-  // is not a regression, it is an empty dataset.
-  if (data.eval_runs_last_7d > 0 && data.avg_pass_rate_last_7d < PASS_RATE_FLOOR) {
-    const pct = Math.round(data.avg_pass_rate_last_7d * 100);
+  // A gate that failed or could not reach a verdict is a CI signal someone
+  // asked for explicitly.
+  const gateFailures = data.eval_gate_failures_7d ?? 0;
+  if (gateFailures > 0) {
+    items.push({
+      key: "gate-failures",
+      severity: "warning",
+      title: `${gateFailures} gated eval ${plural(gateFailures, "run", "runs")} failed or ${plural(
+        gateFailures,
+        "was",
+        "were"
+      )} invalid`,
+      detail: "In the last 7 days. Open a run to see the thresholds it missed.",
+      cta: "View gated runs",
+      to: "/evals?gate=failed,invalid",
+    });
+  }
+
+  // The cases rate, latest run per dataset. Null means no case reached a
+  // verdict (or nothing ran): not a regression, so no warning.
+  const rate = data.eval_case_pass_rate_7d;
+  if (typeof rate === "number" && rate < PASS_RATE_FLOOR) {
+    const pct = Math.round(rate * 100);
+    const datasets = data.eval_datasets_7d ?? 0;
     items.push({
       key: "low-pass-rate",
       severity: "warning",
-      title: `Eval pass rate is ${pct}%`,
-      detail: `Averaged across ${data.eval_runs_last_7d} ${plural(
-        data.eval_runs_last_7d,
-        "run",
-        "runs"
+      title: `Eval cases pass rate is ${pct}%`,
+      detail: `Latest run of ${datasets} ${plural(
+        datasets,
+        "dataset",
+        "datasets"
       )} in the last 7 days, below the ${Math.round(PASS_RATE_FLOOR * 100)}% floor.`,
       cta: "View eval runs",
       to: "/evals",

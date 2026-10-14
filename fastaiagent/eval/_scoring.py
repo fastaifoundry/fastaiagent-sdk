@@ -8,13 +8,19 @@ raises is now recorded as **errored** for that case, like a judge outage.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import inspect
 import json
+import logging
+from collections.abc import Iterator
+from dataclasses import dataclass
 from typing import Any
 
 from fastaiagent._internal.errors import EvalError
 from fastaiagent.eval.scorer import Scorer, ScorerResult
+
+logger = logging.getLogger(__name__)
 
 #: Per-case dataset keys forwarded to scorers. A row's value overrides a
 #: run-wide ``evaluate(**kwargs)`` value for these names only.
@@ -115,6 +121,95 @@ def row_facts(item: Any) -> dict[str, Any]:
     return {k: item[k] for k in ROW_KEYS if item.get(k) is not None}
 
 
+@dataclass
+class EvalSpanContext:
+    """Who a case's spans belong to (1.89.0). Structural only, never content."""
+
+    run_id: str | None = None
+    run_name: str | None = None
+    kind: str | None = None
+    case_ordinal: int | None = None
+
+    @property
+    def source(self) -> str:
+        """``optimize`` for an AutoLLM candidate run, ``eval`` otherwise."""
+        return "optimize" if self.kind == "optimize" else "eval"
+
+    def attributes(self, **extra: Any) -> dict[str, Any]:
+        out = {
+            "fastaiagent.eval.run_id": self.run_id,
+            "fastaiagent.eval.run_name": self.run_name,
+            "fastaiagent.eval.kind": self.kind,
+            "fastaiagent.eval.case_ordinal": self.case_ordinal,
+        }
+        out.update({f"fastaiagent.eval.{k}": v for k, v in extra.items()})
+        return {k: v for k, v in out.items() if v is not None}
+
+
+def agent_scope(ctx: EvalSpanContext | None) -> Any:
+    """The scope the agent call runs in: every span of the case's agent trace
+    is stamped ``fastaiagent.source=eval`` (``optimize`` for AutoLLM), so the
+    production views leave it out (D10, 1.89.0). It is still exported: the
+    plane corroborates eval verdicts against these traces."""
+    if ctx is None:
+        return contextlib.nullcontext()
+    from fastaiagent.trace.provenance import provenance_scope
+
+    return provenance_scope(ctx.source, attributes=ctx.attributes())
+
+
+@contextlib.contextmanager
+def _scoring_span(ctx: EvalSpanContext | None, subject_trace_id: str | None) -> Iterator[Any]:
+    """One root ``eval.score`` span per scored case; ``None`` when tracing is off.
+
+    A root of its own (E3): the judges' ``llm.*`` calls used to land as loose
+    root traces, and as a child of the agent trace they would inflate the
+    agent's cost. Best-effort: a tracing failure never stops scoring.
+    """
+    if ctx is None:
+        yield None
+        return
+    stack = contextlib.ExitStack()
+    span = None
+    try:
+        from opentelemetry import context as otel_context
+
+        from fastaiagent.trace.otel import get_tracer
+        from fastaiagent.trace.provenance import provenance_scope
+
+        stack.enter_context(
+            provenance_scope(
+                ctx.source, attributes=ctx.attributes(subject_trace_id=subject_trace_id)
+            )
+        )
+        span = stack.enter_context(
+            get_tracer("fastaiagent.eval").start_as_current_span(
+                "eval.score", context=otel_context.Context()
+            )
+        )
+    except Exception:  # pragma: no cover - tracing is bookkeeping
+        logger.debug("Could not open the eval.score span", exc_info=True)
+    with stack:
+        yield span
+
+
+def _scorer_span() -> Any:
+    try:
+        from fastaiagent.trace.otel import get_tracer
+
+        return get_tracer("fastaiagent.eval").start_as_current_span("eval.scorer")
+    except Exception:  # pragma: no cover
+        return contextlib.nullcontext()
+
+
+def _trace_id_of(span: Any) -> str | None:
+    try:
+        sc = span.get_span_context()
+        return format(sc.trace_id, "032x") if sc.trace_id else None
+    except Exception:
+        return None
+
+
 def score_case(
     scorers: list[Scorer],
     *,
@@ -122,28 +217,64 @@ def score_case(
     output: Any,
     expected: Any,
     score_kwargs: dict[str, Any] | None = None,
-) -> tuple[dict[str, dict[str, Any]], list[tuple[str, ScorerResult]]]:
-    """Run every scorer on one case. Returns ``(per_scorer, scored)``.
+    span_context: EvalSpanContext | None = None,
+    subject_trace_id: str | None = None,
+) -> tuple[dict[str, dict[str, Any]], list[tuple[str, ScorerResult]], str | None]:
+    """Run every scorer on one case. Returns ``(per_scorer, scored, scoring_trace_id)``.
 
     A scorer that raises, or returns something that is not a ``ScorerResult``,
     is recorded as errored for this case; the others still run.
+
+    With ``span_context`` the scoring runs inside one ``eval.score`` root span,
+    with an ``eval.scorer`` child per scorer carrying only structural
+    attributes (name, outcome, score; never the reason, which is payload). A
+    judge's ``llm.*`` call nests beneath. ``scoring_trace_id`` is that trace.
     """
     per_scorer: dict[str, dict[str, Any]] = {}
     scored: list[tuple[str, ScorerResult]] = []
-    for scorer in scorers:
-        try:
-            result = scorer.score(
-                input=input, output=output, expected=expected, **(score_kwargs or {})
-            )
-            if not isinstance(result, ScorerResult):
-                result = ScorerResult.error(
-                    f"scorer returned {type(result).__name__}, not a ScorerResult"
-                )
-        except Exception as e:
-            result = ScorerResult.error(f"{type(e).__name__}: {e}"[:500])
-        scored.append((scorer.name, result))
-        per_scorer[scorer.name] = result.stored()
-    return per_scorer, scored
+    scoring_trace_id: str | None = None
+    with _scoring_span(span_context, subject_trace_id) as root:
+        if root is not None:
+            scoring_trace_id = _trace_id_of(root)
+        for scorer in scorers:
+            with _scorer_span() if root is not None else contextlib.nullcontext() as child:
+                try:
+                    result = scorer.score(
+                        input=input, output=output, expected=expected, **(score_kwargs or {})
+                    )
+                    if not isinstance(result, ScorerResult):
+                        result = ScorerResult.error(
+                            f"scorer returned {type(result).__name__}, not a ScorerResult"
+                        )
+                except Exception as e:
+                    result = ScorerResult.error(f"{type(e).__name__}: {e}"[:500])
+                if child is not None:
+                    _stamp_scorer(child, scorer.name, result)
+            scored.append((scorer.name, result))
+            per_scorer[scorer.name] = result.stored()
+    return per_scorer, scored, scoring_trace_id
+
+
+def _stamp_scorer(span: Any, name: str, result: ScorerResult) -> None:
+    try:
+        from fastaiagent.trace.span import set_fastaiagent_attributes
+
+        set_fastaiagent_attributes(
+            span,
+            **{
+                "eval.scorer": name,
+                "eval.outcome": result.outcome,
+                "eval.score": result.score,
+                "eval.passed": result.passed,
+            },
+        )
+        if result.outcome == "errored":
+            from opentelemetry.trace import Status, StatusCode
+
+            # The check could not run: an ERROR span, so the trace shows it.
+            span.set_status(Status(StatusCode.ERROR, "scorer could not run"))
+    except Exception:  # pragma: no cover
+        logger.debug("Could not stamp the eval.scorer span", exc_info=True)
 
 
 def scorer_config(scorers: list[Scorer]) -> dict[str, dict[str, Any]]:

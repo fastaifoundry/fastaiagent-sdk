@@ -92,6 +92,7 @@ def run_eval(
                     for c in report.checks
                 },
                 db_path=db,
+                report=report,
             )
     except EvalError as exc:
         console.print(f"[red]{exc}[/red]")

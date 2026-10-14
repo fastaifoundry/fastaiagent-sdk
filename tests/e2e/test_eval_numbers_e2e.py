@@ -139,6 +139,48 @@ def test_live_judge_outage_is_invalid_and_scrubbed() -> None:
 
 
 @requires_openai
+def test_live_agent_and_eval_cost_reach_the_ui(tmp_path: Path, monkeypatch) -> None:  # noqa: ANN001
+    """Phase 7: both costs are real and apart, on a live provider."""
+    pytest.importorskip("fastapi")
+    pytest.importorskip("itsdangerous")
+    from fastapi.testclient import TestClient
+
+    from fastaiagent._internal.config import reset_config
+    from fastaiagent.eval import evaluate
+    from fastaiagent.eval.llm_judge import LLMJudge
+    from fastaiagent.llm import LLMClient
+    from fastaiagent.trace import otel
+    from fastaiagent.ui.server import build_app
+
+    db = tmp_path / "local.db"
+    monkeypatch.setenv("FASTAIAGENT_LOCAL_DB", str(db))
+    reset_config()
+    otel.reset()
+    try:
+        judge = LLMJudge(
+            name="correctness", llm=LLMClient(provider="openai", model=MODEL, temperature=0)
+        )
+        results = evaluate(
+            _agent().run,
+            [{"input": "Where is order A17?", "expected": "FedEx"}],
+            scorers=[judge],
+        )
+        app = build_app(db_path=str(db), auth_path=tmp_path / "auth.json", no_auth=True)
+        with TestClient(app) as client:
+            run = client.get(f"/api/evals/{results.run_id}").json()["run"]
+            scoring_trace = client.get(f"/api/evals/{results.run_id}").json()["cases"][0][
+                "scoring_trace_id"
+            ]
+            scores = client.get(f"/api/traces/{scoring_trace}/scores").json()
+    finally:
+        otel.reset()
+        reset_config()
+    assert run["agent_cost_known"] is True and run["agent_cost_usd"] > 0, run
+    assert run["eval_cost_known"] is True and run["eval_cost_usd"] > 0, run
+    assert scores["eval_scoring"][0]["run_id"] == results.run_id
+
+
+@requires_openai
 def test_live_judge_real_verdict() -> None:
     from fastaiagent.eval import evaluate
     from fastaiagent.eval.llm_judge import LLMJudge

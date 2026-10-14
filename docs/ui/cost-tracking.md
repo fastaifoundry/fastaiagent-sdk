@@ -86,6 +86,28 @@ of a fabricated zero being read as fact.
 This matches the rule the workflows aggregator uses, so per-workflow
 cost cards and the breakdown tables agree by construction.
 
+### Where a cost belongs (1.89.0)
+
+Cost lives on the `llm.*` spans, **under** the agent or workflow span, never on
+it. Three pages priced the wrong span and showed `$0.00` (or "—") for every
+run; since 1.89.0 they sum the calls beneath it:
+
+| Page | What it sums |
+|---|---|
+| **Agents** | each priced call, credited to its **nearest** enclosing `agent.*` span. A worker's calls count for the worker; the lead that called it is not charged them a second time, so agents add up to the total |
+| **Workflows** | every priced call under the chain / swarm / supervisor span |
+| **Eval runs** | **Agent cost**: the calls in each case's agent trace. **Eval cost**: the judges' calls, in each case's `eval.score` trace. Kept apart, so a judge-heavy suite does not look like an expensive agent |
+
+**Unknown is not zero.** When any call in a trace has tokens but no price (a
+private fine-tune, an unpriced deployment), the eval run's cost is flagged
+`*_cost_known: false` and the page shows it as partial; a run with nothing
+traced shows "—", never `$0.00`.
+
+**Tokens are counted once.** The root agent span also carries a roll-up,
+`agent.tokens_used`. The Traces list and trace detail used to add it *and* each
+call's tokens, so every agent trace showed twice its tokens. The per-call
+numbers are used now; the roll-up only when no span carries any.
+
 ## Updating prices
 
 The pricing table in `fastaiagent/ui/pricing.py` is a flat dict keyed by

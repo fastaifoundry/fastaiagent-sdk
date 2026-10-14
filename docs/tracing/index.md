@@ -263,6 +263,18 @@ Every span started inside an experiment carries `fastaiagent.source`:
 | `replay` | `ForkedReplay.rerun()` / `arerun()`, the CLI `replay fork`, the UI's rerun | no |
 | `playground` | the local UI's Prompt Playground | no |
 | `learn` | `fastaiagent learn` (the extraction model's calls) | yes |
+| `eval` | `evaluate()` / `aevaluate()`, the pytest plugin, `eval run`, the UI's run-eval: each case's agent trace, its `eval.score` scoring trace, and `harden()`'s `eval.harden` analysis | yes |
+| `optimize` | an AutoLLM candidate's eval run (same traces as `eval`) | yes |
+| `simulation` | `simulate()`: every span of a simulated conversation | yes |
+
+An eval case's two traces carry `fastaiagent.eval.run_id`, `run_name`, `kind`
+and `case_ordinal` on their root, and the scoring trace adds
+`fastaiagent.eval.subject_trace_id` (the agent trace it judged). The scoring
+trace's root is `eval.score`, with one `eval.scorer` child per scorer carrying
+`fastaiagent.eval.scorer`, `outcome`, `score` and `passed`; never the reason.
+A judge's `llm.*` call is its child. Before 1.89.0 each judge call was a loose
+root trace of its own, and a case's agent trace counted as production traffic.
+They are still exported: a connected plane checks eval verdicts against them.
 
 A trace with no `fastaiagent.source`, or with a value of your own (say
 `"batch-job"`), counts as production. `fastaiagent.trace.provenance.NON_PRODUCTION_SOURCES`

@@ -129,16 +129,19 @@ class SimulatedUser:
         self.persona = persona
         self.script: list[str] | None = list(script) if script is not None else None
         self._llm = llm
-        self._script_idx = 0
 
     async def anext(self, transcript: list[TranscriptTurn]) -> str | None:
-        """Return the next user message, or ``None`` to end the conversation."""
+        """Return the next user message, or ``None`` to end the conversation.
+
+        A script's position is the number of user turns already in
+        ``transcript`` (1.89.0). It was a counter on the instance that never
+        reset, so running the same ``Scenario`` twice (a baseline, then a
+        candidate) gave the second run an empty conversation, and concurrent
+        runs shared one cursor.
+        """
         if self.script is not None:
-            if self._script_idx >= len(self.script):
-                return None
-            msg = self.script[self._script_idx]
-            self._script_idx += 1
-            return msg
+            idx = sum(1 for t in transcript if t.role == "user")
+            return self.script[idx] if idx < len(self.script) else None
         return await self._generate(transcript)
 
     async def _generate(self, transcript: list[TranscriptTurn]) -> str | None:
@@ -208,6 +211,7 @@ class SimulationResults:
         self.agent_name = agent_name
         # Populated by ``persist_local()`` so callers can deep-link the UI.
         self.run_id: str | None = None
+        self.db_path: str | None = None
 
     @property
     def pass_count(self) -> int:
@@ -215,7 +219,10 @@ class SimulationResults:
 
     @property
     def fail_count(self) -> int:
-        return sum(1 for r in self.results if not r.passed)
+        """Scenarios judged and failed (1.89.0). An errored scenario was not
+        judged, so it is in :attr:`errored_count`, not here; it still counts
+        as not passed in :attr:`pass_rate` (D15)."""
+        return sum(1 for r in self.results if not r.passed and not r.error)
 
     @property
     def pass_rate(self) -> float:
@@ -345,6 +352,7 @@ class SimulationResults:
         finally:
             db.close()
         self.run_id = run_id
+        self.db_path = str(resolved)
         return run_id
 
 
@@ -583,6 +591,11 @@ async def _run_scenario(
         #    and does not pass.
         verdicts: list[CriterionVerdict] = []
         passed = False
+        if error is None and not any(t.role == "assistant" for t in transcript):
+            # No conversation happened: there is nothing to judge (1.89.0). A
+            # judge asked about an empty transcript could still say "the
+            # failure did not happen".
+            error = "no conversation: the simulated user sent no message the agent answered"
         if error is None:
             passed, verdicts = await _judge_transcript(scenario, transcript, judge)
             errored = [v.criterion for v in verdicts if v.errored]

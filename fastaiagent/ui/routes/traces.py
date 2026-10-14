@@ -103,8 +103,6 @@ def _summarize_trace(spans: list[dict[str, Any]]) -> dict[str, Any]:
     """Aggregate a trace's span rows into the fields the UI card needs."""
     agent_name: str | None = None
     thread_id: str | None = None
-    total_cost = 0.0
-    total_tokens = 0
     start_time = ""
     end_time = ""
     root_name = ""
@@ -155,34 +153,6 @@ def _summarize_trace(spans: list[dict[str, Any]]) -> dict[str, Any]:
             agent_name = attr(attrs, "agent.name")
         if thread_id is None:
             thread_id = attr(attrs, "thread.id") or attr(attrs, "agent.thread_id")
-        from fastaiagent.ui.attrs import attr, trace_cost_usd
-
-        reported_cost = trace_cost_usd(attrs)
-        input_tokens = int(attrs.get("gen_ai.usage.input_tokens") or 0)
-        output_tokens = int(attrs.get("gen_ai.usage.output_tokens") or 0)
-        # The SDK's root agent span also carries a rolled-up total.
-        agent_total = attr(attrs, "agent.tokens_used")
-        if agent_total is not None:
-            try:
-                total_tokens += int(agent_total)
-            except (TypeError, ValueError):
-                logger.debug(
-                    "Failed to parse agent.tokens_used: %r",
-                    agent_total,
-                    exc_info=True,
-                )
-        else:
-            total_tokens += input_tokens + output_tokens
-        if reported_cost is not None:
-            total_cost += reported_cost
-        elif input_tokens or output_tokens:
-            from fastaiagent.ui.pricing import compute_cost_usd
-
-            estimated = compute_cost_usd(
-                attrs.get("gen_ai.request.model"), input_tokens, output_tokens
-            )
-            if estimated is not None:
-                total_cost += estimated
         if not start_time or (sp.get("start_time") and sp["start_time"] < start_time):
             start_time = sp.get("start_time", "")
         if sp.get("end_time", "") > end_time:
@@ -190,11 +160,17 @@ def _summarize_trace(spans: list[dict[str, Any]]) -> dict[str, Any]:
         if not sp.get("parent_span_id") and not root_name:
             root_name = sp.get("name") or ""
             status = sp.get("status") or status
+    # Per-call spans are the truth; the root's agent.tokens_used roll-up is
+    # used only when no span carries per-call numbers. Both used to be added,
+    # so every agent trace reported twice its tokens (1.89.0).
+    from fastaiagent.ui.trace_cost import rollup_spans
+
+    rollup = rollup_spans(spans)
     return {
         "agent_name": agent_name,
         "thread_id": thread_id,
-        "total_cost_usd": total_cost if total_cost else None,
-        "total_tokens": total_tokens or None,
+        "total_cost_usd": rollup.cost_usd or None,
+        "total_tokens": rollup.tokens,
         "start_time": start_time,
         "end_time": end_time,
         "root_name": root_name,
@@ -764,10 +740,40 @@ def get_trace_scores(
                             key,
                             exc_info=True,
                         )
+        # 1.89.0: this trace may be the *scoring* of an eval case (its judge
+        # calls), or a simulated conversation; both used to be unexplained.
+        scoring_rows = db.fetchall(
+            f"""SELECT c.case_id, c.run_id, c.ordinal, c.per_scorer, c.trace_id,
+                      r.run_name, r.dataset_name, r.started_at
+               FROM eval_cases c
+               LEFT JOIN eval_runs r ON c.run_id = r.run_id
+               WHERE c.scoring_trace_id = ? {pid_clause_c}""",
+            (trace_id, *pid_params),
+        )
+        for row in scoring_rows:
+            try:
+                row["per_scorer"] = json.loads(row.get("per_scorer") or "{}")
+            except json.JSONDecodeError:
+                row["per_scorer"] = {}
+        sim_rows = db.fetchall(
+            f"""SELECT c.case_id, c.run_id, c.ordinal, c.scenario_name, c.passed,
+                      c.per_criterion, c.error, r.run_name, r.started_at
+               FROM sim_cases c
+               LEFT JOIN sim_runs r ON c.run_id = r.run_id
+               WHERE c.trace_id = ? {pid_clause_c}""",
+            (trace_id, *pid_params),
+        )
+        for row in sim_rows:
+            try:
+                row["per_criterion"] = json.loads(row.get("per_criterion") or "[]")
+            except json.JSONDecodeError:
+                row["per_criterion"] = []
         return {
             "trace_id": trace_id,
             "guardrail_events": guardrail_rows,
             "eval_cases": eval_rows,
+            "eval_scoring": scoring_rows,
+            "simulation_cases": sim_rows,
         }
     finally:
         db.close()
