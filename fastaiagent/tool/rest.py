@@ -79,6 +79,20 @@ class RESTTool(Tool):
 
     async def aexecute(self, arguments: dict[str, Any], context: Any | None = None) -> ToolResult:
         """Execute the REST API call."""
+        redacted = sorted(
+            k for k, v in (self.headers or {}).items() if v == self._REDACTED_HEADER_VALUE
+        )
+        if redacted:
+            # A tool rebuilt from a trace or a pushed definition carries the
+            # placeholder, not the credential (1.89.0). Sending it would call
+            # the endpoint unauthenticated with a literal "[redacted]" header.
+            return ToolResult(
+                error=(
+                    f"REST tool '{self.name}' refused: header(s) {redacted} hold the "
+                    "redaction placeholder, not a credential. The tool was rebuilt from "
+                    "a serialized definition; pass the live tool, with its real headers."
+                )
+            )
         try:
             params: dict[str, Any] | None = None
             json_body: Any | None = None
