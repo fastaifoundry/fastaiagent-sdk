@@ -628,6 +628,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Frontend: vitest 332 (was 267).
   - On 1.88.0, all 20 new backend tests fail.
 
+### Run eval from the Local UI (Phase 8)
+
+- ⚠ **Run eval evaluates a real agent with real scorers** (E9). The Datasets
+  page could only post `{"scorers": ["exact_match"]}` with no agent, so every
+  UI run was an echo of the inputs.
+  - New `GET /api/datasets/{name}/run-eval/options`: the registered agents (a
+    Chain listed as unsupported), the scorer catalog with whether each can run
+    on this dataset and why not, judge models with a key, and what the rows
+    carry.
+  - `POST /run-eval` takes scorer **specs** as well as names: built-ins with
+    parameters, `llm_judge` and `geval` with their judge model. Trajectory and
+    RAG scorers are offered when the rows carry their expectations (per-row
+    `context` reaches scorers since Phase 6).
+  - New `fastaiagent.eval.scorer_specs` (`build_scorer`, `parse_spec`,
+    `CATALOG`): everything is validated before any agent call, and every
+    refusal is a 422 with a readable reason.
+  - The refusals: an unknown scorer, a bad parameter, a regex that does not
+    compile, a judge model with no key, duplicate names, a Chain, echo with an
+    agent, no target, and an unloadable image (it was a 500).
+  - Judge-backed runs go through the Playground's LLM rate limit.
+  - The response adds `kind`, `cases` and `checks`.
+- ⚠ **Echo is a dataset check you ask for** (D18): `mode: "echo"`, recorded
+  as `kind: ui-echo` with run name `dataset-check-<name>`. A request with no
+  agent and no mode is a 422; it used to echo silently, and its 0% read like a
+  failing eval.
+- **Editing a dataset no longer deletes fields.** Every add, edit or delete
+  rewrote the JSONL with `input`, `expected_output`, `tags` and `metadata`
+  only, so `expected_trajectory`, `expected_tool_calls`, `expected_steps`,
+  `context` and a replay's `source_trace_id` were dropped from every row. Rows
+  now keep them (`CaseRow.extra`); an edit keeps the row's own unless it sends
+  `extra`. Import and the editor's Duplicate keep them too.
+- **Local UI:** a Run eval dialog with target, grouped scorers and their
+  parameter forms (criteria, scale, threshold, judge model, G-Eval steps and
+  rubric), warnings (rows missing a scorer's input, image rows under text
+  scorers, the judge-call count) and the result inline. The case editor shows
+  a row's other fields read-only.
+- Scorers that measure an agent's run (the trajectory scorers, `latency`,
+  `cost_under`) are refused in a dataset check and unavailable when no
+  runnable agent is registered.
+- Tests:
+  - `test_ui_run_eval_dialog.py`: 19 tests. On 1.88.0 all fail except the
+    404 for an unregistered agent, which is unchanged.
+  - The live e2e adds a registered gpt-4o-mini agent with an `llm_judge` spec
+    through the route (9 tests).
+  - Frontend: vitest 346 (was 332).
+
 ## [1.88.0] - 2026-10-11 — the defects the boundary pages found
 
 Writing the seven "breaks at the boundaries" pages meant running every claim

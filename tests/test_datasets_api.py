@@ -376,7 +376,7 @@ class TestRunEval:
 
         r = client.post(
             "/api/datasets/smoke/run-eval",
-            json={"scorers": ["exact_match"]},
+            json={"scorers": ["exact_match"], "mode": "echo"},
         )
         assert r.status_code == 200, r.text
         body = r.json()
@@ -498,11 +498,22 @@ class TestRunEvalAgainstARegisteredAgent:
         )
         assert r.status_code == 404
 
-    def test_omitting_agent_name_still_echoes(self, client_with_agent: TestClient) -> None:
-        """Registering a runner must not change the no-agent default."""
+    def test_omitting_agent_name_is_refused_not_an_echo(
+        self, client_with_agent: TestClient
+    ) -> None:
+        """D18 (1.89.0): an echo run is a dataset check, run only when asked.
+        It used to be the silent default, and its 0% read as a failing eval."""
         c = client_with_agent
         c.post("/api/datasets", json={"name": "plain"})
         c.post("/api/datasets/plain/cases", json={"input": "a", "expected_output": "a"})
         r = c.post("/api/datasets/plain/run-eval", json={"scorers": ["exact_match"]})
+        assert r.status_code == 422, r.text
+        assert "Pick an agent" in r.json()["detail"]
+        r = c.post(
+            "/api/datasets/plain/run-eval", json={"scorers": ["exact_match"], "mode": "echo"}
+        )
         assert r.status_code == 200, r.text
-        assert r.json()["mode"] == "echo"
+        body = r.json()
+        assert body["mode"] == "echo" and body["kind"] == "ui-echo"
+        run = c.get(f"/api/evals/{body['run_id']}").json()["run"]
+        assert run["run_name"] == "dataset-check-plain"

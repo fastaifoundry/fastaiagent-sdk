@@ -73,7 +73,7 @@ What it unlocks:
 | Without `--agent` | With it |
 |---|---|
 | **Approvals** show pending interrupts but Approve/Reject returns 503 | Approve/Reject resumes the real run |
-| **Run eval** can only echo inputs back (a dataset sanity check) | Evaluates the real agent; result reports `mode: "agent"` |
+| **Run eval** offers only a dataset check (inputs echoed back) | Evaluates the real agent with the scorers you pick, judges included; result reports `mode: "agent"` |
 | **Agents** lists only agents that have already run; tools come from the last run's span | Registered agents appear immediately, with their current tools and `replay_class` |
 
 On startup it prints what it loaded:

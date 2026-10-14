@@ -37,21 +37,39 @@ and a header full of bulk affordances:
   number; nothing partial is written. `mode=append` (default) preserves
   existing cases; `mode=replace` overwrites.
 - **Export** downloads the JSONL.
-- **Run eval** kicks off the eval framework against the dataset. Pick an
-  agent to evaluate a real one; with none selected it falls back to an echo
-  agent + `exact_match` scorer, which checks that the dataset loads and
-  scores rather than that a model is any good (the result is labelled
-  `mode: "echo"` and says so). Agents are selectable once they're registered
-  — start the UI with `fastaiagent ui --agent app.py:my_agent`. The
-  resulting `run_id` is the same one Eval Runs would have produced —
-  clicking through deep-links into `/evals/{run_id}`. The result counts
-  **cases**: `pass_count`, `fail_count`, and `errored_count` for cases whose
-  agent raised, out of `total_cases`. `pass_rate` is passed over *scored*
-  cases, and `null` when nothing was scored. Before 1.89.0 an errored case
-  was counted as a pass. A scorer list the eval cannot use (an unknown name,
-  `regex_match` without a pattern, the same scorer twice) is rejected with a
-  `422` that says why; it used to be a `500`. The run is recorded with
-  `kind` `ui` (a real agent) or `ui-echo` (the echo check).
+- **Run eval** opens a dialog (*1.89.0*) that runs the eval framework on the
+  dataset:
+  - **Target.** A registered agent, or a **dataset check**, which echoes each
+    input back: it tests that the dataset loads and scores, not a model, and is
+    recorded as `kind: ui-echo` and left out of the trend and the Home
+    headline. Agents are selectable once registered: start the UI with
+    `fastaiagent ui --agent app.py:my_agent`. A Chain is listed but cannot be
+    evaluated (it has no `run()`); evaluate its agents. Before 1.89.0 the
+    button always ran the echo check with `exact_match`, and no agent could be
+    picked.
+  - **Scorers**, grouped as deterministic (`exact_match`, `contains`,
+    `regex_match` with its pattern, `length_between`, `latency`,
+    `cost_under`, BLEU, ROUGE, Levenshtein, PII, prompt injection), LLM judges
+    (`task_completion`, `toxicity`, `bias`, `answer_relevancy`, your own
+    `llm_judge` criteria, or `geval` with steps and a rubric, each with a judge
+    model chosen from those with a key on the server), trajectory scorers (they
+    read the agent's tool calls against each row's `expected_trajectory` /
+    `expected_tool_calls` / `expected_steps`) and RAG scorers (each row's
+    `context`). A scorer the dataset cannot feed is disabled with the reason.
+  - **Warnings** before you run: rows missing what a scorer needs (those cases
+    are n/a), image or PDF rows under text scorers, and roughly how many judge
+    calls the run makes.
+  - The result shows cases passed / failed / errored, the checks rate and a
+    link to `/evals/{run_id}`. Every invalid request (an unknown scorer, a bad
+    parameter, a regex that does not compile, a judge model with no key, the
+    same scorer twice, no target chosen, an image a row points at that cannot
+    be loaded) is a `422` that says why, and nothing runs. Judge-backed runs
+    share the Playground's per-minute LLM rate limit. Runs are synchronous.
+- **Fields the editor does not show are kept** (*1.89.0*). A row's
+  `expected_trajectory`, `context`, `source_trace_id` and any other field
+  appear read-only under "Other fields". Before 1.89.0 adding, editing or
+  deleting any case rewrote the file with only `input`, `expected_output`,
+  `tags` and `metadata`, so those fields were dropped from **every** row.
 
 ## Case editor
 
@@ -127,8 +145,32 @@ POST   /api/datasets/{name}/import            → ImportResult (multipart)
 GET    /api/datasets/{name}/export            → JSONL download
 POST   /api/datasets/{name}/images            → 201 ImageUploadResult
 GET    /api/datasets/{name}/images/{filename} → image bytes
+GET    /api/datasets/{name}/run-eval/options  → agents, scorer catalog, judge models, row features
 POST   /api/datasets/{name}/run-eval          → RunEvalResult
 ```
+
+The run-eval body (*1.89.0*):
+
+```json
+{
+  "agent_name": "support",
+  "scorers": [
+    "contains",
+    {"type": "builtin", "name": "regex_match", "params": {"pattern": "^Order"}},
+    {"type": "builtin", "name": "task_completion",
+     "model": {"provider": "openai", "model": "gpt-4o-mini"}},
+    {"type": "llm_judge", "name": "tone", "criteria": "Polite and brief?",
+     "scale": "1-5", "threshold": 0.6,
+     "model": {"provider": "openai", "model": "gpt-4o-mini"}}
+  ]
+}
+```
+
+or `{"mode": "echo", "scorers": [...]}` for a dataset check. The specs are
+`fastaiagent.eval.scorer_specs`, usable from Python too:
+`build_scorer({...})` returns the scorer, validated, without calling a model.
+The response adds `kind`, `cases {passed, failed, errored, pass_rate}` and
+`checks {passed, failed, errored, skipped, pass_rate}`.
 
 Every endpoint is project-scoped via the standard `AppContext` wiring;
 the dataset directory resolves relative to the project's

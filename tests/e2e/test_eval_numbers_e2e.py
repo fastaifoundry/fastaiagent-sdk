@@ -181,6 +181,62 @@ def test_live_agent_and_eval_cost_reach_the_ui(tmp_path: Path, monkeypatch) -> N
 
 
 @requires_openai
+def test_live_ui_run_eval_with_a_judge_spec(tmp_path: Path, monkeypatch) -> None:  # noqa: ANN001
+    """Phase 8: the Local UI's run-eval, a real agent, an llm_judge spec."""
+    pytest.importorskip("fastapi")
+    pytest.importorskip("itsdangerous")
+    from fastapi.testclient import TestClient
+
+    from fastaiagent.ui.db import init_local_db
+    from fastaiagent.ui.server import build_app
+
+    fa = tmp_path / ".fastaiagent"
+    (fa / "datasets").mkdir(parents=True)
+    db = fa / "local.db"
+    init_local_db(db).close()
+    (fa / "datasets" / "orders.jsonl").write_text(
+        json.dumps(
+            {
+                "input": "Where is order A17?",
+                "expected_output": "FedEx",
+                "expected_trajectory": ["lookup_order"],
+            }
+        )
+        + "\n"
+    )
+    app = build_app(
+        db_path=str(db), auth_path=tmp_path / "a.json", no_auth=True, runners=[_agent()]
+    )
+    with TestClient(app) as client:
+        options = client.get("/api/datasets/orders/run-eval/options").json()
+        assert {"provider": "openai", "model": MODEL} in options["judge_models"]
+        r = client.post(
+            "/api/datasets/orders/run-eval",
+            json={
+                "agent_name": "tip-helper",
+                "scorers": [
+                    "contains",
+                    "tool_usage_accuracy",
+                    {
+                        "type": "llm_judge",
+                        "name": "helpful",
+                        "criteria": "Does the reply tell the customer how the order shipped?",
+                        "model": {"provider": "openai", "model": MODEL},
+                    },
+                ],
+            },
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        run = client.get(f"/api/evals/{body['run_id']}").json()
+    assert body["kind"] == "ui" and body["cases"]["errored"] == 0, body
+    per = run["cases"][0]["per_scorer"]
+    assert per["helpful"]["passed"] is True and "errored" not in per["helpful"], per
+    assert per["tool_usage_accuracy"]["passed"] is True, per
+    assert run["run"]["metadata"]["scorer_config"]["helpful"]["model"] == MODEL
+
+
+@requires_openai
 def test_live_judge_real_verdict() -> None:
     from fastaiagent.eval import evaluate
     from fastaiagent.eval.llm_judge import LLMJudge

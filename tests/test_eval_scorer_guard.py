@@ -123,13 +123,13 @@ def client(tmp_path: Path):  # noqa: ANN201
     ids=["needs-args", "unknown", "duplicate"],
 )
 def test_run_eval_rejects_a_bad_scorer_list_with_422(client, scorers, needle) -> None:  # noqa: ANN001
-    r = client.post("/api/datasets/g/run-eval", json={"scorers": scorers})
+    r = client.post("/api/datasets/g/run-eval", json={"scorers": scorers, "mode": "echo"})
     assert r.status_code == 422, r.text
     assert needle in r.json()["detail"]
 
 
 def test_run_eval_records_kind(client) -> None:  # noqa: ANN001
-    r = client.post("/api/datasets/g/run-eval", json={"scorers": ["exact_match"]})
+    r = client.post("/api/datasets/g/run-eval", json={"scorers": ["exact_match"], "mode": "echo"})
     assert r.status_code == 200, r.text
     run = client.get(f"/api/evals/{r.json()['run_id']}").json()["run"]
     assert run["kind"] == "ui-echo"

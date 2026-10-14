@@ -303,6 +303,12 @@ export interface DatasetCase {
   expected_output: unknown | null;
   tags: string[];
   metadata: Record<string, unknown>;
+  /**
+   * Every row field the editor does not model (1.89.0): expected_trajectory,
+   * expected_tool_calls, expected_steps, context, source_trace_id... Shown
+   * read-only; a save that omits it keeps it.
+   */
+  extra: Record<string, unknown>;
 }
 
 export interface DatasetDetail {
@@ -315,6 +321,8 @@ export interface CaseBody {
   expected_output?: unknown;
   tags?: string[];
   metadata?: Record<string, unknown>;
+  /** Omit to keep the row's other fields on an edit; a dict replaces them. */
+  extra?: Record<string, unknown>;
 }
 
 export interface DatasetImageUploadResult {
@@ -345,6 +353,138 @@ export interface DatasetRunEvalResult {
    */
   mode?: "echo" | "agent";
   note?: string | null;
+  /** "ui" for an agent run, "ui-echo" for a dataset check (1.89.0). */
+  kind?: "ui" | "ui-echo";
+  /** Case outcomes (1.89.0). */
+  cases?: RunEvalCaseCounts;
+  /** Scorer verdicts across all cases (1.89.0). */
+  checks?: RunEvalCheckCounts;
+}
+
+export interface RunEvalCaseCounts {
+  passed: number;
+  failed: number;
+  errored: number;
+  pass_rate: number | null;
+}
+
+export interface RunEvalCheckCounts {
+  passed: number;
+  failed: number;
+  errored: number;
+  skipped: number;
+  pass_rate: number | null;
+}
+
+// Run eval dialog (1.89.0): GET /datasets/{name}/run-eval/options
+
+export interface RunEvalAgentOption {
+  name: string;
+  kind: "agent" | "supervisor" | "swarm" | "chain";
+  supported: boolean;
+  reason: string | null;
+}
+
+export type ScorerFamily = "deterministic" | "llm" | "trajectory" | "rag";
+
+/** A row field a scorer reads. */
+export type ScorerNeed =
+  | "expected_output"
+  | "expected_trajectory"
+  | "expected_tool_calls"
+  | "expected_steps"
+  | "context";
+
+export interface ScorerParam {
+  name: string;
+  type: "string" | "number" | "integer";
+  required: boolean;
+  default: string | number | null;
+  minimum: number | null;
+  maximum: number | null;
+  description: string;
+}
+
+export interface ScorerOption {
+  name: string;
+  family: ScorerFamily;
+  description: string;
+  params: ScorerParam[];
+  needs: ScorerNeed[];
+  /** Calls a model, so it takes a judge model. */
+  judge: boolean;
+  /** Reads the agent's tool calls: a dataset check cannot feed it. */
+  needs_agent: boolean;
+  available: boolean;
+  unavailable_reason: string | null;
+  /** Per needed field, how many rows lack it. */
+  rows_missing: Partial<Record<ScorerNeed, number>>;
+}
+
+export interface JudgeModelOption {
+  provider: string;
+  model: string;
+}
+
+export interface DatasetFeatures {
+  rows: number;
+  with_expected_output: number;
+  with_expected_trajectory: number;
+  with_expected_tool_calls: number;
+  with_expected_steps: number;
+  with_context: number;
+  /** Rows whose input carries an image or a PDF. */
+  multimodal: number;
+}
+
+export interface RunEvalOptions {
+  agents: RunEvalAgentOption[];
+  scorers: ScorerOption[];
+  /** Only models whose provider has a key on the server. */
+  judge_models: JudgeModelOption[];
+  dataset_features: DatasetFeatures;
+  echo_available: boolean;
+}
+
+export type JudgeScale = "binary" | "0-1" | "1-5" | "1-10";
+
+export interface BuiltinScorerSpec {
+  type: "builtin";
+  name: string;
+  params?: Record<string, string | number>;
+  /** Only for scorers with `judge: true`; the server default when omitted. */
+  model?: JudgeModelOption;
+}
+
+export interface LLMJudgeScorerSpec {
+  type: "llm_judge";
+  name?: string;
+  criteria: string;
+  scale: JudgeScale;
+  threshold: number;
+  model?: JudgeModelOption;
+}
+
+export interface GEvalScorerSpec {
+  type: "geval";
+  name?: string;
+  criteria: string;
+  evaluation_steps?: string[];
+  rubric?: [number, string][];
+  scale: JudgeScale;
+  threshold: number;
+  model?: JudgeModelOption;
+}
+
+export type ScorerSpec = BuiltinScorerSpec | LLMJudgeScorerSpec | GEvalScorerSpec;
+
+export interface RunEvalBody {
+  /** Required unless mode is "echo"; must be absent when it is. */
+  agent_name?: string;
+  mode?: "agent" | "echo";
+  /** A plain string is the built-in of that name. */
+  scorers: (string | ScorerSpec)[];
+  run_name?: string;
 }
 
 // ---------------------------------------------------------------------------
