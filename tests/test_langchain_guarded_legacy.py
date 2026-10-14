@@ -142,7 +142,7 @@ def _setup(server: Any, kind: str, method: str, reply_text: str) -> Any:
     model = _chat(server) if kind == "chat" else _llm(server)
     has = callable(model) if method == "__call__" else hasattr(model, method)
     if not has:
-        pytest.skip(f"{type(model).__name__}.{method} does not exist on this LangChain line")
+        pytest.skip(f"not on this LangChain line: {type(model).__name__}.{method} does not exist")
     body = _chat_body if kind == "chat" else _completion_body
     server.script(Reply(body=body(reply_text)))
     return with_guardrails(
@@ -213,7 +213,7 @@ def test_a_legacy_method_the_model_lacks_still_raises_attribute_error(server: An
 
     model = _chat(server)
     if hasattr(model, "predict"):
-        pytest.skip("this LangChain line still has predict()")
+        pytest.skip("not on this LangChain line: 0.x still has predict()")
     with pytest.raises(AttributeError):
         with_guardrails(model, input_guardrails=[IN_RAIL]).predict("hi")
 

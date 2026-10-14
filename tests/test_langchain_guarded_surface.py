@@ -345,7 +345,7 @@ def test_graph_astream_events_input_block_and_name(traced_db: Any) -> None:
 def _v3_graph() -> Any:
     graph = _graph()
     if not hasattr(graph, "stream_events"):
-        pytest.skip("stream_events(version='v3') needs LangChain/LangGraph 1.x")
+        pytest.skip("not on this LangChain line: stream_events(version='v3') needs 1.x")
     return graph
 
 

@@ -176,8 +176,10 @@ jobs:
           exit "${PIPESTATUS[0]}"
       - name: Fail on any LangChain skip
         run: |
+          # tests/e2e is deselected here (-m "not e2e"); its LangChain harness
+          # runs, with keys, in the e2e job.
           if grep -E "SKIPPED.*(langchain|LangChain|langgraph)" pytest-langchain.log \
-              | grep -v "not on this LangChain line"; then
+              | grep -v "not on this LangChain line" | grep -v "tests/e2e/"; then
             echo "::error::A LangChain test skipped on line ${{ matrix.line }}.x."
             exit 1
           fi
