@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import warnings
+from collections.abc import Collection
 from datetime import datetime, timedelta, timezone
 from typing import Any, NamedTuple
 
@@ -14,6 +15,10 @@ from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
 
 logger = logging.getLogger(__name__)
+
+#: ``fastaiagent.trace.provenance.LOCAL_ONLY_ATTR``, repeated to keep this
+#: module free of an import cycle (provenance imports nothing from here).
+_LOCAL_ONLY_ATTR = "fastaiagent.export.local_only"
 
 # Opt-in foreign-span normalization. Flipped on by
 # ``fastaiagent.enable_otel_capture()``; default ``False`` keeps the write path
@@ -144,6 +149,10 @@ class LocalStorageProcessor:
         # Write failures already logged, by error type — one warning each, not
         # one per span.
         self._warned: set[str] = set()
+        # Split-DB sink (1.89.0): spans started inside a provenance scope with a
+        # ``trace_db`` are written there. span_id -> path, set at start.
+        self._span_sinks: dict[int, str] = {}
+        self._sink_dbs: dict[str, SQLiteHelper] = {}
 
     def _on_ending(self, span: Any) -> None:
         """Called when a span is ending (before on_end)."""
@@ -168,7 +177,32 @@ class LocalStorageProcessor:
         return self._db
 
     def on_start(self, span: Any, parent_context: Any = None) -> None:
-        pass
+        # Provenance (1.89.0): inside a ``provenance_scope`` every span is
+        # stamped with its origin while it is still mutable. See
+        # ``fastaiagent.trace.provenance``.
+        from fastaiagent.trace.provenance import current_provenance, stamp_on_start
+
+        stamp_on_start(span)
+        prov = current_provenance()
+        if prov is not None and prov.trace_db:
+            try:
+                self._span_sinks[span.get_span_context().span_id] = prov.trace_db
+            except Exception:  # pragma: no cover — a sink is best-effort routing
+                logger.debug("Could not record the span's trace sink", exc_info=True)
+
+    def _sink_db(self, path: str) -> SQLiteHelper:
+        """The store a scoped span is written to (the default one when equal)."""
+        import os
+
+        if os.path.abspath(path) == os.path.abspath(self.db_path):
+            return self._get_db()
+        db = self._sink_dbs.get(path)
+        if db is None:
+            from fastaiagent.ui.db import init_local_db
+
+            db = init_local_db(path)
+            self._sink_dbs[path] = db
+        return db
 
     def on_end(self, span: Any) -> None:
         """Write a finished span to SQLite — and never raise into the caller.
@@ -294,13 +328,14 @@ class LocalStorageProcessor:
 
         from fastaiagent._internal.project import safe_get_project_id
 
-        db = self._get_db()
+        sink = self._span_sinks.pop(ctx.span_id, None)
+        db = self._sink_db(sink) if sink else self._get_db()
         db.execute(
             """INSERT OR REPLACE INTO spans
                (span_id, trace_id, parent_span_id, name,
                 start_time, end_time, status, attributes, events,
-                project_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                project_id, synced)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 span_id,
                 trace_id,
@@ -312,6 +347,10 @@ class LocalStorageProcessor:
                 json.dumps(attrs, default=str),
                 json.dumps(events, default=str),
                 safe_get_project_id(),
+                # A local-only span (a replay, a Playground call) is written as
+                # already handled, so no exporter, this SDK's or an older one
+                # sharing the store, ever sends it (1.89.0).
+                1 if attrs.get(_LOCAL_ONLY_ATTR) else 0,
             ),
         )
 
@@ -319,6 +358,13 @@ class LocalStorageProcessor:
         if self._db:
             self._db.close()
             self._db = None
+        for db in self._sink_dbs.values():
+            try:
+                db.close()
+            except Exception:  # pragma: no cover — shutdown never raises
+                logger.debug("Could not close a trace sink", exc_info=True)
+        self._sink_dbs.clear()
+        self._span_sinks.clear()
 
     def force_flush(self, timeout_millis: int = 30000) -> bool:
         return True
@@ -352,6 +398,13 @@ class TraceStore:
 
     @classmethod
     def default(cls) -> TraceStore:
+        """The configured store, or the scoped one inside a provenance scope
+        with a ``trace_db`` (a replay written to another store, 1.89.0)."""
+        from fastaiagent.trace.provenance import current_provenance
+
+        prov = current_provenance()
+        if prov is not None and prov.trace_db:
+            return cls(db_path=prov.trace_db)
         return cls()
 
     @staticmethod
@@ -482,6 +535,7 @@ class TraceStore:
         limit: int | None = 100,
         name_filter: str | None = None,
         agent_name: str | None = None,
+        exclude_sources: bool | Collection[str] = False,
         **filters: Any,
     ) -> list[TraceSummary]:
         """List traces, newest first.
@@ -494,6 +548,10 @@ class TraceStore:
                 this, e.g. ``"chain.sales-sdr"``.
             agent_name: only traces in which an agent of this name ran — at
                 the root, or as a child span (a swarm, a chain, a supervisor).
+            exclude_sources: ``True`` leaves out every trace with a
+                non-production span (a replay, a Playground call, a learn or
+                eval run; see :mod:`fastaiagent.trace.provenance`). A
+                collection leaves out only those sources. Default: everything.
         """
         if filters:
             warnings.warn(
@@ -511,6 +569,18 @@ class TraceStore:
                 """json_extract(attributes, '$."fastaiagent.agent.name"') = ?)"""
             )
             params += [agent_name, agent_name]
+        if exclude_sources:
+            from fastaiagent.trace.provenance import NON_PRODUCTION_SOURCES, non_production_filter
+
+            keep: bool | set[str] = (
+                False
+                if exclude_sources is True
+                else set(NON_PRODUCTION_SOURCES) - set(exclude_sources)
+            )
+            np_clause, np_params = non_production_filter(include=keep)
+            if np_clause:
+                where.append(np_clause.removeprefix("AND "))
+                params += list(np_params)
         if last_hours is not None:
             cutoff = datetime.now(timezone.utc) - timedelta(hours=last_hours)
             having.append("MIN(start_time) >= ?")

@@ -11,12 +11,13 @@ Two steps:
 1. Parent process: run an agent with a tool, capture the trace_id,
    spawn a subprocess that loads the trace and reruns it WITHOUT
    importing the tool module. The subprocess should exit 0 and report
-   a ReplayResult whose rerun surfaces the "tool not registered"
-   fallback (the agent receives a "no function attached" error from the
-   unregistered tool and can still produce a final answer).
+   a ReplayResult whose tool was blocked (the 1.89.0 default: the agent
+   receives a "Replay blocked tool" error and can still produce a final
+   answer).
 
 2. Parent process: spawn a second subprocess that DOES register the
-   tool before rerunning. That one should succeed with a real answer.
+   tool and allows it (``with_tool_policy("live", allow=[...])``) before
+   rerunning. That one should succeed with a real answer.
 """
 
 from __future__ import annotations
@@ -56,12 +57,17 @@ replay = Replay.load(trace_id)
 steps_before = len(replay.steps())
 forked = replay.fork_at(step=min(2, steps_before - 1))
 forked.modify_prompt("Reply in one sentence.")
+if register_tool:
+    # 1.89.0: a rerun blocks tools unless allowed; this one runs the
+    # function the child registered.
+    forked.with_tool_policy("live", allow=["lookup_order"])
 result = forked.rerun()
 
 print(json.dumps({
     "steps_before": steps_before,
     "new_output": result.new_output,
     "trace_id": result.trace_id,
+    "dispositions": result.tool_dispositions,
 }))
 """
 
@@ -117,6 +123,7 @@ class TestFreshProcessReplayGate:
             "Phase B fallback is broken"
         )
         assert len(payload["new_output"]) > 0
+        assert payload["dispositions"] == {"lookup_order": "blocked"}
 
     def test_03_rerun_in_fresh_subprocess_with_tool_registered(
         self, gate_state: dict[str, Any]
@@ -138,3 +145,4 @@ class TestFreshProcessReplayGate:
         payload = json.loads(proc.stdout.strip().splitlines()[-1])
         assert payload["new_output"], "re-registered rerun produced empty output"
         assert payload["trace_id"], "re-registered rerun emitted no new trace_id"
+        assert payload["dispositions"] == {"lookup_order": "live"}

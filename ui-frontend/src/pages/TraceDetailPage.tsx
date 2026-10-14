@@ -12,6 +12,7 @@ import { TraceComparePicker } from "@/components/traces/TraceComparePicker";
 import { TraceScoresCard } from "@/components/traces/TraceScoresCard";
 import { TraceSummaryBar } from "@/components/traces/TraceSummaryBar";
 import { ExportTraceDialog } from "@/components/traces/ExportTraceDialog";
+import { ReplayOriginBanner } from "@/components/replay/ReplayOriginBanner";
 import { useTrace, useTraceSpans } from "@/hooks/use-traces";
 import type { SpanRow } from "@/lib/types";
 
@@ -113,6 +114,8 @@ export function TraceDetailPage() {
           </Button>
         </Link>
       </PageHeader>
+
+      <ReplayOriginBanner spans={trace.data.spans} />
 
       <TraceSummaryBar trace={trace.data} duration_ms={durationMs} />
 

@@ -266,8 +266,12 @@ class TestReplayRoundTrip:
         otel.get_tracer_provider().force_flush()
         decisions_stub.stop()  # nothing may reach the network from here on
 
-        forked = Replay.load(trace_id).fork_at(step=0).with_determinism(
-            "recorded", on_miss="error"
+        # 1.89.0: a rerun blocks tools by default; this one is the point.
+        forked = (
+            Replay.load(trace_id)
+            .fork_at(step=0)
+            .with_determinism("recorded", on_miss="error")
+            .with_tool_policy("live", allow=["route_ticket_replay_rt"])
         )
         rerun = asyncio.run(forked.arerun())
         assert "billing" in str(rerun.new_output)

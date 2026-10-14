@@ -122,7 +122,8 @@ class Dataset:
         ``agent.<name>`` span (root or nested in a chain/supervisor/swarm) becomes
         one item. See ``curate_from_traces`` for the keyword arguments
         (``filter``, ``agent``, ``since_hours``, ``limit``, ``trace_ids``,
-        ``mark_output_as_expected``, ``db_path``, ``dedup_by``).
+        ``mark_output_as_expected``, ``db_path``, ``dedup_by``,
+        ``include_experiments``).
 
         Example:
             ds = Dataset.from_traces(filter="favorites")

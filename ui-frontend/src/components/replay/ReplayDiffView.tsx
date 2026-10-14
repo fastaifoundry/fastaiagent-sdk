@@ -9,7 +9,7 @@ import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
 import { JsonViewer } from "@/components/shared/JsonViewer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import type { ComparisonResult, ReplayStep } from "@/lib/types";
+import type { ComparisonResult, ReplayStep, ToolDiff } from "@/lib/types";
 
 interface Props {
   comparison: ComparisonResult;
@@ -38,16 +38,38 @@ function contentsDiffer(a: unknown, b: unknown): boolean {
   return stringifyForDiff(a) !== stringifyForDiff(b);
 }
 
+/**
+ * The rows to show, as ``[originalIndex, newIndex]`` pairs.
+ *
+ * Since 1.89.0 the server aligns only the run's own turns (memory and nested
+ * spans are skipped) and returns the pairs; ``diverged_at`` indexes that
+ * alignment's original side. An older server sends no pairs, so fall back to
+ * pairing by position.
+ */
+function rowPairs(comparison: ComparisonResult): [number | null, number | null][] {
+  if (comparison.aligned && comparison.aligned.length > 0) return comparison.aligned;
+  const max = Math.max(comparison.original_steps.length, comparison.new_steps.length);
+  return Array.from({ length: max }, (_, i) => [
+    i < comparison.original_steps.length ? i : null,
+    i < comparison.new_steps.length ? i : null,
+  ]);
+}
+
 export function ReplayDiffView({
   comparison,
   originalOutput,
   newOutput,
 }: Props) {
-  const maxSteps = Math.max(
-    comparison.original_steps.length,
-    comparison.new_steps.length
-  );
+  const pairs = rowPairs(comparison);
   const diverged = comparison.diverged_at;
+  // First row at or after the divergence; every later row is highlighted.
+  // A row with no original step means the original ran fewer turns, so the
+  // runs have diverged by then at the latest.
+  const divergedRow =
+    diverged == null ? -1 : pairs.findIndex(([o]) => o == null || o >= diverged);
+  const toolDiffs = comparison.tool_diffs ?? [];
+  const toolsDiverged = comparison.tools_diverged_at ?? null;
+  const skipped = comparison.skipped_steps?.length ?? 0;
 
   return (
     <div className="space-y-4">
@@ -76,29 +98,113 @@ export function ReplayDiffView({
         <div className="flex items-center justify-between border-b px-4 py-2">
           <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
             Step-by-step comparison
+            {skipped > 0 && (
+              <span
+                className="ml-2 normal-case tracking-normal"
+                title="Memory spans and spans nested under a tool are not compared"
+              >
+                ({skipped} memory/nested step{skipped === 1 ? "" : "s"} not compared)
+              </span>
+            )}
           </span>
-          {comparison.compare_status === "rerun_failed" ? (
-            <span className="rounded-md bg-destructive/10 px-2 py-0.5 text-xs font-mono font-medium text-destructive">
-              rerun trace failed to load
-            </span>
-          ) : diverged != null ? (
-            <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xs font-mono font-medium text-primary">
-              diverged at step {diverged}
-            </span>
-          ) : null}
+          <div className="flex items-center gap-1.5">
+            {comparison.compare_status === "rerun_failed" ? (
+              <span className="rounded-md bg-destructive/10 px-2 py-0.5 text-xs font-mono font-medium text-destructive">
+                rerun trace failed to load
+              </span>
+            ) : diverged != null ? (
+              <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xs font-mono font-medium text-primary">
+                diverged at step {diverged}
+              </span>
+            ) : null}
+            {comparison.compare_status !== "rerun_failed" && toolsDiverged != null && (
+              <span className="rounded-md bg-fa-warning/10 px-2 py-0.5 text-xs font-mono font-medium text-fa-warning">
+                tools differ at step {toolsDiverged}
+              </span>
+            )}
+          </div>
         </div>
         <div className="divide-y">
-          {Array.from({ length: maxSteps }, (_, idx) => (
+          {pairs.map(([o, n], row) => (
             <StepRow
-              key={idx}
-              index={idx}
-              original={safeStep(comparison.original_steps, idx)}
-              rerun={safeStep(comparison.new_steps, idx)}
-              diverged={diverged != null && idx >= diverged}
+              key={`${o ?? "-"}:${n ?? "-"}`}
+              index={o ?? n ?? row}
+              original={o == null ? null : safeStep(comparison.original_steps, o)}
+              rerun={n == null ? null : safeStep(comparison.new_steps, n)}
+              diverged={divergedRow >= 0 && row >= divergedRow}
+              toolChanged={toolsDiverged != null && o === toolsDiverged}
             />
           ))}
         </div>
       </div>
+
+      {toolDiffs.length > 0 && <ToolDiffList diffs={toolDiffs} />}
+    </div>
+  );
+}
+
+function resultPreview(value: unknown): string {
+  const text = stringifyForDiff(value);
+  return text.length > 300 ? `${text.slice(0, 300)}…` : text;
+}
+
+/**
+ * Tool calls whose status or result changed (1.89.0). Kept apart from the
+ * step diff: a recorded rerun with a blocked tool still reports the model's
+ * answers as identical, and this is where the blocked call shows.
+ */
+function ToolDiffList({ diffs }: { diffs: ToolDiff[] }) {
+  return (
+    <div className="rounded-md border bg-card" data-testid="tool-diffs">
+      <div className="border-b px-4 py-2 text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
+        Tool calls that changed
+      </div>
+      <div className="divide-y">
+        {diffs.map((d, i) => (
+          <div
+            key={`${d.name}-${d.original_step ?? "x"}-${d.new_step ?? "x"}-${i}`}
+            className="space-y-2 px-4 py-3"
+            data-testid={`tool-diff-${d.name}`}
+          >
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="font-mono font-medium">{d.name}</span>
+              <span className="font-mono text-muted-foreground">
+                step {d.original_step ?? "—"} → {d.new_step ?? "—"}
+              </span>
+              {d.disposition && (
+                <span className="rounded border px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+                  {d.disposition}
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <ToolDiffSide label="Original" status={d.original_status} result={d.original_result} />
+              <ToolDiffSide label="Rerun" status={d.new_status} result={d.new_result} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ToolDiffSide({
+  label,
+  status,
+  result,
+}: {
+  label: string;
+  status: string | null;
+  result: unknown;
+}) {
+  return (
+    <div className="min-w-0 space-y-1">
+      <span className="block text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
+        {label} · <span className="normal-case tracking-normal">{status ?? "no status"}</span>
+      </span>
+      <pre className="max-h-40 overflow-auto rounded-md border bg-muted/20 p-2 font-mono text-[11px] whitespace-pre-wrap">
+        {resultPreview(result) || "—"}
+      </pre>
     </div>
   );
 }
@@ -108,11 +214,13 @@ function StepRow({
   original,
   rerun,
   diverged,
+  toolChanged = false,
 }: {
   index: number;
   original: ReplayStep | null;
   rerun: ReplayStep | null;
   diverged: boolean;
+  toolChanged?: boolean;
 }) {
   const nameA = original?.span_name ?? "—";
   const nameB = rerun?.span_name ?? "—";
@@ -157,6 +265,12 @@ function StepRow({
 
       <StepColumn label="Original" step={original} highlight={nameChanged} />
       <StepColumn label="Rerun" step={rerun} highlight={nameChanged} />
+
+      {toolChanged && (
+        <span className="col-span-2 col-start-2 text-[11px] font-mono text-fa-warning">
+          First tool call that changed: see "Tool calls that changed" below.
+        </span>
+      )}
 
       {open && canExpand && (
         <div className="col-span-3 mt-2 space-y-3">

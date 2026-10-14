@@ -33,9 +33,14 @@ EXPECTED = {
     ],
     "proof_tools.py": [
         "replay_class: charge_card='side_effecting'  GET carrier_status='side_effecting'",
-        "recorded rerun, same process: 'Done: charged 42.00.'   charges=[42.0, 42.0]",
+        "default rerun: 'Done: charged 42.00.'   charges=[42.0]",
+        "tool_dispositions={'charge_card': 'blocked', 'carrier_status': 'blocked'}",
+        "blocked_tool_calls={'charge_card': 1}",
+        "live, same process: 'Done: charged 42.00.'   charges=[42.0, 42.0]",
+        "disposition: no_function",
         "tool.status = error | tool.error = 'No function attached to this tool'",
         "with_tool_override: 'Done: charged 42.00.'   charges=[42.0, 42.0]",
+        "tool_dispositions={'charge_card': 'override', 'carrier_status': 'blocked'}",
     ],
     "proof_miss.py": [
         "captured model responses: 1",
@@ -47,6 +52,17 @@ EXPECTED = {
         "rerun:        prompt roles ['system', 'user']   memory holds 4 messages",
         "'guardrail.no_secrets']",
         "A replay rebuilds the agent without a checkpointer, so it cannot hold a pause",
+    ],
+    "proof_provenance.py": [
+        "rerun root: fastaiagent.source='replay'",
+        "replays: True",
+        "tool_policy='block'",
+        "rerun.exported=False",
+        "original rows synced=[0]",
+        "rerun    rows synced=[1]",
+        "list_traces(): 2 traces   exclude_sources=True: 1 (the rerun left out: True)",
+        "with_trace_db: rerun in experiments.db: True   in local.db: False",
+        "compare(): status=ok",
     ],
     "proof_regression.py": [
         "source_trace_id",

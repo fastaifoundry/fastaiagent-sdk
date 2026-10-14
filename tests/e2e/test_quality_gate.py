@@ -329,7 +329,10 @@ class TestQualityGate:
 
         replay = gate_state["replay"]
         fork_point = 2
-        forked = replay.fork_at(step=fork_point)
+        # 1.89.0: a rerun blocks tools unless allowed; lookup_order only reads.
+        forked = replay.fork_at(step=fork_point).with_tool_policy(
+            "live", allow=["lookup_order"]
+        )
         assert isinstance(forked, ForkedReplay)
         forked.modify_prompt(
             "You are a terse support agent. Reply in one sentence maximum."
@@ -349,6 +352,8 @@ class TestQualityGate:
         assert isinstance(rerun_result.new_output, str)
         assert len(rerun_result.new_output) > 0, "rerun produced empty output"
         assert rerun_result.trace_id, "rerun did not emit a new trace_id"
+        assert rerun_result.tool_dispositions == {"lookup_order": "live"}
+        assert rerun_result.exported is False, "a rerun is local-only by default"
         gate_state["rerun_result"] = rerun_result
 
     # ── Step 16: compare ──────────────────────────────────────────────────

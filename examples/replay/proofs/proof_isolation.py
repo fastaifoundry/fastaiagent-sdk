@@ -56,7 +56,7 @@ print(f"rerun:        prompt roles {roles}   memory holds {len(memory.messages)}
 print(f"rerun spans:  {[s.name for s in spans]}")
 
 
-@fa.tool(name="refund")
+@fa.tool(name="refund", register=False)  # a stand-in, not the app's refund tool
 def refund_with_approval(order_id: str) -> str:
     """Refund an order, after a human approves."""
     fa.interrupt("refund needs a human", {"order_id": order_id})

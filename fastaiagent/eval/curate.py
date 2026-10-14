@@ -127,6 +127,7 @@ def curate_from_traces(
     db_path: str | Path | None = None,
     dedup_by: str = "none",
     exclude_infra_errors: str = "agent",
+    include_experiments: bool = False,
 ) -> CuratedDataset:
     """Build eval dataset item dicts from captured agent traces.
 
@@ -149,6 +150,11 @@ def curate_from_traces(
             additionally drops any run whose trace carries an error-status span.
             The ``guardrail`` / ``failed`` filters are unaffected (they
             intentionally surface bad runs as ``needs_review``).
+        include_experiments: also curate replay, Playground, learn and eval
+            traces. Off by default (1.89.0): a replay's output is a
+            counterfactual, not a gold answer, and curating it fed a modified
+            run back in as ground truth. Explicit ``trace_ids`` are always
+            honoured.
 
     Returns:
         A list of item dicts ready for :class:`~fastaiagent.eval.Dataset`.
@@ -179,7 +185,12 @@ def curate_from_traces(
             truncated = 0
         else:
             selected, truncated = _select_trace_ids(
-                db, filter=filter, agent=agent, since_hours=since_hours, limit=limit
+                db,
+                filter=filter,
+                agent=agent,
+                since_hours=since_hours,
+                limit=limit,
+                include_experiments=include_experiments,
             )
         notes = _notes_map(db, selected) if filter == "noted" else {}
         reasons = _guardrail_reasons(db, selected) if filter == "guardrail" else {}
@@ -304,10 +315,17 @@ def _select_trace_ids(
     agent: str | None,
     since_hours: float | None,
     limit: int | None,
+    include_experiments: bool = False,
 ) -> tuple[list[str], int]:
     """Return (trace_ids ordered most-recent-first, truncated_count)."""
     where = ["s.name LIKE 'agent.%'"]
     params: list[Any] = []
+    if not include_experiments:
+        from fastaiagent.trace.provenance import non_production_filter
+
+        np_clause, np_params = non_production_filter(column="s.trace_id")
+        where.append(np_clause.removeprefix("AND "))
+        params.extend(np_params)
 
     if since_hours is not None:
         cutoff = (datetime.now(tz=timezone.utc) - timedelta(hours=since_hours)).isoformat()

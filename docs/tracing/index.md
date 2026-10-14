@@ -244,6 +244,68 @@ Returned by `get_trace()`:
 | `attributes` | `dict` | Key-value metadata |
 | `events` | `list[dict]` | Span events |
 
+## Where a trace came from (provenance)
+
+A replay rerun or a Playground call produces a trace that looks like any run
+of your agent. Since 1.89.0 such traces say where they came from, and the
+SDK's production views leave them out.
+
+Every span started inside an experiment carries `fastaiagent.source`:
+
+| `fastaiagent.source` | Set by | Exported by default |
+|---|---|---|
+| `replay` | `ForkedReplay.rerun()` / `arerun()`, the CLI `replay fork`, the UI's rerun | no |
+| `playground` | the local UI's Prompt Playground | no |
+| `learn` | `fastaiagent learn` (the extraction model's calls) | yes |
+
+A trace with no `fastaiagent.source`, or with a value of your own (say
+`"batch-job"`), counts as production. `fastaiagent.trace.provenance.NON_PRODUCTION_SOURCES`
+is the full set the SDK treats as experiments.
+
+**Not exported.** A `replay` or `playground` span is written to `local.db`
+already marked as sent, and also stamped `fastaiagent.export.local_only`. So
+no exporter ships it: not the platform drain (including an older SDK that
+shares the store), and not an `add_exporter` sink. To export experiments
+anyway, use `fa.connect(export_experiments=True)` or
+`FASTAIAGENT_EXPORT_EXPERIMENTS=1`, or `ForkedReplay.with_export()` for one
+rerun. The spans keep their `fastaiagent.source`, so the receiver can still
+tell them apart.
+
+**Left out of production views.** These exclude any trace with an experiment
+span, and say how many they excluded:
+
+| Reader | Opt back in |
+|---|---|
+| UI Analytics, Overview, Agents | the "Include experiments" toggle (`include_experiments=true`) |
+| UI Traces | shows everything; "Hide experiments" filters (`exclude_experiments=true`) |
+| `TraceStore.list_traces(exclude_sources=True)` | default `False`; pass a collection to exclude only those sources |
+| `fastaiagent eval curate` | `--include-experiments` |
+| `fastaiagent learn` | `--include-experiments` |
+
+Analytics reports the excluded traces' count and cost by source, so real spend
+is never hidden. Trace ids you pass explicitly
+(`curate_from_traces(trace_ids=[...])`) are never filtered.
+
+Your own code can mark a block of work the same way:
+
+```python
+from fastaiagent.trace import provenance_scope
+
+with provenance_scope("batch-backfill"):     # not in NON_PRODUCTION_SOURCES:
+    agent.run("…")                           # counts as production, but labelled
+```
+
+And exclude experiments from your own SQL over `local.db`:
+
+```python
+from fastaiagent.trace import non_production_filter
+
+clause, params = non_production_filter(column="trace_id")
+rows = db.execute(f"SELECT trace_id FROM spans WHERE 1=1 {clause}", params)
+```
+
+The attributes carry no payload, so the export policy leaves them alone.
+
 ## GenAI Semantic Conventions
 
 The SDK follows the OpenTelemetry GenAI semantic conventions for LLM-related attributes:

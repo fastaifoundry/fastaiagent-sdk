@@ -176,15 +176,15 @@ print(f"Steps executed: {result.steps_executed}")
 1. Finds the root `agent.{name}` span in the loaded trace.
 2. Reads the [Agent Reconstruction Attributes](../tracing/index.md#agent-reconstruction-attributes-used-by-replay) off that span — `agent.config`, `agent.tools`, `agent.guardrails`, `agent.llm.config`, `agent.system_prompt`, `agent.input` — and decodes them into the canonical `Agent.from_dict` payload.
 3. Applies your `modify_prompt` / `modify_config` / `modify_input` modifications on top of that payload.
-4. Rebinds tool callables by name via the [`ToolRegistry`](../tools/index.md#toolregistry). Tools created with `FunctionTool(name=..., fn=...)` or the `@tool` decorator auto-register at construction, so replay inside the same process picks them up automatically.
-5. Builds a new `Agent` via `Agent.from_dict()` and calls `agent.arun(new_input)`. A new trace is emitted for the rerun, and its `trace_id` is returned on `ReplayResult.trace_id`.
+4. Builds the **tool plan** (1.89.0): your overrides and stubs, the tools you allowed (`with_tool_policy`), and a blocked stand-in for every other tool. An allowed function tool is the callable registered in this process's [`ToolRegistry`](../tools/index.md#toolregistry); tools created with `FunctionTool(name=..., fn=...)` or `@tool` auto-register at construction. See [Fidelity Guarantees](guarantees.md#tools-a-rerun-runs-only-what-you-supply).
+5. Builds a new `Agent` via `Agent.from_dict()` with that plan and calls `agent.arun(new_input)` inside a `replay` provenance scope. A new trace is emitted for the rerun, marked `fastaiagent.source = "replay"` and kept local, and its `trace_id` is returned on `ReplayResult.trace_id` alongside `tool_dispositions`, `blocked_tool_calls` and `exported`.
 
 **v1 scope.** The rerun re-executes the agent **from the top** with modifications applied — it does not literally resume the LLM loop at `fork_point` with prior messages pre-seeded. `fork_point` is still recorded and used by `compare()` to mark where divergence logically happened, so downstream tooling sees your intent. Mid-trace resume (replaying captured messages up to `fork_point` then continuing from there) requires a stable per-provider message-history representation and is planned as a follow-up.
 
 **What you need for `rerun()` to work:**
 
 - The SDK is at a version that captures `agent.*` reconstruction attributes (`0.1.7+`). Traces from older versions can still be loaded and stepped through, but `rerun()` will fail to reconstruct the agent — re-run the agent once on the new SDK to capture a rerun-capable trace.
-- Any Python tool callables the agent used are registered in the [`ToolRegistry`](../tools/index.md#toolregistry) of the replay process. Importing the module that defines the tools is usually enough.
+- For a tool to really run, you supply it (`with_tool_override` / `with_tool_stub`) or allow it (`with_tool_policy("live", allow=[...])`). An allowed function tool must be registered in the [`ToolRegistry`](../tools/index.md#toolregistry) of the replay process; importing the module that defines it is usually enough. Without either, the tool is blocked and the rerun still completes.
 - `FASTAIAGENT_TRACE_PAYLOADS=0` was not set when the original trace was captured, *if* you want the resolved system prompt to round-trip. When payloads were off, modifications still work but the reconstructed agent uses whatever prompt your code supplies via `modify_prompt()`.
 
 ### Available Modifications
@@ -194,6 +194,13 @@ print(f"Steps executed: {result.steps_executed}")
 | `modify_prompt(new_prompt)` | System prompt for the LLM call at the fork point |
 | `modify_input(new_input)` | Input data passed to the step |
 | `modify_config(**kwargs)` | Agent/LLM configuration (temperature, max_tokens, etc.) |
+| `with_determinism(mode, on_miss=)` | How the model is called: `live`, `recorded`, `deterministic` |
+| `with_tool_override(name, fn_or_tool)` | Replace one tool; never registered globally |
+| `with_tool_stub(name, returns=)` | Replace one tool with a stub returning `returns` (1.89.0) |
+| `with_tools([...])` | Replace every tool |
+| `with_tool_policy(policy, allow=)` | `block` *(default)*, `error` or `live` for tools you did not supply; `allow` names tools that really run (1.89.0) |
+| `with_export(True)` | Export the rerun's trace; off by default (1.89.0) |
+| `with_trace_db(path)` | Write the rerun's trace to another `local.db` (1.89.0) |
 
 > **Forking with modified *state*** is not done here. `trace/replay.py` is a read-only inspect/diff surface; trace-based state counterfactuals are the Enterprise Replay engine's job. To branch a run from a saved step with a modified state, use the SDK's checkpoint-fork primitive — [`Chain.afork(...)` / `Agent.afork(...)`](../durability/index.md). (`ForkedReplay.modify_state()` raises `NotImplementedError` pointing there.)
 
@@ -229,7 +236,13 @@ print(f"Diverged at step: {comparison.diverged_at}")
 |-------|------|-------------|
 | `original_steps` | `list[ReplayStep]` | Steps from the original trace |
 | `new_steps` | `list[ReplayStep]` | Steps from the rerun (if available) |
-| `diverged_at` | `int \| None` | Step index where results diverged |
+| `diverged_at` | `int \| None` | Index into `original_steps` of the first aligned turn that differs |
+| `new_diverged_at` | `int \| None` | The same divergence, as an index into `new_steps` (1.89.0) |
+| `aligned` | `list[tuple[int \| None, int \| None]]` | `(original, new)` index pairs of the turns compared: the root and its direct children, minus `memory.*` (1.89.0) |
+| `skipped_steps` / `new_skipped_steps` | `list[int]` | Steps left out of the alignment (1.89.0) |
+| `tool_diffs` | `list[ToolDiff]` | Aligned tool calls whose status or result changed, with the rerun's disposition (1.89.0) |
+| `tools_diverged_at` | `int \| None` | Index into `original_steps` of the first of those (1.89.0) |
+| `compare_status` | `"ok" \| "rerun_failed"` | `rerun_failed` when the rerun's trace couldn't be loaded |
 
 ### ReplayResult
 
@@ -238,7 +251,13 @@ print(f"Diverged at step: {comparison.diverged_at}")
 | `original_output` | `Any` | Output from the original execution |
 | `new_output` | `Any` | Output from the rerun |
 | `steps_executed` | `int` | Number of steps executed in the rerun |
-| `trace_id` | `str \| None` | Trace ID of the original execution |
+| `trace_id` | `str \| None` | Trace ID of the rerun |
+| `source_trace_id` | `str \| None` | Trace ID of the trace it replays (1.89.0) |
+| `determinism` | `str` | The determinism mode it ran under (1.89.0) |
+| `tool_dispositions` | `dict[str, str]` | Per tool: `blocked`, `live`, `stub`, `override` or `no_function` (1.89.0) |
+| `blocked_tool_calls` | `dict[str, int]` | Calls the rerun blocked, per tool. The answer does not show their effect (1.89.0) |
+| `exported` | `bool` | Whether the rerun's trace will be exported. `False` by default (1.89.0) |
+| `trace_db_path` | `str \| None` | The store it was written to, when `with_trace_db` was used (1.89.0) |
 
 `ReplayResult` also exposes [`save_as_test()`](#from-a-rerun-to-a-regression-test) for turning a verified fix into a regression case.
 
@@ -324,7 +343,7 @@ The same workflow is available from the Local UI's Replay page — after
 a rerun, the **Save as regression test** button calls
 `POST /api/replay/forks/{fork_id}/save-as-test`, which appends an
 **identical JSONL record** (same four fields) to
-`./.fastaiagent/regression_tests.jsonl`. UI-saved and code-saved
+`.fastaiagent/datasets/regression_tests.jsonl` by default. UI-saved and code-saved
 records are interchangeable.
 
 ### Side-by-side comparison in the Local UI
@@ -337,9 +356,17 @@ http://127.0.0.1:7842/traces/<trace_id>/replay
 ```
 
 Click any span in the timeline → **Fork here** → pick one of the four
-tabs (Prompt / Input / Tool response / LLM params) → edit → **Rerun
+tabs (Prompt / Input / Tools / LLM params) → edit → **Rerun
 from this step**. The right pane fills with the forked run's spans as
 they arrive.
+
+The dialog also sets the determinism mode, and on the **Tools** tab, what
+the rerun does with each of the agent's tools: **Block** (the default),
+**Stub** with a value you type, or **Live**. Live is disabled for a tool the
+UI process has no function for, and for a REST tool whose credentials were
+redacted from the trace. After the rerun, chips show what happened to each
+tool, a warning lists blocked calls, and a note says the rerun is local-only:
+not counted in Analytics and not exported.
 
 Below, a **Rerun complete** card appears with three pieces:
 
@@ -354,10 +381,13 @@ Below, a **Rerun complete** card appears with three pieces:
    (powered by [`react-diff-viewer-continued`](https://github.com/Aeolun/react-diff-viewer-continued))
    expands inline, showing exactly what changed on that step.
 
+A **Tool calls that changed** panel lists `tool_diffs`: each aligned tool
+call whose status or result differs, with the rerun's disposition.
+
 The diff respects your current theme (light/dark). **Save as
 regression test** appends the case to
-`./.fastaiagent/regression_tests.jsonl` — the same file you'd write to
-from code.
+`.fastaiagent/datasets/regression_tests.jsonl` (1.89.0; before, it sat
+next to `local.db`), the directory the Datasets page reads.
 
 ![Agent Replay side-by-side comparison](../ui/screenshots/20-replay-comparison.png)
 
@@ -375,7 +405,7 @@ The replay page itself and the fork dialog are captured separately:
 2. Click the span you want to branch from. The inspector on the right
    shows its inputs, outputs, attributes, and events.
 3. Click **Fork here**. Pick the tab for the field you want to change
-   (Prompt / Input / Tool response / LLM params).
+   (Prompt / Input / Tools / LLM params).
 4. Edit the field. Click **Rerun from this step**. The UI fires three
    sequential requests behind the scenes: `POST /api/replay/<id>/fork`
    → `PATCH /api/replay/forks/<fork_id>` → `POST /api/replay/forks/<fork_id>/rerun`.
@@ -383,7 +413,7 @@ The replay page itself and the fork dialog are captured separately:
    renders the card described above.
 6. Click any row's chevron to see the per-step diff. Click **Save as
    regression test** to append the case to
-   `./.fastaiagent/regression_tests.jsonl`.
+   `.fastaiagent/datasets/regression_tests.jsonl`.
 
 ### End-to-end bug-fix walkthrough
 

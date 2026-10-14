@@ -5,11 +5,10 @@ import {
   useRef,
   useState,
 } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import {
   ChevronDown,
   ChevronRight,
-  ExternalLink,
   ImageIcon,
   Loader2,
   Play,
@@ -31,6 +30,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ParametersPanel } from "@/components/playground/ParametersPanel";
+import { PlaygroundTraceLink } from "@/components/playground/PlaygroundTraceLink";
 import { isValidMaxTokens } from "@/lib/playground-params";
 import {
   RunHistory,
@@ -315,6 +315,7 @@ export function PlaygroundPage() {
           cost_usd: metadata.cost_usd,
           tokens: metadata.tokens,
           trace_id: metadata.trace_id,
+          trace_in_ui_db: metadata.trace_in_ui_db,
           prompt_template: template,
           system_prompt: systemPrompt || null,
           variables,
@@ -379,6 +380,7 @@ export function PlaygroundPage() {
       tokens: entry.tokens,
       cost_usd: entry.cost_usd,
       trace_id: entry.trace_id,
+      trace_in_ui_db: entry.trace_in_ui_db,
     });
   };
 
@@ -794,15 +796,10 @@ export function PlaygroundPage() {
                   >
                     ~{formatCost(lastMetadata.cost_usd)} est.
                   </span>
-                  {lastMetadata.trace_id && (
-                    <Link
-                      to={`/traces/${lastMetadata.trace_id}`}
-                      className="inline-flex items-center gap-1 text-primary hover:underline"
-                    >
-                      <ExternalLink className="h-3 w-3" />
-                      trace
-                    </Link>
-                  )}
+                  <PlaygroundTraceLink
+                    traceId={lastMetadata.trace_id}
+                    inUiDb={lastMetadata.trace_in_ui_db}
+                  />
                 </div>
               )}
 

@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 
 from fastaiagent.trace.normalize import _SPAN_KIND_MAP
+from fastaiagent.trace.provenance import non_production_filter
 from fastaiagent.ui.deps import get_context, project_filter, require_session
 
 logger = logging.getLogger(__name__)
@@ -269,6 +270,13 @@ def list_traces(
             "``?source=playground`` separates experiments from real traffic."
         ),
     ),
+    exclude_experiments: bool = Query(
+        default=False,
+        description=(
+            "Hide replay, Playground, learn and eval traces. The list shows "
+            "everything by default: it is the raw record."
+        ),
+    ),
     min_duration_ms: int | None = Query(default=None),
     max_duration_ms: int | None = Query(default=None),
     min_cost: float | None = Query(default=None),
@@ -318,6 +326,24 @@ def list_traces(
             )
             params.append(framework)
             params.append(f'%"fastaiagent.framework": "{framework}"%')
+        if source:
+            # In SQL (1.89.0), like ``framework``: filtering after the query
+            # left ``total`` counting every trace, so the page said "4 traces"
+            # over a list of 2. Any span of the trace may carry the source.
+            clauses.append(
+                """EXISTS (
+                    SELECT 1 FROM spans src
+                    WHERE src.trace_id = spans.trace_id
+                      AND src.attributes LIKE '%fastaiagent.source%'
+                      AND CASE WHEN json_valid(src.attributes)
+                          THEN json_extract(src.attributes, '$."fastaiagent.source"') END = ?
+                )"""
+            )
+            params.append(source)
+        if exclude_experiments:
+            np_clause, np_params = non_production_filter(column="spans.trace_id")
+            clauses.append(np_clause.removeprefix("AND "))
+            params.extend(np_params)
 
         # Search path. Prefer FTS5 (v6+) — it's an index lookup, scales
         # to millions of spans. Fall back to LIKE on the JSON blob for
@@ -376,8 +402,6 @@ def list_traces(
             if runner_type and summary["runner_type"] != runner_type:
                 continue
             if runner_name and summary["runner_name"] != runner_name:
-                continue
-            if source and summary["source"] != source:
                 continue
             if framework and summary["framework"] != framework:
                 continue

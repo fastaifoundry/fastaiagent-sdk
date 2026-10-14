@@ -87,6 +87,7 @@ export function TraceFiltersBar({ filters, onChange }: Props) {
     !!filters.thread_id ||
     !!filters.runner_type ||
     !!filters.framework ||
+    !!filters.exclude_experiments ||
     !!filters.since ||
     !!filters.until ||
     filters.min_duration_ms != null ||
@@ -195,6 +196,28 @@ export function TraceFiltersBar({ filters, onChange }: Props) {
           // root span.
         />
 
+        {/* The list is the raw record, so it shows experiments by default;
+            this chip hides replay, Playground, learn and eval traces. */}
+        <button
+          type="button"
+          aria-pressed={!!filters.exclude_experiments}
+          onClick={() =>
+            onChange({
+              ...filters,
+              exclude_experiments: filters.exclude_experiments ? undefined : true,
+              page: 1,
+            })
+          }
+          title="Hide replay, Playground, learn and eval traces"
+          className={cn(
+            "h-9 rounded-md border px-2.5 text-xs font-mono font-medium transition-colors",
+            filters.exclude_experiments
+              ? "border-primary bg-primary text-primary-foreground"
+              : "bg-card text-muted-foreground hover:text-foreground hover:bg-muted"
+          )}
+        >
+          Hide experiments
+        </button>
 
         <Input
           value={filters.thread_id ?? ""}

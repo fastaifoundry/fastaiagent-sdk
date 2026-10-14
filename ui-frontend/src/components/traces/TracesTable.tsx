@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { Copy, GitCompareArrows, MessagesSquare, Star, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -230,8 +231,22 @@ export function TracesTable({ rows, hideBulkSelect }: Props) {
               <TableCell className="font-mono text-xs text-muted-foreground">
                 {shortTraceId(row.trace_id)}
               </TableCell>
-              <TableCell className="font-medium truncate max-w-[240px]">
-                {row.name || "—"}
+              <TableCell className="font-medium max-w-[240px]">
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <span className="truncate">{row.name || "—"}</span>
+                  {/* Non-production origin (replay, playground, eval…):
+                      left out of Overview/Analytics/Agents by default. */}
+                  {row.source && (
+                    <Badge
+                      variant="outline"
+                      data-testid="trace-source-badge"
+                      className="px-1.5 py-0 text-[10px] text-muted-foreground"
+                      title={`Origin: ${row.source} (fastaiagent.source)`}
+                    >
+                      {row.source}
+                    </Badge>
+                  )}
+                </div>
               </TableCell>
               <TableCell>
                 <WorkflowBadge type={row.runner_type} name={row.runner_name} />

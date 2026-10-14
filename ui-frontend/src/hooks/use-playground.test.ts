@@ -39,6 +39,18 @@ describe("parseSseMessage", () => {
     });
   });
 
+  it("keeps trace_in_ui_db on the done metadata (1.89.0)", () => {
+    const raw =
+      'event: done\ndata: {"metadata":{"model":"m","provider":"openai",' +
+      '"latency_ms":1,"tokens":{"input":1,"output":1},"cost_usd":null,' +
+      '"trace_id":"abc","trace_in_ui_db":false}}';
+    const parsed = parseSseMessage(raw);
+    expect(parsed && "metadata" in parsed && parsed.metadata).toMatchObject({
+      trace_id: "abc",
+      trace_in_ui_db: false,
+    });
+  });
+
   it("keeps the correlation id on an error event", () => {
     const raw =
       'event: error\ndata: {"message":"LLM call failed.",' +

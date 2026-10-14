@@ -260,6 +260,10 @@ class _EgressFilteredExporter:
         for span in spans:
             try:
                 attrs = dict(span.attributes or {})
+                # A local-only span (a replay, a Playground call) never leaves
+                # the machine, through a third-party exporter either (1.89.0).
+                if attrs.get("fastaiagent.export.local_only"):
+                    continue
                 new_attrs = apply_export_policy(attrs)
                 new_events = _filtered_events(span)
                 new_status = _filtered_status(span)

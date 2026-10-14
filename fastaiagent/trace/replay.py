@@ -17,6 +17,57 @@ _log = logging.getLogger(__name__)
 
 DeterminismMode = Literal["live", "recorded", "deterministic"]
 
+#: What a rerun does with tools it was not given. See ``with_tool_policy``.
+_TOOL_POLICIES = ("block", "error", "live")
+
+
+def _default_tool_policy() -> str:
+    """``block``, unless ``FASTAIAGENT_REPLAY_TOOL_POLICY`` names another policy.
+
+    The env var is a migration aid (1.89.0): ``live`` restores the old default,
+    under which a rerun ran every tool it could rebuild.
+    """
+    import os
+
+    raw = os.environ.get("FASTAIAGENT_REPLAY_TOOL_POLICY") or ""
+    value = raw.strip().lower()
+    if value in _TOOL_POLICIES:
+        return value
+    if value:
+        _log.warning(
+            "FASTAIAGENT_REPLAY_TOOL_POLICY=%r is not one of %s; using 'block'.",
+            raw,
+            list(_TOOL_POLICIES),
+        )
+    return "block"
+
+
+def _has_redacted_header(spec: dict[str, Any]) -> bool:
+    from fastaiagent.tool.rest import RESTTool
+
+    headers = (spec.get("config") or {}).get("headers") or {}
+    return isinstance(headers, dict) and any(
+        v == RESTTool._REDACTED_HEADER_VALUE for v in headers.values()
+    )
+
+
+def _coerce_replay_class(value: Any) -> str:
+    from fastaiagent.tool._replay_blocked import _coerce_replay_class as coerce
+
+    return coerce(value)
+
+
+class _ReplayBlockedTool:
+    """Typing alias, resolved lazily: see ``fastaiagent.tool._replay_blocked``."""
+
+    def __new__(cls, spec: dict[str, Any], *, reason: str) -> Any:
+        from fastaiagent.tool._replay_blocked import ReplayBlockedTool
+
+        return ReplayBlockedTool(spec, reason=reason)
+
+    name: str
+    calls: int
+
 # Attribute keys whose values represent the *input* side of a span (the
 # question that was asked / the prompt / the tool args). Used by
 # ``ReplayStep`` to partition a span's attributes into the input panel
@@ -232,6 +283,7 @@ class ReplayStep(BaseModel):
     step: int
     span_name: str = ""
     span_id: str = ""
+    parent_span_id: str | None = None
     input: dict[str, Any] = Field(default_factory=dict)
     output: dict[str, Any] = Field(default_factory=dict)
     attributes: dict[str, Any] = Field(default_factory=dict)
@@ -245,6 +297,18 @@ class ReplayResult(BaseModel):
     new_output: Any = None
     steps_executed: int = 0
     trace_id: str | None = None
+    # 1.89.0. All defaulted, so existing constructors keep working.
+    tool_dispositions: dict[str, str] = Field(default_factory=dict)
+    """``{tool_name: override | stub | live | blocked | no_function}``."""
+    blocked_tool_calls: dict[str, int] = Field(default_factory=dict)
+    """Calls the rerun's model made to a blocked tool, by name. Counted on the
+    blocked tool itself, so it is right with tracing off too."""
+    source_trace_id: str | None = None
+    determinism: str = "live"
+    exported: bool = False
+    """Whether the rerun's spans may leave the machine (off by default)."""
+    trace_db_path: str | None = None
+    """Where the rerun's trace was written, when not the default store."""
 
     def save_as_test(
         self,
@@ -323,6 +387,52 @@ class ReplayResult(BaseModel):
         return path
 
 
+class ToolDiff(BaseModel):
+    """One aligned tool call whose outcome changed between the runs (1.89.0)."""
+
+    original_step: int | None = None
+    new_step: int | None = None
+    name: str = ""
+    original_status: str | None = None
+    new_status: str | None = None
+    original_result: Any = None
+    new_result: Any = None
+    disposition: str | None = None
+    """What the rerun did with this tool: ``blocked``, ``stub``, ``live``…"""
+
+
+def _tool_result(step: ReplayStep) -> Any:
+    attrs = step.attributes or {}
+    for key in ("tool.result", "tool.output", "tool.error"):
+        if key in attrs:
+            return attrs[key]
+    return None
+
+
+def _tool_status(step: ReplayStep) -> str | None:
+    attrs = step.attributes or {}
+    status = attrs.get("tool.status")
+    if status is None and "tool.error" in attrs:
+        status = "error"
+    return str(status) if status is not None else None
+
+
+def _turn_indices(steps: list[ReplayStep]) -> list[int]:
+    """The steps a comparison aligns: the root and its direct children that
+    are not ``memory.*``. Memory subtrees (and the LLM calls under them), and
+    anything nested under a tool, are left out."""
+    root = next((s for s in steps if not s.parent_span_id), None)
+    if root is None:
+        return list(range(len(steps)))
+    out: list[int] = []
+    for i, s in enumerate(steps):
+        if s.span_id == root.span_id:
+            out.append(i)
+        elif s.parent_span_id == root.span_id and not s.span_name.startswith("memory."):
+            out.append(i)
+    return out
+
+
 class ComparisonResult(BaseModel):
     """Side-by-side comparison between original and forked execution.
 
@@ -341,7 +451,26 @@ class ComparisonResult(BaseModel):
     original_steps: list[ReplayStep] = Field(default_factory=list)
     new_steps: list[ReplayStep] = Field(default_factory=list)
     diverged_at: int | None = None
+    """An index into ``original_steps``. Since 1.89.0 only the run's own turns
+    are compared (the root and its direct children, minus ``memory.*``): a
+    memory agent's rerun has no memory, and its missing ``memory.*`` spans used
+    to shift every later index, so identical recorded reruns "diverged"."""
     compare_status: Literal["ok", "rerun_failed"] = "ok"
+    # 1.89.0, all additive.
+    new_diverged_at: int | None = None
+    """The same divergence, as an index into ``new_steps``."""
+    skipped_steps: list[int] = Field(default_factory=list)
+    """``original_steps`` left out of the alignment (memory, nested spans)."""
+    new_skipped_steps: list[int] = Field(default_factory=list)
+    aligned: list[tuple[int | None, int | None]] = Field(default_factory=list)
+    """``(original_index, new_index)`` pairs, in order; ``None`` where one side
+    ran fewer turns."""
+    tool_diffs: list[ToolDiff] = Field(default_factory=list)
+    """Aligned tool calls whose status or result differ. Kept apart from
+    ``diverged_at`` so a recorded rerun with a blocked tool still reports the
+    model's answers as identical."""
+    tools_diverged_at: int | None = None
+    """Index into ``original_steps`` of the first tool call that differs."""
 
 
 class ForkedReplay:
@@ -358,8 +487,16 @@ class ForkedReplay:
         self._steps = steps
         self._modifications: dict[str, Any] = {}
         self._tool_overrides: dict[str, Any] = {}
+        self._stub_names: set[str] = set()
         self._determinism: DeterminismMode = "live"
         self._on_miss: str = "live"
+        # 1.89.0: a rerun runs only the tools you supply or allow.
+        self._tool_policy: str = _default_tool_policy()
+        self._allow: set[str] = set()
+        self._export: bool | None = None
+        self._trace_db: str | None = None
+        self._surface: str = "python"
+        self._source_store: TraceStore | None = None
 
     def modify_input(self, new_input: Any) -> ForkedReplay:
         """Override the input the rerun will use.
@@ -433,10 +570,90 @@ class ForkedReplay:
 
         ``with_tools(...)`` (full replacement) takes precedence over
         ``with_tool_override(...)`` if both are used on the same fork.
+
+        ``tool`` is a :class:`~fastaiagent.tool.Tool` (used as-is) or, since
+        1.89.0, a plain callable, wrapped in a ``FunctionTool`` that is **not**
+        registered globally. A ``FunctionTool`` you built with the default
+        ``register=True`` *is* in the global registry, where it replaces the
+        real tool for every later ``Agent.from_dict``; that case logs a warning.
         """
         if not name:
             raise ReplayError("with_tool_override requires a non-empty tool name")
+        from fastaiagent.tool.base import Tool
+        from fastaiagent.tool.function import FunctionTool
+        from fastaiagent.tool.registry import ToolRegistry
+
+        if not isinstance(tool, Tool) and callable(tool):
+            tool = FunctionTool(name=name, fn=tool, register=False)
+        elif isinstance(tool, FunctionTool) and ToolRegistry.get(name) is tool:
+            _log.warning(
+                "with_tool_override(%r): this FunctionTool is registered globally, so it "
+                "replaces the real %r tool for every later Agent.from_dict and replay in "
+                "this process. Build it with FunctionTool(..., register=False), pass a "
+                "plain callable, or use with_tool_stub(%r, returns=...).",
+                name,
+                name,
+                name,
+            )
         self._tool_overrides[name] = tool
+        self._stub_names.discard(name)
+        return self
+
+    def with_tool_stub(self, name: str, returns: Any) -> ForkedReplay:
+        """Replace a tool with a stub that returns ``returns`` (1.89.0).
+
+        The stub is never registered globally, so it affects this rerun only.
+        """
+        from fastaiagent.tool.function import FunctionTool
+
+        if not name:
+            raise ReplayError("with_tool_stub requires a non-empty tool name")
+
+        def _stub(**_kwargs: Any) -> Any:
+            return returns
+
+        _stub.__name__ = f"stubbed_{name}"
+        _stub.__doc__ = f"Stub for tool {name!r}; returns a canned response."
+        self._tool_overrides[name] = FunctionTool(name=name, fn=_stub, register=False)
+        self._stub_names.add(name)
+        return self
+
+    def with_tool_policy(
+        self, policy: Literal["block", "error", "live"] = "block", *, allow: Any = ()
+    ) -> ForkedReplay:
+        """Choose what the rerun does with tools you did not supply (1.89.0).
+
+        * ``"block"`` *(default)*: they are not run. The model gets an error
+          result naming the tool and how to allow it, and the call is counted
+          in ``ReplayResult.blocked_tool_calls``.
+        * ``"error"``: the same, and the rerun raises :class:`ReplayError`
+          (before anything runs, in ``recorded`` mode, when the recorded calls
+          name a tool you did not supply).
+        * ``"live"``: a function tool runs the implementation registered in
+          this process, as reruns did before 1.89.0.
+
+        ``allow`` names tools that run live under any policy. REST and MCP
+        tools rebuilt from the trace run **only** when named here, and never
+        when their credentials were redacted from the trace.
+        """
+        if policy not in _TOOL_POLICIES:
+            raise ReplayError(f"Unknown tool policy {policy!r}; expected one of {_TOOL_POLICIES}")
+        self._tool_policy = policy
+        self._allow = {str(a) for a in allow}
+        return self
+
+    def with_export(self, export: bool = True) -> ForkedReplay:
+        """Export the rerun's trace like a real run (1.89.0; off by default).
+
+        The spans keep ``fastaiagent.source=replay``. Auto-registration stays
+        suppressed either way: a rerun never pushes its agent definition.
+        """
+        self._export = bool(export)
+        return self
+
+    def with_trace_db(self, path: str | Path) -> ForkedReplay:
+        """Write the rerun's trace to another local store (1.89.0)."""
+        self._trace_db = str(path)
         return self
 
     def with_determinism(self, mode: DeterminismMode, *, on_miss: str = "live") -> ForkedReplay:
@@ -489,14 +706,12 @@ class ForkedReplay:
         mid-trace resume — replaying messages up to ``fork_point`` then
         continuing — is a v2 concern and requires a stable on-span message
         history representation across providers.
-        """
-        from fastaiagent.agent.agent import Agent
-        from fastaiagent.llm.client import (
-            _replay_on_miss,
-            _replay_recorded_decisions,
-            _replay_recorded_response,
-        )
 
+        Since 1.89.0 the rerun runs inside a ``replay`` provenance scope: its
+        spans carry ``fastaiagent.source=replay`` and are not exported by
+        default, the rebuilt agent is never registered with the plane, and
+        tools follow the tool plan (``with_tool_policy``; default ``block``).
+        """
         root = self._find_root_span()
         if root is None:
             raise ReplayError(
@@ -522,20 +737,91 @@ class ForkedReplay:
         elif not isinstance(new_input, str):
             new_input = str(new_input)
 
+        from fastaiagent._internal.scope import scoped_tools
+        from fastaiagent.trace.provenance import experiments_exported, provenance_scope
+
+        # The tool plan (1.89.0): a rerun runs only tools you supplied or
+        # allowed. It used to rebuild every function tool from the global
+        # registry (the live implementation, side effects and all) and every
+        # REST/MCP tool from the trace, so a rerun charged the card again.
+        tools, dispositions, blocked = self._build_tool_plan(agent_dict.get("tools") or [])
+        if self._tool_policy == "error" and self._determinism == "recorded":
+            self._preflight_recorded_tools(dispositions)
+
+        scope_attrs = {
+            "fastaiagent.replay.source_trace_id": self._trace.trace_id,
+            "fastaiagent.replay.fork_step": self._fork_point,
+            "fastaiagent.replay.determinism": self._determinism,
+            "fastaiagent.replay.on_miss": self._on_miss,
+            "fastaiagent.replay.tool_policy": self._tool_policy,
+            "fastaiagent.replay.modifications": self._modification_kinds(),
+            "fastaiagent.replay.tool_overrides": sorted(self._tool_overrides),
+            "fastaiagent.replay.surface": self._surface,
+        }
+        # Tools built during the rerun register into a private overlay, never
+        # into the process-global registry.
+        tools_token = scoped_tools.set(dict(scoped_tools.get() or {}))
         try:
-            agent = Agent.from_dict(agent_dict)
+            with provenance_scope(
+                "replay",
+                attributes=scope_attrs,
+                export=self._export,
+                trace_db=self._trace_db,
+                tool_dispositions=dispositions,
+                suppress_registration=True,
+            ) as prov:
+                new_result = await self._arun_in_scope(agent_dict, tools, new_input)
+                exported = experiments_exported(prov)
+        finally:
+            scoped_tools.reset(tools_token)
+
+        blocked_calls = {name: t.calls for name, t in blocked.items() if t.calls}
+        if blocked_calls:
+            _log.warning(
+                "Replay of trace %s blocked %s; the rerun's answer does not show their "
+                "effect. Supply them with with_tool_override / with_tool_stub, or allow "
+                "them with with_tool_policy('live', allow=[...]).",
+                self._trace.trace_id,
+                ", ".join(f"{n} (x{c})" for n, c in sorted(blocked_calls.items())),
+            )
+            if self._tool_policy == "error":
+                raise ReplayError(
+                    f"Replay of trace {self._trace.trace_id} called tools it was not given: "
+                    f"{sorted(blocked_calls)} (tool policy 'error')."
+                )
+
+        root_output = root.attributes.get("agent.output")
+        return ReplayResult(
+            original_output=root_output,
+            new_output=new_result.output,
+            steps_executed=len(self._steps) - self._fork_point,
+            trace_id=new_result.trace_id,
+            tool_dispositions=dispositions,
+            blocked_tool_calls=blocked_calls,
+            source_trace_id=self._trace.trace_id,
+            determinism=self._determinism,
+            exported=exported,
+            trace_db_path=self._trace_db,
+        )
+
+    async def _arun_in_scope(
+        self, agent_dict: dict[str, Any], tools: list[Any], new_input: Any
+    ) -> Any:
+        """Rebuild the agent (without its tools) and run it, honouring determinism."""
+        from fastaiagent.agent.agent import Agent
+        from fastaiagent.llm.client import (
+            _replay_on_miss,
+            _replay_recorded_decisions,
+            _replay_recorded_response,
+        )
+
+        try:
+            agent = Agent.from_dict({**agent_dict, "tools": []})
         except Exception as e:
             raise ReplayError(
                 f"Failed to reconstruct agent from trace {self._trace.trace_id}: {e}"
             ) from e
-
-        # Tool plumbing precedence: with_tools(...) full replacement wins,
-        # then per-name overrides patch on top of the trace-reconstructed
-        # list.
-        if "tools" in self._modifications:
-            agent.tools = list(self._modifications["tools"])
-        if self._tool_overrides:
-            agent.tools = self._apply_tool_overrides(agent.tools)
+        agent.tools = tools
 
         # Determinism mode plumbing — see ForkedReplay.with_determinism.
         if self._determinism == "deterministic":
@@ -568,21 +854,123 @@ class ForkedReplay:
             decisions_token = _replay_recorded_decisions.set(self._all_decisions())
             miss_token = _replay_on_miss.set(self._on_miss)
             try:
-                new_result = await self._arun_unpaused(agent, new_input)
+                return await self._arun_unpaused(agent, new_input)
             finally:
                 _replay_on_miss.reset(miss_token)
                 _replay_recorded_decisions.reset(decisions_token)
                 _replay_recorded_response.reset(token)
-        else:
-            new_result = await self._arun_unpaused(agent, new_input)
+        return await self._arun_unpaused(agent, new_input)
 
-        original_output = root.attributes.get("agent.output")
-        return ReplayResult(
-            original_output=original_output,
-            new_output=new_result.output,
-            steps_executed=len(self._steps) - self._fork_point,
-            trace_id=new_result.trace_id,
+    # ── The tool plan (1.89.0) ─────────────────────────────────────────────
+
+    def _build_tool_plan(
+        self, specs: list[dict[str, Any]]
+    ) -> tuple[list[Any], dict[str, str], dict[str, _ReplayBlockedTool]]:
+        """``(tools, {name: disposition}, {name: blocked_tool})`` for the rerun.
+
+        Priority: ``with_tools`` (full replacement), then a per-name override or
+        stub, then ``live`` (the policy, or the name in ``allow``), else blocked.
+        """
+        from fastaiagent.tool.base import Tool
+        from fastaiagent.tool.function import FunctionTool
+        from fastaiagent.tool.registry import ToolRegistry
+
+        if "tools" in self._modifications:
+            replacement = list(self._modifications["tools"])
+            return replacement, {getattr(t, "name", "?"): "override" for t in replacement}, {}
+
+        tools: list[Any] = []
+        dispositions: dict[str, str] = {}
+        blocked: dict[str, _ReplayBlockedTool] = {}
+
+        def block(spec: dict[str, Any], reason: str) -> None:
+            stand_in = _ReplayBlockedTool(spec, reason=reason)
+            tools.append(stand_in)
+            blocked[stand_in.name] = stand_in
+            dispositions[stand_in.name] = "blocked"
+
+        for spec in specs:
+            if not isinstance(spec, dict) or not spec.get("name"):
+                continue
+            name = str(spec["name"])
+            if name in self._tool_overrides:
+                tools.append(self._tool_overrides[name])
+                dispositions[name] = "stub" if name in self._stub_names else "override"
+                continue
+            tool_type = spec.get("tool_type", "function")
+            allowed = name in self._allow
+            if tool_type in ("rest_api", "mcp"):
+                # An endpoint rebuilt from the trace is not something this
+                # process has: never called unless named in ``allow``.
+                if not allowed:
+                    block(spec, "its endpoint was rebuilt from the trace")
+                elif tool_type == "rest_api" and _has_redacted_header(spec):
+                    block(
+                        spec,
+                        "its credentials were redacted from the trace; pass the live "
+                        "tool with with_tool_override",
+                    )
+                else:
+                    tools.append(Tool.from_dict(spec))
+                    dispositions[name] = "live"
+                continue
+            if not (allowed or self._tool_policy == "live"):
+                block(spec, "a rerun runs only tools you supply")
+                continue
+            registered = ToolRegistry.get(name)
+            if isinstance(registered, FunctionTool) and registered.fn is not None:
+                tools.append(registered)
+                dispositions[name] = "live"
+            else:
+                tools.append(
+                    FunctionTool(
+                        name=name,
+                        description=spec.get("description", ""),
+                        parameters=spec.get("parameters"),
+                        replay_class=_coerce_replay_class(spec.get("replay_class")),
+                        register=False,
+                    )
+                )
+                dispositions[name] = "no_function"
+
+        # Overrides for tools the original run did not have are appended.
+        for name, tool in self._tool_overrides.items():
+            if name not in dispositions:
+                tools.append(tool)
+                dispositions[name] = "stub" if name in self._stub_names else "override"
+        return tools, dispositions, blocked
+
+    def _preflight_recorded_tools(self, dispositions: dict[str, str]) -> None:
+        """Policy ``error`` in recorded mode: refuse before anything runs when the
+        recorded model turns call a tool the rerun was not given."""
+        called: set[str] = set()
+        for response in self._all_llm_responses():
+            for call in getattr(response, "tool_calls", None) or []:
+                name = getattr(call, "name", None) or (
+                    call.get("name") if isinstance(call, dict) else None
+                )
+                if name:
+                    called.add(str(name))
+        missing = sorted(
+            n for n in called if dispositions.get(n) not in ("override", "stub", "live")
         )
+        if missing:
+            raise ReplayError(
+                f"Replay of trace {self._trace.trace_id}: the recorded run calls {missing}, "
+                "which this rerun was not given (tool policy 'error'). Supply them with "
+                "with_tool_override / with_tool_stub, or allow them with "
+                "with_tool_policy('live', allow=[...])."
+            )
+
+    def _modification_kinds(self) -> list[str]:
+        """What was modified, as kinds only: never the modified text itself."""
+        kinds = [k for k in ("prompt", "input", "config", "tools") if k in self._modifications]
+        overrides = set(self._tool_overrides) - self._stub_names
+        if overrides:
+            kinds.append("tool_overrides")
+        if self._stub_names:
+            kinds.append("tool_stubs")
+        return kinds
 
     async def _arun_unpaused(self, agent: Any, new_input: Any) -> Any:
         """``agent.arun`` for a rerun, refusing a pause with a ``ReplayError``.
@@ -675,7 +1063,9 @@ class ForkedReplay:
 
         return run_sync(self.arerun())
 
-    def compare(self, new_result: ReplayResult) -> ComparisonResult:
+    def compare(
+        self, new_result: ReplayResult, *, store: TraceStore | None = None
+    ) -> ComparisonResult:
         """Build a side-by-side comparison between the original and rerun traces.
 
         ``diverged_at`` is computed by walking both step lists and finding
@@ -688,12 +1078,18 @@ class ForkedReplay:
         When the rerun trace can't be loaded, ``compare_status`` is set to
         ``"rerun_failed"`` and ``diverged_at`` stays ``None`` so callers
         can distinguish "no divergence" from "couldn't tell".
+
+        The rerun is read from ``store``, else the store it was written to
+        (``with_trace_db``), else the default store.
         """
         new_steps: list[ReplayStep] = []
         status: Literal["ok", "rerun_failed"] = "ok"
+        if store is None:
+            sink = new_result.trace_db_path or self._trace_db
+            store = TraceStore(db_path=sink) if sink else TraceStore.default()
         if new_result.trace_id:
             try:
-                new_replay = Replay.load(new_result.trace_id)
+                new_replay = Replay.load(new_result.trace_id, store=store)
                 new_steps = new_replay.steps()
             except Exception as e:
                 _log.warning(
@@ -705,12 +1101,67 @@ class ForkedReplay:
         else:
             status = "rerun_failed"
 
-        diverged = None if status == "rerun_failed" else _first_divergence(self._steps, new_steps)
+        if status == "rerun_failed":
+            return ComparisonResult(
+                original_steps=self._steps, new_steps=new_steps, compare_status=status
+            )
+
+        orig_idx = _turn_indices(self._steps)
+        new_idx = _turn_indices(new_steps)
+        orig_turns = [self._steps[i] for i in orig_idx]
+        new_turns = [new_steps[i] for i in new_idx]
+        aligned: list[tuple[int | None, int | None]] = [
+            (
+                orig_idx[k] if k < len(orig_idx) else None,
+                new_idx[k] if k < len(new_idx) else None,
+            )
+            for k in range(max(len(orig_idx), len(new_idx)))
+        ]
+        at = _first_divergence(orig_turns, new_turns)
+
+        def _map(k: int | None, idx: list[int], total: int) -> int | None:
+            if k is None:
+                return None
+            return idx[k] if k < len(idx) else total
+
+        tool_diffs: list[ToolDiff] = []
+        for o, n in aligned:
+            a = self._steps[o] if o is not None else None
+            b = new_steps[n] if n is not None else None
+            either = a or b
+            name = either.span_name if either is not None else ""
+            if not name.startswith("tool."):
+                continue
+            a_status, b_status = (_tool_status(a) if a else None), (_tool_status(b) if b else None)
+            a_res, b_res = (_tool_result(a) if a else None), (_tool_result(b) if b else None)
+            if a_status != b_status or a_res != b_res or a is None or b is None:
+                tool_diffs.append(
+                    ToolDiff(
+                        original_step=o,
+                        new_step=n,
+                        name=name[len("tool.") :],
+                        original_status=a_status,
+                        new_status=b_status,
+                        original_result=a_res,
+                        new_result=b_res,
+                        disposition=(b.attributes or {}).get("fastaiagent.replay.tool_disposition")
+                        if b
+                        else None,
+                    )
+                )
+        aligned_orig = {o for o, _ in aligned if o is not None}
+        aligned_new = {n for _, n in aligned if n is not None}
         return ComparisonResult(
             original_steps=self._steps,
             new_steps=new_steps,
-            diverged_at=diverged,
+            diverged_at=_map(at, orig_idx, len(self._steps)),
+            new_diverged_at=_map(at, new_idx, len(new_steps)),
             compare_status=status,
+            skipped_steps=[i for i in range(len(self._steps)) if i not in aligned_orig],
+            new_skipped_steps=[i for i in range(len(new_steps)) if i not in aligned_new],
+            aligned=aligned,
+            tool_diffs=tool_diffs,
+            tools_diverged_at=tool_diffs[0].original_step if tool_diffs else None,
         )
 
     # ── Internals ──────────────────────────────────────────────────────────
@@ -776,8 +1227,9 @@ class Replay:
         result = forked.rerun()
     """
 
-    def __init__(self, trace_data: TraceData):
+    def __init__(self, trace_data: TraceData, store: TraceStore | None = None):
         self._trace = trace_data
+        self._store = store
         self._steps = self._build_steps()
 
     @classmethod
@@ -785,7 +1237,7 @@ class Replay:
         """Load a replay from a stored trace."""
         store = store or TraceStore.default()
         trace_data = store.get_trace(trace_id)
-        return cls(trace_data)
+        return cls(trace_data, store=store)
 
     @classmethod
     def from_platform(cls, trace_id: str) -> Replay:
@@ -886,6 +1338,7 @@ class Replay:
                     step=i,
                     span_name=span.name,
                     span_id=span.span_id,
+                    parent_span_id=span.parent_span_id,
                     input=input_part,
                     output=output_part,
                     attributes=attrs,
@@ -927,8 +1380,10 @@ class Replay:
         """Fork the execution at a specific step for re-execution."""
         if step < 0 or step >= len(self._steps):
             raise ReplayError(f"Step {step} out of range (0-{len(self._steps) - 1})")
-        return ForkedReplay(
+        forked = ForkedReplay(
             original_trace=self._trace,
             fork_point=step,
             steps=self._steps,
         )
+        forked._source_store = self._store
+        return forked

@@ -16,6 +16,7 @@ function buildQuery(filters: TraceFilters): string {
   if (filters.thread_id) params.set("thread_id", filters.thread_id);
   if (filters.runner_type) params.set("runner_type", filters.runner_type);
   if (filters.framework) params.set("framework", filters.framework);
+  if (filters.exclude_experiments) params.set("exclude_experiments", "true");
   if (filters.since) params.set("since", filters.since);
   if (filters.until) params.set("until", filters.until);
   if (filters.min_duration_ms != null) params.set("min_duration_ms", String(filters.min_duration_ms));

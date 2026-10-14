@@ -73,9 +73,17 @@ This format is automatically converted to Anthropic's `input_schema` format when
 ## Replay safety (`replay_class`)
 
 Every tool type and the `@tool` decorator accept an optional `replay_class` that
-tells [Agent Replay](../replay/index.md) (and the central Replay engine) whether
-a recorded tool call may be **re-executed** during a rerun or must have its
-**recorded output injected** instead:
+tells the central Replay engine whether a recorded tool call may be
+**re-executed** during a rerun or must have its **recorded output injected**
+instead.
+
+!!! note "The SDK's own rerun does not act on `replay_class`"
+    Since 1.89.0 `ForkedReplay.rerun()` blocks every tool you did not supply or
+    allow, whatever its class. Run one for real with
+    `with_tool_policy("live", allow=[name])`, or replace it with
+    `with_tool_override` / `with_tool_stub`. The class is shown beside each
+    tool in the Local UI's fork dialog, to help you choose. See
+    [Replay guarantees](../replay/guarantees.md#tools-a-rerun-runs-only-what-you-supply).
 
 | `replay_class` | Meaning | Replay behavior |
 |----------------|---------|-----------------|
@@ -102,8 +110,8 @@ def charge_card(amount: int) -> str:
     ...
 ```
 
-- **Default is `"side_effecting"`** — the safe choice. An unmarked tool is never
-  re-executed during replay.
+- **Default is `"side_effecting"`** — the safe choice. The central Replay
+  engine never re-executes an unmarked tool.
 - **Never auto-inferred.** A `GET` `RESTTool` is *not* automatically `read_only`;
   only an explicit mark makes a tool re-executable. Auto-inferring would violate
   the replay-safety invariant.
@@ -132,7 +140,9 @@ restored = Tool.from_dict(data)
 # Returns RESTTool if tool_type is "rest_api", FunctionTool if "function", etc.
 ```
 
-> **FunctionTool callables and the ToolRegistry.** Python function objects can't be serialized to JSON, so `FunctionTool.to_dict()` only stores the schema. To make `from_dict()` usable for [Agent Replay](../replay/index.md), every `FunctionTool` that is constructed with a live `fn=...` is automatically registered in the process-wide [`ToolRegistry`](#toolregistry). When `Tool.from_dict()` sees a tool name that's been registered, it returns the live tool (with the callable) instead of a schema-only skeleton. Replay reconstructions in the same process that created the tools "just work".
+> **FunctionTool callables and the ToolRegistry.** Python function objects can't be serialized to JSON, so `FunctionTool.to_dict()` only stores the schema. To make `from_dict()` usable for [Agent Replay](../replay/index.md), every `FunctionTool` that is constructed with a live `fn=...` is automatically registered in the process-wide [`ToolRegistry`](#toolregistry). When `Tool.from_dict()` sees a tool name that's been registered, it returns the live tool (with the callable) instead of a schema-only skeleton. A replay rerun uses a registered tool only when you allow it (`with_tool_policy("live", allow=[...])`, 1.89.0).
+>
+> **Stand-ins that must not register.** A stub or test double built with the name of a real tool would replace the real one in the registry. Pass `register=False`: `FunctionTool(name="charge_card", fn=fake, register=False)` or `@tool(name="charge_card", register=False)`. `with_tool_override` and `with_tool_stub` do this for you.
 
 ## ToolRegistry
 
@@ -171,7 +181,7 @@ assert ToolRegistry.get("echo") is not None
 
 You generally do not need to touch `ToolRegistry` directly — auto-registration at `FunctionTool.__init__` covers the common case. You need it explicitly when:
 
-- **Replaying a trace in a different process than the one that created the tools.** Import your tool module in the replay process so the tools get registered at import time, or re-register manually.
+- **Replaying a trace in a different process than the one that created the tools, with those tools allowed to run.** Import your tool module in the replay process so the tools get registered at import time, or re-register manually, and allow them with `with_tool_policy("live", allow=[...])`.
 - **Unit tests that want to start from a clean slate** — call `ToolRegistry.clear()` in setup.
 - **Distinct tools with the same name** — registration is last-write-wins, so give tools unique names if you care about isolation.
 

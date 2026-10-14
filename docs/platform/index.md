@@ -69,6 +69,7 @@ export FASTAIAGENT_TARGET=https://app.fastaiagent.net
 | `auto_register` | `bool` | `True` | Register every agent as a governed console object (see [above](#3-connect)) |
 | `console_url` | `str \| None` | None | Console origin for deep links, when it differs from `target` |
 | `export_traces` | `bool` | `True` | `False` connects for policy/scorers/prompts **without** registering a span exporter or claiming OTel's global tracer provider — for a runtime that already owns one. See [Guardrails & evals without the runtime](../integrations/primitives-without-the-runtime.md) |
+| `export_experiments` | `bool \| None` | `None` (off) | Export replay reruns and Local UI Playground calls too. Off by default since 1.89.0: they are experiments, not runs of your agent. Falls back to `FASTAIAGENT_EXPORT_EXPERIMENTS`. See [provenance](../tracing/index.md#where-a-trace-came-from-provenance) |
 
 ## Services
 
@@ -193,6 +194,14 @@ forked.modify_prompt("Updated system prompt")
 result = forked.rerun()
 ```
 
+A rerun runs locally and stays local (1.89.0). Its trace is marked
+`fastaiagent.source = "replay"` and is **not exported**, even while connected,
+unless you pass `forked.with_export()` or `connect(export_experiments=True)`.
+A rerun **never registers** its rebuilt agent, so it cannot overwrite the
+console definition of the agent it replays. Its tools are blocked unless you
+supply or allow them; see
+[Replay guarantees](../replay/guarantees.md#tools-a-rerun-runs-only-what-you-supply).
+
 ### Registering agent definitions
 
 When connected, agents **register themselves** so they appear in the console with
@@ -224,7 +233,8 @@ print(result.agent_id, result.url)
 ```
 
 Auto-registration is **ON by default** (best-effort, idempotent by name, non-fatal);
-opt out with `fa.connect(..., auto_register=False)`.
+opt out with `fa.connect(..., auto_register=False)`. It is always off inside a
+replay rerun (1.89.0).
 
 `Agent.to_dict()` (the push payload) emits `{name, agent_type, system_prompt,
 llm_endpoint, tools, guardrails, config}` plus two governed fields **only when

@@ -35,9 +35,10 @@ export interface TraceRow {
   // span. Free-text — any value the harness or a custom instrumentation
   // has stamped survives a trip through the API as-is.
   framework?: string | null;
-  // Where the run originated, from ``fastaiagent.source`` on the root span.
-  // Prompt Playground runs are stamped "playground", so experiments can be
-  // told apart from real traffic (and filtered via ?source=).
+  // Where the run originated, from ``fastaiagent.source`` on any span of the
+  // trace: "replay", "playground", "learn", "eval", "simulation", "optimize",
+  // "kb_search". Null = production. Filter via ?source= or
+  // ?exclude_experiments=true (1.89.0).
   source?: string | null;
   // Whether this trace is starred (present in trace_favorites). Drives the
   // filled star in the Traces list.
@@ -100,12 +101,67 @@ export interface ReplayStep {
   timestamp: string;
 }
 
+/** What a rerun did with one tool (1.89.0). */
+export type ToolDisposition =
+  | "blocked"
+  | "live"
+  | "stub"
+  | "override"
+  | "no_function";
+
+export type ReplayDeterminism = "live" | "recorded" | "deterministic";
+export type ReplayOnMiss = "live" | "error";
+export type ReplayToolPolicy = "block" | "error" | "live";
+
+/**
+ * One of the original agent's tools, and what a rerun could do with it
+ * (``GET /api/replay/{trace_id}`` → ``tools``, 1.89.0).
+ */
+export interface ReplayToolChoice {
+  name: string;
+  tool_type: string;
+  origin: string | null;
+  replay_class: string | null;
+  /** This process has the function (a registered runner's tool, or the registry). */
+  live_available: boolean;
+  /** A REST/MCP tool whose endpoint the trace recorded; Live calls it for real. */
+  endpoint_from_trace: boolean;
+  /** Its auth headers were redacted, so a live call from the trace can't authenticate. */
+  credentials_redacted: boolean;
+}
+
+export interface ReplayPayload {
+  steps: ReplayStep[];
+  tools?: ReplayToolChoice[];
+}
+
 export interface RerunResult {
   fork_id: string;
   new_trace_id: string | null;
   new_output: unknown;
   original_output: unknown;
   steps_executed: number;
+  // 1.89.0 — optional so an older server's payload still type-checks.
+  source?: "replay";
+  determinism?: ReplayDeterminism;
+  tool_policy?: ReplayToolPolicy;
+  tool_dispositions?: Record<string, ToolDisposition>;
+  /** Calls the rerun's model made to a blocked tool, by name. */
+  blocked_tool_calls?: Record<string, number>;
+  /** Whether the rerun's spans may leave the machine (off by default). */
+  exported?: boolean;
+}
+
+/** One aligned tool call whose outcome changed between the runs (1.89.0). */
+export interface ToolDiff {
+  original_step: number | null;
+  new_step: number | null;
+  name: string;
+  original_status: string | null;
+  new_status: string | null;
+  original_result: unknown;
+  new_result: unknown;
+  disposition: ToolDisposition | string | null;
 }
 
 export interface ComparisonResult {
@@ -130,6 +186,19 @@ export interface ComparisonResult {
    * case.
    */
   compare_status?: "ok" | "rerun_failed";
+  // 1.89.0, all additive. ``diverged_at`` indexes ``original_steps``; only
+  // the run's own turns are aligned (memory and nested spans are skipped).
+  /** The same divergence, as an index into ``new_steps``. */
+  new_diverged_at?: number | null;
+  /** ``original_steps`` left out of the alignment (memory, nested spans). */
+  skipped_steps?: number[];
+  new_skipped_steps?: number[];
+  /** ``[original_index, new_index]`` pairs, in order; null where one side ran fewer turns. */
+  aligned?: [number | null, number | null][];
+  /** Aligned tool calls whose status or result differ. */
+  tool_diffs?: ToolDiff[];
+  /** Index into ``original_steps`` of the first tool call that differs. */
+  tools_diverged_at?: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -557,6 +626,17 @@ export interface AnalyticsPoint {
   p99_ms: number | null;
 }
 
+/**
+ * Traces with a non-production source (replay, Playground, learn, eval…),
+ * reported apart from production so excluding them never hides spend
+ * (1.89.0).
+ */
+export interface ExperimentsSummary {
+  trace_count: number;
+  cost_usd: number;
+  by_source: Record<string, { trace_count: number; cost_usd: number }>;
+}
+
 export interface AnalyticsSummary {
   trace_count: number;
   error_count: number;
@@ -565,6 +645,9 @@ export interface AnalyticsSummary {
   p50_ms: number | null;
   p95_ms: number | null;
   p99_ms: number | null;
+  // 1.89.0
+  experiments?: ExperimentsSummary;
+  experiments_included?: boolean;
 }
 
 export interface AnalyticsAgent {
@@ -720,6 +803,14 @@ export interface ForkModifications {
    * calling the original tool.
    */
   tool_overrides?: Record<string, unknown>;
+  /** 1.89.0: how the rerun calls the LLM. */
+  determinism?: ReplayDeterminism;
+  /** 1.89.0: ``recorded`` only — what to do when the rerun makes more LLM calls than recorded. */
+  on_miss?: ReplayOnMiss;
+  /** 1.89.0: what the rerun does with tools you did not stub or allow. */
+  tool_policy?: ReplayToolPolicy;
+  /** 1.89.0: tools that run live under any policy. */
+  allow_tools?: string[];
   /**
    * @deprecated since v1.14.1 — was a no-op for agent reruns
    * (silently routed to modify_state which the agent path ignored).
@@ -738,6 +829,8 @@ export interface TraceFilters {
   runner_type?: RunnerType | null;
   runner_name?: string | null;
   framework?: string | null;
+  /** 1.89.0: hide replay, Playground, learn and eval traces. */
+  exclude_experiments?: boolean;
   since?: string;
   until?: string;
   min_duration_ms?: number;
@@ -861,6 +954,8 @@ export interface CostBreakdownResponse {
   period: string;
   chain_name?: string | null;
   rows: CostByModelRow[] | CostByAgentRow[] | CostByNodeRow[];
+  /** 1.89.0: the experiment traces in this period, whether or not they are in ``rows``. */
+  experiments?: ExperimentsSummary;
 }
 
 export type ToolOrigin =
@@ -1034,6 +1129,11 @@ export interface PlaygroundRunResponse {
   tokens: { input: number; output: number };
   cost_usd: number | null;
   trace_id: string | null;
+  /**
+   * 1.89.0: false when the trace went to a different store than this UI
+   * reads, so a link to it would 404. Absent (older server) = true.
+   */
+  trace_in_ui_db?: boolean;
   finish_reason: string | null;
 }
 
@@ -1044,6 +1144,8 @@ export interface PlaygroundDoneMetadata {
   tokens: { input: number; output: number };
   cost_usd: number | null;
   trace_id: string | null;
+  /** See {@link PlaygroundRunResponse.trace_in_ui_db}. */
+  trace_in_ui_db?: boolean;
 }
 
 export type PlaygroundStreamEvent =

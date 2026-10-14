@@ -29,6 +29,10 @@ import { EmptyState } from "@/components/shared/EmptyState";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { CostBreakdownTable } from "@/components/analytics/CostBreakdownTable";
+import {
+  ExperimentsNote,
+  IncludeExperimentsToggle,
+} from "@/components/shared/ExperimentsNote";
 import { ChartTooltip, Panel } from "@/components/charts/chart-kit";
 import {
   AXIS_PROPS,
@@ -119,8 +123,9 @@ export function AnalyticsPage() {
     <div className="space-y-5">
       <PageHeader
         title="Analytics"
-        description="Latency, cost, and error trends across all traces."
+        description="Latency, cost, and error trends across production traces."
       >
+        <IncludeExperimentsToggle />
         <div className="flex items-center gap-1 rounded-md border bg-card p-0.5">
           {WINDOW_CHOICES.map((c) => (
             <button
@@ -157,6 +162,14 @@ export function AnalyticsPage() {
         <EmptyState title="No analytics yet" />
       ) : (
         <>
+          {/* Experiments left out of the numbers below are still counted
+              here, cost included, so excluding them never hides spend. */}
+          <ExperimentsNote
+            count={analytics.data.summary.experiments?.trace_count}
+            costUsd={analytics.data.summary.experiments?.cost_usd}
+            bySource={analytics.data.summary.experiments?.by_source}
+            included={analytics.data.summary.experiments_included ?? false}
+          />
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
             <StatCard
               label="Traces"

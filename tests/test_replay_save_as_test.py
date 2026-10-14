@@ -331,4 +331,11 @@ class TestSaveAsTestPathContainment:
             json={"input": "x", "expected_output": "y"},
         )
         assert r.status_code == 200, r.text
-        assert (tmp_path / ".fastaiagent" / "regression_tests.jsonl").exists()
+        # 1.89.0 (D17): the datasets folder, so the Datasets page lists it.
+        saved = tmp_path / ".fastaiagent" / "datasets" / "regression_tests.jsonl"
+        assert saved.exists()
+        assert r.json()["path"] == str(saved)
+        listed = client.get("/api/datasets").json()
+        rows = listed if isinstance(listed, list) else listed.get("datasets", [])
+        names = [d.get("name") for d in rows]
+        assert "regression_tests" in names, f"the Datasets page does not list it: {listed}"

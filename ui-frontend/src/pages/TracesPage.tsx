@@ -70,6 +70,9 @@ function paramsToFilters(sp: URLSearchParams): TraceFilters {
   if (fw && FRAMEWORK_PATTERN.test(fw)) {
     out.framework = fw;
   }
+  if (sp.get("exclude_experiments") === "true") {
+    out.exclude_experiments = true;
+  }
   return out;
 }
 
@@ -84,6 +87,7 @@ function filtersToParams(filters: TraceFilters): URLSearchParams {
     const v = (filters as Record<string, unknown>)[key];
     if (typeof v === "number" && Number.isFinite(v)) sp.set(key, String(v));
   }
+  if (filters.exclude_experiments) sp.set("exclude_experiments", "true");
   return sp;
 }
 

@@ -110,6 +110,11 @@ def extract(
         "--reprocess",
         help="Mine traces again even if an earlier run already mined them for this scope.",
     ),
+    include_experiments: bool = typer.Option(
+        False,
+        "--include-experiments",
+        help="Also mine replay, Playground and eval traces (excluded by default).",
+    ),
     attribute_all: bool = typer.Option(
         False,
         "--attribute-all",
@@ -181,6 +186,7 @@ def extract(
         agent_name=agent or None,
         max_traces=max_traces,
         reprocess=reprocess,
+        include_experiments=include_experiments,
     )
 
     total_candidates = sum(len(r.candidates) for r in results)

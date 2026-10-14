@@ -72,6 +72,8 @@ class _Connection:
         # Agent-CI verdict egress posture. None = unset (resolved against
         # FASTAIAGENT_EXPORT_EVALS, then default-on when connected).
         self.export_evals: bool | None = None
+        # Replay / Playground egress (1.89.0). None = FASTAIAGENT_EXPORT_EXPERIMENTS.
+        self.export_experiments: bool | None = None
         # Checkpoint-state replication to the plane (N7). Resolved to a bool at
         # connect(); default on. Local durability is independent of this.
         self.export_checkpoints: bool = True
@@ -195,9 +197,15 @@ def connect(
     export_traces: bool = True,
     export_evals: bool | None = None,
     export_checkpoints: bool | None = None,
+    export_experiments: bool | None = None,
 ) -> None:
     """Connect the SDK to FastAIAgent Platform for observability,
     prompt management, and evaluation services.
+
+    ``export_experiments`` (1.89.0) controls whether replay reruns and
+    Playground calls are exported. They are not by default: a rerun is not a
+    run of the agent, and counted as one on the plane. ``None`` defers to
+    ``FASTAIAGENT_EXPORT_EXPERIMENTS`` (default off); this kwarg wins over it.
 
     All SDK features work without connect(). This adds platform
     backends alongside local storage.
@@ -297,6 +305,10 @@ def connect(
     # FASTAIAGENT_EXPORT_EVALS (then default-on) at each check — see
     # fastaiagent/eval/platform_export.py::eval_export_enabled.
     _connection.export_evals = export_evals
+    # Replays and Playground calls: local-only unless opted in (1.89.0). None =
+    # unset, resolved against FASTAIAGENT_EXPORT_EXPERIMENTS at each span — see
+    # fastaiagent/trace/provenance.py::experiments_exported.
+    _connection.export_experiments = export_experiments
     # Checkpoint-state replication to the plane (N7). kwarg > env > default-on.
     # Independent of ``export_traces``: some users want durable state replicated
     # for cross-machine/DR resume but not trace payloads, and vice-versa.
@@ -569,6 +581,7 @@ def disconnect() -> None:
     _connection.auto_register = True
     _connection.console_url = None
     _connection.export_evals = None
+    _connection.export_experiments = None
     _connection.export_checkpoints = True
     # Clear per-process registration state so a fresh connect() re-registers
     # (e.g. reconnecting to a different plane).

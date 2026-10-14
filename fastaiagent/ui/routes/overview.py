@@ -7,8 +7,9 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 
+from fastaiagent.trace.provenance import non_production_filter
 from fastaiagent.ui.deps import get_context, project_filter, require_session
 
 logger = logging.getLogger(__name__)
@@ -17,9 +18,19 @@ router = APIRouter(prefix="/api", tags=["overview"])
 
 
 @router.get("/overview")
-def overview(request: Request, _user: str = Depends(require_session)) -> dict[str, Any]:
+def overview(
+    request: Request,
+    _user: str = Depends(require_session),
+    include_experiments: bool = Query(
+        default=False,
+        description="Count replay, Playground, learn and eval traces as production.",
+    ),
+) -> dict[str, Any]:
     ctx = get_context(request)
     pid_clause, pid_params = project_filter(ctx)
+    # Experiments are not production traffic (1.89.0): an interrupted replay
+    # used to show up here as a failing production trace.
+    np_clause, np_params = non_production_filter(include=include_experiments)
     db = ctx.db()
     try:
         now = datetime.now(tz=timezone.utc)
@@ -28,8 +39,14 @@ def overview(request: Request, _user: str = Depends(require_session)) -> dict[st
 
         total_day = db.fetchone(
             f"SELECT COUNT(DISTINCT trace_id) AS n FROM spans "
-            f"WHERE start_time >= ? {pid_clause}",
-            (day_ago, *pid_params),
+            f"WHERE start_time >= ? {pid_clause} {np_clause}",
+            (day_ago, *pid_params, *np_params),
+        )
+        only_clause, only_params = non_production_filter(mode="only")
+        experiments_day = db.fetchone(
+            f"SELECT COUNT(DISTINCT trace_id) AS n FROM spans "
+            f"WHERE start_time >= ? {pid_clause} {only_clause}",
+            (day_ago, *pid_params, *only_params),
         )
         # Only OTel ERROR status counts as failing. UNSET (the default when a
         # successful span never sets a status) is *not* a failure — this mirrors
@@ -37,8 +54,8 @@ def overview(request: Request, _user: str = Depends(require_session)) -> dict[st
         # failing previously flagged every clean run as failed.
         failing_day = db.fetchone(
             f"""SELECT COUNT(DISTINCT trace_id) AS n FROM spans
-               WHERE status = 'ERROR' AND start_time >= ? {pid_clause}""",
-            (day_ago, *pid_params),
+               WHERE status = 'ERROR' AND start_time >= ? {pid_clause} {np_clause}""",
+            (day_ago, *pid_params, *np_params),
         )
         runs_week = db.fetchone(
             f"SELECT COUNT(*) AS n FROM eval_runs WHERE started_at >= ? {pid_clause}",
@@ -65,11 +82,11 @@ def overview(request: Request, _user: str = Depends(require_session)) -> dict[st
                       MIN(start_time) AS start_time,
                       MIN(status) AS status
                FROM spans
-               {where_for_recent}
+               WHERE 1=1 {pid_clause} {np_clause}
                GROUP BY trace_id
                ORDER BY start_time DESC
                LIMIT 5""",
-            (ctx.project_id,) if ctx.project_id else (),
+            (*pid_params, *np_params),
         )
         recent_runs = db.fetchall(
             f"""SELECT run_id, run_name, dataset_name, pass_rate, started_at
@@ -90,10 +107,10 @@ def overview(request: Request, _user: str = Depends(require_session)) -> dict[st
         recent_errors = db.fetchall(
             f"""SELECT trace_id, name, start_time, status, attributes
                FROM spans
-               WHERE status = 'ERROR' AND start_time >= ? {pid_clause}
+               WHERE status = 'ERROR' AND start_time >= ? {pid_clause} {np_clause}
                ORDER BY start_time DESC
                LIMIT 10""",
-            (day_ago, *pid_params),
+            (day_ago, *pid_params, *np_params),
         )
         from fastaiagent.ui.attrs import attr
 
@@ -121,6 +138,8 @@ def overview(request: Request, _user: str = Depends(require_session)) -> dict[st
 
         return {
             "traces_last_24h": total_day["n"] if total_day else 0,
+            "experiments_last_24h": experiments_day["n"] if experiments_day else 0,
+            "experiments_included": include_experiments,
             "failing_traces_last_24h": failing_day["n"] if failing_day else 0,
             "eval_runs_last_7d": runs_week["n"] if runs_week else 0,
             "avg_pass_rate_last_7d": (avg_pass["pr"] or 0.0) if avg_pass else 0.0,

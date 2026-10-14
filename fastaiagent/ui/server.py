@@ -305,6 +305,19 @@ def build_app(
     # Eagerly ensure the schema exists so every route can assume it's there.
     init_local_db(resolved_db).close()
 
+    # An embedder pointing the UI at one store while the tracer writes to
+    # another: say so once, and let routes say where a trace went (1.89.0).
+    # ``fastaiagent ui --db`` binds the whole process, so it never splits.
+    trace_db = get_config().resolved_trace_db_path
+    if os.path.abspath(trace_db) != os.path.abspath(resolved_db):
+        logger.warning(
+            "The Local UI reads %s, but this process writes traces to %s: Playground "
+            "and replay traces will not appear in this UI. Set FASTAIAGENT_LOCAL_DB to "
+            "the same path, or start the UI with `fastaiagent ui --db`.",
+            resolved_db,
+            trace_db,
+        )
+
     runner_map: dict[str, Any] = {}
     if runners is not None:
         for r in runners:

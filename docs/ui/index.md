@@ -47,7 +47,7 @@ Opening browser...
 | `--port` | `7842` | Pick anything you like. |
 | `--no-auth` | off | Skip login entirely. Intended for throwaway containers, not everyday use. |
 | `--no-open` | off | Don't launch the browser. |
-| `--db PATH` | `./.fastaiagent/local.db` | Override the local DB path. Also settable via `FASTAIAGENT_LOCAL_DB`. |
+| `--db PATH` | `./.fastaiagent/local.db` | Override the local DB path. Also settable via `FASTAIAGENT_LOCAL_DB`. Since 1.89.0 it binds the **whole process**: the tracer, checkpointers and every other store use `PATH` too, so a Playground run's trace, a replay rerun and a resumed approval all land where the UI reads. A conflicting `FASTAIAGENT_TRACE_DB_PATH` / `FASTAIAGENT_CHECKPOINT_DB_PATH` is overridden, with a note. |
 | `--auth-file PATH` | `./.fastaiagent/auth.json` | Override the credentials file. |
 | `--agent SPEC` | none | Register an agent with the server. Repeatable. See below. |
 
@@ -271,16 +271,38 @@ The fork dialog has four tabs for the four kinds of modification:
 
 - **Prompt** — override the system prompt at the forked step.
 - **Input** — provide a new input JSON at this span.
-- **Tool response** — inject a canned tool return value.
+- **Tools** — Block, Stub or Live for each of the agent's tools (below).
 - **LLM params** — change temperature / max tokens.
+
+It also sets how the rerun calls the model (**live**, **recorded** or
+**deterministic**, and in recorded mode whether running out of recorded turns
+is an error), and what it does with each of the agent's tools (1.89.0):
+
+- **Block** *(default)*: the tool is not run. The model gets an error result
+  that names the tool.
+- **Stub**: the tool returns the value you type.
+- **Live**: the tool really runs. That is possible only when the UI process
+  has its function (a tool of an agent registered with `--agent`, or one in
+  the process's tool registry), or for a REST or MCP tool whose endpoint is
+  in the trace. A REST tool whose credentials were redacted from the trace
+  cannot run live: its call could not authenticate.
+
+Each tool shows its `replay_class`. See
+[Replay guarantees](../replay/guarantees.md#tools-a-rerun-runs-only-what-you-supply).
 
 ![Fork dialog](screenshots/05-replay-fork-dialog.png)
 
 After rerun completes, a side-by-side comparison panel appears below with
 the original vs. new output and a step-by-step comparison of both traces,
-highlighting where they diverged. A **Save as regression test** button
-appends the case to `./.fastaiagent/regression_tests.jsonl` so
-`evaluate()` can pick it up.
+highlighting where they diverged. Tool calls whose outcome changed are
+listed with what the rerun did with each tool. A rerun that blocked a tool
+call says so: its answer does not show that call's effect.
+
+A rerun's trace is marked `fastaiagent.source = "replay"`. It is **not
+exported** and **not counted** in Analytics, Overview or Agents, and its Trace
+Detail page links back to the trace it replays. A **Save as regression test**
+button appends the case to `.fastaiagent/datasets/regression_tests.jsonl`
+(the directory the Datasets page reads) so `evaluate()` can pick it up.
 
 ### Eval runs
 
@@ -381,8 +403,8 @@ choose a model, click **Run**, watch the response stream back. Edit the
 template inline for one-off experiments, attach an image for vision
 models, or click **Save as eval case** to append the input/output pair
 to a JSONL dataset. Every run emits a trace tagged
-`fastaiagent.source = "playground"` so playground experiments share the
-same observability surface as production runs. See
+`fastaiagent.source = "playground"`. You can open it in Traces, but it is
+not exported and not counted in Analytics, Overview or Agents (1.89.0). See
 [Prompt Playground](playground.md).
 
 ![Prompt Playground](screenshots/sprint2-3-playground-streamed-response.png)
@@ -558,6 +580,16 @@ per-node cost breakdown.
     Cost figures are derived from recorded token counts and published API
     pricing. Local models (e.g. Ollama) show `$0.00`, and actual billing may
     differ under your provider agreement.
+
+!!! note "Experiments are counted separately (1.89.0)"
+    Analytics, Overview and Agents count production runs only. Replay reruns,
+    Playground calls and other traces with a non-production
+    `fastaiagent.source` are left out, and a note says how many were left out
+    and what they cost, by source. The money was really spent, so it is
+    reported, not hidden. Turn on **Include experiments** to count them in.
+    Traces lists everything, with a source badge; **Hide experiments**
+    filters them out. See
+    [Tracing → provenance](../tracing/index.md#where-a-trace-came-from-provenance).
 
 ![Analytics](screenshots/13-analytics.png)
 

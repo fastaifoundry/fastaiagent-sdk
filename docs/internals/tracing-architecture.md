@@ -83,6 +83,31 @@ it **drains the `synced=0` rows from SQLite**, POSTs them, and marks them
   in SQLite. See `TraceStore.fetch_unsynced` / `mark_synced` /
   `enforce_buffer_bound` and migration v11 (`spans.synced`).
 
+#### Provenance: stamped at start, kept local at write (1.89.0)
+
+`LocalStorageProcessor.on_start` calls `provenance.stamp_on_start(span)`. When
+a `provenance_scope(source, ...)` is active (a replay rerun, a Playground call,
+`fastaiagent learn`), every span started inside it gets `fastaiagent.source`,
+and the scope's first span also gets the scope's attributes
+(`fastaiagent.replay.*`). Stamping at **start** matters: attributes set in
+`on_end` would never reach a `BatchSpanProcessor`, which reads the span as it
+was handed over.
+
+For a source in `LOCAL_ONLY_SOURCES` (`replay`, `playground`, `kb_search`) the span also
+carries `fastaiagent.export.local_only`, unless experiments are exported
+(`connect(export_experiments=True)`, `FASTAIAGENT_EXPORT_EXPERIMENTS`, or the
+scope's `export=True`). Two consequences:
+
+- `on_end` writes such a row with **`synced=1`**, so the platform drain above
+  never fetches it. That also holds for an older SDK draining the same store.
+- `_EgressFilteredExporter` drops such spans before any `add_exporter` sink.
+
+A scope can also name a `trace_db`: `on_start` records the span's sink, and
+`on_end` writes it to that store instead of the configured one
+(`ForkedReplay.with_trace_db`). Readers exclude experiment traces with
+`provenance.non_production_filter()` (SQL, trace-level) or
+`is_non_production()`.
+
 ### When `add_exporter()` is called
 
 **File:** `fastaiagent/trace/otel.py` (lines 35–39)

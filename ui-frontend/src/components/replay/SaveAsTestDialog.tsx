@@ -62,8 +62,10 @@ export function SaveAsTestDialog({
         <DialogHeader>
           <DialogTitle>Save as regression test</DialogTitle>
           <DialogDescription>
-            Appends one case to <code>./.fastaiagent/regression_tests.jsonl</code>,
-            which <code>evaluate()</code> can pick up.
+            Appends one case to <code>regression_tests.jsonl</code> in the
+            project's datasets directory (
+            <code>.fastaiagent/datasets/</code>), so it shows on the Datasets
+            page and <code>evaluate()</code> or Run eval can pick it up.
           </DialogDescription>
         </DialogHeader>
 

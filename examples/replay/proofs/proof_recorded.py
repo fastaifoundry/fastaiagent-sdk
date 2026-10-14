@@ -4,7 +4,8 @@ Offline: the SDK's own FunctionModel, no API key, a throwaway local.db.
 
 A two-turn tool loop is run once. A recorded rerun serves both captured model
 responses in order: the tool-call turn, so the tool really runs, then the
-answer. No model is called, the output is byte-identical, and every llm span
+answer. The rerun allows the read-only tool by name, since a rerun blocks
+tools by default. No model is called, the output is byte-identical, and every llm span
 of the rerun is marked replay.mode=recorded. Changing the prompt under recorded
 mode changes the prompt the agent is given, not the recorded answer.
 """
@@ -41,7 +42,12 @@ agent = fa.Agent(
 r = agent.run("Where is order 1042?")
 print(f"original run: {r.output!r}   model calls={len(model.calls)} tool calls={len(tool_calls)}")
 
-forked = Replay.load(r.trace_id).fork_at(0).with_determinism("recorded", on_miss="error")
+forked = (
+    Replay.load(r.trace_id)
+    .fork_at(0)
+    .with_determinism("recorded", on_miss="error")
+    .with_tool_policy("live", allow=["lookup_order"])  # a rerun blocks tools by default
+)
 rerun = forked.rerun()
 print(f"recorded rerun: {rerun.new_output!r}")
 print(f"  byte-identical: {rerun.original_output == rerun.new_output}")

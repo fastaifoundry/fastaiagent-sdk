@@ -10,10 +10,19 @@ import { TraceStatusBadge } from "@/components/traces/TraceStatusBadge";
 import { Panel } from "@/components/charts/chart-kit";
 import { AttentionStrip } from "@/components/overview/AttentionStrip";
 import { buildAttention } from "@/components/overview/attention";
+import {
+  ExperimentsNote,
+  IncludeExperimentsToggle,
+} from "@/components/shared/ExperimentsNote";
 import { api } from "@/lib/api";
+import { useIncludeExperiments } from "@/stores/preferences-store";
 
 interface OverviewPayload {
   traces_last_24h: number;
+  // 1.89.0: experiment traces (replay, Playground, eval…) in the last 24h,
+  // and whether the other counts include them.
+  experiments_last_24h?: number;
+  experiments_included?: boolean;
   failing_traces_last_24h: number;
   eval_runs_last_7d: number;
   avg_pass_rate_last_7d: number;
@@ -54,9 +63,11 @@ function ScoreChip({ value }: { value: number }) {
 }
 
 export function OverviewPage() {
+  const includeExperiments = useIncludeExperiments();
   const { data, refetch, isFetching, isLoading } = useQuery({
-    queryKey: ["overview"],
-    queryFn: () => api.get<OverviewPayload>("/overview"),
+    queryKey: ["overview", includeExperiments],
+    queryFn: () =>
+      api.get<OverviewPayload>(`/overview?include_experiments=${includeExperiments}`),
   });
 
   const attention = useMemo(() => buildAttention(data), [data]);
@@ -64,6 +75,7 @@ export function OverviewPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Home" description="What happened since you last looked.">
+        <IncludeExperimentsToggle />
         <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
           <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
           Refresh
@@ -73,6 +85,13 @@ export function OverviewPage() {
       {/* What's wrong, before what exists. */}
       <AttentionStrip items={attention} isLoading={isLoading} />
 
+      {/* The counts below leave experiments out unless asked; say how many. */}
+      <ExperimentsNote
+        count={data?.experiments_last_24h}
+        included={data?.experiments_included ?? false}
+        suffix="from the last 24h"
+        className="-mt-3"
+      />
       <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
         <StatCard label="Traces (24h)" value={String(data?.traces_last_24h ?? "—")} />
         <StatCard

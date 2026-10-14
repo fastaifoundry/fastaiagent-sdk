@@ -102,17 +102,29 @@ Two-panel layout. Left: configuration. Right: response.
 
 Every Run emits a `playground.run` span tagged with
 `fastaiagent.source = "playground"`, with the LLM call as a child span.
+Since 1.89.0 every span of the run carries the tag, not only the root.
 Open `/traces/{trace_id}` from the metadata bar to see the full
 request/response, token usage, and provider call.
 
 That tag is surfaced on every row of the Traces list as `source`, and
-`GET /api/traces?source=playground` filters to just experiments — so a
+`GET /api/traces?source=playground` filters to just Playground runs, so a
 Playground run is distinguishable from production traffic rather than sitting
-anonymously in the same list. `source` is free text: anything stamped on a root
+anonymously in the same list. `source` is free text: anything stamped on a
 span as `fastaiagent.source` shows up and filters the same way.
 
-This means playground experiments share the same observability surface as
-production runs — no separate dashboard.
+A Playground run is an experiment, not production traffic (1.89.0):
+
+- **Not exported.** Its spans never leave the machine, even when the process
+  is connected to the platform, unless you opt in with
+  `connect(export_experiments=True)` or `FASTAIAGENT_EXPORT_EXPERIMENTS=1`.
+- **Not counted.** Analytics, Overview and Agents leave it out and report
+  experiment spend separately; **Include experiments** counts it in.
+
+If the trace goes to a different store than the one the UI reads (an app
+that embeds `build_app(db_path=...)` with its tracer pointed elsewhere), the
+response says `trace_in_ui_db: false` and the metadata bar does not offer a
+trace link that would 404. `fastaiagent ui --db PATH` never splits them: it
+points the whole process at `PATH`.
 
 ## Endpoints
 

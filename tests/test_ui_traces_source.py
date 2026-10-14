@@ -96,6 +96,20 @@ class TestSourceFilter:
     def test_absent_filter_returns_everything(self, client: TestClient) -> None:
         assert len(rows(client)) == 4
 
+    def test_total_counts_the_filtered_set(self, client: TestClient) -> None:
+        """1.89.0: the filter ran after the query, so ``total`` said 4 over a
+        page of 2 and pagination was wrong."""
+        body = client.get("/api/traces?limit=50&source=playground").json()
+        assert body["total"] == 2
+        assert {r["trace_id"] for r in body["rows"]} == {"pg-1", "pg-2"}
+
+    def test_exclude_experiments_hides_playground_but_not_user_sources(
+        self, client: TestClient
+    ) -> None:
+        body = client.get("/api/traces?limit=50&exclude_experiments=true").json()
+        assert {r["trace_id"] for r in body["rows"]} == {"prod-1", "other-1"}
+        assert body["total"] == 2
+
     @pytest.mark.parametrize("bad", ["%", "a%b", "'; DROP TABLE spans--", "-leading"])
     def test_malformed_source_is_rejected_not_interpolated(
         self, client: TestClient, bad: str

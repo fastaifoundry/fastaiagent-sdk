@@ -91,6 +91,55 @@ def _resolve_paths(
     return db_path, auth_path
 
 
+def _bind_process_to_db(db_path: Path) -> None:
+    """Make ``--db`` the store for the whole process, not only the UI's reads (1.89.0).
+
+    ``build_app(db_path=...)`` scoped the routes, but the tracer, the
+    checkpointers and every other SDK store resolved their own path from config.
+    So under ``--db X`` a Playground run's trace went elsewhere (its link 404'd),
+    a replay rerun landed where compare couldn't see it, and resuming an approval
+    looked for its checkpoint in the wrong file and answered 409.
+
+    Runs before user modules (``--agent``) are imported, so an agent built at
+    import time also resolves to ``db_path``.
+    """
+    import os
+
+    from fastaiagent._internal.config import reset_config
+
+    resolved = str(db_path.expanduser().resolve())
+    os.environ["FASTAIAGENT_LOCAL_DB"] = resolved
+    for var in ("FASTAIAGENT_TRACE_DB_PATH", "FASTAIAGENT_CHECKPOINT_DB_PATH"):
+        current = os.environ.get(var)
+        if current and os.path.abspath(os.path.expanduser(current)) != resolved:
+            console.print(
+                f"[yellow]Note: --db overrides {var}={current}; this process uses "
+                f"{resolved} for traces and checkpoints too.[/yellow]"
+            )
+        if current:
+            os.environ[var] = resolved
+    reset_config()
+    from fastaiagent.trace import otel
+
+    if otel._provider is not None:
+        otel.reset()
+
+
+def _warn_on_split_stores() -> None:
+    """Without ``--db``: say so when traces would land outside the UI's store."""
+    import os
+
+    from fastaiagent._internal.config import get_config
+
+    cfg = get_config()
+    if os.path.abspath(cfg.resolved_trace_db_path) != os.path.abspath(cfg.local_db_path):
+        console.print(
+            f"[yellow]Note: FASTAIAGENT_TRACE_DB_PATH ({cfg.resolved_trace_db_path}) differs "
+            f"from the UI's store ({cfg.local_db_path}); traces this process writes "
+            "will not appear in this UI.[/yellow]"
+        )
+
+
 def _maybe_migrate(db_path: Path) -> None:
     """Auto-migrate legacy stores into local.db on first UI start."""
     from fastaiagent.ui.migration import migrate_to_local_db
@@ -374,6 +423,10 @@ def _run_start(
     from fastaiagent.ui.auth import auth_file_exists
 
     db_path, auth_path = _resolve_paths(db, auth)
+    if db is not None:
+        _bind_process_to_db(db_path)
+    else:
+        _warn_on_split_stores()
     _maybe_migrate(db_path)
     if not no_auth and not auth_file_exists(auth_path):
         try:

@@ -43,6 +43,14 @@ class GovPlane:
         # What ``/policy/decide`` answers for the gated tool: ``require_approval``
         # (the default), ``deny``, ``allow``, or ``error`` for a 500.
         self.gated_decision = "require_approval"
+        # Distributed guardrail rules served in ``/policy`` (empty by default).
+        self.guardrail_rules: list[dict[str, Any]] = []
+        # True: ``POST /sdk/agents`` succeeds with ``id=AGENT_ID``. Off by default,
+        # because a successful push stamps that id onto the agent, which would
+        # make every test's agent governed.
+        self.accept_agent_push = False
+        # Every request, as ``"METHOD /path"``, in arrival order.
+        self.paths: list[str] = []
 
     def ledger(self, run_id: str) -> list[dict[str, Any]]:
         """The HITL events received for one run, oldest first."""
@@ -74,6 +82,8 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         st: GovPlane = self.server.state  # type: ignore[attr-defined]
+        with st.lock:
+            st.paths.append(f"GET {self.path}")
         if self.path == "/public/v1/auth/check":
             self._json(
                 200,
@@ -89,7 +99,7 @@ class _Handler(BaseHTTPRequestHandler):
                 200,
                 {
                     "version": "gov-test-v1",
-                    "guardrail_rules": [],
+                    "guardrail_rules": st.guardrail_rules,
                     "approval_policies": [
                         {
                             "id": "ap-1",
@@ -113,7 +123,11 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         st: GovPlane = self.server.state  # type: ignore[attr-defined]
-        if self.path == "/public/v1/policy/decide":
+        with st.lock:
+            st.paths.append(f"POST {self.path}")
+        if self.path == "/public/v1/sdk/agents" and st.accept_agent_push:
+            self._json(201, {"id": AGENT_ID, "name": self._body().get("name")})
+        elif self.path == "/public/v1/policy/decide":
             body = self._body()
             with st.lock:
                 st.decide_calls.append(body)

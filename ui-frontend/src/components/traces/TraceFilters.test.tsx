@@ -102,6 +102,24 @@ describe("TraceFiltersBar (Sprint 3)", () => {
     );
   });
 
+  it("the Hide experiments chip toggles exclude_experiments (1.89.0)", () => {
+    mockEmptyFetch();
+    renderWithProviders(<HostedFilterBar />);
+    const chip = screen.getByRole("button", { name: "Hide experiments" });
+    expect(chip).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(chip);
+    expect(chip).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("filters-state").textContent).toContain(
+      '"exclude_experiments":true'
+    );
+
+    fireEvent.click(chip);
+    expect(screen.getByTestId("filters-state").textContent).not.toContain(
+      "exclude_experiments"
+    );
+  });
+
   it("clears all active filters when the Clear button is pressed", () => {
     mockEmptyFetch();
     renderWithProviders(

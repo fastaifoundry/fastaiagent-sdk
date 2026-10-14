@@ -273,6 +273,11 @@ def curate_cmd(
     ),
     dedup_by: str = typer.Option("none", "--dedup-by", help="none | input"),
     db: str | None = typer.Option(None, "--db", help="local.db path (default: from config)"),
+    include_experiments: bool = typer.Option(
+        False,
+        "--include-experiments",
+        help="Also curate replay, Playground, learn and eval traces (excluded by default).",
+    ),
 ) -> None:
     """Curate an eval dataset from captured agent traces.
 
@@ -294,6 +299,7 @@ def curate_cmd(
             mark_output_as_expected=output_as_expected,
             db_path=db,
             dedup_by=dedup_by,
+            include_experiments=include_experiments,
         )
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")

@@ -12,6 +12,8 @@ export interface PlaygroundHistoryEntry {
   cost_usd: number | null;
   tokens: { input: number; output: number };
   trace_id: string | null;
+  /** False when the trace went to a store this UI doesn't read (1.89.0). */
+  trace_in_ui_db?: boolean;
   // Captured config so re-loading restores the input panel exactly.
   prompt_template: string;
   system_prompt: string | null;

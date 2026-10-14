@@ -7,8 +7,9 @@ import logging
 import re
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
+from fastaiagent.trace.provenance import non_production_filter
 from fastaiagent.ui.deps import get_context, project_filter, require_session
 
 logger = logging.getLogger(__name__)
@@ -172,20 +173,39 @@ def _empty_agent_summary(name: str) -> dict[str, Any]:
     }
 
 
+def _agent_span_rows(db: Any, ctx: Any, *, include_experiments: bool) -> list[dict[str, Any]]:
+    """Every ``agent.*`` span, minus experiment traces unless asked for (1.89.0).
+
+    A replay rerun used to count as a run of the agent: its latency, cost and
+    errors went into the agent's numbers.
+    """
+    pid_clause, pid_params = project_filter(ctx)
+    np_clause, np_params = non_production_filter(include=include_experiments)
+    rows: list[dict[str, Any]] = db.fetchall(
+        f"SELECT * FROM spans WHERE name LIKE 'agent.%' {pid_clause} {np_clause}",
+        (*pid_params, *np_params),
+    )
+    return rows
+
+
+_INCLUDE_EXPERIMENTS = Query(
+    default=False,
+    description="Count replay, Playground, learn and eval traces as production.",
+)
+
+
 @router.get("")
-def list_agents(request: Request, _user: str = Depends(require_session)) -> dict[str, Any]:
+def list_agents(
+    request: Request,
+    _user: str = Depends(require_session),
+    include_experiments: bool = _INCLUDE_EXPERIMENTS,
+) -> dict[str, Any]:
     ctx = get_context(request)
     db = ctx.db()
     try:
         # Scan every agent.* span, not just root spans. With workflow
         # wrappers (chain/swarm/supervisor), agents always run as children.
-        if ctx.project_id:
-            rows = db.fetchall(
-                "SELECT * FROM spans WHERE name LIKE 'agent.%' AND project_id = ?",
-                (ctx.project_id,),
-            )
-        else:
-            rows = db.fetchall("SELECT * FROM spans WHERE name LIKE 'agent.%'")
+        rows = _agent_span_rows(db, ctx, include_experiments=include_experiments)
         by_agent = _aggregate(rows)
         agents = [_format(b) for b in by_agent.values()]
 
@@ -247,20 +267,19 @@ def get_agent(
     request: Request,
     name: str,
     _user: str = Depends(require_session),
+    include_experiments: bool = _INCLUDE_EXPERIMENTS,
 ) -> dict[str, Any]:
     ctx = get_context(request)
     db = ctx.db()
     try:
-        if ctx.project_id:
-            rows = db.fetchall(
-                "SELECT * FROM spans WHERE name LIKE 'agent.%' AND project_id = ?",
-                (ctx.project_id,),
-            )
-        else:
-            rows = db.fetchall("SELECT * FROM spans WHERE name LIKE 'agent.%'")
+        rows = _agent_span_rows(db, ctx, include_experiments=include_experiments)
         by_agent = _aggregate(rows)
         if name in by_agent:
             payload = _format(by_agent[name])
+        elif name in _aggregate(_agent_span_rows(db, ctx, include_experiments=True)):
+            # It has only run as an experiment (a replay, an eval case). A
+            # zero-stat summary, not a 404: the trace links still lead here.
+            payload = _empty_agent_summary(name)
         elif name in _registered_agent_names(ctx.runners):
             # Registered via `fastaiagent ui --agent` (or build_app(runners=...))
             # but hasn't run yet. ``list_agents`` already surfaces these, so
@@ -340,10 +359,13 @@ def get_agent_tools(
                 )
         else:
             # ── latest agent.<name> root span with agent.tools JSON ──
+            # Never a replay's agent span: its tool list holds the rerun's stubs
+            # and blocked stand-ins, not the agent's real tools (1.89.0).
+            np_clause, np_params = non_production_filter()
             agent_rows = db.fetchall(
-                f"SELECT attributes FROM spans WHERE name = ? {pid_clause} "
+                f"SELECT attributes FROM spans WHERE name = ? {pid_clause} {np_clause} "
                 "ORDER BY start_time DESC LIMIT 1",
-                (f"agent.{name}", *pid_params),
+                (f"agent.{name}", *pid_params, *np_params),
             )
             if agent_rows:
                 try:
@@ -375,9 +397,10 @@ def get_agent_tools(
         # in those traces. Simpler than a recursive CTE and correct for the
         # one-level nesting we ship today.
         tool_agg: dict[str, dict[str, Any]] = {}
+        used_np_clause, used_np_params = non_production_filter()
         trace_rows = db.fetchall(
-            f"SELECT DISTINCT trace_id FROM spans WHERE name = ? {pid_clause}",
-            (f"agent.{name}", *pid_params),
+            f"SELECT DISTINCT trace_id FROM spans WHERE name = ? {pid_clause} {used_np_clause}",
+            (f"agent.{name}", *pid_params, *used_np_params),
         )
         trace_ids = [r["trace_id"] for r in trace_rows if r.get("trace_id")]
         if trace_ids:

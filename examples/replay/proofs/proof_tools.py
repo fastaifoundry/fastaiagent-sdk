@@ -2,12 +2,14 @@
 
 Offline: the SDK's own FunctionModel, no API key, a throwaway local.db.
 
-Recorded mode fixes the model's words, not the tools. In the process that
-defined the tool, a rerun calls the real function again. with_tool_override
-swaps it for a stub. In a fresh process the tool has no function: the agent
-gets a tool error, and because the next model turn is served from the
-recording, the output still matches. A tool's replay class is recorded on its
-span, defaults to side_effecting, and is never inferred, not even for a GET.
+Recorded mode fixes the model's words, not the tools. Since 1.89.0 a rerun runs
+only the tools you supply: by default every tool is blocked, the agent gets a
+tool error, and because the next model turn is served from the recording, the
+output still matches. with_tool_policy("live", allow=[...]) runs the real
+function again, but only in the process that defined it: a fresh process has
+no function to run. with_tool_override swaps the tool for a stub. A tool's
+replay class is recorded on its span, defaults to side_effecting, and is never
+inferred, not even for a GET.
 """
 
 import os
@@ -45,31 +47,54 @@ def responder(messages):
     return f"Done: {messages[-1].content}."
 
 
+def tool_span(trace_id):
+    span = next(s for s in TraceStore().get_trace(trace_id).spans if s.name == "tool.charge_card")
+    return span.attributes
+
+
 agent = fa.Agent(name="billing", llm=FunctionModel(responder), tools=[charge_card, status])
 r = agent.run("Charge order 1042")
-span = next(s for s in TraceStore().get_trace(r.trace_id).spans if s.name == "tool.charge_card")
-replay_class = span.attributes.get("fastaiagent.tool.replay_class")
+replay_class = tool_span(r.trace_id)["fastaiagent.tool.replay_class"]
 print(f"tool span: fastaiagent.tool.replay_class={replay_class!r}")
 print(f"original run: {r.output!r}   charges={charges}")
 
 rerun = Replay.load(r.trace_id).fork_at(0).with_determinism("recorded", on_miss="error").rerun()
-print(f"recorded rerun, same process: {rerun.new_output!r}   charges={charges}")
+print(f"default rerun: {rerun.new_output!r}   charges={charges}")
+print(f"  tool_dispositions={rerun.tool_dispositions}")
+print(f"  blocked_tool_calls={rerun.blocked_tool_calls}")
+attrs = tool_span(rerun.trace_id)
+print(f"  tool.status = {attrs.get('tool.status')}")
+
+rerun = (
+    Replay.load(r.trace_id)
+    .fork_at(0)
+    .with_determinism("recorded", on_miss="error")
+    .with_tool_policy("live", allow=["charge_card"])
+    .rerun()
+)
+print(f"live, same process: {rerun.new_output!r}   charges={charges}")
+print(f"  tool_dispositions={rerun.tool_dispositions}")
 
 code = f"""
 import os
 os.environ["FASTAIAGENT_LOCAL_DB"] = {DB!r}
-import logging
-logging.basicConfig(level=logging.WARNING, format="  warning: %(message)s")
 from fastaiagent.trace import Replay, TraceStore
-rerun = Replay.load({r.trace_id!r}).fork_at(0).with_determinism("recorded", on_miss="error").rerun()
+rerun = (
+    Replay.load({r.trace_id!r})
+    .fork_at(0)
+    .with_determinism("recorded", on_miss="error")
+    .with_tool_policy("live", allow=["charge_card"])
+    .rerun()
+)
 span = next(s for s in TraceStore().get_trace(rerun.trace_id).spans if s.name == "tool.charge_card")
 print("  output:", repr(rerun.new_output))
+print("  disposition:", rerun.tool_dispositions["charge_card"])
 status, error = span.attributes.get("tool.status"), span.attributes.get("tool.error")
 print("  tool.status =", status, "| tool.error =", repr(error))
 """
 out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
-print("recorded rerun, fresh process:")
-print((out.stderr.strip() + "\n" + out.stdout.strip()).strip())
+print("live, fresh process:")
+print(out.stdout.strip() or out.stderr.strip())
 
 
 def stub(order_id: str, amount: float) -> str:
@@ -79,8 +104,9 @@ def stub(order_id: str, amount: float) -> str:
 rerun = (
     Replay.load(r.trace_id)
     .fork_at(0)
-    .with_tool_override("charge_card", fa.FunctionTool(name="charge_card", fn=stub))
+    .with_tool_override("charge_card", stub)
     .with_determinism("recorded", on_miss="error")
     .rerun()
 )
 print(f"with_tool_override: {rerun.new_output!r}   charges={charges}")
+print(f"  tool_dispositions={rerun.tool_dispositions}")

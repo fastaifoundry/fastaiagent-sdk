@@ -9,6 +9,10 @@ import { TableSkeleton } from "@/components/shared/LoadingSkeleton";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { TracesTable } from "@/components/traces/TracesTable";
 import { AgentToolsSection } from "@/components/agents/AgentToolsSection";
+import {
+  IncludeExperimentsToggle,
+  ProductionOnlyNote,
+} from "@/components/shared/ExperimentsNote";
 import { useAgent, useAgentTools } from "@/hooks/use-agents";
 import { useTraces } from "@/hooks/use-traces";
 import { formatCost, formatDurationMs, formatTimeAgo } from "@/lib/format";
@@ -63,6 +67,7 @@ export function AgentDetailPage() {
             Back
           </Button>
         </Link>
+        <IncludeExperimentsToggle />
         <Button
           variant="outline"
           size="sm"
@@ -104,6 +109,8 @@ export function AgentDetailPage() {
         Last run {formatTimeAgo(summary.last_run)} · {summary.error_count}{" "}
         error{summary.error_count === 1 ? "" : "s"} tracked.
       </p>
+      {/* Applies to the stats above; the trace list below is the raw record. */}
+      <ProductionOnlyNote className="-mt-3" />
 
       {(summary.workflows ?? []).length > 0 ? (
         <div>

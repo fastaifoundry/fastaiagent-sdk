@@ -66,6 +66,9 @@ def main() -> int:
         Replay.load(live.trace_id)
         .fork_at(step=0)
         .with_determinism("recorded", on_miss="error")
+        # A rerun blocks tools unless allowed (1.89.0). route_ticket runs
+        # again here, and its decision is served from the recording.
+        .with_tool_policy("live", allow=["route_ticket"])
         .arerun()
     )
     print(f"replay:     {rerun.new_output}")

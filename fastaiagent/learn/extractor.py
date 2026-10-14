@@ -184,10 +184,16 @@ def _extract(
     )
 
     from fastaiagent.trace.otel import get_tracer
+    from fastaiagent.trace.provenance import provenance_scope
     from fastaiagent.trace.span import set_fastaiagent_attributes
 
     try:
-        with get_tracer("fastaiagent.learn").start_as_current_span("learn.extract") as span:
+        # A scope, so the extraction's llm.* span is stamped "learn" too, not
+        # only the root (1.89.0). Still exported: learn is not local-only.
+        with (
+            provenance_scope("learn"),
+            get_tracer("fastaiagent.learn").start_as_current_span("learn.extract") as span,
+        ):
             set_fastaiagent_attributes(span, source="learn")
             span.set_attribute("learn.source_trace_id", trace.trace_id)
             span.set_attribute("learn.scope", scope)
@@ -297,11 +303,14 @@ def run_extraction(
     agent_name: str | None = None,
     max_traces: int | None = 100,
     reprocess: bool = False,
+    include_experiments: bool = False,
 ) -> list[ExtractionResult]:
     """Mine the traces you point it at, newest first.
 
     Which traces:
         * those that started within ``last_hours`` (``None`` = all time);
+        * not experiments (replay reruns, Playground calls, eval runs; since
+          1.89.0) unless ``include_experiments=True``;
         * with ``agent_name``, only traces in which that agent ran — at the
           root or as a child span (swarm, chain, supervisor);
         * never the extractor's own ``learn.extract`` calls;
@@ -320,7 +329,15 @@ def run_extraction(
     ts = trace_store if trace_store is not None else TraceStore()
     summaries = [
         s
-        for s in ts.list_traces(last_hours=last_hours, limit=None, agent_name=agent_name)
+        for s in ts.list_traces(
+            last_hours=last_hours,
+            limit=None,
+            agent_name=agent_name,
+            # Experiments are not what the agent learned from (1.89.0): a
+            # replay's answer is counterfactual, so mining it stored facts that
+            # never happened. ``include_experiments`` opts back in.
+            exclude_sources=not include_experiments,
+        )
         if not (s.name or "").startswith("learn.")
     ]
     ledger = None if reprocess else getattr(store, "extracted_trace_ids", None)

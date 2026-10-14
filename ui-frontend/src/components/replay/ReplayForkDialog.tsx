@@ -15,7 +15,14 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiError } from "@/lib/api";
-import type { RerunResult, ReplayStep } from "@/lib/types";
+import { cn } from "@/lib/utils";
+import type {
+  ReplayDeterminism,
+  ReplayOnMiss,
+  ReplayToolChoice,
+  RerunResult,
+  ReplayStep,
+} from "@/lib/types";
 import { useForkAtStep, useModifyFork, useRerunFork } from "@/hooks/use-replay";
 
 interface Props {
@@ -24,6 +31,38 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onRerunComplete: (fork_id: string, result: RerunResult) => void;
+  /**
+   * The original agent's tools (``GET /api/replay/{id}`` → ``tools``,
+   * 1.89.0). Each gets a Block / Stub / Live choice; a rerun runs only the
+   * tools you stub or allow.
+   */
+  tools?: ReplayToolChoice[];
+}
+
+type ToolMode = "block" | "stub" | "live";
+
+const SELECT_CLASS =
+  "h-9 w-full rounded-md border border-input bg-background px-2 text-sm";
+
+/** Why Live is unavailable for this tool, or null when it can run live. */
+function liveBlockedReason(tool: ReplayToolChoice): string | null {
+  if (tool.credentials_redacted) {
+    return "Its credentials were redacted from the trace, so a live call cannot authenticate. Stub it instead.";
+  }
+  if (!tool.live_available && !tool.endpoint_from_trace) {
+    return "This UI process has no implementation of this tool. Start the UI with `fastaiagent ui --agent …` to run it live, or stub it.";
+  }
+  return null;
+}
+
+/** A stub response: JSON when it parses, else the raw text. */
+function parseStub(value: string): unknown {
+  const trimmed = value.trim();
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return value;
+  }
 }
 
 function tryParse(value: string): Record<string, unknown> | null {
@@ -74,8 +113,15 @@ export function ReplayForkDialog({
   open,
   onOpenChange,
   onRerunComplete,
+  tools = [],
 }: Props) {
   const [prompt, setPrompt] = useState("");
+  // 1.89.0: how the rerun calls the LLM, and what it may execute.
+  const [determinism, setDeterminism] = useState<ReplayDeterminism>("live");
+  const [onMiss, setOnMiss] = useState<ReplayOnMiss>("live");
+  // Per-tool choice; a tool absent from the map is blocked (the default).
+  const [toolModes, setToolModes] = useState<Record<string, ToolMode>>({});
+  const [stubTexts, setStubTexts] = useState<Record<string, string>>({});
   const [inputJson, setInputJson] = useState("");
   // v1.14.1+: ``toolName`` + ``toolJson`` together build a single entry
   // in ``mods.tool_overrides`` posted to the route. The previous shape
@@ -99,7 +145,20 @@ export function ReplayForkDialog({
     setToolJson("");
     setTemperature("");
     setMaxTokens("");
+    setDeterminism("live");
+    setOnMiss("live");
+    setToolModes({});
+    setStubTexts({});
   };
+
+  const modeOf = (name: string): ToolMode => toolModes[name] ?? "block";
+  const counts = tools.reduce(
+    (acc, t) => {
+      acc[modeOf(t.name)] += 1;
+      return acc;
+    },
+    { block: 0, stub: 0, live: 0 } as Record<ToolMode, number>
+  );
 
   const handleRerun = async () => {
     if (!step) return;
@@ -121,6 +180,23 @@ export function ReplayForkDialog({
       // v1.14.1+: backend needs a name to call with_tool_override(name, …)
       toast.error("Tool name is required when providing a tool response override");
       return;
+    }
+    // 1.89.0: Stub → tool_overrides (a canned response, this rerun only);
+    // Live → allow_tools; everything else stays blocked.
+    const stubs: Record<string, unknown> = {};
+    const allowTools: string[] = [];
+    for (const t of tools) {
+      const mode = modeOf(t.name);
+      if (mode === "stub") {
+        const text = stubTexts[t.name] ?? "";
+        if (!text.trim()) {
+          toast.error(`Enter a stub response for ${t.name}, or block it`);
+          return;
+        }
+        stubs[t.name] = parseStub(text);
+      } else if (mode === "live" && liveBlockedReason(t) === null) {
+        allowTools.push(t.name);
+      }
     }
 
     try {
@@ -146,18 +222,25 @@ export function ReplayForkDialog({
       // ForkedReplay.with_tool_override (the v1.13 tool_response field
       // was silently dropped for agent reruns — backend keeps accepting
       // it with a deprecation warning).
+      const overrides: Record<string, unknown> = { ...stubs };
       if (parsedTool && toolName.trim()) {
-        mods.tool_overrides = { [toolName.trim()]: parsedTool };
+        overrides[toolName.trim()] = parsedTool;
       }
+      if (Object.keys(overrides).length > 0) mods.tool_overrides = overrides;
 
       const config: Record<string, unknown> = {};
       if (temperature !== "") config.temperature = Number(temperature);
       if (maxTokens !== "") config.max_tokens = Number(maxTokens);
       if (Object.keys(config).length > 0) mods.config = config;
 
-      if (Object.keys(mods).length > 0) {
-        await modify.mutateAsync({ forkId: fork_id, mods });
-      }
+      // Always sent, so the rerun does what this dialog shows: unchosen
+      // tools are blocked, whatever the server's default policy is.
+      mods.determinism = determinism;
+      if (determinism === "recorded") mods.on_miss = onMiss;
+      mods.tool_policy = "block";
+      mods.allow_tools = allowTools;
+
+      await modify.mutateAsync({ forkId: fork_id, mods });
 
       const result = await rerun.mutateAsync(fork_id);
       toast.success("Rerun complete");
@@ -197,6 +280,40 @@ export function ReplayForkDialog({
           </DialogDescription>
         </DialogHeader>
 
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="fork-determinism">LLM calls</Label>
+            <select
+              id="fork-determinism"
+              value={determinism}
+              onChange={(e) => setDeterminism(e.target.value as ReplayDeterminism)}
+              className={SELECT_CLASS}
+            >
+              <option value="live">Live (call the model)</option>
+              <option value="recorded">Recorded (reuse the trace's responses)</option>
+              <option value="deterministic">Deterministic (live, temperature 0)</option>
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="fork-on-miss">When a recorded response is missing</Label>
+            <select
+              id="fork-on-miss"
+              value={onMiss}
+              onChange={(e) => setOnMiss(e.target.value as ReplayOnMiss)}
+              disabled={determinism !== "recorded"}
+              title={
+                determinism !== "recorded"
+                  ? "Only applies to Recorded mode"
+                  : undefined
+              }
+              className={cn(SELECT_CLASS, "disabled:cursor-not-allowed disabled:opacity-50")}
+            >
+              <option value="live">Call the model live (billed)</option>
+              <option value="error">Fail the rerun</option>
+            </select>
+          </div>
+        </div>
+
         <Tabs defaultValue="prompt">
           <TabsList className="w-full">
             <TabsTrigger value="prompt" className="flex-1">
@@ -206,7 +323,7 @@ export function ReplayForkDialog({
               Input
             </TabsTrigger>
             <TabsTrigger value="tool" className="flex-1">
-              Tool response
+              Tools
             </TabsTrigger>
             <TabsTrigger value="params" className="flex-1">
               LLM params
@@ -279,32 +396,62 @@ export function ReplayForkDialog({
           </TabsContent>
 
           <TabsContent value="tool" className="space-y-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="fork-tool-name">Tool name</Label>
-              <Input
-                id="fork-tool-name"
-                value={toolName}
-                onChange={(e) => setToolName(e.target.value)}
-                placeholder="lookup_order"
-              />
-              <p className="text-[10px] text-muted-foreground">
-                Must match a tool name in the captured trace's{" "}
-                <code>agent.tools</code> list. The rerun installs a stub
-                <code>FunctionTool</code> with this name; the LLM receives
-                the JSON below in place of calling the original tool.
-              </p>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="fork-tool">Tool response override (JSON)</Label>
-              <Textarea
-                id="fork-tool"
-                value={toolJson}
-                onChange={(e) => setToolJson(e.target.value)}
-                placeholder='{"result": "canned value"}'
-                rows={6}
-                className="font-mono text-xs"
-              />
-            </div>
+            {tools.length > 0 ? (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  A rerun runs only the tools you stub or allow. A blocked tool
+                  is not called: the model gets an error result instead.
+                </p>
+                <ul className="max-h-72 divide-y overflow-y-auto rounded-md border">
+                  {tools.map((t) => (
+                    <ToolRow
+                      key={t.name}
+                      tool={t}
+                      mode={modeOf(t.name)}
+                      stubText={stubTexts[t.name] ?? ""}
+                      onModeChange={(m) =>
+                        setToolModes((prev) => ({ ...prev, [t.name]: m }))
+                      }
+                      onStubChange={(v) =>
+                        setStubTexts((prev) => ({ ...prev, [t.name]: v }))
+                      }
+                    />
+                  ))}
+                </ul>
+              </>
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  The trace recorded no tool list for this agent. You can
+                  still stub a tool by name.
+                </p>
+                <div className="space-y-1.5">
+                  <Label htmlFor="fork-tool-name">Tool name</Label>
+                  <Input
+                    id="fork-tool-name"
+                    value={toolName}
+                    onChange={(e) => setToolName(e.target.value)}
+                    placeholder="lookup_order"
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    The rerun installs a stub <code>FunctionTool</code> with
+                    this name; the LLM receives the JSON below in place of
+                    calling the original tool.
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="fork-tool">Tool response override (JSON)</Label>
+                  <Textarea
+                    id="fork-tool"
+                    value={toolJson}
+                    onChange={(e) => setToolJson(e.target.value)}
+                    placeholder='{"result": "canned value"}'
+                    rows={6}
+                    className="font-mono text-xs"
+                  />
+                </div>
+              </>
+            )}
           </TabsContent>
 
           <TabsContent value="params" className="grid grid-cols-2 gap-4">
@@ -332,6 +479,13 @@ export function ReplayForkDialog({
           </TabsContent>
         </Tabs>
 
+        {tools.length > 0 && (
+          <p data-testid="fork-tool-summary" className="text-xs text-muted-foreground">
+            Tools: {counts.block} blocked · {counts.stub} stubbed ·{" "}
+            {counts.live} live (see the Tools tab).
+          </p>
+        )}
+
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>
             Cancel
@@ -356,5 +510,86 @@ export function ReplayForkDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+const TOOL_MODES: { value: ToolMode; label: string }[] = [
+  { value: "block", label: "Block" },
+  { value: "stub", label: "Stub" },
+  { value: "live", label: "Live" },
+];
+
+function ToolRow({
+  tool,
+  mode,
+  stubText,
+  onModeChange,
+  onStubChange,
+}: {
+  tool: ReplayToolChoice;
+  mode: ToolMode;
+  stubText: string;
+  onModeChange: (mode: ToolMode) => void;
+  onStubChange: (value: string) => void;
+}) {
+  const liveReason = liveBlockedReason(tool);
+  return (
+    <li className="space-y-2 px-3 py-2" data-testid={`fork-tool-${tool.name}`}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <span className="block truncate font-mono text-xs">{tool.name}</span>
+          <span className="font-mono text-[10px] text-muted-foreground">
+            {tool.tool_type}
+          </span>
+        </div>
+        <div
+          role="group"
+          aria-label={`What the rerun does with ${tool.name}`}
+          className="flex shrink-0 items-center gap-1 rounded-md border bg-card p-0.5"
+        >
+          {TOOL_MODES.map((m) => {
+            const disabled = m.value === "live" && liveReason !== null;
+            return (
+              <button
+                key={m.value}
+                type="button"
+                aria-pressed={mode === m.value}
+                aria-label={`${m.label} ${tool.name}`}
+                disabled={disabled}
+                title={disabled ? liveReason ?? undefined : undefined}
+                onClick={() => onModeChange(m.value)}
+                className={cn(
+                  "rounded px-2 py-1 text-[11px] font-mono font-medium transition-colors",
+                  "disabled:cursor-not-allowed disabled:opacity-40",
+                  mode === m.value
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                )}
+              >
+                {m.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      {liveReason && (
+        <p className="text-[10px] text-muted-foreground">{liveReason}</p>
+      )}
+      {mode === "live" && tool.endpoint_from_trace && (
+        <p className="text-[10px] text-fa-warning">
+          Live calls the endpoint recorded in the trace, for real.
+        </p>
+      )}
+      {mode === "stub" && (
+        <Textarea
+          aria-label={`Stub response for ${tool.name}`}
+          value={stubText}
+          onChange={(e) => onStubChange(e.target.value)}
+          placeholder='{"result": "canned value"}  (JSON, or plain text)'
+          rows={3}
+          className="font-mono text-xs"
+        />
+      )}
+    </li>
   );
 }

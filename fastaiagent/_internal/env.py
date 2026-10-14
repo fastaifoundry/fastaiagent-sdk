@@ -151,6 +151,13 @@ ENV_FLAGS: dict[str, EnvFlagSpec] = {
         resolver="fastaiagent.eval.platform_export:_eval_export_env",
         summary="Off stops Agent-CI verdict metadata reaching the plane.",
     ),
+    "FASTAIAGENT_EXPORT_EXPERIMENTS": EnvFlagSpec(
+        default=False,
+        on_unparsed=False,
+        security_relevant=True,
+        resolver="fastaiagent.trace.provenance:_export_experiments_env",
+        summary="On exports replay reruns and Playground calls (local-only by default).",
+    ),
     "FASTAIAGENT_EXPORT_CHECKPOINTS": EnvFlagSpec(
         default=True,
         on_unparsed=False,

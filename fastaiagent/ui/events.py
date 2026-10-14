@@ -66,7 +66,13 @@ def log_guardrail_event(
     outcome = _outcome(guardrail, result)
     timestamp = datetime.now(tz=timezone.utc).isoformat()
 
-    resolved_db = db_path or config.local_db_path
+    # A replay written to another store keeps its guardrail rows beside its
+    # spans (1.89.0, the split-DB sink).
+    from fastaiagent.trace.provenance import current_provenance
+
+    prov = current_provenance()
+    scoped_db = prov.trace_db if prov is not None and prov.trace_db else None
+    resolved_db = db_path or scoped_db or config.local_db_path
     helper: SQLiteHelper | None = None
     try:
         helper = init_local_db(resolved_db)

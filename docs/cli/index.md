@@ -124,10 +124,32 @@ fastaiagent replay fork <trace_id> --step 3 --prompt "New system prompt" \
     --output rerun.json
 
 fastaiagent replay fork <trace_id> --input "Try a different question"
+
+# Recorded model turns; run the read-only lookup, stub the charge
+fastaiagent replay fork <trace_id> --mode recorded --on-miss error \
+    --allow-tool lookup_order --stub 'charge_card="charged 0.00"'
 ```
 
 `replay fork` is the CLI surface for
 `Replay.load(trace_id).fork_at(step).modify_prompt(...).modify_input(...).rerun()`.
+
+A rerun runs only the tools you give it (1.89.0). Every other tool is blocked,
+and the result reports `tool_dispositions` and `blocked_tool_calls`. See
+[Replay guarantees](../replay/guarantees.md#tools-a-rerun-runs-only-what-you-supply).
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--step N` | `0` | Fork at this step. |
+| `--prompt TEXT` / `--input TEXT` | none | Modify the system prompt / the input. |
+| `--mode` | `live` | `live`, `recorded` or `deterministic`: how the model is called. |
+| `--on-miss` | `live` | `recorded` mode: `live` or `error` when the rerun asks for more model turns than were recorded. |
+| `--tools` | `block` (or `FASTAIAGENT_REPLAY_TOOL_POLICY`) | `block`, `error` or `live`: what to do with tools you did not `--stub` or `--allow-tool`. |
+| `--allow-tool NAME` | none | Run this tool for real. Repeatable. Required for REST and MCP tools. |
+| `--stub NAME=JSON` | none | This tool returns `JSON` (or the bare string) instead of running. Repeatable. |
+| `--db PATH` | the configured store | The `local.db` holding the trace to fork. |
+| `--rerun-db PATH` | the configured store | Write the rerun's trace to this `local.db` instead. |
+| `--export / --no-export` | `--no-export` | Export the rerun to the platform. A rerun is local-only by default. |
+| `--output PATH` | print | Write the result JSON here. |
 
 ## `fastaiagent eval`
 

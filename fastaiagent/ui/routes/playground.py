@@ -390,7 +390,14 @@ async def run(
 
     tracer = get_tracer("fastaiagent.ui.playground")
     trace_id_hex: str | None = None
-    with tracer.start_as_current_span("playground.run") as span:
+    # A provenance scope, not just a root attribute (1.89.0): every span of the
+    # call, the llm.* span included, is stamped "playground" and stays local.
+    from fastaiagent.trace.provenance import provenance_scope
+
+    with (
+        provenance_scope("playground"),
+        tracer.start_as_current_span("playground.run") as span,
+    ):
         set_fastaiagent_attributes(
             span,
             source="playground",
@@ -444,8 +451,26 @@ async def run(
         "tokens": {"input": int(input_tokens), "output": int(output_tokens)},
         "cost_usd": cost_usd,
         "trace_id": trace_id_hex,
+        "trace_in_ui_db": _trace_in_ui_db(request),
         "finish_reason": resp.finish_reason,
     }
+
+
+def _trace_in_ui_db(request: Request) -> bool:
+    """Whether this process's traces land in the store this UI reads (1.89.0).
+
+    False only for an embedder whose ``build_app(db_path=...)`` differs from the
+    configured trace store; the UI then shows where the trace went instead of a
+    link that 404s.
+    """
+    import os
+
+    from fastaiagent._internal.config import get_config
+
+    ui_db = _db_path(request)
+    if not ui_db:
+        return True
+    return os.path.abspath(get_config().resolved_trace_db_path) == os.path.abspath(ui_db)
 
 
 @router.post("/stream")
@@ -482,10 +507,16 @@ async def stream(
         **body.parameters.client_kwargs(),
         **body.connection_kwargs(),
     )
+    trace_in_ui_db = _trace_in_ui_db(request)
 
     async def event_stream() -> Any:
+        from fastaiagent.trace.provenance import provenance_scope
+
         tracer = get_tracer("fastaiagent.ui.playground")
-        with tracer.start_as_current_span("playground.run") as span:
+        with (
+            provenance_scope("playground"),
+            tracer.start_as_current_span("playground.run") as span,
+        ):
             set_fastaiagent_attributes(
                 span,
                 source="playground",
@@ -560,6 +591,7 @@ async def stream(
                         },
                         "cost_usd": cost_usd,
                         "trace_id": trace_id_hex,
+                        "trace_in_ui_db": trace_in_ui_db,
                     }
                 }
             )

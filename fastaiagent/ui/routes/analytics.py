@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from fastaiagent.ui.attrs import attr, trace_cost_usd
 from fastaiagent.ui.deps import get_context, require_session
+from fastaiagent.ui.experiments import experiments_summary, split_experiments
 from fastaiagent.ui.pricing import compute_cost_usd
 
 logger = logging.getLogger(__name__)
@@ -77,6 +78,10 @@ def analytics(
     _user: str = Depends(require_session),
     hours: int = Query(default=168, ge=1, le=24 * 90, description="Window in hours (default 7d)"),
     granularity: str = Query(default="hour", pattern="^(hour|day)$"),
+    include_experiments: bool = Query(
+        default=False,
+        description="Count replay, Playground, learn and eval traces as production.",
+    ),
 ) -> dict[str, Any]:
     ctx = get_context(request)
     db = ctx.db()
@@ -98,6 +103,12 @@ def analytics(
                    WHERE start_time >= ?""",
                 (since.isoformat(),),
             )
+
+        # Experiments (replays, Playground, learn, eval) are not production
+        # traffic (1.89.0): left out unless asked for, and summarised apart.
+        rows, exp_rows, exp_sources = split_experiments(
+            rows, include_experiments=include_experiments
+        )
 
         # Roots define a trace for this aggregation (one duration per trace).
         trace_stats: dict[str, dict[str, Any]] = {}
@@ -121,18 +132,7 @@ def analytics(
                 continue
 
             # Cost per span (reported or computed).
-            reported = trace_cost_usd(attrs)
-            if reported is not None:
-                span_cost = reported
-            else:
-                span_cost = (
-                    compute_cost_usd(
-                        attrs.get("gen_ai.request.model"),
-                        attrs.get("gen_ai.usage.input_tokens"),
-                        attrs.get("gen_ai.usage.output_tokens"),
-                    )
-                    or 0.0
-                )
+            span_cost = _row_span_cost(attrs)
             series[bucket]["cost_usd"] += span_cost
 
             if is_root:
@@ -250,6 +250,10 @@ def analytics(
                 "p50_ms": _percentile(durations, 0.50),
                 "p95_ms": _percentile(durations, 0.95),
                 "p99_ms": _percentile(durations, 0.99),
+                "experiments": experiments_summary(
+                    exp_rows, exp_sources, span_cost=_row_span_cost
+                ),
+                "experiments_included": include_experiments,
             },
             "points": points,
             "top_slowest_agents": top_slowest,
@@ -257,6 +261,21 @@ def analytics(
         }
     finally:
         db.close()
+
+
+def _row_span_cost(attrs: dict[str, Any]) -> float:
+    """One span's cost: reported, else computed from its model and tokens."""
+    reported = trace_cost_usd(attrs)
+    if reported is not None:
+        return reported
+    return (
+        compute_cost_usd(
+            attrs.get("gen_ai.request.model"),
+            attrs.get("gen_ai.usage.input_tokens"),
+            attrs.get("gen_ai.usage.output_tokens"),
+        )
+        or 0.0
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -282,6 +301,10 @@ def cost_breakdown(
     ),
     agent: str | None = Query(
         None, description="Optional filter (group_by=agent or model)."
+    ),
+    include_experiments: bool = Query(
+        default=False,
+        description="Count replay, Playground, learn and eval traces as production.",
     ),
     _user: str = Depends(require_session),
 ) -> dict[str, Any]:
@@ -322,23 +345,31 @@ def cost_breakdown(
                 (since.isoformat(),),
             )
 
+        rows, exp_rows, exp_sources = split_experiments(
+            rows, include_experiments=include_experiments
+        )
+        experiments = experiments_summary(exp_rows, exp_sources, span_cost=_row_span_cost)
+
         if group_by == "model":
             return {
                 "group_by": "model",
                 "period": period,
                 "rows": _by_model(rows, agent_filter=agent),
+                "experiments": experiments,
             }
         if group_by == "agent":
             return {
                 "group_by": "agent",
                 "period": period,
                 "rows": _by_agent(rows),
+                "experiments": experiments,
             }
         return {
             "group_by": "node",
             "period": period,
             "chain_name": chain_name,
             "rows": _by_node(rows, chain_name=chain_name),
+            "experiments": experiments,
         }
     finally:
         db.close()

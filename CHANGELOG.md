@@ -158,6 +158,108 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   runs on 1.x. New `tests/test_langchain_handler.py` and the live
   `tests/e2e/test_harness_langchain_create_agent.py`; 5 fail on 1.88.0.
 
+### Replay isolation and provenance (Phase 4)
+
+- ⚠ **A replay rerun runs only the tools you give it.** A rerun rebuilt every
+  function tool from the process's tool registry, which is the live
+  implementation, and every REST/MCP tool from the trace. So it charged the card,
+  sent the email or called the refund endpoint again, in Python, the CLI and
+  the Local UI alike. Now every tool you did not supply is **blocked**: the
+  model gets an error result naming the tool, and the call is counted in
+  `ReplayResult.blocked_tool_calls` and logged.
+  - **Breaking:** a rerun that relied on its tools running must say so, with
+    `with_tool_policy("live", allow=["lookup_order"])`, `with_tool_override(name,
+    fn)` or the new `with_tool_stub(name, returns=...)`. For the old behaviour
+    everywhere, set `FASTAIAGENT_REPLAY_TOOL_POLICY=live`. REST and MCP tools
+    still run only when named in `allow`, whatever the policy.
+  - A REST tool whose auth headers were redacted from the trace is never
+    called live. `RESTTool` itself now refuses to send the `[redacted]`
+    placeholder as a header, before any request (D15).
+  - `with_tool_policy("error")` raises instead; in recorded mode it raises
+    before anything runs.
+  - `with_tool_override` wraps a callable as `FunctionTool(...,
+    register=False)` and warns when given the tool the registry already holds.
+    Tools built during a rerun register into a private overlay. New
+    `FunctionTool(..., register=False)` / `@tool(..., register=False)` keep a
+    stand-in out of the global registry, where it replaced the real tool.
+  - `ReplayResult` adds `tool_dispositions`, `blocked_tool_calls`,
+    `source_trace_id`, `determinism`, `exported` and `trace_db_path`.
+- ⚠ **A rerun or a Playground call is an experiment, not a production run.**
+  Both produced traces indistinguishable from real runs. They were exported to
+  the plane as runs of the agent, and counted in Analytics, Overview, Agents,
+  eval curation and memory learning. A rerun also pushed its rebuilt agent
+  definition, which could overwrite the real one on the plane.
+  - Every span started inside a new `provenance_scope(source)` carries
+    `fastaiagent.source`: `replay`, `playground` and `learn` for now. A rerun's
+    root also carries `fastaiagent.replay.*` (source trace, fork step,
+    determinism, tool policy, the *kinds* of modification, the surface). Each
+    tool span carries its disposition.
+  - **Not exported by default:** `replay` and `playground` rows are written
+    already marked as sent, so no drain ships them (including an older SDK on
+    the same store) and `add_exporter` sinks drop them. Opt in with
+    `connect(export_experiments=True)`, `FASTAIAGENT_EXPORT_EXPERIMENTS=1` or
+    `ForkedReplay.with_export()`.
+  - **Never registered:** auto-registration is suppressed inside a rerun.
+  - **Left out of production views**, which say what they left out:
+    - the Local UI's Analytics, Overview and Agents report experiment traces and
+      their cost by source, and have an **Include experiments** toggle;
+    - `TraceStore.list_traces(exclude_sources=True)`;
+    - `fastaiagent eval curate` and `curate_from_traces` (`--include-experiments`
+      / `include_experiments=True`; explicit `trace_ids` are never filtered);
+    - `fastaiagent learn` (`--include-experiments`).
+  - The Traces list shows a source badge and a **Hide experiments** filter
+    (`exclude_experiments=true`). Its `source` filter moved to SQL, so `total`
+    now counts the filtered traces instead of the page.
+  - `non_production_filter()` / `is_non_production()` in
+    `fastaiagent.trace` let your own queries do the same.
+- **`compare()` aligns the run's own turns (1.89.0).** It walked every span by
+  index. A memory agent's rerun has no `memory.*` spans, so a byte-identical
+  recorded rerun "diverged" at step 1. It now aligns the root and its direct
+  children, minus `memory.*`. `diverged_at` is still an index into
+  `original_steps`. New: `new_diverged_at`, `aligned`, `skipped_steps`,
+  `new_skipped_steps`, and `tool_diffs` / `tools_diverged_at` for tool calls
+  whose status or result changed (a blocked tool does not move `diverged_at`).
+  `compare()` reads the rerun from the store it was written to.
+- **`ForkedReplay.with_trace_db(path)`** writes a rerun to another store.
+- **`fastaiagent replay fork`** gains `--mode`, `--on-miss`, `--tools`,
+  `--allow-tool`, `--stub NAME=JSON`, `--db`, `--rerun-db` and
+  `--export/--no-export`, and prints what happened to each tool.
+- **`fastaiagent ui --db X` binds the whole process to X.** It scoped the UI's
+  routes only. A Playground trace went to the configured store, so its link
+  404'd; a rerun landed where compare could not see it; and resuming an
+  approval looked for its checkpoint in the wrong file (409). It now sets the
+  tracer and the checkpointers to X, overriding a conflicting
+  `FASTAIAGENT_TRACE_DB_PATH` / `FASTAIAGENT_CHECKPOINT_DB_PATH` with a note.
+  An app embedding `build_app(db_path=...)` with split stores gets a warning,
+  and the Playground response says `trace_in_ui_db`.
+- **Local UI:**
+  - The fork dialog sets the determinism mode and on-miss, and Block / Stub /
+    Live per tool. Live is disabled where it cannot work.
+  - The rerun shows per-tool chips, a blocked-calls warning and a local-only
+    note.
+  - The diff lists changed tool calls.
+  - Trace Detail links a rerun to the trace it replays.
+  - **Save as regression test** writes to `.fastaiagent/datasets/` (the
+    directory the Datasets page reads), not next to `local.db` (D17).
+- Examples and the replay proofs say what they allow. New
+  `examples/replay/proofs/proof_provenance.py`; `docs/replay/replay-boundaries.md`
+  gains a seventh section.
+- Tests:
+  - `tests/integration/test_replay_isolation_sweep.py` covers five surfaces ×
+    three modes, plus a connected case.
+  - Also new: `test_provenance.py`, `test_replay_tool_policy.py`,
+    `test_replay_compare_alignment.py`, `test_ui_db_binds_process.py`,
+    `test_rest_tool_redacted_headers.py`, and the live
+    `tests/e2e/test_replay_isolation_live.py`.
+  - 56 of the 58 new tests fail on 1.88.0, including all 16 sweep cells. Two
+    pass, by design:
+    - the control: a REST tool with real headers still sends;
+    - a docs-truth cell that pins behaviour that already held. A connected
+      rerun still runs the plane's domain-wide guardrails, and no approval
+      policy gates it.
+- Docs: "distributed guardrails never gate a rerun" was false for
+  domain-wide rules, and now says so.
+
 ## [1.88.0] - 2026-10-11 — the defects the boundary pages found
 
 Writing the seven "breaks at the boundaries" pages meant running every claim

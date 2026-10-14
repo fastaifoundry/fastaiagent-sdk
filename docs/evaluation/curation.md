@@ -73,7 +73,18 @@ bad runs as `needs_review`.)
 | `failed` | with an error-status span | needs-review |
 
 Modifiers: `agent=` (one agent's spans), `since_hours=` (time window),
-`limit=` (cap, most-recent first), `dedup_by="input"` (drop duplicate inputs).
+`limit=` (cap, most-recent first), `dedup_by="input"` (drop duplicate inputs),
+`include_experiments=True` (see below).
+
+!!! note "Experiments are not curated (1.89.0)"
+    Every filter leaves out replay reruns, Playground calls and other traces
+    with a non-production `fastaiagent.source`
+    ([provenance](../tracing/index.md#where-a-trace-came-from-provenance)).
+    Before 1.89.0 a rerun of a failed run was curated as a second failure,
+    and its output, which is the rerun's and not the user's, could become a
+    gold answer. Pass `include_experiments=True` (CLI `--include-experiments`)
+    to curate them anyway. Trace ids passed in `trace_ids=` are never
+    filtered.
 
 !!! warning "`guardrail` returned nothing before 1.89.0"
     It matched an event outcome of `fail`, which the SDK has never written, so it
@@ -107,7 +118,7 @@ print(results.summary())
 
 `Dataset.from_traces(**kwargs)` accepts `filter`, `agent`, `since_hours`,
 `limit`, `trace_ids`, `mark_output_as_expected`, `db_path`, `dedup_by`,
-`exclude_infra_errors` (see `curate_from_traces`). `Dataset.to_jsonl(path, append=False)` writes the items in
+`exclude_infra_errors`, `include_experiments` (see `curate_from_traces`). `Dataset.to_jsonl(path, append=False)` writes the items in
 the same line format as `ReplayResult.save_as_test`, so curated and
 replay-saved cases interleave in one file.
 
@@ -130,7 +141,7 @@ fastaiagent eval curate --filter all --dedup-by input --out all.jsonl
 
 Flags: `--out/-o` (required), `--filter/-f`, `--agent`, `--since` (hours),
 `--limit`, `--append/--no-append`, `--output-as-expected/--needs-review`,
-`--dedup-by`, `--db`.
+`--dedup-by`, `--db`, `--include-experiments`.
 
 ## Item shape
 
