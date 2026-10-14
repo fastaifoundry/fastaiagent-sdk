@@ -670,8 +670,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tests:
   - `test_ui_run_eval_dialog.py`: 19 tests. On 1.88.0 all fail except the
     404 for an unregistered agent, which is unchanged.
-  - The live e2e adds a registered gpt-4o-mini agent with an `llm_judge` spec
-    through the route (9 tests).
+  - The live e2e adds a registered agent with an `llm_judge` spec through the
+    route. Every live eval test now runs once per provider target: OpenAI
+    `gpt-4o-mini`, OpenAI `gpt-5.1` and Anthropic `claude-haiku-4-5` (25 tests,
+    all pass). `FASTAIAGENT_E2E_EVAL_TARGETS` overrides them; it was also run on
+    `claude-sonnet-4-6`.
   - Frontend: vitest 346 (was 332).
 
 ## [1.88.0] - 2026-10-11 — the defects the boundary pages found
