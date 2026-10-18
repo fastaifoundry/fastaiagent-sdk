@@ -54,12 +54,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Deferral turns off parallel tool calls for that agent.
   - Live-checked on gpt-5-mini, gemini-3.8-flash and claude-haiku-4-5.
 - Example `109_middleware_bundle_deferred_tools.py`.
+- **`middleware=` on `Chain`, `Swarm` and `Supervisor`** (1C):
+  - Swarm: every hop, outside each agent's own.
+  - Supervisor: its own loop, including the `delegate_to_*` calls; workers keep
+    theirs. In decisions routing it runs on the routed worker.
+  - Chain: outermost around every agent node (the node's agent is not changed),
+    and `wrap_tool` around every tool node (X7). A chain without middleware is
+    unchanged.
+  - A container's middleware keeps one `ctx.state` per run, so a swarm-level
+    `ToolBudget` counts every hop and survives a Swarm resume. A Chain's lasts
+    one execution.
+- **`fastaiagent.middleware`** on the root span of `agent.*`, `chain.*`, `swarm.*`
+  and `supervisor.*` runs: the middleware names in order. It's the one new
+  structural span attribute (decision B1-6), and it's absent when there is no
+  middleware.
 
 ### Fixed — found while mapping Bets 1 and 2, each reproduced before fixing
 
 - **`stream()` returned different text than `run()`** (X13). It joined every
   delta, so text said before a tool call ("Let me check.") became part of the
   answer. It now returns the run's final reply.
+- **`Swarm.stream()` returned different text than `Swarm.run()`** (X14), for the
+  same reason: what an agent said before handing off became part of the
+  swarm's answer. It now returns the final agent's reply.
 
 - **Gemini 3.5 and later: tool-using agents failed on their second turn** (X11).
   Every Gemini model after 2.5 — `gemini-3.5-flash-lite`, `3.6/3.7/3.8-flash`,

@@ -382,8 +382,14 @@ Supervisor(
     routing_questions: dict[str, Predicate | Choice | Score] | None = None,
     routing_instructions: str | None = None,  # the routing Choice's question
     guardrails: list[Guardrail] | None = None,  # 1.90.0 — the supervisor's own
+    middleware: list[AgentMiddleware] | None = None,  # 1.91.0 — the supervisor's own
 )
 ```
+
+`middleware=` runs on the supervisor's own loop — it sees the `delegate_to_*`
+calls — while each worker keeps its own; with `routing="decisions"` it runs on
+the routed worker's run, like `guardrails=`. See
+[Middleware on teams and chains](middleware.md#middleware-on-teams-and-chains).
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|

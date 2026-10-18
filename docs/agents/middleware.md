@@ -338,6 +338,39 @@ class Refunds(AgentMiddleware):
   with the same middleware list. A checkpoint carries `middleware_state` only
   when some middleware keeps state.
 
+## Middleware on teams and chains
+
+`Chain`, `Swarm` and `Supervisor` take `middleware=` too (since 1.91.0), for a
+policy that should hold across the whole team without copying it onto every
+agent:
+
+```python
+from fastaiagent import Supervisor, Swarm, ToolBudget, Worker
+from fastaiagent.chain import Chain
+
+swarm = Swarm(name="desk", agents=[triage, billing], entrypoint="triage",
+              middleware=[ToolBudget(max_calls=8), Audit()])
+sup = Supervisor(name="lead", workers=[Worker(agent=billing)], middleware=[Audit()])
+chain = Chain("flow", middleware=[Audit()])
+```
+
+| Container | Where its middleware runs |
+|---|---|
+| `Swarm` | every hop, **outside** each agent's own middleware |
+| `Supervisor` | the supervisor's own loop — its `delegate_to_*` calls; workers keep theirs. With `routing="decisions"` there is no supervisor loop, so it runs on the routed worker's run |
+| `Chain` | outermost around every **agent node** (outside the node agent's own, without changing that agent), and `wrap_tool` around every **tool node** |
+
+A container's middleware keeps **one** `ctx.state` for the container's run:
+a swarm-level `ToolBudget(max_calls=8)` counts the tools of every hop together,
+and a Swarm resume picks the count up again from the checkpoints. (On a stream a
+handoff is detected from the model's tool call and not run as a tool, so it is
+not counted there.) A Chain's middleware state lasts one execution; `resume`
+starts it afresh. A tool name a container's middleware brings that clashes with
+an agent's raises `ValueError` when the container is built.
+
+Every run's root span names its middleware in order in one attribute,
+`fastaiagent.middleware` — see [Tracing](../tracing/index.md).
+
 ## Cooperative Stop
 
 To end a run from inside middleware, raise `StopAgent`:

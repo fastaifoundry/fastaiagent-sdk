@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
@@ -20,6 +21,9 @@ from fastaiagent.chain.interrupt import AlreadyResumed, Resume
 from fastaiagent.chain.node import Edge, Node, NodeConfig, NodeType
 from fastaiagent.chain.validator import validate_chain
 from fastaiagent.checkpointers import Checkpointer, SQLiteCheckpointer
+
+if TYPE_CHECKING:
+    from fastaiagent.agent.middleware import AgentMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +110,7 @@ class Chain:
         checkpointer: Checkpointer | None = None,
         *,
         strict_routing: bool = False,
+        middleware: Sequence[AgentMiddleware] | None = None,
     ):
         """Construct a chain.
 
@@ -115,6 +120,11 @@ class Chain:
         * ``False`` (legacy / default): the branch silently terminates.
         * ``True``: raise :class:`fastaiagent._internal.errors.ChainRoutingError`
           so misconfigured chains fail loudly. See ``docs/chains/spec.md``.
+
+        ``middleware`` (1.91.0) runs outermost around every agent node — outside
+        the node agent's own middleware, without changing that agent — and wraps
+        every tool node in ``wrap_tool``. Its ``ctx.state`` is one dict per
+        middleware for the whole execution (not restored by ``resume``).
         """
         self.name = name
         self.state_schema = state_schema
@@ -123,6 +133,16 @@ class Chain:
         self.checkpoint_enabled = checkpoint_enabled
         self._checkpointer = checkpointer
         self.strict_routing = strict_routing
+        self.middleware: list[AgentMiddleware] = list(middleware or [])
+
+    def _stamp_middleware(self, span: Any) -> None:
+        """``fastaiagent.middleware`` on the chain's root span (decision B1-6)."""
+        if self.middleware:
+            from fastaiagent.agent.middleware import _MiddlewarePipeline
+
+            span.set_attribute(
+                "fastaiagent.middleware", list(_MiddlewarePipeline(self.middleware)._keys)
+            )
 
     def add_node(
         self,
@@ -355,6 +375,7 @@ class Chain:
                 span.set_attribute("chain.node_count", len(self.nodes))
                 span.set_attribute("chain.node_ids", ",".join(n.id for n in self.nodes))
                 span.set_attribute("fastaiagent.runner.type", "chain")
+                self._stamp_middleware(span)
                 span.set_attribute("fastaiagent.framework", "fastaiagent")
                 # Captured locally unconditionally so the UI/Replay have full
                 # fidelity; payload privacy is enforced at export (N3 egress
@@ -379,6 +400,7 @@ class Chain:
                     hitl_handler=hitl_handler,
                     run_context=context,
                     strict_routing=self.strict_routing,
+                    middleware=self.middleware,
                 )
             except BaseException as exc:
                 # Terminal marker for a run that died (audit D5). Written HERE
@@ -556,6 +578,7 @@ class Chain:
                     # Payload: registered in ``SENSITIVE_ATTR_KEYS``.
                     span.set_attribute("chain.resume.reason", str(reason))
             span.set_attribute("fastaiagent.runner.type", "chain")
+            self._stamp_middleware(span)
             span.set_attribute("fastaiagent.framework", "fastaiagent")
             trace_id = trace_id_of(span)
             try:
@@ -571,6 +594,7 @@ class Chain:
                     resume_value=resume_value,
                     run_context=context,
                     strict_routing=self.strict_routing,
+                    middleware=self.middleware,
                 )
             except BaseException as exc:
                 write_run_end(
@@ -753,6 +777,7 @@ class Chain:
             span.set_attribute("chain.name", self.name)
             span.set_attribute("chain.forked_execution_id", fork_id)
             span.set_attribute("fastaiagent.runner.type", "chain")
+            self._stamp_middleware(span)
             span.set_attribute("fastaiagent.framework", "fastaiagent")
             trace_id = trace_id_of(span)
             # A fork is a run, and a run that ends leaves a tombstone — the same
@@ -774,6 +799,7 @@ class Chain:
                     resume_from_node=start_node,
                     run_context=context,
                     strict_routing=self.strict_routing,
+                    middleware=self.middleware,
                 )
             except BaseException as exc:
                 write_run_end_once(

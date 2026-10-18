@@ -494,6 +494,25 @@ class Agent:
             stack.append(_DeferredTools(deferred))
         return _MiddlewarePipeline(stack)
 
+    def _with_outer_middleware(self, outer: Sequence[AgentMiddleware]) -> Agent:
+        """This agent with ``outer`` middleware around its own — how a Chain runs
+        an agent node under the chain's middleware (1.91.0, 1C). A shallow copy:
+        same tools, memory, model and checkpointer; ``self`` is not changed."""
+        import copy
+
+        if not outer:
+            return self
+        clone = copy.copy(self)
+        clone.middleware = [*outer, *self.middleware]
+        clone._mw_pipeline = clone._make_pipeline()
+        clone._check_tool_names()
+        return clone
+
+    def _middleware_names(self) -> list[str]:
+        """The run's middleware, in order — the ``fastaiagent.middleware`` span
+        attribute (decision B1-6: one structural attribute, no new spans)."""
+        return list(self._mw_pipeline._keys)
+
     def _run_tools(self) -> list[Tool]:
         """The tools a run offers: the agent's, then each middleware's (1.91.0,
         1B). ``self.tools`` stays the agent's own list — what ``to_dict`` and
@@ -894,6 +913,8 @@ class Agent:
             span.set_attribute("agent.name", self.name)
             span.set_attribute("fastaiagent.framework", "fastaiagent")
             span.set_attribute("agent.execution_id", execution_id)
+            if self._mw_pipeline:
+                span.set_attribute("fastaiagent.middleware", self._middleware_names())
             for key, value in (extra or {}).items():
                 if value is not None:
                     span.set_attribute(key, value)
@@ -1408,6 +1429,8 @@ class Agent:
                 span.set_attribute("fastaiagent.framework", "fastaiagent")
                 span.set_attribute("agent.input", input_text)
                 span.set_attribute("agent.streamed", True)
+                if self._mw_pipeline:
+                    span.set_attribute("fastaiagent.middleware", self._middleware_names())
                 # Same link ``arun`` stamps: the run's checkpoints and any
                 # resume of it are found by this id.
                 span.set_attribute("agent.execution_id", exec_id)

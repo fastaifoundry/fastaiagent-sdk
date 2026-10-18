@@ -63,8 +63,13 @@ def test_connected_agent_fully_visible() -> None:
             json={"slug": slug, "content": "You are {{role}} for Acme.", "category": "agent"},
         )
         # Fail here, not later as a PromptNotFoundError: the usual cause is a key
-        # without the prompt:write scope (403).
-        assert published.status_code in (200, 201), (
+        # without the prompt:write scope (403). A 409 ``prompt_exists`` is an
+        # earlier run of this gate having imported it — the plane owns registry
+        # prompts and imports a slug once — so the prompt is there to read.
+        already = published.status_code == 409 and (
+            (published.json().get("detail") or {}).get("error") == "prompt_exists"
+        )
+        assert already or published.status_code in (200, 201), (
             f"publishing prompt {slug!r} failed: HTTP {published.status_code} "
             f"{published.text[:200]} — the key needs the prompt:write scope"
         )

@@ -46,6 +46,7 @@ import json
 import logging
 import re
 from collections.abc import Awaitable, Callable, Sequence
+from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -158,6 +159,41 @@ class MiddlewareContext:
         """Load state saved by :meth:`saved_state` (a resume or a fork)."""
         if saved:
             self._states = json.loads(json.dumps(saved))
+
+
+#: A container's (Chain / Swarm) middleware state for the container's run, keyed
+#: by middleware INSTANCE: ``{id(mw): state_dict}``. Every hop or node the
+#: container runs binds those middleware to the same dict, so a swarm-level
+#: ``ToolBudget`` counts every hop's tools (1.91.0, 1C). Keyed by instance, not
+#: name, so an agent's own ``ToolBudget`` never shares a team's by accident.
+_container_states: ContextVar[dict[int, dict[str, Any]] | None] = ContextVar(
+    "fastaiagent_container_middleware_state", default=None
+)
+
+
+def open_container_state(
+    middleware: Sequence[AgentMiddleware], seed: dict[int, dict[str, Any]] | None = None
+) -> Token[dict[int, dict[str, Any]] | None]:
+    """Give ``middleware`` one state dict each for a container run (nested
+    containers keep the outer ones). ``seed`` restores saved values (a resume)."""
+    outer = _container_states.get() or {}
+    mine = {id(mw): dict((seed or {}).get(id(mw), {})) for mw in middleware}
+    return _container_states.set({**outer, **mine})
+
+
+def close_container_state(token: Token[dict[int, dict[str, Any]] | None]) -> None:
+    _container_states.reset(token)
+
+
+def _bind_state(ctx: MiddlewareContext, key: str, mw: AgentMiddleware) -> None:
+    """Point ``ctx.state`` at ``mw``'s state — the container's dict when ``mw``
+    belongs to the container whose run this is."""
+    ctx._state_key = key
+    shared = _container_states.get()
+    if shared is not None:
+        entry = shared.get(id(mw))
+        if entry is not None:
+            ctx._states[key] = entry
 
 
 ToolCallNext = Callable[[Tool, dict[str, Any]], Awaitable[ToolResult]]
@@ -323,7 +359,7 @@ class _MiddlewarePipeline:
         for key, mw in self._each():
             text = mw.instructions
             if callable(text):
-                ctx._state_key = key
+                _bind_state(ctx, key, mw)
                 text = text(ctx)
             if text and str(text).strip():
                 parts.append(str(text).strip())
@@ -344,13 +380,13 @@ class _MiddlewarePipeline:
 
     async def apply_before_run(self, ctx: MiddlewareContext, input: Any) -> Any:
         for key, mw in self._each():
-            ctx._state_key = key
+            _bind_state(ctx, key, mw)
             input = await mw.before_run(ctx, input)
         return input
 
     async def apply_after_run(self, ctx: MiddlewareContext, result: AgentResult) -> AgentResult:
         for key, mw in self._each(reverse=True):
-            ctx._state_key = key
+            _bind_state(ctx, key, mw)
             result = await mw.after_run(ctx, result)
         return result
 
@@ -358,7 +394,7 @@ class _MiddlewarePipeline:
         """Tell every middleware the run failed. Never raises: the caller is
         about to re-raise ``error``, and a hook's own bug must not replace it."""
         for key, mw in self._each(reverse=True):
-            ctx._state_key = key
+            _bind_state(ctx, key, mw)
             try:
                 await mw.on_error(ctx, error)
             except Exception as hook_error:  # noqa: BLE001 - see docstring
@@ -373,7 +409,7 @@ class _MiddlewarePipeline:
         self, ctx: MiddlewareContext, event: StreamEvent
     ) -> StreamEvent | None:
         for key, mw in self._each(reverse=True):
-            ctx._state_key = key
+            _bind_state(ctx, key, mw)
             rewritten = await mw.on_stream_event(ctx, event)
             if rewritten is None:
                 if isinstance(event, (StreamDone, Paused)):
@@ -404,9 +440,9 @@ class _MiddlewarePipeline:
                     try:
                         return await _prev(m2)
                     finally:
-                        ctx._state_key = _key  # back to this middleware's state
+                        _bind_state(ctx, _key, _mw)  # back to this middleware's state
 
-                ctx._state_key = _key
+                _bind_state(ctx, _key, _mw)
                 return await _mw.wrap_model(ctx, m, _next)
 
             chain = _wrapper
@@ -416,13 +452,13 @@ class _MiddlewarePipeline:
         self, ctx: MiddlewareContext, messages: list[Message]
     ) -> list[Message]:
         for key, mw in self._each():
-            ctx._state_key = key
+            _bind_state(ctx, key, mw)
             messages = await mw.before_model(ctx, messages)
         return messages
 
     async def apply_after_model(self, ctx: MiddlewareContext, response: LLMResponse) -> LLMResponse:
         for key, mw in self._each(reverse=True):
-            ctx._state_key = key
+            _bind_state(ctx, key, mw)
             response = await mw.after_model(ctx, response)
         return response
 
@@ -456,9 +492,9 @@ class _MiddlewarePipeline:
                     try:
                         return await _prev(t2, a2)
                     finally:
-                        ctx._state_key = _key  # back to this middleware's state
+                        _bind_state(ctx, _key, _mw)  # back to this middleware's state
 
-                ctx._state_key = _key
+                _bind_state(ctx, _key, _mw)
                 return await _mw.wrap_tool(ctx, t, a, _next)
 
             chain = _wrapper

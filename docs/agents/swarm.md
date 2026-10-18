@@ -85,6 +85,8 @@ class Swarm:
         entrypoint: str,
         handoffs: dict[str, list[str]] | None = None,
         max_handoffs: int = 8,
+        checkpointer: Checkpointer | None = None,
+        middleware: Sequence[AgentMiddleware] | None = None,  # 1.91.0
     ): ...
 
     def run(self, input: str, *, context: RunContext | None = None) -> AgentResult: ...
@@ -101,6 +103,15 @@ class Swarm:
 ```
 
 A `Swarm` implements the same `run / arun / astream / stream` surface as `Agent`, so it drops into a [Chain](../chains/index.md) node, wraps inside another `Swarm`, or plugs into anything else that takes an agent-shaped object.
+
+`middleware=` (1.91.0) runs on every hop, outside each agent's own middleware,
+with one `ctx.state` for the whole swarm run — a swarm-level `ToolBudget` counts
+every hop's tools, across a resume too. See
+[Middleware on teams and chains](middleware.md#middleware-on-teams-and-chains).
+
+`stream()` returns the final agent's reply — the same `output` as `run()`. Before
+1.91.0 it joined every streamed delta, so what an agent said before handing off
+("Passing you to billing.") became part of the answer.
 
 ### `handoffs` allowlist
 

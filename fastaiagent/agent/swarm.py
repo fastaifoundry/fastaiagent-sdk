@@ -50,9 +50,16 @@ from typing import Any
 from fastaiagent._internal.async_utils import run_sync
 from fastaiagent._internal.errors import AgentError, StopAgent
 from fastaiagent._internal.pricing import run_cost, start_run_cost, stop_run_cost
-from fastaiagent.agent.agent import Agent, AgentResult
+from fastaiagent.agent.agent import Agent, AgentResult, _stream_outcome
 from fastaiagent.agent.context import RunContext
-from fastaiagent.agent.middleware import AgentMiddleware, MiddlewareContext, ToolCallNext
+from fastaiagent.agent.middleware import (
+    AgentMiddleware,
+    MiddlewareContext,
+    ToolCallNext,
+    _container_states,
+    close_container_state,
+    open_container_state,
+)
 from fastaiagent.chain.checkpoint import Checkpoint, latest_resumable, write_run_end
 from fastaiagent.chain.idempotent import _current_checkpointer
 from fastaiagent.chain.interrupt import (
@@ -90,6 +97,23 @@ def _input_text(value: Any) -> str:
     from fastaiagent.multimodal.types import normalize_input
 
     return value if isinstance(value, str) else _input_summary_text(normalize_input(value))
+
+
+async def _bound_to(
+    stream: AsyncGenerator[StreamEvent, None], shared: dict[int, dict[str, Any]]
+) -> AsyncGenerator[StreamEvent, None]:
+    """Run ``stream`` with the swarm's middleware state bound around each step.
+    A generator runs in its consumer's context, so a value set across a yield
+    would leak into whatever the consumer does between events."""
+    while True:
+        token = _container_states.set({**(_container_states.get() or {}), **shared})
+        try:
+            event = await stream.__anext__()
+        except StopAsyncIteration:
+            return
+        finally:
+            _container_states.reset(token)
+        yield event
 
 
 class _Hop:
@@ -332,6 +356,7 @@ class Swarm:
         handoffs: dict[str, list[str]] | None = None,
         max_handoffs: int = 8,
         checkpointer: Checkpointer | None = None,
+        middleware: Sequence[AgentMiddleware] | None = None,
     ):
         if not agents:
             raise SwarmError("Swarm requires at least one agent")
@@ -360,6 +385,38 @@ class Swarm:
         self.handoffs = handoffs
         self.max_handoffs = max_handoffs
         self._checkpointer: Checkpointer | None = checkpointer
+        # The swarm's own middleware (1.91.0, 1C): every hop, outside each
+        # agent's own; one ``ctx.state`` for the whole swarm run.
+        self.middleware: list[AgentMiddleware] = list(middleware or [])
+        for agent in self.agents.values():
+            agent._with_outer_middleware(self.middleware)  # a tool-name clash raises now
+
+    def _middleware_keys(self) -> list[str]:
+        """The keys the swarm's middleware are saved under in a hop's checkpoint
+        (the hop pipeline is ``[_ExitAfterHandoff, *swarm, *agent]``)."""
+        from fastaiagent.agent.middleware import _MiddlewarePipeline
+
+        return _MiddlewarePipeline([_ExitAfterHandoff(_Hop(None)), *self.middleware])._keys[1:]
+
+    def _stamp_middleware(self, span: Any) -> None:
+        if self.middleware:
+            span.set_attribute("fastaiagent.middleware", self._middleware_keys())
+
+    def _resumed_middleware_state(self, store: Checkpointer, execution_id: str) -> dict[int, Any]:
+        """The swarm middleware's state from the newest checkpoint that has it."""
+        if not self.middleware:
+            return {}
+        keys = self._middleware_keys()
+        # Newest by time: ``list`` orders by node_index, and hops restart it.
+        rows = sorted(store.list(execution_id, limit=500), key=lambda c: c.created_at or "")
+        for cp in reversed(rows):
+            saved = (cp.state_snapshot or {}).get("middleware_state") or {}
+            if any(k in saved for k in keys):
+                return {
+                    id(mw): dict(saved.get(key, {}))
+                    for mw, key in zip(self.middleware, keys, strict=True)
+                }
+        return {}
 
     # ------------------------------------------------------------------
     # Run
@@ -406,6 +463,7 @@ class Swarm:
             span.set_attribute("swarm.agent_count", len(getattr(self, "agents", []) or []))
             span.set_attribute("fastaiagent.runner.type", "swarm")
             span.set_attribute("fastaiagent.framework", "fastaiagent")
+            self._stamp_middleware(span)
             # OTel only accepts primitive attribute values — coerce
             # multimodal lists to a readable text summary the same way
             # ``Agent._arun_traced`` does.
@@ -422,9 +480,13 @@ class Swarm:
             execution_id = execution_id or str(uuid.uuid4())
             span.set_attribute("swarm.execution_id", execution_id)
 
-            result = await self._arun_swarm(
-                input, context=context, execution_id=execution_id, **kwargs
-            )
+            state_token = open_container_state(self.middleware)
+            try:
+                result = await self._arun_swarm(
+                    input, context=context, execution_id=execution_id, **kwargs
+                )
+            finally:
+                close_container_state(state_token)
 
             span.set_attribute("swarm.output", result.output)
             span.set_attribute("swarm.handoff_count", len(result.tool_calls or []))
@@ -716,12 +778,23 @@ class Swarm:
             span.set_attribute("swarm.execution_id", execution_id)
             span.set_attribute("fastaiagent.runner.type", "swarm")
             span.set_attribute("fastaiagent.framework", "fastaiagent")
-            result = await self._aresume_inner(
-                execution_id,
-                resume_value=resume_value,
-                context=context,
-                **kwargs,
+            self._stamp_middleware(span)
+            # The swarm middleware's state as the run left it: a swarm-level
+            # budget keeps counting across the pause or crash.
+            seed_store = self._checkpointer or SQLiteCheckpointer()
+            seed_store.setup()
+            state_token = open_container_state(
+                self.middleware, seed=self._resumed_middleware_state(seed_store, execution_id)
             )
+            try:
+                result = await self._aresume_inner(
+                    execution_id,
+                    resume_value=resume_value,
+                    context=context,
+                    **kwargs,
+                )
+            finally:
+                close_container_state(state_token)
             span.set_attribute("swarm.output", result.output)
             result.trace_id = trace_id_of(span)
         return result
@@ -857,6 +930,9 @@ class Swarm:
         state = SwarmState()
         state.path.append(self.entrypoint)
         current = self.entrypoint
+        # One state per swarm middleware for the whole streamed run, bound
+        # around each step of each hop (never held across a yield).
+        shared_states: dict[int, dict[str, Any]] = {id(mw): {} for mw in self.middleware}
         current_input = input
 
         while True:
@@ -865,7 +941,7 @@ class Swarm:
 
             inner_stream = active.astream(current_input, context=context, **kwargs)
             try:
-                async for event in inner_stream:
+                async for event in _bound_to(inner_stream, shared_states):
                     # Detect handoff intent live from the stream — no second
                     # LLM call needed. Break out as soon as it fires so the
                     # active agent's tool loop doesn't keep looping (the
@@ -934,12 +1010,22 @@ class Swarm:
                     span.set_attribute("fastaiagent.runner.type", "swarm")
                     span.set_attribute("fastaiagent.framework", "fastaiagent")
                     span.set_attribute("swarm.streamed", True)
-                    async for event in self.astream(input, context=context):
-                        if isinstance(event, TextDelta):
-                            text_parts.append(event.text)
-                        elif isinstance(event, Usage):
-                            streamed_tokens += event.prompt_tokens + event.completion_tokens
-                    output = "".join(text_parts)
+                    self._stamp_middleware(span)
+                    # Each hop's ``Agent.astream`` publishes its final reply
+                    # here; the last hop to finish is the swarm's answer — what
+                    # ``arun`` returns (1.91.0, X14). Joining every delta also
+                    # took in what an agent said before handing off.
+                    outcome: dict[str, Any] = {}
+                    so_token = _stream_outcome.set(outcome)
+                    try:
+                        async for event in self.astream(input, context=context):
+                            if isinstance(event, TextDelta):
+                                text_parts.append(event.text)
+                            elif isinstance(event, Usage):
+                                streamed_tokens += event.prompt_tokens + event.completion_tokens
+                    finally:
+                        _stream_outcome.reset(so_token)
+                    output = str(outcome.get("output", "".join(text_parts)))
                     span.set_attribute("swarm.output", output)
                     span.set_attribute("swarm.tokens_used", streamed_tokens)
                     trace_id = trace_id_of(span)
@@ -988,7 +1074,7 @@ class Swarm:
         # tool loop stops as soon as a handoff executes. User-supplied
         # middleware still runs (around the real tool) because ours wraps
         # outermost and only short-circuits after the real tool returns.
-        merged_middleware = [_ExitAfterHandoff(hop), *base.middleware]
+        merged_middleware = [_ExitAfterHandoff(hop), *self.middleware, *base.middleware]
         return Agent(
             name=base.name,
             # Managed policy and plane guardrails key on the platform identity;

@@ -412,6 +412,7 @@ Every `agent.run()` root span carries enough metadata for [Agent Replay](../repl
 | `agent.llm.provider` | LLM provider (`openai`, `anthropic`, ...) |
 | `agent.llm.model` | Model id |
 | `agent.llm.config` | JSON-encoded `LLMClient.to_dict()` (api_key stripped) |
+| `fastaiagent.middleware` | The run's middleware, in order — a list of names (each middleware's `name`, or its class name). Also on `chain.*`, `swarm.*` and `supervisor.*` root spans, naming the container's own `middleware=`. Structural, never payload-gated; absent when there is no middleware. New in 1.91.0 |
 
 Tool invocations emit their own `tool.{name}` span with:
 
