@@ -2,9 +2,10 @@
 """Expose an :class:`fastaiagent.agent.Agent` or
 :class:`fastaiagent.chain.Chain` as an MCP (Model Context Protocol) server.
 
-Once a target is served, any MCP-compatible runtime — Claude Desktop,
-Cursor, Continue, Zed, another fastaiagent agent via ``MCPTool`` — can use
-it as a tool.
+Once a target is served, any MCP-compatible runtime that launches a stdio
+server — Claude Desktop, Cursor, Continue, Zed — can use it as a tool. The
+server is stdio-only and ``MCPTool`` is an HTTP client, so ``MCPTool`` cannot
+call a served agent yet (the docs said otherwise until 1.90.0).
 
 .. note::
    The upstream ``mcp`` package ships without ``py.typed`` markers, so the

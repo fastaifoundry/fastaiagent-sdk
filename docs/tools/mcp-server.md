@@ -1,6 +1,14 @@
 # Expose an Agent or Chain as an MCP Server
 
-Since 0.6.0, any `Agent` or `Chain` can be exposed as an [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server. Once exposed, any MCP-compatible runtime — Claude Desktop, Cursor, Continue, Zed, or another fastaiagent agent via `MCPTool` — can invoke it as a tool.
+Since 0.6.0, any `Agent` or `Chain` can be exposed as an [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server. Once exposed, any MCP-compatible runtime that launches a server over **stdio** — Claude Desktop, Cursor, Continue, Zed — can invoke it as a tool.
+
+!!! note "Not yet: one fastaiagent agent calling another over MCP"
+    The server speaks stdio only (`transport="sse"` / `"streamable-http"` raise
+    `NotImplementedError`), and [`MCPTool`](mcp-tools.md) is an HTTP client, so
+    `MCPTool` cannot call a served agent today. Until 1.90.0 this page said it
+    could. In the same process, give the calling agent a `FunctionTool` whose
+    function awaits the other agent's `arun`, or put both in a
+    [Supervisor](../agents/teams.md).
 
 The complement to [MCP Tools](mcp-tools.md) (which lets fastaiagent **consume** MCP servers), this page covers the **serve** side.
 

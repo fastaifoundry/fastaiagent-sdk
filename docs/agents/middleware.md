@@ -109,7 +109,15 @@ class BudgetMiddleware(AgentMiddleware):
         return messages
 ```
 
-The agent returns an `AgentResult` whose `output` is the `StopAgent` message. No `GuardrailBlockedError`, no unwinding through the caller — it's a cooperative signal.
+The agent returns an `AgentResult` whose `output` is the `StopAgent` message and whose `stop_reason` is the stop's `reason` (`StopAgent("…", reason="budget")`; `"stopped"` when none was given). No `GuardrailBlockedError`, no unwinding through the caller — it's a cooperative signal.
+
+**A stopped run is not re-driven.** With `output_type` set, the stop message does not parse, and an output guardrail may reject it; neither calls the model again. Output guardrails still judge the stop message, and a failing `reask` rule blocks instead of re-asking. **`astream` yields the stop message** as one `TextDelta` before `StreamDone`, so a streaming caller sees the same output `run` returns.
+
+!!! warning "Changed in 1.90.0"
+    Before 1.90.0 the reason was dropped, and with `output_type` set the
+    structured re-ask answered the stop message: it called the model again —
+    outside middleware, so the `ToolBudget` or cost stopper never saw the call —
+    and the model's answer **replaced** the stop. A streaming caller got no text.
 
 Use `StopAgent` for budgets, completion signals, or feature flags. Use `Guardrail` for policy rejections that should surface as errors.
 
@@ -139,7 +147,15 @@ a silent success. If your middleware needs the remaining calls to run, return a
 
 ### `TrimLongMessages(keep_last=20)`
 
-Keeps only the most recent `keep_last` messages plus any leading `SystemMessage`. Cheap alternative to summarization for long-running agents.
+Keeps only the most recent `keep_last` messages plus **every leading system message** — the system prompt and the context memory blocks render right after it (a pinned `StaticBlock`, a summary, known facts). Cheap alternative to summarization for long-running agents.
+
+!!! warning "Changed in 1.90.0"
+    Before 1.90.0 only the first message was kept, so on a long run the trim
+    dropped the user's pinned memory. And because the trimmer returned a new
+    list, a structured or guardrail re-ask after a trim re-sent the **untrimmed**
+    history without its latest turns. Both are fixed; a `before_model` hook may
+    return a new list or edit the one it was given, and either is what the rest
+    of the run sees.
 
 ```python
 from fastaiagent import Agent, LLMClient, TrimLongMessages

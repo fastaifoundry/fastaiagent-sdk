@@ -38,11 +38,22 @@ class SQLiteCheckpointer:
         # extra PRAGMA round-trip on every put().
         if self._setup_done:
             return
-        # init_local_db opens its own helper and runs migrations; we then
-        # reuse our own helper for subsequent reads/writes (both share the
-        # same file).
-        helper = init_local_db(self.db_path)
-        helper.close()
+        if str(self.db_path) == ":memory:":
+            # An in-memory database exists only inside the helper that opened it,
+            # so migrate on the one this checkpointer keeps. 1.89.0 migrated on a
+            # throwaway helper, closed it, and every read then hit an empty
+            # database: "no such table" (1.90.0, F9).
+            from fastaiagent._internal.storage import SQLiteHelper
+            from fastaiagent.ui.db import _run_migrations
+
+            self._db = SQLiteHelper(self.db_path)
+            _run_migrations(self._db)
+        else:
+            # init_local_db opens its own helper and runs migrations; we then
+            # reuse our own helper for subsequent reads/writes (both share the
+            # same file).
+            helper = init_local_db(self.db_path)
+            helper.close()
         self._setup_done = True
         # Register for connected-plane checkpoint replication (WS2). Lazy +
         # best-effort: the import happens at runtime (never at module load, so no

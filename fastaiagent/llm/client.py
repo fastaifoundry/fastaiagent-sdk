@@ -32,6 +32,11 @@ from fastaiagent.llm.structured import OutputSpec, _strip_code_fences
 
 logger = logging.getLogger(__name__)
 
+#: The ``tool_choice`` values ``AgentConfig`` and ``LLMClient`` accept (1.90.0).
+TOOL_CHOICES = ("auto", "required", "none")
+#: Providers already warned about an unsupported ``tool_choice`` — once each.
+_TOOL_CHOICE_WARNED: set[str] = set()
+
 
 def _parse_provider_error_body(text: str) -> tuple[str | None, str | None, str | None]:
     """``(message, code, request_id)`` from a provider's error body, where present.
@@ -608,6 +613,33 @@ class LLMClient:
         if self._preset is None:
             return default
         return self._preset.cap(name, default)
+
+    def _requested_tool_choice(
+        self, tools: list[dict[str, Any]] | None, kwargs: dict[str, Any]
+    ) -> str | None:
+        """The per-call ``tool_choice`` to send (1.90.0), or ``None`` to send none.
+
+        ``"auto"`` — the provider default — sends nothing, so an agent on the
+        default sends the request it always did. Without tools there is nothing to
+        choose. ``"required"`` / ``"none"`` are returned for the body builder to
+        put in its own wire shape. A provider with no such option (Ollama, and the
+        Bedrock path, which sends no tools) warns once and sends nothing.
+        """
+        choice = kwargs.get("tool_choice")
+        if choice in (None, "auto") or not tools:
+            return None
+        if choice not in TOOL_CHOICES:
+            raise ValueError(f"tool_choice must be one of {TOOL_CHOICES}, got {choice!r}")
+        if self.provider in ("ollama", "bedrock"):
+            if self.provider not in _TOOL_CHOICE_WARNED:
+                _TOOL_CHOICE_WARNED.add(self.provider)
+                logger.warning(
+                    "tool_choice=%r is not supported by provider %r; it is not sent.",
+                    choice,
+                    self.provider,
+                )
+            return None
+        return str(choice)
 
     def _provider_dict_kwargs(self) -> dict[str, Any]:
         """Build the kwargs passed to ``Message.to_provider_dict`` from this client's config."""
@@ -1503,8 +1535,12 @@ class LLMClient:
             body["stream_options"] = {"include_usage": True}
         if tools:
             body["tools"] = tools
-        if self.temperature is not None:
-            body["temperature"] = self.temperature
+            tool_choice = self._requested_tool_choice(tools, kwargs)
+            if tool_choice is not None:
+                body["tool_choice"] = tool_choice
+        temperature = kwargs.get("temperature", self.temperature)
+        if temperature is not None:
+            body["temperature"] = temperature
         # OpenAI proper uses max_completion_tokens for newer models. The
         # ``custom`` path and any third-party preset (Groq, OpenRouter,
         # DeepSeek, Mistral, ...) sit behind classic Chat Completions APIs
@@ -1757,8 +1793,9 @@ class LLMClient:
             body["stream"] = True
         if system_text:
             body["system"] = system_text
-        if self.temperature is not None:
-            body["temperature"] = self.temperature
+        temperature = kwargs.get("temperature", self.temperature)
+        if temperature is not None:
+            body["temperature"] = temperature
         # Additional parameters (Anthropic supports top_p and stop_sequences)
         top_p = kwargs.get("top_p", self.top_p)
         if top_p is not None:
@@ -1782,6 +1819,11 @@ class LLMClient:
                     }
                 )
             body["tools"] = anthropic_tools
+            tool_choice = self._requested_tool_choice(tools, kwargs)
+            if tool_choice is not None:
+                body["tool_choice"] = {"required": {"type": "any"}, "none": {"type": "none"}}[
+                    tool_choice
+                ]
 
         api_key = self.api_key or os.environ.get("ANTHROPIC_API_KEY", "")
         if not api_key:
@@ -1876,10 +1918,13 @@ class LLMClient:
         }
         if tools:
             body["tools"] = tools
+            # Ollama's /api/chat has no tool_choice: this warns and sends nothing.
+            self._requested_tool_choice(tools, kwargs)
 
         options: dict[str, Any] = {}
-        if self.temperature is not None:
-            options["temperature"] = self.temperature
+        temperature = kwargs.get("temperature", self.temperature)
+        if temperature is not None:
+            options["temperature"] = temperature
         max_tok = kwargs.get("max_tokens", self.max_tokens)
         if max_tok is not None:
             options["num_predict"] = max_tok
@@ -1980,9 +2025,13 @@ class LLMClient:
         if system_parts:
             body["system"] = system_parts
 
+        # This Converse call sends no tools (a separate, known gap), so there is
+        # nothing for tool_choice to steer: warns and sends nothing.
+        self._requested_tool_choice(tools, kwargs)
         inference_config: dict[str, Any] = {}
-        if self.temperature is not None:
-            inference_config["temperature"] = self.temperature
+        temperature = kwargs.get("temperature", self.temperature)
+        if temperature is not None:
+            inference_config["temperature"] = temperature
         max_tok = kwargs.get("max_tokens", self.max_tokens) or 4096
         inference_config["maxTokens"] = max_tok
         # Additional parameters (Bedrock supports topP and stopSequences)
@@ -2210,10 +2259,13 @@ class LLMClient:
         }
         if tools:
             body["tools"] = tools
+            # Ollama's /api/chat has no tool_choice: this warns and sends nothing.
+            self._requested_tool_choice(tools, kwargs)
 
         options: dict[str, Any] = {}
-        if self.temperature is not None:
-            options["temperature"] = self.temperature
+        temperature = kwargs.get("temperature", self.temperature)
+        if temperature is not None:
+            options["temperature"] = temperature
         max_tok = kwargs.get("max_tokens", self.max_tokens)
         if max_tok is not None:
             options["num_predict"] = max_tok

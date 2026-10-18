@@ -119,8 +119,11 @@ def test_akickoff_is_guarded_around_a_real_crew() -> None:
         backstory="Terse.",
         llm=LLM(model="gpt-4o-mini"),
     )
-    task = Task(description="What colour is the sky about {topic}?", expected_output="one line",
-                agent=analyst)
+    task = Task(
+        description="What colour is the sky about {topic}?",
+        expected_output="one line",
+        agent=analyst,
+    )
     crew = Crew(agents=[analyst], tasks=[task], name="live-desk")
     no_secret = Guardrail(
         name="no-secret-in",
@@ -134,3 +137,143 @@ def test_akickoff_is_guarded_around_a_real_crew() -> None:
         asyncio.run(guarded.akickoff(inputs={"topic": "SECRET plans"}))
     out = asyncio.run(guarded.akickoff(inputs={"topic": "noon"}))
     assert out.raw.strip(), "the clean run returned nothing"
+
+
+# ---------------------------------------------------------------------------
+# F6: AgentConfig.tool_choice / temperature reach real providers
+# ---------------------------------------------------------------------------
+
+CHOICE_MODELS = [
+    *MODELS,
+    pytest.param("gemini", "gemini-2.5-flash", "GEMINI_API_KEY", id="gemini-2.5-flash"),
+]
+
+
+def _lookup_agent(provider: str, model: str, **config):
+    from fastaiagent import Agent, AgentConfig, FunctionTool, LLMClient
+
+    calls: list[str] = []
+
+    def lookup_order(order: str) -> str:
+        """Look up the shipping status of an order by its number."""
+        calls.append(order)
+        return f"order {order} shipped yesterday"
+
+    agent = Agent(
+        name=f"choice-{model}",
+        system_prompt="You are a helpful assistant.",
+        llm=LLMClient(provider=provider, model=model),
+        tools=[FunctionTool(name="lookup_order", fn=lookup_order)],
+        config=AgentConfig(**config),
+    )
+    return agent, calls
+
+
+@pytest.mark.parametrize(("provider", "model", "key"), CHOICE_MODELS)
+def test_tool_choice_required_forces_the_first_turn_on_a_real_model(provider, model, key):
+    _need(key)
+    agent, calls = _lookup_agent(provider, model, tool_choice="required")
+    # A prompt no model needs a tool for: only tool_choice makes it call one.
+    result = agent.run("Say hello in one word. Order 77 exists, by the way.")
+    assert calls, f"{model} answered without the forced tool call"
+    assert result.output.strip(), f"{model} never answered after the forced turn"
+
+
+@pytest.mark.parametrize(("provider", "model", "key"), CHOICE_MODELS)
+def test_tool_choice_none_keeps_a_real_model_off_its_tools(provider, model, key):
+    _need(key)
+    agent, calls = _lookup_agent(provider, model, tool_choice="none")
+    # Not a prompt that DEMANDS the tool: told to use one under tool_choice="none",
+    # Claude returns an empty content list and Gemini ends with
+    # UNEXPECTED_TOOL_CALL — no text from either (seen live, 2026-10-18; the
+    # providers' behaviour, documented in docs/agents/index.md).
+    result = agent.run("What is 2 + 2? Order 77 is in the system, if that matters.")
+    assert calls == [], f"{model} called a tool with tool_choice='none'"
+    assert "4" in result.output, f"{model}: {result.output!r}"
+
+
+def test_agent_temperature_is_sent_and_honoured_by_a_model_that_accepts_it():
+    _need("OPENAI_API_KEY")
+    agent, _ = _lookup_agent("openai", "gpt-4o-mini", temperature=0.0, max_tokens=40)
+    assert agent.run("Reply with the single word: ready").output.strip()
+
+
+def test_a_reasoning_model_rejects_a_non_default_temperature_itself():
+    """1.89.0 decision D4, unchanged: nothing is dropped for a model's sampling
+    rules. AgentConfig.temperature used to be ignored; now it is sent, and a model
+    that only accepts the default says so — the provider is the authority."""
+    _need("OPENAI_API_KEY")
+    from fastaiagent._internal.errors import LLMProviderError
+
+    agent, _ = _lookup_agent("openai", "gpt-5-mini", temperature=0.2)
+    with pytest.raises(LLMProviderError, match="(?i)temperature"):
+        agent.run("Reply with the single word: ready")
+
+
+# ---------------------------------------------------------------------------
+# F7: a real Gemini thinking model's tokens add up, and are priced
+# ---------------------------------------------------------------------------
+
+
+def test_gemini_thinking_tokens_are_completion_tokens():
+    _need("GEMINI_API_KEY")
+    from fastaiagent import Agent, LLMClient
+    from fastaiagent.llm.message import UserMessage
+
+    llm = LLMClient(provider="gemini", model="gemini-2.5-flash")
+    question = "A bat and a ball cost $1.10; the bat costs $1 more than the ball. The ball?"
+    resp = asyncio.run(llm.acomplete([UserMessage(question)]))
+    usage = resp.usage
+    assert usage["prompt_tokens"] + usage["completion_tokens"] == usage["total_tokens"], usage
+
+    result = Agent(name="gemini-think", llm=llm).run(question)
+    assert result.cost_known and result.cost > 0
+
+
+# ---------------------------------------------------------------------------
+# F15 consequence: the [anthropic] extra widened to anthropic 1.x
+# ---------------------------------------------------------------------------
+
+
+def test_the_anthropic_integration_traces_a_real_call_on_the_installed_sdk(tmp_path):
+    """Pydantic AI 2.x needs anthropic>=1.12.1, so moving [pydanticai] to 2.x
+    widened [anthropic] past <1. ``integrations.anthropic`` patches the SDK's
+    ``messages.create``; this drives it against the real API on whichever
+    ``anthropic`` is installed (run on 0.105 and 1.15 for 1.90.0)."""
+    _need("ANTHROPIC_API_KEY")
+    anthropic = pytest.importorskip("anthropic")
+    import sqlite3
+
+    from fastaiagent.integrations import anthropic as fa_anthropic
+    from fastaiagent.trace.otel import get_tracer_provider
+
+    fa_anthropic.enable()
+    try:
+        client = anthropic.Anthropic()
+        msg = client.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=20,
+            messages=[{"role": "user", "content": "Reply with the single word: ready"}],
+        )
+        assert msg.content and msg.content[0].text.strip()
+    finally:
+        fa_anthropic.disable()
+
+    provider = get_tracer_provider()
+    if provider is not None and hasattr(provider, "force_flush"):
+        provider.force_flush()
+    db = os.environ.get("FASTAIAGENT_LOCAL_DB")
+    if not db:
+        pytest.skip("set FASTAIAGENT_LOCAL_DB to read the captured span")
+    conn = sqlite3.connect(db)
+    try:
+        rows = conn.execute(
+            "SELECT attributes FROM spans WHERE name LIKE '%anthropic%' ORDER BY start_time DESC"
+        ).fetchall()
+    finally:
+        conn.close()
+    assert rows, f"no anthropic span captured on anthropic {anthropic.__version__}"
+    import json as _json
+
+    attrs = _json.loads(rows[0][0] or "{}")
+    assert int(attrs.get("gen_ai.usage.input_tokens") or 0) > 0, attrs

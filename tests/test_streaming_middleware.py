@@ -190,8 +190,9 @@ async def test_tool_budget_stops_streaming():
     tool_starts = [e for e in events if isinstance(e, ToolCallStart)]
     assert len(tool_starts) == 3  # calls 0, 1, 2 — budget fires on call 2
     text = "".join(e.text for e in events if isinstance(e, TextDelta))
-    # No final text since budget stopped the run
-    assert text == ""
+    # Not the model's "done": the budget's stop message, which is what ``run``
+    # returns as the output too (1.90.0, F8; before, the stream ended with no text).
+    assert text == "over budget"
 
 
 # ---------------------------------------------------------------------------
@@ -266,4 +267,6 @@ async def test_stop_agent_before_model_stops_streaming():
     # No model events are yielded — the loop stops before the model is called.
     # The run still *ends*, so since 1.88.0 the stream closes with its single
     # end-of-stream marker: StopAgent is a deliberate stop, not a block or a pause.
-    assert events == [StreamDone()]
+    # Since 1.90.0 (F8) the stop message comes first, as the reply — the same
+    # output ``run`` returns; before, a streaming caller never saw it.
+    assert events == [TextDelta(text="stopped early"), StreamDone()]

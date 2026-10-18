@@ -24,6 +24,7 @@ from fastaiagent.chain.interrupt import (
 )
 from fastaiagent.checkpointers import Checkpointer, SQLiteCheckpointer
 from fastaiagent.guardrail.guardrail import (
+    Guardrail,
     _run_firings,
     collected_firings,
     start_firing_collection,
@@ -165,10 +166,16 @@ class Supervisor:
         routing_min_confidence: float = 0.0,
         routing_questions: dict[str, Any] | None = None,
         routing_instructions: str | None = None,
+        guardrails: list[Guardrail] | None = None,
     ):
         self.name = name
         self.llm = llm or LLMClient()
         self.workers = workers or []
+        # The supervisor's OWN guardrails (1.90.0, F12), as on ``Agent``. Each
+        # worker keeps its own; these judge the supervisor's run: its input, its
+        # delegate calls and its answer. With ``routing="decisions"`` there is no
+        # supervisor loop, so they run on the routed worker's input and output.
+        self.guardrails: list[Guardrail] = list(guardrails or [])
         self.max_delegation_rounds = max_delegation_rounds
         self.system_prompt = system_prompt if system_prompt else self._build_supervisor_prompt()
         self._checkpointer: Checkpointer | None = checkpointer
@@ -316,6 +323,10 @@ class Supervisor:
         """
         clone = self._build_worker_clone(worker)
         clone._agent_path_label = f"supervisor:{self.name}/worker:{worker.role}"
+        if self.guardrails:
+            # A routed run is this worker's run: it is where the supervisor's
+            # input and output guardrails can judge the request and the answer.
+            clone.guardrails = [*clone.guardrails, *self.guardrails]
         return clone
 
     async def _finish_routed(
@@ -709,6 +720,7 @@ class Supervisor:
             config=AgentConfig(max_iterations=self.max_delegation_rounds * 2),
             checkpointer=self._checkpointer,
             agent_path_label=f"supervisor:{self.name}",
+            guardrails=self.guardrails,
         )
 
     def run(
@@ -965,6 +977,7 @@ class Supervisor:
             llm=self.llm,
             tools=self._build_worker_tools(context=context),
             config=AgentConfig(max_iterations=self.max_delegation_rounds * 2),
+            guardrails=self.guardrails,
         )
         async for event in agent.astream(input, context=context, **kwargs):
             yield event

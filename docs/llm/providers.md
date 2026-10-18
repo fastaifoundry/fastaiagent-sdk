@@ -53,6 +53,13 @@ Set the matching env var (e.g. `export GROQ_API_KEY=…`) and you're done.
   without native enforcement.
 - **✗** — not supported; the field is dropped silently.
 
+**Gemini thinking tokens are completion tokens.** A Gemini thinking model reports
+`thoughtsTokenCount` beside the reply's own tokens; Google bills it at the output
+rate. Since 1.90.0 `completion_tokens` (and so `AgentResult.cost`, the
+`cost_limit` guardrail and the streamed `Usage`) include it. Before, the thinking
+was counted in `tokens_used` but never priced, and `astream` reported fewer
+tokens than `run`.
+
 ## TLS verification (corporate gateways, self-signed certs)
 
 By default `LLMClient` verifies the provider's TLS certificate against the

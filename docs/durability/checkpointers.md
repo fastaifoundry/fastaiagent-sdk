@@ -43,6 +43,22 @@ SQLiteCheckpointer(db_path="/var/lib/fastaiagent/state.db")
 
 Or set the `FASTAIAGENT_LOCAL_DB` environment variable.
 
+In memory, for tests:
+
+```python
+SQLiteCheckpointer(":memory:")
+```
+
+Each in-memory checkpointer is its own private database, shared by every thread
+that uses it (the plane replica drains on a background thread) and gone when
+the checkpointer is closed or collected. It writes no file.
+
+!!! warning "Fixed in 1.90.0"
+    Before 1.90.0 `SQLiteCheckpointer(":memory:")` did not work: its first read
+    raised `no such table`, because each connection opened a fresh empty
+    database. Creating one also tightened the **current working directory** to
+    `0o700` (the parent of `":memory:"` is `.`).
+
 The checkpoint store **shares** `local.db` with traces, prompts, eval
 runs, and other local artefacts. Schema migrations are gated on a
 `PRAGMA user_version`; calling `setup()` on every run is idempotent.

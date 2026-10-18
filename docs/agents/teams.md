@@ -381,6 +381,7 @@ Supervisor(
     routing_min_confidence: float = 0.0,
     routing_questions: dict[str, Predicate | Choice | Score] | None = None,
     routing_instructions: str | None = None,  # the routing Choice's question
+    guardrails: list[Guardrail] | None = None,  # 1.90.0 — the supervisor's own
 )
 ```
 
@@ -394,6 +395,7 @@ Supervisor(
 | `validate_outputs` | `bool` | No | (v1.9.0) When `True`, supervisor LLM reviews each worker output |
 | `validation_prompt` | `str \| None` | No | (v1.9.0) Override the default validator prompt; must include `{task}` and `{output}` placeholders |
 | `max_validation_retries_per_worker` | `int` | No | (v1.9.0) Max retries per delegate after rejection (default `1`) |
+| `guardrails` | `list[Guardrail] \| None` | No | (1.90.0) The supervisor's **own** guardrails, as on `Agent`: they judge its input, its `delegate_to_*` calls and its answer, on `run`, `astream`, `stream` and `resume`. Each worker keeps its own. With `routing="decisions"` there is no supervisor loop, so they judge the routed worker's input and output. Before 1.90.0 a supervisor took none. |
 
 **Methods:**
 

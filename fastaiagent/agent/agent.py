@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from fastaiagent._internal.async_utils import run_sync
 from fastaiagent._internal.errors import StopAgent
@@ -30,6 +30,8 @@ from fastaiagent.agent.context import (
 from fastaiagent.agent.executor import (
     _AgentInterrupted,
     _governed_tool_call,
+    _stopped_response,
+    _StoppedResponse,
     execute_tool_loop,
     stream_tool_loop,
 )
@@ -66,7 +68,7 @@ from fastaiagent.guardrail.guardrail import (
     start_firing_collection,
     stop_firing_collection,
 )
-from fastaiagent.llm.client import LLMClient
+from fastaiagent.llm.client import LLMClient, LLMResponse
 from fastaiagent.llm.message import Message, SystemMessage, UserMessage
 from fastaiagent.llm.stream import Paused, StreamDone, StreamEvent, TextDelta, Usage
 from fastaiagent.llm.structured import OutputSpec
@@ -231,6 +233,12 @@ class AgentConfig(BaseModel):
     """Agent execution configuration."""
 
     max_iterations: int = Field(default=10, ge=1, le=100)
+    # Sent to the model since 1.90.0; before, all three were read by nothing.
+    # ``temperature`` / ``max_tokens`` go on every model call of the run, over
+    # the LLMClient's own values (an explicit ``arun(..., temperature=)`` wins).
+    # ``tool_choice``: "auto" sends nothing (the provider default); "required"
+    # forces the FIRST turn only, so the loop can still answer; "none" applies
+    # to every turn.
     tool_choice: str = "auto"  # "auto", "required", "none"
     temperature: float | None = None
     max_tokens: int | None = None
@@ -255,6 +263,26 @@ class AgentConfig(BaseModel):
     # Use OpenAI/Azure native *strict* Structured Outputs (hard schema guarantee)
     # for ``output_type``. Off by default; ignored by non-OpenAI providers.
     strict_output: bool = False
+
+    @field_validator("tool_choice")
+    @classmethod
+    def _known_tool_choice(cls, value: str) -> str:
+        # Silently ignoring a value was how all three sampling fields went
+        # unnoticed for so long; a value no provider understands is refused.
+        from fastaiagent.llm.client import TOOL_CHOICES
+
+        if value not in TOOL_CHOICES:
+            raise ValueError(f"tool_choice must be one of {TOOL_CHOICES}, got {value!r}")
+        return value
+
+    def _llm_kwargs(self) -> dict[str, Any]:
+        """The per-call LLM options this config sets (only the ones set)."""
+        out: dict[str, Any] = {}
+        if self.temperature is not None:
+            out["temperature"] = self.temperature
+        if self.max_tokens is not None:
+            out["max_tokens"] = self.max_tokens
+        return out
 
 
 class AgentResult(BaseModel):
@@ -304,6 +332,10 @@ class AgentResult(BaseModel):
     status: str = "completed"
     pending_interrupt: dict[str, Any] | None = None
     guardrails: list[GuardrailFiring] = Field(default_factory=list)
+    #: Set when middleware ended the run with ``StopAgent`` (1.90.0): the
+    #: stop's ``reason``, or ``"stopped"`` when it gave none. ``output`` is the
+    #: stop message. ``None`` for a run that was not stopped.
+    stop_reason: str | None = None
     #: How a ``Supervisor(routing="decisions")`` routed this run — a
     #: :class:`~fastaiagent.agent.team.SupervisorRoute` (which worker, the
     #: confidence, whether it fell back, every answer). ``None`` everywhere else.
@@ -528,8 +560,14 @@ class Agent:
         guardrails: list[Guardrail],
         llm_messages: list[Message],
         kwargs: dict[str, Any],
+        *,
+        stopped: bool = False,
     ) -> tuple[str, Any | None, int]:
         """Run the output guardrails, honouring whatever action they carry.
+
+        ``stopped``: middleware ended the run with ``StopAgent``. The rules still
+        judge the stop message, but a ``reask`` cannot re-drive a run its
+        middleware ended, so a failing one blocks at once (1.90.0, F8).
 
         Returns ``(output, parsed, extra_tokens)``. Three of the five actions
         resolve inside :func:`execute_guardrails`; the two that need the agent
@@ -547,7 +585,7 @@ class Agent:
         from fastaiagent.llm.message import AssistantMessage
 
         extra_tokens = 0
-        attempts = max(0, self.config.guardrail_retries)
+        attempts = 0 if stopped else max(0, self.config.guardrail_retries)
 
         for attempt in range(attempts + 1):
             outcome = await execute_guardrails(
@@ -570,13 +608,15 @@ class Agent:
                 # Out of retries. The rule asked us to try again and we did;
                 # the failure stands, so it costs what an unsatisfied guardrail
                 # always costs.
-                outcome.refuse(f"re-asked {attempts} time(s) without satisfying the rule")
+                why = (
+                    "the run was stopped by middleware, so it cannot be re-asked"
+                    if stopped
+                    else f"re-asked {attempts} time(s) without satisfying the rule"
+                )
+                outcome.refuse(why)
                 raise GuardrailBlockedError(
                     guardrail_name="reask",
-                    message=(
-                        f"{outcome.reask.message or 'Guardrail failed'} "
-                        f"(re-asked {attempts} time(s) without satisfying the rule; blocked)"
-                    ),
+                    message=f"{outcome.reask.message or 'Guardrail failed'} ({why}; blocked)",
                     results=outcome.results,
                 )
 
@@ -939,6 +979,10 @@ class Agent:
         # cost up to here. ``LLMClient`` records into it at the one point every
         # completion passes through.
         rcost_token = start_run_cost(_seed_usage)
+        # The agent's sampling options go on every model call of this run — the
+        # tool loop and both re-asks all receive ``kwargs`` (1.90.0, F6).
+        for key, value in self.config._llm_kwargs().items():
+            kwargs.setdefault(key, value)
 
         # Run the agent's checkpointer setup once — cheap on subsequent calls.
         if self._checkpointer is not None:
@@ -998,10 +1042,9 @@ class Agent:
             loop_done = False
             run_ended = False
             try:
+                response: LLMResponse
                 if _stopped is not None:
-                    from fastaiagent.llm.client import LLMResponse
-
-                    response = LLMResponse(content=str(_stopped), finish_reason="stop")
+                    response = _stopped_response(_stopped)
                     tool_calls: list[dict[str, Any]] = []
                 else:
                     response, tool_calls = await execute_tool_loop(
@@ -1027,6 +1070,13 @@ class Agent:
                 loop_done = True
 
                 output = response.content or ""
+                # Middleware ended the run (1.90.0, F8): keep the reason, and never
+                # re-drive the model. The structured re-ask used to answer a stop
+                # message that failed to parse — calling the model again outside
+                # middleware, and replacing the stop with whatever it said.
+                stop_reason = (
+                    response.stop_reason if isinstance(response, _StoppedResponse) else None
+                )
                 parsed, perr = self._try_parse(output)
                 retry_tokens = 0
                 # Structured-output self-correction: on a parse/validation failure,
@@ -1036,6 +1086,7 @@ class Agent:
                     and perr is not None
                     and self._output_spec is not None
                     and self.config.output_retries > 0
+                    and stop_reason is None
                 ):
                     output, parsed, retry_tokens = await self._reask_structured(
                         llm_messages, output, perr, kwargs
@@ -1046,7 +1097,12 @@ class Agent:
                 # than degraded to a block.
                 if eff_guardrails:
                     output, parsed, guardrail_tokens = await self._guard_output(
-                        output, parsed, eff_guardrails, llm_messages, kwargs
+                        output,
+                        parsed,
+                        eff_guardrails,
+                        llm_messages,
+                        kwargs,
+                        stopped=stop_reason is not None,
                     )
                     retry_tokens += guardrail_tokens
 
@@ -1088,6 +1144,7 @@ class Agent:
                     execution_id=exec_id,
                     status="completed",
                     guardrails=collected_firings(),
+                    stop_reason=stop_reason,
                 )
             except _AgentInterrupted as susp:
                 # Deliberately NO run-end marker: a paused run has not ended, and
@@ -1276,6 +1333,8 @@ class Agent:
         """The streamed run itself. Split out of :meth:`astream` only so the
         root span opened there wraps the whole generator body."""
         exec_id = execution_id
+        for key, value in self.config._llm_kwargs().items():
+            kwargs.setdefault(key, value)
 
         # Expose the RunContext before anything reads memory: a per-user Memory
         # resolves its user from it while the prompt is built below. It is
@@ -1425,6 +1484,8 @@ class Agent:
             if outcome is not None:
                 outcome["tokens_used"] = streamed_tokens
                 outcome["output"] = output
+                if final_reply.get("stop_reason"):
+                    outcome["stop_reason"] = final_reply["stop_reason"]
             # The end-of-stream marker, once, after output guardrails and the
             # memory write — so a consumer that sees it knows the run is done and
             # was not blocked. The tool loop drops the per-turn ``StreamDone``s so
@@ -2147,6 +2208,7 @@ class Agent:
                     trace_id=outcome.get("trace_id"),
                     execution_id=str(outcome.get("execution_id", "") or ""),
                     guardrails=collected_firings(),
+                    stop_reason=outcome.get("stop_reason"),
                 )
             finally:
                 stop_run_cost(rcost_token)

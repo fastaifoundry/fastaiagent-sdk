@@ -78,17 +78,31 @@ class SQLiteHelper:
         # it a ``~`` path created a literal ``./~/`` directory relative to the
         # current working directory, so the same configured path resolved to a
         # different store depending on where the process was started.
-        self.db_path = Path(os.path.expanduser(os.path.expandvars(str(db_path))))
-        # ``local.db`` holds trace payloads, prompts, KB contents, and (adjacent)
-        # bcrypt hashes, so it must not be group/world readable. SQLite creates
-        # files with the process umask (typically 0o644), and pre-v1.49 installs
-        # were only tightened at *creation* — so an existing DB stayed
-        # world-readable (security_audit_2 N10). We now tighten on every open,
-        # but only ever REMOVE group/other access (owner bits are never touched,
-        # so the app keeps working), and never when the operator opted out via
-        # ``FASTAIAGENT_DB_KEEP_PERMS=1`` (deliberate group sharing).
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._tighten_perms(self.db_path.parent, 0o700)
+        # ``":memory:"`` (1.90.0, F9). Connections are per-thread (below), and a
+        # plain ``:memory:`` connection is a private, empty database — so each
+        # thread, and every reconnect, saw a different one. One named
+        # shared-cache in-memory database per helper gives every connection the
+        # same data; it lives until ``close()`` drops the last connection. There
+        # is no file, so nothing to create or chmod: ``Path(":memory:").parent``
+        # is ``.``, and 1.89.0 tightened the caller's working directory to 0o700.
+        self._memory_uri: str | None = None
+        if str(db_path) == ":memory:":
+            import uuid
+
+            self.db_path = Path(":memory:")
+            self._memory_uri = f"file:fastaiagent-mem-{uuid.uuid4().hex}?mode=memory&cache=shared"
+        else:
+            self.db_path = Path(os.path.expanduser(os.path.expandvars(str(db_path))))
+            # ``local.db`` holds trace payloads, prompts, KB contents, and
+            # (adjacent) bcrypt hashes, so it must not be group/world readable.
+            # SQLite creates files with the process umask (typically 0o644), and
+            # pre-v1.49 installs were only tightened at *creation* — so an
+            # existing DB stayed world-readable (security_audit_2 N10). We now
+            # tighten on every open, but only ever REMOVE group/other access
+            # (owner bits are never touched, so the app keeps working), and never
+            # when the operator opted out via ``FASTAIAGENT_DB_KEEP_PERMS=1``.
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            self._tighten_perms(self.db_path.parent, 0o700)
         # security_review_1.md M7 — connections are now per-thread.
         # The previous design used a single shared connection guarded by a
         # ``threading.Lock`` and ``check_same_thread=False``. That worked
@@ -154,6 +168,15 @@ class SQLiteHelper:
         # ``check_same_thread=False`` so :meth:`close` can safely close
         # connections from other threads on shutdown — but every actual
         # query stays in the thread that opened it via TLS.
+        if self._memory_uri is not None:
+            # In memory: no WAL (there is no file to journal) and no file mode.
+            conn = sqlite3.connect(self._memory_uri, uri=True, check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA busy_timeout=5000")
+            with self._connections_lock:
+                self._connections.append(conn)
+            self._tls.conn = conn
+            return conn
         conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         conn.row_factory = sqlite3.Row
         # ``busy_timeout`` FIRST, and the order is load-bearing: switching a

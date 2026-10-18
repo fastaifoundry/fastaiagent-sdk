@@ -210,6 +210,32 @@ agent = Agent(
 )
 ```
 
+`temperature` and `max_tokens` go on **every** model call of the run — each turn
+of the tool loop, the structured-output re-ask and a guardrail re-ask — in place
+of the `LLMClient`'s own values. A value passed to the call itself
+(`agent.run(..., temperature=0.2)`) wins over both. Nothing is dropped for a
+model's sampling rules: a model that only accepts the default temperature (the
+OpenAI reasoning models, the newest Claude models) returns its own error, the
+same as when the value is set on the `LLMClient`.
+
+`tool_choice` is sent only when it is not `"auto"`, so an agent on the default
+sends exactly the request it always did. `"required"` forces a tool call on the
+**first** turn only — a model forced on every turn could never answer — and
+`"none"` applies to every turn. OpenAI, Anthropic and Gemini each get their own
+form of it; Ollama has none (and the Bedrock path sends no tools), so there it
+logs one warning and is not sent. Any other value raises `ValueError`.
+
+`"none"` is the provider's own switch, and a prompt that demands a tool under it
+can leave the model with nothing to say: Claude then returns an empty reply and
+Gemini ends with `finish_reason="unexpected_tool_call"`, so the run's `output` is
+`""`. OpenAI answers in text.
+
+!!! warning "Changed in 1.90.0"
+    Before 1.90.0 all three fields were accepted and **ignored**: nothing read
+    `temperature` or `max_tokens`, and `tool_choice` never reached the model.
+    Agents that set them — including ones distributed from the control plane,
+    whose config carries them — now send them.
+
 ## Streaming
 
 Stream tokens from the agent as they are generated, rather than waiting for the full response:
@@ -346,6 +372,7 @@ table below is all of them:
 | `execution_id` | `str` | The durable execution's id. Always populated when a `checkpointer=` is configured; `""` otherwise. It is what you pass to `agent.aresume(...)`. |
 | `status` | `str` | `"completed"` for a normal run, `"paused"` when a tool called [`interrupt()`](../durability/index.md). A paused run **returns** — it does not raise — so a durability user must branch on this. |
 | `pending_interrupt` | `dict \| None` | Set when `status == "paused"`: `{reason, context, node_id, agent_path}` — the same payload the `/approvals` UI reads from the `pending_interrupts` table. |
+| `stop_reason` | `str \| None` | Set when middleware ended the run with `StopAgent` (1.90.0): the stop's `reason`, or `"stopped"` when it gave none. `output` is the stop message. `None` for a run that was not stopped. |
 | `guardrails` | `list[GuardrailFiring]` | Every guardrail that executed, in order, across all four positions. The **only** way to observe a non-halting outcome: `warn`, `mask` and `override` all let the run finish, so before 1.64.0 a run with the Local UI off and no plane attached reported a clean string whether or not a rule had fired. A blocking failure still raises `GuardrailBlockedError` rather than returning. |
 
 ```python
@@ -387,7 +414,7 @@ for g in result.guardrails:
 ```python
 from fastaiagent._internal.errors import (
     AgentError,              # Base agent error
-    AgentTimeoutError,       # Execution timeout
+    AgentTimeoutError,       # Reserved for a run timeout; not raised today
     MaxIterationsError,      # Tool loop exceeded max_iterations
     GuardrailBlockedError,   # Guardrail rejected input/output
     LLMProviderError,        # LLM API error

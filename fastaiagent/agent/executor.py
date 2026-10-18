@@ -494,6 +494,95 @@ async def _invoke_tool_with_span(
             return result_text, result_text
 
 
+class _StoppedResponse(LLMResponse):
+    """The loop's answer when middleware raised ``StopAgent`` (1.90.0, F8).
+
+    The content is the stop message, as before; ``stop_reason`` is what used to
+    be lost, and what tells ``Agent`` not to re-drive a run its middleware ended.
+    """
+
+    stop_reason: str = "stopped"
+
+
+def _stopped_response(stop: StopAgent) -> _StoppedResponse:
+    return _StoppedResponse(
+        content=str(stop), finish_reason="stop", stop_reason=stop.reason or "stopped"
+    )
+
+
+#: ``(agent_name, reason)`` pairs already warned about — once each per process.
+_PARALLEL_FALLBACK_WARNED: set[tuple[str, str]] = set()
+
+
+def _parallel_ok(
+    parallel_tools: bool,
+    n_calls: int,
+    *,
+    checkpointer: Any,
+    mw_pipeline: Any,
+    agent_id: str | None,
+    agent_name: str,
+) -> bool:
+    """Whether this turn's tool calls may run concurrently — and say so when not.
+
+    ``AgentConfig(parallel_tools=True)`` runs sequentially whenever a
+    checkpointer, middleware or a managed ``agent_id`` is in play (their
+    ordering and pause semantics are per call). Until 1.90.0 that fallback was
+    silent — and a Swarm always injects middleware, so its agents never ran in
+    parallel without anyone knowing (F10). One warning per agent per reason.
+    """
+    if not parallel_tools or n_calls <= 1:
+        return False
+    reasons = [
+        name
+        for name, present in (
+            ("middleware", mw_pipeline is not None),
+            ("checkpointer", checkpointer is not None),
+            ("agent_id", bool(agent_id)),
+        )
+        if present
+    ]
+    for reason in reasons:
+        if (agent_name, reason) not in _PARALLEL_FALLBACK_WARNED:
+            _PARALLEL_FALLBACK_WARNED.add((agent_name, reason))
+            logger.warning(
+                "Agent %r: parallel_tools=True is running tool calls sequentially "
+                "because of its %s (parallel execution is not yet supported with "
+                "middleware, a checkpointer or managed governance).",
+                agent_name,
+                reason,
+            )
+    return not reasons
+
+
+def _stream_stop(stop: StopAgent, final_reply: dict[str, str] | None) -> TextDelta:
+    """End a streamed run on ``StopAgent`` the way ``arun`` ends one (1.90.0, F8).
+
+    ``arun`` returns the stop message as the output; the stream used to end with
+    no text at all, so a streaming caller never saw why it stopped. The message
+    becomes the reply (and the final text), and the reason goes to the caller.
+    """
+    if final_reply is not None:
+        final_reply["text"] = str(stop)
+        final_reply["stop_reason"] = stop.reason or "stopped"
+    return TextDelta(text=str(stop))
+
+
+def _turn_llm_kwargs(kwargs: dict[str, Any], tool_choice: str, iteration: int) -> dict[str, Any]:
+    """This turn's LLM kwargs with ``AgentConfig.tool_choice`` applied (1.90.0, F6).
+
+    ``"required"`` forces only the run's first turn: a model that must call a
+    tool on every turn can never answer, and the loop would end at
+    ``max_iterations``. ``"none"`` applies to every turn. ``"auto"`` adds nothing.
+    A ``tool_choice`` the caller passed to ``arun`` themselves is left alone.
+    """
+    if "tool_choice" in kwargs or tool_choice in (None, "auto"):
+        return kwargs
+    if tool_choice == "required" and iteration != 0:
+        return kwargs
+    return {**kwargs, "tool_choice": tool_choice}
+
+
 #: How :func:`_governed_tool_call` asks managed governance about a call.
 #:
 #: * ``"gate"`` — :func:`governance.gate_tool_call`: ``deny`` refuses,
@@ -691,19 +780,29 @@ async def execute_tool_loop(
         if mw_pipeline and mw_ctx is not None:
             mw_ctx.turn = iteration
             try:
-                messages = await mw_pipeline.apply_before_model(mw_ctx, messages)
+                kept = await mw_pipeline.apply_before_model(mw_ctx, messages)
+                if kept is not messages:
+                    # Keep the ONE list everyone holds. ``Agent`` re-sends this
+                    # object for the structured and guardrail re-asks; a hook
+                    # that returned a new list (``TrimLongMessages`` did)
+                    # rebound only the loop's name, so a re-ask after a trim
+                    # re-sent the untrimmed history minus its latest turns
+                    # (1.90.0, F11b). ``RedactPII`` already writes in place.
+                    messages[:] = kept
             except StopAgent as stop:
-                return LLMResponse(content=str(stop), finish_reason="stop"), all_tool_calls
+                return _stopped_response(stop), all_tool_calls
 
         # Call LLM
-        response = await llm.acomplete(messages, tools=tool_defs, **kwargs)
+        response = await llm.acomplete(
+            messages, tools=tool_defs, **_turn_llm_kwargs(kwargs, tool_choice, iteration)
+        )
 
         # Middleware: after_model (may raise StopAgent)
         if mw_pipeline and mw_ctx is not None:
             try:
                 response = await mw_pipeline.apply_after_model(mw_ctx, response)
             except StopAgent as stop:
-                return LLMResponse(content=str(stop), finish_reason="stop"), all_tool_calls
+                return _stopped_response(stop), all_tool_calls
 
         # No tool calls — we're done
         if not response.tool_calls:
@@ -716,12 +815,13 @@ async def execute_tool_loop(
         # no per-tool checkpointing, middleware, or managed governance in play
         # (those are order/identity sensitive and stay sequential). Results are
         # re-ordered by index so message history stays deterministic.
-        if (
-            parallel_tools
-            and len(response.tool_calls) > 1
-            and checkpointer is None
-            and mw_pipeline is None
-            and not agent_id
+        if _parallel_ok(
+            parallel_tools,
+            len(response.tool_calls),
+            checkpointer=checkpointer,
+            mw_pipeline=mw_pipeline,
+            agent_id=agent_id,
+            agent_name=agent_name,
         ):
             sem = asyncio.Semaphore(max_parallel_tools)
 
@@ -812,7 +912,7 @@ async def execute_tool_loop(
                     # (structured-output re-ask, ``reask`` guardrail).
                     messages[:] = balance_tool_messages(messages, note=STOPPED_NOTE)
                     return (
-                        LLMResponse(content=str(stop), finish_reason="stop"),
+                        _stopped_response(stop),
                         all_tool_calls,
                     )
             except InterruptSignal as sig:
@@ -925,8 +1025,17 @@ async def stream_tool_loop(
         if mw_pipeline and mw_ctx is not None:
             mw_ctx.turn = iteration
             try:
-                messages = await mw_pipeline.apply_before_model(mw_ctx, messages)
-            except StopAgent:
+                kept = await mw_pipeline.apply_before_model(mw_ctx, messages)
+                if kept is not messages:
+                    # Keep the ONE list everyone holds. ``Agent`` re-sends this
+                    # object for the structured and guardrail re-asks; a hook
+                    # that returned a new list (``TrimLongMessages`` did)
+                    # rebound only the loop's name, so a re-ask after a trim
+                    # re-sent the untrimmed history minus its latest turns
+                    # (1.90.0, F11b). ``RedactPII`` already writes in place.
+                    messages[:] = kept
+            except StopAgent as stop:
+                yield _stream_stop(stop, final_reply)
                 return
 
         # Stream from LLM
@@ -934,7 +1043,9 @@ async def stream_tool_loop(
         pending_tool_calls: list[ToolCall] = []
         total_usage = Usage()
 
-        async for event in llm.astream(messages, tools=tool_defs, **kwargs):
+        async for event in llm.astream(
+            messages, tools=tool_defs, **_turn_llm_kwargs(kwargs, tool_choice, iteration)
+        ):
             if isinstance(event, TextDelta):
                 accumulated_text += event.text
                 yield event
@@ -967,7 +1078,8 @@ async def stream_tool_loop(
             )
             try:
                 response = await mw_pipeline.apply_after_model(mw_ctx, response)
-            except StopAgent:
+            except StopAgent as stop:
+                yield _stream_stop(stop, final_reply)
                 return
             # Reflect any middleware mutations back into the loop state.
             accumulated_text = response.content or ""
@@ -990,12 +1102,13 @@ async def stream_tool_loop(
         # Concurrent execution when it's provably safe (see execute_tool_loop).
         # ToolCallStart/End events were already yielded during streaming, so
         # parallel execution doesn't reorder anything the caller has seen.
-        if (
-            parallel_tools
-            and len(pending_tool_calls) > 1
-            and checkpointer is None
-            and mw_pipeline is None
-            and not agent_id
+        if _parallel_ok(
+            parallel_tools,
+            len(pending_tool_calls),
+            checkpointer=checkpointer,
+            mw_pipeline=mw_pipeline,
+            agent_id=agent_id,
+            agent_name=agent_name,
         ):
             sem = asyncio.Semaphore(max_parallel_tools)
 
@@ -1049,12 +1162,13 @@ async def stream_tool_loop(
                             agent_name=agent_name,
                         )
                     ).content
-                except StopAgent:
+                except StopAgent as stop:
                     # Streaming twin of the same gap — see the comment on
                     # ``execute_tool_loop``'s handler. The stream path keeps
                     # no per-call record, so the in-flight call is answered
                     # by the same synthetic note as its siblings.
                     messages[:] = balance_tool_messages(messages, note=STOPPED_NOTE)
+                    yield _stream_stop(stop, final_reply)
                     return
             except InterruptSignal as sig:
                 if checkpointer is not None and execution_id is not None:
