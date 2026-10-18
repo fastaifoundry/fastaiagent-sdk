@@ -16,7 +16,7 @@ By the time the LLM event fires, the OTel current span is already the
 spans nest under the right parent automatically.
 
 ```bash
-pip install "fastaiagent[crewai]"  # crewai>=1.0
+pip install "fastaiagent[crewai]"  # crewai>=1.7 (since 1.90.0)
 ```
 
 ## 1. Auto-tracing
@@ -203,6 +203,12 @@ The plan considered loosening to `crewai>=0.80` to match the spec, but
 kept `>=1.0` because CrewAI's public test gate (`tests/e2e/test_gate_crewai.py`)
 already runs against `>=1.0` and we'd rather not regress that gate.
 The CHANGELOG notes this deviation.
+
+Since 1.90.0 the `[crewai]` extra is `crewai>=1.7,<2`. With Pydantic AI 2.x in
+`fastaiagent[all]`, a `>=1.0` floor let the resolver drop CrewAI to 1.6.1 to make
+room for a newer Pydantic AI, so `[all]` installed a CrewAI nine months old. The
+native-async methods this integration guards and traces (`akickoff`,
+`Agent.aexecute_task`, `Task.aexecute_sync`) are patched only where they exist.
 
 ## Examples
 

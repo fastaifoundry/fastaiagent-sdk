@@ -277,3 +277,117 @@ def test_the_anthropic_integration_traces_a_real_call_on_the_installed_sdk(tmp_p
 
     attrs = _json.loads(rows[0][0] or "{}")
     assert int(attrs.get("gen_ai.usage.input_tokens") or 0) > 0, attrs
+
+
+# ---------------------------------------------------------------------------
+# F20: the [openai] extra widened to openai 3.x
+# ---------------------------------------------------------------------------
+
+
+def _span_attrs(db: str, name_like: str) -> list[dict]:
+    import json as _json
+    import sqlite3
+
+    from fastaiagent.trace.otel import get_tracer_provider
+
+    provider = get_tracer_provider()
+    if provider is not None and hasattr(provider, "force_flush"):
+        provider.force_flush()
+    conn = sqlite3.connect(db)
+    try:
+        rows = conn.execute(
+            "SELECT attributes FROM spans WHERE name LIKE ? ORDER BY start_time DESC",
+            (name_like,),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [_json.loads(r[0] or "{}") for r in rows]
+
+
+@pytest.mark.parametrize("stream", [False, True], ids=["create", "stream"])
+def test_the_openai_integration_traces_a_real_call_on_the_installed_sdk(stream):
+    """``integrations.openai`` patches the SDK's chat-completions resource; this
+    drives it against the real API on whichever ``openai`` is installed (run on
+    2.54 and 3.35 for 1.90.0)."""
+    _need("OPENAI_API_KEY")
+    openai = pytest.importorskip("openai")
+    from fastaiagent.integrations import openai as fa_openai
+
+    db = os.environ.get("FASTAIAGENT_LOCAL_DB")
+    if not db:
+        pytest.skip("set FASTAIAGENT_LOCAL_DB to read the captured span")
+    fa_openai.enable()
+    try:
+        client = openai.OpenAI()
+        kwargs = {
+            "model": "gpt-4o-mini",
+            "max_tokens": 10,
+            "messages": [{"role": "user", "content": "Reply with the single word: ready"}],
+        }
+        if stream:
+            text = "".join(
+                (c.choices[0].delta.content or "") if c.choices else ""
+                for c in client.chat.completions.create(
+                    stream=True, stream_options={"include_usage": True}, **kwargs
+                )
+            )
+        else:
+            text = client.chat.completions.create(**kwargs).choices[0].message.content
+        assert (text or "").strip()
+    finally:
+        fa_openai.disable()
+
+    spans = _span_attrs(db, "openai.chat.%")
+    assert spans, f"no openai span captured on openai {openai.__version__}"
+    assert int(spans[0].get("gen_ai.usage.input_tokens") or 0) > 0, spans[0]
+
+
+@pytest.mark.parametrize("mode", ["run", "astream"])
+def test_an_agent_on_an_injected_openai_client_runs_on_the_installed_sdk(mode):
+    """``LLMClient(openai_client=...)`` delegates every call to the SDK client."""
+    _need("OPENAI_API_KEY")
+    openai = pytest.importorskip("openai")
+    from fastaiagent import Agent, FunctionTool, LLMClient
+
+    def lookup_order(order: str) -> str:
+        """Look up the shipping status of an order by its number."""
+        return f"order {order} shipped yesterday"
+
+    agent = Agent(
+        name="injected-client",
+        system_prompt="Use lookup_order to answer order questions.",
+        llm=LLMClient(provider="openai", model="gpt-4o-mini", openai_client=openai.AsyncOpenAI()),
+        tools=[FunctionTool(name="lookup_order", fn=lookup_order)],
+    )
+    if mode == "run":
+        result = agent.run("Where is order 77?")
+        assert "shipped" in result.output.lower(), result.output
+        assert result.tool_calls, "the injected client never made the tool call"
+    else:
+        from fastaiagent.llm.stream import TextDelta
+
+        async def drain() -> str:
+            return "".join(
+                [
+                    e.text
+                    async for e in agent.astream("Where is order 77?")
+                    if isinstance(e, TextDelta)
+                ]
+            )
+
+        assert "shipped" in asyncio.run(drain()).lower()
+
+
+def test_the_openai_embedder_and_moderation_work_on_the_installed_sdk():
+    """The other two places the SDK calls the openai package: KB embeddings and
+    the moderation-backed safety detector."""
+    _need("OPENAI_API_KEY")
+    pytest.importorskip("openai")
+    from fastaiagent._internal.safety_detectors import moderate_text
+    from fastaiagent.kb.embedding import OpenAIEmbedder
+
+    vectors = OpenAIEmbedder().embed(["refund order 1042", "shipping status"])
+    assert len(vectors) == 2 and len(vectors[0]) > 100
+
+    result = moderate_text("I would like to bake a cake for my friend's birthday.")
+    assert result.flagged is False
