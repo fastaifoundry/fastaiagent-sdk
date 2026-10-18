@@ -622,17 +622,20 @@ class LLMClient:
         ``"auto"`` — the provider default — sends nothing, so an agent on the
         default sends the request it always did. Without tools there is nothing to
         choose. ``"required"`` / ``"none"`` are returned for the body builder to
-        put in its own wire shape. A provider with no such option (Ollama, and the
-        Bedrock path, which sends no tools) warns once and sends nothing.
+        put in its own wire shape. A provider with no such option warns once and
+        sends nothing: Ollama has none, and Bedrock Converse has no ``"none"`` (it
+        also requires ``toolConfig`` once a history holds tool blocks, so the
+        tools cannot simply be withheld).
         """
         choice = kwargs.get("tool_choice")
         if choice in (None, "auto") or not tools:
             return None
         if choice not in TOOL_CHOICES:
             raise ValueError(f"tool_choice must be one of {TOOL_CHOICES}, got {choice!r}")
-        if self.provider in ("ollama", "bedrock"):
-            if self.provider not in _TOOL_CHOICE_WARNED:
-                _TOOL_CHOICE_WARNED.add(self.provider)
+        if self.provider == "ollama" or (self.provider == "bedrock" and choice == "none"):
+            key = f"{self.provider}:{choice}"
+            if key not in _TOOL_CHOICE_WARNED:
+                _TOOL_CHOICE_WARNED.add(key)
                 logger.warning(
                     "tool_choice=%r is not supported by provider %r; it is not sent.",
                     choice,
@@ -1994,6 +1997,89 @@ class LLMClient:
             finish_reason=finish_reason,
         )
 
+    def _bedrock_converse_body(
+        self,
+        messages: list[Message],
+        tools: list[dict[str, Any]] | None,
+        kwargs: dict[str, Any],
+    ) -> dict[str, Any]:
+        """The Converse request (minus ``inferenceConfig``) for ``messages`` (1.90.0).
+
+        Converse takes lists of content blocks, not strings, and strictly
+        alternating ``user`` / ``assistant`` turns. Until 1.90.0 messages went in
+        the OpenAI shape — which boto3 refused before sending, even for "hi" — and
+        ``tools`` were never sent.
+
+        * system messages → ``system`` text blocks;
+        * text → ``{"text": ...}``; multimodal content keeps the Bedrock blocks
+          ``to_provider_dict("bedrock")`` already builds;
+        * an assistant's tool calls → ``toolUse`` blocks after its text;
+        * a tool result → a ``toolResult`` block in a **user** turn;
+        * neighbours with the same role are merged into one turn (a run of tool
+          results answering one assistant message becomes one user turn).
+        """
+        system: list[dict[str, Any]] = []
+        turns: list[dict[str, Any]] = []
+
+        def _add(role: str, blocks: list[dict[str, Any]]) -> None:
+            if not blocks:
+                return
+            if turns and turns[-1]["role"] == role:
+                turns[-1]["content"].extend(blocks)
+            else:
+                turns.append({"role": role, "content": list(blocks)})
+
+        for m in messages:
+            role = m.role.value
+            if m.has_multimodal_content():
+                blocks = list(
+                    m.to_provider_dict("bedrock", **self._provider_dict_kwargs()).get("content")
+                    or []
+                )
+            else:
+                blocks = [{"text": m.content}] if m.content else []
+            if role == "system":
+                system.extend(b for b in blocks if "text" in b)
+            elif role == "tool":
+                result = blocks or [{"text": ""}]
+                _add(
+                    "user",
+                    [{"toolResult": {"toolUseId": m.tool_call_id or "", "content": result}}],
+                )
+            elif role == "assistant":
+                calls = [
+                    {"toolUse": {"toolUseId": tc.id, "name": tc.name, "input": tc.arguments}}
+                    for tc in (m.tool_calls or [])
+                ]
+                _add("assistant", [*blocks, *calls])
+            else:
+                _add("user", blocks)
+
+        body: dict[str, Any] = {"messages": turns}
+        if system:
+            body["system"] = system
+        if tools:
+            specs = []
+            for t in tools:
+                func = t.get("function", t)
+                specs.append(
+                    {
+                        "toolSpec": {
+                            "name": func["name"],
+                            "description": func.get("description") or func["name"],
+                            "inputSchema": {
+                                "json": func.get("parameters")
+                                or {"type": "object", "properties": {}}
+                            },
+                        }
+                    }
+                )
+            tool_config: dict[str, Any] = {"tools": specs}
+            if self._requested_tool_choice(tools, kwargs) == "required":
+                tool_config["toolChoice"] = {"any": {}}
+            body["toolConfig"] = tool_config
+        return body
+
     async def _call_bedrock(
         self, messages: list[Message], tools: list[dict[str, Any]] | None = None, **kwargs: Any
     ) -> LLMResponse:
@@ -2005,29 +2091,14 @@ class LLMClient:
                 "boto3 is required for Bedrock provider. Install it with: pip install boto3"
             )
 
-        client = boto3.client("bedrock-runtime", region_name=self._extra.get("region", "us-east-1"))
-        msg_dicts = [
-            m.to_provider_dict("bedrock", **self._provider_dict_kwargs()) for m in messages
-        ]
-
-        # Extract system for Bedrock/Anthropic models
-        system_parts = []
-        filtered = []
-        for m in msg_dicts:
-            if m["role"] == "system":
-                system_parts.append({"text": m.get("content", "")})
-            else:
-                filtered.append(m)
-
-        body: dict[str, Any] = {
-            "messages": filtered,
-        }
-        if system_parts:
-            body["system"] = system_parts
-
-        # This Converse call sends no tools (a separate, known gap), so there is
-        # nothing for tool_choice to steer: warns and sends nothing.
-        self._requested_tool_choice(tools, kwargs)
+        client = boto3.client(
+            "bedrock-runtime",
+            region_name=self._extra.get("region", "us-east-1"),
+            # ``base_url`` is the Converse endpoint when set: a VPC endpoint, a
+            # proxy, or a test server. Unset, boto3 picks the regional default.
+            endpoint_url=self.base_url or None,
+        )
+        body = self._bedrock_converse_body(messages, tools, kwargs)
         inference_config: dict[str, Any] = {}
         temperature = kwargs.get("temperature", self.temperature)
         if temperature is not None:
@@ -2043,7 +2114,9 @@ class LLMClient:
             inference_config["stopSequences"] = [stop] if isinstance(stop, str) else stop
         body["inferenceConfig"] = inference_config
 
-        response = client.converse(modelId=self.model, **body)
+        # boto3 is synchronous: off the event loop, so a slow Bedrock call does
+        # not stall every other task (and a Tool timeout) while it runs.
+        response = await asyncio.to_thread(client.converse, modelId=self.model, **body)
 
         output = response.get("output", {})
         msg_out = output.get("message", {})
@@ -2072,7 +2145,11 @@ class LLMClient:
         stop_reason = response.get("stopReason", "")
         finish_reason = {
             "end_turn": "stop",
+            "stop_sequence": "stop",
             "tool_use": "tool_calls",
+            "max_tokens": "length",
+            "guardrail_intervened": "content_filter",
+            "content_filtered": "content_filter",
         }.get(stop_reason, stop_reason)
 
         return LLMResponse(

@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextvars
+import functools
 import inspect
 import logging
 import re
+import threading
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, get_args, get_origin, get_type_hints
 
 from pydantic import BaseModel, Field, ValidationError, create_model
@@ -15,6 +20,23 @@ from fastaiagent.agent.context import RunContext
 from fastaiagent.tool.base import Tool, ToolResult
 
 logger = logging.getLogger(__name__)
+
+_TIMED_SYNC_POOL: ThreadPoolExecutor | None = None
+_TIMED_SYNC_POOL_LOCK = threading.Lock()
+
+
+def _timed_sync_pool() -> ThreadPoolExecutor:
+    """The threads sync tools with a ``timeout`` run on (created on first use).
+
+    Separate from the event loop's default executor, which ``asyncio.run`` joins
+    on shutdown — a timed-out function would otherwise still hold up a sync
+    ``agent.run()`` until it finished.
+    """
+    global _TIMED_SYNC_POOL
+    with _TIMED_SYNC_POOL_LOCK:
+        if _TIMED_SYNC_POOL is None:
+            _TIMED_SYNC_POOL = ThreadPoolExecutor(thread_name_prefix="fastaiagent-tool")
+        return _TIMED_SYNC_POOL
 
 _ARGS_SECTION_RE = re.compile(r"^\s*(Args|Arguments|Parameters)\s*:\s*$", re.IGNORECASE)
 _SECTION_HEADER_RE = re.compile(r"^\s*\w[\w\s]*:\s*$")
@@ -517,7 +539,23 @@ class FunctionTool(Tool):
             if self._context_param_name is not None and context is not None:
                 call_args[self._context_param_name] = context
 
-            result = self.fn(**call_args)
+            if self.timeout is not None and not inspect.iscoroutinefunction(self.fn):
+                # ``timeout`` is ``asyncio.wait_for`` around this coroutine, and
+                # a sync function called here blocks the event loop, so the wait
+                # could never fire (before 1.90.0 a timed sync tool ran to
+                # completion). Run it in a worker thread instead; ``to_thread``
+                # copies the context vars, so interrupt() / @idempotent still see
+                # the execution. A thread can't be killed: a timed-out function
+                # finishes in the background. Without a timeout, nothing changes.
+                # A pool of our own, not the loop's default executor: asyncio.run()
+                # joins the default executor on shutdown, so a sync agent.run()
+                # would still have waited out the timed-out function.
+                ctx = contextvars.copy_context()
+                result = await asyncio.get_running_loop().run_in_executor(
+                    _timed_sync_pool(), functools.partial(ctx.run, self.fn, **call_args)
+                )
+            else:
+                result = self.fn(**call_args)
             if inspect.isawaitable(result):
                 result = await result
             return ToolResult(output=result)
