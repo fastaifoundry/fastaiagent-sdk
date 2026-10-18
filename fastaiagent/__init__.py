@@ -18,6 +18,7 @@ from fastaiagent.agent import (
     RedactPII,
     Reflect,
     RunContext,
+    RunUsage,
     StaticBlock,
     SummaryBlock,
     Supervisor,
@@ -151,6 +152,7 @@ __all__ = [
     "AgentConfig",
     "AgentResult",
     "RunContext",
+    "RunUsage",
     "Supervisor",
     "Worker",
     # Swarm

@@ -137,7 +137,7 @@ loop without you rewriting it. Where each one acts:
 | **Memory** | Step 3 (read) and step 7 (write) | [memory.md](memory.md) |
 | **Guardrails** | Steps 4, 5 (tool_call/tool_result), and 6 — four positions | [../guardrails/index.md](../guardrails/index.md) |
 | **Tools** | Inside the loop, each in a `tool.<name>` span | [tools.md](tools.md) |
-| **Middleware** | `before_model` / `after_model` each iteration, `wrap_tool` around each tool | [middleware.md](middleware.md) |
+| **Middleware** | `before_run` / `after_run` / `on_error` once per run, `before_model` / `wrap_model` / `after_model` each model call, `wrap_tool` around each tool, `on_stream_event` per streamed event | [middleware.md](middleware.md) |
 | **Durability** | Turn and pre-tool checkpoints; `interrupt()` suspends the loop | [durability.md](durability.md) |
 
 Guardrails have **four positions** — `input`, `tool_call`, `tool_result`,

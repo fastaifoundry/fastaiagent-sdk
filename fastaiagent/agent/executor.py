@@ -26,6 +26,7 @@ from fastaiagent.llm.message import (
     balance_tool_messages,
 )
 from fastaiagent.llm.stream import (
+    StreamDone,
     StreamEvent,
     TextDelta,
     ToolCallEnd,
@@ -616,6 +617,153 @@ def _turn_llm_kwargs(kwargs: dict[str, Any], tool_choice: str, iteration: int) -
     return {**kwargs, "tool_choice": tool_choice}
 
 
+def _tool_defs(tools: list[Tool]) -> list[dict[str, Any]] | None:
+    return [t.to_openai_format() for t in tools] if tools else None
+
+
+def _begin_turn(llm: Any, tools: list[Tool], mw_ctx: MiddlewareContext | None) -> None:
+    """Reset ``ctx.llm`` / ``ctx.tools`` to the agent's for a new turn, so a
+    middleware that changes them changes ONE call (1.91.0, 1A)."""
+    if mw_ctx is not None:
+        mw_ctx.llm = llm
+        mw_ctx.tools = list(tools)
+
+
+def _turn_model(llm: Any, mw_ctx: MiddlewareContext | None) -> Any:
+    """The client this call uses: ``ctx.llm`` when middleware set one."""
+    if mw_ctx is not None and mw_ctx.llm is not None:
+        return mw_ctx.llm
+    return llm
+
+
+def _wraps_model(mw_pipeline: _MiddlewarePipeline | None, mw_ctx: MiddlewareContext | None) -> bool:
+    return bool(mw_pipeline) and mw_ctx is not None and mw_pipeline.overrides("wrap_model")  # type: ignore[union-attr]
+
+
+async def _complete_turn(
+    llm: Any,
+    messages: list[Message],
+    tools: list[Tool],
+    tool_defs: list[dict[str, Any]] | None,
+    mw_pipeline: _MiddlewarePipeline | None,
+    mw_ctx: MiddlewareContext | None,
+    turn_kwargs: dict[str, Any],
+) -> LLMResponse:
+    """One non-streamed model call of the tool loop, through ``wrap_model``
+    when any middleware implements it. The terminal reads ``ctx.llm`` and
+    ``ctx.tools`` when it runs, so a ``wrap_model`` that changes them is heard."""
+    if not _wraps_model(mw_pipeline, mw_ctx):
+        offered = tool_defs if mw_ctx is None else _tool_defs(mw_ctx.tools)
+        plain: LLMResponse = await _turn_model(llm, mw_ctx).acomplete(
+            messages, tools=offered, **turn_kwargs
+        )
+        return plain
+    assert mw_pipeline is not None and mw_ctx is not None
+
+    async def _terminal(msgs: list[Message]) -> LLMResponse:
+        wrapped: LLMResponse = await _turn_model(llm, mw_ctx).acomplete(
+            msgs, tools=_tool_defs(mw_ctx.tools), **turn_kwargs
+        )
+        return wrapped
+
+    return await mw_pipeline.call_model(mw_ctx, messages, _terminal)
+
+
+async def _streamed_turn(
+    llm: Any,
+    messages: list[Message],
+    mw_pipeline: _MiddlewarePipeline,
+    mw_ctx: MiddlewareContext,
+    turn_kwargs: dict[str, Any],
+    out: dict[str, LLMResponse],
+) -> AsyncGenerator[StreamEvent, None]:
+    """One streamed model call through the ``wrap_model`` onion (1.91.0, 1A).
+
+    The onion is a coroutine and the stream is a generator, so the call runs as
+    a task whose terminal pushes the model's events onto a queue this generator
+    drains — deltas reach the caller as they arrive, not after the onion
+    returns. The final response (what the onion returned) is left in
+    ``out["response"]``. A response produced without calling the model is
+    streamed as one ``TextDelta`` (plus its tool-call events); a retry after
+    deltas streams the second attempt too, as ``max_retries`` does.
+    """
+    queue: asyncio.Queue[StreamEvent] = asyncio.Queue()
+    attempts = 0
+
+    async def _terminal(msgs: list[Message]) -> LLMResponse:
+        nonlocal attempts
+        attempts += 1
+        text = ""
+        calls: list[ToolCall] = []
+        prompt_tokens = completion_tokens = 0
+        finish = ""
+        async for event in _turn_model(llm, mw_ctx).astream(
+            msgs, tools=_tool_defs(mw_ctx.tools), **turn_kwargs
+        ):
+            if isinstance(event, StreamDone):
+                finish = event.finish_reason or finish
+                continue  # the loop emits one StreamDone for the whole run
+            if isinstance(event, TextDelta):
+                text += event.text
+            elif isinstance(event, ToolCallEnd):
+                calls.append(
+                    ToolCall(
+                        id=event.call_id,
+                        name=event.tool_name,
+                        arguments=event.arguments,
+                        signature=event.signature,
+                    )
+                )
+            elif isinstance(event, Usage):
+                prompt_tokens += event.prompt_tokens
+                completion_tokens += event.completion_tokens
+            await queue.put(event)
+        return LLMResponse(
+            content=text or None,
+            tool_calls=calls,
+            usage={
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            },
+            finish_reason="tool_calls" if calls else (finish or "stop"),
+        )
+
+    task = asyncio.ensure_future(mw_pipeline.call_model(mw_ctx, messages, _terminal))
+    try:
+        while True:
+            getter = asyncio.ensure_future(queue.get())
+            done, _ = await asyncio.wait({task, getter}, return_when=asyncio.FIRST_COMPLETED)
+            if getter in done:
+                yield getter.result()
+                continue
+            getter.cancel()
+            while not queue.empty():
+                yield queue.get_nowait()
+            break
+        response = task.result()
+    finally:
+        if not task.done():
+            task.cancel()
+            try:
+                await task
+            except BaseException:  # noqa: BLE001 - we are unwinding already
+                pass
+    if attempts == 0:
+        # Answered without the model: the caller still has to see the answer.
+        if response.content:
+            yield TextDelta(text=response.content)
+        for tc in response.tool_calls:
+            yield ToolCallStart(call_id=tc.id, tool_name=tc.name)
+            yield ToolCallEnd(
+                call_id=tc.id,
+                tool_name=tc.name,
+                arguments=dict(tc.arguments),
+                signature=tc.signature,
+            )
+    out["response"] = response
+
+
 #: How :func:`_governed_tool_call` asks managed governance about a call.
 #:
 #: * ``"gate"`` — :func:`governance.gate_tool_call`: ``deny`` refuses,
@@ -809,6 +957,7 @@ async def execute_tool_loop(
                 iteration=iteration,
                 messages=messages,
             )
+        _begin_turn(llm, tools, mw_ctx)
         # Middleware: before_model (may raise StopAgent)
         if mw_pipeline and mw_ctx is not None:
             mw_ctx.turn = iteration
@@ -825,10 +974,23 @@ async def execute_tool_loop(
             except StopAgent as stop:
                 return _stopped_response(stop), all_tool_calls
 
-        # Call LLM
-        response = await llm.acomplete(
-            messages, tools=tool_defs, **_turn_llm_kwargs(kwargs, tool_choice, iteration)
-        )
+        # Call LLM — through ``wrap_model`` when a middleware implements it.
+        try:
+            response = await _complete_turn(
+                llm,
+                messages,
+                tools,
+                tool_defs,
+                mw_pipeline,
+                mw_ctx,
+                _turn_llm_kwargs(kwargs, tool_choice, iteration),
+            )
+        except StopAgent as stop:
+            return _stopped_response(stop), all_tool_calls
+        if mw_ctx is not None:
+            # This turn's tools are what was offered: one a middleware added
+            # for this call can be dispatched (1.91.0, 1A).
+            tools_by_name = {t.name: t for t in mw_ctx.tools}
 
         # Middleware: after_model (may raise StopAgent)
         if mw_pipeline and mw_ctx is not None:
@@ -1054,6 +1216,7 @@ async def stream_tool_loop(
                 iteration=iteration,
                 messages=messages,
             )
+        _begin_turn(llm, tools, mw_ctx)
 
         # Middleware: before_model (may raise StopAgent)
         if mw_pipeline and mw_ctx is not None:
@@ -1076,37 +1239,59 @@ async def stream_tool_loop(
         accumulated_text = ""
         pending_tool_calls: list[ToolCall] = []
         total_usage = Usage()
+        turn_kwargs = _turn_llm_kwargs(kwargs, tool_choice, iteration)
+        wrapped: LLMResponse | None = None
 
-        async for event in llm.astream(
-            messages, tools=tool_defs, **_turn_llm_kwargs(kwargs, tool_choice, iteration)
-        ):
-            if isinstance(event, TextDelta):
-                accumulated_text += event.text
-                yield event
-            elif isinstance(event, ToolCallStart):
-                yield event
-            elif isinstance(event, ToolCallEnd):
-                pending_tool_calls.append(
-                    ToolCall(
-                        id=event.call_id,
-                        name=event.tool_name,
-                        arguments=event.arguments,
-                        signature=event.signature,
+        if _wraps_model(mw_pipeline, mw_ctx):
+            # Through the ``wrap_model`` onion; the deltas still stream live.
+            assert mw_pipeline is not None and mw_ctx is not None
+            out: dict[str, LLMResponse] = {}
+            try:
+                async for event in _streamed_turn(
+                    llm, messages, mw_pipeline, mw_ctx, turn_kwargs, out
+                ):
+                    yield event
+            except StopAgent as stop:
+                yield _stream_stop(stop, final_reply)
+                return
+            wrapped = out["response"]
+            accumulated_text = wrapped.content or ""
+            pending_tool_calls = list(wrapped.tool_calls)
+        else:
+            offered = tool_defs if mw_ctx is None else _tool_defs(mw_ctx.tools)
+            async for event in _turn_model(llm, mw_ctx).astream(
+                messages, tools=offered, **turn_kwargs
+            ):
+                if isinstance(event, TextDelta):
+                    accumulated_text += event.text
+                    yield event
+                elif isinstance(event, ToolCallStart):
+                    yield event
+                elif isinstance(event, ToolCallEnd):
+                    pending_tool_calls.append(
+                        ToolCall(
+                            id=event.call_id,
+                            name=event.tool_name,
+                            arguments=event.arguments,
+                            signature=event.signature,
+                        )
                     )
-                )
-                yield event
-            elif isinstance(event, Usage):
-                total_usage.prompt_tokens += event.prompt_tokens
-                total_usage.completion_tokens += event.completion_tokens
-                yield event
-            # Don't yield StreamDone here — we may have more iterations
+                    yield event
+                elif isinstance(event, Usage):
+                    total_usage.prompt_tokens += event.prompt_tokens
+                    total_usage.completion_tokens += event.completion_tokens
+                    yield event
+                # Don't yield StreamDone here — we may have more iterations
+        if mw_ctx is not None:
+            # This turn's tools are what was offered (see execute_tool_loop).
+            tools_by_name = {t.name: t for t in mw_ctx.tools}
 
         # Middleware: after_model — build an LLMResponse from accumulated
         # stream data and let middleware inspect/rewrite it. This runs after
         # streaming completes but before tool execution, so the stream events
         # have already been yielded to the caller.
         if mw_pipeline and mw_ctx is not None:
-            response = LLMResponse(
+            response = wrapped or LLMResponse(
                 content=accumulated_text or None,
                 tool_calls=list(pending_tool_calls),
                 # ``total_tokens`` as a non-streamed response carries it — a

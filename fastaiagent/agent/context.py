@@ -3,9 +3,38 @@
 from __future__ import annotations
 
 from contextvars import ContextVar
+from dataclasses import dataclass
 from typing import Generic, TypeVar
 
 T = TypeVar("T")
+
+
+@dataclass(frozen=True)
+class RunUsage:
+    """What the current run has spent so far — a read-only snapshot (1.91.0).
+
+    The same running total ``AgentResult.cost`` / ``tokens_used`` and the
+    ``cost_limit`` guardrail read. ``cost_known`` is ``False`` while any model
+    call in the run could not be priced; ``cost`` is then a lower bound, not the
+    spend.
+    """
+
+    tokens: int = 0
+    cost: float = 0.0
+    cost_known: bool = True
+    calls: int = 0
+
+
+def current_run_usage_view() -> RunUsage:
+    """The active run's spend as a :class:`RunUsage` (zeros outside a run)."""
+    from fastaiagent._internal.pricing import current_run_usage
+
+    bucket = current_run_usage()
+    if bucket is None:
+        return RunUsage()
+    return RunUsage(
+        tokens=bucket.tokens, cost=bucket.usd, cost_known=bucket.known, calls=bucket.calls
+    )
 
 
 class RunContext(Generic[T]):

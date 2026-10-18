@@ -184,6 +184,11 @@ print(result.output)
 print(result.trace_id, result.tokens_used, result.execution_id)
 ```
 
+`result.output` is the run's answer — the last turn's reply after middleware, the
+same string `run()` returns. Before 1.91.0 it was every streamed delta joined, so
+text the model said before a tool call ("Let me check.") became part of the
+answer and `stream()` disagreed with `run()`.
+
 !!! note "A streamed run is a traced run (1.67.0)"
     `astream()` opens an `agent.<name>` root span, exactly as `arun()` does, so
     the `llm.*` and `tool.*` spans of a streamed run nest under one root and the
@@ -288,7 +293,7 @@ The SDK's `StreamEvent` types (`TextDelta`, `ToolCallStart`, `ToolCallEnd`, `Usa
 
 As of 1.5.0, `Agent.astream()` is at full feature parity with `Agent.run()` / `arun()`:
 
-- **Middleware hooks fire during streaming.** `before_model`, `after_model`, and `wrap_tool` are invoked at the same logical points they're invoked during a non-streaming run. A configured `ToolBudget`, `TrimLongMessages`, or custom `AgentMiddleware` works identically for both modes.
+- **Middleware hooks fire during streaming.** Every hook — `before_run`, `before_model`, `wrap_model`, `after_model`, `wrap_tool`, `after_run`, `on_error` — is invoked at the same logical point it is during a non-streaming run, and `on_stream_event` (streaming only) can rewrite or drop events. `wrap_model` still lets the model's deltas through as they arrive. A configured `ToolBudget`, `TrimLongMessages`, or custom `AgentMiddleware` works identically for both modes. See [Middleware](../agents/middleware.md).
 - **Checkpoints are written during streaming.** When the agent has a `Checkpointer` configured, turn-boundary and pre-tool checkpoints are persisted as the loop runs — so a process crash mid-stream can resume from the last checkpoint with `chain.aresume(...)`.
 - **`InterruptSignal` works inside streamed tool calls.** Calling `interrupt(...)` from within a tool that runs during `astream()` pauses and checkpoints the run identically to `arun()`, and the execution resumes via the standard `aresume` flow. Since 1.77.0 the stream says so with a final `Paused` event; before, a private exception escaped the generator at that point (a managed approval policy's pause did the same).
 

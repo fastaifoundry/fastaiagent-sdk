@@ -13,9 +13,25 @@ Both plug into the Agent pipeline, but they serve different purposes.
 | Composition | Onion — each middleware wraps the next | Flat list — each guardrail runs independently |
 | When to use | "Trim history", "redact PII", "cap tool calls", "rewrite refusals" | "Is this PII?", "Is the JSON valid?", "Is this toxic?" |
 
-Input guardrails run **before** middleware's `before_model`; output guardrails run **after** middleware's `after_model` on the final iteration.
+Input guardrails run **before** middleware's `before_model` — and **after** `before_run`, so they judge the input as middleware rewrote it; output guardrails run **after** middleware's `after_model` on the final iteration.
 
-## The Three Hooks
+## The Hooks
+
+Eight hooks, all optional. Three act on one model call or one tool call; five
+(since 1.91.0) act on the run as a whole or on every model call:
+
+| Hook | When | Can do |
+|---|---|---|
+| `before_run(ctx, input)` | once per run (`run`, `astream`, a resume), before the input guardrails | rewrite the input; `raise StopAgent` to end the run before any model call |
+| `before_model(ctx, messages)` | before each model call of the tool loop | transform the messages; change `ctx.llm` / `ctx.tools` for this call |
+| `wrap_model(ctx, messages, call_next)` | around **every** model call — the structured-output and guardrail re-asks too | retry, time, cache (answer without calling the model), swap `ctx.llm` |
+| `after_model(ctx, response)` | after each model call, before tools run | inspect or rewrite the response |
+| `wrap_tool(ctx, tool, args, call_next)` | around each tool call | short-circuit, retry, budget |
+| `after_run(ctx, result)` | once, when the run finishes (not on a pause or a failure) | inspect or replace the `AgentResult` |
+| `on_error(ctx, error)` | once, when the run fails | observe — log, count, alert. It cannot swallow the error |
+| `on_stream_event(ctx, event)` | each event `astream` yields | rewrite it, or return `None` to drop it |
+
+The first three hooks, in full:
 
 ```python
 from fastaiagent import AgentMiddleware, MiddlewareContext
@@ -51,21 +67,43 @@ class MyMiddleware(AgentMiddleware):
         return await call_next(tool, args)
 ```
 
-All three hooks are optional — override only what you need.
+Override only what you need. The run-level hooks have the same shape:
+
+```python
+from fastaiagent import AgentMiddleware
+
+
+class RunHooks(AgentMiddleware):
+    async def before_run(self, ctx, input):
+        return input                      # or a rewrite; raise StopAgent to end
+
+    async def wrap_model(self, ctx, messages, call_next):
+        return await call_next(messages)  # MUST call it to reach the model
+
+    async def after_run(self, ctx, result):
+        return result                     # the AgentResult, or a replacement
+
+    async def on_error(self, ctx, error):
+        ...                               # observe; the run still fails
+
+    async def on_stream_event(self, ctx, event):
+        return event                      # or a replacement, or None to drop
+```
 
 ## Hook Ordering
 
-- `before_model` — declaration order (first middleware first)
-- `after_model` — **reverse** declaration order (last middleware first)
-- `wrap_tool` — onion (first middleware is outermost, calls into inner middleware via `call_next`)
+- `before_run`, `before_model` — declaration order (first middleware first)
+- `after_model`, `after_run`, `on_error`, `on_stream_event` — **reverse** declaration order (last middleware first)
+- `wrap_model`, `wrap_tool` — onion (first middleware is outermost, calls into inner middleware via `call_next`)
 
 ```
 Agent.arun()
+ ├─ middleware[0..2].before_run
  ├─ input guardrails
  ├─ middleware[0].before_model
  ├─ middleware[1].before_model
  ├─ middleware[2].before_model
- ├─ LLM.acomplete()
+ ├─ middleware[0].wrap_model → [1] → [2] → LLM.acomplete()
  ├─ middleware[2].after_model
  ├─ middleware[1].after_model
  ├─ middleware[0].after_model
@@ -78,7 +116,8 @@ Agent.arun()
  │   │   ← middleware[1].wrap_tool  (post)
  │   ← middleware[0].wrap_tool  (post)
  ├─ (repeat LLM + tool calls per iteration)
- └─ output guardrails
+ ├─ output guardrails (a reask goes through wrap_model too)
+ └─ middleware[2..0].after_run
 ```
 
 ## The MiddlewareContext
@@ -92,8 +131,161 @@ Each run creates one `MiddlewareContext` that every hook sees:
 | `tool_call_index` | Zero-indexed tool call within the current turn |
 | `scratch` | Mutable `dict` shared across all hooks — use to pass data between `before_model` and `after_model`, or to accumulate state across tool calls |
 | `agent_name` | Name of the agent running |
+| `execution_id` | The run's id — what its checkpoints and resumes use *(since 1.91.0)* |
+| `llm` | The client **this** model call uses. Set it in `before_model` or `wrap_model` to send one call to another model *(since 1.91.0)* |
+| `tools` | The tools **this** model call offers. Filter or extend the list; a tool added here can be called on this turn *(since 1.91.0)* |
+| `usage` | Read-only `RunUsage(tokens, cost, cost_known, calls)`: the run's spend so far — the same running total `AgentResult.cost` and `cost_limit` read *(since 1.91.0)* |
 
-Scratch is **per-run**; a fresh dict on every `agent.arun()`.
+Scratch is **per-run**; a fresh dict on every `agent.arun()`. A **resume** keeps
+one context from start to finish — the tool call it re-runs and the loop it
+continues see the same `scratch` (before 1.91.0 they saw two different ones).
+
+`ctx.llm` and `ctx.tools` are reset to the agent's own before every turn, so a
+change lasts one call. A structured-output or guardrail re-ask offers no tools.
+
+## Wrapping a model call
+
+`wrap_model` is to the model what `wrap_tool` is to a tool. It sees **every**
+model call — each turn of the tool loop, and the structured-output and guardrail
+re-asks, which before 1.91.0 bypassed middleware entirely.
+
+```python
+import time
+from fastaiagent import AgentMiddleware
+from fastaiagent.llm.client import LLMResponse
+
+
+class TimeModelCalls(AgentMiddleware):
+    async def wrap_model(self, ctx, messages, call_next):
+        started = time.monotonic()
+        try:
+            return await call_next(messages)
+        finally:
+            ctx.scratch.setdefault("model_ms", []).append(
+                int((time.monotonic() - started) * 1000)
+            )
+
+
+class RetryOnce(AgentMiddleware):
+    async def wrap_model(self, ctx, messages, call_next):
+        try:
+            return await call_next(messages)
+        except Exception:
+            return await call_next(messages)
+
+
+class AnswerFromCache(AgentMiddleware):
+    def __init__(self):
+        self.cache: dict[str, LLMResponse] = {}
+
+    async def wrap_model(self, ctx, messages, call_next):
+        key = "\n".join(str(m.content) for m in messages)
+        if key in self.cache:
+            return self.cache[key]        # the model is never called
+        response = await call_next(messages)
+        self.cache[key] = response
+        return response
+```
+
+**One call on another model.** Set `ctx.llm` — for example, let a cheaper model
+write the final answer once the tools have run:
+
+```python
+from fastaiagent import LLMClient
+
+cheap = LLMClient(provider="gemini", model="gemini-3.5-flash-lite")
+
+
+class FinalAnswerOnCheapModel(AgentMiddleware):
+    async def before_model(self, ctx, messages):
+        if ctx.turn >= 1:
+            ctx.llm = cheap
+        return messages
+```
+
+**One call with other tools.** Set `ctx.tools` to offer a subset (or extra
+tools) on this call only.
+
+**On `astream`** the model's deltas stream to the caller as they arrive while
+your `wrap_model` waits on `call_next`. A response you return without calling
+the model is streamed as one `TextDelta`; a retry after deltas streams the second
+attempt too. Rewriting the response after `call_next` changes what the run keeps
+and what `stream()` returns, not the deltas already sent — the same rule as
+`after_model`.
+
+## Around the run
+
+`before_run` and `after_run` bracket the run once — a tool loop of any length.
+
+```python
+class TagTicket(AgentMiddleware):
+    async def before_run(self, ctx, input):
+        return f"[ticket {ctx.run_context.state.ticket}] {input}"
+
+    async def after_run(self, ctx, result):
+        result.output = result.output.strip()
+        return result
+```
+
+- `before_run` runs **before the input guardrails**, so they judge the rewritten
+  input. Raising `StopAgent` there ends the run before any model call; the result
+  carries the stop message and `stop_reason`.
+- `before_run` also fires when a run is **resumed**, with the run's original
+  input; there its return value is not used — the saved history is what the run
+  continues from.
+- `after_run` fires once on success — not when the run pauses (a resumed run
+  fires it when it finishes) and not when it fails. On `astream` the reply has
+  already been streamed; what `after_run` returns is what `stream()` returns.
+  Memory keeps the agent's own reply, not the rewrite.
+
+## When a run fails
+
+Middleware is **fail-closed**: a hook that raises anything other than `StopAgent`
+fails the run, exactly as a failing tool loop does. Since 1.91.0, on every path
+(`run`, `astream`, a resume):
+
+- `on_error(ctx, error)` fires once, in reverse order, with the exception the run
+  is failing with. It observes; the run still raises `error`. An exception raised
+  inside `on_error` is logged and never replaces `error`.
+- A run with a checkpointer gets a `failed` run-end marker (see
+  [Durability concepts](../durability/concepts.md)).
+- A `StopAgent` and a pause are not failures — `on_error` does not fire for them.
+
+```python
+import logging
+
+class AlertOnFailure(AgentMiddleware):
+    async def on_error(self, ctx, error):
+        logging.getLogger("agents").error(
+            "run %s failed: %s", ctx.execution_id, type(error).__name__
+        )
+```
+
+`Reflect` is the one built-in that **fails open** by design — a review that
+errors keeps the draft. Since 1.91.0 it says so: a warning, a count in
+`ctx.scratch["reflect_skipped"]` and a `reflect.skipped` span event, so an
+unreviewed answer is never mistaken for an approved one.
+
+## Filtering the stream
+
+`on_stream_event` sees each event `astream` is about to yield:
+
+```python
+from fastaiagent.llm.stream import TextDelta, Usage
+
+
+class HideUsage(AgentMiddleware):
+    async def on_stream_event(self, ctx, event):
+        if isinstance(event, Usage):
+            return None                   # dropped
+        return event
+```
+
+`StreamDone` and `Paused` are always delivered — a consumer waits on them, so a
+`None` for those is ignored.
+
+All of these together, on a support agent, run live or `--offline`:
+[`examples/108_middleware_run_hooks.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/108_middleware_run_hooks.py).
 
 ## Cooperative Stop
 

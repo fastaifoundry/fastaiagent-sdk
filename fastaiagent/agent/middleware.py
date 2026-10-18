@@ -1,50 +1,70 @@
-"""Agent middleware — composable pre/post model hooks and tool wrappers.
+"""Agent middleware — composable hooks around the run, each model call and each tool.
 
-Middleware runs between the agent's guardrail ring and the LLM/tool loop::
+Where each hook sits::
 
+    before_run                      (once per run, before the input guardrails)
     input guardrail
         -> before_model
-        -> LLM
+        -> wrap_model chain -> LLM  (every model call, re-asks included)
         -> after_model
         -> wrap_tool chain -> tool
         -> output guardrail
+    after_run                       (once, on success)
+    on_error                        (once, when the run fails)
+    on_stream_event                 (each event ``astream`` yields)
 
-Three hook types, all optional:
+All hooks are optional:
 
-- ``before_model``   — transform the message list before the LLM call
-- ``after_model``    — inspect or rewrite the LLM response before tool dispatch
-- ``wrap_tool``      — onion-wrap each tool invocation (must call ``call_next``)
+- ``before_run``      — rewrite the run's input, or ``raise StopAgent`` to end it
+- ``before_model``    — transform the message list before the LLM call
+- ``wrap_model``      — onion-wrap each model call (must call ``call_next`` to
+  reach the model; may retry it, time it, or answer without it)
+- ``after_model``     — inspect or rewrite the LLM response before tool dispatch
+- ``wrap_tool``       — onion-wrap each tool invocation (must call ``call_next``)
+- ``after_run``       — inspect or replace the finished ``AgentResult``
+- ``on_error``        — observe the exception a run failed with (cannot swallow it)
+- ``on_stream_event`` — rewrite or drop an event on its way to the caller
 
 Ordering:
 
-- ``before_model`` runs in declaration order (first middleware first)
-- ``after_model`` runs in reverse declaration order (last middleware first) —
-  mirrors the onion pattern
-- ``wrap_tool`` is onion: the first middleware is outermost, sees the full
-  downstream chain via ``call_next``
+- ``before_run`` / ``before_model`` run in declaration order (first middleware
+  first)
+- ``after_model`` / ``after_run`` / ``on_error`` / ``on_stream_event`` run in
+  reverse declaration order (last middleware first) — mirrors the onion pattern
+- ``wrap_model`` / ``wrap_tool`` are onions: the first middleware is outermost
+  and sees the full downstream chain via ``call_next``
 
 Middleware is orthogonal to ``Guardrail``. Middleware *transforms*; guardrails
 *assert*. To block execution cooperatively from middleware, raise
-``StopAgent``.
+``StopAgent``. Any other exception from a hook fails the run (fail-closed), and
+``on_error`` sees it.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastaiagent._internal.errors import StopAgent
-from fastaiagent.agent.context import RunContext
+from fastaiagent.agent.context import RunContext, RunUsage, current_run_usage_view
 from fastaiagent.llm.client import LLMResponse
 from fastaiagent.llm.message import Message, MessageRole, balance_tool_messages
+from fastaiagent.llm.stream import Paused, StreamDone, StreamEvent
 from fastaiagent.tool.base import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from fastaiagent.agent.agent import AgentResult
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "AgentMiddleware",
     "MiddlewareContext",
+    "ModelCallNext",
     "Reflect",
     "RedactPII",
     "StopAgent",
@@ -63,6 +83,9 @@ __all__ = [
 class MiddlewareContext:
     """Per-turn context passed to every middleware callback.
 
+    One context lives for the whole run — a resume included — so ``scratch``
+    carries from ``before_run`` to ``after_run``.
+
     Attributes:
         run_context: The user-supplied RunContext, if any.
         turn: Zero-indexed LLM iteration within the current ``agent.arun()``.
@@ -71,6 +94,14 @@ class MiddlewareContext:
             Use this to pass data between ``before_model`` and ``after_model``,
             or to accumulate state across tool calls within a run.
         agent_name: Name of the agent running.
+        execution_id: The run's id — the one its checkpoints and resumes use.
+        llm: The client THIS model call will use. Set it in ``before_model`` or
+            ``wrap_model`` to send one call to another model; it is reset to the
+            agent's client before every turn, so the change lasts one call.
+        tools: The tools THIS model call offers. Filter or extend the list in
+            ``before_model`` / ``wrap_model``; a tool added here can be called
+            on this turn. Reset to the agent's tools before every turn. A
+            structured-output or guardrail re-ask offers no tools.
     """
 
     run_context: RunContext[Any] | None = None
@@ -78,9 +109,20 @@ class MiddlewareContext:
     tool_call_index: int = 0
     scratch: dict[str, Any] = field(default_factory=dict)
     agent_name: str = ""
+    execution_id: str = ""
+    llm: Any = None
+    tools: list[Tool] = field(default_factory=list)
+
+    @property
+    def usage(self) -> RunUsage:
+        """The run's tokens and cost so far (read-only, from the run's running
+        total — the number ``AgentResult.cost`` and ``cost_limit`` read)."""
+        return current_run_usage_view()
 
 
 ToolCallNext = Callable[[Tool, dict[str, Any]], Awaitable[ToolResult]]
+#: What ``wrap_model`` calls to reach the next middleware, and finally the model.
+ModelCallNext = Callable[[list[Message]], Awaitable[LLMResponse]]
 
 
 # ---------------------------------------------------------------------------
@@ -105,6 +147,60 @@ class AgentMiddleware:
     """
 
     name: str = ""
+
+    async def before_run(self, ctx: MiddlewareContext, input: Any) -> Any:
+        """Once per run, before the input guardrails — so they judge what this
+        returns. ``input`` is what the run was given (a string, or a multimodal
+        list). Return it, or a replacement. ``raise StopAgent`` to end the run
+        before any model call.
+
+        Also fires when a run is **resumed**, with the run's original input
+        text; there the return value is not used — the saved history is what
+        the run continues from.
+        """
+        return input
+
+    async def after_run(self, ctx: MiddlewareContext, result: AgentResult) -> AgentResult:
+        """Once, when the run finishes — not when it pauses or fails. Return the
+        result, or a replacement. On ``astream`` the reply has already been
+        streamed; what this returns is what ``stream()`` returns.
+        """
+        return result
+
+    async def wrap_model(
+        self,
+        ctx: MiddlewareContext,
+        messages: list[Message],
+        call_next: ModelCallNext,
+    ) -> LLMResponse:
+        """Wrap one model call — every one, the structured-output and guardrail
+        re-asks included.
+
+        ``await call_next(messages)`` reaches the next middleware and finally the
+        model (``ctx.llm``, offering ``ctx.tools``). Retry by calling it again,
+        answer without the model by returning an ``LLMResponse`` yourself, or
+        time it. On ``astream`` the model's deltas stream to the caller as they
+        arrive; a response returned without calling the model is streamed as one
+        ``TextDelta``.
+        """
+        return await call_next(messages)
+
+    async def on_error(self, ctx: MiddlewareContext, error: BaseException) -> None:
+        """Once, when the run fails — any exception except ``StopAgent``, which
+        ends a run cooperatively, and a pause. Observe it (log, count, alert);
+        the run still fails with ``error``. An exception raised here is logged
+        and never replaces ``error``.
+        """
+        return None
+
+    async def on_stream_event(
+        self, ctx: MiddlewareContext, event: StreamEvent
+    ) -> StreamEvent | None:
+        """Each event ``astream`` is about to yield. Return it, a replacement, or
+        ``None`` to drop it. ``StreamDone`` and ``Paused`` are always delivered
+        — a ``None`` for those is ignored, since a consumer waits on them.
+        """
+        return event
 
     async def before_model(self, ctx: MiddlewareContext, messages: list[Message]) -> list[Message]:
         """Transform messages before the LLM call.
@@ -160,6 +256,71 @@ class _MiddlewarePipeline:
 
     def __bool__(self) -> bool:
         return bool(self._middleware)
+
+    def overrides(self, hook: str) -> bool:
+        """Does any middleware implement ``hook``? The loops take today's exact
+        path when none does — ``wrap_model`` on a stream, in particular, costs a
+        task and a queue."""
+        base = getattr(AgentMiddleware, hook)
+        return any(getattr(type(mw), hook, base) is not base for mw in self._middleware)
+
+    async def apply_before_run(self, ctx: MiddlewareContext, input: Any) -> Any:
+        for mw in self._middleware:
+            input = await mw.before_run(ctx, input)
+        return input
+
+    async def apply_after_run(self, ctx: MiddlewareContext, result: AgentResult) -> AgentResult:
+        for mw in reversed(self._middleware):
+            result = await mw.after_run(ctx, result)
+        return result
+
+    async def notify_error(self, ctx: MiddlewareContext, error: BaseException) -> None:
+        """Tell every middleware the run failed. Never raises: the caller is
+        about to re-raise ``error``, and a hook's own bug must not replace it."""
+        for mw in reversed(self._middleware):
+            try:
+                await mw.on_error(ctx, error)
+            except Exception as hook_error:  # noqa: BLE001 - see docstring
+                logger.warning(
+                    "middleware %s on_error raised %s: %s (the run's own error stands)",
+                    mw.name or type(mw).__name__,
+                    type(hook_error).__name__,
+                    hook_error,
+                )
+
+    async def apply_stream_event(
+        self, ctx: MiddlewareContext, event: StreamEvent
+    ) -> StreamEvent | None:
+        for mw in reversed(self._middleware):
+            rewritten = await mw.on_stream_event(ctx, event)
+            if rewritten is None:
+                if isinstance(event, (StreamDone, Paused)):
+                    continue  # always delivered: a consumer waits on these
+                return None
+            event = rewritten
+        return event
+
+    async def call_model(
+        self,
+        ctx: MiddlewareContext,
+        messages: list[Message],
+        terminal: ModelCallNext,
+    ) -> LLMResponse:
+        """Run one model call through the ``wrap_model`` onion; ``terminal`` is
+        the real call. The first middleware is outermost."""
+        chain: ModelCallNext = terminal
+        for mw in reversed(self._middleware):
+            prev = chain
+
+            async def _wrapper(
+                m: list[Message],
+                _mw: AgentMiddleware = mw,
+                _prev: ModelCallNext = prev,
+            ) -> LLMResponse:
+                return await _mw.wrap_model(ctx, m, _prev)
+
+            chain = _wrapper
+        return await chain(messages)
 
     async def apply_before_model(
         self, ctx: MiddlewareContext, messages: list[Message]
@@ -374,6 +535,25 @@ class RedactPII(AgentMiddleware):
         return response
 
 
+def _record_reflect_skip(ctx: MiddlewareContext, exc: BaseException) -> None:
+    """``Reflect`` could not review the draft: a warning, a count in
+    ``ctx.scratch["reflect_skipped"]`` and a ``reflect.skipped`` event on the
+    current span (the error's type only — its text may quote the draft)."""
+    ctx.scratch["reflect_skipped"] = ctx.scratch.get("reflect_skipped", 0) + 1
+    logger.warning(
+        "Reflect could not review the answer (%s) and kept the draft unreviewed",
+        type(exc).__name__,
+    )
+    try:
+        from opentelemetry import trace as _otel_trace
+
+        _otel_trace.get_current_span().add_event(
+            "reflect.skipped", {"reflect.error_type": type(exc).__name__}
+        )
+    except Exception:  # pragma: no cover - tracing must never break the run
+        logger.debug("reflect.skipped span event failed", exc_info=True)
+
+
 class Reflect(AgentMiddleware):
     """Self-critique the agent's final answer and revise it.
 
@@ -385,7 +565,10 @@ class Reflect(AgentMiddleware):
 
     Opt-in via ``Agent(middleware=[Reflect(facts=[...])])``. Costs one extra LLM
     call per final answer (more if ``max_revisions > 1`` and the reviewer is not
-    yet satisfied). Fails open: any reviewer error keeps the original answer.
+    yet satisfied). Fails open: any reviewer error keeps the original answer —
+    and is recorded as a warning, ``ctx.scratch["reflect_skipped"]`` and a
+    ``reflect.skipped`` span event, so an unreviewed answer is never mistaken for
+    an approved one.
 
     Example:
         agent = Agent(
@@ -447,8 +630,11 @@ class Reflect(AgentMiddleware):
                 raw = (resp.content or "").strip()
                 raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw).strip()
                 data = json.loads(raw)
-            except Exception:
-                # Fail open — keep the latest good answer if reflection errors.
+            except Exception as exc:
+                # Fail open — keep the latest good answer if reflection errors —
+                # but say so (1.91.0, 1E): a review that silently did not happen
+                # read exactly like one that approved the draft.
+                _record_reflect_skip(ctx, exc)
                 break
 
             revised = str(data.get("revised") or answer)

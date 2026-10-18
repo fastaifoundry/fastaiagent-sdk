@@ -320,6 +320,29 @@ def test_stream_still_reports_the_runs_tokens_and_cost() -> None:
     assert result.cost_known is True  # MockLLMClient is unpriced but zero calls are recorded
 
 
+def test_stream_returns_the_same_answer_as_run() -> None:
+    """X13: ``stream()`` joined every delta, so text said before a tool call
+    ("Let me check.") became part of the answer, unlike ``run()``."""
+
+    def talky() -> MockLLMClient:
+        return MockLLMClient(
+            responses=[
+                LLMResponse(
+                    content="Let me check. ",
+                    tool_calls=[ToolCall(id="c1", name="charge", arguments={"amount": 5})],
+                    finish_reason="tool_calls",
+                ),
+                LLMResponse(content="The answer is 4.", finish_reason="stop"),
+            ]
+        )
+
+    def agent() -> Agent:
+        return Agent(name="x13", llm=talky(), tools=[FunctionTool(name="charge", fn=charge)])
+
+    assert agent().run("q").output == "The answer is 4."
+    assert agent().stream("q").output == "The answer is 4."
+
+
 # ── X8: streamed after_model sees total_tokens ─────────────────────────────
 
 

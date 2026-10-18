@@ -7,7 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] — 1.91.0
 
+### Added — middleware is the one extension model (Bet 1)
+
+- **Five new `AgentMiddleware` hooks**, all optional, same ordering rules as the
+  existing three:
+  - `before_run(ctx, input)` runs once per run (`run`, `astream`, a resume), before
+    the input guardrails, so they judge the rewritten input. `StopAgent` there
+    ends the run with no model call.
+  - `after_run(ctx, result)` runs once, on success.
+  - `wrap_model(ctx, messages, call_next)` is an onion around **every** model
+    call, the structured-output and guardrail re-asks included (they bypassed
+    middleware before). It can retry, time or cache a call. On `astream`,
+    deltas still stream live.
+  - `on_error(ctx, error)` runs once when the run fails and cannot swallow the
+    error.
+  - `on_stream_event(ctx, event)` can rewrite or drop an event. `StreamDone` and
+    `Paused` are always delivered.
+- **`MiddlewareContext.llm` / `.tools`** — the client and tools **this** model
+  call uses; set them to change one call. Also `.execution_id` and `.usage`
+  (`RunUsage(tokens, cost, cost_known, calls)`, exported from `fastaiagent`).
+- A resume keeps **one** middleware context for the re-run tool call and the
+  continued loop (they had separate `scratch` dicts).
+- **Fail-closed, written down:** a hook that raises fails the run, `on_error`
+  hears it, and the run gets a `failed` marker. `Reflect` still fails open,
+  but now records it: a warning, `ctx.scratch["reflect_skipped"]` and a
+  `reflect.skipped` span event.
+- Example `108_middleware_run_hooks.py`.
+
 ### Fixed — found while mapping Bets 1 and 2, each reproduced before fixing
+
+- **`stream()` returned different text than `run()`** (X13). It joined every
+  delta, so text said before a tool call ("Let me check.") became part of the
+  answer. It now returns the run's final reply.
 
 - **Gemini 3.5 and later: tool-using agents failed on their second turn** (X11).
   Every Gemini model after 2.5 — `gemini-3.5-flash-lite`, `3.6/3.7/3.8-flash`,

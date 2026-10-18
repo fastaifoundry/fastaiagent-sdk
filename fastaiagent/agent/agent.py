@@ -35,6 +35,7 @@ from fastaiagent.agent.executor import (
     _governed_tool_call,
     _stopped_response,
     _StoppedResponse,
+    _stream_stop,
     execute_tool_loop,
     stream_tool_loop,
 )
@@ -132,6 +133,10 @@ def _run_tokens_or(response: Any, retry_tokens: int) -> int:
     if accumulated:
         return accumulated
     return usage_tokens(getattr(response, "usage", None)) + retry_tokens
+
+
+async def _one_event(event: StreamEvent) -> AsyncGenerator[StreamEvent, None]:
+    yield event
 
 
 def _loop_end_turn(tool_calls: list[dict[str, Any]], start_iteration: int) -> int:
@@ -514,12 +519,33 @@ class Agent:
         value, _ = self._try_parse(text)
         return value
 
+    async def _ask_model(
+        self,
+        mw_ctx: MiddlewareContext | None,
+        messages: list[Message],
+        kwargs: dict[str, Any],
+    ) -> LLMResponse:
+        """A model call outside the tool loop — the structured-output and
+        guardrail re-asks. Through ``wrap_model`` like every loop call (1.91.0,
+        1A): before, a re-ask bypassed middleware, so a cache, a retry or a
+        budget never saw it. Offers no tools."""
+        if mw_ctx is None or not self._mw_pipeline.overrides("wrap_model"):
+            return await self.llm.acomplete(messages, **kwargs)
+        mw_ctx.llm = self.llm
+        mw_ctx.tools = []
+
+        async def _terminal(msgs: list[Message]) -> LLMResponse:
+            return await (mw_ctx.llm or self.llm).acomplete(msgs, **kwargs)
+
+        return await self._mw_pipeline.call_model(mw_ctx, messages, _terminal)
+
     async def _reask_structured(
         self,
         messages: list[Message],
         bad_output: str,
         error: str,
         kwargs: dict[str, Any],
+        mw_ctx: MiddlewareContext | None = None,
     ) -> tuple[str, Any | None, int]:
         """Re-ask the model to fix a structured-output parse/validation failure.
 
@@ -548,7 +574,7 @@ class Agent:
                     "satisfies the required schema — no explanation, no markdown."
                 )
             )
-            resp = await self.llm.acomplete(messages, **kwargs)
+            resp = await self._ask_model(mw_ctx, messages, kwargs)
             output = resp.content or ""
             extra_tokens += resp.usage.get("total_tokens", 0)
             parsed, reason = self._try_parse(output)
@@ -565,6 +591,7 @@ class Agent:
         kwargs: dict[str, Any],
         *,
         stopped: bool = False,
+        mw_ctx: MiddlewareContext | None = None,
     ) -> tuple[str, Any | None, int]:
         """Run the output guardrails, honouring whatever action they carry.
 
@@ -632,7 +659,7 @@ class Agent:
                     "Reply again, addressing that problem. Do not mention this instruction."
                 ),
             ]
-            resp = await self.llm.acomplete(llm_messages, **kwargs)
+            resp = await self._ask_model(mw_ctx, llm_messages, kwargs)
             output = resp.content or ""
             extra_tokens += resp.usage.get("total_tokens", 0)
             parsed, _ = self._try_parse(output)
@@ -923,6 +950,7 @@ class Agent:
         _stopped: StopAgent | None = None,
         _seed_firings: list[Any] | None = None,
         _seed_usage: Any | None = None,
+        _mw_ctx: MiddlewareContext | None = None,
         **kwargs: Any,
     ) -> AgentResult:
         """Core execution without tracing.
@@ -930,6 +958,10 @@ class Agent:
         ``_stopped``: middleware raised ``StopAgent`` around the call a resume
         re-ran, so the run ends here exactly as the loop ends a stopped run —
         without another model call.
+
+        ``_mw_ctx``: a resume's middleware context. The resume already fired
+        ``before_run`` and ran the saved tool with it; reusing it keeps one
+        ``scratch`` for the whole run and ``before_run`` from firing twice.
 
         ``_seed_firings`` / ``_seed_usage``: what that re-run call recorded
         (guardrail firings, and any model spend — an ``llm_judge`` on it). It ran
@@ -991,7 +1023,25 @@ class Agent:
         if self._checkpointer is not None:
             self._checkpointer.setup()
 
+        # Middleware context shared across the whole run — a resume hands in
+        # its own so the re-run tool call and the continued loop share it.
+        mw_ctx: MiddlewareContext | None = _mw_ctx
+        if mw_ctx is None and self._mw_pipeline:
+            mw_ctx = MiddlewareContext(
+                run_context=context, agent_name=self.name, execution_id=exec_id
+            )
+
         try:
+            # ``before_run`` (1.91.0, 1A): once per run, before the input
+            # guardrails, so they judge the input as rewritten. A resume fired it
+            # already (it hands in ``_mw_ctx``); a fork is a run of its own.
+            # ``StopAgent`` ends the run here, before any model call.
+            if mw_ctx is not None and _mw_ctx is None:
+                try:
+                    input = await self._mw_pipeline.apply_before_run(mw_ctx, input)
+                except StopAgent as stop:
+                    _stopped = stop
+
             # Normalize once — every downstream step uses the same shape.
             normalized_parts: list[ContentPart] = (
                 [input] if isinstance(input, str) else normalize_input(input)
@@ -1005,9 +1055,10 @@ class Agent:
 
             # Execute input guardrails (blocking). Guardrails are text-only
             # today; we pass the text summary so policies still trigger on
-            # the textual portion of multimodal input.
+            # the textual portion of multimodal input. A run its middleware
+            # stopped before it began sends nothing, so there is nothing to judge.
             guarded_input: AgentInput = input
-            if eff_guardrails:
+            if eff_guardrails and _stopped is None:
                 outcome = await execute_guardrails(
                     eff_guardrails, input_text, GuardrailPosition.input, agent_name=self.name
                 )
@@ -1029,11 +1080,6 @@ class Agent:
             response_format = self._build_response_format()
             if response_format is not None:
                 kwargs["response_format"] = response_format
-
-            # Middleware context shared across the whole run.
-            mw_ctx: MiddlewareContext | None = None
-            if self._mw_pipeline:
-                mw_ctx = MiddlewareContext(run_context=context, agent_name=self.name)
 
             # The run-end marker has to cover EVERYTHING that can still kill the
             # run, not just the tool loop: 1.65.0's D5 fix wrapped only
@@ -1092,7 +1138,7 @@ class Agent:
                     and stop_reason is None
                 ):
                     output, parsed, retry_tokens = await self._reask_structured(
-                        llm_messages, output, perr, kwargs
+                        llm_messages, output, perr, kwargs, mw_ctx=mw_ctx
                     )
 
                 # Execute output guardrails. Unlike every other position this one
@@ -1106,6 +1152,7 @@ class Agent:
                         llm_messages,
                         kwargs,
                         stopped=stop_reason is not None,
+                        mw_ctx=mw_ctx,
                     )
                     retry_tokens += guardrail_tokens
 
@@ -1122,21 +1169,8 @@ class Agent:
                 latency = int((time.monotonic() - start) * 1000)
                 tokens = _run_tokens_or(response, retry_tokens)
 
-                # The run finished. Without this row a completed run and one that
-                # crashed right after its last turn are byte-identical — both leave a
-                # ``completed`` turn checkpoint as the newest row (audit D5).
-                if self._checkpointer is not None and owns_run:
-                    write_run_end(
-                        self._checkpointer,
-                        execution_id=exec_id,
-                        chain_name=self.name,
-                        status="completed",
-                        agent_path=new_path,
-                    )
-                    run_ended = True
-
                 cost, cost_known = run_cost()
-                return AgentResult(
+                result = AgentResult(
                     output=output,
                     parsed=parsed,
                     tool_calls=tool_calls,
@@ -1149,6 +1183,24 @@ class Agent:
                     guardrails=collected_firings(),
                     stop_reason=stop_reason,
                 )
+                # ``after_run`` (1.91.0, 1A) before the run-end marker: a hook
+                # that raises fails the run, and the marker must say so.
+                if mw_ctx is not None:
+                    result = await self._mw_pipeline.apply_after_run(mw_ctx, result)
+
+                # The run finished. Without this row a completed run and one that
+                # crashed right after its last turn are byte-identical — both leave a
+                # ``completed`` turn checkpoint as the newest row (audit D5).
+                if self._checkpointer is not None and owns_run:
+                    write_run_end(
+                        self._checkpointer,
+                        execution_id=exec_id,
+                        chain_name=self.name,
+                        status="completed",
+                        agent_path=new_path,
+                    )
+                    run_ended = True
+                return result
             except _AgentInterrupted as susp:
                 # Deliberately NO run-end marker: a paused run has not ended, and
                 # a row written after the ``interrupted`` one would hide the pause
@@ -1212,6 +1264,13 @@ class Agent:
                     )
                 raise
 
+        except BaseException as exc:
+            # ``on_error`` (1.91.0, 1A/1E): once, whatever killed the run — an
+            # input guardrail, the loop, a re-ask, a hook. It observes; the run
+            # still fails with ``exc`` (``notify_error`` never raises).
+            if mw_ctx is not None and not isinstance(exc, StopAgent):
+                await self._mw_pipeline.notify_error(mw_ctx, exc)
+            raise
         finally:
             _current_checkpointer.reset(cp_token)
             _agent_path.reset(ap_token)
@@ -1294,6 +1353,12 @@ class Agent:
                 set_prompt_provenance,
             )
 
+            # The inner generator leaves its middleware context here, so the
+            # ``on_stream_event`` hook below sees the same run context.
+            mw_holder: dict[str, MiddlewareContext] = {}
+            filters_events = bool(self._mw_pipeline) and self._mw_pipeline.overrides(
+                "on_stream_event"
+            )
             inner = self._astream_inner(
                 input,
                 context=context,
@@ -1302,6 +1367,7 @@ class Agent:
                 input_text=input_text,
                 span=span,
                 outcome=outcome,
+                _mw_holder=mw_holder,
                 **kwargs,
             )
             # This run's spend, which ``cost_limit`` reads (1.91.0, X3): before,
@@ -1324,6 +1390,14 @@ class Agent:
                     finally:
                         stop_run_cost(usage_token)
                         reset_prompt_provenance(pv_token)
+                    if filters_events and "ctx" in mw_holder:
+                        # ``on_stream_event`` (1.91.0, 1A): rewrite or drop.
+                        filtered = await self._mw_pipeline.apply_stream_event(
+                            mw_holder["ctx"], event
+                        )
+                        if filtered is None:
+                            continue
+                        event = filtered
                     yield event
             finally:
                 await inner.aclose()
@@ -1338,6 +1412,7 @@ class Agent:
         input_text: str,
         span: Any = None,
         outcome: dict[str, Any] | None = None,
+        _mw_holder: dict[str, MiddlewareContext] | None = None,
         **kwargs: Any,
     ) -> AsyncGenerator[StreamEvent, None]:
         """The streamed run itself. Split out of :meth:`astream` only so the
@@ -1346,17 +1421,38 @@ class Agent:
         for key, value in self.config._llm_kwargs().items():
             kwargs.setdefault(key, value)
 
+        # Middleware context shared across the whole run.
+        mw_ctx: MiddlewareContext | None = None
+        if self._mw_pipeline:
+            mw_ctx = MiddlewareContext(
+                run_context=context, agent_name=self.name, execution_id=exec_id
+            )
+            if _mw_holder is not None:
+                _mw_holder["ctx"] = mw_ctx
+        stopped_at_start: StopAgent | None = None
+
         # Expose the RunContext before anything reads memory: a per-user Memory
         # resolves its user from it while the prompt is built below. It is
         # reset on every exit, including an input guardrail block.
         rc_token = set_active_run_context(context)
         try:
+            # ``before_run`` before the input guardrails, as on ``arun``.
+            if mw_ctx is not None:
+                try:
+                    input = await self._mw_pipeline.apply_before_run(mw_ctx, input)
+                    parts: list[ContentPart] = (
+                        [input] if isinstance(input, str) else normalize_input(input)  # type: ignore[arg-type]
+                    )
+                    input_text = input if isinstance(input, str) else _input_summary_text(parts)
+                except StopAgent as stop:
+                    stopped_at_start = stop
+
             # Effective guardrails = local + plane-authored (see arun for details).
             eff_guardrails = self._effective_guardrails()
 
             # Execute input guardrails (blocking) on the text portion.
             guarded_input: AgentInput = input
-            if eff_guardrails:
+            if eff_guardrails and stopped_at_start is None:
                 in_outcome = await execute_guardrails(
                     eff_guardrails, input_text, GuardrailPosition.input, agent_name=self.name
                 )
@@ -1369,13 +1465,10 @@ class Agent:
             response_format = self._build_response_format()
             if response_format is not None:
                 kwargs["response_format"] = response_format
-
-            # Middleware context shared across the whole run.
-            mw_ctx: MiddlewareContext | None = None
-            if self._mw_pipeline:
-                mw_ctx = MiddlewareContext(run_context=context, agent_name=self.name)
-        except BaseException:
+        except BaseException as exc:
             reset_active_run_context(rc_token)
+            if mw_ctx is not None and not isinstance(exc, StopAgent):
+                await self._mw_pipeline.notify_error(mw_ctx, exc)
             raise
 
         # Set up execution-scoped ContextVars so interrupt() / @idempotent
@@ -1408,26 +1501,32 @@ class Agent:
             final_reply: dict[str, str] = {}
             streamed_tokens = 0
             try:
-                async for event in stream_tool_loop(
-                    llm=self.llm,
-                    messages=llm_messages,
-                    tools=self.tools,
-                    max_iterations=self.config.max_iterations,
-                    tool_choice=self.config.tool_choice,
-                    context=context,
-                    guardrails=eff_guardrails or None,
-                    mw_pipeline=self._mw_pipeline if self._mw_pipeline else None,
-                    mw_ctx=mw_ctx,
-                    checkpointer=self._checkpointer,
-                    execution_id=exec_id,
-                    agent_name=self.name,
-                    agent_id=self.agent_id,
-                    parallel_tools=self.config.parallel_tools,
-                    max_parallel_tools=self.config.max_parallel_tools,
-                    governance_run_id=pause_run_id,
-                    final_reply=final_reply,
-                    **kwargs,
-                ):
+                # ``before_run`` stopped the run: its message is the whole reply.
+                loop_events: AsyncGenerator[StreamEvent, None] = (
+                    _one_event(_stream_stop(stopped_at_start, final_reply))
+                    if stopped_at_start is not None
+                    else stream_tool_loop(
+                        llm=self.llm,
+                        messages=llm_messages,
+                        tools=self.tools,
+                        max_iterations=self.config.max_iterations,
+                        tool_choice=self.config.tool_choice,
+                        context=context,
+                        guardrails=eff_guardrails or None,
+                        mw_pipeline=self._mw_pipeline if self._mw_pipeline else None,
+                        mw_ctx=mw_ctx,
+                        checkpointer=self._checkpointer,
+                        execution_id=exec_id,
+                        agent_name=self.name,
+                        agent_id=self.agent_id,
+                        parallel_tools=self.config.parallel_tools,
+                        max_parallel_tools=self.config.max_parallel_tools,
+                        governance_run_id=pause_run_id,
+                        final_reply=final_reply,
+                        **kwargs,
+                    )
+                )
+                async for event in loop_events:
                     if isinstance(event, TextDelta):
                         accumulated_text += event.text
                     elif isinstance(event, Usage):
@@ -1516,6 +1615,28 @@ class Agent:
             # a multi-turn run reads as one stream; until 1.88.0 nothing emitted
             # the final one, and a consumer waiting for it waited forever. A
             # paused run ends with ``Paused`` instead (returned above).
+            # ``after_run`` (1.91.0, 1A), before the marker as on ``arun``. The
+            # reply has been streamed already; what it returns is what
+            # ``stream()`` returns.
+            if mw_ctx is not None and self._mw_pipeline.overrides("after_run"):
+                streamed_cost, streamed_cost_known = run_cost()
+                finished = await self._mw_pipeline.apply_after_run(
+                    mw_ctx,
+                    AgentResult(
+                        output=output,
+                        tokens_used=streamed_tokens,
+                        cost=streamed_cost,
+                        cost_known=streamed_cost_known,
+                        execution_id=exec_id,
+                        status="completed",
+                        trace_id=(outcome or {}).get("trace_id"),
+                        guardrails=collected_firings(),
+                        stop_reason=final_reply.get("stop_reason"),
+                    ),
+                )
+                if outcome is not None:
+                    outcome["output"] = finished.output
+                    outcome["stop_reason"] = finished.stop_reason
             # The run is done before the caller hears so: mark it first, so a
             # consumer that stops reading at ``StreamDone`` leaves a finished run.
             if marks_run:
@@ -1534,7 +1655,9 @@ class Agent:
             # it can. Same rules as ``_arun_core``: re-raise untouched, the marker
             # is best-effort, and a failure AFTER the loop first gets a re-entry
             # row past the loop's last turn, so recovery re-asks the model rather
-            # than re-running a tool that already ran.
+            # than re-running a tool that already ran. ``on_error`` hears it too.
+            if mw_ctx is not None and not settled and not isinstance(exc, StopAgent):
+                await self._mw_pipeline.notify_error(mw_ctx, exc)
             if marks_run and not settled:
                 if loop_done:
                     self._stream_loop_end_checkpoint(exec_id, llm_messages)
@@ -1824,14 +1947,64 @@ class Agent:
         only so its root span wraps the tool re-invocation and the loop."""
         from fastaiagent._internal.errors import ChainCheckpointError
 
-        if not is_tool_boundary:
-            # Pure turn-boundary resume — re-issue LLM at this iteration.
+        # Match _arun_core's nestable ``_agent_path`` semantics so a Swarm /
+        # Supervisor prefix is preserved; only the run's owner marks its end.
+        parent_path = _agent_path.get()
+        new_path = (
+            f"{parent_path}/{self._agent_path_label}" if parent_path else self._agent_path_label
+        )
+
+        # One middleware context for the whole resume — the re-run tool call and
+        # the continued loop share it (before 1.91.0 each made its own, so
+        # ``scratch`` did not carry across). A resume is a run starting again, so
+        # ``before_run`` fires, with the run's original input; its return is not
+        # used — the saved history is what the run continues from.
+        mw_ctx: MiddlewareContext | None = None
+        stopped: StopAgent | None = None
+        if self._mw_pipeline:
+            mw_ctx = MiddlewareContext(
+                run_context=context, agent_name=self.name, execution_id=execution_id
+            )
+            mw_ctx.turn = start_iteration
+
+        async def _resume_failed(exc: BaseException) -> None:
+            # The pending row is already claimed, so a failure here must leave a
+            # ``failed`` marker — before 1.91.0 the run kept ``interrupted`` as
+            # its newest row: it looked paused and could never be resumed (X2).
+            # Mark it on the store that held the pause; the continued loop's own
+            # failures are marked (and reported) by ``_arun_core``.
+            if mw_ctx is not None and not isinstance(exc, StopAgent):
+                await self._mw_pipeline.notify_error(mw_ctx, exc)
+            if parent_path is None:
+                write_run_end(
+                    store,
+                    execution_id=execution_id,
+                    chain_name=self.name,
+                    status="failed",
+                    error=exc,
+                    agent_path=new_path,
+                )
+
+        if mw_ctx is not None:
+            try:
+                await self._mw_pipeline.apply_before_run(mw_ctx, original_input)
+            except StopAgent as stop:
+                stopped = stop
+            except BaseException as exc:
+                await _resume_failed(exc)
+                raise
+
+        if not is_tool_boundary or stopped is not None:
+            # Pure turn-boundary resume — re-issue LLM at this iteration. Or
+            # ``before_run`` stopped the resume: end it without the saved tool.
             return await self._arun_core(
                 original_input,
                 context=context,
                 execution_id=execution_id,
                 _resumed_messages=messages,
                 _start_iteration=start_iteration,
+                _stopped=stopped,
+                _mw_ctx=mw_ctx,
                 **kwargs,
             )
 
@@ -1862,14 +2035,8 @@ class Agent:
         pause_run_id = self._pause_owner_run_id(execution_id)
 
         # Bind execution-scoped ContextVars exactly like _arun_core would —
-        # the suspended tool may itself call interrupt() / @idempotent. Match
-        # _arun_core's nestable ``_agent_path`` semantics so a Swarm /
-        # Supervisor prefix is preserved.
+        # the suspended tool may itself call interrupt() / @idempotent.
         exec_token = _execution_id.set(execution_id)
-        parent_path = _agent_path.get()
-        new_path = (
-            f"{parent_path}/{self._agent_path_label}" if parent_path else self._agent_path_label
-        )
         ap_token = _agent_path.set(new_path)
         cp_token = _current_checkpointer.set(self._checkpointer)
         # A managed approval policy paused this call and the answer is no — the
@@ -1893,14 +2060,9 @@ class Agent:
             if tool_call_id in ids:
                 call_index = ids.index(tool_call_id)
                 break
-        mw_ctx: MiddlewareContext | None = None
-        if self._mw_pipeline:
-            mw_ctx = MiddlewareContext(run_context=context, agent_name=self.name)
-            mw_ctx.turn = start_iteration
         from fastaiagent._internal.pricing import current_run_usage
         from fastaiagent.llm.message import ToolMessage
 
-        stopped: StopAgent | None = None
         # Collect what the re-run call records — guardrail firings, judge spend —
         # so the continued loop's scope can start from it (the result covers it).
         gf_token = start_firing_collection()
@@ -1983,20 +2145,8 @@ class Agent:
                 )
             except BaseException as exc:
                 # The re-invoked call failed — a ``tool_call`` guardrail blocked
-                # it, say. The pending row is already claimed, so before 1.91.0
-                # the run kept ``interrupted`` as its newest row: it looked paused
-                # and could never be resumed, and nothing said it had failed (X2).
-                # Mark it on the store that held the pause; the continued loop's
-                # own failures are marked by ``_arun_core``.
-                if parent_path is None:
-                    write_run_end(
-                        store,
-                        execution_id=execution_id,
-                        chain_name=self.name,
-                        status="failed",
-                        error=exc,
-                        agent_path=new_path,
-                    )
+                # it, say (X2; see ``_resume_failed``).
+                await _resume_failed(exc)
                 raise
             if stopped is None or tool_content:
                 messages.append(ToolMessage(content=tool_content, tool_call_id=tool_call_id))
@@ -2042,6 +2192,7 @@ class Agent:
                 _stopped=stopped,
                 _seed_firings=resumed_firings,
                 _seed_usage=resumed_usage,
+                _mw_ctx=mw_ctx,
                 **kwargs,
             )
         except _AgentInterrupted as susp:
@@ -2294,7 +2445,12 @@ class Agent:
                     if isinstance(event, TextDelta):
                         text_parts.append(event.text)
                 latency = int((time.monotonic() - start) * 1000)
-                output = "".join(text_parts)
+                # The run's answer — the last turn's reply after middleware,
+                # what ``run`` returns (1.91.0, X13). Joining every delta also
+                # took in text the model said before a tool call ("Let me
+                # check."), so ``stream`` and ``run`` returned different answers
+                # for the same run. The deltas stay the fallback.
+                output = str(outcome.get("output", "".join(text_parts)))
                 parsed = self._parse_output(output)
                 cost, cost_known = run_cost()
                 return AgentResult(
