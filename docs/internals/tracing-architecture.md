@@ -81,7 +81,10 @@ it **drains the `synced=0` rows from SQLite**, POSTs them, and marks them
 - **Bounded.** The re-send queue is capped (`_MAX_UNSYNCED` / `_MAX_AGE_DAYS` in
   `platform_export.py`); excess is abandoned from the queue (`synced=1`) but kept
   in SQLite. See `TraceStore.fetch_unsynced` / `mark_synced` /
-  `enforce_buffer_bound` and migration v11 (`spans.synced`).
+  `enforce_buffer_bound` and migration v11 (`spans.synced`). Flipping `synced`
+  must stay cheap. The `span_fts` update trigger fires only when `trace_id`,
+  `name` or `attributes` change (migration v27, 1.91.0). Before that, every
+  mark-synced rescanned the full-text index, and a 179k-span backlog took hours.
 
 #### Provenance: stamped at start, kept local at write (1.89.0)
 

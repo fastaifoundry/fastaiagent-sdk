@@ -22,9 +22,10 @@ from fastaiagent._internal.async_utils import run_sync
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.errors import LLMError, LLMProviderError, LLMRateLimitError
 from fastaiagent.llm.decisions import DecisionResult
-from fastaiagent.llm.message import Message, MessageRole, ToolCall
+from fastaiagent.llm.message import Message, MessageRole, ReasoningBlock, ToolCall
 from fastaiagent.llm.model_info import ModelInfo
 from fastaiagent.llm.stream import (
+    ReasoningDelta,
     StreamDone,
     StreamEvent,
     TextDelta,
@@ -346,6 +347,144 @@ class LLMResponse(BaseModel):
     # the response ``content`` parsed/validated into that type (``None`` if the
     # content couldn't be parsed).
     parsed: Any = None
+    #: What the model showed of its reasoning (1.91.0): Anthropic summarized
+    #: thinking, Gemini thought summaries, DeepSeek-style ``reasoning_content``.
+    #: ``None`` when it showed none — OpenAI Chat Completions never does.
+    reasoning: str | None = None
+    #: The provider's opaque reasoning blocks, sent back by the agent loop —
+    #: see :class:`~fastaiagent.llm.message.ReasoningBlock`.
+    reasoning_blocks: list[ReasoningBlock] = Field(default_factory=list)
+
+
+def _usage(
+    prompt: int,
+    completion: int,
+    *,
+    total: int | None = None,
+    reasoning: int | None = None,
+    cached: int | None = None,
+    cache_write: int | None = None,
+    cache_write_1h: int | None = None,
+) -> dict[str, Any]:
+    """One usage shape for every provider (1.91.0). ``prompt`` is the whole prompt,
+    cached part included. A count the provider did not report is left out, so a
+    response that reports none keeps the three keys it always had."""
+    usage: dict[str, Any] = {
+        "prompt_tokens": prompt,
+        "completion_tokens": completion,
+        "total_tokens": prompt + completion if total is None else total,
+    }
+    for key, value in (
+        ("reasoning_tokens", reasoning),
+        ("cached_tokens", cached),
+        ("cache_write_tokens", cache_write),
+        ("cache_write_1h_tokens", cache_write_1h),
+    ):
+        if value is not None:
+            usage[key] = int(value)
+    return usage
+
+
+def _openai_usage(raw: dict[str, Any] | None) -> dict[str, Any]:
+    """OpenAI usage with its cache and reasoning counts lifted out of the
+    ``*_details`` objects. ``prompt_tokens`` already includes the cache."""
+    usage = dict(raw or {})
+    prompt_details = usage.get("prompt_tokens_details") or {}
+    completion_details = usage.get("completion_tokens_details") or {}
+    for key, value in (
+        ("cached_tokens", prompt_details.get("cached_tokens")),
+        ("cache_write_tokens", prompt_details.get("cache_write_tokens")),
+        ("reasoning_tokens", completion_details.get("reasoning_tokens")),
+    ):
+        if value is not None:
+            usage[key] = int(value)
+    return usage
+
+
+def _openai_reasoning_text(message: dict[str, Any]) -> str | None:
+    """Reasoning text an OpenAI-compatible provider put beside the answer:
+    ``reasoning_content`` (DeepSeek, vLLM) or ``reasoning`` (Groq, OpenRouter).
+    OpenAI's own Chat Completions returns none."""
+    for key in ("reasoning_content", "reasoning"):
+        value = message.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def _anthropic_usage(raw: dict[str, Any] | None) -> dict[str, Any]:
+    """Anthropic usage, with the cache added back into ``prompt_tokens``:
+    ``input_tokens`` counts only what follows the last cache breakpoint."""
+    raw = raw or {}
+    read = raw.get("cache_read_input_tokens")
+    write = raw.get("cache_creation_input_tokens")
+    prompt = int(raw.get("input_tokens", 0)) + int(read or 0) + int(write or 0)
+    one_hour = (raw.get("cache_creation") or {}).get("ephemeral_1h_input_tokens")
+    return _usage(
+        prompt,
+        int(raw.get("output_tokens", 0)),
+        reasoning=(raw.get("output_tokens_details") or {}).get("thinking_tokens"),
+        cached=read,
+        cache_write=write,
+        cache_write_1h=one_hour or None,
+    )
+
+
+def _bedrock_usage(raw: dict[str, Any]) -> dict[str, Any]:
+    """Converse usage, with the cache in ``prompt_tokens``. Whether ``inputTokens``
+    already includes the cache is read off ``totalTokens``, not assumed."""
+    inp = int(raw.get("inputTokens", 0))
+    out = int(raw.get("outputTokens", 0))
+    read = raw.get("cacheReadInputTokens")
+    write = raw.get("cacheWriteInputTokens")
+    cache = int(read or 0) + int(write or 0)
+    total = raw.get("totalTokens")
+    excludes_cache = cache and total is not None and int(total) >= inp + out + cache
+    prompt = inp + cache if excludes_cache else inp
+    return _usage(prompt, out, cached=read, cache_write=write)
+
+
+def _bedrock_reasoning_in(block: dict[str, Any]) -> dict[str, Any]:
+    """A ``reasoningContent`` block, JSON-safe for a checkpoint: boto3 returns a
+    redacted block's bytes, kept here as base64."""
+    import base64
+
+    content = dict(block["reasoningContent"])
+    redacted = content.get("redactedContent")
+    if isinstance(redacted, (bytes, bytearray)):
+        content["redactedContent"] = base64.b64encode(bytes(redacted)).decode()
+    return {"reasoningContent": content}
+
+
+def _bedrock_reasoning_out(data: dict[str, Any]) -> dict[str, Any]:
+    """Inverse of :func:`_bedrock_reasoning_in`, for the request."""
+    import base64
+
+    content = dict(data.get("reasoningContent") or {})
+    if isinstance(content.get("redactedContent"), str):
+        content["redactedContent"] = base64.b64decode(content["redactedContent"])
+    return {"reasoningContent": content}
+
+
+def _usage_event(usage: dict[str, Any]) -> Usage:
+    """The streamed :class:`Usage` event for a usage dict."""
+    return Usage(
+        prompt_tokens=int(usage.get("prompt_tokens", 0)),
+        completion_tokens=int(usage.get("completion_tokens", 0)),
+        reasoning_tokens=int(usage.get("reasoning_tokens", 0)),
+        cached_tokens=int(usage.get("cached_tokens", 0)),
+        cache_write_tokens=int(usage.get("cache_write_tokens", 0)),
+        cache_write_1h_tokens=int(usage.get("cache_write_1h_tokens", 0)),
+    )
+
+
+def _usage_span_kwargs(usage: dict[str, Any]) -> dict[str, Any]:
+    """The cache and reasoning counts for ``set_genai_attributes``."""
+    return {
+        "reasoning_tokens": usage.get("reasoning_tokens"),
+        "cache_read_tokens": usage.get("cached_tokens"),
+        "cache_write_tokens": usage.get("cache_write_tokens"),
+    }
 
 
 # Built-in providers — these have first-class code paths in this module.
@@ -459,9 +598,25 @@ class LLMClient:
         extra_headers: dict[str, str] | None = None,
         max_concurrency: int | None = None,
         fallbacks: list[LLMClient] | None = None,
+        reasoning: str | None = None,
+        cache: bool | str = False,
         **kwargs: Any,
     ):
         """Configure a client for one provider and model.
+
+        ``reasoning`` (1.91.0) sets how hard the model thinks: ``"none"``,
+        ``"minimal"``, ``"low"``, ``"medium"``, ``"high"``, ``"xhigh"`` or
+        ``"max"``, put in each provider's own field (OpenAI ``reasoning_effort``,
+        Anthropic ``output_config.effort`` + thinking, Gemini ``thinkingLevel`` /
+        ``thinkingBudget``) — see :mod:`fastaiagent.llm.reasoning`. Unset sends
+        nothing: the model's default. A call can pass its own ``reasoning=``.
+        What the model shows of its reasoning is :attr:`LLMResponse.reasoning`.
+
+        ``cache`` (1.91.0) turns on prompt caching where it must be asked for —
+        Anthropic (automatic ``cache_control``) and Bedrock (``cachePoint``s);
+        ``"1h"`` asks for the one-hour lifetime. OpenAI and Gemini cache on their
+        own. Cache reads and writes are counted in ``usage`` and priced at their
+        own rates.
 
         ``extra_body`` / ``extra_headers`` (1.91.0) are added to every request —
         a provider option the SDK has no parameter for (``service_tier``,
@@ -481,9 +636,12 @@ class LLMClient:
         # Preset lookup is opt-in: built-in providers (openai/anthropic/
         # ollama/azure/bedrock/custom) bypass the registry entirely.
         from fastaiagent.llm.providers import get_preset
+        from fastaiagent.llm.reasoning import cache_setting, reasoning_level
 
         if max_concurrency is not None and max_concurrency < 1:
             raise ValueError(f"max_concurrency must be >= 1 or None, got {max_concurrency!r}")
+        self.reasoning: str | None = reasoning_level(reasoning)
+        self.cache: str | None = cache_setting(cache)
         self.extra_body: dict[str, Any] = dict(extra_body or {})
         self.extra_headers: dict[str, str] = dict(extra_headers or {})
         self.max_concurrency = max_concurrency
@@ -816,6 +974,27 @@ class LLMClient:
         async with sem:
             yield
 
+    def _reasoning(self, kwargs: dict[str, Any]) -> str | None:
+        """This call's reasoning level: the call's ``reasoning=``, else the client's."""
+        from fastaiagent.llm.reasoning import reasoning_level
+
+        return reasoning_level(kwargs.get("reasoning", self.reasoning))
+
+    def _cache(self, kwargs: dict[str, Any]) -> str | None:
+        """This call's cache setting: the call's ``cache=``, else the client's."""
+        from fastaiagent.llm.reasoning import cache_setting
+
+        return cache_setting(kwargs["cache"]) if "cache" in kwargs else self.cache
+
+    def _anthropic_reasoning_fields(
+        self, kwargs: dict[str, Any], max_tokens: int
+    ) -> dict[str, Any]:
+        """``thinking`` / ``output_config`` for this call (Anthropic and Bedrock Claude)."""
+        from fastaiagent.llm.reasoning import anthropic_fields
+
+        level = self._reasoning(kwargs)
+        return {} if level is None else anthropic_fields(self.model, level, max_tokens)
+
     def _extras(self, kwargs: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
         """This call's ``extra_body`` / ``extra_headers``: the client's, with the
         call's own merged over them."""
@@ -1060,6 +1239,8 @@ class LLMClient:
                     if response.tool_calls
                     else None,
                     finish_reason=response.finish_reason or None,
+                    response_reasoning=response.reasoning,
+                    **_usage_span_kwargs(response.usage),
                 )
                 # Cost, priced at the call — the one place every completion this
                 # client makes passes through, so a tool loop's third turn and a
@@ -1223,6 +1404,7 @@ class LLMClient:
         self._set_prompt_provenance(span)
 
         text_parts: list[str] = []
+        reasoning_parts: list[str] = []
         streamed_tool_calls: list[dict[str, Any]] = []
         usage_seen: dict[str, int] | None = None
         finish_seen = ""
@@ -1243,10 +1425,17 @@ class LLMClient:
                                 usage_seen = {
                                     "prompt_tokens": event.prompt_tokens,
                                     "completion_tokens": event.completion_tokens,
+                                    # Priced at their own rates (1.91.0, X18).
+                                    "cached_tokens": event.cached_tokens,
+                                    "cache_write_tokens": event.cache_write_tokens,
+                                    "cache_write_1h_tokens": event.cache_write_1h_tokens,
+                                    "reasoning_tokens": event.reasoning_tokens,
                                 }
                                 record_run_cost(self.model, usage_seen, provider=self.provider)
                             elif isinstance(event, TextDelta):
                                 text_parts.append(event.text)
+                            elif isinstance(event, ReasoningDelta):
+                                reasoning_parts.append(event.text)
                             elif isinstance(event, ToolCallEnd):
                                 streamed_tool_calls.append(
                                     {
@@ -1265,6 +1454,7 @@ class LLMClient:
                         # the failed one produced rather than concatenating two
                         # partial answers into the span.
                         text_parts.clear()
+                        reasoning_parts.clear()
                         streamed_tool_calls.clear()
                         await asyncio.sleep(self._delay_for(attempt, e))
                         continue
@@ -1289,10 +1479,14 @@ class LLMClient:
                         span,
                         input_tokens=usage_seen.get("prompt_tokens"),
                         output_tokens=usage_seen.get("completion_tokens"),
+                        # A stream reports zeros for counts its provider has not
+                        # got; only a real count goes on the span.
+                        **{k: v or None for k, v in _usage_span_kwargs(usage_seen).items()},
                     )
                 set_genai_attributes(
                     span,
                     response_content="".join(text_parts) or None,
+                    response_reasoning="".join(reasoning_parts) or None,
                     response_tool_calls=_serialize_for_span(streamed_tool_calls)
                     if streamed_tool_calls
                     else None,
@@ -1326,6 +1520,8 @@ class LLMClient:
 
         async def _collect() -> LLMResponse:
             content_parts: list[str] = []
+            reasoning_parts: list[str] = []
+            reasoning_blocks: list[ReasoningBlock] = []
             tool_calls: list[ToolCall] = []
             usage_data: dict[str, int] = {}
             # Accumulate tool call args per call_id
@@ -1337,6 +1533,10 @@ class LLMClient:
                     provider_finish = event.finish_reason
                 if isinstance(event, TextDelta):
                     content_parts.append(event.text)
+                elif isinstance(event, ReasoningDelta):
+                    reasoning_parts.append(event.text)
+                    if event.block is not None:
+                        reasoning_blocks.append(event.block)
                 elif isinstance(event, ToolCallStart):
                     pending_tools[event.call_id] = {"name": event.tool_name, "args": ""}
                 elif isinstance(event, ToolCallEnd):
@@ -1345,15 +1545,19 @@ class LLMClient:
                             id=event.call_id,
                             name=event.tool_name,
                             arguments=event.arguments,
+                            signature=event.signature,
                         )
                     )
                     pending_tools.pop(event.call_id, None)
                 elif isinstance(event, Usage):
-                    usage_data = {
-                        "prompt_tokens": event.prompt_tokens,
-                        "completion_tokens": event.completion_tokens,
-                        "total_tokens": event.prompt_tokens + event.completion_tokens,
-                    }
+                    usage_data = _usage(
+                        event.prompt_tokens,
+                        event.completion_tokens,
+                        reasoning=event.reasoning_tokens or None,
+                        cached=event.cached_tokens or None,
+                        cache_write=event.cache_write_tokens or None,
+                        cache_write_1h=event.cache_write_1h_tokens or None,
+                    )
 
             content = "".join(content_parts) or None
             # The provider's own reason when it gave one (1.89.0): this was
@@ -1365,6 +1569,8 @@ class LLMClient:
                 usage=usage_data,
                 model=self.model,
                 finish_reason=finish,
+                reasoning="".join(reasoning_parts) or None,
+                reasoning_blocks=reasoning_blocks,
             )
 
         return run_sync(_collect())
@@ -1833,6 +2039,11 @@ class LLMClient:
                 self._preset is not None and not self._preset.cap("parallel_tool_calls", False)
             ):
                 body["parallel_tool_calls"] = ptc
+        # Reasoning (1.91.0, 2A): the level as given — which levels a model takes
+        # varies, and the provider names them in its 400.
+        reasoning = self._reasoning(kwargs)
+        if reasoning is not None:
+            body["reasoning_effort"] = reasoning
 
         # When delegating to an injected OpenAI-SDK client, auth (and headers)
         # are owned by that client — fastaiagent neither needs nor sends its own
@@ -1977,9 +2188,10 @@ class LLMClient:
         return LLMResponse(
             content=msg.get("content"),
             tool_calls=tool_calls,
-            usage=data.get("usage", {}),
+            usage=_openai_usage(data.get("usage")),
             model=data.get("model", self.model),
             finish_reason=choice.get("finish_reason", ""),
+            reasoning=_openai_reasoning_text(msg),
         )
 
     def _build_anthropic_body(
@@ -2008,7 +2220,9 @@ class LLMClient:
             if m.role == MessageRole.system:
                 system_parts.append(_coerce_system_content_to_text(m.content))
             elif m.role == MessageRole.assistant and m.tool_calls:
-                content: list[dict[str, Any]] = []
+                # Claude's thinking goes back first, unchanged, while the tool-use
+                # turn is in progress — the API requires it (1.91.0, X17).
+                content: list[dict[str, Any]] = list(m.reasoning_for("anthropic"))
                 if m.content:
                     content.append({"type": "text", "text": m.content})
                 for tc in m.tool_calls:
@@ -2067,6 +2281,15 @@ class LLMClient:
         stop = kwargs.get("stop", self.stop)
         if stop is not None:
             body["stop_sequences"] = [stop] if isinstance(stop, str) else stop
+        # Reasoning and prompt caching (1.91.0, 2A + 2B). The automatic top-level
+        # ``cache_control`` puts one breakpoint on the last cacheable block and
+        # moves it forward as the conversation grows.
+        body.update(self._anthropic_reasoning_fields(kwargs, body["max_tokens"]))
+        cache = self._cache(kwargs)
+        if cache is not None:
+            body["cache_control"] = (
+                {"type": "ephemeral", "ttl": "1h"} if cache == "1h" else {"type": "ephemeral"}
+            )
 
         # Convert tools from OpenAI format to Anthropic format
         if tools:
@@ -2128,9 +2351,14 @@ class LLMClient:
         # Parse Anthropic response
         content_text = ""
         tool_calls = []
+        reasoning_text = ""
+        reasoning_blocks: list[ReasoningBlock] = []
         for block in data.get("content", []):
             if block.get("type") == "text":
                 content_text += block.get("text", "")
+            elif block.get("type") in ("thinking", "redacted_thinking"):
+                reasoning_text += block.get("thinking", "")
+                reasoning_blocks.append(ReasoningBlock(provider="anthropic", data=dict(block)))
             elif block.get("type") == "tool_use":
                 tool_calls.append(
                     ToolCall(
@@ -2148,13 +2376,8 @@ class LLMClient:
             if rf_type in ("json_object", "json_schema"):
                 content_text = _strip_code_fences(content_text)
 
-        # Normalize usage
-        usage_raw = data.get("usage", {})
-        usage = {
-            "prompt_tokens": usage_raw.get("input_tokens", 0),
-            "completion_tokens": usage_raw.get("output_tokens", 0),
-            "total_tokens": (usage_raw.get("input_tokens", 0) + usage_raw.get("output_tokens", 0)),
-        }
+        # Normalize usage — the cache added back into the prompt (1.91.0).
+        usage = _anthropic_usage(data.get("usage"))
 
         # Normalize finish reason
         stop_reason = data.get("stop_reason", "")
@@ -2169,6 +2392,8 @@ class LLMClient:
             usage=usage,
             model=data.get("model", self.model),
             finish_reason=finish_reason,
+            reasoning=reasoning_text or None,
+            reasoning_blocks=reasoning_blocks,
         )
 
     async def _call_ollama(
@@ -2218,6 +2443,7 @@ class LLMClient:
             if fmt:
                 body["format"] = fmt
 
+        self._apply_ollama_think(body, kwargs)
         url = f"{self.base_url.rstrip('/')}/api/chat"
         ollama_headers: dict[str, str] = {}
         self._apply_extras(body, ollama_headers, kwargs)
@@ -2259,7 +2485,16 @@ class LLMClient:
             usage=usage,
             model=self.model,
             finish_reason=finish_reason,
+            reasoning=msg.get("thinking") or None,
         )
+
+    def _apply_ollama_think(self, body: dict[str, Any], kwargs: dict[str, Any]) -> None:
+        """Ollama's ``think`` for this call's reasoning level (1.91.0)."""
+        from fastaiagent.llm.reasoning import ollama_think
+
+        level = self._reasoning(kwargs)
+        if level is not None:
+            body["think"] = ollama_think(self.model, level)
 
     def _bedrock_converse_body(
         self,
@@ -2315,13 +2550,24 @@ class LLMClient:
                     {"toolUse": {"toolUseId": tc.id, "name": tc.name, "input": tc.arguments}}
                     for tc in (m.tool_calls or [])
                 ]
-                _add("assistant", [*blocks, *calls])
+                # The model's reasoning goes back ahead of its calls (1.91.0).
+                thinking = [_bedrock_reasoning_out(b) for b in m.reasoning_for("bedrock")]
+                _add("assistant", [*(thinking if calls else []), *blocks, *calls])
             else:
                 _add("user", blocks)
 
+        cache = self._cache(kwargs)
+        point: dict[str, Any] = {"type": "default"}
+        if cache == "1h":
+            point["ttl"] = "1h"
         body: dict[str, Any] = {"messages": turns}
         if system:
             body["system"] = system
+            if cache is not None:
+                body["system"] = [*system, {"cachePoint": dict(point)}]
+        if cache is not None and turns:
+            # A breakpoint on the last turn caches the conversation so far.
+            turns[-1]["content"].append({"cachePoint": dict(point)})
         if tools:
             specs = []
             for t in tools:
@@ -2338,6 +2584,8 @@ class LLMClient:
                         }
                     }
                 )
+            if cache is not None:
+                specs.append({"cachePoint": dict(point)})
             tool_config: dict[str, Any] = {"tools": specs}
             if self._requested_tool_choice(tools, kwargs) == "required":
                 tool_config["toolChoice"] = {"any": {}}
@@ -2378,12 +2626,15 @@ class LLMClient:
             inference_config["stopSequences"] = [stop] if isinstance(stop, str) else stop
         body["inferenceConfig"] = inference_config
         # Pass-through options are Converse's model-specific fields (1.91.0, 2K).
-        # Bedrock takes no extra HTTP headers through boto3.
+        # Bedrock takes no extra HTTP headers through boto3. Claude's reasoning
+        # fields travel the same way (2A) and, like the SDK's own keys elsewhere,
+        # win over ``extra_body``.
         extra_body, _ = self._extras(kwargs)
-        if extra_body:
+        model_fields = {**extra_body, **self._bedrock_reasoning_fields(kwargs, max_tok)}
+        if model_fields:
             body["additionalModelRequestFields"] = {
                 **body.get("additionalModelRequestFields", {}),
-                **extra_body,
+                **model_fields,
             }
 
         # boto3 is synchronous: off the event loop, so a slow Bedrock call does
@@ -2394,9 +2645,15 @@ class LLMClient:
         msg_out = output.get("message", {})
         content_text = ""
         tool_calls = []
+        reasoning_text = ""
+        reasoning_blocks: list[ReasoningBlock] = []
         for block in msg_out.get("content", []):
             if "text" in block:
                 content_text += block["text"]
+            elif "reasoningContent" in block:
+                kept = _bedrock_reasoning_in(block)
+                reasoning_text += kept["reasoningContent"].get("reasoningText", {}).get("text", "")
+                reasoning_blocks.append(ReasoningBlock(provider="bedrock", data=kept))
             elif "toolUse" in block:
                 tu = block["toolUse"]
                 tool_calls.append(
@@ -2407,12 +2664,7 @@ class LLMClient:
                     )
                 )
 
-        usage_raw = response.get("usage", {})
-        usage = {
-            "prompt_tokens": usage_raw.get("inputTokens", 0),
-            "completion_tokens": usage_raw.get("outputTokens", 0),
-            "total_tokens": (usage_raw.get("inputTokens", 0) + usage_raw.get("outputTokens", 0)),
-        }
+        usage = _bedrock_usage(response.get("usage") or {})
 
         stop_reason = response.get("stopReason", "")
         finish_reason = {
@@ -2430,7 +2682,28 @@ class LLMClient:
             usage=usage,
             model=self.model,
             finish_reason=finish_reason,
+            reasoning=reasoning_text or None,
+            reasoning_blocks=reasoning_blocks,
         )
+
+    def _bedrock_reasoning_fields(self, kwargs: dict[str, Any], max_tokens: int) -> dict[str, Any]:
+        """Claude's reasoning fields for a Bedrock call; other Bedrock models have
+        their own, which ``extra_body`` can carry."""
+        from fastaiagent.llm.reasoning import _warn_once
+
+        level = self._reasoning(kwargs)
+        if level is None:
+            return {}
+        if "anthropic." not in self.model.lower():
+            _warn_once(
+                f"bedrock-reasoning:{self.model}",
+                "reasoning=%r is mapped for Claude models on Bedrock only; pass %s's "
+                "own reasoning fields in extra_body.",
+                level,
+                self.model,
+            )
+            return {}
+        return self._anthropic_reasoning_fields(kwargs, max_tokens)
 
     # --- Streaming provider methods ---
 
@@ -2458,6 +2731,10 @@ class LLMClient:
             if choices and choices[0].get("finish_reason"):
                 finish_reason = str(choices[0]["finish_reason"])
 
+            # Reasoning text, on the OpenAI-compatible providers that stream it.
+            if thought := _openai_reasoning_text(delta):
+                yield ReasoningDelta(text=thought)
+
             # Text content
             if text := delta.get("content"):
                 yield TextDelta(text=text)
@@ -2484,10 +2761,7 @@ class LLMClient:
 
             # Usage (typically in the final chunk)
             if usage := chunk.get("usage"):
-                yield Usage(
-                    prompt_tokens=usage.get("prompt_tokens", 0),
-                    completion_tokens=usage.get("completion_tokens", 0),
-                )
+                yield _usage_event(_openai_usage(usage))
 
         # Emit ToolCallEnd for each accumulated tool call
         for _idx, tc_acc in sorted(tool_calls_acc.items()):
@@ -2516,8 +2790,10 @@ class LLMClient:
         current_tool_id = ""
         current_tool_name = ""
         current_tool_input_str = ""
-        prompt_tokens = 0
-        completion_tokens = 0
+        # The thinking block being streamed: its text and signature arrive as
+        # deltas, and it is sent back whole (1.91.0, X17).
+        current_thinking: dict[str, Any] | None = None
+        usage_raw: dict[str, Any] = {}
         finish_reason = ""
 
         async with self._new_async_client() as client:
@@ -2550,6 +2826,8 @@ class LLMClient:
                                 call_id=current_tool_id,
                                 tool_name=current_tool_name,
                             )
+                        elif block.get("type") in ("thinking", "redacted_thinking"):
+                            current_thinking = dict(block)
 
                     elif event_type == "content_block_delta":
                         delta = data.get("delta", {})
@@ -2557,9 +2835,26 @@ class LLMClient:
                             yield TextDelta(text=delta.get("text", ""))
                         elif delta.get("type") == "input_json_delta":
                             current_tool_input_str += delta.get("partial_json", "")
+                        elif delta.get("type") == "thinking_delta" and current_thinking:
+                            piece = delta.get("thinking", "")
+                            current_thinking["thinking"] = (
+                                current_thinking.get("thinking", "") + piece
+                            )
+                            if piece:
+                                yield ReasoningDelta(text=piece)
+                        elif delta.get("type") == "signature_delta" and current_thinking:
+                            signature = delta.get("signature", "")
+                            current_thinking["signature"] = (
+                                current_thinking.get("signature", "") + signature
+                            )
 
                     elif event_type == "content_block_stop":
-                        if current_tool_id:
+                        if current_thinking is not None:
+                            yield ReasoningDelta(
+                                block=ReasoningBlock(provider="anthropic", data=current_thinking)
+                            )
+                            current_thinking = None
+                        elif current_tool_id:
                             try:
                                 args = (
                                     _json.loads(current_tool_input_str)
@@ -2578,12 +2873,11 @@ class LLMClient:
                             current_tool_input_str = ""
 
                     elif event_type == "message_start":
-                        msg_usage = data.get("message", {}).get("usage", {})
-                        prompt_tokens = msg_usage.get("input_tokens", 0)
+                        # Input and cache counts arrive here; output in message_delta.
+                        usage_raw.update(data.get("message", {}).get("usage") or {})
 
                     elif event_type == "message_delta":
-                        delta_usage = data.get("usage", {})
-                        completion_tokens = delta_usage.get("output_tokens", 0)
+                        usage_raw.update(data.get("usage") or {})
                         stop_reason = (data.get("delta") or {}).get("stop_reason") or ""
                         if stop_reason:
                             # Same mapping as a non-streamed call.
@@ -2592,8 +2886,9 @@ class LLMClient:
                                 "tool_use": "tool_calls",
                             }.get(stop_reason, stop_reason)
 
-        if prompt_tokens or completion_tokens:
-            yield Usage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens)
+        usage = _anthropic_usage(usage_raw)
+        if usage["prompt_tokens"] or usage["completion_tokens"]:
+            yield _usage_event(usage)
         yield StreamDone(finish_reason=finish_reason)
 
     async def _stream_ollama(
@@ -2643,6 +2938,7 @@ class LLMClient:
             if fmt:
                 body["format"] = fmt
 
+        self._apply_ollama_think(body, kwargs)
         url = f"{self.base_url.rstrip('/')}/api/chat"
         prompt_tokens = 0
         completion_tokens = 0
@@ -2670,6 +2966,8 @@ class LLMClient:
 
                     # Text content
                     msg = chunk.get("message", {})
+                    if thought := msg.get("thinking"):
+                        yield ReasoningDelta(text=thought)
                     if text := msg.get("content"):
                         yield TextDelta(text=text)
 
@@ -2738,6 +3036,13 @@ class LLMClient:
         # us-east-1 (X9). Anything else in ``**kwargs`` may be a credential.
         if self._extra.get("region"):
             data["region"] = str(self._extra["region"])
+        # Reasoning and caching change what a replayed or plane-dispatched run
+        # does, and neither is a secret (1.91.0; new keys signed off 2026-10-18).
+        # Emitted only when set, so a default client's payload is unchanged.
+        if self.reasoning is not None:
+            data["reasoning"] = self.reasoning
+        if self.cache is not None:
+            data["cache"] = self.cache
         return data
 
     @classmethod
@@ -2795,7 +3100,14 @@ class LLMClient:
             # absent (an older payload) still falls through to the globals.
             **{
                 key: data[key]
-                for key in ("pdf_mode", "max_pdf_pages", "max_image_size_mb", "region")
+                for key in (
+                    "pdf_mode",
+                    "max_pdf_pages",
+                    "max_image_size_mb",
+                    "region",
+                    "reasoning",
+                    "cache",
+                )
                 if key in data
             },
         )

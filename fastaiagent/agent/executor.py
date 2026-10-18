@@ -21,11 +21,13 @@ from fastaiagent.llm.client import LLMResponse
 from fastaiagent.llm.message import (
     AssistantMessage,
     Message,
+    ReasoningBlock,
     ToolCall,
     ToolMessage,
     balance_tool_messages,
 )
 from fastaiagent.llm.stream import (
+    ReasoningDelta,
     StreamDone,
     StreamEvent,
     TextDelta,
@@ -106,6 +108,9 @@ def _serialize_messages(messages: list[Message]) -> list[dict[str, Any]]:
         for tc in dumped.get("tool_calls") or []:
             if tc.get("signature") is None:
                 tc.pop("signature", None)
+        # Reasoning blocks (1.91.0) likewise: saved only when the model issued some.
+        if dumped.get("reasoning_blocks") is None:
+            dumped.pop("reasoning_blocks", None)
         out.append(dumped)
     return out
 
@@ -727,6 +732,8 @@ async def _streamed_turn(
         nonlocal attempts
         attempts += 1
         text = ""
+        reasoning = ""
+        blocks: list[ReasoningBlock] = []
         calls: list[ToolCall] = []
         prompt_tokens = completion_tokens = 0
         finish = ""
@@ -738,6 +745,10 @@ async def _streamed_turn(
                 continue  # the loop emits one StreamDone for the whole run
             if isinstance(event, TextDelta):
                 text += event.text
+            elif isinstance(event, ReasoningDelta):
+                reasoning += event.text
+                if event.block is not None:
+                    blocks.append(event.block)
             elif isinstance(event, ToolCallEnd):
                 calls.append(
                     ToolCall(
@@ -760,6 +771,8 @@ async def _streamed_turn(
                 "total_tokens": prompt_tokens + completion_tokens,
             },
             finish_reason="tool_calls" if calls else (finish or "stop"),
+            reasoning=reasoning or None,
+            reasoning_blocks=blocks,
         )
 
     task = asyncio.ensure_future(mw_pipeline.call_model(mw_ctx, messages, _terminal))
@@ -1037,8 +1050,15 @@ async def execute_tool_loop(
         if not response.tool_calls:
             return response, all_tool_calls
 
-        # Build assistant message with tool calls
-        messages.append(AssistantMessage(content=response.content, tool_calls=response.tool_calls))
+        # Build assistant message with tool calls — and the model's reasoning
+        # blocks, which Claude requires back within the tool-use turn (X17).
+        messages.append(
+            AssistantMessage(
+                content=response.content,
+                tool_calls=response.tool_calls,
+                reasoning_blocks=response.reasoning_blocks,
+            )
+        )
 
         # Execute the turn's tool calls concurrently when it's provably safe —
         # no per-tool checkpointing, middleware, or managed governance in play
@@ -1284,6 +1304,7 @@ async def stream_tool_loop(
         # Stream from LLM
         accumulated_text = ""
         pending_tool_calls: list[ToolCall] = []
+        reasoning_blocks: list[ReasoningBlock] = []
         total_usage = Usage()
         turn_kwargs = _turn_llm_kwargs(kwargs, tool_choice, iteration)
         wrapped: LLMResponse | None = None
@@ -1303,6 +1324,7 @@ async def stream_tool_loop(
             wrapped = out["response"]
             accumulated_text = wrapped.content or ""
             pending_tool_calls = list(wrapped.tool_calls)
+            reasoning_blocks = list(wrapped.reasoning_blocks)
         else:
             offered = tool_defs if mw_ctx is None else _tool_defs(mw_ctx.tools)
             async for event in _turn_model(llm, mw_ctx).astream(
@@ -1310,6 +1332,12 @@ async def stream_tool_loop(
             ):
                 if isinstance(event, TextDelta):
                     accumulated_text += event.text
+                    yield event
+                elif isinstance(event, ReasoningDelta):
+                    # Reasoning reaches the caller (1.91.0, B2-5); its blocks go
+                    # back with the turn's tool calls (X17).
+                    if event.block is not None:
+                        reasoning_blocks.append(event.block)
                     yield event
                 elif isinstance(event, ToolCallStart):
                     yield event
@@ -1348,6 +1376,7 @@ async def stream_tool_loop(
                     "total_tokens": total_usage.prompt_tokens + total_usage.completion_tokens,
                 },
                 finish_reason="tool_calls" if pending_tool_calls else "stop",
+                reasoning_blocks=list(reasoning_blocks),
             )
             try:
                 response = await mw_pipeline.apply_after_model(mw_ctx, response)
@@ -1357,6 +1386,7 @@ async def stream_tool_loop(
             # Reflect any middleware mutations back into the loop state.
             accumulated_text = response.content or ""
             pending_tool_calls = list(response.tool_calls)
+            reasoning_blocks = list(response.reasoning_blocks)
 
         # No tool calls — final response, we're done
         if not pending_tool_calls:
@@ -1369,6 +1399,7 @@ async def stream_tool_loop(
             AssistantMessage(
                 content=accumulated_text or None,
                 tool_calls=pending_tool_calls,
+                reasoning_blocks=reasoning_blocks,
             )
         )
 

@@ -17,6 +17,7 @@ from fastaiagent.llm.message import (
     AssistantMessage,
     Message,
     MessageRole,
+    ReasoningBlock,
     SystemMessage,
     ToolCall,
     ToolMessage,
@@ -31,8 +32,10 @@ from fastaiagent.llm.providers import (
     register_provider,
     unregister_provider,
 )
+from fastaiagent.llm.reasoning import REASONING_LEVELS
 from fastaiagent.llm.stream import (
     Paused,
+    ReasoningDelta,
     StreamDone,
     StreamEvent,
     TextDelta,
@@ -52,9 +55,13 @@ __all__ = [
     "UserMessage",
     "AssistantMessage",
     "ToolMessage",
+    # Reasoning (1.91.0)
+    "REASONING_LEVELS",
+    "ReasoningBlock",
     # Streaming
     "StreamEvent",
     "TextDelta",
+    "ReasoningDelta",
     "ToolCallStart",
     "ToolCallEnd",
     "Usage",

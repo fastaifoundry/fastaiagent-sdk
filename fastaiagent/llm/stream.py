@@ -9,12 +9,28 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from fastaiagent.llm.message import ReasoningBlock
+
 
 @dataclass
 class TextDelta:
     """A chunk of text from the LLM stream."""
 
     text: str
+
+
+@dataclass
+class ReasoningDelta:
+    """A chunk of the model's reasoning (1.91.0) — never part of the answer text.
+
+    ``text`` is what the provider shows (Anthropic summarized thinking, Gemini
+    thought summaries, DeepSeek-style ``reasoning_content``); it can be empty.
+    ``block`` is set once per finished reasoning block, on the event that closes
+    it: the provider's opaque block, which the agent loop sends back.
+    """
+
+    text: str = ""
+    block: ReasoningBlock | None = None
 
 
 @dataclass
@@ -39,10 +55,21 @@ class ToolCallEnd:
 
 @dataclass
 class Usage:
-    """Token usage from the LLM response."""
+    """Token usage from the LLM response.
+
+    ``prompt_tokens`` is the whole prompt, cached part included;
+    ``cached_tokens`` / ``cache_write_tokens`` are the parts read from and
+    written to the provider's prompt cache (``cache_write_1h_tokens`` the
+    one-hour share of the writes), and ``reasoning_tokens`` the part of
+    ``completion_tokens`` spent reasoning (1.91.0).
+    """
 
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    reasoning_tokens: int = 0
+    cached_tokens: int = 0
+    cache_write_tokens: int = 0
+    cache_write_1h_tokens: int = 0
 
 
 @dataclass
@@ -91,4 +118,13 @@ class Paused:
     agent_path: str | None = None
 
 
-StreamEvent = TextDelta | ToolCallStart | ToolCallEnd | Usage | StreamDone | HandoffEvent | Paused
+StreamEvent = (
+    TextDelta
+    | ReasoningDelta
+    | ToolCallStart
+    | ToolCallEnd
+    | Usage
+    | StreamDone
+    | HandoffEvent
+    | Paused
+)

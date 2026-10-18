@@ -70,7 +70,8 @@ at capture.
 
 When `FASTAIAGENT_TRACE_PAYLOADS=0` is set, payload-bearing attributes
 (`gen_ai.request.messages`, `gen_ai.response.content`,
-`gen_ai.response.tool_calls`, `gen_ai.request.tools`, agent/chain
+`gen_ai.response.tool_calls`, `gen_ai.request.tools`, the model's reasoning
+text `gen_ai.response.reasoning` (1.91.0), agent/chain
 inputs and outputs, system prompts, tool args/results, retrieved
 documents, and recalled memory) are **stripped before spans leave the
 machine** — both when pushed to the control plane and when sent to any

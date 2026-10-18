@@ -42,7 +42,8 @@ M = 1_000_000
     ],
 )
 def test_gemini_rates_follow_the_published_schedule(model, on, inp, out) -> None:
-    assert compute_cost_usd(model, M, 0, on=on) == pytest.approx(inp)
+    # A 100k-token prompt: below 3.1 Pro's 200k long-context tier (1.91.0).
+    assert compute_cost_usd(model, M // 10, 0, on=on) == pytest.approx(inp / 10)
     assert compute_cost_usd(model, 0, M, on=on) == pytest.approx(out)
 
 

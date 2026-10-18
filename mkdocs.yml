@@ -146,6 +146,7 @@ nav:
           - "Concepts & Mental Model": llm/concepts.md
           - "The model call at its boundaries": llm/llm-boundaries.md
           - "Providers": llm/providers.md
+          - "Reasoning and prompt caching": llm/reasoning-and-caching.md
           - "OpenAI Decisions API": llm/decisions.md
           - "Custom Providers": llm/custom-provider.md
       - Streaming: streaming/index.md

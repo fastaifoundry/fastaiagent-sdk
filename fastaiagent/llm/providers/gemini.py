@@ -30,12 +30,12 @@ from fastaiagent._internal.errors import LLMProviderError
 from fastaiagent.llm.client import _augment_system_for_response_format
 from fastaiagent.llm.message import Message, MessageRole, ToolCall
 from fastaiagent.llm.stream import (
+    ReasoningDelta,
     StreamDone,
     StreamEvent,
     TextDelta,
     ToolCallEnd,
     ToolCallStart,
-    Usage,
 )
 
 if TYPE_CHECKING:
@@ -213,8 +213,29 @@ def _completion_tokens(usage_meta: dict[str, Any]) -> int:
     )
 
 
+def _usage(usage_meta: dict[str, Any]) -> dict[str, Any]:
+    """Gemini usage in the SDK's shape. ``promptTokenCount`` already includes
+    ``cachedContentTokenCount`` (implicit caching, 2.5 and later)."""
+    from fastaiagent.llm.client import _usage as usage_shape
+
+    return usage_shape(
+        int(usage_meta.get("promptTokenCount", 0)),
+        _completion_tokens(usage_meta),
+        total=int(usage_meta.get("totalTokenCount", 0)),
+        reasoning=usage_meta.get("thoughtsTokenCount"),
+        cached=usage_meta.get("cachedContentTokenCount"),
+    )
+
+
 def _build_generation_config(client: LLMClient, **kwargs: Any) -> dict[str, Any]:
+    from fastaiagent.llm.reasoning import gemini_thinking_config
+
     cfg: dict[str, Any] = {}
+    level = client._reasoning(kwargs)
+    if level is not None:
+        thinking = gemini_thinking_config(client.model, level)
+        if thinking is not None:
+            cfg["thinkingConfig"] = thinking
     temperature = kwargs.get("temperature", client.temperature)
     if temperature is not None:
         cfg["temperature"] = temperature
@@ -279,8 +300,13 @@ def _parse_response(client: LLMClient, data: dict[str, Any]) -> LLMResponse:
     candidate = candidates[0]
     parts = (candidate.get("content") or {}).get("parts") or []
     content_text = ""
+    reasoning_text = ""
     tool_calls: list[ToolCall] = []
     for i, part in enumerate(parts):
+        if part.get("thought"):
+            # A thought summary (``includeThoughts``) — reasoning, never the answer.
+            reasoning_text += part.get("text", "")
+            continue
         if "text" in part:
             content_text += part.get("text", "")
         if "functionCall" in part:
@@ -294,12 +320,7 @@ def _parse_response(client: LLMClient, data: dict[str, Any]) -> LLMResponse:
                 )
             )
 
-    usage_meta = data.get("usageMetadata") or {}
-    usage = {
-        "prompt_tokens": int(usage_meta.get("promptTokenCount", 0)),
-        "completion_tokens": _completion_tokens(usage_meta),
-        "total_tokens": int(usage_meta.get("totalTokenCount", 0)),
-    }
+    usage = _usage(data.get("usageMetadata") or {})
     finish_reason_raw = candidate.get("finishReason", "")
     finish_reason = {
         "STOP": "stop",
@@ -316,6 +337,7 @@ def _parse_response(client: LLMClient, data: dict[str, Any]) -> LLMResponse:
         usage=usage,
         model=data.get("modelVersion", client.model),
         finish_reason=finish_reason,
+        reasoning=reasoning_text or None,
     )
 
 
@@ -403,8 +425,7 @@ async def astream_gemini(
     """
     url, body, headers = _build_request(client, messages, tools, stream=True, **kwargs)
 
-    prompt_tokens = 0
-    completion_tokens = 0
+    usage: dict[str, Any] = {}
     seen_tool_index = 0
     finish_reason = ""
 
@@ -451,6 +472,10 @@ async def astream_gemini(
                         }.get(raw_finish, str(raw_finish).lower())
                     parts = (cand0.get("content") or {}).get("parts") or []
                     for part in parts:
+                        if part.get("thought"):
+                            if thought := part.get("text", ""):
+                                yield ReasoningDelta(text=thought)
+                            continue
                         if "text" in part:
                             text = part.get("text", "")
                             if text:
@@ -469,11 +494,14 @@ async def astream_gemini(
 
                 usage_meta = chunk.get("usageMetadata") or {}
                 if usage_meta:
-                    prompt_tokens = max(prompt_tokens, int(usage_meta.get("promptTokenCount", 0)))
-                    completion_tokens = max(completion_tokens, _completion_tokens(usage_meta))
+                    # Each chunk reports the running totals; keep the largest.
+                    for key, value in _usage(usage_meta).items():
+                        usage[key] = max(int(usage.get(key, 0)), int(value))
 
-    if prompt_tokens or completion_tokens:
-        yield Usage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens)
+    if usage.get("prompt_tokens") or usage.get("completion_tokens"):
+        from fastaiagent.llm.client import _usage_event
+
+        yield _usage_event(usage)
     yield StreamDone(finish_reason=finish_reason)
 
 

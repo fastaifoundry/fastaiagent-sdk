@@ -101,15 +101,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Retries wait that long, capped at 60 s.
   - Retries now also cover refused connections, resets and timeouts.
 - Example `111_llm_fallbacks_and_model_info.py`.
+- **`LLMClient(reasoning=...)`** (2A): `"none"`, `"minimal"`, `"low"`, `"medium"`,
+  `"high"`, `"xhigh"` or `"max"`, on the client or one call. Each provider gets its
+  own field:
+  - OpenAI and OpenAI-compatible: `reasoning_effort`.
+  - Claude: `output_config.effort` plus adaptive thinking, or a `budget_tokens`
+    on the extended-thinking-only models. `"none"` turns thinking off.
+  - Gemini: `thinkingLevel` on 3.x / 4, `thinkingBudget` on 2.5.
+  - Bedrock Claude, Ollama: their equivalents.
+  - Unset sends nothing. Which levels a model takes is the provider's call; its
+    400 names them.
+- **What the model shows of its reasoning** comes back as `LLMResponse.reasoning`
+  (never in `content`), with `usage["reasoning_tokens"]`, and streams as the new
+  **`ReasoningDelta`** event (decision B2-5). `ReasoningDelta`, `ReasoningBlock`
+  and `REASONING_LEVELS` are exported.
+- **`LLMClient(cache=True | "1h")`** (2B): Anthropic gets its automatic
+  `cache_control`, Bedrock gets `cachePoint`s. OpenAI and Gemini cache on their
+  own.
+- **Cache counts on every provider**: `usage["cached_tokens"]` and
+  `usage["cache_write_tokens"]`. `prompt_tokens` now always includes the cached
+  part; Anthropic and Bedrock report only the uncached part. The streamed
+  `Usage` event gains `reasoning_tokens`, `cached_tokens` and
+  `cache_write_tokens`.
+- **New span attributes**: `gen_ai.usage.reasoning_tokens`,
+  `gen_ai.usage.cache_read.input_tokens` and
+  `gen_ai.usage.cache_creation.input_tokens`. The reasoning text,
+  `gen_ai.response.reasoning`, is payload: it is kept locally and exported only
+  with payloads on (decision B2-4).
+- `reasoning` and `cache` are part of `LLMClient.to_dict()`, written only when set
+  (new keys, signed off).
+- Example `112_reasoning_and_prompt_caching.py`; new page **Reasoning and prompt
+  caching**.
 
 ### Changed
 
+- **Cost is priced in parts, so figures move** (decision B2-1). Cached prompt
+  tokens are priced at the cached rate, cache writes at the write rate, and a
+  prompt above a model's long-context threshold at that tier:
+  - OpenAI: above 272k tokens.
+  - Claude Haiku 5.5: above 100k.
+  - Gemini 3.1 Pro: above 200k.
+
+  An OpenAI run with cache hits now costs less, which it always did on the
+  invoice. A GPT-5.6+ / GPT-6 cache write costs 1.25× input, which it always did.
+- **The price table was rebuilt** from the providers' pricing pages, read
+  2026-10-18 (X15):
+  - The GPT-6 and GPT-5.2–5.6 families are added.
+  - Claude Opus 5.5 ($4/$20), Sonnet 5.5 ($2/$10), Haiku 5.5 and Fable / Mythos
+    5.1 are added; before, they were priced at the 5.0 rates or not at all.
+  - Sonnet 5 is now $2/$10 (was $3/$15).
+  - Every row carries its cached and write rates.
+- **A built-in rate no longer covers a later version of its model.** The `gpt-5`
+  row priced every later `gpt-5.x`, and `gpt-5.5` costs four times as much. An
+  unknown model is now unpriced, never mispriced. Org overrides are still plain
+  prefixes, and can now carry `(input, output, cached, write)`;
+  `models.json` takes `cached_input_per_1m` / `cache_write_per_1m`.
 - **Anthropic and Bedrock send the model's own maximum as `max_tokens`** when
   none is set: 64,000 for `claude-haiku-4-5` and 128,000 for Claude 4.6+ and
   5.x. Before, it was 4096, which cut long answers short. Unknown models still
   get 4096. Checked live: the API accepts it on non-streamed calls.
 
 ### Fixed — found while mapping Bets 1 and 2, each reproduced before fixing
+
+- **Claude agents lost their own reasoning after the first tool call** (X17).
+  Claude returns thinking blocks, which the 5.x models do without being asked, and
+  Anthropic requires them back unchanged within a tool-use turn. The agent loop
+  dropped them. The API does not error; it switches thinking off for the turn
+  (measured live: the next call reports no `output_tokens_details`). They now
+  ride on the assistant message (`Message.reasoning_blocks`) through `run`,
+  `astream`, checkpoints and resume, and go back only to the provider that
+  issued them. Bedrock's `reasoningContent` the same. Verified live on
+  `claude-haiku-4-5`, `claude-haiku-5-5` and `claude-sonnet-5-5`, with a
+  negative control showing that the live check fails without the fix.
+- **Cached prompt tokens were priced at the full input rate** (X18).
+- **A Gemini thought summary would have been glued onto the answer**: parts marked
+  `thought` were read as text. They are reasoning now.
+- **`LLMClient.stream()` dropped a tool call's Gemini signature** in the
+  `LLMResponse` it returns.
+- **A connected app with a large `local.db` could stall span export for hours**
+  (X19). The full-text index trigger fired on every update of `spans`,
+  including the exporter's "mark synced". Each firing scanned the whole index,
+  about 0.15 s per span on a 380k-span database. Abandoning a backlog of 179k
+  stale spans would have taken about 7.5 hours, and span export and
+  `fa.disconnect()` blocked meanwhile. Schema **v27** limits the trigger to the
+  columns the index is built from. The same backlog now clears in 1.4 s, and
+  search is unchanged. Found when the connected visibility gate hung.
 
 - **Images to Claude 5.x and GPT-6 raised `NonVisionModelError`** (X16) before
   any request: the vision / PDF registry predated both lineups, and PDFs to

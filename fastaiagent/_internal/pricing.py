@@ -14,10 +14,16 @@ and the three framework integrations keep their existing import.
 **These are public list prices and will not match your invoice.** They know
 nothing about negotiated or committed-use discounts, Amazon Bedrock / Google
 Vertex partner rates (billed by those platforms, not Anthropic/OpenAI), the
-Batch API's 50% reduction, or prompt-cache multipliers (cache reads bill at
-roughly 0.1x and writes at 1.25-2x, and the token counts we get here don't
-separate cached from uncached input). Treat every figure as an
-order-of-magnitude sanity check, not accounting.
+Batch API's 50% reduction, or priority/flex tiers. Treat every figure as an
+estimate, not accounting.
+
+Since 1.91.0 a prompt is priced in parts: tokens read from the provider's cache
+(``usage["cached_tokens"]``) at the cached rate, tokens written to it
+(``cache_write_tokens``, the one-hour share ``cache_write_1h_tokens``) at the
+write rate, the rest at the input rate — and above a long-context threshold the
+whole call at that tier's rates. A rate with no cached or write price prices
+those tokens at the input rate. Reasoning tokens are part of every provider's
+completion count, so they are billed at the output rate.
 
 Organisations with their own rates should override them rather than patch this
 table — see :func:`set_rate_overrides` and the ``pricing`` block in
@@ -25,9 +31,13 @@ table — see :func:`set_rate_overrides` and the ``pricing`` block in
 by *every* caller of :func:`compute_cost_usd` (traces, analytics, evals, trace
 export, framework integrations), not just the Playground.
 
-Prices are USD per 1M tokens, current as of 2026-08 (Gemini 3.x / 4: 2026-10,
-with the increases Google has announced dated in ``_SCHEDULED``). Unknown models
-return ``None`` and the UI falls back to a dash.
+Prices are USD per 1M tokens from the providers' own pricing pages, read
+2026-10-18 (developers.openai.com/api/docs/pricing, platform.claude.com pricing
+and prompt-caching pages, ai.google.dev pricing), with the increases Google has
+announced dated in ``_SCHEDULED``. A built-in row covers its model's dated and
+suffixed ids, never a later version (``gpt-5`` prices ``gpt-5-2025-08-07``, not
+``gpt-5.5``): an unknown model returns ``None`` — unpriced, never mispriced —
+and the UI falls back to a dash.
 """
 
 from __future__ import annotations
@@ -46,50 +56,116 @@ logger = logging.getLogger(__name__)
 class _Rate:
     input_per_m: float
     output_per_m: float
+    #: Tokens read from the prompt cache. ``None``: priced at the input rate.
+    cached_input_per_m: float | None = None
+    #: Tokens written to the cache (the provider's default lifetime). ``None``:
+    #: the input rate — OpenAI before GPT-5.6 charges nothing extra.
+    cache_write_per_m: float | None = None
+    #: One-hour cache writes (Anthropic: 2x input). ``None``: the write rate.
+    cache_write_1h_per_m: float | None = None
+    #: ``(threshold, rate)``: a call whose prompt is longer than ``threshold``
+    #: tokens is priced at ``rate`` throughout.
+    long_context: tuple[int, _Rate] | None = None
+
+
+def _claude(
+    inp: float, out: float, read: float, long_context: tuple[int, _Rate] | None = None
+) -> _Rate:
+    """A Claude rate: writes are 1.25x input (5 minutes) and 2x (one hour) on every
+    model; the read rate is per model (prompt-caching page)."""
+    return _Rate(inp, out, read, inp * 1.25, inp * 2.0, long_context)
 
 
 # Prefix-matched. Longer prefixes win.
 _PRICING: dict[str, _Rate] = {
-    # OpenAI
-    "gpt-5-nano": _Rate(0.05, 0.40),
-    "gpt-5-mini": _Rate(0.25, 2.00),
-    "gpt-5": _Rate(1.25, 10.00),
-    "gpt-4o-mini": _Rate(0.15, 0.60),
-    "gpt-4o": _Rate(2.50, 10.00),
+    # OpenAI — developers.openai.com/api/docs/pricing, read 2026-10-18. Long-
+    # context rates apply above 272k input tokens; from GPT-5.6 a cache write
+    # costs 1.25x input (earlier models: no write charge).
+    "gpt-6-astra": _Rate(
+        10.00, 50.00, 1.00, 12.50, long_context=(272_000, _Rate(20.00, 75.00, 2.00, 25.00))
+    ),
+    "gpt-6.1-sol": _Rate(
+        2.00, 10.00, 0.10, 2.50, long_context=(272_000, _Rate(4.00, 15.00, 0.20, 5.00))
+    ),
+    "gpt-6-sol": _Rate(
+        2.00, 10.00, 0.20, 2.50, long_context=(272_000, _Rate(4.00, 15.00, 0.40, 5.00))
+    ),
+    "gpt-6-luna": _Rate(
+        0.10, 0.50, 0.01, 0.125, long_context=(272_000, _Rate(0.20, 0.75, 0.02, 0.25))
+    ),
+    "gpt-5.6-sol": _Rate(
+        4.00, 20.00, 0.40, 5.00, long_context=(272_000, _Rate(8.00, 30.00, 0.80, 10.00))
+    ),
+    "gpt-5.6-terra": _Rate(
+        2.00, 12.00, 0.20, 2.50, long_context=(272_000, _Rate(4.00, 18.00, 0.40, 5.00))
+    ),
+    "gpt-5.6-luna": _Rate(
+        0.20, 1.20, 0.02, 0.25, long_context=(272_000, _Rate(0.40, 1.80, 0.04, 0.50))
+    ),
+    "gpt-5.5": _Rate(5.00, 30.00, 0.50, long_context=(272_000, _Rate(10.00, 45.00, 1.00))),
+    "gpt-5.5-pro": _Rate(30.00, 180.00, long_context=(272_000, _Rate(60.00, 270.00))),
+    "gpt-5.4": _Rate(2.50, 15.00, 0.25, long_context=(272_000, _Rate(5.00, 22.50, 0.50))),
+    "gpt-5.4-mini": _Rate(0.75, 4.50, 0.075),
+    "gpt-5.4-nano": _Rate(0.20, 1.25, 0.02),
+    "gpt-5.4-pro": _Rate(30.00, 180.00, long_context=(272_000, _Rate(60.00, 270.00))),
+    "gpt-5.3-codex": _Rate(1.75, 14.00, 0.175),
+    "gpt-5.2": _Rate(1.75, 14.00, 0.175),
+    "gpt-5.2-pro": _Rate(21.00, 168.00),
+    "gpt-5.1": _Rate(1.25, 10.00, 0.125),
+    "gpt-5-pro": _Rate(15.00, 120.00),
+    "gpt-5-nano": _Rate(0.05, 0.40, 0.005),
+    "gpt-5-mini": _Rate(0.25, 2.00, 0.025),
+    "gpt-5": _Rate(1.25, 10.00, 0.125),
+    "gpt-4o-mini": _Rate(0.15, 0.60, 0.075),
+    "gpt-4o-2024-05-13": _Rate(5.00, 15.00),
+    "gpt-4o": _Rate(2.50, 10.00, 1.25),
     "gpt-4-turbo": _Rate(10.00, 30.00),
-    "gpt-4.1-nano": _Rate(0.10, 0.40),
-    "gpt-4.1-mini": _Rate(0.40, 1.60),
-    "gpt-4.1": _Rate(2.00, 8.00),
+    "gpt-4.1-nano": _Rate(0.10, 0.40, 0.025),
+    "gpt-4.1-mini": _Rate(0.40, 1.60, 0.10),
+    "gpt-4.1": _Rate(2.00, 8.00, 0.50),
     "gpt-3.5-turbo": _Rate(0.50, 1.50),
-    "o4-mini": _Rate(1.10, 4.40),
-    "o3-mini": _Rate(1.10, 4.40),
-    "o3": _Rate(2.00, 8.00),
+    "o4-mini": _Rate(1.10, 4.40, 0.275),
+    "o3-pro": _Rate(20.00, 80.00),
+    "o3-mini": _Rate(1.10, 4.40, 0.55),
+    "o3": _Rate(2.00, 8.00, 0.50),
+    "o1-pro": _Rate(150.00, 600.00),
     "o1-mini": _Rate(1.10, 4.40),
     "o1-preview": _Rate(15.00, 60.00),
-    "o1": _Rate(15.00, 60.00),
-    # Anthropic
-    "claude-3-5-haiku": _Rate(0.80, 4.00),
-    "claude-3-5-sonnet": _Rate(3.00, 15.00),
-    "claude-3-haiku": _Rate(0.25, 1.25),
-    "claude-3-sonnet": _Rate(3.00, 15.00),
-    "claude-3-opus": _Rate(15.00, 75.00),
-    "claude-sonnet-4": _Rate(3.00, 15.00),
-    "claude-sonnet-4-6": _Rate(3.00, 15.00),
+    "o1": _Rate(15.00, 60.00, 7.50),
+    # Anthropic — platform.claude.com pricing + prompt-caching pages, read
+    # 2026-10-18. Reads are 0.1x input except Fable/Mythos 5.1 (0.025x) and
+    # Opus/Sonnet 5.5 (0.05x). Haiku 5.5 has a >100k-token prompt tier.
+    "claude-3-5-haiku": _claude(0.80, 4.00, 0.08),
+    "claude-3-5-sonnet": _claude(3.00, 15.00, 0.30),
+    "claude-3-haiku": _claude(0.25, 1.25, 0.03),
+    "claude-3-sonnet": _claude(3.00, 15.00, 0.30),
+    "claude-3-opus": _claude(15.00, 75.00, 1.50),
+    "claude-sonnet-4": _claude(3.00, 15.00, 0.30),
+    "claude-sonnet-4-5": _claude(3.00, 15.00, 0.30),
+    "claude-sonnet-4-6": _claude(3.00, 15.00, 0.30),
     # Opus 4.0/4.1 were $15/$75; from Opus 4.5 onward the tier is $5/$25.
     # These longer prefixes must stay ahead of the broad "claude-opus-4" row,
     # which otherwise reports 3x the real cost for every 4.5+ model.
-    "claude-opus-4": _Rate(15.00, 75.00),
-    "claude-opus-4-5": _Rate(5.00, 25.00),
-    "claude-opus-4-6": _Rate(5.00, 25.00),
-    "claude-opus-4-7": _Rate(5.00, 25.00),
-    "claude-opus-4-8": _Rate(5.00, 25.00),
-    "claude-haiku-4-5": _Rate(1.00, 5.00),
-    "claude-haiku-4": _Rate(1.00, 5.00),
-    # Claude 5 family
-    "claude-opus-5": _Rate(5.00, 25.00),
-    "claude-sonnet-5": _Rate(3.00, 15.00),
-    "claude-fable-5": _Rate(10.00, 50.00),
-    "claude-mythos-5": _Rate(10.00, 50.00),
+    "claude-opus-4": _claude(15.00, 75.00, 1.50),
+    "claude-opus-4-5": _claude(5.00, 25.00, 0.50),
+    "claude-opus-4-6": _claude(5.00, 25.00, 0.50),
+    "claude-opus-4-7": _claude(5.00, 25.00, 0.50),
+    "claude-opus-4-8": _claude(5.00, 25.00, 0.50),
+    "claude-haiku-4-5": _claude(1.00, 5.00, 0.10),
+    "claude-haiku-4": _claude(1.00, 5.00, 0.10),
+    # Claude 5 family. The 5.5 / 5.1 rows must stay: without them "claude-opus-5"
+    # and "claude-sonnet-5" priced the newer, cheaper models at the 5.0 rates.
+    "claude-opus-5": _claude(5.00, 25.00, 0.50),
+    "claude-opus-5-5": _claude(4.00, 20.00, 0.20),
+    "claude-sonnet-5": _claude(2.00, 10.00, 0.20),
+    "claude-sonnet-5-5": _claude(2.00, 10.00, 0.10),
+    "claude-haiku-5-5": _claude(
+        0.10, 0.50, 0.01, long_context=(100_000, _claude(0.50, 2.50, 0.05))
+    ),
+    "claude-fable-5": _claude(10.00, 50.00, 1.00),
+    "claude-fable-5-1": _claude(10.00, 50.00, 0.25),
+    "claude-mythos-5": _claude(10.00, 50.00, 1.00),
+    "claude-mythos-5-1": _claude(10.00, 50.00, 0.25),
     # Google
     "gemini-1.5-flash": _Rate(0.075, 0.30),
     "gemini-1.5-pro": _Rate(1.25, 5.00),
@@ -97,16 +173,18 @@ _PRICING: dict[str, _Rate] = {
     "gemini-2.5-flash": _Rate(0.30, 2.50),
     "gemini-2.5-pro": _Rate(1.25, 10.00),
     # Gemini 3.x / 4 — ai.google.dev/gemini-api/docs/pricing, read 2026-10-18.
-    # Announced increases are in ``_SCHEDULED``. 3.1-pro-preview is the
-    # <=200k-token prompt tier. gemini-3.5-flash and 3.7-flash are served but not
-    # on the pricing page, so they stay unpriced rather than guessed.
-    "gemini-4-argon": _Rate(2.00, 10.00),
-    "gemini-3.8-flash": _Rate(0.75, 3.75),
-    "gemini-3.6-flash": _Rate(0.75, 3.75),
-    "gemini-3.5-flash-lite": _Rate(0.30, 2.50),
-    "gemini-3.1-pro-preview": _Rate(2.00, 12.00),
-    "gemini-3.1-flash-lite": _Rate(0.25, 1.50),
-    "gemini-3-flash-preview": _Rate(0.50, 3.00),
+    # Announced increases are in ``_SCHEDULED``. gemini-3.5-flash and 3.7-flash
+    # are served but not on the pricing page, so they stay unpriced rather than
+    # guessed. Implicit caching has no write charge.
+    "gemini-4-argon": _Rate(2.00, 10.00, 0.10),
+    "gemini-3.8-flash": _Rate(0.75, 3.75, 0.075),
+    "gemini-3.6-flash": _Rate(0.75, 3.75, 0.075),
+    "gemini-3.5-flash-lite": _Rate(0.30, 2.50, 0.03),
+    "gemini-3.1-pro-preview": _Rate(
+        2.00, 12.00, 0.20, long_context=(200_000, _Rate(4.00, 18.00, 0.40))
+    ),
+    "gemini-3.1-flash-lite": _Rate(0.25, 1.50, 0.025),
+    "gemini-3-flash-preview": _Rate(0.50, 3.00, 0.05),
     # Local / Mistral / Groq
     "mixtral-8x7b": _Rate(0.24, 0.24),
     "llama-3.1-70b": _Rate(0.59, 0.79),
@@ -154,9 +232,9 @@ _PRICING: dict[str, _Rate] = {
 #: date (UTC) on. A cost is priced at the rate in force on the day it is
 #: computed, so a published increase applies without an SDK release.
 _SCHEDULED: dict[str, tuple[tuple[date, _Rate], ...]] = {
-    "gemini-4-argon": ((date(2026, 12, 1), _Rate(4.00, 20.00)),),
-    "gemini-3.8-flash": ((date(2027, 1, 1), _Rate(1.50, 7.50)),),
-    "gemini-3.6-flash": ((date(2027, 1, 1), _Rate(1.50, 7.50)),),
+    "gemini-4-argon": ((date(2026, 12, 1), _Rate(4.00, 20.00, 0.20)),),
+    "gemini-3.8-flash": ((date(2027, 1, 1), _Rate(1.50, 7.50, 0.15)),),
+    "gemini-3.6-flash": ((date(2027, 1, 1), _Rate(1.50, 7.50, 0.15)),),
 }
 
 
@@ -176,19 +254,30 @@ _OVERRIDES_LOADED = False
 _OVERRIDES_LOCK = threading.Lock()
 
 
-def set_rate_overrides(rates: dict[str, tuple[float, float]] | None) -> None:
-    """Replace the org rate table. Keys are model-id prefixes, matched like
-    the built-in table; values are ``(input_per_1m, output_per_1m)`` in USD.
+def set_rate_overrides(rates: dict[str, tuple[float, ...]] | None) -> None:
+    """Replace the org rate table. Keys are model-id prefixes; values are
+    ``(input_per_1m, output_per_1m)`` in USD, optionally followed by the cached-
+    input and cache-write rates: ``(input, output, cached, write)`` (1.91.0).
+    Without them, cached and written tokens are priced at the input rate.
 
     Passing ``None`` (or ``{}``) clears the overrides and falls back to list
     price. Overrides win over built-ins at equal prefix length, so
-    ``{"claude-opus-5": (4.0, 20.0)}`` re-rates that model everywhere.
+    ``{"claude-opus-5": (4.0, 20.0)}`` re-rates that model everywhere. An
+    override is a plain prefix: ``"gpt-5"`` covers ``gpt-5.5`` too.
     """
+    parsed: dict[str, _Rate] = {}
+    for key, values in (rates or {}).items():
+        if not 2 <= len(values) <= 4:
+            raise ValueError(
+                f"rate override {key!r} needs (input, output[, cached[, write]]), got {values!r}"
+            )
+        inp, out, *cache_rates = (float(v) for v in values)
+        cached = cache_rates[0] if cache_rates else None
+        write = cache_rates[1] if len(cache_rates) > 1 else None
+        parsed[key.lower()] = _Rate(inp, out, cached, write)
     global _OVERRIDES, _OVERRIDES_LOADED
     with _OVERRIDES_LOCK:
-        _OVERRIDES = {
-            k.lower(): _Rate(float(i), float(o)) for k, (i, o) in (rates or {}).items()
-        }
+        _OVERRIDES = parsed
         _OVERRIDES_LOADED = True
 
 
@@ -223,11 +312,19 @@ def _parse_rate(prefix: str, spec: object) -> _Rate | None:
         logger.warning("Model catalog: pricing[%r] must be an object — ignoring.", prefix)
         return None
     try:
-        return _Rate(float(spec["input_per_1m"]), float(spec["output_per_1m"]))
+        cached = spec.get("cached_input_per_1m")
+        write = spec.get("cache_write_per_1m")
+        return _Rate(
+            float(spec["input_per_1m"]),
+            float(spec["output_per_1m"]),
+            None if cached is None else float(cached),
+            None if write is None else float(write),
+        )
     except (KeyError, TypeError, ValueError):
         logger.warning(
             "Model catalog: pricing[%r] needs numeric 'input_per_1m' and "
-            "'output_per_1m' — ignoring.",
+            "'output_per_1m' (and, optionally, 'cached_input_per_1m' and "
+            "'cache_write_per_1m') — ignoring.",
             prefix,
         )
         return None
@@ -250,6 +347,9 @@ def compute_cost_usd(
     output_tokens: int | float | None,
     *,
     on: date | None = None,
+    cached_tokens: int | float | None = None,
+    cache_write_tokens: int | float | None = None,
+    cache_write_1h_tokens: int | float | None = None,
 ) -> float | None:
     """Return an estimated USD cost from model + token counts, or ``None``.
 
@@ -257,12 +357,18 @@ def compute_cost_usd(
     built-in list-price table. Longest matching prefix wins, so
     ``gpt-4o-mini-2024-07-18`` still resolves to the ``gpt-4o-mini`` rate.
 
+    ``input_tokens`` is the whole prompt; ``cached_tokens`` /
+    ``cache_write_tokens`` (``cache_write_1h_tokens`` of them one-hour writes)
+    are the parts of it read from and written to the provider's cache, each
+    priced at its own rate (1.91.0). A prompt longer than the model's
+    long-context threshold is priced at that tier.
+
     ``on`` is the day whose built-in rate applies (default: today, UTC) — it only
     matters for a model with an announced price change (``_SCHEDULED``). Org
     overrides are not dated: an override is the rate.
 
     This is an estimate — see the module docstring for what it can't account
-    for (negotiated discounts, partner pricing, batch, prompt caching).
+    for (negotiated discounts, partner pricing, batch).
     """
     if not model:
         return None
@@ -273,7 +379,32 @@ def compute_cost_usd(
     out = float(output_tokens or 0)
     if inp == 0 and out == 0:
         return None
-    return (inp * rate.input_per_m + out * rate.output_per_m) / 1_000_000.0
+    if rate.long_context is not None and inp > rate.long_context[0]:
+        rate = rate.long_context[1]
+    cached = min(float(cached_tokens or 0), inp)
+    written = min(float(cache_write_tokens or 0), inp - cached)
+    written_1h = min(float(cache_write_1h_tokens or 0), written)
+    plain = inp - cached - written
+    cached_rate = rate.input_per_m if rate.cached_input_per_m is None else rate.cached_input_per_m
+    write_rate = rate.input_per_m if rate.cache_write_per_m is None else rate.cache_write_per_m
+    write_1h_rate = write_rate if rate.cache_write_1h_per_m is None else rate.cache_write_1h_per_m
+    return (
+        plain * rate.input_per_m
+        + cached * cached_rate
+        + (written - written_1h) * write_rate
+        + written_1h * write_1h_rate
+        + out * rate.output_per_m
+    ) / 1_000_000.0
+
+
+def _covers(prefix: str, model: str) -> bool:
+    """Does built-in row ``prefix`` price ``model``? Its dated or suffixed ids
+    (``gpt-5-2025-08-07``, ``gpt-5-mini``), not a later version (``gpt-5.5``):
+    a row for a model that did not exist when it was written must not price it."""
+    if not model.startswith(prefix):
+        return False
+    rest = model[len(prefix) :]
+    return not rest or not (rest[0] == "." or rest[0].isdigit())
 
 
 def _match(model: str, *, on: date | None = None) -> _Rate | None:
@@ -283,7 +414,7 @@ def _match(model: str, *, on: date | None = None) -> _Rate | None:
     # Overrides are checked with ">=" so an org rate beats a built-in of the
     # same prefix length; built-ins are checked first with ">".
     for prefix, rate in _PRICING.items():
-        if normalised.startswith(prefix):
+        if _covers(prefix, normalised):
             length = len(prefix)
             if best is None or length > best[0]:
                 best = (length, _in_force(prefix, rate, day))
@@ -389,7 +520,12 @@ def usage_cost(
     if is_local_free(provider, model):
         return 0.0, True
     cost = compute_cost_usd(
-        model, _tokens(usage, _TOKEN_KEYS_IN), _tokens(usage, _TOKEN_KEYS_OUT)
+        model,
+        _tokens(usage, _TOKEN_KEYS_IN),
+        _tokens(usage, _TOKEN_KEYS_OUT),
+        cached_tokens=_tokens(usage, ("cached_tokens",)),
+        cache_write_tokens=_tokens(usage, ("cache_write_tokens",)),
+        cache_write_1h_tokens=_tokens(usage, ("cache_write_1h_tokens",)),
     )
     if cost is None:
         return 0.0, False

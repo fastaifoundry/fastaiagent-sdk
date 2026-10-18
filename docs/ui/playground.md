@@ -125,10 +125,11 @@ Two-panel layout. Left: configuration. Right: response.
     Cost is shown as `~$x est.` because it is computed from **public list
     prices** (`compute_cost_usd()`). It cannot know about negotiated or
     committed-use discounts, Amazon Bedrock / Google Vertex partner rates,
-    the Batch API's 50% reduction, or prompt-cache multipliers (cache reads
-    bill at roughly 0.1x, writes at 1.25–2x, and the token counts here don't
-    separate cached from uncached input). Treat it as an order-of-magnitude
-    sanity check. If your organisation has its own rates, set them once —
+    or the Batch API's 50% reduction. Here it is priced from the run's input
+    and output token counts; an agent's own calls also price the cached part
+    of a prompt at the cached rate (see
+    [cost tracking](cost-tracking.md#cached-written-and-long-prompts-1910)).
+    Treat it as an estimate. If your organisation has its own rates, set them once —
     see [Customising the model list](#customising-the-model-list) — and
     every cost figure in the UI uses them, not just the Playground's.
 - **History**: in-memory list of runs from this session. Click a row to

@@ -88,7 +88,7 @@ def test_connected_agent_fully_visible() -> None:
             agent = fa.Agent(
                 name=f"Conn Vis E2E {uuid.uuid4().hex[:4]}",
                 system_prompt=prompt,
-                llm=fa.LLMClient(provider="openai", model="gpt-4o-mini"),
+                llm=fa.LLMClient(provider="openai", model="gpt-5-mini"),
                 guardrails=[no_pii(position=GuardrailPosition.output)],
                 memory=AgentMemory(),
             )

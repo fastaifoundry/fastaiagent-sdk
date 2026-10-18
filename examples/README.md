@@ -120,6 +120,7 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 - [`16_providers_groq.py`](16_providers_groq.py) — Groq's OpenAI-compatible endpoint, plus how to re-pin when Groq retires a model id
 - [`17_providers_openrouter.py`](17_providers_openrouter.py) — OpenRouter: many models behind one key, chosen by slug
 - [`111_llm_fallbacks_and_model_info.py`](111_llm_fallbacks_and_model_info.py) — `LLMClient(fallbacks=[...])` surviving a dead primary, `model_info` (context window, max output, reasoning, images) from official sources, and `extra_body` / `extra_headers` that never reach `to_dict()` (1.91.0)
+- [`112_reasoning_and_prompt_caching.py`](112_reasoning_and_prompt_caching.py) — `LLMClient(reasoning=...)` on Gemini 3.8 Flash, Claude and OpenAI (the reasoning apart from the answer, reasoning tokens counted), a thinking agent's tool loop streamed with `ReasoningDelta`, and `cache=True`: the second identical prompt read from the cache and priced at the cached rate (1.91.0)
 - [`89_azure_injected_client.py`](89_azure_injected_client.py) — Azure OpenAI with Entra ID / managed identity by handing `LLMClient` your own `AzureOpenAI` client
 
 ### OpenAI Decisions API (1.84.0)

@@ -102,6 +102,21 @@ class ToolCall(BaseModel):
         }
 
 
+class ReasoningBlock(BaseModel):
+    """One block of a model's reasoning, exactly as its provider returned it (1.91.0).
+
+    Anthropic returns ``thinking`` / ``redacted_thinking`` blocks (Bedrock:
+    ``reasoningContent``) and requires them back, unchanged, while a tool-use turn
+    is in progress; they ride on the assistant message for that. ``data`` is
+    opaque — it carries a signature the provider checks — and is sent back only
+    to ``provider``, the one that issued it. The readable text, when the provider
+    shows any, is :attr:`LLMResponse.reasoning`.
+    """
+
+    provider: str
+    data: dict[str, Any] = Field(default_factory=dict)
+
+
 class Message(BaseModel):
     """A message in a conversation.
 
@@ -118,6 +133,14 @@ class Message(BaseModel):
     name: str | None = None
     tool_calls: list[ToolCall] | None = None
     tool_call_id: str | None = None
+    #: An assistant turn's reasoning blocks (1.91.0) — see :class:`ReasoningBlock`.
+    #: Never shown on a span; checkpoints keep them so a resume can send them.
+    reasoning_blocks: list[ReasoningBlock] | None = None
+
+    def reasoning_for(self, provider: str) -> list[dict[str, Any]]:
+        """The blocks ``provider`` issued, ready to send back; ``[]`` for any other
+        provider — a model cannot read another provider's reasoning."""
+        return [b.data for b in self.reasoning_blocks or [] if b.provider == provider]
 
     def has_multimodal_content(self) -> bool:
         """Return ``True`` when ``content`` is a list of parts."""
@@ -236,10 +259,17 @@ def UserMessage(content: str | list[Any]) -> Message:  # noqa: N802
 
 
 def AssistantMessage(  # noqa: N802
-    content: str | None = None, tool_calls: list[ToolCall] | None = None
+    content: str | None = None,
+    tool_calls: list[ToolCall] | None = None,
+    reasoning_blocks: list[ReasoningBlock] | None = None,
 ) -> Message:
     """Create an assistant message."""
-    return Message(role=MessageRole.assistant, content=content, tool_calls=tool_calls)
+    return Message(
+        role=MessageRole.assistant,
+        content=content,
+        tool_calls=tool_calls,
+        reasoning_blocks=reasoning_blocks or None,
+    )
 
 
 def ToolMessage(content: str | list[Any], tool_call_id: str) -> Message:  # noqa: N802

@@ -31,16 +31,18 @@ Every streaming method yields `StreamEvent` objects. There are seven event types
 | Event | Fields | When Emitted |
 |-------|--------|-------------|
 | `TextDelta` | `text: str` | Each token/chunk of text from the LLM |
+| `ReasoningDelta` | `text: str`, `block: ReasoningBlock \| None` | A chunk of the model's reasoning — never part of the answer. `block` is set on the event that closes a provider reasoning block (Claude thinking), which the agent loop sends back. Since 1.91.0, see [Reasoning and prompt caching](../llm/reasoning-and-caching.md) |
 | `ToolCallStart` | `call_id: str`, `tool_name: str` | LLM initiates a tool call |
 | `ToolCallEnd` | `call_id: str`, `tool_name: str`, `arguments: dict` | Tool call arguments fully parsed |
-| `Usage` | `prompt_tokens: int`, `completion_tokens: int` | Token counts (typically at end of response) |
+| `Usage` | `prompt_tokens: int`, `completion_tokens: int`, `reasoning_tokens: int`, `cached_tokens: int`, `cache_write_tokens: int` | Token counts (typically at end of response). `prompt_tokens` includes the cached part; the last three are 0 when the provider reported none (1.91.0) |
 | `HandoffEvent` | `from_agent: str`, `to_agent: str`, `reason: str = ""` | Control passes from one agent to another. Emitted by [`Swarm.astream()`](../agents/swarm.md#streaming) only, tagged in ahead of the target agent's first `TextDelta` |
 | `Paused` | `reason: str`, `context: dict`, `execution_id: str`, `node_id: str`, `agent_path: str \| None` | The run paused — a [managed approval policy](../guardrails/managed-governance.md) or an `interrupt()` in a tool. Always the **last** event; resume with `agent.aresume(execution_id, resume_value=Resume(...))`. Since 1.77.0 |
 | `StreamDone` | *(none)* | End-of-stream marker. `Agent.astream()` yields exactly one, after output guardrails and memory; a paused run ends with `Paused` instead |
 
 ```python
 from fastaiagent.llm.stream import (
-    StreamEvent, TextDelta, ToolCallStart, ToolCallEnd, Usage, HandoffEvent, Paused, StreamDone
+    StreamEvent, TextDelta, ReasoningDelta, ToolCallStart, ToolCallEnd, Usage, HandoffEvent,
+    Paused, StreamDone,
 )
 ```
 

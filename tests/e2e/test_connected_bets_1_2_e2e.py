@@ -102,6 +102,35 @@ def _scripted(*turns: Any):
     return FunctionModel(respond)
 
 
+def _plane_spans(connected: Any, trace_id: str, timeout: float = 30.0) -> list[dict[str, Any]]:
+    """The trace's spans as the plane stored them, through the console spans API
+    (``/api/v1/traces/{id}/spans``); the public trace endpoint serves spans
+    without attributes. The plane keeps an SDK span's raw attributes as its
+    ``input`` (``_enrich_sdk_span``: "preserve raw attributes")."""
+    from fastaiagent.trace.otel import get_tracer_provider
+    from fastaiagent.trace.platform_export import PlatformSpanExporter
+    from tests.e2e.conftest import plane_admin
+
+    admin, jwt, domain_id = plane_admin(
+        connected.target, purpose="this gate reads stored span attributes through the console API."
+    )
+    provider = get_tracer_provider()
+    if provider is not None and hasattr(provider, "force_flush"):
+        provider.force_flush()
+    deadline = time.monotonic() + timeout
+    status = None
+    while time.monotonic() < deadline:
+        PlatformSpanExporter().export([])  # deterministic drain to the live plane
+        resp = admin.get(
+            f"/api/v1/traces/{trace_id}/spans", headers=jwt, params={"domain_id": domain_id}
+        )
+        status = resp.status_code
+        if status == 200 and resp.json():
+            return list(resp.json())
+        time.sleep(1.0)
+    raise AssertionError(f"trace {trace_id} not served by the plane (last HTTP {status})")
+
+
 def test_middleware_state_round_trips_through_the_plane(connected: Any, tmp_path: Path) -> None:
     from fastaiagent import Agent, FunctionTool, Resume, SQLiteCheckpointer, ToolBudget
     from fastaiagent.checkpointers import platform_replica
@@ -175,40 +204,13 @@ def test_a_streamed_run_ends_with_run_end_on_the_plane(connected: Any, tmp_path:
 
 
 def test_the_middleware_attribute_reaches_the_plane_trace(connected: Any) -> None:
-    """Read through the console spans API (``/api/v1/traces/{id}/spans``, which
-    returns each span's stored attributes as ``metadata``); the public trace
-    endpoint serves spans without attributes."""
+    """Read through the console spans API (see :func:`_plane_spans`)."""
     from fastaiagent import Agent, ToolBudget
-    from fastaiagent.trace.otel import get_tracer_provider
-    from fastaiagent.trace.platform_export import PlatformSpanExporter
-    from tests.e2e.conftest import plane_admin
 
-    admin, jwt, domain_id = plane_admin(
-        connected.target, purpose="this gate reads stored span attributes through the console API."
-    )
     result = Agent(
         name="attributed", llm=_scripted("hello"), middleware=[ToolBudget(max_calls=3)]
     ).run("hi")
-    provider = get_tracer_provider()
-    if provider is not None and hasattr(provider, "force_flush"):
-        provider.force_flush()
-
-    deadline = time.monotonic() + 30.0
-    spans: list[dict[str, Any]] = []
-    status = None
-    while time.monotonic() < deadline:
-        PlatformSpanExporter().export([])  # deterministic drain to the live plane
-        resp = admin.get(
-            f"/api/v1/traces/{result.trace_id}/spans",
-            headers=jwt,
-            params={"domain_id": domain_id},
-        )
-        status = resp.status_code
-        if status == 200 and resp.json():
-            spans = resp.json()
-            break
-        time.sleep(1.0)
-    assert spans, f"trace {result.trace_id} not served by the plane (last HTTP {status})"
+    spans = _plane_spans(connected, result.trace_id)
     root = next(s for s in spans if s["name"] == "agent.attributed")
     # The plane keeps an SDK span's raw attributes as the span's ``input``
     # (``_enrich_sdk_span``: "preserve raw attributes"); ``metadata`` holds what
@@ -259,3 +261,67 @@ def test_a_gemini_signature_survives_the_plane(connected: Any, tmp_path: Path) -
     )
     done = agent(store2).resume(exec_id, resume_value=Resume(approved=True))
     assert done.status == "completed"
+
+
+def test_claude_thinking_survives_the_plane(connected: Any, tmp_path: Path) -> None:
+    """X17 across machines: the thinking blocks are replicated with the checkpoint,
+    served back verbatim, and a run resumed from the plane copy sends them — the
+    API verifies their signature (real ``claude-haiku-4-5``, extended thinking)."""
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        pytest.skip("ANTHROPIC_API_KEY not set")
+    from fastaiagent import Agent, FunctionTool, LLMClient, Resume, SQLiteCheckpointer
+    from fastaiagent.checkpointers import platform_replica
+
+    def agent(store: Any) -> Agent:
+        return Agent(
+            name="claude-desk",
+            system_prompt="Call approve with the text the user gives, then confirm in one line.",
+            llm=LLMClient(provider="anthropic", model="claude-haiku-4-5", reasoning="low"),
+            tools=[FunctionTool(name="approve", fn=approve)],
+            checkpointer=store,
+        )
+
+    def blocks(snapshot: dict[str, Any]) -> list[Any]:
+        return [b for m in snapshot["messages"] for b in (m.get("reasoning_blocks") or [])]
+
+    store1 = SQLiteCheckpointer(db_path=str(tmp_path / "c1.db"))
+    exec_id = f"b12-claude-{uuid.uuid4().hex[:8]}"
+    assert agent(store1).run("Approve: refund A-17", execution_id=exec_id).status == "paused"
+    local = blocks(store1.get_last(exec_id).state_snapshot)
+    assert local and local[0]["provider"] == "anthropic", "Claude returned no thinking"
+    _drain(store1, exec_id)
+
+    store2 = SQLiteCheckpointer(db_path=str(tmp_path / "c2.db"))
+    store2.setup()
+    restored = platform_replica.restore_from_plane(store2, exec_id)
+    assert restored is not None
+    assert blocks(restored.state_snapshot) == local, "the plane did not keep the blocks verbatim"
+    done = agent(store2).resume(exec_id, resume_value=Resume(approved=True))
+    assert done.status == "completed"
+
+
+def test_cache_and_reasoning_counts_reach_the_plane_and_the_text_does_not(
+    connected: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With payloads off (decision B2-4): the counts are exported, the reasoning
+    text is not. Real ``claude-haiku-4-5`` with ``cache=True`` and extended thinking."""
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        pytest.skip("ANTHROPIC_API_KEY not set")
+    from fastaiagent import Agent, LLMClient
+
+    monkeypatch.setenv("FASTAIAGENT_TRACE_PAYLOADS", "0")
+    policy = f"Policy {uuid.uuid4()}. " + "Refunds are issued within 14 days. " * 900
+    result = Agent(
+        name="cached-thinker",
+        system_prompt=policy,
+        llm=LLMClient(provider="anthropic", model="claude-haiku-4-5", reasoning="low", cache=True),
+    ).run("How many days do refunds take? One line.")
+    assert result.status == "completed"
+
+    (call,) = [s for s in _plane_spans(connected, result.trace_id) if s["name"].startswith("llm.")]
+    stored = call.get("input") or {}
+    assert stored.get("gen_ai.usage.cache_creation.input_tokens", 0) > 4000, sorted(stored)
+    assert "gen_ai.usage.cache_read.input_tokens" in stored
+    assert stored.get("gen_ai.usage.reasoning_tokens", 0) > 0
+    assert stored.get("gen_ai.usage.input_tokens", 0) > 4000, "the whole prompt, cache included"
+    assert "gen_ai.response.reasoning" not in stored, "reasoning text left with payloads off"

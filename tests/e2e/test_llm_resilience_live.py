@@ -58,11 +58,13 @@ def test_openai_context_overflow_falls_back_to_a_bigger_window() -> None:
 
     client = LLMClient(
         provider="openai",
+        # The primary needs a small window, so the overflow is cheap to provoke;
+        # the fallback is current.
         model="gpt-4o-mini",  # 128k window
-        fallbacks=[LLMClient(provider="openai", model="gpt-4.1-mini")],  # ~1M window
+        fallbacks=[LLMClient(provider="openai", model="gpt-5-mini")],  # 400k window
     )
     response = _ask(client, _long_prompt(140_000))
-    assert response.model.startswith("gpt-4.1-mini")
+    assert response.model.startswith("gpt-5-mini")
     assert "DONE" in (response.content or "").upper()
 
 

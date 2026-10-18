@@ -183,12 +183,20 @@ def set_genai_attributes(
     response_content: str | None = None,
     response_tool_calls: str | None = None,
     finish_reason: str | None = None,
+    reasoning_tokens: int | None = None,
+    cache_read_tokens: int | None = None,
+    cache_write_tokens: int | None = None,
+    response_reasoning: str | None = None,
 ) -> None:
     """Set GenAI semantic convention attributes on a span.
 
     Payload-bearing fields (request_messages, request_tools, response_content,
-    response_tool_calls) are pre-serialized JSON strings provided by the caller
-    and are gated by ``trace_payloads_enabled()``.
+    response_tool_calls, response_reasoning) are pre-serialized JSON strings
+    provided by the caller and are gated by ``trace_payloads_enabled()``.
+
+    The cache counts (1.91.0) use the OpenTelemetry GenAI names
+    ``gen_ai.usage.cache_read.input_tokens`` / ``cache_creation.input_tokens``;
+    both are part of ``gen_ai.usage.input_tokens``, which is the whole prompt.
     """
     attrs: dict[str, Any] = {}
     if system is not None:
@@ -203,6 +211,12 @@ def set_genai_attributes(
         attrs["gen_ai.usage.input_tokens"] = input_tokens
     if output_tokens is not None:
         attrs["gen_ai.usage.output_tokens"] = output_tokens
+    if reasoning_tokens is not None:
+        attrs["gen_ai.usage.reasoning_tokens"] = reasoning_tokens
+    if cache_read_tokens is not None:
+        attrs["gen_ai.usage.cache_read.input_tokens"] = cache_read_tokens
+    if cache_write_tokens is not None:
+        attrs["gen_ai.usage.cache_creation.input_tokens"] = cache_write_tokens
     if finish_reasons is not None:
         attrs["gen_ai.response.finish_reasons"] = str(finish_reasons)
     if finish_reason is not None:
@@ -216,6 +230,8 @@ def set_genai_attributes(
             attrs["gen_ai.response.content"] = response_content
         if response_tool_calls is not None:
             attrs["gen_ai.response.tool_calls"] = response_tool_calls
+        if response_reasoning is not None:
+            attrs["gen_ai.response.reasoning"] = response_reasoning
     set_span_attributes(span, **attrs)
 
 

@@ -61,6 +61,13 @@ LLMClient(provider="openrouter", model="openai/gpt-4o-mini")    # OPENROUTER_API
 and streaming included, with their thought signatures carried for you and
 Google's published prices applied.
 
+**Reasoning and prompt caching, one spelling for every provider:**
+`LLMClient(..., reasoning="low", cache=True)`. `reasoning=` becomes Gemini's
+`thinkingLevel`, OpenAI's `reasoning_effort` or Claude's effort and thinking, and
+the model's reasoning comes back as `response.reasoning`, never inside the answer.
+Cached prompt tokens are counted on every provider and priced at the cached rate.
+See [docs/llm/reasoning-and-caching](docs/llm/reasoning-and-caching.md).
+
 Custom internal LLM gateways register in five lines via
 `fastaiagent.llm.providers.register_provider`.
 See [docs/llm/providers](docs/llm/providers.md).

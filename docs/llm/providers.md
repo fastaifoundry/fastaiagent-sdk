@@ -122,6 +122,13 @@ rate. Since 1.90.0 `completion_tokens` (and so `AgentResult.cost`, the
 was counted in `tokens_used` but never priced, and `astream` reported fewer
 tokens than `run`.
 
+**How hard it thinks.** `LLMClient(provider="gemini", model="gemini-3.8-flash",
+reasoning="low")` sends `thinkingLevel` (and `includeThoughts`, so the thought
+summary comes back as `response.reasoning`, apart from the answer). The same
+`reasoning=` works on every provider — see
+[Reasoning and prompt caching](reasoning-and-caching.md), which also covers
+`cache=` and cache-aware cost.
+
 ## What a model can take: `model_info`
 
 ```python

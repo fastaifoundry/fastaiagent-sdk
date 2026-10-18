@@ -17,7 +17,7 @@ from pathlib import Path
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
 
-CURRENT_SCHEMA_VERSION = 26
+CURRENT_SCHEMA_VERSION = 27
 
 # A migration step is either a SQL string or a callable that takes the
 # ``SQLiteHelper`` and runs whatever logic it needs (e.g., gated
@@ -309,6 +309,35 @@ def _v10_widen_span_fts(db: SQLiteHelper) -> None:
     db.execute(
         f"""INSERT INTO span_fts(trace_id, span_id, name, input_text, output_text)
            SELECT trace_id, span_id, name, {in_col}, {out_col} FROM spans"""
+    )
+
+
+def _v27_scope_span_fts_update_trigger(db: SQLiteHelper) -> None:
+    """Reindex a span in ``span_fts`` only when a searched column changes (1.91.0, X19).
+
+    ``spans_fts_au`` fired on **every** update of ``spans`` — including
+    ``UPDATE spans SET synced = 1``, which the platform exporter runs for each
+    span it delivers or abandons. Each firing deletes from ``span_fts`` by
+    ``span_id``, an UNINDEXED FTS5 column, so it scans the whole index: 0.15 s per
+    span on a 380k-span ``local.db``. Abandoning a backlog of 179k stale spans
+    took about 7.5 hours, and span export and ``fa.disconnect()`` blocked
+    throughout. ``synced`` and ``project_id`` are not searched, so an update of
+    them has nothing to reindex; the trigger now fires on ``trace_id``, ``name``
+    and ``attributes`` only — the columns the index is built from.
+    """
+    rows = db.fetchall("SELECT name FROM sqlite_master WHERE type='table' AND name='span_fts'")
+    if not rows:
+        return
+    in_new = _coalesce_json("new.attributes", _FTS_INPUT_KEYS)
+    out_new = _coalesce_json("new.attributes", _FTS_OUTPUT_KEYS)
+    db.execute("DROP TRIGGER IF EXISTS spans_fts_au")
+    db.execute(
+        f"""CREATE TRIGGER spans_fts_au
+           AFTER UPDATE OF trace_id, name, attributes ON spans BEGIN
+               DELETE FROM span_fts WHERE span_id = old.span_id;
+               INSERT INTO span_fts(trace_id, span_id, name, input_text, output_text)
+               VALUES (new.trace_id, new.span_id, new.name, {in_new}, {out_new});
+           END"""
     )
 
 
@@ -1329,6 +1358,10 @@ _MIGRATIONS: dict[int, list[_Step]] = {
         # 1.89.0: case-level eval numbers, run kinds and case media. See
         # _v26_eval_case_metrics.
         _v26_eval_case_metrics,
+    ],
+    27: [
+        # 1.91.0 (X19): reindex a span only when a searched column changes.
+        _v27_scope_span_fts_update_trigger,
     ],
 }
 

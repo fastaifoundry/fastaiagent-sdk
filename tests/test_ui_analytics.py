@@ -156,7 +156,8 @@ class TestPricing:
             ("claude-opus-4-8", 5.00, 25.00),
             # Claude 5 had no entry at all, so cost rendered as a dash.
             ("claude-opus-5", 5.00, 25.00),
-            ("claude-sonnet-5", 3.00, 15.00),
+            # $2/$10 on Anthropic's pricing page read 2026-10-18 (was $3/$15, X15).
+            ("claude-sonnet-5", 2.00, 10.00),
             ("claude-fable-5", 10.00, 50.00),
             # The older Opus tier genuinely is $15/$75 — don't over-correct.
             ("claude-opus-4-1", 15.00, 75.00),
@@ -177,7 +178,7 @@ class TestRateOverrides:
             pricing.set_rate_overrides({"claude-opus-5": (4.0, 20.0)})
             assert compute_cost_usd("claude-opus-5", 1_000_000, 0) == pytest.approx(4.0)
             # Untouched models keep list price.
-            assert compute_cost_usd("claude-sonnet-5", 1_000_000, 0) == pytest.approx(3.0)
+            assert compute_cost_usd("claude-sonnet-5", 1_000_000, 0) == pytest.approx(2.0)
         finally:
             pricing.set_rate_overrides(None)
 
