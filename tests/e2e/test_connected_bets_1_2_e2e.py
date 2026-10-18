@@ -325,3 +325,48 @@ def test_cache_and_reasoning_counts_reach_the_plane_and_the_text_does_not(
     assert stored.get("gen_ai.usage.reasoning_tokens", 0) > 0
     assert stored.get("gen_ai.usage.input_tokens", 0) > 4000, "the whole prompt, cache included"
     assert "gen_ai.response.reasoning" not in stored, "reasoning text left with payloads off"
+
+
+@pytest.mark.parametrize("stop", ["cancelled", "timeout"])
+def test_a_stopped_run_reaches_the_plane_as_failed_with_its_reason(
+    connected: Any, tmp_path: Path, stop: str
+) -> None:
+    """Decision B2-8: no new checkpoint status for the plane — a cancelled or timed
+    out run ends ``failed`` and says why in ``run_reason``."""
+    import asyncio
+
+    from fastaiagent import Agent, AgentConfig, AgentTimeoutError, FunctionTool, SQLiteCheckpointer
+    from fastaiagent.checkpointers import platform_replica
+
+    async def slow() -> str:
+        """Take a while."""
+        await asyncio.sleep(10)
+        return "done"
+
+    store = SQLiteCheckpointer(db_path=str(tmp_path / "stop.db"))
+    exec_id = f"b12-{stop}-{uuid.uuid4().hex[:8]}"
+    agent = Agent(
+        name="stoppable",
+        llm=_scripted(("", [{"name": "slow", "arguments": {}}]), "done"),
+        tools=[FunctionTool(name="slow", fn=slow)],
+        checkpointer=store,
+        config=AgentConfig(timeout_seconds=0.5) if stop == "timeout" else AgentConfig(),
+    )
+
+    async def main() -> Any:
+        task = asyncio.ensure_future(agent.arun("go", execution_id=exec_id))
+        if stop == "cancelled":
+            await asyncio.sleep(0.4)
+            agent.cancel(exec_id)
+        return await task
+
+    if stop == "timeout":
+        with pytest.raises(AgentTimeoutError):
+            asyncio.run(main())
+    else:
+        assert asyncio.run(main()).status == "cancelled"
+    _drain(store, exec_id)
+    served = platform_replica.fetch_latest_from_plane(exec_id)
+    assert served is not None
+    assert (served.node_id, served.status) == ("run_end", "failed")
+    assert served.state_snapshot.get("run_reason") == stop, served.state_snapshot

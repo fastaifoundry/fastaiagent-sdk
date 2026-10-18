@@ -21,6 +21,7 @@ from fastaiagent.agent.middleware import (
     ToolBudget,
     TrimLongMessages,
 )
+from fastaiagent.agent.run_control import RunInfo
 from fastaiagent.agent.swarm import Swarm, SwarmError, SwarmState
 from fastaiagent.agent.team import Supervisor, SupervisorRoute, Worker
 
@@ -40,6 +41,7 @@ __all__ = [
     "RedactPII",
     "Reflect",
     "RunContext",
+    "RunInfo",
     "RunUsage",
     "StaticBlock",
     "SummaryBlock",

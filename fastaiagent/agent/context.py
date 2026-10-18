@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Generic, TypeVar
+from typing import TYPE_CHECKING, Generic, TypeVar
+
+if TYPE_CHECKING:
+    from fastaiagent.agent.run_control import RunInfo
 
 T = TypeVar("T")
 
@@ -63,6 +66,19 @@ class RunContext(Generic[T]):
     @property
     def state(self) -> T:
         return self._state
+
+    @property
+    def run(self) -> RunInfo | None:
+        """The run this context is used in, read-only (1.91.0, 2H): its
+        ``execution_id``, ``agent_name``, the tool loop's ``turn``, the ``model``
+        of the current call and its ``usage`` so far. ``None`` outside a run.
+
+        A run nested in another (a Swarm hop, a Supervisor worker) reports the
+        top-level run.
+        """
+        from fastaiagent.agent.run_control import current_run_info
+
+        return current_run_info()
 
     def __repr__(self) -> str:
         return f"RunContext(state={self._state!r})"

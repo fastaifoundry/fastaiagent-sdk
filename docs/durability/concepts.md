@@ -69,6 +69,12 @@ committed work:
   would claim the run ended at every handoff. A **paused** run gets none: a pause
   is not an ending.
 
+    Since 1.91.0 a run stopped on purpose ends `failed` too, and says why in
+    `state_snapshot["run_reason"]`: `"cancelled"` after `agent.cancel()`,
+    `"timeout"` past `AgentConfig.timeout_seconds`. `run_error` names the stop
+    (`AgentTimeoutError: …`). There is no new status, so the plane needs nothing
+    new to show it.
+
     Since 1.91.0 **`Agent.astream` writes it too**, on the same rules: `completed`
     before the final `StreamDone`, `failed` when the stream raises — including a
     consumer that stops reading mid-run, since that run did not finish — and

@@ -103,6 +103,7 @@ Structured output works across all providers, with automatic adaptation:
 | **Azure** | Yes | Same as OpenAI (OpenAI-compatible) |
 | **Custom** | Yes | Same as OpenAI (OpenAI-compatible) |
 | **Anthropic** | No | Schema injected into system prompt; code fences stripped from response |
+| **Gemini** | Yes, without tools | `responseMimeType` + `responseSchema` on a call with no tools. While function tools are in the request, the schema is asked for in the prompt and the fenced reply is parsed: Gemini refuses JSON mode with function calling (2.5: HTTP 400) or calls tools forever (3.5, 3.8). Fixed in 1.91.0 (X20); before, an `output_type` agent with tools never worked on Gemini |
 | **Ollama** | Partial | `json_object` → `format: "json"`, `json_schema` → `format: {schema}` |
 | **Bedrock** | No | Not supported |
 

@@ -37,7 +37,7 @@ Every streaming method yields `StreamEvent` objects. There are seven event types
 | `Usage` | `prompt_tokens: int`, `completion_tokens: int`, `reasoning_tokens: int`, `cached_tokens: int`, `cache_write_tokens: int` | Token counts (typically at end of response). `prompt_tokens` includes the cached part; the last three are 0 when the provider reported none (1.91.0) |
 | `HandoffEvent` | `from_agent: str`, `to_agent: str`, `reason: str = ""` | Control passes from one agent to another. Emitted by [`Swarm.astream()`](../agents/swarm.md#streaming) only, tagged in ahead of the target agent's first `TextDelta` |
 | `Paused` | `reason: str`, `context: dict`, `execution_id: str`, `node_id: str`, `agent_path: str \| None` | The run paused — a [managed approval policy](../guardrails/managed-governance.md) or an `interrupt()` in a tool. Always the **last** event; resume with `agent.aresume(execution_id, resume_value=Resume(...))`. Since 1.77.0 |
-| `StreamDone` | *(none)* | End-of-stream marker. `Agent.astream()` yields exactly one, after output guardrails and memory; a paused run ends with `Paused` instead |
+| `StreamDone` | `finish_reason: str = ""` | End-of-stream marker. `Agent.astream()` yields exactly one, after output guardrails and memory; a paused run ends with `Paused` instead. `finish_reason` is the provider's own value on an `LLMClient.astream()` (1.89.0), and `"cancelled"` when `agent.cancel()` ended the run (1.91.0) |
 
 ```python
 from fastaiagent.llm.stream import (

@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from fastaiagent._internal.errors import MaxIterationsError, StopAgent, ToolExecutionError
 from fastaiagent.agent.middleware import MiddlewareContext, _MiddlewarePipeline
+from fastaiagent.agent.run_control import check_before_model_call
 from fastaiagent.chain.checkpoint import Checkpoint
 from fastaiagent.chain.interrupt import InterruptSignal, _agent_path
 from fastaiagent.checkpointers.protocol import Checkpointer, PendingInterrupt
@@ -1023,6 +1024,8 @@ async def execute_tool_loop(
 
         # Call LLM — through ``wrap_model`` when a middleware implements it.
         try:
+            # The run's limits, before every model call (1.91.0, 2I).
+            check_before_model_call(iteration, getattr(_turn_model(llm, mw_ctx), "model", None))
             response = await _complete_turn(
                 llm,
                 messages,
@@ -1300,6 +1303,13 @@ async def stream_tool_loop(
             except StopAgent as stop:
                 yield _stream_stop(stop, final_reply)
                 return
+
+        # The run's limits, before every model call (1.91.0, 2I).
+        try:
+            check_before_model_call(iteration, getattr(_turn_model(llm, mw_ctx), "model", None))
+        except StopAgent as stop:
+            yield _stream_stop(stop, final_reply)
+            return
 
         # Stream from LLM
         accumulated_text = ""

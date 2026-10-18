@@ -380,6 +380,15 @@ def _build_request(
             body["toolConfig"] = {"functionCallingConfig": {"mode": mode}}
 
     gen_cfg = _build_generation_config(client, **kwargs)
+    if converted_tools:
+        # Gemini does not take JSON mode with function calling (1.91.0, X20):
+        # 2.5 refuses the request (HTTP 400 "Function calling with a response
+        # mime type: 'application/json' is unsupported"), and 3.5 / 3.8 answer
+        # every tool result with another call until the loop's limit. The prompt
+        # already asks for the schema (above), and the reply is parsed from the
+        # text; a call without tools keeps the native schema.
+        gen_cfg.pop("responseMimeType", None)
+        gen_cfg.pop("responseSchema", None)
     if gen_cfg:
         body["generationConfig"] = gen_cfg
 
@@ -407,7 +416,19 @@ async def acomplete_gemini(
             )
         data = resp.json()
 
-    return _parse_response(client, data)
+    response = _parse_response(client, data)
+    # Structured output parsed from the text (no JSON mode with tools, X20)
+    # often comes fenced; strip it, as the Anthropic path does.
+    rf = kwargs.get("response_format")
+    if (
+        response.content
+        and isinstance(rf, dict)
+        and rf.get("type") in ("json_object", "json_schema")
+    ):
+        from fastaiagent.llm.structured import _strip_code_fences
+
+        response.content = _strip_code_fences(response.content)
+    return response
 
 
 async def astream_gemini(

@@ -15,7 +15,12 @@ class AgentError(FastAIAgentError):
 
 
 class AgentTimeoutError(AgentError):
-    """Agent execution exceeded timeout."""
+    """The run passed ``AgentConfig.timeout_seconds`` (1.91.0)."""
+
+
+class RunLimitError(AgentError):
+    """A run limit could not be checked (1.91.0): ``max_cost_usd`` on a run whose
+    spend cannot be priced. Raised rather than letting the run go unbudgeted."""
 
 
 class MaxIterationsError(AgentError):

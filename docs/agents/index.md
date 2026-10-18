@@ -236,6 +236,66 @@ Gemini ends with `finish_reason="unexpected_tool_call"`, so the run's `output` i
     Agents that set them — including ones distributed from the control plane,
     whose config carries them — now send them.
 
+### Run limits and cancel (1.91.0)
+
+```python
+agent = Agent(
+    name="research",
+    llm=LLMClient(provider="gemini", model="gemini-3.8-flash"),
+    tools=[search],
+    config=AgentConfig(
+        timeout_seconds=60,      # the run's wall clock
+        max_total_tokens=50_000, # checked before every model call
+        max_cost_usd=0.25,       # checked before every model call
+    ),
+)
+```
+
+| Limit | What happens when it is reached |
+|---|---|
+| `timeout_seconds` | `arun` / `run` / `aresume` stop at once, inside a model or tool call, and raise `AgentTimeoutError`. `astream` stops at its next event. A synchronous tool that blocks the event loop (`time.sleep`, a blocking client) cannot be interrupted, so the stop lands when it returns. An `async` tool stops at once. |
+| `max_total_tokens` | Before the next model call, the run ends normally: `status="completed"`, `stop_reason="max_total_tokens"`. No exception. |
+| `max_cost_usd` | The same, with `stop_reason="max_cost_usd"`. A run whose spend cannot be priced (a model with no rate) cannot be held to it: the check raises `RunLimitError` rather than letting the run go unbudgeted. |
+
+The caps read the run's running total, the same one `AgentResult.cost` and the
+`cost_limit` guardrail read, so they never disagree. They are checked before every
+model call, the structured-output and guardrail re-asks included. A re-ask the
+budget no longer allows is not made: a structured run keeps its last reply (and
+`stop_reason` says why), and a guardrail re-ask blocks, as when its retries run
+out. `max_cost_usd` and `cost_limit` do different jobs:
+
+- **`max_cost_usd`** is a run budget. It ends the run cleanly before the next call.
+- **`cost_limit`** is a policy check at a guardrail position. It blocks with
+  `GuardrailBlockedError`, and the control plane can author it.
+
+**Cancel** a run in progress from anywhere in the process, any thread included:
+
+```python
+task = asyncio.create_task(agent.arun("long research task", execution_id="job-7"))
+...
+agent.cancel("job-7")      # True if the run was in progress
+result = await task        # status="cancelled", stop_reason="cancelled"
+```
+
+- **A non-streamed run** stops at once and returns `status="cancelled"`, with
+  `tokens_used`, `cost` and `messages` as far as it got.
+- **A stream** stops at its next event and ends with
+  `StreamDone(finish_reason="cancelled")`. `agent.stream()` returns
+  `status="cancelled"`.
+- **The checkpoint** of a cancelled or timed-out run ends `failed`, with
+  `state_snapshot["run_reason"]` set to `"cancelled"` or `"timeout"`.
+- **Your own task:** cancelling it (`task.cancel()`) is not `agent.cancel`. It
+  cancels the run and propagates as `CancelledError`, as before.
+
+The limits and the stop belong to the **top-level** run. An agent run inside
+another one (a Supervisor's worker, an agent called from a tool, a Swarm hop)
+runs under its parent's limits and stops with it. A Supervisor run is cancelled
+by its execution id. A `Swarm` or `Chain` run cannot be cancelled in 1.91.0.
+
+The three limits are written into `Agent.to_dict()` only when set, so a
+plane-dispatched or replayed agent keeps them, and a default agent's payload is
+unchanged.
+
 ## Streaming
 
 Stream tokens from the agent as they are generated, rather than waiting for the full response:
@@ -305,6 +365,18 @@ result = agent.run("What's my name?", messages=history)
 # The model sees the prior turns and can answer "Alice".
 ```
 
+`result.messages` (1.91.0) is the run's conversation in that shape — the prior
+`messages=`, the input, the tool turns and the answer — so a chat continues with:
+
+```python
+first = agent.run("My name is Alice.")
+second = agent.run("What's my name?", messages=first.messages)
+```
+
+It leaves out the system prompt, middleware instructions and memory context; each
+run builds those again. Claude's thinking blocks stay on the assistant turns that
+carry them.
+
 This is the building block for [Agent Simulation](../simulation/index.md), which
 drives multi-turn conversations against an agent and judges the transcript. For
 durable, server-side conversation history across requests, see
@@ -356,24 +428,39 @@ to `/public/v1/sdk/agents`. See [Pushing agent definitions](../platform/index.md
 
 ## AgentResult
 
-Every agent execution returns an `AgentResult`. It has twelve fields, and the
+Every agent execution returns an `AgentResult`. It has fifteen fields, and the
 table below is all of them:
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `output` | `str` | The agent's final text response |
-| `parsed` | `Any \| None` | The response parsed into your `output_type`, when the agent declares one. `None` otherwise — read this, not `output`, for a structured run. |
+| `parsed` | `T \| None` | The response parsed into your `output_type`, when the agent declares one. `None` otherwise — read this, not `output`, for a structured run. Typed since 1.91.0: see below. |
 | `tool_calls` | `list[dict]` | All tool calls made during execution |
+| `messages` | `list[Message]` | The run's conversation (1.91.0): prior `messages=`, the input, tool turns and the answer, without the system prompt, instructions or memory context. Pass it back as `messages=` to continue. |
 | `tokens_used` | `int` | Tokens across **every** LLM call the run made — each turn of the tool loop, a structured re-ask, a guardrail re-ask. Same run-scoped accumulator `cost` is built from, so the two always agree. |
 | `cost` | `float` | Estimated USD spend, summed over **every** LLM call the run made — the tool loop's turns, a structured re-ask, a guardrail re-ask. Priced from the model id and the provider's token counts against the built-in list-price table (override it with `set_rate_overrides()`). `0.0` for a model with no rate — see `cost_known`. |
 | `cost_known` | `bool` | Whether every call in the run could be priced. **`cost == 0.0` does not always mean the run was free**: a private fine-tune and a bedrock/azure deployment id have no rate, and reporting `$0.00` for them would be a guess, so this reads `False`. A self-hosted provider (`ollama`, `lmstudio`, `vllm`) is the exception — it runs on hardware you already pay for, so it is a known zero and this reads `True`. Check this flag before trusting the number. |
 | `latency_ms` | `int` | Total execution time in milliseconds |
 | `trace_id` | `str \| None` | Trace ID for debugging. Populated on every path since 1.67.0 — `run`, `arun`, `stream`, and the same fields on `Swarm`, `Supervisor` and `Chain`. |
 | `execution_id` | `str` | The durable execution's id. Always populated when a `checkpointer=` is configured; `""` otherwise. It is what you pass to `agent.aresume(...)`. |
-| `status` | `str` | `"completed"` for a normal run, `"paused"` when a tool called [`interrupt()`](../durability/index.md). A paused run **returns** — it does not raise — so a durability user must branch on this. |
+| `status` | `str` | `"completed"` for a normal run, `"paused"` when a tool called [`interrupt()`](../durability/index.md), `"cancelled"` after `agent.cancel()` (1.91.0). A paused or cancelled run **returns** — it does not raise — so branch on this. |
 | `pending_interrupt` | `dict \| None` | Set when `status == "paused"`: `{reason, context, node_id, agent_path}` — the same payload the `/approvals` UI reads from the `pending_interrupts` table. |
-| `stop_reason` | `str \| None` | Set when middleware ended the run with `StopAgent` (1.90.0): the stop's `reason`, or `"stopped"` when it gave none. `output` is the stop message. `None` for a run that was not stopped. |
+| `stop_reason` | `str \| None` | Why the run ended early: middleware's `StopAgent` reason (1.90.0), or `"stopped"` when it gave none; `"max_total_tokens"` / `"max_cost_usd"` for a run limit, `"cancelled"` for a cancel (1.91.0). `output` is the stop message. `None` for a run that was not stopped. |
+| `route` | `SupervisorRoute \| None` | How a `Supervisor(routing="decisions")` routed the request: the worker, the choice's confidence, and any fallback. `None` otherwise. |
 | `guardrails` | `list[GuardrailFiring]` | Every guardrail that executed, in order, across all four positions. The **only** way to observe a non-halting outcome: `warn`, `mask` and `override` all let the run finish, so before 1.64.0 a run with the Local UI off and no plane attached reported a clean string whether or not a rule had fired. A blocking failure still raises `GuardrailBlockedError` rather than returning. |
+
+**Typed `parsed` (1.91.0).** `AgentResult` is generic in `parsed`. Pass
+`output_type=` to a single run, or declare it on the agent, and your type checker
+knows what `parsed` holds:
+
+```python
+result = agent.run("Extract the invoice", output_type=Invoice)  # AgentResult[Invoice]
+if result.parsed is not None:                                  # Invoice | None
+    print(result.parsed.total)                                 # typed as float
+```
+
+Plain `AgentResult` is `AgentResult[Any]`, so annotations written before 1.91.0
+keep working.
 
 ```python
 result = agent.run("my ssn is 123-45-6789")
@@ -414,7 +501,8 @@ for g in result.guardrails:
 ```python
 from fastaiagent._internal.errors import (
     AgentError,              # Base agent error
-    AgentTimeoutError,       # Reserved for a run timeout; not raised today
+    AgentTimeoutError,       # The run passed AgentConfig.timeout_seconds (1.91.0)
+    RunLimitError,           # max_cost_usd set, but the run cannot be priced (1.91.0)
     MaxIterationsError,      # Tool loop exceeded max_iterations
     GuardrailBlockedError,   # Guardrail rejected input/output
     LLMProviderError,        # LLM API error

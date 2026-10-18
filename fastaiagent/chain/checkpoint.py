@@ -56,8 +56,14 @@ def write_run_end(
     state_snapshot: dict[str, Any] | None = None,
     agent_path: str | None = None,
     middleware_state: dict[str, Any] | None = None,
+    reason: str | None = None,
 ) -> None:
     """Write the terminal checkpoint for a run. Best-effort, never raises.
+
+    ``reason`` (1.91.0): why a ``failed`` run stopped when it was stopped on
+    purpose — ``"cancelled"`` (``Agent.cancel``) or ``"timeout"``
+    (``timeout_seconds``) — saved as ``state_snapshot["run_reason"]``. The status
+    stays ``failed``: no new status for the plane to learn (decision B2-8).
 
     ``middleware_state`` (1.91.0): the agent's middleware state at the end of
     the run, replacing whatever the last step's row carried — this row is what
@@ -115,6 +121,8 @@ def write_run_end(
     snapshot["run_status"] = status
     if error is not None:
         snapshot["run_error"] = f"{type(error).__name__}: {error}"
+    if reason is not None:
+        snapshot["run_reason"] = reason
 
     try:
         checkpointer.put(

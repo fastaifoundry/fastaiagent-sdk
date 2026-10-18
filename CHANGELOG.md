@@ -133,6 +133,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Example `112_reasoning_and_prompt_caching.py`; new page **Reasoning and prompt
   caching**.
 
+### Added — what a run returns, and how to bound it (Bet 2, 2H–2J)
+
+- **Run limits** on `AgentConfig` (2I):
+  - `timeout_seconds` is the run's wall clock. `run` / `arun` / `aresume` stop
+    at once, inside a model or tool call, and raise `AgentTimeoutError`, which
+    was declared but never raised before. `astream` stops at its next event.
+  - `max_total_tokens` / `max_cost_usd` are checked before every model call,
+    re-asks included. Over budget, the run ends normally with `stop_reason` set
+    to the cap (decision B2-7). A guardrail re-ask the budget no longer allows
+    blocks.
+  - `max_cost_usd` on a run that cannot be priced raises the new
+    `RunLimitError`, not a silent pass. It and `cost_limit` read the same total.
+  - Each agent run holds its own caps; cancel and the timeout belong to the
+    top-level run, and a nested agent stops with it.
+- **`agent.cancel(execution_id)`** stops a run in progress, from any thread.
+  `arun` returns `status="cancelled"`; `astream` ends with
+  `StreamDone(finish_reason="cancelled")`. The checkpoint ends `failed`, with the
+  new `state_snapshot["run_reason"]` (`"cancelled"` / `"timeout"`; decision
+  B2-8). Supervisor runs are cancellable; `Swarm` and `Chain` runs are not yet.
+- **`AgentResult[T]`** (2H): `parsed` is typed, and `run` / `arun` take a
+  per-call `output_type=`, so the result is `AgentResult[Invoice]`. Plain
+  `AgentResult` is `AgentResult[Any]`.
+- **`RunContext.run`** returns a `RunInfo` (execution id, agent, turn, model,
+  spend so far) a tool can read.
+- **`AgentResult.messages`** (2J): the run's conversation without the system
+  prompt, instructions or memory context, ready for `messages=`.
+- The three limits are part of `Agent.to_dict()` only when set (new keys, signed
+  off). `AgentTimeoutError`, `RunLimitError` and `RunInfo` are exported.
+- Example `113_run_limits_and_cancel.py`.
+
 ### Changed
 
 - **Cost is priced in parts, so figures move** (decision B2-1). Cached prompt
@@ -178,6 +208,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `thought` were read as text. They are reasoning now.
 - **`LLMClient.stream()` dropped a tool call's Gemini signature** in the
   `LLMResponse` it returns.
+- **A Gemini agent with `output_type` and tools never worked** (X20). JSON mode
+  (`responseMimeType` / `responseSchema`) went on every call, tool turns
+  included, and Gemini does not take it with function calling:
+  `gemini-2.5-flash` answered HTTP 400 ("Function calling with a response mime
+  type: 'application/json' is unsupported"), and `3.5-flash-lite` / `3.8-flash`
+  answered every tool result with another call until `MaxIterationsError`. While
+  function tools are in the request, JSON mode is no longer sent: the prompt asks
+  for the schema and the fenced reply is parsed. Calls without tools keep the
+  native schema. Measured and verified live on 2.5, 3.5-flash-lite, 3.8-flash
+  and 4-argon, `run` and `stream`.
 - **A connected app with a large `local.db` could stall span export for hours**
   (X19). The full-text index trigger fired on every update of `spans`,
   including the exporter's "mark synced". Each firing scanned the whole index,

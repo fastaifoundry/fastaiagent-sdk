@@ -1,6 +1,6 @@
 """FastAIAgent SDK — Build, debug, evaluate, and operate AI agents."""
 
-from fastaiagent._internal.errors import StopAgent
+from fastaiagent._internal.errors import AgentTimeoutError, RunLimitError, StopAgent
 from fastaiagent._version import __version__
 from fastaiagent.agent import (
     Agent,
@@ -18,6 +18,7 @@ from fastaiagent.agent import (
     RedactPII,
     Reflect,
     RunContext,
+    RunInfo,
     RunUsage,
     StaticBlock,
     SummaryBlock,
@@ -159,6 +160,7 @@ __all__ = [
     "AgentConfig",
     "AgentResult",
     "RunContext",
+    "RunInfo",
     "RunUsage",
     "Supervisor",
     "Worker",
@@ -172,6 +174,8 @@ __all__ = [
     "AgentMiddleware",
     "MiddlewareContext",
     "StopAgent",
+    "AgentTimeoutError",
+    "RunLimitError",
     "TrimLongMessages",
     "ToolBudget",
     "RedactPII",

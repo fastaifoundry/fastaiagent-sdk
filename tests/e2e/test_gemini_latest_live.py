@@ -144,3 +144,36 @@ def test_another_providers_history_is_accepted() -> None:
         "Answer now.", messages=history
     )
     assert "-4" in result.output and "14" in result.output
+
+
+@pytest.mark.parametrize(
+    "model", ["gemini-2.5-flash", "gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-4-argon"]
+)
+@pytest.mark.parametrize("stream", [False, True], ids=["run", "stream"])
+def test_a_structured_agent_with_tools_answers(model: str, stream: bool) -> None:
+    """X20: JSON mode with function calling was an HTTP 400 on 2.5 and an endless
+    tool loop on 3.5 / 3.8. Without it on tool turns, every generation answers."""
+    if not os.environ.get("GEMINI_API_KEY"):
+        pytest.skip("GEMINI_API_KEY not set")
+    from pydantic import BaseModel
+
+    from fastaiagent import Agent, AgentConfig, FunctionTool, LLMClient
+
+    class Forecast(BaseModel):
+        city: str
+        celsius: float
+
+    def get_weather(city: str) -> str:
+        """Current weather for a city."""
+        return "24C, sunny"
+
+    agent = Agent(
+        name="forecaster",
+        llm=LLMClient(provider="gemini", model=model),
+        tools=[FunctionTool(name="get_weather", fn=get_weather)],
+        output_type=Forecast,
+        config=AgentConfig(max_iterations=4),
+    )
+    prompt = "What's the weather in Rome? Use the tool, then answer as JSON."
+    result = agent.stream(prompt) if stream else agent.run(prompt)
+    assert result.parsed == Forecast(city="Rome", celsius=24), result.output

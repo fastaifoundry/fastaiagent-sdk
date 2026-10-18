@@ -121,6 +121,7 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 - [`17_providers_openrouter.py`](17_providers_openrouter.py) — OpenRouter: many models behind one key, chosen by slug
 - [`111_llm_fallbacks_and_model_info.py`](111_llm_fallbacks_and_model_info.py) — `LLMClient(fallbacks=[...])` surviving a dead primary, `model_info` (context window, max output, reasoning, images) from official sources, and `extra_body` / `extra_headers` that never reach `to_dict()` (1.91.0)
 - [`112_reasoning_and_prompt_caching.py`](112_reasoning_and_prompt_caching.py) — `LLMClient(reasoning=...)` on Gemini 3.8 Flash, Claude and OpenAI (the reasoning apart from the answer, reasoning tokens counted), a thinking agent's tool loop streamed with `ReasoningDelta`, and `cache=True`: the second identical prompt read from the cache and priced at the cached rate (1.91.0)
+- [`113_run_limits_and_cancel.py`](113_run_limits_and_cancel.py) — `AgentConfig(timeout_seconds=, max_total_tokens=, max_cost_usd=)`, `agent.cancel(execution_id)` landing inside a real model call, a tool reading `RunContext.run`, and `result.messages` + a per-call `output_type=` continuing a conversation into a typed `AgentResult[T]` (1.91.0)
 - [`89_azure_injected_client.py`](89_azure_injected_client.py) — Azure OpenAI with Entra ID / managed identity by handing `LLMClient` your own `AzureOpenAI` client
 
 ### OpenAI Decisions API (1.84.0)
