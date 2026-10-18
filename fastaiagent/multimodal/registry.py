@@ -25,10 +25,13 @@ _VISION_PREFIXES: tuple[tuple[str, str], ...] = (
     ("openai", "o1"),
     ("openai", "o3"),
     ("openai", "o4"),
+    # GPT-6 (1.91.0, X16): model pages list "Input modalities: text, image".
+    ("openai", "gpt-6"),
     # Azure (OpenAI-compatible deployments — naming varies but follows the upstream)
     ("azure", "gpt-4o"),
     ("azure", "gpt-4-turbo"),
     ("azure", "gpt-4-vision"),
+    ("azure", "gpt-6"),
     # Anthropic
     ("anthropic", "claude-3-5"),
     ("anthropic", "claude-3-7"),
@@ -38,11 +41,23 @@ _VISION_PREFIXES: tuple[tuple[str, str], ...] = (
     ("anthropic", "claude-sonnet-4"),
     ("anthropic", "claude-opus-4"),
     ("anthropic", "claude-haiku-4"),
+    # Claude 5.x (1.91.0, X16): "All current models support text and image input"
+    # (Anthropic models overview); the Models API reports image_input + pdf_input.
+    # Family prefixes, so 5.5 / 5.1 / later versions match.
+    ("anthropic", "claude-opus-5"),
+    ("anthropic", "claude-sonnet-5"),
+    ("anthropic", "claude-haiku-5"),
+    ("anthropic", "claude-fable-5"),
+    ("anthropic", "claude-mythos-5"),
     # Bedrock-hosted Claude — ids include the AWS region prefix (anthropic.claude-...)
     ("bedrock", "anthropic.claude-3"),
     ("bedrock", "anthropic.claude-sonnet-4"),
     ("bedrock", "anthropic.claude-opus-4"),
     ("bedrock", "anthropic.claude-haiku-4"),
+    ("bedrock", "anthropic.claude-opus-5"),
+    ("bedrock", "anthropic.claude-sonnet-5"),
+    ("bedrock", "anthropic.claude-haiku-5"),
+    ("bedrock", "anthropic.claude-fable-5"),
     # Gemini — 1.5/2.x flash & pro are all natively multimodal
     ("gemini", "gemini"),
     # Ollama vision tags — the user opts in by tagging their pull
@@ -81,6 +96,16 @@ _NATIVE_PDF_PREFIXES: tuple[tuple[str, str], ...] = (
     ("anthropic", "claude-sonnet-4"),
     ("anthropic", "claude-opus-4"),
     ("anthropic", "claude-haiku-4"),
+    # Claude 5.x (1.91.0, X16): the Models API reports pdf_input for every model.
+    ("anthropic", "claude-opus-5"),
+    ("anthropic", "claude-sonnet-5"),
+    ("anthropic", "claude-haiku-5"),
+    ("anthropic", "claude-fable-5"),
+    ("anthropic", "claude-mythos-5"),
+    ("bedrock", "anthropic.claude-opus-5"),
+    ("bedrock", "anthropic.claude-sonnet-5"),
+    ("bedrock", "anthropic.claude-haiku-5"),
+    ("bedrock", "anthropic.claude-fable-5"),
     ("bedrock", "anthropic.claude-3-5"),
     ("bedrock", "anthropic.claude-sonnet-4"),
     ("bedrock", "anthropic.claude-opus-4"),
@@ -102,6 +127,14 @@ _NATIVE_PDF_PREFIXES: tuple[tuple[str, str], ...] = (
 )
 
 
+def _bedrock_id(provider: str, model: str) -> str:
+    """A Bedrock cross-region id (``us.anthropic.claude-…``, ``eu.…``, ``global.…``)
+    as the bare ``anthropic.claude-…`` id the prefixes above are written for."""
+    if provider == "bedrock" and ".anthropic." in model:
+        return "anthropic." + model.split(".anthropic.", 1)[1]
+    return model
+
+
 def is_vision_capable(provider: str, model: str) -> bool:
     """Return ``True`` if the (provider, model) pair supports image input.
 
@@ -112,6 +145,7 @@ def is_vision_capable(provider: str, model: str) -> bool:
         return True
     if (provider, model) in _NON_VISION_EXACT:
         return False
+    model = _bedrock_id(provider, model)
     for p, prefix in _VISION_PREFIXES:
         if p == provider and prefix and model.startswith(prefix):
             return True
@@ -120,6 +154,7 @@ def is_vision_capable(provider: str, model: str) -> bool:
 
 def supports_native_pdf(provider: str, model: str) -> bool:
     """Return ``True`` if this provider+model accepts native PDF document blocks."""
+    model = _bedrock_id(provider, model)
     for p, prefix in _NATIVE_PDF_PREFIXES:
         if p == provider and model.startswith(prefix):
             return True

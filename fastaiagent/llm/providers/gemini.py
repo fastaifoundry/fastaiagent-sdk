@@ -365,6 +365,7 @@ def _build_request(
     suffix = "?alt=sse" if stream else ""
     url = f"{_base_url(client)}/models/{client.model}:{method}{suffix}"
     headers = {"Content-Type": "application/json", "x-goog-api-key": api_key}
+    client._apply_extras(body, headers, kwargs)  # extra_body / extra_headers (1.91.0)
     return url, body, headers
 
 

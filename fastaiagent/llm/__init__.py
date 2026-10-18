@@ -22,6 +22,7 @@ from fastaiagent.llm.message import (
     ToolMessage,
     UserMessage,
 )
+from fastaiagent.llm.model_info import ModelInfo
 from fastaiagent.llm.providers import (
     ProviderPreset,
     get_preset,
@@ -43,6 +44,7 @@ from fastaiagent.llm.stream import (
 __all__ = [
     "LLMClient",
     "LLMResponse",
+    "ModelInfo",
     "Message",
     "MessageRole",
     "ToolCall",

@@ -69,7 +69,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   structural span attribute (decision B1-6), and it's absent when there is no
   middleware.
 
+### Added — `LLMClient` catches up (Bet 2)
+
+- **`LLMClient.model_info`** → `ModelInfo` (2F): context window, max output
+  tokens, reasoning, caching, vision and PDF.
+  - Figures come only from official sources: OpenAI's model pages, and the
+    Anthropic and Gemini Models APIs.
+  - An unknown model gets `None` for every field, not a guess.
+  - Vision and PDF are read from the multimodal registry, not copied.
+  - `ModelInfo` is exported from `fastaiagent`.
+- **`fallbacks=[LLMClient(...)]`** (2E): the next client is tried after this
+  one's own retries fail.
+  - It triggers on a 429, 5xx, connection error, timeout, or context overflow
+    (recognised from the real OpenAI and Anthropic errors).
+  - Each attempt has its own `llm.*` span, and cost goes to the model that
+    answered.
+  - A stream falls back only before its first event.
+  - Local only: fallbacks are not part of `to_dict()`.
+- **`extra_body` / `extra_headers`** (2K), on the client or per call:
+  - They're sent by every provider, including an injected OpenAI client (as
+    its own `extra_body` / `extra_headers`); Bedrock sends them as
+    `additionalModelRequestFields`.
+  - The SDK's own keys win, the credential header cannot be replaced, and
+    they're never in `to_dict()`.
+- **`max_concurrency=N`**: caps a client's in-flight calls, with one semaphore
+  per event loop.
+- **Rate limits**:
+  - A 429 is now an **`LLMRateLimitError`**. It's a subclass of
+    `LLMProviderError`, so existing handlers still catch it, and it carries
+    `retry_after` from `Retry-After` / `retry-after-ms`.
+  - Retries wait that long, capped at 60 s.
+  - Retries now also cover refused connections, resets and timeouts.
+- Example `111_llm_fallbacks_and_model_info.py`.
+
+### Changed
+
+- **Anthropic and Bedrock send the model's own maximum as `max_tokens`** when
+  none is set: 64,000 for `claude-haiku-4-5` and 128,000 for Claude 4.6+ and
+  5.x. Before, it was 4096, which cut long answers short. Unknown models still
+  get 4096. Checked live: the API accepts it on non-streamed calls.
+
 ### Fixed — found while mapping Bets 1 and 2, each reproduced before fixing
+
+- **Images to Claude 5.x and GPT-6 raised `NonVisionModelError`** (X16) before
+  any request: the vision / PDF registry predated both lineups, and PDFs to
+  Claude 5.x were sent as extracted text.
+  - Claude 5.x now takes images and native PDFs.
+  - GPT-6 takes images; its PDFs render as images.
+  - Bedrock cross-region ids (`us.anthropic.…`) are recognised.
+  - Verified live on `claude-haiku-5-5` and `gpt-6-luna`.
 
 - **`stream()` returned different text than `run()`** (X13). It joined every
   delta, so text said before a tool call ("Let me check.") became part of the

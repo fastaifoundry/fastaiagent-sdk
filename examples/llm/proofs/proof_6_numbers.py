@@ -30,7 +30,7 @@ for model in ("gpt-4o-mini-2024-07-18", "gpt-4.1-mini", "claude-sonnet-5-5", "my
     print(f"{model:<24} 1M in + 1M out → {compute_cost_usd(model, 1_000_000, 1_000_000)}")
 print(f"{'ollama / lmstudio / vllm':<24} is_local_free → {is_local_free('ollama')}, a known zero, not an unknown")
 
-heading("retries: off by default; 429 and 5xx only, with backoff")
+heading("retries: off by default; 429, 5xx and transport failures, with backoff")
 rec = Recorder(statuses=[429, 503, 200])
 url = rec.start()
 t0 = time.monotonic()

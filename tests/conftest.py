@@ -41,7 +41,7 @@ class CaptureServer:
     def __init__(self) -> None:
         self.requests: list[dict[str, Any]] = []
         self._status_codes: list[int] = []
-        self._responses: list[tuple[int, bytes, str]] = []
+        self._responses: list[tuple[int, bytes, str, dict[str, str]]] = []
         self._lock = threading.Lock()
         self._server: HTTPServer | None = None
         self._thread: threading.Thread | None = None
@@ -50,35 +50,35 @@ class CaptureServer:
         with self._lock:
             self._status_codes = list(codes)
 
-    def set_response_sequence(
-        self, responses: list[tuple[int, Any] | tuple[int, Any, str]]
-    ) -> None:
-        """Serve these ``(status, body[, content_type])`` responses in order.
+    def set_response_sequence(self, responses: list[tuple[Any, ...]]) -> None:
+        """Serve these ``(status, body[, content_type[, headers]])`` responses in order.
 
         A ``dict``/``list`` body is sent as JSON; ``str``/``bytes`` as given.
-        The content type defaults to ``application/json``.
+        The content type defaults to ``application/json``. ``headers`` (1.91.0)
+        adds response headers — a ``Retry-After`` on a 429, say.
         """
-        scripted: list[tuple[int, bytes, str]] = []
+        scripted: list[tuple[int, bytes, str, dict[str, str]]] = []
         for entry in responses:
             status, body = entry[0], entry[1]
-            content_type = entry[2] if len(entry) > 2 else "application/json"  # type: ignore[misc]
+            content_type = entry[2] if len(entry) > 2 else "application/json"
+            headers = dict(entry[3]) if len(entry) > 3 else {}
             if isinstance(body, (dict, list)):
                 raw = json.dumps(body).encode()
             elif isinstance(body, str):
                 raw = body.encode()
             else:
                 raw = bytes(body)
-            scripted.append((status, raw, content_type))
+            scripted.append((status, raw, content_type, headers))
         with self._lock:
             self._responses = scripted
 
-    def _next_response(self) -> tuple[int, bytes, str]:
+    def _next_response(self) -> tuple[int, bytes, str, dict[str, str]]:
         with self._lock:
             if self._responses:
                 return self._responses.pop(0)
             code = self._status_codes.pop(0) if self._status_codes else 200
         payload = b'{"ingested": 0}' if 200 <= code < 300 else b'{"error": "scripted failure"}'
-        return code, payload, "application/json"
+        return code, payload, "application/json", {}
 
     def _next_status(self) -> int:
         with self._lock:
@@ -111,10 +111,12 @@ class CaptureServer:
                     capture.requests.append(
                         {"path": self.path, "headers": dict(self.headers), "body": body}
                     )
-                code, payload, content_type = capture._next_response()
+                code, payload, content_type, extra_headers = capture._next_response()
                 self.send_response(code)
                 self.send_header("Content-Type", content_type)
                 self.send_header("Content-Length", str(len(payload)))
+                for name, value in extra_headers.items():
+                    self.send_header(name, value)
                 self.end_headers()
                 self.wfile.write(payload)
 

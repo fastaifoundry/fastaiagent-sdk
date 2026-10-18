@@ -119,6 +119,7 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 - [`15_providers_gemini.py`](15_providers_gemini.py) — Google Gemini on fastaiagent's native wire (no `google-generativeai` dependency)
 - [`16_providers_groq.py`](16_providers_groq.py) — Groq's OpenAI-compatible endpoint, plus how to re-pin when Groq retires a model id
 - [`17_providers_openrouter.py`](17_providers_openrouter.py) — OpenRouter: many models behind one key, chosen by slug
+- [`111_llm_fallbacks_and_model_info.py`](111_llm_fallbacks_and_model_info.py) — `LLMClient(fallbacks=[...])` surviving a dead primary, `model_info` (context window, max output, reasoning, images) from official sources, and `extra_body` / `extra_headers` that never reach `to_dict()` (1.91.0)
 - [`89_azure_injected_client.py`](89_azure_injected_client.py) — Azure OpenAI with Entra ID / managed identity by handing `LLMClient` your own `AzureOpenAI` client
 
 ### OpenAI Decisions API (1.84.0)

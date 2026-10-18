@@ -133,8 +133,20 @@ class LLMProviderError(LLMError):
         super().__init__(message)
 
 
-class LLMRateLimitError(LLMError):
-    """LLM provider rate limit exceeded."""
+class LLMRateLimitError(LLMProviderError):
+    """LLM provider rate limit exceeded (HTTP 429).
+
+    Raised since 1.91.0 (it was defined and never raised). A subclass of
+    :class:`LLMProviderError`, so ``except LLMProviderError`` still catches it.
+    ``retry_after`` is the wait in seconds the provider asked for —
+    ``Retry-After`` or ``retry-after-ms`` — or ``None`` when it named none; the
+    client's own retries wait that long instead of the exponential backoff.
+    """
+
+    def __init__(self, message: str = "", *, retry_after: float | None = None, **kwargs: Any):
+        kwargs.setdefault("status_code", 429)
+        self.retry_after = retry_after
+        super().__init__(message, **kwargs)
 
 
 class LLMAuthError(LLMError):

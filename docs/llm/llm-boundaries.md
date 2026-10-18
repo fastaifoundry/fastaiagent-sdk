@@ -257,14 +257,14 @@ OpenAI enforced the schema on the wire; Anthropic was told the schema in its sys
 
 Latency, cost, retries and the trace are four numbers you act on. Each is computed on your side of the wire, by a rule you can read.
 
-![The numbers: latency is measured client-side and includes network time and retry backoff; cost comes from a local price table by longest prefix and is None for an unknown model and a known zero for local providers; retries are off by default and fire only on 429 and 5xx with exponential backoff; the span carries a summary of the request, never image bytes, and payload keys are stripped on export](img/boundaries/d7-numbers.svg)
+![The numbers: latency is measured client-side and includes network time and retry backoff; cost comes from a local price table by longest prefix and is None for an unknown model and a known zero for local providers; retries are off by default and fire on 429, 5xx and transport failures, waiting what Retry-After asks or backing off exponentially; the span carries a summary of the request, never image bytes, and payload keys are stripped on export](img/boundaries/d7-numbers.svg)
 *Latency is your wall clock. Cost is a local table. Retries are opt-in and narrow. The span carries a summary, and the export policy decides what leaves.*
 
 The rules:
 
 - **Latency is client-side, wall-clock around the call.** It includes network time and, when retries fire, their backoff.
 - **Cost is not reported by the provider.** It is computed from a local price table by longest-prefix match on the model name, so a dated model id resolves to its family's rate. An unknown model yields `None`, never a wrong number; `ollama`, `lmstudio` and `vllm` are a known zero. The span gets `fastaiagent.cost.total_usd` only when the cost is known.
-- **Retries are off by default**, and when enabled fire only on `429` and `5xx`, with backoff of 1 s, 2 s, 4 s, capped at 30 s. A `400`, or a connection error, is not retried.
+- **Retries are off by default**, and when enabled fire on `429`, `5xx` and — since 1.91.0 — a refused connection, a reset or a timeout, with backoff of 1 s, 2 s, 4 s, capped at 30 s. A `429`'s own `Retry-After` replaces the backoff (capped at 60 s). A `400` is not retried. `fallbacks=[...]` then tries other models — see [Providers](providers.md#when-a-model-fails-retries-rate-limits-fallbacks).
 - **The HTTP timeout is a fixed 120 s** at the transport, not a constructor argument.
 - **Two serializers.** `to_provider_dict()` builds the wire, images as base64. `to_openai_format()` builds the span's summary, images as a type and a size, so writing a trace never encodes an image or renders a PDF.
 - **Local capture is full fidelity; export is filtered.** With `FASTAIAGENT_TRACE_PAYLOADS=0`, `gen_ai.request.messages` and `gen_ai.response.content` are dropped on the way out; the model, the tokens and the finish reason stay.
@@ -279,7 +279,7 @@ claude-sonnet-5-5        1M in + 1M out → 18.0
 my-private-finetune      1M in + 1M out → None
 ollama / lmstudio / vllm is_local_free → True, a known zero, not an unknown
 
-── retries: off by default; 429 and 5xx only, with backoff
+── retries: off by default; 429, 5xx and transport failures, with backoff
 max_retries=2 : 3 requests, content='recorded', latency_ms=3046 (two backoffs: 1 s + 2 s), wall 3.1 s
 max_retries=0 : LLMProviderError status=429: OpenAI API error 429: {"error": {"message": "canned 429", "t…
 
@@ -320,7 +320,7 @@ The proof scripts behind this page run each of those checks.
 
 - **Parameters are not vetted per provider.** `temperature`, `top_p`, `seed` and the rest go out as given; a provider that rejects one fails the call.
 - **The timeout is 120 s and not configurable** on the client. Wrap the call if you need a shorter one.
-- **Retries cover `429` and `5xx` only.** A dropped connection raises on the first attempt.
+- **Retries and fallbacks are opt-in** (`max_retries=0`, no `fallbacks`): out of the box a dropped connection or a `503` raises on the first attempt. A fallback model is local — it is not part of `to_dict()`, so a replayed or plane-distributed agent runs its one model.
 - **The price table is a list price**, not your contract. Override rates with `set_rate_overrides()`; an unpriced model stays `None`.
 - **Usage extras are not normalized.** The three keys are always there; whatever else the provider sent is there too, as it came.
 - **Capability flags are claims.** The call is the check.

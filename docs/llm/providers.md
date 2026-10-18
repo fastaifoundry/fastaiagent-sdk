@@ -122,6 +122,94 @@ rate. Since 1.90.0 `completion_tokens` (and so `AgentResult.cost`, the
 was counted in `tokens_used` but never priced, and `astream` reported fewer
 tokens than `run`.
 
+## What a model can take: `model_info`
+
+```python
+from fastaiagent import LLMClient
+
+info = LLMClient(provider="anthropic", model="claude-haiku-4-5").model_info
+info.context_window      # 200000
+info.max_output_tokens   # 64000
+info.supports_reasoning  # True
+info.supports_cache      # True
+info.supports_vision     # True
+info.supports_pdf        # True
+```
+
+`model_info` returns a `ModelInfo` (since 1.91.0). The figures come from the
+providers' own sources only: OpenAI's model pages, Anthropic's Models API
+(`max_input_tokens` / `max_tokens`) and Gemini's Models API (`inputTokenLimit` /
+`outputTokenLimit` / `thinking`). It covers GPT-6, GPT-5.x, GPT-4.1/4o and the
+o-series; Claude 5.x and 4.x; and Gemini 4, 3.x and 2.5. A model it does not know
+gets `None` for every field — unknown, never guessed. `supports_vision` and
+`supports_pdf` are read from the same registry the request formatter uses, so
+they cannot disagree with what a request does.
+
+**Anthropic and Bedrock send the model's own maximum** as `max_tokens` when
+neither the client nor the call sets one — 64,000 for `claude-haiku-4-5`, 128,000
+for Claude 4.6+ and 5.x. Before 1.91.0 they sent 4096, which cut long answers
+short (`finish_reason="max_tokens"`). A model `model_info` does not know still
+gets 4096. Set `max_tokens=` to cap replies yourself.
+
+## When a model fails: retries, rate limits, fallbacks
+
+```python
+from fastaiagent import LLMClient
+
+llm = LLMClient(
+    provider="openai",
+    model="gpt-5-mini",
+    max_retries=2,
+    fallbacks=[
+        LLMClient(provider="anthropic", model="claude-haiku-4-5"),
+        LLMClient(provider="gemini", model="gemini-3.8-flash"),
+    ],
+)
+```
+
+- **Retries** (`max_retries`, default 0) cover a `429`, a `5xx` and — since
+  1.91.0 — a refused connection, a reset or a timeout.
+- **A `429` is an `LLMRateLimitError`** (a subclass of `LLMProviderError`, so
+  existing handlers still catch it) with `retry_after`: the wait the provider
+  asked for in `Retry-After` or `retry-after-ms`. A retry waits exactly that
+  (capped at 60 s) instead of the blind 1 s, 2 s, 4 s… backoff.
+- **`fallbacks`** are tried in order once a client's own retries are spent, on a
+  rate limit, a server error, a connection error, a timeout, or a **context
+  overflow** (the prompt is too long for that model — OpenAI's
+  `context_length_exceeded`, Anthropic's "prompt is too long", Gemini's token
+  limit). A plain `400` is not retried elsewhere: every model would refuse the
+  same bad request. Each attempt is its own `llm.*` span, and the run is priced
+  at the model that answered.
+- **A stream falls back only before its first event.** After that the caller
+  already holds part of one model's answer, so the error is raised instead.
+- **`max_concurrency=N`** caps how many calls one client has in flight; the rest
+  wait.
+
+Fallbacks and `max_concurrency` are local: they are not part of
+`LLMClient.to_dict()`, so a plane-distributed or replayed agent runs its one
+model. Live-checked: a real OpenAI and a real Anthropic context overflow each
+fell back (`tests/e2e/test_llm_resilience_live.py`).
+
+## Provider options the SDK has no parameter for
+
+```python
+llm = LLMClient(
+    provider="openai",
+    model="gpt-5-mini",
+    extra_body={"service_tier": "flex", "safety_identifier": "user-123"},
+    extra_headers={"X-Client-Team": "billing"},
+)
+llm.complete(messages, extra_body={"service_tier": "priority"})  # per call, merged over
+```
+
+`extra_body` is merged into every request body and `extra_headers` into its
+headers, for every provider — OpenAI and every OpenAI-compatible preset,
+Anthropic, Gemini, Ollama, and an injected OpenAI SDK client (as its own
+`extra_body` / `extra_headers`). Bedrock sends `extra_body` as Converse's
+`additionalModelRequestFields`. The SDK's own body keys (`model`, `messages`,
+tools…) win over `extra_body`, and the credential header cannot be replaced.
+**Neither is part of `to_dict()`** — a header often carries a credential.
+
 ## TLS verification (corporate gateways, self-signed certs)
 
 By default `LLMClient` verifies the provider's TLS certificate against the

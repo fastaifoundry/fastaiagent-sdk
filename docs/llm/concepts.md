@@ -145,9 +145,14 @@ the output guardrails and the memory write (since 1.88.0). A paused run ends wit
 ## Two defaults worth knowing
 
 - **Retries are off by default** (`max_retries=0`). When enabled, retries fire
-  only on `429` and `5xx`, with exponential backoff (1s, 2s, 4s… capped at 30s)
-  — driven by a normalized `LLMProviderError` that carries the HTTP status, so
-  the policy is provider-agnostic.
+  on `429`, `5xx` and — since 1.91.0 — a transport failure (a refused
+  connection, a reset, a timeout), with exponential backoff (1s, 2s, 4s… capped
+  at 30s) — driven by a normalized `LLMProviderError` that carries the HTTP
+  status, so the policy is provider-agnostic. A `429` is an `LLMRateLimitError`
+  (a subclass, so `except LLMProviderError` still catches it) carrying the
+  `retry_after` the provider asked for, and a retry waits exactly that (capped at
+  60 s) instead of the blind backoff. `fallbacks=[...]` then tries other models —
+  see [Providers](providers.md#when-a-model-fails-retries-rate-limits-fallbacks).
 - **The HTTP timeout is a fixed 120s** at the transport layer, not a constructor
   argument.
 

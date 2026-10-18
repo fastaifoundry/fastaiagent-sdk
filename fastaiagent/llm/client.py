@@ -9,17 +9,21 @@ import os
 import ssl
 import time
 import warnings
-from collections.abc import AsyncGenerator
+import weakref
+from collections.abc import AsyncGenerator, AsyncIterator
+from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from typing import Any
 
+import httpx
 from pydantic import BaseModel, Field
 
 from fastaiagent._internal.async_utils import run_sync
 from fastaiagent._internal.config import get_config
-from fastaiagent._internal.errors import LLMError, LLMProviderError
+from fastaiagent._internal.errors import LLMError, LLMProviderError, LLMRateLimitError
 from fastaiagent.llm.decisions import DecisionResult
 from fastaiagent.llm.message import Message, MessageRole, ToolCall
+from fastaiagent.llm.model_info import ModelInfo
 from fastaiagent.llm.stream import (
     StreamDone,
     StreamEvent,
@@ -276,6 +280,59 @@ def _inject_system_text(body: dict[str, Any], extra_text: str) -> None:
     messages.insert(0, {"role": "system", "content": extra_text.lstrip()})
 
 
+#: Headers that carry the client's credential — ``extra_headers`` cannot replace them.
+_CREDENTIAL_HEADERS = frozenset({"authorization", "x-api-key", "x-goog-api-key", "api-key"})
+
+_CONTEXT_OVERFLOW_CODES = frozenset({"context_length_exceeded", "string_above_max_length"})
+_CONTEXT_OVERFLOW_PHRASES = (
+    "context length",
+    "context window",
+    "maximum context",
+    "prompt is too long",
+    "too many tokens",
+    "exceeds the maximum number of tokens",
+    "input token count",
+)
+
+
+def _is_context_overflow(error: LLMProviderError) -> bool:
+    """The request was too long for the model (a 400 every provider words
+    differently)."""
+    if error.status_code not in (400, 413):
+        return False
+    if (error.provider_code or "") in _CONTEXT_OVERFLOW_CODES:
+        return True
+    text = f"{error.provider_message or ''} {error}".lower()
+    return any(phrase in text for phrase in _CONTEXT_OVERFLOW_PHRASES)
+
+
+def _retry_after_seconds(headers: Any) -> float | None:
+    """``retry-after-ms`` or ``Retry-After`` (seconds, or an HTTP date), in seconds."""
+    if headers is None:
+        return None
+    try:
+        millis = headers.get("retry-after-ms")
+        if millis is not None:
+            return max(float(millis) / 1000.0, 0.0)
+        value = headers.get("retry-after")
+    except Exception:  # pragma: no cover - headers of an unexpected type
+        return None
+    if value is None:
+        return None
+    try:
+        return max(float(value), 0.0)
+    except (TypeError, ValueError):
+        pass
+    try:
+        from datetime import datetime, timezone
+        from email.utils import parsedate_to_datetime
+
+        when = parsedate_to_datetime(str(value))
+        return max((when - datetime.now(timezone.utc)).total_seconds(), 0.0)
+    except Exception:
+        return None
+
+
 class LLMResponse(BaseModel):
     """Normalized response from any LLM provider."""
 
@@ -398,11 +455,44 @@ class LLMClient:
         max_image_size_mb: float | None = _UNSET,
         verify: bool | str | ssl.SSLContext | None = None,
         openai_client: Any = None,
+        extra_body: dict[str, Any] | None = None,
+        extra_headers: dict[str, str] | None = None,
+        max_concurrency: int | None = None,
+        fallbacks: list[LLMClient] | None = None,
         **kwargs: Any,
     ):
+        """Configure a client for one provider and model.
+
+        ``extra_body`` / ``extra_headers`` (1.91.0) are added to every request —
+        a provider option the SDK has no parameter for (``service_tier``,
+        ``metadata``, a beta header). The SDK's own keys win over ``extra_body``;
+        the credential header cannot be replaced. A call can pass its own
+        ``extra_body=`` / ``extra_headers=``, merged over these. Bedrock sends
+        ``extra_body`` as ``additionalModelRequestFields``. Neither is part of
+        :meth:`to_dict` — a header often carries a credential.
+
+        ``max_concurrency`` caps this client's in-flight calls. ``fallbacks`` are
+        tried in order when this client's call fails — after its own
+        ``max_retries`` — on a rate limit, a server error, a connection error, a
+        timeout or a context overflow; each attempt is its own ``llm.*`` span and
+        is priced at its own model. A stream falls back only before its first
+        event. Neither is part of :meth:`to_dict`.
+        """
         # Preset lookup is opt-in: built-in providers (openai/anthropic/
         # ollama/azure/bedrock/custom) bypass the registry entirely.
         from fastaiagent.llm.providers import get_preset
+
+        if max_concurrency is not None and max_concurrency < 1:
+            raise ValueError(f"max_concurrency must be >= 1 or None, got {max_concurrency!r}")
+        self.extra_body: dict[str, Any] = dict(extra_body or {})
+        self.extra_headers: dict[str, str] = dict(extra_headers or {})
+        self.max_concurrency = max_concurrency
+        self.fallbacks: list[LLMClient] = list(fallbacks or [])
+        # One semaphore per event loop: ``run_sync`` runs each call on a fresh
+        # loop, and an asyncio primitive binds to the loop that first awaits it.
+        self._slots: weakref.WeakKeyDictionary[Any, asyncio.Semaphore] = (
+            weakref.WeakKeyDictionary()
+        )
 
         preset = None if provider in _BUILTIN_PROVIDERS else get_preset(provider)
 
@@ -661,6 +751,20 @@ class LLMClient:
             "max_image_size_mb": self.max_image_size_mb,
         }
 
+    @property
+    def model_info(self) -> ModelInfo:
+        """This model's limits and capabilities — context window, max output
+        tokens, reasoning, caching, images, PDF (1.91.0). ``None`` fields are
+        unknown, never guessed. See :mod:`fastaiagent.llm.model_info`."""
+        from fastaiagent.llm.model_info import model_info
+
+        return model_info(self.provider, self.model)
+
+    def _default_max_tokens(self) -> int:
+        """``max_tokens`` for a provider that requires one (Anthropic, Bedrock)
+        when nothing set it: the model's own maximum, else the old 4096."""
+        return self.model_info.max_output_tokens or 4096
+
     @staticmethod
     def _should_retry(status_code: int | None) -> bool:
         """Retry on rate limit (429) and server errors (5xx)."""
@@ -672,6 +776,65 @@ class LLMClient:
     def _retry_delay(attempt: int) -> float:
         """Exponential backoff: 1s, 2s, 4s, 8s, ... capped at 30s."""
         return min(2**attempt, 30)
+
+    @classmethod
+    def _delay_for(cls, attempt: int, error: BaseException) -> float:
+        """How long to wait before retrying after ``error`` (1.91.0): what the
+        provider asked for in ``Retry-After`` (capped at 60 s), else the
+        exponential backoff."""
+        if isinstance(error, LLMRateLimitError) and error.retry_after is not None:
+            return min(max(error.retry_after, 0.0), 60.0)
+        return float(cls._retry_delay(attempt))
+
+    @classmethod
+    def _retryable(cls, error: BaseException) -> bool:
+        """A 429 / 5xx, or a transport failure — a refused connection, a reset, a
+        timeout (1.91.0: those were never retried)."""
+        if isinstance(error, LLMProviderError):
+            return cls._should_retry(error.status_code)
+        return isinstance(error, (httpx.TransportError, TimeoutError))
+
+    @classmethod
+    def _falls_back(cls, error: BaseException) -> bool:
+        """Should a fallback model be tried after ``error``? Everything retryable,
+        and a context overflow (another model may have a bigger window). Not a
+        plain 4xx: that is the request's fault, and every model would refuse it."""
+        if cls._retryable(error):
+            return True
+        return isinstance(error, LLMProviderError) and _is_context_overflow(error)
+
+    @asynccontextmanager
+    async def _slot(self) -> AsyncIterator[None]:
+        """Hold one of ``max_concurrency`` places for the length of one call."""
+        if self.max_concurrency is None:
+            yield
+            return
+        loop = asyncio.get_running_loop()
+        sem = self._slots.get(loop)
+        if sem is None:
+            sem = self._slots[loop] = asyncio.Semaphore(self.max_concurrency)
+        async with sem:
+            yield
+
+    def _extras(self, kwargs: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
+        """This call's ``extra_body`` / ``extra_headers``: the client's, with the
+        call's own merged over them."""
+        body = {**self.extra_body, **(kwargs.get("extra_body") or {})}
+        headers = {**self.extra_headers, **(kwargs.get("extra_headers") or {})}
+        return body, headers
+
+    def _apply_extras(
+        self, body: dict[str, Any], headers: dict[str, str] | None, kwargs: dict[str, Any]
+    ) -> None:
+        """Merge the extras into a request: the SDK's keys win in the body, and
+        the credential header is never replaced."""
+        extra_body, extra_headers = self._extras(kwargs)
+        for key, value in extra_body.items():
+            body.setdefault(key, value)
+        if headers is not None:
+            for name, value in extra_headers.items():
+                if name.lower() not in _CREDENTIAL_HEADERS:
+                    headers[name] = value
 
     @staticmethod
     def _default_base_url(provider: str) -> str:
@@ -724,13 +887,46 @@ class LLMClient:
         retry-on-failure and strict mode on top.
         """
         if output_type is None:
-            return await self._acomplete_raw(messages, tools=tools, **kwargs)
+            return await self._acomplete_with_fallbacks(messages, tools, kwargs)
         spec = OutputSpec(output_type)
         kwargs.setdefault("response_format", spec.response_format(strict=False))
-        response = await self._acomplete_raw(messages, tools=tools, **kwargs)
+        response = await self._acomplete_with_fallbacks(messages, tools, kwargs)
         if response.content is not None:
             response.parsed, _ = spec.parse(response.content)
         return response
+
+    async def _acomplete_with_fallbacks(
+        self,
+        messages: list[Message],
+        tools: list[dict[str, Any]] | None,
+        kwargs: dict[str, Any],
+    ) -> LLMResponse:
+        """This client's call, then each fallback in turn (1.91.0, 2E). Each is a
+        whole call — its own span, retries and cost — so a trace shows the failed
+        attempt and the one that answered, and the run is priced at the model
+        that actually ran."""
+        try:
+            return await self._acomplete_raw(messages, tools=tools, **kwargs)
+        except Exception as error:
+            if not self.fallbacks or not self._falls_back(error):
+                raise
+            last: Exception = error
+        for fallback in self.fallbacks:
+            logger.warning(
+                "%s/%s failed (%s); falling back to %s/%s",
+                self.provider,
+                self.model,
+                type(last).__name__,
+                fallback.provider,
+                fallback.model,
+            )
+            try:
+                return await fallback.acomplete(messages, tools=tools, **kwargs)
+            except Exception as error:
+                if not self._falls_back(error):
+                    raise
+                last = error
+        raise last
 
     async def _acomplete_raw(
         self,
@@ -845,7 +1041,8 @@ class LLMClient:
 
         for attempt in range(self.max_retries + 1):
             try:
-                response: LLMResponse = await provider_fn(messages, tools, **kwargs)
+                async with self._slot():
+                    response: LLMResponse = await provider_fn(messages, tools, **kwargs)
                 response.latency_ms = int((time.monotonic() - start) * 1000)
                 set_genai_attributes(
                     span,
@@ -885,9 +1082,9 @@ class LLMClient:
                 if cost_known:
                     set_fastaiagent_attributes(span, **{"cost.total_usd": cost})
                 return response
-            except LLMProviderError as e:
-                if attempt < self.max_retries and self._should_retry(e.status_code):
-                    await asyncio.sleep(self._retry_delay(attempt))
+            except (LLMProviderError, httpx.TransportError, TimeoutError) as e:
+                if attempt < self.max_retries and self._retryable(e):
+                    await asyncio.sleep(self._delay_for(attempt, e))
                     continue
                 raise
 
@@ -916,11 +1113,50 @@ class LLMClient:
     ) -> AsyncGenerator[StreamEvent, None]:
         """Async streaming — yields StreamEvent objects as tokens arrive.
 
+        With ``fallbacks``, a stream that fails before its first event is
+        streamed from the next client instead (1.91.0, 2E). Once an event has
+        been yielded it is not: the caller already holds part of one model's
+        answer, and splicing another model's after it would be worse than the
+        error.
+
         Example:
             async for event in llm.astream([UserMessage("Hello")]):
                 if isinstance(event, TextDelta):
                     print(event.text, end="", flush=True)
         """
+        clients: list[LLMClient] = [self, *self.fallbacks]
+        last: Exception | None = None
+        for index, client in enumerate(clients):
+            if index:
+                logger.warning(
+                    "%s/%s stream failed (%s); falling back to %s/%s",
+                    clients[index - 1].provider,
+                    clients[index - 1].model,
+                    type(last).__name__,
+                    client.provider,
+                    client.model,
+                )
+            started = False
+            stream = client._astream_own(messages, tools, **kwargs) if index == 0 else (
+                client.astream(messages, tools, **kwargs)
+            )
+            try:
+                async for event in stream:
+                    started = True
+                    yield event
+                return
+            except Exception as error:
+                if started or index == len(clients) - 1 or not self._falls_back(error):
+                    raise
+                last = error
+
+    async def _astream_own(
+        self,
+        messages: list[Message],
+        tools: list[dict[str, Any]] | None = None,
+        **kwargs: Any,
+    ) -> AsyncGenerator[StreamEvent, None]:
+        """This client's own stream, with its retries — no fallbacks."""
         messages = _sanitized_history(messages, where="astream")
 
         stream_providers: dict[str, Any] = {
@@ -994,43 +1230,43 @@ class LLMClient:
         try:
             for attempt in range(self.max_retries + 1):
                 try:
-                    async for event in fn(messages, tools, **kwargs):
-                        # The streamed twin of the cost recorded in
-                        # ``_acomplete_with_retries``. A ``Usage`` event is the
-                        # only place a stream reports its token counts, so it is
-                        # where a streamed turn gets priced — otherwise
-                        # ``Agent.stream`` would report the trace id and tokens
-                        # it gained in 1.67.0 and still hand back ``cost=0.0``.
-                        if isinstance(event, Usage):
-                            usage_seen = {
-                                "prompt_tokens": event.prompt_tokens,
-                                "completion_tokens": event.completion_tokens,
-                            }
-                            record_run_cost(
-                                self.model, usage_seen, provider=self.provider
-                            )
-                        elif isinstance(event, TextDelta):
-                            text_parts.append(event.text)
-                        elif isinstance(event, ToolCallEnd):
-                            streamed_tool_calls.append(
-                                {
-                                    "id": event.call_id,
-                                    "name": event.tool_name,
-                                    "arguments": event.arguments,
+                    async with self._slot():
+                        async for event in fn(messages, tools, **kwargs):
+                            # The streamed twin of the cost recorded in
+                            # ``_acomplete_with_retries``. A ``Usage`` event is
+                            # the only place a stream reports its token counts,
+                            # so it is where a streamed turn gets priced —
+                            # otherwise ``Agent.stream`` would report the trace
+                            # id and tokens it gained in 1.67.0 and still hand
+                            # back ``cost=0.0``.
+                            if isinstance(event, Usage):
+                                usage_seen = {
+                                    "prompt_tokens": event.prompt_tokens,
+                                    "completion_tokens": event.completion_tokens,
                                 }
-                            )
-                        elif isinstance(event, StreamDone):
-                            finish_seen = event.finish_reason
-                        yield event
+                                record_run_cost(self.model, usage_seen, provider=self.provider)
+                            elif isinstance(event, TextDelta):
+                                text_parts.append(event.text)
+                            elif isinstance(event, ToolCallEnd):
+                                streamed_tool_calls.append(
+                                    {
+                                        "id": event.call_id,
+                                        "name": event.tool_name,
+                                        "arguments": event.arguments,
+                                    }
+                                )
+                            elif isinstance(event, StreamDone):
+                                finish_seen = event.finish_reason
+                            yield event
                     return
-                except LLMProviderError as e:
-                    if attempt < self.max_retries and self._should_retry(e.status_code):
+                except (LLMProviderError, httpx.TransportError, TimeoutError) as e:
+                    if attempt < self.max_retries and self._retryable(e):
                         # A retried attempt re-streams from the top, so drop what
                         # the failed one produced rather than concatenating two
                         # partial answers into the span.
                         text_parts.clear()
                         streamed_tool_calls.clear()
-                        await asyncio.sleep(self._retry_delay(attempt))
+                        await asyncio.sleep(self._delay_for(attempt, e))
                         continue
                     raise
         except Exception as e:
@@ -1604,6 +1840,13 @@ class LLMClient:
         # via ``azure_ad_token_provider``) work. Only ``body`` is used on that
         # path; the returned headers are ignored.
         if self._openai_client is not None:
+            # The OpenAI SDK takes pass-through options as its own
+            # ``extra_body`` / ``extra_headers`` arguments (1.91.0, 2K).
+            extra_body, extra_headers = self._extras(kwargs)
+            if extra_body:
+                body["extra_body"] = extra_body
+            if extra_headers:
+                body["extra_headers"] = extra_headers
             return body, {"Content-Type": "application/json"}
 
         env_var, env_label = self._api_key_env()
@@ -1619,6 +1862,7 @@ class LLMClient:
             "Content-Type": "application/json",
             "Authorization": f"Bearer {api_key}",
         }
+        self._apply_extras(body, headers, kwargs)
 
         return body, headers
 
@@ -1656,6 +1900,16 @@ class LLMClient:
                 request_id = headers.get("x-request-id") or headers.get("request-id")
             except Exception:  # pragma: no cover — headers of an unexpected type
                 request_id = None
+        if status == 429:
+            # 1.91.0: a rate limit says so, with the wait the provider asked for.
+            return LLMRateLimitError(
+                f"{prefix}: {clean}",
+                retry_after=_retry_after_seconds(headers),
+                provider=self.provider,
+                provider_message=message,
+                provider_code=code,
+                request_id=request_id,
+            )
         return LLMProviderError(
             f"{prefix}: {clean}",
             status_code=status,
@@ -1795,7 +2049,9 @@ class LLMClient:
         body: dict[str, Any] = {
             "model": self.model,
             "messages": filtered_msgs,
-            "max_tokens": kwargs.get("max_tokens", self.max_tokens) or 4096,
+            # Anthropic requires max_tokens. Unset, it is the model's own maximum
+            # (1.91.0, 2F) — 4096 cut long answers short on models that take 64k+.
+            "max_tokens": kwargs.get("max_tokens", self.max_tokens) or self._default_max_tokens(),
         }
         if stream:
             body["stream"] = True
@@ -1846,6 +2102,7 @@ class LLMClient:
             "x-api-key": api_key,
             "anthropic-version": "2023-06-01",
         }
+        self._apply_extras(body, headers, kwargs)
 
         return body, headers
 
@@ -1962,8 +2219,10 @@ class LLMClient:
                 body["format"] = fmt
 
         url = f"{self.base_url.rstrip('/')}/api/chat"
+        ollama_headers: dict[str, str] = {}
+        self._apply_extras(body, ollama_headers, kwargs)
         async with self._new_async_client() as client:
-            resp = await client.post(url, json=body)
+            resp = await client.post(url, json=body, headers=ollama_headers or None)
             if resp.status_code != 200:
                 raise self._provider_error(
                     f"Ollama API error {resp.status_code}",
@@ -2108,7 +2367,7 @@ class LLMClient:
         temperature = kwargs.get("temperature", self.temperature)
         if temperature is not None:
             inference_config["temperature"] = temperature
-        max_tok = kwargs.get("max_tokens", self.max_tokens) or 4096
+        max_tok = kwargs.get("max_tokens", self.max_tokens) or self._default_max_tokens()
         inference_config["maxTokens"] = max_tok
         # Additional parameters (Bedrock supports topP and stopSequences)
         top_p = kwargs.get("top_p", self.top_p)
@@ -2118,6 +2377,14 @@ class LLMClient:
         if stop is not None:
             inference_config["stopSequences"] = [stop] if isinstance(stop, str) else stop
         body["inferenceConfig"] = inference_config
+        # Pass-through options are Converse's model-specific fields (1.91.0, 2K).
+        # Bedrock takes no extra HTTP headers through boto3.
+        extra_body, _ = self._extras(kwargs)
+        if extra_body:
+            body["additionalModelRequestFields"] = {
+                **body.get("additionalModelRequestFields", {}),
+                **extra_body,
+            }
 
         # boto3 is synchronous: off the event loop, so a slow Bedrock call does
         # not stall every other task (and a Tool timeout) while it runs.
@@ -2381,8 +2648,12 @@ class LLMClient:
         completion_tokens = 0
         finish_reason = ""
 
+        ollama_headers: dict[str, str] = {}
+        self._apply_extras(body, ollama_headers, kwargs)
         async with self._new_async_client() as client:
-            async with client.stream("POST", url, json=body) as resp:
+            async with client.stream(
+                "POST", url, json=body, headers=ollama_headers or None
+            ) as resp:
                 if resp.status_code != 200:
                     body_text = await resp.aread()
                     raise self._provider_error(

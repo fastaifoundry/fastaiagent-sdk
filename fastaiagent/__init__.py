@@ -81,7 +81,7 @@ from fastaiagent.guardrail import (
     toxicity_check,
 )
 from fastaiagent.kb import KeywordStore, LocalKB, MetadataStore, PlatformKB, VectorStore
-from fastaiagent.llm import LLMClient, Message, StreamEvent, TextDelta
+from fastaiagent.llm import LLMClient, Message, ModelInfo, StreamEvent, TextDelta
 from fastaiagent.llm.stream import HandoffEvent, Paused
 from fastaiagent.multimodal import PDF, ContentPart, File, Image, normalize_input
 from fastaiagent.optimize import (
@@ -196,6 +196,7 @@ __all__ = [
     "IdempotencyError",
     # LLM
     "LLMClient",
+    "ModelInfo",
     "Message",
     "StreamEvent",
     "TextDelta",

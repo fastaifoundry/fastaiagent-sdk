@@ -8,9 +8,10 @@ passes `Image` / `PDF` and the SDK rewrites for the active provider.
 
 | Provider          | Image | PDF text | PDF vision (rendered) | PDF native | Tool returns image |
 |-------------------|:-----:|:--------:|:---------------------:|:----------:|:------------------:|
-| OpenAI gpt-4o     | Yes   | Yes      | Yes                   | Yes        | Yes (auto-split)   |
+| OpenAI gpt-4o / 4.1 / 5 | Yes | Yes   | Yes                   | Yes        | Yes (auto-split)   |
+| OpenAI gpt-6      | Yes   | Yes      | Yes                   | —          | Yes (auto-split)   |
 | Azure gpt-4o      | Yes   | Yes      | Yes                   | Yes        | Yes (auto-split)   |
-| Anthropic 3.5+    | Yes   | Yes      | Yes                   | Yes        | Yes (block)        |
+| Anthropic 3.5+, 4.x, 5.x | Yes | Yes  | Yes                   | Yes        | Yes (block)        |
 | Bedrock (Claude)  | Yes   | Yes      | Yes                   | Yes        | Yes (block)        |
 | Ollama (vision)   | Yes   | Yes      | Yes                   | —          | Yes (auto-split)   |
 | Gemini            | Yes   | —        | —                     | Yes        | Yes (inline)       |
@@ -43,6 +44,18 @@ supports_native_pdf("openai", "gpt-4o")                  # True
 Sending an `Image` (or a PDF in vision mode) to a non-vision model
 raises `NonVisionModelError` *before* any HTTP request — the SDK fails
 early with a clear message rather than letting the provider 4xx.
+
+!!! warning "Fixed in 1.91.0"
+    The registry predated the current lineups, so it refused images for every
+    Claude 5.x model (`claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`,
+    `claude-fable-5-1`, …) and every GPT-6 model (`gpt-6-astra`, `gpt-6.1-sol`,
+    `gpt-6-luna`) — `NonVisionModelError` before any request — and sent a PDF to
+    Claude 5.x as extracted text. Claude 5.x now takes images and native PDFs
+    (Anthropic's Models API reports both for every model); GPT-6 takes images,
+    and its PDFs are rendered as page images (its model pages list text and
+    image input only). Bedrock's cross-region ids (`us.anthropic.claude-…`,
+    `eu.…`, `global.…`) are recognised too. The same answers are on
+    `LLMClient(...).model_info.supports_vision` / `.supports_pdf`.
 
 ## Auto-detection rules (`pdf_mode="auto"`)
 
