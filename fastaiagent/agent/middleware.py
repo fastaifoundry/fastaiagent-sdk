@@ -241,12 +241,18 @@ class TrimLongMessages(AgentMiddleware):
         if len(messages) <= self.keep_last:
             return messages
 
-        # Preserve a leading system message (if present) and keep the tail.
-        head: list[Message] = []
-        body = messages
-        if messages and messages[0].role == MessageRole.system:
-            head = [messages[0]]
-            body = messages[1:]
+        # Preserve every LEADING system message and keep the tail. Memory blocks
+        # render their context (a pinned StaticBlock, a summary, known facts) as
+        # system messages right after the system prompt; keeping only
+        # ``messages[0]`` trimmed the user's pinned memory away on any long run
+        # (1.90.0, F11). The leading run is the prompt's preamble, not history.
+        n_head = 0
+        while n_head < len(messages) and messages[n_head].role == MessageRole.system:
+            n_head += 1
+        head: list[Message] = list(messages[:n_head])
+        body = messages[n_head:]
+        if len(body) <= self.keep_last:
+            return messages
 
         tail = balance_tool_messages(body[-self.keep_last :], note=TRIMMED_NOTE)
         return head + tail

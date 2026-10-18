@@ -278,6 +278,16 @@ def fx_rate(base: str, quote: str) -> float:
 ```
 
 - **`timeout`** — the call is cancelled and reported as an error after N seconds.
+  An `async def` tool is cancelled. A plain `def` tool with a `timeout` runs in a
+  worker thread (context vars copied, so `interrupt()` and `@idempotent` work as
+  usual); on a timeout the model gets the error and the run moves on, but the
+  thread **cannot be stopped**: the function finishes in the background, side
+  effects included. Make such a tool idempotent, or make it `async`. A `def` tool
+  without a `timeout` still runs on the calling thread.
+
+    !!! warning "Fixed in 1.90.0"
+        Before 1.90.0 a `def` tool's `timeout` did nothing: the function ran on
+        the event loop, which the timeout could not interrupt.
 - **`max_retries` / `retry_delay`** — transient failures (exceptions or timeouts)
   are retried with exponential backoff before the error surfaces.
 

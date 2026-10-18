@@ -36,6 +36,7 @@ import pytest
 from pydantic import BaseModel
 
 from fastaiagent import Agent, SQLiteCheckpointer, ToolBudget, TrimLongMessages
+from fastaiagent._internal.errors import GuardrailBlockedError
 from fastaiagent.agent.middleware import MiddlewareContext
 from fastaiagent.chain.checkpoint import is_run_end
 from fastaiagent.chain.interrupt import Resume, interrupt
@@ -257,11 +258,15 @@ async def test_reask_guardrail_re_sends_a_balanced_history_without_output_type()
         # The stop message is what becomes the output, so make it trip the rule.
         middleware=[ToolBudget(max_calls=1, message="stopping on 123-45-6789")],
     )
-    result = await agent.arun("go", trace=False)
+    # Since 1.90.0 (F8) a run middleware stopped is never re-driven: the rule
+    # still judges the stop message, and a failing ``reask`` blocks instead of
+    # calling the model for a new answer. Before, this test pinned that re-ask —
+    # which ran outside middleware and replaced the stop with the model's text.
+    with pytest.raises(GuardrailBlockedError, match="stopped by middleware"):
+        await agent.arun("go", trace=False)
 
-    assert result.output == "clean", "the re-ask turn must actually have happened"
-    assert len(llm.sent) == 2, "expected exactly one re-ask call"
-    assert_balanced(llm.sent[-1], "history re-sent by a reask guardrail")
+    assert len(llm.sent) == 1, "a stopped run must not be re-asked"
+    assert_balanced(llm.sent[-1], "history of the stopped turn")
 
 
 class _Answer(BaseModel):
@@ -278,10 +283,18 @@ async def test_structured_output_reask_re_sends_a_balanced_history() -> None:
         output_type=_Answer,
         middleware=[ToolBudget(max_calls=1, message="over budget")],
     )
-    await agent.arun("go", trace=False)
+    result = await agent.arun("go", trace=False)
 
-    assert len(llm.sent) == 2, "expected a structured-output re-ask"
-    assert_balanced(llm.sent[-1], "history re-sent by _reask_structured")
+    # Since 1.90.0 (F8): the stop message failing to parse is not a reason to
+    # call the model again — the run was stopped. Before, the structured re-ask
+    # fired here and its answer replaced the stop.
+    assert len(llm.sent) == 1, "a stopped run must not be re-asked"
+    assert (result.output, result.stop_reason, result.parsed) == (
+        "over budget",
+        "tool_budget",
+        None,
+    )
+    assert_balanced(llm.sent[-1], "history of the stopped turn")
 
 
 # --------------------------------------------------------------------------- #

@@ -5,6 +5,159 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.90.0] - 2026-10-18 — every tool call governed, every setting honoured
+
+The 17 defects a verification of 1.89.0 found (F1–F17), five of them security,
+plus seven more found while fixing them. Every fix has a test that fails on
+1.89.0, and the provider-facing ones were checked live on OpenAI gpt-4o-mini,
+gpt-5.1 and gpt-5-mini, Anthropic claude-haiku-4-5 and Gemini 2.5 Flash. No wire
+change, no new payload key, `local.db` stays at v26, `Agent.to_dict()` is
+unchanged.
+
+### Upgrading from 1.89 — behaviour changes at a glance
+
+- **Tool calls.** One governed path runs every tool call — the agent loops,
+  `Agent.aresume` and MCP `expose_tools`. A resumed or MCP-called tool now gets
+  the agent's guardrails, middleware, span, timeout and retries; crash recovery
+  asks governance again.
+- **`allowed_domains`** matches the URL's host, not a suffix of it.
+- **Payloads off means payloads off** for tool error text too.
+- **`AgentConfig.temperature` / `max_tokens` / `tool_choice` are sent.** They
+  were ignored. Agents that set them — including plane-distributed ones — now
+  send them; an unknown `tool_choice` raises.
+- **`StopAgent`** keeps its reason (`AgentResult.stop_reason`), is never
+  re-driven by a re-ask, and its message is streamed.
+- **Gemini** thinking tokens are priced: Gemini cost rises.
+- **CrewAI**: `akickoff` and the `*_for_each` methods are guarded and traced; a
+  streaming crew with output guardrails is refused instead of falsely passed.
+- **`SQLiteCheckpointer(":memory:")`** works, and no longer chmods your current
+  directory.
+- **`TrimLongMessages`** keeps pinned memory; a re-ask after a trim sends what
+  the model saw.
+- **`Supervisor(guardrails=)`** is new.
+- **A sync tool's `timeout` is enforced**; such a tool now runs in a worker
+  thread, and keeps running in the background after a timeout.
+- **The Bedrock provider works.** It could not send a single request before.
+- **Extras:** `[pydanticai]` moves to Pydantic AI 2.x (Python 3.11+), `[openai]`
+  allows openai 3.x, and `[crewai]` needs CrewAI 1.7+. `[anthropic]` stays below
+  1.0, on purpose (see Compatibility).
+
+### Security
+
+- ⚠ **`allowed_domains` matched a suffix, so look-alikes passed (F1).**
+  `allowed_domains(["example.com"])` allowed `evilexample.com`. It now parses the
+  host (port, userinfo, case and a trailing dot no longer matter) and allows the
+  domain and its subdomains only. A port entry (`example.com:8080`) allows that
+  port only. A blank entry, which allowed every URL, raises `ValueError`. Also
+  fixed: a bare-domain URL inside a JSON tool call (`"https://example.com"}`) was
+  always **blocked**, because the capture ran into the closing quote.
+- ⚠ **Tool error text egressed with `FASTAIAGENT_TRACE_PAYLOADS=0` (F2).**
+  `tool.error` (agent loop and runner) joined `SENSITIVE_ATTR_KEYS`, and the
+  CrewAI integration's `tool.error` / `llm.error` event `message` joined
+  `SENSITIVE_EVENT_ATTR_KEYS`. Both quote arguments and upstream responses.
+- ⚠ **A resumed tool call skipped every protection (F5).** `Agent.aresume`
+  re-ran the paused tool bare: the `tool_result` guardrail never judged its
+  result (live, on 1.89.0, all four tested models repeated a value the agent's
+  mask rule should have redacted), a `tool_call` mask was lost because the
+  checkpoint holds the pre-guardrail arguments, and `wrap_tool`, the span,
+  `timeout`, `max_retries` and `output_type` did not apply. **Crash recovery
+  asked governance nothing** — the pre-tool checkpoint is written before the
+  gate. It now runs the loop's own path: a resolved approval is not re-asked (a
+  rejected one still never runs); crash recovery asks, so a `deny` refuses and a
+  `require_approval` pauses. The resumed call's guardrail firings and judge spend
+  are on the result.
+- ⚠ **MCP `expose_tools` skipped the agent's guardrails (F3).** A call by name
+  ran a tool the agent's `tool_call` rule blocks and returned a result its
+  `tool_result` rule masks. It now runs the governed path; a block is an MCP
+  error naming the rule (never its message, which can quote the payload).
+- ⚠ **`with_guardrails(crew)` guarded two of six entry points (F4).**
+  `akickoff`, `kickoff_for_each`, `kickoff_for_each_async` and
+  `akickoff_for_each` ran with no guardrails; batch methods now check every input
+  before any run starts. A `stream=True` crew with output guardrails judged the
+  streaming object's `repr` and passed — it now raises `GuardrailBlocked`
+  ("could not run") before the crew starts.
+
+### Correctness
+
+- **`AgentConfig.temperature`, `max_tokens` and `tool_choice` did nothing
+  (F6).** They now go on every model call of the run (tool loop, structured
+  re-ask, guardrail re-ask, run and stream), over the `LLMClient`'s values; an
+  explicit `arun(..., temperature=)` wins. `tool_choice` is sent only when not
+  `"auto"`: `"required"` forces the first turn only, `"none"` every turn, in each
+  provider's shape (OpenAI, Anthropic, Gemini); Ollama and Bedrock warn once and
+  send nothing. Nothing is dropped for a model's sampling rules (1.89.0 D4): a
+  GPT-5 reasoning model rejects `temperature=0.2` itself, as verified live.
+- **Gemini thinking tokens were not priced (F7).** `completion_tokens` now
+  include `thoughtsTokenCount`, in `run` and `astream`; cost and `cost_limit`
+  verdicts rise for thinking models.
+- **`StopAgent` lost its reason, and a re-ask could replace it (F8).**
+  `AgentResult.stop_reason` is new (run, astream, `stream()`, resume). With
+  `output_type`, the structured re-ask answered the stop message — calling the
+  model outside middleware and returning its answer instead of the stop. A stopped
+  run is no longer re-driven; a failing `reask` output rule blocks. `astream`
+  yields the stop message as a `TextDelta` (it ended with no text).
+- **`SQLiteCheckpointer(":memory:")` raised `no such table` (F9),** because
+  per-thread connections each opened a fresh in-memory database. It is now one
+  shared in-memory database per checkpointer. It also tightened the **current
+  working directory** to `0o700` (`Path(":memory:").parent` is `.`) — no longer.
+- **`parallel_tools=True` fell back to sequential silently (F10)** — with
+  middleware, a checkpointer or an `agent_id`, so never in a Swarm. One warning
+  per agent per reason now says so.
+- **`TrimLongMessages` dropped pinned memory (F11).** It now keeps every
+  leading system message. And a `before_model` hook that returned a new list
+  (the trimmer did) left `Agent`'s re-ask history stale: a structured or guardrail
+  re-ask after a trim re-sent the untrimmed history **without the latest turns**.
+  The loop now keeps one shared list.
+- **A Supervisor's own loop took no guardrails (F12).** `Supervisor(guardrails=)`
+  judges its input, its delegate calls and its answer on every path; with
+  `routing="decisions"` it judges the routed worker's input and output.
+- **`Tool(timeout=)` did nothing for a sync (`def`) function.** It ran on the
+  event loop, which `asyncio.wait_for` cannot interrupt, so a slow tool ran to
+  completion. With a `timeout`, a sync function now runs in a worker thread
+  (context vars copied, so `interrupt()` and `@idempotent` work) and the call is
+  bounded; the thread cannot be stopped, so the function finishes in the
+  background. Without a `timeout`, nothing changes.
+- **The Bedrock provider could not send a request.** Messages went in the OpenAI
+  shape, which `boto3` refuses before sending (`ParamValidationError`, even for
+  "hi"), and tools were never sent. It now speaks Converse: content blocks,
+  `system`, `toolUse` / `toolResult`, merged same-role turns and `toolConfig`;
+  `tool_choice="required"` is `any`, `"none"` warns (Converse has none). The
+  `boto3` call runs off the event loop, `base_url` is the endpoint, and
+  `max_tokens` stops report `length`. Verified with a real `boto3` client against
+  the Converse wire format, not yet against a live AWS account.
+
+### Docs and compatibility
+
+- `MCPTool` cannot call a served agent (the server is stdio, `MCPTool` is HTTP);
+  the docs said it could (F13).
+- `AgentTimeoutError` is documented as reserved: no run timeout raises it yet (F17).
+- ⚠ **`[pydanticai]` is Pydantic AI 2.x: `pydantic-ai>=2.31,<3` and
+  `genai-prices>=0.1.13`, on Python 3.11+ (F15, F20).** It pinned 1.105–1.106,
+  which no current Pydantic AI user could install. Verified live (real tokens
+  and cost, OpenAI and Anthropic models) on 2.57.0, and on 2.31.1 in the
+  combination `[all]` resolves to. On Python 3.10 the extra now installs nothing;
+  the integration still works with `pydantic-ai>=1.105,<1.107` and
+  `genai-prices<0.1` installed by hand (never 1.x with genai-prices 0.1+: tokens
+  read as zero).
+- **`[openai]` allows openai 3.x (`<4`).** Auto-tracing (plain and streaming),
+  `LLMClient(openai_client=...)`, `OpenAIEmbedder` and moderation verified live
+  on openai 3.35 and 2.54.
+- ⚠ **`[crewai]` needs CrewAI 1.7+.** With Pydantic AI 2.x in `[all]`, a 1.0
+  floor let the resolver drop CrewAI to 1.6.1; `[all]` now resolves to CrewAI
+  1.15. A CrewAI 1.0–1.6 install is upgraded when you install the extra.
+- **`[anthropic]` stays `<1`, deliberately.** Every anthropic 1.x is built on
+  `httpx2`, and Pydantic AI 2.31 — the newest that can share `[all]` with
+  CrewAI, whose releases cap `openai<3` — cannot hand it a client, so its
+  Anthropic models fail on anthropic 1.x (verified). `integrations.anthropic`
+  itself works on anthropic 1.15 (verified live); the cap moves when CrewAI lifts
+  its `openai<3` cap.
+
+### Not changed
+
+- **F14** claimed a REST tool returned HTTP 4xx/5xx as success. It does not:
+  the request helper raises on an error status and the model is told. Tests now
+  pin that.
+
 ## [1.89.0] - 2026-10-14 — numbers, verdicts and traces you can trust
 
 The fixes from the 2026-10 audit of the Local UI, evals, guardrails, replay and

@@ -16,7 +16,7 @@ By the time the LLM event fires, the OTel current span is already the
 spans nest under the right parent automatically.
 
 ```bash
-pip install "fastaiagent[crewai]"  # crewai>=1.0
+pip install "fastaiagent[crewai]"  # crewai>=1.7 (since 1.90.0)
 ```
 
 ## 1. Auto-tracing
@@ -96,7 +96,20 @@ result = guarded.kickoff(inputs={"input": "..."})  # raises GuardrailBlocked on 
 ```
 
 Block-only semantics — see [Overview → Limitations](overview.md#limitations).
-Wraps `kickoff` and `kickoff_async`.
+Wraps every way CrewAI 1.x runs a crew: `kickoff`, `kickoff_async`, `akickoff`,
+`kickoff_for_each`, `kickoff_for_each_async` and `akickoff_for_each`. The batch
+methods check **every** input before any run starts, and every output after.
+
+A crew built with `stream=True` returns a streaming object, not text, so output
+guardrails cannot judge it: the call raises `GuardrailBlocked` ("could not
+run") before the crew starts. Input guardrails still work on a streaming crew.
+
+!!! warning "Changed in 1.90.0"
+    Before 1.90.0 only `kickoff` and `kickoff_async` were guarded; `akickoff`
+    and the three `*_for_each` methods ran with no guardrails at all. A
+    streaming crew's output guardrails judged the streaming object's `repr` and
+    passed. Tracing (`enable()`) now also covers `Crew.akickoff`,
+    `Agent.aexecute_task` and `Task.aexecute_sync`.
 
 ## 4. Prompt registry
 
@@ -190,6 +203,12 @@ The plan considered loosening to `crewai>=0.80` to match the spec, but
 kept `>=1.0` because CrewAI's public test gate (`tests/e2e/test_gate_crewai.py`)
 already runs against `>=1.0` and we'd rather not regress that gate.
 The CHANGELOG notes this deviation.
+
+Since 1.90.0 the `[crewai]` extra is `crewai>=1.7,<2`. With Pydantic AI 2.x in
+`fastaiagent[all]`, a `>=1.0` floor let the resolver drop CrewAI to 1.6.1 to make
+room for a newer Pydantic AI, so `[all]` installed a CrewAI nine months old. The
+native-async methods this integration guards and traces (`akickoff`,
+`Agent.aexecute_task`, `Task.aexecute_sync`) are patched only where they exist.
 
 ## Examples
 

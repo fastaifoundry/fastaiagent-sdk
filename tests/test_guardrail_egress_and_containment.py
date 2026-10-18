@@ -174,8 +174,11 @@ class TestEventEgressGate:
         assert apply_event_export_policy([event])[0]["attributes"] == {"attempt": 2}
 
     def test_the_registry_names_both_message_carrying_keys(self):
-        """Pinned so a later reader cannot narrow it to the message alone."""
-        assert SENSITIVE_EVENT_ATTR_KEYS == frozenset({"exception.message", "exception.stacktrace"})
+        """Pinned so a later reader cannot narrow it to the message alone.
+
+        A superset check since 1.90.0, which added the CrewAI error events'
+        ``message`` (see ``tests/test_tool_error_egress.py``)."""
+        assert SENSITIVE_EVENT_ATTR_KEYS >= {"exception.message", "exception.stacktrace", "message"}
 
 
 class TestPlatformExporterFiltersEvents:

@@ -422,7 +422,7 @@ Tool invocations emit their own `tool.{name}` span with:
 | `tool.status` | `ok` / `error` / `unknown` |
 | `tool.args` | JSON-encoded arguments (payload-gated — see below) |
 | `tool.result` | JSON-encoded return value (payload-gated) |
-| `tool.error` | Error string when status is `error` |
+| `tool.error` | Error string when status is `error` (payload-gated since 1.90.0 — it quotes arguments and upstream responses) |
 | `fastaiagent.runner.type` | Always `tool` — classifies the span as a tool call |
 | `fastaiagent.tool.replay_class` | `read_only` / `idempotent` / `side_effecting` — the tool's [replay-safety class](../tools/index.md#replay-safety-replay_class) (default `side_effecting`) |
 
@@ -434,7 +434,7 @@ LLM calls emit `llm.{provider}.{model}` spans with standard GenAI attributes plu
 
 ### Payload Gating (`FASTAIAGENT_TRACE_PAYLOADS`)
 
-Payload-bearing attributes — LLM messages, LLM response content, tool arguments, tool results, and resolved system prompts — can contain sensitive data. They are always captured into `local.db`, so the Local UI and Replay work, and you decide whether they may **leave the machine**:
+Payload-bearing attributes — LLM messages, LLM response content, tool arguments, tool results, tool error text, and resolved system prompts — can contain sensitive data. They are always captured into `local.db`, so the Local UI and Replay work, and you decide whether they may **leave the machine**:
 
 ```bash
 export FASTAIAGENT_TRACE_PAYLOADS=0
@@ -444,6 +444,7 @@ With payloads off:
 - Every span still lands in `local.db` in full.
 - Before a span reaches the platform, or any exporter registered with `add_exporter()`, the payload keys are stripped from its attributes, its exception events and its status description. Structural metadata (`agent.config`, `agent.tools`, `agent.guardrails`, `agent.llm.config`, `gen_ai.system`, `gen_ai.request.model`, token counts, finish reasons, `tool.name`/`tool.status`) is always exported.
 - A value other than `1`/`true`/`yes`/`on` or `0`/`false`/`no`/`off` fails closed: payloads stay local.
+- Since 1.90.0 this includes `tool.error` (the agent loop and the runner) and the `message` of the CrewAI integration's `tool.error` / `llm.error` events. Both carried a tool's failure text, which quotes its arguments, out of the machine with payloads off. The event name and `tool.status` still flow.
 
 Defaults to `1` (on). Set it to `0` wherever traces leave a machine that handles PII. To capture nothing at all, use `FASTAIAGENT_TRACE_ENABLED=0`. The behaviour is proved on [Where a trace has to hold](trace-boundaries.md#3-between-capture-and-egress-full-fidelity-in-filtered-out).
 

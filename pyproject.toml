@@ -1,6 +1,6 @@
 [project]
 name = "fastaiagent"
-version = "1.89.0"
+version = "1.90.0"
 description = "Build, debug, evaluate, and operate AI agents. The only SDK with fork-and-rerun Agent Replay."
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -54,7 +54,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-openai = ["openai>=1.0,<3"]
+# LLMClient itself speaks HTTP and needs neither SDK; these back the
+# auto-tracing integrations and LLMClient(openai_client=...).
+# openai 3.x since 1.90.0, verified offline and live on 3.x.
+# anthropic stays <1 on purpose: every anthropic 1.x is built on httpx2, and the
+# newest Pydantic AI that can share [all] with CrewAI (2.31, see below) still
+# hands Anthropic an httpx client, so with anthropic 1.x its Anthropic models
+# fail (verified 2026-10-18). integrations.anthropic itself works on 1.15.
+openai = ["openai>=1.0,<4"]
 anthropic = ["anthropic>=0.20,<1"]
 # Both LangChain lines are supported (1.89.0): 0.x (core 0.3 / langgraph 0.x)
 # and 1.x. The integration uses only the langchain_core callback, prompt and
@@ -64,20 +71,30 @@ anthropic = ["anthropic>=0.20,<1"]
 # ``langchain`` itself is deliberately NOT in the extra: on 0.x it drags in
 # SQLAlchemy, requests and text-splitters the integration never uses.
 langchain = ["langchain-core>=0.3,<2", "langgraph>=0.2,<2"]
-crewai = ["crewai>=1.0,<2"]
-# pydantic-ai >=1.105 is required: earlier 1.x imports anthropic's pre-rename
-# `UserLocation`, which current `anthropic` ships as `BetaUserLocationParam`
-# (ImportError otherwise). 1.105+ uses the new name. The full `[all]` resolution
-# is too deep for pip's backtracker, so the e2e/optional-deps CI jobs install
-# with `uv` (which resolves it, picking a crewai that co-exists with this).
-# Both bounds are regression guards, not conservatism. Each independently
-# zeroes token/cost attribution for every pydanticai run:
-#   * pydantic-ai 1.107.x returns RunUsage(input_tokens=0, output_tokens=0).
-#   * genai-prices >=0.1 powers RequestUsage.extract(); given a real OpenAI
-#     CompletionUsage payload it returns 0/0 where 0.0.60 returns the true
-#     counts, so pydantic-ai's own OTel spans are zeroed before we read them.
-# Verified by bisection (0.0.60 good, 0.1.0 bad). Relax once upstream fixes.
-pydanticai = ["pydantic-ai>=1.105,<1.107", "genai-prices<0.1"]
+# Floor 1.7 since 1.90.0: with Pydantic AI 2.x in [all], an older floor let the
+# resolver drop CrewAI to 1.6.1 (it has no openai<3 cap) to reach Pydantic AI
+# 2.32 — so [all] tested a 9-month-old CrewAI. With >=1.7, [all] resolves to
+# crewai 1.15 + pydantic-ai 2.31 + openai 2.x (verified live 2026-10-18).
+crewai = ["crewai>=1.7,<2"]
+# Pydantic AI 2.x since 1.90.0. Re-tested 2026-10-18 in throwaway venvs, live
+# against gpt-4o-mini and claude-haiku-4-5 (tests/e2e/test_harness_pydanticai.py,
+# real token counts + cost, OpenAI and Anthropic models):
+#   * 2.57.0 + genai-prices 0.1.13 (+ openai 3.35, anthropic 1.15) — correct.
+#   * 2.31.1 + genai-prices 0.1.13 + openai 2.54 + anthropic 0.125 — correct.
+#     This is what [all] resolves to: every stable CrewAI caps openai<3
+#     (through instructor) and Pydantic AI 2.32+ needs openai>=3, so 2.31 is
+#     the newest that shares an environment with CrewAI.
+#   * 1.106 + genai-prices 0.1.13 — token counts ZERO; 1.107.x — RunUsage(0, 0).
+# The 1.x line needed genai-prices<0.1 (bisected: 0.0.60 good, 0.1.0 bad); one
+# extra cannot carry both lines, so it is 2.x. Pydantic AI 2.x needs Python
+# 3.11+: on 3.10 the extra installs nothing (the integration still works with
+# pydantic-ai 1.105-1.106 + genai-prices<0.1 installed by hand). The full
+# `[all]` resolution is too deep for pip's backtracker, so the
+# e2e/optional-deps CI jobs install with `uv`.
+pydanticai = [
+    "pydantic-ai>=2.31,<3; python_version >= '3.11'",
+    "genai-prices>=0.1.13; python_version >= '3.11'",
+]
 # Local PDF decoding: text extraction, page count, page rasterization.
 # ``pypdfium2`` is BSD-3-Clause + Apache-2.0 bindings to PDFium — Google's PDF
 # engine, the one in Chrome. It replaced ``pymupdf``, which is dual-licensed
@@ -140,11 +157,9 @@ dev = [
     "langchain-anthropic>=0.2,<2",
     # Test-only: ``langchain.agents.create_agent`` for the 1.x harness e2e.
     "langchain>=0.3,<2",
-    # The caps of the ``openai`` / ``anthropic`` extras, mirrored. The 0.x
-    # langchain-openai/-anthropic used to cap these implicitly; their 1.x
-    # releases allow openai 3.x / anthropic 1.x, which the SDK's own extras do
-    # not support yet, so the plain ``.[dev]`` test job must not pick them.
-    "openai>=1.0,<3",
+    # The caps of the ``openai`` / ``anthropic`` extras, mirrored, so the plain
+    # ``.[dev]`` test job never picks a major the extras do not allow.
+    "openai>=1.0,<4",
     "anthropic>=0.20,<1",
     # Test-only: drives the live ``tests/e2e/test_openinference_capture_e2e.py``
     # drift check for ``enable_otel_capture()`` against a real OpenInference

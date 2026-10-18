@@ -282,16 +282,56 @@ def allowed_domains(
     domains: list[str],
     position: GuardrailPosition = GuardrailPosition.tool_call,
 ) -> Guardrail:
-    """Create a guardrail that restricts URLs to allowed domains."""
+    """Create a guardrail that restricts URLs to allowed domains.
+
+    A URL passes when its host **is** an allowed domain or a subdomain of one:
+    ``example.com`` allows ``example.com`` and ``api.example.com``, never
+    ``evilexample.com``. The host is parsed, so a port, userinfo, upper case or
+    a trailing dot don't change the verdict. ``*.example.com`` and
+    ``.example.com`` mean the same as ``example.com``.
+
+    An entry that names a port (``example.com:8080``) allows that port only.
+
+    Until 1.90.0 this was a plain suffix check on the text after ``://``, which
+    passed look-alike domains, blocked ``example.com:443``, and blocked every
+    bare-domain URL inside a JSON tool call (the capture ran on into ``"}``).
+    """
+    from urllib.parse import urlsplit
+
+    allowed: list[tuple[str, int | None]] = []
+    for d in domains:
+        raw = str(d).strip().lower().removeprefix("*.").strip(".")
+        try:
+            parts = urlsplit("//" + raw)
+            host, port = (parts.hostname or "").strip("."), parts.port
+        except ValueError:
+            host, port = "", None
+        if not host:
+            # Every host "ends with" an empty string: a blank entry allowed all URLs.
+            raise ValueError(f"allowed_domains: blank or unparseable domain entry {d!r}")
+        allowed.append((host, port))
+
+    def _allowed(host: str, port: int | None) -> bool:
+        return any(
+            (host == d or host.endswith("." + d)) and (p is None or p == port) for d, p in allowed
+        )
 
     def check_domains(text: str) -> GuardrailResult:
         import re
 
-        urls = re.findall(r"https?://([^/\s]+)", text)
+        # Stop at characters no host contains: quotes and brackets around a URL
+        # in a JSON tool call, prose punctuation after it.
+        urls = re.findall(r"https?://[^/\s?#\"'<>`\\]+", text)
         blocked = []
-        for url_domain in urls:
-            if not any(url_domain.endswith(d) for d in domains):
-                blocked.append(url_domain)
+        for url in urls:
+            url = url.rstrip(",;:!)}")
+            try:
+                parts = urlsplit(url)
+                host, port = (parts.hostname or "").rstrip("."), parts.port
+            except ValueError:
+                host, port = "", None
+            if not host or not _allowed(host, port):
+                blocked.append(host or url)
         if blocked:
             return GuardrailResult(
                 passed=False,

@@ -66,6 +66,10 @@ them. Results are re-ordered by call index, so message history and
     - **middleware** is attached (`wrap_tool` sees calls in order),
     - **managed governance** is enrolled (`agent_id` is set for policy/approvals).
 
+    Since 1.90.0 the fallback logs one warning per agent per reason, naming it.
+    Before, it was silent — and a `Swarm` always attaches middleware to its
+    agents, so their `parallel_tools=True` never took effect.
+
     Tools that share mutable `RunContext` state are your responsibility to make
     concurrency-safe when you enable this.
 
@@ -137,8 +141,11 @@ agent = Agent(
 | tool_choice | Behavior |
 |-------------|----------|
 | `"auto"` | LLM decides whether to use tools (default) |
-| `"required"` | LLM must call at least one tool |
-| `"none"` | LLM cannot call tools |
+| `"required"` | LLM must call at least one tool — on the run's **first** turn, so it can still answer |
+| `"none"` | LLM cannot call tools, on every turn |
+
+`"auto"` sends nothing (the provider's default). Before 1.90.0 none of the three
+reached the model. See [Agent Configuration](index.md#agent-configuration).
 
 ## Context & Dependency Injection
 

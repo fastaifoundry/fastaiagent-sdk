@@ -240,9 +240,13 @@ Three resume shapes are auto-detected from the latest checkpoint:
 1. **Interrupted** — pass `resume_value`. Claims the pending row,
    re-invokes the suspended tool with `_resume_value` in scope.
 2. **Tool-boundary crash** — saved tool re-invoked with saved args; LLM
-   is **not** re-called.
+   is **not** re-called. Managed governance is asked again first (1.90.0).
 3. **Turn-boundary crash** — loop re-enters at the saved turn,
    re-issuing the LLM call.
+
+In shapes 1 and 2 the re-invoked call takes the same governed path as a call
+inside the loop (1.90.0): `tool_call` guardrails, `wrap_tool` middleware, the
+`tool.<name>` span, the tool's timeout and retries, `tool_result` guardrails.
 
 In shapes 1 and 2 the resumed tool's result is appended to the saved history
 before the loop continues. If that turn declared **several** tool calls and the

@@ -108,6 +108,11 @@ SENSITIVE_ATTR_KEYS: frozenset[str] = frozenset(
         "tool.args",
         "tool.output",
         "tool.result",
+        # The failure text (``str(exc)`` / ``ToolResult.error``), set by the agent
+        # loop and the runner. It routinely quotes the arguments or the upstream
+        # response, and it egressed with payloads off until 1.90.0. The sibling
+        # ``tool.status`` is structural and stays clear.
+        "tool.error",
         # Chain payloads — ``Chain.aexecute`` writes JSON-serialized state.
         "chain.input",
         "chain.output",
@@ -216,6 +221,11 @@ SENSITIVE_EVENT_ATTR_KEYS: frozenset[str] = frozenset(
     {
         "exception.message",
         "exception.stacktrace",
+        # The CrewAI integration's ``tool.error`` / ``llm.error`` events, written
+        # when a failure arrives as text rather than an exception object. The
+        # text is the upstream error, which quotes arguments and responses; it
+        # egressed with payloads off until 1.90.0. The event *name* still flows.
+        "message",
     }
 )
 

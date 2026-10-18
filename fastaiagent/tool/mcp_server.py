@@ -2,9 +2,10 @@
 """Expose an :class:`fastaiagent.agent.Agent` or
 :class:`fastaiagent.chain.Chain` as an MCP (Model Context Protocol) server.
 
-Once a target is served, any MCP-compatible runtime — Claude Desktop,
-Cursor, Continue, Zed, another fastaiagent agent via ``MCPTool`` — can use
-it as a tool.
+Once a target is served, any MCP-compatible runtime that launches a stdio
+server — Claude Desktop, Cursor, Continue, Zed — can use it as a tool. The
+server is stdio-only and ``MCPTool`` is an HTTP client, so ``MCPTool`` cannot
+call a served agent yet (the docs said otherwise until 1.90.0).
 
 .. note::
    The upstream ``mcp`` package ships without ``py.typed`` markers, so the
@@ -275,22 +276,57 @@ class FastAIAgentMCPServer:
         raise TypeError(f"Unsupported target type: {type(self.target).__name__}")
 
     async def _invoke_inner_tool(self, name: str, arguments: dict[str, Any]) -> str:
-        from fastaiagent.governance import check_direct_call
+        from fastaiagent._internal.errors import GuardrailBlockedError, StopAgent
+        from fastaiagent._internal.pause import describe_pause
+        from fastaiagent.agent.executor import _governed_tool_call
+        from fastaiagent.agent.middleware import MiddlewareContext
+        from fastaiagent.chain.interrupt import InterruptSignal
 
         for t in self._inner_tools:
             if _sanitize_name(t.name) == name:
-                # A direct call skips the agent loop, and with it the governance
-                # gate. Ask the same policy here — before 1.78.0 a tool the plane
-                # denies, or holds for approval, ran when called by name.
-                refusal = await check_direct_call(
-                    t.name, arguments, getattr(self.target, "agent_id", None)
+                # A direct call skips the agent loop, so it takes the loop's own
+                # governed path: the same policy (1.78.0; ``direct`` because no
+                # run exists to pause, so ``require_approval`` refuses), and since
+                # 1.90.0 the agent's guardrails, ``wrap_tool`` middleware, tool
+                # span, timeout and retries. Before, a call the agent's
+                # ``tool_call`` guardrail blocks ran when made by name.
+                target = self.target
+                guardrails = (
+                    target._effective_guardrails()
+                    if hasattr(target, "_effective_guardrails")
+                    else None
                 )
-                if refusal:
-                    raise _RefusedCall(refusal)
-                tool_result = await t.aexecute(arguments)
-                if tool_result.error:
-                    return f"Error: {tool_result.error}"
-                out = tool_result.output
+                pipeline = getattr(target, "_mw_pipeline", None) or None
+                mw_ctx = (
+                    MiddlewareContext(run_context=None, agent_name=getattr(target, "name", ""))
+                    if pipeline
+                    else None
+                )
+                try:
+                    call = await _governed_tool_call(
+                        t,
+                        t.name,
+                        arguments,
+                        governance_mode="direct",
+                        agent_id=getattr(target, "agent_id", None),
+                        run_id="",
+                        context=None,
+                        guardrails=guardrails or None,
+                        mw_pipeline=pipeline,
+                        mw_ctx=mw_ctx,
+                        agent_name=getattr(target, "name", None),
+                    )
+                except GuardrailBlockedError as e:
+                    # The name only: a guardrail's message can quote the payload
+                    # it judged (an llm_judge's is the judge's whole response).
+                    raise _RefusedCall(f"Blocked by guardrail: {e.guardrail_name}") from None
+                except StopAgent as e:
+                    raise _RefusedCall(f"Stopped by middleware: {e}") from None
+                except InterruptSignal as sig:
+                    raise _PausedCall(describe_pause(sig)) from None
+                if call.refusal:
+                    raise _RefusedCall(call.refusal)
+                out = call.content
                 if isinstance(out, str):
                     return out
                 return json.dumps(out, default=str)

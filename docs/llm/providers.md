@@ -53,6 +53,27 @@ Set the matching env var (e.g. `export GROQ_API_KEY=…`) and you're done.
   without native enforcement.
 - **✗** — not supported; the field is dropped silently.
 
+**Bedrock** uses the Converse API through `boto3` (credentials and region from
+the usual AWS chain; `LLMClient(..., region=...)` overrides the region).
+`base_url`, when set, is the Converse endpoint — a VPC endpoint or a proxy.
+Tools are sent as `toolConfig`; `tool_choice="required"` maps to Converse's
+`any`, and `"none"` is not available on Converse, so it logs a warning and the
+model may still call a tool.
+
+!!! warning "Fixed in 1.90.0"
+    Before 1.90.0 the Bedrock provider sent messages in the OpenAI shape, which
+    `boto3` refuses before sending (`ParamValidationError`, even for a plain
+    "hi"), and never sent tools — the table above said it did. Verified against
+    the Converse wire format with a real `boto3` client; not yet against a live
+    AWS account.
+
+**Gemini thinking tokens are completion tokens.** A Gemini thinking model reports
+`thoughtsTokenCount` beside the reply's own tokens; Google bills it at the output
+rate. Since 1.90.0 `completion_tokens` (and so `AgentResult.cost`, the
+`cost_limit` guardrail and the streamed `Usage`) include it. Before, the thinking
+was counted in `tokens_used` but never priced, and `astream` reported fewer
+tokens than `run`.
+
 ## TLS verification (corporate gateways, self-signed certs)
 
 By default `LLMClient` verifies the provider's TLS certificate against the

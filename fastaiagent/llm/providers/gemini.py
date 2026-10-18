@@ -188,6 +188,19 @@ def _convert_tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] |
     return [{"functionDeclarations": declarations}]
 
 
+def _completion_tokens(usage_meta: dict[str, Any]) -> int:
+    """Output tokens as billed: the reply plus the model's thinking (1.90.0, F7).
+
+    A thinking model reports ``thoughtsTokenCount`` beside
+    ``candidatesTokenCount``; Google bills it at the output rate and counts it in
+    ``totalTokenCount``. Mapping completion to the candidates alone left the
+    thinking unpriced, and made ``astream``'s total disagree with ``arun``'s.
+    """
+    return int(usage_meta.get("candidatesTokenCount", 0)) + int(
+        usage_meta.get("thoughtsTokenCount", 0)
+    )
+
+
 def _build_generation_config(client: LLMClient, **kwargs: Any) -> dict[str, Any]:
     cfg: dict[str, Any] = {}
     temperature = kwargs.get("temperature", client.temperature)
@@ -271,7 +284,7 @@ def _parse_response(client: LLMClient, data: dict[str, Any]) -> LLMResponse:
     usage_meta = data.get("usageMetadata") or {}
     usage = {
         "prompt_tokens": int(usage_meta.get("promptTokenCount", 0)),
-        "completion_tokens": int(usage_meta.get("candidatesTokenCount", 0)),
+        "completion_tokens": _completion_tokens(usage_meta),
         "total_tokens": int(usage_meta.get("totalTokenCount", 0)),
     }
     finish_reason_raw = candidate.get("finishReason", "")
@@ -326,6 +339,10 @@ def _build_request(
     converted_tools = _convert_tools(tools)
     if converted_tools:
         body["tools"] = converted_tools
+        tool_choice = client._requested_tool_choice(tools, kwargs)
+        if tool_choice is not None:
+            mode = {"required": "ANY", "none": "NONE"}[tool_choice]
+            body["toolConfig"] = {"functionCallingConfig": {"mode": mode}}
 
     gen_cfg = _build_generation_config(client, **kwargs)
     if gen_cfg:
@@ -438,9 +455,7 @@ async def astream_gemini(
                 usage_meta = chunk.get("usageMetadata") or {}
                 if usage_meta:
                     prompt_tokens = max(prompt_tokens, int(usage_meta.get("promptTokenCount", 0)))
-                    completion_tokens = max(
-                        completion_tokens, int(usage_meta.get("candidatesTokenCount", 0))
-                    )
+                    completion_tokens = max(completion_tokens, _completion_tokens(usage_meta))
 
     if prompt_tokens or completion_tokens:
         yield Usage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens)

@@ -1,6 +1,14 @@
 # Expose an Agent or Chain as an MCP Server
 
-Since 0.6.0, any `Agent` or `Chain` can be exposed as an [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server. Once exposed, any MCP-compatible runtime — Claude Desktop, Cursor, Continue, Zed, or another fastaiagent agent via `MCPTool` — can invoke it as a tool.
+Since 0.6.0, any `Agent` or `Chain` can be exposed as an [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server. Once exposed, any MCP-compatible runtime that launches a server over **stdio** — Claude Desktop, Cursor, Continue, Zed — can invoke it as a tool.
+
+!!! note "Not yet: one fastaiagent agent calling another over MCP"
+    The server speaks stdio only (`transport="sse"` / `"streamable-http"` raise
+    `NotImplementedError`), and [`MCPTool`](mcp-tools.md) is an HTTP client, so
+    `MCPTool` cannot call a served agent today. Until 1.90.0 this page said it
+    could. In the same process, give the calling agent a `FunctionTool` whose
+    function awaits the other agent's `arun`, or put both in a
+    [Supervisor](../agents/teams.md).
 
 The complement to [MCP Tools](mcp-tools.md) (which lets fastaiagent **consume** MCP servers), this page covers the **serve** side.
 
@@ -140,6 +148,17 @@ answering with nothing:
   call has no run to pause (call the agent's primary tool instead); if the plane
   cannot answer, the call is refused. Refusals are MCP errors. An agent with no
   `agent_id`, or a tool no approval policy covers, runs as before.
+- **Inner tools run the agent's own tool path (1.90.0).** Besides governance, a
+  call by name gets what the same call gets inside the agent loop: the agent's
+  `tool_call` and `tool_result` guardrails (a block is an MCP error naming the
+  guardrail, never its message, which can quote the payload; a mask rewrites
+  the arguments or the result), its `wrap_tool` middleware, the `tool.<name>`
+  span, and the tool's `timeout` / `max_retries` / `output_type`.
+
+!!! warning "Changed in 1.90.0"
+    Before 1.90.0 an inner tool called by name ran with none of the agent's
+    guardrails or middleware: a call the agent's `tool_call` guardrail blocks
+    ran, and a result its `tool_result` guardrail masks reached the client.
 
 !!! warning "Changed in 1.78.0"
     Before 1.78.0 a paused run came back as an empty *successful* answer (`""`,

@@ -11,9 +11,10 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from fastaiagent._internal.async_utils import run_sync
+from fastaiagent._internal.errors import StopAgent
 from fastaiagent._internal.pricing import (
     run_cost,
     run_tokens,
@@ -26,7 +27,14 @@ from fastaiagent.agent.context import (
     reset_active_run_context,
     set_active_run_context,
 )
-from fastaiagent.agent.executor import _AgentInterrupted, execute_tool_loop, stream_tool_loop
+from fastaiagent.agent.executor import (
+    _AgentInterrupted,
+    _governed_tool_call,
+    _stopped_response,
+    _StoppedResponse,
+    execute_tool_loop,
+    stream_tool_loop,
+)
 from fastaiagent.agent.memory import MemoryLike
 from fastaiagent.agent.middleware import (
     AgentMiddleware,
@@ -60,14 +68,14 @@ from fastaiagent.guardrail.guardrail import (
     start_firing_collection,
     stop_firing_collection,
 )
-from fastaiagent.llm.client import LLMClient
+from fastaiagent.llm.client import LLMClient, LLMResponse
 from fastaiagent.llm.message import Message, SystemMessage, UserMessage
 from fastaiagent.llm.stream import Paused, StreamDone, StreamEvent, TextDelta, Usage
 from fastaiagent.llm.structured import OutputSpec
 from fastaiagent.multimodal.image import Image as MultimodalImage
 from fastaiagent.multimodal.pdf import PDF as MultimodalPDF  # noqa: N811
 from fastaiagent.multimodal.types import ContentPart, normalize_input
-from fastaiagent.tool.base import Tool, ToolResult
+from fastaiagent.tool.base import Tool
 
 logger = logging.getLogger(__name__)
 
@@ -225,6 +233,12 @@ class AgentConfig(BaseModel):
     """Agent execution configuration."""
 
     max_iterations: int = Field(default=10, ge=1, le=100)
+    # Sent to the model since 1.90.0; before, all three were read by nothing.
+    # ``temperature`` / ``max_tokens`` go on every model call of the run, over
+    # the LLMClient's own values (an explicit ``arun(..., temperature=)`` wins).
+    # ``tool_choice``: "auto" sends nothing (the provider default); "required"
+    # forces the FIRST turn only, so the loop can still answer; "none" applies
+    # to every turn.
     tool_choice: str = "auto"  # "auto", "required", "none"
     temperature: float | None = None
     max_tokens: int | None = None
@@ -249,6 +263,26 @@ class AgentConfig(BaseModel):
     # Use OpenAI/Azure native *strict* Structured Outputs (hard schema guarantee)
     # for ``output_type``. Off by default; ignored by non-OpenAI providers.
     strict_output: bool = False
+
+    @field_validator("tool_choice")
+    @classmethod
+    def _known_tool_choice(cls, value: str) -> str:
+        # Silently ignoring a value was how all three sampling fields went
+        # unnoticed for so long; a value no provider understands is refused.
+        from fastaiagent.llm.client import TOOL_CHOICES
+
+        if value not in TOOL_CHOICES:
+            raise ValueError(f"tool_choice must be one of {TOOL_CHOICES}, got {value!r}")
+        return value
+
+    def _llm_kwargs(self) -> dict[str, Any]:
+        """The per-call LLM options this config sets (only the ones set)."""
+        out: dict[str, Any] = {}
+        if self.temperature is not None:
+            out["temperature"] = self.temperature
+        if self.max_tokens is not None:
+            out["max_tokens"] = self.max_tokens
+        return out
 
 
 class AgentResult(BaseModel):
@@ -298,6 +332,10 @@ class AgentResult(BaseModel):
     status: str = "completed"
     pending_interrupt: dict[str, Any] | None = None
     guardrails: list[GuardrailFiring] = Field(default_factory=list)
+    #: Set when middleware ended the run with ``StopAgent`` (1.90.0): the
+    #: stop's ``reason``, or ``"stopped"`` when it gave none. ``output`` is the
+    #: stop message. ``None`` for a run that was not stopped.
+    stop_reason: str | None = None
     #: How a ``Supervisor(routing="decisions")`` routed this run — a
     #: :class:`~fastaiagent.agent.team.SupervisorRoute` (which worker, the
     #: confidence, whether it fell back, every answer). ``None`` everywhere else.
@@ -522,8 +560,14 @@ class Agent:
         guardrails: list[Guardrail],
         llm_messages: list[Message],
         kwargs: dict[str, Any],
+        *,
+        stopped: bool = False,
     ) -> tuple[str, Any | None, int]:
         """Run the output guardrails, honouring whatever action they carry.
+
+        ``stopped``: middleware ended the run with ``StopAgent``. The rules still
+        judge the stop message, but a ``reask`` cannot re-drive a run its
+        middleware ended, so a failing one blocks at once (1.90.0, F8).
 
         Returns ``(output, parsed, extra_tokens)``. Three of the five actions
         resolve inside :func:`execute_guardrails`; the two that need the agent
@@ -541,7 +585,7 @@ class Agent:
         from fastaiagent.llm.message import AssistantMessage
 
         extra_tokens = 0
-        attempts = max(0, self.config.guardrail_retries)
+        attempts = 0 if stopped else max(0, self.config.guardrail_retries)
 
         for attempt in range(attempts + 1):
             outcome = await execute_guardrails(
@@ -564,13 +608,15 @@ class Agent:
                 # Out of retries. The rule asked us to try again and we did;
                 # the failure stands, so it costs what an unsatisfied guardrail
                 # always costs.
-                outcome.refuse(f"re-asked {attempts} time(s) without satisfying the rule")
+                why = (
+                    "the run was stopped by middleware, so it cannot be re-asked"
+                    if stopped
+                    else f"re-asked {attempts} time(s) without satisfying the rule"
+                )
+                outcome.refuse(why)
                 raise GuardrailBlockedError(
                     guardrail_name="reask",
-                    message=(
-                        f"{outcome.reask.message or 'Guardrail failed'} "
-                        f"(re-asked {attempts} time(s) without satisfying the rule; blocked)"
-                    ),
+                    message=f"{outcome.reask.message or 'Guardrail failed'} ({why}; blocked)",
                     results=outcome.results,
                 )
 
@@ -871,9 +917,21 @@ class Agent:
         messages: list[Message] | None = None,
         _resumed_messages: list[Message] | None = None,
         _start_iteration: int = 0,
+        _stopped: StopAgent | None = None,
+        _seed_firings: list[Any] | None = None,
+        _seed_usage: Any | None = None,
         **kwargs: Any,
     ) -> AgentResult:
-        """Core execution without tracing."""
+        """Core execution without tracing.
+
+        ``_stopped``: middleware raised ``StopAgent`` around the call a resume
+        re-ran, so the run ends here exactly as the loop ends a stopped run —
+        without another model call.
+
+        ``_seed_firings`` / ``_seed_usage``: what that re-run call recorded
+        (guardrail firings, and any model spend — an ``llm_judge`` on it). It ran
+        before this scope opened, and belongs to the same run's result.
+        """
         start = time.monotonic()
         exec_id = execution_id or str(uuid.uuid4())
         # Read BEFORE this run rebinds ``_execution_id`` below.
@@ -914,13 +972,17 @@ class Agent:
         # Collect every guardrail firing for this run, whatever position it ran
         # at — the tool_call/tool_result ones happen inside the tool loop, which
         # is why this is run-scoped rather than a local list here.
-        gf_token = start_firing_collection()
+        gf_token = start_firing_collection(_seed_firings)
         # Accumulate this run's LLM spend. Run-scoped for the same reason the
         # firing collection is: the calls happen inside the tool loop, the
         # structured re-ask and the guardrail re-ask, none of which return a
         # cost up to here. ``LLMClient`` records into it at the one point every
         # completion passes through.
-        rcost_token = start_run_cost()
+        rcost_token = start_run_cost(_seed_usage)
+        # The agent's sampling options go on every model call of this run — the
+        # tool loop and both re-asks all receive ``kwargs`` (1.90.0, F6).
+        for key, value in self.config._llm_kwargs().items():
+            kwargs.setdefault(key, value)
 
         # Run the agent's checkpointer setup once — cheap on subsequent calls.
         if self._checkpointer is not None:
@@ -980,29 +1042,41 @@ class Agent:
             loop_done = False
             run_ended = False
             try:
-                response, tool_calls = await execute_tool_loop(
-                    llm=self.llm,
-                    messages=llm_messages,
-                    tools=self.tools,
-                    max_iterations=self.config.max_iterations,
-                    tool_choice=self.config.tool_choice,
-                    context=context,
-                    guardrails=eff_guardrails or None,
-                    mw_pipeline=self._mw_pipeline if self._mw_pipeline else None,
-                    mw_ctx=mw_ctx,
-                    checkpointer=self._checkpointer,
-                    execution_id=exec_id,
-                    agent_name=self.name,
-                    agent_id=self.agent_id,
-                    start_iteration=_start_iteration,
-                    parallel_tools=self.config.parallel_tools,
-                    max_parallel_tools=self.config.max_parallel_tools,
-                    governance_run_id=pause_run_id,
-                    **kwargs,
-                )
+                response: LLMResponse
+                if _stopped is not None:
+                    response = _stopped_response(_stopped)
+                    tool_calls: list[dict[str, Any]] = []
+                else:
+                    response, tool_calls = await execute_tool_loop(
+                        llm=self.llm,
+                        messages=llm_messages,
+                        tools=self.tools,
+                        max_iterations=self.config.max_iterations,
+                        tool_choice=self.config.tool_choice,
+                        context=context,
+                        guardrails=eff_guardrails or None,
+                        mw_pipeline=self._mw_pipeline if self._mw_pipeline else None,
+                        mw_ctx=mw_ctx,
+                        checkpointer=self._checkpointer,
+                        execution_id=exec_id,
+                        agent_name=self.name,
+                        agent_id=self.agent_id,
+                        start_iteration=_start_iteration,
+                        parallel_tools=self.config.parallel_tools,
+                        max_parallel_tools=self.config.max_parallel_tools,
+                        governance_run_id=pause_run_id,
+                        **kwargs,
+                    )
                 loop_done = True
 
                 output = response.content or ""
+                # Middleware ended the run (1.90.0, F8): keep the reason, and never
+                # re-drive the model. The structured re-ask used to answer a stop
+                # message that failed to parse — calling the model again outside
+                # middleware, and replacing the stop with whatever it said.
+                stop_reason = (
+                    response.stop_reason if isinstance(response, _StoppedResponse) else None
+                )
                 parsed, perr = self._try_parse(output)
                 retry_tokens = 0
                 # Structured-output self-correction: on a parse/validation failure,
@@ -1012,6 +1086,7 @@ class Agent:
                     and perr is not None
                     and self._output_spec is not None
                     and self.config.output_retries > 0
+                    and stop_reason is None
                 ):
                     output, parsed, retry_tokens = await self._reask_structured(
                         llm_messages, output, perr, kwargs
@@ -1022,7 +1097,12 @@ class Agent:
                 # than degraded to a block.
                 if eff_guardrails:
                     output, parsed, guardrail_tokens = await self._guard_output(
-                        output, parsed, eff_guardrails, llm_messages, kwargs
+                        output,
+                        parsed,
+                        eff_guardrails,
+                        llm_messages,
+                        kwargs,
+                        stopped=stop_reason is not None,
                     )
                     retry_tokens += guardrail_tokens
 
@@ -1064,6 +1144,7 @@ class Agent:
                     execution_id=exec_id,
                     status="completed",
                     guardrails=collected_firings(),
+                    stop_reason=stop_reason,
                 )
             except _AgentInterrupted as susp:
                 # Deliberately NO run-end marker: a paused run has not ended, and
@@ -1252,6 +1333,8 @@ class Agent:
         """The streamed run itself. Split out of :meth:`astream` only so the
         root span opened there wraps the whole generator body."""
         exec_id = execution_id
+        for key, value in self.config._llm_kwargs().items():
+            kwargs.setdefault(key, value)
 
         # Expose the RunContext before anything reads memory: a per-user Memory
         # resolves its user from it while the prompt is built below. It is
@@ -1401,6 +1484,8 @@ class Agent:
             if outcome is not None:
                 outcome["tokens_used"] = streamed_tokens
                 outcome["output"] = output
+                if final_reply.get("stop_reason"):
+                    outcome["stop_reason"] = final_reply["stop_reason"]
             # The end-of-stream marker, once, after output guardrails and the
             # memory write — so a consumer that sees it knows the run is done and
             # was not blocked. The tool loop drops the per-turn ``StreamDone``s so
@@ -1691,6 +1776,8 @@ class Agent:
             # Pending row already claimed above; just bind the resume value
             # so the suspended tool's interrupt() returns it on re-entry.
             rv_token = _resume_value.set(resume_value)
+        # Read BEFORE ``_execution_id`` is rebound below (see the method).
+        pause_run_id = self._pause_owner_run_id(execution_id)
 
         # Bind execution-scoped ContextVars exactly like _arun_core would —
         # the suspended tool may itself call interrupt() / @idempotent. Match
@@ -1715,12 +1802,65 @@ class Agent:
             and not resume_value.approved
             and latest.interrupt_reason == governance.APPROVAL_REASON
         )
+        # Which turn's assistant message declared this call, and where in it —
+        # what ``wrap_tool`` middleware sees as ``ctx.tool_call_index``.
+        call_index = 0
+        for m in reversed(messages):
+            calls = getattr(m, "tool_calls", None) or []
+            ids = [tc.id for tc in calls]
+            if tool_call_id in ids:
+                call_index = ids.index(tool_call_id)
+                break
+        mw_ctx: MiddlewareContext | None = None
+        if self._mw_pipeline:
+            mw_ctx = MiddlewareContext(run_context=context, agent_name=self.name)
+            mw_ctx.turn = start_iteration
+        from fastaiagent._internal.pricing import current_run_usage
+        from fastaiagent.llm.message import ToolMessage
+
+        stopped: StopAgent | None = None
+        # Collect what the re-run call records — guardrail firings, judge spend —
+        # so the continued loop's scope can start from it (the result covers it).
+        gf_token = start_firing_collection()
+        rc_token = start_run_cost()
+        resumed_firings: list[Any] = []
+        resumed_usage: Any = None
         try:
             try:
                 if refused:
-                    tool_result = ToolResult(output=governance.denied(tool_name))
+                    tool_content: str | list[Any] = governance.denied(tool_name)
                 else:
-                    tool_result = await tool.aexecute(tool_args, context=context)
+                    # The same governed path the loop uses (1.90.0, F5): guardrails
+                    # on the saved — pre-guardrail — arguments and on the result,
+                    # ``wrap_tool``, the tool span, timeout and retries. A Resume
+                    # value means the pause was the decision, so governance is
+                    # not asked again; crash recovery has none, and the pre-tool
+                    # checkpoint is written before the gate, so it asks.
+                    record: dict[str, Any] = {}
+                    try:
+                        tool_content = (
+                            await _governed_tool_call(
+                                tool,
+                                tool_name,
+                                tool_args,
+                                governance_mode="resolved" if resume_value is not None else "gate",
+                                agent_id=self.agent_id,
+                                run_id=pause_run_id,
+                                context=context,
+                                guardrails=self._effective_guardrails() or None,
+                                mw_pipeline=self._mw_pipeline if self._mw_pipeline else None,
+                                mw_ctx=mw_ctx,
+                                tool_call_index=call_index,
+                                record=record,
+                                agent_name=self.name,
+                            )
+                        ).content
+                    except StopAgent as stop:
+                        # As in the loop: answer the in-flight call with what the
+                        # terminal produced, if anything; siblings are balanced below.
+                        stopped = stop
+                        in_flight = record.get("error") or record.get("output")
+                        tool_content = "" if in_flight is None else str(in_flight)
             except _AgentInterrupted:
                 # interrupt() was called again inside the resumed tool —
                 # _record_agent_interrupt already wrote the new pending
@@ -1759,24 +1899,13 @@ class Agent:
                         "agent_path": susp.agent_path,
                     },
                 )
-            if tool_result.success:
-                from fastaiagent.llm.message import ToolMessage
-
-                if isinstance(tool_result.output, str):
-                    result_text = tool_result.output
-                else:
-                    result_text = json.dumps(tool_result.output, default=str)
-                messages.append(ToolMessage(content=result_text, tool_call_id=tool_call_id))
-            else:
-                from fastaiagent.llm.message import ToolMessage
-
-                messages.append(
-                    ToolMessage(
-                        content=f"Error: {tool_result.error}",
-                        tool_call_id=tool_call_id,
-                    )
-                )
+            if stopped is None or tool_content:
+                messages.append(ToolMessage(content=tool_content, tool_call_id=tool_call_id))
         finally:
+            resumed_firings = collected_firings()
+            resumed_usage = current_run_usage()
+            stop_run_cost(rc_token)
+            stop_firing_collection(gf_token)
             _current_checkpointer.reset(cp_token)
             _agent_path.reset(ap_token)
             _execution_id.reset(exec_token)
@@ -1794,12 +1923,16 @@ class Agent:
         # They are answered, NOT re-dispatched: the resume machinery re-enters a
         # run at a checkpoint, not in the middle of a turn, and firing them here
         # would run side effects the model never saw a first result for.
+        from fastaiagent.agent.executor import STOPPED_NOTE
         from fastaiagent.llm.message import balance_tool_messages
 
-        messages = balance_tool_messages(messages, note=SIBLING_SKIPPED_NOTE)
+        messages = balance_tool_messages(
+            messages, note=STOPPED_NOTE if stopped is not None else SIBLING_SKIPPED_NOTE
+        )
 
         # Continue the loop at the next iteration with the updated
-        # message history.
+        # message history — or, when middleware stopped the run during the
+        # resumed call, finish it the way the loop finishes a stopped run.
         try:
             return await self._arun_core(
                 original_input,
@@ -1807,6 +1940,9 @@ class Agent:
                 execution_id=execution_id,
                 _resumed_messages=messages,
                 _start_iteration=start_iteration + 1,
+                _stopped=stopped,
+                _seed_firings=resumed_firings,
+                _seed_usage=resumed_usage,
                 **kwargs,
             )
         except _AgentInterrupted as susp:
@@ -2072,6 +2208,7 @@ class Agent:
                     trace_id=outcome.get("trace_id"),
                     execution_id=str(outcome.get("execution_id", "") or ""),
                     guardrails=collected_firings(),
+                    stop_reason=outcome.get("stop_reason"),
                 )
             finally:
                 stop_run_cost(rcost_token)

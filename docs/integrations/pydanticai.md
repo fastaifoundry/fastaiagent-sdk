@@ -8,8 +8,26 @@ with a thin parent OTel span tagged `fastaiagent.framework=pydanticai`
 so the UI filter and analytics rollups work alongside everything else.
 
 ```bash
-pip install "fastaiagent[pydanticai]"  # pydantic-ai>=0.1
+pip install "fastaiagent[pydanticai]"  # pydantic-ai>=2.31,<3 + genai-prices>=0.1.13, Python 3.11+
 ```
+
+Verified on 2026-10-18 against the live OpenAI and Anthropic APIs (real token
+counts and cost): Pydantic AI 2.57.0 on its own, and 2.31.1 in the combination
+`fastaiagent[all]` resolves to (with CrewAI 1.15, openai 2.54, anthropic 0.125).
+
+!!! warning "Changed in 1.90.0"
+    The extra moved from Pydantic AI 1.105–1.106 to 2.x. On Python 3.10 it now
+    installs nothing (Pydantic AI 2.x needs 3.11); the integration still works
+    there with `pip install "pydantic-ai>=1.105,<1.107" "genai-prices<0.1"`. Do
+    not mix the lines: with `genai-prices` 0.1+, Pydantic AI 1.x reports zero
+    tokens and cost.
+
+**With `[anthropic]` or `[crewai]` installed**, the resolver stays on Pydantic AI
+2.31: CrewAI caps `openai<3` (Pydantic AI 2.32+ needs openai 3), and the SDK's
+`[anthropic]` extra caps `anthropic<1`. Every anthropic 1.x is built on
+`httpx2`, which Pydantic AI 2.31's Anthropic models cannot use — so if you
+install `anthropic` 1.x yourself next to Pydantic AI 2.31, its Anthropic models
+fail. Pydantic AI 2.57 works with anthropic 1.x.
 
 ## 1. Auto-tracing
 

@@ -34,7 +34,7 @@ from __future__ import annotations
 import logging
 import threading
 from contextvars import ContextVar, Token
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -411,14 +411,23 @@ class _RunUsage:
 _run_cost: ContextVar[_RunUsage | None] = ContextVar("fastaiagent_run_cost", default=None)
 
 
-def start_run_cost() -> Token[_RunUsage | None]:
+def start_run_cost(initial: _RunUsage | None = None) -> Token[_RunUsage | None]:
     """Begin accumulating cost + tokens for the current task. Returns the reset token.
 
     Nested runs (a swarm's child agent inside the swarm's own scope) each open
     their own accumulator, so a child's usage is reported on the child's result
     and re-counted on the parent only if the parent also accumulates.
+
+    ``initial`` seeds it: a resume's re-run tool call (an ``llm_judge``
+    guardrail on it calls a model) happens before the continued loop opens its
+    accumulator, and is part of the same run.
     """
-    return _run_cost.set(_RunUsage())
+    return _run_cost.set(replace(initial) if initial is not None else _RunUsage())
+
+
+def current_run_usage() -> _RunUsage | None:
+    """The accumulator :func:`start_run_cost` opened, or ``None`` outside one."""
+    return _run_cost.get()
 
 
 def record_run_cost(

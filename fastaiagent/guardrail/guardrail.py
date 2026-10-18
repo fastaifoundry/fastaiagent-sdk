@@ -132,9 +132,16 @@ _run_firings: contextvars.ContextVar[list[GuardrailFiring] | None] = contextvars
 )
 
 
-def start_firing_collection() -> contextvars.Token[list[GuardrailFiring] | None]:
-    """Begin collecting guardrail firings for one run. Returns the reset token."""
-    return _run_firings.set([])
+def start_firing_collection(
+    initial: list[GuardrailFiring] | None = None,
+) -> contextvars.Token[list[GuardrailFiring] | None]:
+    """Begin collecting guardrail firings for one run. Returns the reset token.
+
+    ``initial`` seeds the collection — a resume re-runs the paused tool call
+    before the continued loop opens its own scope, and those firings belong to
+    the same run.
+    """
+    return _run_firings.set(list(initial or []))
 
 
 def collected_firings() -> list[GuardrailFiring]:

@@ -104,6 +104,7 @@ The rules:
 - **`interrupt(reason, context)` raises on the first pass.** The executor records the pause and the run returns `status="paused"` with the context on it. The process can exit.
 - **The context is frozen at the pause.** It is serialized into the row and never recomputed, so the approver's decision is about a snapshot, not about whatever the world looks like at resume time.
 - **Resume claims the pending row atomically**, then re-invokes the suspended tool with the `Resume` in scope, so `interrupt()` returns it instead of raising. The loop continues to the answer.
+- **The re-invoked call is governed like any other (1.90.0).** It runs through the loop's own tool path: the agent's `tool_call` guardrails on the saved arguments (the checkpoint holds them as the model sent them, so a mask is applied again), `wrap_tool` middleware, the `tool.<name>` span, the tool's `timeout` / `max_retries`, then the `tool_result` guardrails. Governance is not asked again — the pause was the decision — and a rejected approval still never runs. Before 1.90.0 the resumed call ran bare: its result reached the model unjudged and a masked argument reached the tool unmasked.
 - **A second resume finds no row** and raises `AlreadyResumed`. Under a race, exactly one caller claims the row; the others raise.
 - **The tools must match.** Resume looks the suspended tool up by name on the agent it is called on; a missing tool raises `ChainCheckpointError` naming it.
 
@@ -143,6 +144,7 @@ A crash is a pause nobody asked for. The newest row says which step was in fligh
 The rules:
 
 - **A tool-boundary crash re-invokes the tool** with the saved arguments. The model is not re-called: the assistant's tool calls are already in the saved history.
+- **Crash recovery asks governance again (1.90.0).** The pre-tool checkpoint is written before the governance gate, so the call it recovers may never have been asked about, and the policy may have changed since. Recovery asks: a `deny` refuses the call, a `require_approval` pauses the run. Before 1.90.0 it re-ran the tool without asking.
 - **A turn-boundary crash re-issues the model** at that turn, with the saved history. The tool that ran before it is not run again.
 - **Sibling tool calls are not re-dispatched.** When a model asked for two tools in one turn and the first paused, resume answers the one it suspended on and tells the model the other did not run. Firing it on resume would run a side effect the model never saw a result for.
 - **A re-invoked tool may pause.** If the process died before the tool reached its `interrupt()`, crash recovery re-runs it and it pauses now. The pause is recorded exactly as the loop would record it, and the run resumes from it with a `Resume`.
