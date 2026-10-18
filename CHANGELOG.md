@@ -33,6 +33,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   but now records it: a warning, `ctx.scratch["reflect_skipped"]` and a
   `reflect.skipped` span event.
 - Example `108_middleware_run_hooks.py`.
+- **A middleware brings its own tools, instructions and state** (1B):
+  - `tools` are added to the run's tools. They are not added to `agent.tools`
+    or `to_dict()`, and a name clash raises at `Agent(...)`.
+  - `instructions` is a string or a `callable(ctx)`. All of them form one system
+    message after the system prompt and before memory.
+  - **`ctx.state`** is a JSON-safe dict for each middleware. It is saved in
+    checkpoints as `state_snapshot["middleware_state"]`, only when some
+    middleware keeps state, and restored on resume and fork. State that isn't
+    JSON-safe raises `TypeError` at the checkpoint.
+  - **`ToolBudget` now counts across a resume** (decision B1-5). Before, each
+    resume started a fresh budget.
+- **Tools loaded when needed** (1G): `deferred=True` on `FunctionTool`, `@tool`,
+  `MCPTool` and `RESTTool`.
+  - A deferred tool's definition is not sent. The model gets one built-in
+    `load_tools(names)` tool that lists the deferred tools, and loaded tools
+    stay loaded for the rest of the run, a resume included.
+  - A loaded tool is governed and guarded like any other.
+  - `deferred` is local only: it is not part of `to_dict()`.
+  - Deferral turns off parallel tool calls for that agent.
+  - Live-checked on gpt-5-mini, gemini-3.8-flash and claude-haiku-4-5.
+- Example `109_middleware_bundle_deferred_tools.py`.
 
 ### Fixed — found while mapping Bets 1 and 2, each reproduced before fixing
 

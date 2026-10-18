@@ -43,6 +43,7 @@ from fastaiagent.agent.memory import MemoryLike
 from fastaiagent.agent.middleware import (
     AgentMiddleware,
     MiddlewareContext,
+    _DeferredTools,
     _MiddlewarePipeline,
 )
 from fastaiagent.chain.checkpoint import (
@@ -137,6 +138,20 @@ def _run_tokens_or(response: Any, retry_tokens: int) -> int:
 
 async def _one_event(event: StreamEvent) -> AsyncGenerator[StreamEvent, None]:
     yield event
+
+
+def _end_state(mw_ctx: MiddlewareContext | None, *, strict: bool) -> dict[str, Any] | None:
+    """Middleware state for a run-end marker. ``strict`` on success: state that
+    cannot be saved fails the run, as at any checkpoint. Not on a failure path,
+    where nothing may replace the exception being re-raised."""
+    if mw_ctx is None:
+        return None
+    if strict:
+        return mw_ctx.saved_state()
+    try:
+        return mw_ctx.saved_state()
+    except TypeError:
+        return None
 
 
 def _loop_end_turn(tool_calls: list[dict[str, Any]], start_iteration: int) -> int:
@@ -449,7 +464,8 @@ class Agent:
             OutputSpec(output_type) if output_type is not None else None
         )
         self.middleware: list[AgentMiddleware] = list(middleware) if middleware else []
-        self._mw_pipeline = _MiddlewarePipeline(self.middleware)
+        self._mw_pipeline = self._make_pipeline()
+        self._check_tool_names()
         self._checkpointer: Checkpointer | None = checkpointer
         # Override the segment this Agent contributes to ``_agent_path``.
         # Default ``"agent:<name>"``; ``Supervisor`` uses ``"supervisor:<name>"``,
@@ -463,6 +479,45 @@ class Agent:
             track_agent(self)
         except Exception:
             pass
+
+    def _make_pipeline(self) -> _MiddlewarePipeline:
+        """The middleware pipeline for this agent's ``middleware`` and ``tools``.
+
+        Deferred tools (1.91.0, 1G) are reached through a built-in middleware,
+        innermost so the user's middleware sees every tool. It is only added
+        when a tool is deferred: an empty pipeline keeps parallel tool calls
+        allowed. Anything that copies an agent rebuilds through here.
+        """
+        stack: list[AgentMiddleware] = list(self.middleware)
+        deferred = [t for t in self.tools if getattr(t, "deferred", False)]
+        if deferred:
+            stack.append(_DeferredTools(deferred))
+        return _MiddlewarePipeline(stack)
+
+    def _run_tools(self) -> list[Tool]:
+        """The tools a run offers: the agent's, then each middleware's (1.91.0,
+        1B). ``self.tools`` stays the agent's own list — what ``to_dict`` and
+        the plane see."""
+        return [*self.tools, *self._mw_pipeline.tools]
+
+    def _check_tool_names(self) -> None:
+        """A middleware tool may not share a name with another tool: the model
+        could only ever reach one of them, and which one would be an accident
+        of ordering."""
+        owners: dict[str, str] = {t.name: "the agent" for t in self.tools}
+        for mw in self._mw_pipeline.middleware:
+            label = (
+                "deferred tools (load_tools)"
+                if isinstance(mw, _DeferredTools)
+                else f"middleware {mw.name or type(mw).__name__!r}"
+            )
+            for t in mw.tools or ():
+                if t.name in owners:
+                    raise ValueError(
+                        f"Tool name {t.name!r} is used by {owners[t.name]} and by {label}; "
+                        "tool names must be unique in an agent."
+                    )
+                owners[t.name] = label
 
     def push(self, *, force: bool = True) -> Any:
         """Register this agent's definition with the plane (Gap 2).
@@ -951,9 +1006,13 @@ class Agent:
         _seed_firings: list[Any] | None = None,
         _seed_usage: Any | None = None,
         _mw_ctx: MiddlewareContext | None = None,
+        _mw_state: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> AgentResult:
         """Core execution without tracing.
+
+        ``_mw_state``: middleware state saved in the checkpoint a fork starts
+        from (1.91.0, 1B) — the fork is a new run, from where that one was.
 
         ``_stopped``: middleware raised ``StopAgent`` around the call a resume
         re-ran, so the run ends here exactly as the loop ends a stopped run —
@@ -1030,6 +1089,7 @@ class Agent:
             mw_ctx = MiddlewareContext(
                 run_context=context, agent_name=self.name, execution_id=exec_id
             )
+            mw_ctx.restore_state(_mw_state)
 
         try:
             # ``before_run`` (1.91.0, 1A): once per run, before the input
@@ -1073,7 +1133,9 @@ class Agent:
             llm_messages = (
                 _resumed_messages
                 if _resumed_messages is not None
-                else self._build_messages(guarded_input, context=context, history=messages)
+                else self._build_messages(
+                    guarded_input, context=context, history=messages, mw_ctx=mw_ctx
+                )
             )
 
             # Inject response_format for structured output.
@@ -1099,7 +1161,7 @@ class Agent:
                     response, tool_calls = await execute_tool_loop(
                         llm=self.llm,
                         messages=llm_messages,
-                        tools=self.tools,
+                        tools=self._run_tools(),
                         max_iterations=self.config.max_iterations,
                         tool_choice=self.config.tool_choice,
                         context=context,
@@ -1198,6 +1260,7 @@ class Agent:
                         chain_name=self.name,
                         status="completed",
                         agent_path=new_path,
+                        middleware_state=_end_state(mw_ctx, strict=True),
                     )
                     run_ended = True
                 return result
@@ -1251,6 +1314,9 @@ class Agent:
                                 agent_name=self.name,
                                 iteration=_loop_end_turn(tool_calls, _start_iteration),
                                 messages=llm_messages,
+                                middleware_state=(
+                                    mw_ctx.saved_state() if mw_ctx is not None else None
+                                ),
                             )
                         except Exception:  # pragma: no cover - best effort, like the marker
                             logger.debug("loop-end checkpoint failed", exc_info=True)
@@ -1261,6 +1327,7 @@ class Agent:
                         status="failed",
                         error=exc,
                         agent_path=new_path,
+                        middleware_state=_end_state(mw_ctx, strict=False),
                     )
                 raise
 
@@ -1459,7 +1526,9 @@ class Agent:
                 if in_outcome.modified:
                     guarded_input, input_text = _apply_input_rewrite(input, in_outcome)
 
-            llm_messages = self._build_messages(guarded_input, context=context, history=messages)
+            llm_messages = self._build_messages(
+                guarded_input, context=context, history=messages, mw_ctx=mw_ctx
+            )
 
             # Inject response_format for structured output
             response_format = self._build_response_format()
@@ -1508,7 +1577,7 @@ class Agent:
                     else stream_tool_loop(
                         llm=self.llm,
                         messages=llm_messages,
-                        tools=self.tools,
+                        tools=self._run_tools(),
                         max_iterations=self.config.max_iterations,
                         tool_choice=self.config.tool_choice,
                         context=context,
@@ -1646,6 +1715,7 @@ class Agent:
                     chain_name=self.name,
                     status="completed",
                     agent_path=new_path,
+                    middleware_state=_end_state(mw_ctx, strict=True),
                 )
             settled = True
             yield StreamDone()
@@ -1660,7 +1730,7 @@ class Agent:
                 await self._mw_pipeline.notify_error(mw_ctx, exc)
             if marks_run and not settled:
                 if loop_done:
-                    self._stream_loop_end_checkpoint(exec_id, llm_messages)
+                    self._stream_loop_end_checkpoint(exec_id, llm_messages, mw_ctx)
                 write_run_end(
                     self._checkpointer,
                     execution_id=exec_id,
@@ -1668,6 +1738,7 @@ class Agent:
                     status="failed",
                     error=exc,
                     agent_path=new_path,
+                    middleware_state=_end_state(mw_ctx, strict=False),
                 )
             raise
         finally:
@@ -1676,7 +1747,12 @@ class Agent:
             _execution_id.reset(exec_token)
             reset_active_run_context(rc_token)
 
-    def _stream_loop_end_checkpoint(self, exec_id: str, messages: list[Message]) -> None:
+    def _stream_loop_end_checkpoint(
+        self,
+        exec_id: str,
+        messages: list[Message],
+        mw_ctx: MiddlewareContext | None = None,
+    ) -> None:
         """A turn row past the streamed loop's last turn, when it ended on a tool.
 
         ``arun`` derives that turn from its tool-call records; the stream path
@@ -1700,6 +1776,7 @@ class Agent:
                 agent_name=self.name,
                 iteration=int(last.state_snapshot.get("turn", 0)) + 1,
                 messages=messages,
+                middleware_state=mw_ctx.saved_state() if mw_ctx is not None else None,
             )
         except Exception:  # pragma: no cover - best effort, like the marker
             logger.debug("stream loop-end checkpoint failed", exc_info=True)
@@ -1966,6 +2043,9 @@ class Agent:
                 run_context=context, agent_name=self.name, execution_id=execution_id
             )
             mw_ctx.turn = start_iteration
+            # Middleware state as the run left it (1.91.0, 1B): a budget or a
+            # loaded-tools list keeps counting across the pause or crash.
+            mw_ctx.restore_state(latest.state_snapshot.get("middleware_state"))
 
         async def _resume_failed(exc: BaseException) -> None:
             # The pending row is already claimed, so a failure here must leave a
@@ -1983,6 +2063,7 @@ class Agent:
                     status="failed",
                     error=exc,
                     agent_path=new_path,
+                    middleware_state=_end_state(mw_ctx, strict=False),
                 )
 
         if mw_ctx is not None:
@@ -2015,7 +2096,7 @@ class Agent:
         tool_args = dict(latest.node_input or {})
 
         tool: Tool | None = None
-        for t in self.tools:
+        for t in self._run_tools():
             if t.name == tool_name:
                 tool = t
                 break
@@ -2131,6 +2212,8 @@ class Agent:
                     tool_args=tool_args,
                     messages=messages,
                     sig=sig,
+                    # As of before the re-run call, like the loop's own pauses.
+                    middleware_state=latest.state_snapshot.get("middleware_state"),
                 )
                 return AgentResult(
                     output="",
@@ -2369,6 +2452,9 @@ class Agent:
         messages = balance_tool_messages(messages, note=FORK_SKIPPED_NOTE)
         start_iteration = int(base.state_snapshot.get("turn", 0))
         original_input = _resumed_input_text(messages)
+        # The branch continues from the checkpoint, middleware state included
+        # (a budget spent before the fork point stays spent).
+        mw_state = base.state_snapshot.get("middleware_state")
         if not trace:
             return await self._arun_core(
                 original_input,
@@ -2376,6 +2462,7 @@ class Agent:
                 execution_id=fork_id,
                 _resumed_messages=messages,
                 _start_iteration=start_iteration,
+                _mw_state=mw_state,
                 **kwargs,
             )
         with self._open_run_span(original_input, context, execution_id=fork_id, extra=link) as span:
@@ -2385,6 +2472,7 @@ class Agent:
                 execution_id=fork_id,
                 _resumed_messages=messages,
                 _start_iteration=start_iteration,
+                _mw_state=mw_state,
                 **kwargs,
             )
             self._close_run_span(span, result)
@@ -2483,8 +2571,13 @@ class Agent:
         input: AgentInput,
         context: RunContext[Any] | None = None,
         history: list[Message] | None = None,
+        mw_ctx: MiddlewareContext | None = None,
     ) -> list[Message]:
         """Build the message array for the LLM.
+
+        Middleware ``instructions`` (1.91.0, 1B) become one system message right
+        after the system prompt and before memory — a leading system message, so
+        ``TrimLongMessages`` keeps it.
 
         Accepts string, ``Image``, ``PDF``, or a list of those parts. When
         the input is multimodal, the trailing user message carries a
@@ -2501,6 +2594,10 @@ class Agent:
         system_text = self._resolve_system_prompt(context)
         if system_text:
             messages.append(SystemMessage(system_text))
+        if mw_ctx is not None:
+            instructions = self._mw_pipeline.instructions_text(mw_ctx)
+            if instructions:
+                messages.append(SystemMessage(instructions))
 
         if isinstance(input, str):
             user_content: str | list[ContentPart] = input

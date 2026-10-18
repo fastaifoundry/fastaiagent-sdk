@@ -135,6 +135,7 @@ Each run creates one `MiddlewareContext` that every hook sees:
 | `llm` | The client **this** model call uses. Set it in `before_model` or `wrap_model` to send one call to another model *(since 1.91.0)* |
 | `tools` | The tools **this** model call offers. Filter or extend the list; a tool added here can be called on this turn *(since 1.91.0)* |
 | `usage` | Read-only `RunUsage(tokens, cost, cost_known, calls)`: the run's spend so far — the same running total `AgentResult.cost` and `cost_limit` read *(since 1.91.0)* |
+| `state` | **This** middleware's own JSON-safe dict, saved in checkpoints and restored on resume and fork — see [A middleware as a bundle](#a-middleware-as-a-bundle) *(since 1.91.0)* |
 
 Scratch is **per-run**; a fresh dict on every `agent.arun()`. A **resume** keeps
 one context from start to finish — the tool call it re-runs and the loop it
@@ -287,6 +288,56 @@ class HideUsage(AgentMiddleware):
 All of these together, on a support agent, run live or `--offline`:
 [`examples/108_middleware_run_hooks.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/108_middleware_run_hooks.py).
 
+## A middleware as a bundle
+
+A policy is usually three things: the tools that act, the text that tells the
+model when to use them, and a rule that holds across the run. A middleware can
+carry all three (since 1.91.0):
+
+```python
+from fastaiagent import AgentMiddleware, FunctionTool, StopAgent
+
+
+def issue_refund(order_id: str) -> str:
+    """Issue a refund for an order."""
+    ...
+
+
+class Refunds(AgentMiddleware):
+    name = "refunds"
+    tools = [FunctionTool(name="issue_refund", fn=issue_refund)]
+    instructions = "Refunds: orders under 30 days old only. Use issue_refund."
+
+    def __init__(self, max_refunds: int = 2):
+        self.max_refunds = max_refunds
+
+    async def wrap_tool(self, ctx, tool, args, call_next):
+        if tool.name == "issue_refund":
+            done = ctx.state.get("refunds", 0)
+            if done >= self.max_refunds:
+                raise StopAgent("Refund limit reached for this conversation.", reason="refund_limit")
+            ctx.state["refunds"] = done + 1
+        return await call_next(tool, args)
+```
+
+- **`tools`** are added to the run's tools — offered to the model, dispatched,
+  governed and guarded like the agent's own. They are not added to `agent.tools`
+  (so not to `Agent.to_dict()`). A name that clashes with the agent's tools or
+  another middleware's raises `ValueError` when the `Agent` is built.
+- **`instructions`** is a string or a `callable(ctx) -> str` (a method works).
+  All middleware's instructions form **one** system message right after the
+  system prompt and before memory, in declaration order — a leading system
+  message, so `TrimLongMessages` keeps it.
+- **`ctx.state`** is this middleware's own dict — each middleware sees its own.
+  It is **saved in checkpoints** under `state_snapshot["middleware_state"]` and
+  restored when the run is resumed or forked, so a limit or a counter survives a
+  pause. It must be JSON-safe: anything else raises `TypeError` at the next
+  checkpoint, naming the middleware, rather than being lost on resume. Keep
+  objects that should not be saved in `ctx.scratch`. State is keyed by the
+  middleware's `name` (class name if unset; `#2`, `#3` for repeats), so resume
+  with the same middleware list. A checkpoint carries `middleware_state` only
+  when some middleware keeps state.
+
 ## Cooperative Stop
 
 To end a run from inside middleware, raise `StopAgent`:
@@ -389,19 +440,14 @@ agent = Agent(
 The budget is checked *before* `call_next`, so the call that trips it never runs
 — see [What the history looks like after a stop](#what-the-history-looks-like-after-a-stop).
 
-**With `output_type`.** The stop message becomes the run's output, and it will
-not parse as your schema, so the agent spends its `output_retries` re-asking the
-model with the same history. That is worth knowing for two reasons: the re-ask
-costs turns the budget was meant to save, and it is the request that re-sends the
-stopped turn's history. Before 1.67.0 that second request is what returned
+**It counts across a resume.** The count is kept in `ctx.state`, which is saved
+in every checkpoint, so a run that pauses for approval (or crashes) and is resumed
+keeps counting from where it was. Before 1.91.0 it lived in `ctx.scratch` and
+every resume started a fresh budget.
 
-```
-400 An assistant message with 'tool_calls' must be followed by tool messages
-    responding to each 'tool_call_id'
-```
-
-Set `AgentConfig(output_retries=0)` if you would rather a budgeted run simply
-return the stop message unparsed.
+**With `output_type`.** The stop message becomes the run's output and the run's
+`stop_reason` is `"tool_budget"`. It is not re-asked to fit your schema — since
+1.90.0 a stopped run is never re-driven — so `parsed` is `None`.
 
 ### `RedactPII(patterns=..., placeholder="[REDACTED]", entities=...)`
 

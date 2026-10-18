@@ -449,6 +449,7 @@ class FunctionTool(Tool):
         retry_delay: float = 0.5,
         output_type: Any | None = None,
         register: bool = True,
+        deferred: bool = False,
     ):
         self.fn = fn
         self._context_param_name: str | None = None
@@ -479,6 +480,7 @@ class FunctionTool(Tool):
             max_retries=max_retries,
             retry_delay=retry_delay,
             output_type=output_type,
+            deferred=deferred,
         )
 
         # Auto-register callable-backed tools so ``Agent.from_dict`` can rebind
@@ -614,8 +616,12 @@ def tool(
     retry_delay: float = 0.5,
     output_type: Any | None = None,
     register: bool = True,
+    deferred: bool = False,
 ) -> Callable[..., Any]:
     """Decorator to create a FunctionTool from a function.
+
+    ``deferred=True`` (1.91.0) keeps the tool's definition out of the model
+    request until the model loads it with the built-in ``load_tools``.
 
     ``replay_class`` marks the tool's replay-safety class
     (``read_only`` / ``idempotent`` / ``side_effecting``); unset resolves to the
@@ -650,6 +656,7 @@ def tool(
             retry_delay=retry_delay,
             output_type=output_type,
             register=register,
+            deferred=deferred,
         )
 
     return decorator

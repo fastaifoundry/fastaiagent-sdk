@@ -37,6 +37,7 @@ class MCPTool(Tool):
         max_retries: int = 0,
         retry_delay: float = 0.5,
         output_type: Any | None = None,
+        deferred: bool = False,
     ):
         self.server_url = server_url
         self.tool_name = tool_name or name
@@ -50,6 +51,7 @@ class MCPTool(Tool):
             max_retries=max_retries,
             retry_delay=retry_delay,
             output_type=output_type,
+            deferred=deferred,
         )
 
     async def _send_jsonrpc(

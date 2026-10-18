@@ -380,7 +380,13 @@ def apply_candidate(
     new.tools = list(base.tools)
     new.guardrails = list(base.guardrails)
     new.middleware = list(base.middleware)
-    new._mw_pipeline = _MiddlewarePipeline(new.middleware)
+    # Through the agent's own builder, so built-in middleware (the deferred-tool
+    # loader, 1.91.0) comes along; a bare pipeline of ``middleware`` lost it.
+    new._mw_pipeline = (
+        new._make_pipeline()
+        if hasattr(new, "_make_pipeline")
+        else _MiddlewarePipeline(new.middleware)
+    )
     try:
         from fastaiagent._platform.push import track_agent
 

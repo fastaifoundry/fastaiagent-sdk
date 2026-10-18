@@ -55,8 +55,13 @@ def write_run_end(
     error: BaseException | None = None,
     state_snapshot: dict[str, Any] | None = None,
     agent_path: str | None = None,
+    middleware_state: dict[str, Any] | None = None,
 ) -> None:
     """Write the terminal checkpoint for a run. Best-effort, never raises.
+
+    ``middleware_state`` (1.91.0): the agent's middleware state at the end of
+    the run, replacing whatever the last step's row carried — this row is what
+    the plane shows as the run's latest state.
 
     ``status`` is ``completed`` or ``failed``. This is the row that lets anyone
     downstream tell a finished run from one that died the instant after its last
@@ -105,6 +110,8 @@ def write_run_end(
     # ``aresume``. Callers that own a path pass it; a plain Chain has none.
 
     snapshot: dict[str, Any] = dict(state_snapshot)
+    if middleware_state:
+        snapshot["middleware_state"] = middleware_state
     snapshot["run_status"] = status
     if error is not None:
         snapshot["run_error"] = f"{type(error).__name__}: {error}"

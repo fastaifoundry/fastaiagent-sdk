@@ -45,7 +45,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -102,6 +102,9 @@ class MiddlewareContext:
             ``before_model`` / ``wrap_model``; a tool added here can be called
             on this turn. Reset to the agent's tools before every turn. A
             structured-output or guardrail re-ask offers no tools.
+        state: (property) The CURRENT middleware's own JSON-safe dict — each
+            middleware sees its own. Unlike ``scratch`` it is saved in
+            checkpoints and restored when the run is resumed or forked.
     """
 
     run_context: RunContext[Any] | None = None
@@ -112,12 +115,49 @@ class MiddlewareContext:
     execution_id: str = ""
     llm: Any = None
     tools: list[Tool] = field(default_factory=list)
+    # Per-middleware state, keyed by the pipeline's key for each middleware;
+    # ``_state_key`` names the one whose hook is running.
+    _states: dict[str, dict[str, Any]] = field(default_factory=dict, repr=False)
+    _state_key: str = field(default="", repr=False)
 
     @property
     def usage(self) -> RunUsage:
         """The run's tokens and cost so far (read-only, from the run's running
         total — the number ``AgentResult.cost`` and ``cost_limit`` read)."""
         return current_run_usage_view()
+
+    @property
+    def state(self) -> dict[str, Any]:
+        """This middleware's saved state (1.91.0, 1B). A JSON-safe dict: it goes
+        into every checkpoint under ``state_snapshot["middleware_state"]``, so a
+        budget or a counter kept here survives a resume. Use ``scratch`` for
+        anything that should not be saved."""
+        return self._states.setdefault(self._state_key, {})
+
+    def saved_state(self) -> dict[str, Any] | None:
+        """Every middleware's state as checkpoints store it — ``None`` when no
+        middleware has any, so a checkpoint keeps its shape. Raises
+        ``TypeError`` (naming the middleware) for state that is not JSON:
+        silently dropping it would reset a budget on the next resume."""
+        kept = {key: value for key, value in self._states.items() if value}
+        if not kept:
+            return None
+        for key, value in kept.items():
+            try:
+                json.dumps(value)
+            except (TypeError, ValueError) as exc:
+                raise TypeError(
+                    f"middleware {key!r} keeps state that cannot be checkpointed "
+                    f"({exc}). ctx.state must be JSON-safe; keep other objects in "
+                    "ctx.scratch, which is not saved."
+                ) from None
+        copied: dict[str, Any] = json.loads(json.dumps(kept))
+        return copied
+
+    def restore_state(self, saved: dict[str, Any] | None) -> None:
+        """Load state saved by :meth:`saved_state` (a resume or a fork)."""
+        if saved:
+            self._states = json.loads(json.dumps(saved))
 
 
 ToolCallNext = Callable[[Tool, dict[str, Any]], Awaitable[ToolResult]]
@@ -147,6 +187,14 @@ class AgentMiddleware:
     """
 
     name: str = ""
+    #: Tools this middleware brings (1.91.0, 1B) — merged into the run's tools.
+    #: A name that clashes with the agent's tools or another middleware's is an
+    #: error when the ``Agent`` is built.
+    tools: Sequence[Tool] = ()
+    #: Text for the model (1.91.0, 1B): a string, or ``callable(ctx) -> str``
+    #: (a method works). All middleware's instructions form ONE system message
+    #: right after the system prompt, before memory, in declaration order.
+    instructions: str | Callable[[MiddlewareContext], str] | None = None
 
     async def before_run(self, ctx: MiddlewareContext, input: Any) -> Any:
         """Once per run, before the input guardrails — so they judge what this
@@ -246,10 +294,40 @@ class _MiddlewarePipeline:
 
     def __init__(self, middleware: list[AgentMiddleware]):
         self._middleware = list(middleware)
+        # The key each middleware's ``ctx.state`` is saved under: its ``name``
+        # (or class name), with ``#2``, ``#3``… for repeats. Stable across a
+        # resume as long as the middleware list is the same.
+        self._keys: list[str] = []
+        seen: dict[str, int] = {}
+        for mw in self._middleware:
+            base = mw.name or type(mw).__name__
+            seen[base] = seen.get(base, 0) + 1
+            self._keys.append(base if seen[base] == 1 else f"{base}#{seen[base]}")
 
     @property
     def middleware(self) -> list[AgentMiddleware]:
         return list(self._middleware)
+
+    def _each(self, *, reverse: bool = False) -> list[tuple[str, AgentMiddleware]]:
+        pairs = list(zip(self._keys, self._middleware, strict=True))
+        return list(reversed(pairs)) if reverse else pairs
+
+    @property
+    def tools(self) -> list[Tool]:
+        """Every tool the middleware brings, in declaration order."""
+        return [t for mw in self._middleware for t in (mw.tools or ())]
+
+    def instructions_text(self, ctx: MiddlewareContext) -> str:
+        """All middleware instructions, joined in declaration order ('' if none)."""
+        parts: list[str] = []
+        for key, mw in self._each():
+            text = mw.instructions
+            if callable(text):
+                ctx._state_key = key
+                text = text(ctx)
+            if text and str(text).strip():
+                parts.append(str(text).strip())
+        return "\n\n".join(parts)
 
     def __len__(self) -> int:
         return len(self._middleware)
@@ -265,19 +343,22 @@ class _MiddlewarePipeline:
         return any(getattr(type(mw), hook, base) is not base for mw in self._middleware)
 
     async def apply_before_run(self, ctx: MiddlewareContext, input: Any) -> Any:
-        for mw in self._middleware:
+        for key, mw in self._each():
+            ctx._state_key = key
             input = await mw.before_run(ctx, input)
         return input
 
     async def apply_after_run(self, ctx: MiddlewareContext, result: AgentResult) -> AgentResult:
-        for mw in reversed(self._middleware):
+        for key, mw in self._each(reverse=True):
+            ctx._state_key = key
             result = await mw.after_run(ctx, result)
         return result
 
     async def notify_error(self, ctx: MiddlewareContext, error: BaseException) -> None:
         """Tell every middleware the run failed. Never raises: the caller is
         about to re-raise ``error``, and a hook's own bug must not replace it."""
-        for mw in reversed(self._middleware):
+        for key, mw in self._each(reverse=True):
+            ctx._state_key = key
             try:
                 await mw.on_error(ctx, error)
             except Exception as hook_error:  # noqa: BLE001 - see docstring
@@ -291,7 +372,8 @@ class _MiddlewarePipeline:
     async def apply_stream_event(
         self, ctx: MiddlewareContext, event: StreamEvent
     ) -> StreamEvent | None:
-        for mw in reversed(self._middleware):
+        for key, mw in self._each(reverse=True):
+            ctx._state_key = key
             rewritten = await mw.on_stream_event(ctx, event)
             if rewritten is None:
                 if isinstance(event, (StreamDone, Paused)):
@@ -309,15 +391,23 @@ class _MiddlewarePipeline:
         """Run one model call through the ``wrap_model`` onion; ``terminal`` is
         the real call. The first middleware is outermost."""
         chain: ModelCallNext = terminal
-        for mw in reversed(self._middleware):
+        for key, mw in self._each(reverse=True):
             prev = chain
 
             async def _wrapper(
                 m: list[Message],
+                _key: str = key,
                 _mw: AgentMiddleware = mw,
                 _prev: ModelCallNext = prev,
             ) -> LLMResponse:
-                return await _mw.wrap_model(ctx, m, _prev)
+                async def _next(m2: list[Message]) -> LLMResponse:
+                    try:
+                        return await _prev(m2)
+                    finally:
+                        ctx._state_key = _key  # back to this middleware's state
+
+                ctx._state_key = _key
+                return await _mw.wrap_model(ctx, m, _next)
 
             chain = _wrapper
         return await chain(messages)
@@ -325,12 +415,14 @@ class _MiddlewarePipeline:
     async def apply_before_model(
         self, ctx: MiddlewareContext, messages: list[Message]
     ) -> list[Message]:
-        for mw in self._middleware:
+        for key, mw in self._each():
+            ctx._state_key = key
             messages = await mw.before_model(ctx, messages)
         return messages
 
     async def apply_after_model(self, ctx: MiddlewareContext, response: LLMResponse) -> LLMResponse:
-        for mw in reversed(self._middleware):
+        for key, mw in self._each(reverse=True):
+            ctx._state_key = key
             response = await mw.after_model(ctx, response)
         return response
 
@@ -350,16 +442,24 @@ class _MiddlewarePipeline:
             return await terminal(tool, args)
 
         chain: ToolCallNext = terminal
-        for mw in reversed(self._middleware):
+        for key, mw in self._each(reverse=True):
             prev = chain
 
             async def _wrapper(
                 t: Tool,
                 a: dict[str, Any],
+                _key: str = key,
                 _mw: AgentMiddleware = mw,
                 _prev: ToolCallNext = prev,
             ) -> ToolResult:
-                return await _mw.wrap_tool(ctx, t, a, _prev)
+                async def _next(t2: Tool, a2: dict[str, Any]) -> ToolResult:
+                    try:
+                        return await _prev(t2, a2)
+                    finally:
+                        ctx._state_key = _key  # back to this middleware's state
+
+                ctx._state_key = _key
+                return await _mw.wrap_tool(ctx, t, a, _next)
 
             chain = _wrapper
         return await chain(tool, args)
@@ -424,6 +524,10 @@ class ToolBudget(AgentMiddleware):
 
     When the budget is exhausted, raises ``StopAgent`` which ends the run
     cooperatively with a final message.
+
+    The count lives in ``ctx.state``, so it is checkpointed: a run that pauses
+    and is resumed keeps counting from where it was (1.91.0, decision B1-5).
+    Before, it lived in ``ctx.scratch`` and every resume started a fresh budget.
     """
 
     name = "tool_budget"
@@ -441,11 +545,117 @@ class ToolBudget(AgentMiddleware):
         args: dict[str, Any],
         call_next: ToolCallNext,
     ) -> ToolResult:
-        key = f"_tool_budget_used_{id(self)}"
-        used = ctx.scratch.get(key, 0)
+        used = int(ctx.state.get("used", 0))
         if used >= self.max_calls:
             raise StopAgent(self.message, reason="tool_budget")
-        ctx.scratch[key] = used + 1
+        ctx.state["used"] = used + 1
+        return await call_next(tool, args)
+
+
+#: The built-in tool a deferred toolset is reached through (1.91.0, 1G).
+LOAD_TOOLS = "load_tools"
+
+
+class _LoadToolsTool(Tool):
+    """``load_tools(names)`` — answered by :class:`_DeferredTools` in
+    ``wrap_tool``, never executed itself."""
+
+    origin = "builtin"
+
+    def __init__(self, deferred: list[Tool]) -> None:
+        listing = "\n".join(
+            f"- {t.name}: {((t.description or '').strip().splitlines() or [''])[0]}"
+            for t in deferred
+        )
+        super().__init__(
+            name=LOAD_TOOLS,
+            description=(
+                "Load tools before you call them. These tools are available but not "
+                f"loaded yet:\n{listing}\nCall load_tools with the names you need; "
+                "they can be called from your next step on."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "names": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Names of the tools to load.",
+                    }
+                },
+                "required": ["names"],
+            },
+        )
+
+    async def aexecute(self, arguments: dict[str, Any], context: Any | None = None) -> ToolResult:
+        return ToolResult(error="load_tools runs inside the agent loop only")
+
+
+class _DeferredTools(AgentMiddleware):
+    """Keeps ``Tool(deferred=True)`` tools out of the request until the model
+    loads them (1.91.0, 1G). Added by ``Agent`` itself — innermost, so user
+    middleware sees every tool — only when some tool is deferred.
+
+    The loaded names are this middleware's ``ctx.state``, so they are
+    checkpointed and a resumed run keeps them.
+    """
+
+    name = "deferred_tools"
+
+    def __init__(self, deferred: list[Tool]) -> None:
+        self._deferred = {t.name: t for t in deferred}
+        self.tools = [_LoadToolsTool(deferred)]
+
+    def _loaded(self, ctx: MiddlewareContext) -> list[str]:
+        return list(ctx.state.get("loaded", []))
+
+    async def before_model(self, ctx: MiddlewareContext, messages: list[Message]) -> list[Message]:
+        loaded = set(self._loaded(ctx))
+        pending = [n for n in self._deferred if n not in loaded]
+        ctx.tools = [
+            t
+            for t in ctx.tools
+            if (t.name not in self._deferred or t.name in loaded)
+            and (t.name != LOAD_TOOLS or pending)
+        ]
+        return messages
+
+    async def wrap_tool(
+        self,
+        ctx: MiddlewareContext,
+        tool: Tool,
+        args: dict[str, Any],
+        call_next: ToolCallNext,
+    ) -> ToolResult:
+        loaded = self._loaded(ctx)
+        if tool.name == LOAD_TOOLS:
+            names = args.get("names") or []
+            if isinstance(names, str):
+                names = [names]
+            known = [n for n in names if n in self._deferred]
+            unknown = [n for n in names if n not in self._deferred]
+            for n in known:
+                if n not in loaded:
+                    loaded.append(n)
+            ctx.state["loaded"] = loaded
+            parts = []
+            if known:
+                parts.append(f"Loaded: {', '.join(known)}. You can call them now.")
+            if unknown:
+                parts.append(
+                    f"Not available: {', '.join(unknown)}. Tools you can load: "
+                    f"{', '.join(self._deferred)}."
+                )
+            return ToolResult(output=" ".join(parts) or "No tools named.")
+        if tool.name in self._deferred and tool.name not in loaded and ctx.llm is not None:
+            # A MODEL called it without loading: refuse rather than run a tool
+            # whose definition it never saw. ``ctx.llm`` is set by every turn of
+            # the agent loop; a direct call (MCP ``expose_tools``) has no model
+            # to hide definitions from and runs as any exposed tool does.
+            return ToolResult(
+                output=f"{tool.name} is not loaded. Call load_tools with "
+                f'["{tool.name}"] first, then call it.'
+            )
         return await call_next(tool, args)
 
 

@@ -111,6 +111,7 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 - [`20_output_type.py`](20_output_type.py) — Pydantic structured output
 - [`21_retry_backoff.py`](21_retry_backoff.py) — retry / backoff config
 - [`22_llm_parameters.py`](22_llm_parameters.py) — provider-specific LLM params
+- [`109_middleware_bundle_deferred_tools.py`](109_middleware_bundle_deferred_tools.py) — a refunds policy as ONE middleware (its own tool, instructions, and a limit in checkpointed `ctx.state`) plus billing tools marked `deferred=True` that the model loads with `load_tools` only when it needs them (1.91.0); `--offline` needs no keys
 - [`108_middleware_run_hooks.py`](108_middleware_run_hooks.py) — middleware around the whole run and every model call (1.91.0): `before_run`, `wrap_model` (timing + one retry), `ctx.llm` sending the final answer to a cheaper model, `on_error`, `on_stream_event`; `--offline` needs no keys
 
 ### Providers & model clients

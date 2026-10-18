@@ -31,7 +31,7 @@ captures the state of a run *at one boundary*:
 | `node_index` | Position in topological/turn order |
 | `step_type` | What kind of boundary this is: `llm_call`, `tool_call`, `hitl_pause`, `node`, `handoff`, `fork_origin`, or `run_end` |
 | `status` | `"completed"`, `"interrupted"`, or `"failed"` — **this drives resume** |
-| `state_snapshot` | The full run state at this point, JSON-frozen (chain state, or serialized messages + turn for an agent) |
+| `state_snapshot` | The full run state at this point, JSON-frozen (chain state, or serialized messages + turn for an agent — plus `middleware_state`, each middleware's `ctx.state`, when any middleware keeps some, since 1.91.0; restored on resume and fork) |
 | `node_input` / `node_output` | The step's inputs (e.g. saved tool args) and result |
 | `iteration_counters` | Cycle counts, so a resumed chain loop picks up mid-cycle |
 | `interrupt_reason` / `interrupt_context` | For a paused run — the frozen snapshot the human approves |

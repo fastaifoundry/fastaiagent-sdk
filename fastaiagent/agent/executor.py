@@ -154,8 +154,13 @@ def _record_agent_interrupt(
     tool_args: dict[str, Any],
     messages: list[Message],
     sig: InterruptSignal,
+    middleware_state: dict[str, Any] | None = None,
 ) -> _AgentInterrupted:
     """Persist the interrupted-agent checkpoint + pending row in one txn.
+
+    ``middleware_state`` is the state as of the paused call's pre-tool
+    checkpoint, not as of now: the resume re-runs that call through
+    ``wrap_tool``, so a counter it already bumped would be counted twice.
 
     Returns the sentinel exception the caller should raise so
     :class:`Agent` can convert it into a paused :class:`AgentResult`.
@@ -172,12 +177,15 @@ def _record_agent_interrupt(
         node_index=iteration,
         step_type="hitl_pause",
         status="interrupted",
-        state_snapshot={
-            "messages": _serialize_messages(messages),
-            "turn": iteration,
-            "tool_name": tool_name,
-            "tool_call_id": tool_call_id,
-        },
+        state_snapshot=_with_middleware_state(
+            {
+                "messages": _serialize_messages(messages),
+                "turn": iteration,
+                "tool_name": tool_name,
+                "tool_call_id": tool_call_id,
+            },
+            middleware_state,
+        ),
         node_input=dict(tool_args),
         interrupt_reason=sig.reason,
         interrupt_context=sig.context,
@@ -215,6 +223,21 @@ def _record_agent_interrupt(
     )
 
 
+def _with_middleware_state(
+    snapshot: dict[str, Any], middleware_state: dict[str, Any] | None
+) -> dict[str, Any]:
+    """Add ``middleware_state`` (1.91.0, 1B) only when there is some, so a
+    checkpoint from an agent whose middleware keeps none — and checkpoints
+    replicate to the plane — has exactly the shape it had before."""
+    if middleware_state:
+        snapshot["middleware_state"] = middleware_state
+    return snapshot
+
+
+def _mw_state(mw_ctx: MiddlewareContext | None) -> dict[str, Any] | None:
+    return mw_ctx.saved_state() if mw_ctx is not None else None
+
+
 def _put_turn_checkpoint(
     *,
     checkpointer: Checkpointer,
@@ -222,6 +245,7 @@ def _put_turn_checkpoint(
     agent_name: str,
     iteration: int,
     messages: list[Message],
+    middleware_state: dict[str, Any] | None = None,
 ) -> None:
     """Pre-LLM turn-boundary checkpoint — the resume point for crash recovery."""
     base_path = _agent_path.get() or f"agent:{agent_name}"
@@ -234,10 +258,13 @@ def _put_turn_checkpoint(
             node_index=iteration,
             step_type="llm_call",
             status="completed",
-            state_snapshot={
-                "messages": _serialize_messages(messages),
-                "turn": iteration,
-            },
+            state_snapshot=_with_middleware_state(
+                {
+                    "messages": _serialize_messages(messages),
+                    "turn": iteration,
+                },
+                middleware_state,
+            ),
             agent_path=base_path,
         )
     )
@@ -249,6 +276,7 @@ def _checkpoint_exhausted_loop(
     agent_name: str,
     max_iterations: int,
     messages: list[Message],
+    middleware_state: dict[str, Any] | None = None,
 ) -> None:
     """A turn row past the last turn, written as the loop runs out of iterations.
 
@@ -266,6 +294,7 @@ def _checkpoint_exhausted_loop(
         agent_name=agent_name,
         iteration=max_iterations,
         messages=messages,
+        middleware_state=middleware_state,
     )
 
 
@@ -279,6 +308,7 @@ def _put_tool_checkpoint(
     tool_call_id: str,
     tool_args: dict[str, Any],
     messages: list[Message],
+    middleware_state: dict[str, Any] | None = None,
 ) -> None:
     """Pre-tool checkpoint — captures tool args at the moment of dispatch."""
     base_path = _agent_path.get() or f"agent:{agent_name}"
@@ -291,12 +321,15 @@ def _put_tool_checkpoint(
             node_index=iteration,
             step_type="tool_call",
             status="completed",
-            state_snapshot={
-                "messages": _serialize_messages(messages),
-                "turn": iteration,
-                "tool_name": tool_name,
-                "tool_call_id": tool_call_id,
-            },
+            state_snapshot=_with_middleware_state(
+                {
+                    "messages": _serialize_messages(messages),
+                    "turn": iteration,
+                    "tool_name": tool_name,
+                    "tool_call_id": tool_call_id,
+                },
+                middleware_state,
+            ),
             node_input=dict(tool_args),
             agent_path=f"{base_path}/tool:{tool_name}",
         )
@@ -956,6 +989,7 @@ async def execute_tool_loop(
                 agent_name=agent_name,
                 iteration=iteration,
                 messages=messages,
+                middleware_state=_mw_state(mw_ctx),
             )
         _begin_turn(llm, tools, mw_ctx)
         # Middleware: before_model (may raise StopAgent)
@@ -1047,7 +1081,9 @@ async def execute_tool_loop(
 
             # Pre-tool checkpoint — captures tool args at the moment of
             # dispatch. Resume re-enters the tool with these same args.
+            pre_tool_state: dict[str, Any] | None = None
             if checkpointer is not None and execution_id is not None:
+                pre_tool_state = _mw_state(mw_ctx)
                 _put_tool_checkpoint(
                     checkpointer=checkpointer,
                     execution_id=execution_id,
@@ -1057,6 +1093,7 @@ async def execute_tool_loop(
                     tool_call_id=tc.id,
                     tool_args=dict(tc.arguments),
                     messages=messages,
+                    middleware_state=pre_tool_state,
                 )
 
             try:
@@ -1124,6 +1161,7 @@ async def execute_tool_loop(
                         tool_args=dict(tc.arguments),
                         messages=messages,
                         sig=sig,
+                        middleware_state=pre_tool_state,
                     ) from None
                 # No checkpointer wired — let the InterruptSignal propagate
                 # to whatever owns suspension (typically a parent Chain).
@@ -1132,7 +1170,14 @@ async def execute_tool_loop(
             messages.append(ToolMessage(content=tool_message_content, tool_call_id=tc.id))
             all_tool_calls.append(tool_call_record)
 
-    _checkpoint_exhausted_loop(checkpointer, execution_id, agent_name, max_iterations, messages)
+    _checkpoint_exhausted_loop(
+        checkpointer,
+        execution_id,
+        agent_name,
+        max_iterations,
+        messages,
+        middleware_state=_mw_state(mw_ctx) if checkpointer is not None else None,
+    )
     raise MaxIterationsError(
         f"Agent exceeded maximum iterations ({max_iterations}). "
         f"The LLM continued requesting tool calls beyond the limit.\n"
@@ -1215,6 +1260,7 @@ async def stream_tool_loop(
                 agent_name=agent_name,
                 iteration=iteration,
                 messages=messages,
+                middleware_state=_mw_state(mw_ctx),
             )
         _begin_turn(llm, tools, mw_ctx)
 
@@ -1356,7 +1402,9 @@ async def stream_tool_loop(
 
             # Pre-tool checkpoint — captures tool args at the moment of
             # dispatch. Resume re-enters the tool with these same args.
+            pre_tool_state: dict[str, Any] | None = None
             if checkpointer is not None and execution_id is not None:
+                pre_tool_state = _mw_state(mw_ctx)
                 _put_tool_checkpoint(
                     checkpointer=checkpointer,
                     execution_id=execution_id,
@@ -1366,6 +1414,7 @@ async def stream_tool_loop(
                     tool_call_id=tc.id,
                     tool_args=dict(tc.arguments),
                     messages=messages,
+                    middleware_state=pre_tool_state,
                 )
 
             try:
@@ -1409,12 +1458,20 @@ async def stream_tool_loop(
                         tool_args=dict(tc.arguments),
                         messages=messages,
                         sig=sig,
+                        middleware_state=pre_tool_state,
                     ) from None
                 raise
 
             messages.append(ToolMessage(content=tool_message_content, tool_call_id=tc.id))
 
-    _checkpoint_exhausted_loop(checkpointer, execution_id, agent_name, max_iterations, messages)
+    _checkpoint_exhausted_loop(
+        checkpointer,
+        execution_id,
+        agent_name,
+        max_iterations,
+        messages,
+        middleware_state=_mw_state(mw_ctx) if checkpointer is not None else None,
+    )
     raise MaxIterationsError(
         f"Agent exceeded maximum iterations ({max_iterations}). "
         f"The LLM continued requesting tool calls beyond the limit.\n"

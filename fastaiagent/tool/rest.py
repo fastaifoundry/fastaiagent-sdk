@@ -59,6 +59,7 @@ class RESTTool(Tool):
         max_retries: int = 0,
         retry_delay: float = 0.5,
         output_type: Any | None = None,
+        deferred: bool = False,
     ):
         self.url = url
         self.method = method.upper()
@@ -75,6 +76,7 @@ class RESTTool(Tool):
             max_retries=max_retries,
             retry_delay=retry_delay,
             output_type=output_type,
+            deferred=deferred,
         )
 
     async def aexecute(self, arguments: dict[str, Any], context: Any | None = None) -> ToolResult:

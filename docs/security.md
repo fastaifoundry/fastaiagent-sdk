@@ -196,6 +196,12 @@ this applies to **both** the SQLite and external-Postgres checkpointers.
 `=false`, `=no`, `=off`)
 suppresses that replication. It is independent of `export_traces`.
 
+Since 1.91.0 `state_snapshot` can also carry **`middleware_state`** — whatever
+your middleware keeps in `ctx.state` (a budget count, a list of loaded tools, or
+anything a custom middleware stores). It replicates with the rest of the
+snapshot, under this same switch, so keep customer data out of `ctx.state` or
+turn replication off.
+
 This gates **replication only**. Your local durability (SQLite/Postgres) is
 untouched, so **same-machine crash/interrupt resume still works** with it off.
 What the plane replica additionally provides — and what you lose by disabling
