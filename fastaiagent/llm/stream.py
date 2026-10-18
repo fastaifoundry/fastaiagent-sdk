@@ -32,6 +32,9 @@ class ToolCallEnd:
     call_id: str
     tool_name: str
     arguments: dict[str, Any] = field(default_factory=dict)
+    #: The provider's opaque token for this call (Gemini ``thoughtSignature``),
+    #: carried onto :attr:`ToolCall.signature`. See there.
+    signature: str | None = None
 
 
 @dataclass

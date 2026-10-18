@@ -25,8 +25,9 @@ table — see :func:`set_rate_overrides` and the ``pricing`` block in
 by *every* caller of :func:`compute_cost_usd` (traces, analytics, evals, trace
 export, framework integrations), not just the Playground.
 
-Prices are USD per 1M tokens, current as of 2026-08. Unknown models return
-``None`` and the UI falls back to a dash.
+Prices are USD per 1M tokens, current as of 2026-08 (Gemini 3.x / 4: 2026-10,
+with the increases Google has announced dated in ``_SCHEDULED``). Unknown models
+return ``None`` and the UI falls back to a dash.
 """
 
 from __future__ import annotations
@@ -35,6 +36,7 @@ import logging
 import threading
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, replace
+from datetime import date, datetime, timezone
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -94,6 +96,17 @@ _PRICING: dict[str, _Rate] = {
     "gemini-2.0-flash": _Rate(0.10, 0.40),
     "gemini-2.5-flash": _Rate(0.30, 2.50),
     "gemini-2.5-pro": _Rate(1.25, 10.00),
+    # Gemini 3.x / 4 — ai.google.dev/gemini-api/docs/pricing, read 2026-10-18.
+    # Announced increases are in ``_SCHEDULED``. 3.1-pro-preview is the
+    # <=200k-token prompt tier. gemini-3.5-flash and 3.7-flash are served but not
+    # on the pricing page, so they stay unpriced rather than guessed.
+    "gemini-4-argon": _Rate(2.00, 10.00),
+    "gemini-3.8-flash": _Rate(0.75, 3.75),
+    "gemini-3.6-flash": _Rate(0.75, 3.75),
+    "gemini-3.5-flash-lite": _Rate(0.30, 2.50),
+    "gemini-3.1-pro-preview": _Rate(2.00, 12.00),
+    "gemini-3.1-flash-lite": _Rate(0.25, 1.50),
+    "gemini-3-flash-preview": _Rate(0.50, 3.00),
     # Local / Mistral / Groq
     "mixtral-8x7b": _Rate(0.24, 0.24),
     "llama-3.1-70b": _Rate(0.59, 0.79),
@@ -135,6 +148,23 @@ _PRICING: dict[str, _Rate] = {
     "anthropic/claude-3-5-sonnet": _Rate(3.00, 15.00),
     "anthropic/claude-3-5-haiku": _Rate(0.80, 4.00),
 }
+
+#: Price changes a provider has already announced: prefix -> ``(effective_from,
+#: rate)`` pairs, oldest first, each replacing the ``_PRICING`` rate from that
+#: date (UTC) on. A cost is priced at the rate in force on the day it is
+#: computed, so a published increase applies without an SDK release.
+_SCHEDULED: dict[str, tuple[tuple[date, _Rate], ...]] = {
+    "gemini-4-argon": ((date(2026, 12, 1), _Rate(4.00, 20.00)),),
+    "gemini-3.8-flash": ((date(2027, 1, 1), _Rate(1.50, 7.50)),),
+    "gemini-3.6-flash": ((date(2027, 1, 1), _Rate(1.50, 7.50)),),
+}
+
+
+def _in_force(prefix: str, rate: _Rate, on: date) -> _Rate:
+    for effective, scheduled in _SCHEDULED.get(prefix, ()):
+        if on >= effective:
+            rate = scheduled
+    return rate
 
 
 # ---------------------------------------------------------------------------
@@ -218,6 +248,8 @@ def compute_cost_usd(
     model: str | None,
     input_tokens: int | float | None,
     output_tokens: int | float | None,
+    *,
+    on: date | None = None,
 ) -> float | None:
     """Return an estimated USD cost from model + token counts, or ``None``.
 
@@ -225,12 +257,16 @@ def compute_cost_usd(
     built-in list-price table. Longest matching prefix wins, so
     ``gpt-4o-mini-2024-07-18`` still resolves to the ``gpt-4o-mini`` rate.
 
+    ``on`` is the day whose built-in rate applies (default: today, UTC) — it only
+    matters for a model with an announced price change (``_SCHEDULED``). Org
+    overrides are not dated: an override is the rate.
+
     This is an estimate — see the module docstring for what it can't account
     for (negotiated discounts, partner pricing, batch, prompt caching).
     """
     if not model:
         return None
-    rate = _match(model)
+    rate = _match(model, on=on)
     if rate is None:
         return None
     inp = float(input_tokens or 0)
@@ -240,8 +276,9 @@ def compute_cost_usd(
     return (inp * rate.input_per_m + out * rate.output_per_m) / 1_000_000.0
 
 
-def _match(model: str) -> _Rate | None:
+def _match(model: str, *, on: date | None = None) -> _Rate | None:
     normalised = model.lower()
+    day = on or datetime.now(timezone.utc).date()
     best: tuple[int, _Rate] | None = None
     # Overrides are checked with ">=" so an org rate beats a built-in of the
     # same prefix length; built-ins are checked first with ">".
@@ -249,7 +286,7 @@ def _match(model: str) -> _Rate | None:
         if normalised.startswith(prefix):
             length = len(prefix)
             if best is None or length > best[0]:
-                best = (length, rate)
+                best = (length, _in_force(prefix, rate, day))
     for prefix, rate in _active_overrides().items():
         if normalised.startswith(prefix):
             length = len(prefix)
@@ -423,6 +460,15 @@ def start_run_cost(initial: _RunUsage | None = None) -> Token[_RunUsage | None]:
     accumulator, and is part of the same run.
     """
     return _run_cost.set(replace(initial) if initial is not None else _RunUsage())
+
+
+def bind_run_cost(bucket: _RunUsage) -> Token[_RunUsage | None]:
+    """Make ``bucket`` the active accumulator — the same object, not a copy.
+
+    For a run that is not one coroutine: ``Agent.astream`` is a generator, so it
+    binds its bucket around each step instead of holding one across yields.
+    """
+    return _run_cost.set(bucket)
 
 
 def current_run_usage() -> _RunUsage | None:

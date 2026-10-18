@@ -96,9 +96,16 @@ def _serialize_messages(messages: list[Message]) -> list[dict[str, Any]]:
                 p.to_dict() if _is_multimodal_part(p) else p for p in m.content
             ]
             m_copy = m.model_copy(update={"content": normalized_parts})
-            out.append(m_copy.model_dump(mode="json"))
+            dumped = m_copy.model_dump(mode="json")
         else:
-            out.append(m.model_dump(mode="json"))
+            dumped = m.model_dump(mode="json")
+        # A call's provider signature is saved only when there is one, so a
+        # checkpoint from every provider that issues none — and checkpoints
+        # replicate to the plane — keeps the exact shape it had before 1.91.0.
+        for tc in dumped.get("tool_calls") or []:
+            if tc.get("signature") is None:
+                tc.pop("signature", None)
+        out.append(dumped)
     return out
 
 
@@ -232,6 +239,32 @@ def _put_turn_checkpoint(
             },
             agent_path=base_path,
         )
+    )
+
+
+def _checkpoint_exhausted_loop(
+    checkpointer: Checkpointer | None,
+    execution_id: str | None,
+    agent_name: str,
+    max_iterations: int,
+    messages: list[Message],
+) -> None:
+    """A turn row past the last turn, written as the loop runs out of iterations.
+
+    The last turn's tools have run and their results are in ``messages``, but the
+    newest row is still that turn's pre-tool checkpoint — so crash recovery
+    re-invoked a tool that had already finished: one charge became two (1.91.0,
+    X12, both loops). A turn row here makes recovery re-ask the model instead;
+    resumed with the same ``max_iterations`` it stops again at once.
+    """
+    if checkpointer is None or execution_id is None:
+        return
+    _put_turn_checkpoint(
+        checkpointer=checkpointer,
+        execution_id=execution_id,
+        agent_name=agent_name,
+        iteration=max_iterations,
+        messages=messages,
     )
 
 
@@ -937,6 +970,7 @@ async def execute_tool_loop(
             messages.append(ToolMessage(content=tool_message_content, tool_call_id=tc.id))
             all_tool_calls.append(tool_call_record)
 
+    _checkpoint_exhausted_loop(checkpointer, execution_id, agent_name, max_iterations, messages)
     raise MaxIterationsError(
         f"Agent exceeded maximum iterations ({max_iterations}). "
         f"The LLM continued requesting tool calls beyond the limit.\n"
@@ -1053,7 +1087,12 @@ async def stream_tool_loop(
                 yield event
             elif isinstance(event, ToolCallEnd):
                 pending_tool_calls.append(
-                    ToolCall(id=event.call_id, name=event.tool_name, arguments=event.arguments)
+                    ToolCall(
+                        id=event.call_id,
+                        name=event.tool_name,
+                        arguments=event.arguments,
+                        signature=event.signature,
+                    )
                 )
                 yield event
             elif isinstance(event, Usage):
@@ -1070,9 +1109,12 @@ async def stream_tool_loop(
             response = LLMResponse(
                 content=accumulated_text or None,
                 tool_calls=list(pending_tool_calls),
+                # ``total_tokens`` as a non-streamed response carries it — a
+                # token-budget middleware reads it (1.91.0, X8).
                 usage={
                     "prompt_tokens": total_usage.prompt_tokens,
                     "completion_tokens": total_usage.completion_tokens,
+                    "total_tokens": total_usage.prompt_tokens + total_usage.completion_tokens,
                 },
                 finish_reason="tool_calls" if pending_tool_calls else "stop",
             )
@@ -1187,6 +1229,7 @@ async def stream_tool_loop(
 
             messages.append(ToolMessage(content=tool_message_content, tool_call_id=tc.id))
 
+    _checkpoint_exhausted_loop(checkpointer, execution_id, agent_name, max_iterations, messages)
     raise MaxIterationsError(
         f"Agent exceeded maximum iterations ({max_iterations}). "
         f"The LLM continued requesting tool calls beyond the limit.\n"

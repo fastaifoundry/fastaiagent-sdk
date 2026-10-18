@@ -5,6 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — 1.91.0
+
+### Fixed — found while mapping Bets 1 and 2, each reproduced before fixing
+
+- **Gemini 3.5 and later: tool-using agents failed on their second turn** (X11).
+  Every Gemini model after 2.5 — `gemini-3.5-flash-lite`, `3.6/3.7/3.8-flash`,
+  `gemini-4-argon` and the `gemini-flash-latest` / `gemini-pro-latest` aliases —
+  signs the first function call of a turn and rejects the next request with HTTP
+  400 unless the `thoughtSignature` comes back. The provider dropped it, so `run`
+  and `astream` both failed. It is now kept on the new `ToolCall.signature` (and
+  `ToolCallEnd.signature`), sent back on every later request, and saved in
+  checkpoints so a resume sends it too; it never goes on a span. A tool turn the
+  model did not sign (another provider's history, `messages=`, a pre-1.91.0
+  checkpoint) carries Google's validator-skip value. Verified live on 3.8-flash,
+  4-argon, 3.5-flash-lite and `gemini-flash-latest`.
+- **Gemini tool results are named after their call** (X4) — every
+  `functionResponse` was named `"tool"`.
+- **Gemini 3.x / 4 are priced** at Google's published list prices, and a rate can
+  now carry the date it takes effect: `gemini-4-argon` doubles on 2026-12-01,
+  `gemini-3.6-flash` / `gemini-3.8-flash` on 2027-01-01. Unpublished models
+  (`gemini-3.5-flash`, `gemini-3.7-flash`, the `-latest` aliases) stay unpriced.
+  `compute_cost_usd` gains an optional `on=` date.
+- **A finished `astream` run re-ran on resume** (X1). `Agent.astream` wrote no
+  run-end marker, so `aresume` on a completed streamed run called the model and
+  fired every tool again. It now writes `completed` / `failed` like `arun`, and
+  nothing when the stream ends at `Paused`.
+- **A resume whose re-invoked call fails is marked `failed`** (X2) instead of
+  looking paused forever with its pending row already claimed.
+- **Running out of `max_iterations` right after a tool turn re-ran that tool on
+  resume** (X12, `run` and `astream`). The loop now leaves a re-entry row past the
+  last turn.
+- **`cost_limit` blocked every `astream` run** (X3): a streamed run had no running
+  total, so its spend read as unknown.
+- **A streamed `after_model` response has `total_tokens`** (X8), so token-budget
+  middleware counts streamed turns.
+- **A Bedrock client's `region` survives `to_dict()`** (X9), so replay and plane
+  dispatch call the same region. It is the only constructor extra serialized.
+- **`PlatformKB.as_tool()` is marked `origin="kb"`** (X10), like `LocalKB`.
+
+### Changed
+
+- **`LLMClient(provider=...)` without `model=` uses the preset's default model**;
+  before, every provider got `gpt-4o-mini`, which no preset provider serves. The
+  Gemini default is now **`gemini-3.8-flash`** (was `gemini-2.5-flash`), and docs,
+  examples and the UI model list lead with Gemini 3.5+.
+
 ## [1.90.0] - 2026-10-18 — every tool call governed, every setting honoured
 
 The 17 defects a verification of 1.89.0 found (F1–F17), five of them security,

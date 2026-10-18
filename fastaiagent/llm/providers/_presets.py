@@ -25,10 +25,10 @@ def _register_builtins() -> None:
             key="gemini",
             base_url="https://generativelanguage.googleapis.com/v1beta",
             env_var="GEMINI_API_KEY",
-            # 2.5-flash is the current default for new keys (Google deprecated
-            # 2.0-flash for new users in 2026). The legacy 2.0-flash names
-            # still work for older keys; pass model= explicitly to override.
-            default_model="gemini-2.5-flash",
+            # The latest Flash (1.91.0; was gemini-2.5-flash). Every Gemini after
+            # 2.5 needs its thought signatures sent back across a tool loop,
+            # which the provider does since 1.91.0. Pass model= to override.
+            default_model="gemini-3.8-flash",
             wire="native_gemini",
             capabilities={
                 "tools": True,

@@ -110,19 +110,33 @@ numbers are used now; the roll-up only when no span carries any.
 
 ## Updating prices
 
-The pricing table in `fastaiagent/ui/pricing.py` is a flat dict keyed by
-model-name prefix. Longest prefix wins, so adding a new variant is
-additive:
+The built-in table is public list price, keyed by model-id prefix (longest
+prefix wins), in `fastaiagent/_internal/pricing.py`. Price changes a provider has
+already announced are dated there too, and a call is priced at the rate in force
+on the day it is made — `gemini-4-argon` doubles on 2026-12-01 and
+`gemini-3.6-flash` / `gemini-3.8-flash` on 2027-01-01 without an SDK release.
 
-```python
-PRICING = {
-    "gpt-4.1-nano": _Rate(0.10, 0.40),
+**Your own rates** — negotiated prices, or a model the table does not list (for
+example `gemini-3.5-flash`, which Google serves but does not price on its page) —
+go in the `pricing` block of `models.json` in the Local UI's data directory:
+
+```json
+{
+  "pricing": {
+    "gemini-3.5-flash": {"input_per_1m": 0.30, "output_per_1m": 2.50}
+  }
 }
 ```
 
-Bump the rates here whenever a provider changes their per-million
-pricing — the dashboards re-aggregate from raw token counts on every
-read, so updates apply retroactively.
+or in code with `fastaiagent.ui.pricing.set_rate_overrides({"gemini-3.5-flash":
+(0.30, 2.50)})`. An override wins over a built-in rate of the same prefix and is
+not dated: it is the rate. Every caller uses it — `AgentResult.cost`, the
+`cost_limit` guardrail, the trace export and these dashboards.
+
+A run's cost is written onto its `llm.*` spans when it runs (step 1 above), so a
+new rate prices calls made **after** the change; older spans keep the cost they
+were recorded with. Only a span with no recorded cost is re-estimated from its
+tokens on read.
 
 ## Try it from the examples
 

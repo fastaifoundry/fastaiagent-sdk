@@ -220,8 +220,11 @@ async def test_checkpoint_writes_during_streaming():
     # - Turn checkpoint for iteration 0
     # - Tool checkpoint for tool call in iteration 0
     # - Turn checkpoint for iteration 1
+    # - The run-end marker (1.91.0, X1 — before it a finished stream had none)
     put_calls = mock_checkpointer.put.call_args_list
-    assert len(put_calls) == 3
+    assert len(put_calls) == 4
+    assert put_calls[3][0][0].node_id == "run_end"
+    assert put_calls[3][0][0].status == "completed"
 
     # First checkpoint: turn:0
     ckpt0 = put_calls[0][0][0]

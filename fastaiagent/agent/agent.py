@@ -16,6 +16,9 @@ from pydantic import BaseModel, Field, field_validator
 from fastaiagent._internal.async_utils import run_sync
 from fastaiagent._internal.errors import StopAgent
 from fastaiagent._internal.pricing import (
+    _RunUsage,
+    bind_run_cost,
+    current_run_usage,
     run_cost,
     run_tokens,
     start_run_cost,
@@ -1301,18 +1304,25 @@ class Agent:
                 outcome=outcome,
                 **kwargs,
             )
+            # This run's spend, which ``cost_limit`` reads (1.91.0, X3): before,
+            # a streamed run had no scope, its spend read as unknown and the
+            # fail-closed rule blocked every one. ``stream()`` opens a scope to
+            # build its result, so share it when there is one.
+            run_usage = current_run_usage() or _RunUsage()
             try:
                 while True:
-                    # Bind this run's prompt provenance (see _arun_core) around
-                    # each step, never across a yield: a generator runs in its
-                    # consumer's context, so a value held between yields would
-                    # stamp another stream advanced in the same task.
+                    # Bind this run's prompt provenance (see _arun_core) and spend
+                    # scope around each step, never across a yield: a generator
+                    # runs in its consumer's context, so a value held between
+                    # yields would stamp another stream advanced in the same task.
                     pv_token = set_prompt_provenance(self._prompt_provenance)
+                    usage_token = bind_run_cost(run_usage)
                     try:
                         event = await inner.__anext__()
                     except StopAsyncIteration:
                         break
                     finally:
+                        stop_run_cost(usage_token)
                         reset_prompt_provenance(pv_token)
                     yield event
             finally:
@@ -1378,6 +1388,16 @@ class Agent:
         )
         ap_token = _agent_path.set(new_path)
         cp_token = _current_checkpointer.set(self._checkpointer)
+        # The run-end marker, as ``arun`` writes it (1.91.0, X1): without it a
+        # finished stream left a ``completed`` step as its newest row, looked
+        # crashed, and ``aresume`` re-ran it — model and tools again. Only the
+        # run's owner marks it; a worker streamed inside a Swarm / Supervisor
+        # does not. ``settled`` is set once nothing more may be written: the run
+        # ended, or it paused (a marker after the ``interrupted`` row would hide
+        # the pause from ``aresume``).
+        marks_run = self._checkpointer is not None and parent_path is None
+        settled = False
+        loop_done = False
 
         try:
             if self._checkpointer is not None:
@@ -1427,6 +1447,9 @@ class Agent:
                 if outcome is not None:
                     outcome["tokens_used"] = streamed_tokens
                     outcome["output"] = ""
+                # Before the yield: a consumer that stops reading at ``Paused``
+                # closes the generator right here.
+                settled = True
                 yield Paused(
                     reason=susp.reason,
                     context=susp.context,
@@ -1435,6 +1458,7 @@ class Agent:
                     agent_path=susp.agent_path,
                 )
                 return
+            loop_done = True
 
             # The answer is the last turn's reply after middleware — what ``run``
             # returns and stores — not every delta streamed: those include text
@@ -1492,12 +1516,70 @@ class Agent:
             # a multi-turn run reads as one stream; until 1.88.0 nothing emitted
             # the final one, and a consumer waiting for it waited forever. A
             # paused run ends with ``Paused`` instead (returned above).
+            # The run is done before the caller hears so: mark it first, so a
+            # consumer that stops reading at ``StreamDone`` leaves a finished run.
+            if marks_run:
+                write_run_end(
+                    self._checkpointer,
+                    execution_id=exec_id,
+                    chain_name=self.name,
+                    status="completed",
+                    agent_path=new_path,
+                )
+            settled = True
             yield StreamDone()
+        except BaseException as exc:
+            # The run died — including a consumer that stopped reading mid-run
+            # (``GeneratorExit``): it did not finish, and crash recovery is how
+            # it can. Same rules as ``_arun_core``: re-raise untouched, the marker
+            # is best-effort, and a failure AFTER the loop first gets a re-entry
+            # row past the loop's last turn, so recovery re-asks the model rather
+            # than re-running a tool that already ran.
+            if marks_run and not settled:
+                if loop_done:
+                    self._stream_loop_end_checkpoint(exec_id, llm_messages)
+                write_run_end(
+                    self._checkpointer,
+                    execution_id=exec_id,
+                    chain_name=self.name,
+                    status="failed",
+                    error=exc,
+                    agent_path=new_path,
+                )
+            raise
         finally:
             _current_checkpointer.reset(cp_token)
             _agent_path.reset(ap_token)
             _execution_id.reset(exec_token)
             reset_active_run_context(rc_token)
+
+    def _stream_loop_end_checkpoint(self, exec_id: str, messages: list[Message]) -> None:
+        """A turn row past the streamed loop's last turn, when it ended on a tool.
+
+        ``arun`` derives that turn from its tool-call records; the stream path
+        has none, so it reads the run's newest row instead. A pre-tool row
+        (``turn:N/tool:X``) is what crash recovery would re-invoke — one charge
+        becoming two — so it gets a ``turn:N+1`` row holding the full history. A
+        turn row is already a safe re-entry point and is left alone.
+        """
+        store = self._checkpointer
+        if store is None:
+            return
+        try:
+            from fastaiagent.agent.executor import _put_turn_checkpoint
+
+            last = store.get_last(exec_id)
+            if last is None or "/tool:" not in last.node_id:
+                return
+            _put_turn_checkpoint(
+                checkpointer=store,
+                execution_id=exec_id,
+                agent_name=self.name,
+                iteration=int(last.state_snapshot.get("turn", 0)) + 1,
+                messages=messages,
+            )
+        except Exception:  # pragma: no cover - best effort, like the marker
+            logger.debug("stream loop-end checkpoint failed", exc_info=True)
 
     def resume(
         self,
@@ -1899,6 +1981,23 @@ class Agent:
                         "agent_path": susp.agent_path,
                     },
                 )
+            except BaseException as exc:
+                # The re-invoked call failed — a ``tool_call`` guardrail blocked
+                # it, say. The pending row is already claimed, so before 1.91.0
+                # the run kept ``interrupted`` as its newest row: it looked paused
+                # and could never be resumed, and nothing said it had failed (X2).
+                # Mark it on the store that held the pause; the continued loop's
+                # own failures are marked by ``_arun_core``.
+                if parent_path is None:
+                    write_run_end(
+                        store,
+                        execution_id=execution_id,
+                        chain_name=self.name,
+                        status="failed",
+                        error=exc,
+                        agent_path=new_path,
+                    )
+                raise
             if stopped is None or tool_content:
                 messages.append(ToolMessage(content=tool_content, tool_call_id=tool_call_id))
         finally:

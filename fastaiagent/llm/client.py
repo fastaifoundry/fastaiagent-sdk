@@ -381,7 +381,7 @@ class LLMClient:
     def __init__(
         self,
         provider: str = "openai",
-        model: str = "gpt-4o-mini",
+        model: str | None = None,
         api_key: str | None = None,
         base_url: str | None = None,
         temperature: float | None = None,
@@ -407,7 +407,12 @@ class LLMClient:
         preset = None if provider in _BUILTIN_PROVIDERS else get_preset(provider)
 
         self.provider = provider
-        self.model = model
+        # An omitted model is the preset's default (1.91.0). Before, every
+        # provider got ``gpt-4o-mini`` — a client for Gemini or Groq that sent an
+        # OpenAI model id and could never succeed. Built-ins keep that default.
+        if model is None:
+            model = preset.default_model if preset is not None else "gpt-4o-mini"
+        self.model: str = model
         self.api_key = api_key
         self.base_url = base_url or self._default_base_url(provider)
         # Fill api_key from the preset's env var if neither was passed
@@ -2456,6 +2461,12 @@ class LLMClient:
             data["max_pdf_pages"] = self.max_pdf_pages
         if self.max_image_size_mb != _cfg.max_image_size_mb:
             data["max_image_size_mb"] = self.max_image_size_mb
+        # Constructor extras are an ALLOWLIST: only ``region`` (Bedrock), which
+        # decides where the call goes and is no secret. Before 1.91.0 it was
+        # dropped, so a replayed or plane-dispatched Bedrock agent ran in
+        # us-east-1 (X9). Anything else in ``**kwargs`` may be a credential.
+        if self._extra.get("region"):
+            data["region"] = str(self._extra["region"])
         return data
 
     @classmethod
@@ -2513,7 +2524,7 @@ class LLMClient:
             # absent (an older payload) still falls through to the globals.
             **{
                 key: data[key]
-                for key in ("pdf_mode", "max_pdf_pages", "max_image_size_mb")
+                for key in ("pdf_mode", "max_pdf_pages", "max_image_size_mb", "region")
                 if key in data
             },
         )

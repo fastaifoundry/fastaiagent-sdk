@@ -51,10 +51,15 @@ Each preset resolves the right `base_url` and reads the API key from the
 canonical environment variable, so this is the entire configuration:
 
 ```python
-LLMClient(provider="groq",   model="llama-3.1-70b-versatile")  # GROQ_API_KEY
-LLMClient(provider="gemini", model="gemini-2.0-flash")          # GEMINI_API_KEY
+LLMClient(provider="gemini", model="gemini-3.8-flash")          # GEMINI_API_KEY
+LLMClient(provider="groq",   model="openai/gpt-oss-120b")       # GROQ_API_KEY
 LLMClient(provider="openrouter", model="openai/gpt-4o-mini")    # OPENROUTER_API_KEY
 ```
+
+**Gemini 3.5 and later** — `gemini-3.8-flash` (the default), `gemini-4-argon`,
+`gemini-3.5-flash-lite`, `gemini-flash-latest` — run the full agent loop, tools
+and streaming included, with their thought signatures carried for you and
+Google's published prices applied.
 
 Custom internal LLM gateways register in five lines via
 `fastaiagent.llm.providers.register_provider`.

@@ -98,11 +98,15 @@ class PlatformKB:
                 parts.append(f"[Score: {r.score:.3f}] {r.chunk.content[:200]}")
             return "\n\n".join(parts)
 
-        return FunctionTool(
+        tool = FunctionTool(
             name=f"search_{self.name}",
             fn=kb_search,
             description=f"Search the '{self.name}' platform knowledge base",
         )
+        # As ``LocalKB.as_tool`` does, so the Local UI lists it under knowledge
+        # bases rather than tools (1.91.0, X10).
+        tool.origin = "kb"
+        return tool
 
     @staticmethod
     def _parse_results(items: list[dict[str, Any]]) -> list[SearchResult]:

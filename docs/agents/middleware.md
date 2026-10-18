@@ -283,6 +283,10 @@ result = await agent.arun("hello")
 # Access via a second middleware, or log from after_model.
 ```
 
+`response.usage` carries `prompt_tokens`, `completion_tokens` and `total_tokens`
+on `arun` and `astream` alike. Before 1.91.0 a streamed turn's response had no
+`total_tokens`, so this counter read `0` on every `astream` turn.
+
 A `PromptCache` that returns a cached response when the message list has been seen before:
 
 ```python

@@ -81,6 +81,12 @@ class ToolCall(BaseModel):
     id: str
     name: str
     arguments: dict[str, Any] = Field(default_factory=dict)
+    #: An opaque token the provider issued with this call and requires back,
+    #: verbatim, when the history is re-sent — Gemini's ``thoughtSignature``
+    #: (1.91.0). Gemini 3+ rejects the next request without it. Never shown to
+    #: the model, never put on a span; checkpoints keep it so a resume can send
+    #: it. ``None`` for providers that issue none.
+    signature: str | None = None
 
     def to_openai_format(self) -> dict[str, Any]:
         """Convert to OpenAI function-calling format."""

@@ -237,7 +237,7 @@ def cost_limit(
     (a local ollama model, a private fine-tune, a bedrock/azure deployment id)
     the run cannot be priced, and certifying it as under budget would restore
     the same defect in a quieter form. The raise goes through ``on_error``, so
-    the operator chooses: fail closed (the default) or ``on_error="pass"`` to
+    the operator chooses: fail closed (the default) or ``on_error="allow"`` to
     accept unpriced runs. Give the model a rate with
     :func:`fastaiagent.ui.pricing.set_rate_overrides` or the ``pricing`` block
     of ``models.json`` to gate on it properly.

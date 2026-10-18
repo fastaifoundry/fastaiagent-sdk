@@ -44,6 +44,11 @@ if TYPE_CHECKING:
 
 _DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
+#: What Gemini accepts in place of a thought signature on a function call the
+#: model did not sign. Measured 2026-10-18: accepted by 2.5-flash, 3.8-flash and
+#: 4-argon; a missing signature is a 400 on every model after 2.5.
+_SKIP_SIGNATURE = "skip_thought_signature_validator"
+
 
 def _coerce_text(content: Any) -> str:
     if content is None:
@@ -107,6 +112,9 @@ def _convert_messages(messages: list[Message]) -> tuple[str, list[dict[str, Any]
     """
     system_parts: list[str] = []
     contents: list[dict[str, Any]] = []
+    # tool_call_id -> tool name, from the turn that declared the call. Gemini
+    # restarts its ids every turn, so this is refreshed per assistant turn.
+    call_names: dict[str, str] = {}
 
     for m in messages:
         if m.role == MessageRole.system:
@@ -120,28 +128,32 @@ def _convert_messages(messages: list[Message]) -> tuple[str, list[dict[str, Any]
             text = _coerce_text(m.content)
             if text:
                 parts.append({"text": text})
-            for tc in m.tool_calls or []:
-                parts.append(
-                    {
-                        "functionCall": {
-                            "name": tc.name,
-                            "args": tc.arguments,
-                        }
-                    }
-                )
+            calls = m.tool_calls or []
+            call_names = {tc.id: tc.name for tc in calls}
+            # Gemini 3+ signs the first call of a turn and 400s when the
+            # signature is not sent back (1.91.0, X11). A turn nobody signed —
+            # history from another provider, ``messages=``, a pre-1.91
+            # checkpoint — carries Google's validator-skip value on its first
+            # call instead, which every Gemini model accepts.
+            signed = any(tc.signature for tc in calls)
+            for i, tc in enumerate(calls):
+                part: dict[str, Any] = {"functionCall": {"name": tc.name, "args": tc.arguments}}
+                if tc.signature:
+                    part["thoughtSignature"] = tc.signature
+                elif i == 0 and not signed:
+                    part["thoughtSignature"] = _SKIP_SIGNATURE
+                parts.append(part)
             if not parts:
                 parts.append({"text": ""})
             contents.append({"role": "model", "parts": parts})
             continue
 
         if m.role == MessageRole.tool:
-            # Function response — Gemini wants the previous tool name. Our
-            # ToolMessage carries the tool_call_id but not the name; the
-            # caller is expected to set ``Message.name`` to the tool name
-            # so we can fill ``functionResponse.name`` correctly. Falling
-            # back to "tool" keeps the request well-formed even if name is
-            # absent.
-            tool_name = m.name or "tool"
+            # Function response — named after the call it answers (1.91.0, X4).
+            # ``ToolMessage`` carries only the id, so the name comes from the
+            # declaring turn; an explicit ``Message.name`` still wins, and
+            # ``"tool"`` stays the last resort for a result with no parent.
+            tool_name = m.name or call_names.get(m.tool_call_id or "") or "tool"
             try:
                 response_payload: Any = (
                     _json.loads(m.content) if isinstance(m.content, str) else m.content
@@ -278,6 +290,7 @@ def _parse_response(client: LLMClient, data: dict[str, Any]) -> LLMResponse:
                     id=f"call_{i}",
                     name=fc.get("name", ""),
                     arguments=fc.get("args") or {},
+                    signature=part.get("thoughtSignature") or None,
                 )
             )
 
@@ -450,6 +463,7 @@ async def astream_gemini(
                                 call_id=call_id,
                                 tool_name=fc.get("name", ""),
                                 arguments=fc.get("args") or {},
+                                signature=part.get("thoughtSignature") or None,
                             )
 
                 usage_meta = chunk.get("usageMetadata") or {}

@@ -69,6 +69,18 @@ committed work:
   would claim the run ended at every handoff. A **paused** run gets none: a pause
   is not an ending.
 
+    Since 1.91.0 **`Agent.astream` writes it too**, on the same rules: `completed`
+    before the final `StreamDone`, `failed` when the stream raises — including a
+    consumer that stops reading mid-run, since that run did not finish — and
+    nothing when it ends at `Paused`, even if the consumer stops reading there.
+    Before 1.91.0 a streamed run wrote no marker at all, so a **finished** stream
+    looked crashed and `aresume` re-ran it: the model again, every tool again.
+
+    Since 1.91.0 a **resume whose re-invoked call fails** — a `tool_call`
+    guardrail blocks it on the way back in, say — is marked `failed`. Before, its
+    newest row stayed `interrupted` with the pending row already claimed: the run
+    looked paused, could not be resumed, and nothing said it had failed.
+
     Since 1.68.0 a **fork is a run** by this rule too. `Chain.afork` and
     `Agent.afork` write the same terminal row under the branch's own
     `execution_id` — `failed` when the branch raises, `completed` when it
@@ -161,7 +173,17 @@ like any other crash (before, it wrote none at all, and the run was
 indistinguishable from one that simply finished), plus a turn-boundary row one
 past the loop's last turn. Resume then re-enters **after** the loop and re-issues
 the model, rather than stepping back into the last pre-tool checkpoint and
-re-invoking a tool that had already run.
+re-invoking a tool that had already run. Since 1.91.0 `astream` does the same.
+
+### Running out of iterations
+
+When the loop hits `max_iterations` right after a tool turn, that turn's tools
+have run but the newest row is still their pre-tool checkpoint. Since 1.91.0 the
+loop writes a turn row at `max_iterations` before raising `MaxIterationsError`,
+so resuming (with a higher limit) re-asks the model with the tool results in
+hand. Before, crash recovery re-invoked the last tool: one charge became two, on
+`run` and `astream` alike. Resumed with the same limit, the run stops again at
+once.
 
 ## Interrupt, suspend, and the atomic claim
 

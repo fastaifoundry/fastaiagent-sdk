@@ -105,10 +105,10 @@ Proof 2 asks four providers on three wires the same two things:
 ```
 ── a plain reply
 provider   finish   content    usage keys (normalized)                      latency
-openai     stop     PONG       ['prompt_tokens', 'completion_tokens', 'total_tokens'] +2 provider-specific 806 ms
-anthropic  stop     PONG       ['prompt_tokens', 'completion_tokens', 'total_tokens'] 1043 ms
-gemini     stop     PONG       ['prompt_tokens', 'completion_tokens', 'total_tokens'] 474 ms
-groq       stop     PONG       ['prompt_tokens', 'completion_tokens', 'total_tokens'] +5 provider-specific 194 ms
+openai     stop     PONG       ['prompt_tokens', 'completion_tokens', 'total_tokens'] +2 provider-specific 827 ms
+anthropic  stop     PONG       ['prompt_tokens', 'completion_tokens', 'total_tokens'] 984 ms
+gemini     stop     PONG       ['prompt_tokens', 'completion_tokens', 'total_tokens'] 1721 ms
+groq       stop     PONG       ['prompt_tokens', 'completion_tokens', 'total_tokens'] +5 provider-specific 551 ms
 
 ── a tool call
 provider   finish      tool         arguments            type   content

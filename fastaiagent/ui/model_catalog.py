@@ -131,10 +131,13 @@ PRESET_MODEL_HINTS: dict[str, list[str]] = {
         "groq/compound-mini",
         "qwen/qwen3.8-27b",
     ],
+    # Gemini 3.5+ first (verified live 2026-10-18, tool loop included).
     "gemini": [
+        "gemini-3.8-flash",
+        "gemini-4-argon",
+        "gemini-3.5-flash-lite",
         "gemini-flash-latest",
         "gemini-pro-latest",
-        "gemini-flash-lite-latest",
         "gemini-2.5-flash",
     ],
     "openrouter": [

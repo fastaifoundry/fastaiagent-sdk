@@ -116,13 +116,21 @@ agent = Agent(guardrails=[toxicity_check(mode="decisions", threshold=0.5)])
 
 ### cost_limit()
 
-Policy marker for enforcing cost limits on agent execution.
+Blocks a run that has spent more than `max_usd` so far — the same running total
+that lands on `AgentResult.cost`. At the default `output` position that is the
+whole run; at `input` or `tool_call` it is the spend up to that gate.
 
 ```python
 from fastaiagent.guardrail import cost_limit
 
 agent = Agent(guardrails=[cost_limit(max_usd=0.50)])
 ```
+
+A run it cannot price — a model with no rate, see
+[Cost tracking](../ui/cost-tracking.md#updating-prices) — is an error, not a pass,
+and `on_error` decides: `"block"` (the default) or `"allow"`. It works on `run`,
+`astream` and `stream`; before 1.91.0 a run driven by `astream` had no running
+total, so the rule blocked every streamed run.
 
 ### allowed_domains()
 
