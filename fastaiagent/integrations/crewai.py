@@ -151,6 +151,71 @@ def _install_method_patches() -> None:
 
     tracer = get_tracer("fastaiagent.integrations.crewai")
 
+    # Span attributes for each CrewAI unit, shared by the sync wrapper and its
+    # native-async twin (1.90.0, F16) so the two cannot drift.
+    def _crew_span_open(
+        span: Any, crew: Any, args: tuple[Any, ...], kwargs: dict[str, Any]
+    ) -> None:
+        crew_name = getattr(crew, "name", None) or "crew"
+        set_fastaiagent_attributes(
+            span,
+            framework="crewai",
+            **{"framework.version": _crewai_version()},
+        )
+        stamp_agent_name(span, "crewai")
+        span.set_attribute("crewai.crew.name", str(crew_name))
+        process = getattr(crew, "process", None)
+        if process is not None:
+            span.set_attribute("crewai.crew.process", str(process))
+        span.set_attribute("crewai.crew.agent_count", len(getattr(crew, "agents", []) or []))
+        span.set_attribute("crewai.crew.task_count", len(getattr(crew, "tasks", []) or []))
+        inputs = kwargs.get("inputs") or (args[0] if args else None)
+        if inputs is not None and trace_payloads_enabled():
+            span.set_attribute("crewai.crew.inputs", _safe_json(inputs))
+
+    def _crew_span_close(span: Any, result: Any) -> None:
+        if trace_payloads_enabled():
+            raw = getattr(result, "raw", None)
+            span.set_attribute("crewai.crew.output", _safe_json(raw or result))
+
+    def _agent_span_open(
+        span: Any, agent: Any, args: tuple[Any, ...], kwargs: dict[str, Any]
+    ) -> None:
+        role = getattr(agent, "role", None) or "agent"
+        span.set_attribute("crewai.agent.role", str(role))
+        model = getattr(getattr(agent, "llm", None), "model", None)
+        if model:
+            span.set_attribute("crewai.agent.model", str(model))
+        if trace_payloads_enabled():
+            goal = getattr(agent, "goal", None)
+            if goal:
+                span.set_attribute("crewai.agent.goal", _truncate(goal))
+            backstory = getattr(agent, "backstory", None)
+            if backstory:
+                span.set_attribute("crewai.agent.backstory", _truncate(backstory))
+        task = kwargs.get("task") or (args[0] if args else None)
+        if task is not None and trace_payloads_enabled():
+            desc = getattr(task, "description", None)
+            if desc:
+                span.set_attribute("crewai.agent.task_description", _truncate(desc, 400))
+
+    def _task_span_open(span: Any, task: Any) -> None:
+        if trace_payloads_enabled():
+            desc = getattr(task, "description", None)
+            if desc:
+                span.set_attribute("crewai.task.description", _truncate(desc, 1_000))
+            expected = getattr(task, "expected_output", None)
+            if expected:
+                span.set_attribute("crewai.task.expected_output", _truncate(expected, 1_000))
+        assigned = getattr(getattr(task, "agent", None), "role", None)
+        if assigned:
+            span.set_attribute("crewai.task.agent_role", str(assigned))
+
+    def _task_span_close(span: Any, result: Any) -> None:
+        if trace_payloads_enabled():
+            raw = getattr(result, "raw", None)
+            span.set_attribute("crewai.task.output", _safe_json(raw or result))
+
     if not _patched(Crew.kickoff):
         original_kickoff = Crew.kickoff
 
@@ -158,33 +223,28 @@ def _install_method_patches() -> None:
         def kickoff_wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
             crew_name = getattr(self, "name", None) or "crew"
             with tracer.start_as_current_span(f"crewai.crew.{crew_name}") as span:
-                set_fastaiagent_attributes(
-                    span,
-                    framework="crewai",
-                    **{"framework.version": _crewai_version()},
-                )
-                stamp_agent_name(span, "crewai")
-                span.set_attribute("crewai.crew.name", str(crew_name))
-                process = getattr(self, "process", None)
-                if process is not None:
-                    span.set_attribute("crewai.crew.process", str(process))
-                span.set_attribute(
-                    "crewai.crew.agent_count", len(getattr(self, "agents", []) or [])
-                )
-                span.set_attribute("crewai.crew.task_count", len(getattr(self, "tasks", []) or []))
-                inputs = kwargs.get("inputs") or (args[0] if args else None)
-                if inputs is not None and trace_payloads_enabled():
-                    span.set_attribute("crewai.crew.inputs", _safe_json(inputs))
-                try:
-                    result = original_kickoff(self, *args, **kwargs)
-                except BaseException:
-                    raise
-                if trace_payloads_enabled():
-                    raw = getattr(result, "raw", None)
-                    span.set_attribute("crewai.crew.output", _safe_json(raw or result))
+                _crew_span_open(span, self, args, kwargs)
+                result = original_kickoff(self, *args, **kwargs)
+                _crew_span_close(span, result)
                 return result
 
         Crew.kickoff = _mark_patched(kickoff_wrapper, original_kickoff)  # type: ignore[method-assign]
+
+    # ``akickoff`` is CrewAI's native async run (1.x): unlike ``kickoff_async`` it
+    # never goes through ``kickoff``, so without its own wrapper it was untraced.
+    if hasattr(Crew, "akickoff") and not _patched(Crew.akickoff):
+        original_akickoff = Crew.akickoff
+
+        @functools.wraps(original_akickoff)
+        async def akickoff_wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
+            crew_name = getattr(self, "name", None) or "crew"
+            with tracer.start_as_current_span(f"crewai.crew.{crew_name}") as span:
+                _crew_span_open(span, self, args, kwargs)
+                result = await original_akickoff(self, *args, **kwargs)
+                _crew_span_close(span, result)
+                return result
+
+        Crew.akickoff = _mark_patched(akickoff_wrapper, original_akickoff)  # type: ignore[method-assign]
 
     if not _patched(Crew.kickoff_async):
         original_kickoff_async = Crew.kickoff_async
@@ -220,31 +280,28 @@ def _install_method_patches() -> None:
         def execute_task_wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
             role = getattr(self, "role", None) or "agent"
             with tracer.start_as_current_span(f"crewai.agent.{role}") as span:
-                span.set_attribute("crewai.agent.role", str(role))
-                model = getattr(getattr(self, "llm", None), "model", None)
-                if model:
-                    span.set_attribute("crewai.agent.model", str(model))
-                if trace_payloads_enabled():
-                    goal = getattr(self, "goal", None)
-                    if goal:
-                        span.set_attribute("crewai.agent.goal", _truncate(goal))
-                    backstory = getattr(self, "backstory", None)
-                    if backstory:
-                        span.set_attribute("crewai.agent.backstory", _truncate(backstory))
-                task = kwargs.get("task") or (args[0] if args else None)
-                if task is not None and trace_payloads_enabled():
-                    desc = getattr(task, "description", None)
-                    if desc:
-                        span.set_attribute("crewai.agent.task_description", _truncate(desc, 400))
-                try:
-                    result = original_execute_task(self, *args, **kwargs)
-                except BaseException:
-                    raise
+                _agent_span_open(span, self, args, kwargs)
+                result = original_execute_task(self, *args, **kwargs)
                 if trace_payloads_enabled():
                     span.set_attribute("crewai.agent.output", _safe_json(result))
                 return result
 
         Agent.execute_task = _mark_patched(execute_task_wrapper, original_execute_task)  # type: ignore[method-assign]
+
+    if hasattr(Agent, "aexecute_task") and not _patched(Agent.aexecute_task):
+        original_aexecute_task = Agent.aexecute_task
+
+        @functools.wraps(original_aexecute_task)
+        async def aexecute_task_wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
+            role = getattr(self, "role", None) or "agent"
+            with tracer.start_as_current_span(f"crewai.agent.{role}") as span:
+                _agent_span_open(span, self, args, kwargs)
+                result = await original_aexecute_task(self, *args, **kwargs)
+                if trace_payloads_enabled():
+                    span.set_attribute("crewai.agent.output", _safe_json(result))
+                return result
+
+        Agent.aexecute_task = _mark_patched(aexecute_task_wrapper, original_aexecute_task)  # type: ignore[method-assign]
 
     if not _patched(Task.execute_sync):
         original_task_sync = Task.execute_sync
@@ -253,28 +310,27 @@ def _install_method_patches() -> None:
         def task_sync_wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
             slug = _truncate(getattr(self, "description", None) or "task", 60)
             with tracer.start_as_current_span(f"crewai.task.{slug}") as span:
-                if trace_payloads_enabled():
-                    desc = getattr(self, "description", None)
-                    if desc:
-                        span.set_attribute("crewai.task.description", _truncate(desc, 1_000))
-                    expected = getattr(self, "expected_output", None)
-                    if expected:
-                        span.set_attribute(
-                            "crewai.task.expected_output", _truncate(expected, 1_000)
-                        )
-                assigned = getattr(getattr(self, "agent", None), "role", None)
-                if assigned:
-                    span.set_attribute("crewai.task.agent_role", str(assigned))
-                try:
-                    result = original_task_sync(self, *args, **kwargs)
-                except BaseException:
-                    raise
-                if trace_payloads_enabled():
-                    raw = getattr(result, "raw", None)
-                    span.set_attribute("crewai.task.output", _safe_json(raw or result))
+                _task_span_open(span, self)
+                result = original_task_sync(self, *args, **kwargs)
+                _task_span_close(span, result)
                 return result
 
         Task.execute_sync = _mark_patched(task_sync_wrapper, original_task_sync)  # type: ignore[method-assign]
+
+    if hasattr(Task, "aexecute_sync") and not _patched(Task.aexecute_sync):
+        original_task_asyncnative = Task.aexecute_sync
+
+        @functools.wraps(original_task_asyncnative)
+        async def task_aexecute_sync_wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
+            slug = _truncate(getattr(self, "description", None) or "task", 60)
+            with tracer.start_as_current_span(f"crewai.task.{slug}") as span:
+                span.set_attribute("crewai.task.async", True)
+                _task_span_open(span, self)
+                result = await original_task_asyncnative(self, *args, **kwargs)
+                _task_span_close(span, result)
+                return result
+
+        Task.aexecute_sync = _mark_patched(task_aexecute_sync_wrapper, original_task_asyncnative)  # type: ignore[method-assign]
 
     if not _patched(Task.execute_async):
         original_task_async = Task.execute_async
@@ -797,9 +853,12 @@ def disable() -> None:
     for cls, name in (
         (Crew, "kickoff"),
         (Crew, "kickoff_async"),
+        (Crew, "akickoff"),
         (Agent, "execute_task"),
+        (Agent, "aexecute_task"),
         (Task, "execute_sync"),
         (Task, "execute_async"),
+        (Task, "aexecute_sync"),
     ):
         fn = getattr(cls, name, None)
         original = getattr(fn, "_fastaiagent_original", None)
@@ -869,39 +928,82 @@ class _GuardedCrew:
         finally:
             reset_agent_name(token)
 
+    # Every way CrewAI 1.x runs a crew is guarded here (1.90.0, F4). ``akickoff``
+    # and the three ``*_for_each`` methods used to fall through ``__getattr__``
+    # to the raw crew and ran with no guardrails at all.
+
+    def _before(self, inputs_list: list[Any]) -> None:
+        """Refuse what can't be judged, then check every input — all before any
+        run starts, so a batch with one blocked input runs nothing."""
+        if self._output_guardrails and getattr(self._wrapped, "stream", False):
+            # A streaming crew returns a streaming object, not text. Judging its
+            # repr reported a clean verdict on text the rule never saw.
+            from fastaiagent.integrations._registry import GuardrailBlocked
+
+            names = ", ".join(getattr(g, "name", "?") for g in self._output_guardrails)
+            raise GuardrailBlocked(
+                f"output guardrails could not run: the crew streams (stream=True), so its "
+                f"output is not text that {names} can judge. Run it with stream=False, or "
+                "drop the output guardrails."
+            )
+        for inputs in inputs_list:
+            _run_guardrails(
+                _extract_input_text(inputs) if inputs is not None else "",
+                self._input_guardrails,
+                side="input",
+                agent_name=self._fastaiagent_name,
+            )
+
+    def _after(self, results: list[Any]) -> None:
+        for result in results:
+            _run_guardrails(
+                _extract_output_text(result),
+                self._output_guardrails,
+                side="output",
+                agent_name=self._fastaiagent_name,
+            )
+
     def kickoff(self, inputs: Any = None, **kwargs: Any) -> Any:
-        _run_guardrails(
-            _extract_input_text(inputs) if inputs is not None else "",
-            self._input_guardrails,
-            side="input",
-            agent_name=self._fastaiagent_name,
-        )
+        self._before([inputs])
         with self._named():
             result = self._wrapped.kickoff(inputs=inputs, **kwargs)
-        _run_guardrails(
-            _extract_output_text(result),
-            self._output_guardrails,
-            side="output",
-            agent_name=self._fastaiagent_name,
-        )
+        self._after([result])
         return result
 
     async def kickoff_async(self, inputs: Any = None, **kwargs: Any) -> Any:
-        _run_guardrails(
-            _extract_input_text(inputs) if inputs is not None else "",
-            self._input_guardrails,
-            side="input",
-            agent_name=self._fastaiagent_name,
-        )
+        self._before([inputs])
         with self._named():
             result = await self._wrapped.kickoff_async(inputs=inputs, **kwargs)
-        _run_guardrails(
-            _extract_output_text(result),
-            self._output_guardrails,
-            side="output",
-            agent_name=self._fastaiagent_name,
-        )
+        self._after([result])
         return result
+
+    async def akickoff(self, inputs: Any = None, **kwargs: Any) -> Any:
+        self._before([inputs])
+        with self._named():
+            result = await self._wrapped.akickoff(inputs=inputs, **kwargs)
+        self._after([result])
+        return result
+
+    def kickoff_for_each(self, inputs: list[Any], **kwargs: Any) -> Any:
+        self._before(list(inputs))
+        with self._named():
+            results = self._wrapped.kickoff_for_each(inputs=inputs, **kwargs)
+        self._after(list(results))
+        return results
+
+    async def kickoff_for_each_async(self, inputs: list[Any], **kwargs: Any) -> Any:
+        self._before(list(inputs))
+        with self._named():
+            results = await self._wrapped.kickoff_for_each_async(inputs=inputs, **kwargs)
+        self._after(list(results))
+        return results
+
+    async def akickoff_for_each(self, inputs: list[Any], **kwargs: Any) -> Any:
+        self._before(list(inputs))
+        with self._named():
+            results = await self._wrapped.akickoff_for_each(inputs=inputs, **kwargs)
+        self._after(list(results))
+        return results
 
 
 def with_guardrails(

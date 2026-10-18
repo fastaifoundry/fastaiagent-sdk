@@ -7,7 +7,8 @@ import json
 import logging
 import uuid
 from collections.abc import AsyncGenerator
-from typing import TYPE_CHECKING, Any
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Literal
 
 from fastaiagent._internal.errors import MaxIterationsError, StopAgent, ToolExecutionError
 from fastaiagent.agent.middleware import MiddlewareContext, _MiddlewarePipeline
@@ -493,6 +494,115 @@ async def _invoke_tool_with_span(
             return result_text, result_text
 
 
+#: How :func:`_governed_tool_call` asks managed governance about a call.
+#:
+#: * ``"gate"`` — :func:`governance.gate_tool_call`: ``deny`` refuses,
+#:   ``require_approval`` calls ``interrupt()`` and pauses the run. The agent
+#:   loops, and crash recovery in ``Agent.aresume`` (the pre-tool checkpoint is
+#:   written *before* the gate, so a recovered call may never have been asked).
+#: * ``"direct"`` — :func:`governance.check_direct_call`: there is no run to
+#:   pause, so ``require_approval`` refuses. The MCP ``expose_tools`` surface.
+#: * ``"resolved"`` — skip: the pause this call is resuming from *was* the
+#:   decision. ``Agent.aresume`` with a ``Resume`` value; a rejected approval is
+#:   refused before this is reached, so a rejected call is never executed.
+GovernanceMode = Literal["gate", "direct", "resolved"]
+
+
+@dataclass
+class _GovernedCall:
+    """What :func:`_governed_tool_call` produced for one call."""
+
+    #: The next ``ToolMessage``'s content: a string, or content parts for a tool
+    #: that returned an ``Image``/``PDF`` (the plain path keeps them).
+    content: str | list[Any]
+    #: Set when governance refused the call; ``content`` is then the refusal and
+    #: the tool never ran.
+    refusal: str | None = None
+
+
+async def _governed_tool_call(
+    tool: Tool | None,
+    tool_name: str,
+    arguments: dict[str, Any],
+    *,
+    governance_mode: GovernanceMode,
+    agent_id: str | None,
+    run_id: str,
+    context: Any | None,
+    guardrails: list[Guardrail] | None,
+    mw_pipeline: _MiddlewarePipeline | None = None,
+    mw_ctx: MiddlewareContext | None = None,
+    tool_call_index: int = 0,
+    record: dict[str, Any] | None = None,
+    agent_name: str | None = None,
+) -> _GovernedCall:
+    """Run one tool call the way the agent loop does — the one place that does.
+
+    Order: managed governance → ``wrap_tool`` middleware → ``tool_call``
+    guardrails → ``Tool.ainvoke`` (timeout, retries, ``output_type``) →
+    ``tool_result`` guardrails, all inside the ``tool.<name>`` span.
+
+    Before 1.90.0 the agent loops each carried a copy of this, and two callers
+    skipped it: ``Agent.aresume`` re-ran a paused tool with a bare
+    ``tool.aexecute`` (no guardrails, middleware, span, timeout or retries — and
+    crash recovery asked no governance at all), and the MCP ``expose_tools``
+    surface did the same after its governance check.
+
+    Control flow propagates for the caller to handle: ``InterruptSignal`` (a
+    pause), ``StopAgent`` (from middleware) and ``GuardrailBlockedError``.
+    """
+    if tool is not None and governance_mode != "resolved":
+        from fastaiagent import governance
+
+        if governance_mode == "direct":
+            refusal = await governance.check_direct_call(tool_name, dict(arguments), agent_id)
+        else:
+            refusal = await governance.gate_tool_call(
+                tool_name, dict(arguments), agent_id or "", run_id
+            )
+        if refusal is not None:
+            if record is not None:
+                record["error"] = refusal
+            return _GovernedCall(content=refusal, refusal=refusal)
+
+    if mw_pipeline and mw_ctx is not None:
+        mw_ctx.tool_call_index = tool_call_index
+
+        async def _terminal(t: Tool, a: dict[str, Any]) -> ToolResult:
+            # Middleware path: multimodal tool returns flatten to the string
+            # summary because ``ToolResult.output`` is text-only today. The plain
+            # path below preserves ContentParts.
+            _, summary_text = await _invoke_tool_with_span(
+                tool=tool,
+                tool_name=tool_name,
+                arguments=a,
+                context=context,
+                guardrails=guardrails,
+                tool_call_record=record,
+                agent_name=agent_name,
+            )
+            return ToolResult(output=summary_text)
+
+        wrap_target = tool if tool is not None else _StubTool(tool_name)
+        tr = await mw_pipeline.invoke_tool(mw_ctx, wrap_target, dict(arguments), _terminal)
+        if isinstance(tr.output, str):
+            return _GovernedCall(content=tr.output)
+        if tr.error is not None:
+            return _GovernedCall(content=f"Error: {tr.error}")
+        return _GovernedCall(content=json.dumps(tr.output, default=str))
+
+    content, _ = await _invoke_tool_with_span(
+        tool=tool,
+        tool_name=tool_name,
+        arguments=arguments,
+        context=context,
+        guardrails=guardrails,
+        tool_call_record=record,
+        agent_name=agent_name,
+    )
+    return _GovernedCall(content=content)
+
+
 async def execute_tool_loop(
     llm: Any,
     messages: list[Message],
@@ -655,97 +765,55 @@ async def execute_tool_loop(
                 )
 
             try:
-                # Managed governance (Task C): gate this tool call against the
-                # platform policy cached on connect(). A ``deny`` is fed back to
-                # the model as the tool result; a ``require_approval`` calls
-                # interrupt() which pauses the agent (caught + checkpointed below).
-                # The pending run is registered under the run that OWNS the pause
+                # Managed governance (Task C) gates the call against the policy
+                # cached on connect(): a ``deny`` is fed back to the model as the
+                # tool result; a ``require_approval`` calls interrupt(), which
+                # pauses the agent (caught + checkpointed below). The pending run
+                # is registered under the run that OWNS the pause
                 # (``governance_run_id``, see ``Agent._pause_owner_run_id``).
-                gov_refusal: str | None = None
-                if tool is not None:
-                    from fastaiagent import governance
-
-                    gov_refusal = await governance.gate_tool_call(
-                        tc.name,
-                        dict(tc.arguments),
-                        agent_id or "",
-                        governance_run_id or execution_id or "",
-                    )
-
-                if gov_refusal is not None:
-                    tool_message_content = gov_refusal
-                    tool_call_record["error"] = gov_refusal
-                elif mw_pipeline and mw_ctx is not None:
-                    mw_ctx.tool_call_index = idx
-
-                    async def _terminal(
-                        t: Tool,
-                        a: dict[str, Any],
-                        _tc: Any = tc,
-                        _record: dict[str, Any] = tool_call_record,
-                    ) -> ToolResult:
-                        # Middleware path: multimodal tool returns flatten to
-                        # the string summary because ``ToolResult.output`` is
-                        # text-only today. Non-middleware path preserves
-                        # ContentParts; see the ``else`` branch below.
-                        _, summary_text = await _invoke_tool_with_span(
-                            tool=tools_by_name.get(_tc.name),
-                            tool_name=_tc.name,
-                            arguments=a,
+                try:
+                    tool_message_content: str | list[Any] = (
+                        await _governed_tool_call(
+                            tool,
+                            tc.name,
+                            tc.arguments,
+                            governance_mode="gate",
+                            agent_id=agent_id,
+                            run_id=governance_run_id or execution_id or "",
                             context=context,
                             guardrails=guardrails,
-                            tool_call_record=_record,
+                            mw_pipeline=mw_pipeline,
+                            mw_ctx=mw_ctx,
+                            tool_call_index=idx,
+                            record=tool_call_record,
                             agent_name=agent_name,
                         )
-                        return ToolResult(output=summary_text)
-
-                    wrap_target = tool if tool is not None else _StubTool(tc.name)
-                    try:
-                        tr = await mw_pipeline.invoke_tool(
-                            mw_ctx, wrap_target, dict(tc.arguments), _terminal
-                        )
-                    except StopAgent as stop:
-                        # Include the in-flight tool-call record; the terminal
-                        # closure already populated ``output``/``error`` via
-                        # ``_invoke_tool_with_span`` before the stopper fired.
-                        if tool_call_record not in all_tool_calls:
-                            all_tool_calls.append(tool_call_record)
-                        # The assistant message at the top of this turn already
-                        # declares EVERY call in it. Returning here leaves this
-                        # one — and every later sibling — unanswered, which is a
-                        # history OpenAI and Anthropic both 400 on. Answer the
-                        # in-flight call with whatever the terminal actually
-                        # produced (a stopper that fires before ``call_next``,
-                        # like ``ToolBudget``, produces nothing), then balance
-                        # the siblings. They are NOT dispatched: their side
-                        # effects never happen and the synthetic result says so.
-                        in_flight = tool_call_record.get("error") or tool_call_record.get("output")
-                        if in_flight is not None:
-                            messages.append(ToolMessage(content=str(in_flight), tool_call_id=tc.id))
-                        # ``messages[:]`` and not a rebind: ``Agent._arun_core``
-                        # holds this same list object and is what re-sends it
-                        # (structured-output re-ask, ``reask`` guardrail).
-                        messages[:] = balance_tool_messages(messages, note=STOPPED_NOTE)
-                        return (
-                            LLMResponse(content=str(stop), finish_reason="stop"),
-                            all_tool_calls,
-                        )
-                    tool_message_content: str | list[Any]
-                    if isinstance(tr.output, str):
-                        tool_message_content = tr.output
-                    elif tr.error is not None:
-                        tool_message_content = f"Error: {tr.error}"
-                    else:
-                        tool_message_content = json.dumps(tr.output, default=str)
-                else:
-                    tool_message_content, _ = await _invoke_tool_with_span(
-                        tool=tool,
-                        tool_name=tc.name,
-                        arguments=tc.arguments,
-                        context=context,
-                        guardrails=guardrails,
-                        tool_call_record=tool_call_record,
-                        agent_name=agent_name,
+                    ).content
+                except StopAgent as stop:
+                    # Include the in-flight tool-call record; the terminal
+                    # closure already populated ``output``/``error`` via
+                    # ``_invoke_tool_with_span`` before the stopper fired.
+                    if tool_call_record not in all_tool_calls:
+                        all_tool_calls.append(tool_call_record)
+                    # The assistant message at the top of this turn already
+                    # declares EVERY call in it. Returning here leaves this
+                    # one — and every later sibling — unanswered, which is a
+                    # history OpenAI and Anthropic both 400 on. Answer the
+                    # in-flight call with whatever the terminal actually
+                    # produced (a stopper that fires before ``call_next``,
+                    # like ``ToolBudget``, produces nothing), then balance
+                    # the siblings. They are NOT dispatched: their side
+                    # effects never happen and the synthetic result says so.
+                    in_flight = tool_call_record.get("error") or tool_call_record.get("output")
+                    if in_flight is not None:
+                        messages.append(ToolMessage(content=str(in_flight), tool_call_id=tc.id))
+                    # ``messages[:]`` and not a rebind: ``Agent._arun_core``
+                    # holds this same list object and is what re-sends it
+                    # (structured-output re-ask, ``reask`` guardrail).
+                    messages[:] = balance_tool_messages(messages, note=STOPPED_NOTE)
+                    return (
+                        LLMResponse(content=str(stop), finish_reason="stop"),
+                        all_tool_calls,
                     )
             except InterruptSignal as sig:
                 # A tool inside this turn called interrupt(). Persist the
@@ -964,65 +1032,30 @@ async def stream_tool_loop(
                 # Managed governance (Task C) — gate the tool call (see
                 # execute_tool_loop). deny -> refusal to the model; require_approval
                 # -> interrupt() pauses; the calling application resolves it.
-                gov_refusal: str | None = None
-                if tool is not None:
-                    from fastaiagent import governance
-
-                    gov_refusal = await governance.gate_tool_call(
-                        tc.name,
-                        dict(tc.arguments),
-                        agent_id or "",
-                        governance_run_id or execution_id or "",
-                    )
-
-                if gov_refusal is not None:
-                    tool_message_content = gov_refusal
-                elif mw_pipeline and mw_ctx is not None:
-                    mw_ctx.tool_call_index = idx
-
-                    async def _terminal(
-                        t: Tool,
-                        a: dict[str, Any],
-                        _tc: Any = tc,
-                    ) -> ToolResult:
-                        _, summary_text = await _invoke_tool_with_span(
-                            tool=tools_by_name.get(_tc.name),
-                            tool_name=_tc.name,
-                            arguments=a,
+                try:
+                    tool_message_content: str | list[Any] = (
+                        await _governed_tool_call(
+                            tool,
+                            tc.name,
+                            tc.arguments,
+                            governance_mode="gate",
+                            agent_id=agent_id,
+                            run_id=governance_run_id or execution_id or "",
                             context=context,
                             guardrails=guardrails,
+                            mw_pipeline=mw_pipeline,
+                            mw_ctx=mw_ctx,
+                            tool_call_index=idx,
                             agent_name=agent_name,
                         )
-                        return ToolResult(output=summary_text)
-
-                    wrap_target = tool if tool is not None else _StubTool(tc.name)
-                    try:
-                        tr = await mw_pipeline.invoke_tool(
-                            mw_ctx, wrap_target, dict(tc.arguments), _terminal
-                        )
-                    except StopAgent:
-                        # Streaming twin of the same gap — see the comment on
-                        # ``execute_tool_loop``'s handler. The stream path keeps
-                        # no per-call record, so the in-flight call is answered
-                        # by the same synthetic note as its siblings.
-                        messages[:] = balance_tool_messages(messages, note=STOPPED_NOTE)
-                        return
-                    tool_message_content: str | list[Any]
-                    if isinstance(tr.output, str):
-                        tool_message_content = tr.output
-                    elif tr.error is not None:
-                        tool_message_content = f"Error: {tr.error}"
-                    else:
-                        tool_message_content = json.dumps(tr.output, default=str)
-                else:
-                    tool_message_content, _ = await _invoke_tool_with_span(
-                        tool=tool,
-                        tool_name=tc.name,
-                        arguments=tc.arguments,
-                        context=context,
-                        guardrails=guardrails,
-                        agent_name=agent_name,
-                    )
+                    ).content
+                except StopAgent:
+                    # Streaming twin of the same gap — see the comment on
+                    # ``execute_tool_loop``'s handler. The stream path keeps
+                    # no per-call record, so the in-flight call is answered
+                    # by the same synthetic note as its siblings.
+                    messages[:] = balance_tool_messages(messages, note=STOPPED_NOTE)
+                    return
             except InterruptSignal as sig:
                 if checkpointer is not None and execution_id is not None:
                     raise _record_agent_interrupt(

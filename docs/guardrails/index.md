@@ -140,6 +140,21 @@ agent = Agent(
 # Tool calls to https://api.mycompany.com/data will pass
 ```
 
+A URL passes when its **host** is an allowed domain or a subdomain of one:
+`example.com` allows `example.com` and `api.example.com`, and never
+`evilexample.com` or `example.com.evil.net`. The host is parsed, so a port,
+`user@` userinfo, upper case or a trailing dot don't change the verdict, and a
+bare domain inside a JSON tool call is judged by its host. `*.example.com` and
+`.example.com` mean the same as `example.com`. An entry with a port
+(`example.com:8080`) allows that port only. A blank entry raises `ValueError`.
+
+!!! warning "Changed in 1.90.0"
+    Before 1.90.0 the check was a plain suffix match on the text after `://`.
+    It let look-alike domains through (`evilexample.com` passed for
+    `example.com`), blocked the allowed host when the URL named a port, blocked
+    every bare-domain URL inside a JSON tool call, and a blank entry allowed
+    every URL.
+
 ## Custom Guardrails
 
 ### Inline Function

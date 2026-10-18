@@ -140,6 +140,17 @@ answering with nothing:
   call has no run to pause (call the agent's primary tool instead); if the plane
   cannot answer, the call is refused. Refusals are MCP errors. An agent with no
   `agent_id`, or a tool no approval policy covers, runs as before.
+- **Inner tools run the agent's own tool path (1.90.0).** Besides governance, a
+  call by name gets what the same call gets inside the agent loop: the agent's
+  `tool_call` and `tool_result` guardrails (a block is an MCP error naming the
+  guardrail, never its message, which can quote the payload; a mask rewrites
+  the arguments or the result), its `wrap_tool` middleware, the `tool.<name>`
+  span, and the tool's `timeout` / `max_retries` / `output_type`.
+
+!!! warning "Changed in 1.90.0"
+    Before 1.90.0 an inner tool called by name ran with none of the agent's
+    guardrails or middleware: a call the agent's `tool_call` guardrail blocks
+    ran, and a result its `tool_result` guardrail masks reached the client.
 
 !!! warning "Changed in 1.78.0"
     Before 1.78.0 a paused run came back as an empty *successful* answer (`""`,

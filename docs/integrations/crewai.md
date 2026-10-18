@@ -96,7 +96,20 @@ result = guarded.kickoff(inputs={"input": "..."})  # raises GuardrailBlocked on 
 ```
 
 Block-only semantics — see [Overview → Limitations](overview.md#limitations).
-Wraps `kickoff` and `kickoff_async`.
+Wraps every way CrewAI 1.x runs a crew: `kickoff`, `kickoff_async`, `akickoff`,
+`kickoff_for_each`, `kickoff_for_each_async` and `akickoff_for_each`. The batch
+methods check **every** input before any run starts, and every output after.
+
+A crew built with `stream=True` returns a streaming object, not text, so output
+guardrails cannot judge it: the call raises `GuardrailBlocked` ("could not
+run") before the crew starts. Input guardrails still work on a streaming crew.
+
+!!! warning "Changed in 1.90.0"
+    Before 1.90.0 only `kickoff` and `kickoff_async` were guarded; `akickoff`
+    and the three `*_for_each` methods ran with no guardrails at all. A
+    streaming crew's output guardrails judged the streaming object's `repr` and
+    passed. Tracing (`enable()`) now also covers `Crew.akickoff`,
+    `Agent.aexecute_task` and `Task.aexecute_sync`.
 
 ## 4. Prompt registry
 
