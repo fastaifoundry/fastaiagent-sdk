@@ -73,13 +73,16 @@ def test_an_in_memory_store_leaves_the_working_directory_alone(tmp_path, monkeyp
     work = tmp_path / "project"
     work.mkdir()
     os.chmod(work, 0o755)
+    # Compare with what the platform actually set: Windows has no POSIX bits, so
+    # chmod(0o755) leaves 0o777 there (and 1.89.0's chmod was a no-op too).
+    before = stat.S_IMODE(os.stat(work).st_mode)
     monkeypatch.chdir(work)
 
     cp = SQLiteCheckpointer(":memory:")
     cp.setup()
     cp.list_pending_interrupts()
 
-    assert stat.S_IMODE(os.stat(work).st_mode) == 0o755
+    assert stat.S_IMODE(os.stat(work).st_mode) == before
     assert not any(p.name.startswith((":memory:", "file:")) for p in work.iterdir())
 
 
