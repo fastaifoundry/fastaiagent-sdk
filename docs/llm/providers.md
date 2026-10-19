@@ -307,6 +307,16 @@ Notes:
   a notebook and an Azure ML `score.py` deployment** without per-request token
   management.
 
+## OpenAI Responses API
+
+`LLMClient(provider="openai", api="responses")` (1.91.0) calls OpenAI's
+`POST /v1/responses` instead of Chat Completions. Use it for tools with
+reasoning on GPT-6 and GPT-5.4+, where Chat Completions refuses them, and for
+OpenAI's provider-run tools. It also works with `azure` / `custom` deployments
+that serve `/responses`, and with an injected `openai_client` through
+`responses.create`. See [OpenAI Responses API](responses-api.md) and
+[Provider-run tools](../tools/provider-tools.md).
+
 ## OpenAI Decisions API
 
 `LLMClient.decide()` / `adecide()` (1.84.0) call OpenAI's `POST /v1/decisions`.

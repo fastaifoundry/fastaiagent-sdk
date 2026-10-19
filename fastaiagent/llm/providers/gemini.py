@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json as _json
 import os
+import re
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any
 
@@ -30,6 +31,7 @@ from fastaiagent._internal.errors import LLMProviderError
 from fastaiagent.llm.client import _augment_system_for_response_format
 from fastaiagent.llm.message import Message, MessageRole, ToolCall
 from fastaiagent.llm.stream import (
+    ProviderTurn,
     ReasoningDelta,
     StreamDone,
     StreamEvent,
@@ -48,6 +50,9 @@ _DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 #: model did not sign. Measured 2026-10-18: accepted by 2.5-flash, 3.8-flash and
 #: 4-argon; a missing signature is a 400 on every model after 2.5.
 _SKIP_SIGNATURE = "skip_thought_signature_validator"
+
+#: Gemini models before 3, which refuse built-in tools beside function tools.
+_GEMINI_BEFORE_3 = re.compile(r"gemini-[12]\.")
 
 
 def _coerce_text(content: Any) -> str:
@@ -115,12 +120,30 @@ def _convert_messages(messages: list[Message]) -> tuple[str, list[dict[str, Any]
     # tool_call_id -> tool name, from the turn that declared the call. Gemini
     # restarts its ids every turn, so this is refreshed per assistant turn.
     call_names: dict[str, str] = {}
+    # tool_call_id -> Gemini's own call id, for a turn sent back verbatim.
+    gemini_ids: dict[str, str] = {}
 
     for m in messages:
         if m.role == MessageRole.system:
             text = _coerce_text(m.content)
             if text:
                 system_parts.append(text)
+            continue
+
+        verbatim = m.content_for("gemini") if m.role == MessageRole.assistant else None
+        if verbatim is not None:
+            # A turn in which a built-in tool ran (1.91.0, 2D): its ``toolCall`` /
+            # ``toolResponse`` parts and their signatures go back exactly as they
+            # came — Gemini 400s without them.
+            calls = m.tool_calls or []
+            call_names = {tc.id: tc.name for tc in calls}
+            fc_ids = [
+                str(p["functionCall"].get("id") or "")
+                for p in verbatim
+                if isinstance(p.get("functionCall"), dict)
+            ]
+            gemini_ids = {tc.id: gid for tc, gid in zip(calls, fc_ids) if gid}
+            contents.append({"role": "model", "parts": verbatim})
             continue
 
         if m.role == MessageRole.assistant:
@@ -130,6 +153,7 @@ def _convert_messages(messages: list[Message]) -> tuple[str, list[dict[str, Any]
                 parts.append({"text": text})
             calls = m.tool_calls or []
             call_names = {tc.id: tc.name for tc in calls}
+            gemini_ids = {}
             # Gemini 3+ signs the first call of a turn and 400s when the
             # signature is not sent back (1.91.0, X11). A turn nobody signed —
             # history from another provider, ``messages=``, a pre-1.91
@@ -162,19 +186,10 @@ def _convert_messages(messages: list[Message]) -> tuple[str, list[dict[str, Any]
                 response_payload = {"output": _coerce_text(m.content)}
             if not isinstance(response_payload, dict):
                 response_payload = {"output": response_payload}
-            contents.append(
-                {
-                    "role": "user",
-                    "parts": [
-                        {
-                            "functionResponse": {
-                                "name": tool_name,
-                                "response": response_payload,
-                            }
-                        }
-                    ],
-                }
-            )
+            function_response: dict[str, Any] = {"name": tool_name, "response": response_payload}
+            if gemini_id := gemini_ids.get(m.tool_call_id or ""):
+                function_response["id"] = gemini_id
+            contents.append({"role": "user", "parts": [{"functionResponse": function_response}]})
             continue
 
         # user role — text plus any native inline media (images, PDFs)
@@ -185,10 +200,14 @@ def _convert_messages(messages: list[Message]) -> tuple[str, list[dict[str, Any]
 
 
 def _convert_tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
+    """Function declarations, then any built-in tool (1.91.0, 2D)."""
+    from fastaiagent.llm.provider_tools import gemini_tool, split_tools
+
     if not tools:
         return None
+    functions, specs = split_tools(tools)
     declarations: list[dict[str, Any]] = []
-    for t in tools:
+    for t in functions:
         func = t.get("function", t)
         declarations.append(
             {
@@ -197,7 +216,11 @@ def _convert_tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] |
                 "parameters": func.get("parameters", {"type": "object", "properties": {}}),
             }
         )
-    return [{"functionDeclarations": declarations}]
+    converted: list[dict[str, Any]] = []
+    if declarations:
+        converted.append({"functionDeclarations": declarations})
+    converted.extend(gemini_tool(s) for s in specs)
+    return converted or None
 
 
 def _completion_tokens(usage_meta: dict[str, Any]) -> int:
@@ -215,11 +238,18 @@ def _completion_tokens(usage_meta: dict[str, Any]) -> int:
 
 def _usage(usage_meta: dict[str, Any]) -> dict[str, Any]:
     """Gemini usage in the SDK's shape. ``promptTokenCount`` already includes
-    ``cachedContentTokenCount`` (implicit caching, 2.5 and later)."""
+    ``cachedContentTokenCount`` (implicit caching, 2.5 and later).
+
+    A built-in tool (1.91.0, 2D) adds ``toolUsePromptTokenCount`` — the tool's
+    results fed back to the model, 970 of a 1,963-token code-execution call when
+    measured — which ``totalTokenCount`` includes and ``promptTokenCount`` does
+    not. Google bills it as input ("as Input tokens when the model uses them as
+    part of its iterative reasoning process", pricing page), so it is prompt."""
     from fastaiagent.llm.client import _usage as usage_shape
 
     return usage_shape(
-        int(usage_meta.get("promptTokenCount", 0)),
+        int(usage_meta.get("promptTokenCount", 0))
+        + int(usage_meta.get("toolUsePromptTokenCount", 0)),
         _completion_tokens(usage_meta),
         total=int(usage_meta.get("totalTokenCount", 0)),
         reasoning=usage_meta.get("thoughtsTokenCount"),
@@ -320,7 +350,11 @@ def _parse_response(client: LLMClient, data: dict[str, Any]) -> LLMResponse:
                 )
             )
 
+    from fastaiagent.llm.provider_tools import parse_gemini
+
     usage = _usage(data.get("usageMetadata") or {})
+    report = parse_gemini(parts, candidate.get("groundingMetadata"))
+    report.apply_to_usage(usage)
     finish_reason_raw = candidate.get("finishReason", "")
     finish_reason = {
         "STOP": "stop",
@@ -338,6 +372,8 @@ def _parse_response(client: LLMClient, data: dict[str, Any]) -> LLMResponse:
         model=data.get("modelVersion", client.model),
         finish_reason=finish_reason,
         reasoning=reasoning_text or None,
+        provider_tool_calls=report.calls,
+        provider_content=report.content,
     )
 
 
@@ -375,8 +411,27 @@ def _build_request(
     if converted_tools:
         body["tools"] = converted_tools
         tool_choice = client._requested_tool_choice(tools, kwargs)
-        if tool_choice is not None:
-            mode = {"required": "ANY", "none": "NONE"}[tool_choice]
+        mode = {"required": "ANY", "none": "NONE"}.get(tool_choice or "")
+        has_functions = any("functionDeclarations" in t for t in converted_tools)
+        if has_functions and len(converted_tools) > 1:
+            # Built-in tools beside function declarations (1.91.0, 2D): Gemini 3+
+            # takes the pair only with server-side invocations included and
+            # function calling VALIDATED ("AUTO mode is not supported"). 2.5 and
+            # earlier refuse the pair, with the flag in an unhelpful 400 ("Tool
+            # call context circulation is not enabled"), so it is refused here.
+            if _GEMINI_BEFORE_3.match(client.model.split("/")[-1]):
+                from fastaiagent._internal.errors import LLMError
+
+                raise LLMError(
+                    f"{client.model} cannot use Gemini's built-in tools (web_search(), "
+                    f"code_execution(), file_search()) beside function tools; Gemini 3 "
+                    f"and later can. Use gemini-3.8-flash, or give this agent only one kind."
+                )
+            body["toolConfig"] = {
+                "includeServerSideToolInvocations": True,
+                "functionCallingConfig": {"mode": mode or "VALIDATED"},
+            }
+        elif mode is not None:
             body["toolConfig"] = {"functionCallingConfig": {"mode": mode}}
 
     gen_cfg = _build_generation_config(client, **kwargs)
@@ -449,6 +504,9 @@ async def astream_gemini(
     usage: dict[str, Any] = {}
     seen_tool_index = 0
     finish_reason = ""
+    # Every part and the grounding, for provider-run tools (1.91.0, 2D).
+    all_parts: list[dict[str, Any]] = []
+    grounding: dict[str, Any] | None = None
 
     async with client._new_async_client() as h:
         async with h.stream("POST", url, json=body, headers=headers) as resp:
@@ -492,6 +550,9 @@ async def astream_gemini(
                             "RECITATION": "content_filter",
                         }.get(raw_finish, str(raw_finish).lower())
                     parts = (cand0.get("content") or {}).get("parts") or []
+                    all_parts.extend(dict(p) for p in parts)
+                    if cand0.get("groundingMetadata"):
+                        grounding = cand0["groundingMetadata"]
                     for part in parts:
                         if part.get("thought"):
                             if thought := part.get("text", ""):
@@ -519,6 +580,15 @@ async def astream_gemini(
                     for key, value in _usage(usage_meta).items():
                         usage[key] = max(int(usage.get(key, 0)), int(value))
 
+    from fastaiagent.llm.provider_tools import parse_gemini
+
+    report = parse_gemini(all_parts, grounding)
+    if report.calls or report.content is not None:
+        yield ProviderTurn(
+            calls=report.calls,
+            content=report.content,
+            tool_requests={k: v for k, v in report.tool_requests.items() if v},
+        )
     if usage.get("prompt_tokens") or usage.get("completion_tokens"):
         from fastaiagent.llm.client import _usage_event
 

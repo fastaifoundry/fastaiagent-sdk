@@ -68,6 +68,15 @@ the model's reasoning comes back as `response.reasoning`, never inside the answe
 Cached prompt tokens are counted on every provider and priced at the cached rate.
 See [docs/llm/reasoning-and-caching](docs/llm/reasoning-and-caching.md).
 
+**Tools the provider runs:** `web_search()`, `code_execution()` and
+`file_search()` from `fastaiagent.tool` go in `tools=[...]` beside your own. They
+are sent in OpenAI's, Anthropic's or Gemini's own shape. Every call is recorded,
+judged by your `tool_result` guardrails, and priced with its per-call fee. OpenAI
+runs them on its Responses API, `LLMClient(provider="openai", api="responses")`,
+which is also how GPT-6 models get tools with reasoning on. See
+[docs/tools/provider-tools](docs/tools/provider-tools.md) and
+[docs/llm/responses-api](docs/llm/responses-api.md).
+
 Custom internal LLM gateways register in five lines via
 `fastaiagent.llm.providers.register_provider`.
 See [docs/llm/providers](docs/llm/providers.md).

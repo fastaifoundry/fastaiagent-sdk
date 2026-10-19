@@ -45,7 +45,7 @@ from __future__ import annotations
 import logging
 import threading
 from contextvars import ContextVar, Token
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timezone
 from typing import Any
 
@@ -330,6 +330,67 @@ def _parse_rate(prefix: str, spec: object) -> _Rate | None:
         return None
 
 
+#: Per-call fees of provider-run tools, USD per call (1.91.0, 2D), on top of the
+#: tokens: ``web_search()`` / ``file_search()`` per request, and an OpenAI
+#: ``code_execution()`` container per container (its 1 GB, 20-minute session).
+#: From the providers' pricing pages, read 2026-10-19 — OpenAI web search $10 /
+#: 1k calls, file search $2.50 / 1k, containers $0.03; Anthropic web search $10 /
+#: 1k; Gemini 3+ Google Search grounding $14 / 1k after 5,000 free a month,
+#: which is not modelled (the price can overstate a small account's bill).
+#: Anthropic's code execution is billed by container-hour (1,550 free a month,
+#: then $0.05 / hour) and is not priced here. A fee the table does not know —
+#: the same tool through Azure or a custom gateway — leaves the call unpriced.
+_TOOL_FEES: dict[tuple[str, str], float] = {
+    ("openai", "web_search"): 10.0 / 1000,
+    ("openai", "file_search"): 2.50 / 1000,
+    ("openai", "container"): 0.03,
+    ("anthropic", "web_search"): 10.0 / 1000,
+    ("gemini", "web_search"): 14.0 / 1000,
+}
+_TOOL_FEE_OVERRIDES: dict[tuple[str, str], float] = {}
+
+
+def set_tool_fee_overrides(fees: dict[str, float] | None) -> None:
+    """Replace the org's provider-tool fees (1.91.0). Keys are
+    ``"<provider>/<tool>"`` — ``"openai/web_search"``, ``"openai/container"``,
+    ``"gemini/web_search"`` …; values are USD per call. ``None`` clears them."""
+    parsed: dict[tuple[str, str], float] = {}
+    for key, fee in (fees or {}).items():
+        provider, sep, tool = key.partition("/")
+        if not sep or not provider or not tool:
+            raise ValueError(f"tool fee key must be '<provider>/<tool>', got {key!r}")
+        parsed[(provider.lower(), tool.lower())] = float(fee)
+    global _TOOL_FEE_OVERRIDES
+    _TOOL_FEE_OVERRIDES = parsed
+
+
+def _tool_fee(provider: str, tool: str) -> float | None:
+    key = (provider.lower(), tool)
+    if key in _TOOL_FEE_OVERRIDES:
+        return _TOOL_FEE_OVERRIDES[key]
+    return _TOOL_FEES.get(key)
+
+
+def tool_fees_cost(provider: str | None, usage: dict[str, Any] | None) -> tuple[float, bool]:
+    """The provider-run tool fees of one call: ``(usd, known)``. ``(0.0, True)``
+    when the call ran none. ``usage["tool_requests"]`` counts the requests by
+    tool; ``usage["containers"]`` lists the code containers it ran in."""
+    usage = usage or {}
+    requests = dict(usage.get("tool_requests") or {})
+    containers = list(usage.get("containers") or [])
+    if containers:
+        requests["container"] = len(set(containers))
+    total = 0.0
+    for tool, count in requests.items():
+        if not count:
+            continue
+        fee = _tool_fee(provider or "", tool)
+        if fee is None:
+            return 0.0, False
+        total += fee * int(count)
+    return total, True
+
+
 def _active_overrides() -> dict[str, _Rate]:
     """Override table, loading it from disk on first use."""
     if not _OVERRIDES_LOADED:
@@ -529,7 +590,11 @@ def usage_cost(
     )
     if cost is None:
         return 0.0, False
-    return cost, True
+    # Provider-run tools bill per call on top of the tokens (1.91.0, 2D).
+    fees, fees_known = tool_fees_cost(provider, usage)
+    if not fees_known:
+        return 0.0, False
+    return cost + fees, True
 
 
 def usage_tokens(usage: dict[str, Any] | None) -> int:
@@ -564,6 +629,9 @@ class _RunUsage:
     calls: int = 0
     priced_calls: int = 0
     tokens: int = 0
+    #: Code containers already priced in this run (1.91.0): one container used
+    #: across several model calls is one session, billed once.
+    containers: set[str] = field(default_factory=set)
 
     @property
     def known(self) -> bool:
@@ -595,7 +663,9 @@ def start_run_cost(initial: _RunUsage | None = None) -> Token[_RunUsage | None]:
     guardrail on it calls a model) happens before the continued loop opens its
     accumulator, and is part of the same run.
     """
-    return _run_cost.set(replace(initial) if initial is not None else _RunUsage())
+    if initial is None:
+        return _run_cost.set(_RunUsage())
+    return _run_cost.set(replace(initial, containers=set(initial.containers)))
 
 
 def bind_run_cost(bucket: _RunUsage) -> Token[_RunUsage | None]:
@@ -619,8 +689,13 @@ def record_run_cost(
     provider: str | None = None,
 ) -> tuple[float, bool]:
     """Price one completion, count its tokens, and add both to the active run."""
-    cost, known = usage_cost(model, usage, provider=provider)
     bucket = _run_cost.get()
+    if bucket is not None and usage and usage.get("containers"):
+        # A container this run already paid for is not a new session.
+        fresh = [c for c in usage["containers"] if c not in bucket.containers]
+        bucket.containers.update(usage["containers"])
+        usage = {**usage, "containers": fresh}
+    cost, known = usage_cost(model, usage, provider=provider)
     if bucket is not None:
         bucket.calls += 1
         bucket.tokens += usage_tokens(usage)

@@ -184,6 +184,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   claude-sonnet-5-5 and gemini-3.8-flash, `run` and `astream`.
 - Example `114_output_modes_and_partial_output.py`.
 
+### Added — OpenAI's Responses API and tools the provider runs (Bet 2, 2C + 2D)
+
+- **`LLMClient(provider="openai", api="responses")`** (2C, opt-in; decision B2-2)
+  calls `POST /v1/responses` instead of Chat Completions.
+  - **Why:** on OpenAI's current models, tools with reasoning are only served
+    there. Measured 2026-10-19, `gpt-6-luna` on Chat Completions refuses tools
+    with `reasoning_effort` ≠ `"none"` with HTTP 400. OpenAI's migration guide
+    says GPT-6 Astra and 6.1 Sol need the Responses API for tool calling at all.
+  - **How:** like the Decisions API, it has its own body builder and parser and
+    returns the same `LLMResponse`. Agents, retries, fallbacks, spans, pricing,
+    run limits and checkpoints are unchanged.
+  - **Stateless:** every request is `store: false`. Reasoning items (summary plus
+    encrypted content) go back with the turn's function calls, as OpenAI
+    requires, through `run`, `astream`, checkpoints and resume. The summary is
+    `LLMResponse.reasoning`.
+  - **Endpoints:** works on `azure` / `custom` deployments that serve
+    `/responses`, and with an injected `openai_client` (`responses.create`).
+  - `api` is in `LLMClient.to_dict()` only when `"responses"` (new key, signed off).
+  - The Chat Completions 400 that points to `/v1/responses` now also says
+    `LLMClient(provider='openai', api='responses')`.
+- **`web_search()`, `code_execution()`, `file_search(stores)`** in
+  `fastaiagent.tool` (2D) return a `ProviderTool` (`origin="provider"`).
+  - **Wire shapes:** sent in each provider's own shape — OpenAI Responses
+    `web_search` / `code_interpreter` / `file_search`; Anthropic
+    `web_search_20250305` / `code_execution_20250825`; Gemini `google_search` /
+    `code_execution` / `file_search`.
+  - **Never run locally.** A provider that runs none of them (Chat Completions,
+    Ollama, Bedrock, the OpenAI-compatible presets) refuses before sending, and
+    so does an option the provider cannot honour.
+  - **The turn goes back verbatim** on the new `Message.provider_content` (new
+    checkpoint key, signed off; written only when a provider-run tool ran).
+    Measured: Anthropic runs a search asked for beside a client tool only once
+    the turn is sent back — stripped, it searches again and both are billed —
+    and Gemini 3+ returns 400 without its `toolCall` / `toolResponse` parts.
+    Anthropic `pause_turn` is continued.
+  - **Gemini 3+ with function tools:** the SDK sets
+    `includeServerSideToolInvocations` and function-calling mode `VALIDATED`.
+    Gemini's `toolUsePromptTokenCount` is counted as prompt tokens; Google bills
+    it as input. Gemini 2.5 and earlier refuse the pair, so the SDK refuses it
+    before sending.
+  - **Recorded:** each call is a `tool.<name>` span (`tool.origin="provider"`,
+    never re-run by Replay) and an `AgentResult.tool_calls` record.
+  - **Guardrails:**
+    - `tool_result` guardrails judge what the provider shows: queries, sources,
+      cited text, code and its output. No provider returns the pages it read. A
+      rewrite blocks instead, because the model already read the result.
+    - A `tool_call` guardrail reports could-not-run, and its `on_error` decides
+      (B2-6). With `"block"` the run stops before the model is called; with
+      `"allow"` each call is recorded as unchecked.
+  - **Per-call fees priced with the tokens** (b2-d16): OpenAI web search $10 /
+    1k calls, file search $2.50 / 1k, containers $0.03 each once per run;
+    Anthropic web search $10 / 1k; Gemini search $14 / 1k queries. An unknown fee
+    leaves the call unpriced. `set_tool_fee_overrides()` sets org rates.
+  - `LLMClient.astream()` emits `ProviderTurn` for a turn with provider-run tools;
+    `Agent.astream()` consumes it and does not pass it on.
+  - `agent.as_mcp_server(expose_tools=True)` does not expose them.
+- Docs: new pages `llm/responses-api.md` and `tools/provider-tools.md`; providers,
+  tools, guardrails, streaming, cost tracking and security updated.
+- Example `115_responses_api_and_provider_tools.py`.
+
 ### Changed
 
 - **Cost is priced in parts, so figures move** (decision B2-1). Cached prompt

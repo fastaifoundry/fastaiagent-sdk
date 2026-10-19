@@ -11,6 +11,9 @@ and reads back what the plane kept:
   (decision B1-6).
 * A Gemini 3.5+ thought signature survives replication and restore, so a run
   resumed from the plane copy sends it back (X11) — real ``gemini-3.8-flash``.
+* A turn in which the provider ran ``web_search()`` survives the plane as
+  ``Message.provider_content`` and is accepted on resume, and the
+  ``tool.web_search`` span reaches the plane without its payload (2D).
 
 NO MOCKS of the plane. The model is the SDK's ``FunctionModel`` where the test is
 about the plane, and real Gemini where it is about Gemini. Run with::
@@ -298,6 +301,79 @@ def test_claude_thinking_survives_the_plane(connected: Any, tmp_path: Path) -> N
     assert blocks(restored.state_snapshot) == local, "the plane did not keep the blocks verbatim"
     done = agent(store2).resume(exec_id, resume_value=Resume(approved=True))
     assert done.status == "completed"
+
+
+def test_a_provider_tool_turn_survives_the_plane(connected: Any, tmp_path: Path) -> None:
+    """2D across machines: a turn in which Anthropic ran ``web_search`` is
+    replicated as ``Message.provider_content``, served back verbatim, and a run
+    resumed from the plane copy sends it — Anthropic checks the encrypted search
+    results and refuses an altered turn (real ``claude-sonnet-5-5``)."""
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        pytest.skip("ANTHROPIC_API_KEY not set")
+    from fastaiagent import Agent, FunctionTool, LLMClient, Resume, SQLiteCheckpointer
+    from fastaiagent.checkpointers import platform_replica
+    from fastaiagent.tool import web_search
+
+    def agent(store: Any) -> Agent:
+        return Agent(
+            name="searching-desk",
+            system_prompt=(
+                "Search the web for the fact asked, then call approve with it, then "
+                "confirm in one line."
+            ),
+            llm=LLMClient(provider="anthropic", model="claude-sonnet-5-5", max_retries=2),
+            tools=[web_search(max_uses=1), FunctionTool(name="approve", fn=approve)],
+            checkpointer=store,
+        )
+
+    def carried(snapshot: dict[str, Any]) -> list[Any]:
+        return [m["provider_content"] for m in snapshot["messages"] if m.get("provider_content")]
+
+    store1 = SQLiteCheckpointer(db_path=str(tmp_path / "p1.db"))
+    exec_id = f"b12-provider-{uuid.uuid4().hex[:8]}"
+    first = agent(store1).run("What is the latest stable Python release?", execution_id=exec_id)
+    if first.status != "paused":
+        pytest.skip("the model answered without calling approve this time")
+    local = carried(store1.get_last(exec_id).state_snapshot)
+    if not local:
+        pytest.skip("the model called approve before searching this time")
+    assert local[0]["provider"] == "anthropic"
+    _drain(store1, exec_id)
+
+    store2 = SQLiteCheckpointer(db_path=str(tmp_path / "p2.db"))
+    store2.setup()
+    restored = platform_replica.restore_from_plane(store2, exec_id)
+    assert restored is not None
+    assert carried(restored.state_snapshot) == local, "the plane did not keep the turn verbatim"
+    done = agent(store2).resume(exec_id, resume_value=Resume(approved=True))
+    assert done.status == "completed"
+
+
+def test_a_provider_tool_span_reaches_the_plane_without_its_payload(
+    connected: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A provider-run call is a ``tool.web_search`` span with ``tool.origin =
+    "provider"``; with payloads off its query and sources stay local (real
+    ``gemini-3.8-flash``)."""
+    if not os.environ.get("GEMINI_API_KEY"):
+        pytest.skip("GEMINI_API_KEY not set")
+    from fastaiagent import Agent, LLMClient
+    from fastaiagent.tool import web_search
+
+    monkeypatch.setenv("FASTAIAGENT_TRACE_PAYLOADS", "0")
+    result = Agent(
+        name="grounded",
+        llm=LLMClient(provider="gemini", model="gemini-3.8-flash", max_retries=2),
+        tools=[web_search()],
+    ).run("Search the web: what is the latest stable Python release? One line.")
+    assert "web_search" in [c["tool_name"] for c in result.tool_calls]
+
+    spans = _plane_spans(connected, result.trace_id)
+    (call,) = [s for s in spans if s["name"] == "tool.web_search"]
+    stored = call.get("input") or {}
+    assert stored.get("tool.origin") == "provider", sorted(stored)
+    assert stored.get("fastaiagent.runner.type") == "tool"
+    assert "tool.result" not in stored and "tool.args" not in stored
 
 
 def test_cache_and_reasoning_counts_reach_the_plane_and_the_text_does_not(

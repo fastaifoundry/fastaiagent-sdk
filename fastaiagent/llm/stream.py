@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from fastaiagent.llm.message import ReasoningBlock
+from fastaiagent.llm.message import ProviderContent, ProviderToolCall, ReasoningBlock
 
 
 @dataclass
@@ -85,6 +85,27 @@ class Usage:
 
 
 @dataclass
+class ProviderTurn:
+    """What provider-run tools did in a streamed turn (1.91.0, 2D).
+
+    Emitted once, before ``Usage``, by a stream whose turn ran ``web_search()``,
+    ``code_execution()`` or ``file_search()``: the calls as the provider reported
+    them, the turn verbatim for sending back (:class:`ProviderContent`), and the
+    counts the call is billed by. The agent loop consumes it — it records each
+    call as a ``tool.<name>`` span and runs the ``tool_result`` guardrails — and
+    ``Agent.astream`` does not pass it on. Callers of ``LLMClient.astream`` that
+    keep their own history put ``content`` on the assistant message.
+    """
+
+    calls: list[ProviderToolCall] = field(default_factory=list)
+    content: ProviderContent | None = None
+    #: Billable requests by kind (``web_search``, ``file_search``) and the
+    #: containers that ran code — priced by ``fastaiagent._internal.pricing``.
+    tool_requests: dict[str, int] = field(default_factory=dict)
+    containers: list[str] = field(default_factory=list)
+
+
+@dataclass
 class StreamDone:
     """End-of-stream marker.
 
@@ -137,6 +158,7 @@ StreamEvent = (
     | ToolCallStart
     | ToolCallEnd
     | Usage
+    | ProviderTurn
     | StreamDone
     | HandoffEvent
     | Paused

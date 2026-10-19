@@ -22,12 +22,15 @@ from fastaiagent.llm.client import LLMResponse
 from fastaiagent.llm.message import (
     AssistantMessage,
     Message,
+    ProviderContent,
+    ProviderToolCall,
     ReasoningBlock,
     ToolCall,
     ToolMessage,
     balance_tool_messages,
 )
 from fastaiagent.llm.stream import (
+    ProviderTurn,
     ReasoningDelta,
     StreamDone,
     StreamEvent,
@@ -112,6 +115,9 @@ def _serialize_messages(messages: list[Message]) -> list[dict[str, Any]]:
         # Reasoning blocks (1.91.0) likewise: saved only when the model issued some.
         if dumped.get("reasoning_blocks") is None:
             dumped.pop("reasoning_blocks", None)
+        # And the provider's verbatim turn (1.91.0): only after a provider-run tool.
+        if dumped.get("provider_content") is None:
+            dumped.pop("provider_content", None)
         out.append(dumped)
     return out
 
@@ -567,6 +573,139 @@ async def _invoke_tool_with_span(
             return result_text, result_text
 
 
+#: Why a ``tool_call`` guardrail cannot check a provider-run tool (1.91.0, B2-6).
+_PROVIDER_CALL_UNCHECKABLE = (
+    "{names} {verb} run by the model's provider inside the model call; "
+    "the arguments do not exist until it has run, so a tool_call check cannot "
+    "see them first"
+)
+
+
+def _provider_tools(tools: list[Tool]) -> list[Tool]:
+    return [t for t in tools if getattr(t, "origin", "") == "provider"]
+
+
+def _uncheckable_reason(names: list[str]) -> str:
+    return _PROVIDER_CALL_UNCHECKABLE.format(
+        names=", ".join(names), verb="is" if len(names) == 1 else "are"
+    )
+
+
+async def _gate_provider_tools(
+    offered: list[Tool], guardrails: list[Guardrail] | None, agent_name: str
+) -> None:
+    """Before a provider-run tool is offered (1.91.0, decisions B2-6 + b2-d17).
+
+    A ``tool_call`` guardrail cannot see a provider-run call's arguments before
+    the call runs — it runs inside the model call. Such a check could not run,
+    and its ``on_error`` decides. The blocking rules with ``on_error="block"``
+    (the default) are reported here, before the model is called, so the run
+    stops before anything is searched or executed. The rest — ``on_error="allow"``
+    or observe-only — let the tool be offered, and each call it makes is
+    recorded as unchecked when it comes back.
+    """
+    if not guardrails:
+        return
+    provider = _provider_tools(offered)
+    if not provider:
+        return
+    halting = [
+        g
+        for g in guardrails
+        if g.position == GuardrailPosition.tool_call and g.blocking and g.on_error == "block"
+    ]
+    if not halting:
+        return
+    names = [t.name for t in provider]
+    await execute_guardrails(
+        halting,
+        json.dumps({"tool": names[0], "arguments": {}}),
+        GuardrailPosition.tool_call,
+        agent_name=agent_name,
+        could_not_run=_uncheckable_reason(names),
+    )
+
+
+async def _record_provider_calls(
+    response: LLMResponse,
+    guardrails: list[Guardrail] | None,
+    *,
+    agent_name: str,
+    iteration: int,
+    records: list[dict[str, Any]] | None = None,
+) -> None:
+    """Record the calls the model's provider ran inside this model call (1.91.0, 2D).
+
+    Each becomes a ``tool.<name>`` span (``tool.origin="provider"``, never
+    re-run by Replay) and a tool-call record. The ``tool_call`` guardrails left
+    after :func:`_gate_provider_tools` report could-not-run; the ``tool_result``
+    guardrails judge what the provider showed of the result. The model has
+    already read the result by now, so a rule that rewrites it (mask, override)
+    cannot take effect and blocks instead — as for a tool result with image
+    parts. A result with nothing to judge is could-not-run, never a pass.
+    """
+    from fastaiagent._internal.errors import GuardrailBlockedError
+    from fastaiagent.trace.otel import get_tracer
+    from fastaiagent.trace.span import trace_payloads_enabled
+
+    tracer = get_tracer("fastaiagent.agent.executor")
+    for call in response.provider_tool_calls:
+        record: dict[str, Any] = {
+            "iteration": iteration,
+            "tool_name": call.name,
+            "arguments": call.arguments,
+            "tool_call_id": call.id,
+        }
+        with tracer.start_as_current_span(f"tool.{call.name}") as span:
+            span.set_attribute("tool.name", call.name)
+            span.set_attribute("tool.origin", "provider")
+            span.set_attribute("fastaiagent.runner.type", "tool")
+            span.set_attribute("fastaiagent.tool.replay_class", "side_effecting")
+            payloads = trace_payloads_enabled()
+            if payloads:
+                span.set_attribute("tool.args", json.dumps(call.arguments, default=str))
+            if guardrails:
+                await execute_guardrails(
+                    guardrails,
+                    json.dumps({"tool": call.name, "arguments": call.arguments}, default=str),
+                    GuardrailPosition.tool_call,
+                    agent_name=agent_name,
+                    could_not_run=_uncheckable_reason([call.name]),
+                )
+            if call.error is not None:
+                span.set_attribute("tool.status", "error")
+                span.set_attribute("tool.error", call.error)
+                record["error"] = call.error
+            else:
+                if guardrails:
+                    outcome = await execute_guardrails(
+                        guardrails,
+                        call.output,
+                        GuardrailPosition.tool_result,
+                        agent_name=agent_name,
+                        could_not_run=None
+                        if call.output.strip()
+                        else "the provider returned nothing of this result to judge",
+                    )
+                    if outcome.modified:
+                        outcome.refuse("the model already read the provider-run tool's result")
+                        raise GuardrailBlockedError(
+                            guardrail_name="tool_result",
+                            message=(
+                                f"A guardrail rewrote the result of {call.name}, which the "
+                                f"model's provider ran and the model has already read; "
+                                f"blocked instead."
+                            ),
+                            results=outcome.results,
+                        )
+                span.set_attribute("tool.status", "ok")
+                if payloads:
+                    span.set_attribute("tool.result", call.output)
+                record["output"] = call.output
+        if records is not None:
+            records.append(record)
+
+
 class _StoppedResponse(LLMResponse):
     """The loop's answer when middleware raised ``StopAgent`` (1.90.0, F8).
 
@@ -654,6 +793,19 @@ def _turn_llm_kwargs(kwargs: dict[str, Any], tool_choice: str, iteration: int) -
     if tool_choice == "required" and iteration != 0:
         return kwargs
     return {**kwargs, "tool_choice": tool_choice}
+
+
+def _paused(response: LLMResponse) -> bool:
+    """Anthropic paused a long server-tool turn (``stop_reason="pause_turn"``,
+    1.91.0, 2D): the turn goes back as it is, and the model carries on."""
+    return response.finish_reason == "pause_turn" and not response.tool_calls
+
+
+def _with_paused_text(response: LLMResponse, paused: list[str]) -> LLMResponse:
+    """The answer, with what the model said before a ``pause_turn`` in front."""
+    if not paused:
+        return response
+    return response.model_copy(update={"content": "".join(paused) + (response.content or "")})
 
 
 def _final_answer(calls: list[ToolCall], final_tool: str | None) -> str | None:
@@ -749,12 +901,19 @@ async def _streamed_turn(
         calls: list[ToolCall] = []
         prompt_tokens = completion_tokens = 0
         finish = ""
+        provider_calls: list[ProviderToolCall] = []
+        provider_content: ProviderContent | None = None
         async for event in _turn_model(llm, mw_ctx).astream(
             msgs, tools=_tool_defs(mw_ctx.tools), **turn_kwargs
         ):
             if isinstance(event, StreamDone):
                 finish = event.finish_reason or finish
                 continue  # the loop emits one StreamDone for the whole run
+            if isinstance(event, ProviderTurn):
+                # The loop records these; the caller never sees the event.
+                provider_calls = list(event.calls)
+                provider_content = event.content
+                continue
             if isinstance(event, TextDelta):
                 text += event.text
             elif isinstance(event, ReasoningDelta):
@@ -785,6 +944,8 @@ async def _streamed_turn(
             finish_reason="tool_calls" if calls else (finish or "stop"),
             reasoning=reasoning or None,
             reasoning_blocks=blocks,
+            provider_tool_calls=provider_calls,
+            provider_content=provider_content,
         )
 
     task = asyncio.ensure_future(mw_pipeline.call_model(mw_ctx, messages, _terminal))
@@ -1010,6 +1171,7 @@ async def execute_tool_loop(
         )
         return idx, ToolMessage(content=content, tool_call_id=tc.id), record
 
+    paused_text: list[str] = []
     for iteration in range(start_iteration, max_iterations):
         # Turn-boundary checkpoint — the resume point for crashes mid-LLM.
         if checkpointer is not None and execution_id is not None:
@@ -1038,6 +1200,10 @@ async def execute_tool_loop(
             except StopAgent as stop:
                 return _stopped_response(stop), all_tool_calls
 
+        # A provider-run tool a tool_call guardrail cannot check (1.91.0, B2-6).
+        await _gate_provider_tools(
+            mw_ctx.tools if mw_ctx is not None else tools, guardrails, agent_name
+        )
         # Call LLM — through ``wrap_model`` when a middleware implements it.
         try:
             # The run's limits, before every model call (1.91.0, 2I).
@@ -1053,6 +1219,10 @@ async def execute_tool_loop(
             )
         except StopAgent as stop:
             return _stopped_response(stop), all_tool_calls
+        # What the provider ran inside that call (1.91.0, 2D).
+        await _record_provider_calls(
+            response, guardrails, agent_name=agent_name, iteration=iteration, records=all_tool_calls
+        )
         if mw_ctx is not None:
             # This turn's tools are what was offered: one a middleware added
             # for this call can be dispatched (1.91.0, 1A).
@@ -1065,9 +1235,21 @@ async def execute_tool_loop(
             except StopAgent as stop:
                 return _stopped_response(stop), all_tool_calls
 
+        if _paused(response):
+            # The turn goes back as it is and the model carries on (1.91.0).
+            if response.content:
+                paused_text.append(response.content)
+            messages.append(
+                AssistantMessage(
+                    content=response.content,
+                    reasoning_blocks=response.reasoning_blocks,
+                    provider_content=response.provider_content,
+                )
+            )
+            continue
         # No tool calls — we're done
         if not response.tool_calls:
-            return response, all_tool_calls
+            return _with_paused_text(response, paused_text), all_tool_calls
         # The answer, given as a call (``output_mode="tool"``, 1.91.0).
         answer = _final_answer(response.tool_calls, final_tool)
         if answer is not None:
@@ -1076,12 +1258,14 @@ async def execute_tool_loop(
             ), all_tool_calls
 
         # Build assistant message with tool calls — and the model's reasoning
-        # blocks, which Claude requires back within the tool-use turn (X17).
+        # blocks, which Claude requires back within the tool-use turn (X17), and
+        # the turn verbatim when a provider-run tool ran in it (1.91.0, 2D).
         messages.append(
             AssistantMessage(
                 content=response.content,
                 tool_calls=response.tool_calls,
                 reasoning_blocks=response.reasoning_blocks,
+                provider_content=response.provider_content,
             )
         )
 
@@ -1297,6 +1481,7 @@ async def stream_tool_loop(
         )
         return idx, ToolMessage(content=content, tool_call_id=tc.id)
 
+    paused_text: list[str] = []
     for iteration in range(start_iteration, max_iterations):
         # Turn-boundary checkpoint — the resume point for crashes mid-LLM.
         if checkpointer is not None and execution_id is not None:
@@ -1327,6 +1512,10 @@ async def stream_tool_loop(
                 yield _stream_stop(stop, final_reply)
                 return
 
+        # A provider-run tool a tool_call guardrail cannot check (1.91.0, B2-6).
+        await _gate_provider_tools(
+            mw_ctx.tools if mw_ctx is not None else tools, guardrails, agent_name
+        )
         # The run's limits, before every model call (1.91.0, 2I).
         try:
             check_before_model_call(iteration, getattr(_turn_model(llm, mw_ctx), "model", None))
@@ -1341,6 +1530,8 @@ async def stream_tool_loop(
         total_usage = Usage()
         turn_kwargs = _turn_llm_kwargs(kwargs, tool_choice, iteration)
         wrapped: LLMResponse | None = None
+        provider_turn: ProviderTurn | None = None
+        stream_finish = ""
 
         if _wraps_model(mw_pipeline, mw_ctx):
             # Through the ``wrap_model`` onion; the deltas still stream live.
@@ -1388,7 +1579,27 @@ async def stream_tool_loop(
                     total_usage.prompt_tokens += event.prompt_tokens
                     total_usage.completion_tokens += event.completion_tokens
                     yield event
+                elif isinstance(event, ProviderTurn):
+                    # Recorded below; never passed on (1.91.0, 2D).
+                    provider_turn = event
+                elif isinstance(event, StreamDone):
+                    stream_finish = event.finish_reason
                 # Don't yield StreamDone here — we may have more iterations
+        if wrapped is not None:
+            provider_turn = ProviderTurn(
+                calls=list(wrapped.provider_tool_calls), content=wrapped.provider_content
+            )
+            stream_finish = wrapped.finish_reason
+        provider_content = provider_turn.content if provider_turn is not None else None
+        # What the provider ran inside that call — judged now, after the text
+        # that streamed with it (1.91.0, 2D).
+        if provider_turn is not None and provider_turn.calls:
+            await _record_provider_calls(
+                LLMResponse(provider_tool_calls=provider_turn.calls),
+                guardrails,
+                agent_name=agent_name,
+                iteration=iteration,
+            )
         if mw_ctx is not None:
             # This turn's tools are what was offered (see execute_tool_loop).
             tools_by_name = {t.name: t for t in mw_ctx.tools}
@@ -1408,8 +1619,12 @@ async def stream_tool_loop(
                     "completion_tokens": total_usage.completion_tokens,
                     "total_tokens": total_usage.prompt_tokens + total_usage.completion_tokens,
                 },
-                finish_reason="tool_calls" if pending_tool_calls else "stop",
+                finish_reason="tool_calls"
+                if pending_tool_calls
+                else (stream_finish if stream_finish == "pause_turn" else "stop"),
                 reasoning_blocks=list(reasoning_blocks),
+                provider_tool_calls=list(provider_turn.calls) if provider_turn else [],
+                provider_content=provider_content,
             )
             try:
                 response = await mw_pipeline.apply_after_model(mw_ctx, response)
@@ -1421,10 +1636,21 @@ async def stream_tool_loop(
             pending_tool_calls = list(response.tool_calls)
             reasoning_blocks = list(response.reasoning_blocks)
 
+        if stream_finish == "pause_turn" and not pending_tool_calls:
+            # The turn goes back as it is and the model carries on (1.91.0).
+            paused_text.append(accumulated_text)
+            messages.append(
+                AssistantMessage(
+                    content=accumulated_text or None,
+                    reasoning_blocks=reasoning_blocks,
+                    provider_content=provider_content,
+                )
+            )
+            continue
         # No tool calls — final response, we're done
         if not pending_tool_calls:
             if final_reply is not None:
-                final_reply["text"] = accumulated_text
+                final_reply["text"] = "".join(paused_text) + accumulated_text
             return
         # The answer, given as a call (``output_mode="tool"``, 1.91.0).
         answer = _final_answer(pending_tool_calls, final_tool)
@@ -1439,6 +1665,7 @@ async def stream_tool_loop(
                 content=accumulated_text or None,
                 tool_calls=pending_tool_calls,
                 reasoning_blocks=reasoning_blocks,
+                provider_content=provider_content,
             )
         )
 

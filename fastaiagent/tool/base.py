@@ -244,6 +244,7 @@ class Tool:
         """Deserialize from canonical format — dispatches to correct subclass."""
         from fastaiagent.tool.function import FunctionTool
         from fastaiagent.tool.mcp import MCPTool
+        from fastaiagent.tool.provider import ProviderTool
         from fastaiagent.tool.rest import RESTTool
 
         tool_type = data.get("tool_type", "function")
@@ -251,6 +252,7 @@ class Tool:
             "function": FunctionTool,
             "rest_api": RESTTool,
             "mcp": MCPTool,
+            "provider": ProviderTool,
         }
         target_cls = dispatch.get(tool_type)
         if target_cls is None:

@@ -126,6 +126,23 @@ completion count, so they are priced at the output rate.
 
 See [Reasoning and prompt caching](../llm/reasoning-and-caching.md).
 
+### Provider-run tool fees (1.91.0)
+
+`web_search()`, `code_execution()` and `file_search()` are billed per call on top
+of the tokens. The fee is priced with the call's tokens, so it is in the `llm.*`
+span's `fastaiagent.cost.total_usd` and in the run's cost:
+
+- OpenAI web search: $10 / 1,000 calls.
+- OpenAI file search: $2.50 / 1,000 calls.
+- OpenAI code container: $0.03 each, counted once per run.
+- Anthropic web search: $10 / 1,000 searches.
+- Gemini 3+ Google Search: $14 / 1,000 queries. The 5,000 free a month are not
+  modelled.
+
+A fee the table doesn't know leaves the call unpriced. Org rates go through
+`set_tool_fee_overrides({"openai/web_search": 0.008})`. See
+[Provider-run tools](../tools/provider-tools.md#cost).
+
 ## Updating prices
 
 The built-in table is public list price from each provider's pricing page, keyed

@@ -22,9 +22,17 @@ from fastaiagent._internal.async_utils import run_sync
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.errors import LLMError, LLMProviderError, LLMRateLimitError
 from fastaiagent.llm.decisions import DecisionResult
-from fastaiagent.llm.message import Message, MessageRole, ReasoningBlock, ToolCall
+from fastaiagent.llm.message import (
+    Message,
+    MessageRole,
+    ProviderContent,
+    ProviderToolCall,
+    ReasoningBlock,
+    ToolCall,
+)
 from fastaiagent.llm.model_info import ModelInfo
 from fastaiagent.llm.stream import (
+    ProviderTurn,
     ReasoningDelta,
     StreamDone,
     StreamEvent,
@@ -41,6 +49,10 @@ logger = logging.getLogger(__name__)
 TOOL_CHOICES = ("auto", "required", "none")
 #: Providers already warned about an unsupported ``tool_choice`` — once each.
 _TOOL_CHOICE_WARNED: set[str] = set()
+#: The OpenAI endpoints ``LLMClient(api=...)`` can call (1.91.0, 2C).
+APIS = ("chat", "responses")
+#: Providers whose endpoint can serve the Responses API.
+_RESPONSES_PROVIDERS = frozenset({"openai", "azure", "custom"})
 
 
 def _parse_provider_error_body(text: str) -> tuple[str | None, str | None, str | None]:
@@ -368,6 +380,12 @@ class LLMResponse(BaseModel):
     #: The provider's opaque reasoning blocks, sent back by the agent loop —
     #: see :class:`~fastaiagent.llm.message.ReasoningBlock`.
     reasoning_blocks: list[ReasoningBlock] = Field(default_factory=list)
+    #: Calls of provider-run tools (``web_search()`` …) made inside this model
+    #: call (1.91.0, 2D) — the agent loop records each as a ``tool.<name>`` span.
+    provider_tool_calls: list[ProviderToolCall] = Field(default_factory=list)
+    #: The turn verbatim, when a provider-run tool ran in it — the agent loop
+    #: puts it on the assistant message so it goes back unchanged.
+    provider_content: ProviderContent | None = None
 
 
 def _usage(
@@ -442,6 +460,39 @@ def _anthropic_usage(raw: dict[str, Any] | None) -> dict[str, Any]:
         cache_write=write,
         cache_write_1h=one_hour or None,
     )
+
+
+def _track_anthropic_block(
+    event_type: str,
+    data: dict[str, Any],
+    blocks: dict[int, dict[str, Any]],
+    block_json: dict[int, str],
+) -> None:
+    """Rebuild a streamed Anthropic content block from its events (1.91.0, 2D),
+    as a non-streamed response would have carried it."""
+    index = data.get("index")
+    if not isinstance(index, int):
+        return
+    if event_type == "content_block_start":
+        blocks[index] = dict(data.get("content_block") or {})
+    elif event_type == "content_block_delta" and index in blocks:
+        block, delta = blocks[index], data.get("delta") or {}
+        kind = delta.get("type")
+        if kind == "text_delta":
+            block["text"] = block.get("text", "") + delta.get("text", "")
+        elif kind == "citations_delta" and delta.get("citation"):
+            block.setdefault("citations", []).append(delta["citation"])
+        elif kind == "input_json_delta":
+            block_json[index] = block_json.get(index, "") + delta.get("partial_json", "")
+        elif kind == "thinking_delta":
+            block["thinking"] = block.get("thinking", "") + delta.get("thinking", "")
+        elif kind == "signature_delta":
+            block["signature"] = block.get("signature", "") + delta.get("signature", "")
+    elif event_type == "content_block_stop" and index in block_json:
+        try:
+            blocks[index]["input"] = _json.loads(block_json.pop(index) or "{}")
+        except (_json.JSONDecodeError, KeyError):
+            pass
 
 
 def _bedrock_usage(raw: dict[str, Any]) -> dict[str, Any]:
@@ -614,9 +665,17 @@ class LLMClient:
         fallbacks: list[LLMClient] | None = None,
         reasoning: str | None = None,
         cache: bool | str = False,
+        api: str = "chat",
         **kwargs: Any,
     ):
         """Configure a client for one provider and model.
+
+        ``api`` (1.91.0) picks OpenAI's endpoint: ``"chat"`` (Chat Completions,
+        the default) or ``"responses"`` (the Responses API — see
+        :mod:`fastaiagent.llm.responses`). OpenAI serves tool calling with
+        reasoning on its current models only through ``"responses"``, and its
+        provider-run tools (``web_search()`` …) live there. Valid for
+        ``provider="openai"``, ``"azure"`` and ``"custom"``.
 
         ``reasoning`` (1.91.0) sets how hard the model thinks: ``"none"``,
         ``"minimal"``, ``"low"``, ``"medium"``, ``"high"``, ``"xhigh"`` or
@@ -654,6 +713,15 @@ class LLMClient:
 
         if max_concurrency is not None and max_concurrency < 1:
             raise ValueError(f"max_concurrency must be >= 1 or None, got {max_concurrency!r}")
+        if api not in APIS:
+            raise ValueError(f"api must be one of {APIS}, got {api!r}")
+        if api == "responses" and provider not in _RESPONSES_PROVIDERS:
+            raise ValueError(
+                f"api='responses' is OpenAI's Responses API; provider {provider!r} does not "
+                f"serve it. Use provider='openai', 'azure' or 'custom' (a base_url that "
+                f"serves /responses)."
+            )
+        self.api = api
         self.reasoning: str | None = reasoning_level(reasoning)
         self.cache: str | None = cache_setting(cache)
         self.extra_body: dict[str, Any] = dict(extra_body or {})
@@ -1362,7 +1430,11 @@ class LLMClient:
             "bedrock": None,
             "custom": self._stream_openai,
         }
-        fn = stream_providers.get(self.provider)
+        fn = (
+            self._stream_openai_responses
+            if self.api == "responses"
+            else stream_providers.get(self.provider)
+        )
         if fn is None and self._preset is not None:
             if self._preset.wire == "openai_compat" and self._preset.cap("streaming", True):
                 fn = self._stream_openai
@@ -1420,8 +1492,11 @@ class LLMClient:
         text_parts: list[str] = []
         reasoning_parts: list[str] = []
         streamed_tool_calls: list[dict[str, Any]] = []
-        usage_seen: dict[str, int] | None = None
+        usage_seen: dict[str, Any] | None = None
         finish_seen = ""
+        # The fees a provider-run tool adds (1.91.0, 2D) — a stream reports them
+        # on ``ProviderTurn``, just before its ``Usage``.
+        tool_fees: dict[str, Any] = {}
 
         try:
             for attempt in range(self.max_retries + 1):
@@ -1444,8 +1519,14 @@ class LLMClient:
                                     "cache_write_tokens": event.cache_write_tokens,
                                     "cache_write_1h_tokens": event.cache_write_1h_tokens,
                                     "reasoning_tokens": event.reasoning_tokens,
+                                    **tool_fees,
                                 }
                                 record_run_cost(self.model, usage_seen, provider=self.provider)
+                            elif isinstance(event, ProviderTurn):
+                                if event.tool_requests:
+                                    tool_fees["tool_requests"] = dict(event.tool_requests)
+                                if event.containers:
+                                    tool_fees["containers"] = list(event.containers)
                             elif isinstance(event, TextDelta):
                                 text_parts.append(event.text)
                             elif isinstance(event, ReasoningDelta):
@@ -1470,6 +1551,7 @@ class LLMClient:
                         text_parts.clear()
                         reasoning_parts.clear()
                         streamed_tool_calls.clear()
+                        tool_fees.clear()
                         await asyncio.sleep(self._delay_for(attempt, e))
                         continue
                     raise
@@ -1537,14 +1619,17 @@ class LLMClient:
             reasoning_parts: list[str] = []
             reasoning_blocks: list[ReasoningBlock] = []
             tool_calls: list[ToolCall] = []
-            usage_data: dict[str, int] = {}
+            usage_data: dict[str, Any] = {}
             # Accumulate tool call args per call_id
             pending_tools: dict[str, dict[str, Any]] = {}
             provider_finish = ""
+            turn: ProviderTurn | None = None
 
             async for event in self.astream(messages, tools=tools, **kwargs):
                 if isinstance(event, StreamDone):
                     provider_finish = event.finish_reason
+                if isinstance(event, ProviderTurn):
+                    turn = event
                 if isinstance(event, TextDelta):
                     content_parts.append(event.text)
                 elif isinstance(event, ReasoningDelta):
@@ -1577,6 +1662,11 @@ class LLMClient:
             # The provider's own reason when it gave one (1.89.0): this was
             # hard-coded, so a truncated reply reported "stop".
             finish = provider_finish or ("tool_calls" if tool_calls else "stop")
+            if turn is not None:
+                if turn.tool_requests:
+                    usage_data["tool_requests"] = dict(turn.tool_requests)
+                if turn.containers:
+                    usage_data["containers"] = list(turn.containers)
             return LLMResponse(
                 content=content,
                 tool_calls=tool_calls,
@@ -1585,6 +1675,8 @@ class LLMClient:
                 finish_reason=finish,
                 reasoning="".join(reasoning_parts) or None,
                 reasoning_blocks=reasoning_blocks,
+                provider_tool_calls=list(turn.calls) if turn is not None else [],
+                provider_content=turn.content if turn is not None else None,
             )
 
         return run_sync(_collect())
@@ -1882,6 +1974,8 @@ class LLMClient:
         return parsed, raw.headers.get("x-request-id")
 
     def _get_provider_fn(self) -> Any:
+        if self.api == "responses":
+            return self._call_openai_responses
         providers = {
             "openai": self._call_openai,
             "anthropic": self._call_anthropic,
@@ -1977,6 +2071,14 @@ class LLMClient:
         _stream_openai to avoid duplicating message preparation, parameter
         building, and header construction logic.
         """
+        from fastaiagent.llm.provider_tools import refuse_provider_tools
+
+        refuse_provider_tools(
+            tools,
+            "Chat Completions (use api='responses')"
+            if self.provider in _RESPONSES_PROVIDERS
+            else f"provider {self.provider!r}",
+        )
         prepared = self._split_multimodal_tool_messages_for_openai(messages)
         # All OpenAI-compatible providers share this wire format, but the
         # multimodal formatter needs the *real* provider to resolve pdf_mode:
@@ -2059,6 +2161,11 @@ class LLMClient:
         if reasoning is not None:
             body["reasoning_effort"] = reasoning
 
+        return body, self._openai_auth(body, kwargs)
+
+    def _openai_auth(self, body: dict[str, Any], kwargs: dict[str, Any]) -> dict[str, str]:
+        """Headers for an OpenAI-compatible request, with the pass-through options
+        merged into ``body`` — shared by Chat Completions and Responses."""
         # When delegating to an injected OpenAI-SDK client, auth (and headers)
         # are owned by that client — fastaiagent neither needs nor sends its own
         # API key. This is what makes keyless flows (Azure AD / managed identity
@@ -2072,7 +2179,7 @@ class LLMClient:
                 body["extra_body"] = extra_body
             if extra_headers:
                 body["extra_headers"] = extra_headers
-            return body, {"Content-Type": "application/json"}
+            return {"Content-Type": "application/json"}
 
         env_var, env_label = self._api_key_env()
         api_key = self.api_key or os.environ.get(env_var, "")
@@ -2089,7 +2196,7 @@ class LLMClient:
         }
         self._apply_extras(body, headers, kwargs)
 
-        return body, headers
+        return headers
 
     def _credential_values(self) -> list[str]:
         """Every credential this client could have sent: its own key, plus the
@@ -2120,6 +2227,10 @@ class LLMClient:
 
         clean = scrub_secrets(body or "", self._credential_values())
         message, code, request_id = _parse_provider_error_body(clean)
+        if self.api == "chat" and "/v1/responses" in clean:
+            # OpenAI serves some models' tool calling only on the Responses API
+            # and says so; say how to get there from here (1.91.0, 2C).
+            clean += " — with fastaiagent: LLMClient(provider='openai', api='responses')"
         if request_id is None and headers is not None:
             try:
                 request_id = headers.get("x-request-id") or headers.get("request-id")
@@ -2208,6 +2319,105 @@ class LLMClient:
             reasoning=_openai_reasoning_text(msg),
         )
 
+    # ------------------------------------------------------------------
+    # Responses API (POST /v1/responses) — api="responses" (1.91.0, 2C)
+    # ------------------------------------------------------------------
+
+    def _responses_request(
+        self,
+        messages: list[Message],
+        tools: list[dict[str, Any]] | None,
+        *,
+        stream: bool,
+        kwargs: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, str]]:
+        from fastaiagent.llm.responses import build_body
+
+        body = build_body(self, messages, tools, stream=stream, kwargs=kwargs)
+        return body, self._openai_auth(body, kwargs)
+
+    async def _responses_via_openai_client(self, body: dict[str, Any]) -> Any:
+        """``responses.create`` on the injected OpenAI-SDK client; an HTTP error
+        becomes an :class:`LLMProviderError` so retries and fallbacks see it."""
+        client = self._openai_client
+        try:
+            if self._openai_client_is_async:
+                return await client.responses.create(**body)
+            return await asyncio.to_thread(lambda: client.responses.create(**body))
+        except Exception as e:
+            status = getattr(e, "status_code", None)
+            if isinstance(status, int):
+                raise self._provider_error(
+                    f"OpenAI Responses API error {status}", str(e), status
+                ) from e
+            raise
+
+    async def _call_openai_responses(
+        self, messages: list[Message], tools: list[dict[str, Any]] | None = None, **kwargs: Any
+    ) -> LLMResponse:
+        """One non-streamed Responses API call."""
+        from fastaiagent.llm.responses import parse
+
+        body, headers = self._responses_request(messages, tools, stream=False, kwargs=kwargs)
+        if self._openai_client is not None:
+            raw = await self._responses_via_openai_client(body)
+            return parse(self, raw.model_dump() if hasattr(raw, "model_dump") else dict(raw))
+        url = f"{self.base_url.rstrip('/')}/responses"
+        async with self._new_async_client() as client:
+            resp = await client.post(url, json=body, headers=headers)
+            if resp.status_code != 200:
+                raise self._provider_error(
+                    f"OpenAI Responses API error {resp.status_code}",
+                    resp.text,
+                    resp.status_code,
+                    resp.headers,
+                )
+            data = resp.json()
+        return parse(self, data)
+
+    async def _responses_sse(
+        self, body: dict[str, Any], headers: dict[str, str]
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """The Responses SSE events, as dicts, from either transport."""
+        if self._openai_client is not None:
+            stream = await self._responses_via_openai_client(body)
+            if self._openai_client_is_async:
+                async for event in stream:
+                    yield event.model_dump()
+                return
+            sentinel = object()
+            iterator = iter(stream)
+            while True:
+                event = await asyncio.to_thread(next, iterator, sentinel)
+                if event is sentinel:
+                    break
+                yield event.model_dump()
+            return
+        url = f"{self.base_url.rstrip('/')}/responses"
+        async with self._new_async_client() as client:
+            async with client.stream("POST", url, json=body, headers=headers) as resp:
+                if resp.status_code != 200:
+                    body_text = await resp.aread()
+                    raise self._provider_error(
+                        f"OpenAI Responses API error {resp.status_code}",
+                        body_text.decode(errors="replace"),
+                        resp.status_code,
+                        resp.headers,
+                    )
+                async for line in resp.aiter_lines():
+                    if line.startswith("data: "):
+                        yield _json.loads(line[6:])
+
+    async def _stream_openai_responses(
+        self, messages: list[Message], tools: list[dict[str, Any]] | None = None, **kwargs: Any
+    ) -> AsyncGenerator[StreamEvent, None]:
+        """One streamed Responses API call."""
+        from fastaiagent.llm.responses import stream_events
+
+        body, headers = self._responses_request(messages, tools, stream=True, kwargs=kwargs)
+        async for event in stream_events(self, self._responses_sse(body, headers)):
+            yield event
+
     def _build_anthropic_body(
         self,
         messages: list[Message],
@@ -2231,8 +2441,14 @@ class LLMClient:
         system_parts: list[str] = []
         filtered_msgs: list[dict[str, Any]] = []
         for m in messages:
+            verbatim = m.content_for("anthropic") if m.role == MessageRole.assistant else None
             if m.role == MessageRole.system:
                 system_parts.append(_coerce_system_content_to_text(m.content))
+            elif verbatim is not None:
+                # A turn in which a server tool ran goes back exactly as it came
+                # (1.91.0, 2D): a search requested beside a client tool runs only
+                # once its ``server_tool_use`` block is sent back.
+                filtered_msgs.append({"role": "assistant", "content": verbatim})
             elif m.role == MessageRole.assistant and m.tool_calls:
                 # Claude's thinking goes back first, unchanged, while the tool-use
                 # turn is in progress — the API requires it (1.91.0, X17).
@@ -2315,10 +2531,14 @@ class LLMClient:
                 {"type": "ephemeral", "ttl": "1h"} if cache == "1h" else {"type": "ephemeral"}
             )
 
-        # Convert tools from OpenAI format to Anthropic format
+        # Convert tools from OpenAI format to Anthropic format; a provider-run
+        # tool becomes Anthropic's server tool (1.91.0, 2D).
         if tools:
+            from fastaiagent.llm.provider_tools import anthropic_tool, split_tools
+
+            functions, specs = split_tools(tools)
             anthropic_tools = []
-            for t in tools:
+            for t in functions:
                 func = t.get("function", t)
                 anthropic_tools.append(
                     {
@@ -2329,6 +2549,7 @@ class LLMClient:
                         ),
                     }
                 )
+            anthropic_tools.extend(anthropic_tool(s) for s in specs)
             body["tools"] = anthropic_tools
             tool_choice = self._requested_tool_choice(tools, kwargs)
             if tool_choice is not None:
@@ -2402,6 +2623,10 @@ class LLMClient:
 
         # Normalize usage — the cache added back into the prompt (1.91.0).
         usage = _anthropic_usage(data.get("usage"))
+        from fastaiagent.llm.provider_tools import parse_anthropic
+
+        report = parse_anthropic(data.get("content") or [], data.get("usage"), messages)
+        report.apply_to_usage(usage)
 
         # Normalize finish reason
         stop_reason = data.get("stop_reason", "")
@@ -2418,12 +2643,17 @@ class LLMClient:
             finish_reason=finish_reason,
             reasoning=reasoning_text or None,
             reasoning_blocks=reasoning_blocks,
+            provider_tool_calls=report.calls,
+            provider_content=report.content,
         )
 
     async def _call_ollama(
         self, messages: list[Message], tools: list[dict[str, Any]] | None = None, **kwargs: Any
     ) -> LLMResponse:
         """Call Ollama API."""
+        from fastaiagent.llm.provider_tools import refuse_provider_tools
+
+        refuse_provider_tools(tools, "Ollama")
         msg_dicts = [m.to_provider_dict("ollama", **self._provider_dict_kwargs()) for m in messages]
         body: dict[str, Any] = {
             "model": self.model,
@@ -2541,6 +2771,9 @@ class LLMClient:
         * neighbours with the same role are merged into one turn (a run of tool
           results answering one assistant message becomes one user turn).
         """
+        from fastaiagent.llm.provider_tools import refuse_provider_tools
+
+        refuse_provider_tools(tools, "Bedrock Converse")
         system: list[dict[str, Any]] = []
         turns: list[dict[str, Any]] = []
 
@@ -2848,6 +3081,10 @@ class LLMClient:
         current_thinking: dict[str, Any] | None = None
         usage_raw: dict[str, Any] = {}
         finish_reason = ""
+        # Every block rebuilt whole, by index (1.91.0, 2D): a turn in which a
+        # server tool ran goes back verbatim, so it is reassembled here.
+        blocks: dict[int, dict[str, Any]] = {}
+        block_json: dict[int, str] = {}
 
         async with self._new_async_client() as client:
             async with client.stream("POST", url, json=body, headers=headers) as resp:
@@ -2868,6 +3105,7 @@ class LLMClient:
                     if not line.startswith("data: "):
                         continue
                     data = _json.loads(line[6:])
+                    _track_anthropic_block(event_type, data, blocks, block_json)
 
                     if event_type == "content_block_start":
                         block = data.get("content_block", {})
@@ -2939,6 +3177,15 @@ class LLMClient:
                                 "tool_use": "tool_calls",
                             }.get(stop_reason, stop_reason)
 
+        from fastaiagent.llm.provider_tools import parse_anthropic
+
+        report = parse_anthropic([blocks[i] for i in sorted(blocks)], usage_raw, messages)
+        if report.calls or report.content is not None:
+            yield ProviderTurn(
+                calls=report.calls,
+                content=report.content,
+                tool_requests={k: v for k, v in report.tool_requests.items() if v},
+            )
         usage = _anthropic_usage(usage_raw)
         if usage["prompt_tokens"] or usage["completion_tokens"]:
             yield _usage_event(usage)
@@ -2948,6 +3195,9 @@ class LLMClient:
         self, messages: list[Message], tools: list[dict[str, Any]] | None = None, **kwargs: Any
     ) -> AsyncGenerator[StreamEvent, None]:
         """Stream from Ollama API via newline-delimited JSON."""
+        from fastaiagent.llm.provider_tools import refuse_provider_tools
+
+        refuse_provider_tools(tools, "Ollama")
         msg_dicts = [m.to_provider_dict("ollama", **self._provider_dict_kwargs()) for m in messages]
         body: dict[str, Any] = {
             "model": self.model,
@@ -3096,6 +3346,10 @@ class LLMClient:
             data["reasoning"] = self.reasoning
         if self.cache is not None:
             data["cache"] = self.cache
+        # The endpoint (1.91.0; key signed off 2026-10-19, b2-d15): a rebuilt GPT-6
+        # agent with tools on Chat Completions would 400. Only when not the default.
+        if self.api != "chat":
+            data["api"] = self.api
         return data
 
     @classmethod
@@ -3160,6 +3414,7 @@ class LLMClient:
                     "region",
                     "reasoning",
                     "cache",
+                    "api",
                 )
                 if key in data
             },

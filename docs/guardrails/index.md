@@ -585,6 +585,13 @@ All four guardrail positions are fully wired and operational:
 | `GuardrailPosition.tool_call` | Before tool executes | Restrict URLs, validate arguments, audit |
 | `GuardrailPosition.tool_result` | After tool returns (success only) | Validate tool output, filter sensitive data |
 
+A tool the model's provider runs (`web_search()` …, 1.91.0) is different. A
+`tool_call` rule cannot check it, because its arguments exist only inside the
+model call, so the rule reports could-not-run and its `on_error` decides. With
+the default `on_error="block"`, the run stops before the model is called. A
+`tool_result` rule judges what the provider shows of the result, and a rewrite
+blocks instead. See [Provider-run tools](../tools/provider-tools.md#guardrails).
+
 ```python
 from fastaiagent import Agent, LLMClient
 from fastaiagent.guardrail import Guardrail, GuardrailPosition, allowed_domains

@@ -139,7 +139,11 @@ class FastAIAgentMCPServer:
 
         # Agent has tools; Chain does not (its nodes may have tools but we
         # don't surface them individually by default).
-        self._inner_tools: list[Tool] = list(getattr(target, "tools", []))
+        # A provider-run tool (``web_search()``, 1.91.0) only runs inside a model
+        # call, so it is not something an MCP client can call directly.
+        self._inner_tools: list[Tool] = [
+            t for t in getattr(target, "tools", []) if getattr(t, "origin", "") != "provider"
+        ]
 
         self._server = server_cls(self._primary_name)
         self._register_handlers()

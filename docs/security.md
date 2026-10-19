@@ -203,6 +203,12 @@ anything a custom middleware stores). It replicates with the rest of the
 snapshot, under this same switch, so keep customer data out of `ctx.state` or
 turn replication off.
 
+Also since 1.91.0, an assistant message in the checkpointed history can carry
+**`provider_content`**: the turn exactly as the provider returned it, written
+only when one of the [provider's own tools](tools/provider-tools.md) ran in it.
+It holds search results (titles, URLs, encrypted page content), code and its
+output. It replicates under this same switch.
+
 This gates **replication only**. Your local durability (SQLite/Postgres) is
 untouched, so **same-machine crash/interrupt resume still works** with it off.
 What the plane replica additionally provides — and what you lose by disabling

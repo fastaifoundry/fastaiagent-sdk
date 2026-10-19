@@ -207,8 +207,29 @@ def _stamp_span(span: Any, guardrail: Guardrail, result: GuardrailResult) -> Non
         _log.debug("Failed to stamp guardrail span for %r", guardrail.name, exc_info=True)
 
 
+async def _unrunnable(
+    guardrail: Guardrail, data: str | dict[str, Any], reason: str
+) -> GuardrailResult:
+    """The result of a check that could not run, decided by ``on_error`` — the
+    same verdict ``run_guardrail`` gives a check whose runner raised (CLAUDE.md
+    §2.4: never a clean pass)."""
+    from fastaiagent.guardrail.actions import apply_action
+
+    result = GuardrailResult(
+        passed=guardrail.on_error == "allow",
+        errored=True,
+        message=f"{guardrail.name} could not run (on_error={guardrail.on_error}): {reason}",
+        metadata={"error": reason, "on_error": guardrail.on_error},
+    )
+    return await apply_action(guardrail, data, result)
+
+
 async def _check_in_span(
-    guardrail: Guardrail, data: str | dict[str, Any], *, contain: bool = False
+    guardrail: Guardrail,
+    data: str | dict[str, Any],
+    *,
+    contain: bool = False,
+    could_not_run: str | None = None,
 ) -> tuple[GuardrailResult, str | None]:
     """Run one check inside its own guardrail span; return ``(result, span_id)``.
 
@@ -230,6 +251,8 @@ async def _check_in_span(
     from fastaiagent.trace.span import _span_id_hex
 
     async def check() -> GuardrailResult:
+        if could_not_run is not None:
+            return await _unrunnable(guardrail, data, could_not_run)
         try:
             return await guardrail._acheck(data)
         except Exception as e:
@@ -305,8 +328,16 @@ async def execute_guardrails(
     allow_reask: bool = False,
     agent_name: str | None = None,
     attempt: int | None = None,
+    could_not_run: str | None = None,
 ) -> GuardrailOutcome:
     """Execute guardrails for a given position.
+
+    ``could_not_run`` (1.91.0): the reason none of these checks can see what
+    they would judge — a ``tool_call`` rule over a tool the model's provider
+    runs, whose arguments exist only inside the model call. Each check is then
+    recorded as errored and decided by its ``on_error``, exactly as a check
+    whose runner raised: ``"block"`` halts, ``"allow"`` lets the call through
+    marked unchecked. It is never a pass.
 
     Blocking guardrails are run first (sequentially). Non-blocking guardrails
     are run in parallel. Raises ``GuardrailBlockedError`` when a blocking
@@ -347,7 +378,14 @@ async def execute_guardrails(
 
     batch = EventBatch(agent_name=agent_name, attempt=attempt) if recording_enabled() else None
     try:
-        await _run_position(outcome, blocking, non_blocking, batch, allow_reask=allow_reask)
+        await _run_position(
+            outcome,
+            blocking,
+            non_blocking,
+            batch,
+            allow_reask=allow_reask,
+            could_not_run=could_not_run,
+        )
     finally:
         # A block still records: the rows are flushed on the way out.
         if batch is not None:
@@ -362,12 +400,13 @@ async def _run_position(
     batch: EventBatch | None,
     *,
     allow_reask: bool,
+    could_not_run: str | None = None,
 ) -> None:
     # Run blocking guardrails sequentially
     for guardrail in blocking:
         judged = outcome.data
         # The span closes before any raise below, so blocks are traced too.
-        result, span_id = await _check_in_span(guardrail, judged)
+        result, span_id = await _check_in_span(guardrail, judged, could_not_run=could_not_run)
         outcome.results.append(result)
         _record(
             outcome,
@@ -412,7 +451,10 @@ async def _run_position(
         judged = outcome.data
         # Each task gets its own span (gather copies the context per task).
         checked = await asyncio.gather(
-            *(_check_in_span(g, judged, contain=True) for g in non_blocking)
+            *(
+                _check_in_span(g, judged, contain=True, could_not_run=could_not_run)
+                for g in non_blocking
+            )
         )
         for guardrail, (result, span_id) in zip(non_blocking, checked):
             outcome.results.append(result)

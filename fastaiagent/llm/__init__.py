@@ -17,6 +17,8 @@ from fastaiagent.llm.message import (
     AssistantMessage,
     Message,
     MessageRole,
+    ProviderContent,
+    ProviderToolCall,
     ReasoningBlock,
     SystemMessage,
     ToolCall,
@@ -36,6 +38,7 @@ from fastaiagent.llm.reasoning import REASONING_LEVELS
 from fastaiagent.llm.stream import (
     Paused,
     PartialOutput,
+    ProviderTurn,
     ReasoningDelta,
     StreamDone,
     StreamEvent,
@@ -59,6 +62,10 @@ __all__ = [
     # Reasoning (1.91.0)
     "REASONING_LEVELS",
     "ReasoningBlock",
+    # Provider-run tools (1.91.0)
+    "ProviderContent",
+    "ProviderToolCall",
+    "ProviderTurn",
     # Streaming
     "StreamEvent",
     "TextDelta",
