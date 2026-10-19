@@ -656,6 +656,17 @@ def _turn_llm_kwargs(kwargs: dict[str, Any], tool_choice: str, iteration: int) -
     return {**kwargs, "tool_choice": tool_choice}
 
 
+def _final_answer(calls: list[ToolCall], final_tool: str | None) -> str | None:
+    """The reply a ``final_tool`` call gives, as JSON text; ``None`` when the turn
+    has no such call."""
+    if final_tool is None:
+        return None
+    for call in calls:
+        if call.name == final_tool:
+            return json.dumps(call.arguments)
+    return None
+
+
 def _tool_defs(tools: list[Tool]) -> list[dict[str, Any]] | None:
     return [t.to_openai_format() for t in tools] if tools else None
 
@@ -940,9 +951,14 @@ async def execute_tool_loop(
     parallel_tools: bool = False,
     max_parallel_tools: int = 4,
     governance_run_id: str | None = None,
+    final_tool: str | None = None,
     **kwargs: Any,
 ) -> tuple[LLMResponse, list[dict[str, Any]]]:
     """Execute the agent's tool-calling loop.
+
+    ``final_tool`` (1.91.0, 2G): the name of the tool whose call is the run's
+    answer (``output_mode="tool"``). The loop ends on it, with its arguments as
+    the reply, and runs nothing else of that turn.
 
     Sends messages to the LLM. If the LLM requests tool calls,
     executes them, appends results, and loops. Stops when the LLM
@@ -1052,6 +1068,12 @@ async def execute_tool_loop(
         # No tool calls — we're done
         if not response.tool_calls:
             return response, all_tool_calls
+        # The answer, given as a call (``output_mode="tool"``, 1.91.0).
+        answer = _final_answer(response.tool_calls, final_tool)
+        if answer is not None:
+            return response.model_copy(
+                update={"content": answer, "tool_calls": [], "finish_reason": "stop"}
+            ), all_tool_calls
 
         # Build assistant message with tool calls — and the model's reasoning
         # blocks, which Claude requires back within the tool-use turn (X17).
@@ -1231,6 +1253,7 @@ async def stream_tool_loop(
     max_parallel_tools: int = 4,
     governance_run_id: str | None = None,
     final_reply: dict[str, str] | None = None,
+    final_tool: str | None = None,
     **kwargs: Any,
 ) -> AsyncGenerator[StreamEvent, None]:
     """Streaming version of execute_tool_loop.
@@ -1402,6 +1425,12 @@ async def stream_tool_loop(
         if not pending_tool_calls:
             if final_reply is not None:
                 final_reply["text"] = accumulated_text
+            return
+        # The answer, given as a call (``output_mode="tool"``, 1.91.0).
+        answer = _final_answer(pending_tool_calls, final_tool)
+        if answer is not None:
+            if final_reply is not None:
+                final_reply["text"] = answer
             return
 
         # Append assistant message with accumulated content + tool calls

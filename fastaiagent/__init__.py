@@ -86,6 +86,7 @@ from fastaiagent.llm import (
     LLMClient,
     Message,
     ModelInfo,
+    PartialOutput,
     ReasoningDelta,
     StreamEvent,
     TextDelta,
@@ -212,6 +213,7 @@ __all__ = [
     "StreamEvent",
     "TextDelta",
     "ReasoningDelta",
+    "PartialOutput",
     # Multimodal
     "Image",
     "PDF",

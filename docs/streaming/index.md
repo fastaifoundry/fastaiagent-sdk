@@ -32,6 +32,7 @@ Every streaming method yields `StreamEvent` objects. There are seven event types
 |-------|--------|-------------|
 | `TextDelta` | `text: str` | Each token/chunk of text from the LLM |
 | `ReasoningDelta` | `text: str`, `block: ReasoningBlock \| None` | A chunk of the model's reasoning — never part of the answer. `block` is set on the event that closes a provider reasoning block (Claude thinking), which the agent loop sends back. Since 1.91.0, see [Reasoning and prompt caching](../llm/reasoning-and-caching.md) |
+| `PartialOutput` | `data: Any` | A structured run's reply so far, parsed as incomplete JSON: `agent.astream()` with an `output_type` emits it whenever the value changes (1.91.0, see [Structured Output](../structured-output/index.md#streaming-the-answer-as-it-forms-partialoutput)) |
 | `ToolCallStart` | `call_id: str`, `tool_name: str` | LLM initiates a tool call |
 | `ToolCallEnd` | `call_id: str`, `tool_name: str`, `arguments: dict` | Tool call arguments fully parsed |
 | `Usage` | `prompt_tokens: int`, `completion_tokens: int`, `reasoning_tokens: int`, `cached_tokens: int`, `cache_write_tokens: int` | Token counts (typically at end of response). `prompt_tokens` includes the cached part; the last three are 0 when the provider reported none (1.91.0) |
@@ -41,8 +42,8 @@ Every streaming method yields `StreamEvent` objects. There are seven event types
 
 ```python
 from fastaiagent.llm.stream import (
-    StreamEvent, TextDelta, ReasoningDelta, ToolCallStart, ToolCallEnd, Usage, HandoffEvent,
-    Paused, StreamDone,
+    StreamEvent, TextDelta, ReasoningDelta, PartialOutput, ToolCallStart, ToolCallEnd, Usage,
+    HandoffEvent, Paused, StreamDone,
 )
 ```
 

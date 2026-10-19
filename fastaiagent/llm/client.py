@@ -211,6 +211,20 @@ def _augment_system_for_response_format(
     return system_text or ""
 
 
+def _native_json_schema(
+    response_format: dict[str, Any] | None, kwargs: dict[str, Any]
+) -> dict[str, Any] | None:
+    """The JSON schema to send in the provider's native structured-output field,
+    when the agent asked for ``output_mode="native"`` (1.91.0, 2G) and the format
+    has one; ``None`` keeps the prompted form."""
+    if kwargs.get("output_mode") != "native" or not isinstance(response_format, dict):
+        return None
+    if response_format.get("type") != "json_schema":
+        return None
+    schema = (response_format.get("json_schema") or {}).get("schema")
+    return schema if isinstance(schema, dict) else None
+
+
 def _coerce_system_content_to_text(content: Any) -> str:
     """System prompts must be strings. Reject multimodal system content explicitly."""
     if content is None:
@@ -2255,9 +2269,12 @@ class LLMClient:
 
         system_text = "\n\n".join(system_parts) if system_parts else None
 
-        # Augment system prompt for response_format (Anthropic has no native support)
+        # Structured output: the schema in the system prompt, or — with
+        # ``output_mode="native"`` (1.91.0, 2G) — Anthropic's own
+        # ``output_config.format``, set below.
         response_format = kwargs.get("response_format")
-        if response_format is not None:
+        native_schema = _native_json_schema(response_format, kwargs)
+        if response_format is not None and native_schema is None:
             system_text = _augment_system_for_response_format(system_text, response_format)
 
         body: dict[str, Any] = {
@@ -2285,6 +2302,13 @@ class LLMClient:
         # ``cache_control`` puts one breakpoint on the last cacheable block and
         # moves it forward as the conversation grows.
         body.update(self._anthropic_reasoning_fields(kwargs, body["max_tokens"]))
+        if native_schema is not None:
+            from fastaiagent.llm.structured import anthropic_schema
+
+            body["output_config"] = {
+                **body.get("output_config", {}),
+                "format": {"type": "json_schema", "schema": anthropic_schema(native_schema)},
+            }
         cache = self._cache(kwargs)
         if cache is not None:
             body["cache_control"] = (
@@ -2556,11 +2580,31 @@ class LLMClient:
             else:
                 _add("user", blocks)
 
+        # Structured output (1.91.0): ``outputConfig.textFormat`` for
+        # ``output_mode="native"``, else the schema in the system prompt — before
+        # 1.91.0 Bedrock sent neither, so a structured agent got no schema (X21).
+        response_format = kwargs.get("response_format")
+        native_schema = _native_json_schema(response_format, kwargs)
+        if response_format is not None and native_schema is None:
+            instruction = _augment_system_for_response_format("", response_format).strip()
+            if instruction:
+                system.append({"text": instruction})
+
         cache = self._cache(kwargs)
         point: dict[str, Any] = {"type": "default"}
         if cache == "1h":
             point["ttl"] = "1h"
         body: dict[str, Any] = {"messages": turns}
+        if native_schema is not None:
+            name = (response_format or {}).get("json_schema", {}).get("name") or "response"
+            body["outputConfig"] = {
+                "textFormat": {
+                    "type": "json_schema",
+                    "structure": {
+                        "jsonSchema": {"schema": _json.dumps(native_schema), "name": name}
+                    },
+                }
+            }
         if system:
             body["system"] = system
             if cache is not None:
@@ -2675,6 +2719,15 @@ class LLMClient:
             "guardrail_intervened": "content_filter",
             "content_filtered": "content_filter",
         }.get(stop_reason, stop_reason)
+
+        # A prompted JSON reply may come fenced (1.91.0, X21), as on Anthropic.
+        rf = kwargs.get("response_format")
+        if (
+            content_text
+            and isinstance(rf, dict)
+            and rf.get("type") in ("json_object", "json_schema")
+        ):
+            content_text = _strip_code_fences(content_text)
 
         return LLMResponse(
             content=content_text or None,

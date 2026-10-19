@@ -35,6 +35,7 @@ from fastaiagent.llm.providers import (
 from fastaiagent.llm.reasoning import REASONING_LEVELS
 from fastaiagent.llm.stream import (
     Paused,
+    PartialOutput,
     ReasoningDelta,
     StreamDone,
     StreamEvent,
@@ -62,6 +63,7 @@ __all__ = [
     "StreamEvent",
     "TextDelta",
     "ReasoningDelta",
+    "PartialOutput",
     "ToolCallStart",
     "ToolCallEnd",
     "Usage",

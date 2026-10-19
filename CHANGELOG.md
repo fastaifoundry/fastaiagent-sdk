@@ -163,6 +163,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   off). `AgentTimeoutError`, `RunLimitError` and `RunInfo` are exported.
 - Example `113_run_limits_and_cancel.py`.
 
+### Added — structured output modes and partial streaming (Bet 2, 2G)
+
+- **`AgentConfig(output_mode=...)`** chooses how an `output_type` is asked for:
+  - `"auto"` (default): each provider's usual way, unchanged except on Bedrock
+    (see X21).
+  - `"native"`: the provider's own schema-constrained output, including
+    Anthropic `output_config.format` (the schema adapted to its rules, beside any
+    reasoning `effort`) and Bedrock `outputConfig.textFormat`.
+  - `"tool"`: a `final_result` tool carrying the schema; calling it ends the run
+    with `parsed` set to its arguments. It is offered, not forced, so it works on
+    models that refuse forced tool use.
+  - `"prompt"`: the schema in the prompt only.
+
+  In `Agent.to_dict()` only when not `"auto"` (new key, signed off).
+- **`PartialOutput(data=...)`** stream event: a structured run's reply so far,
+  parsed as incomplete JSON by pydantic-core (no new dependency). Exported from
+  `fastaiagent`.
+- Verified live: all four modes on gpt-5-mini, claude-haiku-5-5,
+  claude-sonnet-5-5 and gemini-3.8-flash, `run` and `astream`.
+- Example `114_output_modes_and_partial_output.py`.
+
 ### Changed
 
 - **Cost is priced in parts, so figures move** (decision B2-1). Cached prompt
@@ -208,6 +229,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `thought` were read as text. They are reasoning now.
 - **`LLMClient.stream()` dropped a tool call's Gemini signature** in the
   `LLMResponse` it returns.
+- **Bedrock ignored structured output** (X21). `_call_bedrock` never read
+  `response_format`, so an `output_type` agent on Bedrock got no schema and no JSON
+  instruction, and its structured re-ask referred to a schema it was never shown.
+  `"auto"` now puts the schema in the system prompt (and strips a fenced reply);
+  `"native"` sends `outputConfig.textFormat`. Tested against real boto3 (no AWS
+  account here, so not live).
 - **A Gemini agent with `output_type` and tools never worked** (X20). JSON mode
   (`responseMimeType` / `responseSchema`) went on every call, tool turns
   included, and Gemini does not take it with function calling:

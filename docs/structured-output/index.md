@@ -105,9 +105,57 @@ Structured output works across all providers, with automatic adaptation:
 | **Anthropic** | No | Schema injected into system prompt; code fences stripped from response |
 | **Gemini** | Yes, without tools | `responseMimeType` + `responseSchema` on a call with no tools. While function tools are in the request, the schema is asked for in the prompt and the fenced reply is parsed: Gemini refuses JSON mode with function calling (2.5: HTTP 400) or calls tools forever (3.5, 3.8). Fixed in 1.91.0 (X20); before, an `output_type` agent with tools never worked on Gemini |
 | **Ollama** | Partial | `json_object` → `format: "json"`, `json_schema` → `format: {schema}` |
-| **Bedrock** | No | Not supported |
+| **Bedrock** | Opt-in | Schema in the system prompt; `outputConfig.textFormat` with `output_mode="native"`. Before 1.91.0 Bedrock sent neither, so a structured agent got no schema (X21) |
 
 > **Note:** For Anthropic, the SDK automatically augments the system prompt with JSON instructions and strips any markdown code fences from the response. This means your code works identically across providers — no per-provider handling needed.
+
+## Choosing how it is asked for: `output_mode` (1.91.0)
+
+An agent with `output_type` asks the model for that shape. `AgentConfig(output_mode=...)`
+picks how:
+
+| Mode | What is sent | When to use it |
+|---|---|---|
+| `"auto"` (default) | Each provider's usual way: OpenAI/Azure native `response_format`, Gemini's native schema (prompted on tool turns), Ollama `format`, the schema in the prompt for Anthropic and Bedrock | Almost always |
+| `"native"` | The provider's own schema-constrained output, including **Anthropic `output_config.format`** and **Bedrock `outputConfig.textFormat`** | You want the provider to guarantee the shape. On Anthropic the schema is adapted to its rules: objects get `additionalProperties: false`, and `minimum` / `maxLength` and the like move into the field description. The reply is still validated against your full type. |
+| `"tool"` | A `final_result` tool whose arguments are your schema. Calling it ends the run, and its arguments are `parsed` | Agents that use tools and should keep using them until they answer. The tool is offered, not forced, so it works on models that refuse forced tool use (Opus 5.5, Sonnet 5.5). A text answer that parses is accepted too. |
+| `"prompt"` | The schema in the system prompt only, no provider parameter | A gateway or model that rejects the native fields |
+
+```python
+from fastaiagent import Agent, AgentConfig, LLMClient
+
+agent = Agent(
+    name="forecaster",
+    llm=LLMClient(provider="anthropic", model="claude-sonnet-5-5"),
+    tools=[get_weather],
+    output_type=Forecast,
+    config=AgentConfig(output_mode="tool"),
+)
+result = agent.run("What's the weather in Rome?")
+result.parsed  # Forecast(city='Rome', celsius=24.0, ...)
+```
+
+A tool named `final_result` on the agent is refused in `"tool"` mode. `output_mode`
+is part of `Agent.to_dict()` when it is not `"auto"`.
+
+### Streaming the answer as it forms: `PartialOutput`
+
+While a structured run streams, `agent.astream()` also yields `PartialOutput(data=...)`:
+the reply so far, parsed as incomplete JSON. Keys and values appear as they arrive,
+and a string can be partway through. `data` changes with each event and is not
+validated; the finished reply is, on the result.
+
+```python
+from fastaiagent import PartialOutput
+
+async for event in agent.astream("What's the weather in Rome?"):
+    if isinstance(event, PartialOutput):
+        render(event.data)   # {"city": "Ro"} … {"city": "Rome", "celsius": 24, …}
+```
+
+Text the model says before a tool call ("Let me check.") is not JSON, so it yields
+none. In `"tool"` mode the answer arrives as a tool call, which providers stream
+whole, so it comes as one `PartialOutput`.
 
 ## Streaming with Structured Output
 

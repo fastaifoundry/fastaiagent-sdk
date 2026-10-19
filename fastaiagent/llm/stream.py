@@ -34,6 +34,18 @@ class ReasoningDelta:
 
 
 @dataclass
+class PartialOutput:
+    """A structured run's reply so far (1.91.0, 2G): the JSON streamed up to now,
+    parsed as incomplete JSON — keys and values appear as they arrive, a string
+    value partway through. Emitted by ``Agent.astream`` for an agent with
+    ``output_type`` whenever the value changes; not validated against the type
+    (the finished reply is, on the result). With ``output_mode="tool"`` it comes
+    once, when the ``final_result`` call completes."""
+
+    data: Any = None
+
+
+@dataclass
 class ToolCallStart:
     """Emitted when the LLM initiates a tool call."""
 
@@ -121,6 +133,7 @@ class Paused:
 StreamEvent = (
     TextDelta
     | ReasoningDelta
+    | PartialOutput
     | ToolCallStart
     | ToolCallEnd
     | Usage

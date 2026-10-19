@@ -77,8 +77,17 @@ from fastaiagent.guardrail.guardrail import (
 )
 from fastaiagent.llm.client import LLMClient, LLMResponse
 from fastaiagent.llm.message import Message, SystemMessage, UserMessage
-from fastaiagent.llm.stream import Paused, StreamDone, StreamEvent, TextDelta, Usage
-from fastaiagent.llm.structured import OutputSpec
+from fastaiagent.llm.stream import (
+    PartialOutput,
+    Paused,
+    StreamDone,
+    StreamEvent,
+    TextDelta,
+    ToolCallEnd,
+    ToolCallStart,
+    Usage,
+)
+from fastaiagent.llm.structured import OutputSpec, partial_json
 from fastaiagent.multimodal.image import Image as MultimodalImage
 from fastaiagent.multimodal.pdf import PDF as MultimodalPDF  # noqa: N811
 from fastaiagent.multimodal.types import ContentPart, normalize_input
@@ -154,6 +163,26 @@ def _end_state(mw_ctx: MiddlewareContext | None, *, strict: bool) -> dict[str, A
         return mw_ctx.saved_state()
     except TypeError:
         return None
+
+
+class _FinalResultTool(Tool):
+    """``final_result`` — how an ``output_mode="tool"`` agent answers (1.91.0,
+    2G). The tool loop ends on the call and takes its arguments as the reply; it
+    is never executed."""
+
+    origin = "builtin"
+
+    def __init__(self, schema: dict[str, Any]) -> None:
+        super().__init__(
+            name=FINAL_RESULT,
+            description="Give your final answer. Call this once, when you have it.",
+            parameters=schema,
+        )
+
+    async def aexecute(self, arguments: dict[str, Any], context: Any | None = None) -> Any:
+        from fastaiagent.tool.base import ToolResult
+
+        return ToolResult(error=f"{FINAL_RESULT} ends the run; it is not executed")
 
 
 def _prefix_ids(llm_messages: list[Message], history: list[Message] | None) -> set[int]:
@@ -278,6 +307,10 @@ def _refuse_stream_rewrite(outcome: GuardrailOutcome) -> None:
 
 #: ``AgentConfig`` fields that bound a run (1.91.0).
 _RUN_LIMITS = ("timeout_seconds", "max_total_tokens", "max_cost_usd")
+#: ``AgentConfig.output_mode`` values (1.91.0, 2G).
+OUTPUT_MODES = ("auto", "native", "tool", "prompt")
+#: The tool ``output_mode="tool"`` offers; calling it is the run's answer.
+FINAL_RESULT = "final_result"
 
 
 class AgentConfig(BaseModel):
@@ -322,6 +355,13 @@ class AgentConfig(BaseModel):
     timeout_seconds: float | None = Field(default=None, gt=0)
     max_total_tokens: int | None = Field(default=None, gt=0)
     max_cost_usd: float | None = Field(default=None, gt=0)
+    # How structured output (``output_type``) is asked for (1.91.0, 2G):
+    # "auto" — each provider's usual way; "native" — the provider's own
+    # schema-constrained output (Anthropic ``output_config.format``, Bedrock
+    # ``outputConfig.textFormat``); "tool" — a ``final_result`` tool the model
+    # calls to answer; "prompt" — the schema in the prompt only. In
+    # ``to_dict()`` only when not "auto".
+    output_mode: str = "auto"
 
     def _to_dict(self) -> dict[str, Any]:
         """The config as ``Agent.to_dict()`` carries it: the run limits only when
@@ -330,7 +370,16 @@ class AgentConfig(BaseModel):
         for key in _RUN_LIMITS:
             if data.get(key) is None:
                 data.pop(key, None)
+        if data.get("output_mode") == "auto":
+            data.pop("output_mode")
         return data
+
+    @field_validator("output_mode")
+    @classmethod
+    def _known_output_mode(cls, value: str) -> str:
+        if value not in OUTPUT_MODES:
+            raise ValueError(f"output_mode must be one of {OUTPUT_MODES}, got {value!r}")
+        return value
 
     @field_validator("tool_choice")
     @classmethod
@@ -601,14 +650,58 @@ class Agent:
     def _run_tools(self) -> list[Tool]:
         """The tools a run offers: the agent's, then each middleware's (1.91.0,
         1B). ``self.tools`` stays the agent's own list — what ``to_dict`` and
-        the plane see."""
-        return [*self.tools, *self._mw_pipeline.tools]
+        the plane see. With ``output_mode="tool"`` the ``final_result`` tool
+        comes last (1.91.0, 2G)."""
+        tools: list[Tool] = [*self.tools, *self._mw_pipeline.tools]
+        if self._output_spec is not None and self.config.output_mode == "tool":
+            tools.append(_FinalResultTool(self._output_spec.schema))
+        return tools
+
+    def _apply_structured(self, kwargs: dict[str, Any]) -> None:
+        """Put this run's structured-output parameters on the model call
+        (1.91.0, 2G): the provider's ``response_format`` for ``"auto"`` and
+        ``"native"`` (which also says so, for the providers whose native form
+        differs); nothing for ``"prompt"`` / ``"tool"``, whose instruction is in
+        the prompt (see :meth:`_build_messages`)."""
+        response_format = self._build_response_format()
+        if response_format is None or self.config.output_mode in ("prompt", "tool"):
+            return
+        kwargs["response_format"] = response_format
+        if self.config.output_mode == "native":
+            kwargs["output_mode"] = "native"
+
+    def _final_tool(self) -> str | None:
+        """``final_result`` when this agent answers through it (``"tool"`` mode)."""
+        if self._output_spec is not None and self.config.output_mode == "tool":
+            return FINAL_RESULT
+        return None
+
+    def _structured_instruction(self) -> str | None:
+        """The system instruction for ``output_mode="prompt"`` / ``"tool"``."""
+        if self._output_spec is None or self.config.output_mode not in ("prompt", "tool"):
+            return None
+        if self.config.output_mode == "tool":
+            return (
+                f"When you have the final answer, call the {FINAL_RESULT} tool with it. "
+                "Do not answer in plain text."
+            )
+        from fastaiagent.llm.client import _augment_system_for_response_format
+
+        return _augment_system_for_response_format(
+            "", self._output_spec.response_format(strict=False)
+        ).strip()
 
     def _check_tool_names(self) -> None:
         """A middleware tool may not share a name with another tool: the model
         could only ever reach one of them, and which one would be an accident
         of ordering."""
         owners: dict[str, str] = {t.name: "the agent" for t in self.tools}
+        if self._output_spec is not None and self.config.output_mode == "tool":
+            if FINAL_RESULT in owners:
+                raise ValueError(
+                    f"Tool name {FINAL_RESULT!r} is reserved by output_mode='tool', which "
+                    "answers through a tool of that name; rename the agent's tool."
+                )
         for mw in self._mw_pipeline.middleware:
             label = (
                 "deferred tools (load_tools)"
@@ -1456,10 +1549,8 @@ class Agent:
             if control is not None:
                 control.llm_messages, control.prefix_ids = llm_messages, prefix
 
-            # Inject response_format for structured output.
-            response_format = self._build_response_format()
-            if response_format is not None:
-                kwargs["response_format"] = response_format
+            # Structured output, as ``output_mode`` asks (1.91.0, 2G).
+            self._apply_structured(kwargs)
 
             # The run-end marker has to cover EVERYTHING that can still kill the
             # run, not just the tool loop: 1.65.0's D5 fix wrapped only
@@ -1494,6 +1585,7 @@ class Agent:
                         parallel_tools=self.config.parallel_tools,
                         max_parallel_tools=self.config.max_parallel_tools,
                         governance_run_id=pause_run_id,
+                        final_tool=self._final_tool(),
                         **kwargs,
                     )
                 loop_done = True
@@ -1898,10 +1990,8 @@ class Agent:
             if stream_control is not None:
                 stream_control.llm_messages, stream_control.prefix_ids = llm_messages, prefix
 
-            # Inject response_format for structured output
-            response_format = self._build_response_format()
-            if response_format is not None:
-                kwargs["response_format"] = response_format
+            # Structured output, as ``output_mode`` asks (1.91.0, 2G).
+            self._apply_structured(kwargs)
         except BaseException as exc:
             reset_active_run_context(rc_token)
             if mw_ctx is not None and not isinstance(exc, StopAgent):
@@ -1960,18 +2050,38 @@ class Agent:
                         max_parallel_tools=self.config.max_parallel_tools,
                         governance_run_id=pause_run_id,
                         final_reply=final_reply,
+                        final_tool=self._final_tool(),
                         **kwargs,
                     )
                 )
+                # ``PartialOutput`` (1.91.0, 2G): the structured reply so far, from
+                # the current turn's text — prose before a tool call is not JSON
+                # and yields none; a turn ends at its tool calls or its usage.
+                structured = self._output_spec is not None
+                final_tool = self._final_tool()
+                turn_text = ""
+                last_partial: Any = None
                 async for event in loop_events:
+                    partial: Any = None
                     if isinstance(event, TextDelta):
                         accumulated_text += event.text
+                        if structured:
+                            turn_text += event.text
+                            partial = partial_json(turn_text)
                     elif isinstance(event, Usage):
                         # The only place a stream reports token counts. Summed
                         # across every turn of the loop so a streamed run reports
                         # the same kind of number ``arun`` does.
                         streamed_tokens += event.prompt_tokens + event.completion_tokens
+                        turn_text = ""
+                    elif isinstance(event, ToolCallStart):
+                        turn_text = ""
+                    elif isinstance(event, ToolCallEnd) and event.tool_name == final_tool:
+                        partial = dict(event.arguments)
                     yield event
+                    if partial is not None and partial != last_partial:
+                        last_partial = partial
+                        yield PartialOutput(data=partial)
             except _AgentInterrupted as susp:
                 # A tool paused the run (a managed approval policy, or interrupt())
                 # and the pause is already checkpointed. Before 1.77.0 this escaped
@@ -2982,6 +3092,9 @@ class Agent:
             instructions = self._mw_pipeline.instructions_text(mw_ctx)
             if instructions:
                 messages.append(SystemMessage(instructions))
+        structured = self._structured_instruction()
+        if structured:
+            messages.append(SystemMessage(structured))
 
         if isinstance(input, str):
             user_content: str | list[ContentPart] = input
