@@ -141,6 +141,10 @@ A second identical prompt costs less than the first, and `AgentResult.cost`, the
 `cost_limit` guardrail and the cost pages all see the difference. See
 [cost tracking](../ui/cost-tracking.md#cached-written-and-long-prompts-1910).
 
+Reasoning, a thinking agent streamed through a tool loop, and a cached prompt on
+Gemini 3.8 Flash, Claude and OpenAI:
+[`examples/112_reasoning_and_prompt_caching.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/112_reasoning_and_prompt_caching.py).
+
 ## In traces
 
 Every `llm.*` span records the counts. With `FASTAIAGENT_TRACE_PAYLOADS=0` the

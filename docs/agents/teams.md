@@ -402,6 +402,7 @@ the routed worker's run, like `guardrails=`. See
 | `validation_prompt` | `str \| None` | No | (v1.9.0) Override the default validator prompt; must include `{task}` and `{output}` placeholders |
 | `max_validation_retries_per_worker` | `int` | No | (v1.9.0) Max retries per delegate after rejection (default `1`) |
 | `guardrails` | `list[Guardrail] \| None` | No | (1.90.0) The supervisor's **own** guardrails, as on `Agent`: they judge its input, its `delegate_to_*` calls and its answer, on `run`, `astream`, `stream` and `resume`. Each worker keeps its own. With `routing="decisions"` there is no supervisor loop, so they judge the routed worker's input and output. Before 1.90.0 a supervisor took none. |
+| `middleware` | `list[AgentMiddleware] \| None` | No | (1.91.0) The supervisor's **own** middleware: it runs on the supervisor's loop and sees its `delegate_to_*` calls; each worker keeps its own. With `routing="decisions"` it runs on the routed worker's run. |
 
 **Methods:**
 
@@ -414,6 +415,10 @@ the routed worker's run, like `guardrails=`. See
 | `resume()` | `(execution_id, *, resume_value=None, context=None) -> AgentResult` | Resume a paused or crashed run |
 
 All methods accept `context: RunContext | None` which is forwarded to all worker agents and their tools.
+
+A `Supervisor` has no `cancel()` of its own. To stop a run in progress (1.91.0),
+call `cancel(<the supervisor run's execution_id>)` on any `Agent`; it returns
+`status="cancelled"`. See [Run limits and cancel](index.md#run-limits-and-cancel-1910).
 
 ### `Worker`
 

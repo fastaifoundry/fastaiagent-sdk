@@ -9,7 +9,7 @@ configuration:
 from fastaiagent import Agent, LLMClient
 
 agent = Agent(name="bot", llm=LLMClient(provider="groq",
-                                        model="llama-3.1-70b-versatile"))
+                                        model="openai/gpt-oss-120b"))
 ```
 
 Set the matching env var (e.g. `export GROQ_API_KEY=…`) and you're done.
@@ -22,7 +22,7 @@ Set the matching env var (e.g. `export GROQ_API_KEY=…`) and you're done.
 | `anthropic` | Anthropic | (specify) | `ANTHROPIC_API_KEY` | ✓ | ✓ | system-prompt |
 | `ollama` | Ollama | (specify) | _(none, local)_ | ✓ | ✓ | native |
 | `azure` | OpenAI-compat | (specify) | `OPENAI_API_KEY` | ✓ | ✓ | native |
-| `bedrock` | Bedrock (boto3) | (specify) | _(AWS creds)_ | ✓ | ✗ | ✗ |
+| `bedrock` | Bedrock (boto3) | (specify) | _(AWS creds)_ | ✓ | ✗ | system-prompt; native with `output_mode="native"` (1.91.0) |
 | `custom` | OpenAI-compat | (specify) | `OPENAI_API_KEY` | ✓ | ✓ | native |
 | `test` | _(stand-in)_ | `test-model` | _(none)_ | ✓ | ✓ | n/a |
 
@@ -30,7 +30,9 @@ Set the matching env var (e.g. `export GROQ_API_KEY=…`) and you're done.
 
 The default model is what `LLMClient(provider=...)` uses when `model=` is
 omitted — since 1.91.0. Before, every provider fell back to `gpt-4o-mini`, an
-OpenAI id no preset provider serves, so an omitted model could never work.
+OpenAI id no preset provider serves, so an omitted model could never work. The
+built-in providers above still default to `gpt-4o-mini`, so pass `model=` for
+every built-in except `openai`.
 
 | Key | Wire | Default model | API key env var | Tools | Streaming | `response_format` |
 |---|---|---|---|---|---|---|
@@ -179,7 +181,8 @@ llm = LLMClient(
 - **A `429` is an `LLMRateLimitError`** (a subclass of `LLMProviderError`, so
   existing handlers still catch it) with `retry_after`: the wait the provider
   asked for in `Retry-After` or `retry-after-ms`. A retry waits exactly that
-  (capped at 60 s) instead of the blind 1 s, 2 s, 4 s… backoff.
+  (capped at 60 s) instead of the blind 1 s, 2 s, 4 s… backoff. Import it with
+  `from fastaiagent._internal.errors import LLMRateLimitError`.
 - **`fallbacks`** are tried in order once a client's own retries are spent, on a
   rate limit, a server error, a connection error, a timeout, or a **context
   overflow** (the prompt is too long for that model — OpenAI's
@@ -196,6 +199,9 @@ Fallbacks and `max_concurrency` are local: they are not part of
 `LLMClient.to_dict()`, so a plane-distributed or replayed agent runs its one
 model. Live-checked: a real OpenAI and a real Anthropic context overflow each
 fell back (`tests/e2e/test_llm_resilience_live.py`).
+
+Runnable version, with `model_info` and `extra_body`:
+[`examples/111_llm_fallbacks_and_model_info.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/111_llm_fallbacks_and_model_info.py).
 
 ## Provider options the SDK has no parameter for
 

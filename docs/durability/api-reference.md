@@ -281,7 +281,7 @@ parentage:
 | `agent.resume.approved` | with a `resume_value` |
 | `agent.resume.resolver` | `Resume.metadata["resolver"]`, else `["approver"]` |
 | `agent.resume.reason` | `Resume.metadata["reason"]`; a payload key, held back on export under `FASTAIAGENT_TRACE_PAYLOADS=0` |
-| `agent.status` | `completed` or `paused` |
+| `agent.status` | `completed`, `paused`, or (1.91.0) `cancelled` |
 
 To find every trace of one execution, match `agent.execution_id` (or
 `chain.`/`swarm.`/`supervisor.execution_id`). `result.trace_id` names the
@@ -611,7 +611,7 @@ class ChainResult(BaseModel):
 class AgentResult(BaseModel):
     # ... v0.x fields ...
     execution_id: str = ""
-    status: str = "completed"             # "completed" or "paused"
+    status: str = "completed"             # "completed", "paused" or (1.91.0) "cancelled"
     pending_interrupt: dict[str, Any] | None = None
 ```
 

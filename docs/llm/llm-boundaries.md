@@ -95,7 +95,7 @@ Replies disagree as much as requests. The point of the parse step is that your c
 The rules:
 
 - **One finish-reason vocabulary for the common cases**: `stop` and `tool_calls`. Anthropic's `end_turn` and `tool_use`, Gemini's `STOP`, are translated. Rarer reasons pass through as the provider names them (`length` from OpenAI, `max_tokens` from Anthropic, `content_filter`); `fastaiagent.llm.finish.normalize_finish_reason()` folds them into `stop`, `length`, `tool_calls`, `content_filter`, `refusal` or `other` (*since 1.89.0*).
-- **One pair of usage keys**: `prompt_tokens` and `completion_tokens`, plus `total_tokens`. Anthropic's `input_tokens` and Gemini's `promptTokenCount` are renamed. An OpenAI-compatible provider's extra fields are kept as they came.
+- **One pair of usage keys**: `prompt_tokens` and `completion_tokens`, plus `total_tokens`. Anthropic's `input_tokens` and Gemini's `promptTokenCount` are renamed, and `prompt_tokens` is always the whole prompt, cached part included. *Since 1.91.0* the same shape also carries, when the provider reports them, `reasoning_tokens`, `cached_tokens`, `cache_write_tokens` and `cache_write_1h_tokens` (see [Reasoning and prompt caching](reasoning-and-caching.md)), and `tool_requests` / `containers` when a [provider-run tool](../tools/provider-tools.md) ran. An OpenAI-compatible provider's extra fields are kept as they came.
 - **Tool-call arguments are a `dict`.** OpenAI sends them as a JSON string; the parser decodes it, so no caller parses JSON.
 - **`content` is `None` on a tool turn** that carries no text, on every provider.
 - **Parameters pass through unchanged.** A provider that rejects one fails the call; the SDK does not strip it.

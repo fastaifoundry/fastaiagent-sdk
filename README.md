@@ -888,7 +888,7 @@ agent = Agent(
 )
 ```
 
-Write your own by subclassing `AgentMiddleware` and overriding `before_model`, `after_model`, or `wrap_tool`. See [docs/agents/middleware.md](docs/agents/middleware.md) for ordering, hook reference, and custom patterns.
+Write your own by subclassing `AgentMiddleware` and overriding `before_model`, `after_model` or `wrap_tool`, or (1.91.0) `before_run`, `after_run`, `wrap_model` (retry, swap or cache a model call), `on_error` and `on_stream_event`. A middleware can also bring its own `tools`, `instructions` and checkpointed `ctx.state`, so a policy travels as one object, and `Chain`, `Swarm` and `Supervisor` take `middleware=` too. See [docs/agents/middleware.md](docs/agents/middleware.md) for ordering, hook reference, and custom patterns.
 
 ## Multi-agent teams with context
 

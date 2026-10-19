@@ -21,12 +21,16 @@ print(result.output)
 
 | Provider | Example |
 |----------|---------|
-| OpenAI | `LLMClient(provider="openai", model="gpt-4.1")` |
-| Anthropic | `LLMClient(provider="anthropic", model="claude-sonnet-4-6")` |
+| Gemini | `LLMClient(provider="gemini", model="gemini-3.8-flash")` |
+| OpenAI | `LLMClient(provider="openai", model="gpt-5-mini")` |
+| Anthropic | `LLMClient(provider="anthropic", model="claude-sonnet-5-5")` |
 | Ollama | `LLMClient(provider="ollama", model="llama3")` |
-| Azure | `LLMClient(provider="azure", model="gpt-4", base_url="https://myendpoint.openai.azure.com/openai/deployments/gpt-4/")` |
-| AWS Bedrock | `LLMClient(provider="bedrock", model="anthropic.claude-3-sonnet-20240229-v1:0")` |
+| Azure | `LLMClient(provider="azure", model="my-gpt-5-deployment", base_url="https://myendpoint.openai.azure.com/openai/v1")` |
+| AWS Bedrock | `LLMClient(provider="bedrock", model="us.anthropic.claude-haiku-4-5-20251001-v1:0", region="us-east-1")` |
 | Custom | `LLMClient(provider="custom", model="my-model", base_url="https://my-api.com/v1")` |
+
+Groq, OpenRouter, DeepSeek, Mistral and the other presets are on
+[Providers](../llm/providers.md).
 
 ## Agent with Tools
 
@@ -90,6 +94,7 @@ result = calculate.execute({"expression": "2 + 2"})
 | `FunctionTool` | Wrap any Python function | `FunctionTool(name="calc", fn=my_func)` |
 | `RESTTool` | Call an HTTP API | `RESTTool(name="weather", url="https://api.weather.com/v1", method="GET")` |
 | `MCPTool` | Connect to MCP server | `MCPTool(name="search", server_url="http://localhost:3000")` |
+| [Provider-run](../tools/provider-tools.md) | Web search, code execution, file search run by the model's provider (1.91.0) | `web_search()`, `code_execution()`, `file_search(["vs_1"])` from `fastaiagent.tool` |
 
 ## Agent with Guardrails
 
@@ -200,7 +205,7 @@ from fastaiagent import Agent, AgentConfig
 
 agent = Agent(
     name="configured-agent",
-    llm=LLMClient(provider="openai", model="gpt-4.1"),
+    llm=LLMClient(provider="gemini", model="gemini-3.8-flash"),
     config=AgentConfig(
         max_iterations=5,     # Max tool-calling loop iterations (default: 10)
         tool_choice="auto",   # "auto", "required", "none"
@@ -209,6 +214,20 @@ agent = Agent(
     ),
 )
 ```
+
+Every field:
+
+| Field | Default | What it does |
+|---|---|---|
+| `max_iterations` | `10` | Model calls the tool loop may make before `MaxIterationsError` |
+| `tool_choice` | `"auto"` | `"required"` forces a tool on the first turn; `"none"` on every turn (below) |
+| `temperature` / `max_tokens` | `None` | Sent on every model call of the run, over the `LLMClient`'s own |
+| `parallel_tools` / `max_parallel_tools` | `False` / `4` | Run one turn's tool calls concurrently (sequential with middleware, a checkpointer or managed governance) |
+| `output_retries` | `2` | Re-asks when the reply does not parse into `output_type` |
+| `guardrail_retries` | `1` | Re-asks for an output guardrail with `action="reask"` |
+| `strict_output` | `False` | OpenAI strict JSON schema for `output_type` |
+| `output_mode` | `"auto"` | How `output_type` is asked for: `"native"`, `"tool"`, `"prompt"` (1.91.0, see [Structured Output](../structured-output/index.md#choosing-how-it-is-asked-for-output_mode-1910)) |
+| `timeout_seconds` / `max_total_tokens` / `max_cost_usd` | `None` | Run limits (1.91.0, [below](#run-limits-and-cancel-1910)) |
 
 `temperature` and `max_tokens` go on **every** model call of the run — each turn
 of the tool loop, the structured-output re-ask and a guardrail re-ask — in place
@@ -222,8 +241,9 @@ same as when the value is set on the `LLMClient`.
 sends exactly the request it always did. `"required"` forces a tool call on the
 **first** turn only — a model forced on every turn could never answer — and
 `"none"` applies to every turn. OpenAI, Anthropic and Gemini each get their own
-form of it; Ollama has none (and the Bedrock path sends no tools), so there it
-logs one warning and is not sent. Any other value raises `ValueError`.
+form of it, and Bedrock Converse takes `"required"`. Ollama has none, and Bedrock
+has no `"none"` (it also needs its tool list once a history holds tool calls), so
+there it logs one warning and is not sent. Any other value raises `ValueError`.
 
 `"none"` is the provider's own switch, and a prompt that demands a tool under it
 can leave the model with nothing to say: Claude then returns an empty reply and
@@ -289,12 +309,17 @@ result = await task        # status="cancelled", stop_reason="cancelled"
 
 The limits and the stop belong to the **top-level** run. An agent run inside
 another one (a Supervisor's worker, an agent called from a tool, a Swarm hop)
-runs under its parent's limits and stops with it. A Supervisor run is cancelled
-by its execution id. A `Swarm` or `Chain` run cannot be cancelled in 1.91.0.
+runs under its parent's limits and stops with it. A `Supervisor` has no `cancel()`
+of its own: call `cancel(<the supervisor run's execution_id>)` on any `Agent`, as
+the registry of running runs is per process. A `Swarm` or `Chain` run cannot be
+cancelled in 1.91.0.
 
 The three limits are written into `Agent.to_dict()` only when set, so a
 plane-dispatched or replayed agent keeps them, and a default agent's payload is
 unchanged.
+
+Limits, cancel, `result.messages` and a typed result together:
+[`examples/113_run_limits_and_cancel.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/113_run_limits_and_cancel.py).
 
 ## Streaming
 
@@ -506,6 +531,7 @@ from fastaiagent._internal.errors import (
     MaxIterationsError,      # Tool loop exceeded max_iterations
     GuardrailBlockedError,   # Guardrail rejected input/output
     LLMProviderError,        # LLM API error
+    LLMRateLimitError,       # a 429, with retry_after in seconds (1.91.0)
 )
 
 try:
@@ -514,6 +540,8 @@ except MaxIterationsError:
     print("Agent couldn't complete in time")
 except GuardrailBlockedError as e:
     print(f"Blocked by {e.guardrail_name}: {e}")
+except LLMRateLimitError as e:   # before LLMProviderError: it is a subclass
+    print(f"Rate limited; the provider asked to wait {e.retry_after}s")
 except LLMProviderError as e:
     print(f"LLM error: {e}")
 ```
@@ -529,7 +557,7 @@ echo a rejected key back (see
 
 ## Middleware
 
-Middleware intercepts and transforms messages, responses, and tool calls without subclassing `Agent`. Use it for message trimming, PII redaction, tool-call budgets, caching, and other cross-cutting concerns.
+Middleware intercepts and transforms messages, responses, and tool calls without subclassing `Agent`. Use it for message trimming, PII redaction, tool-call budgets, caching, and other cross-cutting concerns. Since 1.91.0 it can also wrap the whole run (`before_run`, `after_run`, `on_error`) and each model call (`wrap_model`), bring its own tools and instructions, and be set once on a `Chain`, `Swarm` or `Supervisor`.
 
 ```python
 from fastaiagent import Agent, TrimLongMessages, ToolBudget, RedactPII
@@ -549,7 +577,7 @@ See [Middleware](middleware.md) for the full reference, ordering semantics, and 
 
 ## Next Steps
 
-- [Middleware](middleware.md) — Composable pre/post model hooks and tool wrappers
+- [Middleware](middleware.md) — Run, model-call and tool hooks; policies as one bundle; team-wide middleware
 - [Dynamic Instructions](dynamic-instructions.md) — Personalize system prompts per-request
 - [Agent Memory](memory.md) — Give agents conversation memory across turns
 - [Multi-Agent Teams](teams.md) — Supervisor / Worker (centralized delegation)

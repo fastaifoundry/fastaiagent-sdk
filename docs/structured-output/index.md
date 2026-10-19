@@ -157,6 +157,10 @@ Text the model says before a tool call ("Let me check.") is not JSON, so it yiel
 none. In `"tool"` mode the answer arrives as a tool call, which providers stream
 whole, so it comes as one `PartialOutput`.
 
+Every mode, and `PartialOutput` while the answer streams, on Gemini 3.8 Flash,
+Claude Sonnet 5.5 and gpt-5-mini:
+[`examples/114_output_modes_and_partial_output.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/114_output_modes_and_partial_output.py).
+
 ## Streaming with Structured Output
 
 Structured output works with streaming. The tokens arrive as normal `TextDelta` events; the final concatenated text is valid JSON:
@@ -423,29 +427,36 @@ Unsupported parameters are silently skipped for each provider.
 
 ## Retry with Backoff
 
-`LLMClient` supports automatic retries on transient errors (HTTP 429 rate limits and 5xx server errors):
+`LLMClient` supports automatic retries on transient errors:
 
 ```python
 llm = LLMClient(
     provider="openai",
-    model="gpt-4.1",
+    model="gpt-5-mini",
     max_retries=3,  # Retry up to 3 times
 )
 ```
 
 **Behavior:**
-- Retries on: 429 (rate limit), 500+ (server errors)
+- Retries on: 429 (rate limit), 500+ (server errors), and (*since 1.91.0*) a
+  refused or reset connection and a timeout
 - No retry on: 400, 401, 403, 404 (client errors)
-- Backoff: exponential (1s, 2s, 4s, 8s, ... capped at 30s)
-- `LLMProviderError.status_code` gives the HTTP status code
+- Backoff: what the provider asked for in `Retry-After` (capped at 60s), else
+  exponential (1s, 2s, 4s, 8s, ... capped at 30s)
+- `LLMProviderError.status_code` gives the HTTP status code; a 429 is
+  `LLMRateLimitError`, a subclass, with `retry_after` in seconds (1.91.0)
+- When the retries are spent, `fallbacks=[LLMClient(...)]` tries another model
+  (1.91.0) — see [When a model fails](../llm/providers.md#when-a-model-fails-retries-rate-limits-fallbacks)
 
 ```python
-from fastaiagent._internal.errors import LLMProviderError
+from fastaiagent._internal.errors import LLMProviderError, LLMRateLimitError
 
 try:
     response = llm.complete(messages)
+except LLMRateLimitError as e:
+    print(f"Rate limited; retry after {e.retry_after}s")
 except LLMProviderError as e:
-    print(f"Status: {e.status_code}")  # e.g., 429
+    print(f"Status: {e.status_code}")
 ```
 
 ---

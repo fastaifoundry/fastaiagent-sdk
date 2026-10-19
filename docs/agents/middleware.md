@@ -338,6 +338,10 @@ class Refunds(AgentMiddleware):
   with the same middleware list. A checkpoint carries `middleware_state` only
   when some middleware keeps state.
 
+A refund policy bundled as one middleware (its tools, its instructions and a
+budget that survives a pause), with a deferred tool loaded on demand:
+[`examples/109_middleware_bundle_deferred_tools.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/109_middleware_bundle_deferred_tools.py).
+
 ## Middleware on teams and chains
 
 `Chain`, `Swarm` and `Supervisor` take `middleware=` too (since 1.91.0), for a
@@ -370,6 +374,9 @@ an agent's raises `ValueError` when the container is built.
 
 Every run's root span names its middleware in order in one attribute,
 `fastaiagent.middleware` — see [Tracing](../tracing/index.md).
+
+A team-wide audit and one tool budget on a support Swarm:
+[`examples/110_team_middleware.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/110_team_middleware.py).
 
 ## Cooperative Stop
 
@@ -558,7 +565,9 @@ result = await agent.arun("hello")
 on `arun` and `astream` alike. Before 1.91.0 a streamed turn's response had no
 `total_tokens`, so this counter read `0` on every `astream` turn.
 
-A `PromptCache` that returns a cached response when the message list has been seen before:
+A `PromptCache` that answers from its cache when the message list has been seen
+before. Answering without the model takes `wrap_model` (1.91.0): `before_model`
+and `after_model` can change the messages and the response, but not skip the call.
 
 ```python
 import hashlib
@@ -577,12 +586,12 @@ class PromptCache(AgentMiddleware):
         payload = [m.to_openai_format() for m in messages]
         return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
-    async def before_model(self, ctx, messages):
-        ctx.scratch["cache_key"] = self._key(messages)
-        return messages
-
-    async def after_model(self, ctx, response):
-        self._cache[ctx.scratch["cache_key"]] = response
+    async def wrap_model(self, ctx, messages, call_next):
+        key = self._key(messages)
+        if key in self._cache:
+            return self._cache[key]          # the model is not called
+        response = await call_next(messages)
+        self._cache[key] = response
         return response
 ```
 

@@ -43,7 +43,7 @@ middle is provider-shaped.**
 Message[]  ──normalize──▶  provider wire body  ──HTTP──▶  provider JSON
                                                               │
 LLMResponse  ◀──parse──────────────────────────────────────────┘
-(content, tool_calls, usage, finish_reason, latency_ms, parsed)
+(content, tool_calls, usage, finish_reason, latency_ms, parsed, reasoning)
 ```
 
 1. **Normalize** — your `Message` list is rendered into the provider's actual
@@ -120,7 +120,9 @@ The same feature exists at increasing strictness:
 ## Streaming is the same call in a different shape
 
 `astream()` yields typed events — `TextDelta`, `ToolCallStart`, `ToolCallEnd`,
-`Usage`, `StreamDone` (plus `HandoffEvent` for swarms) — while `stream()` folds
+`Usage`, `StreamDone` (plus `HandoffEvent` for swarms, and since 1.91.0
+`ReasoningDelta`, `PartialOutput` and, from `LLMClient.astream()` only,
+`ProviderTurn`; see the [event table](../streaming/index.md)) — while `stream()` folds
 those same events back into a normal `LLMResponse`. Inside an agent, the tool
 loop re-yields events to you as they arrive while accumulating text and usage,
 and deliberately **suppresses `StreamDone` between turns** so a multi-turn tool

@@ -237,7 +237,7 @@ The rules:
 - **A `completed` marker refuses a resume** with `AlreadyResumed`: there is nothing to continue, and continuing would re-fire every side effect.
 - **A `failed` marker is stepped over.** Crash recovery is the feature; a run that raised stays resumable, and resume re-enters at the last real row.
 - **A fork branches a finished run** under a new `execution_id`, leaving the original untouched. A fork from the marker itself is refused: it is a tombstone, not a step.
-- **A tool that raises is not a failed run.** Its error becomes a tool result the model reads. Only an exception that escapes the run writes a `failed` marker.
+- **A tool that raises is not a failed run.** Its error becomes a tool result the model reads. An exception that escapes the run writes a `failed` marker, and so (*since 1.91.0*) does a run stopped by `agent.cancel()` or `AgentConfig(timeout_seconds=...)`, with `state_snapshot["run_reason"]` set to `"cancelled"` or `"timeout"`. Like any `failed` run, a stopped run stays resumable.
 - **Prune never deletes a pause.** `completed` and `failed` rows older than the cutoff go; an `interrupted` row stays, because deleting it would orphan a human.
 
 Proof 5 finishes a run, fails one by making the provider raise once, forks the finished one, and prunes:

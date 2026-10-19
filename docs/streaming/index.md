@@ -34,8 +34,8 @@ Every streaming method yields `StreamEvent` objects. There are ten event types:
 | `ReasoningDelta` | `text: str`, `block: ReasoningBlock \| None` | A chunk of the model's reasoning — never part of the answer. `block` is set on the event that closes a provider reasoning block (Claude thinking), which the agent loop sends back. Since 1.91.0, see [Reasoning and prompt caching](../llm/reasoning-and-caching.md) |
 | `PartialOutput` | `data: Any` | A structured run's reply so far, parsed as incomplete JSON: `agent.astream()` with an `output_type` emits it whenever the value changes (1.91.0, see [Structured Output](../structured-output/index.md#streaming-the-answer-as-it-forms-partialoutput)) |
 | `ToolCallStart` | `call_id: str`, `tool_name: str` | LLM initiates a tool call |
-| `ToolCallEnd` | `call_id: str`, `tool_name: str`, `arguments: dict` | Tool call arguments fully parsed |
-| `Usage` | `prompt_tokens: int`, `completion_tokens: int`, `reasoning_tokens: int`, `cached_tokens: int`, `cache_write_tokens: int` | Token counts (typically at end of response). `prompt_tokens` includes the cached part; the last three are 0 when the provider reported none (1.91.0) |
+| `ToolCallEnd` | `call_id: str`, `tool_name: str`, `arguments: dict`, `signature: str \| None` | Tool call arguments fully parsed. `signature` is Gemini's opaque thought signature for the call, sent back with it (1.91.0) |
+| `Usage` | `prompt_tokens: int`, `completion_tokens: int`, `reasoning_tokens: int`, `cached_tokens: int`, `cache_write_tokens: int`, `cache_write_1h_tokens: int` | Token counts (typically at end of response). `prompt_tokens` includes the cached part; the last four are 0 when the provider reported none (1.91.0) |
 | `HandoffEvent` | `from_agent: str`, `to_agent: str`, `reason: str = ""` | Control passes from one agent to another. Emitted by [`Swarm.astream()`](../agents/swarm.md#streaming) only, tagged in ahead of the target agent's first `TextDelta` |
 | `ProviderTurn` | `calls: list[ProviderToolCall]`, `content: ProviderContent \| None`, `tool_requests: dict`, `containers: list` | `LLMClient.astream()` only, once, before `Usage`: what the provider's own tools (`web_search()` …) did in the turn, and the turn verbatim for sending back. `Agent.astream()` consumes it and does not pass it on (1.91.0, see [Provider-run tools](../tools/provider-tools.md)) |
 | `Paused` | `reason: str`, `context: dict`, `execution_id: str`, `node_id: str`, `agent_path: str \| None` | The run paused — a [managed approval policy](../guardrails/managed-governance.md) or an `interrupt()` in a tool. Always the **last** event; resume with `agent.aresume(execution_id, resume_value=Resume(...))`. Since 1.77.0 |
@@ -54,7 +54,7 @@ as `status="paused"`, with the same `context` (for a policy pause: `tool`,
 memory write do not run for it.
 
 A single-agent `astream()` never yields a `HandoffEvent` — there is nothing to
-hand off to — so a loop that only handles the other five is still correct for
+hand off to — so a loop that ignores it is still correct for
 `LLMClient.astream()` and `Agent.astream()`. Handle it when you stream a `Swarm`,
 or an agent switch renders as a gap in the text.
 
@@ -86,8 +86,10 @@ async for event in llm.astream([UserMessage("Hello!")]):
 
 | Provider | Streaming | Protocol |
 |----------|:-:|---------|
-| OpenAI | Yes | SSE (`data: {json}` lines) |
+| OpenAI | Yes | SSE (`data: {json}` lines); with `api="responses"`, the Responses API's typed events (1.91.0) |
 | Anthropic | Yes | SSE (Anthropic event format) |
+| Gemini | Yes | SSE (`streamGenerateContent?alt=sse`) |
+| OpenAI-compatible presets (Groq, OpenRouter, DeepSeek, Mistral …) | Yes | SSE (OpenAI-compatible) |
 | Ollama | Yes | Newline-delimited JSON |
 | Azure | Yes | SSE (OpenAI-compatible) |
 | Custom | Yes | SSE (OpenAI-compatible) |
@@ -148,12 +150,14 @@ async for event in agent.astream("Find me a restaurant"):
 When an agent uses tools, the stream emits events in this order for each tool-calling iteration:
 
 ```
+ReasoningDelta    (optional — the model's reasoning, when it shows any; 1.91.0)
 TextDelta         (optional — LLM may emit text before tool calls)
 ToolCallStart     (call_id, tool_name)
 ToolCallEnd       (call_id, tool_name, arguments)
 Usage             (token counts for this iteration)
 --- tool executes, result appended to messages ---
 TextDelta ...     (next iteration's tokens)
+PartialOutput     (optional — an agent with output_type: the structured reply so far; 1.91.0)
 ```
 
 Using Python 3.10+ pattern matching:
@@ -297,8 +301,8 @@ The SDK's `StreamEvent` types (`TextDelta`, `ToolCallStart`, `ToolCallEnd`, `Usa
 
 As of 1.5.0, `Agent.astream()` is at full feature parity with `Agent.run()` / `arun()`:
 
-- **Middleware hooks fire during streaming.** Every hook — `before_run`, `before_model`, `wrap_model`, `after_model`, `wrap_tool`, `after_run`, `on_error` — is invoked at the same logical point it is during a non-streaming run, and `on_stream_event` (streaming only) can rewrite or drop events. `wrap_model` still lets the model's deltas through as they arrive. A configured `ToolBudget`, `TrimLongMessages`, or custom `AgentMiddleware` works identically for both modes. See [Middleware](../agents/middleware.md).
-- **Checkpoints are written during streaming.** When the agent has a `Checkpointer` configured, turn-boundary and pre-tool checkpoints are persisted as the loop runs — so a process crash mid-stream can resume from the last checkpoint with `chain.aresume(...)`.
+- **Middleware hooks fire during streaming.** Every hook — `before_model`, `after_model` and `wrap_tool`, and since 1.91.0 `before_run`, `wrap_model`, `after_run` and `on_error` — is invoked at the same logical point it is during a non-streaming run, and `on_stream_event` (streaming only, 1.91.0) can rewrite or drop events. `wrap_model` still lets the model's deltas through as they arrive. A configured `ToolBudget`, `TrimLongMessages`, or custom `AgentMiddleware` works identically for both modes. See [Middleware](../agents/middleware.md).
+- **Checkpoints are written during streaming.** When the agent has a `Checkpointer` configured, turn-boundary and pre-tool checkpoints are persisted as the loop runs — so a process crash mid-stream can resume from the last checkpoint with `agent.aresume(...)`.
 - **`InterruptSignal` works inside streamed tool calls.** Calling `interrupt(...)` from within a tool that runs during `astream()` pauses and checkpoints the run identically to `arun()`, and the execution resumes via the standard `aresume` flow. Since 1.77.0 the stream says so with a final `Paused` event; before, a private exception escaped the generator at that point (a managed approval policy's pause did the same).
 
 Before 1.5.0, all three were silently bypassed during streaming — middleware was ignored, no checkpoints were written, and `interrupt()` raised an unhandled exception. If you upgrade and your existing streaming code starts seeing middleware applied for the first time, that is the intended behavior.
