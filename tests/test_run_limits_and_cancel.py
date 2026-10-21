@@ -412,17 +412,22 @@ def test_a_resumed_run_is_held_to_its_timeout(tmp_path) -> None:
         return ("", [{"name": "approve", "arguments": {}}]) if calls["n"] == 1 else "done"
 
     store = SQLiteCheckpointer(db_path=str(tmp_path / "cp.db"))
-    agent = Agent(
-        name="resumable",
-        llm=FunctionModel(respond),
-        tools=[FunctionTool(name="approve", fn=approve)],
-        checkpointer=store,
-        config=AgentConfig(timeout_seconds=0.3),
-    )
-    assert agent.run("go", execution_id="rs-1").status == "paused"
+
+    def agent(**config: Any) -> Agent:
+        return Agent(
+            name="resumable",
+            llm=FunctionModel(respond),
+            tools=[FunctionTool(name="approve", fn=approve)],
+            checkpointer=store,
+            config=AgentConfig(**config),
+        )
+
+    # The pause itself runs unbounded: on a slow Windows runner the first run
+    # alone outlasted 0.3 s (CI, 1.91.0). The resume is what this test bounds.
+    assert agent().run("go", execution_id="rs-1").status == "paused"
     started = time.monotonic()
     with pytest.raises(AgentTimeoutError):
-        agent.resume("rs-1", resume_value=Resume(approved=True))
+        agent(timeout_seconds=0.3).resume("rs-1", resume_value=Resume(approved=True))
     assert time.monotonic() - started < 3
     assert _run_end(store, "rs-1").state_snapshot["run_reason"] == "timeout"
 
