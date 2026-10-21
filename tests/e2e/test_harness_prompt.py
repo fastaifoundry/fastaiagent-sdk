@@ -123,7 +123,7 @@ def test_28_lineage_attrs_on_llm_span(seeded_prompt: tuple[str, str]) -> None:
     # The chain renders the template (which stamps the slug/version on
     # the current span) and feeds the resulting messages into the LLM,
     # whose call produces an llm.* span as a child.
-    chain = template | ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    chain = template | ChatOpenAI(model="gpt-5-mini", reasoning_effort="minimal")
     chain.invoke({"topic": "blue"}, config={"callbacks": [handler]})
 
     # Wait until the chain's trace lands and find a span whose attrs

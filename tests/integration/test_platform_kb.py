@@ -127,7 +127,7 @@ def test_agent_uses_platform_kb_end_to_end():
             "Answer from the provided knowledge base only. "
             "Use the search tool before answering."
         ),
-        llm=fa.LLMClient(provider="openai", model="gpt-4o-mini"),
+        llm=fa.LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
         tools=[kb.as_tool()],
     )
     result = agent.run("What's the refund policy?")

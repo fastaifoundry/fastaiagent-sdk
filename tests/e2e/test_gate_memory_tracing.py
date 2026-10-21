@@ -58,7 +58,7 @@ def test_memory_spans_on_real_agent_run(tmp_path: Path, monkeypatch) -> None:
     reset_config()
     reset_tracer()
 
-    llm = LLMClient(provider="openai", model="gpt-4.1")
+    llm = LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal")
     memory = ComposableMemory(
         blocks=[
             StaticBlock("The user is a QA engineer."),
@@ -127,7 +127,7 @@ def test_persist_during_run_writes_facts_with_source_trace(tmp_path: Path, monke
     reset_config()
     reset_tracer()
 
-    llm = LLMClient(provider="openai", model="gpt-4.1")
+    llm = LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal")
     memory = ComposableMemory(
         blocks=[
             FactExtractionBlock(

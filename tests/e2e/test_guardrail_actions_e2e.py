@@ -163,7 +163,7 @@ def test_a_reask_rule_gets_a_real_model_to_correct_itself() -> None:
     )
     agent = Agent(
         name="e2e-reask",
-        llm=LLMClient(provider="openai", model="gpt-4o-mini"),
+        llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
         guardrails=[no_digits],
         config=AgentConfig(guardrail_retries=2),
     )
@@ -202,7 +202,7 @@ def test_a_masking_rule_is_reported_on_the_result() -> None:
     )
     agent = Agent(
         name="e2e-observed",
-        llm=LLMClient(provider="openai", model="gpt-4o-mini"),
+        llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
         guardrails=[redact],
     )
 

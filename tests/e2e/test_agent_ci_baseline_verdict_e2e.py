@@ -1,6 +1,6 @@
 """Live: a ratchet that regresses records ``failed`` against the previous run (E1, E2).
 
-Two real pytest sessions over a real gpt-4o-mini agent, both run with
+Two real pytest sessions over a real gpt-5-mini agent, both run with
 ``--eval-run-name main --eval-baseline main``. Session A answers correctly and
 publishes ``main``. Session B is forced to answer wrongly by its system prompt.
 Before 1.89.0, B compared with itself (delta 0), exited 0 and recorded ``passed``.
@@ -31,7 +31,7 @@ from fastaiagent.llm import LLMClient
 AGENT = Agent(
     name="colour-bot",
     system_prompt="{prompt}",
-    llm=LLMClient(model="gpt-4o-mini", temperature=0),
+    llm=LLMClient(model="gpt-5-mini", reasoning="minimal"),
 )
 
 @case(input="What colour is the sky on a clear day?", expected="BLUE")

@@ -241,7 +241,7 @@ class TestOTLPExportGate:
         agent = Agent(
             name=agent_name,
             system_prompt="You are a gate test agent. Always reply briefly.",
-            llm=LLMClient(provider="openai", model="gpt-4.1-mini"),
+            llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
             tools=[FunctionTool(name="lookup_order", fn=_lookup_order)],
         )
         result = agent.run("Ping the OTLP gate.")

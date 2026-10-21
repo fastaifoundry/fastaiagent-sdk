@@ -42,7 +42,7 @@ class TestStructuredOutputGate:
                 "with the order_id, a status (one of: shipped, processing, "
                 "cancelled, unknown), and a one-sentence summary."
             ),
-            llm=LLMClient(provider="openai", model="gpt-4.1"),
+            llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
             output_type=OrderStatus,
         )
         result = agent.run(
@@ -76,7 +76,7 @@ class TestStructuredOutputGate:
         plain_agent = Agent(
             name="structured-output-gate-plain",
             system_prompt="You are helpful. Reply briefly in plain prose.",
-            llm=LLMClient(provider="openai", model="gpt-4.1"),
+            llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
         )
         result = plain_agent.run("Say hi.")
         assert result.output, "plain agent returned empty output"

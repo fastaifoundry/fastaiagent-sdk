@@ -28,7 +28,7 @@ pytestmark = [
     pytest.mark.skipif(not os.environ.get("OPENAI_API_KEY"), reason="OPENAI_API_KEY not set"),
 ]
 
-MODEL = "gpt-4o-mini"
+MODEL = "gpt-5.1"  # a judge
 
 # The question is deliberately one the model cannot grade without the reference: only
 # the interpolated {expected_output} tells it which internal code is the right one.
@@ -39,7 +39,7 @@ BAD_ANSWER = "It uses BRN-ND-2."
 
 
 def _llm() -> LLMClient:
-    return LLMClient(provider="openai", model=MODEL)
+    return LLMClient(provider="openai", model=MODEL, reasoning="none")
 
 
 def _judge(template: str) -> LLMJudge:

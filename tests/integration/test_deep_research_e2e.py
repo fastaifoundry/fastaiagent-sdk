@@ -56,9 +56,15 @@ def force_mock_backend(monkeypatch):
     # remaining tool calls unanswered, and the structured-output re-ask that
     # followed re-sent that history and got a 400 from the provider. Running on
     # the shipped default is the regression test (1.67.0).
-    # Cheap model for researchers; keep gpt-4o for scope/write since
+    # Cheap model for researchers; a stronger one for scope/write since
     # judgment quality matters for the report shape we're asserting on.
-    monkeypatch.setenv("LLM_MODEL_RESEARCHER", "gpt-4o-mini")
+    # The example builds its clients from these env vars alone, with no
+    # reasoning knob: gpt-5-mini runs at its default effort, and gpt-5.1's
+    # default effort is "none". GPT-5 models reject temperature; the example
+    # sends none.
+    monkeypatch.setenv("LLM_MODEL_RESEARCHER", "gpt-5-mini")
+    monkeypatch.setenv("LLM_MODEL_SCOPE", "gpt-5.1")
+    monkeypatch.setenv("LLM_MODEL_WRITER", "gpt-5.1")
     yield
 
 

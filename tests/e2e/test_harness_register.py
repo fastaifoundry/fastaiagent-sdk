@@ -60,7 +60,7 @@ def test_33_langchain_register(fresh_name: str) -> None:
     from fastaiagent.integrations import langchain as lc
     from fastaiagent.integrations._registry import fetch_agent
 
-    graph = create_react_agent(ChatOpenAI(model="gpt-4o-mini"), tools=[])
+    graph = create_react_agent(ChatOpenAI(model="gpt-5-mini"), tools=[])
     lc.register_agent(graph, name=fresh_name)
 
     row = fetch_agent(fresh_name)
@@ -84,7 +84,7 @@ def test_34_crewai_register(fresh_name: str) -> None:
     from fastaiagent.integrations import crewai as ca
     from fastaiagent.integrations._registry import fetch_agent
 
-    llm = LLM(model="openai/gpt-4o-mini")
+    llm = LLM(model="openai/gpt-5-mini")
     a = Agent(role="Researcher", goal="g", backstory="b", llm=llm,
               verbose=False, allow_delegation=False)
     t = Task(description="d", expected_output="o", agent=a)
@@ -113,7 +113,7 @@ def test_35_pydanticai_register(fresh_name: str) -> None:
     from fastaiagent.integrations import pydanticai as pa
     from fastaiagent.integrations._registry import fetch_agent
 
-    agent = Agent("openai:gpt-4o-mini", system_prompt="be terse")
+    agent = Agent("openai:gpt-5-mini", system_prompt="be terse")
 
     @agent.tool_plain
     def echo(text: str) -> str:
@@ -124,7 +124,7 @@ def test_35_pydanticai_register(fresh_name: str) -> None:
     row = fetch_agent(fresh_name)
     assert row is not None
     assert row["framework"] == "pydanticai"
-    assert row.get("model") and "gpt-4o-mini" in str(row["model"])
+    assert row.get("model") and "gpt-5-mini" in str(row["model"])
 
 
 # ---------------------------------------------------------------------------
@@ -145,7 +145,7 @@ def test_36_harness_auto_attachment(fresh_name: str) -> None:
     from fastaiagent.prompt import PromptRegistry
 
     # Step 1: register the agent so attachments have a parent row.
-    graph = create_react_agent(ChatOpenAI(model="gpt-4o-mini"), tools=[])
+    graph = create_react_agent(ChatOpenAI(model="gpt-5-mini"), tools=[])
     lc.register_agent(graph, name=fresh_name)
 
     # Step 2: attach a guardrail.
@@ -200,7 +200,7 @@ def test_38_langchain_workflow_topology(fresh_name: str) -> None:
     from fastaiagent.integrations import langchain as lc
     from fastaiagent.integrations._registry import fetch_agent
 
-    graph = create_react_agent(ChatOpenAI(model="gpt-4o-mini"), tools=[])
+    graph = create_react_agent(ChatOpenAI(model="gpt-5-mini"), tools=[])
     lc.register_agent(graph, name=fresh_name)
 
     row = fetch_agent(fresh_name)
@@ -225,7 +225,7 @@ def test_39_dependency_endpoint_merges(
     from fastaiagent.integrations import langchain as lc
     from fastaiagent.integrations._registry import attach as _attach
 
-    graph = create_react_agent(ChatOpenAI(model="gpt-4o-mini"), tools=[])
+    graph = create_react_agent(ChatOpenAI(model="gpt-5-mini"), tools=[])
     lc.register_agent(graph, name=fresh_name)
     _attach(fresh_name, "guardrail", "no_pii", position="input")
     _attach(fresh_name, "prompt", "support-system", version="v1")

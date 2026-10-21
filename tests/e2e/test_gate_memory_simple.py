@@ -40,7 +40,7 @@ def test_memory_facade_multiuser_no_cross_contamination(tmp_path: Path, monkeypa
     reset_config()
     reset_tracer()
 
-    llm = LLMClient(provider="openai", model="gpt-4.1")
+    llm = LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal")
 
     # ONE agent definition, ONE Memory — serves every user via the resolver.
     agent = Agent(
@@ -105,7 +105,7 @@ def test_memory_facade_streamed_runs_recall_their_own_user(tmp_path: Path, monke
     agent = Agent(
         name="assistant",
         system_prompt="You are a concise assistant. Use what you remember about the user.",
-        llm=LLMClient(provider="openai", model="gpt-4.1"),
+        llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
         memory=Memory(
             location=MemoryStore(db_path=str(db_path)),
             user_id=lambda ctx: ctx.state.user_id,
@@ -121,9 +121,11 @@ def test_memory_facade_streamed_runs_recall_their_own_user(tmp_path: Path, monke
         return "".join(parts)
 
     async def conversation() -> tuple[str, str]:
-        await say("My locker code is 4417. Just acknowledge it.", "alice")
-        await say("My locker code is 9082. Just acknowledge it.", "bob")
-        question = "What is my locker code? Reply with the digits only."
+        # A favourite number, not a "locker code": gpt-5-mini refuses to repeat a
+        # code as a sensitive secret, which is not what this test is about.
+        await say("My favourite number is 4417. Just acknowledge it.", "alice")
+        await say("My favourite number is 9082. Just acknowledge it.", "bob")
+        question = "What is my favourite number? Reply with the digits only."
         return await say(question, "alice"), await say(question, "bob")
 
     alice_answer, bob_answer = asyncio.run(conversation())
@@ -146,7 +148,7 @@ def test_memory_facade_summarize_fires(tmp_path: Path, monkeypatch) -> None:
     reset_config()
     reset_tracer()
 
-    llm = LLMClient(provider="openai", model="gpt-4.1")
+    llm = LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal")
     agent = Agent(
         name="chat",
         system_prompt="You are concise.",

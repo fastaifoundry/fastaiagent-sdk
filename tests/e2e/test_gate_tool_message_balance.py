@@ -36,15 +36,15 @@ def _require(provider_key: str) -> None:
 
 
 @pytest.mark.parametrize(
-    ("provider", "provider_key", "model"),
+    ("provider", "provider_key", "model", "reasoning"),
     [
-        ("openai", "OPENAI_API_KEY", "gpt-4o-mini"),
-        ("anthropic", "ANTHROPIC_API_KEY", "claude-sonnet-4-6"),
+        ("openai", "OPENAI_API_KEY", "gpt-5-mini", "minimal"),
+        ("anthropic", "ANTHROPIC_API_KEY", "claude-sonnet-4-6", None),
     ],
     ids=["openai", "anthropic"],
 )
 def test_a_stopped_turn_is_still_a_history_the_provider_accepts(
-    provider, provider_key, model
+    provider, provider_key, model, reasoning
 ) -> None:
     _require(provider_key)
 
@@ -66,7 +66,7 @@ def test_a_stopped_turn_is_still_a_history_the_provider_accepts(
 
     agent = Agent(
         name="balance-gate",
-        llm=LLMClient(provider=provider, model=model),
+        llm=LLMClient(provider=provider, model=model, reasoning=reasoning),
         system_prompt=(
             "Look up the population of EVERY city the user names. Call "
             "lookup_population once per city, all in the same turn."

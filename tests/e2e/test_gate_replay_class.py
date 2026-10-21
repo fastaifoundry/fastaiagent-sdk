@@ -56,7 +56,7 @@ def test_replay_class_on_real_llm_tool_span(isolated_local_db: Any) -> None:
             "You have a get_weather tool. When the user asks about the weather "
             "in a city, call get_weather with that city and report the result."
         ),
-        llm=LLMClient(provider="openai", model="gpt-4.1"),
+        llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
         tools=[get_weather],
     )
 

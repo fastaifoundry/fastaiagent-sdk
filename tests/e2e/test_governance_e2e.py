@@ -1,6 +1,6 @@
 """E2E (Task C) — a connected agent honors a managed approval policy.
 
-No mocks of the model. A **real** ``gpt-4o-mini`` agent runs against a localhost
+No mocks of the model. A **real** ``gpt-5-mini`` agent runs against a localhost
 stand-in for the plane's frozen governance endpoints (``/policy``,
 ``/policy/decide``, ``/runs/{id}/pending``, ``/hitl/events`` —
 ``tests/_governance_plane.py``). A high-stakes tool (``transfer_funds``) matches
@@ -64,7 +64,7 @@ def _make_agent(tmp_path: Path) -> tuple[Any, list[dict[str, Any]]]:
             "You are a banking assistant. To move money, call transfer_funds(amount, to). "
             "After the tool returns, tell the user in one sentence exactly what it said."
         ),
-        llm=LLMClient(provider="openai", model="gpt-4o-mini"),
+        llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
         tools=[FunctionTool(name="transfer_funds", fn=transfer_funds)],
         checkpointer=SQLiteCheckpointer(str(tmp_path / "ckpt.db")),
     )
@@ -72,7 +72,7 @@ def _make_agent(tmp_path: Path) -> tuple[Any, list[dict[str, Any]]]:
 
 
 def test_governance_pause_approve_resume(gov_plane: tuple[GovPlane, str], tmp_path: Path) -> None:
-    require_env()  # OPENAI_API_KEY — real gpt-4o-mini
+    require_env()  # OPENAI_API_KEY — real gpt-5-mini
     state, url = gov_plane
 
     import fastaiagent

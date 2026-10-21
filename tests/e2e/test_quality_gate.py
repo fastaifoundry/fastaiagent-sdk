@@ -96,7 +96,7 @@ class TestQualityGate:
                 "Use the lookup_order tool to check order status when asked. "
                 "Be concise."
             ),
-            llm=LLMClient(provider="openai", model="gpt-4.1"),
+            llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
         )
         assert agent.name == "quality-gate-support"
         assert agent.llm.provider == "openai"
@@ -133,7 +133,7 @@ class TestQualityGate:
         blocking_agent = Agent(
             name="quality-gate-guardrail-probe",
             system_prompt="You are a test agent.",
-            llm=LLMClient(provider="openai", model="gpt-4.1"),
+            llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
             tools=[FunctionTool(name="lookup_order", fn=_lookup_order)],
             guardrails=[no_pii(position=GuardrailPosition.input)],
         )

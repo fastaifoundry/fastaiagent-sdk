@@ -38,13 +38,13 @@ def cost_db(tmp_path: Path) -> Path:
     init_local_db(db_path).close()
     now = datetime.now(tz=timezone.utc)
     with SQLiteHelper(db_path) as db:
-        # Two LLM spans with gpt-4o + gpt-4o-mini, both under researcher
+        # Two LLM spans with gpt-5.1 + gpt-5-mini, both under researcher
         # and inside the support-flow chain.
         for i, (model, in_t, out_t, node) in enumerate(
             [
-                ("gpt-4o", 1000, 200, "research"),
-                ("gpt-4o-mini", 500, 100, "process"),
-                ("gpt-4o-mini", 800, 150, "research"),
+                ("gpt-5.1", 1000, 200, "research"),
+                ("gpt-5-mini", 500, 100, "process"),
+                ("gpt-5-mini", 800, 150, "research"),
             ]
         ):
             attrs = {
@@ -99,21 +99,21 @@ def test_cost_breakdown_by_model(client: TestClient) -> None:
     body = r.json()
     assert body["group_by"] == "model"
     by_model = {row["model"]: row for row in body["rows"]}
-    assert "gpt-4o" in by_model
-    assert "gpt-4o-mini" in by_model
+    assert "gpt-5.1" in by_model
+    assert "gpt-5-mini" in by_model
 
     # Token roll-ups match the seed values.
-    assert by_model["gpt-4o"]["calls"] == 1
-    assert by_model["gpt-4o"]["input_tokens"] == 1000
-    assert by_model["gpt-4o"]["output_tokens"] == 200
+    assert by_model["gpt-5.1"]["calls"] == 1
+    assert by_model["gpt-5.1"]["input_tokens"] == 1000
+    assert by_model["gpt-5.1"]["output_tokens"] == 200
 
-    assert by_model["gpt-4o-mini"]["calls"] == 2
-    assert by_model["gpt-4o-mini"]["input_tokens"] == 1300
-    assert by_model["gpt-4o-mini"]["output_tokens"] == 250
+    assert by_model["gpt-5-mini"]["calls"] == 2
+    assert by_model["gpt-5-mini"]["input_tokens"] == 1300
+    assert by_model["gpt-5-mini"]["output_tokens"] == 250
 
     # Cost matches compute_cost_usd, no drift.
-    expected_4o = compute_cost_usd("gpt-4o", 1000, 200)
-    assert abs(by_model["gpt-4o"]["cost_usd"] - expected_4o) < 1e-6
+    expected_51 = compute_cost_usd("gpt-5.1", 1000, 200)
+    assert abs(by_model["gpt-5.1"]["cost_usd"] - expected_51) < 1e-6
 
 
 def test_cost_breakdown_by_agent(client: TestClient) -> None:

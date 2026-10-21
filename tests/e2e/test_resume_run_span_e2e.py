@@ -5,7 +5,7 @@ with a decision, and finishes. Before 1.89.0 the resume opened no agent span:
 the model call it made after the tool was stored as an orphan
 ``llm.<provider>.<model>`` root and ``Agent.resume`` returned ``trace_id=None``.
 
-Checked against ``local.db``, per target (OpenAI ``gpt-4o-mini`` and
+Checked against ``local.db``, per target (OpenAI ``gpt-5-mini`` and
 ``gpt-5.1``, Anthropic ``claude-haiku-4-5``, each skipped when its key is
 missing) × approved/rejected:
 
@@ -31,11 +31,17 @@ import pytest
 pytestmark = pytest.mark.e2e
 
 TARGETS = [
-    ("openai", "gpt-4o-mini"),
+    ("openai", "gpt-5-mini"),
     ("openai", "gpt-5.1"),
     ("anthropic", "claude-haiku-4-5"),
 ]
 _KEY_ENV = {"openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY"}
+# GPT-5 models reject ``temperature``: they take a reasoning level instead.
+_LLM_KWARGS: dict[str, dict[str, Any]] = {
+    "gpt-5-mini": {"reasoning": "minimal"},
+    "gpt-5.1": {"reasoning": "none"},
+    "claude-haiku-4-5": {"temperature": 0},
+}
 
 
 @pytest.fixture(params=TARGETS, ids=lambda t: f"{t[0]}:{t[1]}")
@@ -100,7 +106,7 @@ def test_a_live_resume_is_one_linked_agent_trace(
             "You process refunds. Always call issue_refund with the order id, then "
             "report the tool's result to the user in one sentence."
         ),
-        llm=LLMClient(provider=provider, model=model, temperature=0),
+        llm=LLMClient(provider=provider, model=model, **_LLM_KWARGS[model]),
         tools=[FunctionTool(name="issue_refund", fn=issue_refund)],
         checkpointer=SQLiteCheckpointer(str(local_db)),
     )

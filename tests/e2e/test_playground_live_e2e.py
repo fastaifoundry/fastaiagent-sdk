@@ -35,7 +35,11 @@ from fastaiagent.ui.db import init_local_db  # noqa: E402
 from fastaiagent.ui.server import build_app  # noqa: E402
 
 # Cheap, currently-live models. Kept deliberately small so the suite is fast.
-OPENAI_MODEL = "gpt-4o-mini"
+# OpenAI: gpt-5.1, whose default reasoning effort is "none" — the Playground has
+# no reasoning knob, and the tiny max_tokens budgets below would be spent on
+# reasoning by a model that thinks by default (gpt-5-mini), leaving no reply.
+# GPT-5 models reject ``temperature``, so the OpenAI calls do not send it.
+OPENAI_MODEL = "gpt-5.1"
 ANTHROPIC_MODEL = "claude-haiku-4-5"
 
 needs_openai = pytest.mark.skipif(
@@ -94,7 +98,8 @@ class TestRunWithOpenAI:
                 "model": OPENAI_MODEL,
                 "prompt_template": "Reply with exactly the word 'pong'.",
                 "variables": {},
-                "parameters": {"temperature": 0.0, "max_tokens": 8},
+                # gpt-5.1 refuses to stop at 8 tokens ("could not finish the message").
+                "parameters": {"max_tokens": 64},
             },
         )
         assert r.status_code == 200, r.text
@@ -118,7 +123,7 @@ class TestRunWithOpenAI:
                 "model": OPENAI_MODEL,
                 "prompt_template": "Repeat the word inside the brackets exactly: [{{word}}]",
                 "variables": {"word": "spaceship"},
-                "parameters": {"temperature": 0.0, "max_tokens": 16},
+                "parameters": {"max_tokens": 16},
             },
         )
         assert r.status_code == 200, r.text
@@ -135,7 +140,7 @@ class TestStreamWithOpenAI:
                 "model": OPENAI_MODEL,
                 "prompt_template": "Count from 1 to 5, comma separated.",
                 "variables": {},
-                "parameters": {"temperature": 0.0, "max_tokens": 32},
+                "parameters": {"max_tokens": 32},
             },
         )
         tokens = [e for e in events if e[0] == "token"]
@@ -324,7 +329,7 @@ class TestPlaygroundTraceTag:
                 "model": OPENAI_MODEL,
                 "prompt_template": "Say hi.",
                 "variables": {},
-                "parameters": {"temperature": 0.0, "max_tokens": 8},
+                "parameters": {"max_tokens": 64},
             },
         )
         assert r.status_code == 200, r.text

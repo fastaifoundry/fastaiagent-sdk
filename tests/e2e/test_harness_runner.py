@@ -7,7 +7,7 @@ aren't provided (the standard PLATFORM_ENV gate). Provision an SDK API key on th
 plane and point ``FASTAIAGENT_TARGET`` at it (e.g. ``http://localhost:20001``).
 
 It connects exactly as the shipped ``fastaiagent runner`` CLI now does, runs the
-runner's ``execute_command`` with a real ``gpt-4o-mini`` agent, flushes the real
+runner's ``execute_command`` with a real ``gpt-5-mini`` agent, flushes the real
 exporter the way the daemon does, and asserts the plane accepted the push
 (``count_unsynced == 0`` after a confirmed 2xx) and the runner reported a trace_id.
 """
@@ -66,7 +66,7 @@ def test_runner_live_playground_pushes_to_live_plane(isolated_local_db, _clean_p
     agent = Agent(
         name="taskA-harness",
         system_prompt="Reply with exactly the word OK and nothing else.",
-        llm=LLMClient(provider="openai", model="gpt-4o-mini"),
+        llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
     )
     cmd = {
         "command_id": "taskA-harness-1",

@@ -90,7 +90,7 @@ def test_10_autotrace_openai() -> None:
     pa.enable()
     sentinel = f"sentinel-{uuid.uuid4().hex[:8]}"
     agent = Agent(
-        "openai:gpt-4o-mini",
+        "openai:gpt-5-mini",
         system_prompt=f"Reply with exactly: {sentinel}",
     )
     result = agent.run_sync(f"Echo {sentinel}")
@@ -116,7 +116,7 @@ def test_10_autotrace_openai() -> None:
     assert attrs.get("fastaiagent.framework") == "pydanticai"
     assert (attrs.get("fastaiagent.framework.version") or "").strip()
     assert attrs.get("gen_ai.system") == "openai", attrs.get("gen_ai.system")
-    assert "gpt-4o-mini" in str(attrs.get("gen_ai.request.model") or ""), attrs
+    assert "gpt-5-mini" in str(attrs.get("gen_ai.request.model") or ""), attrs
 
 
 @needs_anthropic
@@ -151,7 +151,7 @@ def test_11_token_capture() -> None:
     from fastaiagent.integrations import pydanticai as pa
 
     pa.enable()
-    agent = Agent("openai:gpt-4o-mini", system_prompt="Reply with the word: pong")
+    agent = Agent("openai:gpt-5-mini", system_prompt="Reply with the word: pong")
     agent.run_sync("ping")
 
     trace = _wait_for_root_span(
@@ -175,7 +175,7 @@ def test_12_tool_capture() -> None:
 
     pa.enable()
     agent = Agent(
-        "openai:gpt-4o-mini",
+        "openai:gpt-5-mini",
         system_prompt="Use the echo tool when asked to echo.",
     )
 

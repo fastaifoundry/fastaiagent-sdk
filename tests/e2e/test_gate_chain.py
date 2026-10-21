@@ -31,7 +31,7 @@ class TestChainGate:
                 "You are a researcher. Provide a two-sentence summary of the "
                 "topic the user asks about. Keep it factual."
             ),
-            llm=LLMClient(provider="openai", model="gpt-4.1"),
+            llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
         )
         responder = Agent(
             name="chain-gate-responder",
@@ -39,7 +39,7 @@ class TestChainGate:
                 "You are a writer. Take the research provided in the state "
                 "and rewrite it as a single concise sentence."
             ),
-            llm=LLMClient(provider="openai", model="gpt-4.1"),
+            llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
         )
 
         chain = Chain("chain-gate-pipeline", checkpoint_enabled=False)

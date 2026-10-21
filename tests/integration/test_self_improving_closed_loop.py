@@ -8,7 +8,7 @@ Walks the full self-improving story end-to-end:
      now carries the learned facts.
   4. Verify the trace from step 3 contains the injected SystemMessage.
 
-Gated on OPENAI_API_KEY. Uses gpt-4o-mini throughout to keep cost low.
+Gated on OPENAI_API_KEY. Uses gpt-5-mini throughout to keep cost low.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ def test_seed_then_learn_then_replay(isolated_local_db, tmp_path: Path) -> None:
     from fastaiagent.learn import MemoryStore, run_extraction
 
     SCOPE_ID = "closed-loop-test"
-    llm = fa.LLMClient(provider="openai", model="gpt-4o-mini")
+    llm = fa.LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal")
 
     # ── Phase 1 — seed
     seed_agent = fa.Agent(

@@ -85,7 +85,7 @@ class TestCrewAIInteropGate:
         agent = Agent(
             name="crewai-interop-fastai-before",
             system_prompt="Reply with exactly the single word: alpha",
-            llm=LLMClient(provider="openai", model="gpt-4.1"),
+            llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
         )
         result = agent.run("Say the word.")
         assert result.output, "fastaiagent run produced empty output"
@@ -117,7 +117,7 @@ class TestCrewAIInteropGate:
                 "You give short, factual, one-sentence answers. "
                 "You never use lists, bullets, or multiple sentences."
             ),
-            llm="gpt-4.1",
+            llm="gpt-5-mini",
             verbose=False,
             allow_delegation=False,
         )
@@ -166,7 +166,7 @@ class TestCrewAIInteropGate:
         agent = Agent(
             name="crewai-interop-fastai-after",
             system_prompt="Reply with exactly the single word: omega",
-            llm=LLMClient(provider="openai", model="gpt-4.1"),
+            llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
         )
         result = agent.run("Say the word.")
         assert result.output, "fastaiagent run after CrewAI produced empty output"

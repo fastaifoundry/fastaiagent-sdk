@@ -150,7 +150,7 @@ def test_gate_simulation_live_real_llm() -> None:
     OpenAI secret). Assertions are structural to tolerate LLM nondeterminism."""
     from fastaiagent import LLMClient
 
-    llm = LLMClient(provider="openai", model="gpt-4o-mini")
+    llm = LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal")
     agent = Agent(
         name="support-bot",
         system_prompt=(

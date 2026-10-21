@@ -24,23 +24,33 @@ from tests.e2e.conftest import require_env
 pytestmark = pytest.mark.e2e
 
 
-def _build_agent():
+def _build_agent(*, takes_temperature: bool = False):
     """A simple agent the test reuses across the determinism modes.
 
     No tools — single-turn so the recorded-mode short-circuit applies
     cleanly. (Tools would require re-execution alongside the recorded
     LLM response; see ``docs/replay/guarantees.md`` §"Tool execution
     is rerun, not recorded".)
+
+    ``takes_temperature``: ``determinism="deterministic"`` pins
+    ``temperature=0`` where the model accepts it (``gpt-4.1-mini``) and only
+    ``seed=42`` on a GPT-5 model, which rejects a non-default temperature
+    (1.91.0, X24). Every other mode runs on ``gpt-5-mini``.
     """
     from fastaiagent import Agent, LLMClient
 
+    llm = (
+        LLMClient(provider="openai", model="gpt-4.1-mini")
+        if takes_temperature
+        else LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal")
+    )
     return Agent(
         name="determinism-gate-bot",
         system_prompt=(
             "You are a concise assistant. Answer the user's question in "
             "exactly one short sentence. Be deterministic."
         ),
-        llm=LLMClient(provider="openai", model="gpt-4.1-mini"),
+        llm=llm,
     )
 
 
@@ -72,11 +82,21 @@ class TestReplayDeterminismLive:
         )
 
     @pytest.mark.asyncio
-    async def test_deterministic_mode_yields_semantically_stable_output(self) -> None:
+    @pytest.mark.parametrize(
+        "takes_temperature",
+        [
+            pytest.param(True, id="gpt-4.1-mini-pins-temperature"),
+            # 1.91.0 (X24): before, the forced temperature=0 was a 400 here.
+            pytest.param(False, id="gpt-5-mini-pins-seed-only"),
+        ],
+    )
+    async def test_deterministic_mode_yields_semantically_stable_output(
+        self, takes_temperature: bool
+    ) -> None:
         require_env()
         from fastaiagent.trace.replay import Replay
 
-        agent = _build_agent()
+        agent = _build_agent(takes_temperature=takes_temperature)
         original = await agent.arun("What is two plus two? Reply with only the number.")
         assert "4" in original.output, f"baseline didn't return '4': {original.output!r}"
 

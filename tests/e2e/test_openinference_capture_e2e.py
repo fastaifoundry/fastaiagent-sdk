@@ -58,9 +58,12 @@ def test_live_openinference_span_is_normalized(tmp_path) -> None:
     try:
         client = openai.OpenAI()
         client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-5-mini",
             messages=[{"role": "user", "content": "Reply with the single word: pong"}],
-            max_tokens=5,
+            # GPT-5 takes max_completion_tokens (it rejects max_tokens), and its
+            # reasoning tokens count against it: minimal effort, a little headroom.
+            reasoning_effort="minimal",
+            max_completion_tokens=200,
         )
         provider.force_flush()
 
@@ -78,7 +81,7 @@ def test_live_openinference_span_is_normalized(tmp_path) -> None:
                 if llm_attrs:
                     break
             assert llm_attrs is not None, "no normalized gen_ai.request.model on any span"
-            assert "gpt-4o-mini" in str(llm_attrs["gen_ai.request.model"])
+            assert "gpt-5-mini" in str(llm_attrs["gen_ai.request.model"])
             # Token counts normalized from the instrumentor's convention.
             assert int(llm_attrs.get("gen_ai.usage.input_tokens") or 0) > 0
             assert int(llm_attrs.get("gen_ai.usage.output_tokens") or 0) > 0

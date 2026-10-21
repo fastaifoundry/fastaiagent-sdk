@@ -62,7 +62,7 @@ def _graph(llm: Any) -> Any:
 def _openai() -> Any:
     from langchain_openai import ChatOpenAI
 
-    return ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    return ChatOpenAI(model="gpt-5-mini", reasoning_effort="minimal")
 
 
 def _trace_named(agent: str) -> Any:

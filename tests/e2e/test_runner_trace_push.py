@@ -1,6 +1,6 @@
 """E2E (Task A) — the registered runner pushes its job traces to the platform.
 
-No mocks. A **real** ``gpt-4o-mini`` agent executes the dispatched commands via the
+No mocks. A **real** ``gpt-5-mini`` agent executes the dispatched commands via the
 real runner daemon + ``execute_command``; the **real** ``PlatformSpanExporter`` —
 wired by the real ``connect()`` + ``BatchSpanProcessor`` exactly as the shipped
 ``fastaiagent runner`` CLI now does — drains to a **real** localhost server that
@@ -179,14 +179,14 @@ def _make_agent_config() -> dict:
     agent = Agent(
         name="runner-echo",
         system_prompt="Reply with exactly the word OK and nothing else.",
-        llm=LLMClient(provider="openai", model="gpt-4o-mini"),
+        llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
     )
     return agent.to_dict()
 
 
 def test_runner_pushes_live_playground_trace(isolated_local_db, _clean_platform) -> None:
     os.environ.setdefault("E2E_SKIP_PLATFORM", "1")  # local stand-in plane, not a remote one
-    require_env()  # OPENAI_API_KEY — runs a real gpt-4o-mini agent
+    require_env()  # OPENAI_API_KEY — runs a real gpt-5-mini agent
 
     cmd = {
         "command_id": "cmd-lp-1",

@@ -24,11 +24,16 @@ pytestmark = [
     pytest.mark.skipif(not os.environ.get("OPENAI_API_KEY"), reason="OPENAI_API_KEY not set"),
 ]
 
-MODEL = "gpt-4o-mini"
+MODEL = "gpt-5-mini"  # the agent under test
+JUDGE_MODEL = "gpt-5.1"  # groundedness, Reflect's critique, toxicity, topic judging
 
 
 def _llm() -> LLMClient:
-    return LLMClient(provider="openai", model=MODEL)
+    return LLMClient(provider="openai", model=MODEL, reasoning="minimal")
+
+
+def _judge_llm() -> LLMClient:
+    return LLMClient(provider="openai", model=JUDGE_MODEL, reasoning="none")
 
 
 # --------------------------------------------------------------------------- #
@@ -38,7 +43,7 @@ def _llm() -> LLMClient:
 
 def test_grounded_passes_when_output_is_supported() -> None:
     reference = "Paris is the capital of France. The Eiffel Tower is located in Paris."
-    g = fa.grounded(reference, llm=_llm())
+    g = fa.grounded(reference, llm=_judge_llm())
     res = g.execute("The capital of France is Paris.")
     assert res.passed is True
     assert res.score is not None and res.score >= 0.7
@@ -46,7 +51,7 @@ def test_grounded_passes_when_output_is_supported() -> None:
 
 def test_grounded_blocks_unsupported_output() -> None:
     reference = "Paris is the capital of France."
-    g = fa.grounded(reference, llm=_llm(), threshold=0.7)
+    g = fa.grounded(reference, llm=_judge_llm(), threshold=0.7)
     res = g.execute("The capital of France is Berlin, and it has a population of 50 billion.")
     assert res.passed is False
     assert res.score is not None and res.score < 0.7
@@ -61,7 +66,7 @@ def test_reflect_revises_against_a_fact() -> None:
     from fastaiagent import MiddlewareContext, Reflect
     from fastaiagent.llm.client import LLMResponse
 
-    reflect = Reflect(facts=["The capital of France is Paris."], llm=_llm())
+    reflect = Reflect(facts=["The capital of France is Paris."], llm=_judge_llm())
     resp = LLMResponse(content="The capital of France is Berlin.")
     out = run_sync(reflect.after_model(MiddlewareContext(), resp))
     assert "Paris" in out.content
@@ -76,7 +81,9 @@ def test_reflect_in_an_agent_run() -> None:
         system_prompt="Answer in one short sentence.",
         llm=_llm(),
         middleware=[
-            Reflect(facts=["Always mention that answers are informational only."], llm=_llm())
+            Reflect(
+                facts=["Always mention that answers are informational only."], llm=_judge_llm()
+            )
         ],
     )
     result = agent.run("What is 2 + 2?")
@@ -89,12 +96,14 @@ def test_reflect_in_an_agent_run() -> None:
 
 
 def test_llm_toxicity_scores_clean_vs_toxic() -> None:
-    clean = detect_toxicity("Thank you so much, this was really helpful!", mode="llm", llm=_llm())
+    clean = detect_toxicity(
+        "Thank you so much, this was really helpful!", mode="llm", llm=_judge_llm()
+    )
     assert clean.toxic is False
     toxic = detect_toxicity(
         "You are worthless and everyone hates you, you should disappear.",
         mode="llm",
-        llm=_llm(),
+        llm=_judge_llm(),
         threshold=0.5,
     )
     assert toxic.toxic is True
@@ -102,7 +111,7 @@ def test_llm_toxicity_scores_clean_vs_toxic() -> None:
 
 
 def test_banned_topics_llm_mode() -> None:
-    g = fa.banned_topics(["politics", "elections"], llm=_llm())
+    g = fa.banned_topics(["politics", "elections"], llm=_judge_llm())
     blocked = g.execute("Which political party should win the upcoming national election?")
     assert blocked.passed is False
     ok = g.execute("What is the boiling point of water at sea level?")

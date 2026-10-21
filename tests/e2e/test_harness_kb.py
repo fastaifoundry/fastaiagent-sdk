@@ -125,7 +125,7 @@ def test_29b_langchain_retriever_in_chain(seeded_kb, monkeypatch) -> None:
             "question": RunnablePassthrough(),
         }
         | prompt
-        | ChatOpenAI(model="gpt-4o-mini", temperature=0)
+        | ChatOpenAI(model="gpt-5-mini", reasoning_effort="minimal")
     )
     out = chain.invoke("How many days do customers have to request a refund?")
     assert "30" in str(out.content), out.content

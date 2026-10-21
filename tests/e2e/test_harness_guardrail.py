@@ -65,7 +65,9 @@ def _block_word_guardrail(*, side: str):
         GuardrailType,
     )
 
-    sentinel = "BLOCK_ME_PLZ" if side == "input" else "FORBIDDEN_TOKEN"
+    # A neutral output sentinel: gpt-5-mini refuses to repeat "FORBIDDEN_TOKEN"
+    # ("I can't comply with that"), so the output rule had nothing to block.
+    sentinel = "BLOCK_ME_PLZ" if side == "input" else "BLUEHERON_42"
 
     def _check(text: str) -> GuardrailResult:
         if sentinel in text:
@@ -105,7 +107,7 @@ def test_21_langchain_input_block() -> None:
 
     lc.enable()
     graph = create_react_agent(
-        ChatOpenAI(model="gpt-4o-mini", temperature=0), tools=[]
+        ChatOpenAI(model="gpt-5-mini", reasoning_effort="minimal"), tools=[]
     )
 
     guarded = lc.with_guardrails(
@@ -134,9 +136,9 @@ def test_22_langchain_output_block_logs_event(app_client: TestClient) -> None:
     lc.enable()
     # The LLM is asked to repeat the sentinel verbatim, which is the
     # most reliable way to make the OUTPUT guardrail trip on
-    # gpt-4o-mini.
+    # gpt-5-mini.
     graph = create_react_agent(
-        ChatOpenAI(model="gpt-4o-mini", temperature=0), tools=[]
+        ChatOpenAI(model="gpt-5-mini", reasoning_effort="minimal"), tools=[]
     )
 
     guarded = lc.with_guardrails(
@@ -152,7 +154,7 @@ def test_22_langchain_output_block_logs_event(app_client: TestClient) -> None:
                     HumanMessage(
                         content=(
                             "Reply with exactly the following uppercase token "
-                            "and nothing else: FORBIDDEN_TOKEN"
+                            "and nothing else: BLUEHERON_42"
                         )
                     )
                 ]
@@ -203,7 +205,7 @@ def test_24_crewai_input_block() -> None:
 
     ca.enable()
 
-    llm = LLM(model="openai/gpt-4o-mini", temperature=0)
+    llm = LLM(model="openai/gpt-5-mini")
     a = Agent(
         role="R",
         goal="answer",
@@ -239,7 +241,7 @@ def test_25_pydanticai_input_block() -> None:
     from fastaiagent.integrations._registry import GuardrailBlocked
 
     pa.enable()
-    agent = Agent("openai:gpt-4o-mini", system_prompt="terse")
+    agent = Agent("openai:gpt-5-mini", system_prompt="terse")
 
     guarded = pa.with_guardrails(
         agent,
@@ -269,7 +271,7 @@ def test_26_langchain_streaming_input_only() -> None:
 
     lc.enable()
     graph = create_react_agent(
-        ChatOpenAI(model="gpt-4o-mini", temperature=0), tools=[]
+        ChatOpenAI(model="gpt-5-mini", reasoning_effort="minimal"), tools=[]
     )
 
     guarded = lc.with_guardrails(

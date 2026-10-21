@@ -44,7 +44,7 @@ class Ticket(BaseModel):
 _CAPTURED: dict[str, Any] = {}
 
 
-def _build_agent(provider: str, model: str):
+def _build_agent(provider: str, model: str, reasoning: str | None = None):
     from fastaiagent import Agent, FunctionTool, LLMClient
 
     def create_ticket(ticket: Ticket) -> str:
@@ -64,7 +64,7 @@ def _build_agent(provider: str, model: str):
             "You are a helpdesk bot. Use create_ticket to file the user's "
             "issue. Choose a sensible priority."
         ),
-        llm=LLMClient(provider=provider, model=model),
+        llm=LLMClient(provider=provider, model=model, reasoning=reasoning),
         tools=[FunctionTool(name="create_ticket", fn=create_ticket)],
     )
 
@@ -84,7 +84,7 @@ def _assert_structured_args(result: Any) -> None:
 def test_openai_pydantic_tool_args() -> None:
     _require("OPENAI_API_KEY")
     _CAPTURED.clear()
-    agent = _build_agent("openai", "gpt-4o")
+    agent = _build_agent("openai", "gpt-5-mini", reasoning="minimal")
     result = agent.run(
         "My laptop won't boot after the latest update — please file a ticket."
     )

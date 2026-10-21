@@ -1,6 +1,6 @@
 """Live e2e: Agent CI gate over a real LLM (marked ``e2e``; needs OPENAI_API_KEY).
 
-One small dataset, a real Agent on gpt-4o-mini, gated via the same
+One small dataset, a real Agent on gpt-5-mini, gated via the same
 ``gate()`` the pytest plugin and CLI use — proving the full loop
 (evaluate → persist → gate → compare) against a live provider.
 """
@@ -69,7 +69,7 @@ def test_agent_ci_gate_live(tmp_path) -> None:
 
     agent = Agent(
         name="ci-e2e",
-        llm=LLMClient(provider="openai", model="gpt-4o-mini", temperature=0),
+        llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
         system_prompt="Follow the instruction literally. Output only the requested word.",
     )
 

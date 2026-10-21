@@ -1,6 +1,6 @@
 """Live: the Guardrail Events record tells the truth about a real model's runs (1.89.0).
 
-gpt-4o-mini agents, ``FASTAIAGENT_UI_ENABLED`` unset, read back through the
+gpt-5-mini agents, ``FASTAIAGENT_UI_ENABLED`` unset, read back through the
 Local UI's own API:
 
 * rows exist without any UI flag;
@@ -59,7 +59,7 @@ def world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
 def _llm() -> Any:
     from fastaiagent import LLMClient
 
-    return LLMClient(provider="openai", model="gpt-4o-mini", temperature=0)
+    return LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal")
 
 
 def _events(client: Any, **params: Any) -> list[dict[str, Any]]:
