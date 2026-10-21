@@ -411,6 +411,15 @@ bugs); each was reproduced before fixing. The provider-facing changes were check
   `with_determinism("deterministic")` forced `temperature=0`, so every such rerun
   was a 400. It now pins `seed=42` always, and the temperature only where the
   model accepts it, with a warning when it can't.
+- **Retries and fallbacks apply when `httpcore` was re-imported** (X25, found by
+  CI). `httpx` maps `httpcore`'s errors to its own through a map it builds once.
+  After something re-imports `httpcore` in the same process (notebook autoreload,
+  a test runner, a plugin loader), a refused connection arrives as a raw
+  `httpcore.ConnectError` that the map no longer recognises. The SDK accepted only
+  `httpx.TransportError`, so `max_retries` and `fallbacks=` silently never
+  applied. Transport failures are now recognised by class name in either form:
+  `fastaiagent._internal.http_errors.is_transport_error`, used by the client and
+  by the span, HITL, eval and checkpoint exporters.
 - **A rule's `llm` config takes `reasoning`, `cache` and `api`** (X22), the keys
   `LLMClient.to_dict()` gained in 1.91.0. They were missing from the shareable
   allowlist, so a judge could not be told to reason less, and a client's

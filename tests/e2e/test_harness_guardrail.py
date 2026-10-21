@@ -65,9 +65,10 @@ def _block_word_guardrail(*, side: str):
         GuardrailType,
     )
 
-    # A neutral output sentinel: gpt-5-mini refuses to repeat "FORBIDDEN_TOKEN"
-    # ("I can't comply with that"), so the output rule had nothing to block.
-    sentinel = "BLOCK_ME_PLZ" if side == "input" else "BLUEHERON_42"
+    # The output sentinel is a word the model cannot avoid: gpt-5-mini refused to
+    # repeat "FORBIDDEN_TOKEN" and did not always copy an invented token exactly,
+    # so the output rule sometimes had nothing to block.
+    sentinel = "BLOCK_ME_PLZ" if side == "input" else "Paris"
 
     def _check(text: str) -> GuardrailResult:
         if sentinel in text:
@@ -134,9 +135,8 @@ def test_22_langchain_output_block_logs_event(app_client: TestClient) -> None:
     from fastaiagent.integrations._registry import GuardrailBlocked
 
     lc.enable()
-    # The LLM is asked to repeat the sentinel verbatim, which is the
-    # most reliable way to make the OUTPUT guardrail trip on
-    # gpt-5-mini.
+    # The LLM is asked a question whose answer is the sentinel ("Paris"),
+    # the most reliable way to make the OUTPUT guardrail trip on gpt-5-mini.
     graph = create_react_agent(
         ChatOpenAI(model="gpt-5-mini", reasoning_effort="minimal"), tools=[]
     )
@@ -147,15 +147,16 @@ def test_22_langchain_output_block_logs_event(app_client: TestClient) -> None:
         output_guardrails=[_block_word_guardrail(side="output")],
     )
 
+    from datetime import datetime, timezone
+
+    # Only this run's rows: the e2e gates can share a local.db across runs.
+    started = datetime.now(timezone.utc).isoformat()
     with pytest.raises(GuardrailBlocked):
         guarded.invoke(
             {
                 "messages": [
                     HumanMessage(
-                        content=(
-                            "Reply with exactly the following uppercase token "
-                            "and nothing else: BLUEHERON_42"
-                        )
+                        content="What is the capital of France? Answer in one word."
                     )
                 ]
             }
@@ -170,6 +171,7 @@ def test_22_langchain_output_block_logs_event(app_client: TestClient) -> None:
         for e in events
         if e.get("guardrail_name") == "block_output_sentinel"
         and e.get("agent_name") == "harness-test-lc-out"
+        and str(e.get("timestamp") or "") >= started
     ]
     # Exactly one row for one check (1.89.0): the proxy used to write two.
     assert len(mine) == 1, mine

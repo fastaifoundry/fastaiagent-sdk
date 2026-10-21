@@ -433,6 +433,8 @@ class EvalRunExporter(SpanExporter):
         """POST to ``/public/v1/eval/runs/ingest``. True on a confirmed 2xx."""
         import httpx
 
+        from fastaiagent._internal.http_errors import is_transport_error
+
         url = f"{conn.target}/public/v1/eval/runs/ingest"
         payload = {"runs": wire}
 
@@ -460,7 +462,9 @@ class EvalRunExporter(SpanExporter):
                     attempt + 1,
                     self._MAX_ATTEMPTS,
                 )
-            except httpx.TransportError:
+            except Exception as exc:
+                if not is_transport_error(exc):  # raw httpcore too (1.91.0)
+                    raise
                 logger.debug(
                     "Eval export transient error (attempt %d/%d)",
                     attempt + 1,

@@ -15,7 +15,6 @@ from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from typing import Any
 
-import httpx
 from pydantic import BaseModel, Field
 
 from fastaiagent._internal.async_utils import run_sync
@@ -1032,7 +1031,10 @@ class LLMClient:
         timeout (1.91.0: those were never retried)."""
         if isinstance(error, LLMProviderError):
             return cls._should_retry(error.status_code)
-        return isinstance(error, (httpx.TransportError, TimeoutError))
+        # By name, so a raw ``httpcore`` error after a re-import counts too.
+        from fastaiagent._internal.http_errors import is_transport_error
+
+        return is_transport_error(error)
 
     @classmethod
     def _falls_back(cls, error: BaseException) -> bool:
@@ -1345,7 +1347,9 @@ class LLMClient:
                 if cost_known:
                     set_fastaiagent_attributes(span, **{"cost.total_usd": cost})
                 return response
-            except (LLMProviderError, httpx.TransportError, TimeoutError) as e:
+            except Exception as e:
+                # A 429 / 5xx, or a transport failure in either spelling (raw
+                # ``httpcore`` after a re-import, 1.91.0); anything else raises.
                 if attempt < self.max_retries and self._retryable(e):
                     await asyncio.sleep(self._delay_for(attempt, e))
                     continue
@@ -1543,7 +1547,7 @@ class LLMClient:
                                 finish_seen = event.finish_reason
                             yield event
                     return
-                except (LLMProviderError, httpx.TransportError, TimeoutError) as e:
+                except Exception as e:
                     if attempt < self.max_retries and self._retryable(e):
                         # A retried attempt re-streams from the top, so drop what
                         # the failed one produced rather than concatenating two

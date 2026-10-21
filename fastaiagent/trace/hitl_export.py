@@ -336,6 +336,8 @@ class HitlEventExporter(SpanExporter):
         """
         import httpx
 
+        from fastaiagent._internal.http_errors import is_transport_error
+
         url = f"{conn.target}/public/v1/hitl/events"
         payload = {"events": wire}
 
@@ -362,7 +364,9 @@ class HitlEventExporter(SpanExporter):
                     attempt + 1,
                     self._MAX_ATTEMPTS,
                 )
-            except httpx.TransportError:
+            except Exception as exc:
+                if not is_transport_error(exc):  # raw httpcore too (1.91.0)
+                    raise
                 logger.debug(
                     "HITL export transient error (attempt %d/%d)",
                     attempt + 1,
