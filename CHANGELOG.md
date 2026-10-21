@@ -5,7 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — 1.91.0
+## [1.91.0] - 2026-10-21 — one extension model, and an LLMClient for today's models
+
+Bets 1 and 2. `AgentMiddleware` becomes the single way to extend a run: run and
+model-call hooks, bundles of tools, instructions and checkpointed state, and
+middleware on Chain, Swarm and Supervisor. `LLMClient` catches up with today's
+models: reasoning, prompt caching, fallbacks, model info, OpenAI's Responses API,
+tools the provider runs, structured-output modes, run limits and cancel. Along the
+way, 22 defects were found and fixed (X1–X24; X5 and X6 turned out not to be
+bugs); each was reproduced before fixing. The provider-facing changes were checked live on GPT-5.x / GPT-6, Claude
+5.x and Gemini 3.5+, and the plane-visible ones on the control plane.
+
+### Upgrading from 1.90 — behaviour changes at a glance
+
+- **Cost figures move.** Cached tokens are priced at the cached rate, and a model
+  the built-in table doesn't list exactly is now unpriced instead of mispriced.
+  Provider-run tool fees are counted. See *Changed*.
+- **Anthropic and Bedrock default `max_tokens`** is the model's own maximum, not
+  4096.
+- **`stream()` returns what `run()` returns** (X13, X14). It used to join every
+  turn's text.
+- **`ToolBudget` counts across a resume** (decision B1-5). It used to reset.
+- **`LLMClient(provider=X)` without `model=`** uses the preset's default;
+  Gemini's is `gemini-3.8-flash`.
+- **Gemini with `output_type` and tools** no longer uses JSON mode on tool turns
+  (X20). **Bedrock with `output_type`** puts the schema in the prompt (X21).
+- **Model-backed judges and deterministic replay** stop forcing `temperature=0` on
+  models that refuse it (X23, X24).
+- **New keys, each written only when set:**
+  - `LLMClient.to_dict()`: `region`, `reasoning`, `cache` and `api`;
+  - `Agent.to_dict()` `config`: `timeout_seconds`, `max_total_tokens`,
+    `max_cost_usd`, and `output_mode` when not `"auto"`;
+  - checkpoint messages: `reasoning_blocks` and `provider_content`;
+  - checkpoints: `middleware_state`.
+
+  A default agent's payload is unchanged.
+- **`local.db` schema v27** (X19): a narrower FTS update trigger. It migrates on
+  first open.
 
 ### Added — middleware is the one extension model (Bet 1)
 
