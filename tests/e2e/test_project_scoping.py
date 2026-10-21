@@ -268,8 +268,8 @@ def _seed_full_two_projects(db_path: Path) -> None:
                    start_time, end_time, status, attributes, events, project_id)
                    VALUES (?, ?, ?, ?, ?, ?, 'OK', ?, '[]', ?)""",
                 (llm_span, trace_id, root_span,
-                 f"llm.openai.gpt-4o-mini-{suffix}", iso, end_iso,
-                 json.dumps({"gen_ai.request.model": "gpt-4o-mini",
+                 f"llm.openai.gpt-5-mini-{suffix}", iso, end_iso,
+                 json.dumps({"gen_ai.request.model": "gpt-5-mini",
                              "gen_ai.usage.input_tokens": 100,
                              "gen_ai.usage.output_tokens": 50,
                              "agent.name": agent_name}),

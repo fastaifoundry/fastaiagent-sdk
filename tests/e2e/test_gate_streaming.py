@@ -34,7 +34,7 @@ class TestStreamingGate:
         agent = Agent(
             name="streaming-gate",
             system_prompt="Reply with exactly: The quick brown fox jumps.",
-            llm=LLMClient(provider="openai", model="gpt-4.1"),
+            llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
         )
 
         async def _collect() -> list[Any]:
@@ -66,7 +66,7 @@ class TestStreamingGate:
         agent = Agent(
             name="streaming-gate-sync",
             system_prompt="Reply with exactly: The quick brown fox jumps.",
-            llm=LLMClient(provider="openai", model="gpt-4.1"),
+            llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
         )
         # Agent.stream() is the sync helper that collects a stream into
         # an AgentResult — still exercises astream under the hood.
@@ -85,7 +85,7 @@ class TestStreamingGate:
                 "You are a support agent. "
                 "Use the lookup_order tool when asked about an order."
             ),
-            llm=LLMClient(provider="openai", model="gpt-4.1"),
+            llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
             tools=[FunctionTool(name="lookup_order", fn=_lookup_order)],
         )
 

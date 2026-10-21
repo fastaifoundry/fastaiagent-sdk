@@ -1,6 +1,6 @@
 """FastAIAgent SDK — Build, debug, evaluate, and operate AI agents."""
 
-from fastaiagent._internal.errors import StopAgent
+from fastaiagent._internal.errors import AgentTimeoutError, RunLimitError, StopAgent
 from fastaiagent._version import __version__
 from fastaiagent.agent import (
     Agent,
@@ -18,6 +18,8 @@ from fastaiagent.agent import (
     RedactPII,
     Reflect,
     RunContext,
+    RunInfo,
+    RunUsage,
     StaticBlock,
     SummaryBlock,
     Supervisor,
@@ -80,7 +82,15 @@ from fastaiagent.guardrail import (
     toxicity_check,
 )
 from fastaiagent.kb import KeywordStore, LocalKB, MetadataStore, PlatformKB, VectorStore
-from fastaiagent.llm import LLMClient, Message, StreamEvent, TextDelta
+from fastaiagent.llm import (
+    LLMClient,
+    Message,
+    ModelInfo,
+    PartialOutput,
+    ReasoningDelta,
+    StreamEvent,
+    TextDelta,
+)
 from fastaiagent.llm.stream import HandoffEvent, Paused
 from fastaiagent.multimodal import PDF, ContentPart, File, Image, normalize_input
 from fastaiagent.optimize import (
@@ -151,6 +161,8 @@ __all__ = [
     "AgentConfig",
     "AgentResult",
     "RunContext",
+    "RunInfo",
+    "RunUsage",
     "Supervisor",
     "Worker",
     # Swarm
@@ -163,6 +175,8 @@ __all__ = [
     "AgentMiddleware",
     "MiddlewareContext",
     "StopAgent",
+    "AgentTimeoutError",
+    "RunLimitError",
     "TrimLongMessages",
     "ToolBudget",
     "RedactPII",
@@ -194,9 +208,12 @@ __all__ = [
     "IdempotencyError",
     # LLM
     "LLMClient",
+    "ModelInfo",
     "Message",
     "StreamEvent",
     "TextDelta",
+    "ReasoningDelta",
+    "PartialOutput",
     # Multimodal
     "Image",
     "PDF",

@@ -59,7 +59,9 @@ def test_16_langchain_eval_3_cases() -> None:
     from fastaiagent.integrations import langchain as lc
 
     lc.enable()
-    graph = create_react_agent(ChatOpenAI(model="gpt-4o-mini", temperature=0), tools=[])
+    graph = create_react_agent(
+        ChatOpenAI(model="gpt-5-mini", reasoning_effort="minimal"), tools=[]
+    )
 
     evaluable = lc.as_evaluable(graph)
     results = fa.evaluate(
@@ -73,7 +75,7 @@ def test_16_langchain_eval_3_cases() -> None:
     cases = results.cases
     assert len(cases) == 3, f"expected 3 cases, got {len(cases)}"
     for case in cases:
-        # We don't assert exact match — gpt-4o-mini sometimes adds a
+        # We don't assert exact match — gpt-5-mini sometimes adds a
         # period or full sentence — but assert *something* was produced.
         assert case.actual_output, case
         assert _normalise(case.expected_output or "") in _normalise(case.actual_output)
@@ -95,7 +97,7 @@ def test_17_crewai_eval() -> None:
 
     ca.enable()
 
-    llm = LLM(model="openai/gpt-4o-mini", temperature=0)
+    llm = LLM(model="openai/gpt-5-mini")
     researcher = Agent(
         role="Researcher",
         goal="Answer concisely.",
@@ -147,7 +149,7 @@ def test_18_pydanticai_eval() -> None:
 
     pa.enable()
     agent = Agent(
-        "openai:gpt-4o-mini",
+        "openai:gpt-5-mini",
         system_prompt="Answer with a single word, no punctuation.",
     )
 
@@ -181,7 +183,9 @@ def test_19_langchain_custom_mapper() -> None:
     from fastaiagent.integrations import langchain as lc
 
     lc.enable()
-    graph = create_react_agent(ChatOpenAI(model="gpt-4o-mini", temperature=0), tools=[])
+    graph = create_react_agent(
+        ChatOpenAI(model="gpt-5-mini", reasoning_effort="minimal"), tools=[]
+    )
 
     seen_inputs: list[Any] = []  # type: ignore[name-defined]
     seen_outputs: list[Any] = []  # type: ignore[name-defined]
@@ -222,7 +226,9 @@ def test_20_eval_trace_linkage() -> None:
     from fastaiagent.trace.storage import TraceStore
 
     lc.enable()
-    graph = create_react_agent(ChatOpenAI(model="gpt-4o-mini", temperature=0), tools=[])
+    graph = create_react_agent(
+        ChatOpenAI(model="gpt-5-mini", reasoning_effort="minimal"), tools=[]
+    )
 
     evaluable = lc.as_evaluable(graph)
     results = fa.evaluate(

@@ -46,7 +46,7 @@ result = agent.run("What's the refund policy?")
 print(result.output)
 ```
 
-Because both `LocalKB` and `PlatformKB` expose the same `search(query, top_k) -> list[SearchResult]` surface and the same `as_tool()` helper, an Agent wired for one works for the other — swap as you promote a KB from local prototyping to platform hosting.
+Because both `LocalKB` and `PlatformKB` expose the same `search(query, top_k) -> list[SearchResult]` surface and the same `as_tool()` helper, an Agent wired for one works for the other — swap as you promote a KB from local prototyping to platform hosting. Both tools carry `origin="kb"`, so the Local UI lists them under the agent's knowledge bases (before 1.91.0 a `PlatformKB` tool showed up as a plain function tool).
 
 ## What Runs Where
 

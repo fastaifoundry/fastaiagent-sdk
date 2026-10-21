@@ -34,11 +34,11 @@ pytestmark = [
     pytest.mark.skipif(not os.environ.get("OPENAI_API_KEY"), reason="OPENAI_API_KEY not set"),
 ]
 
-MODEL = "gpt-4o-mini"
+MODEL = "gpt-5.1"  # every client here is a judge
 
 
 def _llm() -> LLMClient:
-    return LLMClient(provider="openai", model=MODEL)
+    return LLMClient(provider="openai", model=MODEL, reasoning="none")
 
 
 # --- G-Eval judge ---------------------------------------------------------- #

@@ -56,7 +56,7 @@ tooling that wants to read them off the preset.
 
 ## Reserved keys
 
-These six keys are reserved by fastaiagent's first-class code paths and
+These seven keys are reserved by fastaiagent's first-class code paths and
 cannot be re-registered: `openai`, `anthropic`, `ollama`, `azure`,
 `bedrock`, `custom`, `test`.
 
@@ -81,7 +81,9 @@ Custom presets show up automatically in two places:
   so any `register_provider()` call is reflected on the next page
   refresh — no UI rebuild needed).
 
-To suggest specific models for your preset in the Playground dropdown,
-register the preset with a useful `default_model`. Users can also type
+A preset's `default_model` is what `LLMClient(provider="<your key>")` uses when
+`model=` is omitted (since 1.91.0; before, every provider fell back to
+`gpt-4o-mini`), so set it to a model your endpoint serves. It also suggests the
+model in the Playground dropdown. Users can also type
 any model name into the model field directly — the dropdown is a
 suggestion list, not an exhaustive whitelist.

@@ -29,7 +29,7 @@ def test_agent_afork_diverges_and_leaves_original_intact(tmp_path: Path) -> None
     agent = Agent(
         name="fork-agent",
         system_prompt="Answer in as few words as possible.",
-        llm=LLMClient(provider="openai", model="gpt-4.1"),
+        llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
         checkpointer=cp,
     )
 
@@ -82,7 +82,7 @@ def test_agent_afork_without_input_branches_from_a_real_turn(tmp_path: Path) -> 
     agent = Agent(
         name="fork-agent-noinput",
         system_prompt="Answer in as few words as possible.",
-        llm=LLMClient(provider="openai", model="gpt-4.1"),
+        llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
         checkpointer=cp,
     )
 

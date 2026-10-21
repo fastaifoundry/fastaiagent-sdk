@@ -19,7 +19,7 @@ from fastaiagent.llm import UserMessage
 PROVIDERS = [
     ("openai", "gpt-4.1-mini", "OPENAI_API_KEY"),
     ("anthropic", "claude-sonnet-5-5", "ANTHROPIC_API_KEY"),
-    ("gemini", "gemini-2.5-flash", "GEMINI_API_KEY"),
+    ("gemini", "gemini-3.8-flash", "GEMINI_API_KEY"),
     ("groq", "openai/gpt-oss-120b", "GROQ_API_KEY"),
 ]
 TOOLS = [{"type": "function", "function": {

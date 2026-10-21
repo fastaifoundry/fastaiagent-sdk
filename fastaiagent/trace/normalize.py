@@ -247,6 +247,9 @@ def normalize_attributes(
         tokens = {
             "input_tokens": out.get("gen_ai.usage.input_tokens"),
             "output_tokens": out.get("gen_ai.usage.output_tokens"),
+            # The OpenTelemetry GenAI cache counts, part of input_tokens (1.91.0).
+            "cached_tokens": out.get("gen_ai.usage.cache_read.input_tokens"),
+            "cache_write_tokens": out.get("gen_ai.usage.cache_creation.input_tokens"),
         }
         if model and any(v is not None for v in tokens.values()):
             from fastaiagent._internal.pricing import usage_cost

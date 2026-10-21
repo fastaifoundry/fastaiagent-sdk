@@ -77,7 +77,7 @@ def test_a_real_guarded_run_stores_no_key(traced_db: Any) -> None:
 
     # The shape S1 leaked through is now refused, and the refusal does not echo it.
     with pytest.raises(ValueError) as exc:
-        banned_topics(["weapons"], llm={"model": "gpt-4o-mini", "api_key": real})
+        banned_topics(["weapons"], llm={"model": "gpt-5.1", "api_key": real})
     echoed = real in str(exc.value)
     assert not echoed, "the refusal echoed the key"
 
@@ -85,8 +85,12 @@ def test_a_real_guarded_run_stores_no_key(traced_db: Any) -> None:
     agent = fa.Agent(
         name="e2e-secrets",
         system_prompt="Answer in one short sentence.",
-        llm=LLMClient(model="gpt-4o-mini", api_key=real),
-        guardrails=[banned_topics(["weapons"], llm={"model": "gpt-4o-mini"})],
+        llm=LLMClient(model="gpt-5-mini", api_key=real, reasoning="minimal"),
+        # ``reasoning`` in a rule's llm config (1.91.0, X22), on a judge model that
+        # refuses temperature=0 (X23): the run below proves both live.
+        guardrails=[
+            banned_topics(["weapons"], llm={"model": "gpt-5-mini", "reasoning": "minimal"})
+        ],
     )
     result = agent.run("Suggest a quick pasta dish.")
     assert result.output, "the agent returned nothing"
@@ -106,7 +110,7 @@ def test_openai_rejected_key_is_not_echoed(traced_db: Any) -> None:
     agent = fa.Agent(
         name="e2e-bogus-openai",
         system_prompt="s",
-        llm=LLMClient(model="gpt-4o-mini", api_key=BOGUS_OPENAI),
+        llm=LLMClient(model="gpt-5-mini", api_key=BOGUS_OPENAI, reasoning="minimal"),
     )
     with pytest.raises(LLMProviderError) as exc:
         agent.run("hi")

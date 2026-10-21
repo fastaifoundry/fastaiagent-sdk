@@ -52,7 +52,7 @@ def test_openai_list_output() -> None:
     agent = Agent(
         name="geo-openai",
         system_prompt="You extract structured data.",
-        llm=LLMClient(provider="openai", model="gpt-4o"),
+        llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
         output_type=list[Country],
     )
     result = agent.run("List France, Japan, and Egypt with their capitals.")
@@ -82,7 +82,7 @@ def test_openai_strict_output() -> None:
     agent = Agent(
         name="company-strict",
         system_prompt="You extract structured company data.",
-        llm=LLMClient(provider="openai", model="gpt-4o"),
+        llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
         output_type=Company,
         config=AgentConfig(strict_output=True),
     )
@@ -103,7 +103,7 @@ def test_openai_primitive_output() -> None:
     agent = Agent(
         name="counter",
         system_prompt="You answer with a single number.",
-        llm=LLMClient(provider="openai", model="gpt-4o"),
+        llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
         output_type=int,
     )
     result = agent.run("How many sides does a hexagon have?")
@@ -116,7 +116,7 @@ def test_llmclient_level_parsed() -> None:
     from fastaiagent import LLMClient
     from fastaiagent.llm.message import UserMessage
 
-    client = LLMClient(provider="openai", model="gpt-4o")
+    client = LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal")
     resp = client.complete(
         [UserMessage("Give France and its capital.")],
         output_type=Country,

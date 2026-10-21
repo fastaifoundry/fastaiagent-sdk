@@ -50,13 +50,15 @@ class TestJudgeResistsPromptInjection:
         reason="Live test — requires OPENAI_API_KEY.",
     )
     async def test_live_openai_judge_resists_prompt_injection(self):
-        """H2 end-to-end against a real OpenAI judge (gpt-4o-mini)."""
+        """H2 end-to-end against a real OpenAI judge (gpt-5.1)."""
         g = Guardrail(
             name="injection_resistance_openai",
             guardrail_type=GuardrailType.llm_judge,
             config={
                 "prompt": self._JUDGE_PROMPT,
-                "llm": {"provider": "openai", "model": "gpt-4o-mini"},
+                # gpt-5.1 at its default reasoning effort ("none"): a judge that
+                # answers without thinking first, as gpt-4o-mini did.
+                "llm": {"provider": "openai", "model": "gpt-5.1"},
             },
         )
         result = await g.aexecute(self._PROMPT_INJECTION_PAYLOAD)

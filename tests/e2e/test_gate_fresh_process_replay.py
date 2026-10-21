@@ -86,7 +86,7 @@ class TestFreshProcessReplayGate:
             system_prompt=(
                 "You are a support bot. Use lookup_order when asked about an order."
             ),
-            llm=LLMClient(provider="openai", model="gpt-4.1"),
+            llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
             tools=[FunctionTool(name="lookup_order", fn=lookup_order)],
         )
         result = agent.run("What is the status of order ORD-900?")

@@ -46,7 +46,7 @@ def _columns(db: SQLiteHelper, table: str) -> set[str]:
 def test_fresh_db_is_v26(tmp_path: Path) -> None:
     db = init_local_db(tmp_path / "fresh.db")
     try:
-        assert _user_version(db) == CURRENT_SCHEMA_VERSION == 26
+        assert _user_version(db) == CURRENT_SCHEMA_VERSION >= 26
         assert set(V26_RUN_COLUMNS) <= _columns(db, "eval_runs")
         assert "scoring_trace_id" in _columns(db, "eval_cases")
         assert {"case_id", "idx", "media_type", "size_bytes", "sha256", "thumbnail"} <= _columns(
@@ -123,7 +123,7 @@ def test_upgrade_from_v25_backfills_case_columns_and_kind(tmp_path: Path) -> Non
 
     db = init_local_db(db_file)
     try:
-        assert _user_version(db) == 26
+        assert _user_version(db) == CURRENT_SCHEMA_VERSION >= 26
         rows = {r["run_id"]: r for r in db.fetchall("SELECT * FROM eval_runs")}
         c = rows["r-eval"]
         assert (c["case_count"], c["case_pass_count"], c["case_fail_count"]) == (5, 1, 3)

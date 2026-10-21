@@ -31,7 +31,7 @@ def test_curate_real_agent_then_evaluate(isolated_local_db: Any, tmp_path: Any) 
         agent = Agent(
             name="e2e-curate",
             system_prompt="You are a concise FAQ bot. Answer in one short sentence.",
-            llm=LLMClient(provider="openai", model="gpt-4o-mini"),
+            llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
         )
         question = "What is the capital of France?"
         run = agent.run(question)
@@ -83,7 +83,7 @@ def test_curate_guardrail_filter_live(
         agent = Agent(
             name="e2e-pii",
             system_prompt="Repeat the user's message back exactly, nothing else.",
-            llm=LLMClient(provider="openai", model="gpt-4o-mini"),
+            llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
             guardrails=[rule],
         )
         run = agent.run("Repeat exactly: my email is a@b.com")

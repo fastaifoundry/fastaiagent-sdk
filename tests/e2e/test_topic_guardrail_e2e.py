@@ -197,7 +197,7 @@ def test_a_plane_shaped_rule_is_reconstructed_and_fires_inside_an_agent_run() ->
 
     agent = Agent(
         name="e2e-topic-agent",
-        llm=LLMClient(provider="openai", model="gpt-4o-mini"),
+        llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
         guardrails=[rule],
     )
 

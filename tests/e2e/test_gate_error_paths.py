@@ -45,7 +45,7 @@ class TestErrorPathsGate:
                 "call the raising_tool. If it errors, acknowledge the error "
                 "to the user politely."
             ),
-            llm=LLMClient(provider="openai", model="gpt-4.1"),
+            llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
             tools=[FunctionTool(name="raising_tool", fn=_raising_tool)],
         )
         # Agent should complete — the tool raises, ToolExecutionError is
@@ -104,7 +104,7 @@ class TestErrorPathsGate:
                 "tool. Never produce a final answer without calling it first. "
                 "Keep calling until told otherwise."
             ),
-            llm=LLMClient(provider="openai", model="gpt-4.1"),
+            llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
             tools=[FunctionTool(name="loop_bait", fn=loop_bait)],
             config=AgentConfig(max_iterations=3),
         )
@@ -135,7 +135,7 @@ class TestErrorPathsGate:
             system_prompt=(
                 "Reply with exactly the single word: pineapple"
             ),
-            llm=LLMClient(provider="openai", model="gpt-4.1"),
+            llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
             guardrails=[
                 Guardrail(
                     name="forbid_pineapple",

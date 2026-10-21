@@ -9,7 +9,7 @@ configuration:
 from fastaiagent import Agent, LLMClient
 
 agent = Agent(name="bot", llm=LLMClient(provider="groq",
-                                        model="llama-3.1-70b-versatile"))
+                                        model="openai/gpt-oss-120b"))
 ```
 
 Set the matching env var (e.g. `export GROQ_API_KEY=…`) and you're done.
@@ -22,21 +22,27 @@ Set the matching env var (e.g. `export GROQ_API_KEY=…`) and you're done.
 | `anthropic` | Anthropic | (specify) | `ANTHROPIC_API_KEY` | ✓ | ✓ | system-prompt |
 | `ollama` | Ollama | (specify) | _(none, local)_ | ✓ | ✓ | native |
 | `azure` | OpenAI-compat | (specify) | `OPENAI_API_KEY` | ✓ | ✓ | native |
-| `bedrock` | Bedrock (boto3) | (specify) | _(AWS creds)_ | ✓ | ✗ | ✗ |
+| `bedrock` | Bedrock (boto3) | (specify) | _(AWS creds)_ | ✓ | ✗ | system-prompt; native with `output_mode="native"` (1.91.0) |
 | `custom` | OpenAI-compat | (specify) | `OPENAI_API_KEY` | ✓ | ✓ | native |
 | `test` | _(stand-in)_ | `test-model` | _(none)_ | ✓ | ✓ | n/a |
 
 ## Preset providers (registered automatically in v1.8.0)
 
+The default model is what `LLMClient(provider=...)` uses when `model=` is
+omitted — since 1.91.0. Before, every provider fell back to `gpt-4o-mini`, an
+OpenAI id no preset provider serves, so an omitted model could never work. The
+built-in providers above still default to `gpt-4o-mini`, so pass `model=` for
+every built-in except `openai`.
+
 | Key | Wire | Default model | API key env var | Tools | Streaming | `response_format` |
 |---|---|---|---|---|---|---|
-| `gemini` | native | `gemini-2.5-flash` | `GEMINI_API_KEY` | ✓ | ✓ | native (`responseSchema`) |
-| `groq` | OpenAI-compat | `llama-3.1-70b-versatile` | `GROQ_API_KEY` | ✓ | ✓ | native |
+| `gemini` | native | `gemini-3.8-flash` | `GEMINI_API_KEY` | ✓ | ✓ | native (`responseSchema`) |
+| `groq` | OpenAI-compat | `openai/gpt-oss-120b` | `GROQ_API_KEY` | ✓ | ✓ | native |
 | `openrouter` | OpenAI-compat | `openai/gpt-4o-mini` | `OPENROUTER_API_KEY` | ✓ | ✓ | native |
 | `deepseek` | OpenAI-compat | `deepseek-chat` | `DEEPSEEK_API_KEY` | ✓ | ✓ | native |
 | `together` | OpenAI-compat | `meta-llama/Llama-3.1-70B-Instruct-Turbo` | `TOGETHER_API_KEY` | ✓ | ✓ | native |
 | `fireworks` | OpenAI-compat | `accounts/fireworks/models/llama-v3p1-70b-instruct` | `FIREWORKS_API_KEY` | ✓ | ✓ | native |
-| `perplexity` | OpenAI-compat | `llama-3.1-sonar-small-128k-online` | `PERPLEXITY_API_KEY` | ✗ | ✓ | system-prompt |
+| `perplexity` | OpenAI-compat | `sonar` | `PERPLEXITY_API_KEY` | ✗ | ✓ | system-prompt |
 | `mistral` | OpenAI-compat | `mistral-large-latest` | `MISTRAL_API_KEY` | ✓ | ✓ | native |
 | `lmstudio` | OpenAI-compat | `local-model` | _(none, `http://localhost:1234/v1`)_ | ✓ | ✓ | native |
 | `vllm` | OpenAI-compat | `local-model` | _(none, `http://localhost:8000/v1`)_ | ✓ | ✓ | native |
@@ -55,6 +61,10 @@ Set the matching env var (e.g. `export GROQ_API_KEY=…`) and you're done.
 
 **Bedrock** uses the Converse API through `boto3` (credentials and region from
 the usual AWS chain; `LLMClient(..., region=...)` overrides the region).
+The region is part of `LLMClient.to_dict()` since 1.91.0, so a replayed or
+plane-dispatched Bedrock agent calls the same region; before, it was dropped and
+the rebuilt client used `us-east-1`. It is the one constructor extra that is
+serialized — others may be credentials and stay local.
 `base_url`, when set, is the Converse endpoint — a VPC endpoint or a proxy.
 Tools are sent as `toolConfig`; `tool_choice="required"` maps to Converse's
 `any`, and `"none"` is not available on Converse, so it logs a warning and the
@@ -67,12 +77,151 @@ model may still call a tool.
     the Converse wire format with a real `boto3` client; not yet against a live
     AWS account.
 
+## Gemini 3.5 and later — the recommended Gemini models
+
+Use a current Gemini model: `gemini-3.8-flash` (the default), `gemini-4-argon`,
+`gemini-3.5-flash-lite`, or the `gemini-flash-latest` / `gemini-pro-latest`
+aliases. Every one of them runs the full agent loop — tools, `run` and `astream`,
+pause and resume — and is checked live by `tests/e2e/test_gemini_latest_live.py`.
+
+```python
+from fastaiagent import Agent, LLMClient
+
+agent = Agent(
+    name="assistant",
+    llm=LLMClient(provider="gemini", model="gemini-3.8-flash"),  # GEMINI_API_KEY
+    tools=[...],
+)
+```
+
+**Thought signatures are handled for you.** Gemini 3.5+ attaches an opaque
+`thoughtSignature` to the first function call of a turn and rejects the next
+request (HTTP 400, "Function call is missing a thought_signature") unless it is
+sent back. The SDK keeps it on `ToolCall.signature`, returns it on every later
+request, and saves it in checkpoints so a resumed run sends it too. It never
+appears on a span. A tool turn the model did not sign — history from another
+provider, `messages=`, a checkpoint written before 1.91.0 — is sent with Google's
+validator-skip value instead, so switching a conversation onto Gemini works.
+
+**Pricing** comes from Google's published list prices, including the increases
+Google has announced: `gemini-4-argon` doubles on 2026-12-01 and
+`gemini-3.6-flash` / `gemini-3.8-flash` double on 2027-01-01, and a cost is priced
+at the rate in force on the day it is computed. `gemini-3.5-flash`,
+`gemini-3.7-flash` and the `-latest` aliases are not on Google's pricing page, so
+their runs report `cost_known=False` (and a `cost_limit` rule cannot pass them)
+until you give them a rate — see [Cost tracking](../ui/cost-tracking.md).
+
+!!! warning "Fixed in 1.91.0"
+    Before 1.91.0 the provider dropped the signature, so a tool-using agent failed
+    on its **second turn** on every Gemini model after 2.5 — `run` and `astream`
+    alike — and Gemini 3.x had no rates, so every run was unpriced. `gemini-2.5-*`
+    was unaffected and still works.
+
 **Gemini thinking tokens are completion tokens.** A Gemini thinking model reports
 `thoughtsTokenCount` beside the reply's own tokens; Google bills it at the output
 rate. Since 1.90.0 `completion_tokens` (and so `AgentResult.cost`, the
 `cost_limit` guardrail and the streamed `Usage`) include it. Before, the thinking
 was counted in `tokens_used` but never priced, and `astream` reported fewer
 tokens than `run`.
+
+**How hard it thinks.** `LLMClient(provider="gemini", model="gemini-3.8-flash",
+reasoning="low")` sends `thinkingLevel` (and `includeThoughts`, so the thought
+summary comes back as `response.reasoning`, apart from the answer). The same
+`reasoning=` works on every provider — see
+[Reasoning and prompt caching](reasoning-and-caching.md), which also covers
+`cache=` and cache-aware cost.
+
+## What a model can take: `model_info`
+
+```python
+from fastaiagent import LLMClient
+
+info = LLMClient(provider="anthropic", model="claude-haiku-4-5").model_info
+info.context_window      # 200000
+info.max_output_tokens   # 64000
+info.supports_reasoning  # True
+info.supports_cache      # True
+info.supports_vision     # True
+info.supports_pdf        # True
+```
+
+`model_info` returns a `ModelInfo` (since 1.91.0). The figures come from the
+providers' own sources only: OpenAI's model pages, Anthropic's Models API
+(`max_input_tokens` / `max_tokens`) and Gemini's Models API (`inputTokenLimit` /
+`outputTokenLimit` / `thinking`). It covers GPT-6, GPT-5.x, GPT-4.1/4o and the
+o-series; Claude 5.x and 4.x; and Gemini 4, 3.x and 2.5. A model it does not know
+gets `None` for every field — unknown, never guessed. `supports_vision` and
+`supports_pdf` are read from the same registry the request formatter uses, so
+they cannot disagree with what a request does.
+
+**Anthropic and Bedrock send the model's own maximum** as `max_tokens` when
+neither the client nor the call sets one — 64,000 for `claude-haiku-4-5`, 128,000
+for Claude 4.6+ and 5.x. Before 1.91.0 they sent 4096, which cut long answers
+short (`finish_reason="max_tokens"`). A model `model_info` does not know still
+gets 4096. Set `max_tokens=` to cap replies yourself.
+
+## When a model fails: retries, rate limits, fallbacks
+
+```python
+from fastaiagent import LLMClient
+
+llm = LLMClient(
+    provider="openai",
+    model="gpt-5-mini",
+    max_retries=2,
+    fallbacks=[
+        LLMClient(provider="anthropic", model="claude-haiku-4-5"),
+        LLMClient(provider="gemini", model="gemini-3.8-flash"),
+    ],
+)
+```
+
+- **Retries** (`max_retries`, default 0) cover a `429`, a `5xx` and — since
+  1.91.0 — a refused connection, a reset or a timeout.
+- **A `429` is an `LLMRateLimitError`** (a subclass of `LLMProviderError`, so
+  existing handlers still catch it) with `retry_after`: the wait the provider
+  asked for in `Retry-After` or `retry-after-ms`. A retry waits exactly that
+  (capped at 60 s) instead of the blind 1 s, 2 s, 4 s… backoff. Import it with
+  `from fastaiagent._internal.errors import LLMRateLimitError`.
+- **`fallbacks`** are tried in order once a client's own retries are spent, on a
+  rate limit, a server error, a connection error, a timeout, or a **context
+  overflow** (the prompt is too long for that model — OpenAI's
+  `context_length_exceeded`, Anthropic's "prompt is too long", Gemini's token
+  limit). A plain `400` is not retried elsewhere: every model would refuse the
+  same bad request. Each attempt is its own `llm.*` span, and the run is priced
+  at the model that answered.
+- **A stream falls back only before its first event.** After that the caller
+  already holds part of one model's answer, so the error is raised instead.
+- **`max_concurrency=N`** caps how many calls one client has in flight; the rest
+  wait.
+
+Fallbacks and `max_concurrency` are local: they are not part of
+`LLMClient.to_dict()`, so a plane-distributed or replayed agent runs its one
+model. Live-checked: a real OpenAI and a real Anthropic context overflow each
+fell back (`tests/e2e/test_llm_resilience_live.py`).
+
+Runnable version, with `model_info` and `extra_body`:
+[`examples/111_llm_fallbacks_and_model_info.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/111_llm_fallbacks_and_model_info.py).
+
+## Provider options the SDK has no parameter for
+
+```python
+llm = LLMClient(
+    provider="openai",
+    model="gpt-5-mini",
+    extra_body={"service_tier": "flex", "safety_identifier": "user-123"},
+    extra_headers={"X-Client-Team": "billing"},
+)
+llm.complete(messages, extra_body={"service_tier": "priority"})  # per call, merged over
+```
+
+`extra_body` is merged into every request body and `extra_headers` into its
+headers, for every provider — OpenAI and every OpenAI-compatible preset,
+Anthropic, Gemini, Ollama, and an injected OpenAI SDK client (as its own
+`extra_body` / `extra_headers`). Bedrock sends `extra_body` as Converse's
+`additionalModelRequestFields`. The SDK's own body keys (`model`, `messages`,
+tools…) win over `extra_body`, and the credential header cannot be replaced.
+**Neither is part of `to_dict()`** — a header often carries a credential.
 
 ## TLS verification (corporate gateways, self-signed certs)
 
@@ -163,6 +312,16 @@ Notes:
 - Because token refresh is delegated to the openai SDK, the **same code runs in
   a notebook and an Azure ML `score.py` deployment** without per-request token
   management.
+
+## OpenAI Responses API
+
+`LLMClient(provider="openai", api="responses")` (1.91.0) calls OpenAI's
+`POST /v1/responses` instead of Chat Completions. Use it for tools with
+reasoning on GPT-6 and GPT-5.4+, where Chat Completions refuses them, and for
+OpenAI's provider-run tools. It also works with `azure` / `custom` deployments
+that serve `/responses`, and with an injected `openai_client` through
+`responses.create`. See [OpenAI Responses API](responses-api.md) and
+[Provider-run tools](../tools/provider-tools.md).
 
 ## OpenAI Decisions API
 

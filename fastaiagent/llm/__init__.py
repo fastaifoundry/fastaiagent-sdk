@@ -17,11 +17,15 @@ from fastaiagent.llm.message import (
     AssistantMessage,
     Message,
     MessageRole,
+    ProviderContent,
+    ProviderToolCall,
+    ReasoningBlock,
     SystemMessage,
     ToolCall,
     ToolMessage,
     UserMessage,
 )
+from fastaiagent.llm.model_info import ModelInfo
 from fastaiagent.llm.providers import (
     ProviderPreset,
     get_preset,
@@ -30,8 +34,12 @@ from fastaiagent.llm.providers import (
     register_provider,
     unregister_provider,
 )
+from fastaiagent.llm.reasoning import REASONING_LEVELS
 from fastaiagent.llm.stream import (
     Paused,
+    PartialOutput,
+    ProviderTurn,
+    ReasoningDelta,
     StreamDone,
     StreamEvent,
     TextDelta,
@@ -43,6 +51,7 @@ from fastaiagent.llm.stream import (
 __all__ = [
     "LLMClient",
     "LLMResponse",
+    "ModelInfo",
     "Message",
     "MessageRole",
     "ToolCall",
@@ -50,9 +59,18 @@ __all__ = [
     "UserMessage",
     "AssistantMessage",
     "ToolMessage",
+    # Reasoning (1.91.0)
+    "REASONING_LEVELS",
+    "ReasoningBlock",
+    # Provider-run tools (1.91.0)
+    "ProviderContent",
+    "ProviderToolCall",
+    "ProviderTurn",
     # Streaming
     "StreamEvent",
     "TextDelta",
+    "ReasoningDelta",
+    "PartialOutput",
     "ToolCallStart",
     "ToolCallEnd",
     "Usage",

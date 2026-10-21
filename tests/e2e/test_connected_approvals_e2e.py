@@ -1,6 +1,6 @@
 """End-to-end quality gate — the calling application resolves a policy approval (1.74.0).
 
-No mocks. A real SDK and a real ``gpt-4o-mini`` agent against the LIVE local
+No mocks. A real SDK and a real ``gpt-5-mini`` agent against the LIVE local
 plane. This is the reproduction from the plane's handoff
 (``fastaiagent-enterprise/docs/Plane_Handoff_Approvals_2026-09.md`` §2 and
 "Verifying"), kept as a gate:
@@ -131,7 +131,7 @@ def test_a_rejected_approval_never_runs_the_tool_and_is_recorded(lab: Any, tmp_p
             f"You are a banking assistant. To move money, call {TOOL}(amount, to). "
             "After the tool returns, tell the user in one sentence exactly what it said."
         ),
-        llm=LLMClient(provider="openai", model="gpt-4o-mini"),
+        llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
         tools=[FunctionTool(name=TOOL, fn=transfer)],
         checkpointer=SQLiteCheckpointer(str(tmp_path / "ckpt.db")),
     )
@@ -201,7 +201,7 @@ def test_a_chain_owned_pause_is_closed_on_the_plane(lab: Any, tmp_path: Path) ->
             f"You are a banking assistant. To move money, call {TOOL}(amount, to). "
             "After the tool returns, tell the user in one sentence exactly what it said."
         ),
-        llm=LLMClient(provider="openai", model="gpt-4o-mini"),
+        llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
         tools=[FunctionTool(name=TOOL, fn=transfer)],
     )  # no checkpointer: the Chain owns the pause
     agent.push()

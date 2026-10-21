@@ -47,6 +47,8 @@ class Tool:
     # tell at a glance whether a tool came from a decorator, an MCP server,
     # a REST spec, a knowledge base, or their own code.
     origin: str = "custom"
+    #: Class default, so a subclass that never calls ``Tool.__init__`` is not deferred.
+    deferred: bool = False
 
     def __init__(
         self,
@@ -59,9 +61,13 @@ class Tool:
         max_retries: int = 0,
         retry_delay: float = 0.5,
         output_type: Any | None = None,
+        deferred: bool = False,
     ):
         self.name = name
         self.description = description
+        # Not sent to the model until it calls the built-in ``load_tools``
+        # (1.91.0, 1G). Local behaviour only: not part of ``to_dict()``.
+        self.deferred = deferred
         self.parameters = parameters or {"type": "object", "properties": {}}
         # Resolve the safe default *before* validating, so unset always passes.
         # Strict: an explicit out-of-set value is a developer error and raises
@@ -238,6 +244,7 @@ class Tool:
         """Deserialize from canonical format — dispatches to correct subclass."""
         from fastaiagent.tool.function import FunctionTool
         from fastaiagent.tool.mcp import MCPTool
+        from fastaiagent.tool.provider import ProviderTool
         from fastaiagent.tool.rest import RESTTool
 
         tool_type = data.get("tool_type", "function")
@@ -245,6 +252,7 @@ class Tool:
             "function": FunctionTool,
             "rest_api": RESTTool,
             "mcp": MCPTool,
+            "provider": ProviderTool,
         }
         target_cls = dispatch.get(tool_type)
         if target_cls is None:

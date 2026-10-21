@@ -73,9 +73,9 @@ if __name__ == "__main__":
 
     if os.environ.get("GEMINI_API_KEY"):
         ask(
-            "gemini/2.5-flash — File (→ inlineData)",
+            "gemini/3.8-flash — File (→ inlineData)",
             Agent(name="f-gemini", system_prompt="Answer from the document.",
-                  llm=LLMClient(provider="gemini", model="gemini-2.5-flash")),
+                  llm=LLMClient(provider="gemini", model="gemini-3.8-flash")),
             [QUESTION, File.from_bytes(pdf)],
         )
     else:

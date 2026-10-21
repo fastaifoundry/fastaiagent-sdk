@@ -103,10 +103,63 @@ Structured output works across all providers, with automatic adaptation:
 | **Azure** | Yes | Same as OpenAI (OpenAI-compatible) |
 | **Custom** | Yes | Same as OpenAI (OpenAI-compatible) |
 | **Anthropic** | No | Schema injected into system prompt; code fences stripped from response |
+| **Gemini** | Yes, without tools | `responseMimeType` + `responseSchema` on a call with no tools. While function tools are in the request, the schema is asked for in the prompt and the fenced reply is parsed: Gemini refuses JSON mode with function calling (2.5: HTTP 400) or calls tools forever (3.5, 3.8). Fixed in 1.91.0 (X20); before, an `output_type` agent with tools never worked on Gemini |
 | **Ollama** | Partial | `json_object` → `format: "json"`, `json_schema` → `format: {schema}` |
-| **Bedrock** | No | Not supported |
+| **Bedrock** | Opt-in | Schema in the system prompt; `outputConfig.textFormat` with `output_mode="native"`. Before 1.91.0 Bedrock sent neither, so a structured agent got no schema (X21) |
 
 > **Note:** For Anthropic, the SDK automatically augments the system prompt with JSON instructions and strips any markdown code fences from the response. This means your code works identically across providers — no per-provider handling needed.
+
+## Choosing how it is asked for: `output_mode` (1.91.0)
+
+An agent with `output_type` asks the model for that shape. `AgentConfig(output_mode=...)`
+picks how:
+
+| Mode | What is sent | When to use it |
+|---|---|---|
+| `"auto"` (default) | Each provider's usual way: OpenAI/Azure native `response_format`, Gemini's native schema (prompted on tool turns), Ollama `format`, the schema in the prompt for Anthropic and Bedrock | Almost always |
+| `"native"` | The provider's own schema-constrained output, including **Anthropic `output_config.format`** and **Bedrock `outputConfig.textFormat`** | You want the provider to guarantee the shape. On Anthropic the schema is adapted to its rules: objects get `additionalProperties: false`, and `minimum` / `maxLength` and the like move into the field description. The reply is still validated against your full type. |
+| `"tool"` | A `final_result` tool whose arguments are your schema. Calling it ends the run, and its arguments are `parsed` | Agents that use tools and should keep using them until they answer. The tool is offered, not forced, so it works on models that refuse forced tool use (Opus 5.5, Sonnet 5.5). A text answer that parses is accepted too. |
+| `"prompt"` | The schema in the system prompt only, no provider parameter | A gateway or model that rejects the native fields |
+
+```python
+from fastaiagent import Agent, AgentConfig, LLMClient
+
+agent = Agent(
+    name="forecaster",
+    llm=LLMClient(provider="anthropic", model="claude-sonnet-5-5"),
+    tools=[get_weather],
+    output_type=Forecast,
+    config=AgentConfig(output_mode="tool"),
+)
+result = agent.run("What's the weather in Rome?")
+result.parsed  # Forecast(city='Rome', celsius=24.0, ...)
+```
+
+A tool named `final_result` on the agent is refused in `"tool"` mode. `output_mode`
+is part of `Agent.to_dict()` when it is not `"auto"`.
+
+### Streaming the answer as it forms: `PartialOutput`
+
+While a structured run streams, `agent.astream()` also yields `PartialOutput(data=...)`:
+the reply so far, parsed as incomplete JSON. Keys and values appear as they arrive,
+and a string can be partway through. `data` changes with each event and is not
+validated; the finished reply is, on the result.
+
+```python
+from fastaiagent import PartialOutput
+
+async for event in agent.astream("What's the weather in Rome?"):
+    if isinstance(event, PartialOutput):
+        render(event.data)   # {"city": "Ro"} … {"city": "Rome", "celsius": 24, …}
+```
+
+Text the model says before a tool call ("Let me check.") is not JSON, so it yields
+none. In `"tool"` mode the answer arrives as a tool call, which providers stream
+whole, so it comes as one `PartialOutput`.
+
+Every mode, and `PartialOutput` while the answer streams, on Gemini 3.8 Flash,
+Claude Sonnet 5.5 and gpt-5-mini:
+[`examples/114_output_modes_and_partial_output.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/114_output_modes_and_partial_output.py).
 
 ## Streaming with Structured Output
 
@@ -374,29 +427,36 @@ Unsupported parameters are silently skipped for each provider.
 
 ## Retry with Backoff
 
-`LLMClient` supports automatic retries on transient errors (HTTP 429 rate limits and 5xx server errors):
+`LLMClient` supports automatic retries on transient errors:
 
 ```python
 llm = LLMClient(
     provider="openai",
-    model="gpt-4.1",
+    model="gpt-5-mini",
     max_retries=3,  # Retry up to 3 times
 )
 ```
 
 **Behavior:**
-- Retries on: 429 (rate limit), 500+ (server errors)
+- Retries on: 429 (rate limit), 500+ (server errors), and (*since 1.91.0*) a
+  refused or reset connection and a timeout
 - No retry on: 400, 401, 403, 404 (client errors)
-- Backoff: exponential (1s, 2s, 4s, 8s, ... capped at 30s)
-- `LLMProviderError.status_code` gives the HTTP status code
+- Backoff: what the provider asked for in `Retry-After` (capped at 60s), else
+  exponential (1s, 2s, 4s, 8s, ... capped at 30s)
+- `LLMProviderError.status_code` gives the HTTP status code; a 429 is
+  `LLMRateLimitError`, a subclass, with `retry_after` in seconds (1.91.0)
+- When the retries are spent, `fallbacks=[LLMClient(...)]` tries another model
+  (1.91.0) — see [When a model fails](../llm/providers.md#when-a-model-fails-retries-rate-limits-fallbacks)
 
 ```python
-from fastaiagent._internal.errors import LLMProviderError
+from fastaiagent._internal.errors import LLMProviderError, LLMRateLimitError
 
 try:
     response = llm.complete(messages)
+except LLMRateLimitError as e:
+    print(f"Rate limited; retry after {e.retry_after}s")
 except LLMProviderError as e:
-    print(f"Status: {e.status_code}")  # e.g., 429
+    print(f"Status: {e.status_code}")
 ```
 
 ---

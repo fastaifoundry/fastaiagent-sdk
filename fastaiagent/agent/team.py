@@ -16,6 +16,7 @@ from fastaiagent._internal.pricing import run_cost, start_run_cost, stop_run_cos
 from fastaiagent.agent.agent import Agent, AgentConfig, AgentResult
 from fastaiagent.agent.context import RunContext
 from fastaiagent.agent.executor import _AgentInterrupted
+from fastaiagent.agent.middleware import AgentMiddleware
 from fastaiagent.chain.checkpoint import latest_resumable
 from fastaiagent.chain.interrupt import (
     Resume,
@@ -167,10 +168,15 @@ class Supervisor:
         routing_questions: dict[str, Any] | None = None,
         routing_instructions: str | None = None,
         guardrails: list[Guardrail] | None = None,
+        middleware: Sequence[AgentMiddleware] | None = None,
     ):
         self.name = name
         self.llm = llm or LLMClient()
         self.workers = workers or []
+        # The supervisor's OWN middleware (1.91.0, 1C), like ``guardrails``:
+        # its loop and its ``delegate_to_*`` calls; workers keep theirs. With
+        # ``routing="decisions"`` it runs on the routed worker's run.
+        self.middleware: list[AgentMiddleware] = list(middleware or [])
         # The supervisor's OWN guardrails (1.90.0, F12), as on ``Agent``. Each
         # worker keeps its own; these judge the supervisor's run: its input, its
         # delegate calls and its answer. With ``routing="decisions"`` there is no
@@ -327,6 +333,9 @@ class Supervisor:
             # A routed run is this worker's run: it is where the supervisor's
             # input and output guardrails can judge the request and the answer.
             clone.guardrails = [*clone.guardrails, *self.guardrails]
+        if self.middleware:
+            # Same reason for the supervisor's middleware, outermost.
+            clone = clone._with_outer_middleware(self.middleware)
         return clone
 
     async def _finish_routed(
@@ -404,6 +413,15 @@ class Supervisor:
             worker, task, first, route, context=context, execution_id=execution_id
         )
         return self._merge_route(result, route, span)
+
+    def _stamp_middleware(self, span: Any) -> None:
+        """``fastaiagent.middleware`` on the supervisor's root span (B1-6)."""
+        if self.middleware:
+            from fastaiagent.agent.middleware import _MiddlewarePipeline
+
+            span.set_attribute(
+                "fastaiagent.middleware", list(_MiddlewarePipeline(self.middleware)._keys)
+            )
 
     def _build_supervisor_prompt(self) -> str:
         worker_desc = "\n".join(f"- {w.role}: {w.description}" for w in self.workers)
@@ -721,6 +739,7 @@ class Supervisor:
             checkpointer=self._checkpointer,
             agent_path_label=f"supervisor:{self.name}",
             guardrails=self.guardrails,
+            middleware=self.middleware,
         )
 
     def run(
@@ -774,6 +793,7 @@ class Supervisor:
                 len(getattr(self, "workers", []) or []),
             )
             span.set_attribute("fastaiagent.runner.type", "supervisor")
+            self._stamp_middleware(span)
             span.set_attribute("fastaiagent.framework", "fastaiagent")
             span.set_attribute("supervisor.input", input)
             if resumed:
@@ -925,6 +945,7 @@ class Supervisor:
             span.set_attribute("supervisor.routing", "decisions")
             span.set_attribute("supervisor.route.worker", worker.role)
             span.set_attribute("supervisor.resumed", True)
+            self._stamp_middleware(span)
             span.set_attribute("supervisor.resumed_execution_id", execution_id)
             span.set_attribute("supervisor.execution_id", execution_id)
             result = await self._routed_clone(worker).aresume(
@@ -978,6 +999,7 @@ class Supervisor:
             tools=self._build_worker_tools(context=context),
             config=AgentConfig(max_iterations=self.max_delegation_rounds * 2),
             guardrails=self.guardrails,
+            middleware=self.middleware,
         )
         async for event in agent.astream(input, context=context, **kwargs):
             yield event
@@ -1049,6 +1071,7 @@ class Supervisor:
                     )
                     span.set_attribute("fastaiagent.runner.type", "supervisor")
                     span.set_attribute("fastaiagent.framework", "fastaiagent")
+                    self._stamp_middleware(span)
                     span.set_attribute("supervisor.streamed", True)
                     async for event in self.astream(input, context=context, **kwargs):
                         if isinstance(event, TextDelta):

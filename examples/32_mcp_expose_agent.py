@@ -1,8 +1,12 @@
 """Example 32: Expose an Agent as an MCP server.
 
 Run this file directly to start an MCP server on stdio. Register it with
-Claude Desktop / Cursor / Continue / Zed via their MCP config, or drive it
-from another fastaiagent process via ``MCPTool``.
+Claude Desktop / Cursor / Continue / Zed via their MCP config.
+
+Another fastaiagent agent cannot call it through ``MCPTool``: the server
+speaks stdio only and ``MCPTool`` is an HTTP client. In one process, give the
+calling agent a ``FunctionTool`` that awaits this agent's ``arun``, or put both
+in a ``Supervisor`` (see docs/tools/mcp-server.md).
 
 Install:
     pip install 'fastaiagent[mcp-server]'

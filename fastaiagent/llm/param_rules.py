@@ -18,6 +18,19 @@ Measured against the live APIs on 2026-10-14 (temperature 0.7 / 1.0, top_p 0.9
   default (1) value is supported" for temperature; top_p likewise.
 * OpenAI ``o1``/``o3``: temperature default only; top_p not supported.
 * OpenAI ``gpt-5.1``, ``gpt-5.2``, ``gpt-4o``, ``gpt-4.1``: free.
+
+Measured again on 2026-10-19 (temperature 0, top_p 0.9), for 1.91.0:
+
+* OpenAI ``gpt-5.5``, ``gpt-5.6`` and the GPT-6 family (``gpt-6-luna``,
+  ``gpt-6.1-sol``, ``gpt-6-astra``): temperature default only; top_p "not
+  supported with this model".
+* OpenAI ``gpt-5.1``, ``gpt-5.2``, ``gpt-5.4``: free with reasoning off (their
+  default, ``"none"``); with ``reasoning_effort="low"`` temperature 0 is "not
+  supported". The same holds for Claude with thinking on.
+
+:func:`pins_temperature` is what the SDK asks before it sends ``temperature=0``
+**for itself** — a guardrail judge, deterministic replay. That is not decision
+D4: D4 is about a parameter *you* set, which is never dropped.
 """
 
 from __future__ import annotations
@@ -37,12 +50,23 @@ class SamplingRule:
     default_temperature: float = 1.0
     default_top_p: float = 1.0
     note: str = ""
+    reasoning_locks: bool = False
+    """With reasoning (thinking) on, temperature accepts only its default (1.91.0)."""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
 _FREE = SamplingRule()
+_OPENAI_HYBRID = SamplingRule(
+    reasoning_locks=True,
+    note="Free with reasoning off; with reasoning on, only the default temperature (1).",
+)
+_OPENAI_NEW = SamplingRule(
+    temperature="default_only",
+    top_p="unsupported",
+    note="This OpenAI model accepts only the default temperature (1) and no top_p.",
+)
 _CLAUDE_NEW = SamplingRule(
     temperature="default_only",
     top_p="unsupported",
@@ -50,6 +74,7 @@ _CLAUDE_NEW = SamplingRule(
 )
 _CLAUDE_OLD = SamplingRule(
     exclusive=True,
+    reasoning_locks=True,
     note="Claude accepts temperature or top_p, not both.",
 )
 _OPENAI_REASONING = SamplingRule(
@@ -73,8 +98,12 @@ RULES: list[tuple[str, str, SamplingRule]] = [
     ("anthropic", "claude-haiku-5", _CLAUDE_NEW),
     ("anthropic", "claude-fable-5", _CLAUDE_NEW),
     ("openai", "gpt-5", _OPENAI_REASONING),
-    ("openai", "gpt-5.1", _FREE),
-    ("openai", "gpt-5.2", _FREE),
+    ("openai", "gpt-5.1", _OPENAI_HYBRID),
+    ("openai", "gpt-5.2", _OPENAI_HYBRID),
+    ("openai", "gpt-5.4", _OPENAI_HYBRID),
+    ("openai", "gpt-5.5", _OPENAI_NEW),
+    ("openai", "gpt-5.6", _OPENAI_NEW),
+    ("openai", "gpt-6", _OPENAI_NEW),
     ("openai", "o1", _OPENAI_O_SERIES),
     ("openai", "o3", _OPENAI_O_SERIES),
     ("openai", "o4", _OPENAI_REASONING),
@@ -120,9 +149,24 @@ def sampling_rule(provider: str, model: str) -> SamplingRule:
     return best or _FREE
 
 
+def pins_temperature(provider: str, model: str, reasoning: str | None = None) -> bool:
+    """May the SDK send ``temperature=0`` of its own accord to this model? (1.91.0)
+
+    False when the model takes only its default temperature (GPT-5, GPT-5.5+,
+    GPT-6, Claude 5.x) or when reasoning is on for a model that locks it then
+    (gpt-5.1/5.2/5.4, older Claude with thinking). A judge or a deterministic
+    replay then sends no temperature at all, rather than a request the provider
+    refuses with a 400.
+    """
+    rule = sampling_rule(provider, model)
+    if rule.temperature != "free":
+        return False
+    return not (rule.reasoning_locks and reasoning not in (None, "none"))
+
+
 def rules_table() -> list[dict[str, Any]]:
     """The table for the UI, which resolves the free-text model field locally."""
     return [{"provider": p, "model_prefix": prefix, **rule.to_dict()} for p, prefix, rule in RULES]
 
 
-__all__ = ["RULES", "SamplingRule", "rules_table", "sampling_rule"]
+__all__ = ["RULES", "SamplingRule", "pins_temperature", "rules_table", "sampling_rule"]

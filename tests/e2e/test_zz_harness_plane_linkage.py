@@ -140,7 +140,7 @@ def test_langgraph_root_span_carries_agent_name() -> None:
     lc.enable()
     name = f"e2e-linkage-{uuid.uuid4().hex[:8]}"
     graph = create_react_agent(
-        ChatOpenAI(model="gpt-4o-mini", temperature=0, verbose=False), tools=[]
+        ChatOpenAI(model="gpt-5-mini", reasoning_effort="minimal", verbose=False), tools=[]
     )
     lc.with_guardrails(graph, name=name).invoke(
         {"messages": [("user", "Say OK and nothing else.")]}
@@ -166,7 +166,7 @@ def test_pydanticai_root_span_carries_agent_name() -> None:
     pa.enable()
     name = f"e2e-linkage-{uuid.uuid4().hex[:8]}"
     pa.with_guardrails(
-        Agent("openai:gpt-4o-mini", system_prompt="Be terse."), name=name
+        Agent("openai:gpt-5-mini", system_prompt="Be terse."), name=name
     ).run_sync("Say OK and nothing else.")
 
     trace = _wait_for_trace(_by_agent_name(name))
@@ -186,7 +186,7 @@ def test_unnamed_run_emits_no_agent_name() -> None:
     lc.enable()
     marker = f"unnamed-{uuid.uuid4().hex[:8]}"
     graph = create_react_agent(
-        ChatOpenAI(model="gpt-4o-mini", temperature=0, verbose=False), tools=[]
+        ChatOpenAI(model="gpt-5-mini", reasoning_effort="minimal", verbose=False), tools=[]
     )
     graph.invoke({"messages": [("user", f"Reply with exactly: {marker}")]})
 
@@ -208,7 +208,7 @@ def test_agent_name_context_manager() -> None:
     lc.enable()
     name = f"e2e-ctx-{uuid.uuid4().hex[:8]}"
     graph = create_react_agent(
-        ChatOpenAI(model="gpt-4o-mini", temperature=0, verbose=False), tools=[]
+        ChatOpenAI(model="gpt-5-mini", reasoning_effort="minimal", verbose=False), tools=[]
     )
     with agent_name(name):
         graph.invoke({"messages": [("user", "Say OK and nothing else.")]})
@@ -263,7 +263,7 @@ def test_crewai_failure_records_exception_once_and_marks_llm_span(
         role=role,
         goal="g",
         backstory="b",
-        llm=LLM(model="openai/gpt-4o-mini", temperature=0),
+        llm=LLM(model="openai/gpt-5-mini"),
         allow_delegation=False,
         verbose=False,
     )
@@ -307,7 +307,7 @@ def test_crewai_llm_span_carries_usage_on_success() -> None:
         role=role,
         goal="Answer briefly.",
         backstory="Terse assistant.",
-        llm=LLM(model="openai/gpt-4o-mini", temperature=0),
+        llm=LLM(model="openai/gpt-5-mini"),
         allow_delegation=False,
         verbose=False,
     )

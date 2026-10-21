@@ -14,7 +14,7 @@ during a rerun:
 |---|---|---|
 | `"live"` *(default)* | Yes — uses the captured temperature/seed. | Nondeterministic for non-zero temperature. Matches the original behavior. |
 | `"recorded"` | **No** — replays the captured response. | Byte-identical to the original. Use for regression tests. |
-| `"deterministic"` | Yes — but with `temperature=0` and `seed=42` forced. | Semantically stable across runs where the provider supports `seed`. |
+| `"deterministic"` | Yes — but with `seed=42` forced, and `temperature=0` where the model accepts it (see below). | Semantically stable across runs where the provider supports `seed`. |
 
 ```python
 from fastaiagent.trace.replay import Replay
@@ -265,6 +265,12 @@ The default is `"side_effecting"`, and a value is **never auto-inferred** — a
 `deterministic` mode degrades gracefully on Bedrock — it forces
 `temperature=0` and skips the seed. Output is still much more
 reproducible than `live` but not byte-identical across runs.
+
+Some models take only their default temperature. These are GPT-5, GPT-5.5+,
+the GPT-6 family and Claude 5.x, plus gpt-5.1 / 5.2 / 5.4 and older Claude when
+reasoning is on. *Since 1.91.0*, `deterministic` mode pins `seed=42` on these and
+leaves the temperature alone, with a warning naming the model. Before, it forced
+`temperature=0`, and every deterministic rerun of such a trace failed with a 400.
 
 ## Divergence detection
 

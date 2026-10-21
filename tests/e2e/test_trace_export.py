@@ -61,7 +61,7 @@ def export_db(tmp_path: Path) -> Path:
             "fastaiagent.agent.execution_id": EXEC_ID,
         }
         llm_attrs = {
-            "gen_ai.request.model": "gpt-4o-mini",
+            "gen_ai.request.model": "gpt-5-mini",
             "gen_ai.usage.input_tokens": 180,
             "gen_ai.usage.output_tokens": 132,
             "gen_ai.request.messages": json.dumps(
@@ -71,7 +71,7 @@ def export_db(tmp_path: Path) -> Path:
         }
         for sid, parent, name, attrs in [
             (SPAN_ROOT, None, "agent.weather-bot", root_attrs),
-            (SPAN_LLM, SPAN_ROOT, "llm.openai.gpt-4o-mini", llm_attrs),
+            (SPAN_LLM, SPAN_ROOT, "llm.openai.gpt-5-mini", llm_attrs),
         ]:
             db.execute(
                 """INSERT INTO spans
@@ -156,7 +156,7 @@ def test_build_export_payload_shape(export_db: Path) -> None:
     assert len(payload["spans"]) == 2
 
     llm = next(s for s in payload["spans"] if s["span_id"] == SPAN_LLM)
-    assert llm["model"] == "gpt-4o-mini"
+    assert llm["model"] == "gpt-5-mini"
     assert llm["tokens"] == {"input": 180, "output": 132}
     assert llm["cost"] is not None and llm["cost"] > 0
 

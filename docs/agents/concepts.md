@@ -53,18 +53,26 @@ Calling `agent.run(...)` / `await agent.arun(...)` executes this sequence
 (verified against `fastaiagent/agent/agent.py` and `agent/executor.py`):
 
 1. **Open the `agent.<name>` span** — the root of the trace for this run.
-2. **Resolve instructions** — if `system_prompt` is a callable
-   ([dynamic instructions](dynamic-instructions.md)), call it with the
-   `RunContext` to get this request's system prompt.
-3. **Build the message list** — system prompt, then **memory context** (a
-   `memory.read` span pulls prior turns / retrieved blocks), then the user input.
-4. **Input guardrails** — run every `GuardrailPosition.input` guardrail on the
+2. **`before_run`** middleware runs once (1.91.0); it may rewrite the input or
+   `StopAgent`.
+3. **Input guardrails** — run every `GuardrailPosition.input` guardrail on the
    input before the model ever sees it. A blocking guardrail stops the run here.
+4. **Build the message list** — the system prompt (if `system_prompt` is a
+   callable — [dynamic instructions](dynamic-instructions.md) — it is called
+   with the `RunContext` for this request's prompt), then each middleware's
+   `instructions` (1.91.0), then **memory context** (a `memory.read` span pulls
+   prior turns / retrieved blocks), then the user input.
 5. **Enter the tool-calling loop** — `for iteration in range(max_iterations)`
    (default `max_iterations=10`). Each iteration:
    - *(if durable)* write a **turn-boundary checkpoint**.
    - **`before_model`** middleware runs (may `StopAgent`).
-   - **Call the LLM** — one `llm.<provider>.<model>` span.
+   - **The run's limits are checked** (1.91.0): `max_total_tokens` /
+     `max_cost_usd` end the run here with `stop_reason`, and a cancel or the
+     `timeout_seconds` clock stops it.
+   - **Call the LLM** — one `llm.<provider>.<model>` span, through any
+     **`wrap_model`** middleware (1.91.0). Tools the provider runs itself
+     (`web_search()` …) run inside this call and are recorded after it as
+     `tool.<name>` spans.
    - **`after_model`** middleware runs.
    - **No tool calls? Return** — this is the normal exit: the model produced a
      final answer.
@@ -85,6 +93,8 @@ Calling `agent.run(...)` / `await agent.arun(...)` executes this sequence
    final answer.
 7. **Write to memory** — a `memory.write` span records the user message and the
    assistant reply for future turns.
+8. **`after_run`** middleware sees the `AgentResult` (1.91.0). If the run failed
+   anywhere above, **`on_error`** runs instead and the error still propagates.
 
 !!! info "Verified against a live run"
     Running an agent with two tools and input+output guardrails, the observed
@@ -99,18 +109,20 @@ Calling `agent.run(...)` / `await agent.arun(...)` executes this sequence
 ```
 agent.arun(input)
   │
-  ├─ resolve system prompt (dynamic instructions)
-  ├─ memory.read → build messages
+  ├─ before_run
   ├─ input guardrails
+  ├─ build messages (system prompt / dynamic instructions,
+  │                  middleware instructions, memory.read, input)
   │
   ├─ LOOP (max_iterations):
-  │    before_model ─▶ LLM call ─▶ after_model
+  │    before_model ─▶ run limits ─▶ [wrap_model ─▶ LLM call] ─▶ after_model
   │        │
   │        ├─ no tool calls ──────────────▶ break (final answer)
   │        └─ tool calls: [tool_call GR ─▶ tool ─▶ tool_result GR] ×N ─▶ next iteration
   │
   ├─ output guardrails
-  └─ memory.write ─▶ AgentResult(output, tool_calls, tokens, cost, cost_known, trace_id)
+  ├─ memory.write ─▶ AgentResult(output, tool_calls, tokens, cost, cost_known, trace_id)
+  └─ after_run   (on_error instead, when the run failed)
 ```
 
 ### What actually loops
@@ -137,7 +149,7 @@ loop without you rewriting it. Where each one acts:
 | **Memory** | Step 3 (read) and step 7 (write) | [memory.md](memory.md) |
 | **Guardrails** | Steps 4, 5 (tool_call/tool_result), and 6 — four positions | [../guardrails/index.md](../guardrails/index.md) |
 | **Tools** | Inside the loop, each in a `tool.<name>` span | [tools.md](tools.md) |
-| **Middleware** | `before_model` / `after_model` each iteration, `wrap_tool` around each tool | [middleware.md](middleware.md) |
+| **Middleware** | `before_run` / `after_run` / `on_error` once per run, `before_model` / `wrap_model` / `after_model` each model call, `wrap_tool` around each tool, `on_stream_event` per streamed event | [middleware.md](middleware.md) |
 | **Durability** | Turn and pre-tool checkpoints; `interrupt()` suspends the loop | [durability.md](durability.md) |
 
 Guardrails have **four positions** — `input`, `tool_call`, `tool_result`,

@@ -114,7 +114,7 @@ def test_01_autotrace_openai() -> None:
 
     lc.enable()
     handler = lc.get_callback_handler()
-    graph = _build_graph(ChatOpenAI(model="gpt-4o-mini", temperature=0))
+    graph = _build_graph(ChatOpenAI(model="gpt-5-mini", reasoning_effort="minimal"))
 
     # Pass the handler explicitly via config so the test does not depend on
     # the configure-hook ContextVar being inherited into the test runner.
@@ -180,7 +180,7 @@ def test_02_token_capture_openai() -> None:
 
     lc.enable()
     handler = lc.get_callback_handler()
-    graph = _build_graph(ChatOpenAI(model="gpt-4o-mini", temperature=0))
+    graph = _build_graph(ChatOpenAI(model="gpt-5-mini", reasoning_effort="minimal"))
 
     graph.invoke(
         {"messages": [HumanMessage(content="Reply with the single word: pong")]},
@@ -238,7 +238,7 @@ def test_03_tool_capture_openai() -> None:
 
     lc.enable()
     handler = lc.get_callback_handler()
-    graph = _build_graph(ChatOpenAI(model="gpt-4o-mini", temperature=0))
+    graph = _build_graph(ChatOpenAI(model="gpt-5-mini", reasoning_effort="minimal"))
 
     graph.invoke(
         {
@@ -290,7 +290,7 @@ def test_05_full_messages_in_request() -> None:
 
     lc.enable()
     handler = lc.get_callback_handler()
-    graph = _build_graph(ChatOpenAI(model="gpt-4o-mini", temperature=0))
+    graph = _build_graph(ChatOpenAI(model="gpt-5-mini", reasoning_effort="minimal"))
 
     graph.invoke(
         {

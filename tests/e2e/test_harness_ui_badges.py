@@ -67,7 +67,9 @@ def _spawn_langchain_trace() -> None:
         """echo back"""
         return f"echo: {text}"
 
-    graph = create_react_agent(ChatOpenAI(model="gpt-4o-mini", temperature=0), tools=[echo])
+    graph = create_react_agent(
+        ChatOpenAI(model="gpt-5-mini", reasoning_effort="minimal"), tools=[echo]
+    )
     graph.invoke(
         {"messages": [HumanMessage(content="Reply with: ok")]},
         config={"callbacks": [handler]},
@@ -85,7 +87,7 @@ def _spawn_crewai_trace() -> None:
         role="R",
         goal="answer",
         backstory="terse",
-        llm=LLM(model="openai/gpt-4o-mini", temperature=0),
+        llm=LLM(model="openai/gpt-5-mini"),
         verbose=False,
         allow_delegation=False,
     )
@@ -99,7 +101,7 @@ def _spawn_pydanticai_trace() -> None:
     from fastaiagent.integrations import pydanticai as pa
 
     pa.enable()
-    Agent("openai:gpt-4o-mini", system_prompt="Reply with: ok").run_sync("ping")
+    Agent("openai:gpt-5-mini", system_prompt="Reply with: ok").run_sync("ping")
 
 
 def _spawn_anthropic_pa_trace() -> None:

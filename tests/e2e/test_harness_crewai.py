@@ -3,7 +3,7 @@
 Spec test IDs covered: #6, #6b, #7, #8, #9.
 
 CrewAI runs an actual two-step crew (one agent, one task) end-to-end
-against gpt-4o-mini / claude-haiku-4-5 so the assertions about token
+against gpt-5-mini / claude-haiku-4-5 so the assertions about token
 capture and span hierarchy reflect real behaviour.
 """
 
@@ -62,7 +62,8 @@ def _build_crew(model: str):
     from crewai import Agent, Crew, Process, Task
     from crewai.llm import LLM
 
-    llm = LLM(model=model, temperature=0)
+    # GPT-5 models reject a non-default temperature; Claude keeps temperature=0.
+    llm = LLM(model=model) if model.startswith("openai/") else LLM(model=model, temperature=0)
     researcher = Agent(
         role="Researcher",
         goal="Answer concisely.",
@@ -113,7 +114,7 @@ def test_06_autotrace_openai() -> None:
     from fastaiagent.integrations import crewai as ca
 
     ca.enable()
-    crew = _build_crew("openai/gpt-4o-mini")
+    crew = _build_crew("openai/gpt-5-mini")
     result = crew.kickoff()
     assert result.raw, "kickoff returned empty raw output"
 
@@ -155,7 +156,7 @@ def test_07_token_capture() -> None:
     from fastaiagent.integrations import crewai as ca
 
     ca.enable()
-    crew = _build_crew("openai/gpt-4o-mini")
+    crew = _build_crew("openai/gpt-5-mini")
     crew.kickoff()
 
     trace = _wait_for_root_span(
@@ -185,7 +186,7 @@ def test_08_task_spans() -> None:
     from fastaiagent.integrations import crewai as ca
 
     ca.enable()
-    crew = _build_crew("openai/gpt-4o-mini")
+    crew = _build_crew("openai/gpt-5-mini")
     crew.kickoff()
 
     trace = _wait_for_root_span(

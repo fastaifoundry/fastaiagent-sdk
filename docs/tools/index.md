@@ -1,6 +1,6 @@
 # Tools
 
-Tools give agents the ability to take actions — call APIs, query databases, run code, or interact with external systems. The SDK provides three tool types and a schema validation system.
+Tools give agents the ability to take actions — call APIs, query databases, run code, or interact with external systems. The SDK provides the tool types below and a schema validation system.
 
 ## Tool Types
 
@@ -10,6 +10,7 @@ Tools give agents the ability to take actions — call APIs, query databases, ru
 | [RESTTool](rest-tools.md) | Call an HTTP API endpoint | No Python function needed -- just configure URL and method |
 | [MCPTool](mcp-tools.md) | Connect to an MCP server | JSON-RPC 2.0 communication |
 | [`decision_tool`](function-tools.md#decision_tool) | Let an agent classify text with the [Decisions API](../llm/decisions.md) | A `FunctionTool` that returns probabilities (1.84.0) |
+| [`web_search()`, `code_execution()`, `file_search()`](provider-tools.md) | Search the web, run code or search file stores, run by the model's provider | Sent in OpenAI's, Anthropic's or Gemini's own shape; each call recorded and guarded (1.91.0) |
 
 ## Quick Example
 
@@ -200,6 +201,7 @@ off by default, so unset means no change in behavior:
 | `max_retries` / `retry_delay` | Retry transient failures (exceptions or timeouts) with exponential backoff (`retry_delay * 2**attempt`). |
 | `output_type` | Validate/coerce the *return value* against a Pydantic-compatible type (e.g. parse a `dict` into a `BaseModel`); a mismatch is returned to the model as an error. Only needed when the raw return isn't already the type you want. |
 | `validate_args` | *(`FunctionTool` only, default `True`)* Validate/coerce the model's arguments against the function's type hints. |
+| `deferred` | *(1.91.0)* Not sent to the model until it asks for it through the built-in `load_tools` tool, so a large toolset costs no context on turns that don't use it ([details](../agents/tools.md#tools-loaded-when-needed)). |
 
 ```python
 @tool(timeout=2.0, max_retries=2)

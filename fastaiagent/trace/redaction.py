@@ -61,6 +61,9 @@ SENSITIVE_ATTR_KEYS: frozenset[str] = frozenset(
         "gen_ai.request.tools",
         "gen_ai.response.content",
         "gen_ai.response.tool_calls",
+        # What the model showed of its reasoning (1.91.0, decision B2-4: kept
+        # locally, exported only with payloads on).
+        "gen_ai.response.reasoning",
         # Decisions API (``LLMClient.adecide``): the evidence the questions were
         # asked about — user content. The questions and the answers alongside it
         # (``fastaiagent.decision.questions`` / ``.answers``) are developer-authored

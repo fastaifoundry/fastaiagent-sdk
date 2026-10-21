@@ -209,6 +209,33 @@ Typed dependency injection container for agent execution.
 | Property | Type | Description |
 |----------|------|-------------|
 | `state` | `T` | The wrapped state object (read-only) |
+| `run` | `RunInfo \| None` | The run the tool is part of (1.91.0). `None` outside a run. |
+
+### `RunInfo` (1.91.0)
+
+What a tool can know about the run calling it. It's a frozen dataclass, built
+fresh each time you read `ctx.run`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `execution_id` | `str` | The run's id: what `agent.cancel()` and `aresume()` take |
+| `agent_name` | `str` | The agent running the tool |
+| `turn` | `int` | The tool loop's turn, from 0 |
+| `model` | `str` | The model of the call that asked for the tool (a middleware may swap it per call) |
+| `usage` | `RunUsage` | What the run has spent so far: `tokens`, `cost`, `cost_known`, `calls` |
+
+```python
+from fastaiagent import RunContext
+
+def expensive_lookup(query: str, ctx: RunContext[AppState]) -> str:
+    """Search the archive."""
+    if ctx.run is not None and ctx.run.usage.cost > 0.10:
+        return "Budget nearly spent; answer from what you have."
+    return ctx.state.archive.search(query)
+```
+
+A tool receives a `RunContext` only when the run was given one
+(`agent.run(..., context=RunContext(state))`).
 
 ---
 

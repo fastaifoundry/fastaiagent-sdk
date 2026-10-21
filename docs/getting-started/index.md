@@ -27,11 +27,12 @@ print(response.latency_ms)     # 450
 
 | Provider | Setup | API Key Env Var |
 |----------|-------|-----------------|
-| **OpenAI** | `LLMClient(provider="openai", model="gpt-4.1")` | `OPENAI_API_KEY` |
-| **Anthropic** | `LLMClient(provider="anthropic", model="claude-sonnet-4-6")` | `ANTHROPIC_API_KEY` |
+| **Gemini** | `LLMClient(provider="gemini", model="gemini-3.8-flash")` | `GEMINI_API_KEY` |
+| **OpenAI** | `LLMClient(provider="openai", model="gpt-5-mini")` | `OPENAI_API_KEY` |
+| **Anthropic** | `LLMClient(provider="anthropic", model="claude-sonnet-5-5")` | `ANTHROPIC_API_KEY` |
 | **Ollama** | `LLMClient(provider="ollama", model="llama3")` | None (local) |
-| **Azure OpenAI** | `LLMClient(provider="azure", model="gpt-4", base_url="https://<endpoint>.openai.azure.com/openai/deployments/gpt-4/")` | `OPENAI_API_KEY` |
-| **AWS Bedrock** | `LLMClient(provider="bedrock", model="anthropic.claude-3-sonnet-20240229-v1:0", region="us-east-1")` | AWS credentials |
+| **Azure OpenAI** | `LLMClient(provider="azure", model="my-gpt-5-deployment", base_url="https://<endpoint>.openai.azure.com/openai/v1")` | `OPENAI_API_KEY` |
+| **AWS Bedrock** | `LLMClient(provider="bedrock", model="us.anthropic.claude-haiku-4-5-20251001-v1:0", region="us-east-1")` | AWS credentials |
 | **Custom** | `LLMClient(provider="custom", model="my-model", base_url="https://my-api.com/v1")` | `OPENAI_API_KEY` |
 
 ## API Key Handling
@@ -173,6 +174,8 @@ Every completion returns an `LLMResponse`:
 | `model` | `str` | Model used |
 | `finish_reason` | `str` | `"stop"` (complete), `"tool_calls"` (needs tool execution) |
 | `latency_ms` | `int` | Request latency in milliseconds |
+| `parsed` | `Any` | The reply parsed into `output_type`, when you passed one |
+| `reasoning` | `str \| None` | What the model showed of its reasoning, never part of `content` (1.91.0) |
 
 ## Sync vs Async
 

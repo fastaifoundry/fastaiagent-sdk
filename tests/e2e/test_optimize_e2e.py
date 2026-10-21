@@ -22,7 +22,8 @@ pytestmark = [
     pytest.mark.skipif(not os.environ.get("OPENAI_API_KEY"), reason="OPENAI_API_KEY not set"),
 ]
 
-MODEL = "gpt-4o-mini"
+MODEL = "gpt-5-mini"  # the agents under optimization
+JUDGE_MODEL = "gpt-5.1"  # the LLMJudge scorer
 
 
 class ContainsCI(Scorer):
@@ -55,7 +56,7 @@ def _agent() -> Agent:
     return Agent(
         name="capitals",
         system_prompt="You answer questions.",
-        llm=LLMClient(provider="openai", model=MODEL),
+        llm=LLMClient(provider="openai", model=MODEL, reasoning="minimal"),
     )
 
 
@@ -223,7 +224,7 @@ def test_a_live_case_that_raises_counts_against_the_candidate():
     agent = Agent(
         name="capitals",
         system_prompt="Answer with only the city name.",
-        llm=LLMClient(provider="openai", model=MODEL),
+        llm=LLMClient(provider="openai", model=MODEL, reasoning="minimal"),
         guardrails=[guard],
     )
     res = asyncio.run(aevaluate(agent.arun, _CASES, [ContainsCI()], persist=False))
@@ -266,7 +267,7 @@ def test_live_judge_in_scorers_stays_under_max_judge_calls():
 
     judge = CountingJudge(
         criteria="Is the output exactly the expected city name, nothing else?",
-        llm=LLMClient(provider="openai", model=MODEL),
+        llm=LLMClient(provider="openai", model=JUDGE_MODEL, reasoning="none"),
     )
     report = optimize(
         _agent(),
@@ -294,14 +295,19 @@ def test_live_fewshot_does_not_leak_favorites_into_the_holdout(tmp_path, monkeyp
     monkeypatch.setenv("FASTAIAGENT_LOCAL_DB", str(db_path))
     reset_config()
     otel.reset()
-    codes = "A7 C2 F9 B4 D1 E6 G3 H8 J5 K2 L7 M4".split()
+    # Long arbitrary codes: a reasoning model guessed one of the old two-character
+    # codes (A7, C2 …) from the demos it had seen, scoring a held-out case.
+    codes = (
+        "QX7-KP2W ZL4-RT9M BV8-NC3H WD2-YF6J MK5-GS1Q TP9-HX4V "
+        "RJ3-LB8D CN6-WQ2F YH1-DM7K FS4-VZ5P GT8-JC3N LW2-QK9R"
+    ).split()
     bins = {f"SKU-{1000 + i}": code for i, code in enumerate(codes)}
     table = "; ".join(f"{k} -> {v}" for k, v in bins.items())
     try:
         prod = Agent(
             name="bins",
             system_prompt=f"Answer with only the bin code. Bin table: {table}",
-            llm=LLMClient(provider="openai", model=MODEL),
+            llm=LLMClient(provider="openai", model=MODEL, reasoning="minimal"),
         )
         trace_ids = [prod.run(f"Which bin holds {sku}?").trace_id for sku in bins]
         otel.get_tracer_provider().force_flush()
@@ -318,7 +324,7 @@ def test_live_fewshot_does_not_leak_favorites_into_the_holdout(tmp_path, monkeyp
         new = Agent(
             name="bins",
             system_prompt="Answer with only the bin code.",  # no table: it can't know any bin
-            llm=LLMClient(provider="openai", model=MODEL),
+            llm=LLMClient(provider="openai", model=MODEL, reasoning="minimal"),
         )
         cfg = OptimizeConfig(levers=("fewshot",), max_iterations=1, patience=1, seed=0)
         report = optimize(new, cases, ["exact_match"], config=cfg, persist=False)

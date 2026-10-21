@@ -18,7 +18,7 @@ import pytest
 
 pytestmark = pytest.mark.e2e
 
-BAD_MODEL = "gpt-4o-mini-ws1-nonexistent"
+BAD_MODEL = "gpt-5-mini-ws1-nonexistent"
 
 
 @pytest.fixture
@@ -123,6 +123,7 @@ def test_the_playground_stream_failure_is_an_error_trace(traced_db: Any) -> None
 def test_a_real_successful_stream_is_not_an_error(traced_db: Any) -> None:
     from fastaiagent.llm import LLMClient, UserMessage
 
-    asyncio.run(_drain(LLMClient(model="gpt-4o-mini").astream([UserMessage("Say: ok")])))
+    llm = LLMClient(model="gpt-5-mini", reasoning="minimal")
+    asyncio.run(_drain(llm.astream([UserMessage("Say: ok")])))
     spans = _llm_spans(traced_db)
     assert spans and all(s != "ERROR" for _, s, _ in spans), spans

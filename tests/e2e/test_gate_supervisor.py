@@ -23,7 +23,7 @@ class TestSupervisorGate:
         require_env()
         from fastaiagent import Agent, LLMClient, Supervisor, Worker
 
-        llm = LLMClient(provider="openai", model="gpt-4.1")
+        llm = LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal")
 
         researcher = Agent(
             name="supervisor-gate-researcher",

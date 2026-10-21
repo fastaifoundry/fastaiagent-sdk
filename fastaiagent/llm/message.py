@@ -81,6 +81,12 @@ class ToolCall(BaseModel):
     id: str
     name: str
     arguments: dict[str, Any] = Field(default_factory=dict)
+    #: An opaque token the provider issued with this call and requires back,
+    #: verbatim, when the history is re-sent — Gemini's ``thoughtSignature``
+    #: (1.91.0). Gemini 3+ rejects the next request without it. Never shown to
+    #: the model, never put on a span; checkpoints keep it so a resume can send
+    #: it. ``None`` for providers that issue none.
+    signature: str | None = None
 
     def to_openai_format(self) -> dict[str, Any]:
         """Convert to OpenAI function-calling format."""
@@ -94,6 +100,56 @@ class ToolCall(BaseModel):
                 "arguments": json.dumps(self.arguments),
             },
         }
+
+
+class ReasoningBlock(BaseModel):
+    """One block of a model's reasoning, exactly as its provider returned it (1.91.0).
+
+    Anthropic returns ``thinking`` / ``redacted_thinking`` blocks (Bedrock:
+    ``reasoningContent``) and requires them back, unchanged, while a tool-use turn
+    is in progress; they ride on the assistant message for that. ``data`` is
+    opaque — it carries a signature the provider checks — and is sent back only
+    to ``provider``, the one that issued it. The readable text, when the provider
+    shows any, is :attr:`LLMResponse.reasoning`.
+    """
+
+    provider: str
+    data: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProviderContent(BaseModel):
+    """An assistant turn exactly as its provider returned it (1.91.0, 2D).
+
+    A tool the provider runs itself — ``web_search()``, ``code_execution()``,
+    ``file_search()`` — leaves blocks in the turn that the provider requires back
+    unchanged: Anthropic runs a search requested beside a client tool only once
+    the turn is sent back with its ``server_tool_use`` block (stripped, the model
+    searches again, billed twice), and Gemini 400s when its ``toolCall`` /
+    ``toolResponse`` parts are missing. ``data`` is the turn's content blocks
+    (Anthropic), parts (Gemini) or output items (OpenAI Responses); it is sent
+    back, in place of the rebuilt turn, only to ``provider``. Set only on a turn
+    in which a provider-run tool ran.
+    """
+
+    provider: str
+    data: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ProviderToolCall(BaseModel):
+    """One call of a provider-run tool, as the provider reported it (1.91.0, 2D).
+
+    ``name`` is the SDK's tool name (``web_search`` / ``code_execution`` /
+    ``file_search``), whatever the provider calls it. ``output`` is what the
+    provider shows of the result — queries, source titles and URLs, cited text,
+    code and its output. No provider returns the text of the pages it read.
+    ``error`` is set when the provider reports the call failed.
+    """
+
+    id: str
+    name: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    output: str = ""
+    error: str | None = None
 
 
 class Message(BaseModel):
@@ -112,6 +168,23 @@ class Message(BaseModel):
     name: str | None = None
     tool_calls: list[ToolCall] | None = None
     tool_call_id: str | None = None
+    #: An assistant turn's reasoning blocks (1.91.0) — see :class:`ReasoningBlock`.
+    #: Never shown on a span; checkpoints keep them so a resume can send them.
+    reasoning_blocks: list[ReasoningBlock] | None = None
+    #: The turn as its provider returned it, when a provider-run tool ran in it
+    #: (1.91.0) — see :class:`ProviderContent`. Checkpoints keep it.
+    provider_content: ProviderContent | None = None
+
+    def reasoning_for(self, provider: str) -> list[dict[str, Any]]:
+        """The blocks ``provider`` issued, ready to send back; ``[]`` for any other
+        provider — a model cannot read another provider's reasoning."""
+        return [b.data for b in self.reasoning_blocks or [] if b.provider == provider]
+
+    def content_for(self, provider: str) -> list[dict[str, Any]] | None:
+        """The turn verbatim when ``provider`` issued it, else ``None`` (rebuild it)."""
+        if self.provider_content is not None and self.provider_content.provider == provider:
+            return [dict(item) for item in self.provider_content.data]
+        return None
 
     def has_multimodal_content(self) -> bool:
         """Return ``True`` when ``content`` is a list of parts."""
@@ -230,10 +303,19 @@ def UserMessage(content: str | list[Any]) -> Message:  # noqa: N802
 
 
 def AssistantMessage(  # noqa: N802
-    content: str | None = None, tool_calls: list[ToolCall] | None = None
+    content: str | None = None,
+    tool_calls: list[ToolCall] | None = None,
+    reasoning_blocks: list[ReasoningBlock] | None = None,
+    provider_content: ProviderContent | None = None,
 ) -> Message:
     """Create an assistant message."""
-    return Message(role=MessageRole.assistant, content=content, tool_calls=tool_calls)
+    return Message(
+        role=MessageRole.assistant,
+        content=content,
+        tool_calls=tool_calls,
+        reasoning_blocks=reasoning_blocks or None,
+        provider_content=provider_content,
+    )
 
 
 def ToolMessage(content: str | list[Any], tool_call_id: str) -> Message:  # noqa: N802

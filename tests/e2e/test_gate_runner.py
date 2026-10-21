@@ -1,7 +1,7 @@
 """End-to-end gate — the registered-runner daemon (task 2.6).
 
 No Python mocks. A **real** local HTTP server implements the four §7.5 runner-
-channel endpoints, and the daemon runs **real `gpt-4.1` agents** for the
+channel endpoints, and the daemon runs **real `gpt-5-mini` agents** for the
 `live_playground` jobs. We drive the full loop and assert:
 
 * register uses ``X-API-Key``; every later call uses ``Authorization: Bearer``;
@@ -98,7 +98,7 @@ def test_runner_daemon_full_loop_live(tmp_path: Any) -> None:
     import os
 
     os.environ.setdefault("E2E_SKIP_PLATFORM", "1")
-    require_env()  # OPENAI_API_KEY — the runner executes a real gpt-4.1 agent
+    require_env()  # OPENAI_API_KEY — the runner executes a real gpt-5-mini agent
 
     from fastaiagent import Agent, LLMClient
     from fastaiagent.runner.channel import RunnerChannel
@@ -109,7 +109,7 @@ def test_runner_daemon_full_loop_live(tmp_path: Any) -> None:
     agent = Agent(
         name="runner-echo",
         system_prompt="Reply with exactly the word OK and nothing else.",
-        llm=LLMClient(provider="openai", model="gpt-4.1"),
+        llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
     )
     agent_cfg = agent.to_dict()
     commands = [

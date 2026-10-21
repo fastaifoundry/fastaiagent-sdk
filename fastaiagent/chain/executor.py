@@ -200,8 +200,13 @@ async def execute_chain(
     resume_value: Resume | None = None,
     run_context: Any | None = None,
     strict_routing: bool = False,
+    middleware: list[Any] | None = None,
 ) -> dict[str, Any]:
     """Execute a chain as a state machine.
+
+    ``middleware`` (1.91.0, 1C): the chain's own — outermost around every agent
+    node and ``wrap_tool`` around every tool node, with one ``ctx.state`` per
+    middleware for this execution.
 
     Returns a dict with:
         output: final output value
@@ -230,6 +235,17 @@ async def execute_chain(
     exec_id_token = _execution_id_var.set(execution_id)
     # Make the active checkpointer reachable by ``@idempotent``.
     cp_token = _current_checkpointer.set(checkpointer)
+    # The chain's middleware: one state per middleware for this execution, and
+    # a context for the tool nodes' ``wrap_tool`` (agent nodes make their own).
+    mw_ctx: Any = None
+    state_token: Any = None
+    if middleware:
+        from fastaiagent.agent.middleware import MiddlewareContext, open_container_state
+
+        state_token = open_container_state(middleware)
+        mw_ctx = MiddlewareContext(
+            run_context=run_context, agent_name=chain_name, execution_id=execution_id
+        )
 
     try:
         # Validate state against schema if provided
@@ -314,7 +330,13 @@ async def execute_chain(
                 resume_token = _resume_value.set(resume_value)
             try:
                 result = await _execute_node(
-                    node, context, state, hitl_handler, run_context=run_context
+                    node,
+                    context,
+                    state,
+                    hitl_handler,
+                    run_context=run_context,
+                    middleware=middleware,
+                    mw_ctx=mw_ctx,
                 )
             except InterruptSignal as sig:
                 if checkpointer is None:
@@ -557,6 +579,10 @@ async def execute_chain(
     finally:
         _execution_id_var.reset(exec_id_token)
         _current_checkpointer.reset(cp_token)
+        if state_token is not None:
+            from fastaiagent.agent.middleware import close_container_state
+
+            close_container_state(state_token)
 
 
 async def _execute_node(
@@ -566,8 +592,14 @@ async def _execute_node(
     hitl_handler: Any = None,
     *,
     run_context: Any | None = None,
+    middleware: list[Any] | None = None,
+    mw_ctx: Any = None,
 ) -> Any:
     """Execute a single node based on its type.
+
+    ``middleware`` / ``mw_ctx`` (1.91.0, 1C): the chain's middleware — an agent
+    node runs a copy of its agent with it outermost; a tool node runs inside its
+    ``wrap_tool`` onion.
 
     ``run_context`` is the user-supplied :class:`RunContext` from
     :meth:`Chain.execute` / :meth:`Chain.aexecute`. Passing it through to
@@ -596,7 +628,8 @@ async def _execute_node(
         else:
             agent_input = str(raw_input)
         # Agent spans nest under the chain root span — see Chain.aexecute.
-        result = await node.agent.arun(agent_input, context=run_context)
+        agent = node.agent._with_outer_middleware(middleware) if middleware else node.agent
+        result = await agent.arun(agent_input, context=run_context)
         paused = _paused_agent_message(node.id, node.agent, result)
         if paused:
             raise ChainError(paused)
@@ -631,7 +664,22 @@ async def _execute_node(
         # exactly as the agent loop does. Until 1.78.0 this called ``aexecute``,
         # which deliberately skips that policy, so the same tool timed out,
         # retried and validated inside an agent and did none of it in a chain.
-        result = await node.tool.ainvoke(args, context=run_context)
+        if middleware and mw_ctx is not None:
+            # Inside the chain's ``wrap_tool`` onion (1.91.0, 1C; X7): a
+            # middleware may time, budget, retry or answer a tool node, exactly
+            # as it does an agent's tool call.
+            from fastaiagent.agent.middleware import _MiddlewarePipeline
+
+            tool = node.tool
+
+            async def _terminal(t: Any, a: dict[str, Any]) -> Any:
+                return await t.ainvoke(a, context=run_context)
+
+            result = await _MiddlewarePipeline(list(middleware)).invoke_tool(
+                mw_ctx, tool, args, _terminal
+            )
+        else:
+            result = await node.tool.ainvoke(args, context=run_context)
         # A tool that *returns* an error (arguments failed validation, no function
         # attached, an MCP server answering isError) did not run, exactly like one
         # that raises. Until 1.78.0 the error was stored as the node's result, the

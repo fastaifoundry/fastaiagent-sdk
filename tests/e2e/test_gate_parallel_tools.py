@@ -55,7 +55,9 @@ class _ConcurrencyTracker:
         return self._peak
 
 
-def _build_agent(provider: str, model: str, tracker: _ConcurrencyTracker):
+def _build_agent(
+    provider: str, model: str, tracker: _ConcurrencyTracker, reasoning: str | None = None
+):
     from fastaiagent import Agent, AgentConfig, FunctionTool, LLMClient
 
     weather = {"paris": "18C and cloudy", "tokyo": "26C and clear"}
@@ -79,7 +81,7 @@ def _build_agent(provider: str, model: str, tracker: _ConcurrencyTracker):
             "You are a weather assistant. When asked about multiple cities, "
             "call get_weather for every city. Then summarize all results."
         ),
-        llm=LLMClient(provider=provider, model=model),
+        llm=LLMClient(provider=provider, model=model, reasoning=reasoning),
         tools=[FunctionTool(name="get_weather", fn=get_weather)],
         config=AgentConfig(parallel_tools=True, max_parallel_tools=4),
     )
@@ -112,7 +114,7 @@ def _assert_parallel_run(result: Any, tracker: _ConcurrencyTracker) -> None:
 def test_openai_parallel_tools() -> None:
     _require("OPENAI_API_KEY")
     tracker = _ConcurrencyTracker()
-    agent = _build_agent("openai", "gpt-4o", tracker)
+    agent = _build_agent("openai", "gpt-5-mini", tracker, reasoning="minimal")
     result = agent.run("What's the weather in Paris and Tokyo right now?")
     _assert_parallel_run(result, tracker)
 

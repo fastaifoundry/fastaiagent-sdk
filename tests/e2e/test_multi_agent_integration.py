@@ -56,7 +56,7 @@ pytestmark = [
 
 def _llm() -> LLMClient:
     if os.environ.get("OPENAI_API_KEY"):
-        return LLMClient(provider="openai", model="gpt-4o-mini")
+        return LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal")
     return LLMClient(provider="anthropic", model="claude-haiku-4-5-20251001")
 
 

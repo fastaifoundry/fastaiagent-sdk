@@ -6,10 +6,11 @@ Ports the audit's ``run_evals.py`` shape: a real agent with a tool, per-row
 ``agent.run`` / ``agent.arun``; the pytest plugin, the CLI, ``simulate`` and the
 Local UI's run-eval with a live judge; agent and eval cost reaching the UI.
 
-Every live test runs once per **target**: OpenAI ``gpt-4o-mini``, OpenAI
-``gpt-5.1`` (a reasoning model) and Anthropic ``claude-haiku-4-5``, each
-skipped when its key is missing. The agent and the judge use the same target.
-Override with ``FASTAIAGENT_E2E_EVAL_TARGETS="openai:gpt-4o-mini,anthropic:..."``.
+Every live test runs once per **target**: OpenAI ``gpt-5-mini`` (at
+``reasoning="minimal"``), OpenAI ``gpt-5.1`` (a reasoning model) and Anthropic
+``claude-haiku-4-5``, each skipped when its key is missing. The agent and the
+judge use the same target. Override with
+``FASTAIAGENT_E2E_EVAL_TARGETS="openai:gpt-5-mini,anthropic:..."``.
 No mocks.
 """
 
@@ -46,10 +47,24 @@ class Target:
             "gpt-does-not-exist-xyz" if self.provider == "openai" else "claude-does-not-exist-xyz"
         )
 
+    @property
+    def defaults(self) -> dict[str, Any]:
+        """Per-target ``LLMClient`` kwargs. ``gpt-5-mini`` runs at minimal
+        reasoning (fast, cheap) and takes no ``temperature`` — it rejects a
+        non-default one. Every other target keeps ``temperature=0``: gpt-5.1 at
+        its default reasoning (``none``) and Claude 4.5 accept it."""
+        from fastaiagent.llm.param_rules import pins_temperature
+
+        if self.provider == "openai" and self.model.startswith("gpt-5-mini"):
+            return {"reasoning": "minimal"}
+        if pins_temperature(self.provider, self.model):
+            return {"temperature": 0}
+        return {}
+
     def client(self, **kw: Any) -> Any:
         from fastaiagent.llm import LLMClient
 
-        return LLMClient(provider=self.provider, model=self.model, **kw)
+        return LLMClient(provider=self.provider, model=self.model, **{**self.defaults, **kw})
 
     def __str__(self) -> str:
         return f"{self.provider}:{self.model}"
@@ -58,7 +73,7 @@ class Target:
 def _targets() -> list[Target]:
     raw = os.environ.get(
         "FASTAIAGENT_E2E_EVAL_TARGETS",
-        "openai:gpt-4o-mini,openai:gpt-5.1,anthropic:claude-haiku-4-5",
+        "openai:gpt-5-mini,openai:gpt-5.1,anthropic:claude-haiku-4-5",
     )
     out = []
     for item in raw.split(","):
@@ -96,7 +111,7 @@ def _agent(target: Target) -> Any:
             "You answer order questions. Always call lookup_order for any order id "
             "before answering. Never call it when no order id is given."
         ),
-        llm=target.client(temperature=0),
+        llm=target.client(),
         tools=[lookup_order],
     )
 
@@ -205,7 +220,7 @@ def test_live_agent_and_eval_cost_reach_the_ui(target: Target, tmp_path: Path, m
     reset_config()
     otel.reset()
     try:
-        judge = LLMJudge(name="correctness", llm=target.client(temperature=0))
+        judge = LLMJudge(name="correctness", llm=target.client())
         results = evaluate(
             _agent(target).run,
             [{"input": "Where is order A17?", "expected": "FedEx"}],
@@ -284,7 +299,7 @@ def test_live_judge_real_verdict(target: Target) -> None:
     from fastaiagent.eval import evaluate
     from fastaiagent.eval.llm_judge import LLMJudge
 
-    judge = LLMJudge(name="correctness", llm=target.client(temperature=0))
+    judge = LLMJudge(name="correctness", llm=target.client())
     results = evaluate(
         lambda q: "Paris is the capital of France.",
         [{"input": "Capital of France?", "expected": "Paris"}],
@@ -346,7 +361,7 @@ def test_live_simulation_judge(target: Target) -> None:
         failure_criteria=["The assistant refuses to help."],
         max_turns=2,
     )
-    live = LLMJudge(llm=target.client(temperature=0))
+    live = LLMJudge(llm=target.client())
     ok = simulate(scenario, _agent(target), judge=live, persist=False).results[0]
     assert ok.error is None and not any(v.errored for v in ok.verdicts), ok.verdicts
 
@@ -368,7 +383,9 @@ from fastaiagent.eval import case
 from fastaiagent.eval.llm_judge import LLMJudge
 from fastaiagent.llm import LLMClient
 
-good = LLMJudge(name="correctness", llm=LLMClient(provider="{provider}", model="{model}"))
+good = LLMJudge(
+    name="correctness", llm=LLMClient(provider="{provider}", model="{model}", **{defaults})
+)
 down = LLMJudge(
     name="correctness",
     llm=LLMClient(provider="{provider}", model="{missing}", max_retries=0),
@@ -391,7 +408,11 @@ def test_live_pytest_plugin_records_the_outage_case(target: Target, tmp_path: Pa
     suite = tmp_path / "test_live_suite.py"
     suite.write_text(
         _PYTEST_SUITE.format(
-            db=db, provider=target.provider, model=target.model, missing=target.missing_model
+            db=db,
+            provider=target.provider,
+            model=target.model,
+            missing=target.missing_model,
+            defaults=repr(target.defaults),
         )
     )
     env = {k: v for k, v in os.environ.items() if k not in ("FASTAIAGENT_API_KEY",)}

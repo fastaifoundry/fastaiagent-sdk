@@ -219,7 +219,7 @@ class TestRouting:
         )
         agent = Agent(
             name="live-support",
-            llm=LLMClient(provider="openai", model="gpt-4o-mini"),
+            llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
             tools=[triage],
             system_prompt="Always call triage_ticket on the user's message, then name the team.",
         )
@@ -231,7 +231,7 @@ class TestRouting:
         from fastaiagent.agent import Agent
         from fastaiagent.agent.team import Supervisor, Worker
 
-        chat = LLMClient(provider="openai", model="gpt-4o-mini")
+        chat = LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal")
         sup = Supervisor(
             name="live-sup",
             llm=chat,
@@ -285,7 +285,7 @@ class TestRouting:
 
 class TestReplay:
     def test_recorded_rerun_serves_the_captured_decision(self, llm, tmp_path, monkeypatch) -> None:
-        """A real agent (gpt-4o-mini) decides inside a tool; the recorded rerun
+        """A real agent (gpt-5-mini) decides inside a tool; the recorded rerun
         reaches the tool and is served the captured answer, not a live call."""
         from fastaiagent._internal.config import reset_config
         from fastaiagent.agent import Agent
@@ -308,7 +308,7 @@ class TestReplay:
 
             agent = Agent(
                 name="live-router",
-                llm=LLMClient(provider="openai", model="gpt-4o-mini"),
+                llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
                 tools=[FunctionTool(name="route_ticket_live", fn=route_ticket)],
                 system_prompt="Always call route_ticket_live with the user's message, then say which department will help.",
             )

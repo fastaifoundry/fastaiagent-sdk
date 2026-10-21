@@ -70,7 +70,8 @@ at capture.
 
 When `FASTAIAGENT_TRACE_PAYLOADS=0` is set, payload-bearing attributes
 (`gen_ai.request.messages`, `gen_ai.response.content`,
-`gen_ai.response.tool_calls`, `gen_ai.request.tools`, agent/chain
+`gen_ai.response.tool_calls`, `gen_ai.request.tools`, the model's reasoning
+text `gen_ai.response.reasoning` (1.91.0), agent/chain
 inputs and outputs, system prompts, tool args/results, retrieved
 documents, and recalled memory) are **stripped before spans leave the
 machine** — both when pushed to the control plane and when sent to any
@@ -195,6 +196,18 @@ this applies to **both** the SQLite and external-Postgres checkpointers.
 `connect(export_checkpoints=False)` (or `FASTAIAGENT_EXPORT_CHECKPOINTS=0`,
 `=false`, `=no`, `=off`)
 suppresses that replication. It is independent of `export_traces`.
+
+Since 1.91.0 `state_snapshot` can also carry **`middleware_state`** — whatever
+your middleware keeps in `ctx.state` (a budget count, a list of loaded tools, or
+anything a custom middleware stores). It replicates with the rest of the
+snapshot, under this same switch, so keep customer data out of `ctx.state` or
+turn replication off.
+
+Also since 1.91.0, an assistant message in the checkpointed history can carry
+**`provider_content`**: the turn exactly as the provider returned it, written
+only when one of the [provider's own tools](tools/provider-tools.md) ran in it.
+It holds search results (titles, URLs, encrypted page content), code and its
+output. It replicates under this same switch.
 
 This gates **replication only**. Your local durability (SQLite/Postgres) is
 untouched, so **same-machine crash/interrupt resume still works** with it off.

@@ -33,11 +33,16 @@ pytestmark = [
     pytest.mark.skipif(not os.environ.get("OPENAI_API_KEY"), reason="OPENAI_API_KEY not set"),
 ]
 
-MODEL = "gpt-4o-mini"
+MODEL = "gpt-5-mini"  # the agent under test
+JUDGE_MODEL = "gpt-5.1"  # scenario generation, the metric judges and harden()
 
 
 def _llm() -> LLMClient:
-    return LLMClient(provider="openai", model=MODEL)
+    return LLMClient(provider="openai", model=MODEL, reasoning="minimal")
+
+
+def _judge_llm() -> LLMClient:
+    return LLMClient(provider="openai", model=JUDGE_MODEL, reasoning="none")
 
 
 def _support_agent() -> Agent:
@@ -57,7 +62,7 @@ def _support_agent() -> Agent:
 
 
 def test_generate_scenarios_produces_usable_scenarios() -> None:
-    scenarios = generate_scenarios(_support_agent(), n=3, llm=_llm())
+    scenarios = generate_scenarios(_support_agent(), n=3, llm=_judge_llm())
     assert len(scenarios) >= 1
     s = scenarios[0]
     assert s.user.persona  # a simulated-user persona was generated
@@ -71,7 +76,7 @@ def test_generate_scenarios_produces_usable_scenarios() -> None:
 
 
 def test_task_completion_distinguishes_complete_vs_incomplete() -> None:
-    tc = TaskCompletion(llm=_llm())
+    tc = TaskCompletion(llm=_judge_llm())
     complete = tc.score(input="What is 2 + 2?", output="2 + 2 equals 4.")
     incomplete = tc.score(
         input="Book a flight to Paris and give me the confirmation number.",
@@ -82,7 +87,7 @@ def test_task_completion_distinguishes_complete_vs_incomplete() -> None:
 
 
 def test_reflection_quality_scores_a_consistent_answer() -> None:
-    rq = ReflectionQuality(llm=_llm())
+    rq = ReflectionQuality(llm=_judge_llm())
     good = rq.score(input="Is the Earth flat?", output="No — the Earth is an oblate spheroid.")
     assert good.score >= 0.5
 
@@ -120,7 +125,7 @@ def test_harden_recommends_fixes_for_failures() -> None:
             )
         ]
     )
-    report = harden(agent, failing, llm=_llm())
+    report = harden(agent, failing, llm=_judge_llm())
     assert report.failure_count == 1
     assert len(report.recommendations) >= 1
     valid = {"instructions", "model", "tools", "guardrails", "memory"}

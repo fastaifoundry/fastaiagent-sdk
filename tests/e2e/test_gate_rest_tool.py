@@ -153,7 +153,7 @@ class TestRESTToolGate:
                 "call get_ip and include the origin field from its response "
                 "verbatim in your answer."
             ),
-            llm=LLMClient(provider="openai", model="gpt-4.1"),
+            llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
             tools=[tool],
         )
         result = _skip_on_httpbin_outage(

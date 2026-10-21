@@ -280,6 +280,31 @@ finding reported before the run starts and before the model bill. An approval
 gate is deliberately *not* in the list — its handler is an argument to
 `execute()`, so at validate() time there is nothing yet to be missing.
 
+## Middleware on a chain
+
+`Chain(..., middleware=[...])` (1.91.0) runs the middleware outermost around
+every **agent node** — outside that agent's own middleware, without changing the
+agent — and wraps every **tool node** in `wrap_tool`, so a middleware can time,
+budget, retry or answer a tool node exactly as it does an agent's tool call:
+
+```python
+from fastaiagent import AgentMiddleware, ToolBudget
+from fastaiagent.chain import Chain
+
+class Audit(AgentMiddleware):
+    async def wrap_tool(self, ctx, tool, args, call_next):
+        print("tool", tool.name, args)
+        return await call_next(tool, args)
+
+chain = Chain("billing-flow", middleware=[Audit(), ToolBudget(max_calls=10)])
+```
+
+The middleware's `ctx.state` is one dict per middleware for the whole execution
+— the `ToolBudget` above counts tool nodes and every agent node's tool calls
+together — and starts afresh on `resume`. A chain without `middleware=` runs its
+nodes exactly as before. See
+[Middleware on teams and chains](../agents/middleware.md#middleware-on-teams-and-chains).
+
 ## Tool Node State Behavior
 
 When a tool node executes, its return value is wrapped in `{"output": <return_value>, "error": None}` and merged into chain state. This means each successive tool node **overwrites** `state.output` with its own wrapped result.

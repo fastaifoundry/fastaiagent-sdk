@@ -14,7 +14,7 @@ pip install fastaiagent
 
 Runs fully standalone, or connect to the [FastAIAgent Platform](https://fastaiagent.net) for hosted observability, prompt management, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.90.0)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.91.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -51,10 +51,31 @@ Each preset resolves the right `base_url` and reads the API key from the
 canonical environment variable, so this is the entire configuration:
 
 ```python
-LLMClient(provider="groq",   model="llama-3.1-70b-versatile")  # GROQ_API_KEY
-LLMClient(provider="gemini", model="gemini-2.0-flash")          # GEMINI_API_KEY
+LLMClient(provider="gemini", model="gemini-3.8-flash")          # GEMINI_API_KEY
+LLMClient(provider="groq",   model="openai/gpt-oss-120b")       # GROQ_API_KEY
 LLMClient(provider="openrouter", model="openai/gpt-4o-mini")    # OPENROUTER_API_KEY
 ```
+
+**Gemini 3.5 and later** — `gemini-3.8-flash` (the default), `gemini-4-argon`,
+`gemini-3.5-flash-lite`, `gemini-flash-latest` — run the full agent loop, tools
+and streaming included, with their thought signatures carried for you and
+Google's published prices applied.
+
+**Reasoning and prompt caching, one spelling for every provider:**
+`LLMClient(..., reasoning="low", cache=True)`. `reasoning=` becomes Gemini's
+`thinkingLevel`, OpenAI's `reasoning_effort` or Claude's effort and thinking, and
+the model's reasoning comes back as `response.reasoning`, never inside the answer.
+Cached prompt tokens are counted on every provider and priced at the cached rate.
+See [docs/llm/reasoning-and-caching](docs/llm/reasoning-and-caching.md).
+
+**Tools the provider runs:** `web_search()`, `code_execution()` and
+`file_search()` from `fastaiagent.tool` go in `tools=[...]` beside your own. They
+are sent in OpenAI's, Anthropic's or Gemini's own shape. Every call is recorded,
+judged by your `tool_result` guardrails, and priced with its per-call fee. OpenAI
+runs them on its Responses API, `LLMClient(provider="openai", api="responses")`,
+which is also how GPT-6 models get tools with reasoning on. See
+[docs/tools/provider-tools](docs/tools/provider-tools.md) and
+[docs/llm/responses-api](docs/llm/responses-api.md).
 
 Custom internal LLM gateways register in five lines via
 `fastaiagent.llm.providers.register_provider`.
@@ -867,7 +888,7 @@ agent = Agent(
 )
 ```
 
-Write your own by subclassing `AgentMiddleware` and overriding `before_model`, `after_model`, or `wrap_tool`. See [docs/agents/middleware.md](docs/agents/middleware.md) for ordering, hook reference, and custom patterns.
+Write your own by subclassing `AgentMiddleware` and overriding `before_model`, `after_model` or `wrap_tool`, or (1.91.0) `before_run`, `after_run`, `wrap_model` (retry, swap or cache a model call), `on_error` and `on_stream_event`. A middleware can also bring its own `tools`, `instructions` and checkpointed `ctx.state`, so a policy travels as one object, and `Chain`, `Swarm` and `Supervisor` take `middleware=` too. See [docs/agents/middleware.md](docs/agents/middleware.md) for ordering, hook reference, and custom patterns.
 
 ## Multi-agent teams with context
 

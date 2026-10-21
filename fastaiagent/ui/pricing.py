@@ -24,6 +24,8 @@ from fastaiagent._internal.pricing import (
     compute_cost_usd,
     reload_rate_overrides,
     set_rate_overrides,
+    set_tool_fee_overrides,
+    tool_fees_cost,
     usage_cost,
 )
 
@@ -36,5 +38,7 @@ __all__ = [
     "compute_cost_usd",
     "reload_rate_overrides",
     "set_rate_overrides",
+    "set_tool_fee_overrides",
+    "tool_fees_cost",
     "usage_cost",
 ]

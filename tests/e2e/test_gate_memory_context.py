@@ -70,7 +70,7 @@ class TestMemoryContextGate:
                 "You are a helpful assistant. Remember what the user tells you "
                 "and use it in later responses."
             ),
-            llm=LLMClient(provider="openai", model="gpt-4.1"),
+            llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
             memory=memory,
         )
 
@@ -108,7 +108,7 @@ class TestMemoryContextGate:
                 "account. Do not refuse or speculate — call the tool first, "
                 "then report its exact output verbatim in your answer."
             ),
-            llm=LLMClient(provider="openai", model="gpt-4.1"),
+            llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
             tools=[FunctionTool(name="whoami", fn=whoami)],
         )
 
@@ -154,7 +154,7 @@ class TestMemoryContextGate:
         agent = Agent(
             name="dynamic-prompt-gate",
             system_prompt=make_prompt,
-            llm=LLMClient(provider="openai", model="gpt-4.1"),
+            llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
         )
 
         ctx = RunContext(

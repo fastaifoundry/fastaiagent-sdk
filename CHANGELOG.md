@@ -5,6 +5,433 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.91.0] - 2026-10-21 — one extension model, and an LLMClient for today's models
+
+Bets 1 and 2. `AgentMiddleware` becomes the single way to extend a run: run and
+model-call hooks, bundles of tools, instructions and checkpointed state, and
+middleware on Chain, Swarm and Supervisor. `LLMClient` catches up with today's
+models: reasoning, prompt caching, fallbacks, model info, OpenAI's Responses API,
+tools the provider runs, structured-output modes, run limits and cancel. Along the
+way, 22 defects were found and fixed (X1–X24; X5 and X6 turned out not to be
+bugs); each was reproduced before fixing. The provider-facing changes were checked live on GPT-5.x / GPT-6, Claude
+5.x and Gemini 3.5+, and the plane-visible ones on the control plane.
+
+### Upgrading from 1.90 — behaviour changes at a glance
+
+- **Cost figures move.** Cached tokens are priced at the cached rate, and a model
+  the built-in table doesn't list exactly is now unpriced instead of mispriced.
+  Provider-run tool fees are counted. See *Changed*.
+- **Anthropic and Bedrock default `max_tokens`** is the model's own maximum, not
+  4096.
+- **`stream()` returns what `run()` returns** (X13, X14). It used to join every
+  turn's text.
+- **`ToolBudget` counts across a resume** (decision B1-5). It used to reset.
+- **`LLMClient(provider=X)` without `model=`** uses the preset's default;
+  Gemini's is `gemini-3.8-flash`.
+- **Gemini with `output_type` and tools** no longer uses JSON mode on tool turns
+  (X20). **Bedrock with `output_type`** puts the schema in the prompt (X21).
+- **Model-backed judges and deterministic replay** stop forcing `temperature=0` on
+  models that refuse it (X23, X24).
+- **New keys, each written only when set:**
+  - `LLMClient.to_dict()`: `region`, `reasoning`, `cache` and `api`;
+  - `Agent.to_dict()` `config`: `timeout_seconds`, `max_total_tokens`,
+    `max_cost_usd`, and `output_mode` when not `"auto"`;
+  - checkpoint messages: `reasoning_blocks` and `provider_content`;
+  - checkpoints: `middleware_state`.
+
+  A default agent's payload is unchanged.
+- **`local.db` schema v27** (X19): a narrower FTS update trigger. It migrates on
+  first open.
+
+### Added — middleware is the one extension model (Bet 1)
+
+- **Five new `AgentMiddleware` hooks**, all optional, same ordering rules as the
+  existing three:
+  - `before_run(ctx, input)` runs once per run (`run`, `astream`, a resume), before
+    the input guardrails, so they judge the rewritten input. `StopAgent` there
+    ends the run with no model call.
+  - `after_run(ctx, result)` runs once, on success.
+  - `wrap_model(ctx, messages, call_next)` is an onion around **every** model
+    call, the structured-output and guardrail re-asks included (they bypassed
+    middleware before). It can retry, time or cache a call. On `astream`,
+    deltas still stream live.
+  - `on_error(ctx, error)` runs once when the run fails and cannot swallow the
+    error.
+  - `on_stream_event(ctx, event)` can rewrite or drop an event. `StreamDone` and
+    `Paused` are always delivered.
+- **`MiddlewareContext.llm` / `.tools`** — the client and tools **this** model
+  call uses; set them to change one call. Also `.execution_id` and `.usage`
+  (`RunUsage(tokens, cost, cost_known, calls)`, exported from `fastaiagent`).
+- A resume keeps **one** middleware context for the re-run tool call and the
+  continued loop (they had separate `scratch` dicts).
+- **Fail-closed, written down:** a hook that raises fails the run, `on_error`
+  hears it, and the run gets a `failed` marker. `Reflect` still fails open,
+  but now records it: a warning, `ctx.scratch["reflect_skipped"]` and a
+  `reflect.skipped` span event.
+- Example `108_middleware_run_hooks.py`.
+- **A middleware brings its own tools, instructions and state** (1B):
+  - `tools` are added to the run's tools. They are not added to `agent.tools`
+    or `to_dict()`, and a name clash raises at `Agent(...)`.
+  - `instructions` is a string or a `callable(ctx)`. All of them form one system
+    message after the system prompt and before memory.
+  - **`ctx.state`** is a JSON-safe dict for each middleware. It is saved in
+    checkpoints as `state_snapshot["middleware_state"]`, only when some
+    middleware keeps state, and restored on resume and fork. State that isn't
+    JSON-safe raises `TypeError` at the checkpoint.
+  - **`ToolBudget` now counts across a resume** (decision B1-5). Before, each
+    resume started a fresh budget.
+- **Tools loaded when needed** (1G): `deferred=True` on `FunctionTool`, `@tool`,
+  `MCPTool` and `RESTTool`.
+  - A deferred tool's definition is not sent. The model gets one built-in
+    `load_tools(names)` tool that lists the deferred tools, and loaded tools
+    stay loaded for the rest of the run, a resume included.
+  - A loaded tool is governed and guarded like any other.
+  - `deferred` is local only: it is not part of `to_dict()`.
+  - Deferral turns off parallel tool calls for that agent.
+  - Live-checked on gpt-5-mini, gemini-3.8-flash and claude-haiku-4-5.
+- Example `109_middleware_bundle_deferred_tools.py`.
+- **`middleware=` on `Chain`, `Swarm` and `Supervisor`** (1C):
+  - Swarm: every hop, outside each agent's own.
+  - Supervisor: its own loop, including the `delegate_to_*` calls; workers keep
+    theirs. In decisions routing it runs on the routed worker.
+  - Chain: outermost around every agent node (the node's agent is not changed),
+    and `wrap_tool` around every tool node (X7). A chain without middleware is
+    unchanged.
+  - A container's middleware keeps one `ctx.state` per run, so a swarm-level
+    `ToolBudget` counts every hop and survives a Swarm resume. A Chain's lasts
+    one execution.
+- **`fastaiagent.middleware`** on the root span of `agent.*`, `chain.*`, `swarm.*`
+  and `supervisor.*` runs: the middleware names in order. It's the one new
+  structural span attribute (decision B1-6), and it's absent when there is no
+  middleware.
+
+### Added — `LLMClient` catches up (Bet 2)
+
+- **`LLMClient.model_info`** → `ModelInfo` (2F): context window, max output
+  tokens, reasoning, caching, vision and PDF.
+  - Figures come only from official sources: OpenAI's model pages, and the
+    Anthropic and Gemini Models APIs.
+  - An unknown model gets `None` for every field, not a guess.
+  - Vision and PDF are read from the multimodal registry, not copied.
+  - `ModelInfo` is exported from `fastaiagent`.
+- **`fallbacks=[LLMClient(...)]`** (2E): the next client is tried after this
+  one's own retries fail.
+  - It triggers on a 429, 5xx, connection error, timeout, or context overflow
+    (recognised from the real OpenAI and Anthropic errors).
+  - Each attempt has its own `llm.*` span, and cost goes to the model that
+    answered.
+  - A stream falls back only before its first event.
+  - Local only: fallbacks are not part of `to_dict()`.
+- **`extra_body` / `extra_headers`** (2K), on the client or per call:
+  - They're sent by every provider, including an injected OpenAI client (as
+    its own `extra_body` / `extra_headers`); Bedrock sends them as
+    `additionalModelRequestFields`.
+  - The SDK's own keys win, the credential header cannot be replaced, and
+    they're never in `to_dict()`.
+- **`max_concurrency=N`**: caps a client's in-flight calls, with one semaphore
+  per event loop.
+- **Rate limits**:
+  - A 429 is now an **`LLMRateLimitError`**. It's a subclass of
+    `LLMProviderError`, so existing handlers still catch it, and it carries
+    `retry_after` from `Retry-After` / `retry-after-ms`.
+  - Retries wait that long, capped at 60 s.
+  - Retries now also cover refused connections, resets and timeouts.
+- Example `111_llm_fallbacks_and_model_info.py`.
+- **`LLMClient(reasoning=...)`** (2A): `"none"`, `"minimal"`, `"low"`, `"medium"`,
+  `"high"`, `"xhigh"` or `"max"`, on the client or one call. Each provider gets its
+  own field:
+  - OpenAI and OpenAI-compatible: `reasoning_effort`.
+  - Claude: `output_config.effort` plus adaptive thinking, or a `budget_tokens`
+    on the extended-thinking-only models. `"none"` turns thinking off.
+  - Gemini: `thinkingLevel` on 3.x / 4, `thinkingBudget` on 2.5.
+  - Bedrock Claude, Ollama: their equivalents.
+  - Unset sends nothing. Which levels a model takes is the provider's call; its
+    400 names them.
+- **What the model shows of its reasoning** comes back as `LLMResponse.reasoning`
+  (never in `content`), with `usage["reasoning_tokens"]`, and streams as the new
+  **`ReasoningDelta`** event (decision B2-5). `ReasoningDelta`, `ReasoningBlock`
+  and `REASONING_LEVELS` are exported.
+- **`LLMClient(cache=True | "1h")`** (2B): Anthropic gets its automatic
+  `cache_control`, Bedrock gets `cachePoint`s. OpenAI and Gemini cache on their
+  own.
+- **Cache counts on every provider**: `usage["cached_tokens"]` and
+  `usage["cache_write_tokens"]`. `prompt_tokens` now always includes the cached
+  part; Anthropic and Bedrock report only the uncached part. The streamed
+  `Usage` event gains `reasoning_tokens`, `cached_tokens` and
+  `cache_write_tokens`.
+- **New span attributes**: `gen_ai.usage.reasoning_tokens`,
+  `gen_ai.usage.cache_read.input_tokens` and
+  `gen_ai.usage.cache_creation.input_tokens`. The reasoning text,
+  `gen_ai.response.reasoning`, is payload: it is kept locally and exported only
+  with payloads on (decision B2-4).
+- `reasoning` and `cache` are part of `LLMClient.to_dict()`, written only when set
+  (new keys, signed off).
+- Example `112_reasoning_and_prompt_caching.py`; new page **Reasoning and prompt
+  caching**.
+
+### Added — what a run returns, and how to bound it (Bet 2, 2H–2J)
+
+- **Run limits** on `AgentConfig` (2I):
+  - `timeout_seconds` is the run's wall clock. `run` / `arun` / `aresume` stop
+    at once, inside a model or tool call, and raise `AgentTimeoutError`, which
+    was declared but never raised before. `astream` stops at its next event.
+  - `max_total_tokens` / `max_cost_usd` are checked before every model call,
+    re-asks included. Over budget, the run ends normally with `stop_reason` set
+    to the cap (decision B2-7). A guardrail re-ask the budget no longer allows
+    blocks.
+  - `max_cost_usd` on a run that cannot be priced raises the new
+    `RunLimitError`, not a silent pass. It and `cost_limit` read the same total.
+  - Each agent run holds its own caps; cancel and the timeout belong to the
+    top-level run, and a nested agent stops with it.
+- **`agent.cancel(execution_id)`** stops a run in progress, from any thread.
+  `arun` returns `status="cancelled"`; `astream` ends with
+  `StreamDone(finish_reason="cancelled")`. The checkpoint ends `failed`, with the
+  new `state_snapshot["run_reason"]` (`"cancelled"` / `"timeout"`; decision
+  B2-8). Supervisor runs are cancellable; `Swarm` and `Chain` runs are not yet.
+- **`AgentResult[T]`** (2H): `parsed` is typed, and `run` / `arun` take a
+  per-call `output_type=`, so the result is `AgentResult[Invoice]`. Plain
+  `AgentResult` is `AgentResult[Any]`.
+- **`RunContext.run`** returns a `RunInfo` (execution id, agent, turn, model,
+  spend so far) a tool can read.
+- **`AgentResult.messages`** (2J): the run's conversation without the system
+  prompt, instructions or memory context, ready for `messages=`.
+- The three limits are part of `Agent.to_dict()` only when set (new keys, signed
+  off). `AgentTimeoutError`, `RunLimitError` and `RunInfo` are exported.
+- Example `113_run_limits_and_cancel.py`.
+
+### Added — structured output modes and partial streaming (Bet 2, 2G)
+
+- **`AgentConfig(output_mode=...)`** chooses how an `output_type` is asked for:
+  - `"auto"` (default): each provider's usual way, unchanged except on Bedrock
+    (see X21).
+  - `"native"`: the provider's own schema-constrained output, including
+    Anthropic `output_config.format` (the schema adapted to its rules, beside any
+    reasoning `effort`) and Bedrock `outputConfig.textFormat`.
+  - `"tool"`: a `final_result` tool carrying the schema; calling it ends the run
+    with `parsed` set to its arguments. It is offered, not forced, so it works on
+    models that refuse forced tool use.
+  - `"prompt"`: the schema in the prompt only.
+
+  In `Agent.to_dict()` only when not `"auto"` (new key, signed off).
+- **`PartialOutput(data=...)`** stream event: a structured run's reply so far,
+  parsed as incomplete JSON by pydantic-core (no new dependency). Exported from
+  `fastaiagent`.
+- Verified live: all four modes on gpt-5-mini, claude-haiku-5-5,
+  claude-sonnet-5-5 and gemini-3.8-flash, `run` and `astream`.
+- Example `114_output_modes_and_partial_output.py`.
+
+### Added — OpenAI's Responses API and tools the provider runs (Bet 2, 2C + 2D)
+
+- **`LLMClient(provider="openai", api="responses")`** (2C, opt-in; decision B2-2)
+  calls `POST /v1/responses` instead of Chat Completions.
+  - **Why:** on OpenAI's current models, tools with reasoning are only served
+    there. Measured 2026-10-19, `gpt-6-luna` on Chat Completions refuses tools
+    with `reasoning_effort` ≠ `"none"` with HTTP 400. OpenAI's migration guide
+    says GPT-6 Astra and 6.1 Sol need the Responses API for tool calling at all.
+  - **How:** like the Decisions API, it has its own body builder and parser and
+    returns the same `LLMResponse`. Agents, retries, fallbacks, spans, pricing,
+    run limits and checkpoints are unchanged.
+  - **Stateless:** every request is `store: false`. Reasoning items (summary plus
+    encrypted content) go back with the turn's function calls, as OpenAI
+    requires, through `run`, `astream`, checkpoints and resume. The summary is
+    `LLMResponse.reasoning`.
+  - **Endpoints:** works on `azure` / `custom` deployments that serve
+    `/responses`, and with an injected `openai_client` (`responses.create`).
+  - `api` is in `LLMClient.to_dict()` only when `"responses"` (new key, signed off).
+  - The Chat Completions 400 that points to `/v1/responses` now also says
+    `LLMClient(provider='openai', api='responses')`.
+- **`web_search()`, `code_execution()`, `file_search(stores)`** in
+  `fastaiagent.tool` (2D) return a `ProviderTool` (`origin="provider"`).
+  - **Wire shapes:** sent in each provider's own shape — OpenAI Responses
+    `web_search` / `code_interpreter` / `file_search`; Anthropic
+    `web_search_20250305` / `code_execution_20250825`; Gemini `google_search` /
+    `code_execution` / `file_search`.
+  - **Never run locally.** A provider that runs none of them (Chat Completions,
+    Ollama, Bedrock, the OpenAI-compatible presets) refuses before sending, and
+    so does an option the provider cannot honour.
+  - **The turn goes back verbatim** on the new `Message.provider_content` (new
+    checkpoint key, signed off; written only when a provider-run tool ran).
+    Measured: Anthropic runs a search asked for beside a client tool only once
+    the turn is sent back — stripped, it searches again and both are billed —
+    and Gemini 3+ returns 400 without its `toolCall` / `toolResponse` parts.
+    Anthropic `pause_turn` is continued.
+  - **Gemini 3+ with function tools:** the SDK sets
+    `includeServerSideToolInvocations` and function-calling mode `VALIDATED`.
+    Gemini's `toolUsePromptTokenCount` is counted as prompt tokens; Google bills
+    it as input. Gemini 2.5 and earlier refuse the pair, so the SDK refuses it
+    before sending.
+  - **Recorded:** each call is a `tool.<name>` span (`tool.origin="provider"`,
+    never re-run by Replay) and an `AgentResult.tool_calls` record.
+  - **Guardrails:**
+    - `tool_result` guardrails judge what the provider shows: queries, sources,
+      cited text, code and its output. No provider returns the pages it read. A
+      rewrite blocks instead, because the model already read the result.
+    - A `tool_call` guardrail reports could-not-run, and its `on_error` decides
+      (B2-6). With `"block"` the run stops before the model is called; with
+      `"allow"` each call is recorded as unchecked.
+  - **Per-call fees priced with the tokens** (b2-d16): OpenAI web search $10 /
+    1k calls, file search $2.50 / 1k, containers $0.03 each once per run;
+    Anthropic web search $10 / 1k; Gemini search $14 / 1k queries. An unknown fee
+    leaves the call unpriced. `set_tool_fee_overrides()` sets org rates.
+  - `LLMClient.astream()` emits `ProviderTurn` for a turn with provider-run tools;
+    `Agent.astream()` consumes it and does not pass it on.
+  - `agent.as_mcp_server(expose_tools=True)` does not expose them.
+- Docs: new pages `llm/responses-api.md` and `tools/provider-tools.md`; providers,
+  tools, guardrails, streaming, cost tracking and security updated.
+- Example `115_responses_api_and_provider_tools.py`.
+
+### Changed
+
+- **Cost is priced in parts, so figures move** (decision B2-1). Cached prompt
+  tokens are priced at the cached rate, cache writes at the write rate, and a
+  prompt above a model's long-context threshold at that tier:
+  - OpenAI: above 272k tokens.
+  - Claude Haiku 5.5: above 100k.
+  - Gemini 3.1 Pro: above 200k.
+
+  An OpenAI run with cache hits now costs less, which it always did on the
+  invoice. A GPT-5.6+ / GPT-6 cache write costs 1.25× input, which it always did.
+- **The price table was rebuilt** from the providers' pricing pages, read
+  2026-10-18 (X15):
+  - The GPT-6 and GPT-5.2–5.6 families are added.
+  - Claude Opus 5.5 ($4/$20), Sonnet 5.5 ($2/$10), Haiku 5.5 and Fable / Mythos
+    5.1 are added; before, they were priced at the 5.0 rates or not at all.
+  - Sonnet 5 is now $2/$10 (was $3/$15).
+  - Every row carries its cached and write rates.
+- **A built-in rate no longer covers a later version of its model.** The `gpt-5`
+  row priced every later `gpt-5.x`, and `gpt-5.5` costs four times as much. An
+  unknown model is now unpriced, never mispriced. Org overrides are still plain
+  prefixes, and can now carry `(input, output, cached, write)`;
+  `models.json` takes `cached_input_per_1m` / `cache_write_per_1m`.
+- **Anthropic and Bedrock send the model's own maximum as `max_tokens`** when
+  none is set: 64,000 for `claude-haiku-4-5` and 128,000 for Claude 4.6+ and
+  5.x. Before, it was 4096, which cut long answers short. Unknown models still
+  get 4096. Checked live: the API accepts it on non-streamed calls.
+
+### Fixed — found while mapping Bets 1 and 2, each reproduced before fixing
+
+- **Claude agents lost their own reasoning after the first tool call** (X17).
+  Claude returns thinking blocks, which the 5.x models do without being asked, and
+  Anthropic requires them back unchanged within a tool-use turn. The agent loop
+  dropped them. The API does not error; it switches thinking off for the turn
+  (measured live: the next call reports no `output_tokens_details`). They now
+  ride on the assistant message (`Message.reasoning_blocks`) through `run`,
+  `astream`, checkpoints and resume, and go back only to the provider that
+  issued them. Bedrock's `reasoningContent` the same. Verified live on
+  `claude-haiku-4-5`, `claude-haiku-5-5` and `claude-sonnet-5-5`, with a
+  negative control showing that the live check fails without the fix.
+- **Cached prompt tokens were priced at the full input rate** (X18).
+- **A Gemini thought summary would have been glued onto the answer**: parts marked
+  `thought` were read as text. They are reasoning now.
+- **`LLMClient.stream()` dropped a tool call's Gemini signature** in the
+  `LLMResponse` it returns.
+- **Bedrock ignored structured output** (X21). `_call_bedrock` never read
+  `response_format`, so an `output_type` agent on Bedrock got no schema and no JSON
+  instruction, and its structured re-ask referred to a schema it was never shown.
+  `"auto"` now puts the schema in the system prompt (and strips a fenced reply);
+  `"native"` sends `outputConfig.textFormat`. Tested against real boto3 (no AWS
+  account here, so not live).
+- **A Gemini agent with `output_type` and tools never worked** (X20). JSON mode
+  (`responseMimeType` / `responseSchema`) went on every call, tool turns
+  included, and Gemini does not take it with function calling:
+  `gemini-2.5-flash` answered HTTP 400 ("Function calling with a response mime
+  type: 'application/json' is unsupported"), and `3.5-flash-lite` / `3.8-flash`
+  answered every tool result with another call until `MaxIterationsError`. While
+  function tools are in the request, JSON mode is no longer sent: the prompt asks
+  for the schema and the fenced reply is parsed. Calls without tools keep the
+  native schema. Measured and verified live on 2.5, 3.5-flash-lite, 3.8-flash
+  and 4-argon, `run` and `stream`.
+- **A connected app with a large `local.db` could stall span export for hours**
+  (X19). The full-text index trigger fired on every update of `spans`,
+  including the exporter's "mark synced". Each firing scanned the whole index,
+  about 0.15 s per span on a 380k-span database. Abandoning a backlog of 179k
+  stale spans would have taken about 7.5 hours, and span export and
+  `fa.disconnect()` blocked meanwhile. Schema **v27** limits the trigger to the
+  columns the index is built from. The same backlog now clears in 1.4 s, and
+  search is unchanged. Found when the connected visibility gate hung.
+
+- **Images to Claude 5.x and GPT-6 raised `NonVisionModelError`** (X16) before
+  any request: the vision / PDF registry predated both lineups, and PDFs to
+  Claude 5.x were sent as extracted text.
+  - Claude 5.x now takes images and native PDFs.
+  - GPT-6 takes images; its PDFs render as images.
+  - Bedrock cross-region ids (`us.anthropic.…`) are recognised.
+  - Verified live on `claude-haiku-5-5` and `gpt-6-luna`.
+
+- **`stream()` returned different text than `run()`** (X13). It joined every
+  delta, so text said before a tool call ("Let me check.") became part of the
+  answer. It now returns the run's final reply.
+- **`Swarm.stream()` returned different text than `Swarm.run()`** (X14), for the
+  same reason: what an agent said before handing off became part of the
+  swarm's answer. It now returns the final agent's reply.
+
+- **Gemini 3.5 and later: tool-using agents failed on their second turn** (X11).
+  Every Gemini model after 2.5 — `gemini-3.5-flash-lite`, `3.6/3.7/3.8-flash`,
+  `gemini-4-argon` and the `gemini-flash-latest` / `gemini-pro-latest` aliases —
+  signs the first function call of a turn and rejects the next request with HTTP
+  400 unless the `thoughtSignature` comes back. The provider dropped it, so `run`
+  and `astream` both failed. It is now kept on the new `ToolCall.signature` (and
+  `ToolCallEnd.signature`), sent back on every later request, and saved in
+  checkpoints so a resume sends it too; it never goes on a span. A tool turn the
+  model did not sign (another provider's history, `messages=`, a pre-1.91.0
+  checkpoint) carries Google's validator-skip value. Verified live on 3.8-flash,
+  4-argon, 3.5-flash-lite and `gemini-flash-latest`.
+- **Gemini tool results are named after their call** (X4) — every
+  `functionResponse` was named `"tool"`.
+- **Gemini 3.x / 4 are priced** at Google's published list prices, and a rate can
+  now carry the date it takes effect: `gemini-4-argon` doubles on 2026-12-01,
+  `gemini-3.6-flash` / `gemini-3.8-flash` on 2027-01-01. Unpublished models
+  (`gemini-3.5-flash`, `gemini-3.7-flash`, the `-latest` aliases) stay unpriced.
+  `compute_cost_usd` gains an optional `on=` date.
+- **A finished `astream` run re-ran on resume** (X1). `Agent.astream` wrote no
+  run-end marker, so `aresume` on a completed streamed run called the model and
+  fired every tool again. It now writes `completed` / `failed` like `arun`, and
+  nothing when the stream ends at `Paused`.
+- **A resume whose re-invoked call fails is marked `failed`** (X2) instead of
+  looking paused forever with its pending row already claimed.
+- **Running out of `max_iterations` right after a tool turn re-ran that tool on
+  resume** (X12, `run` and `astream`). The loop now leaves a re-entry row past the
+  last turn.
+- **`cost_limit` blocked every `astream` run** (X3): a streamed run had no running
+  total, so its spend read as unknown.
+- **A streamed `after_model` response has `total_tokens`** (X8), so token-budget
+  middleware counts streamed turns.
+- **A Bedrock client's `region` survives `to_dict()`** (X9), so replay and plane
+  dispatch call the same region. It is the only constructor extra serialized.
+- **`PlatformKB.as_tool()` is marked `origin="kb"`** (X10), like `LocalKB`.
+- **The `topic`, `content_safety` and `groundedness` judges work on today's
+  models** (X23). They always sent `temperature=0`. Measured 2026-10-19, that is
+  a 400 on gpt-5-mini, gpt-5.5, gpt-5.6, GPT-6 and Claude 5.x, and on gpt-5.1 /
+  5.2 / 5.4 with reasoning on, so every check on those models errored and the
+  default `on_error="block"` blocked every request. They now send it only where
+  the model takes it: `fastaiagent.llm.param_rules.pins_temperature()`, from a
+  table updated with these measurements (a new `reasoning_locks` field).
+  Verified live on gpt-5-mini and claude-sonnet-5-5: real verdicts, no errors.
+- **Deterministic replay of a GPT-5+ or Claude 5.x trace works** (X24).
+  `with_determinism("deterministic")` forced `temperature=0`, so every such rerun
+  was a 400. It now pins `seed=42` always, and the temperature only where the
+  model accepts it, with a warning when it can't.
+- **Retries and fallbacks apply when `httpcore` was re-imported** (X25, found by
+  CI). `httpx` maps `httpcore`'s errors to its own through a map it builds once.
+  After something re-imports `httpcore` in the same process (notebook autoreload,
+  a test runner, a plugin loader), a refused connection arrives as a raw
+  `httpcore.ConnectError` that the map no longer recognises. The SDK accepted only
+  `httpx.TransportError`, so `max_retries` and `fallbacks=` silently never
+  applied. Transport failures are now recognised by class name in either form:
+  `fastaiagent._internal.http_errors.is_transport_error`, used by the client and
+  by the span, HITL, eval and checkpoint exporters.
+- **A rule's `llm` config takes `reasoning`, `cache` and `api`** (X22), the keys
+  `LLMClient.to_dict()` gained in 1.91.0. They were missing from the shareable
+  allowlist, so a judge could not be told to reason less, and a client's
+  `to_dict()` was refused as a rule config. None is a secret.
+
+### Changed
+
+- **`LLMClient(provider=...)` without `model=` uses the preset's default model**;
+  before, every provider got `gpt-4o-mini`, which no preset provider serves. The
+  Gemini default is now **`gemini-3.8-flash`** (was `gemini-2.5-flash`), and docs,
+  examples and the UI model list lead with Gemini 3.5+.
+
 ## [1.90.0] - 2026-10-18 — every tool call governed, every setting honoured
 
 The 17 defects a verification of 1.89.0 found (F1–F17), five of them security,

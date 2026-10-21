@@ -116,13 +116,21 @@ agent = Agent(guardrails=[toxicity_check(mode="decisions", threshold=0.5)])
 
 ### cost_limit()
 
-Policy marker for enforcing cost limits on agent execution.
+Blocks a run that has spent more than `max_usd` so far — the same running total
+that lands on `AgentResult.cost`. At the default `output` position that is the
+whole run; at `input` or `tool_call` it is the spend up to that gate.
 
 ```python
 from fastaiagent.guardrail import cost_limit
 
 agent = Agent(guardrails=[cost_limit(max_usd=0.50)])
 ```
+
+A run it cannot price — a model with no rate, see
+[Cost tracking](../ui/cost-tracking.md#updating-prices) — is an error, not a pass,
+and `on_error` decides: `"block"` (the default) or `"allow"`. It works on `run`,
+`astream` and `stream`; before 1.91.0 a run driven by `astream` had no running
+total, so the rule blocked every streamed run.
 
 ### allowed_domains()
 
@@ -405,7 +413,8 @@ judge_guard = Guardrail(
 !!! warning "No credentials in `config[\"llm\"]` (changed in 1.89.0)"
     `config` is serialized into traces and pushed to the control plane, so
     `config["llm"]` takes only shareable `LLMClient` fields (`provider`,
-    `model`, `base_url`, sampling parameters). An `api_key`, `default_headers`
+    `model`, `base_url`, sampling parameters, and since 1.91.0 `reasoning`,
+    `cache` and `api`). An `api_key`, `default_headers`
     or any other field **raises `ValueError`** when the guardrail is built. The
     judge resolves its key from the provider's environment variable
     (`OPENAI_API_KEY`, …) on whichever machine runs the rule. A rule stored by
@@ -576,6 +585,13 @@ All four guardrail positions are fully wired and operational:
 | `GuardrailPosition.output` | After LLM responds | Block PII leaks, validate format, quality check |
 | `GuardrailPosition.tool_call` | Before tool executes | Restrict URLs, validate arguments, audit |
 | `GuardrailPosition.tool_result` | After tool returns (success only) | Validate tool output, filter sensitive data |
+
+A tool the model's provider runs (`web_search()` …, 1.91.0) is different. A
+`tool_call` rule cannot check it, because its arguments exist only inside the
+model call, so the rule reports could-not-run and its `on_error` decides. With
+the default `on_error="block"`, the run stops before the model is called. A
+`tool_result` rule judges what the provider shows of the result, and a rewrite
+blocks instead. See [Provider-run tools](../tools/provider-tools.md#guardrails).
 
 ```python
 from fastaiagent import Agent, LLMClient

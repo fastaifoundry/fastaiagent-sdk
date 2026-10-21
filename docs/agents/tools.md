@@ -63,7 +63,8 @@ them. Results are re-ordered by call index, so message history and
     transparently falls back to sequential execution:
 
     - a **checkpointer** is configured (per-tool checkpoints / crash recovery / HITL),
-    - **middleware** is attached (`wrap_tool` sees calls in order),
+    - **middleware** is attached (`wrap_tool` sees calls in order) — including
+      the built-in one behind [deferred tools](#tools-loaded-when-needed),
     - **managed governance** is enrolled (`agent_id` is set for policy/approvals).
 
     Since 1.90.0 the fallback logs one warning per agent per reason, naming it.
@@ -96,8 +97,9 @@ result = calculate.execute({"expression": "2 + 2"})
 | `FunctionTool` | Wrap any Python function | `FunctionTool(name="calc", fn=my_func)` |
 | `RESTTool` | Call an HTTP API | `RESTTool(name="weather", url="https://api.weather.com/v1", method="GET")` |
 | `MCPTool` | Connect to MCP server | `MCPTool(name="search", server_url="http://localhost:3000")` |
+| [Provider-run](../tools/provider-tools.md) | Web search, code execution, file search run by the model's provider (1.91.0) | `web_search()`, `code_execution()`, `file_search(["vs_1"])` from `fastaiagent.tool` |
 
-All three (and `@tool`) accept an optional `replay_class` (`read_only` / `idempotent` / `side_effecting`, default `side_effecting`) that controls inject-vs-execute during [Agent Replay](../replay/index.md). See [Tools → Replay safety](../tools/index.md#replay-safety-replay_class).
+The first three (and `@tool`) accept an optional `replay_class` (`read_only` / `idempotent` / `side_effecting`, default `side_effecting`) that controls inject-vs-execute during [Agent Replay](../replay/index.md). See [Tools → Replay safety](../tools/index.md#replay-safety-replay_class).
 
 ## ToolResult
 
@@ -146,6 +148,62 @@ agent = Agent(
 
 `"auto"` sends nothing (the provider's default). Before 1.90.0 none of the three
 reached the model. See [Agent Configuration](index.md#agent-configuration).
+
+## Tools loaded when needed
+
+Every tool definition goes into every request. With a large toolset — an MCP
+server's forty tools — that costs context on every turn whether or not the tools
+are used. Mark a tool `deferred=True` (since 1.91.0) and its definition is not
+sent:
+
+```python
+from fastaiagent import Agent, FunctionTool, LLMClient, tool
+
+
+@tool(deferred=True)
+def get_invoice(invoice_id: str) -> str:
+    """Look up an invoice: its amount and due date."""
+    ...
+
+
+agent = Agent(
+    name="billing",
+    llm=LLMClient(provider="gemini", model="gemini-3.8-flash"),
+    tools=[
+        get_invoice,
+        FunctionTool(name="track_shipment", fn=track_shipment, deferred=True),
+    ],
+)
+```
+
+Instead the model is offered one built-in tool, **`load_tools(names)`**, whose
+description lists each deferred tool by name and the first line of its
+description. When the model loads a tool, its definition is sent from the next
+step on, for the rest of the run:
+
+```
+turn 0   offered: load_tools          → model calls load_tools(["get_invoice"])
+turn 1   offered: get_invoice, load_tools → model calls get_invoice("INV-9")
+turn 2   offered: get_invoice, load_tools → model answers
+```
+
+- `deferred=` is accepted by `FunctionTool`, `@tool`, `MCPTool` and `RESTTool`.
+- A loaded tool is governed and guarded like any other tool.
+- A deferred tool the model calls *without* loading it is not run; the model is
+  told to call `load_tools` first.
+- The loaded set is checkpointed, so a resumed run keeps it.
+- `load_tools` is no longer offered once every deferred tool is loaded. It is a
+  reserved name while any tool is deferred.
+- **Local only.** `deferred` is not part of `Tool.to_dict()`, so a
+  plane-distributed copy of the agent sends every tool, as before.
+- MCP `expose_tools` clients call deferred tools directly — deferral hides
+  definitions from a model, not from a client with its own tool list.
+- Deferral uses the middleware machinery, so it turns off
+  [parallel tool calls](#parallel-tool-execution) for the agent.
+
+Live-checked on `gpt-5-mini`, `gemini-3.8-flash` and `claude-haiku-4-5`: each
+found the tool from the `load_tools` description, loaded it and called it
+(`tests/e2e/test_middleware_bundles_live.py`).
 
 ## Context & Dependency Injection
 

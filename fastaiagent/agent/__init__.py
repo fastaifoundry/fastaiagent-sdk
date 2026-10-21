@@ -1,7 +1,7 @@
 """Agent module — the central component of the SDK."""
 
 from fastaiagent.agent.agent import Agent, AgentConfig, AgentResult
-from fastaiagent.agent.context import RunContext
+from fastaiagent.agent.context import RunContext, RunUsage
 from fastaiagent.agent.memory import AgentMemory, ComposableMemory
 from fastaiagent.agent.memory_simple import Memory
 from fastaiagent.agent.memory_blocks import (
@@ -21,6 +21,7 @@ from fastaiagent.agent.middleware import (
     ToolBudget,
     TrimLongMessages,
 )
+from fastaiagent.agent.run_control import RunInfo
 from fastaiagent.agent.swarm import Swarm, SwarmError, SwarmState
 from fastaiagent.agent.team import Supervisor, SupervisorRoute, Worker
 
@@ -40,6 +41,8 @@ __all__ = [
     "RedactPII",
     "Reflect",
     "RunContext",
+    "RunInfo",
+    "RunUsage",
     "StaticBlock",
     "SummaryBlock",
     "Supervisor",

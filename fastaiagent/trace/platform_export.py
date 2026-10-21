@@ -164,6 +164,8 @@ class PlatformSpanExporter(SpanExporter):
         """
         import httpx
 
+        from fastaiagent._internal.http_errors import is_transport_error
+
         url = f"{conn.target}/public/v1/traces/ingest"
         payload = {"project": conn.project_id or conn.project, "spans": wire}
 
@@ -189,8 +191,11 @@ class PlatformSpanExporter(SpanExporter):
                     attempt + 1,
                     self._MAX_ATTEMPTS,
                 )
-            except httpx.TransportError:
+            except Exception as exc:
                 # Covers ConnectError, ConnectTimeout, ReadTimeout, PoolTimeout…
+                # as httpx or as raw httpcore after a re-import (1.91.0).
+                if not is_transport_error(exc):
+                    raise
                 logger.debug(
                     "Platform export transient error (attempt %d/%d)",
                     attempt + 1,

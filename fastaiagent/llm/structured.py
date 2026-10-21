@@ -73,6 +73,69 @@ def _make_strict(node: Any) -> Any:
     return node
 
 
+#: JSON Schema keywords Anthropic's ``output_config.format`` refuses (structured
+#: outputs page, read 2026-10-19). They move into the description, and the reply
+#: is still validated against the full type locally.
+_ANTHROPIC_UNSUPPORTED = (
+    "minimum",
+    "maximum",
+    "exclusiveMinimum",
+    "exclusiveMaximum",
+    "multipleOf",
+    "minLength",
+    "maxLength",
+    "pattern",
+    "maxItems",
+    "uniqueItems",
+)
+
+
+def anthropic_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """``schema`` in the shape Anthropic's native structured output takes
+    (1.91.0): every object closed (``additionalProperties: false``), and the
+    constraints it does not support written into the field's description."""
+
+    def visit(node: Any) -> Any:
+        if isinstance(node, dict):
+            moved = [f"{key}={node.pop(key)}" for key in _ANTHROPIC_UNSUPPORTED if key in node]
+            min_items = node.get("minItems")
+            if isinstance(min_items, int) and min_items > 1:
+                moved.append(f"minItems={node.pop('minItems')}")
+            if moved:
+                note = "Constraints: " + ", ".join(moved) + "."
+                existing = node.get("description")
+                node["description"] = f"{existing} {note}" if existing else note
+            if node.get("type") == "object" and "properties" in node:
+                node["additionalProperties"] = False
+            for value in node.values():
+                visit(value)
+        elif isinstance(node, list):
+            for item in node:
+                visit(item)
+        return node
+
+    return visit(copy.deepcopy(schema))  # type: ignore[no-any-return]
+
+
+def partial_json(text: str) -> Any | None:
+    """The JSON in ``text`` so far, parsed as incomplete JSON (1.91.0), or
+    ``None`` when ``text`` is not the start of a JSON object or array — prose
+    before a tool call, an empty reply. A leading code fence is skipped."""
+    from pydantic_core import from_json
+
+    body = text.lstrip()
+    if body.startswith("```"):
+        body = body.split("\n", 1)[1] if "\n" in body else ""
+        body = body.rsplit("```", 1)[0] if body.rstrip().endswith("```") else body
+        body = body.lstrip()
+    if not body.startswith(("{", "[")):
+        return None
+    try:
+        return from_json(body, allow_partial="trailing-strings")
+    except ValueError:
+        return None
+
+
 class OutputSpec:
     """Resolved structured-output plan for one ``output_type`` (built once)."""
 

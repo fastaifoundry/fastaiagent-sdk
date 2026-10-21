@@ -1,5 +1,5 @@
-"""1.90.0 "Fix now" against real models (OpenAI GPT-4o-mini and GPT-5-class,
-Anthropic Claude Haiku 4.5, Gemini).
+"""1.90.0 "Fix now" against real models (OpenAI GPT-5-class, Anthropic Claude
+Haiku 4.5, Gemini).
 
 The offline suites drive each fix with ``FunctionModel`` and a real socket; this
 proves the same behaviour holds when a real provider is on the other end:
@@ -29,7 +29,6 @@ pytestmark = pytest.mark.e2e
 SSN = "123-45-6789"
 
 MODELS = [
-    pytest.param("openai", "gpt-4o-mini", "OPENAI_API_KEY", id="gpt-4o-mini"),
     pytest.param("openai", "gpt-5.1", "OPENAI_API_KEY", id="gpt-5.1"),
     pytest.param("openai", "gpt-5-mini", "OPENAI_API_KEY", id="gpt-5-mini"),
     pytest.param("anthropic", "claude-haiku-4-5", "ANTHROPIC_API_KEY", id="claude-haiku-4-5"),
@@ -117,7 +116,7 @@ def test_akickoff_is_guarded_around_a_real_crew() -> None:
         role="analyst",
         goal="Answer in one short sentence.",
         backstory="Terse.",
-        llm=LLM(model="gpt-4o-mini"),
+        llm=LLM(model="gpt-5-mini"),
     )
     task = Task(
         description="What colour is the sky about {topic}?",
@@ -193,6 +192,8 @@ def test_tool_choice_none_keeps_a_real_model_off_its_tools(provider, model, key)
 
 
 def test_agent_temperature_is_sent_and_honoured_by_a_model_that_accepts_it():
+    # Stays on gpt-4o-mini on purpose: the point is a model that accepts a
+    # non-default temperature (gpt-5-mini rejects one — the next test).
     _need("OPENAI_API_KEY")
     agent, _ = _lookup_agent("openai", "gpt-4o-mini", temperature=0.0, max_tokens=40)
     assert agent.run("Reply with the single word: ready").output.strip()
@@ -320,8 +321,11 @@ def test_the_openai_integration_traces_a_real_call_on_the_installed_sdk(stream):
     try:
         client = openai.OpenAI()
         kwargs = {
-            "model": "gpt-4o-mini",
-            "max_tokens": 10,
+            # GPT-5 takes max_completion_tokens (not max_tokens); minimal
+            # reasoning keeps the budget for the reply.
+            "model": "gpt-5-mini",
+            "reasoning_effort": "minimal",
+            "max_completion_tokens": 64,
             "messages": [{"role": "user", "content": "Reply with the single word: ready"}],
         }
         if stream:
@@ -356,7 +360,12 @@ def test_an_agent_on_an_injected_openai_client_runs_on_the_installed_sdk(mode):
     agent = Agent(
         name="injected-client",
         system_prompt="Use lookup_order to answer order questions.",
-        llm=LLMClient(provider="openai", model="gpt-4o-mini", openai_client=openai.AsyncOpenAI()),
+        llm=LLMClient(
+            provider="openai",
+            model="gpt-5-mini",
+            reasoning="minimal",
+            openai_client=openai.AsyncOpenAI(),
+        ),
         tools=[FunctionTool(name="lookup_order", fn=lookup_order)],
     )
     if mode == "run":

@@ -111,11 +111,19 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 - [`20_output_type.py`](20_output_type.py) — Pydantic structured output
 - [`21_retry_backoff.py`](21_retry_backoff.py) — retry / backoff config
 - [`22_llm_parameters.py`](22_llm_parameters.py) — provider-specific LLM params
+- [`110_team_middleware.py`](110_team_middleware.py) — one middleware for a whole team (1.91.0): `Swarm(middleware=[Audit(), ToolBudget(max_calls=6)])` logs every hop and tool call and keeps one budget across hops; `Supervisor` / `Chain` take `middleware=` the same way; `--offline` needs no keys
+- [`109_middleware_bundle_deferred_tools.py`](109_middleware_bundle_deferred_tools.py) — a refunds policy as ONE middleware (its own tool, instructions, and a limit in checkpointed `ctx.state`) plus billing tools marked `deferred=True` that the model loads with `load_tools` only when it needs them (1.91.0); `--offline` needs no keys
+- [`108_middleware_run_hooks.py`](108_middleware_run_hooks.py) — middleware around the whole run and every model call (1.91.0): `before_run`, `wrap_model` (timing + one retry), `ctx.llm` sending the final answer to a cheaper model, `on_error`, `on_stream_event`; `--offline` needs no keys
 
 ### Providers & model clients
 - [`15_providers_gemini.py`](15_providers_gemini.py) — Google Gemini on fastaiagent's native wire (no `google-generativeai` dependency)
 - [`16_providers_groq.py`](16_providers_groq.py) — Groq's OpenAI-compatible endpoint, plus how to re-pin when Groq retires a model id
 - [`17_providers_openrouter.py`](17_providers_openrouter.py) — OpenRouter: many models behind one key, chosen by slug
+- [`111_llm_fallbacks_and_model_info.py`](111_llm_fallbacks_and_model_info.py) — `LLMClient(fallbacks=[...])` surviving a dead primary, `model_info` (context window, max output, reasoning, images) from official sources, and `extra_body` / `extra_headers` that never reach `to_dict()` (1.91.0)
+- [`112_reasoning_and_prompt_caching.py`](112_reasoning_and_prompt_caching.py) — `LLMClient(reasoning=...)` on Gemini 3.8 Flash, Claude and OpenAI (the reasoning apart from the answer, reasoning tokens counted), a thinking agent's tool loop streamed with `ReasoningDelta`, and `cache=True`: the second identical prompt read from the cache and priced at the cached rate (1.91.0)
+- [`113_run_limits_and_cancel.py`](113_run_limits_and_cancel.py) — `AgentConfig(timeout_seconds=, max_total_tokens=, max_cost_usd=)`, `agent.cancel(execution_id)` landing inside a real model call, a tool reading `RunContext.run`, and `result.messages` + a per-call `output_type=` continuing a conversation into a typed `AgentResult[T]` (1.91.0)
+- [`114_output_modes_and_partial_output.py`](114_output_modes_and_partial_output.py) — `AgentConfig(output_mode="auto" | "native" | "tool" | "prompt")` on Gemini 3.8 Flash, Claude Sonnet 5.5 and gpt-5-mini with a tool in play, and `PartialOutput` events showing the structured answer form field by field while it streams (1.91.0)
+- [`115_responses_api_and_provider_tools.py`](115_responses_api_and_provider_tools.py) — `web_search()` beside a function tool and `code_execution()` on Gemini 3.8 Flash, Claude 5.5 and OpenAI (each call in `result.tool_calls`, its fee in `result.cost`), and `LLMClient(api="responses")` giving `gpt-6-luna` tools with reasoning on (1.91.0)
 - [`89_azure_injected_client.py`](89_azure_injected_client.py) — Azure OpenAI with Entra ID / managed identity by handing `LLMClient` your own `AzureOpenAI` client
 
 ### OpenAI Decisions API (1.84.0)

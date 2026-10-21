@@ -371,6 +371,8 @@ def _post_checkpoints(conn: _Connection, wire: list[dict[str, Any]]) -> _PostOut
     """
     import httpx
 
+    from fastaiagent._internal.http_errors import is_transport_error
+
     url = f"{conn.target}/public/v1/checkpoints/ingest"
     payload = {"checkpoints": wire}
     reason = "no response from the plane"
@@ -400,7 +402,9 @@ def _post_checkpoints(conn: _Connection, wire: list[dict[str, Any]]) -> _PostOut
             logger.debug(
                 "Checkpoint ingest HTTP %d (attempt %d/%d)", code, attempt + 1, _MAX_ATTEMPTS
             )
-        except httpx.TransportError as exc:
+        except Exception as exc:
+            if not is_transport_error(exc):  # raw httpcore too (1.91.0)
+                raise
             reason = f"transport error: {type(exc).__name__}"
             logger.debug(
                 "Checkpoint ingest transient error (attempt %d/%d)",
@@ -625,11 +629,15 @@ def fetch_latest_from_plane(execution_id: str, *, conn: Any | None = None) -> Ch
 
     import httpx
 
+    from fastaiagent._internal.http_errors import is_transport_error
+
     url = f"{conn.target}/public/v1/checkpoints/{execution_id}/latest"
     try:
         with httpx.Client(timeout=_TIMEOUT, verify=True) as client:
             resp = client.get(url, headers=conn.headers)
-    except httpx.TransportError:
+    except Exception as exc:
+        if not is_transport_error(exc):  # raw httpcore too (1.91.0)
+            raise
         logger.debug("checkpoint restore transient error", exc_info=True)
         return None
     if resp.status_code == 404:

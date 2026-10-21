@@ -1,4 +1,4 @@
-"""End-to-end multimodal gate — OpenAI gpt-4o.
+"""End-to-end multimodal gate — OpenAI gpt-5-mini.
 
 Real Anthropic SDK / no — real OpenAI. No mocking. Hits the live API using
 ``OPENAI_API_KEY`` from the user's environment. The fixture image renders
@@ -32,28 +32,28 @@ def _ensure_fixtures() -> None:
         make()
 
 
-def _gpt4o_agent(name: str = "vision-test") -> Agent:
+def _vision_agent(name: str = "vision-test") -> Agent:
     return Agent(
         name=name,
         system_prompt=(
             "You are a vision assistant. Answer concisely. "
             "If you see text in the image, quote it exactly."
         ),
-        llm=LLMClient(provider="openai", model="gpt-4o"),
+        llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
     )
 
 
 class TestOpenAIVisionGate:
-    """Spec test #1, #5, #6 — real OpenAI gpt-4o vision calls."""
+    """Spec test #1, #5, #6 — real OpenAI gpt-5-mini vision calls."""
 
     def test_image_input_round_trip(self) -> None:
         require_env()
         _ensure_fixtures()
-        agent = _gpt4o_agent("describe-image")
+        agent = _vision_agent("describe-image")
         result = agent.run(
             ["What letters do you see in this image?", Image.from_file(FIXTURES / "cat.jpg")]
         )
-        assert result.output, "expected non-empty output from gpt-4o"
+        assert result.output, "expected non-empty output from gpt-5-mini"
         letters = "".join(c for c in result.output.upper() if c.isalpha())
         assert "CAT" in letters, (
             f"vision response should mention CAT (any spacing); got: {result.output[:200]}"
@@ -63,7 +63,7 @@ class TestOpenAIVisionGate:
         """Spec test #5 — text + image + PDF flow into one call in order."""
         require_env()
         _ensure_fixtures()
-        agent = _gpt4o_agent("mixed-input")
+        agent = _vision_agent("mixed-input")
         result = agent.run(
             [
                 "I will give you an image and a contract. "
@@ -114,7 +114,7 @@ class TestOpenAIVisionGate:
                 "Use the take_test_image tool to fetch the picture, "
                 "then describe what letters appear in it."
             ),
-            llm=LLMClient(provider="openai", model="gpt-4o"),
+            llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
             tools=[FunctionTool(name="take_test_image", fn=take_test_image)],
         )
         result = agent.run("Please fetch the test image and tell me what letters it shows.")

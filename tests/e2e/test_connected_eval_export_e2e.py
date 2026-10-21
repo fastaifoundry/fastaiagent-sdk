@@ -45,7 +45,7 @@ def _live_agent():
 
     return Agent(
         name="partd-e2e-agent",
-        llm=LLMClient(provider="openai", model="gpt-4o-mini", temperature=0),
+        llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
         system_prompt="Follow the instruction literally. Output only the requested word.",
     )
 

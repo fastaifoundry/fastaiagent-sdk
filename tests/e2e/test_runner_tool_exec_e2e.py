@@ -3,7 +3,7 @@ connector that uses a real credential (``OPENAI_API_KEY`` from ~/.zshrc).
 
 No mocks. The real daemon registers + long-polls a real localhost plane, claims a
 ``tool_exec`` command, resolves the operator's locally-registered tool by its
-``exposed_name``, and runs it — the tool makes a real ``gpt-4o-mini`` call with the
+``exposed_name``, and runs it — the tool makes a real ``gpt-5-mini`` call with the
 operator's own key. The runner reports ``{"success","result"}`` and pushes the
 ``tool.<name>`` trace. We assert the result is recorded and the trace is ingested +
 linked. Run via ``zsh -lc`` so ~/.zshrc keys reach the process.
@@ -130,7 +130,7 @@ def test_runner_executes_tool_exec_against_local_connector(
         agent = Agent(
             name="connector",
             system_prompt="Reply with exactly the word OK and nothing else.",
-            llm=LLMClient(provider="openai", model="gpt-4o-mini"),
+            llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
         )
         return (await agent.arun(question)).output
 

@@ -3,9 +3,41 @@
 from __future__ import annotations
 
 from contextvars import ContextVar
-from typing import Generic, TypeVar
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Generic, TypeVar
+
+if TYPE_CHECKING:
+    from fastaiagent.agent.run_control import RunInfo
 
 T = TypeVar("T")
+
+
+@dataclass(frozen=True)
+class RunUsage:
+    """What the current run has spent so far — a read-only snapshot (1.91.0).
+
+    The same running total ``AgentResult.cost`` / ``tokens_used`` and the
+    ``cost_limit`` guardrail read. ``cost_known`` is ``False`` while any model
+    call in the run could not be priced; ``cost`` is then a lower bound, not the
+    spend.
+    """
+
+    tokens: int = 0
+    cost: float = 0.0
+    cost_known: bool = True
+    calls: int = 0
+
+
+def current_run_usage_view() -> RunUsage:
+    """The active run's spend as a :class:`RunUsage` (zeros outside a run)."""
+    from fastaiagent._internal.pricing import current_run_usage
+
+    bucket = current_run_usage()
+    if bucket is None:
+        return RunUsage()
+    return RunUsage(
+        tokens=bucket.tokens, cost=bucket.usd, cost_known=bucket.known, calls=bucket.calls
+    )
 
 
 class RunContext(Generic[T]):
@@ -34,6 +66,19 @@ class RunContext(Generic[T]):
     @property
     def state(self) -> T:
         return self._state
+
+    @property
+    def run(self) -> RunInfo | None:
+        """The run this context is used in, read-only (1.91.0, 2H): its
+        ``execution_id``, ``agent_name``, the tool loop's ``turn``, the ``model``
+        of the current call and its ``usage`` so far. ``None`` outside a run.
+
+        A run nested in another (a Swarm hop, a Supervisor worker) reports the
+        top-level run.
+        """
+        from fastaiagent.agent.run_control import current_run_info
+
+        return current_run_info()
 
     def __repr__(self) -> str:
         return f"RunContext(state={self._state!r})"

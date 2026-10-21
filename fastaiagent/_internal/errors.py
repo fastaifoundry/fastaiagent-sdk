@@ -15,7 +15,12 @@ class AgentError(FastAIAgentError):
 
 
 class AgentTimeoutError(AgentError):
-    """Agent execution exceeded timeout."""
+    """The run passed ``AgentConfig.timeout_seconds`` (1.91.0)."""
+
+
+class RunLimitError(AgentError):
+    """A run limit could not be checked (1.91.0): ``max_cost_usd`` on a run whose
+    spend cannot be priced. Raised rather than letting the run go unbudgeted."""
 
 
 class MaxIterationsError(AgentError):
@@ -133,8 +138,20 @@ class LLMProviderError(LLMError):
         super().__init__(message)
 
 
-class LLMRateLimitError(LLMError):
-    """LLM provider rate limit exceeded."""
+class LLMRateLimitError(LLMProviderError):
+    """LLM provider rate limit exceeded (HTTP 429).
+
+    Raised since 1.91.0 (it was defined and never raised). A subclass of
+    :class:`LLMProviderError`, so ``except LLMProviderError`` still catches it.
+    ``retry_after`` is the wait in seconds the provider asked for —
+    ``Retry-After`` or ``retry-after-ms`` — or ``None`` when it named none; the
+    client's own retries wait that long instead of the exponential backoff.
+    """
+
+    def __init__(self, message: str = "", *, retry_after: float | None = None, **kwargs: Any):
+        kwargs.setdefault("status_code", 429)
+        self.retry_after = retry_after
+        super().__init__(message, **kwargs)
 
 
 class LLMAuthError(LLMError):

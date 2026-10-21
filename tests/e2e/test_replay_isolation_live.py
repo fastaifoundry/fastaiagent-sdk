@@ -1,6 +1,6 @@
 """Live replay isolation (1.89.0): a rerun against a real model stays an experiment.
 
-A real gpt-4o-mini agent charges a card and looks up an order. Its live rerun,
+A real gpt-5-mini agent charges a card and looks up an order. Its live rerun,
 with a changed prompt, must:
 
 * not charge the card again (blocked by default), and say so;
@@ -69,7 +69,7 @@ def test_a_live_rerun_does_not_repeat_side_effects(world: Path) -> None:
     agent = Agent(
         name="live-billing",
         system_prompt=SYSTEM,
-        llm=LLMClient(provider="openai", model="gpt-4o-mini", temperature=0),
+        llm=LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal"),
         tools=[
             FunctionTool(name="lookup_order", fn=lookup_order, replay_class="read_only"),
             FunctionTool(name="charge_card", fn=charge_card),
