@@ -171,6 +171,14 @@ configured to do.)
 
 All three are judges with structure, distributed from the plane like any other rule.
 
+Each judge asks its model for `temperature=0` where the model takes it. Since
+1.91.0 it leaves the temperature alone on models that accept only their default
+(GPT-5, GPT-5.5+, GPT-6, Claude 5.x, and gpt-5.1 / 5.2 / 5.4 or older Claude with
+reasoning on). Before, every check on those models was refused with a 400, so it
+errored, and with `on_error="block"` every request was blocked. To have the judge
+reason less, put it in its `llm` config:
+`{"llm": {"model": "gpt-5-mini", "reasoning": "minimal"}}`.
+
 ### `content_safety`
 
 Scores the payload against the [MLCommons hazard taxonomy](https://github.com/meta-llama/PurpleLlama/blob/main/Llama-Guard4/12B/MODEL_CARD.md)

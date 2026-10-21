@@ -158,8 +158,15 @@ class TestConstructionRefuses:
             pdf_mode="vision",
             max_pdf_pages=3,
             max_image_size_mb=1.0,
+            # 1.91.0 keys — missing here, the allowlist missed them too (X22).
+            reasoning="low",
+            cache=True,
+            api="responses",
         )
+        assert {"reasoning", "cache", "api"} <= set(client.to_dict())
         assert set(client.to_dict()) <= LLM_CONFIG_FIELDS
+        bedrock = LLMClient(provider="bedrock", model="m", region="eu-west-1")
+        assert set(bedrock.to_dict()) <= LLM_CONFIG_FIELDS
         assert "api_key" not in LLM_CONFIG_FIELDS
 
 

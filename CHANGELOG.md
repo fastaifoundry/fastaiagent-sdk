@@ -363,6 +363,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A Bedrock client's `region` survives `to_dict()`** (X9), so replay and plane
   dispatch call the same region. It is the only constructor extra serialized.
 - **`PlatformKB.as_tool()` is marked `origin="kb"`** (X10), like `LocalKB`.
+- **The `topic`, `content_safety` and `groundedness` judges work on today's
+  models** (X23). They always sent `temperature=0`. Measured 2026-10-19, that is
+  a 400 on gpt-5-mini, gpt-5.5, gpt-5.6, GPT-6 and Claude 5.x, and on gpt-5.1 /
+  5.2 / 5.4 with reasoning on, so every check on those models errored and the
+  default `on_error="block"` blocked every request. They now send it only where
+  the model takes it: `fastaiagent.llm.param_rules.pins_temperature()`, from a
+  table updated with these measurements (a new `reasoning_locks` field).
+  Verified live on gpt-5-mini and claude-sonnet-5-5: real verdicts, no errors.
+- **Deterministic replay of a GPT-5+ or Claude 5.x trace works** (X24).
+  `with_determinism("deterministic")` forced `temperature=0`, so every such rerun
+  was a 400. It now pins `seed=42` always, and the temperature only where the
+  model accepts it, with a warning when it can't.
+- **A rule's `llm` config takes `reasoning`, `cache` and `api`** (X22), the keys
+  `LLMClient.to_dict()` gained in 1.91.0. They were missing from the shareable
+  allowlist, so a judge could not be told to reason less, and a client's
+  `to_dict()` was refused as a rule config. None is a secret.
 
 ### Changed
 

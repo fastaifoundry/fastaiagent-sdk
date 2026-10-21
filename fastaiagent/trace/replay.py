@@ -668,7 +668,10 @@ class ForkedReplay:
           Use for byte-identical regression tests.
         * ``"deterministic"``: call the LLM live, but force
           ``temperature=0`` (and ``seed=42`` where the provider supports
-          it). Reduces nondeterminism without skipping the call.
+          it). Reduces nondeterminism without skipping the call. A model that
+          takes only its default temperature — GPT-5, GPT-5.5+, GPT-6, Claude
+          5.x, or a model with reasoning on that locks it — keeps its own,
+          with a warning (1.91.0): forcing 0 there was a 400 on every call.
 
         ``on_miss`` (``"recorded"`` mode only) controls what happens when the
         rerun makes MORE LLM calls than the original trace captured:
@@ -830,9 +833,27 @@ class ForkedReplay:
             # the provider supports them. Bedrock has no seed concept,
             # which we accept as a documented gap.
             if hasattr(agent, "llm") and agent.llm is not None:
+                from fastaiagent.llm.param_rules import pins_temperature
+
+                llm = agent.llm
                 try:
-                    agent.llm.temperature = 0
-                    agent.llm.seed = 42
+                    llm.seed = 42
+                    if pins_temperature(
+                        getattr(llm, "provider", ""),
+                        getattr(llm, "model", ""),
+                        getattr(llm, "reasoning", None),
+                    ):
+                        llm.temperature = 0
+                    else:
+                        # The model refuses temperature=0 (1.91.0, X24): forcing
+                        # it made every deterministic rerun a 400.
+                        llm.temperature = None
+                        _log.warning(
+                            "determinism='deterministic': %s/%s takes only its default "
+                            "temperature, so the rerun pins seed=42 but not temperature.",
+                            getattr(llm, "provider", ""),
+                            getattr(llm, "model", ""),
+                        )
                 except AttributeError:
                     pass
 

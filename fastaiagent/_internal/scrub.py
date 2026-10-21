@@ -60,6 +60,11 @@ LLM_CONFIG_FIELDS: frozenset[str] = frozenset(
         "max_pdf_pages",
         "max_image_size_mb",
         "region",
+        # Serialized by LLMClient.to_dict() since 1.91.0 and none a secret; left
+        # out of this list, a rule's ``llm`` config could not carry them (X22).
+        "reasoning",
+        "cache",
+        "api",
     }
 )
 

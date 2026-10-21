@@ -579,6 +579,23 @@ def _judge_client(config: dict[str, Any]) -> Any:
     return LLMClient(max_retries=LLM_DETECTOR_MAX_RETRIES)
 
 
+def _judge_sampling(llm: Any) -> dict[str, Any]:
+    """``temperature=0`` for a judge's call, where its model takes it (1.91.0, X23).
+
+    GPT-5 / GPT-5.5+ / GPT-6 and Claude 5.x refuse it with a 400 (measured
+    2026-10-19), and so do gpt-5.1/5.2/5.4 and older Claude with reasoning on.
+    Sent there, every check errored and ``on_error`` blocked every request; on
+    those models the judge now runs at the model's default instead.
+    """
+    from fastaiagent.llm.param_rules import pins_temperature
+
+    if pins_temperature(
+        getattr(llm, "provider", ""), getattr(llm, "model", ""), getattr(llm, "reasoning", None)
+    ):
+        return {"temperature": 0}
+    return {}
+
+
 async def _run_content_safety(guardrail: Guardrail, data: str | dict[str, Any]) -> GuardrailResult:
     """Score the payload against the MLCommons hazard taxonomy, with a bar per category.
 
@@ -616,7 +633,7 @@ async def _run_content_safety(guardrail: Guardrail, data: str | dict[str, Any]) 
                 UserMessage(f"<<DATA>>\n{text}\n<</DATA>>"),
             ],
             max_tokens=300,
-            temperature=0,
+            **_judge_sampling(llm),
         )
         scores = tax.parse_scores((response.content or "").strip(), categories)
     tripped = sorted(
@@ -679,7 +696,7 @@ async def _run_groundedness(guardrail: Guardrail, data: str | dict[str, Any]) ->
             ),
         ],
         max_tokens=400,
-        temperature=0,
+        **_judge_sampling(llm),
     )
 
     score, unsupported = grounding.parse_verdict((response.content or "").strip())
@@ -738,7 +755,7 @@ async def _run_topic(guardrail: Guardrail, data: str | dict[str, Any]) -> Guardr
                 UserMessage(f"<<DATA>>\n{text}\n<</DATA>>"),
             ],
             max_tokens=200,
-            temperature=0,
+            **_judge_sampling(llm),
         )
         matched = tp.parse_topics((response.content or "").strip(), resolved)
     names = [t["name"] for t in resolved]
