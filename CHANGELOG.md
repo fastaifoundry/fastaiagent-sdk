@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   point was dropped (a 4-point collection went to 0 in one test). They now
   delete and replace by id. `kb.delete(id)` also removes a point the KB never
   loaded, and returns True when it did.
+- **`position="input"` (a string, as the framework pages write it) now records
+  guardrail events.** The string was stored raw: the check ran and blocked, but
+  no `guardrail_events` row was written — on the Agent path and in the
+  LangChain/CrewAI/PydanticAI proxies — and `to_dict()` raised. `position` and
+  `guardrail_type` strings are now stored as their enums; a misspelt value
+  (`"inpt"`) raises `ValueError` at construction instead of never running.
 
 ### Docs and examples
 
