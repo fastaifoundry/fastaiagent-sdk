@@ -633,8 +633,9 @@ class Agent:
         """Stop the run ``execution_id`` if it is in progress in this process (1.91.0).
 
         ``arun`` / ``run`` / ``aresume`` stop at once — inside a model or tool call
-        — and return ``status="cancelled"``; ``astream`` stops at its next event
-        and ends with ``StreamDone(finish_reason="cancelled")``. Safe from any
+        — and return ``status="cancelled"``; ``astream`` stops inside a tool call,
+        or at the next chunk of a model call (1.93.0), and ends with
+        ``StreamDone(finish_reason="cancelled")``. Safe from any
         thread. The run's checkpoint ends ``failed`` with ``run_reason``
         ``"cancelled"``. Returns ``False`` when no such run is in progress.
         """
@@ -1230,6 +1231,7 @@ class Agent:
             cost_known=bucket.known if bucket is not None else False,
             latency_ms=int((time.monotonic() - control.started) * 1000),
             execution_id=control.execution_id,
+            trace_id=control.trace_id,
             status=run_control.CANCELLED,
             stop_reason=run_control.CANCELLED,
             messages=_conversation(control.llm_messages or [], control.prefix_ids),
@@ -1254,15 +1256,33 @@ class Agent:
         with self._open_run_span(
             input, context, execution_id=exec_id, metadata=metadata, extra=extra
         ) as span:
-            result = await self._arun_core(
-                input,
-                context=context,
-                execution_id=exec_id,
-                messages=messages,
-                **kwargs,
-            )
+            try:
+                result = await self._arun_core(
+                    input,
+                    context=context,
+                    execution_id=exec_id,
+                    messages=messages,
+                    **kwargs,
+                )
+            except BaseException:
+                self._mark_stopped_span(span)
+                raise
             self._close_run_span(span, result)
             return result
+
+    @staticmethod
+    def _mark_stopped_span(span: Any) -> None:
+        """A run stopped on purpose says so on its span, and leaves its trace id
+        for the result (1.93.0): a cancelled run's span ended UNSET with nothing
+        to tell it from an unfinished one, and the result had ``trace_id=None``."""
+        from fastaiagent.agent import run_control
+        from fastaiagent.trace.span import trace_id_of
+
+        control = run_control.active_control()
+        if control is None or control.root().reason is None:
+            return
+        span.set_attribute("agent.status", control.root().reason)
+        control.trace_id = trace_id_of(span.get_span_context())
 
     @contextmanager
     def _open_run_span(
@@ -1911,10 +1931,14 @@ class Agent:
                 if nested:
                     raise  # the top-level run ends it
                 # A cancelled stream ends, it does not fail its consumer.
+                if span is not None:
+                    span.set_attribute("agent.status", run_control.CANCELLED)
                 if outcome is not None:
                     outcome["status"] = run_control.CANCELLED
                     outcome["stop_reason"] = run_control.CANCELLED
                     outcome["output"] = ""
+                    # What it spent before the stop (it read 0, 1.93.0).
+                    outcome["tokens_used"] = run_usage.tokens
                     outcome["messages"] = _conversation(
                         control.llm_messages or [], control.prefix_ids
                     )
@@ -2026,7 +2050,7 @@ class Agent:
 
             # Stream tool loop — yields events to caller
             accumulated_text = ""
-            final_reply: dict[str, str] = {}
+            final_reply: dict[str, Any] = {}
             streamed_tokens = 0
             try:
                 # ``before_run`` stopped the run: its message is the whole reply.
@@ -2156,6 +2180,7 @@ class Agent:
             if outcome is not None:
                 outcome["tokens_used"] = streamed_tokens
                 outcome["output"] = output
+                outcome["tool_calls"] = list(final_reply.get("tool_calls", []))
                 if final_reply.get("stop_reason"):
                     outcome["stop_reason"] = final_reply["stop_reason"]
             # The end-of-stream marker, once, after output guardrails and the
@@ -2173,6 +2198,7 @@ class Agent:
                     mw_ctx,
                     AgentResult(
                         output=output,
+                        tool_calls=list(final_reply.get("tool_calls", [])),
                         tokens_used=streamed_tokens,
                         cost=streamed_cost,
                         cost_known=streamed_cost_known,
@@ -3036,6 +3062,7 @@ class Agent:
                 return AgentResult(
                     output=output,
                     parsed=parsed,
+                    tool_calls=list(outcome.get("tool_calls", [])),
                     tokens_used=int(outcome.get("tokens_used", 0) or 0),
                     cost=cost,
                     cost_known=cost_known,

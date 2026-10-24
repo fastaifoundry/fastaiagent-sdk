@@ -25,6 +25,7 @@ Every recipe in this section exposes the **same HTTP surface**, so you can switc
 | `POST` | `/run` | Synchronous run. Body: `{"input": "..."}`. Response: `{"output": "...", "latency_ms": ..., "tokens_used": ..., "trace_id": ...}` |
 | `POST` | `/run/stream` | Server-Sent Events stream of tokens. Body: `{"input": "..."}`. Each event is a JSON object with `{"type": "delta"\|"tool_call"\|"paused"\|"done", ...}` (`paused` from `fastaiagent agent serve` since 1.77.0, when the run stops for a decision) |
 | `POST` | `/resume` | Resume a paused run. Body: `{"execution_id": "...", "approved": true, "metadata": {}}`. Same response as `/run`. Provided by `fastaiagent agent serve` since 1.92.0; see the [CLI reference](../cli/index.md#fastaiagent-agent-serve) |
+| `POST` | `/cancel` | Stop a run in progress. Body: `{"execution_id": "..."}` (pass the same `execution_id` in the `/run` body). The `/run` request answers `status="cancelled"`. Provided by `fastaiagent agent serve` since 1.93.0 |
 
 Use this contract as a template; extend it freely for your needs.
 

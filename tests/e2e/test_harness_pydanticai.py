@@ -145,7 +145,10 @@ def test_10b_autotrace_anthropic() -> None:
 
 @needs_openai
 def test_11_token_capture() -> None:
-    """Spec #11: usage() tokens land on the root span."""
+    """Spec #11: usage() tokens land on the root span — as the run's roll-up
+    (``agent.tokens_used`` / ``agent.cost_usd``) since 1.93.0, beside the
+    per-call tokens on PydanticAI's own ``chat`` spans. As per-call values on
+    the root they were added to the chat spans' and counted twice."""
     from pydantic_ai import Agent
 
     from fastaiagent.integrations import pydanticai as pa
@@ -160,10 +163,18 @@ def test_11_token_capture() -> None:
     assert trace is not None
     root = _root_pa_span(trace)
     attrs = root.attributes or {}
-    assert int(attrs.get("gen_ai.usage.input_tokens") or 0) > 0, attrs
-    assert int(attrs.get("gen_ai.usage.output_tokens") or 0) > 0, attrs
+    total = int(attrs.get("agent.tokens_used") or 0)
+    assert total > 0, attrs
+    assert "gen_ai.usage.input_tokens" not in attrs, "the root must not count as a call"
     # Cost computed via the OpenAI pricing prefix.
-    assert float(attrs.get("fastaiagent.cost.total_usd") or 0.0) > 0.0, attrs
+    assert float(attrs.get("agent.cost_usd") or 0.0) > 0.0, attrs
+    per_call = sum(
+        int((s.attributes or {}).get("gen_ai.usage.input_tokens") or 0)
+        + int((s.attributes or {}).get("gen_ai.usage.output_tokens") or 0)
+        for s in trace.spans
+        if s.name.startswith("chat ")
+    )
+    assert per_call == total, f"chat spans {per_call} vs run total {total}"
 
 
 @needs_openai

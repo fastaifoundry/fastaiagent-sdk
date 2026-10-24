@@ -49,6 +49,10 @@ result = calculate.execute({"expression": "17 * 23"})
 print(result.output)  # "391"
 ```
 
+Bare `@tool` (no parentheses) names the tool after the function and uses its
+docstring (since 1.93.0; before, it returned the decorator itself and the agent
+failed later with an unclear `AttributeError`).
+
 ## Async Functions
 
 Async functions work seamlessly:

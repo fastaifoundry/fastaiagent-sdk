@@ -85,6 +85,44 @@ def test_an_agent_without_a_system_prompt_runs(traced_db: Any, how: str) -> None
     assert _roots(traced_db), "the run was not traced"
 
 
+@pytest.mark.parametrize("how", ["run_sync", "run", "run_stream"])
+def test_the_ui_counts_a_runs_tokens_once(traced_db: Any, how: str) -> None:
+    """1.93.0: the root span carried the run's tokens and cost as per-call
+    values beside PydanticAI's own ``chat`` spans, and ``run_sync`` opened a
+    second root through ``run`` — the UI showed 2x to 3x the real spend."""
+    from fastaiagent.trace import otel
+    from fastaiagent.ui.trace_cost import rollup_spans
+
+    # The fixture builds a new tracer provider for every test, as
+    # ``fastaiagent ui --db`` does in production. PydanticAI's own spans must
+    # follow it: they went to OTel's first global provider (1.93.0).
+    agent = Agent(TestModel(custom_output_text="ok"))
+
+    async def stream() -> Any:
+        async with agent.run_stream("hi") as result:
+            async for _ in result.stream_text(delta=True):
+                pass
+            return result
+
+    if how == "run_sync":
+        result = agent.run_sync("hi")
+    elif how == "run":
+        result = asyncio.run(agent.run("hi"))
+    else:
+        result = asyncio.run(stream())
+    usage = result.usage() if callable(result.usage) else result.usage
+    real = usage.input_tokens + usage.output_tokens
+    assert real > 0
+
+    otel.get_tracer_provider().force_flush()
+    with sqlite3.connect(traced_db) as conn:
+        conn.row_factory = sqlite3.Row
+        spans = [dict(r) for r in conn.execute("SELECT * FROM spans")]
+    assert len(_roots(traced_db)) == 1, "one root span per run"
+    assert any(s["name"].startswith("chat ") for s in spans), "PydanticAI's own spans"
+    assert rollup_spans(spans).tokens == real
+
+
 def test_a_system_prompt_is_still_previewed(traced_db: Any) -> None:
     agent = Agent(TestModel(custom_output_text="ok"), system_prompt="Be brief.")
     agent.run_sync("hi")

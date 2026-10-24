@@ -54,6 +54,13 @@ kb = LocalKB(
 )
 ```
 
+On a shared store, or an existing collection, each KB touches only its own
+points: `delete`, `delete_by_source`, `update` and reopening a persisted KB
+remove or replace points by id (since 1.93.0; before, each one rebuilt the
+store from that KB's chunks and dropped everyone else's). `kb.delete(id)` also
+removes a point this KB never loaded, such as an id from a search hit on an
+existing collection. `kb.clear()` is the exception: it drops the whole store.
+
 ## Qdrant
 
 Install with:

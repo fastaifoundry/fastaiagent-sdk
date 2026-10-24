@@ -22,7 +22,7 @@ from typing import Any
 import httpx
 import pytest
 
-from tests.e2e.conftest import require_env, require_ollama_running
+from tests.e2e.conftest import require_ollama_running
 
 pytestmark = pytest.mark.e2e
 
@@ -57,7 +57,6 @@ class TestOllamaProviderGate:
     """Real Ollama provider — daemon required, model auto-detected."""
 
     def test_01_llmclient_direct_complete(self, gate_state: dict[str, Any]) -> None:
-        require_env()
         require_ollama_running()
         from fastaiagent import LLMClient
         from fastaiagent.llm.message import UserMessage
@@ -80,7 +79,6 @@ class TestOllamaProviderGate:
         )
 
     def test_02_agent_run_with_ollama(self, gate_state: dict[str, Any]) -> None:
-        require_env()
         require_ollama_running()
         from fastaiagent import Agent, LLMClient
 
@@ -104,7 +102,6 @@ class TestOllamaProviderGate:
     def test_03_replay_load_with_ollama_trace(
         self, gate_state: dict[str, Any]
     ) -> None:
-        require_env()
         require_ollama_running()
         from fastaiagent.trace.replay import Replay
 
@@ -139,3 +136,94 @@ class TestOllamaProviderGate:
             f"llm.* span name does not include provider: "
             f"{[s.span_name for s in llm_spans]}"
         )
+
+
+_TOOL_MODELS = ["llama3.1:8b-instruct-q6_K", "llama3.1:8b", "qwen3:8b", "mistral-nemo"]
+
+
+def _pick_tool_model() -> str:
+    """A model that calls tools (gemma2 and phi3 do not), or skip."""
+    require_ollama_running()
+    resp = httpx.get("http://localhost:11434/api/tags", timeout=5.0)
+    installed = {m.get("name", "") for m in resp.json().get("models", [])}
+    for preferred in _TOOL_MODELS:
+        match = next((name for name in installed if name.startswith(preferred)), None)
+        if match:
+            return match
+    pytest.skip(f"no tool-capable Ollama model installed (pull one of {_TOOL_MODELS})")
+
+
+def _secret_code(city: str) -> str:
+    """The secret code for a city."""
+    return "ZEBRA-4417" if "paris" in city.lower() else "NONE"
+
+
+def _population(city: str) -> float:
+    """The population of a city in millions."""
+    return 2.1 if "lyon" in city.lower() else 0.0
+
+
+def _tool_agent(**kwargs: Any) -> Any:
+    from fastaiagent import Agent, LLMClient
+
+    return Agent(
+        name="ollama-tools",
+        system_prompt=(
+            "You have no knowledge of your own: always call a tool first, then "
+            "report the tool's value exactly."
+        ),
+        # An 8B model on default sampling skips the tool now and then.
+        llm=LLMClient(provider="ollama", model=_pick_tool_model(), temperature=0, seed=7),
+        **kwargs,
+    )
+
+
+class TestOllamaToolLoop:
+    """1.93.0: every Ollama tool loop failed on its second request (arguments
+    sent as a JSON string, HTTP 400) and streamed tool calls were dropped."""
+
+    def test_a_tool_loop_completes_on_run(self) -> None:
+        from fastaiagent import FunctionTool
+
+        agent = _tool_agent(tools=[FunctionTool(name="get_secret_code", fn=_secret_code)])
+        result = agent.run("What is the secret code for Paris?")
+        assert [tc["tool_name"] for tc in result.tool_calls] == ["get_secret_code"]
+        assert "4417" in result.output
+
+    def test_a_tool_loop_completes_on_astream(self) -> None:
+        import asyncio
+
+        from fastaiagent import FunctionTool
+        from fastaiagent.llm.stream import TextDelta, ToolCallEnd
+
+        agent = _tool_agent(tools=[FunctionTool(name="get_secret_code", fn=_secret_code)])
+
+        async def main() -> tuple[list[str], str]:
+            calls: list[str] = []
+            text = ""
+            async for event in agent.astream("What is the secret code for Paris?"):
+                if isinstance(event, ToolCallEnd):
+                    calls.append(event.tool_name)
+                elif isinstance(event, TextDelta):
+                    text += event.text
+            return calls, text
+
+        calls, text = asyncio.run(main())
+        assert calls == ["get_secret_code"]
+        assert "4417" in text
+
+    def test_structured_output_beside_a_tool_uses_the_tool(self) -> None:
+        from pydantic import BaseModel
+
+        from fastaiagent import FunctionTool
+
+        class CityFact(BaseModel):
+            city: str
+            population_millions: float
+
+        agent = _tool_agent(
+            tools=[FunctionTool(name="get_population", fn=_population)], output_type=CityFact
+        )
+        result = agent.run("Use get_population for Lyon and report it.")
+        assert [tc["tool_name"] for tc in result.tool_calls] == ["get_population"]
+        assert result.parsed is not None and result.parsed.population_millions == 2.1

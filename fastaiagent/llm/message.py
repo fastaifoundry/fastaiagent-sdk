@@ -239,6 +239,12 @@ class Message(BaseModel):
             msg["name"] = self.name
         if self.tool_calls:
             msg["tool_calls"] = [tc.to_openai_format() for tc in self.tool_calls]
+            if provider == "ollama":
+                # Ollama's /api/chat takes the arguments as an object, not
+                # OpenAI's JSON string: a string got HTTP 400 on the second turn
+                # of every tool loop (1.93.0).
+                for call, tc in zip(msg["tool_calls"], self.tool_calls):
+                    call["function"]["arguments"] = tc.arguments
         if self.tool_call_id is not None:
             msg["tool_call_id"] = self.tool_call_id
 

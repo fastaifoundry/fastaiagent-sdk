@@ -160,6 +160,18 @@ class TestToolDecorator:
         result = say_hello.execute({"name": "World"})
         assert result.output == "Hello, World!"
 
+    def test_bare_decorator(self):
+        """1.93.0: bare ``@tool`` returned the decorator, not a tool."""
+
+        @tool
+        def shout(text: str) -> str:
+            """Upper-case the text."""
+            return text.upper()
+
+        assert isinstance(shout, FunctionTool)
+        assert shout.name == "shout" and shout.description == "Upper-case the text."
+        assert shout.execute({"text": "hi"}).output == "HI"
+
 
 # --- Tool serialization tests ---
 

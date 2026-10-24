@@ -354,6 +354,7 @@ Every chain execution returns a `ChainResult`:
 | `final_state` | `dict` | Chain state after all nodes complete |
 | `execution_id` | `str` | UUID for checkpointing and resume |
 | `node_results` | `dict` | Map of node_id -> output for each executed node |
+| `status` | `str` | `"completed"`, `"paused"`, `"rejected"`, or `"cancelled"` (1.93.0) |
 
 ```python
 result = chain.execute({"message": "Hello"})
@@ -362,6 +363,34 @@ result = chain.execute({"message": "Hello"})
 for node_id, output in result.node_results.items():
     print(f"{node_id}: {output}")
 ```
+
+## Cancelling a run
+
+Since 1.93.0 a chain run can be stopped from anywhere in the process, any thread
+included:
+
+```python
+task = asyncio.create_task(chain.aexecute({"message": "Hi"}, execution_id="job-7"))
+...
+chain.cancel("job-7")   # True if the run was in progress
+result = await task     # result.status == "cancelled"
+```
+
+- It stops at once, inside an agent or tool node. A blocking synchronous tool
+  node cannot be interrupted; the stop lands when it returns, and no later node
+  starts.
+- The run-end checkpoint ends `failed` with `state_snapshot["run_reason"] ==
+  "cancelled"`, as an agent's does. An agent node that runs out of its own
+  `timeout_seconds` fails the chain with `run_reason == "timeout"`.
+- Cancelling an agent node's own run (its id is `ctx.run.execution_id` in its
+  tools) cancels the chain. Before 1.93.0 the next node ran on the cancelled
+  node's empty output and the chain reported `completed`.
+- `Chain.cancel`, `Agent.cancel` and `Swarm.cancel` share one registry of runs in
+  progress, so any of them stops a run by its id.
+
+Each tool node is traced as a `tool.<name>` span under the `chain.<name>` root
+(since 1.93.0; before, tool nodes left no span), with `tool.status`, and
+`tool.args` / `tool.result` unless `FASTAIAGENT_TRACE_PAYLOADS=0`.
 
 ## Serialization
 

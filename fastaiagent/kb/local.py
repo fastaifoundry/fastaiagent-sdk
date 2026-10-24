@@ -155,7 +155,10 @@ class LocalKB:
                     if e:
                         paired_chunks.append(c)
                         paired_embs.append(e)
-                vstore.rebuild(paired_chunks, paired_embs)
+                # Only this KB's ids: a store shared with other KBs, or an
+                # existing collection, keeps everything else (1.93.0).
+                vstore.delete([c.id for c in paired_chunks])
+                vstore.add(paired_chunks, paired_embs)
 
         # Populate keyword store
         if self._keyword is not None:
@@ -340,17 +343,17 @@ class LocalKB:
     # ------------------------------------------------------------------
 
     def delete(self, chunk_id: str) -> bool:
-        """Delete a chunk by id. Returns True if found and deleted."""
+        """Delete a chunk by id. Returns True if found and deleted.
+
+        A chunk this KB did not load (it lives only in an explicit vector
+        store, e.g. an existing Qdrant or Chroma collection) is deleted there
+        too, and counts as found when the store shrank.
+        """
         before = len(self._chunks)
         self._chunks = [c for c in self._chunks if c.id != chunk_id]
-        if len(self._chunks) == before:
-            return False
-        self._rebuild_indexes_after_delete()
-        if self._keyword is not None:
-            self._keyword.delete([chunk_id])
-        if self._metadata is not None:
-            self._metadata.delete_chunks([chunk_id])
-        return True
+        in_memory = len(self._chunks) < before
+        removed_from_store = self._delete_from_stores([chunk_id])
+        return in_memory or removed_from_store
 
     def delete_by_source(self, source: str) -> int:
         """Delete all chunks from a given source. Returns count deleted."""
@@ -359,25 +362,27 @@ class LocalKB:
             return 0
         id_set = set(ids_to_delete)
         self._chunks = [c for c in self._chunks if c.id not in id_set]
-        self._rebuild_indexes_after_delete()
-        if self._keyword is not None:
-            self._keyword.delete(ids_to_delete)
-        if self._metadata is not None:
-            self._metadata.delete_chunks(ids_to_delete)
+        self._delete_from_stores(ids_to_delete)
         return len(ids_to_delete)
 
-    def _rebuild_indexes_after_delete(self) -> None:
-        """Rebuild the vector store from surviving chunks after a delete."""
-        if self._vector is None or self._embedder is None:
-            return
-        if not self._chunks:
-            self._vector.reset()
-            return
-        # Re-embed survivors. Cheap for small corpora; adapters with true
-        # per-id delete (Qdrant, Chroma) override this via their own delete().
-        texts = [c.content for c in self._chunks]
-        embeddings = self._embedder.embed(texts)
-        self._vector.rebuild(self._chunks, embeddings)
+    def _delete_from_stores(self, chunk_ids: list[str]) -> bool:
+        """Remove ``chunk_ids`` from every backend, by id only (1.93.0).
+
+        Before 1.93.0 a delete rebuilt the vector store from this KB's
+        in-memory chunks: on a store shared with another KB, or an existing
+        collection this KB had not loaded, every other point was dropped.
+        Returns True when the vector store held fewer points afterwards.
+        """
+        shrank = False
+        if self._vector is not None:
+            before = self._vector.count()
+            self._vector.delete(chunk_ids)
+            shrank = self._vector.count() < before
+        if self._keyword is not None:
+            self._keyword.delete(chunk_ids)
+        if self._metadata is not None:
+            self._metadata.delete_chunks(chunk_ids)
+        return shrank
 
     def update(self, chunk_id: str, content: str) -> bool:
         """Update a chunk's content and re-embed it. Returns True if found."""
@@ -396,10 +401,10 @@ class LocalKB:
         if self._embedder and self.search_type in ("vector", "hybrid"):
             new_embedding = self._embedder.embed([content])[0]
             if self._vector is not None:
-                # Rebuild is the safe default that works for all adapters.
-                texts = [c.content for c in self._chunks]
-                embeddings = self._embedder.embed(texts)
-                self._vector.rebuild(self._chunks, embeddings)
+                # Replace this one point; a rebuild would drop every point
+                # this KB does not hold in memory (1.93.0).
+                self._vector.delete([chunk_id])
+                self._vector.add([self._chunks[idx]], [new_embedding])
 
         # Update BM25
         if self._keyword is not None:

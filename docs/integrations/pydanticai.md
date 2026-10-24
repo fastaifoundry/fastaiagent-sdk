@@ -43,7 +43,7 @@ result = agent.run_sync("What colour is the sky?")
 
 | Span | Captures |
 |---|---|
-| `pydanticai.agent.{name}` (root) | `fastaiagent.framework=pydanticai`, `framework.version`, `gen_ai.system`, `gen_ai.request.model`, system prompt (200 chars), input + output payloads, tokens from `RunResult.usage()`, computed cost |
+| `pydanticai.agent.{name}` (root) | `fastaiagent.framework=pydanticai`, `framework.version`, `gen_ai.system`, `gen_ai.request.model`, system prompt (200 chars), input + output payloads, the run's total as `agent.tokens_used` / `agent.cost_usd` (from `RunResult.usage()`). Since 1.93.0 it is a roll-up the UI uses only when no per-call span has tokens; before, it was stamped as per-call tokens and cost beside the `chat` spans' own, and `run_sync` opened a second root through `run`, so the UI and analytics showed 2–3 times the spend |
 | `chat <model>` (PydanticAI's own) | request / response messages, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, response model parameters |
 | Tool spans | PydanticAI emits these natively when an `@agent.tool_plain` is invoked |
 
