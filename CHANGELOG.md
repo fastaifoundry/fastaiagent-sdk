@@ -72,6 +72,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   swarm wrote none, and a `SwarmError` was recorded as `GeneratorExit`. Hops now
   run nested under one `execution_id`, and the swarm writes its own marker.
 - **A Swarm hop's timeout records `run_reason="timeout"`** (it was empty).
+- **A cancelled run reports what happened.** `arun` / `run` returned
+  `trace_id=None` though the trace exists; a cancelled `stream()` returned
+  `tokens_used=0` with a non-zero cost; the run's span ended with no status;
+  and `run_error` named the private `_RunCancelled`. The span now carries
+  `agent.status="cancelled"` (or `"timeout"`), the result its `trace_id` and
+  tokens, and `run_error` reads `RunCancelled: …`.
 - **PydanticAI runs are no longer counted 2–3 times in the UI and analytics.**
   The root span carried the run's tokens and cost as per-call values beside
   PydanticAI's own `chat` spans, and `run_sync` opened a second root through

@@ -1231,6 +1231,7 @@ class Agent:
             cost_known=bucket.known if bucket is not None else False,
             latency_ms=int((time.monotonic() - control.started) * 1000),
             execution_id=control.execution_id,
+            trace_id=control.trace_id,
             status=run_control.CANCELLED,
             stop_reason=run_control.CANCELLED,
             messages=_conversation(control.llm_messages or [], control.prefix_ids),
@@ -1255,15 +1256,33 @@ class Agent:
         with self._open_run_span(
             input, context, execution_id=exec_id, metadata=metadata, extra=extra
         ) as span:
-            result = await self._arun_core(
-                input,
-                context=context,
-                execution_id=exec_id,
-                messages=messages,
-                **kwargs,
-            )
+            try:
+                result = await self._arun_core(
+                    input,
+                    context=context,
+                    execution_id=exec_id,
+                    messages=messages,
+                    **kwargs,
+                )
+            except BaseException:
+                self._mark_stopped_span(span)
+                raise
             self._close_run_span(span, result)
             return result
+
+    @staticmethod
+    def _mark_stopped_span(span: Any) -> None:
+        """A run stopped on purpose says so on its span, and leaves its trace id
+        for the result (1.93.0): a cancelled run's span ended UNSET with nothing
+        to tell it from an unfinished one, and the result had ``trace_id=None``."""
+        from fastaiagent.agent import run_control
+        from fastaiagent.trace.span import trace_id_of
+
+        control = run_control.active_control()
+        if control is None or control.root().reason is None:
+            return
+        span.set_attribute("agent.status", control.root().reason)
+        control.trace_id = trace_id_of(span.get_span_context())
 
     @contextmanager
     def _open_run_span(
@@ -1912,10 +1931,14 @@ class Agent:
                 if nested:
                     raise  # the top-level run ends it
                 # A cancelled stream ends, it does not fail its consumer.
+                if span is not None:
+                    span.set_attribute("agent.status", run_control.CANCELLED)
                 if outcome is not None:
                     outcome["status"] = run_control.CANCELLED
                     outcome["stop_reason"] = run_control.CANCELLED
                     outcome["output"] = ""
+                    # What it spent before the stop (it read 0, 1.93.0).
+                    outcome["tokens_used"] = run_usage.tokens
                     outcome["messages"] = _conversation(
                         control.llm_messages or [], control.prefix_ids
                     )

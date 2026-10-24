@@ -304,7 +304,14 @@ result = await task        # status="cancelled", stop_reason="cancelled"
   It ends with `StreamDone(finish_reason="cancelled")`; `agent.stream()` returns
   `status="cancelled"`. Before 1.93.0 a stream waited out the tool call in flight.
 - **The checkpoint** of a cancelled or timed-out run ends `failed`, with
-  `state_snapshot["run_reason"]` set to `"cancelled"` or `"timeout"`.
+  `state_snapshot["run_reason"]` set to `"cancelled"` or `"timeout"` and
+  `run_error` reading `RunCancelled: run <id> was cancelled` (since 1.93.0; it
+  named the private `_RunCancelled` before).
+- **The trace** of a cancelled run says so: its `agent.<name>` span carries
+  `agent.status="cancelled"` (`"timeout"` for a timeout), and the result's
+  `trace_id` names it. Before 1.93.0 the span ended with no status and the
+  result had `trace_id=None`; a cancelled `stream()` also reported
+  `tokens_used=0`.
 - **Your own task:** cancelling it (`task.cancel()`) is not `agent.cancel`. It
   cancels the run and propagates as `CancelledError`, as before.
 

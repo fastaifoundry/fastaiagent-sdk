@@ -72,6 +72,8 @@ class RunControl:
     prefix_ids: set[int] = field(default_factory=set)
     #: A cap that ended a re-ask (``max_total_tokens`` / ``max_cost_usd``).
     limit_reason: str | None = None
+    #: The run's trace, for the result of a run stopped from outside (1.93.0).
+    trace_id: str | None = None
     #: The run this one is nested in (a Swarm hop, a Supervisor worker, an agent
     #: called from a tool). Cancel and the timeout are the top-level run's; the
     #: caps are each run's own, on its own spend.
@@ -110,11 +112,15 @@ class RunControl:
         return top.timeout_error() if top.reason == TIMEOUT else _RunCancelled(top)
 
 
-class _RunCancelled(BaseException):  # noqa: N818 - a signal, like CancelledError
-    """Ends a cancelled run's streamed generator; never reaches the caller."""
+class RunCancelled(BaseException):  # noqa: N818 - a signal, like CancelledError
+    """Ends a cancelled run; never reaches the caller. Its name is what a
+    cancelled run's ``run_error`` shows (``_RunCancelled`` before 1.93.0)."""
 
     def __init__(self, control: RunControl) -> None:
         super().__init__(f"run {control.execution_id} was cancelled")
+
+
+_RunCancelled = RunCancelled
 
 
 _active: ContextVar[RunControl | None] = ContextVar("fastaiagent_run_control", default=None)
