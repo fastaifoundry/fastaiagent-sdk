@@ -84,6 +84,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `run`. The root now carries the total as a roll-up (`agent.tokens_used` /
   `agent.cost_usd`) and one root is opened per run. Checked live on gpt-5-mini:
   78 tokens real, 78 shown (234 before for a similar call).
+- **The Groq preset's default model is priced.** `openai/gpt-oss-120b` (and
+  `-20b`) had no rate, so Groq runs reported no cost; rates from Groq's model
+  page, read 2026-10-24.
+- **A Groq (or other preset) error names its provider** — `groq API error 400`,
+  not `OpenAI API error 400`.
+- **Bare `@tool` works.** Without parentheses it returned the decorator, and
+  the agent failed later with an unclear `AttributeError`.
 - **`agent serve`: `GET /openapi.json` works** (it answered 500 — FastAPI could
   not resolve the `/run/stream` return annotation — so `/docs` was empty).
 - **`agent serve`: a `/run` whose client hangs up is cancelled.** It kept

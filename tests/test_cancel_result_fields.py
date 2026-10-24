@@ -58,7 +58,9 @@ def _root_status(db: Path) -> Any:
 
     otel.get_tracer_provider().force_flush()
     with sqlite3.connect(db) as conn:
-        (attrs,) = conn.execute("SELECT attributes FROM spans WHERE name = 'agent.stopped'").fetchone()
+        (attrs,) = conn.execute(
+            "SELECT attributes FROM spans WHERE name = 'agent.stopped'"
+        ).fetchone()
     return json.loads(attrs).get("agent.status")
 
 

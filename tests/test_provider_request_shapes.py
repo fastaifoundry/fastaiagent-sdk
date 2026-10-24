@@ -7,6 +7,8 @@ builds, so CI — which has neither — still catches a regression.
 
 from __future__ import annotations
 
+import pytest
+
 from fastaiagent.llm.client import LLMClient, _apply_ollama_format, _ollama_tool_calls
 from fastaiagent.llm.message import AssistantMessage, SystemMessage, ToolCall, UserMessage
 
@@ -67,3 +69,21 @@ def test_groq_puts_the_schema_in_the_prompt_beside_tools() -> None:
 def test_groq_without_tools_and_openai_keep_the_native_schema() -> None:
     assert _openai_body("groq", None)["response_format"] == SCHEMA
     assert _openai_body("openai", TOOLS)["response_format"] == SCHEMA
+
+
+def test_the_groq_presets_default_model_has_a_price() -> None:
+    """Groq's default model was unpriced, so its runs reported no cost."""
+    from fastaiagent._internal.pricing import compute_cost_usd
+
+    assert compute_cost_usd("openai/gpt-oss-120b", 1_000_000, 1_000_000) == pytest.approx(0.75)
+    assert compute_cost_usd("openai/gpt-oss-20b", 1_000_000, 1_000_000) == pytest.approx(0.375)
+
+
+def test_a_preset_error_names_its_provider(capture_server: object) -> None:
+    """A Groq error read "OpenAI API error 400"."""
+    from fastaiagent._internal.errors import LLMProviderError
+
+    capture_server.set_response_sequence([(400, '{"error": "bad"}')])  # type: ignore[attr-defined]
+    client = LLMClient(provider="groq", model="m", api_key="k", base_url=capture_server.url)  # type: ignore[attr-defined]
+    with pytest.raises(LLMProviderError, match="^groq API error 400"):
+        client.complete([UserMessage("hi")])

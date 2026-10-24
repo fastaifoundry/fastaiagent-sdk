@@ -972,7 +972,7 @@ class LLMClient:
                 if resp.status_code != 200:
                     body_text = await resp.aread()
                     raise self._provider_error(
-                        f"OpenAI API error {resp.status_code}",
+                        f"{self._wire_name()} API error {resp.status_code}",
                         body_text.decode(errors="replace"),
                         resp.status_code,
                         resp.headers,
@@ -984,6 +984,11 @@ class LLMClient:
                     if payload.strip() == "[DONE]":
                         break
                     yield _json.loads(payload)
+
+    def _wire_name(self) -> str:
+        """Who an OpenAI-compatible error came from (1.93.0): a Groq or other
+        preset's errors read "OpenAI API error", pointing at the wrong vendor."""
+        return {"openai": "OpenAI", "azure": "Azure OpenAI"}.get(self.provider, self.provider)
 
     def _capability(self, name: str, default: object = None) -> object:
         """Look up a capability flag from the registered preset, if any."""
@@ -2340,7 +2345,7 @@ class LLMClient:
             resp = await client.post(url, json=body, headers=headers)
             if resp.status_code != 200:
                 raise self._provider_error(
-                    f"OpenAI API error {resp.status_code}",
+                    f"{self._wire_name()} API error {resp.status_code}",
                     resp.text,
                     resp.status_code,
                     resp.headers,

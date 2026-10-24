@@ -618,7 +618,7 @@ class FunctionTool(Tool):
 
 
 def tool(
-    name: str | None = None,
+    name: str | Callable[..., Any] | None = None,
     description: str = "",
     replay_class: str | None = None,
     *,
@@ -652,10 +652,16 @@ def tool(
         @tool(name="greet", description="Greet someone")
         def greet(name: str) -> str:
             return f"Hello, {name}!"
+
+    Bare ``@tool`` works too (1.93.0); before, it returned the decorator itself
+    and ``Agent(tools=[greet])`` later failed with an unclear AttributeError.
     """
+    if callable(name):
+        bare: FunctionTool = tool()(name)
+        return bare  # type: ignore[return-value]
 
     def decorator(fn: Callable[..., Any]) -> FunctionTool:
-        tool_name = name or fn.__name__
+        tool_name = name if isinstance(name, str) and name else fn.__name__
         tool_desc = description or inspect.getdoc(fn) or ""
         return FunctionTool(
             name=tool_name,
