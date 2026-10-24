@@ -5,7 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.93.0] - 2026-10-24 — tested against the real thing
+
+1.92.0 rebuilt MCP after finding it had only ever been tested against a stand-in.
+This release tests every other integration the same way — real OpenAI,
+Anthropic, Groq and Ollama; Qdrant, Chroma and FAISS; Phoenix over OTLP;
+Postgres and Redis — and cancel on every runner. Everything it found is fixed:
+a knowledge-base delete that wiped a shared vector store, Ollama tool loops that
+never worked, guardrail events lost for the documented `position="input"`, a
+cancelled Chain node reported as success, PydanticAI spend shown two to three
+times over, and the gaps in cancel (Chain and Swarm can now be cancelled, and
+`agent serve` has `POST /cancel`). Each fix fails on 1.92.0 first.
+
+### Upgrading from 1.92 — behaviour changes at a glance
+
+- **A misspelt guardrail `position` or `guardrail_type` raises `ValueError`**
+  at construction (`position="inpt"` built a guardrail that never ran).
+- **In a `parallel_tools=True` turn, plain `def` tools run in worker threads**
+  (context variables are copied). Sequential turns are unchanged.
+- **A cancel or timeout stops the turn before its next tool**, and a streamed
+  run's tool call is stopped mid-call. Code that relied on the rest of a turn
+  running after a stop will see it not run.
+- **`Swarm.astream` is one run** under one `execution_id`: hops are nested in
+  it, and the swarm writes the run-end marker (hops no longer write their own).
+- **A failed Chain run started without an `execution_id` gets a run-end marker**
+  (only runs given an id did).
+- **The cancel signal is `RunCancelled`**, so `run_error` reads
+  `RunCancelled: …`; the old `_RunCancelled` name still works.
+- **PydanticAI root spans carry `agent.tokens_used` / `agent.cost_usd`**, not
+  `gen_ai.usage.*` / `cost.total_usd`, when PydanticAI's own spans are on.
+- **Structured output beside tools on Groq and Ollama is prompted**, as on
+  Gemini, instead of sent as `response_format` / `format`.
 
 ### Fixed
 
@@ -117,6 +147,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`docs/ui/projects.md` no longer says the Local UI can share a Postgres
   database.** The UI reads SQLite only; projects share one SQLite file
   (`--db` / `FASTAIAGENT_LOCAL_DB`). Postgres stays a checkpointer backend.
+- Example `113_run_limits_and_cancel.py` cancels a Chain run too.
+- Cancel, run limits, Swarm, Supervisor, Chain, `agent serve`, knowledge-base
+  backends, structured output, tools and PydanticAI pages updated for the above.
+
+### Tests
+
+- **The Ollama gate runs without platform credentials and tests tool loops**
+  (`run`, `astream`, structured output beside a tool). It needed
+  `FASTAIAGENT_API_KEY` / `FASTAIAGENT_TARGET`, so it never ran, and it checked
+  no tools — which is how a broken Ollama tool loop shipped.
+- **The live judge-injection tests fail when the judge did not run.** An
+  errored judge fails closed with `passed=False`, which is what they asserted:
+  the Groq case passed on a retired model and the Gemini one on an exhausted
+  key. Groq now uses `openai/gpt-oss-120b`.
+- New sweeps: `test_kb_shared_store.py` (FAISS, Qdrant, Chroma),
+  `test_chain_cancel.py`, `test_swarm_cancel.py`, `test_supervisor_stream.py`,
+  `test_cancel_between_tools.py`, `test_stream_tool_calls.py`, and a real
+  uvicorn server for `agent serve` cancel and hang-up.
+
+### Known issues
+
+- A stream stopped during an OpenAI response can log "error occurred during
+  closing of asynchronous generator … athrow()". The run ends correctly; the
+  message is noise. Not fixed: closing the SSE generator explicitly did not
+  stop it.
 
 ## [1.92.0] - 2026-10-24 — the features that have to work, working
 
