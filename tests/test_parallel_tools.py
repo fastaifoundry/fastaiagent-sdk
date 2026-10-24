@@ -48,14 +48,28 @@ def _two_call_script() -> list[LLMResponse]:
     ]
 
 
+#: Each tool call's (start, end), for the overlap checks. A wall-clock bound on
+#: the whole loop flaked on slow CI runners (macOS: 0.567 s for two 0.25 s
+#: calls that did overlap) — loop overhead, not sequencing.
+_SPANS: list[tuple[float, float]] = []
+
+
+def _overlapped() -> bool:
+    (s1, e1), (s2, e2) = sorted(_SPANS)
+    return s2 < e1
+
+
 async def _run(**loop_kwargs) -> tuple[float, list[Message], list[dict]]:
     def make_tool() -> FunctionTool:
         async def slow(tag: str) -> str:
+            started = time.perf_counter()
             await asyncio.sleep(_SLEEP)
+            _SPANS.append((started, time.perf_counter()))
             return f"done-{tag}"
 
         return FunctionTool(name="slow", fn=slow)
 
+    _SPANS.clear()
     messages: list[Message] = [UserMessage(content="go")]
     llm = _ScriptedLLM(_two_call_script())
     start = time.monotonic()
@@ -65,10 +79,10 @@ async def _run(**loop_kwargs) -> tuple[float, list[Message], list[dict]]:
 
 @pytest.mark.asyncio
 async def test_parallel_overlaps_and_preserves_order() -> None:
-    elapsed, messages, all_calls = await _run(parallel_tools=True, max_parallel_tools=4)
+    _, messages, all_calls = await _run(parallel_tools=True, max_parallel_tools=4)
 
-    # Two 0.25s tools running concurrently finish in ~0.25s, not ~0.5s.
-    assert elapsed < 2 * _SLEEP, f"expected overlap, took {elapsed:.3f}s"
+    # The two calls ran at the same time: each started before the other ended.
+    assert _overlapped(), f"expected overlap: {_SPANS}"
 
     # Tool results are appended in call order regardless of completion order.
     tool_msgs = [m for m in messages if m.role == "tool"]
@@ -78,8 +92,8 @@ async def test_parallel_overlaps_and_preserves_order() -> None:
 
 @pytest.mark.asyncio
 async def test_sequential_by_default() -> None:
-    elapsed, messages, _ = await _run()  # parallel_tools defaults to False
-    assert elapsed >= 2 * _SLEEP * 0.9, f"expected sequential, took {elapsed:.3f}s"
+    _, messages, _ = await _run()  # parallel_tools defaults to False
+    assert not _overlapped(), f"expected sequential: {_SPANS}"
     tool_msgs = [m for m in messages if m.role == "tool"]
     assert [m.tool_call_id for m in tool_msgs] == ["call_1", "call_2"]
 
@@ -88,8 +102,8 @@ async def test_sequential_by_default() -> None:
 async def test_governance_agent_id_forces_sequential() -> None:
     # agent_id set => managed governance is order/identity-sensitive, so the
     # loop must fall back to sequential even with parallel_tools=True.
-    elapsed, _, _ = await _run(parallel_tools=True, agent_id="agent-123")
-    assert elapsed >= 2 * _SLEEP * 0.9, f"expected sequential fallback, took {elapsed:.3f}s"
+    await _run(parallel_tools=True, agent_id="agent-123")
+    assert not _overlapped(), f"expected sequential fallback: {_SPANS}"
 
 
 def _sync_agent(parallel: bool, spans: list[tuple[float, float]] | None = None) -> object:
