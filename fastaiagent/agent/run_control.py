@@ -177,6 +177,59 @@ def arm_timeout(control: RunControl) -> asyncio.TimerHandle | None:
     return control.loop.call_later(remaining, control.stop, TIMEOUT)
 
 
+def check_stopped() -> None:
+    """Raise when the active run was cancelled or ran out of time (1.93.0).
+
+    The tool loop calls this before each tool call and at the top of each turn.
+    A cancel is delivered to ``arun``'s task as ``CancelledError`` at its next
+    real await, and a sync tool blocks the loop: after it returned, the turn's
+    remaining tools ran and the next turn's ``before_model`` hooks fired before
+    the stop landed. A no-op outside a registered run.
+    """
+    control = _active.get()
+    if control is None:
+        return
+    top = control.root()
+    if top.reason is not None:
+        raise top.stop_error()
+    if top.overdue():
+        top.reason = TIMEOUT
+        raise top.timeout_error()
+
+
+async def stoppable(work: Any) -> Any:
+    """Await ``work`` (a coroutine) so a cancel or timeout stops it mid-call (1.93.0).
+
+    ``arun`` already runs as a task its stop cancels. A streamed run has no such
+    task — its consumer drives it — so a stop waited for the step in flight: a
+    slow tool, or a Supervisor worker running inside a delegate call, ran to the
+    end. A streamed run's tool call now runs as the run's task while it lasts,
+    with the timeout armed. Inline when there is no run or a task already
+    carries the stop.
+    """
+    control = _active.get()
+    top = control.root() if control is not None else None
+    if top is None or top.task is not None:
+        return await work
+    loop = asyncio.get_running_loop()
+    task = asyncio.ensure_future(work)
+    top.task, top.loop = task, loop
+    timer = None
+    if top.timeout_seconds is not None:
+        remaining = max(top.timeout_seconds - (time.monotonic() - top.started), 0.0)
+        timer = loop.call_later(remaining, top.stop, TIMEOUT)
+    try:
+        return await task
+    except asyncio.CancelledError:
+        if top.reason is None:
+            raise  # the consumer's own cancellation
+        raise top.stop_error() from None
+    finally:
+        top.task = None
+        if timer is not None:
+            timer.cancel()
+
+
 def check_before_model_call(turn: int | None = None, model: str | None = None) -> None:
     """Hold the active run to its limits before a model call.
 

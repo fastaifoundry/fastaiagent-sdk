@@ -25,6 +25,14 @@ _TIMED_SYNC_POOL: ThreadPoolExecutor | None = None
 _TIMED_SYNC_POOL_LOCK = threading.Lock()
 
 
+#: Set by the agent loop around each call of a turn it runs concurrently
+#: (``AgentConfig(parallel_tools=True)``): a sync tool then runs in a worker
+#: thread, so the calls overlap (1.93.0).
+_in_parallel_turn: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "fastaiagent_in_parallel_turn", default=False
+)
+
+
 def _timed_sync_pool() -> ThreadPoolExecutor:
     """The threads sync tools with a ``timeout`` run on (created on first use).
 
@@ -541,7 +549,11 @@ class FunctionTool(Tool):
             if self._context_param_name is not None and context is not None:
                 call_args[self._context_param_name] = context
 
-            if self.timeout is not None and not inspect.iscoroutinefunction(self.fn):
+            offload = self.timeout is not None or _in_parallel_turn.get()
+            if offload and not inspect.iscoroutinefunction(self.fn):
+                # Also when the agent runs this turn's calls concurrently
+                # (``parallel_tools=True``, 1.93.0): called on the loop, sync
+                # tools ran one after another and the turn took their sum.
                 # ``timeout`` is ``asyncio.wait_for`` around this coroutine, and
                 # a sync function called here blocks the event loop, so the wait
                 # could never fire (before 1.90.0 a timed sync tool ran to

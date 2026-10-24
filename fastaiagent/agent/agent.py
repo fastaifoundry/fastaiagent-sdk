@@ -2026,7 +2026,7 @@ class Agent:
 
             # Stream tool loop — yields events to caller
             accumulated_text = ""
-            final_reply: dict[str, str] = {}
+            final_reply: dict[str, Any] = {}
             streamed_tokens = 0
             try:
                 # ``before_run`` stopped the run: its message is the whole reply.
@@ -2156,6 +2156,7 @@ class Agent:
             if outcome is not None:
                 outcome["tokens_used"] = streamed_tokens
                 outcome["output"] = output
+                outcome["tool_calls"] = list(final_reply.get("tool_calls", []))
                 if final_reply.get("stop_reason"):
                     outcome["stop_reason"] = final_reply["stop_reason"]
             # The end-of-stream marker, once, after output guardrails and the
@@ -2173,6 +2174,7 @@ class Agent:
                     mw_ctx,
                     AgentResult(
                         output=output,
+                        tool_calls=list(final_reply.get("tool_calls", [])),
                         tokens_used=streamed_tokens,
                         cost=streamed_cost,
                         cost_known=streamed_cost_known,
@@ -3036,6 +3038,7 @@ class Agent:
                 return AgentResult(
                     output=output,
                     parsed=parsed,
+                    tool_calls=list(outcome.get("tool_calls", [])),
                     tokens_used=int(outcome.get("tokens_used", 0) or 0),
                     cost=cost,
                     cost_known=cost_known,

@@ -273,7 +273,7 @@ agent = Agent(
 
 | Limit | What happens when it is reached |
 |---|---|
-| `timeout_seconds` | `arun` / `run` / `aresume` stop at once, inside a model or tool call, and raise `AgentTimeoutError`. `astream` stops at its next event. A synchronous tool that blocks the event loop (`time.sleep`, a blocking client) cannot be interrupted, so the stop lands when it returns. An `async` tool stops at once. |
+| `timeout_seconds` | `arun` / `run` / `aresume` stop at once, inside a model or tool call, and raise `AgentTimeoutError`. `astream` stops inside a tool call, and during a model call at the next streamed chunk. A synchronous tool that blocks the event loop (`time.sleep`, a blocking client) cannot be interrupted, so the stop lands when it returns: no later tool of that turn runs and no further model call or `before_model` hook happens (since 1.93.0; before, the turn's remaining tools still ran). An `async` tool stops at once. |
 | `max_total_tokens` | Before the next model call, the run ends normally: `status="completed"`, `stop_reason="max_total_tokens"`. No exception. |
 | `max_cost_usd` | The same, with `stop_reason="max_cost_usd"`. A run whose spend cannot be priced (a model with no rate) cannot be held to it: the check raises `RunLimitError` rather than letting the run go unbudgeted. |
 
@@ -299,9 +299,10 @@ result = await task        # status="cancelled", stop_reason="cancelled"
 
 - **A non-streamed run** stops at once and returns `status="cancelled"`, with
   `tokens_used`, `cost` and `messages` as far as it got.
-- **A stream** stops at its next event and ends with
-  `StreamDone(finish_reason="cancelled")`. `agent.stream()` returns
-  `status="cancelled"`.
+- **A stream** stops inside a tool call (a Supervisor worker running in a
+  delegate call included), and during a model call at the next streamed chunk.
+  It ends with `StreamDone(finish_reason="cancelled")`; `agent.stream()` returns
+  `status="cancelled"`. Before 1.93.0 a stream waited out the tool call in flight.
 - **The checkpoint** of a cancelled or timed-out run ends `failed`, with
   `state_snapshot["run_reason"]` set to `"cancelled"` or `"timeout"`.
 - **Your own task:** cancelling it (`task.cancel()`) is not `agent.cancel`. It

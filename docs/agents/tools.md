@@ -57,6 +57,11 @@ A turn's wall-clock becomes the *slowest* tool instead of the *sum* of all of
 them. Results are re-ordered by call index, so message history and
 `result.tool_calls` stay deterministic regardless of which tool finishes first.
 
+Async tools run on the event loop; plain `def` tools run in worker threads for
+the turn (context variables are copied, so `RunContext`, `interrupt()` and
+`@idempotent` still work). Before 1.93.0 a sync tool ran on the loop and
+blocked it, so sync tools got no overlap at all.
+
 !!! note "When it stays sequential"
     For correctness, the parallel path is used only when none of these
     order/identity-sensitive features are engaged; otherwise the agent

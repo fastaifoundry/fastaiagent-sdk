@@ -22,6 +22,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   LangChain/CrewAI/PydanticAI proxies — and `to_dict()` raised. `position` and
   `guardrail_type` strings are now stored as their enums; a misspelt value
   (`"inpt"`) raises `ValueError` at construction instead of never running.
+- **Ollama tool loops work.** Every one failed on its second request (HTTP 400
+  "Value looks like object, but can't find closing '}'"): the call history sent
+  the arguments as OpenAI's JSON string, and Ollama takes an object. Resume
+  failed the same way. Ollama's own call ids are kept (they were renumbered
+  `call_0`, `call_1`, …).
+- **Streamed Ollama tool calls are no longer dropped.** Ollama 0.24 sends them in
+  a `done: false` chunk; only the final chunk was read, so `astream` returned an
+  empty answer and the tool never ran.
+- **Structured output beside tools works on Groq and Ollama.** Groq refused the
+  request (HTTP 400 "json mode cannot be combined with tool/function calling"),
+  and Ollama's `format` kept the model from calling the tool, so it invented the
+  value. With tools, both now get the schema in the prompt, as Gemini does; the
+  prompt asks for the tools first and JSON in the final answer.
+- **`Agent.stream()` lists the run's tool calls.** It always returned
+  `tool_calls=[]`, on every provider; `after_run` middleware on `astream` saw
+  none either.
+- **`TestModel(response=[...], tool_calls=[...])` keeps the tool calls** on the
+  first response, as documented; a list response dropped them.
+- **`parallel_tools=True` overlaps plain `def` tools.** A sync tool ran on the
+  event loop and blocked it, so two 2-second sync tools took 4 seconds against a
+  live model; only async tools (or sync tools with a `timeout`) overlapped. In a
+  parallel turn, sync tools now run in worker threads.
+- **A cancel or timeout during a blocking sync tool stops the turn there.** The
+  stop only reached `arun`'s task at its next real await, so the turn's other
+  tools still ran and the next turn's `before_model` hooks fired. The loop now
+  checks before each tool call and at the top of each turn, on `run`, `arun`
+  and `astream`.
+- **A streamed run's cancel and timeout land inside a tool call.** A stream
+  stopped only at its next event, so it waited out the tool in flight — a
+  Supervisor's whole worker run included. Its tool calls now run as the run's
+  task, as `arun`'s do. A model call still stops at its next streamed chunk.
+- **`Supervisor.astream` writes checkpoints and a root span.** It built its
+  inner agent without the supervisor's checkpointer, so a streamed run left no
+  run-end marker (cancelled or completed) and nothing to resume, and it opened no
+  `supervisor.*` span.
 
 ### Docs and examples
 

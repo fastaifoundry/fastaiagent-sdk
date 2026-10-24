@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from fastaiagent._internal.errors import MaxIterationsError, StopAgent, ToolExecutionError
 from fastaiagent.agent.middleware import MiddlewareContext, _MiddlewarePipeline
-from fastaiagent.agent.run_control import check_before_model_call
+from fastaiagent.agent.run_control import check_before_model_call, check_stopped, stoppable
 from fastaiagent.chain.checkpoint import Checkpoint
 from fastaiagent.chain.interrupt import InterruptSignal, _agent_path
 from fastaiagent.checkpointers.protocol import Checkpointer, PendingInterrupt
@@ -40,6 +40,7 @@ from fastaiagent.llm.stream import (
     Usage,
 )
 from fastaiagent.tool.base import Tool, ToolResult
+from fastaiagent.tool.function import _in_parallel_turn
 
 logger = logging.getLogger(__name__)
 
@@ -767,7 +768,7 @@ def _parallel_ok(
     return not reasons
 
 
-def _stream_stop(stop: StopAgent, final_reply: dict[str, str] | None) -> TextDelta:
+def _stream_stop(stop: StopAgent, final_reply: dict[str, Any] | None) -> TextDelta:
     """End a streamed run on ``StopAgent`` the way ``arun`` ends one (1.90.0, F8).
 
     ``arun`` returns the stop message as the output; the stream used to end with
@@ -1173,6 +1174,8 @@ async def execute_tool_loop(
 
     paused_text: list[str] = []
     for iteration in range(start_iteration, max_iterations):
+        # Before the turn's checkpoint and ``before_model`` hooks (1.93.0).
+        check_stopped()
         # Turn-boundary checkpoint — the resume point for crashes mid-LLM.
         if checkpointer is not None and execution_id is not None:
             _put_turn_checkpoint(
@@ -1287,6 +1290,8 @@ async def execute_tool_loop(
                 idx: int, tc: ToolCall, _it: int = iteration
             ) -> tuple[int, Message, dict[str, Any]]:
                 async with sem:
+                    # Each gathered call is its own task, so this stays local to it.
+                    _in_parallel_turn.set(True)
                     return await _run_plain_tool_call(idx, tc, _it)
 
             results = await asyncio.gather(
@@ -1299,6 +1304,7 @@ async def execute_tool_loop(
 
         # Execute each tool call
         for idx, tc in enumerate(response.tool_calls):
+            check_stopped()  # a cancel during the previous (sync) tool
             tool_call_record = {
                 "iteration": iteration,
                 "tool_name": tc.name,
@@ -1436,7 +1442,7 @@ async def stream_tool_loop(
     parallel_tools: bool = False,
     max_parallel_tools: int = 4,
     governance_run_id: str | None = None,
-    final_reply: dict[str, str] | None = None,
+    final_reply: dict[str, Any] | None = None,
     final_tool: str | None = None,
     **kwargs: Any,
 ) -> AsyncGenerator[StreamEvent, None]:
@@ -1467,7 +1473,9 @@ async def stream_tool_loop(
     tool_defs = [t.to_openai_format() for t in tools] if tools else None
     tools_by_name = {t.name: t for t in tools}
 
-    async def _run_plain_tool_call(idx: int, tc: ToolCall) -> tuple[int, Message]:
+    async def _run_plain_tool_call(
+        idx: int, tc: ToolCall, record: dict[str, Any]
+    ) -> tuple[int, Message]:
         """Execute one tool call via the plain path (see the ``execute_tool_loop``
         counterpart). Used only by the parallel branch, which is gated on the
         absence of checkpointer/middleware/governance."""
@@ -1477,12 +1485,32 @@ async def stream_tool_loop(
             arguments=tc.arguments,
             context=context,
             guardrails=guardrails,
+            tool_call_record=record,
             agent_name=agent_name,
         )
         return idx, ToolMessage(content=content, tool_call_id=tc.id)
 
+    # The run's tool calls, as ``execute_tool_loop`` returns them: published
+    # through ``final_reply`` so a streamed run's result lists them too. Before
+    # 1.93.0 ``Agent.stream()`` always returned ``tool_calls=[]``.
+    tool_records: list[dict[str, Any]] = []
+    if final_reply is not None:
+        final_reply["tool_calls"] = tool_records
+
+    def _new_record(iteration: int, tc: ToolCall) -> dict[str, Any]:
+        record = {
+            "iteration": iteration,
+            "tool_name": tc.name,
+            "arguments": tc.arguments,
+            "tool_call_id": tc.id,
+        }
+        tool_records.append(record)
+        return record
+
     paused_text: list[str] = []
     for iteration in range(start_iteration, max_iterations):
+        # Before the turn's checkpoint and ``before_model`` hooks (1.93.0).
+        check_stopped()
         # Turn-boundary checkpoint — the resume point for crashes mid-LLM.
         if checkpointer is not None and execution_id is not None:
             _put_turn_checkpoint(
@@ -1681,13 +1709,15 @@ async def stream_tool_loop(
             agent_name=agent_name,
         ):
             sem = asyncio.Semaphore(max_parallel_tools)
+            records = [_new_record(iteration, tc) for tc in pending_tool_calls]
 
             async def _guarded(idx: int, tc: ToolCall) -> tuple[int, Message]:
                 async with sem:
-                    return await _run_plain_tool_call(idx, tc)
+                    _in_parallel_turn.set(True)
+                    return await _run_plain_tool_call(idx, tc, records[idx])
 
-            results = await asyncio.gather(
-                *[_guarded(i, tc) for i, tc in enumerate(pending_tool_calls)]
+            results = await stoppable(
+                asyncio.gather(*[_guarded(i, tc) for i, tc in enumerate(pending_tool_calls)])
             )
             for _, tool_msg in sorted(results, key=lambda r: r[0]):
                 messages.append(tool_msg)
@@ -1695,6 +1725,7 @@ async def stream_tool_loop(
 
         # Execute each tool call
         for idx, tc in enumerate(pending_tool_calls):
+            check_stopped()  # a cancel during the previous (sync) tool
             tool = tools_by_name.get(tc.name)
 
             # Pre-tool checkpoint — captures tool args at the moment of
@@ -1720,19 +1751,22 @@ async def stream_tool_loop(
                 # -> interrupt() pauses; the calling application resolves it.
                 try:
                     tool_message_content: str | list[Any] = (
-                        await _governed_tool_call(
-                            tool,
-                            tc.name,
-                            tc.arguments,
-                            governance_mode="gate",
-                            agent_id=agent_id,
-                            run_id=governance_run_id or execution_id or "",
-                            context=context,
-                            guardrails=guardrails,
-                            mw_pipeline=mw_pipeline,
-                            mw_ctx=mw_ctx,
-                            tool_call_index=idx,
-                            agent_name=agent_name,
+                        await stoppable(
+                            _governed_tool_call(
+                                tool,
+                                tc.name,
+                                tc.arguments,
+                                governance_mode="gate",
+                                agent_id=agent_id,
+                                run_id=governance_run_id or execution_id or "",
+                                context=context,
+                                guardrails=guardrails,
+                                mw_pipeline=mw_pipeline,
+                                mw_ctx=mw_ctx,
+                                tool_call_index=idx,
+                                record=_new_record(iteration, tc),
+                                agent_name=agent_name,
+                            )
                         )
                     ).content
                 except StopAgent as stop:

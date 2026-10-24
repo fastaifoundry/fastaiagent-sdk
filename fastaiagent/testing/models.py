@@ -82,12 +82,16 @@ def _coerce_responses(
     """Build the round-robin list of canned turns from constructor args."""
     if response is None and not tool_calls:
         return [_CannedTurn(text="ok", usage=usage)]
+    tcs = _coerce_tool_calls(tool_calls, base_index=0)
     if isinstance(response, list):
         if not response:
-            return [_CannedTurn(text="ok", usage=usage)]
-        return [_CannedTurn(text=t, usage=usage) for t in response]
+            return [_CannedTurn(text="ok", tool_calls=tcs, usage=usage)]
+        # The tool calls go with the first response, as documented; before
+        # 1.93.0 a list response dropped them without a word.
+        turns = [_CannedTurn(text=t, usage=usage) for t in response]
+        turns[0].tool_calls = tcs
+        return turns
     text = response if response is not None else ""
-    tcs = _coerce_tool_calls(tool_calls, base_index=0)
     return [_CannedTurn(text=text, tool_calls=tcs, usage=usage)]
 
 

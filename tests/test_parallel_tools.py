@@ -90,3 +90,42 @@ async def test_governance_agent_id_forces_sequential() -> None:
     # loop must fall back to sequential even with parallel_tools=True.
     elapsed, _, _ = await _run(parallel_tools=True, agent_id="agent-123")
     assert elapsed >= 2 * _SLEEP * 0.9, f"expected sequential fallback, took {elapsed:.3f}s"
+
+
+def _sync_agent(parallel: bool) -> object:
+    from fastaiagent import Agent, AgentConfig
+    from fastaiagent.testing import TestModel
+
+    def slow(tag: str) -> str:
+        time.sleep(_SLEEP)  # a plain blocking tool, the common case
+        return f"done-{tag}"
+
+    return Agent(
+        name="sync-tools",
+        llm=TestModel(
+            response=["", "final answer"],
+            tool_calls=[
+                {"name": "slow", "arguments": {"tag": "a"}},
+                {"name": "slow", "arguments": {"tag": "b"}},
+            ],
+        ),
+        tools=[FunctionTool(name="slow", fn=slow)],
+        config=AgentConfig(parallel_tools=parallel),
+    )
+
+
+@pytest.mark.parametrize("method", ["run", "stream"])
+def test_plain_sync_tools_overlap_too(method: str) -> None:
+    """1.93.0: sync tools ran on the event loop, so ``parallel_tools=True`` gave
+    them no overlap (two 2 s tools took 4 s against a live model)."""
+    started = time.perf_counter()
+    result = getattr(_sync_agent(True), method)("go")
+    elapsed = time.perf_counter() - started
+    assert [c["output"] for c in result.tool_calls] == ["done-a", "done-b"]
+    assert elapsed < 1.6 * _SLEEP, f"sync tools ran back to back: {elapsed:.3f}s"
+
+
+def test_sync_tools_stay_sequential_without_parallel_tools() -> None:
+    started = time.perf_counter()
+    _sync_agent(False).run("go")
+    assert time.perf_counter() - started >= 2 * _SLEEP * 0.9
