@@ -5,7 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.92.0] - 2026-10-24 — the features that have to work, working
+
+No new bets: only things the SDK already claimed that did not work against the
+real world. `MCPTool` now uses the official `mcp` client (its hand-written
+JSON-RPC client was refused by every official MCP server, and its tests ran
+against a stub written the same way). The SSRF guard closes a DNS-rebinding bypass,
+caps bodies while reading, and refuses carrier-grade NAT. `@idempotent` now runs
+async functions, caches `None`, and protects an Agent node of a Chain across
+resume. `agent serve` can resume what it pauses. Every fix was reproduced on 1.91.0
+first, checked against real servers rather than stand-ins, and the model-facing
+ones live on gpt-5-mini.
+
+### Upgrading from 1.91 — behaviour changes at a glance
+
+- **`MCPTool` needs `pip install "fastaiagent[mcp]"`** (`[mcp-server]` still works).
+  `discover_tools()` is gone: use `MCPTool.from_server(...)`.
+- **`fastaiagent agent serve --reload` is removed** (it never worked).
+- **The SSRF guard refuses `100.64.0.0/10` and other non-global addresses.** Set
+  `FASTAIAGENT_ALLOW_PRIVATE_NETWORKS=1` to call a Tailscale/CGNAT host on purpose.
+- **Guarded requests connect to the checked IP** with the same `Host` header and
+  certificate check; a response over the size cap now fails while it is read.
+- **`@idempotent` cache rows are stored in an envelope**; rows from older versions
+  are still read.
 
 ### Security
 
