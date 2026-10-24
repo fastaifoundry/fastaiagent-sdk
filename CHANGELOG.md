@@ -57,6 +57,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inner agent without the supervisor's checkpointer, so a streamed run left no
   run-end marker (cancelled or completed) and nothing to resume, and it opened no
   `supervisor.*` span.
+- **A cancelled agent node no longer lets its Chain report `completed`.**
+  Cancelling the node's own run (its id is visible to its tools) left the next
+  node running on `output=""`; the chain now stops as cancelled.
+- **Chain tool nodes are traced.** They emitted no span, though the docs say
+  every tool nests under the chain root; each is now a `tool.<name>` span with
+  `tool.status` and the payload-gated `tool.args` / `tool.result`.
+- **An agent node's timeout is recorded on the Chain's run-end checkpoint**
+  (`run_reason="timeout"`; it was empty). A failed chain run started without an
+  `execution_id` now gets its run-end marker too (only runs given an id did).
+
+### Added
+
+- **`Chain.cancel(execution_id)`** stops a chain run in progress, at once,
+  inside an agent or tool node. The result has `status="cancelled"` and the
+  run-end checkpoint `run_reason="cancelled"`.
 
 ### Docs and examples
 
