@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — breaking
+
+- **`MCPTool` runs on the official `mcp` client library.** The hand-written
+  JSON-RPC client is deleted: it skipped the handshake and the headers the spec
+  requires, so every official MCP server refused it (`406` on mcp 1.x, `400` on
+  2.x), and its tests passed only against a stub written the same way. Each call
+  now opens a session, runs `initialize`, calls the tool and closes. The SSRF guard
+  is kept (an httpx transport that checks every request, each redirect hop
+  included), as are `auth_token`, guardrails, governance and tracing. The
+  handshake gives up after 30 s, so a URL that is not an MCP server fails instead
+  of hanging. Checked live against the control plane's hosted MCP servers.
+  - **Needs the extra:** `pip install "fastaiagent[mcp]"` (`mcp>=1.24,<2`).
+    `fastaiagent[mcp-server]` still works as an alias. `import fastaiagent` does
+    not need it; using `MCPTool` without it raises an error naming the install.
+  - **`discover_tools()` is removed.** Use `MCPTool.from_server(...)` /
+    `await MCPTool.afrom_server(...)`, which return one ready `MCPTool` per tool on
+    the server, with name, description and input schema.
+
+### Added
+
+- **Local MCP servers:** `MCPTool(command=[...], env={...})` and
+  `MCPTool.from_server(command=[...])` start a server as a subprocess (stdio).
+  The command, `env` and `auth_token` are never serialized: `to_dict()` still
+  carries only `server_url` and `tool_name`, so a tool rebuilt from a payload (the
+  runner, a trace, the plane) cannot start a process — it refuses with an error.
+  This also lets one fastaiagent agent use another served with `as_mcp_server`,
+  which the docs said was impossible. Example 116.
+
 ### Fixed
 
 - **`fastaiagent mcp serve` works on a Chain.** It passed `expose_tools=` to every

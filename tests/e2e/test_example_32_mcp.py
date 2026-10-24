@@ -7,7 +7,7 @@ client roundtrip via the ``mcp`` Python package:
 
 The example exits ``1`` if no LLM key is present, so the test asserts at
 least one of OPENAI_API_KEY / ANTHROPIC_API_KEY before subprocessing.
-``mcp`` is an optional extra (``fastaiagent[mcp-server]``); the test
+``mcp`` is an optional extra (``fastaiagent[mcp]``); the test
 skips cleanly when it isn't installed.
 
 Marked ``e2e`` so it runs in the e2e quality gate alongside the rest of
@@ -43,7 +43,7 @@ async def test_mcp_example_serves_research_lookup() -> None:
     """
     pytest.importorskip(
         "mcp",
-        reason="mcp client not installed; pip install 'fastaiagent[mcp-server]'",
+        reason="mcp client not installed; pip install 'fastaiagent[mcp]'",
     )
     if not _has_llm_key():
         pytest.skip(

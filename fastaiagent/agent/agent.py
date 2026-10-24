@@ -3139,7 +3139,7 @@ class Agent:
         Returns a :class:`fastaiagent.tool.mcp_server.FastAIAgentMCPServer`.
         Call ``await server.run()`` to start the stdio loop.
 
-        Requires ``pip install 'fastaiagent[mcp-server]'``.
+        Requires ``pip install 'fastaiagent[mcp]'``.
 
         Example::
 

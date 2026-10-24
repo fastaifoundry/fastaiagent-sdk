@@ -3,13 +3,11 @@
 Run this file directly to start an MCP server on stdio. Register it with
 Claude Desktop / Cursor / Continue / Zed via their MCP config.
 
-Another fastaiagent agent cannot call it through ``MCPTool``: the server
-speaks stdio only and ``MCPTool`` is an HTTP client. In one process, give the
-calling agent a ``FunctionTool`` that awaits this agent's ``arun``, or put both
-in a ``Supervisor`` (see docs/tools/mcp-server.md).
+Another fastaiagent agent can call it too (since 1.92.0): example 116 starts
+this file with ``MCPTool.from_server(command=[...])`` and uses its tools.
 
 Install:
-    pip install 'fastaiagent[mcp-server]'
+    pip install 'fastaiagent[mcp]'
 
 Run directly (expects Claude Desktop or another stdio MCP client to pipe
 stdin/stdout):

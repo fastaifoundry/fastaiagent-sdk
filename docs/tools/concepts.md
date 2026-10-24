@@ -81,7 +81,7 @@ All types share the same lifecycle, validation, execution policy, and
 |------|-------------------|--------|
 | **FunctionTool** (`@tool` / `FunctionTool`) | You have (or can write) a Python function — schema auto-generated from its type hints | `function` |
 | **RESTTool** | You want to call an HTTP API directly, no Python wrapper — map args to query/body/path | `rest` |
-| **MCPTool** | You're connecting to an MCP server (JSON-RPC), e.g. an existing extension | `mcp` |
+| **MCPTool** | You want an MCP server's tools — remote (`server_url=`) or local (`command=`) | `mcp` |
 | **Knowledge base** (`LocalKB.as_tool()`) | You want retrieval/search as a callable tool | `kb` |
 | **Custom `Tool` subclass** | You need special execution or validation the built-ins don't cover | `custom` |
 | **Agent/Chain as a tool** (`as_mcp_server()`) | You want to expose a whole agent or chain as a tool for another agent | — |

@@ -309,6 +309,14 @@ through a single SSRF-hardened helper that:
 permitted for MCP by default while every other private range stays blocked.
 For other intranet hosts, opt in with `FASTAIAGENT_ALLOW_PRIVATE_NETWORKS=1`.
 
+Since 1.92.0 `MCPTool` makes its requests through the official `mcp` client, so
+the check sits in an httpx transport instead of the helper: the same address
+rules run on every request, each redirect hop included, and httpx drops the
+`Authorization` header on a cross-origin redirect. There is no body-size cap
+there (MCP replies stream). A local `command=` server is never in a payload:
+`to_dict()` carries only `server_url` and `tool_name`, so a tool rebuilt from a
+runner payload, a trace or the plane cannot start a process.
+
 ## Governance (tool-approval egress)
 
 When connected with a cached **approval policy**, a governed tool call sends the

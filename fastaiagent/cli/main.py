@@ -121,7 +121,7 @@ _KNOWN_EXTRAS: list[tuple[str, str]] = [
     ("kb", "faiss"),
     ("qdrant", "qdrant_client"),
     ("chroma", "chromadb"),
-    ("mcp-server", "mcp"),
+    ("mcp", "mcp"),
     ("otel-export", "opentelemetry.exporter.otlp"),
 ]
 

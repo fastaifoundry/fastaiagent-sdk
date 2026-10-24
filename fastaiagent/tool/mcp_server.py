@@ -3,9 +3,9 @@
 :class:`fastaiagent.chain.Chain` as an MCP (Model Context Protocol) server.
 
 Once a target is served, any MCP-compatible runtime that launches a stdio
-server — Claude Desktop, Cursor, Continue, Zed — can use it as a tool. The
-server is stdio-only and ``MCPTool`` is an HTTP client, so ``MCPTool`` cannot
-call a served agent yet (the docs said otherwise until 1.90.0).
+server — Claude Desktop, Cursor, Continue, Zed — can use it as a tool, and so
+can another fastaiagent agent: ``MCPTool.from_server(command=["python",
+"my_agent.py"])`` (since 1.92.0; before, ``MCPTool`` was HTTP-only).
 
 .. note::
    The upstream ``mcp`` package ships without ``py.typed`` markers, so the
@@ -40,7 +40,7 @@ and in ``~/Library/Application Support/Claude/claude_desktop_config.json``::
 
 Installation::
 
-    pip install 'fastaiagent[mcp-server]'
+    pip install 'fastaiagent[mcp]'
 
 The MVP ships **stdio** transport. SSE and streamable-HTTP transports are
 tracked as follow-ups.
@@ -82,7 +82,7 @@ def _require_mcp() -> Any:
     except ImportError as err:  # pragma: no cover — exercised only without the extra
         raise ImportError(
             "MCP server support requires the 'mcp' package. Install with: "
-            "pip install 'fastaiagent[mcp-server]'"
+            "pip install 'fastaiagent[mcp]'"
         ) from err
     return Server, mcp_types
 

@@ -351,7 +351,7 @@ fastaiagent mcp serve path/to/my_chain.py:chain
 
 See [docs/tools/mcp-server.md](../tools/mcp-server.md) for Claude Desktop / Cursor config snippets.
 
-Requires: `pip install 'fastaiagent[mcp-server]'`.
+Requires: `pip install 'fastaiagent[mcp]'`.
 
 ---
 

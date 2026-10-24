@@ -759,7 +759,16 @@ Register it in `claude_desktop_config.json`:
 
 Claude Desktop now treats your fastaiagent as a callable tool. Same config shape for Cursor / Continue / Zed. Or use the CLI: `fastaiagent mcp serve my_agent.py:agent`. See [docs/tools/mcp-server.md](docs/tools/mcp-server.md).
 
-Install: `pip install 'fastaiagent[mcp-server]'`.
+The other direction — use any MCP server's tools in your agent, remote or local:
+
+```python
+from fastaiagent import MCPTool
+
+tools = MCPTool.from_server("https://mcp.example.com/mcp", auth_token="...")
+tools = MCPTool.from_server(command=["npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp"])
+```
+
+See [docs/tools/mcp-tools.md](docs/tools/mcp-tools.md). Install: `pip install 'fastaiagent[mcp]'`.
 
 ## Peer-to-peer swarms with handoffs
 

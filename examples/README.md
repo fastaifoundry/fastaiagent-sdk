@@ -152,6 +152,7 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 - [`69_prompt_injection_guardrail.py`](69_prompt_injection_guardrail.py) — `no_prompt_injection()` blocks jailbreak / injection attempts before the LLM sees them; shares its detector with the `PromptInjection` scorer
 - [`73_responsible_ai.py`](73_responsible_ai.py) — the Trust Layer end to end: `no_secrets()` + `grounded()` + `toxicity_check()` + `banned_topics()` / `allowed_topics()` + the `Reflect` middleware
 - [`32_mcp_expose_agent.py`](32_mcp_expose_agent.py) — expose Agent as MCP server
+- [`116_mcp_tool.py`](116_mcp_tool.py) — the other direction: `MCPTool.from_server(command=[...])` starts example 32 as a local MCP server and gives its tools to a gpt-5-mini agent; `from_server(server_url=...)` does the same for a remote server (1.92.0)
 - [`41_agent_tools.py`](41_agent_tools.py) — tool decoration patterns
 - [`70_tool_replay_class.py`](70_tool_replay_class.py) — mark tools `read_only` / `idempotent` / `side_effecting` for replay
 - [`90_parallel_and_pydantic_tools.py`](90_parallel_and_pydantic_tools.py) — parallel tool execution, Pydantic-typed + auto-coerced args, and per-tool timeout / retry / output validation → [docs](../docs/tools/function-tools.md)
