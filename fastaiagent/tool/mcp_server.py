@@ -50,7 +50,6 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal
 
 logger = logging.getLogger(__name__)
@@ -110,8 +109,8 @@ class FastAIAgentMCPServer:
 
     Example::
 
-        FastAIAgentMCPServer(agent).run()                # stdio, default
-        agent.as_mcp_server(expose_tools=True).run()     # also surface inner tools
+        asyncio.run(FastAIAgentMCPServer(agent).run())              # stdio, default
+        asyncio.run(agent.as_mcp_server(expose_tools=True).run())   # also inner tools
     """
 
     def __init__(
@@ -463,30 +462,3 @@ def _params_to_input_schema(parameters: dict[str, Any] | None) -> dict[str, Any]
     if "type" not in parameters:
         return {"type": "object", **parameters}
     return parameters
-
-
-# ---------------------------------------------------------------------------
-# Factory helpers used by Agent.as_mcp_server / Chain.as_mcp_server
-# ---------------------------------------------------------------------------
-
-
-def _factory_for(target: Agent | Chain) -> Callable[..., FastAIAgentMCPServer]:
-    """Return a thin bound factory so ``agent.as_mcp_server(...)`` reads naturally."""
-
-    def _factory(
-        transport: Transport = "stdio",
-        expose_tools: bool = False,
-        expose_system_prompt: bool = True,
-        tool_name: str | None = None,
-        tool_description: str | None = None,
-    ) -> FastAIAgentMCPServer:
-        return FastAIAgentMCPServer(
-            target=target,
-            transport=transport,
-            expose_tools=expose_tools,
-            expose_system_prompt=expose_system_prompt,
-            tool_name=tool_name,
-            tool_description=tool_description,
-        )
-
-    return _factory

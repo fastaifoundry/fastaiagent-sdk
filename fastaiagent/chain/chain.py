@@ -866,7 +866,7 @@ class Chain:
 
         Example::
 
-            chain.as_mcp_server(transport="stdio").run()
+            asyncio.run(chain.as_mcp_server(transport="stdio").run())  # run() is async
         """
         from fastaiagent.tool.mcp_server import FastAIAgentMCPServer
 

@@ -64,6 +64,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `aresume` and answers like `/run`; a run that is not waiting answers `409`, an
   unknown Chain execution `404`. `--auth-token` covers it. Agent and Chain targets.
 
+### Docs and examples
+
+- The `as_mcp_server` docstrings (Agent, Chain, `FastAIAgentMCPServer`) showed
+  `.run()` as a plain call; it is a coroutine, so the example did nothing. They now
+  show `asyncio.run(...)`. An unused factory helper in `tool/mcp_server.py` is gone.
+- Example 32 (and so example 116, which starts it) runs on `gpt-5-mini` /
+  `claude-haiku-5-5` instead of `gpt-4o-mini` / Claude Haiku 4.5.
+
 ### Removed
 
 - **`fastaiagent agent serve --reload`.** It never worked: uvicorn reloads only from

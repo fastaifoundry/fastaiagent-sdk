@@ -36,9 +36,9 @@ from fastaiagent import Agent, FunctionTool, LLMClient
 
 def _pick_llm() -> LLMClient:
     if os.environ.get("OPENAI_API_KEY"):
-        return LLMClient(provider="openai", model="gpt-4o-mini")
+        return LLMClient(provider="openai", model="gpt-5-mini", reasoning="minimal")
     if os.environ.get("ANTHROPIC_API_KEY"):
-        return LLMClient(provider="anthropic", model="claude-haiku-4-5-20251001")
+        return LLMClient(provider="anthropic", model="claude-haiku-5-5")
     print(
         "Set OPENAI_API_KEY or ANTHROPIC_API_KEY before starting the MCP server.",
         file=sys.stderr,

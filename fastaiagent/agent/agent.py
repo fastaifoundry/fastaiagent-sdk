@@ -3144,7 +3144,7 @@ class Agent:
 
         Example::
 
-            agent.as_mcp_server(transport="stdio").run()
+            asyncio.run(agent.as_mcp_server(transport="stdio").run())  # run() is async
         """
         from fastaiagent.tool.mcp_server import FastAIAgentMCPServer
 
