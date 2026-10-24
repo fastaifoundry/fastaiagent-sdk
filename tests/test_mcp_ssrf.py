@@ -41,7 +41,9 @@ async def test_a_redirect_to_a_private_address_is_refused(capture_server: Any) -
         [(307, "", "text/plain", {"Location": "http://169.254.169.254/mcp"})]
     )
     tool = MCPTool(name="t", server_url=f"{capture_server.url}/mcp", tool_name="x")
-    with pytest.raises(ToolExecutionError, match="not a public address"):
+    # mcp < 1.30 follows it into our guard; mcp >= 1.30 follows only same-origin
+    # redirects and refuses this one itself. Either way it is never reached.
+    with pytest.raises(ToolExecutionError, match="not a public address|not followed"):
         await tool.aexecute({})
 
 

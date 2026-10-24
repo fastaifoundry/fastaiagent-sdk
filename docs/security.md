@@ -331,7 +331,8 @@ Since 1.92.0 `MCPTool` makes its requests through the official `mcp` client, so
 the check sits in an httpx transport instead of the helper: the same address
 rules run on every request, each redirect hop included, each connection goes to
 the checked address, and httpx drops the `Authorization` header on a
-cross-origin redirect. There is no body-size cap
+cross-origin redirect (from `mcp` 1.30 the library follows only same-origin
+redirects and refuses the rest itself). There is no body-size cap
 there (MCP replies stream). A local `command=` server is never in a payload:
 `to_dict()` carries only `server_url` and `tool_name`, so a tool rebuilt from a
 runner payload, a trace or the plane cannot start a process.
