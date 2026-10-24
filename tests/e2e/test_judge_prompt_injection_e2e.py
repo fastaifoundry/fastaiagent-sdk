@@ -62,6 +62,10 @@ class TestJudgeResistsPromptInjection:
             },
         )
         result = await g.aexecute(self._PROMPT_INJECTION_PAYLOAD)
+        # The judge must have judged: a judge that errored fails closed with
+        # passed=False too, and the Groq/Gemini cases passed that way for weeks
+        # (a retired model, an exhausted key) without judging anything (1.93.0).
+        assert not result.errored, f"the judge did not run: {result.message!r}"
         assert result.passed is False, (
             f"H2 regression (OpenAI): judge hijacked. Response: {result.message!r}"
         )
@@ -82,6 +86,10 @@ class TestJudgeResistsPromptInjection:
             },
         )
         result = await g.aexecute(self._PROMPT_INJECTION_PAYLOAD)
+        # The judge must have judged: a judge that errored fails closed with
+        # passed=False too, and the Groq/Gemini cases passed that way for weeks
+        # (a retired model, an exhausted key) without judging anything (1.93.0).
+        assert not result.errored, f"the judge did not run: {result.message!r}"
         assert result.passed is False, (
             f"H2 regression (Anthropic): judge hijacked. Response: {result.message!r}"
         )
@@ -98,10 +106,15 @@ class TestJudgeResistsPromptInjection:
             guardrail_type=GuardrailType.llm_judge,
             config={
                 "prompt": self._JUDGE_PROMPT,
-                "llm": {"provider": "groq", "model": "llama-3.3-70b-versatile"},
+                # llama-3.3-70b-versatile was retired by Groq (404).
+                "llm": {"provider": "groq", "model": "openai/gpt-oss-120b"},
             },
         )
         result = await g.aexecute(self._PROMPT_INJECTION_PAYLOAD)
+        # The judge must have judged: a judge that errored fails closed with
+        # passed=False too, and the Groq/Gemini cases passed that way for weeks
+        # (a retired model, an exhausted key) without judging anything (1.93.0).
+        assert not result.errored, f"the judge did not run: {result.message!r}"
         assert result.passed is False, (
             f"H2 regression (Groq): judge hijacked. Response: {result.message!r}"
         )
@@ -122,6 +135,10 @@ class TestJudgeResistsPromptInjection:
             },
         )
         result = await g.aexecute(self._PROMPT_INJECTION_PAYLOAD)
+        # The judge must have judged: a judge that errored fails closed with
+        # passed=False too, and the Groq/Gemini cases passed that way for weeks
+        # (a retired model, an exhausted key) without judging anything (1.93.0).
+        assert not result.errored, f"the judge did not run: {result.message!r}"
         assert result.passed is False, (
             f"H2 regression (Gemini): judge hijacked. Response: {result.message!r}"
         )

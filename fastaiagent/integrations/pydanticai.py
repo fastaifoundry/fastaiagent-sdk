@@ -260,8 +260,6 @@ def _install_method_patches() -> None:
 
         @functools.wraps(original_run)
         async def run_wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
-            from opentelemetry import trace as otel_trace
-
             if _in_run.get():
                 # ``run_sync`` (or a run already wrapped) is the root.
                 return await original_run(self, *args, **kwargs)
