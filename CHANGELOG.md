@@ -80,6 +80,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `aresume` and answers like `/run`; a run that is not waiting answers `409`, an
   unknown Chain execution `404`. `--auth-token` covers it. Agent and Chain targets.
 
+- **`MCPTool`: one clear error for a server that is not MCP.** The `mcp` library
+  logged the bad reply with a full traceback while the error said only "timed out".
+  During an `MCPTool` call its warnings and errors now go into the
+  `ToolExecutionError` ("… (the server's reply: Error parsing JSON response)");
+  outside `MCPTool`, the library's logging is untouched.
+
 ### Docs and examples
 
 - The `as_mcp_server` docstrings (Agent, Chain, `FastAIAgentMCPServer`) showed

@@ -13,8 +13,10 @@ reject (406 / 400); it is gone.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+import logging
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager, contextmanager
+from contextvars import ContextVar
 from typing import Any
 
 import httpx
@@ -31,6 +33,43 @@ _HANDSHAKE_SECONDS = 30.0
 #: How long a tool call may take when the tool sets no ``timeout`` (the same as
 #: the HTTP read timeout).
 _CALL_SECONDS = 300.0
+
+
+#: What the mcp library logged during this MCPTool call, set by :func:`_quiet`.
+_library_errors: ContextVar[list[str] | None] = ContextVar("_library_errors", default=None)
+
+
+class _IntoTheError(logging.Filter):
+    """While an MCPTool call runs, the mcp client's own error records (a bad
+    reply is logged with a full traceback) are kept for the call's error
+    instead of reaching the console. Outside a call they pass untouched."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        errors = _library_errors.get()
+        if errors is None or record.levelno < logging.WARNING:
+            return True
+        errors.append(record.getMessage())
+        return False
+
+
+logging.getLogger("mcp.client.streamable_http").addFilter(_IntoTheError())
+
+
+@contextmanager
+def _quiet() -> Iterator[list[str]]:
+    errors: list[str] = []
+    token = _library_errors.set(errors)
+    try:
+        yield errors
+    finally:
+        _library_errors.reset(token)
+
+
+def _failure(name: str, err: BaseException, errors: list[str]) -> ToolExecutionError:
+    reason = str(_root_cause(err))
+    if errors:
+        reason += f" (the server's reply: {errors[0]})"
+    return ToolExecutionError(f"MCP tool '{name}' failed: {reason}")
 
 
 def _require_mcp() -> None:
@@ -207,14 +246,24 @@ class MCPTool(Tool):
         if server_url and command:
             raise ValueError("from_server takes server_url or command, not both")
         found: list[Any] = []
-        async with _session(server_url, auth_token, command, env) as session:
-            cursor = None
-            while True:
-                page = await session.list_tools(cursor) if cursor else await session.list_tools()
-                found.extend(page.tools)
-                cursor = page.nextCursor
-                if not cursor:
-                    break
+        with _quiet() as errors:
+            try:
+                async with _session(server_url, auth_token, command, env) as session:
+                    cursor = None
+                    while True:
+                        page = (
+                            await session.list_tools(cursor)
+                            if cursor
+                            else await session.list_tools()
+                        )
+                        found.extend(page.tools)
+                        cursor = page.nextCursor
+                        if not cursor:
+                            break
+            except (ImportError, ToolExecutionError):
+                raise
+            except Exception as e:
+                raise _failure("from_server", e, errors) from e
         return [
             cls(
                 name=t.name,
@@ -254,13 +303,14 @@ class MCPTool(Tool):
         from datetime import timedelta
 
         wait = timedelta(seconds=self.timeout or _CALL_SECONDS)
-        try:
-            async with _session(self.server_url, self.auth_token, self.command, self.env) as s:
-                result = await s.call_tool(self.tool_name, arguments, read_timeout_seconds=wait)
-        except ToolExecutionError:
-            raise
-        except Exception as e:
-            raise ToolExecutionError(f"MCP tool '{self.name}' failed: {_root_cause(e)}") from e
+        with _quiet() as errors:
+            try:
+                async with _session(self.server_url, self.auth_token, self.command, self.env) as s:
+                    result = await s.call_tool(self.tool_name, arguments, read_timeout_seconds=wait)
+            except ToolExecutionError:
+                raise
+            except Exception as e:
+                raise _failure(self.name, e, errors) from e
         return _to_tool_result(result)
 
     def _tool_type(self) -> str:

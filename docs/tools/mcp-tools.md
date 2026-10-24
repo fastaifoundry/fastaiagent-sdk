@@ -65,7 +65,7 @@ local server that means one process start per call.
 | Embedded resource with text | its text |
 | No content, structured content only | `output` = the structured content |
 | `isError: true` | `error` = the text |
-| Server unreachable, not MCP, or a refused address | raises `ToolExecutionError` |
+| Server unreachable, not MCP, or a refused address | raises `ToolExecutionError`; for a reply that is not MCP, the error includes what the client made of it (for example `Error parsing JSON response`) instead of the `mcp` library logging a traceback |
 
 The handshake and `tools/list` give up after 30 seconds, so a URL that is not an MCP server fails
 instead of hanging. A call waits up to the tool's `timeout`, or 300 seconds when none is set.

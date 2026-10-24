@@ -139,6 +139,45 @@ async def test_a_server_that_is_not_mcp_fails_instead_of_hanging(
         await MCPTool(name="x", server_url=f"{capture_server.url}/mcp").aexecute({})
 
 
+async def test_a_server_that_is_not_mcp_gives_one_clear_error(
+    capture_server: Any, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The mcp library logs the bad reply with a full traceback; before 1.92.0's
+    G fix that went to the console while the error said only "timed out". The
+    reason now goes into the error and the library's record stays quiet."""
+    import importlib
+    import logging
+
+    monkeypatch.setattr(importlib.import_module("fastaiagent.tool.mcp"), "_HANDSHAKE_SECONDS", 1.0)
+    with caplog.at_level(logging.DEBUG):
+        with pytest.raises(ToolExecutionError, match="Error parsing JSON response"):
+            await MCPTool(name="x", server_url=f"{capture_server.url}/mcp").aexecute({})
+
+    # Debug records still pass (seen only when debug logging is on); nothing at
+    # warning or above reaches the handlers.
+    loud = [r for r in caplog.records if r.name.startswith("mcp.") and r.levelno >= logging.WARNING]
+    assert loud == []
+
+
+async def test_the_library_logger_is_untouched_outside_mcp_tool() -> None:
+    import logging
+
+    seen: list[str] = []
+
+    class Keep(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            seen.append(record.getMessage())
+
+    log = logging.getLogger("mcp.client.streamable_http")
+    handler = Keep()
+    log.addHandler(handler)
+    try:
+        log.error("logged by someone using the mcp library directly")
+    finally:
+        log.removeHandler(handler)
+    assert seen == ["logged by someone using the mcp library directly"]
+
+
 # --- stdio ----------------------------------------------------------------------
 
 
