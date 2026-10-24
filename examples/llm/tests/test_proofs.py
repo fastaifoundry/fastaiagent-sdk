@@ -25,7 +25,10 @@ EXPECTED = {
     "proof_3_presets.py": [
         "provider keys in total: 19",
         "response_format in body: False · parallel_tool_calls in body: False · max_tokens key: max_tokens",
-        "You must respond with valid JSON matching this schema ('City')",
+        # The request offers tools, so the instruction is about the final answer
+        # (1.93.0: "respond with JSON only" made models skip the tool).
+        "Call the tools you need first. When you give your final answer, "
+        "you must respond with valid JSON matching this schema ('City')",
     ],
     "proof_6_numbers.py": [
         "gpt-4o-mini-2024-07-18   1M in + 1M out → 0.75",
