@@ -244,6 +244,10 @@ kb.update(chunk_id, "Updated content")  # Re-embeds automatically
 kb.clear()  # Removes all chunks, embeddings, and indexes
 ```
 
+`clear()` empties the whole vector store, including points other KBs keep in
+a store you shared with them. To remove only this KB's content, use
+`delete_by_source` or `delete`.
+
 ## Using KB as an Agent Tool
 
 The most common pattern — give your agent access to a knowledge base:

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A knowledge-base delete no longer wipes a shared vector store.**
+  `delete`, `delete_by_source`, `update` and reopening a persisted `LocalKB`
+  rebuilt the whole vector store from that KB's in-memory chunks. On a store
+  shared with another KB, or an existing Qdrant/Chroma collection, every other
+  point was dropped (a 4-point collection went to 0 in one test). They now
+  delete and replace by id. `kb.delete(id)` also removes a point the KB never
+  loaded, and returns True when it did.
+
 ### Docs and examples
 
 - **`docs/ui/projects.md` no longer says the Local UI can share a Postgres
