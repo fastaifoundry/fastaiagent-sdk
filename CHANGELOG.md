@@ -22,6 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   over the cap is refused before the body is read, and a body without one stops at
   the cap. Before, the whole body was read into memory and then measured: an
   endless response was read until the connection ended.
+- **SSRF guard: carrier-grade NAT and other non-global addresses refused.** The
+  guard blocked "private" addresses, and `100.64.0.0/10` (carrier-grade NAT, where
+  Tailscale puts tailnet devices — `100.100.100.100` is its own service) and
+  benchmarking space are not, so an agent could reach services on a tailnet. Any
+  address that is not globally routable is now refused. **Behaviour change:** to
+  call a Tailscale or CGNAT host on purpose, set
+  `FASTAIAGENT_ALLOW_PRIVATE_NETWORKS=1`.
 
 ### Changed — breaking
 

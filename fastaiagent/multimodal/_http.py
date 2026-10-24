@@ -71,6 +71,10 @@ def _is_blocked_ip(
         or ip.is_reserved
         or ip.is_multicast
         or ip.is_unspecified
+        # Anything else not routable on the public internet (1.92.0): carrier-
+        # grade NAT 100.64.0.0/10 — where Tailscale puts tailnet devices — and
+        # benchmarking space were not "private", so they passed.
+        or not ip.is_global
     )
 
 

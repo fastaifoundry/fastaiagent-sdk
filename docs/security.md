@@ -297,7 +297,10 @@ through a single SSRF-hardened helper that:
 
 * allows only `http(s)` schemes;
 * blocks private / loopback / link-local / reserved / multicast addresses
-  (including cloud-metadata `169.254.169.254`), resolving hostnames first;
+  (including cloud-metadata `169.254.169.254`), and since 1.92.0 any other
+  address that is not globally routable — notably carrier-grade NAT
+  `100.64.0.0/10`, where Tailscale puts tailnet devices — resolving hostnames
+  first;
 * **connects to the address it checked** (since 1.92.0), so a DNS server that
   answers "public" to the check and "internal" to the connection (DNS
   rebinding) cannot redirect the request. The request keeps its `Host` header,

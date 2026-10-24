@@ -109,6 +109,49 @@ async def test_mcp_tool_does_not_follow_a_rebound_name(
     assert capture_server.requests == []
 
 
+# --- addresses that are not globally routable -----------------------------------
+
+#: Carrier-grade NAT (100.64.0.0/10) — Tailscale gives tailnet devices addresses
+#: here, 100.100.100.100 is its own service — and benchmarking space. Before
+#: 1.92.0 the guard checked "private" only, and these are not.
+NOT_GLOBAL = ["100.64.0.1", "100.100.100.100", "100.127.255.254", "198.18.0.1"]
+
+
+@pytest.mark.parametrize("host", NOT_GLOBAL)
+async def test_addresses_that_are_not_global_are_refused(host: str) -> None:
+    with pytest.raises(MultimodalError, match="not a public address"):
+        await asafe_http_request(f"http://{host}/", timeout=1, max_redirects=0, max_bytes=1000)
+    with pytest.raises(MultimodalError, match="not a public address"):
+        safe_http_fetch(f"http://{host}/", timeout=1, max_redirects=0, max_bytes=1000)
+    with pytest.raises(ToolExecutionError, match="not a public address"):
+        await RESTTool(name="t", url=f"http://{host}/", method="GET").ainvoke({})
+
+
+@pytest.mark.parametrize("host", NOT_GLOBAL)
+async def test_mcp_tool_refuses_addresses_that_are_not_global(host: str) -> None:
+    pytest.importorskip("mcp")
+    from fastaiagent.tool.mcp import MCPTool
+
+    with pytest.raises(ToolExecutionError, match="not a public address"):
+        await MCPTool(name="t", server_url=f"http://{host}/mcp").aexecute({})
+
+
+def test_global_addresses_still_pass_the_check() -> None:
+    from fastaiagent.multimodal._http import validate_url
+
+    for url in ("http://1.1.1.1/", "http://8.8.8.8/", "http://[2606:4700:4700::1111]/"):
+        assert validate_url(url) is None  # a literal, allowed IP: nothing to pin
+
+
+async def test_the_opt_out_still_opens_them(
+    capture_server: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from fastaiagent.multimodal._http import validate_url
+
+    monkeypatch.setenv("FASTAIAGENT_ALLOW_PRIVATE_NETWORKS", "1")
+    assert validate_url("http://100.100.100.100/") is None
+
+
 # --- a name still reaches its server, with its own Host header ------------------
 
 
