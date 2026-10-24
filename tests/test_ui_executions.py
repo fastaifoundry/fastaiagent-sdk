@@ -280,3 +280,41 @@ def test_resume_via_chain_python_api_matches_http_result(temp_dir: Path) -> None
     assert py_final.get("final_approved") == http_final.get("final_approved")
     assert py_final.get("step_final_done") is True
     assert http_final.get("step_final_done") is True
+
+
+# ---------- GET /api/executions/{id}/idempotency-cache ------------------
+
+
+def test_idempotency_cache_shows_the_value_not_the_envelope(temp_dir: Path) -> None:
+    """Since 1.92.0 results are stored in an envelope (so ``None`` can be
+    cached); the inspector shows the value inside it."""
+    from fastaiagent import idempotent
+    from fastaiagent.chain.idempotent import _current_checkpointer
+    from fastaiagent.chain.interrupt import _execution_id
+
+    db_path = str(temp_dir / "idem.db")
+    store = SQLiteCheckpointer(db_path=db_path)
+    store.setup()
+
+    @idempotent(key_fn=lambda amount: f"charge:{amount}")
+    def charge(amount: int) -> dict[str, str]:
+        return {"charge_id": "ch_1"}
+
+    @idempotent(key_fn=lambda order: f"record:{order}")
+    def record(order: str) -> None:
+        return None
+
+    e_tok, c_tok = _execution_id.set("idem-exec"), _current_checkpointer.set(store)
+    try:
+        charge(5)
+        record("o-1")
+    finally:
+        _current_checkpointer.reset(c_tok)
+        _execution_id.reset(e_tok)
+
+    client = TestClient(build_app(db_path=db_path, no_auth=True))
+    items = client.get("/api/executions/idem-exec/idempotency-cache").json()["items"]
+    assert {i["function_key"]: i["result"] for i in items} == {
+        "charge:5": {"charge_id": "ch_1"},
+        "record:o-1": None,
+    }

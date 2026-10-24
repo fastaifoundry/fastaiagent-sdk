@@ -11,6 +11,9 @@ Plus: outside-chain pass-through, key_fn override, non-serializable result
 
 from __future__ import annotations
 
+import os
+import uuid
+
 import pytest
 from pydantic import BaseModel
 
@@ -18,13 +21,32 @@ from fastaiagent import IdempotencyError, SQLiteCheckpointer, idempotent
 from fastaiagent.chain.idempotent import _current_checkpointer
 from fastaiagent.chain.interrupt import _execution_id
 
+PG_DSN = os.environ.get("PG_TEST_DSN")
 
-@pytest.fixture
-def store(temp_dir) -> SQLiteCheckpointer:
-    cp = SQLiteCheckpointer(db_path=str(temp_dir / "cp.db"))
-    cp.setup()
-    yield cp
-    cp.close()
+
+@pytest.fixture(params=["sqlite", "postgres"])
+def store(request, temp_dir):
+    """Every test runs on both checkpointers that store the cache (1.92.0)."""
+    if request.param == "sqlite":
+        cp = SQLiteCheckpointer(db_path=str(temp_dir / "cp.db"))
+        cp.setup()
+        yield cp
+        cp.close()
+        return
+    if not PG_DSN:
+        pytest.skip("PG_TEST_DSN not set — skipping the Postgres checkpointer")
+    from fastaiagent.checkpointers.postgres import PostgresCheckpointer
+
+    schema = f"fastaiagent_t_{uuid.uuid4().hex[:8]}"
+    pg = PostgresCheckpointer(PG_DSN, schema=schema)
+    pg.setup()
+    try:
+        yield pg
+    finally:
+        with pg._get_pool().connection() as conn, conn.cursor() as cur:
+            cur.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
+            conn.commit()
+        pg.close()
 
 
 def _bind(execution_id: str, store: SQLiteCheckpointer):
@@ -232,3 +254,100 @@ class TestPydanticReturn:
         # Second call: cached — comes back as the JSON-deserialized dict.
         # The decorator documents this in its docstring.
         assert second == {"charge_id": "ch_42", "amount": 500}
+
+
+class TestNoneReturn:
+    """Before 1.92.0 a cached ``None`` read back as "not cached", so a
+    function returning ``None`` ran again on every call."""
+
+    def test_none_result_is_cached(self, store):
+        calls = []
+
+        @idempotent
+        def record_invoice(order_id):
+            calls.append(order_id)
+
+        tokens = _bind("exec-none", store)
+        try:
+            assert record_invoice("o-1") is None
+            assert record_invoice("o-1") is None
+        finally:
+            _unbind(tokens)
+
+        assert calls == ["o-1"]
+
+    def test_a_row_written_before_1_92_is_still_a_hit(self, store):
+        from fastaiagent.chain.idempotent import _build_default_key
+
+        calls = []
+
+        @idempotent
+        def charge(amount):
+            calls.append(amount)
+            return {"charge_id": "new"}
+
+        # What 1.91.0 stored: the bare value, no envelope.
+        key = _build_default_key(charge.__qualname__, (100,), {})
+        store.put_idempotent("exec-legacy", key, {"charge_id": "old"})
+
+        tokens = _bind("exec-legacy", store)
+        try:
+            assert charge(100) == {"charge_id": "old"}
+        finally:
+            _unbind(tokens)
+
+        assert calls == []
+
+
+class TestAsyncFunction:
+    """Before 1.92.0 the wrapper was sync only: an ``async def`` body was
+    never awaited and caching its coroutine raised ``IdempotencyError``."""
+
+    @pytest.mark.asyncio
+    async def test_async_body_runs_once_and_is_cached(self, store):
+        import inspect
+
+        calls = []
+
+        @idempotent
+        async def charge(amount):
+            calls.append(amount)
+            return {"charge_id": f"ch_{len(calls)}"}
+
+        assert inspect.iscoroutinefunction(charge)
+
+        tokens = _bind("exec-async", store)
+        try:
+            first = await charge(100)
+            second = await charge(100)
+        finally:
+            _unbind(tokens)
+
+        assert calls == [100]
+        assert first == second == {"charge_id": "ch_1"}
+
+    @pytest.mark.asyncio
+    async def test_async_outside_a_run_passes_through(self):
+        calls = []
+
+        @idempotent
+        async def charge(amount):
+            calls.append(amount)
+            return amount
+
+        assert await charge(1) == 1
+        assert await charge(1) == 1
+        assert calls == [1, 1]
+
+    @pytest.mark.asyncio
+    async def test_async_non_jsonable_result_raises(self, store):
+        @idempotent
+        async def fn():
+            return object()
+
+        tokens = _bind("exec-async-bad", store)
+        try:
+            with pytest.raises(IdempotencyError, match="non-JSON-serializable"):
+                await fn()
+        finally:
+            _unbind(tokens)

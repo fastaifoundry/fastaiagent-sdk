@@ -14,6 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failed with `TypeError` before the handshake. `--expose-tools` now applies to an
   Agent only. New test drives the real CLI over stdio with the official MCP client,
   for a Chain and an Agent.
+- **`@idempotent` on an `async def` never ran the function.** The wrapper was sync
+  only: it cached the un-awaited coroutine, which raised `IdempotencyError`. Inside an
+  agent the tool reported a failure to the model and the run still finished normally,
+  so the charge (or email, or write) silently never happened. The decorator now
+  awaits an async body once and caches its result. Tested across `Agent.arun`,
+  `Agent.astream` and `Chain.aexecute`, each paused and resumed.
+- **`@idempotent` re-ran a function that returns `None`.** A cached `None` read back
+  as "not cached". Results are now stored in a small envelope, so `None` is cached
+  like any other value. Rows written by older versions are still read, and no
+  checkpointer changed. The Local UI's idempotency-cache view shows the value inside.
 
 ## [1.91.0] - 2026-10-21 — one extension model, and an LLMClient for today's models
 

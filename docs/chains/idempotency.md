@@ -37,6 +37,22 @@ Now the first call inside an execution stores its receipt. The second
 call (after resume) finds the cache row and returns it without hitting
 Stripe. Counter stays at 1.
 
+`async def` functions work the same way (since 1.92.0): the body is awaited
+once and its result cached.
+
+```python
+@idempotent
+async def charge_customer(amount):
+    return await stripe_async.charge(amount=amount)
+```
+
+!!! warning "Before 1.92.0"
+    An `async def` wrapped in `@idempotent` never ran: the wrapper cached the
+    un-awaited coroutine and raised. Inside an agent the tool reported a failure
+    and the run still finished normally. A function returning `None` was also
+    never cached, so it ran again on every call. Both are fixed; cached rows
+    from older versions are still read.
+
 ## How keys work
 
 The default key is `sha256(json.dumps([qualname, args, kwargs], sort_keys=True))`.
@@ -54,9 +70,10 @@ def process(user, req):
 - Same `execution_id` + same key → cache hit, body skipped.
 - Different `execution_id` → cache miss, body runs again. The cache is
   scoped per execution; there is no cross-execution sharing.
-- No active `execution_id` (called outside any chain run) → pass-through,
-  body runs every time. Unit tests of `@idempotent` functions don't need
-  any setup.
+- No active `execution_id` or no checkpointer (called outside a checkpointed
+  Agent, Chain or Swarm run) → pass-through, body runs every time. Unit tests
+  of `@idempotent` functions don't need any setup.
+- A `None` result is cached like any other value.
 
 ## Result serialization
 
