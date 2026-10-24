@@ -22,10 +22,16 @@ from fastaiagent._internal.errors import AgentTimeoutError
 from fastaiagent.agent.swarm import SwarmError
 from fastaiagent.llm.stream import StreamDone
 from fastaiagent.testing import TestModel
+from tests._cancel_helpers import cancel_when
+
+#: Set when the slow tool starts; a cancel waits for it (a fixed delay raced
+#: the run on slow CI runners).
+_IN_TOOL = threading.Event()
 
 
 async def aslow() -> str:
     """Take a while."""
+    _IN_TOOL.set()
     await asyncio.sleep(5)
     return "late"
 
@@ -80,7 +86,8 @@ def _run_end(store: SQLiteCheckpointer, execution_id: str) -> Any:
 
 def test_swarm_arun_can_be_cancelled(store: SQLiteCheckpointer) -> None:
     swarm = _slow_swarm(store)
-    threading.Timer(0.3, swarm.cancel, args=("sw-1",)).start()
+    _IN_TOOL.clear()
+    cancel_when(_IN_TOOL, swarm.cancel, "sw-1")
     started = time.monotonic()
     result = swarm.run("go", execution_id="sw-1")
     assert time.monotonic() - started < 2
@@ -91,7 +98,8 @@ def test_swarm_arun_can_be_cancelled(store: SQLiteCheckpointer) -> None:
 
 def test_swarm_astream_can_be_cancelled(store: SQLiteCheckpointer) -> None:
     swarm = _slow_swarm(store)
-    threading.Timer(0.3, swarm.cancel, args=("sw-2",)).start()
+    _IN_TOOL.clear()
+    cancel_when(_IN_TOOL, swarm.cancel, "sw-2")
     started = time.monotonic()
     events = _stream(swarm, "sw-2")
     assert time.monotonic() - started < 2

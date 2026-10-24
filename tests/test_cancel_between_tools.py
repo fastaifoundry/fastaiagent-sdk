@@ -18,12 +18,20 @@ from fastaiagent import Agent, AgentConfig, FunctionTool
 from fastaiagent._internal.errors import AgentTimeoutError
 from fastaiagent.agent.middleware import AgentMiddleware
 from fastaiagent.testing import TestModel
+from tests._cancel_helpers import cancel_when
+
+#: Set when the first blocking tool starts; the cancel waits for it (a fixed
+#: delay raced the run on slow CI runners).
+_in_tool: dict[str, threading.Event] = {}
 
 
-def _agent(log: list[str], **config: object) -> Agent:
+def _agent(log: list[str], sleep: float = 0.4, **config: object) -> Agent:
+    started = threading.Event()
+
     def slow(step: str) -> str:
         log.append(f"start {step}")
-        time.sleep(0.4)
+        started.set()
+        time.sleep(sleep)
         log.append(f"end {step}")
         return step
 
@@ -32,7 +40,7 @@ def _agent(log: list[str], **config: object) -> Agent:
             log.append("before_model")
             return messages
 
-    return Agent(
+    agent = Agent(
         name="blocking",
         llm=TestModel(
             response=["", "done"],
@@ -45,10 +53,12 @@ def _agent(log: list[str], **config: object) -> Agent:
         middleware=[Hooks()],
         config=AgentConfig(**config),  # type: ignore[arg-type]
     )
+    _in_tool[agent.name] = started
+    return agent
 
 
 def _cancel_soon(agent: Agent, exec_id: str) -> None:
-    threading.Timer(0.15, agent.cancel, args=(exec_id,)).start()
+    cancel_when(_in_tool[agent.name], agent.cancel, exec_id)
 
 
 def test_run_stops_after_the_blocking_tool() -> None:
@@ -82,8 +92,10 @@ def test_astream_stops_inside_a_slow_async_tool() -> None:
     """A streamed run stopped only at its next event: a cancel waited out the
     tool in flight. The tool call now runs as the run's task."""
     done: list[str] = []
+    in_tool = threading.Event()
 
     async def aslow() -> str:
+        in_tool.set()
         await asyncio.sleep(5)
         done.append("finished")
         return "late"
@@ -93,7 +105,7 @@ def test_astream_stops_inside_a_slow_async_tool() -> None:
         llm=TestModel(response=["", "done"], tool_calls=[{"name": "aslow", "arguments": {}}]),
         tools=[FunctionTool(name="aslow", fn=aslow)],
     )
-    _cancel_soon(agent, "c-async")
+    cancel_when(in_tool, agent.cancel, "c-async")
     started = time.monotonic()
     result = agent.stream("go", execution_id="c-async")
     assert result.status == "cancelled"
@@ -120,7 +132,8 @@ def test_a_streamed_timeout_lands_inside_a_slow_async_tool() -> None:
 
 def test_a_timeout_stops_after_the_blocking_tool() -> None:
     log: list[str] = []
-    agent = _agent(log, timeout_seconds=0.2)
+    # Margins wide enough that a slow runner still times out inside the tool.
+    agent = _agent(log, sleep=2.0, timeout_seconds=1.0)
     with pytest.raises(AgentTimeoutError):
         agent.run("go")
     assert log == ["before_model", "start one", "end one"]

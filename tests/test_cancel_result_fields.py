@@ -20,12 +20,7 @@ import pytest
 
 from fastaiagent import Agent, FunctionTool, SQLiteCheckpointer
 from fastaiagent.testing import TestModel
-
-
-async def aslow() -> str:
-    """Take a while."""
-    await asyncio.sleep(5)
-    return "late"
+from tests._cancel_helpers import cancel_when
 
 
 @pytest.fixture
@@ -42,7 +37,13 @@ def traced(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     reset_config()
 
 
-def _agent(store: SQLiteCheckpointer) -> Agent:
+def _agent(store: SQLiteCheckpointer, started: threading.Event) -> Agent:
+    async def aslow() -> str:
+        """Take a while."""
+        started.set()
+        await asyncio.sleep(5)
+        return "late"
+
     return Agent(
         name="stopped",
         llm=TestModel(
@@ -67,8 +68,9 @@ def _root_status(db: Path) -> Any:
 @pytest.mark.parametrize("method", ["run", "stream"])
 def test_a_cancelled_run_reports_what_happened(traced: Path, tmp_path: Path, method: str) -> None:
     store = SQLiteCheckpointer(db_path=str(tmp_path / "cp.db"))
-    agent = _agent(store)
-    threading.Timer(0.3, agent.cancel, args=(f"cf-{method}",)).start()
+    started = threading.Event()
+    agent = _agent(store, started)
+    cancel_when(started, agent.cancel, f"cf-{method}")
     result = getattr(agent, method)("go", execution_id=f"cf-{method}")
     assert result.status == "cancelled"
     assert result.trace_id, "the cancelled run's trace exists; name it"

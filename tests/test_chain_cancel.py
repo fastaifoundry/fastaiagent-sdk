@@ -22,15 +22,17 @@ from fastaiagent import Agent, AgentConfig, Chain, FunctionTool, SQLiteCheckpoin
 from fastaiagent._internal.errors import AgentTimeoutError
 from fastaiagent.agent.context import RunContext
 from fastaiagent.testing import TestModel
+from tests._cancel_helpers import cancel_when
 
 
-async def aslow() -> str:
-    """Take a while."""
-    await asyncio.sleep(5)
-    return "late"
+def _slow_agent(started: threading.Event | None = None, **config: Any) -> Agent:
+    async def aslow() -> str:
+        """Take a while."""
+        if started is not None:
+            started.set()
+        await asyncio.sleep(5)
+        return "late"
 
-
-def _slow_agent(**config: Any) -> Agent:
     return Agent(
         name="worker",
         llm=TestModel(response=["", "worked"], tool_calls=[{"name": "aslow", "arguments": {}}]),
@@ -59,8 +61,9 @@ def store(tmp_path: Path) -> SQLiteCheckpointer:
 
 def test_a_chain_can_be_cancelled_by_its_id(store: SQLiteCheckpointer) -> None:
     ran: list[str] = []
-    chain = _chain(store, _slow_agent(), ran)
-    threading.Timer(0.3, chain.cancel, args=("ch-1",)).start()
+    in_tool = threading.Event()
+    chain = _chain(store, _slow_agent(in_tool), ran)
+    cancel_when(in_tool, chain.cancel, "ch-1")
     started = time.monotonic()
     result = asyncio.run(chain.aexecute({"message": "go"}, execution_id="ch-1"))
     assert time.monotonic() - started < 2, "the cancel waited out the agent's tool"
@@ -102,9 +105,11 @@ def test_cancelling_an_agent_node_stops_the_chain(store: SQLiteCheckpointer) -> 
 
 def test_a_blocking_tool_node_lets_no_later_node_start(store: SQLiteCheckpointer) -> None:
     ran: list[str] = []
+    in_tool = threading.Event()
 
     def blocking() -> str:
         """Blocks the loop."""
+        in_tool.set()
         time.sleep(0.4)
         ran.append("blocking")
         return "ok"
@@ -118,7 +123,7 @@ def test_a_blocking_tool_node_lets_no_later_node_start(store: SQLiteCheckpointer
     chain.add_node("first", tool=FunctionTool(name="blocking", fn=blocking))
     chain.add_node("after", tool=FunctionTool(name="after", fn=after))
     chain.connect("first", "after")
-    threading.Timer(0.1, chain.cancel, args=("ch-3",)).start()
+    cancel_when(in_tool, chain.cancel, "ch-3")
     result = chain.execute({}, execution_id="ch-3")
     assert result.status == "cancelled"
     assert ran == ["blocking"]

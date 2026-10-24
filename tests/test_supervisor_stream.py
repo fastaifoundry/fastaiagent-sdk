@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -21,9 +22,14 @@ from fastaiagent import Agent, FunctionTool, SQLiteCheckpointer, Supervisor, Wor
 from fastaiagent.llm.stream import StreamDone
 from fastaiagent.testing import FunctionModel
 
+#: Set when the worker's slow tool starts; the cancel waits for it (a fixed
+#: delay raced the run on slow CI runners).
+_IN_TOOL = threading.Event()
+
 
 async def aslow() -> str:
     """Take a while."""
+    _IN_TOOL.set()
     await asyncio.sleep(5)
     return "done"
 
@@ -54,7 +60,7 @@ def store(tmp_path: Path) -> SQLiteCheckpointer:
     return SQLiteCheckpointer(db_path=str(tmp_path / "cp.db"))
 
 
-def _drain(sup: Supervisor, execution_id: str, cancel_after: float | None = None) -> list[Any]:
+def _drain(sup: Supervisor, execution_id: str, cancel_in_tool: bool = False) -> list[Any]:
     async def main() -> list[Any]:
         events: list[Any] = []
 
@@ -62,9 +68,11 @@ def _drain(sup: Supervisor, execution_id: str, cancel_after: float | None = None
             async for event in sup.astream("go", execution_id=execution_id):
                 events.append(event)
 
+        _IN_TOOL.clear()
         task = asyncio.ensure_future(consume())
-        if cancel_after is not None:
-            await asyncio.sleep(cancel_after)
+        if cancel_in_tool:
+            while not _IN_TOOL.is_set():
+                await asyncio.sleep(0.02)
             assert Agent.cancel(sup.workers[0].agent, execution_id) is True
         await asyncio.wait_for(task, 5)
         return events
@@ -80,7 +88,7 @@ def test_a_completed_stream_leaves_a_run_end_marker(store: SQLiteCheckpointer) -
 
 def test_a_cancelled_stream_records_the_cancel(store: SQLiteCheckpointer) -> None:
     started = time.monotonic()
-    events = _drain(_supervisor(store, slow_worker=True), "ss-2", cancel_after=0.3)
+    events = _drain(_supervisor(store, slow_worker=True), "ss-2", cancel_in_tool=True)
     # The worker's 5 s tool is stopped mid-call, not waited out.
     assert time.monotonic() - started < 2
     assert isinstance(events[-1], StreamDone) and events[-1].finish_reason == "cancelled"

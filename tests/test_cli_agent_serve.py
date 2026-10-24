@@ -268,7 +268,7 @@ class _Server:
         self._thread.join(timeout=10)
 
 
-def _slow_agent(finished: list[str]) -> Agent:
+def _slow_agent(finished: list[str], started: object = None) -> Agent:
     import asyncio
 
     from fastaiagent import FunctionTool
@@ -276,6 +276,8 @@ def _slow_agent(finished: list[str]) -> Agent:
 
     async def aslow() -> str:
         """Take a while."""
+        if started is not None:
+            started.set()  # type: ignore[attr-defined]
         await asyncio.sleep(3)
         finished.append("yes")
         return "late"
@@ -294,7 +296,8 @@ def test_cancel_stops_a_run_in_progress(isolated_local_db) -> None:
     import httpx
 
     finished: list[str] = []
-    with _Server(agent_cli._build_app(_slow_agent(finished))) as url:
+    in_tool = threading.Event()
+    with _Server(agent_cli._build_app(_slow_agent(finished, in_tool))) as url:
         answer: dict[str, object] = {}
 
         def call_run() -> None:
@@ -302,14 +305,14 @@ def test_cancel_stops_a_run_in_progress(isolated_local_db) -> None:
             answer.update(httpx.post(f"{url}/run", json=body, timeout=10).json())
 
         caller = threading.Thread(target=call_run)
-        started = time.monotonic()
         caller.start()
-        time.sleep(0.4)
+        assert in_tool.wait(10), "the run never reached its tool"
+        stopped = time.monotonic()
         resp = httpx.post(f"{url}/cancel", json={"execution_id": "srv-1"}, timeout=5)
         caller.join(timeout=5)
     assert resp.status_code == 200 and resp.json()["cancelled"] is True
     assert answer["status"] == "cancelled" and answer["execution_id"] == "srv-1"
-    assert time.monotonic() - started < 2.5 and finished == []
+    assert time.monotonic() - stopped < 2 and finished == []
 
 
 def test_a_client_that_hangs_up_stops_the_run(isolated_local_db) -> None:
