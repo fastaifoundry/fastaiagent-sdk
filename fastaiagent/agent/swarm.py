@@ -935,6 +935,7 @@ class Swarm:
         exec_token = _execution_id.set(execution_id)
         ap_token = _agent_path.set(f"swarm:{self.name}")
         cache_tokens = bind_cache(execution_id, self._checkpointer)
+
         async def resume_run() -> AgentResult:
             active_agent = self._active_agent(
                 active_name, state, context=context, original_input=original_input

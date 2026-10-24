@@ -220,6 +220,7 @@ def _build_app(
         if not req.input.strip():
             raise HTTPException(400, "input must be non-empty")
         execution_id = req.execution_id or str(uuid.uuid4())
+        work: asyncio.Future[Any]
         if isinstance(target, Agent):
             work = asyncio.ensure_future(target.arun(req.input, execution_id=execution_id))
         else:
