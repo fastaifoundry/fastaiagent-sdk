@@ -92,12 +92,15 @@ async def test_governance_agent_id_forces_sequential() -> None:
     assert elapsed >= 2 * _SLEEP * 0.9, f"expected sequential fallback, took {elapsed:.3f}s"
 
 
-def _sync_agent(parallel: bool) -> object:
+def _sync_agent(parallel: bool, spans: list[tuple[float, float]] | None = None) -> object:
     from fastaiagent import Agent, AgentConfig
     from fastaiagent.testing import TestModel
 
     def slow(tag: str) -> str:
+        started = time.perf_counter()
         time.sleep(_SLEEP)  # a plain blocking tool, the common case
+        if spans is not None:
+            spans.append((started, time.perf_counter()))
         return f"done-{tag}"
 
     return Agent(
@@ -118,14 +121,17 @@ def _sync_agent(parallel: bool) -> object:
 def test_plain_sync_tools_overlap_too(method: str) -> None:
     """1.93.0: sync tools ran on the event loop, so ``parallel_tools=True`` gave
     them no overlap (two 2 s tools took 4 s against a live model)."""
-    started = time.perf_counter()
-    result = getattr(_sync_agent(True), method)("go")
-    elapsed = time.perf_counter() - started
+    spans: list[tuple[float, float]] = []
+    result = getattr(_sync_agent(True, spans), method)("go")
     assert [c["output"] for c in result.tool_calls] == ["done-a", "done-b"]
-    assert elapsed < 1.6 * _SLEEP, f"sync tools ran back to back: {elapsed:.3f}s"
+    # The calls' own intervals overlap: each started before the other ended.
+    # (A wall-clock bound flaked on slow CI runners: overhead, not overlap.)
+    (s1, e1), (s2, e2) = sorted(spans)
+    assert s2 < e1, f"sync tools ran back to back: {spans}"
 
 
 def test_sync_tools_stay_sequential_without_parallel_tools() -> None:
-    started = time.perf_counter()
-    _sync_agent(False).run("go")
-    assert time.perf_counter() - started >= 2 * _SLEEP * 0.9
+    spans: list[tuple[float, float]] = []
+    _sync_agent(False, spans).run("go")
+    (s1, e1), (s2, e2) = sorted(spans)
+    assert s2 >= e1
