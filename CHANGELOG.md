@@ -72,6 +72,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   swarm wrote none, and a `SwarmError` was recorded as `GeneratorExit`. Hops now
   run nested under one `execution_id`, and the swarm writes its own marker.
 - **A Swarm hop's timeout records `run_reason="timeout"`** (it was empty).
+- **PydanticAI runs are no longer counted 2–3 times in the UI and analytics.**
+  The root span carried the run's tokens and cost as per-call values beside
+  PydanticAI's own `chat` spans, and `run_sync` opened a second root through
+  `run`. The root now carries the total as a roll-up (`agent.tokens_used` /
+  `agent.cost_usd`) and one root is opened per run. Checked live on gpt-5-mini:
+  78 tokens real, 78 shown (234 before for a similar call).
 - **`agent serve`: `GET /openapi.json` works** (it answered 500 — FastAPI could
   not resolve the `/run/stream` return annotation — so `/docs` was empty).
 - **`agent serve`: a `/run` whose client hangs up is cancelled.** It kept

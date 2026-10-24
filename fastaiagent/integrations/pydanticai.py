@@ -26,6 +26,7 @@ PydanticAI; we additionally guard the run-method wrap with the
 from __future__ import annotations
 
 import contextlib
+import contextvars
 import functools
 import logging
 from typing import Any
@@ -41,6 +42,13 @@ logger = logging.getLogger(__name__)
 _INSTALL_HINT = 'pydantic-ai is required. Install with: pip install "fastaiagent[pydanticai]"'
 
 _enabled = False
+#: ``Agent.instrument_all()`` took: PydanticAI emits its own per-call spans.
+_native_spans = False
+#: Set while a wrapped run is in progress (1.93.0). ``run_sync`` runs ``run``
+#: inside it; both opened a root span, nested, each with the run's totals.
+_in_run: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "fastaiagent_pydanticai_in_run", default=False
+)
 
 
 def _require() -> None:
@@ -148,13 +156,22 @@ def _stamp_usage_and_cost(span: Any, result: Any) -> None:
         or getattr(usage, "response_tokens", None)
         or getattr(usage, "completion_tokens", None)
     )
+    bare = _bare_model(getattr(span, "_model_name", None) or "")
+    cost = compute_cost_usd(bare, in_toks, out_toks)
+    if _native_spans:
+        # PydanticAI's own ``chat <model>`` spans carry each call's tokens, so
+        # the root carries the run's total as a roll-up, as an ``agent.*`` root
+        # does (1.93.0). Stamped as per-call tokens and cost, it was added to the
+        # children's: the UI and analytics showed 2x (``run``) to 3x (``run_sync``).
+        span.set_attribute("agent.tokens_used", int(in_toks or 0) + int(out_toks or 0))
+        if cost is not None:
+            span.set_attribute("agent.cost_usd", cost)
+        return
     set_genai_attributes(
         span,
         input_tokens=int(in_toks) if in_toks else None,
         output_tokens=int(out_toks) if out_toks else None,
     )
-    bare = _bare_model(getattr(span, "_model_name", None) or "")
-    cost = compute_cost_usd(bare, in_toks, out_toks)
     if cost is not None:
         set_fastaiagent_attributes(span, **{"cost.total_usd": cost})
 
@@ -218,14 +235,17 @@ def _install_method_patches() -> None:
         def run_sync_wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
             from opentelemetry import trace as otel_trace
 
+            if _in_run.get():
+                return original_run_sync(self, *args, **kwargs)
             span = _open_root(self)
             with otel_trace.use_span(span, end_on_exit=True):
                 if trace_payloads_enabled() and args:
                     span.set_attribute("pydanticai.agent.input", str(args[0])[:1_000])
+                run_token = _in_run.set(True)
                 try:
                     result = original_run_sync(self, *args, **kwargs)
-                except BaseException:
-                    raise
+                finally:
+                    _in_run.reset(run_token)
                 if trace_payloads_enabled():
                     output = getattr(result, "output", None) or getattr(result, "data", None)
                     if output is not None:
@@ -242,7 +262,19 @@ def _install_method_patches() -> None:
         async def run_wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
             from opentelemetry import trace as otel_trace
 
+            if _in_run.get():
+                # ``run_sync`` (or a run already wrapped) is the root.
+                return await original_run(self, *args, **kwargs)
             span = _open_root(self)
+            run_token = _in_run.set(True)
+            try:
+                return await _traced_run(span, self, args, kwargs)
+            finally:
+                _in_run.reset(run_token)
+
+        async def _traced_run(span: Any, self: Any, args: Any, kwargs: Any) -> Any:
+            from opentelemetry import trace as otel_trace
+
             with otel_trace.use_span(span, end_on_exit=True):
                 if trace_payloads_enabled() and args:
                     span.set_attribute("pydanticai.agent.input", str(args[0])[:1_000])
@@ -411,7 +443,7 @@ def enable() -> None:
     a ``_fastaiagent_patched`` sentinel; ``Agent.instrument_all`` is
     itself idempotent).
     """
-    global _enabled
+    global _enabled, _native_spans
     if _enabled:
         return
     _require()
@@ -419,6 +451,7 @@ def enable() -> None:
 
     try:
         Agent.instrument_all()
+        _native_spans = True
     except Exception:
         # If the instrument-all surface ever changes, fall back to our
         # wrapper-only spans — they still carry framework + cost; just
