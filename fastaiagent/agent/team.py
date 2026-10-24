@@ -171,10 +171,19 @@ class Supervisor:
         routing_instructions: str | None = None,
         guardrails: list[Guardrail] | None = None,
         middleware: Sequence[AgentMiddleware] | None = None,
+        *,
+        timeout_seconds: float | None = None,
     ):
         self.name = name
         self.llm = llm or LLMClient()
         self.workers = workers or []
+        if timeout_seconds is not None and timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be > 0")
+        #: The whole supervisor run's wall clock, workers included (1.93.0): the
+        #: delegating loop's ``timeout_seconds`` (with ``routing="decisions"``,
+        #: the routed worker run's). A worker's own ``timeout_seconds`` still
+        #: bounds that worker.
+        self.timeout_seconds = timeout_seconds
         # The supervisor's OWN middleware (1.91.0, 1C), like ``guardrails``:
         # its loop and its ``delegate_to_*`` calls; workers keep theirs. With
         # ``routing="decisions"`` it runs on the routed worker's run.
@@ -331,6 +340,11 @@ class Supervisor:
         """
         clone = self._build_worker_clone(worker)
         clone._agent_path_label = f"supervisor:{self.name}/worker:{worker.role}"
+        if self.timeout_seconds is not None:
+            # The routed worker's run IS the supervisor's run (1.93.0).
+            clone.config = clone.config.model_copy(
+                update={"timeout_seconds": self.timeout_seconds}
+            )
         if self.guardrails:
             # A routed run is this worker's run: it is where the supervisor's
             # input and output guardrails can judge the request and the answer.
@@ -761,7 +775,10 @@ class Supervisor:
             system_prompt=self.system_prompt,
             llm=self.llm,
             tools=self._build_worker_tools(context=context),
-            config=AgentConfig(max_iterations=self.max_delegation_rounds * 2),
+            config=AgentConfig(
+                max_iterations=self.max_delegation_rounds * 2,
+                timeout_seconds=self.timeout_seconds,
+            ),
             checkpointer=self._checkpointer,
             agent_path_label=f"supervisor:{self.name}",
             guardrails=self.guardrails,

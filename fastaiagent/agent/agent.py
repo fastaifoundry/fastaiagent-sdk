@@ -633,8 +633,9 @@ class Agent:
         """Stop the run ``execution_id`` if it is in progress in this process (1.91.0).
 
         ``arun`` / ``run`` / ``aresume`` stop at once — inside a model or tool call
-        — and return ``status="cancelled"``; ``astream`` stops at its next event
-        and ends with ``StreamDone(finish_reason="cancelled")``. Safe from any
+        — and return ``status="cancelled"``; ``astream`` stops inside a tool call,
+        or at the next chunk of a model call (1.93.0), and ends with
+        ``StreamDone(finish_reason="cancelled")``. Safe from any
         thread. The run's checkpoint ends ``failed`` with ``run_reason``
         ``"cancelled"``. Returns ``False`` when no such run is in progress.
         """

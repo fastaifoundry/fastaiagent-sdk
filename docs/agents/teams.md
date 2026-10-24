@@ -419,6 +419,15 @@ All methods accept `context: RunContext | None` which is forwarded to all worker
 A `Supervisor` has no `cancel()` of its own. To stop a run in progress (1.91.0),
 call `cancel(<the supervisor run's execution_id>)` on any `Agent`; it returns
 `status="cancelled"`. See [Run limits and cancel](index.md#run-limits-and-cancel-1910).
+Since 1.93.0 a streamed run stops at once too, a worker's tool call included.
+
+`Supervisor(..., timeout_seconds=)` (1.93.0) bounds the whole run, workers
+included, and raises `AgentTimeoutError` (`run_reason="timeout"`). A worker's
+own `timeout_seconds` still bounds that worker. It is not part of `to_dict()`.
+
+`astream()` runs with the supervisor's checkpointer and under a
+`supervisor.<name>` root span, as `arun()` does (since 1.93.0; before, a
+streamed run left no checkpoints and no root span).
 
 ### `Worker`
 

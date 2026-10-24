@@ -312,8 +312,14 @@ The limits and the stop belong to the **top-level** run. An agent run inside
 another one (a Supervisor's worker, an agent called from a tool, a Swarm hop)
 runs under its parent's limits and stops with it. A `Supervisor` has no `cancel()`
 of its own: call `cancel(<the supervisor run's execution_id>)` on any `Agent`, as
-the registry of running runs is per process. A `Swarm` or `Chain` run cannot be
-cancelled in 1.91.0.
+the registry of running runs is per process. Since 1.93.0 a `Swarm` run
+(`swarm.cancel(id)`, `arun` and `astream`) and a `Chain` run (`chain.cancel(id)`)
+can be cancelled too, with the same result and `run_reason`; before, neither could.
+
+`Swarm(..., timeout_seconds=)` and `Supervisor(..., timeout_seconds=)` (1.93.0)
+bound the whole run, every hop or worker included, and raise `AgentTimeoutError`
+with `run_reason="timeout"`. A worker's or hop agent's own `timeout_seconds`
+still bounds that agent. Neither is written into `to_dict()`.
 
 The three limits are written into `Agent.to_dict()` only when set, so a
 plane-dispatched or replayed agent keeps them, and a default agent's payload is

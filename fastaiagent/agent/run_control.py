@@ -20,12 +20,15 @@ from __future__ import annotations
 import asyncio
 import threading
 import time
+from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TypeVar
 
 from fastaiagent._internal.errors import AgentTimeoutError, RunLimitError, StopAgent
 from fastaiagent.agent.context import RunUsage
+
+T = TypeVar("T")
 
 #: ``run_reason`` on a run-end checkpoint and ``stop_reason`` on a result.
 CANCELLED = "cancelled"
@@ -195,6 +198,61 @@ def check_stopped() -> None:
     if top.overdue():
         top.reason = TIMEOUT
         raise top.timeout_error()
+
+
+async def controlled(
+    execution_id: str,
+    name: str,
+    work: Callable[[], Awaitable[T]],
+    *,
+    timeout_seconds: float | None = None,
+) -> T:
+    """Run ``work`` as a run that :func:`cancel` and ``timeout_seconds`` can stop
+    (1.93.0) — what ``Agent._controlled`` does, for a Chain or a Swarm.
+
+    A top-level run is registered by ``execution_id`` and runs as a task, so a
+    stop lands at once, inside a node or a hop. A run inside another runs inline
+    and stops with its parent. Raises ``_RunCancelled`` when cancelled and
+    ``AgentTimeoutError`` when out of time; the caller's own cancellation stops
+    the run and propagates.
+    """
+    parent = _active.get()
+    control = RunControl(
+        execution_id=execution_id,
+        agent_name=name,
+        model="",
+        timeout_seconds=timeout_seconds,
+        parent=parent,
+    )
+    token = bind(control)  # before the task, which copies it
+    try:
+        if parent is not None:
+            return await work()
+        add(control)
+        control.loop = asyncio.get_running_loop()
+        task = asyncio.ensure_future(work())
+        control.task = task
+        timer = arm_timeout(control)
+        try:
+            return await task
+        except (asyncio.CancelledError, _RunCancelled):
+            if control.reason is None:
+                # The caller's own task was cancelled: stop the run with it.
+                task.cancel()
+                try:
+                    await task
+                except BaseException:  # noqa: BLE001 - unwinding already
+                    pass
+                raise
+            if control.reason == TIMEOUT:
+                raise control.timeout_error() from None
+            raise _RunCancelled(control) from None
+        finally:
+            if timer is not None:
+                timer.cancel()
+    finally:
+        unbind(token)
+        remove(control)
 
 
 async def stoppable(work: Any) -> Any:

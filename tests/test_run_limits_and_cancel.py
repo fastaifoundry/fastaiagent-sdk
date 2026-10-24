@@ -461,14 +461,24 @@ def test_a_supervisor_run_can_be_cancelled_by_its_id() -> None:
     assert asyncio.run(main()).status == "cancelled"
 
 
-def test_a_swarm_is_not_cancellable_and_says_so() -> None:
-    """Its hops run nested; 1.91.0 registers no Swarm-level run (documented)."""
+def test_a_swarm_is_cancellable_by_its_id() -> None:
+    """1.91.0 registered no Swarm-level run; 1.93.0 does (tests/test_swarm_cancel.py)."""
     from fastaiagent import Swarm
 
-    agent = Agent(name="a", llm=FunctionModel(lambda m: "done"))
+    agent = Agent(
+        name="a",
+        llm=FunctionModel(lambda m: ("", [{"name": "aslow", "arguments": {}}])),
+        tools=[FunctionTool(name="aslow", fn=aslow)],
+    )
     swarm = Swarm(name="s", agents=[agent], entrypoint="a", handoffs={"a": []})
-    assert swarm.run("go", execution_id="sw-1").output == "done"
-    assert agent.cancel("sw-1") is False
+
+    async def main() -> Any:
+        task = asyncio.ensure_future(swarm.arun("go", execution_id="sw-1"))
+        await asyncio.sleep(0.3)
+        assert agent.cancel("sw-1") is True  # one registry for every runner
+        return await asyncio.wait_for(task, 3)
+
+    assert asyncio.run(main()).status == "cancelled"
 
 
 def test_a_nested_agent_holds_its_own_caps() -> None:

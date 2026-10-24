@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import uuid
 from collections.abc import Awaitable, Callable, Sequence
@@ -160,39 +159,12 @@ class Chain:
     async def _controlled(
         self, execution_id: str, work: Callable[[], Awaitable[dict[str, Any]]]
     ) -> dict[str, Any]:
-        """Run ``work`` as a run :meth:`cancel` can stop (1.93.0), as
-        ``Agent._controlled`` does: a top-level chain runs as a task its stop
-        cancels; a chain inside another run runs inline and stops with it.
-        Raises ``_RunCancelled`` when the run was cancelled."""
+        """Run ``work`` as a run :meth:`cancel` can stop (1.93.0): a top-level
+        chain runs as a task its stop cancels; a chain inside another run runs
+        inline and stops with it. Raises ``_RunCancelled`` when cancelled."""
         from fastaiagent.agent import run_control
 
-        parent = run_control.active_control()
-        control = run_control.RunControl(
-            execution_id=execution_id, agent_name=self.name, model="", parent=parent
-        )
-        token = run_control.bind(control)  # before the task, which copies it
-        try:
-            if parent is not None:
-                return await work()
-            run_control.add(control)
-            control.loop = asyncio.get_running_loop()
-            task = asyncio.ensure_future(work())
-            control.task = task
-            try:
-                return await task
-            except (asyncio.CancelledError, _RunCancelled):
-                if control.reason is None:
-                    # The caller's own task was cancelled: stop the run with it.
-                    task.cancel()
-                    try:
-                        await task
-                    except BaseException:  # noqa: BLE001 - unwinding already
-                        pass
-                    raise
-                raise _RunCancelled(control) from None
-        finally:
-            run_control.unbind(token)
-            run_control.remove(control)
+        return await run_control.controlled(execution_id, self.name, work)
 
     def _cancelled(
         self, store: Checkpointer | None, execution_id: str, stopped: BaseException

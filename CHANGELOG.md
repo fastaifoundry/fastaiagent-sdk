@@ -67,11 +67,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`run_reason="timeout"`; it was empty). A failed chain run started without an
   `execution_id` now gets its run-end marker too (only runs given an id did).
 
+- **A streamed Swarm is one run.** Each hop of `Swarm.astream` was its own run:
+  a hop left at its handoff wrote a `failed` run-end (`GeneratorExit`), the
+  swarm wrote none, and a `SwarmError` was recorded as `GeneratorExit`. Hops now
+  run nested under one `execution_id`, and the swarm writes its own marker.
+- **A Swarm hop's timeout records `run_reason="timeout"`** (it was empty).
+
 ### Added
 
 - **`Chain.cancel(execution_id)`** stops a chain run in progress, at once,
   inside an agent or tool node. The result has `status="cancelled"` and the
   run-end checkpoint `run_reason="cancelled"`.
+- **`Swarm.cancel(execution_id)`** — `Swarm.arun` could not be cancelled at all.
+  `Agent.cancel`, `Chain.cancel` and `Swarm.cancel` share one registry.
+- **`Swarm(..., timeout_seconds=)` and `Supervisor(..., timeout_seconds=)`**
+  bound the whole run, every hop or worker included (`AgentTimeoutError`,
+  `run_reason="timeout"`). Runtime settings, not part of `to_dict()`.
 
 ### Docs and examples
 

@@ -43,13 +43,14 @@ from __future__ import annotations
 
 import time
 import uuid
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
 from fastaiagent._internal.async_utils import run_sync
-from fastaiagent._internal.errors import AgentError, StopAgent
+from fastaiagent._internal.errors import AgentError, AgentTimeoutError, StopAgent
 from fastaiagent._internal.pricing import run_cost, start_run_cost, stop_run_cost
+from fastaiagent.agent import run_control
 from fastaiagent.agent.agent import Agent, AgentResult, _stream_outcome
 from fastaiagent.agent.context import RunContext
 from fastaiagent.agent.middleware import (
@@ -78,6 +79,7 @@ from fastaiagent.guardrail.guardrail import (
 from fastaiagent.llm.message import AssistantMessage, Message, MessageRole, UserMessage
 from fastaiagent.llm.stream import (
     HandoffEvent,
+    StreamDone,
     StreamEvent,
     TextDelta,
     ToolCallEnd,
@@ -100,19 +102,33 @@ def _input_text(value: Any) -> str:
 
 
 async def _bound_to(
-    stream: AsyncGenerator[StreamEvent, None], shared: dict[int, dict[str, Any]]
+    stream: AsyncGenerator[StreamEvent, None],
+    shared: dict[int, dict[str, Any]],
+    *,
+    run: tuple[str, str, Any] | None = None,
 ) -> AsyncGenerator[StreamEvent, None]:
     """Run ``stream`` with the swarm's middleware state bound around each step.
     A generator runs in its consumer's context, so a value set across a yield
-    would leak into whatever the consumer does between events."""
+    would leak into whatever the consumer does between events.
+
+    ``run`` (1.93.0): ``(execution_id, agent_path, control)`` of the swarm run,
+    bound the same way, so the hop runs nested in it — under its path and its
+    stop control, writing no run-end marker of its own."""
     while True:
-        token = _container_states.set({**(_container_states.get() or {}), **shared})
+        states = {**(_container_states.get() or {}), **shared}
+        tokens: list[tuple[Any, Any]] = [(_container_states, _container_states.set(states))]
+        if run is not None:
+            exec_id, path, control = run
+            tokens.append((_execution_id, _execution_id.set(exec_id)))
+            tokens.append((_agent_path, _agent_path.set(path)))
+            tokens.append((run_control._active, run_control.bind(control)))
         try:
             event = await stream.__anext__()
         except StopAsyncIteration:
             return
         finally:
-            _container_states.reset(token)
+            for var, token in reversed(tokens):
+                var.reset(token)
         yield event
 
 
@@ -357,11 +373,18 @@ class Swarm:
         max_handoffs: int = 8,
         checkpointer: Checkpointer | None = None,
         middleware: Sequence[AgentMiddleware] | None = None,
+        *,
+        timeout_seconds: float | None = None,
     ):
         if not agents:
             raise SwarmError("Swarm requires at least one agent")
         if max_handoffs < 0:
             raise SwarmError("max_handoffs must be >= 0")
+        if timeout_seconds is not None and timeout_seconds <= 0:
+            raise SwarmError("timeout_seconds must be > 0")
+        #: The whole swarm run's wall clock, every hop included (1.93.0). Not in
+        #: ``to_dict()``: a runtime setting, like the checkpointer.
+        self.timeout_seconds = timeout_seconds
 
         self.name = name
         self.agents: dict[str, Agent] = {}
@@ -390,6 +413,60 @@ class Swarm:
         self.middleware: list[AgentMiddleware] = list(middleware or [])
         for agent in self.agents.values():
             agent._with_outer_middleware(self.middleware)  # a tool-name clash raises now
+
+    def cancel(self, execution_id: str) -> bool:
+        """Stop the swarm run ``execution_id`` if it is in progress in this process
+        (1.93.0). ``arun`` stops at once, inside a hop, and returns
+        ``status="cancelled"``; ``astream`` ends with
+        ``StreamDone(finish_reason="cancelled")``. The run-end checkpoint ends
+        ``failed`` with ``run_reason="cancelled"``. ``False`` when no such run is
+        in progress. The registry is shared with ``Agent.cancel`` and
+        ``Chain.cancel``."""
+        return run_control.cancel(execution_id)
+
+    def _run_end_failed(self, exec_id: str, exc: BaseException, reason: str | None) -> None:
+        if self._checkpointer is not None:
+            write_run_end(
+                self._checkpointer,
+                execution_id=exec_id,
+                chain_name=self.name,
+                status="failed",
+                error=exc,
+                agent_path=f"swarm:{self.name}",
+                reason=reason,
+            )
+
+    def _cancelled_result(self, exec_id: str, started: float) -> AgentResult:
+        return AgentResult(
+            output="",
+            latency_ms=int((time.monotonic() - started) * 1000),
+            execution_id=exec_id,
+            status=run_control.CANCELLED,
+            stop_reason=run_control.CANCELLED,
+        )
+
+    async def _controlled(self, exec_id: str, work: Callable[[], Any]) -> AgentResult:
+        """``work()`` as a run ``cancel`` and ``timeout_seconds`` stop, with its
+        run-end marker (1.93.0). Before, a swarm run was not cancellable at all
+        and a hop's timeout left ``run_reason`` empty."""
+        started = time.monotonic()
+        try:
+            result: AgentResult = await run_control.controlled(
+                exec_id, self.name, work, timeout_seconds=self.timeout_seconds
+            )
+        except run_control._RunCancelled as stopped:
+            self._run_end_failed(exec_id, stopped, run_control.CANCELLED)
+            return self._cancelled_result(exec_id, started)
+        except AlreadyResumed:
+            raise  # another resumer won: the run is theirs, not failed
+        except BaseException as exc:
+            # ``_run_loop`` has no ``try`` of its own — SwarmError and anything a
+            # child agent raises escaped uncheckpointed until it got this one.
+            reason = run_control.TIMEOUT if isinstance(exc, AgentTimeoutError) else None
+            self._run_end_failed(exec_id, exc, reason)
+            raise
+        self._mark_run_end(exec_id, result)
+        return result
 
     def _middleware_keys(self) -> list[str]:
         """The keys the swarm's middleware are saved under in a hop's checkpoint
@@ -521,8 +598,9 @@ class Swarm:
         try:
             state = SwarmState()
             state.path.append(self.entrypoint)
-            try:
-                result = await self._run_loop(
+            return await self._controlled(
+                exec_id,
+                lambda: self._run_loop(
                     exec_id=exec_id,
                     current=self.entrypoint,
                     current_input=input,
@@ -534,22 +612,8 @@ class Swarm:
                     start=time.monotonic(),
                     context=context,
                     kwargs=kwargs,
-                )
-            except BaseException as exc:
-                # ``_run_loop`` has no ``try`` of its own — SwarmError and
-                # anything a child agent raises escaped uncheckpointed until now.
-                if self._checkpointer is not None:
-                    write_run_end(
-                        self._checkpointer,
-                        execution_id=exec_id,
-                        chain_name=self.name,
-                        status="failed",
-                        error=exc,
-                        agent_path=f"swarm:{self.name}",
-                    )
-                raise
-            self._mark_run_end(exec_id, result)
-            return result
+                ),
+            )
         finally:
             unbind_cache(cache_tokens)
             _agent_path.reset(ap_token)
@@ -871,7 +935,7 @@ class Swarm:
         exec_token = _execution_id.set(execution_id)
         ap_token = _agent_path.set(f"swarm:{self.name}")
         cache_tokens = bind_cache(execution_id, self._checkpointer)
-        try:
+        async def resume_run() -> AgentResult:
             active_agent = self._active_agent(
                 active_name, state, context=context, original_input=original_input
             )
@@ -893,7 +957,7 @@ class Swarm:
                     **kwargs,
                 )
 
-            resumed = await self._run_loop(
+            return await self._run_loop(
                 exec_id=execution_id,
                 current=active_name,
                 current_input=current_input,
@@ -908,14 +972,12 @@ class Swarm:
                 skip_first_checkpoint=True,
                 first_agent_result=first_result,
             )
+
+        try:
             # A resumed run that reaches the end has ended just as much as one
-            # that never paused, so it earns the same marker (audit D5).
-            self._mark_run_end(execution_id, resumed)
-            return resumed
-        except AlreadyResumed:
-            # Re-raise so callers can distinguish "already resumed" from
-            # generic checkpoint errors.
-            raise
+            # that never paused, so it earns the same marker (audit D5); one
+            # that is cancelled or fails gets its marker too (1.93.0).
+            return await self._controlled(execution_id, resume_run)
         finally:
             unbind_cache(cache_tokens)
             _agent_path.reset(ap_token)
@@ -927,21 +989,73 @@ class Swarm:
         """Stream events from the currently active agent. Handoffs emit a
         :class:`HandoffEvent` before the target agent starts streaming.
         """
+        # One swarm run (1.93.0): one execution id for every hop, the hops nested
+        # under ``swarm:<name>`` and under this run's stop control. Before, each
+        # hop was its own top-level run: a hop abandoned at its handoff wrote a
+        # ``failed`` run-end (``GeneratorExit``), the swarm wrote none, and a
+        # ``SwarmError`` was never recorded.
+        exec_id = kwargs.pop("execution_id", None) or str(uuid.uuid4())
+        parent = run_control.active_control()
+        control = run_control.RunControl(
+            execution_id=exec_id,
+            agent_name=self.name,
+            model="",
+            timeout_seconds=self.timeout_seconds,
+            parent=parent,
+        )
+        if parent is None:
+            run_control.add(control)
+        if self._checkpointer is not None:
+            self._checkpointer.setup()
+        try:
+            async for event in self._astream_hops(input, exec_id, control, context, kwargs):
+                yield event
+        except run_control._RunCancelled as stopped:
+            if parent is not None:
+                raise  # the enclosing run ends it
+            self._run_end_failed(exec_id, stopped, run_control.CANCELLED)
+            yield StreamDone(finish_reason=run_control.CANCELLED)
+            return
+        except GeneratorExit:
+            raise  # the consumer stopped reading; nothing ended
+        except BaseException as exc:
+            reason = run_control.TIMEOUT if isinstance(exc, AgentTimeoutError) else None
+            self._run_end_failed(exec_id, exc, reason)
+            raise
+        finally:
+            if parent is None:
+                run_control.remove(control)
+        self._mark_run_end(exec_id, AgentResult(status="completed"))
+
+    async def _astream_hops(
+        self,
+        input: Any,
+        exec_id: str,
+        control: Any,
+        context: RunContext[Any] | None,
+        kwargs: dict[str, Any],
+    ) -> AsyncGenerator[StreamEvent, None]:
         state = SwarmState()
         state.path.append(self.entrypoint)
         current = self.entrypoint
         # One state per swarm middleware for the whole streamed run, bound
-        # around each step of each hop (never held across a yield).
+        # around each step of each hop (never held across a yield) — with the
+        # swarm's run identity, so each hop runs nested in it.
         shared_states: dict[int, dict[str, Any]] = {id(mw): {} for mw in self.middleware}
         current_input = input
+        swarm_path = f"swarm:{self.name}"
 
         while True:
             active = self._active_agent(current, state, context=context, original_input=input)
             handoff_from_stream: tuple[str, str] | None = None
 
-            inner_stream = active.astream(current_input, context=context, **kwargs)
+            inner_stream = active.astream(
+                current_input, context=context, execution_id=exec_id, **kwargs
+            )
             try:
-                async for event in _bound_to(inner_stream, shared_states):
+                async for event in _bound_to(
+                    inner_stream, shared_states, run=(exec_id, swarm_path, control)
+                ):
                     # Detect handoff intent live from the stream — no second
                     # LLM call needed. Break out as soon as it fires so the
                     # active agent's tool loop doesn't keep looping (the
