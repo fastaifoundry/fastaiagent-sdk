@@ -102,6 +102,16 @@ times over, and the gaps in cancel (Chain and Swarm can now be cancelled, and
   swarm wrote none, and a `SwarmError` was recorded as `GeneratorExit`. Hops now
   run nested under one `execution_id`, and the swarm writes its own marker.
 - **A Swarm hop's timeout records `run_reason="timeout"`** (it was empty).
+- **PydanticAI's own spans reach the current trace store.** They were sent to
+  OTel's global tracer provider, which is not always the SDK's: after the SDK
+  rebuilt its provider over another store (`fastaiagent ui --db`, a changed
+  `FASTAIAGENT_LOCAL_DB`) they kept going to the old one, and with
+  `connect(export_traces=False)` the SDK never owns the global slot. The
+  integration now binds them to the SDK's provider and re-binds when it changes.
+- **`fastaiagent[safety]` excludes `preshed` 3.0.14.** Released 2026-10-24, it
+  breaks spaCy 3.8 model loading (`spacy.load("en_core_web_lg")` raises
+  `OverflowError` in the tokenizer), so the Presidio PII backend could not start
+  on a fresh install. 3.0.13 works; the exclusion lets a fixed release through.
 - **A cancelled run reports what happened.** `arun` / `run` returned
   `trace_id=None` though the trace exists; a cancelled `stream()` returned
   `tokens_used=0` with a non-zero cost; the run's span ended with no status;

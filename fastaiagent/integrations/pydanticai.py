@@ -44,6 +44,8 @@ _INSTALL_HINT = 'pydantic-ai is required. Install with: pip install "fastaiagent
 _enabled = False
 #: ``Agent.instrument_all()`` took: PydanticAI emits its own per-call spans.
 _native_spans = False
+#: The SDK tracer provider PydanticAI's own spans were last bound to.
+_bound_provider: Any = None
 #: Set while a wrapped run is in progress (1.93.0). ``run_sync`` runs ``run``
 #: inside it; both opened a root span, nested, each with the run's totals.
 _in_run: contextvars.ContextVar[bool] = contextvars.ContextVar(
@@ -123,6 +125,38 @@ def _agent_name(agent: Any) -> str:
     )
 
 
+def _bind_native_spans() -> None:
+    """Send PydanticAI's own spans to the SDK's tracer provider (1.93.0).
+
+    ``Agent.instrument_all()`` with no settings uses OTel's *global* provider,
+    which is not always the SDK's: ``connect(export_traces=False)`` never claims
+    the global slot, and after the SDK rebuilds its provider (``fastaiagent ui
+    --db``) the global one is the shut-down original. Either way the ``chat``
+    spans never reached ``local.db``. Re-bound whenever the provider changes.
+    """
+    global _bound_provider, _native_spans
+    from fastaiagent.trace.otel import get_tracer_provider
+
+    provider = get_tracer_provider()
+    if provider is _bound_provider:
+        return
+    from pydantic_ai import Agent
+
+    try:
+        from pydantic_ai.models.instrumented import InstrumentationSettings
+
+        Agent.instrument_all(InstrumentationSettings(tracer_provider=provider))
+    except Exception:
+        # If the instrument-all surface ever changes, fall back to our
+        # wrapper-only spans — they still carry framework + cost; just
+        # without PydanticAI's per-message detail.
+        logger.debug("Could not bind PydanticAI's own spans", exc_info=True)
+        _native_spans = False
+        return
+    _bound_provider = provider
+    _native_spans = True
+
+
 def _stamp_usage_and_cost(span: Any, result: Any) -> None:
     """Pull token counts off ``AgentRunResult.usage()`` and compute cost."""
     from fastaiagent.trace.span import (
@@ -187,6 +221,7 @@ def _install_method_patches() -> None:
     )
 
     def _open_root(agent: Any) -> Any:
+        _bind_native_spans()
         name = _agent_name(agent)
         bare = _bare_model(_model_name(agent))
         # Looked up per run, not bound when the patches are installed: an
@@ -441,20 +476,11 @@ def enable() -> None:
     a ``_fastaiagent_patched`` sentinel; ``Agent.instrument_all`` is
     itself idempotent).
     """
-    global _enabled, _native_spans
+    global _enabled
     if _enabled:
         return
     _require()
-    from pydantic_ai import Agent
-
-    try:
-        Agent.instrument_all()
-        _native_spans = True
-    except Exception:
-        # If the instrument-all surface ever changes, fall back to our
-        # wrapper-only spans — they still carry framework + cost; just
-        # without PydanticAI's per-message detail.
-        pass
+    _bind_native_spans()
     _install_method_patches()
     _enabled = True
 
