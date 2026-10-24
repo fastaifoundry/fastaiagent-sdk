@@ -159,6 +159,17 @@ def capture_server() -> Any:
 
 
 @pytest.fixture
+def official_mcp_server() -> Any:
+    """A real MCP server (official ``mcp`` library, streamable HTTP); see
+    ``tests/_mcp_servers.py``."""
+    pytest.importorskip("mcp")
+    from tests._mcp_servers import OfficialMCPServer
+
+    with OfficialMCPServer() as server:
+        yield server
+
+
+@pytest.fixture
 def isolated_local_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     """Point all local storage at a fresh per-test SQLite file + a fixed project.
 

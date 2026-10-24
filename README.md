@@ -14,7 +14,7 @@ pip install fastaiagent
 
 Runs fully standalone, or connect to the [FastAIAgent Platform](https://fastaiagent.net) for hosted observability, prompt management, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.91.0)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.92.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -759,7 +759,16 @@ Register it in `claude_desktop_config.json`:
 
 Claude Desktop now treats your fastaiagent as a callable tool. Same config shape for Cursor / Continue / Zed. Or use the CLI: `fastaiagent mcp serve my_agent.py:agent`. See [docs/tools/mcp-server.md](docs/tools/mcp-server.md).
 
-Install: `pip install 'fastaiagent[mcp-server]'`.
+The other direction — use any MCP server's tools in your agent, remote or local:
+
+```python
+from fastaiagent import MCPTool
+
+tools = MCPTool.from_server("https://mcp.example.com/mcp", auth_token="...")
+tools = MCPTool.from_server(command=["npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp"])
+```
+
+See [docs/tools/mcp-tools.md](docs/tools/mcp-tools.md). Install: `pip install 'fastaiagent[mcp]'`.
 
 ## Peer-to-peer swarms with handoffs
 

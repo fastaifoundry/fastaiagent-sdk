@@ -79,7 +79,8 @@ class TestOpenAIVisionGate:
         assert "two years" in result.output.lower() or "2 years" in result.output.lower()
 
     def test_pdf_text_mode_passthrough(self) -> None:
-        """Spec test #2 — PDF text-mode route, exercised against gpt-3.5-turbo."""
+        """Spec test #2 — PDF text-mode route: the text is extracted locally and
+        sent as text (was gpt-3.5-turbo, which OpenAI retired; 404 since)."""
         require_env()
         _ensure_fixtures()
         agent = Agent(
@@ -87,7 +88,8 @@ class TestOpenAIVisionGate:
             system_prompt="Answer concisely from the document.",
             llm=LLMClient(
                 provider="openai",
-                model="gpt-3.5-turbo",
+                model="gpt-5-mini",
+                reasoning="minimal",
                 pdf_mode="text",
             ),
         )

@@ -43,7 +43,9 @@ def charge_customer(amount: int):
 [`@idempotent`](../chains/idempotency.md) keys on
 `(execution_id, sha256(qualname + args + kwargs))`. The cache lives in
 the same SQLite (or Postgres) the checkpointer uses, so it survives
-process restarts.
+process restarts. `async def` functions and functions that return `None`
+are cached too (both since 1.92.0 — before, an async body never ran and a
+`None` result re-ran on every call).
 
 ## Where it bites — concrete examples
 

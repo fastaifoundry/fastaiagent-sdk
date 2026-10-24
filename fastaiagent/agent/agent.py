@@ -56,7 +56,7 @@ from fastaiagent.chain.checkpoint import (
     write_run_end,
     write_run_end_once,
 )
-from fastaiagent.chain.idempotent import _current_checkpointer
+from fastaiagent.chain.idempotent import bind_cache, unbind_cache
 from fastaiagent.chain.interrupt import (
     AlreadyResumed,
     InterruptSignal,
@@ -1449,7 +1449,8 @@ class Agent:
         # None here (the Supervisor sets no path of its own) and correctly
         # counts as outermost.
         owns_run = parent_path is None
-        cp_token = _current_checkpointer.set(self._checkpointer)
+        # An enclosing run (an Agent node of a Chain) keeps its cache (1.92.0).
+        cache_tokens = bind_cache(exec_id, self._checkpointer)
         # Expose the RunContext so memory blocks can resolve a dynamic scope_id
         # (e.g. per-user) for this turn. Absent context → callable ids resolve
         # to "" → safe (no personal facts).
@@ -1759,7 +1760,7 @@ class Agent:
                 )
             raise
         finally:
-            _current_checkpointer.reset(cp_token)
+            unbind_cache(cache_tokens)
             _agent_path.reset(ap_token)
             _execution_id.reset(exec_token)
             reset_active_run_context(rc_token)
@@ -2007,7 +2008,7 @@ class Agent:
             f"{parent_path}/{self._agent_path_label}" if parent_path else self._agent_path_label
         )
         ap_token = _agent_path.set(new_path)
-        cp_token = _current_checkpointer.set(self._checkpointer)
+        cache_tokens = bind_cache(exec_id, self._checkpointer)
         # The run-end marker, as ``arun`` writes it (1.91.0, X1): without it a
         # finished stream left a ``completed`` step as its newest row, looked
         # crashed, and ``aresume`` re-ran it — model and tools again. Only the
@@ -2227,7 +2228,7 @@ class Agent:
                 )
             raise
         finally:
-            _current_checkpointer.reset(cp_token)
+            unbind_cache(cache_tokens)
             _agent_path.reset(ap_token)
             _execution_id.reset(exec_token)
             reset_active_run_context(rc_token)
@@ -2610,7 +2611,7 @@ class Agent:
         # the suspended tool may itself call interrupt() / @idempotent.
         exec_token = _execution_id.set(execution_id)
         ap_token = _agent_path.set(new_path)
-        cp_token = _current_checkpointer.set(self._checkpointer)
+        cache_tokens = bind_cache(execution_id, self._checkpointer)
         # A managed approval policy paused this call and the answer is no — the
         # app rejected it, or the blocking wait expired. The decision lives in
         # ``governance.gate_tool_call``, which this re-entry never passes through,
@@ -2729,7 +2730,7 @@ class Agent:
             resumed_usage = current_run_usage()
             stop_run_cost(rc_token)
             stop_firing_collection(gf_token)
-            _current_checkpointer.reset(cp_token)
+            unbind_cache(cache_tokens)
             _agent_path.reset(ap_token)
             _execution_id.reset(exec_token)
             if rv_token is not None:
@@ -3139,11 +3140,11 @@ class Agent:
         Returns a :class:`fastaiagent.tool.mcp_server.FastAIAgentMCPServer`.
         Call ``await server.run()`` to start the stdio loop.
 
-        Requires ``pip install 'fastaiagent[mcp-server]'``.
+        Requires ``pip install 'fastaiagent[mcp]'``.
 
         Example::
 
-            agent.as_mcp_server(transport="stdio").run()
+            asyncio.run(agent.as_mcp_server(transport="stdio").run())  # run() is async
         """
         from fastaiagent.tool.mcp_server import FastAIAgentMCPServer
 

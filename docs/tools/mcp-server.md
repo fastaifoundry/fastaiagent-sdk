@@ -2,21 +2,24 @@
 
 Since 0.6.0, any `Agent` or `Chain` can be exposed as an [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server. Once exposed, any MCP-compatible runtime that launches a server over **stdio** — Claude Desktop, Cursor, Continue, Zed — can invoke it as a tool.
 
-!!! note "Not yet: one fastaiagent agent calling another over MCP"
+!!! note "One fastaiagent agent calling another over MCP"
     The server speaks stdio only (`transport="sse"` / `"streamable-http"` raise
-    `NotImplementedError`), and [`MCPTool`](mcp-tools.md) is an HTTP client, so
-    `MCPTool` cannot call a served agent today. Until 1.90.0 this page said it
-    could. In the same process, give the calling agent a `FunctionTool` whose
-    function awaits the other agent's `arun`, or put both in a
-    [Supervisor](../agents/teams.md).
+    `NotImplementedError`). Since 1.92.0 [`MCPTool`](mcp-tools.md) can start a
+    stdio server, so another agent can use a served one:
+    `MCPTool.from_server(command=["python", "my_agent.py"])`. Before 1.92.0
+    `MCPTool` was HTTP-only and could not. In the same process, a `FunctionTool`
+    that awaits the other agent's `arun`, or a [Supervisor](../agents/teams.md),
+    is simpler.
 
 The complement to [MCP Tools](mcp-tools.md) (which lets fastaiagent **consume** MCP servers), this page covers the **serve** side.
 
 ## Install
 
 ```bash
-pip install 'fastaiagent[mcp-server]'
+pip install 'fastaiagent[mcp]'
 ```
+
+(`fastaiagent[mcp-server]`, the name before 1.92.0, still works.)
 
 The `mcp` Python package is an optional extra — importing `FastAIAgentMCPServer` before installing it raises a clear `ImportError` with install instructions.
 
@@ -113,8 +116,9 @@ fastaiagent mcp serve <target> [--transport stdio] [--expose-tools] [--name NAME
 - `<target>` is either a file path or a dotted module path, followed by `:attr_name`:
   - `path/to/my_agent.py:agent`
   - `mypkg.agents:research_bot`
+  - `path/to/my_chain.py:chain` (a Chain target works since 1.92.0; before, it failed with `TypeError`)
 - `--transport` defaults to `stdio`.
-- `--expose-tools` turns on individual tool surfacing.
+- `--expose-tools` turns on individual tool surfacing (Agent targets only).
 - `--name` overrides the primary tool name.
 
 ## What the MCP client sees
@@ -200,7 +204,7 @@ From Claude Desktop this looks like one tool called `support_bot`. Claude calls 
 
 ## Troubleshooting
 
-- **`ImportError: mcp`** — you haven't installed the extra. `pip install 'fastaiagent[mcp-server]'`.
+- **`ImportError: mcp`** — you haven't installed the extra. `pip install 'fastaiagent[mcp]'`.
 - **Claude Desktop doesn't list the server** — ensure the `command` path is absolute and `python` resolves to an interpreter that has `fastaiagent` installed. Use an absolute `python` path if you use multiple environments.
 - **Agent output looks blank** — the primary tool requires a non-empty `input` argument. Empty input returns an explicit error string.
 - **Need to see what the server will expose before shipping** — call `server.describe()` to get a plain dict summary of the tools and prompts, without starting the stdio loop.

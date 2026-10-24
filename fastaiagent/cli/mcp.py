@@ -88,14 +88,19 @@ def serve(
         raise typer.BadParameter(f"Could not load {target!r}: {err}") from err
 
     # ``resolved`` should be an Agent, Chain, or already a FastAIAgentMCPServer.
+    from fastaiagent.agent import Agent
     from fastaiagent.tool.mcp_server import FastAIAgentMCPServer
 
     if isinstance(resolved, FastAIAgentMCPServer):
         server = resolved
-    elif hasattr(resolved, "as_mcp_server"):
+    elif isinstance(resolved, Agent):
         server = resolved.as_mcp_server(
             transport=transport, expose_tools=expose_tools, tool_name=name
         )
+    elif hasattr(resolved, "as_mcp_server"):
+        # A Chain has no tools of its own to expose (before 1.92.0 this
+        # passed ``expose_tools=`` anyway and every Chain died with TypeError).
+        server = resolved.as_mcp_server(transport=transport, tool_name=name)
     else:
         raise typer.BadParameter(
             f"{target!r} resolved to {type(resolved).__name__} — expected "

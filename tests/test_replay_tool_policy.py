@@ -28,10 +28,16 @@ from tests._replay_isolation_harness import (
 
 @pytest.fixture
 def world(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capture_server: Any, decisions_stub: Any
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capture_server: Any,
+    decisions_stub: Any,
+    official_mcp_server: Any,
 ) -> Any:
     try:
-        yield prepare_world(tmp_path, monkeypatch, capture_server, decisions_stub)
+        yield prepare_world(
+            tmp_path, monkeypatch, capture_server, decisions_stub, official_mcp_server
+        )
     finally:
         teardown_world()
 

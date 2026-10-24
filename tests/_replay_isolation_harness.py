@@ -4,12 +4,13 @@ One agent whose every tool leaves an observable trace of having run:
 
 * ``charge_card`` (FunctionTool) appends ``CHARGE <amount>`` to a side file;
 * ``issue_refund`` (RESTTool) POSTs to ``/refunds`` on a real local server;
-* ``notify`` (MCPTool) calls ``/mcp`` on the same server.
+* ``notify`` (MCPTool) calls a real MCP server (official ``mcp`` library,
+  ``tests/_mcp_servers.py``), which records the call.
 
 Its model is the established chat stand-in (``tests/_decisions_stub.py``),
 scripted to call all three tools and then answer, so live, deterministic and
 recorded reruns all run offline. ``snapshot``/``new_rows`` diff every table of
-``local.db`` plus the side file and the server's hits, which is how "a rerun
+``local.db`` plus the side file, the server's hits and the MCP server's calls, which is how "a rerun
 changed nothing but its own trace" is checked rather than assumed.
 """
 
@@ -56,6 +57,7 @@ class World:
     side_file: Path
     server: Any
     stub: Any
+    mcp: Any
     snapshots: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -90,7 +92,7 @@ def build_agent(world: World, *, name: str = AGENT_NAME) -> Any:
         ),
         MCPTool(
             name="notify",
-            server_url=f"{world.server.url}/mcp",
+            server_url=world.mcp.url,
             tool_name="notify",
             description="Notify the customer.",
             parameters={"type": "object", "properties": {"text": {"type": "string"}}},
@@ -127,6 +129,7 @@ def snapshot(world: World) -> dict[str, Any]:
         "tables": tables,
         "side": side_lines(world),
         "hits": [r["path"] for r in world.server.requests],
+        "mcp_calls": list(world.mcp.calls),
     }
 
 
@@ -141,7 +144,7 @@ def new_rows(before: dict[str, Any], after: dict[str, Any]) -> dict[str, int]:
 
 
 def prepare_world(
-    tmp_path: Path, monkeypatch: Any, capture_server: Any, decisions_stub: Any
+    tmp_path: Path, monkeypatch: Any, capture_server: Any, decisions_stub: Any, mcp_server: Any
 ) -> World:
     """A traced private store, the side effects wired up, and one original run.
 
@@ -171,14 +174,19 @@ def prepare_world(
     init_local_db(db).close()
 
     w = World(
-        db=db, side_file=tmp_path / "side_effects.log", server=capture_server, stub=decisions_stub
+        db=db,
+        side_file=tmp_path / "side_effects.log",
+        server=capture_server,
+        stub=decisions_stub,
+        mcp=mcp_server,
     )
     script_model(decisions_stub)
     agent = build_agent(w)
     result = agent.run("Refund order 7")
     lines = side_lines(w)
     assert len(lines) == 1 and lines[0].startswith("CHARGE 42"), "the original run's tools"
-    assert hits(w, "/refunds") == 1 and hits(w, "/mcp") >= 1
+    assert hits(w, "/refunds") == 1
+    assert w.mcp.calls == [{"tool": "notify", "text": "refunded"}]
     w.original_trace_id = result.trace_id  # type: ignore[attr-defined]
     w.agent = agent  # type: ignore[attr-defined]
     return w

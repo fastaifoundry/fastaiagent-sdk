@@ -44,7 +44,7 @@ fastapi>=0.115
 uvicorn>=0.32
 ```
 
-Adjust extras to match what your agent uses — `[openai]`, `[anthropic]`, `[qdrant]`, `[chroma]`, `[mcp-server]`, etc.
+Adjust extras to match what your agent uses — `[openai]`, `[anthropic]`, `[qdrant]`, `[chroma]`, `[mcp]`, etc.
 
 ## Build and test locally
 

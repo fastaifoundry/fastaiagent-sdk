@@ -400,10 +400,13 @@ def list_idempotency_cache(
                 "ORDER BY created_at ASC",
                 (execution_id,),
             )
+        from fastaiagent.chain.idempotent import _unwrap
+
         items = []
         for r in rows:
             try:
-                result = json.loads(r.get("result") or "null")
+                # The value inside the 1.92.0 envelope, or a bare older row.
+                result = _unwrap(json.loads(r.get("result") or "null"))[1]
             except json.JSONDecodeError:
                 result = r.get("result")
             items.append(

@@ -8,7 +8,7 @@ Tools give agents the ability to take actions — call APIs, query databases, ru
 |------|----------|-----------|
 | [FunctionTool](function-tools.md) | Wrap any Python function | Auto-generated JSON Schema from type hints |
 | [RESTTool](rest-tools.md) | Call an HTTP API endpoint | No Python function needed -- just configure URL and method |
-| [MCPTool](mcp-tools.md) | Connect to an MCP server | JSON-RPC 2.0 communication |
+| [MCPTool](mcp-tools.md) | Use an MCP server's tools | Official `mcp` client; remote (HTTP) or local (stdio); `from_server()` loads every tool |
 | [`decision_tool`](function-tools.md#decision_tool) | Let an agent classify text with the [Decisions API](../llm/decisions.md) | A `FunctionTool` that returns probabilities (1.84.0) |
 | [`web_search()`, `code_execution()`, `file_search()`](provider-tools.md) | Search the web, run code or search file stores, run by the model's provider | Sent in OpenAI's, Anthropic's or Gemini's own shape; each call recorded and guarded (1.91.0) |
 

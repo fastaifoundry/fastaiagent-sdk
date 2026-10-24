@@ -1,6 +1,6 @@
 [project]
 name = "fastaiagent"
-version = "1.91.0"
+version = "1.92.0"
 description = "Build, debug, evaluate, and operate AI agents. The only SDK with fork-and-rerun Agent Replay."
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -109,7 +109,13 @@ pdf = ["pypdfium2>=4,<6"]
 kb = ["fastembed>=0.3,<1", "fastaiagent[pdf]", "faiss-cpu>=1.7,<2"]
 qdrant = ["qdrant-client>=1.8,<2"]
 chroma = ["chromadb>=0.5,<2"]
-mcp-server = ["mcp>=1.2,<2"]
+# The official MCP library, for ``MCPTool`` (client) and ``as_mcp_server``
+# (server). 1.24 is the first release with ``streamable_http_client``. Held below
+# 2: mcp 2.x moved to ``httpx2`` and renamed the server API, and CrewAI and
+# langchain-mcp-adapters still require mcp<2.
+mcp = ["mcp>=1.24,<2"]
+# Name used before 1.92.0; kept so existing installs keep working.
+mcp-server = ["fastaiagent[mcp]"]
 otel-export = [
     "opentelemetry-exporter-otlp>=1.20,<2",
 ]
@@ -134,7 +140,7 @@ ui = [
     # endpoints (Sprint 3) — image upload + JSONL import are multipart.
     "python-multipart>=0.0.9,<1",
 ]
-all = ["fastaiagent[openai,anthropic,langchain,crewai,pydanticai,pdf,kb,qdrant,chroma,mcp-server,otel-export,postgres,redis,safety,ui]"]
+all = ["fastaiagent[openai,anthropic,langchain,crewai,pydanticai,pdf,kb,qdrant,chroma,mcp,otel-export,postgres,redis,safety,ui]"]
 docs = [
     "mkdocs>=1.6,<2",
     "mkdocs-material>=9.5,<10",
@@ -170,6 +176,9 @@ dev = [
     # ``pdf`` extra ships; declaring it here does not put it in anyone's
     # ``pip install fastaiagent`` tree — the ``clean-core`` job proves that.
     "pypdfium2>=4,<6",
+    # Test-only: the MCP suites run against real servers built with the official
+    # library, so they must not skip in the plain ``.[dev]`` CI matrix (1.92.0).
+    "mcp>=1.24,<2",
 ]
 
 [project.scripts]

@@ -51,10 +51,16 @@ MODES = ["recorded", "live", "deterministic"]
 
 @pytest.fixture
 def world(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capture_server: Any, decisions_stub: Any
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capture_server: Any,
+    decisions_stub: Any,
+    official_mcp_server: Any,
 ) -> Any:
     try:
-        yield prepare_world(tmp_path, monkeypatch, capture_server, decisions_stub)
+        yield prepare_world(
+            tmp_path, monkeypatch, capture_server, decisions_stub, official_mcp_server
+        )
     finally:
         teardown_world()
 
@@ -188,9 +194,7 @@ def test_a_default_rerun_escapes_nowhere(world: Any, surface: str, mode: str) ->
     assert hits(world, "/refunds") == before["hits"].count("/refunds"), (
         f"{where}: the rerun re-POSTed the refund"
     )
-    assert [p for p in after["hits"] if "/mcp" in p] == [
-        p for p in before["hits"] if "/mcp" in p
-    ], f"{where}: the rerun called the MCP server"
+    assert after["mcp_calls"] == before["mcp_calls"], f"{where}: the rerun called the MCP server"
     # 5: nothing but the rerun's own trace was written.
     added = new_rows(before, after)
     stray = {t: n for t, n in added.items() if not t.startswith(RERUN_TABLES)}

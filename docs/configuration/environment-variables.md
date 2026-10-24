@@ -97,7 +97,7 @@ argument on a client always wins. See [SDK configuration](sdk-config.md).
 | Variable | Default | Purpose |
 |---|---|---|
 | `FASTAIAGENT_LLM_VERIFY` | on | 🔒 **Tri-state, not a boolean**: a false value (`0`/`false`/`no`/`off`) disables TLS verification for LLM traffic **that didn't specify `verify=` explicitly** (an explicit `verify=True` is never downgraded); a true value forces it on; anything else is used as a CA-bundle path (`~` expands). Prefer the CA-bundle form over disabling. |
-| `FASTAIAGENT_ALLOW_PRIVATE_NETWORKS` | `0` | 🔒 On lets the SSRF-guarded fetchers (multimodal, `RESTTool`, `MCPTool`) reach private/intranet hosts. Loopback is already allowed for `MCPTool`. |
+| `FASTAIAGENT_ALLOW_PRIVATE_NETWORKS` | `0` | 🔒 On lets the SSRF-guarded fetchers (multimodal, `RESTTool`, `MCPTool`) reach private/intranet hosts — and, since 1.92.0, any other non-global address such as a Tailscale `100.x` host. Loopback is already allowed for `MCPTool`. |
 | `FASTAIAGENT_RUNNER_ALLOW_INSECURE` | `0` | 🔒 On allows `fastaiagent runner --connect` to a **non-loopback** plane over plaintext `http`. By default a remote plane must be `https`. |
 
 ## `fastaiagent agent serve`

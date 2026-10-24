@@ -5,6 +5,129 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.92.0] - 2026-10-24 — the features that have to work, working
+
+No new bets: only things the SDK already claimed that did not work against the
+real world. `MCPTool` now uses the official `mcp` client (its hand-written
+JSON-RPC client was refused by every official MCP server, and its tests ran
+against a stub written the same way). The SSRF guard closes a DNS-rebinding bypass,
+caps bodies while reading, and refuses carrier-grade NAT. `@idempotent` now runs
+async functions, caches `None`, and protects an Agent node of a Chain across
+resume. `agent serve` can resume what it pauses. Every fix was reproduced on 1.91.0
+first, checked against real servers rather than stand-ins, and the model-facing
+ones live on gpt-5-mini.
+
+### Upgrading from 1.91 — behaviour changes at a glance
+
+- **`MCPTool` needs `pip install "fastaiagent[mcp]"`** (`[mcp-server]` still works).
+  `discover_tools()` is gone: use `MCPTool.from_server(...)`.
+- **`fastaiagent agent serve --reload` is removed** (it never worked).
+- **The SSRF guard refuses `100.64.0.0/10` and other non-global addresses.** Set
+  `FASTAIAGENT_ALLOW_PRIVATE_NETWORKS=1` to call a Tailscale/CGNAT host on purpose.
+- **Guarded requests connect to the checked IP** with the same `Host` header and
+  certificate check; a response over the size cap now fails while it is read.
+- **`@idempotent` cache rows are stored in an envelope**; rows from older versions
+  are still read.
+
+### Security
+
+- **SSRF guard: DNS rebinding closed.** The guard resolved a hostname and checked
+  every address, then httpx resolved the name again to connect, so a DNS server
+  answering "public" to the check and "internal" to the connection got the request
+  into an internal service. Reproduced on every guarded path — `RESTTool`,
+  `MCPTool`, `Image`/`PDF.from_url` — with a stand-in resolver and a real local
+  server playing the internal service. Each connection now goes to the address
+  that was checked (the next checked address if one cannot be reached); the `Host`
+  header and TLS certificate verification for the hostname are unchanged, checked
+  live (a wrong-host and a self-signed certificate are still refused).
+- **SSRF helper: the size cap applies while reading.** A declared `Content-Length`
+  over the cap is refused before the body is read, and a body without one stops at
+  the cap. Before, the whole body was read into memory and then measured: an
+  endless response was read until the connection ended.
+- **SSRF guard: carrier-grade NAT and other non-global addresses refused.** The
+  guard blocked "private" addresses, and `100.64.0.0/10` (carrier-grade NAT, where
+  Tailscale puts tailnet devices — `100.100.100.100` is its own service) and
+  benchmarking space are not, so an agent could reach services on a tailnet. Any
+  address that is not globally routable is now refused. **Behaviour change:** to
+  call a Tailscale or CGNAT host on purpose, set
+  `FASTAIAGENT_ALLOW_PRIVATE_NETWORKS=1`.
+
+### Changed — breaking
+
+- **`MCPTool` runs on the official `mcp` client library.** The hand-written
+  JSON-RPC client is deleted: it skipped the handshake and the headers the spec
+  requires, so every official MCP server refused it (`406` on mcp 1.x, `400` on
+  2.x), and its tests passed only against a stub written the same way. Each call
+  now opens a session, runs `initialize`, calls the tool and closes. The SSRF guard
+  is kept (an httpx transport that checks every request, each redirect hop
+  included), as are `auth_token`, guardrails, governance and tracing. The
+  handshake gives up after 30 s, so a URL that is not an MCP server fails instead
+  of hanging. Checked live against the control plane's hosted MCP servers.
+  - **Needs the extra:** `pip install "fastaiagent[mcp]"` (`mcp>=1.24,<2`).
+    `fastaiagent[mcp-server]` still works as an alias. `import fastaiagent` does
+    not need it; using `MCPTool` without it raises an error naming the install.
+  - **`discover_tools()` is removed.** Use `MCPTool.from_server(...)` /
+    `await MCPTool.afrom_server(...)`, which return one ready `MCPTool` per tool on
+    the server, with name, description and input schema.
+
+### Added
+
+- **Local MCP servers:** `MCPTool(command=[...], env={...})` and
+  `MCPTool.from_server(command=[...])` start a server as a subprocess (stdio).
+  The command, `env` and `auth_token` are never serialized: `to_dict()` still
+  carries only `server_url` and `tool_name`, so a tool rebuilt from a payload (the
+  runner, a trace, the plane) cannot start a process — it refuses with an error.
+  This also lets one fastaiagent agent use another served with `as_mcp_server`,
+  which the docs said was impossible. Example 116.
+
+### Fixed
+
+- **`fastaiagent mcp serve` works on a Chain.** It passed `expose_tools=` to every
+  target, and `Chain.as_mcp_server` takes no such parameter, so serving any Chain
+  failed with `TypeError` before the handshake. `--expose-tools` now applies to an
+  Agent only. New test drives the real CLI over stdio with the official MCP client,
+  for a Chain and an Agent.
+- **`@idempotent` on an `async def` never ran the function.** The wrapper was sync
+  only: it cached the un-awaited coroutine, which raised `IdempotencyError`. Inside an
+  agent the tool reported a failure to the model and the run still finished normally,
+  so the charge (or email, or write) silently never happened. The decorator now
+  awaits an async body once and caches its result. Tested across `Agent.arun`,
+  `Agent.astream` and `Chain.aexecute`, each paused and resumed.
+- **`@idempotent` re-ran a function that returns `None`.** A cached `None` read back
+  as "not cached". Results are now stored in a small envelope, so `None` is cached
+  like any other value. Rows written by older versions are still read, and no
+  checkpointer changed. The Local UI's idempotency-cache view shows the value inside.
+- **`@idempotent` inside an Agent node of a checkpointed Chain re-ran on every Chain
+  resume.** The Chain calls the Agent without its execution id, and the Agent bound
+  the cache to its own checkpointer (usually none) under a fresh id, so the cache
+  never matched and a charge before an `interrupt()` fired again. A run nested in a
+  checkpointed run now keeps the outer run's cache. Proof 4 on the durability
+  boundaries page shows it, with the async and `None` cases.
+- **`fastaiagent agent serve` can resume what it pauses.** `/run` returned a paused
+  run's `execution_id`, but the service had no way to resume it. New
+  `POST /resume` (`{"execution_id", "approved", "metadata"}`) calls the target's
+  `aresume` and answers like `/run`; a run that is not waiting answers `409`, an
+  unknown Chain execution `404`. `--auth-token` covers it. Agent and Chain targets.
+
+- **`MCPTool`: one clear error for a server that is not MCP.** The `mcp` library
+  logged the bad reply with a full traceback while the error said only "timed out".
+  During an `MCPTool` call its warnings and errors now go into the
+  `ToolExecutionError` ("… (the server's reply: Error parsing JSON response)");
+  outside `MCPTool`, the library's logging is untouched.
+
+### Docs and examples
+
+- The `as_mcp_server` docstrings (Agent, Chain, `FastAIAgentMCPServer`) showed
+  `.run()` as a plain call; it is a coroutine, so the example did nothing. They now
+  show `asyncio.run(...)`. An unused factory helper in `tool/mcp_server.py` is gone.
+- Example 32 (and so example 116, which starts it) runs on `gpt-5-mini` /
+  `claude-haiku-5-5` instead of `gpt-4o-mini` / Claude Haiku 4.5.
+
+### Removed
+
+- **`fastaiagent agent serve --reload`.** It never worked: uvicorn reloads only from
+  an import string, and `serve` passes an app object, so uvicorn refused to start.
+
 ## [1.91.0] - 2026-10-21 — one extension model, and an LLMClient for today's models
 
 Bets 1 and 2. `AgentMiddleware` becomes the single way to extend a run: run and

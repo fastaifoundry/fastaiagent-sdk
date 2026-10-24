@@ -39,6 +39,11 @@ EXPECTED = {
     "proof_4_side_effects.py": [
         "plain function         status=completed charge_card fired 2×",
         "@idempotent            status=completed charge_card fired 1×",
+        # Fixed in 1.92.0: async bodies ran 0×, None results re-ran, an Agent node
+        # of a Chain re-charged on every Chain resume.
+        "async @idempotent      status=completed charge_card fired 1×",
+        "returns None           status=completed charge_card fired 1×",
+        "Agent node in a Chain  status=completed charge_card fired 1×",
         "called twice outside any run → fired 2 ×",
         "non-JSON-serializable value of type 'object'",
     ],

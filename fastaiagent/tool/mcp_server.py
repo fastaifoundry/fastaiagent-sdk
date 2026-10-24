@@ -3,9 +3,9 @@
 :class:`fastaiagent.chain.Chain` as an MCP (Model Context Protocol) server.
 
 Once a target is served, any MCP-compatible runtime that launches a stdio
-server — Claude Desktop, Cursor, Continue, Zed — can use it as a tool. The
-server is stdio-only and ``MCPTool`` is an HTTP client, so ``MCPTool`` cannot
-call a served agent yet (the docs said otherwise until 1.90.0).
+server — Claude Desktop, Cursor, Continue, Zed — can use it as a tool, and so
+can another fastaiagent agent: ``MCPTool.from_server(command=["python",
+"my_agent.py"])`` (since 1.92.0; before, ``MCPTool`` was HTTP-only).
 
 .. note::
    The upstream ``mcp`` package ships without ``py.typed`` markers, so the
@@ -40,7 +40,7 @@ and in ``~/Library/Application Support/Claude/claude_desktop_config.json``::
 
 Installation::
 
-    pip install 'fastaiagent[mcp-server]'
+    pip install 'fastaiagent[mcp]'
 
 The MVP ships **stdio** transport. SSE and streamable-HTTP transports are
 tracked as follow-ups.
@@ -50,7 +50,6 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal
 
 logger = logging.getLogger(__name__)
@@ -82,7 +81,7 @@ def _require_mcp() -> Any:
     except ImportError as err:  # pragma: no cover — exercised only without the extra
         raise ImportError(
             "MCP server support requires the 'mcp' package. Install with: "
-            "pip install 'fastaiagent[mcp-server]'"
+            "pip install 'fastaiagent[mcp]'"
         ) from err
     return Server, mcp_types
 
@@ -110,8 +109,8 @@ class FastAIAgentMCPServer:
 
     Example::
 
-        FastAIAgentMCPServer(agent).run()                # stdio, default
-        agent.as_mcp_server(expose_tools=True).run()     # also surface inner tools
+        asyncio.run(FastAIAgentMCPServer(agent).run())              # stdio, default
+        asyncio.run(agent.as_mcp_server(expose_tools=True).run())   # also inner tools
     """
 
     def __init__(
@@ -463,30 +462,3 @@ def _params_to_input_schema(parameters: dict[str, Any] | None) -> dict[str, Any]
     if "type" not in parameters:
         return {"type": "object", **parameters}
     return parameters
-
-
-# ---------------------------------------------------------------------------
-# Factory helpers used by Agent.as_mcp_server / Chain.as_mcp_server
-# ---------------------------------------------------------------------------
-
-
-def _factory_for(target: Agent | Chain) -> Callable[..., FastAIAgentMCPServer]:
-    """Return a thin bound factory so ``agent.as_mcp_server(...)`` reads naturally."""
-
-    def _factory(
-        transport: Transport = "stdio",
-        expose_tools: bool = False,
-        expose_system_prompt: bool = True,
-        tool_name: str | None = None,
-        tool_description: str | None = None,
-    ) -> FastAIAgentMCPServer:
-        return FastAIAgentMCPServer(
-            target=target,
-            transport=transport,
-            expose_tools=expose_tools,
-            expose_system_prompt=expose_system_prompt,
-            tool_name=tool_name,
-            tool_description=tool_description,
-        )
-
-    return _factory

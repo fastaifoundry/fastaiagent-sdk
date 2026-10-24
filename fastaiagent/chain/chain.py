@@ -862,11 +862,11 @@ class Chain:
         Returns a :class:`fastaiagent.tool.mcp_server.FastAIAgentMCPServer`.
         Call ``await server.run()`` to start the stdio loop.
 
-        Requires ``pip install 'fastaiagent[mcp-server]'``.
+        Requires ``pip install 'fastaiagent[mcp]'``.
 
         Example::
 
-            chain.as_mcp_server(transport="stdio").run()
+            asyncio.run(chain.as_mcp_server(transport="stdio").run())  # run() is async
         """
         from fastaiagent.tool.mcp_server import FastAIAgentMCPServer
 
