@@ -1,8 +1,9 @@
 # Project scoping
 
 The Local UI scopes every read and write by a `project_id` so multiple
-projects can share the same database (e.g. a Postgres backend) without
-cross-contamination. The active project is shown in the header
+projects can share the same SQLite database without cross-contamination.
+The UI reads SQLite only; Postgres is supported for checkpoints
+(`PostgresCheckpointer`), not as the UI's store. The active project is shown in the header
 breadcrumb.
 
 ![Header breadcrumb showing the project name](screenshots/sprint1-6-project-breadcrumb.png)
@@ -43,8 +44,8 @@ can coexist:
 /projects/weather-bot/.fastaiagent/config.toml  → project_id = "weather-bot"
 ```
 
-Both can point at the same Postgres backend; each `fastaiagent ui`
-session shows only that project's data.
+Both can point at the same SQLite file (`FASTAIAGENT_LOCAL_DB`); each
+`fastaiagent ui` session shows only that project's data.
 
 `import fastaiagent` is **side-effect-free** — it never touches the
 filesystem. Folder and config creation happen lazily, on the first
@@ -120,29 +121,29 @@ the **legacy / unscoped mode** used by tests and pre-v4 databases.
 Real users running `fastaiagent ui` always get the strict filter
 because `ProjectConfig.get_project_id()` resolves a non-empty id.
 
-## Multiple projects, one Postgres
+## Multiple projects, one database
 
-Two directories pointing at the same Postgres URL with different
-`project_id` values:
+Two directories sharing one SQLite file, with different `project_id`
+values:
 
 ```bash
 # in /projects/refund-bot
-$ fastaiagent ui
+$ fastaiagent ui --db /shared/local.db
 # Local UI // refund-bot // auth disabled
 
 # in /projects/weather-bot (separate terminal)
-$ fastaiagent ui
+$ fastaiagent ui --db /shared/local.db --port 7843
 # Local UI // weather-bot // auth disabled
 ```
 
 Each UI shows only its own data. Traces, checkpoints, and the
-breadcrumb are all scoped.
+breadcrumb are all scoped. Agents write to the same file when
+`FASTAIAGENT_LOCAL_DB=/shared/local.db` is set.
 
-For teams that want **stricter** isolation (separate Postgres schemas,
-separate permissions), the existing
-`PostgresCheckpointer(conn, schema="fastaiagent_refund_bot")` option
-remains. Project scoping via `project_id` and schema-level isolation
-are complementary, not competing.
+The UI does not read Postgres. A production run can keep its
+checkpoints in `PostgresCheckpointer(conn, schema="fastaiagent_refund_bot")`
+for separate schemas and permissions; those runs do not appear in the
+Local UI.
 
 ## Tests
 
