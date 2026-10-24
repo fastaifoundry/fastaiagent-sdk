@@ -221,6 +221,115 @@ def test_resume_requires_token_when_configured(tmp_path) -> None:
     assert r.status_code == 401
 
 
+def test_openapi_json_is_served() -> None:
+    """1.93.0: ``/openapi.json`` answered 500 — FastAPI could not resolve the
+    ``StreamingResponse`` return annotation — so ``/docs`` showed nothing."""
+    client = TestClient(agent_cli._build_app(_agent()))
+    resp = client.get("/openapi.json")
+    assert resp.status_code == 200
+    assert {"/run", "/run/stream", "/resume", "/cancel"} <= set(resp.json()["paths"])
+
+
+def test_cancel_of_a_run_not_in_progress_is_404() -> None:
+    client = TestClient(agent_cli._build_app(_agent(), auth_token="s3cret"))
+    assert client.post("/cancel", json={"execution_id": "nope"}).status_code == 401
+    resp = client.post(
+        "/cancel", json={"execution_id": "nope"}, headers={"Authorization": "Bearer s3cret"}
+    )
+    assert resp.status_code == 404
+
+
+class _Server:
+    """The serve app on a real uvicorn, so a request can be in flight or dropped."""
+
+    def __init__(self, app: object) -> None:
+        import socket
+        import threading
+
+        import uvicorn
+
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            self.port = s.getsockname()[1]
+        config = uvicorn.Config(app, host="127.0.0.1", port=self.port, log_level="error")
+        self._server = uvicorn.Server(config)
+        self._thread = threading.Thread(target=self._server.run, daemon=True)
+
+    def __enter__(self) -> str:
+        import time
+
+        self._thread.start()
+        while not self._server.started:
+            time.sleep(0.05)
+        return f"http://127.0.0.1:{self.port}"
+
+    def __exit__(self, *exc: object) -> None:
+        self._server.should_exit = True
+        self._thread.join(timeout=10)
+
+
+def _slow_agent(finished: list[str]) -> Agent:
+    import asyncio
+
+    from fastaiagent import FunctionTool
+    from fastaiagent.testing import TestModel
+
+    async def aslow() -> str:
+        """Take a while."""
+        await asyncio.sleep(3)
+        finished.append("yes")
+        return "late"
+
+    return Agent(
+        name="slow",
+        llm=TestModel(response=["", "done"], tool_calls=[{"name": "aslow", "arguments": {}}]),
+        tools=[FunctionTool(name="aslow", fn=aslow)],
+    )
+
+
+def test_cancel_stops_a_run_in_progress(isolated_local_db) -> None:
+    import threading
+    import time
+
+    import httpx
+
+    finished: list[str] = []
+    with _Server(agent_cli._build_app(_slow_agent(finished))) as url:
+        answer: dict[str, object] = {}
+
+        def call_run() -> None:
+            body = {"input": "go", "execution_id": "srv-1"}
+            answer.update(httpx.post(f"{url}/run", json=body, timeout=10).json())
+
+        caller = threading.Thread(target=call_run)
+        started = time.monotonic()
+        caller.start()
+        time.sleep(0.4)
+        resp = httpx.post(f"{url}/cancel", json={"execution_id": "srv-1"}, timeout=5)
+        caller.join(timeout=5)
+    assert resp.status_code == 200 and resp.json()["cancelled"] is True
+    assert answer["status"] == "cancelled" and answer["execution_id"] == "srv-1"
+    assert time.monotonic() - started < 2.5 and finished == []
+
+
+def test_a_client_that_hangs_up_stops_the_run(isolated_local_db) -> None:
+    """1.93.0: an abandoned ``/run`` kept calling the model and tools to the end."""
+    import time
+
+    import httpx
+
+    from fastaiagent.agent import run_control
+
+    finished: list[str] = []
+    with _Server(agent_cli._build_app(_slow_agent(finished))) as url:
+        with pytest.raises(httpx.ReadTimeout):
+            httpx.post(f"{url}/run", json={"input": "go", "execution_id": "srv-2"}, timeout=0.4)
+        time.sleep(1.5)  # the server notices within its 0.5 s poll
+        assert run_control.cancel("srv-2") is False, "the run is still going"
+        time.sleep(2)
+    assert finished == []
+
+
 def test_serve_has_no_reload_flag() -> None:
     """``--reload`` never worked: uvicorn reloads only from an import string,
     and serve passes it an app object. Removed in 1.92.0."""

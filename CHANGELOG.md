@@ -72,12 +72,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   swarm wrote none, and a `SwarmError` was recorded as `GeneratorExit`. Hops now
   run nested under one `execution_id`, and the swarm writes its own marker.
 - **A Swarm hop's timeout records `run_reason="timeout"`** (it was empty).
+- **`agent serve`: `GET /openapi.json` works** (it answered 500 — FastAPI could
+  not resolve the `/run/stream` return annotation — so `/docs` was empty).
+- **`agent serve`: a `/run` whose client hangs up is cancelled.** It kept
+  calling the model and tools to the end. The body-size check is now a plain
+  ASGI middleware; the `@app.middleware("http")` form hid the disconnect from
+  the route.
 
 ### Added
 
 - **`Chain.cancel(execution_id)`** stops a chain run in progress, at once,
   inside an agent or tool node. The result has `status="cancelled"` and the
   run-end checkpoint `run_reason="cancelled"`.
+- **`agent serve`: `POST /cancel`** (`{"execution_id"}`) stops a run in
+  progress, and `/run` / `/run/stream` take an optional `execution_id` to name
+  the run.
 - **`Swarm.cancel(execution_id)`** — `Swarm.arun` could not be cancelled at all.
   `Agent.cancel`, `Chain.cancel` and `Swarm.cancel` share one registry.
 - **`Swarm(..., timeout_seconds=)` and `Supervisor(..., timeout_seconds=)`**

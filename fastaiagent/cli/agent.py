@@ -10,19 +10,34 @@ or anything else the uniform contract doesn't cover, eject by copying
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import importlib.util
 import sys
+import uuid
 from pathlib import Path
 from typing import Any
 
 import typer
 
 try:
+    # Module level so FastAPI can resolve the ``request: Request`` annotation of
+    # a route (annotations are strings in this module); fastapi is an extra.
+    from fastapi import Request
+except ImportError:  # pragma: no cover - checked when the app is built
+    Request = None  # type: ignore[assignment, misc]
+
+try:
     from pydantic import BaseModel
 
     class RunRequest(BaseModel):
         input: str
+        # Names the run (1.93.0), so the caller can ``POST /cancel`` it while it
+        # is in progress; one is chosen when absent.
+        execution_id: str | None = None
+
+    class CancelRequest(BaseModel):
+        execution_id: str
 
     class ResumeRequest(BaseModel):
         # The ``execution_id`` a paused ``/run`` returned; ``approved`` and
@@ -45,6 +60,7 @@ try:
         pending_interrupt: dict[str, Any] | None = None
 except ImportError:  # pragma: no cover - pydantic is a required fastaiagent dep
     RunRequest = None  # type: ignore[assignment, misc]
+    CancelRequest = None  # type: ignore[assignment, misc]
     ResumeRequest = None  # type: ignore[assignment, misc]
     RunResponse = None  # type: ignore[assignment, misc]
 
@@ -114,7 +130,7 @@ def _build_app(
         import hmac
         import json
 
-        from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
+        from fastapi import Depends, FastAPI, Header, HTTPException, status
         from fastapi.responses import JSONResponse, StreamingResponse
     except ImportError as err:  # pragma: no cover
         raise ImportError(
@@ -172,31 +188,63 @@ def _build_app(
     # second, FastAPI-made span per request would land beside it (FastAPI >= 0.143).
     app = FastAPI(title=f"fastaiagent {target.name}", **sdk_app_kwargs())
 
-    @app.middleware("http")
-    async def _limit_body(request: Request, call_next: Any) -> Any:
-        content_length = request.headers.get("content-length")
-        if content_length is not None:
-            try:
-                if int(content_length) > max_body_bytes:
-                    return JSONResponse(
-                        {"detail": f"Request body exceeds {max_body_bytes} bytes."},
-                        status_code=413,
-                    )
-            except ValueError:
-                pass
-        return await call_next(request)
+    class _LimitBody:
+        """Refuse an oversized body by ``Content-Length``. A plain ASGI
+        middleware, not ``@app.middleware("http")``: that one wraps ``receive``,
+        so a route could never see its client hang up (1.93.0)."""
+
+        def __init__(self, inner: Any) -> None:
+            self.inner = inner
+
+        async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+            if scope["type"] == "http":
+                for name, value in scope.get("headers", []):
+                    if name == b"content-length" and value.isdigit():
+                        if int(value) > max_body_bytes:
+                            refusal = JSONResponse(
+                                {"detail": f"Request body exceeds {max_body_bytes} bytes."},
+                                status_code=413,
+                            )
+                            await refusal(scope, receive, send)
+                            return
+            await self.inner(scope, receive, send)
+
+    app.add_middleware(_LimitBody)
 
     @app.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
     @app.post("/run", response_model=RunResponse, dependencies=[Depends(require_token)])
-    async def run(req: RunRequest) -> RunResponse:
+    async def run(req: RunRequest, request: Request) -> RunResponse:
         if not req.input.strip():
             raise HTTPException(400, "input must be non-empty")
+        execution_id = req.execution_id or str(uuid.uuid4())
         if isinstance(target, Agent):
-            return _response(await target.arun(req.input))
-        return _response(await target.aexecute({"input": req.input}))
+            work = asyncio.ensure_future(target.arun(req.input, execution_id=execution_id))
+        else:
+            work = asyncio.ensure_future(
+                target.aexecute({"input": req.input}, execution_id=execution_id)
+            )
+        # A client that hangs up stops the run (1.93.0): before, an abandoned
+        # ``/run`` kept calling the model and tools to the end.
+        while not work.done():
+            await asyncio.wait({work}, timeout=0.5)
+            if not work.done() and await request.is_disconnected():
+                target.cancel(execution_id)
+                break
+        return _response(await work)
+
+    @app.post("/cancel", dependencies=[Depends(require_token)])
+    async def cancel(req: CancelRequest) -> dict[str, Any]:
+        """Stop a run in progress by its ``execution_id`` (1.93.0). The run
+        answers its own request with ``status="cancelled"``."""
+        if not target.cancel(req.execution_id):
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                f"No run {req.execution_id!r} is in progress on this server.",
+            )
+        return {"execution_id": req.execution_id, "cancelled": True}
 
     @app.post("/resume", response_model=RunResponse, dependencies=[Depends(require_token)])
     async def resume(req: ResumeRequest) -> RunResponse:
@@ -212,15 +260,18 @@ def _build_app(
             raise HTTPException(status.HTTP_404_NOT_FOUND, str(err)) from err
         return _response(result)
 
-    @app.post("/run/stream", dependencies=[Depends(require_token)])
-    async def run_stream(req: RunRequest) -> StreamingResponse:
+    # ``response_model=None`` and no return annotation: under ``from __future__
+    # import annotations`` FastAPI could not resolve ``StreamingResponse`` (a
+    # local import), and ``GET /openapi.json`` answered 500 (fixed 1.93.0).
+    @app.post("/run/stream", response_model=None, dependencies=[Depends(require_token)])
+    async def run_stream(req: RunRequest):  # type: ignore[no-untyped-def]
         if not req.input.strip():
             raise HTTPException(400, "input must be non-empty")
         if not isinstance(target, Agent):
             raise HTTPException(400, "Streaming is only supported for Agent targets")
 
         async def events() -> Any:
-            async for event in target.astream(req.input):
+            async for event in target.astream(req.input, execution_id=req.execution_id):
                 if isinstance(event, TextDelta):
                     yield f"data: {json.dumps({'type': 'delta', 'text': event.text})}\n\n"
                 elif isinstance(event, ToolCallEnd):

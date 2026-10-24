@@ -302,6 +302,12 @@ Exposes:
 - `POST /run`         — `{"input": "..."}` → `{"output", "latency_ms", "tokens_used", "trace_id", "status", "execution_id", "pending_interrupt"}`. `status` is `"paused"` when the run stopped for a decision — a [managed approval policy](../guardrails/managed-governance.md) or an `interrupt()` — with empty `output` and the reason and context (for a policy pause, the tool and its arguments) in `pending_interrupt`.
 - `POST /run/stream`  — Server-Sent Events (Agent targets only). A run that pauses ends with a `{"type": "paused", "reason", "execution_id", "context"}` event before `done` (1.77.0).
 - `POST /resume`      — `{"execution_id": "...", "approved": true, "metadata": {}}` → the same response as `/run` (since 1.92.0). Resumes a paused run: `approved` and `metadata` become the `Resume` the paused tool receives. A run that is not waiting (or was already resumed) answers `409`; an unknown Chain execution answers `404`. The target needs a checkpointer, as for any resume.
+- `POST /cancel`      — `{"execution_id": "..."}` → `{"execution_id", "cancelled": true}` (since 1.93.0). Stops a run in progress; its own `/run` request then answers `status="cancelled"`. Name the run by passing `"execution_id"` in the `/run` or `/run/stream` body. A run not in progress answers `404`.
+- `GET /openapi.json` and `/docs` — the API description (it answered `500` before 1.93.0).
+
+A `/run` whose client hangs up is cancelled within half a second (since 1.93.0;
+before, an abandoned run kept calling the model and its tools to the end). A
+`/run/stream` whose client stops reading ends `failed`, as before.
 
 ```bash
 curl -X POST localhost:8000/run -d '{"input": "Refund order 42"}' -H 'Content-Type: application/json'
@@ -316,7 +322,7 @@ curl -X POST localhost:8000/resume -H 'Content-Type: application/json' \
 
 ### Security
 
-`/run`, `/run/stream` and `/resume` execute your agent — including its tools and LLM calls — so treat the port as sensitive. `--auth-token` covers all three.
+`/run`, `/run/stream` and `/resume` execute your agent — including its tools and LLM calls — so treat the port as sensitive. `--auth-token` covers them and `/cancel`.
 
 - **Default bind is `0.0.0.0`** so the service is reachable when running inside a container (binding `127.0.0.1` would make it unreachable through Docker/Kubernetes port mapping). Pass `--host 127.0.0.1` for a purely local service.
 - **The execution routes are unauthenticated by default.** Enable a bearer token with `--auth-token <token>` (or the `FASTAIAGENT_SERVE_TOKEN` env var); callers then send `Authorization: Bearer <token>`. `GET /health` stays open for liveness probes.
