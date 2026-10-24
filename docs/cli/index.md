@@ -331,7 +331,11 @@ Expose an `Agent` or `Chain` as an MCP server over stdio — registers with Clau
 ```bash
 fastaiagent mcp serve path/to/my_agent.py:agent
 fastaiagent mcp serve path/to/my_agent.py:agent --expose-tools --name research_bot
+fastaiagent mcp serve path/to/my_chain.py:chain
 ```
+
+`--expose-tools` applies to an Agent only; a Chain is served as its one primary tool. (Before
+1.92.0 serving any Chain failed with `TypeError`.)
 
 See [docs/tools/mcp-server.md](../tools/mcp-server.md) for Claude Desktop / Cursor config snippets.
 

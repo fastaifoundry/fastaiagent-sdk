@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`fastaiagent mcp serve` works on a Chain.** It passed `expose_tools=` to every
+  target, and `Chain.as_mcp_server` takes no such parameter, so serving any Chain
+  failed with `TypeError` before the handshake. `--expose-tools` now applies to an
+  Agent only. New test drives the real CLI over stdio with the official MCP client,
+  for a Chain and an Agent.
+
 ## [1.91.0] - 2026-10-21 — one extension model, and an LLMClient for today's models
 
 Bets 1 and 2. `AgentMiddleware` becomes the single way to extend a run: run and

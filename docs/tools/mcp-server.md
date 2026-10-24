@@ -113,8 +113,9 @@ fastaiagent mcp serve <target> [--transport stdio] [--expose-tools] [--name NAME
 - `<target>` is either a file path or a dotted module path, followed by `:attr_name`:
   - `path/to/my_agent.py:agent`
   - `mypkg.agents:research_bot`
+  - `path/to/my_chain.py:chain` (a Chain target works since 1.92.0; before, it failed with `TypeError`)
 - `--transport` defaults to `stdio`.
-- `--expose-tools` turns on individual tool surfacing.
+- `--expose-tools` turns on individual tool surfacing (Agent targets only).
 - `--name` overrides the primary tool name.
 
 ## What the MCP client sees
