@@ -20,7 +20,7 @@ Set the matching env var (e.g. `export GROQ_API_KEY=…`) and you're done.
 |---|---|---|---|---|---|---|
 | `openai` | OpenAI | `gpt-4o-mini` | `OPENAI_API_KEY` | ✓ | ✓ | native |
 | `anthropic` | Anthropic | (specify) | `ANTHROPIC_API_KEY` | ✓ | ✓ | system-prompt |
-| `ollama` | Ollama | (specify) | _(none, local)_ | ✓ | ✓ | native |
+| `ollama` | Ollama | (specify) | _(none, local)_ | ✓ (since 1.93.0; every tool loop failed before) | ✓ | native (prompted beside tools) |
 | `azure` | OpenAI-compat | (specify) | `OPENAI_API_KEY` | ✓ | ✓ | native |
 | `bedrock` | Bedrock (boto3) | (specify) | _(AWS creds)_ | ✓ | ✗ | system-prompt; native with `output_mode="native"` (1.91.0) |
 | `custom` | OpenAI-compat | (specify) | `OPENAI_API_KEY` | ✓ | ✓ | native |
@@ -37,7 +37,7 @@ every built-in except `openai`.
 | Key | Wire | Default model | API key env var | Tools | Streaming | `response_format` |
 |---|---|---|---|---|---|---|
 | `gemini` | native | `gemini-3.8-flash` | `GEMINI_API_KEY` | ✓ | ✓ | native (`responseSchema`) |
-| `groq` | OpenAI-compat | `openai/gpt-oss-120b` | `GROQ_API_KEY` | ✓ | ✓ | native |
+| `groq` | OpenAI-compat | `openai/gpt-oss-120b` | `GROQ_API_KEY` | ✓ | ✓ | native (prompted beside tools) |
 | `openrouter` | OpenAI-compat | `openai/gpt-4o-mini` | `OPENROUTER_API_KEY` | ✓ | ✓ | native |
 | `deepseek` | OpenAI-compat | `deepseek-chat` | `DEEPSEEK_API_KEY` | ✓ | ✓ | native |
 | `together` | OpenAI-compat | `meta-llama/Llama-3.1-70B-Instruct-Turbo` | `TOGETHER_API_KEY` | ✓ | ✓ | native |

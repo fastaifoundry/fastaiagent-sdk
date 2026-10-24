@@ -104,7 +104,8 @@ Structured output works across all providers, with automatic adaptation:
 | **Custom** | Yes | Same as OpenAI (OpenAI-compatible) |
 | **Anthropic** | No | Schema injected into system prompt; code fences stripped from response |
 | **Gemini** | Yes, without tools | `responseMimeType` + `responseSchema` on a call with no tools. While function tools are in the request, the schema is asked for in the prompt and the fenced reply is parsed: Gemini refuses JSON mode with function calling (2.5: HTTP 400) or calls tools forever (3.5, 3.8). Fixed in 1.91.0 (X20); before, an `output_type` agent with tools never worked on Gemini |
-| **Ollama** | Partial | `json_object` → `format: "json"`, `json_schema` → `format: {schema}` |
+| **Ollama** | Yes, without tools | `json_object` → `format: "json"`, `json_schema` → `format: {schema}` on a call with no tools. With tools, the schema is asked for in the prompt: `format` constrains every token to the schema, so the model never called a tool and invented the value instead (fixed in 1.93.0) |
+| **Groq** | Yes, without tools | `response_format` on a call with no tools; with tools, the schema in the prompt. Groq refuses JSON mode beside tools (HTTP 400 "json mode cannot be combined with tool/function calling"; fixed in 1.93.0) |
 | **Bedrock** | Opt-in | Schema in the system prompt; `outputConfig.textFormat` with `output_mode="native"`. Before 1.91.0 Bedrock sent neither, so a structured agent got no schema (X21) |
 
 > **Note:** For Anthropic, the SDK automatically augments the system prompt with JSON instructions and strips any markdown code fences from the response. This means your code works identically across providers — no per-provider handling needed.
@@ -116,7 +117,7 @@ picks how:
 
 | Mode | What is sent | When to use it |
 |---|---|---|
-| `"auto"` (default) | Each provider's usual way: OpenAI/Azure native `response_format`, Gemini's native schema (prompted on tool turns), Ollama `format`, the schema in the prompt for Anthropic and Bedrock | Almost always |
+| `"auto"` (default) | Each provider's usual way: OpenAI/Azure native `response_format`, Gemini's, Groq's and Ollama's native schema (prompted on tool turns), the schema in the prompt for Anthropic and Bedrock | Almost always |
 | `"native"` | The provider's own schema-constrained output, including **Anthropic `output_config.format`** and **Bedrock `outputConfig.textFormat`** | You want the provider to guarantee the shape. On Anthropic the schema is adapted to its rules: objects get `additionalProperties: false`, and `minimum` / `maxLength` and the like move into the field description. The reply is still validated against your full type. |
 | `"tool"` | A `final_result` tool whose arguments are your schema. Calling it ends the run, and its arguments are `parsed` | Agents that use tools and should keep using them until they answer. The tool is offered, not forced, so it works on models that refuse forced tool use (Opus 5.5, Sonnet 5.5). A text answer that parses is accepted too. |
 | `"prompt"` | The schema in the system prompt only, no provider parameter | A gateway or model that rejects the native fields |

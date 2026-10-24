@@ -131,6 +131,38 @@ def test_groq_tool_call() -> None:
 
 
 @needs_groq
+@pytest.mark.parametrize("method", ["run", "stream"])
+def test_groq_structured_output_beside_a_tool(method: str) -> None:
+    """1.93.0: Groq refused ``response_format`` with tools (HTTP 400 "json mode
+    cannot be combined with tool/function calling"); the schema now goes in the
+    prompt on tool turns."""
+    from pydantic import BaseModel
+
+    from fastaiagent import Agent, FunctionTool
+
+    class CityFact(BaseModel):
+        city: str
+        population_millions: float
+
+    def get_population(city: str) -> float:
+        """The population of a city in millions."""
+        return 2.1 if "lyon" in city.lower() else 0.0
+
+    agent = Agent(
+        name="groq-structured",
+        system_prompt="Always call get_population, then report its value exactly.",
+        llm=LLMClient(provider="groq", model=GROQ_MODEL, temperature=0.0),
+        tools=[FunctionTool(name="get_population", fn=get_population)],
+        output_type=CityFact,
+    )
+    prompt = "Use get_population for Lyon and report it."
+    # stream() drives astream() and collects its result.
+    result = agent.run(prompt) if method == "run" else agent.stream(prompt)
+    assert [tc["tool_name"] for tc in result.tool_calls] == ["get_population"]
+    assert result.parsed is not None and result.parsed.population_millions == 2.1
+
+
+@needs_groq
 def test_groq_trace_span_records_provider() -> None:
     """The OTel span emitted by acomplete carries gen_ai.system='groq'."""
     from opentelemetry import trace
