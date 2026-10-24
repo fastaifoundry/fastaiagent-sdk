@@ -169,35 +169,102 @@ async def test_a_hostname_keeps_its_host_header(capture_server: Any) -> None:
     assert capture_server.requests[0]["headers"]["Host"] == f"localhost:{port}"
 
 
-async def test_the_next_checked_address_is_tried_when_one_refuses(
-    capture_server: Any, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A name with several addresses: the pinned send moves to the next checked
-    one when a connection cannot be made, as httpx does for a name."""
-    real = socket.getaddrinfo
+class _IPv6Only:
+    """A real HTTP server on ::1 only. ``localhost`` resolves to 127.0.0.1 and
+    ::1, and IPv4 is tried first, so reaching this server by name proves the
+    pinned send moved on to the next checked address. No resolver stand-in."""
 
-    def getaddrinfo(host: Any, port: Any, *args: Any, **kwargs: Any) -> Any:
-        name = host.decode() if isinstance(host, bytes) else host
-        if name != "two.fastaiagent.test":
-            return real(host, port, *args, **kwargs)
-        # Nothing answers on 127.0.0.2 (refused on Linux, a connect timeout on
-        # macOS); 127.0.0.1 is the server.
-        return [
-            (socket.AF_INET, socket.SOCK_STREAM, 6, "", (a, int(port or 0)))
-            for a in ("127.0.0.2", "127.0.0.1")
-        ]
+    def __init__(self) -> None:
+        self.hosts: list[str] = []
+        seen = self.hosts
 
-    monkeypatch.setattr(socket, "getaddrinfo", getaddrinfo)
-    port = capture_server.url.rsplit(":", 1)[1]
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args: Any) -> None:
+                pass
+
+            def do_GET(self) -> None:  # noqa: N802
+                seen.append(self.headers.get("Host", ""))
+                self.send_response(200)
+                self.send_header("Content-Length", "2")
+                self.end_headers()
+                self.wfile.write(b"ok")
+
+        class Server(ThreadingHTTPServer):
+            address_family = socket.AF_INET6
+
+        self._server = Server(("::1", 0), Handler)
+        self.port = self._server.server_address[1]
+        threading.Thread(target=self._server.serve_forever, daemon=True).start()
+
+    def stop(self) -> None:
+        self._server.shutdown()
+
+
+@pytest.fixture
+def ipv6_only() -> Any:
+    addrs = {a[4][0] for a in socket.getaddrinfo("localhost", 80, proto=socket.IPPROTO_TCP)}
+    if not {"127.0.0.1", "::1"} <= addrs or not socket.has_ipv6:
+        pytest.skip(f"localhost resolves to {sorted(addrs)}, not both 127.0.0.1 and ::1")
+    server = _IPv6Only()
+    yield server
+    server.stop()
+
+
+async def test_the_next_checked_address_is_tried_when_one_refuses(ipv6_only: Any) -> None:
     resp = await asafe_http_request(
-        f"http://two.fastaiagent.test:{port}/x",
-        timeout=1,
+        f"http://localhost:{ipv6_only.port}/x",
+        timeout=5,
         max_redirects=0,
         max_bytes=1000,
         allow_loopback=True,
     )
-    assert resp.status_code == 200
-    assert capture_server.requests[0]["headers"]["Host"] == f"two.fastaiagent.test:{port}"
+    assert resp.status_code == 200 and resp.text == "ok"
+    assert ipv6_only.hosts == [f"localhost:{ipv6_only.port}"]
+
+
+def test_the_fallback_survives_a_reimported_httpcore(ipv6_only: Any) -> None:
+    """After a re-import of httpcore, httpx lets the raw ``httpcore.ConnectError``
+    through (X25, 1.91.0). The fallback must still recognise "cannot connect"."""
+    import subprocess
+    import sys
+    import textwrap
+
+    script = textwrap.dedent(
+        f"""
+        import asyncio, importlib, socket, sys
+        import httpx
+
+        # httpx builds its httpcore -> httpx error map on its first error, so
+        # fail once (a dead port), then re-import httpcore — as CI's run did.
+        s = socket.socket(); s.bind(("127.0.0.1", 0)); dead = s.getsockname()[1]; s.close()
+        try:
+            httpx.get(f"http://127.0.0.1:{{dead}}/")
+        except httpx.ConnectError:
+            pass
+        for name in [m for m in sys.modules if m == "httpcore" or m.startswith("httpcore.")]:
+            del sys.modules[name]
+        importlib.import_module("httpcore")
+        from fastaiagent.multimodal._http import asafe_http_request
+        resp = asyncio.run(asafe_http_request(
+            "http://localhost:{ipv6_only.port}/x", timeout=5, max_redirects=0,
+            max_bytes=1000, allow_loopback=True))
+        print("STATUS", resp.status_code)
+        """
+    )
+    proc = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
+    assert "STATUS 200" in proc.stdout, proc.stderr[-2000:]
+
+
+def test_is_connect_error_by_name() -> None:
+    from fastaiagent._internal.http_errors import is_connect_error
+
+    assert is_connect_error(httpx.ConnectError("refused"))
+    assert is_connect_error(httpx.ConnectTimeout("slow"))
+    # A class from a second import of httpcore: same name, a different object.
+    stale = type("ConnectError", (Exception,), {"__module__": "httpcore._exceptions"})
+    assert is_connect_error(stale("All connection attempts failed"))
+    assert not is_connect_error(httpx.ReadError("dropped"))
+    assert not is_connect_error(type("ConnectError", (Exception,), {"__module__": "x"})("x"))
 
 
 async def test_mcp_tool_reaches_an_official_server_by_name(official_mcp_server: Any) -> None:

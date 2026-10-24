@@ -10,7 +10,6 @@ rebinding attack itself is proven offline in ``tests/test_ssrf_pinning.py``.
 
 from __future__ import annotations
 
-import httpx
 import pytest
 
 from fastaiagent.multimodal._http import asafe_http_request, safe_http_fetch
@@ -37,8 +36,13 @@ def test_https_redirect_through_the_sync_helper() -> None:
     "url", ["https://wrong.host.badssl.com/", "https://self-signed.badssl.com/"]
 )
 async def test_a_bad_certificate_is_still_refused(url: str) -> None:
-    with pytest.raises(httpx.ConnectError, match="CERTIFICATE_VERIFY_FAILED|certificate"):
+    from fastaiagent._internal.http_errors import is_transport_error
+
+    # Matched by name and message, not class: in a long test run something
+    # re-imports httpcore and the raw httpcore.ConnectError arrives (X25).
+    with pytest.raises(Exception, match="CERTIFICATE_VERIFY_FAILED") as caught:
         await asafe_http_request(url, timeout=20, max_redirects=0, max_bytes=1_000_000)
+    assert is_transport_error(caught.value)
 
 
 def test_image_from_url() -> None:

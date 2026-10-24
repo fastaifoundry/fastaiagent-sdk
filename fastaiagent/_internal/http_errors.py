@@ -26,6 +26,21 @@ import httpx
 _HTTPCORE_BASES = frozenset({"NetworkError", "TimeoutException", "ProtocolError"})
 
 
+#: ``httpcore``'s classes for "no connection was made" (refused, unreachable,
+#: or timed out while connecting) — the same in ``httpx``.
+_CONNECT_FAILURES = frozenset({"ConnectError", "ConnectTimeout"})
+
+
+def is_connect_error(error: BaseException) -> bool:
+    """No connection could be made, as ``httpx`` or raw ``httpcore`` raises it
+    (by name, for the reason above). Used to try a host's next checked address
+    (1.92.0)."""
+    return any(
+        cls.__module__.split(".")[0] in ("httpx", "httpcore") and cls.__name__ in _CONNECT_FAILURES
+        for cls in type(error).__mro__
+    )
+
+
 def is_transport_error(error: BaseException) -> bool:
     """A transient network failure, as ``httpx`` or as raw ``httpcore`` raises it."""
     if isinstance(error, (httpx.TransportError, TimeoutError)):

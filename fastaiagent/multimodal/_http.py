@@ -150,23 +150,25 @@ def pinned(request: httpx.Request, address: str) -> httpx.Request:
     )
 
 
-#: A connection to this address could not be made (refused, unreachable, or
-#: timed out connecting); the next checked address is worth trying.
-_CANNOT_CONNECT = (httpx.ConnectError, httpx.ConnectTimeout)
-
-
 def send_pinned(
     client: httpx.Client, request: httpx.Request, addresses: list[str] | None
 ) -> httpx.Response:
     """Send ``request`` (streamed) to the checked addresses in turn — the next
-    one only when a connection cannot be made, as httpx does for a name."""
+    one only when a connection cannot be made, as httpx does for a name.
+
+    "Cannot connect" is recognised by name (``is_connect_error``): after a
+    re-import of ``httpcore``, httpx lets the raw ``httpcore.ConnectError``
+    through unmapped (see ``_internal/http_errors.py``)."""
+    from fastaiagent._internal.http_errors import is_connect_error
+
     if not addresses:
         return client.send(request, stream=True)
     for address in addresses[:-1]:
         try:
             return client.send(pinned(request, address), stream=True)
-        except _CANNOT_CONNECT:
-            continue
+        except Exception as e:
+            if not is_connect_error(e):
+                raise
     return client.send(pinned(request, addresses[-1]), stream=True)
 
 
@@ -177,13 +179,16 @@ async def asend_pinned(
 ) -> httpx.Response:
     """Async :func:`send_pinned`; ``send`` is a client's ``send`` or a
     transport's ``handle_async_request`` (then ``stream`` does not apply)."""
+    from fastaiagent._internal.http_errors import is_connect_error
+
     if not addresses:
         return await send(request)
     for address in addresses[:-1]:
         try:
             return await send(pinned(request, address))
-        except _CANNOT_CONNECT:
-            continue
+        except Exception as e:
+            if not is_connect_error(e):
+                raise
     return await send(pinned(request, addresses[-1]))
 
 
