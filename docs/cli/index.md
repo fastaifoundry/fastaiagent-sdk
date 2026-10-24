@@ -294,17 +294,29 @@ Run any `Agent` or `Chain` as a FastAPI service that exposes the [uniform deploy
 fastaiagent agent serve examples/01_simple_agent.py:agent --port 8000
 
 # pkg.module:attr
-fastaiagent agent serve mypkg.agents:research_bot --port 9000 --reload
+fastaiagent agent serve mypkg.agents:research_bot --port 9000
 ```
 
 Exposes:
 - `GET  /health`
-- `POST /run`         — `{"input": "..."}` → `{"output", "latency_ms", "tokens_used", "trace_id", "status", "execution_id", "pending_interrupt"}`. `status` is `"paused"` when the run stopped for a decision — a [managed approval policy](../guardrails/managed-governance.md) or an `interrupt()` — with empty `output` and the reason and context (for a policy pause, the tool and its arguments) in `pending_interrupt`. The service has no resume route: resume the `execution_id` from your application with `aresume(...)` against the same checkpointer.
+- `POST /run`         — `{"input": "..."}` → `{"output", "latency_ms", "tokens_used", "trace_id", "status", "execution_id", "pending_interrupt"}`. `status` is `"paused"` when the run stopped for a decision — a [managed approval policy](../guardrails/managed-governance.md) or an `interrupt()` — with empty `output` and the reason and context (for a policy pause, the tool and its arguments) in `pending_interrupt`.
 - `POST /run/stream`  — Server-Sent Events (Agent targets only). A run that pauses ends with a `{"type": "paused", "reason", "execution_id", "context"}` event before `done` (1.77.0).
+- `POST /resume`      — `{"execution_id": "...", "approved": true, "metadata": {}}` → the same response as `/run` (since 1.92.0). Resumes a paused run: `approved` and `metadata` become the `Resume` the paused tool receives. A run that is not waiting (or was already resumed) answers `409`; an unknown Chain execution answers `404`. The target needs a checkpointer, as for any resume.
+
+```bash
+curl -X POST localhost:8000/run -d '{"input": "Refund order 42"}' -H 'Content-Type: application/json'
+# {"status": "paused", "execution_id": "4f1c…", "pending_interrupt": {...}, ...}
+curl -X POST localhost:8000/resume -H 'Content-Type: application/json' \
+  -d '{"execution_id": "4f1c…", "approved": true, "metadata": {"resolver": "alice"}}'
+# {"status": "completed", "output": "...", ...}
+```
+
+`--reload` was removed in 1.92.0: uvicorn reloads only from an import string, and
+`serve` hands it an app object, so the flag never worked. Restart the command after a change.
 
 ### Security
 
-`/run` and `/run/stream` execute your agent — including its tools and LLM calls — so treat the port as sensitive.
+`/run`, `/run/stream` and `/resume` execute your agent — including its tools and LLM calls — so treat the port as sensitive. `--auth-token` covers all three.
 
 - **Default bind is `0.0.0.0`** so the service is reachable when running inside a container (binding `127.0.0.1` would make it unreachable through Docker/Kubernetes port mapping). Pass `--host 127.0.0.1` for a purely local service.
 - **The execution routes are unauthenticated by default.** Enable a bearer token with `--auth-token <token>` (or the `FASTAIAGENT_SERVE_TOKEN` env var); callers then send `Authorization: Bearer <token>`. `GET /health` stays open for liveness probes.

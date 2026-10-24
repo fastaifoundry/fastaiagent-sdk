@@ -24,6 +24,13 @@ try:
     class RunRequest(BaseModel):
         input: str
 
+    class ResumeRequest(BaseModel):
+        # The ``execution_id`` a paused ``/run`` returned; ``approved`` and
+        # ``metadata`` become the ``Resume`` the paused tool receives.
+        execution_id: str
+        approved: bool
+        metadata: dict[str, Any] = {}
+
     class RunResponse(BaseModel):
         output: str
         latency_ms: int = 0
@@ -38,6 +45,7 @@ try:
         pending_interrupt: dict[str, Any] | None = None
 except ImportError:  # pragma: no cover - pydantic is a required fastaiagent dep
     RunRequest = None  # type: ignore[assignment, misc]
+    ResumeRequest = None  # type: ignore[assignment, misc]
     RunResponse = None  # type: ignore[assignment, misc]
 
 agent_app = typer.Typer(
@@ -114,12 +122,35 @@ def _build_app(
             "Install with: pip install fastapi 'uvicorn[standard]'"
         ) from err
 
+    from fastaiagent._internal.errors import ChainCheckpointError
     from fastaiagent.agent.agent import Agent
     from fastaiagent.chain.chain import Chain
+    from fastaiagent.chain.interrupt import AlreadyResumed, Resume
     from fastaiagent.llm.stream import Paused, TextDelta, ToolCallEnd
 
     if not isinstance(target, (Agent, Chain)):
         raise typer.BadParameter(f"Target must be Agent or Chain, got {type(target).__name__}")
+
+    def _response(result: Any) -> RunResponse:
+        """``/run`` and ``/resume`` answer the same way, for an AgentResult
+        or a Chain result."""
+        if isinstance(target, Agent):
+            return RunResponse(
+                output=result.output,
+                latency_ms=result.latency_ms,
+                tokens_used=result.tokens_used,
+                trace_id=result.trace_id,
+                status=result.status,
+                execution_id=result.execution_id,
+                pending_interrupt=result.pending_interrupt,
+            )
+        output = result.output
+        return RunResponse(
+            output=output if isinstance(output, str) else json.dumps(output, default=str),
+            status=result.status,
+            execution_id=result.execution_id,
+            pending_interrupt=result.pending_interrupt,
+        )
 
     async def require_token(
         authorization: str | None = Header(default=None),
@@ -164,29 +195,22 @@ def _build_app(
         if not req.input.strip():
             raise HTTPException(400, "input must be non-empty")
         if isinstance(target, Agent):
-            agent_result = await target.arun(req.input)
-            return RunResponse(
-                output=agent_result.output,
-                latency_ms=agent_result.latency_ms,
-                tokens_used=agent_result.tokens_used,
-                trace_id=agent_result.trace_id,
-                status=agent_result.status,
-                execution_id=agent_result.execution_id,
-                pending_interrupt=agent_result.pending_interrupt,
-            )
-        # Chain
-        chain_result = await target.aexecute({"input": req.input})
-        chain_output = (
-            chain_result.output
-            if isinstance(chain_result.output, str)
-            else json.dumps(chain_result.output, default=str)
-        )
-        return RunResponse(
-            output=chain_output,
-            status=chain_result.status,
-            execution_id=chain_result.execution_id,
-            pending_interrupt=chain_result.pending_interrupt,
-        )
+            return _response(await target.arun(req.input))
+        return _response(await target.aexecute({"input": req.input}))
+
+    @app.post("/resume", response_model=RunResponse, dependencies=[Depends(require_token)])
+    async def resume(req: ResumeRequest) -> RunResponse:
+        # The run's own ``aresume`` claims the pause atomically and emits the
+        # resolution event, so a second resume of the same run is a 409 here
+        # and nothing is reported twice.
+        value = Resume(approved=req.approved, metadata=req.metadata)
+        try:
+            result = await target.aresume(req.execution_id, resume_value=value)
+        except AlreadyResumed as err:
+            raise HTTPException(status.HTTP_409_CONFLICT, str(err)) from err
+        except ChainCheckpointError as err:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, str(err)) from err
+        return _response(result)
 
     @app.post("/run/stream", dependencies=[Depends(require_token)])
     async def run_stream(req: RunRequest) -> StreamingResponse:
@@ -207,8 +231,8 @@ def _build_app(
                     }
                     yield f"data: {json.dumps(payload)}\n\n"
                 elif isinstance(event, Paused):
-                    # The run stopped for a decision; resume ``execution_id`` from
-                    # the application (there is no resume route here).
+                    # The run stopped for a decision; the caller resumes
+                    # ``execution_id`` with ``POST /resume``.
                     paused = {
                         "type": "paused",
                         "reason": event.reason,
@@ -272,21 +296,21 @@ def serve(
         None,
         "--auth-token",
         envvar="FASTAIAGENT_SERVE_TOKEN",
-        help="Require 'Authorization: Bearer <token>' on /run and /run/stream. "
-        "Strongly recommended for any non-loopback bind.",
+        help="Require 'Authorization: Bearer <token>' on /run, /run/stream and "
+        "/resume. Strongly recommended for any non-loopback bind.",
     ),
     max_body_bytes: int = typer.Option(
         _DEFAULT_MAX_BODY_BYTES,
         "--max-body-bytes",
         help="Reject request bodies larger than this many bytes.",
     ),
-    reload: bool = typer.Option(False, "--reload", help="Auto-reload on code changes."),
 ) -> None:
     """Run an Agent or Chain as a FastAPI service on the uniform contract:
 
     - ``GET  /health``
     - ``POST /run``         body: {"input": "..."}
     - ``POST /run/stream``  body: {"input": "..."}  returns SSE
+    - ``POST /resume``      body: {"execution_id": "...", "approved": true, "metadata": {}}
 
     The execution routes are unauthenticated unless ``--auth-token`` is set.
     """
@@ -301,4 +325,4 @@ def serve(
     resolved = _resolve_target(target)
     app = _build_app(resolved, auth_token=auth_token, max_body_bytes=max_body_bytes)
     _warn_on_exposure(host, auth_token)
-    uvicorn.run(app, host=host, port=port, reload=reload)
+    uvicorn.run(app, host=host, port=port)

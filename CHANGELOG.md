@@ -24,6 +24,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as "not cached". Results are now stored in a small envelope, so `None` is cached
   like any other value. Rows written by older versions are still read, and no
   checkpointer changed. The Local UI's idempotency-cache view shows the value inside.
+- **`fastaiagent agent serve` can resume what it pauses.** `/run` returned a paused
+  run's `execution_id`, but the service had no way to resume it. New
+  `POST /resume` (`{"execution_id", "approved", "metadata"}`) calls the target's
+  `aresume` and answers like `/run`; a run that is not waiting answers `409`, an
+  unknown Chain execution `404`. `--auth-token` covers it. Agent and Chain targets.
+
+### Removed
+
+- **`fastaiagent agent serve --reload`.** It never worked: uvicorn reloads only from
+  an import string, and `serve` passes an app object, so uvicorn refused to start.
 
 ## [1.91.0] - 2026-10-21 — one extension model, and an LLMClient for today's models
 

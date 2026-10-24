@@ -152,3 +152,80 @@ def test_run_stream_sends_a_paused_event(isolated_local_db, tmp_path) -> None:
     assert paused["reason"] == "need_sign_off"
     assert paused["execution_id"]
     assert paused["context"] == {"question": "ok?"}
+
+
+# --- POST /resume (1.92.0): a run paused through the service is resumed through it
+
+
+def _clerk(tmp_path) -> Agent:
+    from fastaiagent.checkpointers.sqlite import SQLiteCheckpointer
+    from tests.test_stream_pause import _llm, _sign_off_tool
+
+    return Agent(
+        name="clerk",
+        llm=_llm("ask_human", {"question": "ok?"}),
+        tools=[_sign_off_tool()],
+        checkpointer=SQLiteCheckpointer(str(tmp_path / "ckpt.db")),
+    )
+
+
+def test_resume_completes_a_paused_agent_run(isolated_local_db, tmp_path) -> None:
+    client = TestClient(agent_cli._build_app(_clerk(tmp_path)))
+    paused = client.post("/run", json={"input": "Get sign-off."}).json()
+    assert paused["status"] == "paused"
+
+    r = client.post("/resume", json={"execution_id": paused["execution_id"], "approved": True})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "completed"
+    assert body["output"] == "done"
+    assert body["execution_id"] == paused["execution_id"]
+
+    again = client.post("/resume", json={"execution_id": paused["execution_id"], "approved": True})
+    assert again.status_code == 409
+
+
+def test_resume_completes_a_paused_chain_run(isolated_local_db, tmp_path) -> None:
+    from fastaiagent import Chain
+    from fastaiagent.checkpointers.sqlite import SQLiteCheckpointer
+    from tests.test_stream_pause import _sign_off_tool
+
+    chain = Chain(
+        "sign-off",
+        checkpoint_enabled=True,
+        checkpointer=SQLiteCheckpointer(str(tmp_path / "ckpt.db")),
+    )
+    chain.add_node(
+        "ask",
+        type="tool",
+        tool=_sign_off_tool(),
+        input_mapping={"question": "{{input.input}}"},
+    )
+    client = TestClient(agent_cli._build_app(chain))
+    paused = client.post("/run", json={"input": "ok?"}).json()
+    assert paused["status"] == "paused"
+
+    body = client.post(
+        "/resume", json={"execution_id": paused["execution_id"], "approved": False}
+    ).json()
+    assert body["status"] == "completed"
+    assert "declined" in body["output"]
+
+    unknown = client.post("/resume", json={"execution_id": "nope", "approved": True})
+    assert unknown.status_code == 404
+
+
+def test_resume_requires_token_when_configured(tmp_path) -> None:
+    client = TestClient(agent_cli._build_app(_clerk(tmp_path), auth_token="s3cret"))
+    r = client.post("/resume", json={"execution_id": "x", "approved": True})
+    assert r.status_code == 401
+
+
+def test_serve_has_no_reload_flag() -> None:
+    """``--reload`` never worked: uvicorn reloads only from an import string,
+    and serve passes it an app object. Removed in 1.92.0."""
+    from typer.testing import CliRunner
+
+    result = CliRunner().invoke(agent_cli.agent_app, ["serve", "x.py:a", "--reload"])
+    assert result.exit_code == 2
+    assert "No such option" in result.output
