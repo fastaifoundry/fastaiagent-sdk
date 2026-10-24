@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **SSRF guard: DNS rebinding closed.** The guard resolved a hostname and checked
+  every address, then httpx resolved the name again to connect, so a DNS server
+  answering "public" to the check and "internal" to the connection got the request
+  into an internal service. Reproduced on every guarded path — `RESTTool`,
+  `MCPTool`, `Image`/`PDF.from_url` — with a stand-in resolver and a real local
+  server playing the internal service. Each connection now goes to the address
+  that was checked (the next checked address if one cannot be reached); the `Host`
+  header and TLS certificate verification for the hostname are unchanged, checked
+  live (a wrong-host and a self-signed certificate are still refused).
+- **SSRF helper: the size cap applies while reading.** A declared `Content-Length`
+  over the cap is refused before the body is read, and a body without one stops at
+  the cap. Before, the whole body was read into memory and then measured: an
+  endless response was read until the connection ended.
+
 ### Changed — breaking
 
 - **`MCPTool` runs on the official `mcp` client library.** The hand-written

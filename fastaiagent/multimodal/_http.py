@@ -16,7 +16,12 @@ This helper rejects both. Hardening:
   link-local / reserved / multicast / unspecified). Set
   ``FASTAIAGENT_ALLOW_PRIVATE_NETWORKS=1`` to opt out (intranet use).
 * Redirects are followed manually with a per-hop scheme + host check.
-* Response body is capped at ``max_bytes``.
+* Response body is capped at ``max_bytes``, while it is read (1.92.0).
+* The connection goes to the address that was checked (1.92.0). Before, httpx
+  resolved the name again to connect, so a DNS server answering "public" to
+  the check and "internal" to the connect (DNS rebinding) got through. The
+  request keeps its ``Host`` header, and TLS still verifies the certificate
+  against the hostname (httpx's ``sni_hostname`` extension).
 """
 
 from __future__ import annotations
@@ -24,6 +29,7 @@ from __future__ import annotations
 import ipaddress
 import logging
 import socket
+from collections.abc import Awaitable, Callable
 from typing import Any
 from urllib.parse import urlparse
 
@@ -68,12 +74,16 @@ def _is_blocked_ip(
     )
 
 
-def validate_url(url: str, *, allow_loopback: bool = False) -> None:
+def validate_url(url: str, *, allow_loopback: bool = False) -> list[str] | None:
     """Raise if ``url`` is not a public http(s) URL we are willing to fetch.
 
     ``allow_loopback=True`` additionally permits loopback addresses (for local
     MCP servers etc.) while keeping every other private/link-local/metadata
     block in force.
+
+    Returns the checked addresses to connect to (IPv4 first) when the host is a
+    name that was resolved here; ``None`` for a literal IP or when private
+    networks are allowed (nothing to pin). See :func:`send_pinned`.
     """
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
@@ -84,7 +94,7 @@ def validate_url(url: str, *, allow_loopback: bool = False) -> None:
     if not host:
         raise UnsupportedFormatError(f"URL missing host: {url!r}")
     if _allow_private_networks():
-        return
+        return None
     # Literal IP in the URL — check directly.
     try:
         ip = ipaddress.ip_address(host)
@@ -96,13 +106,14 @@ def validate_url(url: str, *, allow_loopback: bool = False) -> None:
                 f"Refusing to fetch {url!r}: host {host!r} is not a public "
                 f"address. Set {ALLOW_PRIVATE_NETWORKS_ENV}=1 to override."
             )
-        return
+        return None
     # Hostname — resolve and check every record. ``getaddrinfo`` may return
     # both IPv4 and IPv6 entries; reject if any is non-public.
     try:
         infos = socket.getaddrinfo(host, None)
     except OSError as exc:
         raise MultimodalError(f"Could not resolve host {host!r}: {exc}") from exc
+    checked: list[ipaddress.IPv4Address | ipaddress.IPv6Address] = []
     for _fam, _type, _proto, _canon, sockaddr in infos:
         addr = sockaddr[0]
         try:
@@ -115,6 +126,82 @@ def validate_url(url: str, *, allow_loopback: bool = False) -> None:
                 f"non-public address {addr!r}. Set "
                 f"{ALLOW_PRIVATE_NETWORKS_ENV}=1 to override."
             )
+        if resolved not in checked:
+            checked.append(resolved)
+    if not checked:
+        raise MultimodalError(f"Could not resolve host {host!r} to an IP address")
+    return [str(a) for a in sorted(checked, key=lambda a: a.version)]
+
+
+def pinned(request: httpx.Request, address: str) -> httpx.Request:
+    """``request`` sent to the checked ``address`` instead of being resolved
+    again: same method, headers (``Host`` included), body and extensions, plus
+    ``sni_hostname`` so TLS verifies the certificate for the hostname."""
+    return httpx.Request(
+        request.method,
+        request.url.copy_with(host=address),
+        headers=request.headers,
+        stream=request.stream,
+        extensions={**request.extensions, "sni_hostname": request.url.host},
+    )
+
+
+#: A connection to this address could not be made (refused, unreachable, or
+#: timed out connecting); the next checked address is worth trying.
+_CANNOT_CONNECT = (httpx.ConnectError, httpx.ConnectTimeout)
+
+
+def send_pinned(
+    client: httpx.Client, request: httpx.Request, addresses: list[str] | None
+) -> httpx.Response:
+    """Send ``request`` (streamed) to the checked addresses in turn — the next
+    one only when a connection cannot be made, as httpx does for a name."""
+    if not addresses:
+        return client.send(request, stream=True)
+    for address in addresses[:-1]:
+        try:
+            return client.send(pinned(request, address), stream=True)
+        except _CANNOT_CONNECT:
+            continue
+    return client.send(pinned(request, addresses[-1]), stream=True)
+
+
+async def asend_pinned(
+    send: Callable[[httpx.Request], Awaitable[httpx.Response]],
+    request: httpx.Request,
+    addresses: list[str] | None,
+) -> httpx.Response:
+    """Async :func:`send_pinned`; ``send`` is a client's ``send`` or a
+    transport's ``handle_async_request`` (then ``stream`` does not apply)."""
+    if not addresses:
+        return await send(request)
+    for address in addresses[:-1]:
+        try:
+            return await send(pinned(request, address))
+        except _CANNOT_CONNECT:
+            continue
+    return await send(pinned(request, addresses[-1]))
+
+
+def _too_big(url: str, size: int, max_bytes: int) -> MultimodalError:
+    return MultimodalError(f"Response body from {url!r} is {size} bytes; cap is {max_bytes}.")
+
+
+def _declared_size(resp: httpx.Response) -> int | None:
+    try:
+        return int(resp.headers["content-length"])
+    except (KeyError, ValueError):
+        return None
+
+
+def _capped(resp: httpx.Response, request: httpx.Request, body: bytes) -> httpx.Response:
+    """The response as callers expect it: the body read under the cap (already
+    decoded, so the encoding headers go), and the request they made — the
+    hostname URL, not the pinned address."""
+    headers = httpx.Headers(resp.headers)
+    for name in ("content-encoding", "content-length", "transfer-encoding"):
+        headers.pop(name, None)
+    return httpx.Response(resp.status_code, headers=headers, content=body, request=request)
 
 
 # Headers that must not follow a redirect to a different origin — credentials
@@ -166,25 +253,32 @@ def safe_http_fetch(
     private-IP block. Returns the final non-redirect ``httpx.Response``.
     The caller may inspect ``.headers`` / ``.content``.
     """
-    validate_url(url)
     current = url
     with httpx.Client(follow_redirects=False, timeout=timeout, verify=True) as client:
         for _hop in range(max_redirects + 1):
-            resp = client.get(current)
-            if 300 <= resp.status_code < 400 and "location" in resp.headers:
-                # Resolve relative redirect against the hop URL, then
-                # re-validate the resolved target before issuing the next GET.
-                next_target = str(httpx.URL(current).join(resp.headers["location"]))
-                validate_url(next_target)
-                current = next_target
-                continue
-            resp.raise_for_status()
-            if len(resp.content) > max_bytes:
-                raise MultimodalError(
-                    f"Response body from {url!r} is "
-                    f"{len(resp.content)} bytes; cap is {max_bytes}."
-                )
-            return resp
+            # Check this hop, then connect to the address that was checked.
+            addresses = validate_url(current)
+            request = client.build_request("GET", current)
+            resp = send_pinned(client, request, addresses)
+            try:
+                if 300 <= resp.status_code < 400 and "location" in resp.headers:
+                    # Resolve a relative redirect against the hop URL; the next
+                    # iteration validates the target before requesting it.
+                    current = str(httpx.URL(current).join(resp.headers["location"]))
+                    continue
+                declared = _declared_size(resp)
+                if declared is not None and declared > max_bytes:
+                    raise _too_big(url, declared, max_bytes)
+                body = bytearray()
+                for chunk in resp.iter_bytes():
+                    body += chunk
+                    if len(body) > max_bytes:
+                        raise _too_big(url, len(body), max_bytes)
+            finally:
+                resp.close()
+            out = _capped(resp, request, bytes(body))
+            out.raise_for_status()
+            return out
     raise MultimodalError(f"Too many redirects (>{max_redirects}) fetching {url!r}")
 
 
@@ -218,38 +312,42 @@ async def asafe_http_request(
     are dropped on a cross-origin redirect so a cooperating first hop can't
     bounce a bearer token to another host (security_audit_2 N11).
     """
-    validate_url(url, allow_loopback=allow_loopback)
     current = url
     current_method = method.upper()
     current_json = json
     current_headers = dict(headers) if headers else headers
     async with httpx.AsyncClient(follow_redirects=False, timeout=timeout, verify=True) as client:
         for _hop in range(max_redirects + 1):
-            resp = await client.request(
-                current_method,
-                current,
-                headers=current_headers,
-                json=current_json,
-                params=params,
+            # Check this hop, then connect to the address that was checked.
+            addresses = validate_url(current, allow_loopback=allow_loopback)
+            request = client.build_request(
+                current_method, current, headers=current_headers, json=current_json, params=params
             )
-            if 300 <= resp.status_code < 400 and "location" in resp.headers:
-                next_target = str(httpx.URL(current).join(resp.headers["location"]))
-                validate_url(next_target, allow_loopback=allow_loopback)
-                # Strip credentials before following a redirect to a new origin.
-                if not _same_origin(current, next_target):
-                    current_headers = _strip_sensitive_headers(current_headers)
-                current = next_target
-                if resp.status_code == 303:
-                    current_method = "GET"
-                    current_json = None
-                continue
-            resp.raise_for_status()
-            if len(resp.content) > max_bytes:
-                raise MultimodalError(
-                    f"Response body from {url!r} is "
-                    f"{len(resp.content)} bytes; cap is {max_bytes}."
-                )
-            return resp
+            resp = await asend_pinned(lambda r: client.send(r, stream=True), request, addresses)
+            try:
+                if 300 <= resp.status_code < 400 and "location" in resp.headers:
+                    next_target = str(httpx.URL(current).join(resp.headers["location"]))
+                    # Strip credentials before following a redirect to a new origin.
+                    if not _same_origin(current, next_target):
+                        current_headers = _strip_sensitive_headers(current_headers)
+                    current = next_target
+                    if resp.status_code == 303:
+                        current_method = "GET"
+                        current_json = None
+                    continue
+                declared = _declared_size(resp)
+                if declared is not None and declared > max_bytes:
+                    raise _too_big(url, declared, max_bytes)
+                body = bytearray()
+                async for chunk in resp.aiter_bytes():
+                    body += chunk
+                    if len(body) > max_bytes:
+                        raise _too_big(url, len(body), max_bytes)
+            finally:
+                await resp.aclose()
+            out = _capped(resp, request, bytes(body))
+            out.raise_for_status()
+            return out
     raise MultimodalError(f"Too many redirects (>{max_redirects}) fetching {url!r}")
 
 

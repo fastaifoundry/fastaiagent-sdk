@@ -42,19 +42,21 @@ def _require_mcp() -> None:
 
 class _GuardedTransport(httpx.AsyncBaseTransport):
     """Every request — the first and each redirect hop — passes the SDK's SSRF
-    check (security_audit_2 N15). ``server_url`` can arrive from a payload (the
-    runner, a trace, ``from_dict``), so cloud metadata and private networks are
-    refused; loopback stays allowed for local servers.
-    ``FASTAIAGENT_ALLOW_PRIVATE_NETWORKS=1`` opens intranet hosts."""
+    check (security_audit_2 N15) and connects to the address it checked, so a
+    DNS answer that changes in between cannot redirect it (1.92.0).
+    ``server_url`` can arrive from a payload (the runner, a trace,
+    ``from_dict``), so cloud metadata and private networks are refused; loopback
+    stays allowed for local servers. ``FASTAIAGENT_ALLOW_PRIVATE_NETWORKS=1``
+    opens intranet hosts."""
 
     def __init__(self) -> None:
         self._inner = httpx.AsyncHTTPTransport()
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        from fastaiagent.multimodal._http import validate_url
+        from fastaiagent.multimodal._http import asend_pinned, validate_url
 
-        validate_url(str(request.url), allow_loopback=True)
-        return await self._inner.handle_async_request(request)
+        addresses = validate_url(str(request.url), allow_loopback=True)
+        return await asend_pinned(self._inner.handle_async_request, request, addresses)
 
     async def aclose(self) -> None:
         await self._inner.aclose()

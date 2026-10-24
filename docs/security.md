@@ -298,11 +298,26 @@ through a single SSRF-hardened helper that:
 * allows only `http(s)` schemes;
 * blocks private / loopback / link-local / reserved / multicast addresses
   (including cloud-metadata `169.254.169.254`), resolving hostnames first;
+* **connects to the address it checked** (since 1.92.0), so a DNS server that
+  answers "public" to the check and "internal" to the connection (DNS
+  rebinding) cannot redirect the request. The request keeps its `Host` header,
+  TLS still verifies the certificate for the hostname, and when a name has
+  several checked addresses the next is tried if one cannot be reached;
 * re-validates the target on **every redirect hop**;
 * drops credential/session headers (`Authorization`, `Cookie`, API-key
   headers) when a redirect crosses to a different origin, so a cooperating
   first hop can't bounce a bearer token to another host; and
-* caps the response body size.
+* caps the response body size **while reading it** (since 1.92.0): a declared
+  `Content-Length` over the cap is refused before the body is read, and a body
+  without one stops at the cap. Before, the whole body was read and then
+  measured.
+
+!!! warning "Before 1.92.0: DNS rebinding"
+    The guard resolved a hostname and checked the answer, then httpx resolved it
+    again to connect. A hostile DNS server could pass the check and send the
+    request to an internal address. This affected `RESTTool`, `MCPTool` and
+    `Image`/`PDF.from_url`. Upgrade if agents fetch URLs a model or a payload
+    can influence.
 
 `MCPTool` is the one exception to the loopback block: local MCP servers
 (`http://localhost:3000`) are a common, legitimate pattern, so loopback is
@@ -311,8 +326,9 @@ For other intranet hosts, opt in with `FASTAIAGENT_ALLOW_PRIVATE_NETWORKS=1`.
 
 Since 1.92.0 `MCPTool` makes its requests through the official `mcp` client, so
 the check sits in an httpx transport instead of the helper: the same address
-rules run on every request, each redirect hop included, and httpx drops the
-`Authorization` header on a cross-origin redirect. There is no body-size cap
+rules run on every request, each redirect hop included, each connection goes to
+the checked address, and httpx drops the `Authorization` header on a
+cross-origin redirect. There is no body-size cap
 there (MCP replies stream). A local `command=` server is never in a payload:
 `to_dict()` carries only `server_url` and `tool_name`, so a tool rebuilt from a
 runner payload, a trace or the plane cannot start a process.
