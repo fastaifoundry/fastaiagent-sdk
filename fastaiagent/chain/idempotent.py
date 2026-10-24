@@ -33,6 +33,30 @@ _current_checkpointer: ContextVar[Checkpointer | None] = ContextVar(
     "_current_checkpointer", default=None
 )
 
+#: The execution id the cache is keyed by — the run that bound the checkpointer.
+#: A run nested in it (an Agent node of a Chain) has an execution id of its own,
+#: but must share its parent's cache: the parent's resume re-runs it from the top.
+_cache_execution_id: ContextVar[str | None] = ContextVar("_cache_execution_id", default=None)
+
+
+def bind_cache(execution_id: str, checkpointer: Checkpointer | None) -> Any:
+    """Bind the cache for a run — unless an enclosing run already bound one.
+
+    Before 1.92.0 every run bound its own, so an Agent node of a checkpointed
+    Chain replaced the Chain's cache with the Agent's (usually none) under a fresh
+    execution id, and a charge before an ``interrupt()`` ran again on every Chain
+    resume. Returns the tokens for :func:`unbind_cache` (``None`` when nested)."""
+    if _current_checkpointer.get() is not None:
+        return None
+    return _current_checkpointer.set(checkpointer), _cache_execution_id.set(execution_id)
+
+
+def unbind_cache(tokens: Any) -> None:
+    if tokens is not None:
+        cp_token, exec_token = tokens
+        _cache_execution_id.reset(exec_token)
+        _current_checkpointer.reset(cp_token)
+
 
 class IdempotencyError(Exception):
     """Raised when an ``@idempotent`` function returns a non-serializable value."""
@@ -81,19 +105,21 @@ def idempotent(
     """
 
     def wrap(f: Callable[..., Any]) -> Callable[..., Any]:
-        def scope(args: tuple[Any, ...], kwargs: dict[str, Any]) -> tuple[Any, str] | None:
-            """The checkpointer and key, or ``None`` outside a run (no
-            execution_id or no checkpointer): then the body runs every time,
+        def scope(args: tuple[Any, ...], kwargs: dict[str, Any]) -> tuple[Any, str, str] | None:
+            """The checkpointer, execution id and key, or ``None`` outside a run
+            (no execution_id or no checkpointer): then the body runs every time,
             which also keeps @idempotent functions callable from unit tests."""
-            exec_id = _execution_id.get()
+            # The id of the run that bound the cache (see bind_cache); a bare
+            # ``_execution_id`` when a caller bound the two variables directly.
+            exec_id = _cache_execution_id.get() or _execution_id.get()
             cp = _current_checkpointer.get()
             if exec_id is None or cp is None:
                 return None
             if key_fn is not None:
-                return cp, key_fn(*args, **kwargs)
-            return cp, _build_default_key(f.__qualname__, args, kwargs)
+                return cp, exec_id, key_fn(*args, **kwargs)
+            return cp, exec_id, _build_default_key(f.__qualname__, args, kwargs)
 
-        def store(cp: Any, key: str, result: Any) -> None:
+        def store(cp: Any, exec_id: str, key: str, result: Any) -> None:
             try:
                 serializable = to_jsonable_python(result)
                 # Round-trip through json so we surface non-serializable
@@ -108,7 +134,7 @@ def idempotent(
                     "Pydantic model, return plain data, or split this into a "
                     "non-cached node."
                 ) from e
-            cp.put_idempotent(_execution_id.get(), key, {_ENVELOPE: serializable})
+            cp.put_idempotent(exec_id, key, {_ENVELOPE: serializable})
 
         if inspect.iscoroutinefunction(f):
 
@@ -117,12 +143,12 @@ def idempotent(
                 found = scope(args, kwargs)
                 if found is None:
                     return await f(*args, **kwargs)
-                cp, key = found
-                hit, cached = _unwrap(cp.get_idempotent(_execution_id.get(), key))
+                cp, exec_id, key = found
+                hit, cached = _unwrap(cp.get_idempotent(exec_id, key))
                 if hit:
                     return cached
                 result = await f(*args, **kwargs)
-                store(cp, key, result)
+                store(cp, exec_id, key, result)
                 return result
 
             return ainner
@@ -132,12 +158,12 @@ def idempotent(
             found = scope(args, kwargs)
             if found is None:
                 return f(*args, **kwargs)
-            cp, key = found
-            hit, cached = _unwrap(cp.get_idempotent(_execution_id.get(), key))
+            cp, exec_id, key = found
+            hit, cached = _unwrap(cp.get_idempotent(exec_id, key))
             if hit:
                 return cached
             result = f(*args, **kwargs)
-            store(cp, key, result)
+            store(cp, exec_id, key, result)
             return result
 
         return inner

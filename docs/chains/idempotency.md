@@ -74,6 +74,12 @@ def process(user, req):
   Agent, Chain or Swarm run) → pass-through, body runs every time. Unit tests
   of `@idempotent` functions don't need any setup.
 - A `None` result is cached like any other value.
+- **A run nested in a checkpointed run shares its cache.** An Agent node of a
+  Chain (or a Chain run from a tool) runs under an execution id of its own, but
+  the outer run's resume re-runs it from the top, so its `@idempotent` calls are
+  keyed by the outer run's execution and stored in the outer run's checkpointer.
+  Before 1.92.0 the inner Agent replaced the cache with its own — usually none —
+  and a charge inside an Agent node ran again on every Chain resume.
 
 ## Result serialization
 

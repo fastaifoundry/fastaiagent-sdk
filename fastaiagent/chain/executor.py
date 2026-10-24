@@ -16,7 +16,7 @@ from fastaiagent._internal.errors import (
     ChainRoutingError,
 )
 from fastaiagent.chain.checkpoint import Checkpoint
-from fastaiagent.chain.idempotent import _current_checkpointer
+from fastaiagent.chain.idempotent import bind_cache, unbind_cache
 from fastaiagent.chain.interrupt import (
     InterruptSignal,
     Resume,
@@ -233,8 +233,9 @@ async def execute_chain(
 
     # Make execution_id visible to interrupt() / @idempotent.
     exec_id_token = _execution_id_var.set(execution_id)
-    # Make the active checkpointer reachable by ``@idempotent``.
-    cp_token = _current_checkpointer.set(checkpointer)
+    # Make the active checkpointer reachable by ``@idempotent`` (unless an
+    # enclosing run already did — its resume re-runs this chain).
+    cache_tokens = bind_cache(execution_id, checkpointer)
     # The chain's middleware: one state per middleware for this execution, and
     # a context for the tool nodes' ``wrap_tool`` (agent nodes make their own).
     mw_ctx: Any = None
@@ -578,7 +579,7 @@ async def execute_chain(
         }
     finally:
         _execution_id_var.reset(exec_id_token)
-        _current_checkpointer.reset(cp_token)
+        unbind_cache(cache_tokens)
         if state_token is not None:
             from fastaiagent.agent.middleware import close_container_state
 

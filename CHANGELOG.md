@@ -52,6 +52,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as "not cached". Results are now stored in a small envelope, so `None` is cached
   like any other value. Rows written by older versions are still read, and no
   checkpointer changed. The Local UI's idempotency-cache view shows the value inside.
+- **`@idempotent` inside an Agent node of a checkpointed Chain re-ran on every Chain
+  resume.** The Chain calls the Agent without its execution id, and the Agent bound
+  the cache to its own checkpointer (usually none) under a fresh id, so the cache
+  never matched and a charge before an `interrupt()` fired again. A run nested in a
+  checkpointed run now keeps the outer run's cache. Proof 4 on the durability
+  boundaries page shows it, with the async and `None` cases.
 - **`fastaiagent agent serve` can resume what it pauses.** `/run` returned a paused
   run's `execution_id`, but the service had no way to resume it. New
   `POST /resume` (`{"execution_id", "approved", "metadata"}`) calls the target's

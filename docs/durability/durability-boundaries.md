@@ -200,6 +200,8 @@ The rules:
 - **A plain side effect fires again on resume.** The tool is re-invoked from the top, and nothing in the SDK knows which line is safe to repeat.
 - **`@idempotent` caches by `(execution_id, key)`.** The key is a hash of the function's name and arguments, or your `key_fn`. A hit returns the stored result and never runs the body.
 - **The cache is per run.** A new `execution_id` is a miss. Outside any run, there is no cache and the body runs every time, which is what makes wrapped functions safe to unit-test.
+- **A nested run shares the outer run's cache.** An Agent node of a Chain runs under an execution id of its own, but the Chain's resume re-runs it from the top, so its calls are cached under the Chain's run (since 1.92.0; before, the Agent replaced the cache with its own and the charge ran again on every Chain resume).
+- **`async def` functions and `None` results are cached** like any other (since 1.92.0; before, an async body never ran and a `None` result re-ran on every call).
 - **A result that cannot be stored is refused.** The value is stored as JSON; a return that cannot be serialized raises `IdempotencyError` rather than silently going uncached.
 
 Proof 4 pauses and resumes the same tool, plain and wrapped:
@@ -211,6 +213,13 @@ plain function         status=completed charge_card fired 2× → ['1042', '1042
 
 ── the cache is per run
 @idempotent, new run   status=completed charge_card fired 1× → ['1042']
+
+── async functions and None results are cached too (1.92.0)
+async @idempotent      status=completed charge_card fired 1× → ['1042']
+returns None           status=completed charge_card fired 1× → ['1042']
+
+── an Agent node of a Chain shares the Chain's cache (1.92.0)
+Agent node in a Chain  status=completed charge_card fired 1× → ['1042']
 
 ── outside a run there is no cache
 called twice outside any run → fired 2 ×

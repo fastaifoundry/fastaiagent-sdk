@@ -4,7 +4,10 @@ not fire again when the paused run resumes.
 Before 1.92.0 an ``async def`` wrapped in ``@idempotent`` never ran at all: the
 sync wrapper cached the un-awaited coroutine, raised, the model was told the tool
 failed, and the run still finished normally. Swept across the places that bind the
-cache: ``Agent.arun``, ``Agent.astream`` and ``Chain.aexecute``, each resumed.
+cache: ``Agent.arun``, ``Agent.astream`` and ``Chain.aexecute``, each resumed — and
+an Agent running as a node of a checkpointed Chain, which before 1.92.0 replaced
+the Chain's cache with its own (none) under a fresh execution id, so the charge ran
+again on every resume.
 
 Real ``Agent`` / ``Chain`` / ``SQLiteCheckpointer``; the model is ``FunctionModel``.
 """
@@ -101,5 +104,29 @@ async def test_chain_aexecute_then_aresume_charges_once(tmp_path: Path) -> None:
     assert charges == [40]
 
     done = await chain.aresume("pay-chain-1", resume_value=Resume(approved=True))
+    assert done.status == "completed"
+    assert charges == [40]
+
+
+@pytest.mark.asyncio
+async def test_an_agent_node_in_a_chain_charges_once_across_resume(tmp_path: Path) -> None:
+    charges: list[int] = []
+    agent = Agent(
+        name="payer",
+        llm=FunctionModel(_route),
+        tools=[FunctionTool(name="pay", fn=_make_pay(charges))],
+    )
+    chain = Chain(
+        "agent-chain",
+        checkpoint_enabled=True,
+        checkpointer=SQLiteCheckpointer(str(tmp_path / "cp.db")),
+    )
+    chain.add_node("pay", type="agent", agent=agent)
+
+    paused = await chain.aexecute({"input": "pay 40"}, execution_id="agent-chain-1")
+    assert paused.status == "paused"
+    assert charges == [40]
+
+    done = await chain.aresume("agent-chain-1", resume_value=Resume(approved=True))
     assert done.status == "completed"
     assert charges == [40]

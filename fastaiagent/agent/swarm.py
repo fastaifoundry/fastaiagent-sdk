@@ -61,7 +61,7 @@ from fastaiagent.agent.middleware import (
     open_container_state,
 )
 from fastaiagent.chain.checkpoint import Checkpoint, latest_resumable, write_run_end
-from fastaiagent.chain.idempotent import _current_checkpointer
+from fastaiagent.chain.idempotent import bind_cache, unbind_cache
 from fastaiagent.chain.interrupt import (
     AlreadyResumed,
     Resume,
@@ -513,7 +513,7 @@ class Swarm:
         # extend ``_agent_path`` with their own segment.
         exec_token = _execution_id.set(exec_id)
         ap_token = _agent_path.set(f"swarm:{self.name}")
-        cp_token = _current_checkpointer.set(self._checkpointer)
+        cache_tokens = bind_cache(exec_id, self._checkpointer)
 
         if self._checkpointer is not None:
             self._checkpointer.setup()
@@ -551,7 +551,7 @@ class Swarm:
             self._mark_run_end(exec_id, result)
             return result
         finally:
-            _current_checkpointer.reset(cp_token)
+            unbind_cache(cache_tokens)
             _agent_path.reset(ap_token)
             _execution_id.reset(exec_token)
 
@@ -870,7 +870,7 @@ class Swarm:
         # Bind ContextVars so the resumed agent inherits the swarm prefix.
         exec_token = _execution_id.set(execution_id)
         ap_token = _agent_path.set(f"swarm:{self.name}")
-        cp_token = _current_checkpointer.set(self._checkpointer)
+        cache_tokens = bind_cache(execution_id, self._checkpointer)
         try:
             active_agent = self._active_agent(
                 active_name, state, context=context, original_input=original_input
@@ -917,7 +917,7 @@ class Swarm:
             # generic checkpoint errors.
             raise
         finally:
-            _current_checkpointer.reset(cp_token)
+            unbind_cache(cache_tokens)
             _agent_path.reset(ap_token)
             _execution_id.reset(exec_token)
 
