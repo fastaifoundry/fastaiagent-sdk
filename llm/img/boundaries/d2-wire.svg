@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 680" width="1200" height="680" role="img" aria-label="One conversation, three wires: the same four messages and one tool definition become an OpenAI chat-completions body with max_completion_tokens, an identical body with max_tokens for custom endpoints and presets, and an Anthropic messages body with the system prompt hoisted, the tool call as a tool_use block, the tool result as a user turn, and input_schema tools.">
+  <title>One conversation, three wires: the same four messages and one tool definition become an OpenAI chat-completions body with max_completion_tokens, an identical body with max_tokens for custom endpoints and presets, and an Anthropic messages body with the system prompt hoisted, the tool call as a tool_use block, the tool result as a user turn, and input_schema tools.</title>
+  <rect x="0" y="0" width="1200" height="680" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">One conversation, three wires</text>
+  <rect x="48" y="120" width="380" height="198.0" rx="10" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="62" y="152" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="700" fill="#0b0b0b" text-anchor="start">Message[]</text>
+  <text x="62" y="173.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">system     You are a weather bot.</text>
+  <text x="62" y="194.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">user       Weather in Paris?</text>
+  <text x="62" y="215.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">assistant  tool_calls: get_weather</text>
+  <text x="62" y="236.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">             {city: Paris}  id call_1</text>
+  <text x="62" y="257.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">tool       18°C and sunny  (call_1)</text>
+  <text x="62" y="278.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start"></text>
+  <text x="62" y="299.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">tools: one dict, OpenAI function shape</text>
+  <rect x="470" y="120" width="682" height="114.0" rx="10" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="484" y="152" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="700" fill="#0b0b0b" text-anchor="start">openai  →  POST /chat/completions</text>
+  <text x="484" y="173.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">Authorization: Bearer …</text>
+  <text x="484" y="194.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">messages as above, role 'tool' kept</text>
+  <text x="484" y="215.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">max_completion_tokens: 64            tools: function shape</text>
+  <rect x="470" y="268" width="682" height="114.0" rx="10" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="484" y="300" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="700" fill="#0b0b0b" text-anchor="start">custom · presets  →  POST /chat/completions</text>
+  <text x="484" y="321.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">Authorization: Bearer …  (the preset's env var)</text>
+  <text x="484" y="342.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">messages as above</text>
+  <text x="484" y="363.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">max_tokens: 64   — classic APIs 400 on the newer key</text>
+  <rect x="470" y="416" width="682" height="156.0" rx="10" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="484" y="448" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="700" fill="#0b0b0b" text-anchor="start">anthropic  →  POST /messages</text>
+  <text x="484" y="469.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">x-api-key: …   anthropic-version: 2023-06-01</text>
+  <text x="484" y="490.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">system: 'You are a weather bot.'  (a top-level field)</text>
+  <text x="484" y="511.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">assistant → content [{type: tool_use, id, name, input}]</text>
+  <text x="484" y="532.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">tool      → role user, content [{type: tool_result, tool_use_id}]</text>
+  <text x="484" y="553.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">tools: [{name, description, input_schema}]</text>
+  <text x="48" y="360" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">Gemini has its own wire:</text>
+  <text x="48" y="380" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">contents · parts · functionCall</text>
+  <text x="48" y="400" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">(a native adapter, not a preset)</text>
+  <polyline points="50,460 57,468 71,451" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="78" y="466" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1baf7a" text-anchor="start">tools travel in OpenAI shape</text>
+  <text x="78" y="486" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1baf7a" text-anchor="start">everywhere; adapters convert</text>
+  <text x="78" y="506" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1baf7a" text-anchor="start">out of it, never into it</text>
+  <text x="48" y="630" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">Proof 1 records these bodies from a local endpoint: the bytes are the SDK's, only the reply is canned.</text>
+</svg>

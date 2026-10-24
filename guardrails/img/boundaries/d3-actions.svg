@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" width="1200" height="700" role="img" aria-label="A failure has a cost: block raises, warn records and continues, mask redacts the span and carries the rewritten payload forward to the next rule and the model, override replaces the payload with the operator's copy, reask re-drives the model up to guardrail_retries; an observer's rewrite is recorded and never applied; where a rewrite cannot be applied faithfully the run blocks.">
+  <title>A failure has a cost: block raises, warn records and continues, mask redacts the span and carries the rewritten payload forward to the next rule and the model, override replaces the payload with the operator's copy, reask re-drives the model up to guardrail_retries; an observer's rewrite is recorded and never applied; where a rewrite cannot be applied faithfully the run blocks.</title>
+  <rect x="0" y="0" width="1200" height="700" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">A failure has a cost — and the cost travels forward</text>
+  <rect x="48" y="120" width="204" height="110" rx="12" fill="#fdefe8" stroke="#eb6834" stroke-width="2"/>
+  <text x="68" y="156" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" font-weight="700" fill="#0b0b0b" text-anchor="start">block</text>
+  <text x="68" y="176" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">raises</text>
+  <text x="68" y="194" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">GuardrailBlockedError</text>
+  <rect x="272" y="120" width="204" height="110" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="292" y="156" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" font-weight="700" fill="#0b0b0b" text-anchor="start">warn</text>
+  <text x="292" y="176" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">records 'warned',</text>
+  <text x="292" y="194" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">continues untouched</text>
+  <rect x="496" y="120" width="204" height="110" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="516" y="156" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" font-weight="700" fill="#0b0b0b" text-anchor="start">mask</text>
+  <text x="516" y="176" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">redacts the span:</text>
+  <text x="516" y="194" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">[REDACTED] carries forward</text>
+  <rect x="720" y="120" width="204" height="110" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="740" y="156" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" font-weight="700" fill="#0b0b0b" text-anchor="start">override</text>
+  <text x="740" y="176" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">replaces the payload</text>
+  <text x="740" y="194" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">with the operator's copy</text>
+  <rect x="944" y="120" width="204" height="110" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="964" y="156" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" font-weight="700" fill="#0b0b0b" text-anchor="start">reask</text>
+  <text x="964" y="176" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">re-drives the model,</text>
+  <text x="964" y="194" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">output only, ≤ retries</text>
+  <text x="48" y="262" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">action_taken says what happened: blocked · warned · masked · overridden · reask · none</text>
+  <rect x="48" y="300" width="300" height="42" rx="8" fill="#e5f6ef" stroke="#1baf7a" stroke-width="1.5"/>
+  <text x="62" y="326.4" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#0b0b0b" text-anchor="start">mask-ssn · blocking</text>
+  <polyline points="348,321 400,321" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="400,321 386.0,314.0 386.0,328.0" fill="#1baf7a"/>
+  <rect x="400" y="300" width="300" height="42" rx="8" fill="#eaf2fc" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="414" y="326.4" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#0b0b0b" text-anchor="start">block-ssn · judges the masked text</text>
+  <polyline points="700,321 752,321" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="752,321 738.0,314.0 738.0,328.0" fill="#1baf7a"/>
+  <rect x="752" y="300" width="400" height="42" rx="8" fill="#ffffff" stroke="#d6d4cc" stroke-width="1.5"/>
+  <text x="766" y="326.04" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#0b0b0b" text-anchor="start">the model (input)  /  the caller (output): [REDACTED]</text>
+  <circle cx="60" cy="380" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="373" x2="67" y2="387" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="387" x2="67" y2="373" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="386" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#eb6834" text-anchor="start">an observer's mask is evidence: the firing says 'masked', the payload is unchanged</text>
+  <rect x="48" y="420" width="1104" height="156.0" rx="10" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="62" y="452" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="700" fill="#0b0b0b" text-anchor="start">where a rewrite cannot be applied, the run blocks instead</text>
+  <text x="62" y="473.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">astream()       every TextDelta has already left — a mask cannot un-emit it</text>
+  <text x="62" y="494.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">input           multimodal: the judged text is a summary of the parts; substituting it would drop them</text>
+  <text x="62" y="515.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">tool_call       the rewrite no longer parses as an arguments object</text>
+  <text x="62" y="536.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">tool_result     the tool returned image/PDF parts the rewrite cannot cover</text>
+  <text x="62" y="557.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">any position    an errored check: nothing is known about the payload, so nothing can be masked</text>
+  <text x="48" y="660" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">Proof 2: the same SSN reply, five costs; a streamed reply was blocked after it had been read.</text>
+</svg>

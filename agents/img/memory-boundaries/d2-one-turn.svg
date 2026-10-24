@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720" width="1200" height="720" role="img" aria-label="One turn: memory is read into the prompt, the model and tools run, and the turn is written only if it succeeded. Tool traffic is never stored.">
+  <title>One turn: memory is read into the prompt, the model and tools run, and the turn is written only if it succeeded. Tool traffic is never stored.</title>
+  <rect x="0" y="0" width="1200" height="720" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">One turn: read, run, write — and what never gets written</text>
+  <text x="48" y="146" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" font-weight="700" fill="#2a78d6" text-anchor="start">1 · READ</text>
+  <text x="150" y="146" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="400" fill="#52514e" text-anchor="start">the prompt, top to bottom</text>
+  <rect x="84" y="168" width="330" height="46" rx="8" fill="#ffffff" stroke="#d6d4cc" stroke-width="1.5"/>
+  <text x="98" y="197.12" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="start">system prompt</text>
+  <rect x="84" y="222" width="330" height="46" rx="8" fill="#eaf2fc" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="98" y="251.12" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="start">Learned facts (agent:…)</text>
+  <rect x="84" y="276" width="330" height="46" rx="8" fill="#eaf2fc" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="98" y="305.12" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="start">Learned facts (user):</text>
+  <rect x="84" y="330" width="330" height="46" rx="8" fill="#eaf2fc" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="98" y="359.12" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="start">Conversation summary so far</text>
+  <rect x="84" y="384" width="330" height="46" rx="8" fill="#eaf2fc" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="98" y="413.12" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="start">Relevant prior exchanges</text>
+  <rect x="84" y="438" width="330" height="46" rx="8" fill="#eaf2fc" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="98" y="467.12" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="start">the conversation window</text>
+  <rect x="84" y="492" width="330" height="46" rx="8" fill="#ffffff" stroke="#d6d4cc" stroke-width="1.5"/>
+  <text x="98" y="521.12" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="start">this turn's input</text>
+  <path d="M74,222 h-10 v262 h10" fill="none" stroke="#2a78d6" stroke-width="2.5"/>
+  <text x="48" y="353" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#2a78d6" text-anchor="middle" transform="rotate(-90 48 353)">memory</text>
+  <path d="M424,168 h10 v370 h-10" fill="none" stroke="#52514e" stroke-width="2.5"/>
+  <polyline points="434,353 520,353 520,240 560,240" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="560,240 546.0,233.0 546.0,247.0" fill="#2a78d6"/>
+  <rect x="440.95" y="325.85" width="70.1" height="22.950000000000003" rx="4" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="476" y="342" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="500" fill="#2a78d6" text-anchor="middle">prompt</text>
+  <text x="560" y="146" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" font-weight="700" fill="#0b0b0b" text-anchor="start">2 · RUN</text>
+  <rect x="560" y="190" width="250" height="100" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="580" y="226" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">Model</text>
+  <text x="580" y="254" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="400" fill="#52514e" text-anchor="start">answers or calls tools</text>
+  <rect x="560" y="350" width="250" height="100" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="580" y="386" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">Tools</text>
+  <text x="580" y="414" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="400" fill="#52514e" text-anchor="start">results go back in</text>
+  <polyline points="640,290 640,350" fill="none" stroke="#52514e" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="640,350 647.0,336.0 633.0,336.0" fill="#52514e"/>
+  <polyline points="730,350 730,290" fill="none" stroke="#52514e" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="730,290 723.0,304.0 737.0,304.0" fill="#52514e"/>
+  <circle cx="578" cy="488" r="14" fill="#fcfcfb"/>
+  <line x1="571" y1="481" x2="585" y2="495" stroke="#eb6834" stroke-width="3"/>
+  <line x1="571" y1="495" x2="585" y2="481" stroke="#eb6834" stroke-width="3"/>
+  <text x="596" y="482" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="600" fill="#eb6834" text-anchor="start">tool calls &amp; results</text>
+  <text x="596" y="505" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="600" fill="#eb6834" text-anchor="start">are never stored</text>
+  <text x="890" y="146" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" font-weight="700" fill="#1baf7a" text-anchor="start">3 · WRITE</text>
+  <rect x="880" y="168" width="272" height="330" rx="16" fill="none" stroke="#1baf7a" stroke-width="2" stroke-dasharray="8 6"/>
+  <rect x="896" y="186" width="240" height="96" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="916" y="222" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">the input</text>
+  <text x="916" y="250" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="400" fill="#52514e" text-anchor="start">as the user said it</text>
+  <rect x="896" y="294" width="240" height="96" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="916" y="330" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">the final answer</text>
+  <text x="916" y="358" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="400" fill="#52514e" text-anchor="start">after middleware</text>
+  <text x="900" y="424" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">→ window · summary · recall</text>
+  <text x="900" y="446" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">→ learn= mines the user's</text>
+  <text x="900" y="468" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">    message only</text>
+  <polyline points="810,240 880,240" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="880,240 866.0,233.0 866.0,247.0" fill="#1baf7a"/>
+  <rect x="829.2" y="210.8" width="31.6" height="21.6" rx="4" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="845" y="226" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="500" fill="#1baf7a" text-anchor="middle">ok</text>
+  <polyline points="790,450 790,560" fill="none" stroke="#eb6834" stroke-width="2.5" stroke-linejoin="round" stroke-dasharray="8 6"/>
+  <polygon points="790,560 797.0,546.0 783.0,546.0" fill="#eb6834"/>
+  <rect x="560" y="560" width="592" height="124" rx="12" fill="#fdefe8" stroke="#eb6834" stroke-width="2"/>
+  <text x="580" y="596" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">Nothing is written when the run…</text>
+  <text x="580" y="624" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="400" fill="#52514e" text-anchor="start">fails · is blocked by a guardrail</text>
+  <text x="580" y="648" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="400" fill="#52514e" text-anchor="start">hits the iteration limit · pauses for approval</text>
+  <text x="48" y="612" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">stream, resume and swarm</text>
+  <text x="48" y="635" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">record the same one turn</text>
+</svg>
