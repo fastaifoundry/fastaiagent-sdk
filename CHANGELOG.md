@@ -21,6 +21,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   prompts, …), `PlatformAPI` and the runner channel. The SDK never sent it,
   though the plane's brief assumed it had since wire v1.10.
 
+### Tests
+
+- **The e2e harness signs in at a plane's login address** (`plane_login()` in
+  `tests/e2e/conftest.py`; the plane's F-Q40 = A). A password sign-in at a SaaS
+  server holding several workspaces answers `400 customer_required`; the harness
+  now looks up a ticket at the login proxy, signs in with it, and picks a
+  workspace by `E2E_PLANE_WORKSPACE` when the person is in several. A plane with
+  no proxy (404/405 at the lookup) signs in as before; a CAPTCHA skips, saying
+  so. `E2E_PLANE_LOGIN_URL` names the login address when it is not the target.
+  Checked against the plane's real login proxy run locally, with a person in two
+  workspaces.
+
 ## [1.93.0] - 2026-10-24 — tested against the real thing
 
 1.92.0 rebuilt MCP after finding it had only ever been tested against a stand-in.
