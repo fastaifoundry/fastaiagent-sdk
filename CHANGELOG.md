@@ -32,6 +32,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so. `E2E_PLANE_LOGIN_URL` names the login address when it is not the target.
   Checked against the plane's real login proxy run locally, with a person in two
   workspaces.
+- **The connected-visibility gate can run twice in one project.** It published
+  the fixed prompt `acme-support-system`, and the plane imports a slug once; it
+  now names the prompt per run and deletes it at the end.
+- **The connected-memory gate adds the embedding model the plane needs.** The
+  plane ships none of its own since 0.19.0, so a fact for an agent whose project
+  has no embedding endpoint answers `409 embedding_not_configured`. The gate then
+  adds an OpenAI `text-embedding-3-small` endpoint with `OPENAI_API_KEY` (skipping,
+  saying so, without one) and deletes it at the end.
 
 ## [1.93.0] - 2026-10-24 — tested against the real thing
 
