@@ -388,6 +388,11 @@ TraceData.publish() -> None
 
 ## Internals
 
+Every call to the plane carries `X-FAA-Protocol: v1.11` (since 1.94.0) — the
+plane wire version the SDK understands, which the plane uses for telemetry and
+feature-gating. New wire keys are additive, so an older SDK keeps working; the
+header says what this one reads.
+
 For contributors who need to understand the HTTP client, the connection lifecycle, the per-feature caching/fallback behavior, error handling, or how to add a new platform-facing endpoint, see [Platform API Internals](../internals/platform-api.md).
 
 ## Next Steps

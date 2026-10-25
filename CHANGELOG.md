@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Before, it kept sending for the rest of the month and every new trace was
   refused. The pause is kept in `local.db` (schema v28), per plane address and
   project.
+- **Every plane call sends `X-FAA-Protocol: v1.11`** — the connection (traces,
+  prompts, …), `PlatformAPI` and the runner channel. The SDK never sent it,
+  though the plane's brief assumed it had since wire v1.10.
 
 ## [1.93.0] - 2026-10-24 — tested against the real thing
 
