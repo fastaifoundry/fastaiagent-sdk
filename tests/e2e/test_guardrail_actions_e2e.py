@@ -206,7 +206,11 @@ def test_a_masking_rule_is_reported_on_the_result() -> None:
         guardrails=[redact],
     )
 
-    result = agent.run("Repeat this back to me exactly: my ssn is 123-45-6789")
+    # Not the textbook 123-45-6789: a model refusing to repeat an SSN offered that
+    # one as an example placeholder, so the output held it though the model was
+    # sent "[REDACTED]".
+    ssn = "512-38-4417"
+    result = agent.run(f"Repeat this back to me exactly: my ssn is {ssn}")
 
     fired = [g for g in result.guardrails if g.fired()]
     assert [g.name for g in fired] == ["e2e-redact-ssn"], (
@@ -217,4 +221,4 @@ def test_a_masking_rule_is_reported_on_the_result() -> None:
 
     # And the redaction really happened on the way to the model — the point of
     # reporting it is that the caller can tell the model saw something else.
-    assert "123-45-6789" not in result.output, result.output
+    assert ssn not in result.output, result.output
