@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.94.0] - 2026-10-25 — the plane's monthly trace limit
+
 ### Added
 
 - **Trace export pauses at the plane's monthly trace limit (S7, plane wire
@@ -40,6 +42,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   has no embedding endpoint answers `409 embedding_not_configured`. The gate then
   adds an OpenAI `text-embedding-3-small` endpoint with `OPENAI_API_KEY` (skipping,
   saying so, without one) and deletes it at the end.
+- **The live masking gate no longer fails when a model refuses.** It used the
+  textbook SSN `123-45-6789`, and gpt-5-mini, sent `my ssn is [REDACTED]`,
+  sometimes offered that very number as an example placeholder. It now uses one
+  a model would not produce by itself.
 
 ## [1.93.0] - 2026-10-24 — tested against the real thing
 
