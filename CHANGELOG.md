@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Trace export pauses at the plane's monthly trace limit (S7, plane wire
+  v1.11).** When `/public/v1/traces/ingest` answers `limit_reached`, the SDK stops
+  sending traces until `resets_at`, survives a restart without resuming early,
+  logs one warning (`Trace limit reached; export resumes on <date> …`), keeps
+  recording locally, and after the reset sends only traces recorded after it.
+  Before, it kept sending for the rest of the month and every new trace was
+  refused. The pause is kept in `local.db` (schema v28), per plane address and
+  project.
+
 ## [1.93.0] - 2026-10-24 — tested against the real thing
 
 1.92.0 rebuilt MCP after finding it had only ever been tested against a stand-in.

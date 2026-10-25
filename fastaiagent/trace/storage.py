@@ -160,6 +160,11 @@ CREATE TABLE IF NOT EXISTS trace_attachments (
     created_at     TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_trace_attachments_span ON trace_attachments(trace_id, span_id);
+CREATE TABLE IF NOT EXISTS trace_export_pause (
+    scope       TEXT PRIMARY KEY,
+    resets_at   TEXT NOT NULL,
+    paused_at   TEXT NOT NULL
+);
 """
 
 
@@ -721,6 +726,34 @@ class TraceStore:
                 f"UPDATE spans SET synced = 1 WHERE span_id IN ({placeholders})",
                 tuple(chunk),
             )
+
+    def export_pause(self, scope: str) -> str | None:
+        """When trace export to ``scope`` resumes (ISO 8601 UTC), or ``None`` (1.94.0)."""
+        row = self._db.fetchone(
+            "SELECT resets_at FROM trace_export_pause WHERE scope = ?", (scope,)
+        )
+        return str(row["resets_at"]) if row else None
+
+    def set_export_pause(self, scope: str, resets_at: str, paused_at: str) -> None:
+        self._db.execute(
+            "INSERT OR REPLACE INTO trace_export_pause (scope, resets_at, paused_at) "
+            "VALUES (?, ?, ?)",
+            (scope, resets_at, paused_at),
+        )
+
+    def clear_export_pause(self, scope: str) -> None:
+        self._db.execute("DELETE FROM trace_export_pause WHERE scope = ?", (scope,))
+
+    def mark_synced_before(self, start_time: str, project_id: str | None = None) -> int:
+        """Mark un-acked spans that started before ``start_time`` as done; return
+        how many. Spans recorded while export is paused at the plane's limit are
+        never sent (1.94.0, S7)."""
+        sql = "UPDATE spans SET synced = 1 WHERE synced = 0 AND start_time < ?"
+        params: tuple[Any, ...] = (start_time,)
+        if project_id is not None:
+            sql += " AND project_id = ?"
+            params += (project_id,)
+        return int(self._db.execute(sql, params).rowcount)
 
     def count_unsynced(self, project_id: str | None = None) -> int:
         """Count un-acked (``synced=0``) spans, optionally scoped to a project."""
