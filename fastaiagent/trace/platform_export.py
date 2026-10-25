@@ -49,6 +49,35 @@ def get_abandoned_total() -> int:
     return _abandoned_total
 
 
+# Pauses already announced in this process: one warning per pause, not one per
+# export (1.94.0, S7).
+_announced_pauses: set[tuple[str, str]] = set()
+
+
+def _pause_scope(conn: _Connection) -> str:
+    """One pause per plane address and project: an API key names one workspace."""
+    return f"{conn.target}|{conn.project_id or conn.project}"
+
+
+def _utc_iso(value: str) -> str | None:
+    """``value`` as the ISO form spans are stored with (``+00:00``), or ``None``."""
+    from datetime import datetime, timezone
+
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (AttributeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).isoformat()
+
+
+def _now_iso() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat()
+
+
 def to_wire(span: Any) -> dict[str, Any]:
     """Serialize one stored span for egress, with both content channels filtered.
 
@@ -124,6 +153,9 @@ class PlatformSpanExporter(SpanExporter):
 
             store = self._get_store()
             pid = safe_get_project_id()
+            scope = _pause_scope(_connection)
+            if self._paused(store, scope, pid):
+                return SpanExportResult.SUCCESS
 
             pending = store.fetch_unsynced(limit=self._DRAIN_LIMIT, project_id=pid)
             if pending:
@@ -132,8 +164,13 @@ class PlatformSpanExporter(SpanExporter):
                 # FASTAIAGENT_TRACE_PAYLOADS=0, and any installed redaction policy
                 # is applied here so the plane never receives raw sensitive values.
                 wire = [to_wire(s) for s in pending]
-                if self._post_with_retry(_connection, wire):
+                answer = self._post_with_retry(_connection, wire)
+                if answer is not None:
+                    # A 2xx: the batch is done, its rejected traces included —
+                    # the plane has dropped them; they stay in local.db.
                     store.mark_synced([s.span_id for s in pending])
+                    if answer.get("limit_reached"):
+                        self._pause(store, scope, pid, answer)
 
             dropped = store.enforce_buffer_bound(
                 self._MAX_UNSYNCED, self._MAX_AGE_DAYS, project_id=pid
@@ -155,8 +192,62 @@ class PlatformSpanExporter(SpanExporter):
         # Always SUCCESS — the durable buffer owns retry, not the OTel processor.
         return SpanExportResult.SUCCESS
 
-    def _post_with_retry(self, conn: _Connection, wire: list[dict[str, Any]]) -> bool:
-        """POST ``wire`` to ``/public/v1/traces/ingest``. Return True on 2xx.
+    def _paused(self, store: TraceStore, scope: str, project_id: str | None) -> bool:
+        """Whether export to ``scope`` is paused at the plane's monthly trace limit.
+
+        While paused nothing is sent, and spans recorded meanwhile are marked done
+        as they arrive: after the reset only spans from after it are sent, never
+        the pause's backlog (S7, D161 — "after it only new spans flow"). The pause
+        lives in local.db, so a restarted process stays paused.
+        """
+        resets_at = store.export_pause(scope)
+        if resets_at is None:
+            return False
+        store.mark_synced_before(resets_at, project_id=project_id)
+        if _now_iso() >= resets_at:
+            store.clear_export_pause(scope)
+            logger.info("Trace limit reset; trace export resumed (%s).", resets_at)
+            return False
+        self._announce(scope, resets_at)
+        return True
+
+    def _pause(
+        self, store: TraceStore, scope: str, project_id: str | None, answer: dict[str, Any]
+    ) -> None:
+        """Pause export until the plane's ``resets_at`` (wire v1.11)."""
+        resets_at = _utc_iso(str(answer.get("resets_at") or ""))
+        if resets_at is None:
+            logger.warning(
+                "The plane reported its trace limit reached without a valid resets_at "
+                "(%r); trace export is not paused.",
+                answer.get("resets_at"),
+            )
+            return
+        store.set_export_pause(scope, resets_at, _now_iso())
+        store.mark_synced_before(resets_at, project_id=project_id)
+        self._announce(scope, resets_at, answer)
+
+    @staticmethod
+    def _announce(scope: str, resets_at: str, answer: dict[str, Any] | None = None) -> None:
+        """Warn once per pause in this process."""
+        if (scope, resets_at) in _announced_pauses:
+            return
+        _announced_pauses.add((scope, resets_at))
+        detail = ""
+        if answer is not None and answer.get("trace_limit") is not None:
+            detail = f" (the workspace's monthly limit is {answer['trace_limit']} traces)"
+        logger.warning(
+            "Trace limit reached; export resumes on %s%s. Traces are still recorded "
+            "locally; ones from before the reset are not sent.",
+            resets_at[:10],
+            detail,
+        )
+
+    def _post_with_retry(
+        self, conn: _Connection, wire: list[dict[str, Any]]
+    ) -> dict[str, Any] | None:
+        """POST ``wire`` to ``/public/v1/traces/ingest``. Return the plane's answer
+        on 2xx (``{}`` when it has no JSON body), ``None`` otherwise.
 
         Retries connection errors, timeouts, and HTTP 5xx with exponential
         backoff. Does **not** retry 4xx (auth/bad-request won't fix on retry) —
@@ -175,7 +266,11 @@ class PlatformSpanExporter(SpanExporter):
                     resp = client.post(url, json=payload, headers=conn.headers)
                 code = resp.status_code
                 if 200 <= code < 300:
-                    return True
+                    try:
+                        answer = resp.json()
+                    except ValueError:
+                        return {}
+                    return answer if isinstance(answer, dict) else {}
                 if 400 <= code < 500:
                     logger.warning(
                         "Platform rejected %d spans with HTTP %d — not retrying; "
@@ -183,7 +278,7 @@ class PlatformSpanExporter(SpanExporter):
                         len(wire),
                         code,
                     )
-                    return False
+                    return None
                 # 5xx → transient; fall through to backoff + retry.
                 logger.debug(
                     "Platform export HTTP %d (attempt %d/%d)",
@@ -206,7 +301,7 @@ class PlatformSpanExporter(SpanExporter):
             if attempt < self._MAX_ATTEMPTS - 1:
                 time.sleep(self._BACKOFF_BASE * (2**attempt))
 
-        return False
+        return None
 
     def shutdown(self) -> None:
         if self._store is not None:

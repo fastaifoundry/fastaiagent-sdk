@@ -143,9 +143,8 @@ def enroll(governed_agent_ids: list[str] | None = None) -> dict[str, Any] | None
         "instance_id": get_instance_id(),
         "sdk_version": __version__,
         "fail_mode": getattr(_connection, "governance_fail_mode", "open"),
-        # Protocol version travels in the BODY, not a header: _connection.headers
-        # has no X-FAA-Protocol today (prior workstreams shipped without it) and the
-        # enroll schema accepts protocol_version, so this stays additive/minimal.
+        # The enroll schema's own field (the governance protocol, not the wire
+        # version — that is the X-FAA-Protocol header every call carries since 1.94.0).
         "protocol_version": "1",
     }
     try:

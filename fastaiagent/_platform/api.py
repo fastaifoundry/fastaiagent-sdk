@@ -42,10 +42,13 @@ class PlatformAPI:
         self._timeout = timeout
 
     def _headers(self) -> dict[str, str]:
+        from fastaiagent._internal.wire import PLANE_WIRE_PROTOCOL, PROTOCOL_HEADER
+
         return {
             "X-API-Key": self._api_key,
             "Content-Type": "application/json",
             "User-Agent": f"fastaiagent-sdk/{__version__}",
+            PROTOCOL_HEADER: PLANE_WIRE_PROTOCOL,
         }
 
     def __repr__(self) -> str:

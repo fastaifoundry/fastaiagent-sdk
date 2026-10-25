@@ -17,7 +17,7 @@ from pathlib import Path
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
 
-CURRENT_SCHEMA_VERSION = 27
+CURRENT_SCHEMA_VERSION = 28
 
 # A migration step is either a SQL string or a callable that takes the
 # ``SQLiteHelper`` and runs whatever logic it needs (e.g., gated
@@ -612,6 +612,22 @@ def _v21_add_sim_case_error(db: SQLiteHelper) -> None:
     if not rows:
         return
     _add_column_if_missing(db, "sim_cases", "error", "TEXT")
+
+
+def _v28_add_trace_export_pause(db: SQLiteHelper) -> None:
+    """Where trace export to the plane is paused, and until when (1.94.0, S7).
+
+    The plane answers a full monthly trace limit with ``limit_reached`` and the
+    reset time (wire v1.11). One row per plane address + project holds that time,
+    so a restarted process stays paused instead of sending again. Local only.
+    """
+    db.execute(
+        """CREATE TABLE IF NOT EXISTS trace_export_pause (
+            scope       TEXT PRIMARY KEY,
+            resets_at   TEXT NOT NULL,
+            paused_at   TEXT NOT NULL
+        )"""
+    )
 
 
 def _v22_add_legacy_imports(db: SQLiteHelper) -> None:
@@ -1362,6 +1378,10 @@ _MIGRATIONS: dict[int, list[_Step]] = {
     27: [
         # 1.91.0 (X19): reindex a span only when a searched column changes.
         _v27_scope_span_fts_update_trigger,
+    ],
+    28: [
+        # 1.94.0 (S7): trace export paused at the plane's monthly limit.
+        _v28_add_trace_export_pause,
     ],
 }
 

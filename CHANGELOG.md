@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [1.94.0] - 2026-10-25 — the plane's monthly trace limit
+
+### Added
+
+- **Trace export pauses at the plane's monthly trace limit (S7, plane wire
+  v1.11).** When `/public/v1/traces/ingest` answers `limit_reached`, the SDK stops
+  sending traces until `resets_at`, survives a restart without resuming early,
+  logs one warning (`Trace limit reached; export resumes on <date> …`), keeps
+  recording locally, and after the reset sends only traces recorded after it.
+  Before, it kept sending for the rest of the month and every new trace was
+  refused. The pause is kept in `local.db` (schema v28), per plane address and
+  project.
+- **Every plane call sends `X-FAA-Protocol: v1.11`** — the connection (traces,
+  prompts, …), `PlatformAPI` and the runner channel. The SDK never sent it,
+  though the plane's brief assumed it had since wire v1.10.
+
+### Tests
+
+- **The e2e harness signs in at a plane's login address** (`plane_login()` in
+  `tests/e2e/conftest.py`; the plane's F-Q40 = A). A password sign-in at a SaaS
+  server holding several workspaces answers `400 customer_required`; the harness
+  now looks up a ticket at the login proxy, signs in with it, and picks a
+  workspace by `E2E_PLANE_WORKSPACE` when the person is in several. A plane with
+  no proxy (404/405 at the lookup) signs in as before; a CAPTCHA skips, saying
+  so. `E2E_PLANE_LOGIN_URL` names the login address when it is not the target.
+  Checked against the plane's real login proxy run locally, with a person in two
+  workspaces.
+- **The connected-visibility gate can run twice in one project.** It published
+  the fixed prompt `acme-support-system`, and the plane imports a slug once; it
+  now names the prompt per run and deletes it at the end.
+- **The connected-memory gate adds the embedding model the plane needs.** The
+  plane ships none of its own since 0.19.0, so a fact for an agent whose project
+  has no embedding endpoint answers `409 embedding_not_configured`. The gate then
+  adds an OpenAI `text-embedding-3-small` endpoint with `OPENAI_API_KEY` (skipping,
+  saying so, without one) and deletes it at the end.
+- **The live masking gate no longer fails when a model refuses.** It used the
+  textbook SSN `123-45-6789`, and gpt-5-mini, sent `my ssn is [REDACTED]`,
+  sometimes offered that very number as an example placeholder. It now uses one
+  a model would not produce by itself.
+
 ## [1.93.0] - 2026-10-24 — tested against the real thing
 
 1.92.0 rebuilt MCP after finding it had only ever been tested against a stand-in.

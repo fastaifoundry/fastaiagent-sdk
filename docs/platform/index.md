@@ -304,6 +304,25 @@ send never double-counts.
 All of this runs on a background thread — **agent execution is never blocked**
 by the network.
 
+**Monthly trace limit (since 1.94.0).** A workspace with a monthly trace limit
+(SaaS Free: 10,000 traces a month) answers a full month with `201` and
+`limit_reached: true`, the reset time (`resets_at`, the 1st of next month 00:00
+UTC), `rejected_traces` and `trace_limit` (plane wire v1.11). The SDK then:
+
+- treats that batch as sent (the plane has dropped its new traces; they stay in
+  `local.db`),
+- **stops sending traces until `resets_at`**, and stays stopped across a restart
+  (the reset time is kept in `local.db`, per plane address and project),
+- logs one warning: `Trace limit reached; export resumes on 2026-11-01 (the
+  workspace's monthly limit is 10000 traces). Traces are still recorded locally;
+  ones from before the reset are not sent.`
+- keeps recording every trace locally — the Local UI is unaffected,
+- after the reset sends **only traces recorded after it**: the ones recorded
+  during the pause are not sent later.
+
+Other projects, and other planes, keep sending. Before 1.94.0 the SDK ignored the
+limit and kept sending for the rest of the month, each new trace refused.
+
 **Bounded buffer.** The re-send queue is capped (~10,000 un-acked spans or
 ~7 days). Beyond that, the oldest spans are dropped from the *re-send queue* but
 **kept in `local.db`** (they still appear in the Local UI); the dropped count is
@@ -368,6 +387,11 @@ TraceData.publish() -> None
 ---
 
 ## Internals
+
+Every call to the plane carries `X-FAA-Protocol: v1.11` (since 1.94.0) — the
+plane wire version the SDK understands, which the plane uses for telemetry and
+feature-gating. New wire keys are additive, so an older SDK keeps working; the
+header says what this one reads.
 
 For contributors who need to understand the HTTP client, the connection lifecycle, the per-feature caching/fallback behavior, error handling, or how to add a new platform-facing endpoint, see [Platform API Internals](../internals/platform-api.md).
 

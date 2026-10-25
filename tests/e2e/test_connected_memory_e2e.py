@@ -16,6 +16,12 @@ auto-approved and served by the same endpoint, so it exercises the same read pat
 Seeding + redaction need a domain-admin session, so the gate reads
 ``E2E_PLANE_EMAIL`` / ``E2E_PLANE_PASSWORD`` from the env and skips cleanly when
 they're absent. Gated by ``connected_state_plane`` (403 → skip with a setup note).
+
+The plane ships no embedding model of its own (since 0.19.0): a fact is stored only
+when the agent's project has an embedding endpoint (or the agent a knowledge base),
+else it answers 409 ``embedding_not_configured``. When the project has none, the
+gate adds an OpenAI ``text-embedding-3-small`` endpoint with ``OPENAI_API_KEY`` and
+deletes it at the end.
 """
 
 from __future__ import annotations
@@ -23,6 +29,7 @@ from __future__ import annotations
 import os
 import uuid
 
+import httpx
 import pytest
 
 from tests.e2e.conftest import plane_admin, require_env, require_lab_project, require_platform
@@ -33,12 +40,6 @@ pytestmark = pytest.mark.e2e
 def test_connected_memory_facts_read_and_redact(isolated_local_db) -> None:
     require_env()
     require_platform()
-
-    import httpx
-
-    import fastaiagent as fa
-    from fastaiagent.agent.memory_blocks import PlaneFactBlock
-    from fastaiagent.client import _connection
 
     base = os.environ["FASTAIAGENT_TARGET"].rstrip("/")
     http = httpx.Client(timeout=30)
@@ -84,14 +85,66 @@ def test_connected_memory_facts_read_and_redact(isolated_local_db) -> None:
 
     # Seed a curated, approved fact (manual create → auto-approved + active).
     fact = f"The customer's preferred contact channel is email. [{uuid.uuid4().hex[:8]}]"
-    mr = http.post(
-        f"{base}/api/v1/agents/{agent_id}/memories",
-        headers=jwt,
-        json={"content": fact, "category": "preferences", "importance": 0.9},
-    )
-    assert mr.status_code == 201, f"memory create failed: {mr.status_code} {mr.text[:200]}"
-    assert mr.json().get("curation_status") == "approved"
-    memory_id = mr.json()["id"]
+
+    def create_fact() -> httpx.Response:
+        return http.post(
+            f"{base}/api/v1/agents/{agent_id}/memories",
+            headers=jwt,
+            json={"content": fact, "category": "preferences", "importance": 0.9},
+        )
+
+    endpoint_id = None
+    mr = create_fact()
+    if mr.status_code == 409 and mr.json()["detail"].get("error") == "embedding_not_configured":
+        if not os.environ.get("OPENAI_API_KEY"):
+            pytest.skip(
+                "the agent's project has no embedding endpoint (409 embedding_not_configured) "
+                "and OPENAI_API_KEY is not set to add one"
+            )
+        er = http.post(
+            f"{base}/api/v1/llm-endpoints",
+            headers=jwt,
+            json={
+                "project_id": ar.json()["project_id"],
+                "name": f"ws3-mem-e2e embeddings {uuid.uuid4().hex[:4]}",
+                "provider": "openai",
+                "base_url": "https://api.openai.com/v1",
+                "api_key": os.environ["OPENAI_API_KEY"],
+                "model_name": "text-embedding-3-small",
+                "endpoint_type": "embedding",
+            },
+        )
+        assert er.status_code == 201, (
+            f"adding an embedding endpoint failed: {er.status_code} {er.text[:200]}"
+        )
+        endpoint_id = er.json()["id"]
+        mr = create_fact()
+
+    try:
+        assert mr.status_code == 201, f"memory create failed: {mr.status_code} {mr.text[:200]}"
+        assert mr.json().get("curation_status") == "approved"
+        memory_id = mr.json()["id"]
+        _read_and_redact(base, api_key, http, jwt, agent_id, memory_id, fact)
+    finally:
+        if endpoint_id:
+            removed = http.delete(f"{base}/api/v1/llm-endpoints/{endpoint_id}", headers=jwt)
+            assert removed.status_code == 204, (
+                f"deleting embedding endpoint {endpoint_id} failed: HTTP {removed.status_code}"
+            )
+
+
+def _read_and_redact(
+    base: str,
+    api_key: str,
+    http: httpx.Client,
+    jwt: dict[str, str],
+    agent_id: str,
+    memory_id: str,
+    fact: str,
+) -> None:
+    import fastaiagent as fa
+    from fastaiagent.agent.memory_blocks import PlaneFactBlock
+    from fastaiagent.client import _connection
 
     # --- SDK assertion: the block reads the curated fact from the live plane ---
     fa.connect(api_key=api_key, target=base)

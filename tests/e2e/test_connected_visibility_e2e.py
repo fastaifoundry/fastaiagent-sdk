@@ -9,6 +9,10 @@ Exercises all four gaps in one run against a live plane (no mocks):
 
 Reads ``FASTAIAGENT_TARGET`` + ``E2E_PLANE_EMAIL`` / ``E2E_PLANE_PASSWORD`` from
 the env and skips cleanly when absent (hard-fails only in CI via E2E_REQUIRED).
+
+The prompt it publishes is named per run and deleted at the end, so the gate can
+run again in the same project (the plane imports a slug once and answers a second
+publish with 409 ``prompt_exists``).
 """
 
 from __future__ import annotations
@@ -55,21 +59,20 @@ def test_connected_agent_fully_visible() -> None:
     # whole guardrail-actions gate.
     rules_before = lab_guardrail_ids(admin, jwt, domain_id)
 
+    # Named per run: the plane imports a slug once, so a fixed name answered the
+    # next run's publish with 409 ``prompt_exists``. Deleted again below.
+    slug = f"acme-support-system-{uuid.uuid4().hex[:8]}"
+    published = None
+    removed = None
     try:
-        slug = "acme-support-system"
         published = http.post(
             f"{base}/public/v1/prompts",
             headers={"X-API-Key": api_key},
             json={"slug": slug, "content": "You are {{role}} for Acme.", "category": "agent"},
         )
         # Fail here, not later as a PromptNotFoundError: the usual cause is a key
-        # without the prompt:write scope (403). A 409 ``prompt_exists`` is an
-        # earlier run of this gate having imported it — the plane owns registry
-        # prompts and imports a slug once — so the prompt is there to read.
-        already = published.status_code == 409 and (
-            (published.json().get("detail") or {}).get("error") == "prompt_exists"
-        )
-        assert already or published.status_code in (200, 201), (
+        # without the prompt:write scope (403).
+        assert published.status_code in (200, 201), (
             f"publishing prompt {slug!r} failed: HTTP {published.status_code} "
             f"{published.text[:200]} — the key needs the prompt:write scope"
         )
@@ -119,9 +122,7 @@ def test_connected_agent_fully_visible() -> None:
         assert agent.agent_id, "Gap 2: agent was not auto-registered (agent_id is None)"
 
         # Gap 3 — governed definition carries the slug + memory.
-        gov = http.get(
-            f"{base}/api/v1/agents/{agent.agent_id}/governance", headers=jwt
-        )
+        gov = http.get(f"{base}/api/v1/agents/{agent.agent_id}/governance", headers=jwt)
         assert gov.status_code == 200, f"governance HTTP {gov.status_code}: {gov.text[:160]}"
         consumes = gov.json().get("consumes", gov.json())
         assert consumes.get("prompt_slug") == slug, (
@@ -129,4 +130,13 @@ def test_connected_agent_fully_visible() -> None:
         )
         assert consumes.get("memory_enabled") is True, "Gap 3: memory_enabled not True"
     finally:
+        if published is not None and published.status_code in (200, 201):
+            # A permanent delete (domain admin): archiving keeps the slug taken.
+            removed = http.delete(
+                f"{base}/api/v1/prompts/{slug}", headers=jwt, params={"permanent": "true"}
+            )
         remove_guardrails_added_since(admin, jwt, domain_id, rules_before)
+    assert removed is not None and removed.status_code == 204, (
+        f"deleting prompt {slug!r} failed: HTTP {removed.status_code if removed else None} "
+        f"{removed.text[:200] if removed else ''}"
+    )

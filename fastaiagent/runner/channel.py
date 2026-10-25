@@ -19,6 +19,8 @@ from typing import Any
 
 import httpx
 
+from fastaiagent._internal.wire import PLANE_WIRE_PROTOCOL, PROTOCOL_HEADER
+
 logger = logging.getLogger(__name__)
 
 
@@ -43,6 +45,7 @@ class RunnerChannel:
         return {
             "Authorization": f"Bearer {self._runner_token}",
             "Content-Type": "application/json",
+            PROTOCOL_HEADER: PLANE_WIRE_PROTOCOL,
         }
 
     async def register(
@@ -60,7 +63,9 @@ class RunnerChannel:
         }
         async with httpx.AsyncClient(timeout=self._timeout, verify=True) as client:
             resp = await client.post(
-                f"{self._base}/runners", json=body, headers={"X-API-Key": self._api_key}
+                f"{self._base}/runners",
+                json=body,
+                headers={"X-API-Key": self._api_key, PROTOCOL_HEADER: PLANE_WIRE_PROTOCOL},
             )
         if resp.status_code in (401, 403):
             raise RunnerAuthError(f"runner register rejected ({resp.status_code})")

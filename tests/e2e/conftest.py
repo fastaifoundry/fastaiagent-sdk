@@ -93,6 +93,61 @@ LAB_DOMAIN_NAME = "Guardrail Actions Lab"
 _PLANE_ADMIN: tuple[Any, dict[str, str], str] | None = None
 
 
+def plane_login(address: str, email: str, password: str, *, workspace: str | None = None) -> str:
+    """Sign in at a plane's login address and return an access token (1.94.0).
+
+    A SaaS server holds many workspaces, and a password sign-in at its own
+    address cannot tell which one is meant: it answers ``400 customer_required``
+    once a second workspace exists. People sign in at the login address (the
+    plane's login proxy), in up to three steps (the plane's F-Q40 = A):
+
+    1. ``POST /proxy/v1/login/lookup {email}`` → a ``ticket``. Any other answer
+       (404 at a plane with no proxy, 405 from a console's nginx) means there is
+       no proxy: the sign-in goes on without a ticket, as before.
+    2. ``POST /api/v1/auth/login`` with ``X-FAA-Login-Ticket`` → an
+       ``access_token``, or ``choices`` when the person is in several workspaces.
+    3. For ``choices`` only: ``POST /proxy/v1/login/choose {choice}`` → the
+       token, for the workspace named ``workspace`` (``E2E_PLANE_WORKSPACE``).
+
+    A CAPTCHA at the proxy answers step 1 with 400, which no script passes: the
+    test skips, saying so (the operator can exempt the address, or run the
+    key-based tests only). A refused password **fails**: a gate that could not
+    sign in checked nothing.
+    """
+    import httpx
+
+    with httpx.Client(base_url=address, timeout=60) as client:
+        headers: dict[str, str] = {}
+        lookup = client.post("/proxy/v1/login/lookup", json={"email": email})
+        if lookup.status_code == 200 and lookup.json().get("ticket"):
+            headers["X-FAA-Login-Ticket"] = lookup.json()["ticket"]
+        elif lookup.status_code == 400:
+            pytest.skip(
+                f"the login address {address} asks for a CAPTCHA, which a script cannot "
+                "pass: have its operator exempt this address (CAPTCHA_EXEMPT_IPS), or run "
+                "the key-based tests only (unset E2E_PLANE_PASSWORD)."
+            )
+        resp = client.post(
+            "/api/v1/auth/login", json={"email": email, "password": password}, headers=headers
+        )
+        if resp.status_code != 200:
+            pytest.fail(f"plane login refused: HTTP {resp.status_code} {resp.text[:160]}")
+        body = resp.json()
+        if "choices" not in body:
+            return str(body["access_token"])
+        names = [c.get("workspace") for c in body["choices"]]
+        chosen = next((c for c in body["choices"] if c.get("workspace") == workspace), None)
+        if chosen is None:
+            pytest.fail(
+                f"{email} is in several workspaces ({names}); set E2E_PLANE_WORKSPACE to "
+                "the one the tests should use."
+            )
+        picked = client.post("/proxy/v1/login/choose", json={"choice": chosen["choice"]})
+        if picked.status_code != 200:
+            pytest.fail(f"choosing {workspace!r} refused: HTTP {picked.status_code}")
+        return str(picked.json()["access_token"])
+
+
 def plane_admin(target: str, *, purpose: str) -> tuple[Any, dict[str, str], str]:
     """A domain-admin console session on the lab domain: ``(client, headers, domain_id)``.
 
@@ -123,12 +178,15 @@ def plane_admin(target: str, *, purpose: str) -> tuple[Any, dict[str, str], str]
 
     client = httpx.Client(base_url=target, timeout=30)
     try:
-        resp = client.post("/api/v1/auth/login", json={"email": email, "password": password})
+        token = plane_login(
+            os.environ.get("E2E_PLANE_LOGIN_URL") or target,
+            email,
+            password,
+            workspace=os.environ.get("E2E_PLANE_WORKSPACE"),
+        )
     except httpx.TransportError as exc:
         pytest.skip(f"plane unreachable at {target} ({exc}) — is the local plane running?")
-    if resp.status_code != 200:
-        pytest.fail(f"plane login refused: HTTP {resp.status_code} {resp.text[:160]}")
-    headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+    headers = {"Authorization": f"Bearer {token}"}
 
     domain_id = os.environ.get("E2E_PLANE_DOMAIN_ID")
     if not domain_id:
