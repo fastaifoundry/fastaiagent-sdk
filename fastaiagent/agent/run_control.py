@@ -20,12 +20,15 @@ from __future__ import annotations
 import asyncio
 import threading
 import time
+from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TypeVar
 
 from fastaiagent._internal.errors import AgentTimeoutError, RunLimitError, StopAgent
 from fastaiagent.agent.context import RunUsage
+
+T = TypeVar("T")
 
 #: ``run_reason`` on a run-end checkpoint and ``stop_reason`` on a result.
 CANCELLED = "cancelled"
@@ -69,6 +72,8 @@ class RunControl:
     prefix_ids: set[int] = field(default_factory=set)
     #: A cap that ended a re-ask (``max_total_tokens`` / ``max_cost_usd``).
     limit_reason: str | None = None
+    #: The run's trace, for the result of a run stopped from outside (1.93.0).
+    trace_id: str | None = None
     #: The run this one is nested in (a Swarm hop, a Supervisor worker, an agent
     #: called from a tool). Cancel and the timeout are the top-level run's; the
     #: caps are each run's own, on its own spend.
@@ -107,11 +112,15 @@ class RunControl:
         return top.timeout_error() if top.reason == TIMEOUT else _RunCancelled(top)
 
 
-class _RunCancelled(BaseException):  # noqa: N818 - a signal, like CancelledError
-    """Ends a cancelled run's streamed generator; never reaches the caller."""
+class RunCancelled(BaseException):  # noqa: N818 - a signal, like CancelledError
+    """Ends a cancelled run; never reaches the caller. Its name is what a
+    cancelled run's ``run_error`` shows (``_RunCancelled`` before 1.93.0)."""
 
     def __init__(self, control: RunControl) -> None:
         super().__init__(f"run {control.execution_id} was cancelled")
+
+
+_RunCancelled = RunCancelled
 
 
 _active: ContextVar[RunControl | None] = ContextVar("fastaiagent_run_control", default=None)
@@ -175,6 +184,114 @@ def arm_timeout(control: RunControl) -> asyncio.TimerHandle | None:
         return None
     remaining = max(control.timeout_seconds - (time.monotonic() - control.started), 0.0)
     return control.loop.call_later(remaining, control.stop, TIMEOUT)
+
+
+def check_stopped() -> None:
+    """Raise when the active run was cancelled or ran out of time (1.93.0).
+
+    The tool loop calls this before each tool call and at the top of each turn.
+    A cancel is delivered to ``arun``'s task as ``CancelledError`` at its next
+    real await, and a sync tool blocks the loop: after it returned, the turn's
+    remaining tools ran and the next turn's ``before_model`` hooks fired before
+    the stop landed. A no-op outside a registered run.
+    """
+    control = _active.get()
+    if control is None:
+        return
+    top = control.root()
+    if top.reason is not None:
+        raise top.stop_error()
+    if top.overdue():
+        top.reason = TIMEOUT
+        raise top.timeout_error()
+
+
+async def controlled(
+    execution_id: str,
+    name: str,
+    work: Callable[[], Awaitable[T]],
+    *,
+    timeout_seconds: float | None = None,
+) -> T:
+    """Run ``work`` as a run that :func:`cancel` and ``timeout_seconds`` can stop
+    (1.93.0) — what ``Agent._controlled`` does, for a Chain or a Swarm.
+
+    A top-level run is registered by ``execution_id`` and runs as a task, so a
+    stop lands at once, inside a node or a hop. A run inside another runs inline
+    and stops with its parent. Raises ``_RunCancelled`` when cancelled and
+    ``AgentTimeoutError`` when out of time; the caller's own cancellation stops
+    the run and propagates.
+    """
+    parent = _active.get()
+    control = RunControl(
+        execution_id=execution_id,
+        agent_name=name,
+        model="",
+        timeout_seconds=timeout_seconds,
+        parent=parent,
+    )
+    token = bind(control)  # before the task, which copies it
+    try:
+        if parent is not None:
+            return await work()
+        add(control)
+        control.loop = asyncio.get_running_loop()
+        task = asyncio.ensure_future(work())
+        control.task = task
+        timer = arm_timeout(control)
+        try:
+            return await task
+        except (asyncio.CancelledError, _RunCancelled):
+            if control.reason is None:
+                # The caller's own task was cancelled: stop the run with it.
+                task.cancel()
+                try:
+                    await task
+                except BaseException:  # noqa: BLE001 - unwinding already
+                    pass
+                raise
+            if control.reason == TIMEOUT:
+                raise control.timeout_error() from None
+            raise _RunCancelled(control) from None
+        finally:
+            if timer is not None:
+                timer.cancel()
+    finally:
+        unbind(token)
+        remove(control)
+
+
+async def stoppable(work: Any) -> Any:
+    """Await ``work`` (a coroutine) so a cancel or timeout stops it mid-call (1.93.0).
+
+    ``arun`` already runs as a task its stop cancels. A streamed run has no such
+    task — its consumer drives it — so a stop waited for the step in flight: a
+    slow tool, or a Supervisor worker running inside a delegate call, ran to the
+    end. A streamed run's tool call now runs as the run's task while it lasts,
+    with the timeout armed. Inline when there is no run or a task already
+    carries the stop.
+    """
+    control = _active.get()
+    top = control.root() if control is not None else None
+    if top is None or top.task is not None:
+        return await work
+    loop = asyncio.get_running_loop()
+    task = asyncio.ensure_future(work)
+    top.task, top.loop = task, loop
+    timer = None
+    if top.timeout_seconds is not None:
+        remaining = max(top.timeout_seconds - (time.monotonic() - top.started), 0.0)
+        timer = loop.call_later(remaining, top.stop, TIMEOUT)
+    try:
+        return await task
+    except asyncio.CancelledError:
+        if top.reason is None:
+            raise  # the consumer's own cancellation
+        raise top.stop_error() from None
+    finally:
+        top.task = None
+        if timer is not None:
+            timer.cancel()
 
 
 def check_before_model_call(turn: int | None = None, model: str | None = None) -> None:

@@ -159,12 +159,12 @@ provider keys in total: 19
 POST /v1/chat/completions · headers {'authorization': '***'} (key read from CORP_GATEWAY_KEY)
 body keys: ['max_tokens', 'messages', 'model', 'tools']
 system message sent:
-"Answer briefly.\n\nYou must respond with valid JSON matching this schema ('City'):\n```json\n{\n  \"properties\": {\n    \"name\": {\n      \"title\": \"Name\",\n      \"type\": \"string\"\n    }, …
+"Answer briefly.\n\nCall the tools you need first. When you give your final answer, you must respond with valid JSON matching this schema ('City'):\n```json\n{\n  \"properties\": {\n    \"name\": {\n      \"title\": \"Name\",\n      \"type\": \"string\"\n    }, …
 response_format in body: False · parallel_tool_calls in body: False · max_tokens key: max_tokens
 the canned reply parsed as City: None
 ```
 
-The client was asked for a `City` and for parallel tool calls. The gateway's flags said it could do neither natively, so the schema went into the system prompt and the parallel flag went nowhere. The call succeeded either way; the soft path is why a provider can look "worse at structured output" when it is only taking a different route to it.
+The client was asked for a `City` and for parallel tool calls. The gateway's flags said it could do neither natively, so the schema went into the system prompt and the parallel flag went nowhere. Because the request also offers tools, the instruction asks for the tools first and JSON in the final answer (since 1.93.0; "respond with JSON only" made models answer without calling the tool). The call succeeded either way; the soft path is why a provider can look "worse at structured output" when it is only taking a different route to it.
 
 **Code:** the registry and the shipped presets are [`llm/providers/registry.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/llm/providers/registry.py) and [`llm/providers/_presets.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/llm/providers/_presets.py); the fallbacks are `_capability`, `_augment_system_for_response_format` and `_inject_system_text` in [`llm/client.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/llm/client.py). The proof is [`proof_3_presets.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/llm/proofs/proof_3_presets.py); [`tests/test_provider_registry.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/tests/test_provider_registry.py) pins the registry; see [Custom Providers](custom-provider.md) and [`examples/16_providers_groq.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/16_providers_groq.py).
 

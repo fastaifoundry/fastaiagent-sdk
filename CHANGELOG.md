@@ -5,6 +5,184 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.93.0] - 2026-10-24 — tested against the real thing
+
+1.92.0 rebuilt MCP after finding it had only ever been tested against a stand-in.
+This release tests every other integration the same way — real OpenAI,
+Anthropic, Groq and Ollama; Qdrant, Chroma and FAISS; Phoenix over OTLP;
+Postgres and Redis — and cancel on every runner. Everything it found is fixed:
+a knowledge-base delete that wiped a shared vector store, Ollama tool loops that
+never worked, guardrail events lost for the documented `position="input"`, a
+cancelled Chain node reported as success, PydanticAI spend shown two to three
+times over, and the gaps in cancel (Chain and Swarm can now be cancelled, and
+`agent serve` has `POST /cancel`). Each fix fails on 1.92.0 first.
+
+### Upgrading from 1.92 — behaviour changes at a glance
+
+- **A misspelt guardrail `position` or `guardrail_type` raises `ValueError`**
+  at construction (`position="inpt"` built a guardrail that never ran).
+- **In a `parallel_tools=True` turn, plain `def` tools run in worker threads**
+  (context variables are copied). Sequential turns are unchanged.
+- **A cancel or timeout stops the turn before its next tool**, and a streamed
+  run's tool call is stopped mid-call. Code that relied on the rest of a turn
+  running after a stop will see it not run.
+- **`Swarm.astream` is one run** under one `execution_id`: hops are nested in
+  it, and the swarm writes the run-end marker (hops no longer write their own).
+- **A failed Chain run started without an `execution_id` gets a run-end marker**
+  (only runs given an id did).
+- **The cancel signal is `RunCancelled`**, so `run_error` reads
+  `RunCancelled: …`; the old `_RunCancelled` name still works.
+- **PydanticAI root spans carry `agent.tokens_used` / `agent.cost_usd`**, not
+  `gen_ai.usage.*` / `cost.total_usd`, when PydanticAI's own spans are on.
+- **Structured output beside tools on Groq and Ollama is prompted**, as on
+  Gemini, instead of sent as `response_format` / `format`.
+
+### Fixed
+
+- **A knowledge-base delete no longer wipes a shared vector store.**
+  `delete`, `delete_by_source`, `update` and reopening a persisted `LocalKB`
+  rebuilt the whole vector store from that KB's in-memory chunks. On a store
+  shared with another KB, or an existing Qdrant/Chroma collection, every other
+  point was dropped (a 4-point collection went to 0 in one test). They now
+  delete and replace by id. `kb.delete(id)` also removes a point the KB never
+  loaded, and returns True when it did.
+- **`position="input"` (a string, as the framework pages write it) now records
+  guardrail events.** The string was stored raw: the check ran and blocked, but
+  no `guardrail_events` row was written — on the Agent path and in the
+  LangChain/CrewAI/PydanticAI proxies — and `to_dict()` raised. `position` and
+  `guardrail_type` strings are now stored as their enums; a misspelt value
+  (`"inpt"`) raises `ValueError` at construction instead of never running.
+- **Ollama tool loops work.** Every one failed on its second request (HTTP 400
+  "Value looks like object, but can't find closing '}'"): the call history sent
+  the arguments as OpenAI's JSON string, and Ollama takes an object. Resume
+  failed the same way. Ollama's own call ids are kept (they were renumbered
+  `call_0`, `call_1`, …).
+- **Streamed Ollama tool calls are no longer dropped.** Ollama 0.24 sends them in
+  a `done: false` chunk; only the final chunk was read, so `astream` returned an
+  empty answer and the tool never ran.
+- **Structured output beside tools works on Groq and Ollama.** Groq refused the
+  request (HTTP 400 "json mode cannot be combined with tool/function calling"),
+  and Ollama's `format` kept the model from calling the tool, so it invented the
+  value. With tools, both now get the schema in the prompt, as Gemini does; the
+  prompt asks for the tools first and JSON in the final answer.
+- **`Agent.stream()` lists the run's tool calls.** It always returned
+  `tool_calls=[]`, on every provider; `after_run` middleware on `astream` saw
+  none either.
+- **`TestModel(response=[...], tool_calls=[...])` keeps the tool calls** on the
+  first response, as documented; a list response dropped them.
+- **`parallel_tools=True` overlaps plain `def` tools.** A sync tool ran on the
+  event loop and blocked it, so two 2-second sync tools took 4 seconds against a
+  live model; only async tools (or sync tools with a `timeout`) overlapped. In a
+  parallel turn, sync tools now run in worker threads.
+- **A cancel or timeout during a blocking sync tool stops the turn there.** The
+  stop only reached `arun`'s task at its next real await, so the turn's other
+  tools still ran and the next turn's `before_model` hooks fired. The loop now
+  checks before each tool call and at the top of each turn, on `run`, `arun`
+  and `astream`.
+- **A streamed run's cancel and timeout land inside a tool call.** A stream
+  stopped only at its next event, so it waited out the tool in flight — a
+  Supervisor's whole worker run included. Its tool calls now run as the run's
+  task, as `arun`'s do. A model call still stops at its next streamed chunk.
+- **`Supervisor.astream` writes checkpoints and a root span.** It built its
+  inner agent without the supervisor's checkpointer, so a streamed run left no
+  run-end marker (cancelled or completed) and nothing to resume, and it opened no
+  `supervisor.*` span.
+- **A cancelled agent node no longer lets its Chain report `completed`.**
+  Cancelling the node's own run (its id is visible to its tools) left the next
+  node running on `output=""`; the chain now stops as cancelled.
+- **Chain tool nodes are traced.** They emitted no span, though the docs say
+  every tool nests under the chain root; each is now a `tool.<name>` span with
+  `tool.status` and the payload-gated `tool.args` / `tool.result`.
+- **An agent node's timeout is recorded on the Chain's run-end checkpoint**
+  (`run_reason="timeout"`; it was empty). A failed chain run started without an
+  `execution_id` now gets its run-end marker too (only runs given an id did).
+
+- **A streamed Swarm is one run.** Each hop of `Swarm.astream` was its own run:
+  a hop left at its handoff wrote a `failed` run-end (`GeneratorExit`), the
+  swarm wrote none, and a `SwarmError` was recorded as `GeneratorExit`. Hops now
+  run nested under one `execution_id`, and the swarm writes its own marker.
+- **A Swarm hop's timeout records `run_reason="timeout"`** (it was empty).
+- **PydanticAI's own spans reach the current trace store.** They were sent to
+  OTel's global tracer provider, which is not always the SDK's: after the SDK
+  rebuilt its provider over another store (`fastaiagent ui --db`, a changed
+  `FASTAIAGENT_LOCAL_DB`) they kept going to the old one, and with
+  `connect(export_traces=False)` the SDK never owns the global slot. The
+  integration now binds them to the SDK's provider and re-binds when it changes.
+- **`fastaiagent[safety]` excludes `preshed` 3.0.14.** Released 2026-10-24, it
+  breaks spaCy 3.8 model loading (`spacy.load("en_core_web_lg")` raises
+  `OverflowError` in the tokenizer), so the Presidio PII backend could not start
+  on a fresh install. 3.0.13 works; the exclusion lets a fixed release through.
+- **A cancelled run reports what happened.** `arun` / `run` returned
+  `trace_id=None` though the trace exists; a cancelled `stream()` returned
+  `tokens_used=0` with a non-zero cost; the run's span ended with no status;
+  and `run_error` named the private `_RunCancelled`. The span now carries
+  `agent.status="cancelled"` (or `"timeout"`), the result its `trace_id` and
+  tokens, and `run_error` reads `RunCancelled: …`.
+- **PydanticAI runs are no longer counted 2–3 times in the UI and analytics.**
+  The root span carried the run's tokens and cost as per-call values beside
+  PydanticAI's own `chat` spans, and `run_sync` opened a second root through
+  `run`. The root now carries the total as a roll-up (`agent.tokens_used` /
+  `agent.cost_usd`) and one root is opened per run. Checked live on gpt-5-mini:
+  78 tokens real, 78 shown (234 before for a similar call).
+- **The Groq preset's default model is priced.** `openai/gpt-oss-120b` (and
+  `-20b`) had no rate, so Groq runs reported no cost; rates from Groq's model
+  page, read 2026-10-24.
+- **A Groq (or other preset) error names its provider** — `groq API error 400`,
+  not `OpenAI API error 400`.
+- **Bare `@tool` works.** Without parentheses it returned the decorator, and
+  the agent failed later with an unclear `AttributeError`.
+- **`agent serve`: `GET /openapi.json` works** (it answered 500 — FastAPI could
+  not resolve the `/run/stream` return annotation — so `/docs` was empty).
+- **`agent serve`: a `/run` whose client hangs up is cancelled.** It kept
+  calling the model and tools to the end. The body-size check is now a plain
+  ASGI middleware; the `@app.middleware("http")` form hid the disconnect from
+  the route.
+
+### Added
+
+- **`Chain.cancel(execution_id)`** stops a chain run in progress, at once,
+  inside an agent or tool node. The result has `status="cancelled"` and the
+  run-end checkpoint `run_reason="cancelled"`.
+- **`agent serve`: `POST /cancel`** (`{"execution_id"}`) stops a run in
+  progress, and `/run` / `/run/stream` take an optional `execution_id` to name
+  the run.
+- **`Swarm.cancel(execution_id)`** — `Swarm.arun` could not be cancelled at all.
+  `Agent.cancel`, `Chain.cancel` and `Swarm.cancel` share one registry.
+- **`Swarm(..., timeout_seconds=)` and `Supervisor(..., timeout_seconds=)`**
+  bound the whole run, every hop or worker included (`AgentTimeoutError`,
+  `run_reason="timeout"`). Runtime settings, not part of `to_dict()`.
+
+### Docs and examples
+
+- **`docs/ui/projects.md` no longer says the Local UI can share a Postgres
+  database.** The UI reads SQLite only; projects share one SQLite file
+  (`--db` / `FASTAIAGENT_LOCAL_DB`). Postgres stays a checkpointer backend.
+- Example `113_run_limits_and_cancel.py` cancels a Chain run too.
+- Cancel, run limits, Swarm, Supervisor, Chain, `agent serve`, knowledge-base
+  backends, structured output, tools and PydanticAI pages updated for the above.
+
+### Tests
+
+- **The Ollama gate runs without platform credentials and tests tool loops**
+  (`run`, `astream`, structured output beside a tool). It needed
+  `FASTAIAGENT_API_KEY` / `FASTAIAGENT_TARGET`, so it never ran, and it checked
+  no tools — which is how a broken Ollama tool loop shipped.
+- **The live judge-injection tests fail when the judge did not run.** An
+  errored judge fails closed with `passed=False`, which is what they asserted:
+  the Groq case passed on a retired model and the Gemini one on an exhausted
+  key. Groq now uses `openai/gpt-oss-120b`.
+- New sweeps: `test_kb_shared_store.py` (FAISS, Qdrant, Chroma),
+  `test_chain_cancel.py`, `test_swarm_cancel.py`, `test_supervisor_stream.py`,
+  `test_cancel_between_tools.py`, `test_stream_tool_calls.py`, and a real
+  uvicorn server for `agent serve` cancel and hang-up.
+
+### Known issues
+
+- A stream stopped during an OpenAI response can log "error occurred during
+  closing of asynchronous generator … athrow()". The run ends correctly; the
+  message is noise. Not fixed: closing the SSE generator explicitly did not
+  stop it.
+
 ## [1.92.0] - 2026-10-24 — the features that have to work, working
 
 No new bets: only things the SDK already claimed that did not work against the

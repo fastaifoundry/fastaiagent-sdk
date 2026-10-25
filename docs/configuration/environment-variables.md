@@ -104,7 +104,7 @@ argument on a client always wins. See [SDK configuration](sdk-config.md).
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `FASTAIAGENT_SERVE_TOKEN` | unset | 🔒 Bearer token required on `/run` and `/run/stream`. Set it for any network-exposed deployment (the default bind is `0.0.0.0` for containers). |
+| `FASTAIAGENT_SERVE_TOKEN` | unset | 🔒 Bearer token required on `/run`, `/run/stream`, `/resume` and `/cancel`. Set it for any network-exposed deployment (the default bind is `0.0.0.0` for containers). |
 
 ## Diagnostics
 

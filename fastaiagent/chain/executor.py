@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import logging
 import re
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from typing import Any
 
 from fastaiagent._internal.errors import (
@@ -15,6 +17,7 @@ from fastaiagent._internal.errors import (
     ChainError,
     ChainRoutingError,
 )
+from fastaiagent.agent.run_control import check_stopped
 from fastaiagent.chain.checkpoint import Checkpoint
 from fastaiagent.chain.idempotent import bind_cache, unbind_cache
 from fastaiagent.chain.interrupt import (
@@ -301,6 +304,9 @@ async def execute_chain(
             # Skip nodes that no upstream branch routed to.
             if node_id not in activated:
                 continue
+            # A cancel that arrived during a blocking (sync) node lands here,
+            # before the next node starts (1.93.0).
+            check_stopped()
 
             step_count += 1
             if step_count > max_total_steps:
@@ -586,6 +592,44 @@ async def execute_chain(
             close_container_state(state_token)
 
 
+@contextmanager
+def _tool_node_span(tool: Any, args: dict[str, Any]) -> Iterator[Any]:
+    """A ``tool.<name>`` span for a tool node, with the attributes the agent
+    loop's tool span carries (1.93.0). Tool nodes ran with no span: a chain's
+    trace held only its root (and its agents), though the docs say every tool
+    nests under it. ``tool.args`` / ``tool.result`` are payload-gated."""
+    from fastaiagent.trace.otel import get_tracer
+    from fastaiagent.trace.span import trace_payloads_enabled
+
+    with get_tracer("fastaiagent.chain").start_as_current_span(f"tool.{tool.name}") as span:
+        span.set_attribute("tool.name", tool.name)
+        span.set_attribute("tool.origin", getattr(tool, "origin", "unknown"))
+        span.set_attribute("fastaiagent.runner.type", "tool")
+        span.set_attribute(
+            "fastaiagent.tool.replay_class", getattr(tool, "replay_class", "side_effecting")
+        )
+        if trace_payloads_enabled():
+            span.set_attribute("tool.args", json.dumps(args, default=str))
+        try:
+            yield span
+        except Exception as e:
+            span.set_attribute("tool.status", "error")
+            span.set_attribute("tool.error", str(e))
+            raise
+
+
+def _end_tool_node_span(span: Any, result: Any) -> None:
+    from fastaiagent.trace.span import trace_payloads_enabled
+
+    if result.error is not None:
+        span.set_attribute("tool.status", "error")
+        span.set_attribute("tool.error", str(result.error))
+        return
+    span.set_attribute("tool.status", "ok")
+    if trace_payloads_enabled():
+        span.set_attribute("tool.result", json.dumps(result.output, default=str))
+
+
 async def _execute_node(
     node: NodeConfig,
     context: dict[str, Any],
@@ -634,6 +678,18 @@ async def _execute_node(
         paused = _paused_agent_message(node.id, node.agent, result)
         if paused:
             raise ChainError(paused)
+        if result.status == "cancelled":
+            # The node's own run was cancelled (its execution id is visible to
+            # its tools). The chain stops with it (1.93.0); before, the next
+            # node ran on output="" and the chain reported ``completed``.
+            from fastaiagent.agent import run_control
+
+            top = run_control.active_control()
+            if top is not None:
+                top = top.root()
+                top.reason = top.reason or run_control.CANCELLED
+                raise run_control._RunCancelled(top)
+            raise ChainError(f"Agent node '{node.id}' was cancelled; the chain stopped there.")
         return {"output": result.output, "tool_calls": result.tool_calls}
 
     elif node.type == NodeType.tool:
@@ -665,22 +721,24 @@ async def _execute_node(
         # exactly as the agent loop does. Until 1.78.0 this called ``aexecute``,
         # which deliberately skips that policy, so the same tool timed out,
         # retried and validated inside an agent and did none of it in a chain.
-        if middleware and mw_ctx is not None:
-            # Inside the chain's ``wrap_tool`` onion (1.91.0, 1C; X7): a
-            # middleware may time, budget, retry or answer a tool node, exactly
-            # as it does an agent's tool call.
-            from fastaiagent.agent.middleware import _MiddlewarePipeline
+        with _tool_node_span(node.tool, args) as span:
+            if middleware and mw_ctx is not None:
+                # Inside the chain's ``wrap_tool`` onion (1.91.0, 1C; X7): a
+                # middleware may time, budget, retry or answer a tool node,
+                # exactly as it does an agent's tool call.
+                from fastaiagent.agent.middleware import _MiddlewarePipeline
 
-            tool = node.tool
+                tool = node.tool
 
-            async def _terminal(t: Any, a: dict[str, Any]) -> Any:
-                return await t.ainvoke(a, context=run_context)
+                async def _terminal(t: Any, a: dict[str, Any]) -> Any:
+                    return await t.ainvoke(a, context=run_context)
 
-            result = await _MiddlewarePipeline(list(middleware)).invoke_tool(
-                mw_ctx, tool, args, _terminal
-            )
-        else:
-            result = await node.tool.ainvoke(args, context=run_context)
+                result = await _MiddlewarePipeline(list(middleware)).invoke_tool(
+                    mw_ctx, tool, args, _terminal
+                )
+            else:
+                result = await node.tool.ainvoke(args, context=run_context)
+            _end_tool_node_span(span, result)
         # A tool that *returns* an error (arguments failed validation, no function
         # attached, an MCP server answering isError) did not run, exactly like one
         # that raises. Until 1.78.0 the error was stored as the node's result, the

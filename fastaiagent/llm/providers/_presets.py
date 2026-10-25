@@ -48,7 +48,9 @@ def _register_builtins() -> None:
             # returns 400 "has been decommissioned". Verified live 2026-08-28.
             default_model="openai/gpt-oss-120b",
             wire="openai_compat",
-            capabilities=_OPENAI_COMPAT_CAPS,
+            # Groq refuses response_format beside tools (HTTP 400, verified live
+            # 2026-10-24); the schema goes in the prompt on those turns.
+            capabilities={**_OPENAI_COMPAT_CAPS, "response_format_with_tools": False},
             description="Groq — fast inference for open models.",
         )
     )

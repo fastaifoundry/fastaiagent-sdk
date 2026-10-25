@@ -231,8 +231,12 @@ class Guardrail:
         floor: bool = False,
     ):
         self.name = name
-        self.guardrail_type = guardrail_type
-        self.position = position
+        # Strings are accepted (``position="input"``, as the docs write it) and
+        # stored as the enum (1.93.0). Kept raw, they matched every ``==`` but
+        # broke each ``.value``: no guardrail_events row, a failing to_dict().
+        # A misspelt value raises here instead of never running.
+        self.guardrail_type = GuardrailType(guardrail_type)
+        self.position = GuardrailPosition(position)
         self.config = config or {}
         if "llm" in self.config:
             # 1.89.0 (S1): ``config`` is shareable — it is serialized into traces

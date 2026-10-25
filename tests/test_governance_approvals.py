@@ -101,10 +101,17 @@ def plane(isolated_local_db: Path) -> Iterator[GovPlane]:
             reset_connection()
 
 
-def _ledger(plane: GovPlane, run_id: str) -> list[tuple[Any, ...]]:
+def _ledger(plane: GovPlane, run_id: str, expect: int = 0) -> list[tuple[Any, ...]]:
+    import time
+
     from fastaiagent.trace.hitl_export import get_hitl_exporter
 
     get_hitl_exporter().export([])  # synchronous drain; the emit's own drain may race it
+    # When the emit's background drain holds the events, ours returns before
+    # they land: wait for the ones the test needs (a Windows CI runner lost it).
+    deadline = time.monotonic() + 10
+    while len(plane.ledger(run_id)) < expect and time.monotonic() < deadline:
+        time.sleep(0.05)
     return [(e["event_type"], e["kind"], e["status"], e["resolver"]) for e in plane.ledger(run_id)]
 
 
@@ -213,7 +220,7 @@ def test_the_refusal_is_scoped_to_policy_pauses(plane: GovPlane, tmp_path: Path)
     assert final.status == "completed", final
     assert answers == [False]
     assert llm.told() == ["declined"]
-    assert _ledger(plane, "run-u") == [
+    assert _ledger(plane, "run-u", expect=2) == [
         ("paused", "interrupt", None, None),
         ("resolved", "interrupt", "rejected", None),
     ]
@@ -239,7 +246,7 @@ def test_the_ledger_records_an_approval_and_who_resolved_it(
         )
     )
 
-    assert _ledger(plane, "run-1") == [
+    assert _ledger(plane, "run-1", expect=2) == [
         ("paused", "approval", None, None),
         ("resolved", "approval", "rejected", "carol@bank.example"),
     ]
@@ -268,7 +275,7 @@ def test_a_resolution_names_the_pending_run_it_resolves(plane: GovPlane, tmp_pat
     asyncio.run(agent.arun("Transfer $500 to Bob.", execution_id="run-1"))
     asyncio.run(agent.aresume("run-1", resume_value=Resume(approved=True)))
 
-    _ledger(plane, "run-1")  # drain
+    _ledger(plane, "run-1", expect=2)  # drain
     paused, resolved = plane.ledger("run-1")
     assert resolved["event_type"] == "resolved"
     # Exactly the id the plane handed back from POST /runs/run-1/pending, and nothing else:
@@ -296,7 +303,7 @@ def test_a_failed_registration_is_reported_not_left_to_a_guess(
     assert paused.pending_interrupt["context"]["pending_id"] is None
     asyncio.run(agent.aresume("run-1", resume_value=Resume(approved=False)))
 
-    _ledger(plane, "run-1")  # drain
+    _ledger(plane, "run-1", expect=2)  # drain
     resolved = plane.ledger("run-1")[-1]
     assert resolved["context"] == {"pending_id": None}
     assert ran == [] and llm.told() == [REFUSAL]
@@ -335,7 +342,7 @@ def test_a_chain_refuses_a_rejected_approval(plane: GovPlane, tmp_path: Path) ->
     assert final.status == "completed", final
     assert ran == []
     assert llm.told() == [REFUSAL]
-    assert [row[:2] for row in _ledger(plane, "run-c")] == [
+    assert [row[:2] for row in _ledger(plane, "run-c", expect=2)] == [
         ("paused", "approval"),
         ("resolved", "approval"),
     ]

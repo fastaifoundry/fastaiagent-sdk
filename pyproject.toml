@@ -1,6 +1,6 @@
 [project]
 name = "fastaiagent"
-version = "1.92.0"
+version = "1.93.0"
 description = "Build, debug, evaluate, and operate AI agents. The only SDK with fork-and-rerun Agent Replay."
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -129,6 +129,10 @@ safety = [
     "presidio-analyzer>=2.2,<3",
     "presidio-anonymizer>=2.2,<3",
     "spacy>=3.7,<4",
+    # preshed 3.0.14 (released 2026-10-24) breaks spaCy 3.8 model loading:
+    # spacy.load("en_core_web_lg") raises OverflowError in the tokenizer, so the
+    # Presidio backend cannot start. 3.0.13 loads; excluded until a fixed release.
+    "preshed!=3.0.14",
 ]
 ui = [
     "fastapi>=0.110,<1",

@@ -194,6 +194,11 @@ _PRICING: dict[str, _Rate] = {
     "llama-3.1-70b-versatile": _Rate(0.59, 0.79),
     "llama-3.1-8b-instant": _Rate(0.05, 0.08),
     "mixtral-8x7b-32768": _Rate(0.24, 0.24),
+    # The Groq preset's default and its smaller sibling (1.93.0). Groq rates from
+    # console.groq.com/docs/models, read 2026-10-24; the same ids on OpenRouter
+    # are billed at OpenRouter's own rates (set_rate_overrides to change them).
+    "openai/gpt-oss-120b": _Rate(0.15, 0.60),
+    "openai/gpt-oss-20b": _Rate(0.075, 0.30),
     # DeepSeek
     "deepseek-chat": _Rate(0.27, 1.10),
     "deepseek-reasoner": _Rate(0.55, 2.19),

@@ -150,6 +150,26 @@ Swarm(..., max_handoffs=3)
 
 Default is `8`. Tune to your topology: a linear pipeline of 4 agents needs at most 3 handoffs.
 
+### Cancel and `timeout_seconds` (1.93.0)
+
+```python
+swarm = Swarm(..., timeout_seconds=120)   # the whole run, every hop included
+swarm.cancel("job-7")                     # stop a run in progress, from any thread
+```
+
+A cancelled run returns `status="cancelled"` (`astream` ends with
+`StreamDone(finish_reason="cancelled")`); a timed-out run raises
+`AgentTimeoutError`. Either stops at once, inside a hop's tool call, and the
+run-end checkpoint ends `failed` with `run_reason` `"cancelled"` / `"timeout"`.
+Before 1.93.0 a Swarm had no run time limit and `arun` could not be cancelled.
+`timeout_seconds` is a runtime setting and is not part of `to_dict()`.
+
+A streamed swarm is one run under one `execution_id` (pass `execution_id=` to
+`astream`, or one is chosen): its checkpoints, its run-end marker and a
+`SwarmError` are recorded as for `arun`. Before 1.93.0 each hop of a stream was
+its own run, a hop left at its handoff was recorded as `failed`, and the swarm
+recorded nothing.
+
 ### Shared blackboard (`SwarmState.shared`)
 
 Handoff tools accept an optional `context=` dict whose entries merge into `SwarmState.shared` and are visible to every subsequent agent through the briefing message:

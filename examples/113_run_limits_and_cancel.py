@@ -5,6 +5,8 @@
         (``stop_reason``); the timeout raises ``AgentTimeoutError``.
     agent.cancel(execution_id)
         Stops a run in progress, from any thread: ``status="cancelled"``.
+    chain.cancel(execution_id)
+        The same for a Chain run (1.93.0), and ``swarm.cancel`` for a Swarm.
     result.messages
         The run's conversation, ready for the next run's ``messages=``.
     agent.run(..., output_type=T)
@@ -94,6 +96,24 @@ def cancel() -> None:
     asyncio.run(main())
 
 
+def cancel_a_chain() -> None:
+    print("── cancel a chain run (1.93.0; Swarm.cancel works the same way)")
+    from fastaiagent import Chain
+
+    chain = Chain("report", checkpoint_enabled=False)
+    chain.add_node("draft", agent=Agent(name="essayist", llm=llm()))
+
+    async def main() -> None:
+        task = asyncio.create_task(
+            chain.aexecute({"input": "Write a 3000-word essay on canals."}, execution_id="job-8")
+        )
+        await asyncio.sleep(1)
+        print(f"  chain.cancel('job-8') -> {chain.cancel('job-8')}")
+        print(f"  status={(await task).status!r}")
+
+    asyncio.run(main())
+
+
 def continue_and_type() -> None:
     print("── messages carry the conversation; output_type types the result")
     agent = Agent(
@@ -118,4 +138,5 @@ if __name__ == "__main__":
     budgets()
     timeout()
     cancel()
+    cancel_a_chain()
     continue_and_type()

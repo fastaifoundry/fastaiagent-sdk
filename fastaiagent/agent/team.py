@@ -5,7 +5,9 @@ from __future__ import annotations
 import json as _json
 import logging
 import time
-from collections.abc import AsyncGenerator, Callable, Sequence
+import uuid
+from collections.abc import AsyncGenerator, Callable, Iterator, Sequence
+from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any
 
@@ -169,10 +171,19 @@ class Supervisor:
         routing_instructions: str | None = None,
         guardrails: list[Guardrail] | None = None,
         middleware: Sequence[AgentMiddleware] | None = None,
+        *,
+        timeout_seconds: float | None = None,
     ):
         self.name = name
         self.llm = llm or LLMClient()
         self.workers = workers or []
+        if timeout_seconds is not None and timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be > 0")
+        #: The whole supervisor run's wall clock, workers included (1.93.0): the
+        #: delegating loop's ``timeout_seconds`` (with ``routing="decisions"``,
+        #: the routed worker run's). A worker's own ``timeout_seconds`` still
+        #: bounds that worker.
+        self.timeout_seconds = timeout_seconds
         # The supervisor's OWN middleware (1.91.0, 1C), like ``guardrails``:
         # its loop and its ``delegate_to_*`` calls; workers keep theirs. With
         # ``routing="decisions"`` it runs on the routed worker's run.
@@ -329,6 +340,11 @@ class Supervisor:
         """
         clone = self._build_worker_clone(worker)
         clone._agent_path_label = f"supervisor:{self.name}/worker:{worker.role}"
+        if self.timeout_seconds is not None:
+            # The routed worker's run IS the supervisor's run (1.93.0).
+            clone.config = clone.config.model_copy(
+                update={"timeout_seconds": self.timeout_seconds}
+            )
         if self.guardrails:
             # A routed run is this worker's run: it is where the supervisor's
             # input and output guardrails can judge the request and the answer.
@@ -728,6 +744,30 @@ class Supervisor:
             )
         return tools
 
+    @contextmanager
+    def _root_span(self, input: str, *, resumed: str | None = None) -> Iterator[Any]:
+        """The ``supervisor.<name>`` root span, so the delegated worker spans
+        nest under it in the UI span tree; also readies the checkpointer.
+        ``arun`` and ``astream`` share it (``astream`` opened none before 1.93.0)."""
+        from fastaiagent.trace.otel import get_tracer
+
+        with get_tracer().start_as_current_span(f"supervisor.{self.name}") as span:
+            span.set_attribute("supervisor.name", self.name)
+            span.set_attribute(
+                "supervisor.worker_count",
+                len(getattr(self, "workers", []) or []),
+            )
+            span.set_attribute("fastaiagent.runner.type", "supervisor")
+            self._stamp_middleware(span)
+            span.set_attribute("fastaiagent.framework", "fastaiagent")
+            span.set_attribute("supervisor.input", input)
+            if resumed:
+                span.set_attribute("supervisor.resumed", True)
+                span.set_attribute("supervisor.resumed_execution_id", resumed)
+            if self._checkpointer is not None:
+                self._checkpointer.setup()
+            yield span
+
     def _build_inner_agent(self, context: RunContext[Any] | None = None) -> Agent:
         """Build the supervisor-as-agent with durability + custom path label."""
         return Agent(
@@ -735,7 +775,10 @@ class Supervisor:
             system_prompt=self.system_prompt,
             llm=self.llm,
             tools=self._build_worker_tools(context=context),
-            config=AgentConfig(max_iterations=self.max_delegation_rounds * 2),
+            config=AgentConfig(
+                max_iterations=self.max_delegation_rounds * 2,
+                timeout_seconds=self.timeout_seconds,
+            ),
             checkpointer=self._checkpointer,
             agent_path_label=f"supervisor:{self.name}",
             guardrails=self.guardrails,
@@ -781,28 +824,7 @@ class Supervisor:
         **kwargs: Any,
     ) -> AgentResult:
         """The run itself; ``resumed`` names the execution a resume continues."""
-        from fastaiagent.trace.otel import get_tracer
-
-        tracer = get_tracer()
-        # Root span wraps the supervisor run so the delegated worker spans
-        # nest as children in the UI span tree.
-        with tracer.start_as_current_span(f"supervisor.{self.name}") as span:
-            span.set_attribute("supervisor.name", self.name)
-            span.set_attribute(
-                "supervisor.worker_count",
-                len(getattr(self, "workers", []) or []),
-            )
-            span.set_attribute("fastaiagent.runner.type", "supervisor")
-            self._stamp_middleware(span)
-            span.set_attribute("fastaiagent.framework", "fastaiagent")
-            span.set_attribute("supervisor.input", input)
-            if resumed:
-                span.set_attribute("supervisor.resumed", True)
-                span.set_attribute("supervisor.resumed_execution_id", resumed)
-
-            if self._checkpointer is not None:
-                self._checkpointer.setup()
-
+        with self._root_span(input, resumed=resumed) as span:
             if self.routing == "decisions":
                 result = await self._arun_routed(
                     input, span, context=context, execution_id=execution_id, **kwargs
@@ -992,17 +1014,18 @@ class Supervisor:
             async for event in self._astream_routed(input, context=context, **kwargs):
                 yield event
             return
-        agent = Agent(
-            name=self.name,
-            system_prompt=self.system_prompt,
-            llm=self.llm,
-            tools=self._build_worker_tools(context=context),
-            config=AgentConfig(max_iterations=self.max_delegation_rounds * 2),
-            guardrails=self.guardrails,
-            middleware=self.middleware,
-        )
-        async for event in agent.astream(input, context=context, **kwargs):
-            yield event
+        # The same inner agent as ``arun``, under the same root span (1.93.0).
+        # Before, the streamed supervisor had no checkpointer — no run-end
+        # marker, cancelled or completed, and nothing to resume — and no
+        # ``supervisor.*`` span.
+        with self._root_span(input) as span:
+            agent = self._build_inner_agent(context=context)
+            execution_id = kwargs.pop("execution_id", None) or str(uuid.uuid4())
+            span.set_attribute("supervisor.execution_id", execution_id)
+            async for event in agent.astream(
+                input, context=context, execution_id=execution_id, **kwargs
+            ):
+                yield event
 
     async def _astream_routed(
         self, input: str, *, context: RunContext[Any] | None = None, **kwargs: Any

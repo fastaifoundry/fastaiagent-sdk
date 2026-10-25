@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import logging
 import uuid
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
 from fastaiagent._internal.async_utils import run_sync
+from fastaiagent.agent.run_control import _RunCancelled
 from fastaiagent.chain.checkpoint import (
     latest_forkable,
     latest_resumable,
@@ -56,6 +57,14 @@ _KNOWN_CONFIG_KEYS = frozenset(
 _CALLABLE_LOOKALIKE_KWARGS = ("fn", "function", "func", "callable")
 
 
+def _stop_reason(exc: BaseException) -> str | None:
+    """``run_reason`` for a failed run: ``"timeout"`` when a node ran out of time
+    (an agent node's ``timeout_seconds``), else ``None`` (1.93.0)."""
+    from fastaiagent._internal.errors import AgentTimeoutError
+
+    return "timeout" if isinstance(exc, AgentTimeoutError) else None
+
+
 def _type_name(obj: object) -> str:
     """``type(obj).__name__`` — a free function because ``add_node`` shadows
     the builtin ``type`` with its own parameter."""
@@ -66,7 +75,8 @@ class ChainResult(BaseModel):
     """Result of a chain execution.
 
     ``status`` is ``"completed"`` for a normal run, ``"paused"`` when a
-    node called :func:`interrupt`, or ``"rejected"`` (1.77.0) when an approval
+    node called :func:`interrupt`, ``"cancelled"`` (1.93.0) after
+    :meth:`Chain.cancel`, or ``"rejected"`` (1.77.0) when an approval
     gate (``NodeType.hitl``) said no — the chain stopped at that gate, nothing
     after it ran, ``output`` is ``None`` and the gate's ``node_results`` entry
     reads ``{"approved": False}``. In the paused case ``pending_interrupt``
@@ -134,6 +144,51 @@ class Chain:
         self._checkpointer = checkpointer
         self.strict_routing = strict_routing
         self.middleware: list[AgentMiddleware] = list(middleware or [])
+
+    def cancel(self, execution_id: str) -> bool:
+        """Stop the chain run ``execution_id`` if it is in progress in this process
+        (1.93.0). It stops at once — inside an agent or tool node — and returns
+        ``status="cancelled"``; the run-end checkpoint ends ``failed`` with
+        ``run_reason="cancelled"``. Safe from any thread. ``False`` when no such
+        run is in progress. The registry is shared: ``Agent.cancel`` and
+        ``Swarm.cancel`` stop the same runs."""
+        from fastaiagent.agent import run_control
+
+        return run_control.cancel(execution_id)
+
+    async def _controlled(
+        self, execution_id: str, work: Callable[[], Awaitable[dict[str, Any]]]
+    ) -> dict[str, Any]:
+        """Run ``work`` as a run :meth:`cancel` can stop (1.93.0): a top-level
+        chain runs as a task its stop cancels; a chain inside another run runs
+        inline and stops with it. Raises ``_RunCancelled`` when cancelled."""
+        from fastaiagent.agent import run_control
+
+        return await run_control.controlled(execution_id, self.name, work)
+
+    def _cancelled(
+        self, store: Checkpointer | None, execution_id: str, stopped: BaseException
+    ) -> dict[str, Any]:
+        """Mark a cancelled run ended and build its raw result."""
+        last = store.get_last(execution_id) if store is not None else None
+        final_state = dict(last.state_snapshot or {}) if last is not None else {}
+        if store is not None:
+            write_run_end(
+                store,
+                execution_id=execution_id,
+                chain_name=self.name,
+                status="failed",
+                error=stopped,
+                reason="cancelled",
+            )
+        return {
+            "output": None,
+            "final_state": final_state,
+            "execution_id": execution_id,
+            "node_results": {},
+            "status": "cancelled",
+            "pending_interrupt": None,
+        }
 
     def _stamp_middleware(self, span: Any) -> None:
         """``fastaiagent.middleware`` on the chain's root span (decision B1-6)."""
@@ -388,33 +443,41 @@ class Chain:
                     except (TypeError, ValueError):
                         logger.debug("Failed to serialize chain input for trace", exc_info=True)
 
+            # Chosen here so the run is cancellable by it from the start (1.93.0).
+            execution_id = execution_id or str(uuid.uuid4())
             try:
-                raw = await execute_chain(
-                    nodes=self.nodes,
-                    edges=self.edges,
-                    initial_state=initial_state or {},
-                    state_schema=self.state_schema,
-                    checkpointer=store,
-                    chain_name=self.name,
-                    execution_id=execution_id,
-                    hitl_handler=hitl_handler,
-                    run_context=context,
-                    strict_routing=self.strict_routing,
-                    middleware=self.middleware,
+                raw = await self._controlled(
+                    execution_id,
+                    lambda: execute_chain(
+                        nodes=self.nodes,
+                        edges=self.edges,
+                        initial_state=initial_state or {},
+                        state_schema=self.state_schema,
+                        checkpointer=store,
+                        chain_name=self.name,
+                        execution_id=execution_id,
+                        hitl_handler=hitl_handler,
+                        run_context=context,
+                        strict_routing=self.strict_routing,
+                        middleware=self.middleware,
+                    ),
                 )
+            except _RunCancelled as stopped:
+                raw = self._cancelled(store, execution_id, stopped)
             except BaseException as exc:
                 # Terminal marker for a run that died (audit D5). Written HERE
                 # and not in ``execute_chain`` because that function recurses
                 # into itself for cycles with the same execution_id — a write
                 # there would fire once per loop iteration. ``aexecute`` is
                 # provably called once per run.
-                if store is not None and execution_id:
+                if store is not None:
                     write_run_end(
                         store,
                         execution_id=execution_id,
                         chain_name=self.name,
                         status="failed",
                         error=exc,
+                        reason=_stop_reason(exc),
                     )
                 raise
             # Only a run that actually ENDED gets a marker. A paused chain has
@@ -582,20 +645,25 @@ class Chain:
             span.set_attribute("fastaiagent.framework", "fastaiagent")
             trace_id = trace_id_of(span)
             try:
-                raw = await execute_chain(
-                    nodes=self.nodes,
-                    edges=self.edges,
-                    initial_state=state,
-                    state_schema=self.state_schema,
-                    checkpointer=store,
-                    chain_name=self.name,
-                    execution_id=execution_id,
-                    resume_from_node=start_node,
-                    resume_value=resume_value,
-                    run_context=context,
-                    strict_routing=self.strict_routing,
-                    middleware=self.middleware,
+                raw = await self._controlled(
+                    execution_id,
+                    lambda: execute_chain(
+                        nodes=self.nodes,
+                        edges=self.edges,
+                        initial_state=state,
+                        state_schema=self.state_schema,
+                        checkpointer=store,
+                        chain_name=self.name,
+                        execution_id=execution_id,
+                        resume_from_node=start_node,
+                        resume_value=resume_value,
+                        run_context=context,
+                        strict_routing=self.strict_routing,
+                        middleware=self.middleware,
+                    ),
                 )
+            except _RunCancelled as stopped:
+                raw = self._cancelled(store, execution_id, stopped)
             except BaseException as exc:
                 write_run_end(
                     store,
@@ -603,6 +671,7 @@ class Chain:
                     chain_name=self.name,
                     status="failed",
                     error=exc,
+                    reason=_stop_reason(exc),
                 )
                 raise
             # A resumed run that reaches the end has ended just as much as one

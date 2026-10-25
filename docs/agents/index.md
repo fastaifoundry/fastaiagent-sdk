@@ -273,7 +273,7 @@ agent = Agent(
 
 | Limit | What happens when it is reached |
 |---|---|
-| `timeout_seconds` | `arun` / `run` / `aresume` stop at once, inside a model or tool call, and raise `AgentTimeoutError`. `astream` stops at its next event. A synchronous tool that blocks the event loop (`time.sleep`, a blocking client) cannot be interrupted, so the stop lands when it returns. An `async` tool stops at once. |
+| `timeout_seconds` | `arun` / `run` / `aresume` stop at once, inside a model or tool call, and raise `AgentTimeoutError`. `astream` stops inside a tool call, and during a model call at the next streamed chunk. A synchronous tool that blocks the event loop (`time.sleep`, a blocking client) cannot be interrupted, so the stop lands when it returns: no later tool of that turn runs and no further model call or `before_model` hook happens (since 1.93.0; before, the turn's remaining tools still ran). An `async` tool stops at once. |
 | `max_total_tokens` | Before the next model call, the run ends normally: `status="completed"`, `stop_reason="max_total_tokens"`. No exception. |
 | `max_cost_usd` | The same, with `stop_reason="max_cost_usd"`. A run whose spend cannot be priced (a model with no rate) cannot be held to it: the check raises `RunLimitError` rather than letting the run go unbudgeted. |
 
@@ -299,11 +299,19 @@ result = await task        # status="cancelled", stop_reason="cancelled"
 
 - **A non-streamed run** stops at once and returns `status="cancelled"`, with
   `tokens_used`, `cost` and `messages` as far as it got.
-- **A stream** stops at its next event and ends with
-  `StreamDone(finish_reason="cancelled")`. `agent.stream()` returns
-  `status="cancelled"`.
+- **A stream** stops inside a tool call (a Supervisor worker running in a
+  delegate call included), and during a model call at the next streamed chunk.
+  It ends with `StreamDone(finish_reason="cancelled")`; `agent.stream()` returns
+  `status="cancelled"`. Before 1.93.0 a stream waited out the tool call in flight.
 - **The checkpoint** of a cancelled or timed-out run ends `failed`, with
-  `state_snapshot["run_reason"]` set to `"cancelled"` or `"timeout"`.
+  `state_snapshot["run_reason"]` set to `"cancelled"` or `"timeout"` and
+  `run_error` reading `RunCancelled: run <id> was cancelled` (since 1.93.0; it
+  named the private `_RunCancelled` before).
+- **The trace** of a cancelled run says so: its `agent.<name>` span carries
+  `agent.status="cancelled"` (`"timeout"` for a timeout), and the result's
+  `trace_id` names it. Before 1.93.0 the span ended with no status and the
+  result had `trace_id=None`; a cancelled `stream()` also reported
+  `tokens_used=0`.
 - **Your own task:** cancelling it (`task.cancel()`) is not `agent.cancel`. It
   cancels the run and propagates as `CancelledError`, as before.
 
@@ -311,8 +319,14 @@ The limits and the stop belong to the **top-level** run. An agent run inside
 another one (a Supervisor's worker, an agent called from a tool, a Swarm hop)
 runs under its parent's limits and stops with it. A `Supervisor` has no `cancel()`
 of its own: call `cancel(<the supervisor run's execution_id>)` on any `Agent`, as
-the registry of running runs is per process. A `Swarm` or `Chain` run cannot be
-cancelled in 1.91.0.
+the registry of running runs is per process. Since 1.93.0 a `Swarm` run
+(`swarm.cancel(id)`, `arun` and `astream`) and a `Chain` run (`chain.cancel(id)`)
+can be cancelled too, with the same result and `run_reason`; before, neither could.
+
+`Swarm(..., timeout_seconds=)` and `Supervisor(..., timeout_seconds=)` (1.93.0)
+bound the whole run, every hop or worker included, and raise `AgentTimeoutError`
+with `run_reason="timeout"`. A worker's or hop agent's own `timeout_seconds`
+still bounds that agent. Neither is written into `to_dict()`.
 
 The three limits are written into `Agent.to_dict()` only when set, so a
 plane-dispatched or replayed agent keeps them, and a default agent's payload is

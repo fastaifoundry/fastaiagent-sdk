@@ -198,13 +198,22 @@ def _validate_openai_client(client: Any) -> None:
 
 
 def _augment_system_for_response_format(
-    system_text: str | None, response_format: dict[str, Any]
+    system_text: str | None, response_format: dict[str, Any], *, with_tools: bool = False
 ) -> str:
-    """Inject JSON instructions into system prompt for providers without native response_format."""
+    """Inject JSON instructions into system prompt for providers without native response_format.
+
+    ``with_tools`` (1.93.0): the request also offers tools, so the instruction is
+    about the *final* answer. "Respond with the raw JSON object only" on its own
+    made models answer at once without calling the tool."""
     rf_type = response_format.get("type", "text") if isinstance(response_format, dict) else "text"
+    lead = (
+        "\n\nCall the tools you need first. When you give your final answer, you"
+        if with_tools
+        else "\n\nYou"
+    )
     if rf_type == "json_object":
         return (system_text or "") + (
-            "\n\nYou must respond with valid JSON only. Do not include any text, "
+            f"{lead} must respond with valid JSON only. Do not include any text, "
             "markdown formatting, or code fences outside the JSON object. "
             "Your entire response must be parseable by JSON.parse()."
         )
@@ -213,7 +222,7 @@ def _augment_system_for_response_format(
         schema_name = js.get("name", "response")
         schema_body = _json.dumps(js.get("schema", {}), indent=2)
         return (system_text or "") + (
-            f"\n\nYou must respond with valid JSON matching this schema ('{schema_name}'):\n"
+            f"{lead} must respond with valid JSON matching this schema ('{schema_name}'):\n"
             f"```json\n{schema_body}\n```\n"
             "Respond with the raw JSON object only. Do not wrap it in markdown code fences "
             "or add any text outside the JSON. "
@@ -279,6 +288,40 @@ def _ollama_format_from_response_format(
         schema = response_format.get("json_schema", {}).get("schema")
         return schema if schema else "json"
     return None
+
+
+def _apply_ollama_format(
+    body: dict[str, Any],
+    tools: list[dict[str, Any]] | None,
+    response_format: dict[str, Any] | None,
+) -> None:
+    """Structured output for Ollama: ``format`` without tools, the schema in the
+    prompt with them (1.93.0). ``format`` constrains every token to the schema,
+    so beside tools the model could never call one; it answered with an
+    invented value instead. Gemini and Groq take the same path."""
+    if response_format is None:
+        return
+    if tools:
+        _inject_system_text(
+            body, _augment_system_for_response_format("", response_format, with_tools=True)
+        )
+        return
+    fmt = _ollama_format_from_response_format(response_format)
+    if fmt:
+        body["format"] = fmt
+
+
+def _ollama_tool_calls(
+    msg: dict[str, Any], start: int
+) -> list[tuple[str, str, dict[str, Any]]]:
+    """``(id, name, arguments)`` for each tool call in an Ollama message. Ollama's
+    own id is kept when it sends one; ``call_<n>`` (numbered from ``start``
+    across a stream) otherwise."""
+    calls = []
+    for i, tc in enumerate(msg.get("tool_calls") or [], start=start):
+        func = tc.get("function", {})
+        calls.append((tc.get("id") or f"call_{i}", func.get("name", ""), func.get("arguments", {})))
+    return calls
 
 
 def _inject_system_text(body: dict[str, Any], extra_text: str) -> None:
@@ -929,7 +972,7 @@ class LLMClient:
                 if resp.status_code != 200:
                     body_text = await resp.aread()
                     raise self._provider_error(
-                        f"OpenAI API error {resp.status_code}",
+                        f"{self._wire_name()} API error {resp.status_code}",
                         body_text.decode(errors="replace"),
                         resp.status_code,
                         resp.headers,
@@ -941,6 +984,11 @@ class LLMClient:
                     if payload.strip() == "[DONE]":
                         break
                     yield _json.loads(payload)
+
+    def _wire_name(self) -> str:
+        """Who an OpenAI-compatible error came from (1.93.0): a Groq or other
+        preset's errors read "OpenAI API error", pointing at the wrong vendor."""
+        return {"openai": "OpenAI", "azure": "Azure OpenAI"}.get(self.provider, self.provider)
 
     def _capability(self, name: str, default: object = None) -> object:
         """Look up a capability flag from the registered preset, if any."""
@@ -2127,11 +2175,19 @@ class LLMClient:
         response_format = kwargs.get("response_format")
         if response_format is not None:
             rf_caps = self._capability("response_format", "native")
-            if rf_caps in (False, "none"):
+            # A preset that refuses JSON mode beside tools (Groq: HTTP 400 "json
+            # mode cannot be combined with tool/function calling") gets the
+            # schema in the prompt on tool turns, as Gemini does (1.93.0).
+            refuses_with_tools = bool(tools) and not self._capability(
+                "response_format_with_tools", True
+            )
+            if rf_caps in (False, "none") or refuses_with_tools:
                 # Augment the system message instead. The body builder has
                 # already rendered messages, so we patch the first system
                 # entry in-place (or insert one) with the augmented text.
-                augmented = _augment_system_for_response_format("", response_format)
+                augmented = _augment_system_for_response_format(
+                    "", response_format, with_tools=bool(tools)
+                )
                 _inject_system_text(body, augmented)
             else:
                 body["response_format"] = response_format
@@ -2289,7 +2345,7 @@ class LLMClient:
             resp = await client.post(url, json=body, headers=headers)
             if resp.status_code != 200:
                 raise self._provider_error(
-                    f"OpenAI API error {resp.status_code}",
+                    f"{self._wire_name()} API error {resp.status_code}",
                     resp.text,
                     resp.status_code,
                     resp.headers,
@@ -2694,12 +2750,7 @@ class LLMClient:
             options["presence_penalty"] = pres_pen
         if options:
             body["options"] = options
-        # Structured output
-        response_format = kwargs.get("response_format")
-        if response_format is not None:
-            fmt = _ollama_format_from_response_format(response_format)
-            if fmt:
-                body["format"] = fmt
+        _apply_ollama_format(body, tools, kwargs.get("response_format"))
 
         self._apply_ollama_think(body, kwargs)
         url = f"{self.base_url.rstrip('/')}/api/chat"
@@ -2717,17 +2768,10 @@ class LLMClient:
             data = resp.json()
 
         msg = data.get("message", {})
-        tool_calls = []
-        if raw_tc := msg.get("tool_calls"):
-            for i, tc in enumerate(raw_tc):
-                func = tc.get("function", {})
-                tool_calls.append(
-                    ToolCall(
-                        id=f"call_{i}",
-                        name=func.get("name", ""),
-                        arguments=func.get("arguments", {}),
-                    )
-                )
+        tool_calls = [
+            ToolCall(id=call_id, name=name, arguments=args)
+            for call_id, name, args in _ollama_tool_calls(msg, 0)
+        ]
 
         usage = {
             "prompt_tokens": data.get("prompt_eval_count", 0),
@@ -3238,15 +3282,11 @@ class LLMClient:
             options["presence_penalty"] = pres_pen
         if options:
             body["options"] = options
-        # Structured output
-        response_format = kwargs.get("response_format")
-        if response_format is not None:
-            fmt = _ollama_format_from_response_format(response_format)
-            if fmt:
-                body["format"] = fmt
+        _apply_ollama_format(body, tools, kwargs.get("response_format"))
 
         self._apply_ollama_think(body, kwargs)
         url = f"{self.base_url.rstrip('/')}/api/chat"
+        calls_seen = 0
         prompt_tokens = 0
         completion_tokens = 0
         finish_reason = ""
@@ -3278,21 +3318,18 @@ class LLMClient:
                     if text := msg.get("content"):
                         yield TextDelta(text=text)
 
-                    # Ollama sends tool calls only in the final message (done=true)
+                    # Tool calls can come in any chunk: Ollama 0.24 sends them
+                    # in a ``done: false`` one. Reading only the final chunk
+                    # dropped every streamed call (1.93.0).
+                    for call_id, name, args in _ollama_tool_calls(msg, calls_seen):
+                        calls_seen += 1
+                        yield ToolCallStart(call_id=call_id, tool_name=name)
+                        yield ToolCallEnd(call_id=call_id, tool_name=name, arguments=args)
+
                     if chunk.get("done"):
                         prompt_tokens = chunk.get("prompt_eval_count", 0)
                         completion_tokens = chunk.get("eval_count", 0)
                         finish_reason = str(chunk.get("done_reason") or "")
-
-                        # Tool calls in final message
-                        if raw_tcs := msg.get("tool_calls"):
-                            for i, tc in enumerate(raw_tcs):
-                                func = tc.get("function", {})
-                                call_id = f"call_{i}"
-                                name = func.get("name", "")
-                                args = func.get("arguments", {})
-                                yield ToolCallStart(call_id=call_id, tool_name=name)
-                                yield ToolCallEnd(call_id=call_id, tool_name=name, arguments=args)
 
         if prompt_tokens or completion_tokens:
             yield Usage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens)
