@@ -414,3 +414,6 @@ silent failure:
   and gates its own subset. Run eval-gated suites in a single process.
 - Gating covers cases scored through `evaluate_one`; assertions you write by
   hand in a test body are ordinary pytest failures, not eval metrics.
+- **One run per gate.** A gate judges a single run, and a single run can pass
+  or fail by the model's luck. To gate on a pass rate over several runs, see
+  [Repeated runs](repeated-runs.md).
