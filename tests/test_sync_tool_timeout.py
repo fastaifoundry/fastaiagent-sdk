@@ -36,12 +36,34 @@ def _slow(seconds: float) -> str:
     return "finished"
 
 
+class _Blocked:
+    """A sync tool body that blocks until released, and says whether it finished.
+
+    The timeout tests assert the call came back while this was still blocked: an
+    event, not a wall-clock bound, which a slow CI runner broke (0.88 s against
+    0.8 s on macOS). The 30 s cap only keeps a regression from hanging the suite;
+    if it is ever reached, ``finished`` is set and the test fails.
+    """
+
+    def __init__(self) -> None:
+        self.release = threading.Event()
+        self.finished = threading.Event()
+
+    def __call__(self) -> str:
+        self.release.wait(30)
+        self.finished.set()
+        return "finished"
+
+
 def test_a_sync_tool_times_out() -> None:
-    tool = FunctionTool(name="slow", fn=lambda: _slow(1.0), timeout=0.1)
-    start = time.monotonic()
-    with pytest.raises(ToolExecutionError, match="timed out"):
-        asyncio.run(tool.ainvoke({}))
-    assert time.monotonic() - start < 0.8, "the timeout did not bound the call"
+    blocked = _Blocked()
+    tool = FunctionTool(name="slow", fn=blocked, timeout=0.1)
+    try:
+        with pytest.raises(ToolExecutionError, match="timed out"):
+            asyncio.run(tool.ainvoke({}))
+        assert not blocked.finished.is_set(), "the timeout did not bound the call"
+    finally:
+        blocked.release.set()
 
 
 def test_a_sync_tool_within_its_timeout_answers() -> None:
@@ -59,11 +81,14 @@ def test_the_agent_loop_hands_the_model_the_timeout() -> None:
             return "gave up"
         return "", [{"name": "slow", "arguments": {}}]
 
-    tool = FunctionTool(name="slow", fn=lambda: _slow(1.0), timeout=0.1)
+    blocked = _Blocked()
+    tool = FunctionTool(name="slow", fn=blocked, timeout=0.1)
     agent = Agent(name="t", llm=FunctionModel(respond), tools=[tool])
-    start = time.monotonic()
-    assert agent.run("go", trace=False).output == "gave up"
-    assert time.monotonic() - start < 0.8
+    try:
+        assert agent.run("go", trace=False).output == "gave up"
+        assert not blocked.finished.is_set(), "the run waited for the timed-out tool"
+    finally:
+        blocked.release.set()
     assert seen and "timed out" in seen[0]
 
 
