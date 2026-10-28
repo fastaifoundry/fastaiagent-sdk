@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Docs
+
+- **New page: Repeated runs** (`docs/evaluation/repeated-runs.md`). How to run
+  an eval several times and gate on a pass rate per case with `evaluate()` as it
+  is today, who decides what (cases, runs, rate, spend), and the current limits
+  (gates and baselines judge one run). The example output is a real gpt-5-mini
+  run in which the agent invented a returns policy once in five runs. Agent CI's
+  Limitations now point to it. No code change.
+
+### Tests
+
+- **The sync-tool timeout tests no longer race the clock.** They asserted the
+  call returned within 0.8 s of a 1 s tool, and a slow macOS runner took 0.88 s.
+  The tool now blocks on an event, and each test asserts the call came back
+  while the tool was still blocked.
+
 ## [1.94.0] - 2026-10-25 — the plane's monthly trace limit
 
 ### Added
