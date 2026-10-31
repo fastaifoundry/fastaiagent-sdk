@@ -469,7 +469,7 @@ async def acomplete_gemini(
             raise client._provider_error(
                 f"Gemini API error {resp.status_code}", resp.text, resp.status_code, resp.headers
             )
-        data = resp.json()
+        data = client._json_body(resp, "Gemini API")
 
     response = _parse_response(client, data)
     # Structured output parsed from the text (no JSON mode with tools, X20)
