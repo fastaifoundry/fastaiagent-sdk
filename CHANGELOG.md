@@ -64,6 +64,12 @@ The plane receives no new keys. The SDK stops pushing agents with
   a plain function recorded no `trace_id` for a case, so the Evals page could
   not open the run behind a score. A function whose output has its own
   `trace_id` still sets the link.
+- **No "Overriding of current TracerProvider is not allowed" warning when the
+  app owns the global provider.** The SDK builds its own provider on its first
+  span and asked to make it global every time; with an app provider already
+  set (the Pydantic AI setup), OTel refused and logged the warning. It now asks
+  only while the global slot is unset. Nothing else changes: the app keeps its
+  provider, and spans are still stored locally.
 - The 1.95.0 regression in CrewAI `as_evaluable` (after a direct `kickoff()`,
   every eval case ran the previous input) ends with the adapter's removal.
 

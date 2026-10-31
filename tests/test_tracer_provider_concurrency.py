@@ -100,3 +100,49 @@ def test_concurrent_evaluate_does_not_override_the_provider(tmp_path: Path) -> N
     assert done.returncode == 0, done.stderr[-2000:]
     assert "passed 8" in done.stdout
     assert "Overriding of current TracerProvider" not in done.stderr
+
+
+_APP_OWNS_PROVIDER = """
+import logging, sqlite3, sys
+logging.basicConfig(level=logging.WARNING)
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+import fastaiagent as fa
+
+app = TracerProvider()
+trace.set_tracer_provider(app)
+fa.enable_otel_capture()
+with fa.trace_context("agent.support", **{"agent.name": "support"}):
+    trace.get_tracer("app").start_span("app.step").end()
+from fastaiagent.trace import otel
+otel.get_tracer_provider().force_flush()
+app.force_flush()
+print("app keeps the slot", trace.get_tracer_provider() is app)
+names = {r[0] for r in sqlite3.connect(sys.argv[1]).execute("SELECT name FROM spans")}
+print("stored", sorted(names))
+"""
+
+
+def test_an_app_that_owns_the_global_provider_gets_no_override_warning(tmp_path: Path) -> None:
+    """The Pydantic AI setup in docs/integrations/frameworks.md (1.96.0): the app sets
+    its provider first, then a fastaiagent span builds the SDK's own provider."""
+    import os
+    import subprocess
+    import sys
+
+    db = tmp_path / "local.db"
+    env = {**os.environ, "FASTAIAGENT_LOCAL_DB": str(db)}
+    env.pop("FASTAIAGENT_API_KEY", None)
+    env.pop("FASTAIAGENT_TARGET", None)
+    done = subprocess.run(
+        [sys.executable, "-c", _APP_OWNS_PROVIDER, str(db)],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=tmp_path,
+        timeout=120,
+    )
+    assert done.returncode == 0, done.stderr[-2000:]
+    assert "Overriding of current TracerProvider" not in done.stderr
+    assert "app keeps the slot True" in done.stdout
+    assert "stored ['agent.support', 'app.step']" in done.stdout

@@ -86,7 +86,12 @@ def get_tracer_provider() -> Any:
             if _claim_global:
                 from opentelemetry import trace as otel_trace
 
-                otel_trace.set_tracer_provider(provider)
+                # Only while the slot is still OTel's default proxy. An app that
+                # set its own provider first keeps it (first-wins either way);
+                # asking again only logged "Overriding of current TracerProvider
+                # is not allowed" (1.96.0).
+                if isinstance(otel_trace.get_tracer_provider(), otel_trace.ProxyTracerProvider):
+                    otel_trace.set_tracer_provider(provider)
             _provider = provider
     return _provider
 
