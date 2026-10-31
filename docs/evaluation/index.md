@@ -56,6 +56,12 @@ def run_pipeline(input_text):
 evaluate(agent_fn=run_pipeline, dataset=dataset)
 ```
 
+Each case is linked to the trace its run produced, so the Local UI opens the run
+behind a verdict. An `AgentResult` names its trace; for any other return value
+(another framework's agent behind a plain function, traced through
+[`enable_otel_capture()`](../tracing/third-party-otel.md)) the case takes the first
+trace the call started. Before 1.96.0 such cases had no trace.
+
 ## Async
 
 Every entry point has an `a`-prefixed coroutine — `aevaluate`, `asimulate`,
