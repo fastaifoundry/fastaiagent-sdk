@@ -498,6 +498,20 @@ class ForkedReplay:
         self._trace_db: str | None = None
         self._surface: str = "python"
         self._source_store: TraceStore | None = None
+        self._context: Any = None
+
+    def with_context(self, context: Any) -> ForkedReplay:
+        """The ``RunContext`` the rerun passes to ``agent.arun(context=...)``.
+
+        A trace does not record a run's context (its dependencies are live
+        objects: a database client, a user session), so a rerun has none unless
+        you give it one. Tools that take a ``RunContext`` and run live (an
+        override, or one allowed by the tool policy) need it; without it the
+        rerun refuses with a ``ReplayError`` instead of failing each tool call
+        inside the model loop (1.95.0).
+        """
+        self._context = context
+        return self
 
     def modify_input(self, new_input: Any) -> ForkedReplay:
         """Override the input the rerun will use.
@@ -751,6 +765,7 @@ class ForkedReplay:
         tools, dispositions, blocked = self._build_tool_plan(agent_dict.get("tools") or [])
         if self._tool_policy == "error" and self._determinism == "recorded":
             self._preflight_recorded_tools(dispositions)
+        self._preflight_context(tools, dispositions)
 
         scope_attrs = {
             "fastaiagent.replay.source_trace_id": self._trace.trace_id,
@@ -1018,6 +1033,30 @@ class ForkedReplay:
             kinds.append("tool_stubs")
         return kinds
 
+    def _preflight_context(self, tools: list[Any], dispositions: dict[str, str]) -> None:
+        """Refuse a rerun whose live tools need a ``RunContext`` it was not given.
+
+        Without one, each call to such a tool failed with "missing 1 required
+        positional argument: 'ctx'", the model read the error and answered
+        anyway, and the rerun reported success (1.95.0).
+        """
+        if self._context is not None:
+            return
+        if self._determinism == "recorded" and self._on_miss != "live":
+            return  # every tool result is served from the recording
+        needs = sorted(
+            getattr(t, "name", "?")
+            for t in tools
+            if getattr(t, "_context_param_name", None)
+            and dispositions.get(getattr(t, "name", "")) in ("live", "override")
+        )
+        if needs:
+            raise ReplayError(
+                f"Replay of trace {self._trace.trace_id} runs tools that take a RunContext "
+                f"({', '.join(needs)}), but a trace does not record the run's context. Pass "
+                f"one with .with_context(RunContext(...)), or stub them with with_tool_stub."
+            )
+
     async def _arun_unpaused(self, agent: Any, new_input: Any) -> Any:
         """``agent.arun`` for a rerun, refusing a pause with a ``ReplayError``.
 
@@ -1031,7 +1070,7 @@ class ForkedReplay:
         from fastaiagent.chain.interrupt import InterruptSignal
 
         try:
-            result = await agent.arun(new_input)
+            result = await agent.arun(new_input, context=self._context)
         except InterruptSignal as sig:
             paused = what_paused(sig)
         else:
