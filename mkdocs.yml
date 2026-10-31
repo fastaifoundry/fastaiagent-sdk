@@ -54,6 +54,14 @@ plugins:
             members_order: source
             docstring_style: google
   - section-index
+  # Pages removed with the framework adapters in 1.96.0; old links land on the recipe page.
+  - redirects:
+      redirect_maps:
+        integrations/overview.md: integrations/frameworks.md
+        integrations/langchain.md: integrations/frameworks.md
+        integrations/crewai.md: integrations/frameworks.md
+        integrations/pydanticai.md: integrations/frameworks.md
+        tutorials/trace-langchain.md: integrations/frameworks.md
 
 markdown_extensions:
   - admonition
