@@ -70,18 +70,24 @@ def main() -> int:
     try:
         # 1. Publish a governed prompt (double-brace {{var}} matches the plane).
         registry = PromptRegistry()
-        # A stable-ish slug derived from the connected project; no wall clock in
-        # the example so it can be re-run (publish always creates a new version).
+        # A stable slug derived from the connected project. The plane imports a
+        # slug once and answers 409 after that, so a re-run uses the prompt the
+        # first run published.
         slug = f"acme-support-{_connection.project_id or 'demo'}"
-        registry.publish(
-            slug=slug,
-            content=(
-                "You are a customer support agent for {{company}}.\n"
-                "Be helpful, concise, and professional."
-            ),
-            variables=["company"],
-        )
-        print(f"published prompt: {slug}")
+        try:
+            registry.publish(
+                slug=slug,
+                content=(
+                    "You are a customer support agent for {{company}}.\n"
+                    "Be helpful, concise, and professional."
+                ),
+                variables=["company"],
+            )
+            print(f"published prompt: {slug}")
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code != 409:
+                raise
+            print(f"prompt already published (the plane keeps the first import): {slug}")
 
         # 2. Build an agent from the registry Prompt (references the slug) + memory.
         #    Passing the Prompt object as system_prompt auto-links prompt_slug and
