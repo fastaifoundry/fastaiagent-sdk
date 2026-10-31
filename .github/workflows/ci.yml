@@ -108,10 +108,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      # uv resolves the heavy ``[all]`` graph that pip's backtracker can't
-      # (``resolution-too-deep``): pydantic-ai 1.105+ pulls newer transitive
-      # deps that pip can't reconcile with crewai/langchain/chroma in finite
-      # backtracking. uv finds the valid set in <1s.
+      # uv resolves the heavy ``[all]`` graph faster than pip's backtracker,
+      # which hit ``resolution-too-deep`` while ``[all]`` carried the framework
+      # extras (removed in 1.96.0).
       - name: Install uv
         run: pip install uv
       - name: Install with extras
@@ -123,67 +122,6 @@ jobs:
           fi
       - name: Run tests
         run: pytest tests/ -v -m "not e2e" --tb=short
-
-  # Both LangChain lines, each forced explicitly (1.89.0). The ``[langchain]``
-  # extra admits 0.x and 1.x; without a constraint every other job resolves
-  # 1.x, so 0.x would go untested. Each cell asserts the line it actually got
-  # (a constraint that silently stopped applying would test the wrong line),
-  # and fails on any LangChain skip except a test that declares itself
-  # ``not on this LangChain line:``.
-  langchain-lines:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        line: ["0", "1"]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Install uv
-        run: pip install uv
-      - name: Constrain to LangChain ${{ matrix.line }}.x
-        run: |
-          if [ "${{ matrix.line }}" = "0" ]; then
-            printf '%s\n' 'langchain-core<1' 'langgraph<1' 'langchain<1' \
-              'langchain-openai<1' 'langchain-anthropic<1' > lc-constraints.txt
-          else
-            printf '%s\n' 'langchain-core>=1,<2' 'langgraph>=1,<2' 'langchain>=1,<2' > lc-constraints.txt
-          fi
-          cat lc-constraints.txt
-      - name: Install
-        run: uv pip install --system -e ".[langchain,dev]" -c lc-constraints.txt
-      - name: Assert the resolved line
-        run: |
-          python - <<'PY'
-          import importlib.metadata as md
-          import sys
-          want = "${{ matrix.line }}"
-          bad = []
-          for pkg in ("langchain-core", "langgraph", "langchain", "langchain-openai", "langchain-anthropic"):
-              v = md.version(pkg)
-              print(f"{pkg}=={v}")
-              if v.split(".")[0] != want:
-                  bad.append(f"{pkg}=={v}")
-          if bad:
-              print(f"::error::expected LangChain {want}.x, got {bad}")
-              sys.exit(1)
-          PY
-      - name: Run tests
-        run: |
-          pytest tests/ -v -m "not e2e" --tb=short -rs | tee pytest-langchain.log
-          exit "${PIPESTATUS[0]}"
-      - name: Fail on any LangChain skip
-        run: |
-          # tests/e2e is deselected here (-m "not e2e"); its LangChain harness
-          # runs, with keys, in the e2e job.
-          if grep -E "SKIPPED.*(langchain|LangChain|langgraph)" pytest-langchain.log \
-              | grep -v "not on this LangChain line" | grep -v "tests/e2e/"; then
-            echo "::error::A LangChain test skipped on line ${{ matrix.line }}.x."
-            exit 1
-          fi
-          echo "No LangChain test skipped."
 
   # Durability backends — Postgres and Redis, on real servers.
   #
@@ -270,10 +208,6 @@ jobs:
         run: pip install uv
       - name: Install with all extras
         run: uv pip install --system -e ".[all,dev]"
-      # The live LangChain harness must run on the 1.x line fresh installs get.
-      - name: Assert LangChain 1.x resolved
-        run: |
-          python -c "import importlib.metadata as m, sys; v = m.version('langchain-core'); print('langchain-core', v); sys.exit(0 if v.startswith('1.') else 1)"
       - name: Run end-to-end quality gate
         run: pytest tests/e2e/ -v -m e2e --tb=short
       - name: Regression-from-trace template smoke (no LLM)

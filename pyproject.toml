@@ -57,44 +57,17 @@ dependencies = [
 # LLMClient itself speaks HTTP and needs neither SDK; these back the
 # auto-tracing integrations and LLMClient(openai_client=...).
 # openai 3.x since 1.90.0, verified offline and live on 3.x.
-# anthropic stays <1 on purpose: every anthropic 1.x is built on httpx2, and the
-# newest Pydantic AI that can share [all] with CrewAI (2.31, see below) still
-# hands Anthropic an httpx client, so with anthropic 1.x its Anthropic models
-# fail (verified 2026-10-18). integrations.anthropic itself works on 1.15.
+# anthropic stays <1 for now. The cap was set for the Pydantic AI integration
+# (removed in 1.96.0), which handed Anthropic an httpx client that anthropic
+# 1.x (httpx2) rejects. integrations.anthropic itself works on 1.15; widening
+# the cap is its own change.
 openai = ["openai>=1.0,<4"]
 anthropic = ["anthropic>=0.20,<1"]
-# Both LangChain lines are supported (1.89.0): 0.x (core 0.3 / langgraph 0.x)
-# and 1.x. The integration uses only the langchain_core callback, prompt and
-# retriever surface, which is the same on both. ``langgraph`` is here for users,
-# not the SDK. The ``langchain-lines`` CI job tests each line. Drop the 0.x floor
-# in the first release after upstream ends 0.x support (December 2026).
-# ``langchain`` itself is deliberately NOT in the extra: on 0.x it drags in
-# SQLAlchemy, requests and text-splitters the integration never uses.
-langchain = ["langchain-core>=0.3,<2", "langgraph>=0.2,<2"]
-# Floor 1.7 since 1.90.0: with Pydantic AI 2.x in [all], an older floor let the
-# resolver drop CrewAI to 1.6.1 (it has no openai<3 cap) to reach Pydantic AI
-# 2.32 — so [all] tested a 9-month-old CrewAI. With >=1.7, [all] resolves to
-# crewai 1.15 + pydantic-ai 2.31 + openai 2.x (verified live 2026-10-18).
-crewai = ["crewai>=1.7,<2"]
-# Pydantic AI 2.x since 1.90.0. Re-tested 2026-10-18 in throwaway venvs, live
-# against gpt-4o-mini and claude-haiku-4-5 (tests/e2e/test_harness_pydanticai.py,
-# real token counts + cost, OpenAI and Anthropic models):
-#   * 2.57.0 + genai-prices 0.1.13 (+ openai 3.35, anthropic 1.15) — correct.
-#   * 2.31.1 + genai-prices 0.1.13 + openai 2.54 + anthropic 0.125 — correct.
-#     This is what [all] resolves to: every stable CrewAI caps openai<3
-#     (through instructor) and Pydantic AI 2.32+ needs openai>=3, so 2.31 is
-#     the newest that shares an environment with CrewAI.
-#   * 1.106 + genai-prices 0.1.13 — token counts ZERO; 1.107.x — RunUsage(0, 0).
-# The 1.x line needed genai-prices<0.1 (bisected: 0.0.60 good, 0.1.0 bad); one
-# extra cannot carry both lines, so it is 2.x. Pydantic AI 2.x needs Python
-# 3.11+: on 3.10 the extra installs nothing (the integration still works with
-# pydantic-ai 1.105-1.106 + genai-prices<0.1 installed by hand). The full
-# `[all]` resolution is too deep for pip's backtracker, so the
-# e2e/optional-deps CI jobs install with `uv`.
-pydanticai = [
-    "pydantic-ai>=2.31,<3; python_version >= '3.11'",
-    "genai-prices>=0.1.13; python_version >= '3.11'",
-]
+# The langchain / crewai / pydanticai extras were removed in 1.96.0 with the
+# framework integrations. Their agents run on the neutral path: an
+# OpenInference instrumentor + ``fa.enable_otel_capture()``, the guardrail
+# primitives and ``fa.evaluate`` on a plain callable
+# (docs/integrations/frameworks.md).
 # Local PDF decoding: text extraction, page count, page rasterization.
 # ``pypdfium2`` is BSD-3-Clause + Apache-2.0 bindings to PDFium — Google's PDF
 # engine, the one in Chrome. It replaced ``pymupdf``, which is dual-licensed
@@ -111,8 +84,7 @@ qdrant = ["qdrant-client>=1.8,<2"]
 chroma = ["chromadb>=0.5,<2"]
 # The official MCP library, for ``MCPTool`` (client) and ``as_mcp_server``
 # (server). 1.24 is the first release with ``streamable_http_client``. Held below
-# 2: mcp 2.x moved to ``httpx2`` and renamed the server API, and CrewAI and
-# langchain-mcp-adapters still require mcp<2.
+# 2: mcp 2.x moved to ``httpx2`` and renamed the server API.
 mcp = ["mcp>=1.24,<2"]
 # Name used before 1.92.0; kept so existing installs keep working.
 mcp-server = ["fastaiagent[mcp]"]
@@ -144,7 +116,7 @@ ui = [
     # endpoints (Sprint 3) — image upload + JSONL import are multipart.
     "python-multipart>=0.0.9,<1",
 ]
-all = ["fastaiagent[openai,anthropic,langchain,crewai,pydanticai,pdf,kb,qdrant,chroma,mcp,otel-export,postgres,redis,safety,ui]"]
+all = ["fastaiagent[openai,anthropic,pdf,kb,qdrant,chroma,mcp,otel-export,postgres,redis,safety,ui]"]
 docs = [
     "mkdocs>=1.6,<2",
     "mkdocs-material>=9.5,<10",
@@ -157,16 +129,6 @@ dev = [
     "pytest-cov>=5.0,<8",
     "ruff>=0.3,<1",
     "mypy>=1.8,<2",
-    # Universal-harness test deps. The SDK itself has no runtime
-    # dependency on these — users bring their own LangChain provider
-    # adapters — but the e2e harness suite needs them. Including
-    # ``langchain-openai`` / ``langchain-anthropic`` in ``dev`` keeps
-    # ``pip install -e .[all,dev]`` (the CI install line) sufficient
-    # to run the harness suite without per-test importorskips.
-    "langchain-openai>=0.2,<2",
-    "langchain-anthropic>=0.2,<2",
-    # Test-only: ``langchain.agents.create_agent`` for the 1.x harness e2e.
-    "langchain>=0.3,<2",
     # The caps of the ``openai`` / ``anthropic`` extras, mirrored, so the plain
     # ``.[dev]`` test job never picks a major the extras do not allow.
     "openai>=1.0,<4",

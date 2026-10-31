@@ -57,7 +57,7 @@ body:
         - Evaluation
         - CLI
         - Platform Sync
-        - Integration (OpenAI/Anthropic/LangChain/CrewAI)
+        - Integration (OpenAI/Anthropic auto-tracing, OpenTelemetry capture)
         - Other
     validations:
       required: true
