@@ -75,8 +75,13 @@ class CitationsInTrail(Scorer):
         expected_output: str | None = None,
         context: list | None = None,
     ) -> float:
-        # Pull URLs from the Sources block at the bottom of the report.
-        urls_in_report = set(re.findall(r"https?://\S+", actual_output or ""))
+        # Pull URLs from the Sources block at the bottom of the report. Stop at
+        # markdown/bracket delimiters: a writer that formats ``[url](url)``
+        # otherwise yields one bogus "url](url)" that matches nothing.
+        urls_in_report = {
+            u.rstrip(".,;:")
+            for u in re.findall(r"https?://[^\s()\[\]<>]+", actual_output or "")
+        }
         if not urls_in_report:
             return 0.0
         retrieved_urls = {entry.get("url") for entry in (context or [])}

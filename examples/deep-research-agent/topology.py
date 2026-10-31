@@ -31,7 +31,41 @@ from pydantic import BaseModel, Field
 from tools import web_fetch, web_search
 
 import fastaiagent as fa
-from fastaiagent.agent.middleware import ToolBudget
+from fastaiagent.agent.middleware import AgentMiddleware
+from fastaiagent.tool.base import ToolResult
+
+
+class ResearchBudget(AgentMiddleware):
+    """Cap a researcher's tool calls, then make it write up what it has.
+
+    ``ToolBudget`` ends the run with ``StopAgent`` once the budget is spent, so
+    the branch returned the budget message instead of its ``ResearchFindings``
+    and the report came back empty. Here, once the budget is spent, the model is
+    offered no tools, so its next turn is the answer; a call it still makes in
+    the turn that crossed the budget is refused with a tool error.
+    """
+
+    name = "research_budget"
+
+    def __init__(self, max_calls: int) -> None:
+        self.max_calls = max_calls
+
+    async def wrap_model(self, ctx, messages, call_next):  # type: ignore[no-untyped-def]
+        if int(ctx.state.get("used", 0)) >= self.max_calls:
+            ctx.tools = []  # read when the model is called; reset every turn
+        return await call_next(messages)
+
+    async def wrap_tool(self, ctx, tool, args, call_next):  # type: ignore[no-untyped-def]
+        used = int(ctx.state.get("used", 0))
+        if used >= self.max_calls:
+            return ToolResult(
+                error=(
+                    f"Research budget of {self.max_calls} tool calls is spent. Do not call "
+                    "tools again: return your ResearchFindings now, from the sources you have."
+                )
+            )
+        ctx.state["used"] = used + 1
+        return await call_next(tool, args)
 
 # ─── Structured output schemas ───────────────────────────────────────────────
 
@@ -121,6 +155,8 @@ Why it matters:
 Your job: gather authoritative sources via the ``web_search`` tool. For any
 search hit whose snippet is too thin to support a citation, call
 ``web_fetch`` on its URL to read the full page. Iterate 1–3 search rounds.
+You have a small budget of tool calls (about six), so fetch only pages you
+will cite, and write up your findings as soon as you have enough.
 
 Then return a ResearchFindings with:
   * ``subtopic``  — repeat your assigned subtopic verbatim.
@@ -217,15 +253,11 @@ def build_researcher(subtopic: str, rationale: str) -> fa.Agent:
         llm=_researcher_llm(),
         tools=[web_search, web_fetch],
         # Cap each branch at 6 tool calls (3 searches + 3 fetches typical).
-        # Protects against a misbehaving model spamming the search backend.
-        middleware=[
-            ToolBudget(
-                max_calls=tool_budget,
-                message="Research budget exhausted for this subtopic.",
-            )
-        ],
+        # Protects against a misbehaving model spamming the search backend,
+        # and still lets the branch report what it found.
+        middleware=[ResearchBudget(max_calls=tool_budget)],
         # Give the loop room for one LLM turn per tool call plus the final
-        # structured-output turn, so ``ToolBudget`` is the *graceful* limiter
+        # structured-output turn, so ``ResearchBudget`` is the *graceful* limiter
         # rather than a hard ``MaxIterationsError`` when a model spreads its
         # calls one-per-turn (the default max_iterations of 10 could bind first
         # and abort the branch before it emits ``ResearchFindings``).
