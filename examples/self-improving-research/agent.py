@@ -206,7 +206,7 @@ async def phase_optimize() -> None:
     if report.run_id:
         print(
             f"[optimize] run persisted as {report.run_id[:8]} — view the trajectory "
-            "in `fastaiagent ui` → Optimize Runs (drill each step into its eval run)."
+            "in `fastaiagent ui` → AutoLLM (drill each step into its eval run)."
         )
 
 

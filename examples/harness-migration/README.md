@@ -31,7 +31,7 @@ This template is the canonical demo of `fastaiagent.integrations.langchain` / `c
 - **Sharing a single registered prompt across three frameworks** — `register_support_prompt()` writes once; every framework reads the latest version.
 - **Sharing a single guardrail set across three frameworks** — `with_guardrails(agent, input_guardrails=[...], output_guardrails=[...])` accepts the same `fa.Guardrail` type in all three.
 - **`fa.evaluate()` against any of the three** — `as_evaluable(agent)` wraps each framework's native interface into the callable `fa.evaluate` expects.
-- **External-agent registry** — `register_agent(agent, name="...")` makes the LangGraph / CrewAI / PydanticAI agent appear in the Local UI's `/agents` page with a framework badge alongside native fa.Agents. Since **1.46.0** it also registers the agent with the Enterprise plane when connected, so traces from a *named* run link to it (see [linking to the control plane](../../docs/integrations/overview.md#connecting-foreign-agents-to-the-control-plane)).
+- **External-agent registry** — `register_agent(agent, name="...")` records the LangGraph / CrewAI / PydanticAI agent so the Local UI's `/agents/<name>` page shows its dependency graph (model, tools, harness layers) with a framework badge. Since **1.46.0** it also registers the agent with the Enterprise plane when connected, so traces from a *named* run link to it (see [linking to the control plane](../../docs/integrations/overview.md#connecting-foreign-agents-to-the-control-plane)).
 
 ---
 
@@ -173,7 +173,7 @@ fastaiagent ui start             # http://127.0.0.1:7842
 What this template populates:
 
 - **`/traces`** — every `kickoff()`/`invoke()`/`run()` lands as a trace under the framework's name. The framework badge ("langchain", "crewai", "pydanticai") is on each row so you can filter.
-- **`/agents`** — `lc-support-bot`, `ca-support-bot`, `pa-support-bot` listed alongside any native fa.Agents, courtesy of `register_agent()` writing to the `external_agents` table.
+- **`/agents/lc-support-bot`, `/agents/ca-support-bot`, `/agents/pa-support-bot`** — each framework agent's dependency graph, from the row `register_agent()` writes to the `external_agents` table. (The `/agents` list itself is built from native `agent.*` spans and `ui --agent` runners, so these framework agents are reached by name.)
 - **`/playground/support-prompt`** — edit the registered prompt; the next call from any of the three frameworks picks up the new version with no restart.
 - **`/evals`** — three runs persisted as `harness-migration-langchain`, `harness-migration-crewai`, `harness-migration-pydanticai` against the same `harness-migration-faq` dataset. Click in for per-case `trace_id`-linked drill-down.
 - **`/guardrails`** — events from input + output guardrail firings, identical shape regardless of the originating framework.
@@ -184,7 +184,7 @@ What this template populates:
 
 ### KB path coupling — must be the SDK default
 
-The integrations' `kb_as_retriever()` / `kb_as_tool()` re-instantiate `LocalKB(name=kb_name)` *with the default on-disk path* — they do not accept a `path=` kwarg. So the shared KB you create here MUST live at the default path (`~/.fastaiagent/kb/support-kb/`) or the integration will see an empty store.
+The integrations' `kb_as_retriever()` / `kb_as_tool()` re-instantiate `LocalKB(name=kb_name)` *with the default on-disk path* — they do not accept a `path=` kwarg. So the shared KB you create here MUST live at the default path (`./.fastaiagent/kb/support-kb/`, relative to the directory you run from) or the integration will see an empty store.
 
 Concretely: in `shared/kb.py` we do **not** pass `path=`. If you change that to `path="./.fastaiagent-kb"` to keep the index local to your project, the example's KB lookups will return zero documents.
 
