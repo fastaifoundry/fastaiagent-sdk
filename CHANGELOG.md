@@ -7,8 +7,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.95.0] - 2026-10-31 — what the full check found
+
+Every example, doc block and documented CLI command was run against the
+current SDK (real OpenAI/Anthropic/Groq keys, the local plane on :20001). This
+release fixes what that found.
+
+### Changed (behaviour)
+
+- **`connect()` no longer uploads traces recorded offline (S1).** Every span was
+  written queued (`synced=0`) whether or not the process was connected, so the
+  first `connect()` uploaded up to 7 days / 10,000 spans of offline history; the
+  docs said it does not. A span is now queued only while a platform span
+  exporter is registered; offline and `connect(export_traces=False)` spans are
+  stored as handled. Outage buffering while connected is unchanged. The local.db
+  migration (schema v29) marks every span still queued as handled, since an
+  offline span and an outage backlog look the same; `TraceData.publish()` still
+  sends one on demand.
+- **`ROUGEScore(variant="rouge-l")` is named `"rouge-l"` (S2).** Both variants
+  were named `"rouge"`, so the 1.89.0 duplicate-name guard rejected running them
+  together (example 26). The default `rouge-1` keeps `"rouge"`. Only a rouge-l
+  scorer's result key changes.
+- **`Replay.fork_at()` / `rerun()` refuse a chain or supervisor trace (S14)**
+  with a `ReplayError` naming the root and pointing to `Chain.afork` /
+  `aresume`. They rebuilt a default agent named `replayed-agent` and reported
+  success. The trace stays readable (`summary`, `step_through`, `inspect`).
+
+### Added
+
+- **`ForkedReplay.with_context(ctx)` (S13)** passes a `RunContext` to the rerun.
+  A rerun whose live or overriding tools take one, and has none, refuses up
+  front with a `ReplayError`; before, every such tool call failed and the rerun
+  reported success.
+
+### Fixed
+
+- **A resumed or forked chain keeps the earlier nodes' results (S15).**
+  `Chain.resume()` / `afork()` ran forward with an empty `node_results`, so a
+  node templating `{{node_results.<earlier>.output}}` (or an edge condition on
+  it) got nothing and finished `completed` with the wrong result. It is rebuilt
+  from the run's node checkpoints.
+- **PydanticAI `register_agent()` (S3)** crashed with `TypeError` on any agent
+  without a static `system_prompt=`, and on pydantic-ai 2.x recorded no tools.
+- **`fastaiagent traces export <id> > trace.json` and `eval export --dry-run`
+  print valid JSON (S4).** Rich wrapped long strings at 80 columns.
+- **Local UI `/api/prompts` counts linked traces in one scan (S5):** minutes on
+  a 530k-span local.db, now 1.5 s.
+- **`pkg.module:attr` targets resolve from the project directory (S6)** for
+  `resume --runner`, `push --module`, `eval run --agent`, `agent serve`,
+  `mcp serve` and `runner --tools`. The directory is searched last.
+- **`kb delete ./docs/x.md` deletes what `kb add ./docs/` stored (S7).**
+- **A provider body that is not JSON raises `LLMProviderError` (S8)**, streamed
+  or not; it escaped `except LLMError` as a bare `JSONDecodeError`.
+- **`fastaiagent traces list` prints the full trace id (S9)**; the 12-character
+  prefix it printed could not be looked up by any command.
+- **pytest baseline gates no longer report "not like for like" (S10)** against
+  a baseline from this SDK.
+- **AutoLLM's proposer call is stamped `optimize` (S11)**, so `learn` no longer
+  learns the optimizer's own prompts as facts.
+- **CrewAI `as_evaluable()` runs each case on its own `crew.copy()` (S12)**;
+  concurrent cases errored with "Executor is already running".
+- **An errored eval case always records why (S16)**; an exception with no
+  message was recorded as an empty reason.
+
 ### Docs
 
+- Docs homepage and first-agent tutorial: `result.trace` does not exist.
+- Teams, swarm, structured-output, knowledge-base, prompts (storage is
+  `local.db`), internals (eval, platform API) and CLI pages corrected; standalone
+  blocks get their imports. Each fix verified by running the block.
+- Security: password auth is the Local UI's default; `--no-auth` opts out.
 - **New page: Repeated runs** (`docs/evaluation/repeated-runs.md`). How to run
   an eval several times and gate on a pass rate per case with `evaluate()` as it
   is today, who decides what (cases, runs, rate, spend), and the current limits
@@ -22,6 +90,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   call returned within 0.8 s of a 1 s tool, and a slow macOS runner took 0.88 s.
   The tool now blocks on an event, and each test asserts the call came back
   while the tool was still blocked.
+
+### Examples
+
+- `44` uses `gpt-5-mini` (`gpt-3.5-turbo` is retired); `87` mints its key with
+  the `project_id` plane 0.17+ requires; `89` says to install `azure-identity`
+  instead of crashing.
+- deep-research-agent: reports keep their findings (the tool budget ended every
+  branch before it answered); its citation scorer reads markdown links.
+- autollm-loop `switch_models.py`: live default models, and a retired model is
+  reported as "every case errored" (exit 1), not as a score of 0.
+- `eval_suite.py --publish` connects first (four projects); sales-sdr's eval reads
+  the real score; customer-support's eval approves its pause, its replay demo
+  blocks `create_ticket`, and its approval gate keys on a structured category.
+- The meeting-notes, sales-sdr and research replay demos read the trace and fork
+  a chain from its checkpoint (S14, S15).
 
 ## [1.94.0] - 2026-10-25 — the plane's monthly trace limit
 
