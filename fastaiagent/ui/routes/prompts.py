@@ -39,45 +39,50 @@ def list_prompts(request: Request, _user: str = Depends(require_session)) -> dic
         }
         prompts = [p for p in prompts if p.get("name") in own_slugs]
     try:
-        enriched: list[dict[str, Any]] = []
-        for p in prompts:
-            # security_review_1.md L1: prompt names are user-supplied
-            # and may legitimately contain ``%`` / ``_`` / ``\`` — the
-            # LIKE wildcards. Without escaping, ``my_prompt`` would
-            # over-match every name with the same prefix-and-trailer.
-            # Escape those three chars and tell SQLite about our escape
-            # character via ``ESCAPE '\\'`` on every clause.
-            esc = (
-                p["name"]
-                .replace("\\", "\\\\")
-                .replace("%", "\\%")
-                .replace("_", "\\_")
-            )
-            # Accept every prefix variant so this count works across traces
-            # from older SDK releases too.
-            trace_count = db.fetchone(
-                f"""SELECT COUNT(DISTINCT trace_id) AS n
-                   FROM spans
-                   WHERE (attributes LIKE ? ESCAPE '\\'
-                      OR attributes LIKE ? ESCAPE '\\'
-                      OR attributes LIKE ? ESCAPE '\\') {pid_clause}""",
-                (
-                    f'%"fastaiagent.prompt.name": "{esc}"%',
-                    f'%"prompt.name": "{esc}"%',
-                    f'%"fastai.prompt.name": "{esc}"%',
-                    *pid_params,
-                ),
-            )
-            enriched.append(
-                {
-                    **p,
-                    "linked_trace_count": int((trace_count or {}).get("n") or 0),
-                    "registry_is_local": reg.is_local(),
-                }
-            )
+        linked = _linked_trace_ids(db, pid_clause, pid_params)
+        enriched = [
+            {
+                **p,
+                "linked_trace_count": len(linked.get(p["name"], ())),
+                "registry_is_local": reg.is_local(),
+            }
+            for p in prompts
+        ]
         return {"rows": enriched, "registry_is_local": reg.is_local()}
     finally:
         db.close()
+
+
+# Every prefix the prompt-name attribute has had, so traces from older SDK
+# releases count too.
+_PROMPT_NAME_KEYS = ("fastaiagent.prompt.name", "prompt.name", "fastai.prompt.name")
+
+
+def _linked_trace_ids(
+    db: Any, pid_clause: str, pid_params: tuple[Any, ...]
+) -> dict[str, set[str]]:
+    """``{prompt name: trace ids}`` for every prompt any span names, in one scan.
+
+    This used to run one ``LIKE`` scan of ``spans`` per prompt, so the page took
+    minutes on a large ``local.db`` (1.95.0). Names are compared exactly, as
+    JSON values, so a prompt name holding ``%`` or ``_`` matches only itself.
+    """
+    columns = ", ".join(
+        f"json_extract(attributes, '$.\"{key}\"') AS k{i}"
+        for i, key in enumerate(_PROMPT_NAME_KEYS)
+    )
+    rows = db.fetchall(
+        f"""SELECT trace_id, {columns} FROM spans
+            WHERE attributes LIKE '%prompt.name"%' AND json_valid(attributes) {pid_clause}""",
+        pid_params,
+    )
+    linked: dict[str, set[str]] = {}
+    for row in rows:
+        for i in range(len(_PROMPT_NAME_KEYS)):
+            name = row[f"k{i}"]
+            if isinstance(name, str):
+                linked.setdefault(name, set()).add(row["trace_id"])
+    return linked
 
 
 @router.get("/{slug}")
