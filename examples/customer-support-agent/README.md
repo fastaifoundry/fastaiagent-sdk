@@ -133,8 +133,18 @@ toxicity_check = fa.toxicity_check(position=GuardrailPosition.input)
 
 ```python
 @fa.tool()
-async def create_ticket(subject, description, priority, ctx: fa.RunContext[Deps]) -> str:
-    if priority in ("high", "urgent") or "billing" in subject.lower():
+async def create_ticket(
+    subject: str,
+    description: str,
+    priority: Literal["low", "medium", "high", "urgent"],
+    category: Literal["billing", "refund", "technical", "account", "other"],
+    ctx: fa.RunContext[Deps],
+) -> str:
+    # Gate on the model's structured category, not only the words it wrote:
+    # "Double charge this month" at priority medium used to skip review.
+    if priority in ("high", "urgent") or category in ("billing", "refund") or any(
+        w in f"{subject} {description}".lower() for w in _NEEDS_REVIEW_WORDS
+    ):
         decision = fa.interrupt(
             reason="ticket_approval_required",
             context={"subject": subject, "priority": priority, "user_email": ctx.state.user_email},

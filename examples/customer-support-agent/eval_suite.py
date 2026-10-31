@@ -22,6 +22,7 @@ that ``LocalKB`` indexed.
 
 import argparse
 import asyncio
+import os
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -155,11 +156,24 @@ async def run_eval(publish: bool = False) -> None:
     print("   Scorers: correctness, helpfulness, safety, faithfulness, answer_relevancy")
     print()
 
+    async def answer(query: str) -> fa.AgentResult:
+        # A billing ticket pauses for a human's approval (create_ticket calls
+        # interrupt()). The eval approves it, so the run finishes and its answer
+        # is scored; before, the case errored with "paused: ...".
+        result = await agent.arun(query, context=ctx)
+        while result.status == "paused":
+            result = await agent.aresume(
+                result.execution_id,
+                resume_value=fa.Resume(approved=True, metadata={"approver": "eval"}),
+                context=ctx,
+            )
+        return result
+
     # ``context=kb_context`` is forwarded to every scorer's score(...) call,
     # so Faithfulness can verify each response against the same corpus the
     # KB indexed. AnswerRelevancy ignores it; LLMJudge ignores it.
     results = fa.evaluate(
-        agent_fn=lambda q: agent.run(q, context=ctx),
+        agent_fn=answer,
         dataset=dataset,
         scorers=[correctness, helpfulness, safety, faithfulness, answer_relevancy],
         context=kb_context,
@@ -168,7 +182,16 @@ async def run_eval(publish: bool = False) -> None:
     print(results.summary())
 
     if publish:
-        results.publish()
+        # publish() needs a connection, so connect from the environment first.
+        api_key = os.environ.get("FASTAIAGENT_API_KEY")
+        if not api_key:
+            raise SystemExit("--publish needs FASTAIAGENT_API_KEY (and FASTAIAGENT_TARGET for a self-hosted plane)")
+        target = os.environ.get("FASTAIAGENT_TARGET")
+        fa.connect(api_key=api_key, **({"target": target} if target else {}))
+        try:
+            results.publish(run_name="customer-support eval")
+        except Exception as e:
+            raise SystemExit(f"Platform publish failed: {e}") from e
         print("\nResults published to FastAIAgent Platform")
 
 

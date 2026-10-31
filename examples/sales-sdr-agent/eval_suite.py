@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import uuid
 
 from dotenv import load_dotenv
@@ -92,16 +93,20 @@ async def _drive_one(prospect_email: str) -> tuple[fa.ChainResult, dict]:
         execution_id=execution_id,
         context=ctx,
     )
+    node_results: dict = {}
     while result.status == "paused":
         # Capture state before the resume — gives the scorer access to
         # the draft+score even when the case will be auto-declined.
         captured.update(result.final_state)
+        node_results.update(result.node_results)
         result = await chain.aresume(
             execution_id,
             resume_value=fa.Resume(approved=False, metadata={"approver": "eval"}),
             context=ctx,
         )
     captured.update(result.final_state)
+    node_results.update(result.node_results)
+    captured["node_results"] = node_results
     return result, captured
 
 
@@ -127,19 +132,22 @@ def _last_draft_body(captured: dict) -> str:
 
 
 def _last_score(captured: dict) -> tuple[float, bool]:
-    """Pull the score node's (score, qualified) from captured state.
+    """Pull the score node's (score, qualified) from its own node result.
 
-    The score node writes ``{"score","qualified","reasons","raw"}`` — but
-    once a downstream node runs, its return overwrites state.output.
-    We rely on the captured snapshot from the *first* HITL pause, which
-    fires AFTER scoring on the qualified path. For unqualified runs the
-    chain doesn't pause; the disqualify node's return overwrites and we
-    return (0.0, False) which is the conservative default.
+    The score node returns ``{"score","qualified","reasons","raw"}``, but every
+    later node overwrites ``state.output``: by the HITL pause it holds the
+    draft. Reading ``state.output`` therefore scored every prospect 0.00. The
+    score node's result stays in ``node_results["score"]``. A run that never
+    reached it returns (0.0, False), the conservative default.
     """
-    out = captured.get("output")
+    out = (captured.get("node_results") or {}).get("score", {}).get("output")
+    if isinstance(out, str):
+        try:
+            out = json.loads(out)
+        except ValueError:
+            out = None
     if isinstance(out, dict) and "score" in out:
         return float(out.get("score", 0.0)), bool(out.get("qualified", False))
-    # No HITL pause = unqualified path was taken
     return 0.0, False
 
 
@@ -261,11 +269,17 @@ async def run_eval(publish: bool = False) -> None:
         print(f"\n  Could not persist eval run locally: {e}")
 
     if publish:
+        # publish() needs a connection, so connect from the environment first.
+        api_key = os.environ.get("FASTAIAGENT_API_KEY")
+        if not api_key:
+            raise SystemExit("--publish needs FASTAIAGENT_API_KEY (and FASTAIAGENT_TARGET for a self-hosted plane)")
+        target = os.environ.get("FASTAIAGENT_TARGET")
+        fa.connect(api_key=api_key, **({"target": target} if target else {}))
         try:
             results.publish(run_name="sales-sdr eval")
-            print("  ✓ published to FastAIAgent Platform")
         except Exception as e:
-            print(f"  Platform publish failed: {e}")
+            raise SystemExit(f"Platform publish failed: {e}") from e
+        print("  ✓ published to FastAIAgent Platform")
 
 
 def main() -> None:
