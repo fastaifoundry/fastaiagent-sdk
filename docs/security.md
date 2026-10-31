@@ -27,11 +27,14 @@ If you deliberately share the directory with a group, opt out with
 
 The bundled Local UI (`fastaiagent ui`) ships with three modes:
 
-* **No-auth (default for `localhost`):** Browser-only; the UI binds to
-  `127.0.0.1` and is unreachable from other hosts.
-* **Password auth:** Set up via `fastaiagent ui --auth password`. Uses
-  bcrypt + itsdangerous-signed cookies. CSRF middleware enforces a
-  double-submit token on every state-changing request.
+* **Password auth (the default):** the first `fastaiagent ui` start
+  prompts you to create a username and password (stored in `auth.json`;
+  `fastaiagent ui reset-password` deletes it so the next start prompts
+  again). Uses bcrypt + itsdangerous-signed cookies. CSRF middleware
+  enforces a double-submit token on every state-changing request.
+* **No-auth (opt-in, throwaway use):** `fastaiagent ui --no-auth` skips the
+  login. The UI still binds to `127.0.0.1` and is unreachable from other
+  hosts unless you pass `--insecure-bind`.
 * **Custom OAuth / SSO:** Wrap the FastAPI app with your own auth
   middleware; see [Local UI / Deployment](deployment/index.md).
 

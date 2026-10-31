@@ -108,7 +108,7 @@ A fully automatic semantic-dedup pass (LLM judge per scope_id batch) is tracked 
 
 ## Privacy
 
-`fastaiagent learn` extracts only `agent`-scoped facts by default. Both `--scope user` and `--scope project` require `--allow-personal` to be set explicitly:
+`fastaiagent learn` extracts only `agent`-scoped facts by default. `--scope user` and `--scope project` require `--allow-personal`, a non-empty `--scope-id` (the user or project the facts are filed under), `--agent` (to narrow the traces) and `--attribute-all` (to confirm every trace of that agent belongs to that user or project, since traces carry no user id); see [`fastaiagent learn`](../cli/learn.md):
 
 ```sh
 # Allowed:

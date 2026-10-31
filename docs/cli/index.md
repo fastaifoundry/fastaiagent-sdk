@@ -19,7 +19,7 @@ fastaiagent --help
 | `fastaiagent connect` | Save Platform credentials and verify the API key |
 | `fastaiagent disconnect` | Remove saved Platform credentials |
 | `fastaiagent auth` | Inspect saved credentials (`status`, `env`) |
-| `fastaiagent traces` | List, export, and search local traces |
+| `fastaiagent traces` | List, export, prune, scrub and purge local traces |
 | `fastaiagent replay` | Show, inspect, and fork traces for debugging |
 | `fastaiagent eval` | Curate eval datasets from traces; run evaluations |
 | `fastaiagent prompts` | Browse the prompt registry |
@@ -40,7 +40,7 @@ fastaiagent --help
 
 ```bash
 $ fastaiagent version
-fastaiagent 1.0.0 [openai, anthropic, langchain, crewai, kb, qdrant, chroma, mcp-server, otel-export, postgres]
+fastaiagent 1.95.0 [openai, anthropic, langchain, crewai, kb, qdrant, chroma, mcp, otel-export]
 ```
 
 Brackets list the optional extras whose upstream package is importable. Useful when debugging "which extras did this env install?" in bug reports.
@@ -206,8 +206,8 @@ are never sent.** Disable with `connect(export_evals=False)` or
 # List registered prompts
 fastaiagent prompts list
 
-# Diff two versions
-fastaiagent prompts diff <name> --from v1 --to v2
+# Diff two versions (version numbers, positional)
+fastaiagent prompts diff <name> 1 2
 ```
 
 ## `fastaiagent kb`
