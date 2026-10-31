@@ -45,6 +45,8 @@ result = await chain.resume(
 
 The chain loads the last successful checkpoint, optionally merges in your modified state, and continues from the next node.
 
+The nodes that already ran keep their results: `{{node_results.<node>.output}}` in a later node's `input_mapping` or an edge `condition` resolves on a resumed run (and on a `fork` / `afork`, up to the fork point) exactly as it would have in the original run. They are rebuilt from the run's node checkpoints. Before 1.95.0 a resumed or forked run started with an empty `node_results`, so such a template rendered empty and the run finished `completed` with the wrong result, or routed down the wrong branch.
+
 ## Custom Checkpoint Backend
 
 The default `SQLiteCheckpointer` is right for local development and

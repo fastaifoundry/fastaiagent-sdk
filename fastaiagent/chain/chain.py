@@ -65,6 +65,37 @@ def _stop_reason(exc: BaseException) -> str | None:
     return "timeout" if isinstance(exc, AgentTimeoutError) else None
 
 
+def _node_results_from(
+    store: Checkpointer, execution_id: str, *, upto_index: int | None = None
+) -> dict[str, Any]:
+    """The ``node_results`` a run had built, rebuilt from its node checkpoints.
+
+    A resume or a fork runs forward from a node and used to start with none, so
+    a node templating ``{{node_results.<earlier>.output}}`` got nothing and
+    finished "completed" with the wrong result (1.95.0). A completed node's
+    checkpoint holds its result as ``node_output``. ``upto_index`` stops at a
+    fork point; a node that ran more than once (a cycle) keeps its latest result.
+    """
+    results: dict[str, Any] = {}
+    for cp in store.list(execution_id, limit=10_000):
+        if cp.status != "completed" or cp.agent_path or cp.step_type not in (None, "node"):
+            continue
+        if upto_index is not None and cp.node_index > upto_index:
+            continue
+        results[cp.node_id] = dict(cp.node_output)
+    return results
+
+
+def _ran_this_time(node_results: dict[str, Any], restored: dict[str, Any]) -> dict[str, Any]:
+    """``node_results`` without the restored entries no node ran again.
+
+    A resume or fork returns only the nodes it executed, as it always has; the
+    restored results are for templates and conditions inside the run. A node that
+    ran again holds a new result object, so it is kept.
+    """
+    return {k: v for k, v in node_results.items() if restored.get(k) is not v}
+
+
 def _type_name(obj: object) -> str:
     """``type(obj).__name__`` — a free function because ``add_node`` shadows
     the builtin ``type`` with its own parameter."""
@@ -644,6 +675,7 @@ class Chain:
             self._stamp_middleware(span)
             span.set_attribute("fastaiagent.framework", "fastaiagent")
             trace_id = trace_id_of(span)
+            restored = _node_results_from(store, execution_id)
             try:
                 raw = await self._controlled(
                     execution_id,
@@ -660,6 +692,7 @@ class Chain:
                         run_context=context,
                         strict_routing=self.strict_routing,
                         middleware=self.middleware,
+                        initial_node_results=restored,
                     ),
                 )
             except _RunCancelled as stopped:
@@ -700,7 +733,7 @@ class Chain:
             output=raw["output"],
             final_state=raw["final_state"],
             execution_id=raw["execution_id"],
-            node_results=raw["node_results"],
+            node_results=_ran_this_time(raw["node_results"], restored),
             status=raw.get("status", "completed"),
             pending_interrupt=raw.get("pending_interrupt"),
             trace_id=trace_id,
@@ -856,6 +889,7 @@ class Chain:
             # simply stopped and ``latest_resumable`` handed back its last real
             # checkpoint. Both markers are best-effort inside ``write_run_end``,
             # so a checkpointer problem can never replace the exception below.
+            restored = _node_results_from(store, execution_id, upto_index=base.node_index)
             try:
                 raw = await execute_chain(
                     nodes=self.nodes,
@@ -869,6 +903,7 @@ class Chain:
                     run_context=context,
                     strict_routing=self.strict_routing,
                     middleware=self.middleware,
+                    initial_node_results=restored,
                 )
             except BaseException as exc:
                 write_run_end_once(
@@ -894,7 +929,7 @@ class Chain:
             output=raw["output"],
             final_state=raw["final_state"],
             execution_id=raw["execution_id"],
-            node_results=raw["node_results"],
+            node_results=_ran_this_time(raw["node_results"], restored),
             status=raw.get("status", "completed"),
             pending_interrupt=raw.get("pending_interrupt"),
             trace_id=trace_id,

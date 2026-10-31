@@ -5,8 +5,12 @@ Run: python replay_demo.py
 
 This demo runs the chain on the sample transcript, loads the trace, lists
 every step in it and inspects one. Replay reruns standalone agent traces
-only, so forking this chain trace is refused (1.95.0); a chain is forked
-from its checkpoint with ``chain.afork``. A chain's trace is for reading.
+only, so forking this chain trace is refused (1.95.0). A chain is forked
+from its checkpoint instead: the last step branches from the checkpoint
+after ``analyze`` with ``chain.afork``, so only ``merge`` runs again, on
+the analysis the original run produced — useful when debugging "why did
+merge produce a partial MeetingNotes" without paying for a fresh
+``analyze``.
 """
 
 from __future__ import annotations
@@ -77,6 +81,22 @@ async def demo() -> None:
         replay.fork_at(0)
     except ReplayError as e:
         print(f"   Refused, as it should be: {str(e)[:160]}...")
+
+    # The chain's own fork: branch from the checkpoint after `analyze`, so only
+    # `merge` runs again, on the analysis the original run produced.
+    print("\nStep 5: Forking the run from its checkpoint after `analyze`\n")
+    after_analyze = next(
+        (c for c in fa.SQLiteCheckpointer().list(execution_id) if c.node_id == "analyze"), None
+    )
+    if after_analyze is not None:
+        forked = await chain.afork(
+            execution_id, checkpoint_id=after_analyze.checkpoint_id, context=ctx
+        )
+        print(f"   Fork status: {forked.status}")
+        print(
+            "   action_items:",
+            len((forked.final_state.get("output") or {}).get("action_items", [])),
+        )
 
     print("\nReplay demo complete.\n")
 
