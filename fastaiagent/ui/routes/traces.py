@@ -33,8 +33,9 @@ class TraceRow(BaseModel):
     total_tokens: int | None = None
     runner_type: str = "agent"
     runner_name: str | None = None
-    # Universal-harness: the source framework of the run, drawn from the
-    # ``fastaiagent.framework`` attribute on the root span. Powers the FA /
+    # The source framework of the run, drawn from the
+    # ``fastaiagent.framework`` attribute on the root span (stamped by
+    # ``enable_otel_capture()`` for a captured framework). Powers the FA /
     # LC / CA / PA badge in the Traces list and the framework filter.
     framework: str | None = None
     # Where the run came from, drawn from the ``fastaiagent.source`` attribute
@@ -304,7 +305,7 @@ def list_traces(
         description=(
             "Filter by source framework, drawn from the "
             "``fastaiagent.framework`` attribute on the root span. "
-            "Free-text — any value that the harness or a custom "
+            "Free-text — any value that OTel capture or a custom "
             "instrumentation has stamped on a trace."
         ),
     ),

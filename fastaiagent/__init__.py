@@ -138,9 +138,9 @@ def __getattr__(name: str) -> object:
 
         return FastAIAgentMCPServer
     if name == "integrations":
-        # The README's "Trace any agent" snippet calls
-        # ``fastaiagent.integrations.langchain.enable()``. Lazy-import the
-        # subpackage so optional integration deps don't load eagerly.
+        # ``fastaiagent.integrations.openai.enable()`` and its anthropic
+        # sibling. Lazy-import the subpackage so provider SDKs don't load
+        # eagerly.
         import fastaiagent.integrations as integrations  # noqa: PLC0415
 
         return integrations

@@ -98,47 +98,6 @@ def test_a_resumed_tool_result_is_masked_before_the_real_model_sees_it(
 
 
 # ---------------------------------------------------------------------------
-# F4: a real CrewAI crew, native async
-# ---------------------------------------------------------------------------
-
-
-def test_akickoff_is_guarded_around_a_real_crew() -> None:
-    _need("OPENAI_API_KEY")
-    pytest.importorskip("crewai")
-    from crewai import LLM, Crew, Task
-    from crewai import Agent as CrewAgent
-
-    from fastaiagent.guardrail import Guardrail, GuardrailPosition, GuardrailResult, GuardrailType
-    from fastaiagent.integrations import crewai as fa_crewai
-    from fastaiagent.integrations._registry import GuardrailBlocked
-
-    analyst = CrewAgent(
-        role="analyst",
-        goal="Answer in one short sentence.",
-        backstory="Terse.",
-        llm=LLM(model="gpt-5-mini"),
-    )
-    task = Task(
-        description="What colour is the sky about {topic}?",
-        expected_output="one line",
-        agent=analyst,
-    )
-    crew = Crew(agents=[analyst], tasks=[task], name="live-desk")
-    no_secret = Guardrail(
-        name="no-secret-in",
-        guardrail_type=GuardrailType.code,
-        position=GuardrailPosition.input,
-        fn=lambda t: GuardrailResult(passed="SECRET" not in t, message="secret"),
-    )
-    guarded = fa_crewai.with_guardrails(crew, input_guardrails=[no_secret])
-
-    with pytest.raises(GuardrailBlocked, match="no-secret-in"):
-        asyncio.run(guarded.akickoff(inputs={"topic": "SECRET plans"}))
-    out = asyncio.run(guarded.akickoff(inputs={"topic": "noon"}))
-    assert out.raw.strip(), "the clean run returned nothing"
-
-
-# ---------------------------------------------------------------------------
 # F6: AgentConfig.tool_choice / temperature reach real providers
 # ---------------------------------------------------------------------------
 

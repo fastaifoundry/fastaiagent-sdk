@@ -7,6 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.96.0] - 2026-10-31 — the framework adapters are removed
+
+The LangChain/LangGraph, CrewAI and Pydantic AI adapters wrapped each
+framework's internals, so they broke whenever a framework changed. Agents built
+in those frameworks keep tracing, guardrails, evals, knowledge bases, prompts
+and plane linkage through the frameworks' own OpenTelemetry instrumentation and
+the public SDK API. [Use fastaiagent with your existing
+framework](docs/integrations/frameworks.md) shows how; every step on it was run
+live on LangGraph 1.2, CrewAI 1.15 and Pydantic AI 2.31, and step 7 against
+the plane.
+
+### Removed (breaking)
+
+- **`fastaiagent.integrations.langchain`, `.crewai` and `.pydanticai`**, and
+  `fastaiagent.integrations.agent_name()`. `fastaiagent.integrations` keeps
+  `openai` and `anthropic`. The replacements:
+
+  | Removed | Use instead |
+  |---|---|
+  | `enable()` | An OpenInference instrumentor + `fa.enable_otel_capture()` |
+  | `with_guardrails(agent, ...)` | `guardrail.execute(...)` around the call |
+  | `as_evaluable(agent)` | A plain function passed to `fa.evaluate` |
+  | `kb_as_retriever(kb)`, `kb_as_tool(kb)` | `kb.search` inside a framework tool |
+  | `prompt_from_registry(name)` | `PromptRegistry().get(name).format(...)` |
+  | `register_agent(agent, name=...)` | `fa.Agent(name=...).push()` while connected |
+  | `agent_name(name)` | `fa.trace_context("agent.<name>", **{"agent.name": name})` |
+
+- **The `[langchain]`, `[crewai]` and `[pydanticai]` extras**, and the
+  LangChain test dependencies in `[dev]`. `[all]` no longer includes them.
+  Asking for one now installs the core package; pip and uv print a warning that
+  the extra does not exist.
+- **`fastaiagent.guardrail.actions.harness_halts`**, which only the adapters
+  used. A borrowing runtime acts on `action_taken` (guardrail proof 6 shows
+  how).
+- **The Local UI no longer reads the `external_agents` table** that the
+  adapters' `register_agent()` wrote. An agent's dependency page is built from
+  its traces instead. The table stays in local.db.
+- The examples `08_trace_langchain.py`, `55`–`59`, `93` and
+  `harness-migration/`, the four integration doc pages and the "Trace a
+  LangChain agent" tutorial, and the `langchain-lines` CI job.
+
+The plane receives no new keys. The SDK stops pushing agents with
+`agent_type` `langchain`, `crewai` or `pydanticai`.
+
+### Fixed
+
+- **The OpenTelemetry GenAI content keys are gated at egress (F1).** With
+  `FASTAIAGENT_TRACE_PAYLOADS=0`, `gen_ai.input.messages`,
+  `gen_ai.output.messages`, `gen_ai.system_instructions`,
+  `gen_ai.tool.call.arguments`, `gen_ai.tool.call.result`, Pydantic AI's
+  `pydantic_ai.all_messages` / `final_result` and OpenInference CrewAI's
+  `crew_tasks` / `crew_agents` still left the machine on captured framework
+  spans. They are now stripped like the SDK's own payload keys.
+- **An eval case links to the trace its call started (O1).** `fa.evaluate` on
+  a plain function recorded no `trace_id` for a case, so the Evals page could
+  not open the run behind a score. A function whose output has its own
+  `trace_id` still sets the link.
+- **No "Overriding of current TracerProvider is not allowed" warning when the
+  app owns the global provider.** The SDK builds its own provider on its first
+  span and asked to make it global every time; with an app provider already
+  set (the Pydantic AI setup), OTel refused and logged the warning. It now asks
+  only while the global slot is unset. Nothing else changes: the app keeps its
+  provider, and spans are still stored locally.
+- The 1.95.0 regression in CrewAI `as_evaluable` (after a direct `kickoff()`,
+  every eval case ran the previous input) ends with the adapter's removal.
+
 ## [1.95.0] - 2026-10-31 — what the full check found
 
 Every example, doc block and documented CLI command was run against the

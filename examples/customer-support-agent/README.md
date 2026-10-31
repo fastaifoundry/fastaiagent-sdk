@@ -341,7 +341,7 @@ python agent.py --connect
 
 ## What this example does NOT demonstrate
 
-- **Universal harness** (v1.6.0) — this agent is native `fastaiagent`, not LangChain / CrewAI / PydanticAI. See `examples/55_trace_crewai.py`, `56_trace_pydanticai.py`, `57_eval_langchain.py` for those.
+- **Another framework's agent** — this agent is native `fastaiagent`. For a LangGraph / CrewAI / Pydantic AI agent, see [Use fastaiagent with your existing framework](../../docs/integrations/frameworks.md).
 - **Swarm / Supervisor** topologies — see `examples/18_supervisor_worker.py`, `31_swarm_research_team.py`.
 - **MCP server** (expose this agent as MCP tools) — see `examples/32_mcp_expose_agent.py`.
 

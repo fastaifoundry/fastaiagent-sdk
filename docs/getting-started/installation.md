@@ -16,8 +16,8 @@ no copyleft anywhere in the resolved tree. A `clean-core` CI job installs the
 package with no extras on every pull request and fails the build if an AGPL or
 GPL package appears, or if the library-usage surface (`run_guardrail`,
 `plane_guardrails_for_agent`, guardrail evaluation) stops working without extras.
-Dropping the SDK into an existing LangChain or CrewAI project should not drag a
-licence review along with it.
+Dropping the SDK into an existing LangGraph, CrewAI or Pydantic AI project should
+not drag a licence review along with it.
 
 ## Optional Integrations
 
@@ -27,13 +27,16 @@ FastAIAgent uses optional dependencies to keep the core package lightweight.
 |-------|-------------|-----------------|
 | `openai` | OpenAI SDK auto-tracing | `pip install "fastaiagent[openai]"` |
 | `anthropic` | Anthropic SDK auto-tracing | `pip install "fastaiagent[anthropic]"` |
-| `langchain` | LangChain / LangGraph auto-tracing (LangChain 0.x and 1.x) | `pip install "fastaiagent[langchain]"` |
-| `crewai` | CrewAI auto-tracing | `pip install "fastaiagent[crewai]"` |
 | `pdf` | Local PDF decoding — text, page count, page rendering (pypdfium2) | `pip install "fastaiagent[pdf]"` |
 | `kb` | Local knowledge base (FastEmbed + faiss + `pdf`) | `pip install "fastaiagent[kb]"` |
 | `otel-export` | OpenTelemetry OTLP exporter | `pip install "fastaiagent[otel-export]"` |
 | `postgres` | Postgres durability backend (psycopg3) | `pip install "fastaiagent[postgres]"` |
 | `all` | All of the above | `pip install "fastaiagent[all]"` |
+
+A LangGraph, CrewAI or Pydantic AI agent needs no extra: install the framework
+and its OpenInference instrumentor next to `fastaiagent`. The `[langchain]`,
+`[crewai]` and `[pydanticai]` extras were removed in 1.96.0. See
+[Use fastaiagent with your existing framework](../integrations/frameworks.md).
 
 !!! note "Local PDF decoding is optional — three ways to avoid it"
 

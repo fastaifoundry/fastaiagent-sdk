@@ -447,11 +447,13 @@ diff, distinct from a block. A `reask` shows as **re-asked** (1.89.0; it was
 recorded as a block), and an observe-only rule as observe-only, whatever its
 action. See [what a row says](../ui/guardrail-events.md#what-a-row-says-outcome-and-effect-1890).
 
-## Foreign frameworks
+## Another framework's agent
 
-The LangChain, CrewAI and PydanticAI wrappers own the verdict but not the payload
-and not the loop. There, `warn` records and continues and everything else blocks,
-saying why. Run the rule on a `fastaiagent` `Agent` to get the rewrite.
+Around a LangGraph, CrewAI or Pydantic AI call, run the rule yourself and act on
+`action_taken`: continue on `none` or `warned`, stop on `blocked`, and send
+`modified_data` on `masked` or `overridden`. `reask` needs the `fastaiagent`
+`Agent` loop. See
+[Use fastaiagent with your existing framework](../integrations/frameworks.md#3-guardrails).
 
 ## Compatibility
 

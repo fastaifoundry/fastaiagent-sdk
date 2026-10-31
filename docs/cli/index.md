@@ -40,7 +40,7 @@ fastaiagent --help
 
 ```bash
 $ fastaiagent version
-fastaiagent 1.95.0 [openai, anthropic, langchain, crewai, kb, qdrant, chroma, mcp, otel-export]
+fastaiagent 1.96.0 [openai, anthropic, kb, qdrant, chroma, mcp, otel-export]
 ```
 
 Brackets list the optional extras whose upstream package is importable. Useful when debugging "which extras did this env install?" in bug reports.

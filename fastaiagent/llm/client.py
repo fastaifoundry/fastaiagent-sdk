@@ -1377,8 +1377,7 @@ class LLMClient:
                 # Cost, priced at the call — the one place every completion this
                 # client makes passes through, so a tool loop's third turn and a
                 # structured re-ask are both counted without any call site having
-                # to remember. ``fastaiagent.cost.total_usd`` is the same key the
-                # langchain/crewai/pydanticai integrations have always set and is
+                # to remember. ``fastaiagent.cost.total_usd`` is
                 # already in ``FASTAIAGENT_ATTRIBUTES``: an existing key on an
                 # existing payload, so not a wire event (CLAUDE.md §2.2).
                 #

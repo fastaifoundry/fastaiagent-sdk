@@ -8,9 +8,8 @@ module from ``llm/client.py`` would have dragged the UI namespace into core.
 
 Nothing about the table changed, and this module keeps the whole public
 surface, so every existing ``from fastaiagent.ui.pricing import ...`` — the UI
-routes, the trace exporter, the langchain/crewai/pydanticai integrations —
-keeps working unchanged. Prefer the ``_internal`` path in new core code and
-this one in UI code.
+routes and the trace exporter — keeps working unchanged. Prefer the
+``_internal`` path in new core code and this one in UI code.
 """
 
 from __future__ import annotations

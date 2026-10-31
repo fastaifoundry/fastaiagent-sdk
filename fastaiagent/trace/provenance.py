@@ -66,6 +66,10 @@ class Provenance:
     #: Span ids started inside this scope; a span whose parent is not among
     #: them is a scope root.
     _scope_span_ids: set[int] = field(default_factory=set)
+    #: The trace of the first root span started in this scope (32-hex), so a
+    #: caller that got no trace id back (an eval case running another
+    #: framework's agent) can still name the run's trace (1.96.0).
+    first_root_trace_id: str | None = None
 
 
 _current: ContextVar[Provenance | None] = ContextVar("fastaiagent_provenance", default=None)
@@ -162,6 +166,8 @@ def stamp_on_start(span: Any) -> None:
         parent = getattr(span, "parent", None)
         is_root = parent is None or parent.span_id not in prov._scope_span_ids
         prov._scope_span_ids.add(ctx.span_id)
+        if is_root and prov.first_root_trace_id is None:
+            prov.first_root_trace_id = format(ctx.trace_id, "032x")
 
         span.set_attribute(SOURCE_ATTR, prov.source)
         if prov.source in LOCAL_ONLY_SOURCES and not experiments_exported(prov):

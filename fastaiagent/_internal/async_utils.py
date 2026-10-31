@@ -22,7 +22,7 @@ def run_sync(coro: Coroutine[Any, Any, T]) -> T:
     read back as its default inside the coroutine — while the same code in a
     plain script (the ``asyncio.run`` branch below) saw them fine. The bug was
     therefore invisible until someone ran from Jupyter, pytest-asyncio, or a
-    framework proxy that already owns the loop.
+    framework that already owns the loop.
 
     The one that made it concrete: ``fa.guardrail_context(context=docs)`` backs a
     ``groundedness`` rule, and losing it means the rule cannot find its context,

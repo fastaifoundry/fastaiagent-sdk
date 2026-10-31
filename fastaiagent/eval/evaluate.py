@@ -236,7 +236,7 @@ async def aevaluate(
             call_started = time.monotonic()
             # Call agent
             try:
-                with agent_scope(span_ctx):
+                with agent_scope(span_ctx) as scope:
                     output = await _call_agent_fn(agent_fn, input_text)
                 # A paused run (approval policy / interrupt()) has no answer yet:
                 # its ``output`` is "". Scoring that graded a run that never
@@ -251,7 +251,12 @@ async def aevaluate(
                 # Coerce a missing output to "" so scorers don't crash on None;
                 # preserve any real (possibly non-str) output unchanged.
                 output_text = "" if out_val is None else out_val
-                trace_id = getattr(output, "trace_id", None)
+                # An AgentResult names its trace. Anything else (another
+                # framework's agent behind a plain callable) is linked to the
+                # first trace the call started, captured by the case's scope.
+                trace_id = getattr(output, "trace_id", None) or getattr(
+                    scope, "first_root_trace_id", None
+                )
                 # Latency is always knowable — measured here when the callable
                 # returns something that isn't an AgentResult (a bare string,
                 # a dict), so the gate never has to guess.

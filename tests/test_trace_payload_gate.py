@@ -155,6 +155,48 @@ def test_normalized_foreign_span_is_gated_end_to_end(monkeypatch):
     assert exported.get("gen_ai.request.model") == "gpt-4o"
 
 
+def json_dumps_canary(role: str) -> str:
+    return '[{"role": "' + role + '", "parts": [{"content": "' + CANARY + '"}]}]'
+
+
+# Shapes the three frameworks emitted through ``enable_otel_capture()`` in the
+# 1.95.0 live check (values shortened; the canary stands in for user content).
+_FRAMEWORK_SPANS = {
+    "pydantic-ai (OTel GenAI conventions)": {
+        "gen_ai.input.messages": json_dumps_canary("user"),
+        "gen_ai.output.messages": json_dumps_canary("assistant"),
+        "gen_ai.system_instructions": f"You are support. {CANARY}",
+        "gen_ai.tool.call.arguments": '{"order_id": "' + CANARY + '"}',
+        "gen_ai.tool.call.result": f"order {CANARY} shipped",
+        "pydantic_ai.all_messages": json_dumps_canary("user"),
+        "final_result": f"Your order {CANARY} shipped.",
+        "gen_ai.request.model": "gpt-4o-mini",
+        "gen_ai.tool.definitions": '[{"name": "lookup_order"}]',
+        "logfire.msg": "running tool: lookup_order",
+    },
+    "crewai (OpenInference)": {
+        "crew_tasks": '[{"description": "Where is order ' + CANARY + '?"}]',
+        "crew_agents": '[{"role": "support", "goal": "' + CANARY + '"}]',
+        "tool.parameters": '{"properties": {"order_id": {"type": "string"}}}',
+        "crew_id": "4f2dfe48",
+    },
+}
+
+
+@pytest.mark.parametrize("framework", sorted(_FRAMEWORK_SPANS))
+def test_framework_spans_lose_their_content_with_payloads_off(framework, monkeypatch):
+    """1.96.0: these keys were unregistered, so a captured run egressed the
+    conversation, the tool calls and the answer with payloads off."""
+    monkeypatch.setenv("FASTAIAGENT_TRACE_PAYLOADS", "off")
+    exported = apply_export_policy(dict(_FRAMEWORK_SPANS[framework]))
+    assert CANARY not in repr(exported), f"{framework}: {exported}"
+    # Structure still leaves: the model, tool schemas and span labels.
+    for key in ("gen_ai.request.model", "gen_ai.tool.definitions", "logfire.msg",
+                "tool.parameters", "crew_id"):
+        if key in _FRAMEWORK_SPANS[framework]:
+            assert key in exported, f"{framework}: structural {key} was dropped"
+
+
 def test_local_capture_is_unaffected_and_search_still_matches(tmp_path, monkeypatch):
     """§2.5: filtering happens on the way out; local.db stays full fidelity.
 

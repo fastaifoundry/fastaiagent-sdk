@@ -1,15 +1,14 @@
 """Best-effort USD cost estimate for common LLM models.
 
 Since 1.67.0 the SDK populates ``fastaiagent.cost.total_usd`` on every
-``llm.*`` span it emits, and ``AgentResult.cost`` from the same numbers — the
-key the langchain/crewai/pydanticai integrations have always set. When that
+``llm.*`` span it emits, and ``AgentResult.cost`` from the same numbers. When that
 attribute is missing (an older trace, a foreign span) but we know the model +
 token counts, this table lets the UI show a reasonable estimate instead of "—".
 
 This module lives under ``_internal`` rather than ``ui`` because it is on the
 LLM hot path: ``LLMClient`` costs every completion. ``fastaiagent.ui.pricing``
-re-exports the whole surface unchanged, so the UI routes, the trace exporter
-and the three framework integrations keep their existing import.
+re-exports the whole surface unchanged, so the UI routes and the trace exporter
+keep their existing import.
 
 **These are public list prices and will not match your invoice.** They know
 nothing about negotiated or committed-use discounts, Amazon Bedrock / Google

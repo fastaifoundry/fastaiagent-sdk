@@ -24,7 +24,6 @@ from fastaiagent.guardrail.actions import (
     coerce_action,
     coerce_severity,
     halts,
-    harness_halts,
     mask_payload,
 )
 from fastaiagent.guardrail.executor import execute_guardrails
@@ -353,23 +352,3 @@ def test_the_ui_outcome_distinguishes_a_rewrite_from_a_block() -> None:
 
     observer = _regex_rule(blocking=False)
     assert _outcome(observer, observer.execute(DIRTY)) == "warned"
-
-
-# --------------------------------------------------------------------------- #
-# Foreign-framework proxies
-# --------------------------------------------------------------------------- #
-def test_a_harness_honours_warn_but_blocks_what_it_cannot_do() -> None:
-    warner = _regex_rule(action="warn")
-    assert harness_halts(warner, warner.execute(DIRTY)) is None
-
-    for action, needle in (
-        ("mask", "cannot do"),
-        ("override", "cannot do"),
-        ("reask", "agent loop"),
-    ):
-        g = _regex_rule(action=action, config={"override_message": "no"})
-        reason = harness_halts(g, g.execute(DIRTY))
-        assert reason is not None and needle in reason, action
-
-    clean = _regex_rule(action="mask")
-    assert harness_halts(clean, clean.execute("nothing here")) is None

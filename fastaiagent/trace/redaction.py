@@ -93,11 +93,31 @@ SENSITIVE_ATTR_KEYS: frozenset[str] = frozenset(
         # shipping the original would have been the same leak with extra steps.
         "input.value",
         "output.value",
-        # ``integrations.langchain`` writes the chain's inputs and outputs onto
-        # these bare keys (``on_chain_start`` / ``on_chain_end``). They are
-        # generic names, but only a span attribute is ever matched against this
-        # registry, and the only writer of them is that integration — where they
-        # hold the full serialized prompt and completion.
+        # The current OpenTelemetry GenAI semantic conventions carry the whole
+        # conversation on single keys (no index), and Pydantic AI's own
+        # instrumentation writes them plus its message dump and final answer.
+        # None of these was registered, so a run captured with
+        # ``enable_otel_capture()`` egressed prompts, replies and tool results
+        # with ``FASTAIAGENT_TRACE_PAYLOADS=0`` (1.95.0 check, 1.96.0 fix).
+        # ``gen_ai.tool.definitions`` and ``tool.parameters`` are tool schemas
+        # (structure), so they stay clear.
+        "gen_ai.input.messages",
+        "gen_ai.output.messages",
+        "gen_ai.system_instructions",
+        "gen_ai.tool.call.arguments",
+        "gen_ai.tool.call.result",
+        "pydantic_ai.all_messages",
+        "final_result",
+        # OpenInference's CrewAI instrumentor: the crew's tasks carry the user's
+        # request in each ``description``, and its agents carry role/goal/
+        # backstory, the prompt text ``crewai.agent.goal`` already gates below.
+        "crew_tasks",
+        "crew_agents",
+        # The LangChain integration (removed in 1.96.0) wrote the chain's inputs
+        # and outputs onto these bare keys. They are generic names, but only a
+        # span attribute is ever matched against this registry, and spans it
+        # stored before 1.96.0 still hold the full serialized prompt and
+        # completion here.
         "input",
         "output",
         # Agent inputs/outputs/system prompt captured by ``Agent._arun_traced``.
@@ -165,7 +185,9 @@ SENSITIVE_ATTR_KEYS: frozenset[str] = frozenset(
         "memory.scope_id",
         # Framework-integration payloads (crewai / pydantic-ai). Structural
         # fields (names, roles, models, process, counts) are intentionally
-        # excluded; only free-text content is listed.
+        # excluded; only free-text content is listed. The integrations that wrote
+        # them were removed in 1.96.0; the keys stay because spans already in a
+        # local.db, or in the unsent buffer, still carry them.
         "crewai.agent.backstory",
         "crewai.agent.goal",
         "crewai.agent.output",
@@ -174,6 +196,8 @@ SENSITIVE_ATTR_KEYS: frozenset[str] = frozenset(
         "crewai.task.description",
         "crewai.task.output",
         "pydanticai.agent.system_prompt",
+        "pydanticai.agent.input",
+        "pydanticai.agent.output",
     }
 )
 

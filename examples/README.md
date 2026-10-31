@@ -25,7 +25,6 @@ subsystem: read them, run them, lift the pattern.
 | [`sales-sdr-agent/`](sales-sdr-agent/) | Clay / HubSpot Breeze-style outbound SDR pipeline with HITL approval before send | `Chain` DAG with conditional edge routing + `chain.aexecute(... context=ctx)` + LLM agents wrapped inside tool nodes + `fa.interrupt()` + `@idempotent` send + 3 pluggable backends (Clearbit / Salesforce / SendGrid) | a **deterministic-flow** workflow with HITL |
 | [`meeting-notes-agent/`](meeting-notes-agent/) | Granola / Otter / Fireflies-style transcript → structured notes generator | `Chain` with **parallel LLM fan-out** via `asyncio.gather` + Pydantic `MeetingNotes` schema enforcement at merge + multimodal `fa.PDF.extract_text` + per-attendee personalization | parallel analyzer fan-out + schema enforcement |
 | [`personal-assistant/`](personal-assistant/) | Long-lived REPL personal assistant with cross-session memory | **Every memory-block type** — `StaticBlock + SummaryBlock + VectorBlock + FactExtractionBlock` — composed via `ComposableMemory` with `FaissVectorStore` + on-disk persistence + `PromptRegistry`-backed system prompt | the canonical **memory** showcase |
-| [`harness-migration/`](harness-migration/) | Wrap an existing **LangGraph / CrewAI / PydanticAI** agent with FastAIAgent's harness | `fastaiagent.integrations.{langchain,crewai,pydanticai}` — `enable()` auto-tracing + `with_guardrails()` + `kb_as_retriever()` / `kb_as_tool()` + `prompt_from_registry()` + `register_agent()` + cross-framework `fa.evaluate()` via `as_evaluable()` | gradual migration **from another framework** |
 | [`deep-research-agent/`](deep-research-agent/) | Open-Deep-Research-style long-horizon investigation: scope → parallel sub-researchers → write | `ScopeAgent` → `asyncio.gather` over plain `Agent` sub-researchers → writer, with structured `deep_research.*` spans, a tool budget, pluggable search backends (mock / Tavily / Brave / Serper) and `fastaiagent.template.kind` for UI badging | the **long-horizon research** shape |
 | [`regression-from-trace/`](regression-from-trace/) | A customer reports a bad answer: capture it, fix it, keep it fixed | The full `trace → Replay.fork_at() → swap the broken tool or prompt → rerun → save as a regression case → evaluate()` loop, in five runnable scripts | the **debug-to-regression-test** loop |
 | [`autollm-loop/`](autollm-loop/) | A live triage agent gets priorities wrong: turn its traffic into a better prompt version and ship it | `PromptRegistry` versions + aliases → traces stamped with the prompt version → `curate_from_traces` → Dataset Editor → `evaluate()` baseline → `optimize()` (instructions + few-shot, holdout-guarded) → new registry version → pytest `--eval-baseline` gate → alias move (1.87.0) | the **traces-to-better-prompt** loop |
@@ -61,7 +60,7 @@ needs forking.
    - **Deterministic workflow with HITL gates** → [`sales-sdr-agent/`](sales-sdr-agent/)
    - **Parallel LLM analysis with structured output** → [`meeting-notes-agent/`](meeting-notes-agent/)
    - **Long-running session with rich memory** → [`personal-assistant/`](personal-assistant/)
-   - **Already on LangChain / CrewAI / PydanticAI** → [`harness-migration/`](harness-migration/)
+   - **Already on LangGraph / CrewAI / Pydantic AI** → [Use fastaiagent with your existing framework](../docs/integrations/frameworks.md)
    - **Long-horizon research over many sources** → [`deep-research-agent/`](deep-research-agent/)
    - **A reported bad answer you need to fix and keep fixed** → [`regression-from-trace/`](regression-from-trace/)
    - **A prompt that's wrong in ways your labels know about** → [`autollm-loop/`](autollm-loop/)
@@ -204,7 +203,6 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 - [`tracing/proofs/`](tracing/proofs/) — five offline scripts behind [Where a trace has to hold](../docs/tracing/trace-boundaries.md): the tree, the write, egress, the plane queue, foreign spans. No API key; run in CI.
 - [`replay/proofs/`](replay/proofs/) — six offline scripts behind [Where a replay has to hold](../docs/replay/replay-boundaries.md): the blueprint, recorded mode, tools, the miss, isolation, the regression test. No API key; run in CI.
 - [`04_agent_replay.py`](04_agent_replay.py) — `Replay.fork_at(...).rerun()`
-- [`08_trace_langchain.py`](08_trace_langchain.py) — auto-trace LangChain agents
 - [`09_otel_export.py`](09_otel_export.py) — OpenTelemetry export
 - [`10_trace_query.py`](10_trace_query.py) — query traces from the SDK
 - [`38_replay_comparison.py`](38_replay_comparison.py) — diff two replays
@@ -233,12 +231,6 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 - [`10_platform_sync.py`](10_platform_sync.py) — `fa.connect()` end-to-end
 - [`19_connect_e2e.py`](19_connect_e2e.py) — full platform round-trip
 - [`33_deploy_fastapi.py`](33_deploy_fastapi.py) — wrap an Agent in FastAPI
-- [`55_trace_crewai.py`](55_trace_crewai.py) — auto-trace CrewAI agents
-- [`56_trace_pydanticai.py`](56_trace_pydanticai.py) — auto-trace PydanticAI
-- [`57_eval_langchain.py`](57_eval_langchain.py) — eval a LangGraph agent
-- [`58_guardrail_pydanticai.py`](58_guardrail_pydanticai.py) — `with_guardrails()` on PydanticAI
-- [`59_register_external_agent.py`](59_register_external_agent.py) — register a non-fastaiagent agent
-- [`93_connected_foreign_agent_linkage.py`](93_connected_foreign_agent_linkage.py) — link a LangGraph/CrewAI/PydanticAI trace to a control-plane agent via `agent.name` + plane registration (1.46.0) → [docs](../docs/integrations/overview.md#connecting-foreign-agents-to-the-control-plane)
 - [`94_primitives_without_runtime.py`](94_primitives_without_runtime.py) — borrow `run_guardrail` + `Scorer` from a foreign runtime and emit OpenInference `GUARDRAIL`/`EVALUATOR` spans on your own tracer; `connect(export_traces=False)` keeps one exporter per process (1.47.0) → [docs](../docs/integrations/primitives-without-the-runtime.md)
 
 ### Connected control plane (Enterprise)

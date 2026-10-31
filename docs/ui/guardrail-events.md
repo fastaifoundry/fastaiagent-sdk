@@ -17,7 +17,6 @@ never leaves the machine.
 | Caller | Writes a row |
 |---|---|
 | An `Agent`, `Chain`, `Supervisor` or `Swarm` run | for every check, once |
-| The LangChain, CrewAI and PydanticAI proxies | for every check, once |
 | A bare `Guardrail.execute()` / `aexecute()` | only inside a recording span, so a check called from a web handler never creates `local.db` |
 | `log_guardrail_event(...)` called directly | whenever tracing is on |
 

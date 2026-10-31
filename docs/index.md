@@ -66,7 +66,7 @@ print(Replay.load(result.trace_id).summary())
 - **[Prompts](prompts/index.md)** — Registry with versioning and fragment composition
 - **[Knowledge Base](knowledge-base/index.md)** — Local file ingestion with embedding search, or [`PlatformKB`](knowledge-base/platform-kb.md) for hosted KBs
 - **[Platform Connection](platform/index.md)** — Connect for traces, prompts, eval, and replay
-- **[Integrations](integrations/index.md)** — Auto-tracing for OpenAI, Anthropic, LangChain, CrewAI
+- **[Integrations](integrations/index.md)** — Auto-tracing for OpenAI and Anthropic, and [your existing LangGraph / CrewAI / Pydantic AI agent](integrations/frameworks.md) through OpenTelemetry
 
 ---
 
@@ -74,5 +74,5 @@ print(Replay.load(result.trace_id).summary())
 
 - [Installation Guide](getting-started/installation.md)
 - [Build Your First Agent in 5 Minutes](tutorials/first-agent.md)
-- [Trace a LangChain Agent in 2 Minutes](tutorials/trace-langchain.md)
+- [Use fastaiagent with your existing framework](integrations/frameworks.md)
 - [Debug with Agent Replay](tutorials/debug-with-replay.md)
