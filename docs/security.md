@@ -137,6 +137,17 @@ gated now — the indexed families by prefix, since there is no bounded set of
 names to enumerate. Local capture is unchanged, so the Local UI's trace search
 still matches on them.
 
+**Current OpenTelemetry GenAI keys, since 1.96.0.** The newer GenAI conventions
+put a whole conversation on single keys — `gen_ai.input.messages`,
+`gen_ai.output.messages`, `gen_ai.system_instructions`,
+`gen_ai.tool.call.arguments`, `gen_ai.tool.call.result` — and Pydantic AI's own
+instrumentation adds `pydantic_ai.all_messages` and `final_result`; the
+OpenInference CrewAI instrumentor adds `crew_tasks` (the request text) and
+`crew_agents` (role, goal, backstory). None of these were registered, so a run
+captured with `enable_otel_capture()` sent them with `FASTAIAGENT_TRACE_PAYLOADS`
+off. They are gated now. Tool schemas (`gen_ai.tool.definitions`,
+`tool.parameters`) are structure and still leave.
+
 To capture *nothing at all* (not even locally), disable tracing entirely
 with `FASTAIAGENT_TRACE_ENABLED=0` — see the next section.
 
