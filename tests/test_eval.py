@@ -220,6 +220,24 @@ class TestSimilarityScorers:
         r = s.score(input="q", output="the cat sat on the mat", expected="the cat is on the mat")
         assert r.score > 0.5
 
+    def test_rouge_variants_have_distinct_names(self):
+        assert ROUGEScore().name == "rouge"
+        assert ROUGEScore(variant="rouge-l").name == "rouge-l"
+
+    def test_both_rouge_variants_run_in_one_evaluate(self):
+        from fastaiagent.eval import Dataset, evaluate
+
+        dataset = Dataset.from_list(
+            [{"input": "q", "expected": "the cat is on the mat"}]
+        )
+        results = evaluate(
+            agent_fn=lambda _: "the cat sat on the mat",
+            dataset=dataset,
+            scorers=[ROUGEScore(variant="rouge-1"), ROUGEScore(variant="rouge-l")],
+            persist=False,
+        )
+        assert set(results.scores) == {"rouge", "rouge-l"}
+
     def test_rouge_no_overlap(self):
         s = ROUGEScore(variant="rouge-1")
         r = s.score(input="q", output="alpha beta gamma", expected="delta epsilon zeta")

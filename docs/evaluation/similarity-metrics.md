@@ -56,6 +56,8 @@ result = scorer.score(
 
 Recall-oriented n-gram evaluation. Supports unigram recall (`rouge-1`) and LCS-based F1 (`rouge-l`). Pure Python, no API calls.
 
+The scorer is named `"rouge"` for `rouge-1` (the default) and `"rouge-l"` for `rouge-l`, so both variants can run in one `evaluate()` and report separately. Before 1.95.0 both were named `"rouge"` and running them together raised `EvalError`.
+
 ```python
 from fastaiagent.eval import ROUGEScore
 

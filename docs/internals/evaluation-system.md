@@ -329,7 +329,7 @@ Score = 1.0 if no matches (safe), 0.0 if any found (leaking PII).
 |--------|-------------|-----------|-------------|
 | `SemanticSimilarity` | `"semantic_similarity"` | Cosine similarity between embedding vectors | Embedder (fastembed/OpenAI) |
 | `BLEUScore` | `"bleu"` | Brevity penalty × geometric mean of n-gram precisions (n=1..4) | None (pure Python) |
-| `ROUGEScore` | `"rouge"` | Unigram F1 (rouge-1) or LCS-based F1 (rouge-l) | None (pure Python) |
+| `ROUGEScore` | `"rouge"` (rouge-1), `"rouge-l"` (rouge-l instance) | Unigram F1 (rouge-1) or LCS-based F1 (rouge-l) | None (pure Python) |
 | `LevenshteinDistance` | `"levenshtein"` | Normalized edit distance: `1.0 - (dist / max_len)` | None (pure Python) |
 
 **SemanticSimilarity flow:**
