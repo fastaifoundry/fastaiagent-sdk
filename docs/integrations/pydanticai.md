@@ -146,7 +146,12 @@ pa.register_agent(agent, name="support-bot")
 ```
 
 Writes the model, provider, system prompt (1000 chars), and registered
-tools into the `external_agents` table. PydanticAI agents are
+tools into the `external_agents` table. The prompt is the agent's static
+text: `system_prompt=` and `instructions=` strings, joined with ` | `. A
+dynamic prompt (a `@agent.system_prompt` / `@agent.instructions` function)
+has no text until a run, so it is not recorded. Before 1.95.0, registering an
+agent with no static `system_prompt=` raised `TypeError`, and on pydantic-ai
+2.x no tools were recorded. PydanticAI agents are
 single-agent, so there is no graph topology to capture — the Local UI
 shows the dependency graph (model + tools + harness layers) without a
 separate workflow visualisation.

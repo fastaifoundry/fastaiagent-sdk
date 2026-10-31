@@ -116,6 +116,46 @@ def _model_name(agent: Any) -> str:
     return getattr(m, "model_name", None) or getattr(m, "name", None) or str(m)
 
 
+def _text_parts(value: Any) -> list[str]:
+    """The strings in a str / list / tuple; anything else (a callable) is skipped."""
+    if isinstance(value, str):
+        return [value] if value else []
+    if isinstance(value, (list, tuple)):
+        return [v for v in value if isinstance(v, str) and v]
+    return []
+
+
+def _system_prompt_text(agent: Any) -> str | None:
+    """The agent's static system prompts and instructions as text, or ``None``.
+
+    Private attributes, read defensively: they differ across pydantic-ai
+    releases. ``agent.system_prompt`` is a *decorator method* there, not text,
+    and iterating it raised TypeError for every agent built without a static
+    ``system_prompt=`` (1.89.0 on the run path, 1.95.0 in ``register_agent``).
+    Dynamic prompts (functions) are not text and are left out.
+    """
+    parts = _text_parts(getattr(agent, "_system_prompts", None))
+    if not parts:  # a release that exposed the text on the public attribute
+        parts = _text_parts(getattr(agent, "system_prompt", None))
+    parts += _text_parts(getattr(agent, "_instructions", None))
+    return " | ".join(parts) or None
+
+
+def _function_tools(agent: Any) -> dict[str, Any]:
+    """``{name: tool}`` for the agent's own function tools, ``{}`` if unreadable.
+
+    pydantic-ai 1.x kept them in ``_function_tools``; 2.x keeps them on
+    ``_function_toolset.tools``.
+    """
+    for tools in (
+        getattr(agent, "_function_tools", None),
+        getattr(getattr(agent, "_function_toolset", None), "tools", None),
+    ):
+        if isinstance(tools, dict) and tools:
+            return tools
+    return {}
+
+
 def _agent_name(agent: Any) -> str:
     """Use the user-supplied name if present, otherwise the model id."""
     return (
@@ -240,25 +280,11 @@ def _install_method_patches() -> None:
         provider = _provider_from_model(_model_name(agent))
         set_genai_attributes(span, system=provider, model=bare)
         if trace_payloads_enabled():
-            # ``agent.system_prompt`` is a *decorator method* in current
-            # pydantic-ai, not text. An agent created without a system prompt
-            # has empty ``_system_prompts``, so this used to iterate that bound
-            # method, raise TypeError, and fail every run of such an agent:
-            # tracing broke the user's call (1.89.0). Text only, and a preview
-            # that cannot be built is skipped, never raised.
+            # A preview that cannot be built is skipped, never raised (1.89.0).
             try:
-                sysprompts = getattr(agent, "_system_prompts", None)
-                if not sysprompts:
-                    fallback = getattr(agent, "system_prompt", None)
-                    sysprompts = fallback if isinstance(fallback, (str, list, tuple)) else None
-                if sysprompts:
-                    preview = (
-                        sysprompts
-                        if isinstance(sysprompts, str)
-                        else " | ".join(str(s) for s in sysprompts if isinstance(s, str))
-                    )[:200]
-                    if preview:
-                        span.set_attribute("pydanticai.agent.system_prompt", preview)
+                preview = (_system_prompt_text(agent) or "")[:200]
+                if preview:
+                    span.set_attribute("pydanticai.agent.system_prompt", preview)
             except Exception:  # pragma: no cover — a preview never fails the run
                 logger.debug("Could not read the PydanticAI system prompt", exc_info=True)
         return span
@@ -665,26 +691,17 @@ def register_agent(agent: Any, *, name: str) -> None:
     provider = _provider_from_model(model)
     bare = _bare_model(model)
 
-    tools_meta: list[dict[str, Any]] = []
-    raw_tools = getattr(agent, "_function_tools", None) or {}
-    if isinstance(raw_tools, dict):
-        for tool_name, tool in raw_tools.items():
-            tools_meta.append(
-                {
-                    "id": str(tool_name),
-                    "type": "tool",
-                    "description": str(getattr(tool, "description", ""))[:200],
-                }
-            )
+    tools_meta = [
+        {
+            "id": str(tool_name),
+            "type": "tool",
+            "description": str(getattr(tool, "description", "") or "")[:200],
+        }
+        for tool_name, tool in _function_tools(agent).items()
+    ]
 
-    sysprompts = (
-        getattr(agent, "_system_prompts", None) or getattr(agent, "system_prompt", None) or None
-    )
-    sysprompt_str: str | None = None
-    if sysprompts:
-        sysprompt_str = (
-            sysprompts if isinstance(sysprompts, str) else " | ".join(str(s) for s in sysprompts)
-        )[:1_000]
+    text = _system_prompt_text(agent)
+    sysprompt_str = text[:1_000] if text else None
 
     upsert_agent(
         name,
