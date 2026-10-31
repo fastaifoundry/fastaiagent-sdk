@@ -279,14 +279,18 @@ def export_evals_cmd(
     if not payloads:
         console.print("[yellow]No eval runs to preview.[/yellow]")
         raise typer.Exit(0)
-    console.print(_json.dumps({"runs": payloads}, indent=2))
-    console.print(
+    # The payload goes to stdout as plain text, so ``> payload.json`` is valid
+    # JSON: Rich wraps long strings at the terminal width, which broke it. The
+    # notes go to stderr (1.95.0).
+    typer.echo(_json.dumps({"runs": payloads}, indent=2))
+    notes = Console(stderr=True)
+    notes.print(
         f"[dim]{len(payloads)} run(s). Case inputs/outputs are absent by design — "
         "the plane joins content via trace_id.[/dim]"
     )
     ungated = [p["run_id"] for p in payloads if p.get("gate_outcome") is None]
     if ungated:
-        console.print(
+        notes.print(
             f"[yellow]Not exportable (no gate verdict recorded): {', '.join(ungated)}. "
             "A run becomes evidence once record_gate_result() records its verdict; the "
             "CLI and the pytest plugin record it for you.[/yellow]"

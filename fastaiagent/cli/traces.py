@@ -50,7 +50,9 @@ def export_trace(
 
     store = TraceStore()
     exported = store.export(trace_id, format=format)
-    console.print(exported)
+    # Plain text, so ``> trace.json`` is valid JSON: Rich wraps long strings
+    # at the terminal width, which broke it (1.95.0).
+    typer.echo(exported)
     store.close()
 
 

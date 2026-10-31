@@ -176,8 +176,9 @@ Two local surfaces do hand the originals back, deliberately and
 
 * `GET /api/traces/{id}/spans/{id}/attachments/{id}?full=1` — the Local UI's
   full-resolution modal, behind the UI's own session auth, on loopback.
-* `fastaiagent traces export` / `trace_export.py` — base64-embeds `full_data`
-  into the portable bundle.
+* `fastaiagent export-trace --include-attachments` / `trace_export.py` —
+  base64-embeds `full_data` into the portable bundle. (`fastaiagent traces
+  export` prints the spans only, without attachment bytes.)
 
 Both are **user-initiated local actions on a machine that already holds the
 bytes**, which is why they are not gated: the payload switch governs what the
