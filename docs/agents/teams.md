@@ -213,7 +213,10 @@ original task.
 supervisor = Supervisor(
     name="manager",
     llm=LLMClient(provider="openai", model="gpt-4o-mini"),
-    workers=[researcher, writer],
+    workers=[
+        Worker(agent=researcher, role="researcher", description="Finds facts"),
+        Worker(agent=writer, role="writer", description="Writes content"),
+    ],
     validate_outputs=True,                  # opt in
     max_validation_retries_per_worker=1,    # default
     # validation_prompt=...                  # optional custom template
@@ -258,7 +261,10 @@ the probability.
 supervisor = Supervisor(
     name="manager",
     llm=LLMClient(provider="openai", model="gpt-4o-mini"),
-    workers=[researcher, writer],
+    workers=[
+        Worker(agent=researcher, role="researcher", description="Finds facts"),
+        Worker(agent=writer, role="writer", description="Writes content"),
+    ],
     validate_outputs=True,
     validation_mode="decisions",
     validation_llm=LLMClient(model="gpt-6-luna"),   # the default
@@ -383,6 +389,8 @@ Supervisor(
     routing_instructions: str | None = None,  # the routing Choice's question
     guardrails: list[Guardrail] | None = None,  # 1.90.0 — the supervisor's own
     middleware: list[AgentMiddleware] | None = None,  # 1.91.0 — the supervisor's own
+    *,
+    timeout_seconds: float | None = None,   # 1.93.0
 )
 ```
 

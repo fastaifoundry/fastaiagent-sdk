@@ -69,9 +69,9 @@ import fastaiagent as fa
 fa.connect(api_key="fa-...", target="https://your-plane.example.com")
 
 # A different machine. This store has never heard of the run.
-fresh = SQLiteCheckpointer(db_path="rebuilt.db")
+fresh = fa.SQLiteCheckpointer(db_path="rebuilt.db")
 chain = build_chain(checkpointer=fresh)          # same chain definition (code)
-await chain.resume(execution_id, resume_value=Resume(approved=True))
+await chain.resume(execution_id, resume_value=fa.Resume(approved=True))
 ```
 
 Three rules worth knowing:

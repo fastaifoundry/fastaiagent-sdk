@@ -948,10 +948,10 @@ fa.connect(api_key="fa-...", project="my-project")
 result = agent.run("Help me")
 
 # Pull versioned prompts from platform
-prompt = PromptRegistry().get("support-prompt")
+prompt = fa.PromptRegistry().get("support-prompt")
 
 # Publish eval results to platform
-results = evaluate(agent, dataset=dataset)
+results = fa.evaluate(agent.run, dataset=dataset)
 results.publish()
 ```
 

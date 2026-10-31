@@ -278,27 +278,25 @@ A prompt fetched from the control plane also stamps `fastaiagent.prompt.slug` an
 
 ## Storage
 
-Prompts are stored as JSON files in the `.prompts/` directory by default:
-
-```
-.prompts/
-├── support-agent.json        # Prompt with all versions
-├── greeting.json
-├── _fragment_tone.json       # Fragment files prefixed with _fragment_
-├── _fragment_format.json
-└── _fragment_safety.json
-```
+Prompts, their versions, aliases and fragments are stored in the project's
+`local.db` (`.fastaiagent/local.db` by default), the same SQLite file that holds
+traces and eval runs, so the Local UI's Prompts page reads them directly.
 
 ### Custom Storage Path
 
+`path` is the SQLite file to use:
+
 ```python
-reg = PromptRegistry(path="/path/to/my/prompts/")
+reg = PromptRegistry(path="/path/to/prompts.db")
 ```
 
-Or via environment variable:
+Or set it for everything the SDK stores locally:
 ```bash
-export FASTAIAGENT_LOCAL_DB=/path/to/my/prompts/
+export FASTAIAGENT_LOCAL_DB=/path/to/local.db
 ```
+
+A `path` ending in `.db` is the file itself; any other `path` is treated as a
+directory, and `local.db` is created inside it.
 
 ## Prompt Object
 
@@ -349,7 +347,7 @@ registry.publish(slug="greeting", content=prompt.template, variables=prompt.vari
 ```bash
 # List all registered prompts
 fastaiagent prompts list
-fastaiagent prompts list --path /custom/prompts/
+fastaiagent prompts list --path /custom/local.db   # the SQLite file to read
 
 # Diff two versions
 fastaiagent prompts diff support-agent 1 2
@@ -456,7 +454,7 @@ See `examples/89_connected_agent_push.py` and [Platform](../platform/index.md#re
 
 ## Internals
 
-For contributors who need to understand the platform publish/fetch code paths, TTL cache implementation, local YAML storage layout, fragment resolution, or how `source="auto"` decides between platform and local, see [Platform API Internals](../internals/platform-api.md).
+For contributors who need to understand the platform publish/fetch code paths, TTL cache implementation, local SQLite storage, fragment resolution, or how `source="auto"` decides between platform and local, see [Platform API Internals](../internals/platform-api.md).
 
 ## Next Steps
 

@@ -205,9 +205,12 @@ All CRUD operations persist to SQLite and update search indexes.
 
 ```python
 kb.add("Content to delete")
-chunk_id = kb._chunks[0].id
+chunk_id = kb.search("Content to delete", top_k=1)[0].chunk.id
 kb.delete(chunk_id)  # Returns True if found
 ```
+
+`add()` returns a chunk count, not ids; look a chunk up by searching for it (or
+list them in the Local UI's KB page).
 
 ### Delete by Source File
 
@@ -234,7 +237,7 @@ source (a file or directory ingest), that path still wins over the metadata.
 
 ```python
 kb.add("Original content")
-chunk_id = kb._chunks[0].id
+chunk_id = kb.search("Original content", top_k=1)[0].chunk.id
 kb.update(chunk_id, "Updated content")  # Re-embeds automatically
 ```
 

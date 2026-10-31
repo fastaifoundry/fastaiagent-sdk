@@ -43,6 +43,7 @@ Inserts are idempotent: re-adding the same `(scope, scope_id, fact, project_id)`
 ### 2. `extract_facts_from_trace` — the LLM call
 
 ```python
+import fastaiagent as fa
 from fastaiagent.learn import extract_facts_from_trace
 from fastaiagent.trace.storage import TraceStore
 

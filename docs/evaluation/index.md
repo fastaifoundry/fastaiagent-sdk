@@ -46,8 +46,8 @@ results = evaluate(
 # Plain function
 evaluate(agent_fn=lambda x: x.upper(), dataset=dataset)
 
-# Agent.run
-evaluate(agent_fn=my_agent.run, dataset=dataset)
+# Agent.run (support_agent is an Agent)
+evaluate(agent_fn=support_agent.run, dataset=dataset)
 
 # Custom wrapper
 def run_pipeline(input_text):
@@ -435,7 +435,7 @@ print(results_v1.compare(results_v2))
 
 ```python
 results = evaluate(
-    agent_fn=my_agent.run,
+    agent_fn=my_agent,
     dataset=Dataset.from_jsonl("test_cases.jsonl"),
     scorers=[
         ExactMatch(),                         # Exact string match
@@ -501,7 +501,7 @@ The equivalent Python API:
 from fastaiagent.eval import evaluate
 
 results = evaluate(
-    agent_fn=my_agent.run,
+    agent_fn=my_agent,
     dataset="test_cases.jsonl",
     scorers=["exact_match", "contains"],
 )

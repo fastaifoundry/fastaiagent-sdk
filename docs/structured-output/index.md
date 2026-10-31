@@ -77,7 +77,10 @@ response = llm.complete(
                         "items": {"type": "string"},
                     },
                 },
-                "required": ["name", "age"],
+                # Strict mode requires every property in "required" and
+                # additionalProperties: false; OpenAI rejects the schema otherwise.
+                "required": ["name", "age", "hobbies"],
+                "additionalProperties": False,
             },
             "strict": True,  # OpenAI only — enforces strict schema adherence
         },
@@ -171,7 +174,8 @@ from fastaiagent.llm.stream import TextDelta
 
 content = ""
 async for event in llm.astream(
-    [UserMessage("Describe Paris")],
+    # OpenAI's json_object mode needs the word "JSON" in the messages.
+    [UserMessage("Describe Paris as JSON")],
     response_format={"type": "json_object"},
 ):
     if isinstance(event, TextDelta):

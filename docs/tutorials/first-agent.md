@@ -16,6 +16,7 @@ pip install "fastaiagent[openai]"
 ```python
 from fastaiagent import Agent, LLMClient
 from fastaiagent.tool import FunctionTool
+from fastaiagent.trace import Replay
 
 # Define a tool
 weather_tool = FunctionTool(
@@ -37,11 +38,18 @@ result = agent.run("What's the weather in San Francisco?", trace=True)
 print(result.output)
 
 # See the trace
-print(result.trace.summary())
-# Steps: 3 | Duration: 1.2s | Tokens: 245 | Cost: $0.001
-# Step 1: LLM call (choose tool) - 400ms
-# Step 2: Tool call (get-weather) - 5ms
-# Step 3: LLM call (final response) - 750ms
+print(Replay.load(result.trace_id).summary())
+# Trace: 75e1672ded9f2cba4811de44a190f8f2
+# Name: agent.assistant
+# Status: UNSET
+# Spans: 4
+# Duration: 2026-10-31T01:06:02.624746+00:00 → 2026-10-31T01:06:04.359789+00:00
+#
+# Steps:
+#   [0] agent.assistant
+#   [1] llm.openai.gpt-4o-mini
+#   [2] tool.get-weather
+#   [3] llm.openai.gpt-4o-mini
 ```
 
 That's it. You've built an agent with a tool and full tracing in 5 minutes.
