@@ -52,6 +52,26 @@ def _has_redacted_header(spec: dict[str, Any]) -> bool:
     )
 
 
+def _require_agent_root(trace: TraceData) -> None:
+    """Refuse to rerun a trace whose root is not a standalone agent run (1.95.0).
+
+    A rerun rebuilds an ``Agent`` from the root span's ``agent.*`` attributes.
+    A ``chain.*``, ``supervisor.*`` or framework root has none, so the rerun was
+    a default agent named ``replayed-agent`` on the default model, and it
+    reported success.
+    """
+    roots = [s for s in trace.spans if not s.parent_span_id] or trace.spans[:1]
+    if not roots or any(s.name.startswith("agent.") for s in roots):
+        return
+    raise ReplayError(
+        f"Trace {trace.trace_id} is a {roots[0].name!r} run, not a standalone agent run. "
+        "A rerun rebuilds an Agent from the trace's root span, and this root has no agent "
+        "to rebuild. Fork a Chain from its checkpoint with Chain.afork(execution_id, ...) "
+        "or Chain.aresume(...). The trace can still be read with summary(), "
+        "step_through() and inspect()."
+    )
+
+
 def _coerce_replay_class(value: Any) -> str:
     from fastaiagent.tool._replay_blocked import _coerce_replay_class as coerce
 
@@ -735,6 +755,7 @@ class ForkedReplay:
             raise ReplayError(
                 f"Trace {self._trace.trace_id} has no spans — cannot reconstruct agent."
             )
+        _require_agent_root(self._trace)
 
         agent_dict = self._build_agent_dict(root)
         self._apply_agent_modifications(agent_dict)
@@ -1465,6 +1486,7 @@ class Replay:
         """Fork the execution at a specific step for re-execution."""
         if step < 0 or step >= len(self._steps):
             raise ReplayError(f"Step {step} out of range (0-{len(self._steps) - 1})")
+        _require_agent_root(self._trace)
         forked = ForkedReplay(
             original_trace=self._trace,
             fork_point=step,

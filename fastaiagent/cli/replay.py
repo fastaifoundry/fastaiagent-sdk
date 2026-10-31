@@ -92,7 +92,11 @@ def fork_and_rerun(
             stubs[name] = raw  # a bare string is a fine canned result
 
     replay = Replay.load(trace_id, store=TraceStore(db_path=db) if db else None)
-    forked = replay.fork_at(step)
+    try:
+        forked = replay.fork_at(step)
+    except ReplayError as exc:  # a step out of range, or a trace that is not an agent run
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
     forked._surface = "cli"
     if prompt is not None:
         forked.modify_prompt(prompt)

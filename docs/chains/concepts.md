@@ -186,6 +186,8 @@ inspection, not editing.
     `Chain.aresume(execution_id, modified_state=...)` (continue the same run)
     or `Chain.afork(execution_id, checkpoint_id=..., modified_state=...)`
     (branch a new run, leaving the original intact) — not the Replay engine.
+    `Replay.fork_at()` on a chain trace raises `ReplayError` (since 1.95.0;
+    before, it reran a default agent and reported success).
 
 ### When something goes wrong
 
