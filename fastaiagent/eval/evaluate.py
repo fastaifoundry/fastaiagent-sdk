@@ -37,8 +37,10 @@ class _CasePaused(Exception):  # noqa: N818 — internal; recorded as the case's
 def _case_error(exc: BaseException) -> str:
     """The recorded error for a case that produced no scorable output. A bare
     ``InterruptSignal`` (an agent with no checkpointer pausing) is described as
-    the pause it is, not by its reason string alone."""
-    return (describe_pause(exc) or str(exc))[:500]
+    the pause it is, not by its reason string alone. An exception with no
+    message (a bare ``TimeoutError``) is named by its type: it was recorded as
+    ``""``, an errored case with no reason anywhere (1.95.0)."""
+    return (describe_pause(exc) or str(exc) or type(exc).__name__)[:500]
 
 
 def _is_async_callable(fn: Callable[..., Any]) -> bool:
