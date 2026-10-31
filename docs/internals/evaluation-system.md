@@ -48,6 +48,11 @@ def evaluate(
     dataset: Dataset | str | list[dict[str, Any]],  # .jsonl path, .csv path, list, or Dataset
     scorers: list[Scorer | str] | None = None,      # Scorer objects or string names
     concurrency: int = 4,             # Max parallel evaluations
+    persist: bool = True,             # Write the run to local.db for the Local UI
+    run_name: str | None = None,
+    dataset_name: str | None = None,
+    agent_name: str | None = None,
+    run_kind: str = "evaluate",
     **kwargs: Any,                    # Forwarded to each scorer's score() call
 ) -> EvalResults:
 ```
@@ -216,7 +221,7 @@ def my_scorer(input: str, output: str, expected: str | None = None) -> ScorerRes
 The decorated function can return:
 - `ScorerResult` — used directly
 - `bool` — converted to `ScorerResult(score=1.0 if True else 0.0, passed=bool_value)`
-- `int` or `float` — converted to `ScorerResult(score=float(value), passed=value > 0.5)`
+- `int` or `float` — converted to `ScorerResult(score=float(value), passed=value >= 0.5)`
 - `str` — treated as an error reason
 
 The decorator wraps the function in a `CodeScorer` instance that handles the type coercion.
@@ -329,7 +334,7 @@ Score = 1.0 if no matches (safe), 0.0 if any found (leaking PII).
 |--------|-------------|-----------|-------------|
 | `SemanticSimilarity` | `"semantic_similarity"` | Cosine similarity between embedding vectors | Embedder (fastembed/OpenAI) |
 | `BLEUScore` | `"bleu"` | Brevity penalty × geometric mean of n-gram precisions (n=1..4) | None (pure Python) |
-| `ROUGEScore` | `"rouge"` | Unigram F1 (rouge-1) or LCS-based F1 (rouge-l) | None (pure Python) |
+| `ROUGEScore` | `"rouge"` (rouge-1), `"rouge-l"` (rouge-l instance) | Unigram F1 (rouge-1) or LCS-based F1 (rouge-l) | None (pure Python) |
 | `LevenshteinDistance` | `"levenshtein"` | Normalized edit distance: `1.0 - (dist / max_len)` | None (pure Python) |
 
 **SemanticSimilarity flow:**
@@ -351,11 +356,16 @@ A generic LLM-based scorer that delegates evaluation to an LLM. Used internally 
 
 ```python
 LLMJudge(
-    criteria: str,                      # What to evaluate (e.g., "correctness", "helpfulness")
+    criteria: str = "correctness",      # What to evaluate (e.g., "correctness", "helpfulness")
     prompt_template: str | None = None, # Custom template with {input}/{output}/{expected} placeholders
     llm: Any = None,                    # Custom LLMClient (defaults to LLMClient())
     scale: str = "binary",              # "binary", "0-1", "1-5", ...
+    *,
+    evaluation_steps: list[str] | None = None,  # G-Eval style steps
+    rubric: Rubric | None = None,
     threshold: float = 0.5,             # Pass threshold, applied to the normalized 0-1 score
+    name: str | None = None,            # Scorer name (defaults to "llm_judge")
+    auto_steps: bool = False,           # Let the judge write its own evaluation steps
 )
 ```
 

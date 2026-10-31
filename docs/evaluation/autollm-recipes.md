@@ -33,10 +33,11 @@ is half the recipe.
 A prompt is tuned to its model. To move models, re-tune rather than copy:
 [`switch_models.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/autollm-loop/switch_models.py)
 runs AutoLLM per model on the same dataset and seed — so every model faces the same
-holdout — and measures cost from the traces. On the triage agent, `gpt-4.1-nano`
-ran the shipped prompt at 0.867 on the holdout and its own re-tuned prompt at
-0.933, at $0.065 per thousand tickets — 1/17 of `gpt-4.1`'s cost. A forced
-migration is the same run with the old and new model.
+holdout — and measures cost from the traces. On the triage agent (2026-10-31),
+`gpt-5-nano` ran the live prompt at 0.800 on the holdout and its own re-tuned
+prompt at 0.900 — `gpt-4.1`'s score — at $0.15 per thousand tickets, under 1/10
+of `gpt-4.1`'s cost. A forced migration is the same run with the old and new
+model; a retired model shows as "every case errored", not as a score of 0.
 
 ## Calibrate a judge
 

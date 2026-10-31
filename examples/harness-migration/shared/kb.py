@@ -5,7 +5,8 @@ via each integration's ``kb_as_retriever()`` (LangChain) or
 **Important — KB path coupling.** Each integration's ``kb_as_retriever()``
 / ``kb_as_tool()`` re-instantiates ``LocalKB(name=kb_name)`` *with the
 default path* — they don't accept a ``path=`` kwarg. So the KB created
-here MUST also live at the default path (``~/.fastaiagent/kb/<name>``)
+here MUST also live at the default path (``./.fastaiagent/kb/<name>``, relative
+to the working directory)
 or the integration will read from an empty store. We deliberately omit
 ``path=`` here for that reason. Document this gotcha; don't fight it.
 """

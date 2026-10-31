@@ -27,11 +27,14 @@ If you deliberately share the directory with a group, opt out with
 
 The bundled Local UI (`fastaiagent ui`) ships with three modes:
 
-* **No-auth (default for `localhost`):** Browser-only; the UI binds to
-  `127.0.0.1` and is unreachable from other hosts.
-* **Password auth:** Set up via `fastaiagent ui --auth password`. Uses
-  bcrypt + itsdangerous-signed cookies. CSRF middleware enforces a
-  double-submit token on every state-changing request.
+* **Password auth (the default):** the first `fastaiagent ui` start
+  prompts you to create a username and password (stored in `auth.json`;
+  `fastaiagent ui reset-password` deletes it so the next start prompts
+  again). Uses bcrypt + itsdangerous-signed cookies. CSRF middleware
+  enforces a double-submit token on every state-changing request.
+* **No-auth (opt-in, throwaway use):** `fastaiagent ui --no-auth` skips the
+  login. The UI still binds to `127.0.0.1` and is unreachable from other
+  hosts unless you pass `--insecure-bind`.
 * **Custom OAuth / SSO:** Wrap the FastAPI app with your own auth
   middleware; see [Local UI / Deployment](deployment/index.md).
 
@@ -176,8 +179,9 @@ Two local surfaces do hand the originals back, deliberately and
 
 * `GET /api/traces/{id}/spans/{id}/attachments/{id}?full=1` — the Local UI's
   full-resolution modal, behind the UI's own session auth, on loopback.
-* `fastaiagent traces export` / `trace_export.py` — base64-embeds `full_data`
-  into the portable bundle.
+* `fastaiagent export-trace --include-attachments` / `trace_export.py` —
+  base64-embeds `full_data` into the portable bundle. (`fastaiagent traces
+  export` prints the spans only, without attachment bytes.)
 
 Both are **user-initiated local actions on a machine that already holds the
 bytes**, which is why they are not gated: the payload switch governs what the

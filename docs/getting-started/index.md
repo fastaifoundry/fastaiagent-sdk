@@ -295,10 +295,16 @@ from fastaiagent._internal.errors import LLMError, LLMProviderError
 try:
     response = llm.complete(messages)
 except LLMProviderError as e:
-    print(f"API error: {e}")  # 401, 429, 500, etc.
+    print(f"API error: {e}")  # 401, 429, 500, a 200 whose body is not JSON, etc.
 except LLMError as e:
     print(f"LLM error: {e}")  # Unsupported provider, missing key, etc.
 ```
+
+`LLMProviderError` also covers a `200` whose body is not JSON — a proxy or a wrong
+`base_url` serving an HTML page (since 1.95.0; before, a bare `JSONDecodeError`).
+A transport failure — DNS, a refused connection, a timeout — is retried and then
+raised as the `httpx` error itself (`httpx.ConnectError`, `httpx.TimeoutException`),
+not as an `LLMError`; catch `httpx.HTTPError` too if you handle those.
 
 ---
 

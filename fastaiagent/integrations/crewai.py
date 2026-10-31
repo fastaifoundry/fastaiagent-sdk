@@ -810,8 +810,12 @@ def as_evaluable(
 
     def _evaluable(text: str) -> _EvaluableResult:
         inputs = in_map(text)
+        # A fresh copy per case, as CrewAI's own ``kickoff_for_each`` does: one
+        # Crew's executors refuse to run twice at once, so ``evaluate()``'s
+        # concurrent cases errored with "Executor is already running" (1.95.0).
+        run_crew = crew.copy()
         with tracer.start_as_current_span("eval.case"):
-            result = crew.kickoff(inputs=dict(inputs) if isinstance(inputs, dict) else inputs)
+            result = run_crew.kickoff(inputs=dict(inputs) if isinstance(inputs, dict) else inputs)
             return _EvaluableResult(output=str(out_map(result)), trace_id=_current_trace_id())
 
     return _evaluable

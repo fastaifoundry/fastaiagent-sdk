@@ -63,13 +63,13 @@ def _load_tools(entrypoints: list[str]) -> None:
     tools/connectors. They self-register in the ToolRegistry (e.g. by building
     ``FunctionTool``s with the operator's own creds); ``tool_exec`` then resolves
     them by their exposed name. Raises on a bad spec or import/exec error."""
-    import importlib
+    from fastaiagent._internal.target import import_dotted
 
     for ep in entrypoints:
         module_name, sep, attr = ep.partition(":")
         if not sep or not module_name or not attr:
             raise ValueError(f"--tools must be 'module:callable' (got {ep!r})")
-        fn = getattr(importlib.import_module(module_name), attr)
+        fn = getattr(import_dotted(module_name), attr)
         fn()
 
 

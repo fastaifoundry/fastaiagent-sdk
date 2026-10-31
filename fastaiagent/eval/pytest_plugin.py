@@ -480,7 +480,7 @@ def _apply_baseline_gate(
     """Compare vs the already-loaded baseline: ``"passed"`` | ``"regressed"`` |
     ``"unavailable"`` (the comparison itself failed)."""
     from fastaiagent.eval.compare import compare_runs
-    from fastaiagent.eval.results import Scorecard
+    from fastaiagent.eval.results import SUMMARY_VERSION, Scorecard
 
     try:
         current = {
@@ -488,6 +488,10 @@ def _apply_baseline_gate(
                 "run_id": collector.run_id or "(unpersisted)",
                 "run_name": "(current session)",
                 "pass_rate": Scorecard.from_eval_results(results).overall_pass_rate,
+                # The pass rate above uses this SDK's definition. Without the
+                # stamp the run read as pre-1.89.0, so every baseline gate said
+                # "not like for like" (1.95.0).
+                "summary_version": SUMMARY_VERSION,
             },
             "cases": [
                 {

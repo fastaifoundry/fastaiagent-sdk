@@ -35,6 +35,7 @@ pip install fastaiagent
 
 ```python
 from fastaiagent import Agent, FunctionTool, LLMClient
+from fastaiagent.trace import Replay
 
 agent = Agent(
     name="assistant",
@@ -45,7 +46,7 @@ agent = Agent(
 
 result = agent.run("Say hello to World", trace=True)
 print(result.output)
-print(result.trace.summary())
+print(Replay.load(result.trace_id).summary())
 ```
 
 ---

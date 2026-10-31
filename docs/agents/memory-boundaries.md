@@ -111,6 +111,9 @@ Three rules keep users apart:
 Proof 2 puts Alice (streaming) and Bob (`run()`) on one agent with one shared recall store. The window is set to hold a single turn, so each member's class can only come back through recall:
 
 ```python
+from fastaiagent import Memory
+from fastaiagent.kb.backends.faiss import FaissVectorStore
+
 shared_recall = FaissVectorStore(dimension=384)
 mem = Memory(
     agent_id="support-bot",

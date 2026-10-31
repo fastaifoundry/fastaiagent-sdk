@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 
 from dotenv import load_dotenv
 
@@ -191,11 +192,17 @@ async def run_eval(publish: bool = False) -> None:
         print(f"\n  Could not persist eval run locally: {e}")
 
     if publish:
+        # publish() needs a connection, so connect from the environment first.
+        api_key = os.environ.get("FASTAIAGENT_API_KEY")
+        if not api_key:
+            raise SystemExit("--publish needs FASTAIAGENT_API_KEY (and FASTAIAGENT_TARGET for a self-hosted plane)")
+        target = os.environ.get("FASTAIAGENT_TARGET")
+        fa.connect(api_key=api_key, **({"target": target} if target else {}))
         try:
             results.publish(run_name="personal-assistant eval")
-            print("  ✓ published to FastAIAgent Platform")
         except Exception as e:
-            print(f"  Platform publish failed: {e}")
+            raise SystemExit(f"Platform publish failed: {e}") from e
+        print("  ✓ published to FastAIAgent Platform")
 
 
 def main() -> None:

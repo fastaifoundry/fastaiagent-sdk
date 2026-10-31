@@ -85,14 +85,16 @@ def test_the_innermost_scope_wins(traced_db: Any) -> None:
     assert rows == {"eval.case": "eval", "agent.inner": "replay"}
 
 
-def test_no_scope_means_no_stamp(traced_db: Any) -> None:
+def test_no_scope_means_no_stamp(traced_db: Any, trace_export_on: None) -> None:
     _span_tree()
     assert all(SOURCE_ATTR not in r["attributes"] for r in _rows(traced_db))
     assert all(r["synced"] == 0 for r in _rows(traced_db))
 
 
 @pytest.mark.parametrize("source", ["replay", "playground", "kb_search"])
-def test_a_local_only_source_is_written_as_already_sent(traced_db: Any, source: str) -> None:
+def test_a_local_only_source_is_written_as_already_sent(
+    traced_db: Any, trace_export_on: None, source: str
+) -> None:
     with provenance_scope(source):
         _span_tree()
     rows = _rows(traced_db)
@@ -101,7 +103,9 @@ def test_a_local_only_source_is_written_as_already_sent(traced_db: Any, source: 
 
 
 @pytest.mark.parametrize("source", ["learn", "eval", "simulation", "optimize", "batch-job"])
-def test_other_sources_are_still_exported(traced_db: Any, source: str) -> None:
+def test_other_sources_are_still_exported(
+    traced_db: Any, trace_export_on: None, source: str
+) -> None:
     with provenance_scope(source):
         _span_tree()
     assert all(r["synced"] == 0 for r in _rows(traced_db))
@@ -109,7 +113,7 @@ def test_other_sources_are_still_exported(traced_db: Any, source: str) -> None:
 
 @pytest.mark.parametrize("how", ["scope", "env"])
 def test_exporting_experiments_is_an_opt_in(
-    traced_db: Any, monkeypatch: pytest.MonkeyPatch, how: str
+    traced_db: Any, trace_export_on: None, monkeypatch: pytest.MonkeyPatch, how: str
 ) -> None:
     if how == "env":
         monkeypatch.setenv("FASTAIAGENT_EXPORT_EXPERIMENTS", "1")

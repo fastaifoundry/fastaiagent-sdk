@@ -1,9 +1,10 @@
 """Step 1 — run the buggy agent and capture a failing trace.
 
-The agent uses ``lookup_order_buggy`` which returns the literal string
-``"None"`` for missing orders. We pass an unknown order ID so the LLM
-ingests "None" and replies with a confidently-wrong sentence — the
-exact bug the rest of the loop fixes.
+The agent uses ``lookup_order_buggy``, which silently falls back to another
+order's record (stamped with the requested id) when an order is missing. We
+pass an unknown order ID, so the LLM receives a valid-looking record and
+replies with confidently-wrong details — the exact bug the rest of the loop
+fixes.
 
 Run from the template directory::
 

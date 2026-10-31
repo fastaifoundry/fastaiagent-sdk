@@ -287,7 +287,7 @@ get("support-v1", source="auto")
     │       └── No → skip platform
     │
     └── _fetch_from_local("support-v1")
-            └── Reads .prompts/support-v1.json from disk
+            └── Reads the prompt from local.db (prompts / prompt_versions)
 ```
 
 **`source="local"` (explicit local):**
@@ -295,7 +295,7 @@ get("support-v1", source="auto")
 get("support-v1", source="local")
     │
     └── _fetch_from_local("support-v1")
-            └── Reads .prompts/support-v1.json from disk
+            └── Reads the prompt from local.db (prompts / prompt_versions)
 ```
 
 ### Platform Cache
@@ -335,31 +335,23 @@ Use this when you know the platform-side prompt has changed (e.g., after a colle
 
 ## Feature: Prompt Registry (Local Path)
 
-### Local Storage: `YAMLStorage`
+### Local Storage: `SQLiteStorage`
 
 **File:** `fastaiagent/prompt/storage.py`
 
-Despite the name, `YAMLStorage` uses JSON files (not YAML) under `.prompts/`:
+Prompts live in the project's `local.db`, the same SQLite file as traces,
+checkpoints and eval runs (the earlier per-file JSON layout under `.prompts/` is
+gone). Four tables:
 
-```
-.prompts/
-├── support.json                     ← prompt "support" with all versions
-│   {
-│       "name": "support",
-│       "versions": [
-│           {"name": "support", "template": "...", "variables": [...], "version": 1, "metadata": {}},
-│           {"name": "support", "template": "...", "variables": [...], "version": 2, "metadata": {}}
-│       ],
-│       "latest_version": 2,
-│       "aliases": {"production": 1, "staging": 2}
-│   }
-│
-├── _fragment_tone.json              ← fragment "tone"
-│   {"name": "tone", "content": "Be professional.", "version": 1}
-│
-└── _fragment_safety.json            ← fragment "safety"
-    {"name": "safety", "content": "Never disclose internal info.", "version": 1}
-```
+| Table | Holds |
+|---|---|
+| `prompts` | one row per prompt `slug`: `latest_version`, `project_id`, timestamps |
+| `prompt_versions` | one row per `(slug, version)`: `template`, `variables`, `fragments`, `metadata` |
+| `prompt_aliases` | `(slug, alias) → version`, e.g. `production → 1` |
+| `prompt_fragments` | one row per fragment `name`: its `content` |
+
+`SQLiteStorage(path)` uses `path` as the database file when it ends in `.db`, and
+otherwise as a directory holding `local.db`.
 
 ### `load_prompt(name, version, alias)`
 
@@ -410,7 +402,7 @@ def register_fragment(self, name, content):
     self._fragments[name] = fragment
 ```
 
-Stored both in memory (`self._fragments` dict) and on disk (`.prompts/_fragment_{name}.json`).
+Stored both in memory (`self._fragments` dict) and in `local.db` (the `prompt_fragments` table).
 
 ### Resolution: `{{@fragment_name}}` Syntax
 
@@ -670,7 +662,7 @@ See `tests/e2e/test_gate_prompt_registry.py` for the canonical pattern: `TestPro
 | `fastaiagent/client.py` | `_Connection` singleton, `connect()`, `disconnect()`, `_normalize_target()` |
 | `fastaiagent/_platform/api.py` | `PlatformAPI` HTTP client, `get_platform_api()` factory, error handling |
 | `fastaiagent/prompt/registry.py` | `PromptRegistry` — publish, get, load, fragments, TTL cache |
-| `fastaiagent/prompt/storage.py` | `YAMLStorage` — local JSON file storage for prompts and fragments |
+| `fastaiagent/prompt/storage.py` | `SQLiteStorage` — prompts, versions, aliases and fragments in `local.db` |
 | `fastaiagent/prompt/prompt.py` | `Prompt` model — template, variables, format() |
 | `fastaiagent/prompt/fragment.py` | `Fragment` model — name, content |
 | `fastaiagent/eval/dataset.py` | `Dataset.publish()`, `Dataset.from_platform()` |

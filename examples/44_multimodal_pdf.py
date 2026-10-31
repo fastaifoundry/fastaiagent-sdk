@@ -3,7 +3,7 @@
 Demonstrates the three ``pdf_mode`` settings against a 2-page contract:
 
 * ``text``    — extracts text locally, sends as plain text. Cheapest, no
-                vision LLM required (gpt-3.5-turbo / claude-2.x work).
+                vision LLM required (any text model works).
 * ``vision``  — pages rendered to PNG, sent as image blocks to a vision
                 LLM. Preserves layout (tables, signatures).
 * ``native``  — raw PDF forwarded to the provider, which parses it
@@ -63,11 +63,11 @@ if __name__ == "__main__":
 
     if os.environ.get("OPENAI_API_KEY"):
         ask(
-            "openai/gpt-3.5-turbo + pdf_mode='text'",
+            "openai/gpt-5-mini + pdf_mode='text'",
             Agent(
                 name="pdf-text",
                 system_prompt="Answer concisely from the document.",
-                llm=LLMClient(provider="openai", model="gpt-3.5-turbo", pdf_mode="text"),
+                llm=LLMClient(provider="openai", model="gpt-5-mini", pdf_mode="text"),
             ),
             pdf,
         )

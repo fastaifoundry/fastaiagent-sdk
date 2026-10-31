@@ -20,6 +20,19 @@ logger = logging.getLogger(__name__)
 #: module free of an import cycle (provenance imports nothing from here).
 _LOCAL_ONLY_ATTR = "fastaiagent.export.local_only"
 
+
+def _exporting_to_plane() -> bool:
+    """True while ``connect()`` has a platform span exporter registered (1.95.0).
+
+    A span recorded while this is False was never meant for a plane: not
+    connected, or ``connect(export_traces=False)``. Queuing it anyway made the
+    first later ``connect()`` upload the user's offline history.
+    """
+    from fastaiagent.client import _connection
+
+    return _connection.is_connected and _connection._platform_processor is not None
+
+
 # Opt-in foreign-span normalization. Flipped on by
 # ``fastaiagent.enable_otel_capture()``; default ``False`` keeps the write path
 # byte-identical. When on, ``on_end`` maps foreign OTel/OpenInference/
@@ -375,10 +388,12 @@ class LocalStorageProcessor:
                 json.dumps(attrs, default=str),
                 json.dumps(events, default=str),
                 safe_get_project_id(),
-                # A local-only span (a replay, a Playground call) is written as
-                # already handled, so no exporter, this SDK's or an older one
-                # sharing the store, ever sends it (1.89.0).
-                1 if attrs.get(_LOCAL_ONLY_ATTR) else 0,
+                # Queued for the plane (``synced=0``) only while trace export is
+                # on. A local-only span (a replay, a Playground call, 1.89.0) or
+                # one recorded offline (1.95.0) is written as already handled, so
+                # no exporter, this SDK's or an older one sharing the store, ever
+                # sends it.
+                0 if _exporting_to_plane() and not attrs.get(_LOCAL_ONLY_ATTR) else 1,
             ),
         )
 
@@ -688,7 +703,8 @@ class TraceStore:
         return trace.model_dump_json(indent=2)
 
     # --- Platform-export buffer ------------------------------------------
-    # ``LocalStorageProcessor`` writes every span with ``synced=0``;
+    # ``LocalStorageProcessor`` writes a span with ``synced=0`` while trace
+    # export to a plane is on (``synced=1`` otherwise);
     # ``PlatformSpanExporter`` (bg thread) drains synced=0 rows, pushes them,
     # then marks ``synced=1`` only after a confirmed 2xx. See platform_export.py.
 

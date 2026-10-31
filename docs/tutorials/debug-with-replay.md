@@ -116,7 +116,7 @@ inputs.
 fastaiagent traces list
 
 # Pull a specific trace as JSON
-fastaiagent traces show <trace-id>
+fastaiagent traces export <trace-id>
 ```
 
 For interactive replay, use the [Local UI](../ui/index.md) — it ships

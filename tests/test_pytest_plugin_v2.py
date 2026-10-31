@@ -181,6 +181,18 @@ def test_baseline_within_tolerance_passes(pytester: pytest.Pytester, tmp_path) -
     assert result.ret == 0
 
 
+def test_a_baseline_from_this_sdk_is_like_for_like(pytester: pytest.Pytester, tmp_path) -> None:
+    """1.95.0: the session's run carried no ``summary_version``, so it read as
+    pre-1.89.0 and every baseline gate warned the rates were not comparable."""
+    db = tmp_path / "local.db"
+    pytester.makepyfile(_PASSING_SUITE.format(db=db))
+    assert pytester.runpytest("--no-header", "--eval-run-name", "main").ret == 0
+
+    result = pytester.runpytest("--no-header", "--eval-baseline", "main")
+    assert result.ret == 0
+    assert "like for like" not in result.stdout.str()
+
+
 def test_missing_baseline_fails_gate(pytester: pytest.Pytester, tmp_path) -> None:
     db = tmp_path / "local.db"
     pytester.makepyfile(_PASSING_SUITE.format(db=db))

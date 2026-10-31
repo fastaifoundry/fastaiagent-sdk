@@ -2,7 +2,8 @@
 
 Reads ``last_trace_id.txt`` from capture.py, loads the trace, prints
 each step's name + a short attribute summary so the user can spot the
-tool node where ``lookup_order`` returned the bogus ``"None"`` string.
+tool node where ``lookup_order`` returned another order's record under the
+requested id.
 
 Run from the template directory::
 

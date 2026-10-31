@@ -14,8 +14,12 @@ from __future__ import annotations
 
 import os
 
-from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-from openai import AzureOpenAI
+try:
+    from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+    from openai import AzureOpenAI
+except ImportError:
+    print('azure-identity is not installed. Install with: pip install azure-identity "openai>=1.0"')
+    raise SystemExit(0) from None
 
 from fastaiagent import Agent, LLMClient
 from fastaiagent.llm.message import UserMessage

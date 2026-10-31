@@ -137,7 +137,7 @@ class TestReplay:
         assert len(steps) == 3
 
     def test_fork_at(self):
-        trace = _make_trace(5)
+        trace = _make_agent_trace(4)
         replay = Replay(trace)
         forked = replay.fork_at(step=2)
         assert isinstance(forked, ForkedReplay)
@@ -148,17 +148,36 @@ class TestReplay:
         with pytest.raises(ReplayError, match="out of range"):
             replay.fork_at(step=99)
 
+    @pytest.mark.parametrize("root_name", ["chain.refund-flow", "supervisor.desk", "step_0"])
+    def test_fork_at_refuses_a_trace_that_is_not_an_agent_run(self, root_name: str) -> None:
+        """1.95.0: a chain or supervisor root was rebuilt as a default agent
+        named ``replayed-agent`` and the rerun reported success."""
+        trace = _make_trace()
+        trace.spans[0].name = root_name
+        for span in trace.spans[1:]:
+            span.parent_span_id = trace.spans[0].span_id
+        replay = Replay(trace)
+        with pytest.raises(ReplayError, match="not a standalone agent run"):
+            replay.fork_at(step=0)
+        assert replay.summary()  # still readable
+
+    def test_a_refused_trace_cannot_rerun_through_a_hand_built_fork(self) -> None:
+        trace = _make_trace()
+        forked = ForkedReplay(original_trace=trace, fork_point=0, steps=Replay(trace).steps())
+        with pytest.raises(ReplayError, match="not a standalone agent run"):
+            forked.rerun()
+
 
 class TestForkedReplay:
     def test_modify_input(self):
-        trace = _make_trace()
+        trace = _make_agent_trace()
         replay = Replay(trace)
         forked = replay.fork_at(step=1)
         result = forked.modify_input({"new": "input"})
         assert result is forked  # returns self for chaining
 
     def test_modify_prompt(self):
-        trace = _make_trace()
+        trace = _make_agent_trace()
         replay = Replay(trace)
         forked = replay.fork_at(step=1)
         forked.modify_prompt("New prompt")
@@ -171,7 +190,7 @@ class TestForkedReplay:
         # the SDK checkpoint-fork primitive instead.
         import pytest
 
-        trace = _make_trace()
+        trace = _make_agent_trace()
         replay = Replay(trace)
         forked = replay.fork_at(step=0)
         with pytest.raises(NotImplementedError, match="afork"):

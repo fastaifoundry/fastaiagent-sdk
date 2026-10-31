@@ -137,22 +137,25 @@ from its traces. Each winner is registered as its own version
 (`metadata.model`):
 
 ```sh
-python switch_models.py                                  # gpt-4.1, -mini, -nano
-python switch_models.py --models gpt-4.1-nano --ollama llama3.1:8b
-python switch_models.py --models gpt-4o-2024-05-13,gpt-5-mini   # a forced migration
+python switch_models.py                                  # gpt-4.1, gpt-4.1-mini, gpt-5-nano
+python switch_models.py --models gpt-5-nano --ollama llama3.1:8b
+python switch_models.py --models gpt-4o-2024-08-06,gpt-5-mini   # a forced migration
 ```
 
-From our run (live prompt: v2, written for `gpt-4.1-mini`):
+From our run (2026-10-31; live prompt written for `gpt-4.1-mini`):
 
 ```
 model                    holdout: live prompt → tuned   $ / 1k tickets  version
-gpt-4.1                                 1.000 → 1.000           1.1259  kept the live prompt
-gpt-4.1-mini                            0.967 → 0.967           0.2252  kept the live prompt
-gpt-4.1-nano                            0.867 → 0.933           0.0650  v3
+gpt-4.1                                 0.900 → 0.900           1.6219  kept the live prompt
+gpt-4.1-mini                            0.933 → 0.933           0.3328  v4
+gpt-5-nano                              0.800 → 0.900           0.1524  v5
 ```
 
-Re-tuned, `gpt-4.1-nano` reaches 0.933 at $0.065 per thousand tickets — 1/17 of
-`gpt-4.1`'s cost. ~5 minutes per OpenAI model. A local model through Ollama
+Re-tuned, `gpt-5-nano` goes from 0.800 to 0.900 at $0.15 per thousand tickets —
+under 1/10 of `gpt-4.1`'s cost, at `gpt-4.1`'s holdout score. Your numbers will
+differ run to run (the models are not deterministic). ~5 minutes per OpenAI model.
+A model the provider has retired fails every case; the table then says
+"every case errored" with the provider's message, and the script exits 1. A local model through Ollama
 works too, but slowly: an 8B model took ~13 s per ticket on our laptop, so a
 re-tune (~600 calls) is hours.
 

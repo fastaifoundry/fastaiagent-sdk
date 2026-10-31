@@ -69,7 +69,7 @@ database size: full-res images can be 1–10 MB each.
 
 The bytes stay local — they live in `local.db` and never ride the span export
 path, so they do not reach the control plane or any `add_exporter` target. The
-`?full=1` modal above and `fastaiagent traces export` do hand them back to you
+`?full=1` modal above and `fastaiagent export-trace --include-attachments` do hand them back to you
 locally; see [Attachment bytes](../security.md#attachment-bytes) for the
 posture.
 

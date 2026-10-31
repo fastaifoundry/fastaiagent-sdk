@@ -78,7 +78,12 @@ evaluable = ca.as_evaluable(
 ```
 
 The adapter opens an outer `eval.case` OTel span so `trace_id` is
-captured per case.
+captured per case. Each case runs on its own `crew.copy()`, as CrewAI's
+`kickoff_for_each` does, so `evaluate()` can run cases concurrently (its
+default is four at a time). Before 1.95.0 every case shared one crew, and
+CrewAI refused the overlapping runs with "Executor is already running":
+most cases errored. State you keep on the crew object between kickoffs is
+not shared across cases.
 
 ## 3. Guardrails
 

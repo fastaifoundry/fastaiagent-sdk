@@ -264,7 +264,7 @@ Every span started inside an experiment carries `fastaiagent.source`:
 | `playground` | the local UI's Prompt Playground | no |
 | `learn` | `fastaiagent learn` (the extraction model's calls) | yes |
 | `eval` | `evaluate()` / `aevaluate()`, the pytest plugin, `eval run`, the UI's run-eval: each case's agent trace, its `eval.score` scoring trace, and `harden()`'s `eval.harden` analysis | yes |
-| `optimize` | an AutoLLM candidate's eval run (same traces as `eval`) | yes |
+| `optimize` | an AutoLLM candidate's eval run (same traces as `eval`), and the proposer's call that rewrites the prompt (since 1.95.0; before, it was unstamped and `learn` learned from it) | yes |
 | `simulation` | `simulate()`: every span of a simulated conversation | yes |
 
 An eval case's two traces carry `fastaiagent.eval.run_id`, `run_name`, `kind`

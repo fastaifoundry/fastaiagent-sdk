@@ -1,5 +1,5 @@
 """
-Replay Demo — fork-and-rerun a research run.
+Replay Demo — read a research run's trace.
 
 Run: python replay_demo.py
 
@@ -7,9 +7,10 @@ Walks through the Replay workflow against a Supervisor trace:
   1. Run the supervisor on a topic, capture the trace.
   2. Load the trace; print every span — including the nested worker spans
      under ``supervisor:research-team/worker:<role>/...``.
-  3. Pick a step (default: step 1, just after the supervisor's first LLM
-     call) and fork from there with a different topic, then rerun.
-  4. Compare the original and forked timelines.
+  3. Inspect one step.
+  4. Try to fork it: Replay reruns standalone agent traces only, so a
+     Supervisor trace is refused with a ReplayError (1.95.0). Before, the
+     rerun was a default agent that reported success.
 
 This is the multi-agent analogue of ``examples/customer-support-agent/replay_demo.py``
 — same primitives, but the trace tree is taller because each worker
@@ -25,6 +26,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import fastaiagent as fa
+from fastaiagent._internal.errors import ReplayError
 
 from tools import make_deps
 from topology import build_supervisor
@@ -64,25 +66,21 @@ async def demo() -> None:
     steps = replay.steps()
     print(f"\n   Total steps: {len(steps)}")
 
-    # ── Step 3: Fork at a handoff boundary ──────────────────────────────────
-    if len(steps) <= 1:
-        print("\n   Only one step — skipping fork demo.")
-        return
+    # ── Step 3: Inspect one step ────────────────────────────────────────────
+    if len(steps) > 1:
+        step = replay.inspect(1)
+        print(f"\nStep 3: Inspecting step [1] {step.span_name}")
+        print(f"   attributes: {sorted(step.attributes)[:6]} ...")
 
-    fork_step = min(1, len(steps) - 1)
-    print(f"\nStep 3: Forking from step [{fork_step}] with a swapped topic\n")
-    forked = replay.fork_at(fork_step)
-    forked.modify_input("Constitutional AI")  # different topic, same workflow
-
-    forked_result = forked.rerun()
-    print(f"   Forked: steps_executed={forked_result.steps_executed}")
-    print(f"   Original trace: {trace_id}")
-
-    # ── Step 4: Compare ─────────────────────────────────────────────────────
-    print("\nStep 4: Comparing original vs forked timeline\n")
-    comparison = forked.compare(forked_result)
-    print(f"   Original steps: {len(comparison.original_steps)}")
-    print(f"   Diverged at:    step {comparison.diverged_at}")
+    # ── Step 4: Why there is no fork ────────────────────────────────────────
+    # A rerun rebuilds a standalone Agent from the trace's root span. This root
+    # is the supervisor, which has no agent blueprint, so fork_at() refuses
+    # (1.95.0) instead of rerunning a default agent and reporting success.
+    print("\nStep 4: Forking a Supervisor trace\n")
+    try:
+        replay.fork_at(0)
+    except ReplayError as e:
+        print(f"   Refused, as it should be: {str(e)[:160]}...")
 
     print("\nReplay demo complete.\n")
 

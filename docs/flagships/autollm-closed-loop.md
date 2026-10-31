@@ -159,36 +159,40 @@ model faces the same 30-ticket holdout, and it measures cost from the traces of
 each model's holdout eval:
 
 ```sh
-python switch_models.py                                  # gpt-4.1, -mini, -nano
-python switch_models.py --models gpt-4.1-nano --ollama llama3.1:8b
-python switch_models.py --models gpt-4o-2024-05-13,gpt-5-mini   # a forced migration
+python switch_models.py                                  # gpt-4.1, gpt-4.1-mini, gpt-5-nano
+python switch_models.py --models gpt-5-nano --ollama llama3.1:8b
+python switch_models.py --models gpt-4o-2024-08-06,gpt-5-mini   # a forced migration
 ```
 
-From our run, starting from the shipped v2 (written for `gpt-4.1-mini`):
+From our run (2026-10-31), starting from the live prompt written for `gpt-4.1-mini`:
 
 ```
 model                    holdout: live prompt → tuned   $ / 1k tickets  version
-gpt-4.1                                 1.000 → 1.000           1.1259  kept the live prompt
-gpt-4.1-mini                            0.967 → 0.967           0.2252  kept the live prompt
-gpt-4.1-nano                            0.867 → 0.933           0.0650  v3
+gpt-4.1                                 0.900 → 0.900           1.6219  kept the live prompt
+gpt-4.1-mini                            0.933 → 0.933           0.3328  v4
+gpt-5-nano                              0.800 → 0.900           0.1524  v5
 ```
 
-- `gpt-4.1` is perfect on the holdout — at five times the cost of `-mini`.
-- `gpt-4.1-nano` runs the shipped prompt at 0.867. Re-tuned for nano, it gets
-  0.933 at **$0.065 per thousand tickets** — under a third of `-mini`'s cost and
-  1/17 of `gpt-4.1`'s.
+- `gpt-4.1` scores no better than `-mini` on this holdout, at five times the cost.
+- `gpt-5-nano` runs the live prompt at 0.800. Re-tuned for nano, it gets
+  0.900 — `gpt-4.1`'s score — at **$0.15 per thousand tickets**, under half of
+  `-mini`'s cost and under 1/10 of `gpt-4.1`'s.
 - Each model's winner is registered as its own version (`metadata.model`), so a
-  nano-specific prompt is `load_agent(version=3)` — not a fork of your code.
+  nano-specific prompt is `load_agent(version=5)` — not a fork of your code.
+- A model the provider has retired fails every case: the row reads "every case
+  errored" with the provider's message, and the script exits 1. (Both
+  `gpt-4.1-nano` and the `gpt-4o-2024-05-13` snapshot from an earlier version
+  of this table now answer 404.)
 
-Whether 0.933 at $0.065 beats 0.967 at $0.23 is a business decision; the table
-is what makes it one.
+Whether 0.900 at $0.15 beats 0.933 at $0.33 is a business decision; the table
+is what makes it one. Numbers move from run to run: the models are not
+deterministic.
 
 A local model runs the same loop through Ollama (`--ollama <model tag>`), but
 plan for it: on our laptop an 8B model answered in about 13 seconds a ticket,
 so one re-tune — some 600 calls — is hours, not minutes. We didn't wait for one
 to finish, so there is no local row in the table. A forced migration is the same command with the old and
-the new model — OpenAI's `gpt-4o-2024-05-13` snapshot shuts down on
-October 23, 2026.
+the new model — run it before the old snapshot shuts down, while both still answer.
 
 ## The honest edges
 

@@ -13,8 +13,11 @@ model's holdout eval. Each model's winner is registered as its own
 just another version — load it with ``load_agent(version=…)``.
 
     python switch_models.py                                   # 3 OpenAI sizes
-    python switch_models.py --models gpt-4.1-nano --ollama llama3.1:8b
-    python switch_models.py --models gpt-4o-2024-05-13,gpt-5-mini   # a forced migration
+    python switch_models.py --models gpt-5-nano --ollama llama3.1:8b
+    python switch_models.py --models gpt-4o-2024-08-06,gpt-5-mini   # a forced migration
+
+A model that fails every holdout case (a retired model answers 404) is reported
+as "every case errored" with the provider's message, and the script exits 1.
 
 Run after step 3 (it needs the labelled dataset). ~5 minutes per OpenAI model; a
 local model is far slower (an 8B model on a laptop: ~13 s a call, hours a re-tune).
@@ -61,6 +64,19 @@ def cost_per_1k(eval_run_id: str | None) -> float | None:
     return None if total is None else total / len(trace_ids) * 1000
 
 
+def errored(eval_run_id: str | None) -> tuple[int, int, str | None]:
+    """``(errored, cases, first error)`` of one eval run.
+
+    A model the provider has retired fails every case; without this the table
+    read "0.000 → 0.000, kept the live prompt", as if the model had simply lost.
+    """
+    if not eval_run_id:
+        return 0, 0, None
+    cases = load_run(eval_run_id)["cases"]
+    errors = [c["error"] for c in cases if c.get("error")]
+    return len(errors), len(cases), (errors[0] if errors else None)
+
+
 def tune(model: str, provider: str, dataset: Dataset) -> dict[str, Any]:
     agent = load_agent(alias="production")
     agent.llm = fa.LLMClient(provider=provider, model=model)
@@ -85,6 +101,7 @@ def tune(model: str, provider: str, dataset: Dataset) -> dict[str, Any]:
         "after": after.score if after else None,
         "improved": report.improved,
         "cost": cost_per_1k(after.eval_run_id if after else None),
+        "errored": errored(before.eval_run_id if before else None),
         "version": None,
     }
     if report.improved:
@@ -111,7 +128,7 @@ def tune(model: str, provider: str, dataset: Dataset) -> dict[str, Any]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--models", default="gpt-4.1,gpt-4.1-mini,gpt-4.1-nano")
+    parser.add_argument("--models", default="gpt-4.1,gpt-4.1-mini,gpt-5-nano")
     parser.add_argument("--ollama", help="also tune a local Ollama model, e.g. llama3.1:8b")
     args = parser.parse_args()
 
@@ -131,10 +148,20 @@ def main() -> None:
         return "—" if x is None else format(x, spec)
 
     print(f"\n{'model':<22} {'holdout: live prompt → tuned':>30} {'$ / 1k tickets':>16}  version")
+    failed = False
     for r in rows:
+        n_err, n_cases, first = r["errored"]
+        if n_cases and n_err == n_cases:  # nothing was scored: say why, not 0.000
+            failed = True
+            reason = " ".join((first or "").split())[:120]  # provider errors are multi-line JSON
+            print(f"{r['model']:<22} {'every case errored':>30} {'—':>16}  {reason}")
+            continue
         moved = f"{fmt(r['before'], '.3f')} → {fmt(r['after'], '.3f')}"
         kept = f"v{r['version']}" if r["version"] else "kept the live prompt"
-        print(f"{r['model']:<22} {moved:>30} {fmt(r['cost'], '>16.4f'):>16}  {kept}")
+        note = f"  ({n_err}/{n_cases} cases errored)" if n_err else ""
+        print(f"{r['model']:<22} {moved:>30} {fmt(r['cost'], '>16.4f'):>16}  {kept}{note}")
+    if failed:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

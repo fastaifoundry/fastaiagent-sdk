@@ -982,6 +982,40 @@ def test_the_proposer_is_shown_a_bounded_number_of_failures(caplog):
     assert nothing == [] and "unreadable reply" in caplog.text
 
 
+def test_the_proposer_call_is_stamped_optimize(isolated_local_db) -> None:
+    """1.95.0: the proposer's LLM call carried no provenance, so ``fastaiagent
+    learn`` read the optimizer's own prompt-engineering reply as a production
+    conversation and learned "facts" from it."""
+    import sqlite3
+
+    from fastaiagent.trace import otel
+    from fastaiagent.trace.provenance import SOURCE_ATTR
+
+    from fastaiagent.ui.db import init_local_db
+
+    res = asyncio.run(aevaluate(lambda q: "no", _CASES, ["exact_match"], persist=False))
+    otel.reset()
+    init_local_db(isolated_local_db).close()
+    with sqlite3.connect(isolated_local_db) as conn:
+        conn.execute("DELETE FROM spans")  # keep only what the proposer records
+    try:
+        asyncio.run(
+            propose_prompt_rewrites(
+                current_prompt="P",
+                results=res,
+                llm=FunctionModel(lambda m: json.dumps({"proposals": [{"system_prompt": "P2"}]})),
+                n=1,
+            )
+        )
+        otel.get_tracer_provider().force_flush()
+    finally:
+        otel.reset()
+    with sqlite3.connect(isolated_local_db) as conn:
+        rows = [json.loads(a) for (a,) in conn.execute("SELECT attributes FROM spans")]
+    assert rows, "the proposer call recorded no span"
+    assert {r.get(SOURCE_ATTR) for r in rows} == {"optimize"}
+
+
 def test_an_audit_judge_named_like_a_scorer_is_refused():
     """Judges are deduped by name, so a selection judge in scorers stood in for an
     audit judge of the same default name: the audit judge made no calls."""

@@ -49,7 +49,8 @@ Three consequences fall out of it:
 1. **SQLite is the queue; the batch processor is just a doorbell.** The trace
    exporter *ignores* the batch of spans handed to it and instead drains
    unsynced rows from the store. A platform outage can't lose data — rows simply
-   stay unsynced until the next drain.
+   stay unsynced until the next drain. Only spans recorded while connected are
+   queued: offline history is never uploaded by a later `connect()` (1.95.0).
 2. **Delivery is at-least-once, and that's safe.** Rows are marked synced only
    after a 2xx, so a crash mid-flight means a re-send. The server is idempotent
    by `span_id`, so a re-sent span is counted once.

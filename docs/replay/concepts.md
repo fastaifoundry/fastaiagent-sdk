@@ -136,6 +136,8 @@ root `agent.<name>` span and rebuilds from it. Two things it deliberately does
   attributes describe *what happened*, not the graph you defined — the structure
   isn't recoverable from the trace. To re-run a chain from a saved point, use
   the **checkpoint** primitives `Chain.aresume(...)` / `Chain.afork(..., modified_state=...)`.
+  Since 1.95.0 `fork_at()` refuses a chain or supervisor trace with a
+  `ReplayError`; before, it reran a default agent and reported success.
 - **Mid-run state counterfactuals.** `ForkedReplay.modify_state()` intentionally
   raises `NotImplementedError` — trace/replay is a read-only inspect-and-rerun
   surface. To fork from a saved step with changed state, use `Agent.afork(...)`

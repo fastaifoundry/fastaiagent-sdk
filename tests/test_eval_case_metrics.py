@@ -120,6 +120,28 @@ def test_a_judge_outage_is_invalid_not_failed() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("exc", "want"),
+    [(TimeoutError(), "TimeoutError"), (RuntimeError("provider 500"), "provider 500")],
+)
+def test_an_errored_case_always_says_why(exc: BaseException, want: str) -> None:
+    """1.95.0: an exception with no message (a bare TimeoutError, an
+    httpx.ConnectError) was recorded as ``""``, so the errored case had no
+    reason in the summary, the UI or the persisted run."""
+    from fastaiagent.eval import Dataset, evaluate
+
+    def agent_fn(_: str) -> str:
+        raise exc
+
+    results = evaluate(
+        agent_fn=agent_fn,
+        dataset=Dataset.from_list([{"input": "q", "expected": "a"}]),
+        scorers=["exact_match"],
+        persist=False,
+    )
+    assert results.cases[0].error == want
+
+
 def test_partial_outage_within_max_error_rate_is_gated() -> None:
     er = EvalResults()
     verdicts = [P, P, P, ScorerResult.error("Judge error: 503")]

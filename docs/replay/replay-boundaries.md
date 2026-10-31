@@ -176,6 +176,7 @@ The rules:
 - **REST and MCP tools run only when named in `allow`.** Their endpoint was rebuilt from the trace. A REST tool whose auth headers were redacted from the trace is never called, since its header holds `[redacted]`, not the credential; pass the live tool with `with_tool_override`.
 - **`with_tool_override(name, fn_or_tool)` and `with_tool_stub(name, returns=...)` replace one tool; `with_tools([...])` replaces them all.** Neither touches the global tool registry. The Local UI's rerun lets you pick Block, Stub or Live per tool; `fastaiagent ui --agent path.py:agent` is how its tools get functions.
 - **`with_tool_policy("error")`** raises instead of blocking, before anything runs in recorded mode. `FASTAIAGENT_REPLAY_TOOL_POLICY` sets the default per process.
+- **`with_context(RunContext(...))` gives the rerun a context.** A trace does not record the `RunContext` a run was given (its state is live objects: a database client, a session), so a tool that takes one has none in a rerun. Since 1.95.0 a rerun whose live or overriding tools take a `RunContext` refuses with a `ReplayError` until you pass one; a stubbed or blocked tool needs none. Before, each call failed with "missing 1 required positional argument: 'ctx'", the model answered around the error, and the rerun reported success.
 - **`replay_class` is recorded on every tool span** as `fastaiagent.tool.replay_class`: `read_only`, `idempotent` or `side_effecting`. The default is `side_effecting`, and it is never inferred; a GET `RESTTool` is side-effecting until you say otherwise. The central Replay engine reads it to choose between injecting the recorded output and re-executing. The SDK's rerun does not: it blocks whatever you did not allow, whatever its class.
 
 Proof 3 charges a card:
@@ -344,14 +345,16 @@ rerun root: fastaiagent.source='replay'
   determinism='recorded'
   tool_policy='block'
 rerun.exported=False
-original rows synced=[0]
+original rows synced=[1]
 rerun    rows synced=[1]
+original local_only=False
+rerun    local_only=True
 list_traces(): 2 traces   exclude_sources=True: 1 (the rerun left out: True)
 with_trace_db: rerun in experiments.db: True   in local.db: False
   compare(): status=ok
 ```
 
-The original is waiting to be exported; the rerun never will be. The production listing has one trace, and the rerun written elsewhere is still comparable.
+The proof runs offline, so neither trace is queued for the plane (`synced=1`: since 1.95.0 a span is queued only while connected with trace export on). The difference is `local_only`: run while connected, the original would be queued and exported, and the rerun, stamped local-only, still would not. The production listing has one trace, and the rerun written elsewhere is still comparable.
 
 **Code:** [`trace/provenance.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/trace/provenance.py); the stamp is in `LocalStorageProcessor.on_start`, [`trace/storage.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/trace/storage.py); the export filter is `_EgressFilteredExporter` in [`trace/otel.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/trace/otel.py). The proof is [`proofs/proof_provenance.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/replay/proofs/proof_provenance.py). The reader side is [Tracing → provenance](../tracing/index.md#where-a-trace-came-from-provenance).
 
@@ -376,7 +379,7 @@ FastAIAgent's answers are the seven sections above, and each has a run behind it
 - **The fork is a reference point; the rerun starts from the top.** The agent re-executes end to end with your changes applied, and `fork_at(step)` tells `compare()` where to look.
 - **Recorded mode cannot test a fix.** The model never runs, so the recorded answer comes back whatever the prompt says. Use live mode to test, recorded mode to pin.
 - **A tool that did something different is not a divergence.** `diverged_at` reads span names and model outputs; tool results are listed in `tool_diffs`, so check both.
-- **A chain trace is not refused.** Replay rebuilds from the first parentless span, and a `chain.<name>` root has no agent blueprint, so the rerun is a default agent named `replayed-agent` on the default model, fed the captured responses. On a two-agent chain the offline check returned the first agent's answer under the second agent's name. Known, and open; use `Chain.aresume` and `Chain.afork` for chains, as [Concepts](concepts.md#boundaries-and-the-checkpoint-cousins) says.
+- **Only a standalone agent trace reruns.** A rerun rebuilds an `Agent` from the root span, and a `chain.<name>`, `supervisor.<name>` or framework root has no agent blueprint. Since 1.95.0 `fork_at()` (and `rerun()`) refuse such a trace with a `ReplayError`; it can still be read with `summary()`, `step_through()` and `inspect()`. Before, the rerun was a default agent named `replayed-agent` on the default model, fed the captured responses, and it reported success: on a two-agent chain the offline check returned the first agent's answer under the second agent's name. Use `Chain.aresume` and `Chain.afork` for chains, as [Concepts](concepts.md#boundaries-and-the-checkpoint-cousins) says.
 - **`modify_state` raises `NotImplementedError`.** Local replay is read-only on state; `Agent.afork` and `Chain.afork` fork from a checkpoint with changed state.
 - **A fresh process has no tool functions unless you supply them**, through `with_tool_override`, `with_tool_stub`, `with_tools`, or `fastaiagent ui --agent`; allowing a tool there finds nothing to run.
 - **`@idempotent` does not protect a rerun.** Its cache lives in the checkpointer, and a rerun has none; an allowed `@idempotent` tool runs again.

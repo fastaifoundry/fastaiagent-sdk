@@ -43,6 +43,7 @@ Inserts are idempotent: re-adding the same `(scope, scope_id, fact, project_id)`
 ### 2. `extract_facts_from_trace` — the LLM call
 
 ```python
+import fastaiagent as fa
 from fastaiagent.learn import extract_facts_from_trace
 from fastaiagent.trace.storage import TraceStore
 
@@ -107,7 +108,7 @@ A fully automatic semantic-dedup pass (LLM judge per scope_id batch) is tracked 
 
 ## Privacy
 
-`fastaiagent learn` extracts only `agent`-scoped facts by default. Both `--scope user` and `--scope project` require `--allow-personal` to be set explicitly:
+`fastaiagent learn` extracts only `agent`-scoped facts by default. `--scope user` and `--scope project` require `--allow-personal`, a non-empty `--scope-id` (the user or project the facts are filed under), `--agent` (to narrow the traces) and `--attribute-all` (to confirm every trace of that agent belongs to that user or project, since traces carry no user id); see [`fastaiagent learn`](../cli/learn.md):
 
 ```sh
 # Allowed:

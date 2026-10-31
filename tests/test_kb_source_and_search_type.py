@@ -84,6 +84,26 @@ def test_metadata_source_survives_add_and_delete_by_source(
 
 
 @pytest.mark.parametrize("search_type", KB_KINDS)
+def test_delete_by_source_takes_the_path_as_it_was_added(
+    tmp_path: Path, search_type: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """1.95.0: ``add("./docs/")`` stores ``docs/old-faq.md``; the documented
+    ``kb delete ./docs/old-faq.md`` deleted 0 chunks."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "old-faq.md").write_text("Refunds take seven days.")
+    (tmp_path / "docs" / "new-faq.md").write_text("Shipping is free over fifty.")
+    kb = _kb(tmp_path, search_type)
+    kb.add("./docs/")
+
+    stored = str(Path("docs") / "new-faq.md")  # docs\new-faq.md on Windows
+    assert kb.delete_by_source("./docs/old-faq.md") == 1
+    assert _sources(kb) == [stored]
+    assert kb.delete_by_source(stored) == 1  # the stored form still works
+    kb.close()
+
+
+@pytest.mark.parametrize("search_type", KB_KINDS)
 def test_document_source_still_wins(tmp_path: Path, search_type: str) -> None:
     kb = _kb(tmp_path, search_type)
     kb.add_documents([Document(content="Doc only source.", source="doc.txt")])

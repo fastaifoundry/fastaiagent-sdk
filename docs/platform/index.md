@@ -286,8 +286,10 @@ agent via `PlaneFactBlock` — see [Memory → PlaneFactBlock](../agents/memory.
 Trace export is **local-first, then drained to the platform**, so a platform
 outage never loses spans:
 
-1. Every span is written to local SQLite first (the durable source of truth),
-   marked un-acked (`synced=0`).
+1. Every span is written to local SQLite first (the durable source of truth).
+   While trace export is on, it is marked un-acked (`synced=0`). A span recorded
+   while not connected, or under `connect(export_traces=False)`, is written as
+   handled (`synced=1`): it stays local and a later `connect()` never sends it.
 2. The exporter drains un-acked spans and POSTs them to
    `/public/v1/traces/ingest`. Transient failures (connection errors, timeouts,
    HTTP 5xx) are **retried** with bounded exponential backoff (~3 attempts). A
@@ -328,10 +330,16 @@ limit and kept sending for the rest of the month, each new trace refused.
 **kept in `local.db`** (they still appear in the Local UI); the dropped count is
 logged. Local trace history is never deleted to bound the buffer.
 
-> Upgrade note: the `synced` flag is added by an automatic, additive migration.
-> Existing local traces are marked acked on upgrade, so connecting an existing
-> project does **not** retroactively back-push your whole history. Use the manual
-> backfill below to push historical traces on demand.
+**Connecting never uploads earlier history.** Only spans recorded while connected
+are queued. Traces recorded offline stay in `local.db`; use the manual backfill
+below to push one on demand.
+
+> Upgrade note (1.95.0): before 1.95.0 a span was queued whether or not the
+> process was connected, so the first `connect()` uploaded up to 7 days of
+> offline traces. The 1.95.0 migration marks every span still queued as handled,
+> since an offline span and an outage backlog look the same. A backlog from a
+> connected run that had not reached the plane before the upgrade stays local;
+> publish it with the manual backfill if you need it there.
 
 ## Disconnecting
 

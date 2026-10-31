@@ -106,7 +106,9 @@ def _resolve_target(spec: str) -> Any:
         sys.path.insert(0, str(path.parent.resolve()))
         spec_obj.loader.exec_module(module)
     else:
-        module = importlib.import_module(module_part)
+        from fastaiagent._internal.target import import_dotted
+
+        module = import_dotted(module_part)
     if not hasattr(module, attr):
         raise typer.BadParameter(f"Module {module_part!r} has no attribute {attr!r}")
     return getattr(module, attr)

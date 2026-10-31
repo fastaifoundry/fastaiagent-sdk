@@ -21,7 +21,9 @@ def list_traces(last_hours: int = typer.Option(24, help="Show traces from last N
         return
 
     table = Table(title="Recent Traces")
-    table.add_column("Trace ID", style="cyan")
+    # The full id: replay, export and export-trace look a trace up by it, and a
+    # 12-character prefix found nothing (1.95.0).
+    table.add_column("Trace ID", style="cyan", no_wrap=True, min_width=32)
     table.add_column("Name")
     table.add_column("Status")
     table.add_column("Spans", justify="right")
@@ -29,7 +31,7 @@ def list_traces(last_hours: int = typer.Option(24, help="Show traces from last N
 
     for t in traces:
         table.add_row(
-            t.trace_id[:12] + "...",
+            t.trace_id,
             t.name,
             t.status,
             str(t.span_count),
@@ -50,7 +52,9 @@ def export_trace(
 
     store = TraceStore()
     exported = store.export(trace_id, format=format)
-    console.print(exported)
+    # Plain text, so ``> trace.json`` is valid JSON: Rich wraps long strings
+    # at the terminal width, which broke it (1.95.0).
+    typer.echo(exported)
     store.close()
 
 

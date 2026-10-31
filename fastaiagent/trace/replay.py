@@ -52,6 +52,26 @@ def _has_redacted_header(spec: dict[str, Any]) -> bool:
     )
 
 
+def _require_agent_root(trace: TraceData) -> None:
+    """Refuse to rerun a trace whose root is not a standalone agent run (1.95.0).
+
+    A rerun rebuilds an ``Agent`` from the root span's ``agent.*`` attributes.
+    A ``chain.*``, ``supervisor.*`` or framework root has none, so the rerun was
+    a default agent named ``replayed-agent`` on the default model, and it
+    reported success.
+    """
+    roots = [s for s in trace.spans if not s.parent_span_id] or trace.spans[:1]
+    if not roots or any(s.name.startswith("agent.") for s in roots):
+        return
+    raise ReplayError(
+        f"Trace {trace.trace_id} is a {roots[0].name!r} run, not a standalone agent run. "
+        "A rerun rebuilds an Agent from the trace's root span, and this root has no agent "
+        "to rebuild. Fork a Chain from its checkpoint with Chain.afork(execution_id, ...) "
+        "or Chain.aresume(...). The trace can still be read with summary(), "
+        "step_through() and inspect()."
+    )
+
+
 def _coerce_replay_class(value: Any) -> str:
     from fastaiagent.tool._replay_blocked import _coerce_replay_class as coerce
 
@@ -498,6 +518,20 @@ class ForkedReplay:
         self._trace_db: str | None = None
         self._surface: str = "python"
         self._source_store: TraceStore | None = None
+        self._context: Any = None
+
+    def with_context(self, context: Any) -> ForkedReplay:
+        """The ``RunContext`` the rerun passes to ``agent.arun(context=...)``.
+
+        A trace does not record a run's context (its dependencies are live
+        objects: a database client, a user session), so a rerun has none unless
+        you give it one. Tools that take a ``RunContext`` and run live (an
+        override, or one allowed by the tool policy) need it; without it the
+        rerun refuses with a ``ReplayError`` instead of failing each tool call
+        inside the model loop (1.95.0).
+        """
+        self._context = context
+        return self
 
     def modify_input(self, new_input: Any) -> ForkedReplay:
         """Override the input the rerun will use.
@@ -721,6 +755,7 @@ class ForkedReplay:
             raise ReplayError(
                 f"Trace {self._trace.trace_id} has no spans — cannot reconstruct agent."
             )
+        _require_agent_root(self._trace)
 
         agent_dict = self._build_agent_dict(root)
         self._apply_agent_modifications(agent_dict)
@@ -751,6 +786,7 @@ class ForkedReplay:
         tools, dispositions, blocked = self._build_tool_plan(agent_dict.get("tools") or [])
         if self._tool_policy == "error" and self._determinism == "recorded":
             self._preflight_recorded_tools(dispositions)
+        self._preflight_context(tools, dispositions)
 
         scope_attrs = {
             "fastaiagent.replay.source_trace_id": self._trace.trace_id,
@@ -1018,6 +1054,30 @@ class ForkedReplay:
             kinds.append("tool_stubs")
         return kinds
 
+    def _preflight_context(self, tools: list[Any], dispositions: dict[str, str]) -> None:
+        """Refuse a rerun whose live tools need a ``RunContext`` it was not given.
+
+        Without one, each call to such a tool failed with "missing 1 required
+        positional argument: 'ctx'", the model read the error and answered
+        anyway, and the rerun reported success (1.95.0).
+        """
+        if self._context is not None:
+            return
+        if self._determinism == "recorded" and self._on_miss != "live":
+            return  # every tool result is served from the recording
+        needs = sorted(
+            getattr(t, "name", "?")
+            for t in tools
+            if getattr(t, "_context_param_name", None)
+            and dispositions.get(getattr(t, "name", "")) in ("live", "override")
+        )
+        if needs:
+            raise ReplayError(
+                f"Replay of trace {self._trace.trace_id} runs tools that take a RunContext "
+                f"({', '.join(needs)}), but a trace does not record the run's context. Pass "
+                f"one with .with_context(RunContext(...)), or stub them with with_tool_stub."
+            )
+
     async def _arun_unpaused(self, agent: Any, new_input: Any) -> Any:
         """``agent.arun`` for a rerun, refusing a pause with a ``ReplayError``.
 
@@ -1031,7 +1091,7 @@ class ForkedReplay:
         from fastaiagent.chain.interrupt import InterruptSignal
 
         try:
-            result = await agent.arun(new_input)
+            result = await agent.arun(new_input, context=self._context)
         except InterruptSignal as sig:
             paused = what_paused(sig)
         else:
@@ -1426,6 +1486,7 @@ class Replay:
         """Fork the execution at a specific step for re-execution."""
         if step < 0 or step >= len(self._steps):
             raise ReplayError(f"Step {step} out of range (0-{len(self._steps) - 1})")
+        _require_agent_root(self._trace)
         forked = ForkedReplay(
             original_trace=self._trace,
             fork_point=step,

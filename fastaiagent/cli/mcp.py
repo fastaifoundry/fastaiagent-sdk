@@ -42,7 +42,9 @@ def _resolve_target(spec: str) -> Any:
             pass
     else:
         # Dotted import path.
-        module = importlib.import_module(module_part)
+        from fastaiagent._internal.target import import_dotted
+
+        module = import_dotted(module_part)
 
     if not hasattr(module, attr):
         raise typer.BadParameter(

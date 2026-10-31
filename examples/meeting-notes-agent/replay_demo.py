@@ -1,17 +1,16 @@
 """
-Replay Demo — fork the chain at a node boundary and rerun.
+Replay Demo — read the meeting-notes chain's trace.
 
 Run: python replay_demo.py
 
-The interesting fork point here is between ``analyze`` and ``merge`` —
-forking just before merge lets you inspect what the three analyzers
-returned and rerun merge with hand-edited analyzer payloads. Useful
-when debugging "why did merge produce a partial MeetingNotes" without
-spending the LLM tokens on a fresh ``analyze`` run.
-
-For a less academic use case, this demo just runs the chain on the
-sample transcript, loads the trace, lists every step in the trace tree,
-forks at step 1 with a different transcript path, and reruns from there.
+This demo runs the chain on the sample transcript, loads the trace, lists
+every step in it and inspects one. Replay reruns standalone agent traces
+only, so forking this chain trace is refused (1.95.0). A chain is forked
+from its checkpoint instead: the last step branches from the checkpoint
+after ``analyze`` with ``chain.afork``, so only ``merge`` runs again, on
+the analysis the original run produced — useful when debugging "why did
+merge produce a partial MeetingNotes" without paying for a fresh
+``analyze``.
 """
 
 from __future__ import annotations
@@ -24,6 +23,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import fastaiagent as fa
+from fastaiagent._internal.errors import ReplayError
 
 from tools import make_deps
 from workflow import build_chain
@@ -66,22 +66,37 @@ async def demo() -> None:
     steps = replay.steps()
     print(f"\n   Total steps: {len(steps)}")
 
-    if len(steps) <= 1:
-        print("   Only one step — skipping fork demo.")
-        return
+    if len(steps) > 1:
+        step = replay.inspect(1)
+        print(f"\nStep 3: Inspecting step [1] {step.span_name}")
+        print(f"   attributes: {sorted(step.attributes)[:6]} ...")
 
-    fork_step = min(1, len(steps) - 1)
-    print(f"\nStep 3: Forking at step [{fork_step}]\n")
-    forked = replay.fork_at(fork_step)
-    forked.modify_input({"path": transcript})
+    # A chain is forked from its checkpoint, not its trace: Replay rebuilds a
+    # standalone Agent from a trace's root span, and a chain root has none, so
+    # fork_at() refuses a chain trace (1.95.0) instead of rerunning a default
+    # agent and reporting success. Fork the run itself with
+    # chain.afork(execution_id, checkpoint_id=..., input=...).
+    print("\nStep 4: Forking a Chain trace\n")
+    try:
+        replay.fork_at(0)
+    except ReplayError as e:
+        print(f"   Refused, as it should be: {str(e)[:160]}...")
 
-    forked_result = forked.rerun()
-    print(f"   Forked result: steps_executed={forked_result.steps_executed}")
-
-    print("\nStep 4: Comparing original vs forked timeline\n")
-    comparison = forked.compare(forked_result)
-    print(f"   Original steps: {len(comparison.original_steps)}")
-    print(f"   Diverged at:    step {comparison.diverged_at}")
+    # The chain's own fork: branch from the checkpoint after `analyze`, so only
+    # `merge` runs again, on the analysis the original run produced.
+    print("\nStep 5: Forking the run from its checkpoint after `analyze`\n")
+    after_analyze = next(
+        (c for c in fa.SQLiteCheckpointer().list(execution_id) if c.node_id == "analyze"), None
+    )
+    if after_analyze is not None:
+        forked = await chain.afork(
+            execution_id, checkpoint_id=after_analyze.checkpoint_id, context=ctx
+        )
+        print(f"   Fork status: {forked.status}")
+        print(
+            "   action_items:",
+            len((forked.final_state.get("output") or {}).get("action_items", [])),
+        )
 
     print("\nReplay demo complete.\n")
 

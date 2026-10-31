@@ -63,8 +63,9 @@ Now every span goes to both sinks. The `_platform_processor` reference is stored
 #### Platform export is drain-based and durable
 
 The two sinks are ordered: `LocalStorageProcessor` is attached first, so it
-writes each span to SQLite (`synced=0`) *before* `BatchSpanProcessor` enqueues
-it. `PlatformSpanExporter.export()` therefore doesn't push the live span batch —
+writes each span to SQLite (`synced=0` while trace export is on, `synced=1` for
+a span recorded offline, which is never sent) *before* `BatchSpanProcessor`
+enqueues it. `PlatformSpanExporter.export()` therefore doesn't push the live span batch —
 it **drains the `synced=0` rows from SQLite**, POSTs them, and marks them
 `synced=1` only after a confirmed `2xx`. Consequences:
 

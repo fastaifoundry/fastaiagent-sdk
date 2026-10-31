@@ -18,6 +18,7 @@ This file demonstrates two newer SDK features:
 
 import hashlib
 import os
+from typing import Literal
 
 import fastaiagent as fa
 from fastaiagent.chain.idempotent import idempotent
@@ -85,22 +86,34 @@ def _allocate_ticket_id(*, user_email: str, subject: str, priority: str) -> dict
     }
 
 
+_NEEDS_REVIEW_WORDS = ("billing", "refund", "charge", "invoice", "payment")
+
+
 @fa.tool()
 async def create_ticket(
     subject: str,
     description: str,
-    priority: str,
+    priority: Literal["low", "medium", "high", "urgent"],
+    category: Literal["billing", "refund", "technical", "account", "other"],
     ctx: fa.RunContext[Deps],
 ) -> str:
     """Create a support ticket for issues that cannot be resolved directly.
-    Priority should be 'low', 'medium', 'high', or 'urgent'.
-    Use this for billing disputes, refund requests, or complex technical issues."""
+    Use this for billing disputes, refund requests, or complex technical issues.
+    Set ``category`` to what the ticket is about: a double charge is "billing"."""
     user_email = ctx.state.user_email
 
     # HITL: high-impact tickets require human approval before they're filed.
     # The Agent's SQLiteCheckpointer persists the suspension; the REPL prompts
     # the user, then calls ``agent.aresume(...)`` with the decision.
-    if priority in ("high", "urgent") or "billing" in subject.lower() or "refund" in description.lower():
+    # Gate on the model's structured ``category``, not only on the words it
+    # happened to write: "Double charge this month" (priority medium) used to
+    # skip review. The word check stays as a backstop.
+    text = f"{subject} {description}".lower()
+    if (
+        priority in ("high", "urgent")
+        or category in ("billing", "refund")
+        or any(word in text for word in _NEEDS_REVIEW_WORDS)
+    ):
         decision = fa.interrupt(
             reason="ticket_approval_required",
             context={

@@ -19,7 +19,7 @@ fastaiagent --help
 | `fastaiagent connect` | Save Platform credentials and verify the API key |
 | `fastaiagent disconnect` | Remove saved Platform credentials |
 | `fastaiagent auth` | Inspect saved credentials (`status`, `env`) |
-| `fastaiagent traces` | List, export, and search local traces |
+| `fastaiagent traces` | List, export, prune, scrub and purge local traces |
 | `fastaiagent replay` | Show, inspect, and fork traces for debugging |
 | `fastaiagent eval` | Curate eval datasets from traces; run evaluations |
 | `fastaiagent prompts` | Browse the prompt registry |
@@ -40,7 +40,7 @@ fastaiagent --help
 
 ```bash
 $ fastaiagent version
-fastaiagent 1.0.0 [openai, anthropic, langchain, crewai, kb, qdrant, chroma, mcp-server, otel-export, postgres]
+fastaiagent 1.95.0 [openai, anthropic, langchain, crewai, kb, qdrant, chroma, mcp, otel-export]
 ```
 
 Brackets list the optional extras whose upstream package is importable. Useful when debugging "which extras did this env install?" in bug reports.
@@ -206,8 +206,8 @@ are never sent.** Disable with `connect(export_evals=False)` or
 # List registered prompts
 fastaiagent prompts list
 
-# Diff two versions
-fastaiagent prompts diff <name> --from v1 --to v2
+# Diff two versions (version numbers, positional)
+fastaiagent prompts diff <name> 1 2
 ```
 
 ## `fastaiagent kb`
@@ -271,6 +271,16 @@ Takes `path/to/file.py:attr` or `pkg.module:attr` — the same syntax as
 `Agent`, `Chain`, `Swarm`, or `Supervisor`. Targets that fail to resolve are
 reported and skipped; the UI still starts. The module is imported, so guard
 module-level side effects with `if __name__ == "__main__":`.
+
+!!! note "Where `pkg.module` is looked up"
+    Every command that takes a `pkg.module:attr` target (`ui --agent`,
+    `agent serve`, `mcp serve`, `eval run --agent`, `resume --runner`, `push
+    --module`, `runner --tools`) finds a package that is installed **or** sits
+    in the directory you run the command from, like `python -m` does. The
+    current directory is searched last, so an installed package or the
+    standard library always wins over a same-named file in it. Before 1.95.0
+    an uninstalled package in the project directory failed with `No module
+    named …` unless you set `PYTHONPATH=.`.
 
 Unlike `agent serve`, this does **not** expose an endpoint that runs your
 agent on request. Import paths are read only from the command line, never

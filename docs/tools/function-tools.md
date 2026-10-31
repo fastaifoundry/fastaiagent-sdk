@@ -224,8 +224,11 @@ and gets the answers back as data. Use it when *the agent* should decide when to
 triage or check scope, at a fraction of a chat turn's latency and price:
 
 ```python
+from fastaiagent import Agent
 from fastaiagent.llm import Choice, LLMClient, Predicate
 from fastaiagent.tool import decision_tool
+
+chat_llm = LLMClient(provider="openai", model="gpt-4o-mini")  # the agent's own model
 
 triage = decision_tool(
     {

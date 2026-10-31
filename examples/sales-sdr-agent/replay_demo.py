@@ -1,18 +1,19 @@
 """
-Replay Demo — fork the sales-SDR chain at a node boundary.
+Replay Demo — read the sales-SDR chain's trace.
 
 Run: python replay_demo.py
 
 The supervisor in ``research-agent`` had a fairly tall trace tree because every
 delegation added a worker sub-tree. This Chain is flatter — one chain root,
-one tool span per node — but the same Replay primitives apply: load by
-trace_id, inspect the steps, fork at a chosen step with modified input,
-rerun, compare.
+one tool span per node — and the same Replay primitives read it: load by
+trace_id, list the steps, inspect one. Replay reruns standalone agent traces
+only, so forking this chain trace is refused (1.95.0); a chain is forked from
+its checkpoint with ``chain.afork``.
 
 Note: this demo runs the chain to *qualified path* but does not actually
-trigger the HITL gate on send (it just inspects + forks the trace before
-that point). To exercise resume across HITL, see ``agent.py``'s
-``run_one`` which loops ``aresume()`` until the run is no longer paused.
+trigger the HITL gate on send. To exercise resume across HITL, see
+``agent.py``'s ``run_one`` which loops ``aresume()`` until the run is no
+longer paused.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import fastaiagent as fa
+from fastaiagent._internal.errors import ReplayError
 
 from tools import make_deps
 from workflow import build_chain
@@ -79,22 +81,22 @@ async def demo() -> None:
     steps = replay.steps()
     print(f"\n   Total steps: {len(steps)}")
 
-    # ─── Step 4: Fork ────────────────────────────────────────────────────────
-    if len(steps) <= 1:
-        print("   Only one step — skipping fork demo.")
-        return
-    fork_step = min(1, len(steps) - 1)
-    print(f"\nStep 3: Forking at step [{fork_step}] with a different prospect\n")
-    forked = replay.fork_at(fork_step)
-    forked.modify_input("carol@megacorp.global")  # switch prospect mid-flight
+    # ─── Step 4: Inspect one step ───────────────────────────────────────────
+    if len(steps) > 1:
+        step = replay.inspect(1)
+        print(f"\nStep 3: Inspecting step [1] {step.span_name}")
+        print(f"   attributes: {sorted(step.attributes)[:6]} ...")
 
-    forked_result = forked.rerun()
-    print(f"   Forked result: steps_executed={forked_result.steps_executed}")
-
-    print("\nStep 4: Comparing original vs forked timeline\n")
-    comparison = forked.compare(forked_result)
-    print(f"   Original steps: {len(comparison.original_steps)}")
-    print(f"   Diverged at:    step {comparison.diverged_at}")
+    # ─── Step 5: Why there is no fork ───────────────────────────────────────
+    # A rerun rebuilds a standalone Agent from the trace's root span, and a
+    # chain root has none, so fork_at() refuses a chain trace (1.95.0) instead
+    # of rerunning a default agent and reporting success. A chain is forked
+    # from its checkpoint: chain.afork(execution_id, checkpoint_id=..., input=...).
+    print("\nStep 4: Forking a Chain trace\n")
+    try:
+        replay.fork_at(0)
+    except ReplayError as e:
+        print(f"   Refused, as it should be: {str(e)[:160]}...")
 
     print("\nReplay demo complete.\n")
 

@@ -157,3 +157,39 @@ def test_a_failed_run_stream_ends_error_and_detaches(traced_db: Any) -> None:
     assert roots, "the failed root span was never ended, so never stored"
     assert roots[-1]["status"] == "ERROR"
     assert any(e.get("name") == "exception" for e in roots[-1]["events"])
+
+
+def _registered(db: Any, name: str) -> dict[str, Any]:
+    with sqlite3.connect(db) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM external_agents WHERE name = ?", (name,)).fetchone()
+    assert row is not None, f"{name} was not registered"
+    return dict(row)
+
+
+def _search_kb(query: str) -> str:
+    """Search the support knowledge base."""
+    return query
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "stored"),
+    [
+        ({}, None),
+        ({"instructions": "Be terse."}, "Be terse."),
+        ({"system_prompt": "You help."}, "You help."),
+    ],
+    ids=["no-prompt", "instructions", "system-prompt"],
+)
+def test_register_agent_reads_prompts_without_the_decorator_method(
+    traced_db: Any, kwargs: dict[str, Any], stored: str | None
+) -> None:
+    """Before 1.95.0 an agent with no static ``system_prompt=`` raised TypeError:
+    ``register_agent`` iterated ``Agent.system_prompt``, the decorator method."""
+    from fastaiagent.integrations import pydanticai as pa
+
+    pa.register_agent(Agent(TestModel(), tools=[_search_kb], **kwargs), name="support")
+    row = _registered(traced_db, "support")
+    assert row["system_prompt"] == stored
+    tools = [node["id"] for node in json.loads(row["topology_json"])["nodes"]]
+    assert tools == ["_search_kb"], "the agent's function tools were not registered"

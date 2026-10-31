@@ -204,8 +204,13 @@ async def execute_chain(
     run_context: Any | None = None,
     strict_routing: bool = False,
     middleware: list[Any] | None = None,
+    initial_node_results: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Execute a chain as a state machine.
+
+    ``initial_node_results`` (1.95.0): the results of nodes that already ran,
+    for a resume or a fork, so a node templating ``{{node_results.<id>...}}``
+    sees them.
 
     ``middleware`` (1.91.0, 1C): the chain's own — outermost around every agent
     node and ``wrap_tool`` around every tool node, with one ``ctx.state`` per
@@ -230,7 +235,7 @@ async def execute_chain(
     """
     execution_id = execution_id or str(uuid.uuid4())
     state = ChainState(initial_state)
-    node_results: dict[str, Any] = {}
+    node_results: dict[str, Any] = dict(initial_node_results or {})
     iteration_counters: dict[str, int] = {}
     node_map = {n.id: n for n in nodes}
 

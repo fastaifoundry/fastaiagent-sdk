@@ -169,6 +169,9 @@ class ROUGEScore(Scorer):
     Supports ``rouge-1`` (unigram recall) and ``rouge-l`` (LCS-based F1).
     Pure Python implementation. No LLM or API calls.
 
+    Named ``"rouge"`` for ``rouge-1`` (the default) and ``"rouge-l"`` for
+    ``rouge-l``, so both can run in one ``evaluate()``.
+
     Example:
         scorer = ROUGEScore(variant="rouge-1")
         result = scorer.score(
@@ -184,6 +187,10 @@ class ROUGEScore(Scorer):
             raise ValueError(f"Unsupported variant: {variant}. Use 'rouge-1' or 'rouge-l'.")
         self.variant = variant
         self.threshold = threshold
+        # The default keeps "rouge"; rouge-l gets its own name so both variants
+        # can run in one evaluate() without their verdicts colliding (1.95.0).
+        if variant == "rouge-l":
+            self.name = "rouge-l"
 
     def score(
         self, input: str, output: str, expected: str | None = None, **kw: Any

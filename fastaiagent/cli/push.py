@@ -10,13 +10,14 @@ console object. Replaces hand-written ``httpx.post(...)`` registration.
 
 from __future__ import annotations
 
-import importlib
 import json
 from typing import Any
 
 import typer
 from rich.console import Console
 from rich.table import Table
+
+from fastaiagent._internal.target import import_dotted
 
 console = Console()
 
@@ -59,7 +60,7 @@ def push(
     # Import the module first so its agents exist. Do NOT rely on the module
     # calling connect() — we own the connection here.
     try:
-        mod = importlib.import_module(module)
+        mod = import_dotted(module)
     except Exception as err:
         console.print(f"[red]Could not import module[/red] {module!r}: {err}")
         raise typer.Exit(code=1) from err

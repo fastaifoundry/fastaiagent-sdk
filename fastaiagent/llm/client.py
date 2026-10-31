@@ -983,7 +983,7 @@ class LLMClient:
                     payload = line[6:]
                     if payload.strip() == "[DONE]":
                         break
-                    yield _json.loads(payload)
+                    yield self._json_chunk(payload, f"{self._wire_name()} API")
 
     def _wire_name(self) -> str:
         """Who an OpenAI-compatible error came from (1.93.0): a Groq or other
@@ -2022,7 +2022,7 @@ class LLMClient:
             # openai SDK models carry the request id as ``_request_id``.
             dumped: dict[str, Any] = raw.model_dump()
             return dumped, getattr(raw, "_request_id", None)
-        parsed: dict[str, Any] = raw.json()
+        parsed: dict[str, Any] = self._json_body(raw, "OpenAI Decisions API")
         return parsed, raw.headers.get("x-request-id")
 
     def _get_provider_fn(self) -> Any:
@@ -2268,6 +2268,31 @@ class LLMClient:
             values.insert(0, self.api_key)
         return values
 
+    def _json_body(self, resp: Any, api: str) -> Any:
+        """``resp.json()``, or an :class:`LLMProviderError` when the body is not JSON.
+
+        A 200 with an HTML page (a proxy, a wrong ``base_url``) raised a bare
+        ``JSONDecodeError`` that escaped ``except LLMError`` (1.95.0).
+        """
+        try:
+            return resp.json()
+        except ValueError as e:
+            raise self._provider_error(
+                f"{api} returned a body that is not JSON (HTTP {resp.status_code})",
+                resp.text[:300],
+                resp.status_code,
+                resp.headers,
+            ) from e
+
+    def _json_chunk(self, payload: str, api: str) -> Any:
+        """One streamed chunk as JSON; the same error as :meth:`_json_body` if not."""
+        try:
+            return _json.loads(payload)
+        except ValueError as e:
+            raise self._provider_error(
+                f"{api} streamed a chunk that is not JSON (HTTP 200)", payload[:300], 200
+            ) from e
+
     def _provider_error(
         self,
         prefix: str,
@@ -2350,7 +2375,7 @@ class LLMClient:
                     resp.status_code,
                     resp.headers,
                 )
-            data = resp.json()
+            data = self._json_body(resp, f"{self._wire_name()} API")
 
         return self._parse_openai_response(data)
 
@@ -2432,7 +2457,7 @@ class LLMClient:
                     resp.status_code,
                     resp.headers,
                 )
-            data = resp.json()
+            data = self._json_body(resp, "OpenAI Responses API")
         return parse(self, data)
 
     async def _responses_sse(
@@ -2466,7 +2491,7 @@ class LLMClient:
                     )
                 async for line in resp.aiter_lines():
                     if line.startswith("data: "):
-                        yield _json.loads(line[6:])
+                        yield self._json_chunk(line[6:], "OpenAI Responses API")
 
     async def _stream_openai_responses(
         self, messages: list[Message], tools: list[dict[str, Any]] | None = None, **kwargs: Any
@@ -2651,7 +2676,7 @@ class LLMClient:
                     resp.status_code,
                     resp.headers,
                 )
-            data = resp.json()
+            data = self._json_body(resp, "Anthropic API")
 
         # Parse Anthropic response
         content_text = ""
@@ -2765,7 +2790,7 @@ class LLMClient:
                     resp.status_code,
                     resp.headers,
                 )
-            data = resp.json()
+            data = self._json_body(resp, "Ollama API")
 
         msg = data.get("message", {})
         tool_calls = [
@@ -3152,7 +3177,7 @@ class LLMClient:
                         continue
                     if not line.startswith("data: "):
                         continue
-                    data = _json.loads(line[6:])
+                    data = self._json_chunk(line[6:], "Anthropic API")
                     _track_anthropic_block(event_type, data, blocks, block_json)
 
                     if event_type == "content_block_start":
@@ -3309,7 +3334,7 @@ class LLMClient:
                 async for line in resp.aiter_lines():
                     if not line.strip():
                         continue
-                    chunk = _json.loads(line)
+                    chunk = self._json_chunk(line, "Ollama API")
 
                     # Text content
                     msg = chunk.get("message", {})

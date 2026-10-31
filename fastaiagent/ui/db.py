@@ -17,7 +17,7 @@ from pathlib import Path
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
 
-CURRENT_SCHEMA_VERSION = 28
+CURRENT_SCHEMA_VERSION = 29
 
 # A migration step is either a SQL string or a callable that takes the
 # ``SQLiteHelper`` and runs whatever logic it needs (e.g., gated
@@ -628,6 +628,22 @@ def _v28_add_trace_export_pause(db: SQLiteHelper) -> None:
             paused_at   TEXT NOT NULL
         )"""
     )
+
+
+def _v29_retire_offline_span_queue(db: SQLiteHelper) -> None:
+    """Stop the plane drain from uploading offline history (1.95.0, S1).
+
+    Before 1.95.0 every span was written ``synced=0``, connected or not, so the
+    first ``connect()`` uploaded up to 7 days of traces recorded offline. A span
+    is now queued only while trace export is on. The rows already queued cannot
+    be told apart (offline history, or an outage backlog from a connected run),
+    so all of them are marked handled, as ``_v11_add_span_synced`` did on its
+    upgrade. They stay in ``local.db``; ``TraceData.publish()`` sends one on
+    demand.
+    """
+    rows = db.fetchall("SELECT name FROM sqlite_master WHERE type='table' AND name='spans'")
+    if rows:
+        db.execute("UPDATE spans SET synced = 1 WHERE synced = 0")
 
 
 def _v22_add_legacy_imports(db: SQLiteHelper) -> None:
@@ -1382,6 +1398,10 @@ _MIGRATIONS: dict[int, list[_Step]] = {
     28: [
         # 1.94.0 (S7): trace export paused at the plane's monthly limit.
         _v28_add_trace_export_pause,
+    ],
+    29: [
+        # 1.95.0 (S1): offline spans are no longer queued for the plane.
+        _v29_retire_offline_span_queue,
     ],
 }
 

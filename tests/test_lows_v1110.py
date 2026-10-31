@@ -91,6 +91,39 @@ def test_l1_like_escape_does_not_overmatch_underscore(tmp_path: Path) -> None:
     assert by_name["myAprompt"]["linked_trace_count"] == 1
 
 
+def test_prompt_counts_read_every_key_prefix(tmp_path: Path) -> None:
+    """1.95.0: one scan for all prompts. Spans from older SDKs (``prompt.name``,
+    ``fastai.prompt.name``) still count, and distinct traces count once."""
+    db_path = tmp_path / "local.db"
+    _seed_two_prompts_with_like_chars(db_path)
+    db = init_local_db(db_path)
+    now = datetime.now(tz=timezone.utc).isoformat()
+    try:
+        for span_id, trace_id, attributes in (
+            ("s-legacy", "trace-legacy", json.dumps({"prompt.name": "myAprompt"})),
+            ("s-oldest", "trace-oldest", json.dumps({"fastai.prompt.name": "myAprompt"})),
+            ("s-again", "trace-foil", json.dumps({"fastaiagent.prompt.name": "myAprompt"})),
+        ):
+            db.execute(
+                """INSERT INTO spans
+                   (span_id, trace_id, parent_span_id, name, start_time, end_time,
+                    status, attributes, events)
+                   VALUES (?, ?, NULL, 'agent.x', ?, ?, 'OK', ?, '[]')""",
+                (span_id, trace_id, now, now, attributes),
+            )
+    finally:
+        db.close()
+
+    app = build_app(db_path=str(db_path), no_auth=True)
+    with TestClient(app) as client:
+        r = client.get("/api/prompts")
+    assert r.status_code == 200, r.text
+    by_name = {row["name"]: row for row in r.json()["rows"]}
+    # trace-foil (two spans, one trace), trace-legacy, trace-oldest.
+    assert by_name["myAprompt"]["linked_trace_count"] == 3
+    assert by_name["my_prompt"]["linked_trace_count"] == 0
+
+
 # ---------------------------------------------------------------------------
 # L3 — Filter preset Pydantic schema (permissive)
 # ---------------------------------------------------------------------------
