@@ -111,8 +111,14 @@ async def _arequest_rewrites(
     def one_line(text: str) -> str:  # provider errors carry multi-line JSON bodies
         return " ".join(text.split())[:300]
 
+    from fastaiagent.trace.provenance import provenance_scope
+
     try:
-        resp = await llm.acomplete([SystemMessage(_REWRITE_SYSTEM), UserMessage(user)])
+        # Stamped "optimize" so `fastaiagent learn` and production views skip it:
+        # unstamped, the proposer's own prompt-engineering reply was learned as a
+        # fact about the agent's users (1.95.0).
+        with provenance_scope("optimize"):
+            resp = await llm.acomplete([SystemMessage(_REWRITE_SYSTEM), UserMessage(user)])
     except Exception as exc:
         return [], one_line(f"{type(exc).__name__}: {exc}")
     try:
