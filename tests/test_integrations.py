@@ -51,11 +51,11 @@ class TestAnthropicIntegration:
         anthropic_int.disable()
 
 
-@pytest.mark.skipif(not _can_import("langchain_core"), reason="langchain-core not installed")
-class TestLangChainIntegration:
-    def test_enable_disable_cycle(self) -> None:
-        from fastaiagent.integrations import langchain as lc_int
+def test_the_framework_integrations_are_gone() -> None:
+    """1.96.0 removed the LangChain / CrewAI / Pydantic AI adapters."""
+    import fastaiagent.integrations as integrations
 
-        lc_int.disable()
-        lc_int.enable()
-        lc_int.disable()
+    assert integrations.__all__ == ["anthropic", "openai"]
+    for name in ("langchain", "crewai", "pydanticai"):
+        with pytest.raises(AttributeError):
+            getattr(integrations, name)

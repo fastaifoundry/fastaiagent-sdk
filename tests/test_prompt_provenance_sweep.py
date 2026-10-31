@@ -316,32 +316,23 @@ def test_prompts_page_lineage_finds_a_real_run(isolated_local_db: Path) -> None:
     assert results.run_id in lineage["eval_run_ids"]
 
 
-def test_prompts_page_lineage_finds_a_langchain_run(isolated_local_db: Path) -> None:
-    """``prompt_from_registry`` runs show up too — LangChain stamped only the slug,
-    and the page matches on ``prompt.name``. Real LangChain, its own fake chat model."""
+def test_prompts_page_lineage_finds_a_run_that_names_only_the_prompt(
+    isolated_local_db: Path,
+) -> None:
+    """A run of another framework's agent stamps only the prompt's name on its
+    root span (the recipe in docs/integrations/frameworks.md), no version; the
+    page matches on ``fastaiagent.prompt.name`` and still finds it."""
     pytest.importorskip("fastapi")
-    pytest.importorskip("langchain_core")
     from fastapi.testclient import TestClient
-    from langchain_core.globals import get_debug
-    from langchain_core.language_models.fake_chat_models import FakeListChatModel
 
-    from fastaiagent.integrations import langchain as lc
-    from fastaiagent.trace import otel
+    from fastaiagent.trace import otel, trace_context
     from fastaiagent.ui.server import build_app
-
-    try:
-        get_debug()
-    except AttributeError:
-        # langchain_core 0.3 reads ``langchain.debug`` when a ``langchain``
-        # package is importable; a stray langchain 1.x (not one of our
-        # dependencies) has none, and every LangChain call raises.
-        pytest.skip("installed 'langchain' package does not match langchain-core")
 
     otel.reset()
     try:
-        PromptRegistry().register("support-system", "Answer questions about {{topic}}.")
-        chain = lc.prompt_from_registry("support-system") | FakeListChatModel(responses=["blue"])
-        chain.invoke({"topic": "the sky"}, config={"callbacks": [lc.get_callback_handler()]})
+        prompt = PromptRegistry().register("support-system", "Answer questions about {{topic}}.")
+        with trace_context("agent.support", **{"fastaiagent.prompt.name": prompt.name}):
+            prompt.format(topic="the sky")  # handed to the framework as its system prompt
         get_tracer_provider().force_flush()
     finally:
         otel.reset()

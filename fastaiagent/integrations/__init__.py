@@ -1,26 +1,25 @@
-"""Optional adapters that bolt FastAIAgent tracing onto third-party agent
-frameworks. Each submodule is lazy-loaded so installing
-``fastaiagent`` doesn't pull in ``langchain`` / ``crewai`` / etc. unless
-the user actually touches that integration.
+"""Auto-tracing for the OpenAI and Anthropic SDKs. Each submodule is lazy-loaded,
+so installing ``fastaiagent`` does not import either provider SDK until you
+use that integration.
 
 Used like::
 
     import fastaiagent
-    fastaiagent.integrations.langchain.enable()
+    fastaiagent.integrations.openai.enable()
+
+Agent frameworks (LangChain/LangGraph, CrewAI, Pydantic AI) have no adapter
+here since 1.96.0: trace them through their own OpenTelemetry instrumentation
+and ``fastaiagent.enable_otel_capture()``, and use guardrails and evals as
+plain functions. See docs/integrations/frameworks.md.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-# ``agent_name`` is a plain context manager with no third-party dependency, so
-# it is imported eagerly — it is the framework-agnostic way to name a run for
-# control-plane linkage when you are not using ``with_guardrails(name=...)``.
-from fastaiagent.integrations._identity import agent_name
+_SUBMODULES = ["anthropic", "openai"]
 
-_SUBMODULES = ["langchain", "crewai", "pydanticai", "anthropic", "openai"]
-
-__all__ = [*_SUBMODULES, "agent_name"]
+__all__ = list(_SUBMODULES)
 
 
 def __getattr__(name: str) -> Any:

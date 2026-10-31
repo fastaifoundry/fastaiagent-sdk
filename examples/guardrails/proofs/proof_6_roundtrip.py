@@ -1,25 +1,26 @@
 """Proof for "6 · Between the agent loop and everything else" on docs/guardrails/guardrail-boundaries.md.
 
-Offline: real guardrails through to_dict()/from_dict() and the harness helper.
+Offline: real guardrails through to_dict()/from_dict() and run_guardrail().
 
 A rule leaves the process as a dict — to the plane, to a replay, to local.db. The
 config-based types come back whole. A builtin comes back armed. A custom fn cannot
-travel, and the restored rule says so by erroring, never by passing. A foreign
-runtime that borrows the verdict can block and warn, and must block where it
-cannot rewrite.
+travel, and the restored rule says so by erroring, never by passing. A runtime
+that borrows the verdict (another framework's agent) calls run_guardrail() on the
+text it holds and acts on the outcome: continue, stop, or send the masked text.
 """
+
+import asyncio
 
 import _common  # noqa: F401
 from _common import heading
 
+import fastaiagent as fa
 from fastaiagent.guardrail import (
     Guardrail,
-    GuardrailResult,
     GuardrailType,
     cost_limit,
     no_pii,
 )
-from fastaiagent.guardrail.actions import harness_halts
 
 TEXT = "mail bob@acme.com, ssn 123-45-6789"
 
@@ -42,10 +43,15 @@ for label, g in cases:
     after = roundtrip(g).execute(TEXT)
     print(f"{label:<24} {str(before.passed):<15} {str(after.passed):<14} {str(after.errored):<8} {(after.message or '')[:60]}")
 
-heading("a foreign runtime: what a proxy can honour")
-g = Guardrail(name="r", guardrail_type=GuardrailType.regex, config={"pattern": "x"})
-for taken, passed in (("none", True), ("warned", False), ("blocked", False), ("masked", False), ("reask", False)):
-    r = GuardrailResult(passed=passed, action_taken=taken, message="ssn in output",
-                        modified_data="[REDACTED]" if taken == "masked" else None)
-    verdict = harness_halts(g, r)
-    print(f"action_taken={taken:<8} → {'continue' if verdict is None else 'stop: ' + verdict[:70] + '…'}")
+heading("a borrowing runtime: run_guardrail() on the text it holds")
+for action in ("warn", "block", "mask"):
+    g = Guardrail(name="ssn", guardrail_type=GuardrailType.regex,
+                  config={"pattern": r"\d{3}-\d{2}-\d{4}"}, action=action)
+    r = asyncio.run(fa.run_guardrail(g, TEXT))
+    if r.passed or r.action_taken == "warned":
+        step = f"continue with: {TEXT}"
+    elif r.action_taken == "masked":
+        step = f"send instead:  {r.modified_data}"
+    else:
+        step = f"stop:          {r.message}"
+    print(f"action={action:<6} action_taken={r.action_taken:<8} → {step}")

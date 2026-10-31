@@ -1160,11 +1160,9 @@ _MIGRATIONS: dict[int, list[_Step]] = {
     7: [
         # Sprint 4 — Universal harness external-agent registry.
         #
-        # ``register_agent()`` and the harness auto-attachment helpers
-        # write into these two tables. The ``/api/agents/{name}/dependencies``
-        # endpoint merges them with the in-memory ``ctx.runners`` lookup
-        # so external agents (LangGraph, CrewAI, PydanticAI) show up in
-        # the dependency-graph UI alongside native runners.
+        # Written by the framework integrations' ``register_agent()``. Unused
+        # since 1.96.0 removed them; the tables stay because a migration is
+        # history.
         """CREATE TABLE IF NOT EXISTS external_agents (
             name           TEXT PRIMARY KEY,
             framework      TEXT NOT NULL,

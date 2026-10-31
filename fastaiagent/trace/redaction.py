@@ -113,11 +113,11 @@ SENSITIVE_ATTR_KEYS: frozenset[str] = frozenset(
         # backstory, the prompt text ``crewai.agent.goal`` already gates below.
         "crew_tasks",
         "crew_agents",
-        # ``integrations.langchain`` writes the chain's inputs and outputs onto
-        # these bare keys (``on_chain_start`` / ``on_chain_end``). They are
-        # generic names, but only a span attribute is ever matched against this
-        # registry, and the only writer of them is that integration — where they
-        # hold the full serialized prompt and completion.
+        # The LangChain integration (removed in 1.96.0) wrote the chain's inputs
+        # and outputs onto these bare keys. They are generic names, but only a
+        # span attribute is ever matched against this registry, and spans it
+        # stored before 1.96.0 still hold the full serialized prompt and
+        # completion here.
         "input",
         "output",
         # Agent inputs/outputs/system prompt captured by ``Agent._arun_traced``.

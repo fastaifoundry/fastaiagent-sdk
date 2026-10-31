@@ -9,7 +9,6 @@ A string was stored raw. It matched every ``==`` (``GuardrailPosition`` is a
 from __future__ import annotations
 
 import asyncio
-import importlib
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -60,20 +59,6 @@ def test_to_dict_round_trips() -> None:
 def test_a_misspelt_position_raises_instead_of_never_running() -> None:
     with pytest.raises(ValueError, match="inpt"):
         no_pii(position="inpt")  # type: ignore[arg-type]
-
-
-@pytest.mark.parametrize("framework", ["langchain", "crewai", "pydanticai"])
-def test_each_proxy_writes_a_row(traced: Path, framework: str) -> None:
-    from fastaiagent.integrations._registry import GuardrailBlocked
-
-    module = importlib.import_module(f"fastaiagent.integrations.{framework}")
-    module._run_guardrails("hello", [no_pii(position="input")], side="input", agent_name="bot")
-    with pytest.raises(GuardrailBlocked):
-        module._run_guardrails(
-            "mail me at jo@example.com", [no_pii(position="input")], side="input", agent_name="bot"
-        )
-    outcomes = [(r["position"], r["outcome"]) for r in _rows(traced)]
-    assert outcomes == [("input", "passed"), ("input", "blocked")]
 
 
 def test_the_agent_path_writes_a_row(traced: Path) -> None:

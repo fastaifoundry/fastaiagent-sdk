@@ -54,7 +54,8 @@ EXPECTED = {
     "proof_6_roundtrip.py": [
         "no_pii() builtin         False           False          False",
         "custom fn                False           False          True",
-        "action_taken=masked   → stop:",
+        "action=mask   action_taken=masked   → send instead:  mail bob@acme.com, ssn [REDACTED]",
+        "action=block  action_taken=blocked  → stop:",
     ],
 }
 

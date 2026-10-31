@@ -107,8 +107,9 @@ FASTAIAGENT_ATTRIBUTES = {
     "fastaiagent.prompt.environment": str,
     "fastaiagent.cost.total_usd": float,
     "fastaiagent.thread.id": str,
-    # Universal-harness attributes — set on the root span of every run so
-    # the Local UI can badge / filter / group by source framework.
+    # Source-framework attributes, so the Local UI can badge / filter / group
+    # by framework. ``external_agent.name`` was written by the framework
+    # integrations removed in 1.96.0; stored spans still carry it.
     "fastaiagent.framework": str,
     "fastaiagent.framework.version": str,
     "fastaiagent.external_agent.name": str,

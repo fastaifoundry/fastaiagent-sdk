@@ -310,9 +310,9 @@ class TestTopologyPayloadKeysAreGated:
         assert apply_export_policy(attrs) == attrs
 
     def test_the_bare_langchain_chain_payload_keys_are_dropped(self, monkeypatch):
-        """``integrations.langchain`` writes the chain's inputs and outputs onto
-        bare ``input``/``output``. Generic names, but only a span attribute is
-        matched against the registry and that integration is their only writer."""
+        """The LangChain integration (removed in 1.96.0) wrote the chain's inputs
+        and outputs onto bare ``input``/``output``. Spans already stored in
+        local.db or the unsent buffer still carry them, so the keys stay gated."""
         monkeypatch.setenv("FASTAIAGENT_TRACE_PAYLOADS", "0")
         from fastaiagent.trace.redaction import apply_export_policy
 

@@ -290,8 +290,8 @@ class Guardrail:
         adds its firing to the run being collected, if any, and writes a local
         event row when tracing is on **and** a span is recording (1.89.0). The
         span gate keeps a bare check in, say, a web handler from creating
-        ``local.db``. The SDK runtime and the framework proxies call
-        :meth:`_acheck` and record themselves, once.
+        ``local.db``. The SDK runtime calls :meth:`_acheck` and records
+        itself, once.
         """
         result = await self._acheck(data)
         record_firing(self, result)

@@ -116,8 +116,6 @@ def export_trace_cli(
 _KNOWN_EXTRAS: list[tuple[str, str]] = [
     ("openai", "openai"),
     ("anthropic", "anthropic"),
-    ("langchain", "langchain_core"),
-    ("crewai", "crewai"),
     ("kb", "faiss"),
     ("qdrant", "qdrant_client"),
     ("chroma", "chromadb"),

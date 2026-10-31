@@ -255,41 +255,6 @@ def halts(guardrail: Guardrail, result: GuardrailResult) -> bool:
     return not result.passed and guardrail.blocking and result.action_taken in ("blocked", "reask")
 
 
-def harness_halts(guardrail: Guardrail, result: GuardrailResult) -> str | None:
-    """Should a foreign-framework proxy stop this call, and what should it say?
-
-    The LangChain / CrewAI / PydanticAI proxies wrap somebody else's runnable.
-    They own the verdict but not the payload and not the loop, so only two of
-    the five actions mean anything there:
-
-    * ``warn`` — record and carry on, exactly as in the SDK's own runtime.
-    * ``block`` — stop, as before.
-
-    ``mask``, ``override`` and ``reask`` need to rewrite the payload or re-drive
-    the model, neither of which a proxy can do. They **block**, and say why,
-    rather than letting text the rule wanted redacted through untouched.
-
-    Returns the reason to block, or ``None`` to continue.
-    """
-    if result.passed or not getattr(guardrail, "blocking", True):
-        return None
-    taken = result.action_taken
-    if taken == "warned":
-        return None
-    if taken in ("masked", "overridden"):
-        return (
-            f"{result.message or guardrail.name} (this guardrail rewrites the payload, "
-            "which a framework proxy cannot do; blocked instead — run it on a "
-            "fastaiagent Agent to get the rewrite)"
-        )
-    if taken == "reask":
-        return (
-            f"{result.message or guardrail.name} (this guardrail re-asks the model, "
-            "which needs the fastaiagent agent loop; blocked instead)"
-        )
-    return result.message or f"Blocked by guardrail: {guardrail.name}"
-
-
 #: What a guardrail check did to the run, as opposed to what its verdict was
 #: (1.89.0). Recorded on the local event row and on ``GuardrailFiring``; never
 #: on the wire, where ``action_taken`` keeps its existing meaning.
