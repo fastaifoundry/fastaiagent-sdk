@@ -272,6 +272,16 @@ Takes `path/to/file.py:attr` or `pkg.module:attr` — the same syntax as
 reported and skipped; the UI still starts. The module is imported, so guard
 module-level side effects with `if __name__ == "__main__":`.
 
+!!! note "Where `pkg.module` is looked up"
+    Every command that takes a `pkg.module:attr` target (`ui --agent`,
+    `agent serve`, `mcp serve`, `eval run --agent`, `resume --runner`, `push
+    --module`, `runner --tools`) finds a package that is installed **or** sits
+    in the directory you run the command from, like `python -m` does. The
+    current directory is searched last, so an installed package or the
+    standard library always wins over a same-named file in it. Before 1.95.0
+    an uninstalled package in the project directory failed with `No module
+    named …` unless you set `PYTHONPATH=.`.
+
 Unlike `agent serve`, this does **not** expose an endpoint that runs your
 agent on request. Import paths are read only from the command line, never
 from a request body.

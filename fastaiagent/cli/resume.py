@@ -16,12 +16,13 @@ original Python definition to re-instantiate it.
 from __future__ import annotations
 
 import asyncio
-import importlib
 import json
 import sys
 from typing import Any
 
 import typer
+
+from fastaiagent._internal.target import import_dotted
 
 resume_app = typer.Typer(
     no_args_is_help=False,
@@ -47,7 +48,7 @@ def _load_runner(spec: str) -> Any:
         raise typer.BadParameter("--runner expects 'module:attr' (e.g. 'myapp.chains:my_chain')")
     module_name, attr = spec.split(":", 1)
     try:
-        module = importlib.import_module(module_name)
+        module = import_dotted(module_name)
     except ImportError as e:
         raise typer.BadParameter(f"Cannot import module {module_name!r}: {e}") from e
     if not hasattr(module, attr):

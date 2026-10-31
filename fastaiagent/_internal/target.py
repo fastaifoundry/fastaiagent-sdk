@@ -10,10 +10,27 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import os
 import sys
 from collections.abc import Callable
 from pathlib import Path
+from types import ModuleType
 from typing import Any, cast
+
+
+def import_dotted(module_name: str) -> ModuleType:
+    """``importlib.import_module`` that also finds modules in the current directory.
+
+    A console script does not put the working directory on ``sys.path`` (``python
+    -m`` and uvicorn do), so ``--runner myapp.flows:build_chain`` run from the
+    project directory failed with ``No module named 'myapp'`` (1.95.0). The
+    directory is appended, not prepended: an installed package and the standard
+    library still win over a same-named file in it.
+    """
+    cwd = os.getcwd()
+    if cwd not in sys.path:
+        sys.path.append(cwd)
+    return importlib.import_module(module_name)
 
 
 def resolve_target(spec: str) -> Any:
@@ -31,7 +48,7 @@ def resolve_target(spec: str) -> Any:
         sys.path.insert(0, str(path.parent.resolve()))
         spec_obj.loader.exec_module(module)
     else:
-        module = importlib.import_module(module_part)
+        module = import_dotted(module_part)
     if not hasattr(module, attr):
         raise ValueError(f"Module {module_part!r} has no attribute {attr!r}")
     return getattr(module, attr)
