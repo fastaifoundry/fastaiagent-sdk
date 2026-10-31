@@ -446,13 +446,17 @@ def test_migration_v13_adds_checkpoint_synced_and_is_idempotent(tmp_path: Path) 
 # --- Full local-first → push, through the real LocalStorageProcessor ----------
 
 
-def test_local_first_then_push_end_to_end(isolated_local_db, capture_server) -> None:
-    """A real OTel span written by LocalStorageProcessor (synced=0) is drained
-    and pushed by the exporter, then marked synced=1 — usage rides inside it."""
+def test_local_first_then_push_end_to_end(
+    isolated_local_db, capture_server, trace_export_on
+) -> None:
+    """A real OTel span written by LocalStorageProcessor while export is on
+    (synced=0) is drained and pushed by the exporter, then marked synced=1 —
+    usage rides inside it."""
     from opentelemetry.sdk.trace import TracerProvider
 
     from fastaiagent.trace.storage import LocalStorageProcessor
 
+    _connect(capture_server.url)
     prov = TracerProvider()
     lsp = LocalStorageProcessor(db_path=str(isolated_local_db))
     prov.add_span_processor(lsp)
@@ -465,7 +469,6 @@ def test_local_first_then_push_end_to_end(isolated_local_db, capture_server) -> 
     store = TraceStore()
     assert store.count_unsynced("test-proj") == 1  # local-first write, un-acked
 
-    _connect(capture_server.url)
     exporter = PlatformSpanExporter()
     assert exporter.export([]) == SpanExportResult.SUCCESS
     exporter.shutdown()

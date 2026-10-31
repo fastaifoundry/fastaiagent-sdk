@@ -154,7 +154,7 @@ def test_a_globally_registered_override_warns(world: Any, caplog: pytest.LogCapt
         fa.FunctionTool(name="charge_card", fn=world.agent.tools[0].fn)  # restore
 
 
-def test_export_is_an_opt_in(world: Any) -> None:
+def test_export_is_an_opt_in(world: Any, trace_export_on: None) -> None:
     result = _fork(world).with_determinism("recorded").with_export(True).rerun()
     spans = spans_of(world.db, str(result.trace_id))
     assert result.exported is True

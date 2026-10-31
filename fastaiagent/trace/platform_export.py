@@ -5,7 +5,9 @@
 **local-first, then drain-to-platform**:
 
 * ``LocalStorageProcessor`` (always registered first) writes every span to the
-  local SQLite store with ``synced=0`` — the durable source of truth.
+  local SQLite store — the durable source of truth — with ``synced=0`` while
+  this exporter is registered. A span recorded offline is written ``synced=1``
+  and never queued: ``connect()`` does not upload earlier history (1.95.0).
 * ``export()`` drains a bounded batch of ``synced=0`` rows, POSTs them to
   ``/public/v1/traces/ingest`` with bounded retry, and marks them ``synced=1``
   **only after a confirmed 2xx**. Un-acked spans stay buffered and re-drain on

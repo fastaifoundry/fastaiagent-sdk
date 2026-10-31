@@ -344,14 +344,16 @@ rerun root: fastaiagent.source='replay'
   determinism='recorded'
   tool_policy='block'
 rerun.exported=False
-original rows synced=[0]
+original rows synced=[1]
 rerun    rows synced=[1]
+original local_only=False
+rerun    local_only=True
 list_traces(): 2 traces   exclude_sources=True: 1 (the rerun left out: True)
 with_trace_db: rerun in experiments.db: True   in local.db: False
   compare(): status=ok
 ```
 
-The original is waiting to be exported; the rerun never will be. The production listing has one trace, and the rerun written elsewhere is still comparable.
+The proof runs offline, so neither trace is queued for the plane (`synced=1`: since 1.95.0 a span is queued only while connected with trace export on). The difference is `local_only`: run while connected, the original would be queued and exported, and the rerun, stamped local-only, still would not. The production listing has one trace, and the rerun written elsewhere is still comparable.
 
 **Code:** [`trace/provenance.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/trace/provenance.py); the stamp is in `LocalStorageProcessor.on_start`, [`trace/storage.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/trace/storage.py); the export filter is `_EgressFilteredExporter` in [`trace/otel.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/trace/otel.py). The proof is [`proofs/proof_provenance.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/replay/proofs/proof_provenance.py). The reader side is [Tracing → provenance](../tracing/index.md#where-a-trace-came-from-provenance).
 

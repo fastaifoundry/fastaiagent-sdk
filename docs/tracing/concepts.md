@@ -128,7 +128,9 @@ unsynced; the exporter **ignores the batch handed to it** and instead drains
 unsynced rows from SQLite, marking them synced only after a confirmed 2xx. In
 other words: **SQLite is the queue and the OTel batch is just a doorbell.** A
 platform outage can't lose data — it just leaves rows unsynced until the next
-drain.
+drain. Only spans recorded while connected with trace export on are queued; a
+span recorded offline is stored as already handled, so connecting later never
+uploads it (1.95.0).
 
 ## Capturing other frameworks
 

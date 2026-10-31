@@ -42,6 +42,9 @@ with sqlite3.connect(DB) as conn:
     for label, trace_id in (("original", r.trace_id), ("rerun", rerun.trace_id)):
         rows = conn.execute("SELECT synced FROM spans WHERE trace_id = ?", (trace_id,))
         print(f"{label:<8} rows synced={sorted({row[0] for row in rows})}")
+for label, trace_id in (("original", r.trace_id), ("rerun", rerun.trace_id)):
+    span = TraceStore().get_trace(trace_id).spans[0]
+    print(f"{label:<8} local_only={bool(span.attributes.get('fastaiagent.export.local_only'))}")
 
 all_ids = {t.trace_id for t in TraceStore().list_traces()}
 prod_ids = {t.trace_id for t in TraceStore().list_traces(exclude_sources=True)}

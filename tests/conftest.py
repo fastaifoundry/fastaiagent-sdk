@@ -193,6 +193,30 @@ def isolated_local_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
         reset_config()
 
 
+@pytest.fixture
+def trace_export_on() -> Any:
+    """Put the process in the state ``connect()`` leaves it in with trace export on.
+
+    Since 1.95.0 a span is queued for the plane (``synced=0``) only then. The
+    exporter's processor is real but not attached to a provider, so nothing
+    drains mid-test and a test reads exactly what was written.
+    """
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+    from fastaiagent.client import _connection
+    from fastaiagent.trace.platform_export import PlatformSpanExporter
+
+    saved = (_connection.api_key, _connection._platform_processor)
+    processor = BatchSpanProcessor(PlatformSpanExporter())
+    _connection.api_key = "fa_k_test"
+    _connection._platform_processor = processor
+    try:
+        yield
+    finally:
+        _connection.api_key, _connection._platform_processor = saved
+        processor.shutdown()
+
+
 class MockLLMClient(LLMClient):
     """A mock LLM client that returns predefined responses."""
 
