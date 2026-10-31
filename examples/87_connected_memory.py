@@ -24,6 +24,10 @@ Usage:
     export E2E_PLANE_EMAIL=admin@... E2E_PLANE_PASSWORD=...  # optional: seed a fact
     export E2E_PLANE_DOMAIN_ID=<domain uuid>   # which of that admin's domains to seed in
                                                # (default: their first domain)
+    export E2E_PLANE_PROJECT_ID=<project uuid> # the project to seed in (default: a
+                                               # "ws3-demo" project it creates). It needs
+                                               # an embedding endpoint (Models & Vector
+                                               # Stores), or seeding is refused with 409.
     python examples/87_connected_memory.py
 
 Expected output (snapshot — real run against a local plane on :20001):
@@ -88,8 +92,15 @@ def _seed_fact_via_admin(base: str) -> str | None:
         headers=jwt,
         json={"name": "WS3 Demo", "slug": "ws3-demo"},
     )  # 201 or 409 (exists) — both fine
+    projects = _checked(
+        http.get(f"{base}/api/v1/domains/{domain_id}/projects", headers=jwt), "projects"
+    ).json()
+    project_id = os.environ.get("E2E_PLANE_PROJECT_ID") or next(
+        p["id"] for p in projects if p.get("slug") == "ws3-demo"
+    )
 
     # Mint a short-lived key just to push the agent definition (no execution).
+    # Since plane 0.17 every key belongs to a domain AND a project.
     kr = _checked(
         http.post(
             f"{base}/api/v1/api-keys",
@@ -98,6 +109,7 @@ def _seed_fact_via_admin(base: str) -> str | None:
                 "name": f"ws3-demo-{uuid.uuid4().hex[:6]}",
                 "permissions": ["read", "write", "execute"],
                 "domain_id": domain_id,
+                "project_id": project_id,
                 "scopes": ["agent:write", "agent:execute"],
             },
         ),
