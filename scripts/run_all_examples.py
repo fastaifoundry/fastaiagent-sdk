@@ -29,7 +29,6 @@ SKIP: dict[str, str] = {
     "19_connect_e2e.py": "needs Platform cloud credentials",
     "34_platform_kb.py": "needs Platform cloud credentials",
     "29_kb_qdrant.py": "needs running qdrant server",
-    "08_trace_langchain.py": "needs langchain + LangSmith credentials",
     "09_otel_export.py": "needs OTel collector listening on localhost",
     # Long-running uvicorn servers — we boot them separately as a smoke check.
     "33_deploy_fastapi.py": "long-running uvicorn server (smoke-tested separately)",
