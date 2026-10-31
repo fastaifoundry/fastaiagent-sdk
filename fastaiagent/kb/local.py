@@ -356,8 +356,14 @@ class LocalKB:
         return in_memory or removed_from_store
 
     def delete_by_source(self, source: str) -> int:
-        """Delete all chunks from a given source. Returns count deleted."""
-        ids_to_delete = [c.id for c in self._chunks if c.metadata.get("source") == source]
+        """Delete all chunks from a given source. Returns count deleted.
+
+        ``source`` matches as given or in the form ``add()`` stores a file path
+        (``str(Path(...))``), so ``./docs/faq.md`` finds chunks added from
+        ``./docs/faq.md``; before 1.95.0 it deleted nothing.
+        """
+        forms = {source, str(Path(source))} if source else {source}
+        ids_to_delete = [c.id for c in self._chunks if c.metadata.get("source") in forms]
         if not ids_to_delete:
             return 0
         id_set = set(ids_to_delete)
