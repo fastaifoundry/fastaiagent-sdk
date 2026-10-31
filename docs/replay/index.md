@@ -437,25 +437,31 @@ fastaiagent replay inspect <trace_id> 3
 
 Example:
 ```bash
-$ fastaiagent replay show b6acf1ef2c27
+$ fastaiagent replay show b6acf1ef2c2779bbc2fcf80802ae0534
 
 Trace: b6acf1ef2c2779bbc2fcf80802ae0534
 Name: agent.support-bot
-Status: OK
+Status: UNSET
 Spans: 4
+Duration: 2026-10-30T23:05:17.562451+00:00 → 2026-10-30T23:05:19.459172+00:00
 
 Steps:
-  [0] agent.run
-  [1] llm.chat_completion
+  [0] agent.support-bot
+  [1] llm.openai.gpt-4o-mini
   [2] tool.search_docs
-  [3] llm.chat_completion
+  [3] llm.openai.gpt-4o-mini
 
-$ fastaiagent replay inspect b6acf1ef2c27 2
+$ fastaiagent replay inspect b6acf1ef2c2779bbc2fcf80802ae0534 2
 
 Step 2: tool.search_docs
-  Timestamp: 2025-01-15T10:30:01.300Z
-  Attributes: {'fastaiagent.tool.name': 'search_docs'}
+  Timestamp: 2026-10-30T23:05:18.301122+00:00
+  Attributes: {'fastaiagent.tool.name': 'search_docs', ...}
 ```
+
+Pass the full 32-character trace id, as `fastaiagent traces list` prints it (since
+1.95.0; it used to print a 12-character prefix that no command could look up).
+`Status` is the root span's OpenTelemetry status: `UNSET` for a run that
+finished without error, `ERROR` for one that failed.
 
 ## Debugging Workflow
 

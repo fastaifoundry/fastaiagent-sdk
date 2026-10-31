@@ -36,6 +36,24 @@ def test_traces_export_is_valid_json(isolated_local_db: Path) -> None:
     assert exported["spans"][0]["attributes"]["note"] == LONG
 
 
+def test_traces_list_prints_ids_that_replay_can_load(isolated_local_db: Path) -> None:
+    """S9: ``traces list`` printed ``id[:12] + "..."``, which ``replay show`` and
+    ``traces export`` could not find, so the documented flow dead-ended."""
+    otel.reset()
+    try:
+        with trace_context("listed-trace") as span:
+            trace_id = format(span.get_span_context().trace_id, "032x")
+        otel.get_tracer_provider().force_flush()
+    finally:
+        otel.reset()
+
+    listed = runner.invoke(app, ["traces", "list"])
+    assert listed.exit_code == 0, listed.output
+    assert trace_id in listed.output
+    shown = runner.invoke(app, ["replay", "show", trace_id])
+    assert shown.exit_code == 0, shown.output
+
+
 def test_eval_export_dry_run_stdout_is_valid_json(isolated_local_db: Path) -> None:
     from fastaiagent.eval import Dataset, evaluate
 
