@@ -67,7 +67,7 @@ The script walks four phases: seed runs → extract → optimize (Phase 2.5) →
 │                                                              │
 │  Substrate                 — already shipped                 │
 │    Traces in local.db      (every run, every harness)        │
-│    Universal harness       (LangGraph / CrewAI / PydanticAI) │
+│    OTel capture            (LangGraph / CrewAI / PydanticAI) │
 └─────────────────────────────────────────────────────────────┘
 ```
 

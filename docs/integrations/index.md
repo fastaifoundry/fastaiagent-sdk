@@ -1,54 +1,24 @@
-# Framework Integrations
+# Integrations
 
-FastAIAgent ships **two** flavours of integration:
+`fastaiagent.integrations` patches the **OpenAI and Anthropic SDKs**, so every
+`chat.completions.create()` and `messages.create()` call lands in the local
+trace store with tokens, cost and payloads. Use it when your code calls the
+provider SDK directly.
 
-1. **SDK auto-tracing** — patches the OpenAI / Anthropic SDKs so every
-   `chat.completions.create()` and `messages.create()` call lands in
-   the local trace store with full token / cost / payload data. Use
-   when your code calls the provider SDK directly.
-
-2. **Universal agent harness** — wraps **LangChain / LangGraph**,
-   **CrewAI**, and **PydanticAI** agents with FastAIAgent's
-   observability, eval, guardrails, prompt registry, and KB. Use when
-   your agent is built in one of those frameworks and you want the
-   same Local UI surface without rewriting.
-
-Beyond these, **any in-process OpenTelemetry / OpenInference / OpenLLMetry
-instrumentor** can be captured and rendered richly with a single opt-in call —
-`fastaiagent.enable_otel_capture()`. See
-[Capture any OTel / OpenInference framework](../tracing/third-party-otel.md).
+Any other in-process **OpenTelemetry / OpenInference / OpenLLMetry**
+instrumentor is captured with one opt-in call, `fastaiagent.enable_otel_capture()`.
+See [Capture any OTel / OpenInference framework](../tracing/third-party-otel.md).
 
 ## Pick your starting point
 
-- I have an existing **LangGraph** / **CrewAI** / **PydanticAI** agent →
-  start with [Universal harness — overview](overview.md), then read the
-  framework-specific guide.
+- I have a **LangGraph**, **CrewAI** or **Pydantic AI** agent →
+  [Use fastaiagent with your existing framework](frameworks.md). The
+  framework adapters were removed in 1.96.0; that page shows the route that
+  replaces them.
+- I want plane-authored guardrails and scorers inside my own runtime →
+  [Guardrails & evals without the runtime](primitives-without-the-runtime.md).
 - I'm calling the **OpenAI / Anthropic SDK directly** → keep reading
   this page.
-
-## Connecting to the control plane
-
-Tracing works out of the box; **linking those traces to an agent on the
-Enterprise plane needs a name**. Pass `name=` to `with_guardrails(...)` (or use
-`agent_name(...)`) so the root span carries `agent.name`, and call
-`register_agent()` so the plane has an agent with that name to match. See
-[Connecting foreign agents to the control plane](overview.md#connecting-foreign-agents-to-the-control-plane).
-
-## Universal harness — per framework
-
-- [Overview & feature matrix](overview.md)
-- [LangChain / LangGraph](langchain.md)
-- [CrewAI](crewai.md)
-- [PydanticAI](pydanticai.md)
-
-## Borrowing SDK primitives — any runtime
-
-The harness above traces your framework. The other half is *enforcement and
-scoring*: run plane-authored guardrails and platform scorers inside a runtime
-that isn't `fa.Agent`, and emit the results as standard OpenInference spans on
-the exporter you already have — no second exporter, no rewrite.
-
-See [Guardrails & evals without the runtime](primitives-without-the-runtime.md).
 
 ---
 
@@ -116,10 +86,7 @@ and follows the same contract.
 
 ## Disabling
 
-Each integration's `disable()` restores the originals (best-effort —
-some surfaces, like LangChain's configure-hook registry, don't expose
-a public unregister; the integration's idempotency flag stops the
-handler from creating new spans regardless).
+Each integration's `disable()` restores the original methods.
 
 ```python
 openai_integration.disable()

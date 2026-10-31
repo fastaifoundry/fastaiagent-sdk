@@ -52,8 +52,11 @@ print(results.summary())
 mlflow.langchain.autolog()
 
 # After (FastAIAgent)
-import fastaiagent
-fastaiagent.integrations.langchain.enable()
+import fastaiagent as fa
+from openinference.instrumentation.langchain import LangChainInstrumentor
+
+fa.enable_otel_capture()
+LangChainInstrumentor().instrument()
 # Traces stored locally in SQLite, exportable via OTel
 ```
 

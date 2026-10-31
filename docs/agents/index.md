@@ -529,7 +529,7 @@ for g in result.guardrails:
 !!! note "Where cost comes from, and where it lands"
     It is computed at the provider call inside `LLMClient` and also written to
     the `llm.*` span as `fastaiagent.cost.total_usd` — the same attribute the
-    LangChain, CrewAI and Pydantic-AI integrations have always emitted, so the
+    framework integrations emitted until their removal in 1.96.0, so the
     control plane, the Local UI and trace export read one key for every
     framework. Before 1.67.0 nothing populated `AgentResult.cost` and the SDK's
     own runs were the only framework the plane received no cost for; the UI hid

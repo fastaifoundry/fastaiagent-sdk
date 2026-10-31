@@ -67,8 +67,8 @@ For every LLM span the endpoint:
 1. Reads the cost the SDK reported on the span — `fastaiagent.cost.total_usd`,
    or the legacy `agent.cost_usd`. Since 1.67.0 `LLMClient` writes
    `fastaiagent.cost.total_usd` on every `llm.*` span it emits, which is the
-   same attribute the LangChain, CrewAI and Pydantic-AI integrations have
-   always set — so this path now hits for the SDK's own runs too, not only for
+   same attribute the framework integrations (removed in 1.96.0) set — so
+   this path hits for the SDK's own runs too, not only for
    foreign frameworks.
 2. Falls back to `compute_cost_usd(model, input_tokens, output_tokens)`
    from [`fastaiagent/_internal/pricing.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/_internal/pricing.py)

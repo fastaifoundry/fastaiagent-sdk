@@ -150,6 +150,7 @@ runtime](../integrations/primitives-without-the-runtime.md).
 ## Related
 
 - [Guardrails & evals without the runtime](../integrations/primitives-without-the-runtime.md) — borrowing SDK primitives when your framework owns the exporter
-- [Integrations](../integrations/index.md) — first-party LangChain / CrewAI / PydanticAI harness + OpenAI / Anthropic SDK auto-tracing
+- [Use fastaiagent with your existing framework](../integrations/frameworks.md) — LangGraph, CrewAI and Pydantic AI through this capture, plus guardrails, evals and the plane
+- [Integrations](../integrations/index.md) — OpenAI / Anthropic SDK auto-tracing
 - [Tracing](index.md) — how native spans are captured and stored
 - [Local UI](../ui/index.md) — the visual trace explorer

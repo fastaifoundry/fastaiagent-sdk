@@ -293,19 +293,19 @@ The rule arrived with an action the SDK does not know, `redact-and-notify`, and 
 
 ## 6 · Between the agent loop and everything outside it: a round-trip, a rerun, a foreign runtime
 
-A rule does not only run inside `Agent.run()`. It leaves the process as a dict, to the plane, to `local.db`, to a replay. It comes back through `from_dict`. And it is borrowed by frameworks that own neither the payload nor the loop. Each crossing can disarm it quietly.
+A rule does not only run inside `Agent.run()`. It leaves the process as a dict, to the plane, to `local.db`, to a replay. It comes back through `from_dict`. And it is borrowed by a runtime that is not `fa.Agent`, which holds the text and decides what to do with the verdict. Each crossing can disarm it quietly.
 
-![A rule leaves the process as a dict: config-based types come back whole; a builtin comes back armed by name; a custom fn and a parameterised builtin cannot travel and the restored rule errors at execution rather than passing; a foreign-framework proxy can honour block and warn and must block where it cannot rewrite or re-ask](img/boundaries/d7-roundtrip.svg)
-*What survives the dict depends on the type. What cannot travel errors when it runs. A proxy that cannot rewrite blocks instead.*
+![A rule leaves the process as a dict: config-based types come back whole; a builtin comes back armed by name; a custom fn and a parameterised builtin cannot travel and the restored rule errors at execution rather than passing; a borrowing runtime gets the verdict and, for a mask, the rewritten text](img/boundaries/d7-roundtrip.svg)
+*What survives the dict depends on the type. What cannot travel errors when it runs. A borrowing runtime acts on `action_taken`.*
 
 The rules:
 
 - **Config-based types round-trip whole**: the same verdict before and after.
 - **A builtin comes back armed by name.** `no_pii`, `no_secrets`, `toxicity_check`, `json_valid`, `no_prompt_injection` and `openai_moderation` are a closed set of zero-argument factories, so `from_dict` restores their callable. That is what makes a Replay rerun a reproduction rather than a rerun with the controls off.
 - **A custom `fn` and a parameterised builtin cannot travel.** `to_dict()` never carries `fn=`, and `cost_limit(1.0)`'s budget lived in a constructor argument. The restored rule **errors at execution** (since 1.64.0) rather than reporting a clean pass over a payload nothing inspected.
-- **A foreign-framework proxy can honour `block` and `warn`.** The LangChain, CrewAI and PydanticAI proxies own the verdict but not the payload or the loop, so `mask`, `override` and `reask` block there, and say why. `run_guardrail` computes; `emit_guardrail` reports on the framework's own tracer.
+- **A borrowing runtime gets the verdict and the safe text.** `run_guardrail` applies the rule's action and reports what it did in `action_taken`: `warned` continues, `blocked` stops, and `masked` carries the rewritten text in `modified_data`. The runtime owns the loop, so it acts on that; `emit_guardrail` reports on its own tracer. `reask` needs the `fa.Agent` loop.
 
-Proof 6 round-trips five rules and asks the harness helper what a proxy may do with each outcome:
+Proof 6 round-trips five rules, then runs three actions through `run_guardrail` the way a borrowing runtime would:
 
 ```
 ── what survives a round-trip
@@ -316,17 +316,15 @@ no_pii() builtin         False           False          False    PII detected: e
 cost_limit(1.0) builtin  False           False          True     cost_limit errored (on_error=block): code guardrail 'cost_li…
 custom fn                False           False          True     mine errored (on_error=block): code guardrail 'mine' has no …
 
-── a foreign runtime: what a proxy can honour
-action_taken=none     → continue
-action_taken=warned   → continue
-action_taken=blocked  → stop: ssn in output…
-action_taken=masked   → stop: ssn in output (this guardrail rewrites the payload, which a framework …
-action_taken=reask    → stop: ssn in output (this guardrail re-asks the model, which needs the fasta…
+── a borrowing runtime: run_guardrail() on the text it holds
+action=warn   action_taken=warned   → continue with: mail bob@acme.com, ssn 123-45-6789
+action=block  action_taken=blocked  → stop:          Pattern matched: \d{3}-\d{2}-\d{4}
+action=mask   action_taken=masked   → send instead:  mail bob@acme.com, ssn [REDACTED]
 ```
 
 Every restored rule still said `passed=False` on the dirty text, but two of them said so by erroring: they could not check anything, and they refused to pretend otherwise.
 
-**Code:** `to_dict` and `from_dict` in [`guardrail/guardrail.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/guardrail/guardrail.py); `restore_builtin_fn` in [`guardrail/builtins.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/guardrail/builtins.py); `harness_halts` in [`guardrail/actions.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/guardrail/actions.py). The proof is [`proof_6_roundtrip.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/guardrails/proofs/proof_6_roundtrip.py); [`tests/test_guardrail_audit_followups.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/tests/test_guardrail_audit_followups.py) pins the re-arming; see [Guardrails and evals without the runtime](../integrations/primitives-without-the-runtime.md) and [`examples/58_guardrail_pydanticai.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/58_guardrail_pydanticai.py).
+**Code:** `to_dict` and `from_dict` in [`guardrail/guardrail.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/guardrail/guardrail.py); `restore_builtin_fn` in [`guardrail/builtins.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/guardrail/builtins.py); `apply_action` in [`guardrail/actions.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/guardrail/actions.py). The proof is [`proof_6_roundtrip.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/guardrails/proofs/proof_6_roundtrip.py); [`tests/test_guardrail_audit_followups.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/tests/test_guardrail_audit_followups.py) pins the re-arming; see [Guardrails and evals without the runtime](../integrations/primitives-without-the-runtime.md) and [Use fastaiagent with your existing framework](../integrations/frameworks.md).
 
 ---
 

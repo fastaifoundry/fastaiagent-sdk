@@ -353,7 +353,7 @@ The SDK follows the OpenTelemetry GenAI semantic conventions for LLM-related att
 | `fastaiagent.guardrail.position` | `input` / `tool_call` / `tool_result` / `output` |
 | `fastaiagent.guardrail.errored` | The check couldn't run; `passed` reflects `on_error`, not a verdict |
 | `fastaiagent.guardrail.checks` | JSON `[{"name": ..., "result": "pass"｜"block"｜"error"}]` |
-| `fastaiagent.cost.total_usd` | Estimated USD cost of that one LLM call, priced from the model id and the provider's token counts. Set by `LLMClient` on every `llm.*` span since 1.67.0, and by the LangChain / CrewAI / Pydantic-AI integrations before that. Sum it across a trace for the run's cost. **Absent** — not `0.0` — when the model has no rate, so a reader can fall back to its own estimate instead of trusting a fabricated zero. |
+| `fastaiagent.cost.total_usd` | Estimated USD cost of that one LLM call, priced from the model id and the provider's token counts. Set by `LLMClient` on every `llm.*` span since 1.67.0, and before that by the framework integrations removed in 1.96.0. Sum it across a trace for the run's cost. **Absent** — not `0.0` — when the model has no rate, so a reader can fall back to its own estimate instead of trusting a fabricated zero. |
 | `fastaiagent.template.kind` | Flagship-template marker on root span (e.g. `"deep-research"`) — set via `set_template_kind()`. Lets the UI badge / filter trace lists by template. |
 
 ### OpenInference standard attributes
@@ -699,7 +699,7 @@ For contributors who need to modify the tracing layer, add new span attributes, 
 ## Next Steps
 
 - [Replay](../replay/index.md) — Debug agent execution with fork-and-rerun
-- [Integrations](../integrations/index.md) — Auto-trace OpenAI, Anthropic, LangChain, CrewAI
+- [Integrations](../integrations/index.md) — Auto-trace OpenAI and Anthropic; [your existing framework](../integrations/frameworks.md) through OpenTelemetry
 - [Capture any OTel / OpenInference framework](third-party-otel.md) — `enable_otel_capture()` for third-party instrumentors
 - [Agents](../agents/index.md) — Build agents with automatic tracing
 

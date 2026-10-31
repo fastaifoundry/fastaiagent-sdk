@@ -6,7 +6,7 @@
 - 🛡️ **Responsible AI Trust Layer** — groundedness, reflection, secrets, PII, toxicity, and topic controls as runtime guardrails — the things an enterprise review actually asks for, in one call.
 - 🖥️ **Zero-ceremony Local UI** — ships inside the wheel. Span-tree traces, evals, prompt playground, cost, and workflow topology. No Docker, no signup, nothing phones home.
 - ⏸️ **Durable & resumable** — crash-proof agents that pause for human approval *for days* and resume after a real `SIGKILL`.
-- 🔌 **Universal & model-agnostic** — 20+ LLM providers; one-line instrumentation for LangGraph, CrewAI, PydanticAI, and any OpenTelemetry stack.
+- 🔌 **Universal & model-agnostic** — 20+ LLM providers; traces, guardrails and evals for a LangGraph, CrewAI or Pydantic AI agent through OpenTelemetry, with no adapter.
 
 ```bash
 pip install fastaiagent
@@ -641,57 +641,37 @@ the fail-policy reference in [docs/guardrails/index.md](https://github.com/fasta
 and runnable [examples/73_responsible_ai.py](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/73_responsible_ai.py)
 · [examples/91_guardrail_on_error.py](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/91_guardrail_on_error.py).
 
-## Works with LangGraph, CrewAI, PydanticAI — universal harness
+## Works with your LangGraph, CrewAI or Pydantic AI agent
 
-Don't rewrite your existing agents. **One line** and they get FastAIAgent's
-full Local UI, eval framework, guardrails, prompt registry, and KB on top.
-
-```python
-# LangChain / LangGraph
-from fastaiagent.integrations import langchain as lc
-lc.enable()
-result = compiled_graph.invoke({"messages": [HumanMessage("...")]})
-
-# CrewAI
-from fastaiagent.integrations import crewai as ca
-ca.enable()
-result = crew.kickoff(inputs={"input": "..."})
-
-# PydanticAI
-from fastaiagent.integrations import pydanticai as pa
-pa.enable()
-result = agent.run_sync("...")
-```
-
-After `enable()`, every LLM call, tool call, retrieval, and graph step
-lands in `.fastaiagent/local.db` and renders in the Local UI side-by-side
-with native FastAIAgent traces. The same Local UI shows them all — filter
-by framework with the free-text input on the Traces page.
-
-The harness also gives you the per-framework helpers `as_evaluable()`,
-`with_guardrails()`, `prompt_from_registry()`, `kb_as_retriever()` /
-`kb_as_tool()`, and `register_agent()` — see the
-[universal harness overview](docs/integrations/overview.md) and the
-[per-framework guides](docs/integrations/) for the full feature matrix.
-
-What the harness *can't* give you (and why): Replay (fork-and-rerun),
-durability (checkpoint-resumable runs), and suspending HITL all need
-execution control of the framework's state machine. Build new
-workflows that need those features natively in FastAIAgent.
-
-### …and any other OpenTelemetry / OpenInference instrumentor
-
-Not on the list above? If your stack emits OpenTelemetry spans through **any**
-in-process instrumentor (OpenInference, OpenLLMetry / Traceloop, or your own),
-one opt-in call captures and richly renders them in the same Local UI:
+Don't rewrite your existing agents. If your stack emits OpenTelemetry spans
+through any in-process instrumentor (OpenInference, OpenLLMetry / Traceloop, or
+your own), one opt-in call captures them and renders them in the Local UI next
+to native FastAIAgent traces:
 
 ```python
 import fastaiagent as fa
+from openinference.instrumentation.langchain import LangChainInstrumentor
+
 fa.enable_otel_capture()   # foreign spans now show model, tokens, cost, I/O
+LangChainInstrumentor().instrument()
+
+result = compiled_graph.invoke({"messages": [("user", "...")]})
 ```
 
-See [Capture any OTel / OpenInference framework](docs/tracing/third-party-otel.md)
-for the convention-mapping table and a runnable OpenInference example.
+Guardrails, evals, knowledge bases and registry prompts work around the
+framework call with the same public API a native agent uses. See
+[Use fastaiagent with your existing framework](docs/integrations/frameworks.md)
+for LangGraph, CrewAI and Pydantic AI, and
+[Capture any OTel / OpenInference framework](docs/tracing/third-party-otel.md)
+for the convention-mapping table.
+
+Replay (fork-and-rerun), durability (checkpoint-resumable runs) and
+suspending HITL need control of the run loop, so they work on native
+FastAIAgent agents only.
+
+The `fastaiagent.integrations.langchain`, `.crewai` and `.pydanticai` adapters
+were removed in 1.96.0. They wrapped each framework's internals and broke
+whenever a framework changed.
 
 ## Build agents with guardrails and cyclic workflows
 
@@ -971,7 +951,6 @@ pip install fastaiagent
 With optional integrations:
 ```bash
 pip install "fastaiagent[openai]"       # OpenAI auto-tracing
-pip install "fastaiagent[langchain]"    # LangChain auto-tracing
 pip install "fastaiagent[kb]"           # Local knowledge base
 pip install "fastaiagent[all]"          # Everything
 ```

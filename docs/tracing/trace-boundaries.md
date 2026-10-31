@@ -253,7 +253,7 @@ list_traces() shows both: ['ChatCompletion', 'agent.support']
 
 The foreign span came back with the canonical keys and its originals; both traces are in one list.
 
-**Code:** [`trace/otel_capture.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/trace/otel_capture.py) and `normalize_attributes` in [`trace/normalize.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/trace/normalize.py). The proof is [`proofs/proof_foreign.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/tracing/proofs/proof_foreign.py); the live version, with the real instrumentor and a real OpenAI call, is [`examples/otel-openinference/capture.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/otel-openinference/capture.py), and [Capture any OTel / OpenInference framework](third-party-otel.md) and [Trace a LangChain agent](../tutorials/trace-langchain.md) cover the setup.
+**Code:** [`trace/otel_capture.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/trace/otel_capture.py) and `normalize_attributes` in [`trace/normalize.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/trace/normalize.py). The proof is [`proofs/proof_foreign.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/tracing/proofs/proof_foreign.py); the live version, with the real instrumentor and a real OpenAI call, is [`examples/otel-openinference/capture.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/otel-openinference/capture.py), and [Capture any OTel / OpenInference framework](third-party-otel.md) and [Use fastaiagent with your existing framework](../integrations/frameworks.md) cover the setup.
 
 ---
 

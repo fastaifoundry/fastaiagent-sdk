@@ -32,8 +32,11 @@ os.environ["LANGCHAIN_TRACING_V2"] = "true"
 os.environ["LANGCHAIN_API_KEY"] = "ls-..."
 
 # After (FastAIAgent)
-import fastaiagent
-fastaiagent.integrations.langchain.enable()
+import fastaiagent as fa
+from openinference.instrumentation.langchain import LangChainInstrumentor
+
+fa.enable_otel_capture()
+LangChainInstrumentor().instrument()
 # Traces stored locally — no API key needed
 ```
 

@@ -82,7 +82,6 @@ nav:
       - Tutorials:
           - tutorials/index.md
           - "Build Your First Agent in 5 Minutes": tutorials/first-agent.md
-          - "Trace a LangChain Agent in 2 Minutes": tutorials/trace-langchain.md
           - "Debug with Agent Replay": tutorials/debug-with-replay.md
           - "Memory, End to End": tutorials/memory-guide.md
           - "Route a Call Centre with the Decisions API": tutorials/decision-routing.md
@@ -250,10 +249,7 @@ nav:
           - "Replicate (Cog)": deployment/replicate.md
       - Integrations:
           - integrations/index.md
-          - "Universal harness (overview)": integrations/overview.md
-          - "LangChain / LangGraph": integrations/langchain.md
-          - CrewAI: integrations/crewai.md
-          - PydanticAI: integrations/pydanticai.md
+          - "Use fastaiagent with your existing framework": integrations/frameworks.md
           - "Guardrails & evals without the runtime": integrations/primitives-without-the-runtime.md
       - CLI Reference:
           - cli/index.md
