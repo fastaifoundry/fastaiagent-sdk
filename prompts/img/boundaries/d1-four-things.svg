@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 620" width="1200" height="620" role="img" aria-label="A prompt is four things: rows in local.db (prompts, versions, aliases, fragments); load() resolves fragments into a Prompt object whose variables are still open; format() fills the variables into the text the model reads; passing the Prompt object to the Agent stamps its name and version on every llm span.">
+  <title>A prompt is four things: rows in local.db (prompts, versions, aliases, fragments); load() resolves fragments into a Prompt object whose variables are still open; format() fills the variables into the text the model reads; passing the Prompt object to the Agent stamps its name and version on every llm span.</title>
+  <rect x="0" y="0" width="1200" height="620" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">A prompt is four things — and the object, not the text, is what links a run</text>
+  <path d="M48,146 L48,264 A125.0,16 0 0 0 298,264 L298,146" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <ellipse cx="173.0" cy="146" rx="125.0" ry="16" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <text x="173" y="188" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="middle">local.db</text>
+  <text x="173" y="216" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="middle">prompts · prompt_versions</text>
+  <text x="173" y="236" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="middle">prompt_aliases · prompt_fragments</text>
+  <polyline points="50,318 57,326 71,309" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="80" y="324" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#1baf7a" text-anchor="start">one file per project; survives a restart</text>
+  <polyline points="298,205 360,205" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="360,205 346.0,198.0 346.0,212.0" fill="#1baf7a"/>
+  <rect x="297.25" y="175.75" width="63.50000000000001" height="20.25" rx="4" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="329" y="190" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="500" fill="#52514e" text-anchor="middle">load()</text>
+  <rect x="360" y="130" width="310" height="160" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="380" y="166" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">Prompt</text>
+  <text x="380" y="191" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">name · version</text>
+  <text x="380" y="213" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">template: fragments resolved,</text>
+  <text x="380" y="235" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">{{variables}} still open</text>
+  <text x="380" y="257" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">variables: ['company', 'name', …]</text>
+  <polyline points="670,205 730,205" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="730,205 716.0,198.0 716.0,212.0" fill="#2a78d6"/>
+  <rect x="660.0" y="175.75" width="80.0" height="20.25" rx="4" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="700" y="190" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="500" fill="#52514e" text-anchor="middle">format()</text>
+  <rect x="730" y="150" width="200" height="110" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="750" y="186" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">the text</text>
+  <text x="750" y="211" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">one string: the</text>
+  <text x="750" y="233" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">system prompt</text>
+  <polyline points="930,205 990,205" fill="none" stroke="#52514e" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="990,205 976.0,198.0 976.0,212.0" fill="#52514e"/>
+  <rect x="990" y="150" width="162" height="110" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="1010" y="186" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">the model</text>
+  <text x="1010" y="211" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">reads it</text>
+  <polyline points="515,290 515,400" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round" stroke-dasharray="8 6"/>
+  <polygon points="515,400 522.0,386.0 508.0,386.0" fill="#2a78d6"/>
+  <rect x="396.625" y="335.75" width="236.75000000000003" height="20.25" rx="4" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="515" y="350" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="500" fill="#52514e" text-anchor="middle">Agent(system_prompt=prompt)</text>
+  <rect x="360" y="400" width="430" height="110" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="380" y="436" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">the Agent</text>
+  <text x="380" y="461" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">runs prompt.template</text>
+  <text x="380" y="483" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">remembers name · version for the run</text>
+  <polyline points="790,455 870,455" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="870,455 856.0,448.0 856.0,462.0" fill="#1baf7a"/>
+  <rect x="870" y="400" width="282" height="110" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="890" y="436" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">every llm span</text>
+  <text x="890" y="459" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">fastaiagent.prompt.name</text>
+  <text x="890" y="479" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">fastaiagent.prompt.version</text>
+  <text x="48" y="570" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">Fragments resolve when the prompt is loaded, variables when it is formatted. Pass the object, not the string, if you want the run linked.</text>
+</svg>

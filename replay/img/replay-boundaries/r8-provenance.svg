@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" width="1200" height="700" role="img" aria-label="Between a rerun and the record of production: every span a rerun writes carries fastaiagent.source=replay and its root names the trace it replays; the rows are written to local.db already marked as sent, so neither the platform drain nor an add_exporter sink ships them; Analytics, Overview, Agents, list_traces(exclude_sources=True), eval curate and learn leave them out and report what they left out; with_export, connect(export_experiments=True) or FASTAIAGENT_EXPORT_EXPERIMENTS opt back in, and with_trace_db writes the rerun to a store of its own.">
+  <title>Between a rerun and the record of production: every span a rerun writes carries fastaiagent.source=replay and its root names the trace it replays; the rows are written to local.db already marked as sent, so neither the platform drain nor an add_exporter sink ships them; Analytics, Overview, Agents, list_traces(exclude_sources=True), eval curate and learn leave them out and report what they left out; with_export, connect(export_experiments=True) or FASTAIAGENT_EXPORT_EXPERIMENTS opt back in, and with_trace_db writes the rerun to a store of its own.</title>
+  <rect x="0" y="0" width="1200" height="700" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Between a rerun and the record of production: a rerun says what it is</text>
+  <rect x="48" y="120" width="470" height="186.0" rx="10" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="62" y="152" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="start">the rerun's root span</text>
+  <text x="62" y="171.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">fastaiagent.source = 'replay'</text>
+  <text x="62" y="191.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">fastaiagent.replay.source_trace_id = c3934819…</text>
+  <text x="62" y="211.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">fastaiagent.replay.determinism = 'recorded'</text>
+  <text x="62" y="231.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">fastaiagent.replay.tool_policy = 'block'</text>
+  <text x="62" y="251.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">fastaiagent.replay.modifications = ['prompt']</text>
+  <text x="62" y="271.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">fastaiagent.replay.surface = 'python'</text>
+  <text x="62" y="291.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">each tool span: …replay.tool_disposition</text>
+  <polyline points="518,230 570,230" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="570,230 556.0,223.0 556.0,237.0" fill="#2a78d6"/>
+  <path d="M570,166 L570,294 A115.0,16 0 0 0 800,294 L800,166" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <ellipse cx="685.0" cy="166" rx="115.0" ry="16" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <text x="685" y="200" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="19" font-weight="700" fill="#0b0b0b" text-anchor="middle">local.db</text>
+  <text x="685" y="226" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="middle">rows written with</text>
+  <text x="685" y="246" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="middle">synced=1: already sent</text>
+  <polyline points="800,190 852,190" fill="none" stroke="#eb6834" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="852,190 838.0,183.0 838.0,197.0" fill="#eb6834"/>
+  <rect x="852" y="120" width="300" height="130" rx="12" fill="#fdefe8" stroke="#eb6834" stroke-width="2"/>
+  <text x="872" y="156" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="start">not exported</text>
+  <text x="872" y="176" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">the platform drain skips them;</text>
+  <text x="872" y="194" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">add_exporter sinks drop them;</text>
+  <text x="872" y="212" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">an older SDK on the same</text>
+  <text x="872" y="230" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">store skips them too</text>
+  <rect x="852" y="262" width="300" height="110" rx="12" fill="#fdefe8" stroke="#eb6834" stroke-width="2"/>
+  <text x="872" y="298" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="start">never registered</text>
+  <text x="872" y="318" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">a rerun does not push its</text>
+  <text x="872" y="336" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">agent definition, exported</text>
+  <text x="872" y="354" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">or not</text>
+  <rect x="48" y="410" width="1104" height="130" rx="14" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="68" y="442" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#2a78d6" text-anchor="start">production readers leave experiments out, and say what they left out</text>
+  <text x="68" y="470" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">UI Analytics · Overview · Agents → a note: 'Excludes 12 experiment traces ($0.42)'</text>
+  <text x="68" y="492" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">list_traces(exclude_sources=True) · fastaiagent eval curate · fastaiagent learn</text>
+  <text x="68" y="514" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">opt back in: the 'Include experiments' toggle · --include-experiments</text>
+  <text x="48" y="590" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">Opt in: forked.with_export() · connect(export_experiments=True) · FASTAIAGENT_EXPORT_EXPERIMENTS=1.  Elsewhere: with_trace_db(path).</text>
+  <text x="48" y="650" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="12" font-weight="400" fill="#8a8880" text-anchor="start">Code: trace/provenance.py · trace/storage.py::LocalStorageProcessor.on_start · trace/otel.py::_EgressFilteredExporter</text>
+</svg>

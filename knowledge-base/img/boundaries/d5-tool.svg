@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 660" width="1200" height="660" role="img" aria-label="Retrieval is a tool call: the model decides to search and writes the query, the search tool runs kb.search and returns the scored chunks as text, which enters the conversation; the trace keeps a tool span and a retrieval span; on export with payloads off the query and doc_ids are dropped and the structural keys are kept.">
+  <title>Retrieval is a tool call: the model decides to search and writes the query, the search tool runs kb.search and returns the scored chunks as text, which enters the conversation; the trace keeps a tool span and a retrieval span; on export with payloads off the query and doc_ids are dropped and the structural keys are kept.</title>
+  <rect x="0" y="0" width="1200" height="660" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Retrieval is a tool call — the model writes the query, the trace keeps it</text>
+  <rect x="48" y="140" width="220" height="110" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="68" y="176" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">the model</text>
+  <text x="68" y="199" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">decides to search</text>
+  <text x="68" y="219" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">writes the query</text>
+  <polyline points="268,195 320,195" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="320,195 306.0,188.0 306.0,202.0" fill="#2a78d6"/>
+  <rect x="320" y="140" width="320" height="110" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="340" y="176" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">tool.search_support-kb</text>
+  <text x="340" y="196" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">args {query: 'ERR-4012 checkout'}</text>
+  <text x="340" y="214" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">origin: kb</text>
+  <polyline points="640,195 684,195" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="684,195 670.0,188.0 670.0,202.0" fill="#2a78d6"/>
+  <rect x="684" y="140" width="200" height="110" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="704" y="176" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">kb.search()</text>
+  <text x="704" y="199" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">hybrid · top_k 5</text>
+  <polyline points="884,195 928,195" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="928,195 914.0,188.0 914.0,202.0" fill="#1baf7a"/>
+  <rect x="928" y="140" width="224" height="110" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="948" y="176" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">the result, as text</text>
+  <text x="948" y="196" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">[Score: 0.700] Error</text>
+  <text x="948" y="214" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">code ERR-4012 means …</text>
+  <polyline points="1038,250 1038,285 158,285 158,250" fill="none" stroke="#52514e" stroke-width="2.5" stroke-linejoin="round" stroke-dasharray="8 6"/>
+  <polygon points="158,250 151.0,264.0 165.0,264.0" fill="#52514e"/>
+  <rect x="358.15" y="286.7" width="483.70000000000005" height="18.900000000000002" rx="4" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="600" y="300" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="500" fill="#52514e" text-anchor="middle">enters the conversation; the model answers, or searches again</text>
+  <rect x="48" y="330" width="580" height="114.0" rx="10" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="62" y="362" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="700" fill="#0b0b0b" text-anchor="start">two spans per search</text>
+  <text x="62" y="383.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">tool.search_support-kb   tool.args · tool.result · tool.origin</text>
+  <text x="62" y="404.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">retrieval.support-kb     query · backend · search_type · top_k</text>
+  <text x="62" y="425.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">                         result_count · latency_ms · doc_ids</text>
+  <rect x="660" y="330" width="492" height="150" rx="12" fill="#fdefe8" stroke="#eb6834" stroke-width="2"/>
+  <text x="680" y="366" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">export, payloads off</text>
+  <text x="680" y="388" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">FASTAIAGENT_TRACE_PAYLOADS=0 — kept: backend · kb_name ·</text>
+  <text x="680" y="407" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">search_type · top_k · result_count · latency_ms (· kb_id)</text>
+  <text x="680" y="426" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">dropped: query · doc_ids   —   local.db keeps them</text>
+  <polyline points="50,530 57,538 71,521" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="78" y="536" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1baf7a" text-anchor="start">the model pays only for context it asks for, and can ask again with a better query</text>
+  <circle cx="60" cy="570" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="563" x2="67" y2="577" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="577" x2="67" y2="563" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="576" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#eb6834" text-anchor="start">the KB cannot tell a stale document from a current one — read doc_ids, score with the RAG metrics</text>
+  <circle cx="60" cy="610" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="603" x2="67" y2="617" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="617" x2="67" y2="603" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="616" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#eb6834" text-anchor="start">PlatformKB's tool cuts each chunk to 200 characters; LocalKB's sends the whole chunk</text>
+</svg>

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" width="1200" height="600" role="img" aria-label="Where guardrail bugs hide: a typical test runs one blocking rule at one position on a dirty sample; the bugs sit on the boundaries around that — an observer that crashed, a mask that found nothing, a judge that timed out, a rule with an empty config, a rerun with the controls off, a proxy that cannot redact.">
+  <title>Where guardrail bugs hide: a typical test runs one blocking rule at one position on a dirty sample; the bugs sit on the boundaries around that — an observer that crashed, a mask that found nothing, a judge that timed out, a rule with an empty config, a rerun with the controls off, a proxy that cannot redact.</title>
+  <rect x="0" y="0" width="1200" height="600" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Where guardrail bugs hide</text>
+  <rect x="330" y="190" width="540" height="220" rx="18" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="600" y="236" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#2a78d6" text-anchor="middle">A TYPICAL TEST</text>
+  <text x="600" y="274" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="middle">one blocking rule, one position</text>
+  <text x="600" y="304" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="middle">a dirty sample: it blocks</text>
+  <text x="600" y="334" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="middle">a clean sample: it passes</text>
+  <rect x="48" y="122" width="248.79999999999998" height="44" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="62" y="150" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">an observer that crashed</text>
+  <line x1="296.79999999999995" y1="144" x2="330" y2="230" stroke="#eb6834" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <rect x="48" y="272" width="258.0" height="44" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="62" y="300" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">a mask that found nothing</text>
+  <line x1="306.0" y1="294" x2="330" y2="300" stroke="#eb6834" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <rect x="48" y="422" width="276.4" height="44" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="62" y="450" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">a rule with an empty config</text>
+  <line x1="324.4" y1="444" x2="330" y2="380" stroke="#eb6834" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <rect x="921.6" y="122" width="230.39999999999998" height="44" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="935.6" y="150" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">a judge that timed out</text>
+  <line x1="921.6" y1="144" x2="870" y2="230" stroke="#eb6834" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <rect x="894.0" y="272" width="258.0" height="44" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="908.0" y="300" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">a rerun with controls off</text>
+  <line x1="894.0" y1="294" x2="870" y2="300" stroke="#eb6834" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <rect x="894.0" y="422" width="258.0" height="44" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="908.0" y="450" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">a proxy that can't redact</text>
+  <line x1="894.0" y1="444" x2="870" y2="380" stroke="#eb6834" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <text x="48" y="540" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">Each boundary has a proof script; test your own controls on the same lines.</text>
+</svg>
