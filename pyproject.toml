@@ -122,6 +122,7 @@ docs = [
     "mkdocs-material>=9.5,<10",
     "mkdocstrings[python]>=0.24,<1",
     "mkdocs-section-index>=0.3,<1",
+    "mkdocs-redirects>=1.2,<2",
 ]
 dev = [
     "pytest>=8.0,<10",
