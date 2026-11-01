@@ -684,13 +684,19 @@ in your code — just add `guardrails=[…]` to the agent.
 
 ## Pruning the local buffer
 
-Traces are buffered in `local.db`. Reclaim space by deleting already-sent
-(acked/abandoned) spans:
+Traces are buffered in `local.db`. Reclaim space by deleting spans the plane
+confirmed it received:
 
 ```bash
-fastaiagent traces prune               # delete all acked spans
+fastaiagent traces prune               # every span the plane already has
 fastaiagent traces prune --older-than-days 7
 ```
+
+A span that never reached a plane is kept, since `local.db` holds its only copy:
+local-only runs, traces recorded while not connected, spans dropped from the
+re-send queue, and everything recorded before 1.97.0. Before 1.97.0 prune also
+deleted those, so in a project that never connected it deleted every trace. To
+delete them anyway, use `fastaiagent traces purge`, which deletes by scope.
 
 ## Internals
 

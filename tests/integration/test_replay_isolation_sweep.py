@@ -207,7 +207,7 @@ def test_a_default_rerun_escapes_nowhere(world: Any, surface: str, mode: str) ->
     )
     root = next(s for s in spans if not s["parent_span_id"])
     assert root["attributes"].get("fastaiagent.replay.source_trace_id") == world.original_trace_id
-    assert all(s["synced"] == 1 for s in spans), f"{where}: the rerun would be exported"
+    assert all(s["synced"] == 2 for s in spans), f"{where}: the rerun would be exported"
     # 6: production views did not move; asking for experiments shows it.
     assert _views(world.db) == views_before, f"{where}: the rerun counted as production"
     assert _views(world.db, include=True)["analytics"] == views_before["analytics"] + 1

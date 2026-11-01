@@ -279,7 +279,7 @@ def test_buffer_bound_age_abandons_old_keeps_local(
     rows = {
         r["span_id"]: r["synced"] for r in store._db.fetchall("SELECT span_id, synced FROM spans")
     }
-    assert rows["ancient"] == 1
+    assert rows["ancient"] == 2  # kept (1.97.0): abandoned, so prune keeps it
     assert rows["recent"] == 0
     assert store._db.fetchone("SELECT COUNT(*) AS n FROM spans")["n"] == 2  # kept
     store.close()
@@ -340,8 +340,9 @@ def test_migration_v11_adds_synced_backfills_and_is_idempotent(tmp_path: Path) -
     db = ui_db.init_local_db(str(p))
     cols = {r["name"] for r in db.fetchall("PRAGMA table_info(spans)")}
     assert "synced" in cols
-    # Existing rows backfilled to synced=1 → upgrade does NOT back-push history.
-    assert db.fetchone("SELECT synced FROM spans WHERE span_id='old'")["synced"] == 1
+    # Existing rows backfilled as handled → upgrade does NOT back-push history;
+    # v30 (1.97.0) then marks them kept, since the plane never confirmed them.
+    assert db.fetchone("SELECT synced FROM spans WHERE span_id='old'")["synced"] == 2
     # New rows still default to synced=0 → they become push candidates.
     db.execute(
         "INSERT INTO spans (span_id, trace_id, name, start_time, project_id) "

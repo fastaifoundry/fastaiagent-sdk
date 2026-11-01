@@ -186,14 +186,48 @@ def test_prune_acked_deletes_only_synced(tmp_path) -> None:
     db = str(tmp_path / "local.db")
     store = TraceStore(db_path=db)
     conn = store._db
-    # Insert 2 acked + 1 unacked span.
-    for sid, synced in [("s1", 1), ("s2", 1), ("s3", 0)]:
+    # 2 acked, 1 queued, 1 kept (never sent).
+    for sid, synced in [("s1", 1), ("s2", 1), ("s3", 0), ("s4", 2)]:
         conn.execute(
             "INSERT INTO spans (span_id, trace_id, name, start_time, synced) VALUES (?,?,?,?,?)",
             (sid, "t1", "x", "2026-01-01T00:00:00+00:00", synced),
         )
     deleted = store.prune_acked()
     assert deleted == 2
-    remaining = conn.fetchall("SELECT span_id, synced FROM spans")
-    assert [r["span_id"] for r in remaining] == ["s3"]
+    remaining = conn.fetchall("SELECT span_id, synced FROM spans ORDER BY span_id")
+    assert [r["span_id"] for r in remaining] == ["s3", "s4"]
     store.close()
+
+
+def test_prune_keeps_every_trace_of_a_project_that_never_connected(
+    isolated_local_db, monkeypatch
+) -> None:
+    """``traces prune -y`` deleted every trace here until 1.97.0: a span not sent
+    to a plane was stored as if the plane had confirmed it."""
+    import sqlite3
+
+    from typer.testing import CliRunner
+
+    from fastaiagent.cli.main import app
+    from fastaiagent.testing import TestModel
+    from fastaiagent.trace import otel
+
+    monkeypatch.delenv("FASTAIAGENT_API_KEY", raising=False)
+    otel.reset()  # a provider built by an earlier test writes to its database
+    try:
+        for i in range(3):
+            fa.Agent(name="greeter", llm=TestModel(response="hi")).run(f"q{i}")
+        get_tracer_provider().force_flush()
+    finally:
+        otel.reset()
+
+    def count() -> int:
+        with sqlite3.connect(isolated_local_db) as conn:
+            return int(conn.execute("SELECT COUNT(*) FROM spans").fetchone()[0])
+
+    before = count()
+    assert before > 0
+    result = CliRunner().invoke(app, ["traces", "prune", "-y"])
+    assert result.exit_code == 0, result.output
+    assert "Pruned 0" in result.output
+    assert count() == before

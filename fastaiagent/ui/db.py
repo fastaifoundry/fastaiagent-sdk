@@ -17,7 +17,7 @@ from pathlib import Path
 from fastaiagent._internal.config import get_config
 from fastaiagent._internal.storage import SQLiteHelper
 
-CURRENT_SCHEMA_VERSION = 29
+CURRENT_SCHEMA_VERSION = 30
 
 # A migration step is either a SQL string or a callable that takes the
 # ``SQLiteHelper`` and runs whatever logic it needs (e.g., gated
@@ -644,6 +644,21 @@ def _v29_retire_offline_span_queue(db: SQLiteHelper) -> None:
     rows = db.fetchall("SELECT name FROM sqlite_master WHERE type='table' AND name='spans'")
     if rows:
         db.execute("UPDATE spans SET synced = 1 WHERE synced = 0")
+
+
+def _v30_keep_unconfirmed_spans(db: SQLiteHelper) -> None:
+    """Stop ``traces prune`` deleting spans the plane never received (1.97.0).
+
+    ``synced=1`` meant both "the plane confirmed it" and "not queued": a
+    local-only or offline span, one the buffer bound abandoned, and every row the
+    v11 and v29 backfills marked. Prune deletes ``synced=1``, so in a project
+    that never connected it deleted every trace. Unconfirmed spans are now
+    ``synced=2`` (kept). The existing rows cannot be told apart, so all of them
+    are kept; only spans the plane confirms from now on are pruned.
+    """
+    rows = db.fetchall("SELECT name FROM sqlite_master WHERE type='table' AND name='spans'")
+    if rows:
+        db.execute("UPDATE spans SET synced = 2 WHERE synced = 1")
 
 
 def _v22_add_legacy_imports(db: SQLiteHelper) -> None:
@@ -1400,6 +1415,10 @@ _MIGRATIONS: dict[int, list[_Step]] = {
     29: [
         # 1.95.0 (S1): offline spans are no longer queued for the plane.
         _v29_retire_offline_span_queue,
+    ],
+    30: [
+        # 1.97.0: spans the plane never confirmed are kept by ``traces prune``.
+        _v30_keep_unconfirmed_spans,
     ],
 }
 
