@@ -64,6 +64,9 @@ fastaiagent push --module my_app.agents        # register every agent in the mod
 fastaiagent push --module my_app.agents --dry-run   # preview the payloads
 ```
 
+`--dry-run` prints one JSON array of the request bodies on stdout and its notes on
+stderr, so `--dry-run | jq` works (since 1.97.0).
+
 ## What gets pushed
 
 `Agent.to_dict()` — `name`, `system_prompt` (or `prompt_slug` when the agent

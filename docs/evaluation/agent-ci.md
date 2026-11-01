@@ -274,7 +274,7 @@ either a callable or any object with a `.run` method (e.g. an `Agent`).
 |---|---|
 | `0` | Gate passed |
 | `1` | Quality gate failed (threshold miss or regression) |
-| `3` | Run invalid: the error rate exceeded `--max-error-rate`, nothing was scored, a gated scorer could not run or applied to no case, or the threshold is not a metric (`overall.avg_score`) |
+| `3` | Run invalid: the error rate exceeded `--max-error-rate`, nothing was scored, a gated scorer could not run or applied to no case, the threshold is not a metric (`overall.avg_score`), or the dataset or the agent could not be loaded (*1.97.0*; it was `1`) |
 
 `eval run` prints an `errored` and an `n/a` column per scorer, an
 `overall (checks)` row and a `cases` row; `--json` adds `scorecard.cases` and

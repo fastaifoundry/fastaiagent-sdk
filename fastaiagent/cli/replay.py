@@ -127,7 +127,8 @@ def fork_and_rerun(
         "exported": result.exported,
     }
     if output is None:
-        console.print(payload)
+        # JSON as the help says; ``console.print`` gave a Python repr (1.97.0).
+        typer.echo(json.dumps(payload, indent=2, default=str))
     else:
         Path(output).write_text(json.dumps(payload, indent=2))
         console.print(f"[green]✓[/green] Wrote rerun result to {output}")

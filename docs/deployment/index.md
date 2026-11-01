@@ -27,15 +27,21 @@ Every recipe in this section exposes the **same HTTP surface**, so you can switc
 | `POST` | `/resume` | Resume a paused run. Body: `{"execution_id": "...", "approved": true, "metadata": {}}`. Same response as `/run`. Provided by `fastaiagent agent serve` since 1.92.0; see the [CLI reference](../cli/index.md#fastaiagent-agent-serve) |
 | `POST` | `/cancel` | Stop a run in progress. Body: `{"execution_id": "..."}` (pass the same `execution_id` in the `/run` body). The `/run` request answers `status="cancelled"`. Provided by `fastaiagent agent serve` since 1.93.0 |
 
-Use this contract as a template; extend it freely for your needs.
+Use this contract as a template; extend it freely for your needs. A chat endpoint needs two
+things it leaves out: the conversation so far and the user. The [FastAPI recipe](fastapi.md#conversations-and-users)
+adds both: `messages` in the body and the response, and the user passed to the agent as `context=`.
+`fastaiagent agent serve` takes `input` only.
 
 ## What about observability?
 
 Every recipe keeps the existing fastaiagent trace/observability story. Inside your handler, `agent.run(input)` emits OTel spans the same way it does locally. Connect to the [fastaiagent Platform](../platform/index.md) via `fa.connect(...)` at startup and all production traces flow to the same dashboard you use for dev:
 
 ```python
+import os
+
 import fastaiagent as fa
-fa.connect("https://app.fastaiagent.net")
+
+fa.connect(api_key=os.environ["FASTAIAGENT_API_KEY"])
 # ...define agent, start server...
 ```
 

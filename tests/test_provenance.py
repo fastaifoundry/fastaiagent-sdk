@@ -2,7 +2,7 @@
 
 Every experiment (a replay rerun, a Playground call, a learn pass, an eval case)
 used to look exactly like production. ``provenance_scope`` stamps the origin on
-every span started inside it; local-only sources are written ``synced=1`` so no
+every span started inside it; local-only sources are written ``synced=2`` so no
 exporter sends them; ``non_production_filter`` lets every reader exclude them.
 
 Real tracing, real SQLite, real OTel exporters; no mocks.
@@ -98,7 +98,8 @@ def test_a_local_only_source_is_written_as_already_sent(
     with provenance_scope(source):
         _span_tree()
     rows = _rows(traced_db)
-    assert rows and all(r["synced"] == 1 for r in rows), "a local-only span would be exported"
+    # 2 = kept (1.97.0): never queued, and ``traces prune`` keeps it.
+    assert rows and all(r["synced"] == 2 for r in rows), "a local-only span would be exported"
     assert all(r["attributes"].get(LOCAL_ONLY_ATTR) is True for r in rows)
 
 

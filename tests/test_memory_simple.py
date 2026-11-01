@@ -501,6 +501,32 @@ def test_an_odd_window_never_starts_with_an_orphan_reply():
     assert [m.content for m in mem.messages] == ["u2", "a2"]  # was ["a1", "u2", "a2"]
 
 
+def test_a_zero_window_keeps_no_messages():
+    """``0`` read as "no limit" until 1.97.0: every message was kept."""
+    from fastaiagent import AgentMemory
+    from fastaiagent.llm.message import AssistantMessage
+
+    mem = AgentMemory(max_messages=0)
+    for i in range(3):
+        mem.add(UserMessage(f"u{i}"))
+        mem.add(AssistantMessage(f"a{i}"))
+    assert mem.messages == [] and mem.get_context() == []
+    # An explicit 0 means none too, rather than falling back to the window.
+    full = AgentMemory(max_messages=10)
+    full.add(UserMessage("u"))
+    assert full.get_context(max_messages=0) == []
+    assert [m.content for m in full.get_context()] == ["u"]
+
+
+def test_a_negative_window_is_refused():
+    from fastaiagent import AgentMemory
+
+    with pytest.raises(ValueError, match="0 or more"):
+        AgentMemory(max_messages=-1)
+    with pytest.raises(ValueError, match="0 or more"):
+        Memory(window=-1)
+
+
 def test_memory_creates_no_local_files_until_used(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("FASTAIAGENT_LOCAL_DB", raising=False)

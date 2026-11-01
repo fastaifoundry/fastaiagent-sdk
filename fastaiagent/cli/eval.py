@@ -16,6 +16,11 @@ _EXIT_QUALITY_FAILED = 1
 _EXIT_INFRA_INVALID = 3
 
 
+def _err(message: str) -> None:
+    """One line on stderr, ``[…]`` in paths and errors printed as written."""
+    Console(stderr=True).print(message, markup=False, style="red")
+
+
 @eval_app.command("run")
 def run_eval(
     dataset: str = typer.Option(..., help="Path to dataset (JSONL or CSV)"),
@@ -45,7 +50,8 @@ def run_eval(
     """Run an evaluation and gate on it.
 
     Exit codes: 0 gate passed · 1 quality gate failed · 3 run invalid
-    (infra error rate exceeded / nothing scored).
+    (infra error rate exceeded / nothing scored / the dataset or the agent
+    could not be loaded).
     """
     import json as _json
 
@@ -59,6 +65,11 @@ def run_eval(
         agent_fn = resolve_agent_fn(resolve_target(agent))
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
+    except Exception as exc:
+        # An agent that fails to import is no verdict: exit 3, not the
+        # quality-failed 1 it shared with a traceback until 1.97.0.
+        _err(f"Run INVALID — could not load the agent {agent!r}: {type(exc).__name__}: {exc}")
+        raise typer.Exit(_EXIT_INFRA_INVALID) from exc
 
     try:
         results = evaluate(
@@ -96,6 +107,9 @@ def run_eval(
             )
     except EvalError as exc:
         console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(_EXIT_INFRA_INVALID) from exc
+    except FileNotFoundError as exc:
+        _err(f"Run INVALID — dataset not found: {exc.filename or dataset}")
         raise typer.Exit(_EXIT_INFRA_INVALID) from exc
 
     scorecard = Scorecard.from_eval_results(results)

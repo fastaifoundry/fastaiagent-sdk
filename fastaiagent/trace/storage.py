@@ -20,6 +20,13 @@ logger = logging.getLogger(__name__)
 #: module free of an import cycle (provenance imports nothing from here).
 _LOCAL_ONLY_ATTR = "fastaiagent.export.local_only"
 
+#: ``spans.synced``: 0 = queued for the plane, 1 = the plane confirmed it (a
+#: 2xx), 2 = never sent and kept here — local-only, recorded offline, dropped by
+#: the buffer bound, or recorded while export was paused (1.97.0). ``traces
+#: prune`` deletes only 1; until 1.97.0 every "not queued" span was also 1, so
+#: prune deleted traces that existed nowhere else.
+SYNC_QUEUED, SYNC_ACKED, SYNC_KEPT = 0, 1, 2
+
 
 def _exporting_to_plane() -> bool:
     """True while ``connect()`` has a platform span exporter registered (1.95.0).
@@ -390,10 +397,12 @@ class LocalStorageProcessor:
                 safe_get_project_id(),
                 # Queued for the plane (``synced=0``) only while trace export is
                 # on. A local-only span (a replay, a Playground call, 1.89.0) or
-                # one recorded offline (1.95.0) is written as already handled, so
-                # no exporter, this SDK's or an older one sharing the store, ever
-                # sends it.
-                0 if _exporting_to_plane() and not attrs.get(_LOCAL_ONLY_ATTR) else 1,
+                # one recorded offline (1.95.0) is written as kept, so no
+                # exporter, this SDK's or an older one sharing the store, ever
+                # sends it, and ``traces prune`` never deletes it.
+                SYNC_QUEUED
+                if _exporting_to_plane() and not attrs.get(_LOCAL_ONLY_ATTR)
+                else SYNC_KEPT,
             ),
         )
 
@@ -704,7 +713,7 @@ class TraceStore:
 
     # --- Platform-export buffer ------------------------------------------
     # ``LocalStorageProcessor`` writes a span with ``synced=0`` while trace
-    # export to a plane is on (``synced=1`` otherwise);
+    # export to a plane is on (``synced=2``, kept, otherwise);
     # ``PlatformSpanExporter`` (bg thread) drains synced=0 rows, pushes them,
     # then marks ``synced=1`` only after a confirmed 2xx. See platform_export.py.
 
@@ -729,18 +738,26 @@ class TraceStore:
         return [self._row_to_span(r) for r in rows]
 
     def mark_synced(self, span_ids: list[str]) -> None:
-        """Mark spans as no longer re-send candidates (acked *or* abandoned).
+        """Mark spans the plane confirmed (a 2xx) — the only ones ``prune`` deletes.
 
         Chunked to stay under SQLite's bound-variable limit (999).
         """
+        self._set_synced(span_ids, SYNC_ACKED)
+
+    def mark_kept(self, span_ids: list[str]) -> None:
+        """Take spans off the re-send queue without claiming the plane has them
+        (1.97.0): they stay in ``local.db`` and ``prune`` keeps them."""
+        self._set_synced(span_ids, SYNC_KEPT)
+
+    def _set_synced(self, span_ids: list[str], value: int) -> None:
         for start in range(0, len(span_ids), 500):
             chunk = span_ids[start : start + 500]
             if not chunk:
                 continue
             placeholders = ",".join("?" * len(chunk))
             self._db.execute(
-                f"UPDATE spans SET synced = 1 WHERE span_id IN ({placeholders})",
-                tuple(chunk),
+                f"UPDATE spans SET synced = ? WHERE span_id IN ({placeholders})",
+                (value, *chunk),
             )
 
     def export_pause(self, scope: str) -> str | None:
@@ -763,9 +780,9 @@ class TraceStore:
     def mark_synced_before(self, start_time: str, project_id: str | None = None) -> int:
         """Mark un-acked spans that started before ``start_time`` as done; return
         how many. Spans recorded while export is paused at the plane's limit are
-        never sent (1.94.0, S7)."""
-        sql = "UPDATE spans SET synced = 1 WHERE synced = 0 AND start_time < ?"
-        params: tuple[Any, ...] = (start_time,)
+        never sent (1.94.0, S7), so they are kept, not acked (1.97.0)."""
+        sql = "UPDATE spans SET synced = ? WHERE synced = 0 AND start_time < ?"
+        params: tuple[Any, ...] = (SYNC_KEPT, start_time)
         if project_id is not None:
             sql += " AND project_id = ?"
             params += (project_id,)
@@ -787,9 +804,10 @@ class TraceStore:
     ) -> int:
         """Bound the platform re-send queue *without deleting local history*.
 
-        Abandons (marks ``synced=1`` — rows stay in ``local.db`` so the Local UI
-        still shows them) un-acked spans that are either older than
-        ``max_age_days`` or beyond the ``max_unsynced`` cap (oldest first).
+        Abandons (marks ``synced=2``, kept — rows stay in ``local.db`` so the
+        Local UI still shows them and ``prune`` keeps them) un-acked spans that
+        are either older than ``max_age_days`` or beyond the ``max_unsynced``
+        cap (oldest first).
         Returns the count abandoned so the caller can log the drop. Each branch
         is gated on a cheap read so a healthy steady-state export does no write.
         """
@@ -806,7 +824,7 @@ class TraceStore:
             (project_id, cutoff),
         )
         if old:
-            self.mark_synced([r["span_id"] for r in old])
+            self.mark_kept([r["span_id"] for r in old])
             abandoned += len(old)
 
         # (b) Count bound — abandon the oldest excess beyond the cap.
@@ -819,7 +837,7 @@ class TraceStore:
                 (project_id, excess),
             )
             if rows:
-                self.mark_synced([r["span_id"] for r in rows])
+                self.mark_kept([r["span_id"] for r in rows])
                 abandoned += len(rows)
 
         return abandoned
@@ -827,13 +845,13 @@ class TraceStore:
     def prune_acked(
         self, older_than_days: int | None = None, project_id: str | None = None
     ) -> int:
-        """Delete acked/abandoned (``synced=1``) spans to reclaim local.db space.
+        """Delete spans the plane confirmed (``synced=1``) to reclaim local.db space.
 
-        Distinct from ``enforce_buffer_bound`` (which only *abandons* — marks
-        ``synced=1`` but keeps the rows) and from ``purge`` (which deletes by
-        trace scope). Only ``synced=1`` rows are removed, so nothing waiting to
-        be re-sent is ever lost. ``older_than_days`` restricts to rows older than
-        the cutoff; ``project_id`` scopes to one project. Returns rows deleted.
+        A span that never reached the plane (``synced=2``: local-only, offline,
+        abandoned by ``enforce_buffer_bound``) and one still queued (``0``) are
+        kept: this copy is the only one. Distinct from ``purge``, which deletes
+        by trace scope. ``older_than_days`` restricts to rows older than the
+        cutoff; ``project_id`` scopes to one project. Returns rows deleted.
         """
         db = self._db
         clauses = ["synced = 1"]

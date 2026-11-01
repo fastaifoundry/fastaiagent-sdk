@@ -50,7 +50,9 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
 def test_push_finds_a_package_in_the_project_dir(project: str) -> None:
     result = CliRunner().invoke(app, ["push", "--module", f"{project}.agents", "--dry-run"])
     assert result.exit_code == 0, result.output
-    assert "s6-support" in result.output
+    # stdout is one JSON array of the bodies (1.97.0); the notes are on stderr.
+    assert [body["name"] for body in json.loads(result.stdout)] == ["s6-support"]
+    assert "Dry run" in result.stderr
 
 
 def test_resolve_target_finds_a_package_in_the_project_dir(project: str) -> None:

@@ -63,8 +63,8 @@ Now every span goes to both sinks. The `_platform_processor` reference is stored
 #### Platform export is drain-based and durable
 
 The two sinks are ordered: `LocalStorageProcessor` is attached first, so it
-writes each span to SQLite (`synced=0` while trace export is on, `synced=1` for
-a span recorded offline, which is never sent) *before* `BatchSpanProcessor`
+writes each span to SQLite (`synced=0` while trace export is on, `synced=2`,
+kept, for a span recorded offline, which is never sent) *before* `BatchSpanProcessor`
 enqueues it. `PlatformSpanExporter.export()` therefore doesn't push the live span batch —
 it **drains the `synced=0` rows from SQLite**, POSTs them, and marks them
 `synced=1` only after a confirmed `2xx`. Consequences:
@@ -80,9 +80,13 @@ it **drains the `synced=0` rows from SQLite**, POSTs them, and marks them
 - **Idempotent re-send.** `/traces/ingest` dedups by `span_id`, so overlapping
   re-sends never double-count.
 - **Bounded.** The re-send queue is capped (`_MAX_UNSYNCED` / `_MAX_AGE_DAYS` in
-  `platform_export.py`); excess is abandoned from the queue (`synced=1`) but kept
-  in SQLite. See `TraceStore.fetch_unsynced` / `mark_synced` /
-  `enforce_buffer_bound` and migration v11 (`spans.synced`). Flipping `synced`
+  `platform_export.py`); excess is abandoned from the queue (`synced=2`) but kept
+  in SQLite. See `TraceStore.fetch_unsynced` / `mark_synced` / `mark_kept` /
+  `enforce_buffer_bound` and migrations v11 and v30 (`spans.synced`).
+- **Three values (1.97.0).** `0` queued, `1` the plane confirmed it (the only
+  rows `traces prune` deletes), `2` never sent and kept. Before 1.97.0 `1` also
+  meant "not queued", so prune deleted traces that existed nowhere else; v30
+  marks every older `1` row `2`. Flipping `synced`
   must stay cheap. The `span_fts` update trigger fires only when `trace_id`,
   `name` or `attributes` change (migration v27, 1.91.0). Before that, every
   mark-synced rescanned the full-text index, and a 179k-span backlog took hours.
@@ -102,7 +106,7 @@ carries `fastaiagent.export.local_only`, unless experiments are exported
 (`connect(export_experiments=True)`, `FASTAIAGENT_EXPORT_EXPERIMENTS`, or the
 scope's `export=True`). Two consequences:
 
-- `on_end` writes such a row with **`synced=1`**, so the platform drain above
+- `on_end` writes such a row with **`synced=2`** (kept), so the platform drain above
   never fetches it. That also holds for an older SDK draining the same store.
 - `_EgressFilteredExporter` drops such spans before any `add_exporter` sink.
 

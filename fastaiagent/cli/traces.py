@@ -50,6 +50,11 @@ def export_trace(
     """Export a trace."""
     from fastaiagent.trace.storage import TraceStore
 
+    # JSON is the only format; ``--format csv`` printed JSON and exited 0 (1.97.0).
+    if format != "json":
+        raise typer.BadParameter(
+            f"unsupported format {format!r}; only 'json'", param_hint="--format"
+        )
     store = TraceStore()
     exported = store.export(trace_id, format=format)
     # Plain text, so ``> trace.json`` is valid JSON: Rich wraps long strings
@@ -63,23 +68,24 @@ def prune_acked(
     older_than_days: int | None = typer.Option(
         None,
         "--older-than-days",
-        help="Only delete acked spans older than this many days. Omit to prune all acked spans.",
+        help="Only delete spans older than this many days. Omit to prune every one the plane has.",
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt."),
 ) -> None:
-    """Delete acked/abandoned spans from local.db to reclaim space.
+    """Delete spans the plane already has from local.db to reclaim space.
 
-    Removes only ``synced=1`` spans (already sent to the plane, or abandoned
-    from the re-send queue by the buffer bound) — nothing waiting to be re-sent
-    is ever touched. Complements ``purge`` (which deletes by trace scope).
+    Removes only spans the plane confirmed it received. A span that never
+    reached a plane (local-only, offline, or dropped from the re-send queue)
+    is kept, since this is its only copy, and so is everything recorded before
+    1.97.0. Complements ``purge`` (which deletes by trace scope).
     """
     from fastaiagent.trace.storage import TraceStore
 
     store = TraceStore()
     scope = (
-        f"acked spans older than {older_than_days} day(s)"
+        f"spans the plane already has, older than {older_than_days} day(s),"
         if older_than_days is not None
-        else "all acked spans"
+        else "every span the plane already has"
     )
     if not yes:
         confirm = typer.confirm(f"Delete {scope} from local.db?")
@@ -88,7 +94,7 @@ def prune_acked(
             store.close()
             return
     deleted = store.prune_acked(older_than_days=older_than_days)
-    console.print(f"[green]✓[/green] Pruned {deleted} acked span(s).")
+    console.print(f"[green]✓[/green] Pruned {deleted} span(s) the plane already has.")
     store.close()
 
 

@@ -7,6 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.97.0] - 2026-11-01 — the CLI reports what happened; prune keeps unsent traces
+
+A read of the CLI as a coding agent or a CI job uses it (exit codes, stdout,
+stderr) found commands that exited `0` on a failure, one that deleted data, and
+output called JSON that did not parse. A check of the FastAPI deployment page
+found `Memory(window=0)` keeping every message.
+
+### Fixed
+
+- **`fastaiagent traces prune` deleted every trace in a project that never
+  connected.** `spans.synced=1` meant both "the plane confirmed it" and "not
+  queued" (local-only, offline, abandoned by the buffer bound, and every row the
+  v11 and v29 migrations backfilled), and prune deletes `1`. Spans the plane
+  never confirmed are now `synced=2` and kept; prune deletes only spans the plane
+  confirmed. Schema v30 marks every existing `1` row as `2`, since they cannot be
+  told apart: **prune keeps everything recorded before 1.97.0**. Use
+  `fastaiagent traces purge` to delete those by scope.
+- **`fastaiagent connect` printed "✓ Connected" and exited `0` for a dead or
+  wrong target.** A target that cannot be reached or answers `5xx` saves the
+  credentials, says they are not verified, and exits `1`. A target that answers
+  anything else, such as a `404` from a server that is not a plane, saves
+  nothing and exits `1`. `fa.connect()` in Python still connects offline; it now
+  logs a warning on a non-plane answer.
+- **`kb status`, `kb clear` and `kb delete` with a mistyped `--name`** reported
+  0 chunks and created an empty KB. They exit `1` and create nothing.
+- **`kb add <missing path>`** stored the path string as a one-chunk document. It
+  exits `1`.
+- **`fastaiagent learn` exited `0` when extraction failed** on every trace. Any
+  failed trace now exits `1` with a count and the first error; facts from the
+  other traces are still written.
+- **The hidden `learn extract` alias** required an argument named `kwargs` and
+  otherwise did nothing with exit `0`. It points at `fastaiagent learn` and exits
+  `2`.
+- **`traces export --format csv`** printed JSON. A format other than `json` is a
+  usage error (exit `2`).
+- **`replay fork` without `--output`** printed a Python dict, not JSON. It prints
+  JSON.
+- **`push --dry-run`** output did not parse: Rich wrapped the JSON inside its
+  strings and mixed notes in. stdout is one JSON array of the request bodies; the
+  notes go to stderr.
+- **`eval run` with a missing dataset or an agent that fails to import** exited
+  `1`, the "quality gate failed" code, with a traceback. Both are "run invalid":
+  exit `3` with one line on stderr. A threshold naming a metric the run did not
+  produce still fails (`1`), as documented.
+- **`Memory(window=0)` / `AgentMemory(max_messages=0)` kept every message**: `0`
+  read as "no limit". It keeps none; facts, the summary and recall still work, so
+  an app that sends the conversation as `messages=` can keep a user's facts. A
+  negative window raises `ValueError`.
+
+### Changed
+
+- **Behaviour a script may rely on.** `window=0` keeps no messages (it kept all;
+  use `None` on `AgentMemory` for no limit). `connect`, `learn`, the `kb`
+  commands, `traces export` and `eval run` now exit non-zero in the cases above.
+  `push --dry-run` stdout is one JSON array. `traces prune` deletes less.
+
+### Docs
+
+- **[Deploy with FastAPI](docs/deployment/fastapi.md)**: the server takes the
+  conversation (`messages`) and returns it, and passes the user to the agent as
+  `context=`. New sections on conversations and users (client history is
+  untrusted; the user comes from your auth) and on `Memory` behind several
+  workers. The out-of-date `ComposableMemory` advice is gone. `fa.connect(...)` on
+  this page and on the deployment index passed the URL as the API key; fixed.
+  `examples/33_deploy_fastapi.py` matches the page and its e2e test covers a
+  second turn.
+- The removed framework pages redirect to the framework page (#198).
+
 ## [1.96.0] - 2026-10-31 — the framework adapters are removed
 
 The LangChain/LangGraph, CrewAI and Pydantic AI adapters wrapped each

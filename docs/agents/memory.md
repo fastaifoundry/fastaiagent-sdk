@@ -38,7 +38,7 @@ The whole surface is keywords on one object:
 | `user_id` | personalization key — a string or `(ctx)->str` resolver (per-run, multi-user) |
 | `agent_id` | global tier: facts true for everyone using the agent |
 | `project_id` | tenant partition applied across tiers |
-| `window` | recent messages kept (session/working memory) |
+| `window` | recent messages kept (session/working memory). `0` keeps none: facts, the summary and recall still work, for an app that sends the conversation itself as `messages=` (before 1.97.0, `0` kept everything) |
 | `learn` | an LLM → extract + persist durable facts from each user message (never from the model's replies) |
 | `max_learned_facts` | keep the newest N learned facts per user, deleting older ones (default `200`; `None` = no cap). Facts you `persist` yourself are never touched |
 | `summarize` | an LLM → compress older turns into a running summary |
@@ -234,7 +234,7 @@ result = agent.run("What's my name?")  # "Your name is Alice."
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `max_messages` | `int \| None` | `None` | Messages to retain (a count, not tokens). `None` keeps everything; `Memory(window=)` defaults to 20 |
+| `max_messages` | `int \| None` | `None` | Messages to retain (a count, not tokens). `0` keeps none, `None` keeps everything, a negative count raises; `Memory(window=)` defaults to 20 |
 
 ---
 

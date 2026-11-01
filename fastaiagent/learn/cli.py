@@ -231,6 +231,15 @@ def extract(
             for f in r.candidates[:3]:
                 console.print(f"  - [{f.scope}/{f.scope_id or '*'}] {f.fact}")
 
+    # Exited 0 when every trace's model call failed until 1.97.0.
+    if error_count:
+        Console(stderr=True).print(
+            f"{error_count} of {len(results)} traces failed; first error: "
+            f"{next(r.error for r in results if r.error)}",
+            markup=False,
+        )
+        raise typer.Exit(code=1)
+
 
 @learn_app.command("list")
 def list_facts(
@@ -301,17 +310,15 @@ def supersede_cmd(
 
 # Aliases the user can rely on if they prefer ``fastaiagent learn extract``.
 @learn_app.command("extract", hidden=True)
-def extract_alias(
-    ctx: typer.Context,
-    **kwargs,
-) -> None:
+def extract_alias() -> None:
     """Hidden alias — the default action of ``fastaiagent learn`` is extract."""
-    # Typer doesn't easily forward all params, so users hitting this path
-    # should just run ``fastaiagent learn`` directly.
-    console.print(
+    # Typer doesn't easily forward all params, so this only points at the real
+    # command. It took ``**kwargs``, which Typer read as a required argument,
+    # and exited 0 having run nothing (1.97.0: a usage error, 2).
+    Console(stderr=True).print(
         "Run [bold]fastaiagent learn[/bold] (without 'extract') — extract is the default."
     )
-    raise typer.Exit(code=0)
+    raise typer.Exit(code=2)
 
 
 # Allow ``python -m fastaiagent.learn.cli`` for ad-hoc invocation in tests.

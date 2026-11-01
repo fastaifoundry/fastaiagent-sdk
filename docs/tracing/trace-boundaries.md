@@ -201,7 +201,7 @@ The rules:
 - **Rows land unsent.** Every span is written to `local.db` with `synced = 0` before anything else happens.
 - **The exporter ignores the batch it is handed.** `PlatformSpanExporter.export()` calls `fetch_unsynced`, runs each span through the egress filter, POSTs to `/public/v1/traces/ingest` with bounded retry, and calls `mark_synced` only after a 2xx. It always returns success to OTel, because the table owns retry, not the processor.
 - **An outage loses nothing and blocks nothing.** `connect()` to an unreachable plane warns and keeps the connection; runs proceed; rows wait for the next drain. Re-sends are safe because the plane dedups by `span_id`.
-- **The re-send queue is bounded.** Past about 10,000 un-acknowledged spans or 7 days, the oldest are abandoned from re-send only. They stay in `local.db` until you `fastaiagent traces prune`.
+- **The re-send queue is bounded.** Past about 10,000 un-acknowledged spans or 7 days, the oldest are abandoned from re-send only. They stay in `local.db`, and `fastaiagent traces prune` keeps them too: it deletes only spans the plane confirmed (since 1.97.0; before, it deleted these). `fastaiagent traces purge` deletes by scope.
 
 Proof 4 connects to an address nothing listens on and runs three times:
 

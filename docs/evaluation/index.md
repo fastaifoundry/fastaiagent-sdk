@@ -496,7 +496,8 @@ fastaiagent eval curate --filter failed -o cases/regressions.jsonl
 ```
 
 Exit codes: `0` gate passed · `1` quality gate failed · `3` run invalid
-(infra error rate exceeded, a gated scorer could not run, or nothing scored).
+(infra error rate exceeded, a gated scorer could not run, nothing scored, or the
+dataset or the agent could not be loaded).
 `--fail-under "cases.pass_rate=0.8"` gates on cases instead of checks. See
 **[Agent CI](agent-ci.md)** for the
 pytest-native gate, baselines, and the GitHub Actions recipe.

@@ -53,7 +53,7 @@ def test_offline_span_is_not_sent_by_a_later_connect(
     isolated_local_db: Path, capture_server: Any
 ) -> None:
     offline = _record("offline-run")
-    assert _synced(isolated_local_db, offline) == [1]
+    assert _synced(isolated_local_db, offline) == [2]  # kept: never sent
 
     fastaiagent.connect(api_key="fa_k_test", target=capture_server.url, auto_register=False)
     connected = _record("connected-run")  # the flush drains it to the server
@@ -61,8 +61,9 @@ def test_offline_span_is_not_sent_by_a_later_connect(
 
     sent = _sent_trace_ids(capture_server)
     assert connected in sent
+    assert _synced(isolated_local_db, connected) == [1]  # the plane confirmed it
     assert offline not in sent
-    assert _synced(isolated_local_db, offline) == [1]
+    assert _synced(isolated_local_db, offline) == [2]  # kept: never sent
 
 
 def test_export_traces_false_queues_nothing(isolated_local_db: Path, capture_server: Any) -> None:
@@ -70,7 +71,7 @@ def test_export_traces_false_queues_nothing(isolated_local_db: Path, capture_ser
         api_key="fa_k_test", target=capture_server.url, auto_register=False, export_traces=False
     )
     trace_id = _record("no-export-run")
-    assert _synced(isolated_local_db, trace_id) == [1]
+    assert _synced(isolated_local_db, trace_id) == [2]  # kept: never sent
 
 
 def test_after_disconnect_spans_are_not_queued(
@@ -79,7 +80,7 @@ def test_after_disconnect_spans_are_not_queued(
     fastaiagent.connect(api_key="fa_k_test", target=capture_server.url, auto_register=False)
     fastaiagent.disconnect()
     trace_id = _record("after-disconnect")
-    assert _synced(isolated_local_db, trace_id) == [1]
+    assert _synced(isolated_local_db, trace_id) == [2]  # kept: never sent
 
 
 def test_v29_marks_the_existing_queue_handled(tmp_path: Path) -> None:
@@ -94,5 +95,6 @@ def test_v29_marks_the_existing_queue_handled(tmp_path: Path) -> None:
     )
     _run_migrations(db)
     row = db.fetchone("SELECT synced FROM spans WHERE span_id = 's1'")
-    assert row is not None and row["synced"] == 1
+    # Handled by v29, then kept by v30 (1.97.0): never sent, so prune keeps it.
+    assert row is not None and row["synced"] == 2
     db.close()

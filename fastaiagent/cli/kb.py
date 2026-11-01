@@ -10,6 +10,20 @@ from rich.table import Table
 
 kb_app = typer.Typer()
 console = Console()
+err_console = Console(stderr=True)
+
+_KB_ROOT = ".fastaiagent/kb/"
+
+
+def _require_kb(name: str) -> None:
+    """Exit 1 for a KB that does not exist. Opening one creates it, so a
+    mistyped ``--name`` used to report 0 chunks and leave an empty KB (1.97.0)."""
+    if not (Path(_KB_ROOT) / name / "kb.sqlite").exists():
+        err_console.print(
+            f"No KB named {name!r} under {_KB_ROOT}. "
+            "Run `fastaiagent kb list` to see the KBs there."
+        )
+        raise typer.Exit(code=1)
 
 
 @kb_app.command("list")
@@ -61,6 +75,7 @@ def kb_status(name: str = typer.Option("default", help="KB name")) -> None:
     """Show knowledge base status."""
     from fastaiagent.kb import LocalKB
 
+    _require_kb(name)
     kb = LocalKB(name=name)
     status = kb.status()
     console.print(f"KB: {status['name']}")
@@ -80,6 +95,11 @@ def kb_add(
     """Add a file or directory to the knowledge base."""
     from fastaiagent.kb import LocalKB
 
+    # ``LocalKB.add`` takes raw text too, so a mistyped path was stored as a
+    # one-chunk document holding the path itself (1.97.0).
+    if not Path(file_path).exists():
+        err_console.print(f"No such file or directory: {file_path}")
+        raise typer.Exit(code=1)
     kb = LocalKB(name=name)
     count = kb.add(file_path)
     console.print(f"Added {count} chunks from {file_path}")
@@ -91,6 +111,7 @@ def kb_clear(name: str = typer.Option("default", help="KB name")) -> None:
     """Clear all data from a knowledge base."""
     from fastaiagent.kb import LocalKB
 
+    _require_kb(name)
     kb = LocalKB(name=name)
     count = kb.status()["chunk_count"]
     kb.clear()
@@ -106,6 +127,7 @@ def kb_delete(
     """Delete chunks from a source file."""
     from fastaiagent.kb import LocalKB
 
+    _require_kb(name)
     kb = LocalKB(name=name)
     count = kb.delete_by_source(source)
     console.print(f"Deleted {count} chunks from source '{source}'")

@@ -4,7 +4,7 @@ Offline: the SDK's own FunctionModel, no API key, a throwaway local.db.
 
 Since 1.89.0 a rerun's trace says it is a replay. Every span carries
 fastaiagent.source=replay, the root names the trace it replays, and the rows
-are written already marked as sent, so no exporter ships them to the plane.
+are written as kept (synced=2), so no exporter ships them to the plane.
 Readers that mean production (list_traces(exclude_sources=True), Analytics,
 Overview, Agents, eval curation, memory learning) leave the rerun out. A rerun
 can also be written to a store of its own with with_trace_db.

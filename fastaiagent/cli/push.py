@@ -74,11 +74,14 @@ def push(
         raise typer.Exit(code=1)
 
     if dry_run:
-        console.print(f"[bold]Dry run[/bold] — {len(agents)} agent(s) in {module!r}:\n")
+        # stdout is one JSON array of the request bodies; the notes go to stderr.
+        # Rich wrapped the JSON at the terminal width, inside its strings, and
+        # mixed the notes in, so it never parsed (1.97.0).
+        notes = Console(stderr=True)
+        notes.print(f"[bold]Dry run[/bold] — {len(agents)} agent(s) in {module!r}:")
         for agent in agents:
-            console.print(f"[cyan]{agent.name}[/cyan] → POST /public/v1/sdk/agents")
-            console.print(json.dumps(agent.to_dict(), indent=2, default=str))
-            console.print("")
+            notes.print(f"[cyan]{agent.name}[/cyan] → POST /public/v1/sdk/agents")
+        typer.echo(json.dumps([agent.to_dict() for agent in agents], indent=2, default=str))
         return
 
     # Connect with auto_register OFF so we push explicitly, once, per agent —

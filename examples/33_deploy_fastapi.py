@@ -4,8 +4,13 @@ Minimum working HTTP server that follows the uniform deployment contract
 documented in ``docs/deployment/index.md``:
 
     GET  /health         -> {"status": "ok"}
-    POST /run            -> {"output": ..., "latency_ms": ..., "tokens_used": ...}
+    POST /run            -> {"output": ..., "latency_ms": ..., "tokens_used": ...,
+                             "messages": [...]}
     POST /run/stream     -> Server-Sent Events token stream
+
+A request continues a conversation by sending back the previous response's
+``messages``, and names its user in an ``X-User-Id`` header (a stand-in for
+your auth). See "Conversations and users" in ``docs/deployment/fastapi.md``.
 
 Run it locally::
 
@@ -35,12 +40,14 @@ from __future__ import annotations
 
 import json
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from fastaiagent import Agent, LLMClient
+from fastaiagent import Agent, LLMClient, RunContext
+from fastaiagent.llm.message import Message
 from fastaiagent.llm.stream import TextDelta, ToolCallEnd
 
 # ---------------------------------------------------------------------------
@@ -72,6 +79,8 @@ app = FastAPI(title="fastaiagent deployed-agent", lifespan=lifespan)
 
 class RunRequest(BaseModel):
     input: str
+    # The conversation so far: the ``messages`` the previous response returned.
+    messages: list[Message] = Field(default_factory=list)
 
 
 class RunResponse(BaseModel):
@@ -79,6 +88,19 @@ class RunResponse(BaseModel):
     latency_ms: int
     tokens_used: int
     trace_id: str | None = None
+    # Send this back as ``messages`` on the next request to continue.
+    messages: list[Message] = Field(default_factory=list)
+
+
+@dataclass
+class Caller:
+    user_id: str | None
+
+
+def caller(user_id: str | None) -> RunContext[Caller]:
+    # Stand-in for your auth: take the user from a verified token in
+    # production, never from the request body.
+    return RunContext(state=Caller(user_id=user_id))
 
 
 # ---------------------------------------------------------------------------
@@ -92,25 +114,31 @@ async def health() -> dict[str, str]:
 
 
 @app.post("/run", response_model=RunResponse)
-async def run(req: RunRequest) -> RunResponse:
+async def run(req: RunRequest, x_user_id: str | None = Header(default=None)) -> RunResponse:
     if not req.input.strip():
         raise HTTPException(400, "input must be non-empty")
-    result = await app.state.agent.arun(req.input)
+    result = await app.state.agent.arun(req.input, context=caller(x_user_id), messages=req.messages)
     return RunResponse(
         output=result.output,
         latency_ms=result.latency_ms,
         tokens_used=result.tokens_used,
         trace_id=result.trace_id,
+        messages=result.messages,
     )
 
 
 @app.post("/run/stream")
-async def run_stream(req: RunRequest) -> StreamingResponse:
+async def run_stream(
+    req: RunRequest, x_user_id: str | None = Header(default=None)
+) -> StreamingResponse:
     if not req.input.strip():
         raise HTTPException(400, "input must be non-empty")
 
     async def event_source():
-        async for event in app.state.agent.astream(req.input):
+        stream = app.state.agent.astream(
+            req.input, context=caller(x_user_id), messages=req.messages
+        )
+        async for event in stream:
             if isinstance(event, TextDelta):
                 yield f"data: {json.dumps({'type': 'delta', 'text': event.text})}\n\n"
             elif isinstance(event, ToolCallEnd):
