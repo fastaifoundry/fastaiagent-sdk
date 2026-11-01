@@ -54,6 +54,10 @@ class _Connection:
         self.domain_id: str | None = None
         self.project_id: str | None = None
         self.scopes: list[str] = []
+        # What the last connect()'s key check found (1.97.0): "verified",
+        # "unreachable", or "HTTP <code>" for an answer that is not the plane's.
+        # Only ``fastaiagent connect`` reads it, to stop reporting success.
+        self.check_result: str | None = None
         self.policy_cache: dict[str, Any] | None = None
         # WS4 governance: client fail mode. Default "open" preserves today's
         # behavior (a missing policy cache => the tool gate is a no-op). "closed"
@@ -327,6 +331,7 @@ def connect(
         suppress_global_provider()
 
     # Lightweight auth check — also captures domain/project from the key
+    _connection.check_result = None
     try:
         with httpx.Client(timeout=10, verify=True) as client:
             resp = client.get(
@@ -349,15 +354,25 @@ def connect(
                 _connection.domain_id = data.get("domain_id")
                 _connection.project_id = data.get("project_id")
                 _connection.scopes = data.get("scopes", [])
+                _connection.check_result = "verified"
                 logger.info(
                     "Connected to platform: domain=%s project=%s scopes=%s",
                     _connection.domain_id,
                     _connection.project_id,
                     _connection.scopes,
                 )
+            else:
+                _connection.check_result = f"HTTP {resp.status_code}"
+                logger.warning(
+                    "The key check at %s answered HTTP %s; the key is not verified. "
+                    "Is the target a FastAIAgent plane?",
+                    _connection.target,
+                    resp.status_code,
+                )
     except httpx.ConnectError:
         # Allow connecting even if platform is unreachable — traces will
         # queue locally and export when the platform becomes available.
+        _connection.check_result = "unreachable"
         logger.warning(
             "Could not reach platform at %s. "
             "Connection stored — traces will export when platform is reachable.",

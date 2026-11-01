@@ -20,6 +20,7 @@ import typer
 from rich.console import Console
 
 console = Console()
+err_console = Console(stderr=True)
 
 _DEFAULT_TARGET = "https://app.fastaiagent.net"
 _CREDENTIALS_PATH = Path.home() / ".fastaiagent" / "credentials.toml"
@@ -104,11 +105,30 @@ def connect(
         console.print(f"[red]Connection failed:[/red] {err}")
         raise typer.Exit(code=1) from err
 
+    # Until 1.97.0 every outcome below printed "✓ Connected" and exited 0.
+    result = _client._connection.check_result or "unreachable"
+    server_error = result.startswith("HTTP 5")
+    if result.startswith("HTTP") and not server_error:
+        _client.disconnect()
+        err_console.print(
+            f"[red]Not connected:[/red] {target} answered the key check with {result}, "
+            "so it is not a FastAIAgent plane. Check --target. Nothing was saved."
+        )
+        raise typer.Exit(code=1)
+
     _write_credentials({"api_key": api_key, "target": target, "project": project})
-    console.print(
-        f"[green]✓[/green] Connected to [bold]{target}[/bold]. "
-        f"Credentials saved to {_CREDENTIALS_PATH}."
+    if result == "verified":
+        console.print(
+            f"[green]✓[/green] Connected to [bold]{target}[/bold]. "
+            f"Credentials saved to {_CREDENTIALS_PATH}."
+        )
+        return
+    reason = f"it answered {result}" if server_error else "it could not be reached"
+    err_console.print(
+        f"[yellow]Saved, not verified:[/yellow] {reason}. The key in {_CREDENTIALS_PATH} "
+        "is used once the plane answers; run `fastaiagent connect` again to verify it."
     )
+    raise typer.Exit(code=1)
 
 
 def disconnect() -> None:

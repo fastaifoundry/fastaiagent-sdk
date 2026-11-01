@@ -37,6 +37,9 @@ Which traces it reads:
 - at most `--max-traces` of them.
 
 The summary reports **new** facts separately from facts that were already known.
+When the extraction failed on any trace (the model call errored, say), it says how
+many and exits `1` (before 1.97.0 it exited `0`); the facts from the other traces
+are still written.
 
 ### Flags
 

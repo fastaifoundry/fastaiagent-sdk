@@ -40,7 +40,7 @@ fastaiagent --help
 
 ```bash
 $ fastaiagent version
-fastaiagent 1.96.0 [openai, anthropic, kb, qdrant, chroma, mcp, otel-export]
+fastaiagent 1.97.0 [openai, anthropic, kb, qdrant, chroma, mcp, otel-export]
 ```
 
 Brackets list the optional extras whose upstream package is importable. Useful when debugging "which extras did this env install?" in bug reports.
@@ -48,6 +48,12 @@ Brackets list the optional extras whose upstream package is importable. Useful w
 ## `fastaiagent connect` / `disconnect` / `auth`
 
 Persist Platform credentials to `~/.fastaiagent/credentials.toml` (mode `0600`) so scripts and CI don't need to pass the API key each time.
+
+`connect` exits `0` only when the plane verified the key. A target that cannot
+be reached (or answers `5xx`) saves the credentials, says they are not verified,
+and exits `1`; a target that answers anything else, such as a `404` from a server
+that is not a plane, saves nothing and exits `1`. Before 1.97.0 both printed
+"✓ Connected" and exited `0`.
 
 ```bash
 # Save + verify
@@ -87,8 +93,9 @@ fastaiagent traces export <trace_id> --format json
 
 !!! note "There is no `--limit` and no `--output`"
     `traces list` windows by time, not by row count — `--last-hours N` is its
-    only option. `traces export` takes `--format` (currently `json`) and writes
-    to stdout; shell redirection is how you get a file.
+    only option. `traces export` takes `--format` (only `json`; any other value
+    is a usage error, exit `2`, since 1.97.0) and writes to stdout; shell
+    redirection is how you get a file.
 
 ### `traces scrub-secrets`
 
@@ -132,6 +139,8 @@ fastaiagent replay fork <trace_id> --mode recorded --on-miss error \
 
 `replay fork` is the CLI surface for
 `Replay.load(trace_id).fork_at(step).modify_prompt(...).modify_input(...).rerun()`.
+Without `--output` it prints the result as JSON on stdout (before 1.97.0, a
+Python dict that did not parse).
 
 A rerun runs only the tools you give it (1.89.0). Every other tool is blocked,
 and the result reports `tool_dispositions` and `blocked_tool_calls`. See
@@ -187,8 +196,9 @@ refused.
 
 **Exit codes:** `0` gate passed · `1` quality gate failed (threshold miss or
 regression) · `3` run invalid (infra error rate exceeded, nothing scored, a
-gated scorer could not run or applied to no case, or a threshold that is not a
-metric). `2` is reserved for usage errors.
+gated scorer could not run or applied to no case, a threshold that is not a
+metric, or the dataset or the agent could not be loaded; before 1.97.0 those two
+exited `1` with a traceback). `2` is reserved for usage errors.
 
 For gating your existing pytest suite — with baselines and regression detection —
 see [Agent CI](../evaluation/agent-ci.md).
@@ -232,6 +242,11 @@ fastaiagent kb delete docs/old.md --name product-docs
 # Clear the whole KB
 fastaiagent kb clear --name product-docs
 ```
+
+`kb status`, `kb delete` and `kb clear` exit `1` for a KB that does not exist,
+and `kb add` exits `1` for a path that does not exist. Before 1.97.0 a mistyped
+`--name` created an empty KB, and a mistyped path was stored as a document
+holding the path itself.
 
 ## `fastaiagent ui`
 
