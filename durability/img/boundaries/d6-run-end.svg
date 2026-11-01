@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 640" width="1200" height="640" role="img" aria-label="Between a run that ended and one that died: the run_end marker says how a run ended; a completed marker makes resume raise AlreadyResumed while fork branches it under a new id; a failed marker is stepped over so the run stays resumable; a paused run has no marker; a fork from the marker itself is refused because it is not a step; prune deletes completed and failed rows and never an interrupted one.">
+  <title>Between a run that ended and one that died: the run_end marker says how a run ended; a completed marker makes resume raise AlreadyResumed while fork branches it under a new id; a failed marker is stepped over so the run stays resumable; a paused run has no marker; a fork from the marker itself is refused because it is not a step; prune deletes completed and failed rows and never an interrupted one.</title>
+  <rect x="0" y="0" width="1200" height="640" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Between a run that ended and one that died — the marker</text>
+  <rect x="48" y="130" width="340" height="140" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="68" y="166" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">run_end · completed</text>
+  <text x="68" y="188" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">resume → AlreadyResumed</text>
+  <text x="68" y="207" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">fork → a new execution_id,</text>
+  <text x="68" y="226" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">the original untouched</text>
+  <rect x="430" y="130" width="340" height="140" rx="12" fill="#fdefe8" stroke="#eb6834" stroke-width="2"/>
+  <text x="450" y="166" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">run_end · failed</text>
+  <text x="450" y="188" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">the provider raised after the tool</text>
+  <text x="450" y="207" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">resume steps over the marker and</text>
+  <text x="450" y="226" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">re-issues the model: completed</text>
+  <rect x="812" y="130" width="340" height="140" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="832" y="166" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">no marker · paused</text>
+  <text x="832" y="188" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">a pause is not an ending</text>
+  <text x="832" y="207" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">resume needs a Resume value</text>
+  <text x="832" y="226" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">prune never deletes it</text>
+  <text x="48" y="310" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">Before the marker a finished run and a run that died after its last step were byte-identical, and</text>
+  <text x="48" y="330" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">resuming a finished run re-ran it — re-calling the model and re-firing every side effect not wrapped.</text>
+  <rect x="48" y="360" width="1104" height="127.5" rx="10" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="62" y="392" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="start">proof 5</text>
+  <text x="62" y="411.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">done-1    last row: #2 run_end completed   resume → AlreadyResumed   fork → new id, rows 4 → 4</text>
+  <text x="62" y="431.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">failed-1  last row: #2 run_end failed      resume → completed, charges: 1 (the tool did not run again)</text>
+  <text x="62" y="451.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">fork(checkpoint_id=&lt;the marker&gt;) → ChainCheckpointError: the marker is not a step</text>
+  <text x="62" y="471.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">prune(older_than=0s) deleted 17 rows · still stored: ['paused-1'] · pending: ['paused-1']</text>
+  <polyline points="50,540 57,548 71,531" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="78" y="546" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#1baf7a" text-anchor="start">the marker sorts last under both orderings the SDK uses, and carries the final state so the plane's /latest is useful</text>
+  <circle cx="60" cy="580" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="573" x2="67" y2="587" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="587" x2="67" y2="573" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="586" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#eb6834" text-anchor="start">a tool that raises is not a failed run: its error is a tool result the model reads; only an escaped exception fails the run</text>
+</svg>

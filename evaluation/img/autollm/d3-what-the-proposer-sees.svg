@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720" width="1200" height="720" role="img" aria-label="What the proposer is shown: the agent name, the current system prompt, and up to 40 failing train cases each with its input, expected output, actual output and the scorer's reason; it answers with N full revised prompts, each with a rationale. Passing, infra-errored, dev and holdout cases are never shown.">
+  <title>What the proposer is shown: the agent name, the current system prompt, and up to 40 failing train cases each with its input, expected output, actual output and the scorer's reason; it answers with N full revised prompts, each with a rationale. Passing, infra-errored, dev and holdout cases are never shown.</title>
+  <rect x="0" y="0" width="1200" height="720" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">What the proposer is shown — failures it can learn from</text>
+  <rect x="48" y="130" width="600" height="367.5" rx="10" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="62" y="162" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="700" fill="#0b0b0b" text-anchor="start">the proposer's prompt</text>
+  <text x="62" y="184.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">Agent name: ticket-triage</text>
+  <text x="62" y="206.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start"></text>
+  <text x="62" y="228.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">Current system prompt:</text>
+  <text x="62" y="250.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">"""  …your prompt, verbatim…  """</text>
+  <text x="62" y="272.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start"></text>
+  <text x="62" y="294.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">Failing cases (40 of 49):</text>
+  <text x="62" y="316.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">  Input:     You charged our card EUR 740 twice …</text>
+  <text x="62" y="338.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">  Expected:  {"queue": "billing", "priority": "P1"}</text>
+  <text x="62" y="360.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">  Actual:    {"queue": "billing", "priority": "P2"}</text>
+  <text x="62" y="382.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">  Reason:    priority P2, expected P1</text>
+  <text x="62" y="404.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">  …</text>
+  <text x="62" y="426.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">Propose 3 distinct revised system prompts</text>
+  <text x="62" y="448.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">that would make these cases pass.</text>
+  <text x="62" y="470.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">Respond with JSON only: {"proposals": [ … ]}</text>
+  <polyline points="648,300 700,300" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="700,300 686.0,293.0 686.0,307.0" fill="#2a78d6"/>
+  <rect x="700" y="240" width="452" height="120" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="720" y="276" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">the proposer</text>
+  <text x="720" y="301" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">a model you choose (proposer_llm) —</text>
+  <text x="720" y="323" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">a reasoning model does this induction best;</text>
+  <text x="720" y="345" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">it writes N complete prompts, not patches</text>
+  <rect x="700" y="392" width="452" height="44" rx="8" fill="#ffffff" stroke="#d6d4cc" stroke-width="1.5"/>
+  <text x="714" y="420.12" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="start">candidate 1 · full prompt + rationale</text>
+  <rect x="700" y="446" width="452" height="44" rx="8" fill="#ffffff" stroke="#d6d4cc" stroke-width="1.5"/>
+  <text x="714" y="474.12" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="start">candidate 2 · full prompt + rationale</text>
+  <rect x="700" y="500" width="452" height="44" rx="8" fill="#ffffff" stroke="#d6d4cc" stroke-width="1.5"/>
+  <text x="714" y="528.12" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="start">candidate 3 · full prompt + rationale</text>
+  <polyline points="926,360 926,392" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="926,392 933.0,378.0 919.0,378.0" fill="#2a78d6"/>
+  <text x="48" y="560" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#eb6834" text-anchor="start">never shown</text>
+  <circle cx="60" cy="588" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="581" x2="67" y2="595" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="595" x2="67" y2="581" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="594" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">passing cases — nothing to learn from</text>
+  <circle cx="60" cy="618" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="611" x2="67" y2="625" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="625" x2="67" y2="611" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="624" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">infra-errored cases — a fault the agent can't fix</text>
+  <circle cx="60" cy="648" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="641" x2="67" y2="655" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="655" x2="67" y2="641" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="654" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">dev and holdout cases — the exam stays sealed</text>
+  <text x="700" y="586" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">The other levers propose without a model:</text>
+  <text x="700" y="606" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">fewshot — gold (input, expected) pairs from train</text>
+  <text x="700" y="626" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">memory — subsets of the agent's existing facts,</text>
+  <text x="700" y="646" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">ranked by confidence then recency; never edited</text>
+</svg>

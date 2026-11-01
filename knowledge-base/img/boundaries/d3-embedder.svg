@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 640" width="1200" height="640" role="img" aria-label="The embedder is part of the index: chunk text goes through the embedder into SQLite, where the vectors are cached, and the FAISS index is rebuilt from SQLite on open; a query goes through the same embedder and is compared by cosine; a different dimension is refused on reopen, a different model of the same dimension is not detected, and the model's quality is the ceiling of what retrieval can find.">
+  <title>The embedder is part of the index: chunk text goes through the embedder into SQLite, where the vectors are cached, and the FAISS index is rebuilt from SQLite on open; a query goes through the same embedder and is compared by cosine; a different dimension is refused on reopen, a different model of the same dimension is not detected, and the model's quality is the ceiling of what retrieval can find.</title>
+  <rect x="0" y="0" width="1200" height="640" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">The embedder is part of the index</text>
+  <rect x="48" y="140" width="200" height="90" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="68" y="176" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">chunk text</text>
+  <text x="68" y="199" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">at add()</text>
+  <polyline points="248,185 300,185" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="300,185 286.0,178.0 286.0,192.0" fill="#2a78d6"/>
+  <rect x="300" y="140" width="230" height="90" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="320" y="176" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">embedder</text>
+  <text x="320" y="199" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">bge-small · 384-d</text>
+  <polyline points="530,185 590,185" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="590,185 576.0,178.0 576.0,192.0" fill="#2a78d6"/>
+  <path d="M590,136 L590,234 A110.0,16 0 0 0 810,234 L810,136" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <ellipse cx="700.0" cy="136" rx="110.0" ry="16" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <text x="700" y="176" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="19" font-weight="700" fill="#0b0b0b" text-anchor="middle">kb.sqlite</text>
+  <text x="700" y="200" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="middle">chunks + vectors, cached</text>
+  <text x="700" y="219" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="middle">never recomputed</text>
+  <polyline points="810,185 870,185" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="870,185 856.0,178.0 856.0,192.0" fill="#1baf7a"/>
+  <rect x="870" y="140" width="282" height="90" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="890" y="176" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">FAISS index</text>
+  <text x="890" y="198" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">rebuilt from kb.sqlite on open</text>
+  <rect x="48" y="290" width="200" height="90" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="68" y="326" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">query</text>
+  <text x="68" y="349" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">at search()</text>
+  <polyline points="248,335 300,335" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="300,335 286.0,328.0 286.0,342.0" fill="#2a78d6"/>
+  <rect x="300" y="290" width="230" height="90" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="320" y="326" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">same embedder</text>
+  <text x="320" y="349" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">one probe on open</text>
+  <polyline points="530,335 590,335" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="590,335 576.0,328.0 576.0,342.0" fill="#2a78d6"/>
+  <rect x="590" y="290" width="562" height="90" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="610" y="326" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">cosine against the stored vectors</text>
+  <text x="610" y="348" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">[0.710]  'can I get my money back?'  →  the refund chunk</text>
+  <circle cx="60" cy="430" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="423" x2="67" y2="437" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="437" x2="67" y2="423" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="436" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#eb6834" text-anchor="start">another dimension on reopen → ValueError: Embedding dimension mismatch: stored=384, current embedder=128</text>
+  <circle cx="60" cy="470" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="463" x2="67" y2="477" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="477" x2="67" y2="463" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="476" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#eb6834" text-anchor="start">the same dimension, a different model → not detected: query and chunks live in two spaces</text>
+  <circle cx="60" cy="510" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="503" x2="67" y2="517" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="517" x2="67" y2="503" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="516" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#eb6834" text-anchor="start">the model is the ceiling: 'how long is the reimbursement window?' → 'Support hours…' on bge-small</text>
+  <polyline points="50,556 57,564 71,547" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="78" y="562" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1baf7a" text-anchor="start">a reopen embeds one word — the dimension probe — then only queries; keyword mode embeds nothing</text>
+</svg>

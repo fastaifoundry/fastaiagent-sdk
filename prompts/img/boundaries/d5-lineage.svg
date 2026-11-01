@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 640" width="1200" height="640" role="img" aria-label="Who used what: an Agent built from the Prompt object stamps the prompt's name and version on every llm span on every run path, including the offline test models; the Prompts page lineage reads those spans; a formatted string stamps nothing; an agent inside a tool stamps its own prompt; a prompt changed by AutoLLM drops its slug.">
+  <title>Who used what: an Agent built from the Prompt object stamps the prompt's name and version on every llm span on every run path, including the offline test models; the Prompts page lineage reads those spans; a formatted string stamps nothing; an agent inside a tool stamps its own prompt; a prompt changed by AutoLLM drops its slug.</title>
+  <rect x="0" y="0" width="1200" height="640" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Who used what — the object links the run, the string does not</text>
+  <rect x="48" y="130" width="330" height="110" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="68" y="166" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">Agent(system_prompt=prompt)</text>
+  <text x="68" y="191" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">a Prompt, not its text</text>
+  <text x="68" y="213" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">runs .template · keeps name · version</text>
+  <rect x="430" y="130" width="250" height="44" rx="8" fill="#ffffff" stroke="#d6d4cc" stroke-width="1.5"/>
+  <text x="444" y="157.76" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#0b0b0b" text-anchor="start">run · arun</text>
+  <polyline points="680,152 740,152" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="740,152 726.0,145.0 726.0,159.0" fill="#2a78d6"/>
+  <rect x="430" y="186" width="250" height="44" rx="8" fill="#ffffff" stroke="#d6d4cc" stroke-width="1.5"/>
+  <text x="444" y="213.76" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#0b0b0b" text-anchor="start">stream · astream</text>
+  <polyline points="680,208 740,208" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="740,208 726.0,201.0 726.0,215.0" fill="#2a78d6"/>
+  <rect x="430" y="242" width="250" height="44" rx="8" fill="#ffffff" stroke="#d6d4cc" stroke-width="1.5"/>
+  <text x="444" y="269.76" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#0b0b0b" text-anchor="start">resume · fork</text>
+  <polyline points="680,264 740,264" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="740,264 726.0,257.0 726.0,271.0" fill="#2a78d6"/>
+  <rect x="430" y="298" width="250" height="44" rx="8" fill="#ffffff" stroke="#d6d4cc" stroke-width="1.5"/>
+  <text x="444" y="325.76" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#0b0b0b" text-anchor="start">TestModel · FunctionModel</text>
+  <polyline points="680,320 740,320" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="740,320 726.0,313.0 726.0,327.0" fill="#2a78d6"/>
+  <polyline points="378,185 430,185" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="430,185 416.0,178.0 416.0,192.0" fill="#2a78d6"/>
+  <rect x="740" y="130" width="412" height="160" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="760" y="166" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">every llm span</text>
+  <text x="760" y="189" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">fastaiagent.prompt.name = triage</text>
+  <text x="760" y="209" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">fastaiagent.prompt.version = 2</text>
+  <text x="760" y="229" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">+ prompt.slug · prompt.environment</text>
+  <text x="760" y="249" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">  (control-plane prompt only)</text>
+  <polyline points="946,290 946,340" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="946,340 953.0,326.0 939.0,326.0" fill="#1baf7a"/>
+  <rect x="740" y="340" width="412" height="100" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="760" y="376" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">Prompts page → Lineage</text>
+  <text x="760" y="401" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">traces using this prompt</text>
+  <text x="760" y="423" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">eval runs using this prompt</text>
+  <circle cx="60" cy="400" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="393" x2="67" y2="407" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="407" x2="67" y2="393" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="406" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">system_prompt=prompt.format(…) is a string: nothing to stamp</text>
+  <polyline points="50,444 57,452 71,435" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="78" y="450" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#1baf7a" text-anchor="start">an agent inside a tool stamps its own prompt, never its caller's</text>
+  <circle cx="60" cy="488" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="481" x2="67" y2="495" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="495" x2="67" y2="481" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="494" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">a prompt AutoLLM changed drops prompt_slug — register the winner as a version</text>
+  <text x="48" y="570" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">Proof 4: three llm spans in one run — ['triage v2', 'summarizer v1', 'triage v2'] — each with its own prompt.</text>
+</svg>

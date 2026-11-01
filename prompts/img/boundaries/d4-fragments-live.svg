@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 620" width="1200" height="620" role="img" aria-label="A fragment is live, a version is frozen: one fragment row is referenced by three prompts; editing it changes all three on their next load while their version numbers and diff() do not change; the llm span's recorded request messages hold the text actually sent.">
+  <title>A fragment is live, a version is frozen: one fragment row is referenced by three prompts; editing it changes all three on their next load while their version numbers and diff() do not change; the llm span's recorded request messages hold the text actually sent.</title>
+  <rect x="0" y="0" width="1200" height="620" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">A fragment is live, a version is frozen</text>
+  <rect x="48" y="180" width="250" height="120" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="68" y="216" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">fragment: tone</text>
+  <text x="68" y="241" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">one row, updated in place</text>
+  <text x="68" y="263" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">no version history</text>
+  <circle cx="60" cy="330" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="323" x2="67" y2="337" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="337" x2="67" y2="323" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="336" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#eb6834" text-anchor="start">register_fragment('tone', …) again</text>
+  <text x="78" y="356" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#eb6834" text-anchor="start">→ every user changes on next load()</text>
+  <rect x="380" y="120" width="280" height="90" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="400" y="156" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">support · v1</text>
+  <text x="400" y="178" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">You help customers. {{@tone}}</text>
+  <polyline points="298,240 340,240 340,165 380,165" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="380,165 366.0,158.0 366.0,172.0" fill="#1baf7a"/>
+  <rect x="380" y="250" width="280" height="90" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="400" y="286" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">onboarding · v2</text>
+  <text x="400" y="308" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">Welcome {{name}}. {{@tone}}</text>
+  <polyline points="298,240 340,240 340,295 380,295" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="380,295 366.0,288.0 366.0,302.0" fill="#1baf7a"/>
+  <rect x="380" y="380" width="280" height="90" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="400" y="416" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">triage · v1</text>
+  <text x="400" y="438" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">Route the ticket. {{@tone}}</text>
+  <polyline points="298,240 340,240 340,425 380,425" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="380,425 366.0,418.0 366.0,432.0" fill="#1baf7a"/>
+  <rect x="720" y="120" width="432" height="110" rx="12" fill="#fdefe8" stroke="#eb6834" stroke-width="2"/>
+  <text x="740" y="156" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">on the next load()</text>
+  <text x="740" y="181" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">all three change · no version changes</text>
+  <text x="740" y="203" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">diff(support, 1, 1): (no template changes)</text>
+  <rect x="720" y="260" width="432" height="150" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="740" y="296" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">the trace</text>
+  <text x="740" y="319" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">llm span: prompt.version = 1, both runs</text>
+  <text x="740" y="339" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">gen_ai.request.messages holds the text sent:</text>
+  <text x="740" y="359" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">'You help customers. Be formal.'</text>
+  <text x="740" y="379" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">'You help customers. Be casual and brief.'</text>
+  <polyline points="50,500 57,508 71,491" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="78" y="506" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#1baf7a" text-anchor="start">one update point for shared text — consistency, by design</text>
+  <circle cx="60" cy="540" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="533" x2="67" y2="547" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="547" x2="67" y2="533" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="546" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eb6834" text-anchor="start">a version no longer pins the text the model read; the trace does</text>
+</svg>
