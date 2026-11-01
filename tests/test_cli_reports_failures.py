@@ -71,14 +71,49 @@ def test_connect_to_an_unreachable_plane_saves_but_says_unverified(
     assert credentials.exists()
 
 
+@pytest.fixture
+def not_a_plane() -> Any:
+    """A web server that answers 404 to everything, as one that is not a plane does.
+
+    Not ``capture_server`` with one scripted 404: on CI another request can take
+    that 404 first, and the key check then gets a 200.
+    """
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    paths: list[str] = []
+
+    class _Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args: Any) -> None:
+            pass
+
+        def _answer(self) -> None:
+            paths.append(self.path)
+            self.send_response(404)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        do_GET = _answer  # noqa: N815
+        do_POST = _answer  # noqa: N815
+
+    server = HTTPServer(("127.0.0.1", 0), _Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_address[1]}", paths
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
 def test_connect_to_a_server_that_is_not_a_plane_saves_nothing(
-    isolated_local_db: Path, credentials: Path, capture_server: Any
+    isolated_local_db: Path, credentials: Path, not_a_plane: Any
 ) -> None:
-    capture_server.set_status_sequence([404])
-    result = runner.invoke(
-        app, ["connect", "--api-key", "fa_k_test", "--target", capture_server.url]
-    )
+    url, paths = not_a_plane
+    result = runner.invoke(app, ["connect", "--api-key", "fa_k_test", "--target", url])
     assert result.exit_code == 1, result.output
+    assert "/public/v1/auth/check" in paths
     assert "HTTP 404" in result.stderr and "Nothing was saved" in result.stderr
     assert not credentials.exists()
 
