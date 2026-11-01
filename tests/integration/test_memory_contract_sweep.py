@@ -170,6 +170,29 @@ def test_learned_facts_are_capped_and_yours_are_kept(store, path, tracing):
     assert any(f.fact == "typed in by hand" for f in facts)
 
 
+def test_a_zero_window_keeps_no_turns_but_keeps_facts(store, path, tracing):
+    """``window=0`` (1.97.0): the app sends the conversation as ``messages=``;
+    memory adds the user's facts and no earlier turn. 0 used to keep them all."""
+    alice = _uid("alice")
+    store.add(Fact(scope="user", scope_id=alice, fact="alice-fact-2290"))
+
+    def extractor(messages):
+        text = (messages[-1].content or "").split("Message:", 1)[1].split("\n\nJSON:")[0]
+        return json.dumps([f"learned: {text.strip()}"])
+
+    model = TestModel(response="noted")
+    agent = Agent(
+        name="a", llm=model, memory=_per_user(store, window=0, learn=FunctionModel(extractor))
+    )
+    _turn(agent, "earlier-turn-5512", alice, path)
+    _turn(agent, "hello", alice, path)
+    turns = [m.content for m in model.calls[-1]["messages"] if m.role != MessageRole.system]
+    assert turns == ["hello"]  # no earlier turn; its learned fact is in the system part
+    assert "alice-fact-2290" in _prompt(model)
+    facts = {f.fact for f in store.list_active(scope="user", scope_id=alice)}
+    assert "learned: earlier-turn-5512" in facts
+
+
 def test_run_and_astream_store_the_same_turn(tracing):
     """The final reply after middleware, never text said before a tool call; the
     user's words as said."""

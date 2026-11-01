@@ -47,16 +47,23 @@ class AgentMemory:
     """Manages conversation history for an agent.
 
     A sliding window of the last ``max_messages`` messages (a count, not
-    tokens; ``None`` keeps everything), with JSON persistence.
+    tokens; ``0`` keeps none, ``None`` keeps everything), with JSON persistence.
     """
 
     def __init__(self, max_messages: int | None = None):
+        if max_messages is not None and max_messages < 0:
+            raise ValueError("max_messages must be 0 or more, or None to keep everything")
         self._messages: list[Message] = []
         self.max_messages = max_messages
 
     def add(self, message: Message) -> None:
         """Add a message to memory."""
         self._messages.append(message)
+        if self.max_messages == 0:
+            # 0 kept everything until 1.97.0: it read as "no limit", and
+            # ``[-0:]`` is the whole list.
+            self._messages = []
+            return
         if self.max_messages and len(self._messages) > self.max_messages:
             window = self._messages[-self.max_messages :]
             # Don't start the window on the second half of a turn: a reply
@@ -79,7 +86,9 @@ class AgentMemory:
         Returns copies: callers such as middleware may edit what they are
         given, and that must never rewrite stored history.
         """
-        limit = max_messages or self.max_messages
+        limit = self.max_messages if max_messages is None else max_messages
+        if limit == 0:
+            return []
         window = self._messages[-limit:] if limit else self._messages
         return [m.model_copy() for m in window]
 

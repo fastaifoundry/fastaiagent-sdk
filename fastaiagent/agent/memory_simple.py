@@ -172,7 +172,9 @@ class Memory:
             facts are injected on every turn. Must be non-empty: ``""`` would
             read every agent's global facts, so it raises.
         project_id: tenant partition applied across tiers.
-        window: messages kept in the session/working window.
+        window: messages kept in the session/working window. ``0`` keeps none:
+            facts, the summary and recall still work, for a caller that sends
+            the conversation itself as ``messages=``.
         learn: an ``LLMClient`` → extract + persist durable facts from each
             user message (never from the model's replies).
         max_learned_facts: keep at most this many learned facts per user,
@@ -216,6 +218,8 @@ class Memory:
         max_users: int | None = 10_000,
         plane_agent_id: str | None = None,
     ):
+        if window < 0:
+            raise ValueError("window must be 0 or more")
         if max_users is not None and max_users < 1:
             raise ValueError("max_users must be at least 1, or None for no cap")
         if plane_agent_id is not None and not plane_agent_id:
