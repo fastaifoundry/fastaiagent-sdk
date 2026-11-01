@@ -332,7 +332,7 @@ A rerun's trace looks like a run of the agent, because it is one. Until 1.89.0 n
 The rules:
 
 - **Every span is marked.** A rerun's spans carry `fastaiagent.source = "replay"`. Its root also carries `fastaiagent.replay.source_trace_id`, the fork step, the determinism mode, the tool policy, the *kinds* of modification (never the new text) and the surface (`python`, `cli`, `ui`). Each tool span carries its disposition.
-- **Not exported.** The rows are written already marked as sent, so no exporter ships them, including an older SDK sharing the store, and `add_exporter` sinks drop them. Opt in with `with_export()`, `connect(export_experiments=True)` or `FASTAIAGENT_EXPORT_EXPERIMENTS=1`; the spans keep their marking.
+- **Not exported.** The rows are written as never to be sent (`synced=2`), so no exporter ships them, including an older SDK sharing the store, and `add_exporter` sinks drop them. Opt in with `with_export()`, `connect(export_experiments=True)` or `FASTAIAGENT_EXPORT_EXPERIMENTS=1`; the spans keep their marking.
 - **Never registered.** A rerun does not push its agent definition, exported or not.
 - **Left out of production readers**, which say what they left out: the Local UI's Analytics, Overview and Agents, `list_traces(exclude_sources=True)`, `fastaiagent eval curate` and `fastaiagent learn`.
 - **A store of its own, if you like.** `with_trace_db(path)` writes the rerun elsewhere; `compare()` finds it there.
@@ -345,8 +345,8 @@ rerun root: fastaiagent.source='replay'
   determinism='recorded'
   tool_policy='block'
 rerun.exported=False
-original rows synced=[1]
-rerun    rows synced=[1]
+original rows synced=[2]
+rerun    rows synced=[2]
 original local_only=False
 rerun    local_only=True
 list_traces(): 2 traces   exclude_sources=True: 1 (the rerun left out: True)
@@ -354,7 +354,7 @@ with_trace_db: rerun in experiments.db: True   in local.db: False
   compare(): status=ok
 ```
 
-The proof runs offline, so neither trace is queued for the plane (`synced=1`: since 1.95.0 a span is queued only while connected with trace export on). The difference is `local_only`: run while connected, the original would be queued and exported, and the rerun, stamped local-only, still would not. The production listing has one trace, and the rerun written elsewhere is still comparable.
+The proof runs offline, so neither trace is queued for the plane (`synced=2`, kept: since 1.95.0 a span is queued only while connected with trace export on, and since 1.97.0 a span the plane never received is `2`, which `traces prune` keeps). The difference is `local_only`: run while connected, the original would be queued and exported, and the rerun, stamped local-only, still would not. The production listing has one trace, and the rerun written elsewhere is still comparable.
 
 **Code:** [`trace/provenance.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/trace/provenance.py); the stamp is in `LocalStorageProcessor.on_start`, [`trace/storage.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/trace/storage.py); the export filter is `_EgressFilteredExporter` in [`trace/otel.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/fastaiagent/trace/otel.py). The proof is [`proofs/proof_provenance.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/replay/proofs/proof_provenance.py). The reader side is [Tracing → provenance](../tracing/index.md#where-a-trace-came-from-provenance).
 
