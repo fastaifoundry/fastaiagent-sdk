@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -39,6 +40,8 @@ def _load_example_app() -> Any:
     spec = importlib.util.spec_from_file_location("_ex33_deploy_fastapi", EXAMPLE)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
+    # Registered first, as a normal import is: ``@dataclass`` looks its module up.
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module.app
 
@@ -52,9 +55,7 @@ def test_fastapi_example_health_endpoint() -> None:
     just the key — but no LLM call is issued.
     """
     if not os.environ.get("OPENAI_API_KEY"):
-        pytest.skip(
-            "OPENAI_API_KEY required — lifespan builds an LLMClient at startup"
-        )
+        pytest.skip("OPENAI_API_KEY required — lifespan builds an LLMClient at startup")
     from fastapi.testclient import TestClient
 
     app = _load_example_app()
@@ -80,6 +81,34 @@ def test_fastapi_example_run_returns_real_llm_output() -> None:
         assert "4" in data["output"]
         assert isinstance(data["latency_ms"], int)
         assert isinstance(data["tokens_used"], int) and data["tokens_used"] >= 0
+
+
+def test_fastapi_example_continues_a_conversation_from_returned_messages() -> None:
+    """The second turn only knows the order number through the ``messages``
+    the first response returned (the server keeps no state)."""
+    if not os.environ.get("OPENAI_API_KEY"):
+        pytest.skip("OPENAI_API_KEY required for the real /run round-trip")
+    from fastapi.testclient import TestClient
+
+    app = _load_example_app()
+    with TestClient(app) as client:
+        first = client.post(
+            "/run",
+            json={"input": "My order number is 4417. Just say OK."},
+            headers={"X-User-Id": "alice"},
+        )
+        assert first.status_code == 200, first.text
+        history = first.json()["messages"]
+        assert [m["role"] for m in history] == ["user", "assistant"]
+
+        second = client.post(
+            "/run",
+            json={"input": "What was my order number? Digits only.", "messages": history},
+            headers={"X-User-Id": "alice"},
+        )
+        assert second.status_code == 200, second.text
+        assert "4417" in second.json()["output"]
+        assert len(second.json()["messages"]) == 4
 
 
 def test_fastapi_example_run_rejects_empty_input() -> None:
