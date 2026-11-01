@@ -6,7 +6,7 @@ with a changed prompt, must:
 * not charge the card again (blocked by default), and say so;
 * run the read-only lookup when allowed by name;
 * write a trace marked ``fastaiagent.source=replay`` that is never exported
-  (rows land ``synced=1``) and that production readers leave out.
+  (rows land ``synced=2``, kept) and that production readers leave out.
 
 The offline sweep (``tests/integration/test_replay_isolation_sweep.py``) covers
 every surface and mode; this gate proves it holds against a real provider,
@@ -108,7 +108,8 @@ def test_a_live_rerun_does_not_repeat_side_effects(world: Path) -> None:
                 "SELECT synced FROM spans WHERE trace_id = ?", (rerun.trace_id,)
             )
         }
-    assert synced == {1}, f"rerun rows would be exported: synced={synced}"
+    # 2 = kept (1.97.0): never queued for the plane, and ``traces prune`` keeps it.
+    assert synced == {2}, f"rerun rows would be exported: synced={synced}"
 
     production = {t.trace_id for t in TraceStore().list_traces(exclude_sources=True)}
     assert result.trace_id in production
