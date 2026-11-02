@@ -22,6 +22,7 @@ public API. None of it imports framework code from `fastaiagent`.
 | Evals, each case linked to its trace | `fa.evaluate(...)` on a plain function |
 | Knowledge-base search | `kb.search(...)` inside one of the framework's own tools |
 | Registry prompts | `PromptRegistry().get(...).format(...)` as the system prompt |
+| Plane tool approvals | `fa.check_tool_call(...)` inside the framework's tool |
 
 ## 1. Trace the run
 
@@ -111,8 +112,8 @@ explains what the capture does.
 The framework's root span says nothing about *which* agent ran
 (`LangGraph`, `Crew_<uuid>.kickoff`, `agent run`). Open your own root span with
 `fa.trace_context(...)` and put the run under it. `agent.name` gives the run its
-name in the UI and is what the plane matches to an agent. `fastaiagent.prompt.name`
-puts the run on that prompt's page.
+name in the UI and is what the plane matches to an agent. Step 6 adds the
+prompt the run used.
 
 ```python
 import fastaiagent as fa
@@ -156,7 +157,10 @@ def guarded(question: str) -> str:
 code, `await no_pii.aexecute(question)`.
 
 Guardrails authored on the plane come from
-`fa.plane_guardrails_for_agent("support")`. For the plane to record a verdict,
+`fa.plane_guardrails_for_agent("support")`. The plane scopes a rule to an agent
+by its id, so push the agent first (step 7): the SDK then resolves the name to
+its id. For a name this process has not pushed, only the domain-wide rules come
+back, and the SDK logs a warning. For the plane to record a verdict,
 emit it as a `GUARDRAIL` span with `fa.emit_guardrail(...)`.
 [Guardrails & evals without the runtime](primitives-without-the-runtime.md)
 covers both, and the `on_error` policy.
@@ -200,6 +204,11 @@ opens the run behind a score. A function that returns an object with a
 `trace_id` sets the link itself. The same function works in
 [Agent CI](../evaluation/agent-ci.md) gates.
 
+A plain `fa.evaluate` run stays local. When connected, the plane receives
+only runs that went through a gate (`gate` then `record_gate_result`, or the
+pytest gate). See
+[Connected eval export](../platform/connected-eval-export.md#delivery-model).
+
 ## 5. Knowledge bases
 
 Search a `LocalKB` inside one of the framework's own tools:
@@ -223,8 +232,8 @@ retrieval span lands in the same trace as the run.
 
 ## 6. Prompts
 
-Use a registry prompt as the system prompt, and stamp its name on the root
-span so the run shows on the prompt's page:
+Use a registry prompt as the system prompt, and stamp it on the root span with
+`prompt.trace_attributes()` so the run shows on the prompt's page:
 
 ```python
 import fastaiagent as fa
@@ -234,10 +243,17 @@ system_prompt = prompt.format(company="Northwind")
 
 with fa.trace_context(
     "agent.support",
-    **{"agent.name": "support", "fastaiagent.prompt.name": prompt.name},
+    **{"agent.name": "support"},
+    **prompt.trace_attributes(),
 ):
     ...  # build the framework agent with system_prompt and run it
 ```
+
+`trace_attributes()` gives the keys a native `fa.Agent` stamps:
+`fastaiagent.prompt.name` and `.version`, which the Local UI reads, and for a
+control-plane prompt `.slug` and `.environment` as well. The plane links a run
+to a prompt by slug and version, so a run stamped with only the name is on no
+prompt's page there.
 
 ## 7. The control plane
 
@@ -259,7 +275,27 @@ fa.Agent(
 ```
 
 The key needs the `agent:write` scope. See
-[Registration](../platform/registration.md).
+[Registration](../platform/registration.md). Push before step 3 asks for the
+agent's guardrails, so its name resolves to its plane id.
+
+Tools the plane holds an approval policy for are not gated for you, because
+`fa.Agent` is not running them. Ask inside the tool with `fa.check_tool_call`:
+
+```python
+def refund(order_id: str, amount: float) -> str:
+    """Refund an order."""
+    decision = fa.check_tool_call(
+        "refund", {"order_id": order_id, "amount": amount}, agent="support"
+    )
+    if decision.decision != "allow":
+        return f"Not done: {decision.reason or decision.decision}"
+    return do_refund(order_id, amount)
+```
+
+It never pauses the run. On `require_approval` the plane records a pending
+request and your application collects the decision.
+[Managed governance](../guardrails/managed-governance.md#a-tool-your-own-code-calls)
+lists what it answers when the plane is unreachable.
 
 !!! warning "Pydantic AI on a provider you own"
     Spans recorded on your own `TracerProvider` (the Pydantic AI setup in step 1)

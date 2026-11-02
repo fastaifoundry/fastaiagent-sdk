@@ -148,12 +148,25 @@ def plane_guardrails_for_agent(agent_id: str | None) -> list[Guardrail]:
     """Runtime guardrails distributed to this connected agent via the cached
     policy. A rule with an empty ``agent_ids`` is domain-wide; a non-empty list
     scopes it to those agents. Returns ``[]`` when not connected or nothing applies.
+
+    ``agent_id`` is the plane's agent id, or the name of an agent this process
+    has pushed (``fa.Agent(name=...).push()``), which resolves to its id. Rules
+    are scoped by id, so before 1.98.0 a name matched only domain-wide rules and
+    the agent's own were skipped without a word.
     """
+    from fastaiagent._platform.push import pushed_agent_id
     from fastaiagent.client import _plane_guardrail_rules, _plane_policy_version
 
     rules = _plane_guardrail_rules()
     if not rules:
         return []
+
+    if agent_id:
+        resolved = pushed_agent_id(agent_id)
+        if resolved:
+            agent_id = resolved
+        else:
+            _warn_if_unresolved_name(agent_id, rules)
 
     key = (_plane_policy_version(), agent_id)
     cached = _CACHE.get(key)
@@ -175,3 +188,28 @@ def plane_guardrails_for_agent(agent_id: str | None) -> list[Guardrail]:
 
     _CACHE[key] = built
     return built
+
+
+_warned_names: set[str] = set()
+
+
+def _warn_if_unresolved_name(value: str, rules: list[dict[str, Any]]) -> None:
+    """Warn once when ``value`` looks like an unpushed agent name and some rules
+    are scoped to agents, because those rules cannot match it."""
+    from fastaiagent.governance import _is_uuid
+
+    if value in _warned_names:
+        return
+    scoped = [r for r in rules if r.get("agent_ids")]
+    if not scoped or any(value in r["agent_ids"] for r in scoped):
+        return
+    if _is_uuid(value):
+        return  # an id with no rules scoped to it
+    _warned_names.add(value)
+    logger.warning(
+        "plane_guardrails_for_agent(%r): no agent of that name was pushed in this "
+        "process, so the %d rule(s) scoped to specific agents are skipped. Push the "
+        "agent first (fa.Agent(name=...).push()) or pass its plane agent id.",
+        value,
+        len(scoped),
+    )

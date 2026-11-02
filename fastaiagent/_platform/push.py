@@ -51,6 +51,14 @@ _inflight: dict[str, threading.Event] = {}
 _INFLIGHT_WAIT_SECONDS = 15.0
 # Names we've already warned about (unregistered-while-connected) — warn once.
 _warned: set[str] = set()
+# Agent ids the governance enrollment has named, or None until ``connect()``
+# enrolls. A push after that which adds an id re-enrolls (see
+# :func:`_reenroll_if_new`). Guarded by ``_lock``; reset on disconnect.
+_enrolled_ids: set[str] | None = None
+# One enrollment sender at a time (see :func:`enroll_governed_async`): whether
+# one is running, and whether the list changed since it read it. ``_lock``.
+_enroll_running = False
+_enroll_dirty = False
 
 
 @dataclass
@@ -223,6 +231,8 @@ def push_agent(
             name,
             f" → {result.url}" if result.url else "",
         )
+        if agent_id:
+            _reenroll_if_new(agent_id)
         return result
     except Exception as exc:
         if best_effort:
@@ -332,6 +342,76 @@ def flush_pending_registrations() -> list[str]:
     return agent_ids
 
 
+def mark_enrolled(agent_ids: list[str]) -> None:
+    """Record the ids ``connect()``'s enrollment names, which arms
+    :func:`_reenroll_if_new` for every push that follows."""
+    global _enrolled_ids
+    with _lock:
+        _enrolled_ids = set(agent_ids)
+
+
+def _reenroll_if_new(agent_id: str) -> None:
+    """Re-enroll when a push adds an agent the enrollment does not name yet.
+
+    The enrollment at ``connect()`` names only the agents that existed then, so
+    an agent pushed or auto-registered later had no SDK version or fail mode on
+    the plane. The plane *replaces* the stored list on each enroll, so this
+    sends every id this process has pushed, never only the new one. In the
+    background, like the enrollment at ``connect()``, so a push never waits on
+    it. A no-op before ``connect()`` has enrolled, which also keeps its own
+    registration flush from enrolling once per agent.
+    """
+    with _lock:
+        if _enrolled_ids is None or agent_id in _enrolled_ids:
+            return
+        _enrolled_ids.add(agent_id)
+    enroll_governed_async()
+
+
+def enroll_governed_async() -> None:
+    """Send the enrollment naming every agent id known so far, on a daemon thread.
+
+    One sender at a time, reading the list at send time: a call while one is
+    sending marks the list changed and returns, and the sender goes again. So
+    the last enrollment the plane receives is never a shorter list than an
+    earlier one, and concurrent pushes of different agents never queue behind
+    each other's enrollment.
+    """
+    global _enroll_running, _enroll_dirty
+    with _lock:
+        if _enroll_running:
+            _enroll_dirty = True
+            return
+        _enroll_running = True
+    try:
+        threading.Thread(target=_enroll_loop, daemon=True).start()
+    except Exception:  # pragma: no cover - defensive
+        with _lock:
+            _enroll_running = False
+        logger.debug("Could not start governance enrollment", exc_info=True)
+
+
+def _enroll_loop() -> None:
+    global _enroll_running, _enroll_dirty
+    from fastaiagent import governance
+
+    while True:
+        with _lock:
+            _enroll_dirty = False
+            if _enrolled_ids is None:  # disconnected meanwhile
+                _enroll_running = False
+                return
+            ids = sorted(_enrolled_ids | {r.agent_id for r in _pushed.values() if r.agent_id})
+        try:
+            governance.enroll(governed_agent_ids=ids or None)
+        except Exception:  # pragma: no cover - enroll() swallows its own errors
+            logger.debug("governance enroll failed", exc_info=True)
+        with _lock:
+            if not _enroll_dirty:
+                _enroll_running = False
+                return
+
+
 def _warn_once(key: str, message: str) -> None:
     """Emit ``message`` at most once per process for ``key``."""
     with _lock:
@@ -383,9 +463,11 @@ def reset_registration_state() -> None:
     would leave a waiting thread blocked for the full timeout, because the
     owner's ``finally`` pops by name and would find nothing to set.
     """
+    global _enrolled_ids
     with _lock:
         _pushed.clear()
         _warned.clear()
+        _enrolled_ids = None
         waiters = list(_inflight.values())
         _inflight.clear()
     for waiter in waiters:

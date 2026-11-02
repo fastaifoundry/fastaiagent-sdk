@@ -16,7 +16,7 @@ in.
 
 ## Enrollment (attestation)
 
-On `connect()`, the SDK sends a one-shot, **fire-and-forget** POST to
+On `connect()`, the SDK sends a **fire-and-forget** POST to
 `/public/v1/governance/enroll` carrying *metadata only*:
 
 | Field | Meaning |
@@ -26,6 +26,13 @@ On `connect()`, the SDK sends a one-shot, **fire-and-forget** POST to
 | `protocol_version` | the wire protocol the SDK speaks |
 | `fail_mode` | the attested posture — `open` (default) or `closed` |
 | `hostname` | the machine name (best-effort) |
+| `governed_agent_ids` | the plane ids of the agents this process has pushed (omitted when none) |
+
+An agent pushed after `connect()`, by `agent.push()` or by registering itself on
+its first run, re-sends the enrollment with the **full** list (since 1.98.0). The
+plane replaces the stored list on each enrollment, so the SDK never sends only
+the new id. Before 1.98.0 only agents that existed at `connect()` were named, so
+an agent built afterwards showed no SDK version or fail mode on the plane.
 
 The plane upserts on `(domain, project, instance_id)` — keeping the first-seen
 timestamp and refreshing last-seen + posture — so re-connecting the same install

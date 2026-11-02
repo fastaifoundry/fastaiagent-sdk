@@ -120,7 +120,9 @@ agent.run("Confirm my record: name Dana, SSN 123-45-6789.")
 !!! tip "You don't need to pull them yourself"
     `plane_guardrails_for_agent(...)` exists for runtimes that aren't `fa.Agent`
     (see [Guardrails & evals without the runtime](../integrations/primitives-without-the-runtime.md)).
-    A connected `fa.Agent` already enforces plane rules with no code at all.
+    Pass the plane agent id or the name of an agent this process pushed; rules
+    are scoped by id. A connected `fa.Agent` already enforces plane rules with no
+    code at all.
 
 Enforcement is always **local** — the runtime is the enforcement point (see
 [Who actually blocks](index.md)). The plane *authors and distributes*; it never
@@ -219,6 +221,44 @@ answer (1.78.0). None of these approves or rejects on anyone's behalf:
 | [`simulate()`](../simulation/index.md#when-the-agent-pauses) | the scenario stops there, unjudged, with `error` set |
 | [`evaluate()` / pytest eval](../evaluation/agent-ci.md#infra-failures-cant-green-a-build) | an **errored** case: unscored, counted in `error_rate` |
 | [Replay](../replay/guarantees.md#pauses-and-governance-during-a-rerun) | `ReplayError`; a rerun is not governed |
+
+### A tool your own code calls
+
+A tool in another framework (LangGraph, CrewAI, Pydantic AI) is not gated by
+`fa.Agent`. Ask the plane yourself with `fa.check_tool_call` (since 1.98.0), and
+`await fa.acheck_tool_call(...)` in async code:
+
+```python
+import fastaiagent as fa
+
+def refund(order_id: str, amount: float) -> str:
+    decision = fa.check_tool_call(
+        "refund", {"order_id": order_id, "amount": amount}, agent="support"
+    )
+    if decision.decision == "deny":
+        return f"Not permitted: {decision.reason}"
+    if decision.decision == "require_approval":
+        return f"This needs approval first (request {decision.approval_request_id})."
+    return do_refund(order_id, amount)
+```
+
+`agent` is the name of an agent this process pushed (`fa.Agent(name="support",
+...).push()`), or its plane id. It never pauses anything; it returns a
+`ToolDecision` and your code decides. The rules match the agent's own gate:
+
+| Situation | `decision` |
+|---|---|
+| Not connected, or no approval policy matches the tool | `allow`, and nothing is sent |
+| The plane answers | its verdict: `allow`, `deny` or `require_approval` |
+| `/policy/decide` unreachable | `deny` (fail-closed) |
+| `governance_fail_mode="closed"` and no cached policy | `deny` |
+| A name this process has not pushed | `deny`: the plane needs the agent's id |
+
+On `require_approval` the plane has recorded a pending request,
+`approval_request_id`. Your application collects the decision and runs the tool
+afterwards. The SDK reports nothing back for it, because there is no paused run.
+Policies are read at `connect()`, so call `fa.refresh_policy()` to see one created
+later. As with the agent's gate, the tool's arguments go to the plane.
 
 ## Verified end-to-end
 

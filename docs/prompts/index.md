@@ -270,6 +270,10 @@ A prompt fetched from the control plane also stamps `fastaiagent.prompt.slug` an
 - **A formatted string is not linked.** `system_prompt=prompt.format(...)` is just text; the
   run carries no prompt name. A prompt with `{{variables}}` has to be formatted, so its runs
   are not linked today.
+- **Your own root span can carry it.** When something other than `fa.Agent` runs the prompt
+  (a [framework agent](../integrations/frameworks.md#6-prompts)), open the run's span with
+  `fa.trace_context(..., **prompt.trace_attributes())`. It stamps the same keys, leaving out
+  any that are unset (since 1.98.0).
 - **A local prompt never links a pushed agent.** Only a control-plane prompt sets
   `prompt_slug`: the plane has no slug for a prompt that lives in your `local.db`.
 - **A tuned prompt is a new version.** An [AutoLLM](../evaluation/optimization.md) winner

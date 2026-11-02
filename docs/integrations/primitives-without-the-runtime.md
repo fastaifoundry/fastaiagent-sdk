@@ -67,7 +67,9 @@ from opentelemetry import trace
 
 tracer = trace.get_tracer("my.runtime")   # YOUR tracer, YOUR exporter
 
-# 1. Pull — the guardrails the plane distributed to this agent.
+# 1. Pull — the guardrails the plane distributed to this agent. Pass its plane
+#    agent id, or the name of an agent this process pushed: rules are scoped by
+#    id, so an unpushed name gets only the domain-wide ones.
 guardrails = fa.plane_guardrails_for_agent("support-bot")
 
 async def check(text: str, position: str = "output") -> bool:
@@ -209,7 +211,8 @@ stability commitment:
 | Symbol | What it does |
 |--------|--------------|
 | `fa.run_guardrail(guardrail, data)` | Compute one guardrail verdict. Async. Applies `on_error`. Emits nothing. |
-| `fa.plane_guardrails_for_agent(agent_id)` | Rebuild the plane-authored guardrails scoped to an agent. |
+| `fa.plane_guardrails_for_agent(agent_id)` | Rebuild the plane-authored guardrails scoped to an agent (its plane id, or the name of an agent this process pushed). |
+| `fa.check_tool_call(name, args, agent=...)` | Ask the plane's approval policy about a tool call; returns a `ToolDecision`. `fa.acheck_tool_call` in async code. See [Managed governance](../guardrails/managed-governance.md#a-tool-your-own-code-calls). |
 | `fa.guardrail_from_policy_rule(rule)` | Rebuild a single `/policy` rule; `None` if not locally enforceable. |
 | `fa.emit_guardrail(tracer, ...)` | Open + stamp + close a `GUARDRAIL` span on your tracer. |
 | `fa.emit_evaluation(tracer, ...)` | Open + stamp + close an `EVALUATOR` span on your tracer. |

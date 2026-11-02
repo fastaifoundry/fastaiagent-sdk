@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.98.0] - 2026-11-02 — framework agents on the control plane
+
+The plane team ran the framework recipe (`docs/integrations/frameworks.md`)
+against a live plane with LangChain, LangGraph and CrewAI. Each plane feature
+worked, with five gaps on the SDK side. None changes the wire.
+
+### Added
+
+- **`fa.check_tool_call(name, args, agent=...)`** and async
+  **`fa.acheck_tool_call`** ask the plane's approval policy about a tool call
+  that `fa.Agent` does not run, such as a LangGraph or CrewAI tool. They return a
+  `ToolDecision` (`decision`, `reason`, `approval_request_id`) and never pause.
+  They follow the agent's own gate: `allow` with nothing sent when no policy
+  matches, and `deny` when the plane cannot be reached. Before, this took the
+  internal async `governance.decide`.
+- **`Prompt.trace_attributes()`** returns the `fastaiagent.prompt.*` keys a
+  native agent stamps, for your own root span. Unset keys are left out.
+
+### Fixed
+
+- **`fa.plane_guardrails_for_agent("support")` skipped the rules attached to
+  that agent**, without a word. The plane scopes rules by agent id, and the
+  recipe passed a name, so only domain-wide rules came back. A name this process
+  pushed now resolves to its id. An unpushed name logs a warning when
+  agent-scoped rules exist.
+- **The framework recipe linked no run to a prompt on the plane.** It stamped
+  `fastaiagent.prompt.name`; the plane links by `slug` and `version`. Step 6 now
+  uses `prompt.trace_attributes()`.
+- **Agents pushed after `connect()` had no SDK version or fail mode on the
+  plane.** The governance enrollment named only the agents that existed at
+  `connect()`. An agent pushed later, by `agent.push()` or by registering itself
+  on its first run, re-enrolls with the full list of this process's agents. This
+  also covers native `fa.Agent`s built after `connect()`.
+
+### Docs
+
+- The framework recipe says that a plain `fa.evaluate` run stays local: the
+  plane receives only gated runs. It also covers tool approvals and the order of
+  push and guardrails.
+- Managed governance: a section for tools your own code calls. Connected
+  governance: `governed_agent_ids` and the re-enrollment.
+
 ## [1.97.0] - 2026-11-01 — the CLI reports what happened; prune keeps unsent traces
 
 A read of the CLI as a coding agent or a CI job uses it (exit codes, stdout,

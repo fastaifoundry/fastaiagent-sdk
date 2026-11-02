@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import threading
+import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -49,6 +50,18 @@ class GovPlane:
         # because a successful push stamps that id onto the agent, which would
         # make every test's agent governed.
         self.accept_agent_push = False
+        # True (with ``accept_agent_push``): each pushed name gets its own UUID,
+        # as on the real plane, instead of ``AGENT_ID``.
+        self.push_ids_by_name = False
+        # Added to the key's scopes at ``/auth/check`` — ``agent:write`` turns on
+        # auto-registration. Set before ``connect()``.
+        self.extra_scopes: list[str] = []
+        self.pushed_ids: dict[str, str] = {}
+        # Every ``POST /governance/enroll`` body, in arrival order.
+        self.enrolls: list[dict[str, Any]] = []
+        # When set to an Event, ``/governance/enroll`` holds each request until
+        # it is set (10 s at most), to show a push does not wait on enrollment.
+        self.enroll_gate: threading.Event | None = None
         # Every request, as ``"METHOD /path"``, in arrival order.
         self.paths: list[str] = []
 
@@ -91,7 +104,13 @@ class _Handler(BaseHTTPRequestHandler):
                     "ok": True,
                     "domain_id": "dom-1",
                     "project_id": "proj-1",
-                    "scopes": ["policy:read", "policy:decide", "run:write", "run:read"],
+                    "scopes": [
+                        "policy:read",
+                        "policy:decide",
+                        "run:write",
+                        "run:read",
+                        *st.extra_scopes,
+                    ],
                 },
             )
         elif self.path == "/public/v1/policy":
@@ -126,7 +145,19 @@ class _Handler(BaseHTTPRequestHandler):
         with st.lock:
             st.paths.append(f"POST {self.path}")
         if self.path == "/public/v1/sdk/agents" and st.accept_agent_push:
-            self._json(201, {"id": AGENT_ID, "name": self._body().get("name")})
+            name = self._body().get("name")
+            agent_id = AGENT_ID
+            if st.push_ids_by_name:
+                with st.lock:
+                    agent_id = st.pushed_ids.setdefault(name, str(uuid.uuid4()))
+            self._json(201, {"id": agent_id, "name": name})
+        elif self.path == "/public/v1/governance/enroll":
+            body = self._body()
+            if st.enroll_gate is not None:
+                st.enroll_gate.wait(10)
+            with st.lock:
+                st.enrolls.append(body)
+            self._json(200, {"enrolled": True, "instance_id": body.get("instance_id")})
         elif self.path == "/public/v1/policy/decide":
             body = self._body()
             with st.lock:
