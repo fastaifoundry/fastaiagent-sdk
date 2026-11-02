@@ -28,6 +28,8 @@ from __future__ import annotations
 
 import fnmatch
 import logging
+import uuid
+from dataclasses import dataclass
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -289,6 +291,89 @@ async def check_direct_call(
             f"approval pauses its run for the calling application to resolve."
         )
     return None
+
+
+@dataclass(frozen=True)
+class ToolDecision:
+    """The plane's approval-policy verdict on one tool call.
+
+    ``decision`` is ``"allow"``, ``"deny"`` or ``"require_approval"``. On
+    ``require_approval`` the plane has recorded a pending request,
+    ``approval_request_id``; the application collects the decision.
+    """
+
+    decision: str
+    reason: str | None = None
+    approval_request_id: str | None = None
+
+
+async def acheck_tool_call(
+    tool_name: str, tool_input: dict[str, Any], *, agent: str
+) -> ToolDecision:
+    """Ask the plane's approval policy about a tool call made by your own code.
+
+    For runtimes that aren't ``fa.Agent`` — a LangGraph, CrewAI or Pydantic AI
+    tool. ``fa.Agent`` gates its tools itself and pauses its run on
+    ``require_approval``; this never pauses, it reports, and the caller decides
+    what to do.
+
+    ``agent`` is the name of an agent this process has pushed, or its plane id.
+    The same rules as the agent's own gate:
+
+    * not connected, or no cached approval policy matches ``tool_name`` →
+      ``allow``, and nothing is sent;
+    * ``/policy/decide`` unreachable, or the opt-in fail-closed mode with no
+      cached policy → ``deny``.
+
+    A policy-matched tool with an ``agent`` the plane cannot know (a name not
+    pushed in this process) is also ``deny``: the plane validates the id, and an
+    unchecked call must not run. Policies are read at ``connect()``; one created
+    later is seen after ``refresh_policy()``. The arguments are sent to the
+    plane, as for the agent's gate (see :func:`decide`).
+    """
+    from fastaiagent._platform.push import pushed_agent_id
+    from fastaiagent.client import _connection
+
+    agent_id = pushed_agent_id(agent) or agent
+    refusal = _fail_closed_refusal(tool_name, agent_id)
+    if refusal:
+        return ToolDecision("deny", refusal)
+    if not _connection.is_connected or not policy_matches(tool_name):
+        return ToolDecision("allow")
+    if agent_id == agent and not _is_uuid(agent):
+        return ToolDecision(
+            "deny",
+            f"Refused: agent {agent!r} has not been pushed in this process, so the "
+            "plane cannot decide for it. Push it (fa.Agent(name=...).push()) or "
+            "pass its plane agent id.",
+        )
+    try:
+        verdict = await decide(tool_name, tool_input, agent_id)
+    except Exception:
+        logger.warning("policy/decide unreachable; refusing %r (fail-closed)", tool_name)
+        logger.debug("policy/decide error detail", exc_info=True)
+        return ToolDecision("deny", "Refused: governance check unavailable")
+    return ToolDecision(
+        verdict.get("decision") or "deny",
+        verdict.get("reason"),
+        verdict.get("approval_request_id"),
+    )
+
+
+def check_tool_call(tool_name: str, tool_input: dict[str, Any], *, agent: str) -> ToolDecision:
+    """Sync :func:`acheck_tool_call`, for a framework's sync tool. Safe to call
+    from inside a running event loop."""
+    from fastaiagent._internal.async_utils import run_sync
+
+    return run_sync(acheck_tool_call(tool_name, tool_input, agent=agent))
+
+
+def _is_uuid(value: str) -> bool:
+    try:
+        uuid.UUID(value)
+    except ValueError:
+        return False
+    return True
 
 
 async def gate_tool_call(

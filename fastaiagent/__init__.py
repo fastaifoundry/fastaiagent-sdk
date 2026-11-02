@@ -59,6 +59,7 @@ from fastaiagent.eval import (
     harden,
     simulate,
 )
+from fastaiagent.governance import ToolDecision, acheck_tool_call, check_tool_call
 from fastaiagent.guardrail import (
     Guardrail,
     GuardrailResult,
@@ -154,6 +155,10 @@ __all__ = [
     "disconnect",
     "refresh_policy",
     "push",
+    # Plane approval policy for a tool call made outside fa.Agent
+    "check_tool_call",
+    "acheck_tool_call",
+    "ToolDecision",
     "job_scope",
     "is_connected",
     # Agent

@@ -51,6 +51,12 @@ _inflight: dict[str, threading.Event] = {}
 _INFLIGHT_WAIT_SECONDS = 15.0
 # Names we've already warned about (unregistered-while-connected) — warn once.
 _warned: set[str] = set()
+# Agent ids the governance enrollment has named, or None until ``connect()``
+# enrolls. A push after that which adds an id re-enrolls (see
+# :func:`_reenroll_if_new`). Guarded by ``_lock``; reset on disconnect.
+_enrolled_ids: set[str] | None = None
+# Serializes the enrollment POSTs themselves (see :func:`enroll_governed`).
+_enroll_lock = threading.Lock()
 
 
 @dataclass
@@ -223,6 +229,8 @@ def push_agent(
             name,
             f" → {result.url}" if result.url else "",
         )
+        if agent_id:
+            _reenroll_if_new(agent_id)
         return result
     except Exception as exc:
         if best_effort:
@@ -332,6 +340,50 @@ def flush_pending_registrations() -> list[str]:
     return agent_ids
 
 
+def mark_enrolled(agent_ids: list[str]) -> None:
+    """Record the ids ``connect()``'s enrollment names, which arms
+    :func:`_reenroll_if_new` for every push that follows."""
+    global _enrolled_ids
+    with _lock:
+        _enrolled_ids = set(agent_ids)
+
+
+def _reenroll_if_new(agent_id: str) -> None:
+    """Re-enroll when a push adds an agent the enrollment does not name yet.
+
+    The enrollment at ``connect()`` names only the agents that existed then, so
+    an agent pushed or auto-registered later had no SDK version or fail mode on
+    the plane. The plane *replaces* the stored list on each enroll, so this
+    sends every id this process has pushed, never only the new one. Synchronous
+    and best-effort: ``governance.enroll`` never raises, and a push that ran this
+    far already made one network call. A no-op before ``connect()`` has enrolled,
+    which also keeps its own registration flush from enrolling once per agent.
+    """
+    with _lock:
+        if _enrolled_ids is None or agent_id in _enrolled_ids:
+            return
+        _enrolled_ids.add(agent_id)
+    enroll_governed()
+
+
+def enroll_governed() -> None:
+    """POST the enrollment naming every agent id known so far.
+
+    Serialized, and the list is read at send time, so the last enrollment to
+    reach the plane is never a shorter list than an earlier one: ``connect()``
+    sends from a daemon thread, which a push's re-enroll could otherwise
+    overtake.
+    """
+    from fastaiagent import governance
+
+    with _enroll_lock:
+        with _lock:
+            if _enrolled_ids is None:
+                return
+            ids = sorted(_enrolled_ids | {r.agent_id for r in _pushed.values() if r.agent_id})
+        governance.enroll(governed_agent_ids=ids or None)
+
+
 def _warn_once(key: str, message: str) -> None:
     """Emit ``message`` at most once per process for ``key``."""
     with _lock:
@@ -383,9 +435,11 @@ def reset_registration_state() -> None:
     would leave a waiting thread blocked for the full timeout, because the
     owner's ``finally`` pops by name and would find nothing to set.
     """
+    global _enrolled_ids
     with _lock:
         _pushed.clear()
         _warned.clear()
+        _enrolled_ids = None
         waiters = list(_inflight.values())
         _inflight.clear()
     for waiter in waiters:

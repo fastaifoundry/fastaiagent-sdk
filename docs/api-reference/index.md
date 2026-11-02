@@ -16,7 +16,7 @@ Auto-generated reference documentation for all public FastAIAgent SDK classes an
 ## Safety
 
 - **[Guardrail](../guardrails/index.md)** — `Guardrail`, `GuardrailResult`, `no_pii`, `json_valid`, `toxicity_check`
-- **[Guardrail primitives](../integrations/primitives-without-the-runtime.md)** — `run_guardrail(guardrail, data)` (compute only, applies `on_error`), `plane_guardrails_for_agent(agent_id)`, `guardrail_from_policy_rule(rule)`. Use these when the runtime isn't `fa.Agent`.
+- **[Guardrail primitives](../integrations/primitives-without-the-runtime.md)** — `run_guardrail(guardrail, data)` (compute only, applies `on_error`), `plane_guardrails_for_agent(agent_id)`, `guardrail_from_policy_rule(rule)`, `check_tool_call(name, args, agent=...)`. Use these when the runtime isn't `fa.Agent`.
 
 ## Durability (v1.0)
 

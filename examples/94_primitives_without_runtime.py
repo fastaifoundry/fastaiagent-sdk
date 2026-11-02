@@ -79,6 +79,8 @@ def main() -> int:
 
     try:
         # ── 2. PULL — plane-authored guardrails, rebuilt as runnable objects.
+        #    The rule here is domain-wide. A rule attached to one agent is scoped
+        #    by its plane id: pass that, or the name of an agent you pushed.
         rails = fa.plane_guardrails_for_agent("support-bot")
         print(f"guardrails distributed by the plane: {[g.name for g in rails]}")
 

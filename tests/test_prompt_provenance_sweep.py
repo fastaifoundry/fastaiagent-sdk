@@ -155,6 +155,25 @@ def test_llm_span_carries_the_registry_prompt(
     assert _prompt_attrs(llm[-1]) == expected
 
 
+@pytest.mark.parametrize("kind", ["local", "platform"])
+def test_a_root_span_from_trace_attributes_carries_what_an_agent_stamps(
+    kind: str, tmp_path: Path, collector: _Collector
+) -> None:
+    """``prompt.trace_attributes()`` on a framework run's own root span gives the
+    keys a native agent stamps: ``slug`` + ``version`` for the plane's prompt
+    link, ``name`` for the Local UI, and nothing unset (1.98.0)."""
+    from fastaiagent.trace import trace_context
+
+    prompt, expected = _system_prompt(kind, tmp_path)
+    assert prompt.trace_attributes() == expected
+
+    with trace_context("agent.support", **prompt.trace_attributes()):
+        pass
+
+    root = [a for n, a in collector.spans if n == "agent.support"]
+    assert _prompt_attrs(root[-1]) == expected
+
+
 @pytest.mark.parametrize("kind", ["local", "platform", "plain"])
 def test_resumed_run_carries_the_registry_prompt(
     kind: str, tmp_path: Path, collector: _Collector
@@ -319,9 +338,10 @@ def test_prompts_page_lineage_finds_a_real_run(isolated_local_db: Path) -> None:
 def test_prompts_page_lineage_finds_a_run_that_names_only_the_prompt(
     isolated_local_db: Path,
 ) -> None:
-    """A run of another framework's agent stamps only the prompt's name on its
-    root span (the recipe in docs/integrations/frameworks.md), no version; the
-    page matches on ``fastaiagent.prompt.name`` and still finds it."""
+    """A run of another framework's agent stamps the prompt on its own root span
+    with ``prompt.trace_attributes()`` (the recipe in
+    docs/integrations/frameworks.md); the page matches on
+    ``fastaiagent.prompt.name`` and finds it."""
     pytest.importorskip("fastapi")
     from fastapi.testclient import TestClient
 
@@ -331,7 +351,7 @@ def test_prompts_page_lineage_finds_a_run_that_names_only_the_prompt(
     otel.reset()
     try:
         prompt = PromptRegistry().register("support-system", "Answer questions about {{topic}}.")
-        with trace_context("agent.support", **{"fastaiagent.prompt.name": prompt.name}):
+        with trace_context("agent.support", **prompt.trace_attributes()):
             prompt.format(topic="the sky")  # handed to the framework as its system prompt
         get_tracer_provider().force_flush()
     finally:

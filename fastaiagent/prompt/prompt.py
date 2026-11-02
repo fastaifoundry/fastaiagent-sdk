@@ -37,6 +37,24 @@ class Prompt(BaseModel):
             result = result.replace(f"{{{{{key}}}}}", str(value))
         return result
 
+    def trace_attributes(self) -> dict[str, Any]:
+        """The ``fastaiagent.prompt.*`` attributes that link a run to this prompt.
+
+        For a root span opened by your own code, such as
+        ``fa.trace_context(..., **prompt.trace_attributes())`` around a
+        framework call. ``name`` and ``version`` for the Local UI's prompt
+        lineage; ``slug`` and ``environment`` too for a control-plane prompt,
+        which the plane links by slug and version. A native ``fa.Agent`` given
+        the ``Prompt`` stamps the same keys itself. Unset values are left out.
+        """
+        attrs = {
+            "fastaiagent.prompt.name": self.name,
+            "fastaiagent.prompt.version": self.version,
+            "fastaiagent.prompt.slug": self.slug,
+            "fastaiagent.prompt.environment": self.environment,
+        }
+        return {k: v for k, v in attrs.items() if v is not None}
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
