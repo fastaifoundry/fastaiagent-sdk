@@ -59,6 +59,9 @@ class GovPlane:
         self.pushed_ids: dict[str, str] = {}
         # Every ``POST /governance/enroll`` body, in arrival order.
         self.enrolls: list[dict[str, Any]] = []
+        # When set to an Event, ``/governance/enroll`` holds each request until
+        # it is set (10 s at most), to show a push does not wait on enrollment.
+        self.enroll_gate: threading.Event | None = None
         # Every request, as ``"METHOD /path"``, in arrival order.
         self.paths: list[str] = []
 
@@ -150,6 +153,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(201, {"id": agent_id, "name": name})
         elif self.path == "/public/v1/governance/enroll":
             body = self._body()
+            if st.enroll_gate is not None:
+                st.enroll_gate.wait(10)
             with st.lock:
                 st.enrolls.append(body)
             self._json(200, {"enrolled": True, "instance_id": body.get("instance_id")})

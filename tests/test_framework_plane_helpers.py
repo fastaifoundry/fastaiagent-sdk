@@ -185,17 +185,45 @@ def _governed(enroll: dict[str, Any]) -> set[str]:
     return set(enroll.get("governed_agent_ids") or [])
 
 
+def _sender_idle() -> bool:
+    from fastaiagent._platform import push
+
+    return not push._enroll_running
+
+
 def test_each_new_push_re_enrolls_with_the_full_list(plane: GovPlane) -> None:
-    _wait_for(lambda: len(plane.enrolls) >= 1)  # connect()'s own, on a daemon thread
     first = _push("support")
     second = _push("billing")
 
-    assert _governed(plane.enrolls[-1]) >= {first, second}
+    _wait_for(lambda: bool(plane.enrolls) and _governed(plane.enrolls[-1]) >= {first, second})
+    _wait_for(_sender_idle)
     # The plane replaces the stored list, so no enrollment drops an earlier agent.
-    assert first in _governed(plane.enrolls[-2])
+    lists = [_governed(e) for e in plane.enrolls]
+    assert all(a <= b for a, b in zip(lists, lists[1:])), lists
     sent = len(plane.enrolls)
     _push("support")  # nothing new to name
+    assert _sender_idle()
     assert len(plane.enrolls) == sent
+
+
+def test_a_push_does_not_wait_on_the_enrollment(plane: GovPlane) -> None:
+    """Enrollment runs in the background: a slow plane never delays a push, and
+    concurrent pushes of different agents never queue behind it."""
+    import threading
+
+    plane.enroll_gate = threading.Event()  # the stand-in holds each enrollment 10 s
+    ids: list[str] = []
+    pushed = threading.Event()
+
+    def push_both() -> None:
+        ids.extend([_push("support"), _push("billing")])
+        pushed.set()
+
+    threading.Thread(target=push_both, daemon=True).start()
+    assert pushed.wait(5), "a push waited on the held enrollment"
+
+    plane.enroll_gate.set()
+    _wait_for(lambda: bool(plane.enrolls) and _governed(plane.enrolls[-1]) >= set(ids))
 
 
 def test_an_agent_auto_registered_on_its_first_run_is_enrolled(isolated_local_db: Path) -> None:

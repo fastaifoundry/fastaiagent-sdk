@@ -502,13 +502,11 @@ def connect(
     # the just-registered governed_agent_ids are populated. An agent pushed after
     # this re-enrolls with the full list (push._reenroll_if_new, 1.98.0).
     try:
-        import threading
-
-        from fastaiagent._platform.push import enroll_governed, mark_enrolled
+        from fastaiagent._platform.push import enroll_governed_async, mark_enrolled
 
         # From here on, a push that adds an agent re-enrolls with the full list.
         mark_enrolled(governed_agent_ids)
-        threading.Thread(target=enroll_governed, daemon=True).start()
+        enroll_governed_async()
     except Exception:
         logger.debug("Could not kick governance enroll on connect", exc_info=True)
 

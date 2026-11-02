@@ -55,8 +55,10 @@ _warned: set[str] = set()
 # enrolls. A push after that which adds an id re-enrolls (see
 # :func:`_reenroll_if_new`). Guarded by ``_lock``; reset on disconnect.
 _enrolled_ids: set[str] | None = None
-# Serializes the enrollment POSTs themselves (see :func:`enroll_governed`).
-_enroll_lock = threading.Lock()
+# One enrollment sender at a time (see :func:`enroll_governed_async`): whether
+# one is running, and whether the list changed since it read it. ``_lock``.
+_enroll_running = False
+_enroll_dirty = False
 
 
 @dataclass
@@ -354,34 +356,60 @@ def _reenroll_if_new(agent_id: str) -> None:
     The enrollment at ``connect()`` names only the agents that existed then, so
     an agent pushed or auto-registered later had no SDK version or fail mode on
     the plane. The plane *replaces* the stored list on each enroll, so this
-    sends every id this process has pushed, never only the new one. Synchronous
-    and best-effort: ``governance.enroll`` never raises, and a push that ran this
-    far already made one network call. A no-op before ``connect()`` has enrolled,
-    which also keeps its own registration flush from enrolling once per agent.
+    sends every id this process has pushed, never only the new one. In the
+    background, like the enrollment at ``connect()``, so a push never waits on
+    it. A no-op before ``connect()`` has enrolled, which also keeps its own
+    registration flush from enrolling once per agent.
     """
     with _lock:
         if _enrolled_ids is None or agent_id in _enrolled_ids:
             return
         _enrolled_ids.add(agent_id)
-    enroll_governed()
+    enroll_governed_async()
 
 
-def enroll_governed() -> None:
-    """POST the enrollment naming every agent id known so far.
+def enroll_governed_async() -> None:
+    """Send the enrollment naming every agent id known so far, on a daemon thread.
 
-    Serialized, and the list is read at send time, so the last enrollment to
-    reach the plane is never a shorter list than an earlier one: ``connect()``
-    sends from a daemon thread, which a push's re-enroll could otherwise
-    overtake.
+    One sender at a time, reading the list at send time: a call while one is
+    sending marks the list changed and returns, and the sender goes again. So
+    the last enrollment the plane receives is never a shorter list than an
+    earlier one, and concurrent pushes of different agents never queue behind
+    each other's enrollment.
     """
+    global _enroll_running, _enroll_dirty
+    with _lock:
+        if _enroll_running:
+            _enroll_dirty = True
+            return
+        _enroll_running = True
+    try:
+        threading.Thread(target=_enroll_loop, daemon=True).start()
+    except Exception:  # pragma: no cover - defensive
+        with _lock:
+            _enroll_running = False
+        logger.debug("Could not start governance enrollment", exc_info=True)
+
+
+def _enroll_loop() -> None:
+    global _enroll_running, _enroll_dirty
     from fastaiagent import governance
 
-    with _enroll_lock:
+    while True:
         with _lock:
-            if _enrolled_ids is None:
+            _enroll_dirty = False
+            if _enrolled_ids is None:  # disconnected meanwhile
+                _enroll_running = False
                 return
             ids = sorted(_enrolled_ids | {r.agent_id for r in _pushed.values() if r.agent_id})
-        governance.enroll(governed_agent_ids=ids or None)
+        try:
+            governance.enroll(governed_agent_ids=ids or None)
+        except Exception:  # pragma: no cover - enroll() swallows its own errors
+            logger.debug("governance enroll failed", exc_info=True)
+        with _lock:
+            if not _enroll_dirty:
+                _enroll_running = False
+                return
 
 
 def _warn_once(key: str, message: str) -> None:
