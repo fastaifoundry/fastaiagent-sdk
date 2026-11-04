@@ -48,6 +48,11 @@ print(result.output)
 
 Because both `LocalKB` and `PlatformKB` expose the same `search(query, top_k) -> list[SearchResult]` surface and the same `as_tool()` helper, an Agent wired for one works for the other — swap as you promote a KB from local prototyping to platform hosting. Both tools carry `origin="kb"`, so the Local UI lists them under the agent's knowledge bases (before 1.91.0 a `PlatformKB` tool showed up as a plain function tool).
 
+Each hit reaches the model as the **whole chunk**, as `LocalKB`'s do. Before 1.99.0
+`PlatformKB.as_tool()` cut every hit to its first 200 characters, so a fact further into a
+chunk never reached the model. In a live test the agent answered with none of the facts it
+was asked for, and searched again and again for text it was never shown.
+
 ## What Runs Where
 
 | Stage | LocalKB | PlatformKB |

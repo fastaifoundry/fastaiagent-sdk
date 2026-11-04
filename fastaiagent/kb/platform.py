@@ -85,7 +85,10 @@ class PlatformKB:
         """Create a FunctionTool that wraps this KB for agent use.
 
         Mirrors ``LocalKB.as_tool()`` so a ``PlatformKB`` can drop into the same
-        ``tools=[kb.as_tool()]`` wiring on ``Agent``.
+        ``tools=[kb.as_tool()]`` wiring on ``Agent``. Each hit is the whole
+        chunk, as ``LocalKB``'s are. Until 1.99.0 this tool cut every hit to its
+        first 200 characters, so a fact further into a chunk never reached the
+        model.
         """
         from fastaiagent.tool.function import FunctionTool
 
@@ -95,7 +98,7 @@ class PlatformKB:
                 return "No results found."
             parts = []
             for r in results:
-                parts.append(f"[Score: {r.score:.3f}] {r.chunk.content[:200]}")
+                parts.append(f"[Score: {r.score:.3f}] {r.chunk.content}")
             return "\n\n".join(parts)
 
         tool = FunctionTool(
