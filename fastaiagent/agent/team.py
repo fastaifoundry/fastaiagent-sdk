@@ -451,30 +451,16 @@ class Supervisor:
     def _build_worker_clone(self, worker: Worker) -> Agent:
         """Build the agent that actually runs when ``delegate_to_<role>`` fires.
 
-        The clone shares everything with the user's worker.agent but:
+        A copy of the user's worker.agent (``Agent._team_member``: every field,
+        ``agent_id`` and prompt lineage included, registering as the worker
+        itself) except that it:
             - uses the supervisor's checkpointer (so its checkpoints land
               under the supervisor's execution_id);
             - uses ``"worker:<role>"`` as its agent_path label so paths nest
               as ``supervisor:<s>/worker:<role>/...``.
         """
-        base = worker.agent
-        return Agent(
-            name=base.name,
-            # The platform identity is what managed policy is enforced on
-            # (``/policy/decide``) and what plane guardrails are scoped to. A
-            # clone without it was never gated: a worker's approval-policy tool
-            # ran with no approval at all (fixed 1.74.0).
-            agent_id=base.agent_id,
-            system_prompt=base.system_prompt,
-            llm=base.llm,
-            tools=list(base.tools),
-            guardrails=list(base.guardrails),
-            memory=base.memory,
-            config=base.config,
-            output_type=base.output_type,
-            middleware=list(base.middleware),
-            checkpointer=self._checkpointer,
-            agent_path_label=f"worker:{worker.role}",
+        return worker.agent._team_member(
+            agent_path_label=f"worker:{worker.role}", checkpointer=self._checkpointer
         )
 
     def _has_worker_state(self, execution_id: str, worker_role: str) -> bool:

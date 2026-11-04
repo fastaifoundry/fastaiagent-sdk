@@ -1174,39 +1174,31 @@ class Swarm:
     ) -> Agent:
         """Return a clone of ``agents[name]`` with handoff tools injected.
 
-        The clone shares everything with the original (llm, system_prompt,
-        memory, guardrails, middleware) but gets additional per-run handoff
-        tools. The original agent is left untouched so multiple swarms can
-        share the same agent instances without cross-contamination. Its
-        memory is seen through a :class:`_HopMemory` for this hop, so the run
-        records the user's ``original_input`` once, not the hand-off mechanics.
+        The clone is a copy of the original (``Agent._team_member``: every field,
+        ``agent_id`` and prompt lineage included, registering as the original)
+        with additional per-run handoff tools. The original agent is left
+        untouched so multiple swarms can share the same agent instances without
+        cross-contamination. Its memory is seen through a :class:`_HopMemory`
+        for this hop, so the run records the user's ``original_input`` once, not
+        the hand-off mechanics.
         """
         base = self.agents[name]
         hop = _Hop(original_input)
-        handoff_tools = self._build_handoff_tools(name, state)
-        merged_tools: list[Tool] = list(base.tools) + handoff_tools
-        # Prepend the internal exit-after-handoff middleware so the inner
-        # tool loop stops as soon as a handoff executes. User-supplied
-        # middleware still runs (around the real tool) because ours wraps
-        # outermost and only short-circuits after the real tool returns.
-        merged_middleware = [_ExitAfterHandoff(hop), *self.middleware, *base.middleware]
-        return Agent(
-            name=base.name,
-            # Managed policy and plane guardrails key on the platform identity;
-            # without it the clone was never gated (fixed 1.74.0).
-            agent_id=base.agent_id,
-            system_prompt=base.system_prompt,
-            llm=base.llm,
-            tools=merged_tools,
-            guardrails=base.guardrails,
-            memory=_HopMemory(base.memory, hop) if base.memory is not None else None,
-            config=base.config,
-            output_type=base.output_type,
-            middleware=merged_middleware,
+        return base._team_member(
+            # ``swarm:<s>/agent:<name>`` is what ``aresume`` parses the active
+            # agent out of, whatever label the agent carries on its own.
+            agent_path_label=f"agent:{base.name}",
             # Forward the swarm's checkpointer so the cloned agent writes
             # turn / tool / interrupted checkpoints under the same execution
             # with the nested ``swarm:.../agent:...`` path.
             checkpointer=self._checkpointer,
+            extra_tools=self._build_handoff_tools(name, state),
+            # The internal exit-after-handoff middleware is outermost so the
+            # inner tool loop stops as soon as a handoff executes. User-supplied
+            # middleware still runs (around the real tool) because ours only
+            # short-circuits after the real tool returns.
+            outer_middleware=[_ExitAfterHandoff(hop), *self.middleware],
+            memory=_HopMemory(base.memory, hop) if base.memory is not None else None,
         )
 
     def _build_handoff_tools(self, current: str, state: SwarmState) -> list[Tool]:

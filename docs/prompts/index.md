@@ -267,6 +267,9 @@ A prompt fetched from the control plane also stamps `fastaiagent.prompt.slug` an
   only for control-plane prompts, so a local prompt's lineage panel stayed empty.)
 - **Only the agent's own calls.** An agent run inside another — a tool, a worker — stamps its
   own prompt, or none, never its caller's.
+- **Inside a team too.** A Supervisor worker or a Swarm member stamps its own prompt, and
+  its pushed definition keeps the slug. Before 1.99.0 the team's copy of the agent dropped
+  both, so its calls carried nothing and the plane showed it as "Inline".
 - **A formatted string is not linked.** `system_prompt=prompt.format(...)` is just text; the
   run carries no prompt name. A prompt with `{{variables}}` has to be formatted, so its runs
   are not linked today.

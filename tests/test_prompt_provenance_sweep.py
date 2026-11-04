@@ -274,6 +274,64 @@ def test_interleaved_streams_keep_their_own_prompt(tmp_path: Path, collector: _C
     assert spans["llm.test.model-b"] == {}
 
 
+# --------------------------------------------------------------------------- #
+# Team members (1.99.0)
+# --------------------------------------------------------------------------- #
+def _lead_route(messages: list[Any]) -> Any:
+    """Delegate once; answer once the worker's reply is in."""
+    if messages[-1].role.value == "tool":
+        return f"team says: {messages[-1].content}"
+    return "", [{"name": "delegate_to_member", "arguments": {"task": "help"}}]
+
+
+def _team(topology: str, member: fa.Agent) -> Any:
+    """``member`` inside a Supervisor or a Swarm whose other agent has no prompt."""
+    if topology == "supervisor":
+        return fa.Supervisor(
+            name="prov-team",
+            llm=FunctionModel(_lead_route, model="lead-model"),
+            workers=[fa.Worker(member, role="member")],
+        )
+    entry = fa.Agent(
+        name="entry",
+        system_prompt="You route.",
+        llm=FunctionModel(
+            lambda m: ("", [{"name": f"handoff_to_{member.name}", "arguments": {"reason": "x"}}]),
+            model="entry-model",
+        ),
+    )
+    return fa.Swarm(name="prov-swarm", agents=[entry, member], entrypoint="entry")
+
+
+@pytest.mark.parametrize("kind", ["local", "platform", "plain"])
+@pytest.mark.parametrize("path", sorted(PATHS))
+@pytest.mark.parametrize("topology", ["supervisor", "swarm"])
+def test_a_team_member_carries_its_registry_prompt(
+    topology: str, kind: str, path: str, tmp_path: Path, collector: _Collector
+) -> None:
+    """A Supervisor worker or Swarm member stamps its own prompt, and the agent
+    that hands it the work does not borrow it. Both teams ran a field-by-field
+    rebuild of the member that dropped the prompt's provenance, so a member's
+    llm spans carried nothing and its pushed definition showed "Inline"."""
+    system_prompt, expected = _system_prompt(kind, tmp_path)
+    member = fa.Agent(
+        name="member", system_prompt=system_prompt, llm=TestModel("ok", model="member-model")
+    )
+    team = _team(topology, member)
+
+    PATHS[path](team, tmp_path)
+
+    spans: dict[str, list[dict[str, Any]]] = {}
+    for name, attrs in collector.spans:
+        if name.startswith("llm."):
+            spans.setdefault(name, []).append(_prompt_attrs(attrs))
+    assert spans["llm.test.member-model"] and all(
+        a == expected for a in spans["llm.test.member-model"]
+    )
+    other = "llm.test.lead-model" if topology == "supervisor" else "llm.test.entry-model"
+    assert spans[other] and all(a == {} for a in spans[other])
+
+
 def test_a_local_prompt_never_links_the_pushed_agent(tmp_path: Path) -> None:
     """Only a control-plane prompt sets prompt_slug — the plane has no local slug."""
     local, _ = _system_prompt("local", tmp_path)

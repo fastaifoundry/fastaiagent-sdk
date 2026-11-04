@@ -362,6 +362,26 @@ Its `--compare` flag runs the same tickets through both modes. The same routing
 as a Chain graph is in
 [`107_call_center_chain.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/107_call_center_chain.py).
 
+## Team members on the control plane
+
+A worker runs as a per-run copy of the agent you built, and since 1.99.0 that copy
+keeps everything the agent has. That matters once you `fa.connect()`:
+
+- **It registers as your agent.** The definition pushed on its first run is your
+  agent's own: its tools, its prompt slug. It doesn't include the team's internal
+  `handoff_to_*` tools. The `agent_id` the plane hands back lands on your agent too.
+- **Managed governance gates it on every run.** Approval policies and plane guardrails
+  key on that `agent_id`. Before 1.99.0 the id landed only on the throwaway copy, so
+  a worker built after `connect()` (the order you need when its prompt comes from
+  the plane) was never gated after its first run. A tool behind an
+  "always require approval" policy ran unapproved.
+- **Its prompt lineage survives.** A worker built from a registry `Prompt` stamps
+  `fastaiagent.prompt.*` on its own model calls inside the team, the same as when
+  it runs alone.
+
+The same holds for a [Swarm](swarm.md) member. The supervisor's lead, which is rebuilt
+each run, is linked to its plane id from its second run on.
+
 ## API Reference
 
 ### `Supervisor`

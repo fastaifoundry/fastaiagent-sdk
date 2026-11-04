@@ -272,6 +272,15 @@ swarm = Swarm(
 )
 ```
 
+## On the control plane
+
+Each hop runs a copy of the agent you built, with the `handoff_to_*` tools added.
+Since 1.99.0 the copy registers as your agent: the pushed definition has your agent's
+own tools and prompt slug, not the handoff tools. The `agent_id` lands on your agent,
+so managed governance gates its tools on every run, and its registry prompt is
+stamped on its model calls. See
+[Team members on the control plane](teams.md#team-members-on-the-control-plane).
+
 ## Serialization
 
 ```python

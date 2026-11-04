@@ -83,6 +83,16 @@ If an agent runs while connected but isn't registered (auto-register off, missin
 you exactly what to do — enable `auto_register`, call `agent.push()`, or run
 `fastaiagent push`. Silence never hides it.
 
+## Agents in a Supervisor or Swarm
+
+A team runs a copy of each member, but the member registers as **itself**: the
+definition pushed is the agent you built, without the team's `handoff_to_*` tools.
+The returned `agent_id` is set on your agent, so governance applies to it on every
+run (since 1.99.0; before, the id landed on the copy and the member went ungated).
+Every later agent with an already-registered name is linked to the same id when it
+first runs. That includes a Supervisor's lead, which is rebuilt each run. See
+[Team members on the control plane](../agents/teams.md#team-members-on-the-control-plane).
+
 ## Naming
 
 The plane keys agents by **name within the project**, so two live agents with the

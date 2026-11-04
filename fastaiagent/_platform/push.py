@@ -134,6 +134,24 @@ def _has_agent_write_scope() -> bool:
     return "agent:write" in scopes
 
 
+def _stamp(agent: Agent, agent_id: str | None) -> None:
+    """Give ``agent`` — and the agent it is a copy of — the plane's ``agent_id``.
+
+    Never overwrites an id the user set. The origin matters (1.99.0): a team runs
+    a fresh copy of each member every time, so an id left only on the copy was
+    gone by the next run, and the member's tools were never gated again.
+    """
+    if not agent_id:
+        return
+    origin = getattr(agent, "_registration_origin", None)
+    for target in (agent, origin):
+        if target is not None and not getattr(target, "agent_id", None):
+            try:
+                target.agent_id = agent_id
+            except Exception:  # pragma: no cover - defensive
+                logger.debug("Could not stamp agent_id back onto agent", exc_info=True)
+
+
 def push_agent(
     agent: Agent,
     *,
@@ -152,10 +170,16 @@ def push_agent(
     ``best_effort=True`` (the auto paths) swallows errors, logs once, and
     returns ``None`` so a run is never broken. ``best_effort=False`` (explicit
     push) lets platform errors propagate so the caller/CLI sees them.
+
+    A copy (``Agent._copy`` — a Supervisor worker, a Swarm hop) registers as the
+    agent it was made from (1.99.0): that agent's definition is what is pushed,
+    without the team's ``handoff_to_*`` tools, and the ``agent_id`` lands on it
+    as well as on the copy.
     """
     from fastaiagent._platform.api import get_platform_api
 
-    name = agent.name
+    origin = getattr(agent, "_registration_origin", None) or agent
+    name = origin.name
 
     # Claim the name before the request, not after the response.
     #
@@ -173,6 +197,7 @@ def push_agent(
         with _lock:
             if not force and name in _pushed:
                 cached = _pushed[name]
+                _stamp(agent, cached.agent_id)
                 return PushResult(
                     agent_id=cached.agent_id,
                     name=cached.name,
@@ -199,6 +224,7 @@ def push_agent(
         with _lock:
             if name in _pushed:
                 cached = _pushed[name]
+                _stamp(agent, cached.agent_id)
                 return PushResult(
                     agent_id=cached.agent_id,
                     name=cached.name,
@@ -209,7 +235,7 @@ def push_agent(
         # The winner failed and cached nothing. Try it ourselves.
 
     try:
-        payload = agent.to_dict()
+        payload = origin.to_dict()
         resp = get_platform_api().post("/public/v1/sdk/agents", payload)
         agent_id = resp.get("id") or resp.get("agent_id")
         result = PushResult(
@@ -219,11 +245,7 @@ def push_agent(
             url=_console_url_for_agent(agent_id),
         )
         # Link the live agent so governance tool-gating lights up immediately.
-        if agent_id and not getattr(agent, "agent_id", None):
-            try:
-                agent.agent_id = agent_id
-            except Exception:  # pragma: no cover - defensive
-                logger.debug("Could not stamp agent_id back onto agent", exc_info=True)
+        _stamp(agent, agent_id)
         with _lock:
             _pushed[name] = result
         logger.info(
@@ -283,6 +305,10 @@ def auto_register_async(agent: Agent) -> None:
         return
     with _lock:
         if agent.name in _pushed:
+            # Already registered — by this agent's earlier run, or by an earlier
+            # copy of it (every Supervisor/Swarm run, and a Supervisor's lead,
+            # is a fresh object). Link this one too, before its tools run.
+            _stamp(agent, _pushed[agent.name].agent_id)
             return
     if not _has_agent_write_scope():
         _warn_once(
