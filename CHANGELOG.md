@@ -7,6 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.99.0] - 2026-11-04 — Supervisor and Swarm on the control plane
+
+A live test of both team types against a local plane found nine bugs. The test
+used real models, plane prompts, hosted KBs, approval policies and eval export.
+Each bug was then reproduced a second time by a separate method before it was
+fixed. None changes the wire.
+
+### Fixed
+
+- **Managed governance never gated a team member built after `connect()`.**
+  That is the order you need when the member's prompt comes from the plane. The
+  member registered on its first run as the team's per-run copy. Its `agent_id`
+  landed on that copy and was thrown away with it, so every later run went
+  ungated. Live, a tool behind an "always require approval" policy ran unapproved
+  on every run, in a Supervisor and in a Swarm. The id now lands on your agent.
+  An agent whose name is already registered is linked to that id when its run
+  starts, which covers a Supervisor's lead (rebuilt each run).
+- **`PlatformKB.as_tool()` cut every hit to its first 200 characters.**
+  `LocalKB.as_tool()` never did. Any fact further into a chunk never reached the
+  model. Live: 0 of 5 facts in a swarm's answer, against 5 of 5 with whole
+  chunks.
+- **Team members lost their prompt lineage.** A Supervisor worker or Swarm
+  member built from a registry `Prompt` stamped nothing on its model calls, and
+  the plane showed every member as "Inline". Both teams rebuilt the member field
+  by field and dropped the prompt's provenance and `prompt_slug`. Every copy now
+  comes from one `Agent._copy()` that keeps every field.
+- **A Swarm member's plane definition held the swarm's `handoff_to_*` tools.**
+  Registration now pushes the agent you built, not the team's copy.
+- **`Swarm.astream()` opened no root span.** One streamed run was one unrelated
+  trace per hop, locally and on the plane. `Supervisor.astream()` with
+  `routing="decisions"` opened none either.
+- **`Supervisor.stream()` nested a second `supervisor.<name>` span** inside its own.
+- **`swarm.handoff_count` counted every tool call.** A run with 3 handoffs and 6
+  KB searches reported 9. `stream()` and `astream()` left it unset.
+- **`fastaiagent push --module` skipped Supervisors and Swarms.** It now
+  registers a Supervisor's lead and workers and a Swarm's members, each once.
+- **Eval export could send one run twice.** The gate's background kick, a span
+  flush and `fastaiagent eval export` drained the same rows at once. The plane
+  answered the duplicate with 409, and the SDK logged a rejection for a run that
+  had landed. One drain now runs at a time for each `local.db`.
+
+### Changed
+
+- **A Supervisor's `tokens_used`, `cost` and `cost_known` are the whole team's.**
+  They now include every worker run, every `validate_outputs` retry and the
+  routing decision, on `run`, `arun` and `stream`. Before, they were the lead's
+  own turns only (live, 7,528 of 29,339 tokens). The documented remedy, "sum
+  each worker's", was impossible: the worker's result was discarded. This is a
+  signed-off behaviour change, and the totals grow to what the team spent.
+- Team members are now gated by approval policies and plane guardrails on every
+  run. That is the fix above, but a tool that used to run will now pause for
+  approval.
+- `Supervisor(system_prompt=)` and `Agent(system_prompt=)` take a registry
+  `Prompt` in their type hints. Both already accepted one at runtime.
+
+### Tests
+
+- Team axes in the prompt-provenance sweep: Supervisor and Swarm × `run`,
+  `arun`, `stream` and `astream` × local, platform and plain prompts, plus the
+  Supervisor's lead. New tests: `test_team_registration.py` (a real HTTP plane
+  stand-in), `test_team_trace_tree.py`, `test_supervisor_team_spend.py`,
+  `test_platform_kb_tool.py`, `test_push_discovers_teams.py`, and the two
+  concurrent-drain cases in `test_eval_platform_export.py`.
+- Live gate `tests/e2e/test_connected_teams_plane_e2e.py`. It fails on 1.98.0.
+
+### Docs
+
+- Teams: "Team members on the control plane", whole-team totals, a single
+  streamed span, and `Prompt` on `system_prompt`. Removed the duplicate heading.
+- Swarm: the control plane, and the root span plus `handoff_count` when
+  streaming. Also updated: registration (teams, `push --module`), prompts
+  (lineage inside a team), platform KB (whole chunks), managed governance (an
+  auto-registered member is enrolled) and eval export (one drain at a time).
+
 ## [1.98.0] - 2026-11-02 — framework agents on the control plane
 
 The plane team ran the framework recipe (`docs/integrations/frameworks.md`)
