@@ -131,3 +131,31 @@ def test_a_supervisor_lead_is_enrolled_from_its_second_run(auto: _Recorder) -> N
     push_mod.auto_register_async(next_lead)  # the first thing its run does
     assert next_lead.agent_id == lead_id
     assert len([p for p in auto.posts if p.get("name") == "lead"]) == 1
+
+
+# ── streamed runs register too ─────────────────────────────────────────────
+
+
+def _stream(runner: Any) -> None:
+    import asyncio
+
+    async def consume() -> None:
+        async for _ in runner.astream("hi"):
+            pass
+
+    asyncio.run(consume())
+
+
+@pytest.mark.parametrize("topology", ["agent", "supervisor", "swarm"])
+def test_a_streamed_first_run_registers(topology: str, auto: _Recorder) -> None:
+    """Only ``arun`` registered an agent on its first run. An agent built after
+    ``connect()`` and only ever streamed — alone or in a team — never got an
+    ``agent_id``, so managed governance never gated it."""
+    member = _member()
+    runner: Any = member if topology == "agent" else _team(topology, member)
+
+    _stream(runner)
+
+    agent_id = _registered("member")
+    assert agent_id, "a streamed run registered nothing"
+    assert member.agent_id == agent_id

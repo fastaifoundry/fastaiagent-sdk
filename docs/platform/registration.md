@@ -15,7 +15,9 @@ The SDK owns registration end-to-end. **You never write `httpx.post(...)`.**
 That's it. There's no "connect at the end" rule and no ordering puzzle:
 
 - Agents that exist when you call `connect()` are registered at connect time.
-- Agents created later register themselves on their **first run**.
+- Agents created later register themselves on their **first run**: `run`, `arun`,
+  `stream` or `astream`. (A streamed run registered nothing before 1.99.0, so an agent
+  that was only ever streamed had no `agent_id` and governance never gated it.)
 
 Either way, `connect()` is the single entry point.
 

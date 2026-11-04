@@ -1910,8 +1910,17 @@ class Agent:
                 # Same link ``arun`` stamps: the run's checkpoints and any
                 # resume of it are found by this id.
                 span.set_attribute("agent.execution_id", exec_id)
-                if outcome is not None:
-                    outcome["trace_id"] = format(span.get_span_context().trace_id, "032x")
+            # First-run registration, as ``arun`` does (1.99.0). A streamed run
+            # never registered: an agent built after ``connect()`` and only ever
+            # streamed had no ``agent_id``, so managed governance never gated it.
+            try:
+                from fastaiagent._platform.push import auto_register_async
+
+                auto_register_async(self)
+            except Exception:
+                pass
+            if span is not None and outcome is not None:
+                outcome["trace_id"] = format(span.get_span_context().trace_id, "032x")
             if outcome is not None:
                 outcome["execution_id"] = exec_id
             from fastaiagent.prompt.provenance import (
