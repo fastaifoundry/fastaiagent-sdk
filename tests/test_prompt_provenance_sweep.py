@@ -332,6 +332,36 @@ def test_a_team_member_carries_its_registry_prompt(
     assert spans[other] and all(a == {} for a in spans[other])
 
 
+@pytest.mark.parametrize("kind", ["local", "platform"])
+@pytest.mark.parametrize("path", sorted(PATHS))
+def test_a_supervisor_lead_carries_its_registry_prompt(
+    kind: str, path: str, tmp_path: Path, collector: _Collector
+) -> None:
+    """``Supervisor(system_prompt=<Prompt>)`` links the lead's own calls, and
+    only those: the worker it delegates to has no prompt."""
+    system_prompt, expected = _system_prompt(kind, tmp_path)
+    member = fa.Agent(
+        name="member", system_prompt="plain", llm=TestModel("ok", model="member-model")
+    )
+    team = fa.Supervisor(
+        name="prov-lead",
+        llm=FunctionModel(_lead_route, model="lead-model"),
+        system_prompt=system_prompt,
+        workers=[fa.Worker(member, role="member")],
+    )
+
+    PATHS[path](team, tmp_path)
+
+    by_model: dict[str, list[dict[str, Any]]] = {}
+    for name, attrs in collector.spans:
+        if name.startswith("llm."):
+            by_model.setdefault(name, []).append(_prompt_attrs(attrs))
+    assert by_model["llm.test.lead-model"] and all(
+        a == expected for a in by_model["llm.test.lead-model"]
+    )
+    assert all(a == {} for a in by_model["llm.test.member-model"])
+
+
 def test_a_local_prompt_never_links_the_pushed_agent(tmp_path: Path) -> None:
     """Only a control-plane prompt sets prompt_slug — the plane has no local slug."""
     local, _ = _system_prompt("local", tmp_path)

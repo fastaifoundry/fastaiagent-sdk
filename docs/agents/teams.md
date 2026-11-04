@@ -11,8 +11,6 @@ Use **Supervisor** when a central LLM should orchestrate and synthesize results.
 
 A supervisor agent delegates tasks to specialized worker agents. This pattern is useful when different parts of a task require different expertise, models, or tool sets.
 
-## Supervisor / Worker Pattern
-
 ```python
 from fastaiagent import Agent, LLMClient, Supervisor, Worker
 
@@ -397,7 +395,7 @@ Supervisor(
     name: str,
     llm: LLMClient | None = None,
     workers: list[Worker] | None = None,
-    system_prompt: str | Callable[[RunContext | None], str] = "",
+    system_prompt: str | Prompt | Callable[[RunContext | None], str] = "",
     max_delegation_rounds: int = 3,
     checkpointer: Checkpointer | None = None,
     validate_outputs: bool = False,
@@ -430,7 +428,7 @@ the routed worker's run, like `guardrails=`. See
 | `name` | `str` | Yes | Supervisor name |
 | `llm` | `LLMClient \| None` | No | LLM for the supervisor (defaults to OpenAI gpt-4o-mini) |
 | `workers` | `list[Worker] \| None` | No | Workers available for delegation |
-| `system_prompt` | `str \| Callable` | No | Custom instructions. If omitted, auto-generates from worker descriptions |
+| `system_prompt` | `str \| Prompt \| Callable` | No | Custom instructions. If omitted, auto-generates from worker descriptions. A registry `Prompt` links the lead like an `Agent`: its model calls carry `fastaiagent.prompt.*`, and the pushed lead keeps a plane prompt's slug. `prompt.format(...)` text links nothing |
 | `max_delegation_rounds` | `int` | No | Max delegation rounds (default: 3, translates to `max_iterations * 2`) |
 | `validate_outputs` | `bool` | No | (v1.9.0) When `True`, supervisor LLM reviews each worker output |
 | `validation_prompt` | `str \| None` | No | (v1.9.0) Override the default validator prompt; must include `{task}` and `{output}` placeholders |

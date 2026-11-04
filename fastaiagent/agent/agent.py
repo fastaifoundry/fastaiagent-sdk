@@ -9,7 +9,7 @@ import uuid
 from collections.abc import AsyncGenerator, Callable, Coroutine, Iterator, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any, Generic, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, overload
 
 from pydantic import BaseModel, Field, field_validator
 from typing_extensions import TypeVar as TypeVarWithDefault
@@ -92,6 +92,9 @@ from fastaiagent.multimodal.image import Image as MultimodalImage
 from fastaiagent.multimodal.pdf import PDF as MultimodalPDF  # noqa: N811
 from fastaiagent.multimodal.types import ContentPart, normalize_input
 from fastaiagent.tool.base import Tool
+
+if TYPE_CHECKING:
+    from fastaiagent.prompt.prompt import Prompt
 
 logger = logging.getLogger(__name__)
 
@@ -493,7 +496,7 @@ class Agent:
     def __init__(
         self,
         name: str,
-        system_prompt: str | Callable[..., str] = "",
+        system_prompt: str | Prompt | Callable[..., str] = "",
         llm: LLMClient | None = None,
         tools: Sequence[Tool] | None = None,
         guardrails: Sequence[Guardrail] | None = None,
@@ -512,7 +515,12 @@ class Agent:
         # so the plane can match approval policies (Task C). Without it the
         # governance gate is a no-op (the agent isn't enrolled).
         self.agent_id = agent_id
-        self.system_prompt = system_prompt
+        from fastaiagent.prompt.prompt import Prompt as _RegistryPrompt
+
+        # A registry ``Prompt`` runs as its template (its lineage is kept below).
+        self.system_prompt: str | Callable[..., str] = (
+            system_prompt.template if isinstance(system_prompt, _RegistryPrompt) else system_prompt
+        )
         # A control-plane prompt-registry reference. When set, to_dict() emits
         # this slug and sends system_prompt="" so a pushed agent links to the
         # governed prompt (console shows the slug, not "Inline") instead of

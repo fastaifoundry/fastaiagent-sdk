@@ -153,7 +153,11 @@ agent = Agent(
   the agent isn't enrolled and the gate is a no-op. `agent.push()` registers the
   agent and sets it for you. An enrolled agent stays governed inside a `Swarm` or
   a `Supervisor` (before 1.74.0 their internal copies dropped the id, so a
-  worker's policy-gated tool ran with no approval at all).
+  worker's policy-gated tool ran with no approval at all). The same holds for a
+  member that **auto-registers** on its first run inside a team, the usual case
+  when it is built after `connect()` with a plane prompt. Since 1.99.0 the id
+  lands on your agent. Before, it landed on the team's per-run copy, so the member
+  was ungoverned on every later run.
 - A **`checkpointer`** is required so a paused run can be resumed. Without one,
   the pause cannot be saved and surfaces as an `InterruptSignal` exception (unless
   the agent runs inside a checkpointed `Chain`, which then owns the pause).

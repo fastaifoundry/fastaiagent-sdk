@@ -9,9 +9,12 @@ import uuid
 from collections.abc import AsyncGenerator, Callable, Iterator, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from fastaiagent.prompt.prompt import Prompt
 
 from fastaiagent._internal.async_utils import run_sync
 from fastaiagent._internal.pricing import _RunUsage, run_cost, start_run_cost, stop_run_cost
@@ -193,7 +196,7 @@ class Supervisor:
         name: str,
         llm: LLMClient | None = None,
         workers: list[Worker] | None = None,
-        system_prompt: str | Callable[..., str] = "",
+        system_prompt: str | Prompt | Callable[..., str] = "",
         max_delegation_rounds: int = 3,
         checkpointer: Checkpointer | None = None,
         validate_outputs: bool = False,
