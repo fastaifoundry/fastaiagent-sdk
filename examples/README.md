@@ -169,6 +169,10 @@ Numbered scripts grouped by topic. Each one is ~50–150 lines and demonstrates 
 - [`18_supervisor_worker.py`](18_supervisor_worker.py) — `Supervisor` + `Worker` (also see `research-agent/`)
 - [`65_supervisor_validate.py`](65_supervisor_validate.py) — `Supervisor(validate_outputs=True)`: the manager inspects each worker's output and re-invokes it once with feedback (runs under pytest, no keys)
 - [`31_swarm_research_team.py`](31_swarm_research_team.py) — `Swarm` peer-to-peer handoffs
+- [`117_teams_end_to_end.py`](117_teams_end_to_end.py) — a Supervisor and a Swarm end to end (1.99.0):
+  KBs that say what they hold, `Supervisor(memory=)`, whole-team tokens and the workers' tool calls,
+  Swarm handoffs that carry what was found, one trace per streamed run, and (with `FASTAIAGENT_API_KEY`)
+  members registered and governed as themselves
 - [`36_chain_workflow.py`](36_chain_workflow.py) — Chain end-to-end
 - [`39_workflows_demo.py`](39_workflows_demo.py) — workflow comparison
 - [`47_workflow_topology.py`](47_workflow_topology.py) — topology API for the UI

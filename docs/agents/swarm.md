@@ -348,6 +348,7 @@ except SwarmError as e:
 
 ## Next Steps
 
+- [Example 117](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/117_teams_end_to_end.py) — a Swarm and a Supervisor end to end, on or off the control plane
 - [Supervisor / Worker Teams](teams.md) — Centralized delegation topology
 - [Memory](memory.md) — Add long-term memory to swarm agents
 - [KB Backends](../knowledge-base/backends.md) — Give swarm agents searchable knowledge

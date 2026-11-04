@@ -535,6 +535,7 @@ Worker(
 
 ## Next Steps
 
+- [Example 117](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/117_teams_end_to_end.py) -- a Supervisor and a Swarm end to end, on or off the control plane
 - [Agents](index.md) -- Core agent documentation
 - [Context & Dependency Injection](../tools/context.md) -- RunContext details
 - [Streaming](../streaming/index.md) -- Streaming architecture
