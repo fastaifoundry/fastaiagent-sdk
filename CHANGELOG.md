@@ -12,9 +12,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 A live test of both team types against a local plane found nine bugs. The test
 used real models, plane prompts, hosted KBs, approval policies and eval export.
 Each bug was then reproduced a second time by a separate method before it was
-fixed. None changes the wire.
+fixed. The same test named five improvements, which are in this release too.
+None changes the wire.
+
+### Added
+
+- **`Supervisor(memory=...)`.** The team holds a conversation: each run records
+  the request and the final answer once, and the next run's lead sees them, on
+  `run`, `stream` and `astream`. `resume` continues the turn that paused. With
+  `routing="decisions"` (no lead) the constructor refuses it.
+- **Swarm handoffs carry what the team found.** Each hop's tool results are kept
+  in `SwarmState.findings` (agent, tool, result), and every briefing lists them.
+  Before, the next agent saw only what the model copied into `reason` or
+  `context`. Live, billing never learned tech had solved its part, handed back,
+  and one run hit `max_handoffs`. Each result is repeated up to 4,000 characters.
+- **A Supervisor's result lists what its workers ran.** Each worker's calls (every
+  `validate_outputs` attempt) follow the `delegate_to_<role>` call that ran them,
+  and every entry names its `agent` (a worker's also its `worker` role), as a
+  Swarm's do. A trajectory eval over `supervisor.run` now scores the worker's
+  tools. Code that counts a supervisor's `tool_calls` will see more entries.
+- **KB tools say what they hold.** `PlatformKB(kb_id, name=, description=)` and
+  `LocalKB(..., description=)`: the tool is `search_<name>`, and its description
+  ends with what the KB holds. Before, a `PlatformKB` tool was `search_<uuid>`,
+  described by the uuid. Tool names are made valid (`"Product docs"` →
+  `search_Product_docs`). A name that was already valid is unchanged.
+- **Team spans name every member.** Each agent span carries `agent.id` once the
+  agent is registered. A team's root span lists its members (`supervisor.workers`,
+  `swarm.agents`). The plane ties a trace to an agent by its root span, so a
+  worker's or member's page showed no team run. Attributing by these is the
+  plane's call.
+- Example `117_teams_end_to_end.py`: a Supervisor and a Swarm end to end, on or
+  off the plane.
 
 ### Fixed
+
+- **A streamed run never registered.** Only `run`/`arun` registered an agent on
+  its first run. An agent built after `connect()` and only ever streamed, alone or
+  as a Swarm member, had no `agent_id`, so managed governance never gated it.
 
 - **Managed governance never gated a team member built after `connect()`.**
   That is the order you need when the member's prompt comes from the plane. The
@@ -70,7 +104,14 @@ fixed. None changes the wire.
   stand-in), `test_team_trace_tree.py`, `test_supervisor_team_spend.py`,
   `test_platform_kb_tool.py`, `test_push_discovers_teams.py`, and the two
   concurrent-drain cases in `test_eval_platform_export.py`.
-- Live gate `tests/e2e/test_connected_teams_plane_e2e.py`. It fails on 1.98.0.
+- Live gate `tests/e2e/test_connected_teams_plane_e2e.py`. It fails on 1.98.0. It
+  also checks that a streamed run registers, and that the wire payload names each
+  member.
+- `test_supervisor_memory.py`, `test_swarm_findings.py`,
+  `test_supervisor_worker_calls.py`, a streamed-registration case, an identity
+  case in the trace-tree sweep, KB naming cases, and a team runner axis in the
+  memory contract sweep (Supervisor and Swarm × 3 stores × `run`/`astream` ×
+  tracing).
 
 ### Docs
 
@@ -80,6 +121,10 @@ fixed. None changes the wire.
   streaming. Also updated: registration (teams, `push --module`), prompts
   (lineage inside a team), platform KB (whole chunks), managed governance (an
   auto-registered member is enrolled) and eval export (one drain at a time).
+- Teams: "What the result carries" and "Conversation memory". Swarm: "What the
+  team found". Memory: "Memory in a team". KB reference and platform KB:
+  `name`/`description`. Tracing: `agent.id`, `supervisor.workers`,
+  `swarm.agents`. Trajectory scoring: teams. Registration: streamed first runs.
 
 ## [1.98.0] - 2026-11-02 — framework agents on the control plane
 
