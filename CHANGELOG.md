@@ -46,6 +46,10 @@ None changes the wire.
 
 ### Fixed
 
+- **A resumed Swarm lost a multimodal request.** `resume()` turned the stored
+  request back into text, so every agent after the resume, after a pause or a
+  crash, was briefed with the envelope's text (base64 included) instead of the
+  `Image`/`PDF` parts.
 - **A streamed run never registered.** Only `run`/`arun` registered an agent on
   its first run. An agent built after `connect()` and only ever streamed, alone or
   as a Swarm member, had no `agent_id`, so managed governance never gated it.

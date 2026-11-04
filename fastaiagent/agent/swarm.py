@@ -995,9 +995,16 @@ class Swarm:
                 "pass resume_value=Resume(...) to swarm.resume()."
             )
 
+        from fastaiagent.chain.state import _hydrate_from_checkpoint
+
         state = _restore_state(snapshot)
-        current_input = str(snapshot.get("current_input", ""))
-        original_input = str(snapshot.get("original_input", current_input))
+        # Rehydrated, never ``str()``-ed (1.99.0): the snapshot stores an
+        # Image/PDF as a JSON-safe dict, and stringifying it briefed every agent
+        # after the resume with the dict's text — base64 and all — not the photo.
+        current_input = _hydrate_from_checkpoint(snapshot.get("current_input", ""))
+        original_input = _hydrate_from_checkpoint(
+            snapshot.get("original_input", snapshot.get("current_input", ""))
+        )
         accumulated = list(snapshot.get("accumulated_tool_calls", []))
         total_tokens = int(snapshot.get("total_tokens", 0))
         iteration = int(snapshot.get("iteration", 0))
