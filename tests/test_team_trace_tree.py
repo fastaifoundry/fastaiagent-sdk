@@ -142,3 +142,33 @@ def test_swarm_handoff_count_counts_handoffs(path: str, collector: _Collector) -
 
     root = next(s for s in collector.spans if s.name == ROOT["swarm"])
     assert root.attributes["swarm.handoff_count"] == 1  # not 2: the search is not a handoff
+
+
+MEMBERS = {"supervisor": ("supervisor.workers", ["a", "b"]),
+           "decisions": ("supervisor.workers", ["a", "b"]),
+           "swarm": ("swarm.agents", ["a", "b"])}  # fmt: skip
+
+
+@pytest.mark.parametrize("path", ["run", "arun", "stream", "astream"])
+@pytest.mark.parametrize("topology", ["supervisor", "decisions", "swarm"])
+def test_member_spans_carry_their_plane_identity(
+    topology: str, path: str, collector: _Collector
+) -> None:
+    """The plane ties a trace to an agent by its root span's name, so a worker or
+    member — a nested span — was tied to nothing (1.99.0). Each agent span now
+    carries ``agent.id`` and the team's root lists its members by name."""
+    team = _team(topology)
+    members = team.agents.values() if topology == "swarm" else [w.agent for w in team.workers]
+    for i, agent in enumerate(members):
+        agent.agent_id = f"00000000-0000-0000-0000-00000000000{i + 1}"
+
+    _drive(team, path)
+
+    root = next(s for s in collector.spans if s.name == ROOT[topology])
+    key, names = MEMBERS[topology]
+    assert list(root.attributes[key]) == names
+    ran = [s for s in collector.spans if s.name in ("agent.a", "agent.b")]
+    assert ran, "a member ran"
+    for s in ran:
+        expected = next(a.agent_id for a in members if f"agent.{a.name}" == s.name)
+        assert s.attributes.get("agent.id") == expected, s.name

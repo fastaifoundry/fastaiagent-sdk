@@ -816,6 +816,9 @@ class Supervisor:
                 "supervisor.worker_count",
                 len(getattr(self, "workers", []) or []),
             )
+            # The workers' agent names (1.99.0), so a trace can be tied to each
+            # registered worker and not only to the lead its root span names.
+            span.set_attribute("supervisor.workers", [w.agent.name for w in self.workers])
             span.set_attribute("fastaiagent.runner.type", "supervisor")
             self._stamp_middleware(span)
             span.set_attribute("fastaiagent.framework", "fastaiagent")
@@ -1032,6 +1035,7 @@ class Supervisor:
             span.set_attribute("fastaiagent.framework", "fastaiagent")
             span.set_attribute("supervisor.routing", "decisions")
             span.set_attribute("supervisor.route.worker", worker.role)
+            span.set_attribute("supervisor.workers", [w.agent.name for w in self.workers])
             span.set_attribute("supervisor.resumed", True)
             self._stamp_middleware(span)
             span.set_attribute("supervisor.resumed_execution_id", execution_id)

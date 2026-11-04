@@ -415,6 +415,12 @@ keeps everything the agent has. That matters once you `fa.connect()`:
   `fastaiagent.prompt.*` on its own model calls inside the team, the same as when
   it runs alone.
 
+- **Its spans name it.** Each agent span carries `agent.id`, and the team's root span
+  lists the members (`supervisor.workers`, `swarm.agents`). The plane matches a trace to
+  an agent by the root span, so it ties a team run to the lead, or to no agent for a
+  Swarm. These attributes are there for it to tie the run to each member; until the
+  plane reads them, a member's page shows only its own runs.
+
 The same holds for a [Swarm](swarm.md) member. The supervisor's lead, which is rebuilt
 each run, is linked to its plane id from its second run on.
 

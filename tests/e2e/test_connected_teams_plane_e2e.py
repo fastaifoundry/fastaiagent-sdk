@@ -241,20 +241,42 @@ def test_teams_on_the_plane(tmp_path: Path) -> None:
                 async for _ in plain.astream("hi"):
                     pass
 
+            asyncio.run(consume())  # registers the members (streamed runs do, 1.99.0)
+            assert _poll(lambda: s_member.agent_id, bool, timeout=20), (
+                "streamed run never registered"
+            )
+            spans.spans.clear()
             asyncio.run(consume())
             roots = [s for s in spans.spans if s.parent is None]
             assert [s.name for s in roots] == [f"swarm.{plain.name}"]
             trace_id = format(roots[0].context.trace_id, "032x")
             get_tracer_provider().force_flush()
 
-            def served_spans() -> list[str]:
+            def served_spans() -> list[dict[str, Any]]:
                 PlatformSpanExporter().export([])
                 resp = admin.get(f"/api/v1/traces/{trace_id}/spans", headers=jwt, params=scoped)
-                return [s["name"] for s in resp.json()] if resp.status_code == 200 else []
+                return list(resp.json()) if resp.status_code == 200 else []
 
             want = {f"agent.{s_entry.name}", f"agent.{s_member.name}"}
-            names = _poll(served_spans, lambda n: want <= set(n))
-            assert want <= set(names), names
+            served = _poll(served_spans, lambda ss: want <= {s["name"] for s in ss})
+            assert want <= {s["name"] for s in served}, [s["name"] for s in served]
+
+            # ── what the SDK sends names each member, not only the root ───────
+            # Asserted on the wire (``to_wire``, the exact bytes the exporter
+            # posts): the plane keeps only the span keys it derives, so it does
+            # not store these yet — using them is the plane's call.
+            from fastaiagent.trace.platform_export import to_wire
+            from fastaiagent.trace.storage import TraceStore
+
+            wire = {
+                s["name"]: s["attributes"]
+                for s in map(to_wire, TraceStore().get_trace(trace_id).spans)
+            }
+            assert list(wire[f"swarm.{plain.name}"]["swarm.agents"]) == [
+                s_entry.name,
+                s_member.name,
+            ]
+            assert wire[f"agent.{s_member.name}"]["agent.id"] == s_member.agent_id
         finally:
             fa.disconnect()
     finally:

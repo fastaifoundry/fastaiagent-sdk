@@ -159,3 +159,32 @@ def test_a_streamed_first_run_registers(topology: str, auto: _Recorder) -> None:
     agent_id = _registered("member")
     assert agent_id, "a streamed run registered nothing"
     assert member.agent_id == agent_id
+
+
+def test_a_first_runs_span_carries_the_id_it_registered(auto: _Recorder) -> None:
+    """The id arrives from a background push while the first run runs; the
+    member's span is stamped with it before it closes (1.99.0)."""
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor, SpanExporter, SpanExportResult
+
+    from fastaiagent.trace.otel import get_tracer_provider
+
+    class _Spans(SpanExporter):
+        spans: list[Any] = []
+
+        def export(self, spans):  # type: ignore[override]
+            self.spans.extend(spans)
+            return SpanExportResult.SUCCESS
+
+    collector = _Spans()
+    get_tracer_provider().add_span_processor(SimpleSpanProcessor(collector))
+    auto.delay = 0.0
+
+    def slow_member(messages: list[Any]) -> str:
+        time.sleep(0.5)  # longer than the push takes: the id lands mid-run
+        return "ok"
+
+    member = fa.Agent(name="member", llm=FunctionModel(slow_member))
+    _team("supervisor", member).run("hi")
+
+    span = next(s for s in collector.spans if s.name == "agent.member")
+    assert span.attributes.get("agent.id") == _registered("member")

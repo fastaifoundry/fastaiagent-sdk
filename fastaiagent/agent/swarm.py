@@ -544,6 +544,9 @@ class Swarm:
             span.set_attribute("swarm.name", self.name)
             span.set_attribute("swarm.entrypoint", self.entrypoint)
             span.set_attribute("swarm.agent_count", len(getattr(self, "agents", []) or []))
+            # The members' names (1.99.0): the plane matches a trace to an agent
+            # by its root span, and a swarm's root names no agent.
+            span.set_attribute("swarm.agents", list(self.agents))
             span.set_attribute("fastaiagent.runner.type", "swarm")
             span.set_attribute("fastaiagent.framework", "fastaiagent")
             self._stamp_middleware(span)
@@ -909,6 +912,7 @@ class Swarm:
         with get_tracer().start_as_current_span(f"swarm.{self.name}") as span:
             span.set_attribute("swarm.name", self.name)
             span.set_attribute("swarm.resumed_execution_id", execution_id)
+            span.set_attribute("swarm.agents", list(self.agents))
             span.set_attribute("swarm.execution_id", execution_id)
             span.set_attribute("fastaiagent.runner.type", "swarm")
             span.set_attribute("fastaiagent.framework", "fastaiagent")

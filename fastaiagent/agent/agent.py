@@ -1449,7 +1449,24 @@ class Agent:
                 # Callable system_prompt that needs context — best-effort only.
                 logger.debug("Failed to resolve system prompt for trace", exc_info=True)
 
-            yield span
+            self._stamp_agent_id(span)
+            try:
+                yield span
+            finally:
+                # A first run registers on a background thread; its id is known
+                # by the end of the run, if not at the start.
+                self._stamp_agent_id(span)
+
+    def _stamp_agent_id(self, span: Any) -> None:
+        """``agent.id`` — the plane's id for this agent — on its span (1.99.0).
+
+        The plane matches a trace to an agent by its root span's name, so a
+        Supervisor worker or a Swarm member — a nested span — was never tied to
+        its registered agent. Its span now carries the id; how nested runs are
+        attributed is the plane's call.
+        """
+        if span is not None and self.agent_id:
+            span.set_attribute("agent.id", self.agent_id)
 
     @staticmethod
     def _close_run_span(span: Any, result: AgentResult) -> None:
@@ -1919,6 +1936,7 @@ class Agent:
                 auto_register_async(self)
             except Exception:
                 pass
+            self._stamp_agent_id(span)
             if span is not None and outcome is not None:
                 outcome["trace_id"] = format(span.get_span_context().trace_id, "032x")
             if outcome is not None:
@@ -2242,6 +2260,7 @@ class Agent:
             if span is not None:
                 span.set_attribute("agent.output", output)
                 span.set_attribute("agent.tokens_used", streamed_tokens)
+            self._stamp_agent_id(span)  # a first run's id lands while it runs
             if outcome is not None:
                 outcome["tokens_used"] = streamed_tokens
                 outcome["output"] = output
