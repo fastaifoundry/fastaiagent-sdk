@@ -161,6 +161,11 @@ streamed run renders as one trace and its result carries a `trace_id` — `run()
 and `arun()` always had one by inheriting it from the inner agent, and the
 stream path built its result by hand and inherited nothing.
 
+Since 1.99.0 that is the only `supervisor.<name>` span in a streamed run. `stream()`
+and `astream()` used to open one each, nested, so the supervisor appeared twice in
+the trace. `astream()` with `routing="decisions"` now runs under the root span too;
+before, its worker's spans were a trace of their own.
+
 Since 1.68.0 that hand-built result also carries `tokens_used`, `cost` and
 `cost_known`. All three used to come back at their defaults, so a streamed
 supervisor run looked free while the identical `arun()` reported real numbers.

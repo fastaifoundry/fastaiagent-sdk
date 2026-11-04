@@ -202,6 +202,12 @@ async for event in swarm.astream("Write a poem about bridges."):
         print(f"\n[{event.from_agent} → {event.to_agent}: {event.reason}]\n")
 ```
 
+A streamed run is one trace under a `swarm.<name>` root span, the same as `run()`. Before
+1.99.0 `astream()` opened no root span, so each hop was an unrelated trace locally and on
+the plane. The root span's `swarm.handoff_count` counts handoffs on every path. Before
+1.99.0 it counted every tool call, KB searches included, and `stream()`/`astream()` left
+it unset.
+
 ## Composing with other primitives
 
 ### With agent tools

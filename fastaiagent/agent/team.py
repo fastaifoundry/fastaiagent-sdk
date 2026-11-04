@@ -46,6 +46,13 @@ _log = logging.getLogger(__name__)
 # A ContextVar, not instance state: one Supervisor may serve concurrent runs.
 _last_review: ContextVar[float | None] = ContextVar("_fastaiagent_last_review", default=None)
 
+#: The root span ``Supervisor.stream()`` opened around its ``astream()``, with
+#: the supervisor that opened it, so ``astream`` stamps that span instead of
+#: nesting a second one under it. Only ``stream()`` sets it.
+_streaming_root: ContextVar[tuple[Any, Any] | None] = ContextVar(
+    "_fastaiagent_supervisor_streaming_root", default=None
+)
+
 ROUTING_MODES = ("tools", "decisions")
 _DEFAULT_ROUTING_INSTRUCTIONS = "Which team member should handle this request?"
 
@@ -403,12 +410,16 @@ class Supervisor:
             result.cost_known = False
         else:
             result.cost += extra_cost
+        self._stamp_route(span, route)
+        return result
+
+    @staticmethod
+    def _stamp_route(span: Any, route: SupervisorRoute) -> None:
         span.set_attribute("supervisor.routing", "decisions")
         span.set_attribute("supervisor.route.worker", route.worker)
         span.set_attribute("supervisor.route.fallback", route.fallback)
         if route.confidence is not None:
             span.set_attribute("supervisor.route.confidence", route.confidence)
-        return result
 
     async def _arun_routed(
         self,
@@ -734,9 +745,17 @@ class Supervisor:
     def _root_span(self, input: str, *, resumed: str | None = None) -> Iterator[Any]:
         """The ``supervisor.<name>`` root span, so the delegated worker spans
         nest under it in the UI span tree; also readies the checkpointer.
-        ``arun`` and ``astream`` share it (``astream`` opened none before 1.93.0)."""
+        ``arun``, ``astream`` and ``stream`` share it (``astream`` opened none
+        before 1.93.0). Inside ``stream()`` it is the span ``stream`` already
+        opened: until 1.99.0 the two nested a second ``supervisor.<name>``."""
         from fastaiagent.trace.otel import get_tracer
 
+        opened = _streaming_root.get()
+        if opened is not None and opened[0] is self:
+            if self._checkpointer is not None:
+                self._checkpointer.setup()
+            yield opened[1]
+            return
         with get_tracer().start_as_current_span(f"supervisor.{self.name}") as span:
             span.set_attribute("supervisor.name", self.name)
             span.set_attribute(
@@ -997,8 +1016,11 @@ class Supervisor:
         streamed to the caller).
         """
         if self.routing == "decisions":
-            async for event in self._astream_routed(input, context=context, **kwargs):
-                yield event
+            # Under the root span too (1.99.0): a routed stream opened none, so
+            # its worker's spans were a trace of their own.
+            with self._root_span(input) as span:
+                async for event in self._astream_routed(input, span, context=context, **kwargs):
+                    yield event
             return
         # The same inner agent as ``arun``, under the same root span (1.93.0).
         # Before, the streamed supervisor had no checkpointer — no run-end
@@ -1014,9 +1036,15 @@ class Supervisor:
                 yield event
 
     async def _astream_routed(
-        self, input: str, *, context: RunContext[Any] | None = None, **kwargs: Any
+        self,
+        input: str,
+        span: Any,
+        *,
+        context: RunContext[Any] | None = None,
+        **kwargs: Any,
     ) -> AsyncGenerator[StreamEvent, None]:
         worker, route = await self._route(input)
+        self._stamp_route(span, route)
         yield HandoffEvent(
             from_agent=self.name,
             to_agent=worker.role,
@@ -1047,12 +1075,12 @@ class Supervisor:
     ) -> AgentResult:
         """Synchronous streaming — collects stream into AgentResult.
 
-        Opens a ``supervisor.<name>`` root span so a streamed supervisor run has
+        Opens the ``supervisor.<name>`` root span so a streamed supervisor run has
         the same identity ``run``/``arun`` do. ``run`` got its ``trace_id`` for
         free by inheriting the inner agent's; the stream path built its result
-        by hand and inherited nothing.
+        by hand and inherited nothing. ``astream`` runs inside that span rather
+        than opening its own.
         """
-        from fastaiagent.trace.otel import get_tracer
         from fastaiagent.trace.span import trace_id_of
 
         async def _collect() -> AgentResult:
@@ -1073,20 +1101,17 @@ class Supervisor:
             streamed_tokens = 0
             rcost_token = start_run_cost()
             try:
-                with get_tracer().start_as_current_span(f"supervisor.{self.name}") as span:
-                    span.set_attribute("supervisor.name", self.name)
-                    span.set_attribute(
-                        "supervisor.worker_count", len(getattr(self, "workers", []) or [])
-                    )
-                    span.set_attribute("fastaiagent.runner.type", "supervisor")
-                    span.set_attribute("fastaiagent.framework", "fastaiagent")
-                    self._stamp_middleware(span)
+                with self._root_span(input) as span:
                     span.set_attribute("supervisor.streamed", True)
-                    async for event in self.astream(input, context=context, **kwargs):
-                        if isinstance(event, TextDelta):
-                            text_parts.append(event.text)
-                        elif isinstance(event, Usage):
-                            streamed_tokens += event.prompt_tokens + event.completion_tokens
+                    root_token = _streaming_root.set((self, span))
+                    try:
+                        async for event in self.astream(input, context=context, **kwargs):
+                            if isinstance(event, TextDelta):
+                                text_parts.append(event.text)
+                            elif isinstance(event, Usage):
+                                streamed_tokens += event.prompt_tokens + event.completion_tokens
+                    finally:
+                        _streaming_root.reset(root_token)
                     output = "".join(text_parts)
                     span.set_attribute("supervisor.output", output)
                     span.set_attribute("supervisor.tokens_used", streamed_tokens)

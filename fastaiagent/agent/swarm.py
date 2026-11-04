@@ -43,7 +43,9 @@ from __future__ import annotations
 
 import time
 import uuid
-from collections.abc import AsyncGenerator, Callable, Sequence
+from collections.abc import AsyncGenerator, Callable, Iterator, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -239,6 +241,22 @@ class SwarmState:
     handoff_count: int = 0
     path: list[str] = field(default_factory=list)
     last_reason: str = ""
+
+
+#: The root span ``Swarm.stream()`` opened around its ``astream()``, with the
+#: swarm that opened it — so ``astream`` stamps that span instead of nesting a
+#: second ``swarm.<name>`` under it. Only ``stream()`` sets it.
+_streaming_root: ContextVar[tuple[Any, Any] | None] = ContextVar(
+    "_fastaiagent_swarm_streaming_root", default=None
+)
+
+
+def _handoffs_in(tool_calls: list[dict[str, Any]] | None) -> int:
+    """How many of a run's tool calls were handoffs. ``swarm.handoff_count`` was
+    ``len(tool_calls)`` until 1.99.0 — every hop's KB searches included."""
+    return sum(
+        1 for c in tool_calls or [] if str(c.get("tool_name") or "").startswith("handoff_to_")
+    )
 
 
 def _encode_handoff(target: str, reason: str) -> str:
@@ -468,6 +486,39 @@ class Swarm:
         self._mark_run_end(exec_id, result)
         return result
 
+    @contextmanager
+    def _root_span(self, input: Any, execution_id: str | None) -> Iterator[Any]:
+        """The ``swarm.<name>`` root span, so every hop's agent span is a
+        descendant and the run is one trace. ``arun``, ``astream`` and ``stream``
+        share it; ``astream`` opened none before 1.99.0, so a streamed run was one
+        unrelated trace per hop. Inside ``stream()`` it is the span ``stream``
+        already opened, not a second one."""
+        opened = _streaming_root.get()
+        if opened is not None and opened[0] is self:
+            yield opened[1]
+            return
+        from fastaiagent.agent.agent import _input_summary_text
+        from fastaiagent.multimodal.types import normalize_input
+        from fastaiagent.trace.otel import get_tracer
+
+        with get_tracer().start_as_current_span(f"swarm.{self.name}") as span:
+            span.set_attribute("swarm.name", self.name)
+            span.set_attribute("swarm.entrypoint", self.entrypoint)
+            span.set_attribute("swarm.agent_count", len(getattr(self, "agents", []) or []))
+            span.set_attribute("fastaiagent.runner.type", "swarm")
+            span.set_attribute("fastaiagent.framework", "fastaiagent")
+            self._stamp_middleware(span)
+            # OTel only accepts primitive attribute values — coerce
+            # multimodal lists to a readable text summary the same way
+            # ``Agent._arun_traced`` does.
+            span.set_attribute(
+                "swarm.input",
+                input if isinstance(input, str) else _input_summary_text(normalize_input(input)),
+            )
+            if execution_id:
+                span.set_attribute("swarm.execution_id", execution_id)
+            yield span
+
     def _middleware_keys(self) -> list[str]:
         """The keys the swarm's middleware are saved under in a hop's checkpoint
         (the hop pipeline is ``[_ExitAfterHandoff, *swarm, *agent]``)."""
@@ -528,35 +579,13 @@ class Swarm:
         ``checkpointer`` on the Swarm to get crash- and interrupt-recovery
         via :meth:`resume`.
         """
-        from fastaiagent.trace.otel import get_tracer
         from fastaiagent.trace.span import trace_id_of
 
-        tracer = get_tracer()
-        # Root span wraps the whole swarm run so every child agent span is a
-        # descendant — the UI renders one trace with the handoff path.
-        with tracer.start_as_current_span(f"swarm.{self.name}") as span:
-            span.set_attribute("swarm.name", self.name)
-            span.set_attribute("swarm.entrypoint", self.entrypoint)
-            span.set_attribute("swarm.agent_count", len(getattr(self, "agents", []) or []))
-            span.set_attribute("fastaiagent.runner.type", "swarm")
-            span.set_attribute("fastaiagent.framework", "fastaiagent")
-            self._stamp_middleware(span)
-            # OTel only accepts primitive attribute values — coerce
-            # multimodal lists to a readable text summary the same way
-            # ``Agent._arun_traced`` does.
-            from fastaiagent.agent.agent import _input_summary_text
-            from fastaiagent.multimodal.types import normalize_input
-
-            swarm_input_text = (
-                input if isinstance(input, str) else _input_summary_text(normalize_input(input))
-            )
-            span.set_attribute("swarm.input", swarm_input_text)
-            # Chosen here so the root span can name the run its checkpoints and
-            # any resume of it are filed under (``_arun_swarm`` would otherwise
-            # pick it, after the span had nothing to say).
-            execution_id = execution_id or str(uuid.uuid4())
-            span.set_attribute("swarm.execution_id", execution_id)
-
+        # Chosen here so the root span can name the run its checkpoints and
+        # any resume of it are filed under (``_arun_swarm`` would otherwise
+        # pick it, after the span had nothing to say).
+        execution_id = execution_id or str(uuid.uuid4())
+        with self._root_span(input, execution_id) as span:
             state_token = open_container_state(self.middleware)
             try:
                 result = await self._arun_swarm(
@@ -566,7 +595,7 @@ class Swarm:
                 close_container_state(state_token)
 
             span.set_attribute("swarm.output", result.output)
-            span.set_attribute("swarm.handoff_count", len(result.tool_calls or []))
+            span.set_attribute("swarm.handoff_count", _handoffs_in(result.tool_calls))
             # Stamped HERE, at the span, rather than at each of the three
             # ``AgentResult(...)`` sites inside ``_run_loop`` — one place per
             # topology, so a future return site cannot forget. Deliberately NOT
@@ -1009,8 +1038,14 @@ class Swarm:
         if self._checkpointer is not None:
             self._checkpointer.setup()
         try:
-            async for event in self._astream_hops(input, exec_id, control, context, kwargs):
-                yield event
+            with self._root_span(input, exec_id) as span:
+                span.set_attribute("swarm.streamed", True)
+                handoffs = 0
+                async for event in self._astream_hops(input, exec_id, control, context, kwargs):
+                    if isinstance(event, HandoffEvent):
+                        handoffs += 1
+                    yield event
+                span.set_attribute("swarm.handoff_count", handoffs)
         except run_control._RunCancelled as stopped:
             if parent is not None:
                 raise  # the enclosing run ends it
@@ -1100,11 +1135,11 @@ class Swarm:
     def stream(self, input: Any, *, context: RunContext[Any] | None = None) -> AgentResult:
         """Synchronous streaming — collects into an :class:`AgentResult`.
 
-        Opens a ``swarm.<name>`` root span, so a streamed swarm renders as one
+        Opens the ``swarm.<name>`` root span, so a streamed swarm renders as one
         trace and the returned result can name it — the same identity
-        :meth:`arun` has always had.
+        :meth:`arun` has always had. ``astream`` runs inside that span rather
+        than opening its own.
         """
-        from fastaiagent.trace.otel import get_tracer
         from fastaiagent.trace.span import trace_id_of
 
         async def _collect() -> AgentResult:
@@ -1118,27 +1153,26 @@ class Swarm:
             # agent yields one through ``astream``.
             streamed_tokens = 0
             rcost_token = start_run_cost()
+            exec_id = str(uuid.uuid4())
             try:
-                with get_tracer().start_as_current_span(f"swarm.{self.name}") as span:
-                    span.set_attribute("swarm.name", self.name)
-                    span.set_attribute("swarm.entrypoint", self.entrypoint)
-                    span.set_attribute("fastaiagent.runner.type", "swarm")
-                    span.set_attribute("fastaiagent.framework", "fastaiagent")
-                    span.set_attribute("swarm.streamed", True)
-                    self._stamp_middleware(span)
+                with self._root_span(input, exec_id) as span:
                     # Each hop's ``Agent.astream`` publishes its final reply
                     # here; the last hop to finish is the swarm's answer — what
                     # ``arun`` returns (1.91.0, X14). Joining every delta also
                     # took in what an agent said before handing off.
                     outcome: dict[str, Any] = {}
                     so_token = _stream_outcome.set(outcome)
+                    root_token = _streaming_root.set((self, span))
                     try:
-                        async for event in self.astream(input, context=context):
+                        async for event in self.astream(
+                            input, context=context, execution_id=exec_id
+                        ):
                             if isinstance(event, TextDelta):
                                 text_parts.append(event.text)
                             elif isinstance(event, Usage):
                                 streamed_tokens += event.prompt_tokens + event.completion_tokens
                     finally:
+                        _streaming_root.reset(root_token)
                         _stream_outcome.reset(so_token)
                     output = str(outcome.get("output", "".join(text_parts)))
                     span.set_attribute("swarm.output", output)
@@ -1153,6 +1187,7 @@ class Swarm:
                     cost_known=cost_known,
                     latency_ms=latency,
                     trace_id=trace_id,
+                    execution_id=exec_id,
                     guardrails=collected_firings(),
                 )
             finally:
