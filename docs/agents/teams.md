@@ -125,6 +125,20 @@ ctx = RunContext(state=TeamState(db=get_db(), user_id="u-456", company="Acme"))
 result = supervisor.run("Show my open tickets and latest invoice", context=ctx)
 ```
 
+## What the result carries
+
+`run`, `arun` and `resume` return one `AgentResult` for the whole team:
+
+| Field | Notes |
+|---|---|
+| `output` | The lead's final answer (the worker's reply with `routing="decisions"`) |
+| `tool_calls` | The lead's `delegate_to_*` calls, each followed by the calls of the worker it ran (every `validate_outputs` attempt). Each entry has `agent`; a worker's also has `worker` (its role). Since 1.99.0; before, only the `delegate_to_*` calls, so a trajectory eval never saw a worker's tools |
+| `tokens_used` / `cost` / `cost_known` | The whole team's (1.99.0), as below |
+| `trace_id` | The `supervisor.<name>` root span: one trace for the run |
+
+`stream()` returns `output`, `tokens_used`, `cost`, `cost_known` and `trace_id`, but no
+`tool_calls`.
+
 ## Conversation memory
 
 Give the supervisor `memory=` and the team holds a conversation (since 1.99.0):

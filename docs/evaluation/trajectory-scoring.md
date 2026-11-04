@@ -139,6 +139,13 @@ compared two empty lists and **passed**: an agent that called the wrong tool,
 or none, scored 1.0. A trajectory result's `details` carries the tool names
 only, never the arguments, which can hold case content.
 
+**Teams.** A `Swarm` result lists every hop's calls. Since 1.99.0 a `Supervisor`
+result lists each worker's calls too, right after the `delegate_to_<role>` call that ran
+them. So `evaluate(supervisor.run, ...)` scores the whole team's path, for example
+`["delegate_to_orders", "lookup_order"]`. Every entry names its `agent`, and a worker's
+also its `worker` role. Before, a supervisor's trajectory was the `delegate_to_*` calls
+alone.
+
 ## Calling them directly
 
 Pass the trajectory you collected yourself, e.g. from `AgentResult.tool_calls`

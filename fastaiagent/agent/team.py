@@ -67,6 +67,43 @@ def _count_run(spend: _RunUsage, result: AgentResult) -> None:
         spend.usd += result.cost
 
 
+#: Each delegation's worker tool calls in this supervisor run, in call order, as
+#: ``(role, calls)`` (1.99.0). The lead's result listed only its own
+#: ``delegate_to_*`` calls, so a trajectory scorer never saw what a worker ran.
+_worker_calls: ContextVar[list[tuple[str, list[dict[str, Any]]]] | None] = ContextVar(
+    "_fastaiagent_worker_calls", default=None
+)
+
+
+def _tag_calls(calls: list[dict[str, Any]], worker: Worker) -> list[dict[str, Any]]:
+    """A worker's tool calls tagged with who made them, as a Swarm tags its hops'."""
+    name = worker.agent.name
+    return [{**c, "agent": c.get("agent") or name, "worker": worker.role} for c in calls]
+
+
+def _with_worker_calls(
+    result: AgentResult, delegations: list[tuple[str, list[dict[str, Any]]]], lead: str
+) -> AgentResult:
+    """``result.tool_calls`` with each delegation's worker calls right after the
+    ``delegate_to_<role>`` call that ran them, every call tagged with its ``agent``."""
+    pending: dict[str, list[list[dict[str, Any]]]] = {}
+    for role, calls in delegations:
+        pending.setdefault(role, []).append(calls)
+    merged: list[dict[str, Any]] = []
+    for call in result.tool_calls:
+        merged.append({**call, "agent": call.get("agent") or lead})
+        name = str(call.get("tool_name") or "")
+        role = name[len("delegate_to_") :] if name.startswith("delegate_to_") else None
+        queue = pending.get(role) if role is not None else None
+        if queue:
+            merged.extend(queue.pop(0))
+    for queue in pending.values():  # a delegation the lead's record does not show
+        for calls in queue:
+            merged.extend(calls)
+    result.tool_calls = merged
+    return result
+
+
 def _route_tokens(route: SupervisorRoute) -> int:
     """The routing decision's tokens (0 when it reported none)."""
     from fastaiagent.llm.decisions import DecisionResult
@@ -489,6 +526,9 @@ class Supervisor:
         result = await self._finish_routed(
             worker, task, first, route, context=context, execution_id=execution_id
         )
+        # The routed result is the worker's own: tag its calls as a tools-routed
+        # supervisor's are (1.99.0).
+        result.tool_calls = _tag_calls(result.tool_calls, worker)
         return self._merge_route(result, route, span)
 
     def _stamp_middleware(self, span: Any) -> None:
@@ -717,6 +757,12 @@ class Supervisor:
                 current_task = task
                 last_output = ""
                 last_feedback = ""
+                # This delegation's worker tool calls, every attempt's, for the
+                # supervisor's result (1.99.0). Registered now, in call order.
+                ran: list[dict[str, Any]] = []
+                collector = _worker_calls.get()
+                if collector is not None:
+                    collector.append((_worker.role, ran))
 
                 # First attempt + up to N validation-driven retries. With
                 # ``validate_outputs=False`` the loop runs exactly once.
@@ -727,6 +773,7 @@ class Supervisor:
                 )
                 for attempt in range(attempts):
                     result = await _invoke_worker(current_task)
+                    ran.extend(_tag_calls(result.tool_calls, _worker))
                     # Every attempt's spend is the team's, a rejected one too.
                     spend = _team_spend.get()
                     if spend is not None:
@@ -895,14 +942,17 @@ class Supervisor:
             else:
                 agent = self._build_inner_agent(context=context)
                 spend = _RunUsage()
+                delegations: list[tuple[str, list[dict[str, Any]]]] = []
                 spend_token = _team_spend.set(spend)
+                calls_token = _worker_calls.set(delegations)
                 try:
                     result = await agent.arun(
                         input, context=context, execution_id=execution_id, **kwargs
                     )
                 finally:
+                    _worker_calls.reset(calls_token)
                     _team_spend.reset(spend_token)
-                result = _with_spend(result, spend)
+                result = _with_worker_calls(_with_spend(result, spend), delegations, self.name)
             span.set_attribute("supervisor.output", result.output)
             # Read off the result rather than chosen up front: with no id given,
             # each ``validate_outputs`` retry of a routed worker picks its own,
@@ -1048,6 +1098,7 @@ class Supervisor:
                 **kwargs,
             )
             result.route = SupervisorRoute(worker=worker.role, chosen=worker.role)
+            result.tool_calls = _tag_calls(result.tool_calls, worker)
             span.set_attribute("supervisor.output", result.output)
             return result
 
