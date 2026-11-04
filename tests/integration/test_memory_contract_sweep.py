@@ -130,6 +130,38 @@ def test_one_users_conversation_never_reaches_another(store, path, tracing):
     assert "alice-secret-7731" in _prompt(model)  # her own window still has it
 
 
+@pytest.mark.parametrize("runner", ["supervisor", "swarm"])
+def test_a_teams_conversation_never_reaches_another_user(store, path, tracing, runner):
+    """The same contract for a team (1.99.0): a Supervisor's own ``memory=``
+    (the lead's) and a Swarm whose agents share one memory."""
+    from fastaiagent import Supervisor, Swarm, Worker
+
+    alice, bob = _uid("alice"), _uid("bob")
+    model = TestModel(response="noted")
+    memory = _per_user(store)
+    if runner == "supervisor":
+        team: Any = Supervisor(
+            name="sweep-lead",
+            llm=model,
+            workers=[Worker(Agent(name="w", llm=TestModel()), role="w")],
+            memory=memory,
+        )
+    else:
+        team = Swarm(
+            name="sweep-swarm",
+            agents=[
+                Agent(name="a", llm=model, memory=memory),
+                Agent(name="b", llm=TestModel(), memory=memory),
+            ],
+            entrypoint="a",
+        )
+    _turn(team, "alice-secret-7731", alice, path)
+    _turn(team, "hello", bob, path)
+    assert "alice-secret-7731" not in _prompt(model)
+    _turn(team, "again", alice, path)
+    assert "alice-secret-7731" in _prompt(model)
+
+
 def test_one_users_facts_never_reach_another(store, path, tracing):
     alice, bob = _uid("alice"), _uid("bob")
     store.add(Fact(scope="user", scope_id=alice, fact="alice-fact-4410"))

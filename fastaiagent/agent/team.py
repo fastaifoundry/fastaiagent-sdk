@@ -21,6 +21,7 @@ from fastaiagent._internal.pricing import _RunUsage, run_cost, start_run_cost, s
 from fastaiagent.agent.agent import Agent, AgentConfig, AgentResult
 from fastaiagent.agent.context import RunContext
 from fastaiagent.agent.executor import _AgentInterrupted
+from fastaiagent.agent.memory import MemoryLike
 from fastaiagent.agent.middleware import AgentMiddleware
 from fastaiagent.chain.checkpoint import latest_resumable
 from fastaiagent.chain.interrupt import (
@@ -216,10 +217,21 @@ class Supervisor:
         middleware: Sequence[AgentMiddleware] | None = None,
         *,
         timeout_seconds: float | None = None,
+        memory: MemoryLike | None = None,
     ):
         self.name = name
         self.llm = llm or LLMClient()
         self.workers = workers or []
+        #: The lead's own conversation memory (1.99.0): each team turn records the
+        #: request and the final answer once, and the next turn's lead sees them.
+        #: Workers keep their own ``memory=``. None before 1.99.0, so a team had
+        #: no conversation of its own and a follow-up depended on a worker's.
+        self.memory = memory
+        if memory is not None and routing == "decisions":
+            raise ValueError(
+                "Supervisor(memory=...) needs routing='tools': with routing='decisions' "
+                "there is no lead to hold the conversation. Give the workers memory instead."
+            )
         if timeout_seconds is not None and timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be > 0")
         #: The whole supervisor run's wall clock, workers included (1.93.0): the
@@ -830,6 +842,7 @@ class Supervisor:
             agent_path_label=f"supervisor:{self.name}",
             guardrails=self.guardrails,
             middleware=self.middleware,
+            memory=self.memory,
         )
 
     def run(
@@ -1035,7 +1048,12 @@ class Supervisor:
             return result
 
     def _hydrate_input(self, store: Checkpointer, execution_id: str) -> str | None:
-        """Pull the original supervisor input from its earliest turn checkpoint."""
+        """Pull the original supervisor input from its earliest turn checkpoint.
+
+        The LAST user message of that checkpoint: the lead's memory (1.99.0)
+        puts earlier turns' user messages ahead of this one, and the first of
+        them would resume the run with an old request.
+        """
         prefix_exact = f"supervisor:{self.name}"
         # ``list`` returns checkpoints in chronological order — first match
         # wins. Filter to checkpoints written by the supervisor itself
@@ -1043,9 +1061,13 @@ class Supervisor:
         for cp in store.list(execution_id, limit=500):
             if (cp.agent_path or "") != prefix_exact:
                 continue
-            for raw in cp.state_snapshot.get("messages", []) or []:
-                if (raw or {}).get("role") == "user" and raw.get("content"):
-                    return str(raw["content"])
+            users = [
+                raw
+                for raw in cp.state_snapshot.get("messages", []) or []
+                if (raw or {}).get("role") == "user" and raw.get("content")
+            ]
+            if users:
+                return str(users[-1]["content"])
         return None
 
     async def astream(

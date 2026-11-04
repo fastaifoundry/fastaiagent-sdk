@@ -606,6 +606,16 @@ shared.upstream_messages()      # everything upstream, in order
 
 Only block output flows through the pipe — the raw primary window is appended afterwards and is not shared.
 
+## Memory in a team
+
+A **Supervisor** takes `memory=` for its lead's conversation: one request and one answer
+per team turn (since 1.99.0). A **Swarm** uses its agents' own memories. Pass the same
+memory to every agent and the swarm records one turn per run. The two are described in
+[Teams: conversation memory](teams.md#conversation-memory) and
+[Swarm: with ComposableMemory](swarm.md#with-composablememory). Per-user memory keeps users
+apart in both. The memory contract sweep (`tests/integration/test_memory_contract_sweep.py`)
+checks this across every store, `run`/`astream` and tracing on and off.
+
 ## Persistence
 
 `ComposableMemory.save(path)` writes to a directory:

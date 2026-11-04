@@ -125,6 +125,38 @@ ctx = RunContext(state=TeamState(db=get_db(), user_id="u-456", company="Acme"))
 result = supervisor.run("Show my open tickets and latest invoice", context=ctx)
 ```
 
+## Conversation memory
+
+Give the supervisor `memory=` and the team holds a conversation (since 1.99.0):
+
+```python
+from fastaiagent import Memory
+
+supervisor = Supervisor(
+    name="support-lead",
+    llm=llm,
+    workers=[...],
+    memory=Memory(),   # the lead's own conversation
+)
+
+supervisor.run("Where is order A100?")
+supervisor.run("Which order was that?")   # the lead sees the first turn
+```
+
+- **One turn per run.** The memory records the user's request and the team's final
+  answer, not the `delegate_to_*` calls in between. It works the same on `run`, `stream`
+  and `astream`, and `resume` continues the turn that paused, not an earlier one.
+- **Workers see only what the lead passes them.** A worker gets the `task` the lead
+  writes, not the conversation. Give a worker its own `memory=` if it needs its own
+  history.
+- **Per user.** `Memory(user_id=lambda ctx: ...)` keeps users apart. The `context=`
+  you pass the supervisor reaches the lead's memory.
+- **Not with `routing="decisions"`.** That mode has no lead, so the constructor refuses
+  `memory=`. Give the workers memory instead.
+
+Before 1.99.0 a supervisor took no memory, and a follow-up worked only if a worker
+happened to have one.
+
 ## Streaming
 
 Stream the supervisor's output in real-time. Worker delegation appears as `ToolCallStart` / `ToolCallEnd` events, and the supervisor's synthesized response streams as `TextDelta` events.
@@ -415,6 +447,7 @@ Supervisor(
     middleware: list[AgentMiddleware] | None = None,  # 1.91.0 — the supervisor's own
     *,
     timeout_seconds: float | None = None,   # 1.93.0
+    memory: MemoryLike | None = None,       # 1.99.0 — the lead's conversation
 )
 ```
 
@@ -435,6 +468,7 @@ the routed worker's run, like `guardrails=`. See
 | `max_validation_retries_per_worker` | `int` | No | (v1.9.0) Max retries per delegate after rejection (default `1`) |
 | `guardrails` | `list[Guardrail] \| None` | No | (1.90.0) The supervisor's **own** guardrails, as on `Agent`: they judge its input, its `delegate_to_*` calls and its answer, on `run`, `astream`, `stream` and `resume`. Each worker keeps its own. With `routing="decisions"` there is no supervisor loop, so they judge the routed worker's input and output. Before 1.90.0 a supervisor took none. |
 | `middleware` | `list[AgentMiddleware] \| None` | No | (1.91.0) The supervisor's **own** middleware: it runs on the supervisor's loop and sees its `delegate_to_*` calls; each worker keeps its own. With `routing="decisions"` it runs on the routed worker's run. |
+| `memory` | `MemoryLike \| None` | No | (1.99.0, keyword) The lead's conversation memory: each run records the request and the final answer once, and the next run's lead sees them. Workers keep their own `memory=`. Refused with `routing="decisions"`, which has no lead. See [Conversation memory](#conversation-memory). |
 
 **Methods:**
 
