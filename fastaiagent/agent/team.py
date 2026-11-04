@@ -14,7 +14,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from fastaiagent._internal.async_utils import run_sync
-from fastaiagent._internal.pricing import run_cost, start_run_cost, stop_run_cost
+from fastaiagent._internal.pricing import _RunUsage, run_cost, start_run_cost, stop_run_cost
 from fastaiagent.agent.agent import Agent, AgentConfig, AgentResult
 from fastaiagent.agent.context import RunContext
 from fastaiagent.agent.executor import _AgentInterrupted
@@ -45,6 +45,39 @@ _log = logging.getLogger(__name__)
 # check in this task, so a routed run can report it on ``SupervisorRoute.reviews``.
 # A ContextVar, not instance state: one Supervisor may serve concurrent runs.
 _last_review: ContextVar[float | None] = ContextVar("_fastaiagent_last_review", default=None)
+
+#: The spend of every worker run in this supervisor run (1.99.0): a delegated
+#: worker reports it on its own ``AgentResult``, which the delegate tool used to
+#: drop, so ``Supervisor.run()`` reported the lead's turns only (~26% of a live
+#: team's tokens) and the documented "sum it with each worker's" had nothing to
+#: sum. Opened by ``arun``/``stream``, filled by the delegate tool.
+_team_spend: ContextVar[_RunUsage | None] = ContextVar("_fastaiagent_team_spend", default=None)
+
+
+def _count_run(spend: _RunUsage, result: AgentResult) -> None:
+    """Add one finished run's reported spend to ``spend``."""
+    spend.tokens += result.tokens_used
+    spend.calls += 1
+    if result.cost_known:
+        spend.priced_calls += 1
+        spend.usd += result.cost
+
+
+def _route_tokens(route: SupervisorRoute) -> int:
+    """The routing decision's tokens (0 when it reported none)."""
+    from fastaiagent.llm.decisions import DecisionResult
+
+    if isinstance(route.answers, DecisionResult):
+        return int(route.answers.usage.get("total_tokens") or 0)
+    return 0
+
+
+def _with_spend(result: AgentResult, spend: _RunUsage) -> AgentResult:
+    """``result`` with ``spend`` added: tokens and cost; unknown if any part is."""
+    result.tokens_used += spend.tokens
+    result.cost += spend.usd
+    result.cost_known = result.cost_known and spend.known
+    return result
 
 #: The root span ``Supervisor.stream()`` opened around its ``astream()``, with
 #: the supervisor that opened it, so ``astream`` stamps that span instead of
@@ -371,39 +404,41 @@ class Supervisor:
         context: RunContext[Any] | None,
         execution_id: str | None,
     ) -> AgentResult:
-        """Apply ``validate_outputs`` to a routed worker's result (same contract as tools)."""
+        """Apply ``validate_outputs`` to a routed worker's result (same contract as tools).
+
+        The result returned carries every attempt's spend (1.99.0); a retry used
+        to replace the rejected attempt's result, and its tokens and cost with it.
+        """
         result = first
         if result.status == "paused" or not self.validate_outputs:
             return result
+        earlier = _RunUsage()
         current_task, last_feedback = task, ""
         for attempt in range(1 + self.max_validation_retries_per_worker):
             if attempt > 0:
+                _count_run(earlier, result)
                 result = await self._routed_clone(worker).arun(
                     current_task, context=context, execution_id=execution_id
                 )
                 if result.status == "paused":
-                    return result
+                    return _with_spend(result, earlier)
             approved, feedback = await self._validate_worker_output(
                 worker_role=worker.role, task=task, output=result.output
             )
             route.reviews.append(_last_review.get())
             if approved:
-                return result
+                return _with_spend(result, earlier)
             last_feedback = feedback
             current_task = f"{task}\n\n[Supervisor feedback]: {feedback or 'please revise.'}"
         self._log_validation_warning(
             worker_role=worker.role, task=task, output=result.output, feedback=last_feedback
         )
-        return result
+        return _with_spend(result, earlier)
 
     def _merge_route(self, result: AgentResult, route: SupervisorRoute, span: Any) -> AgentResult:
         """Stamp the route on the result and span, and add the decisions' spend."""
-        from fastaiagent.llm.decisions import DecisionResult
-
         extra_cost = route.cost_usd
-        extra_tokens = 0
-        if isinstance(route.answers, DecisionResult):
-            extra_tokens = int(route.answers.usage.get("total_tokens") or 0)
+        extra_tokens = _route_tokens(route)
         result.route = route
         result.tokens_used += extra_tokens
         if extra_cost is None:
@@ -677,6 +712,10 @@ class Supervisor:
                 )
                 for attempt in range(attempts):
                     result = await _invoke_worker(current_task)
+                    # Every attempt's spend is the team's, a rejected one too.
+                    spend = _team_spend.get()
+                    if spend is not None:
+                        _count_run(spend, result)
                     # The worker's run collected its own firings (and shadowed
                     # ours while it ran). ``result.guardrails`` is documented as
                     # every guardrail that executed, so hand them up (1.89.0).
@@ -836,9 +875,15 @@ class Supervisor:
                 )
             else:
                 agent = self._build_inner_agent(context=context)
-                result = await agent.arun(
-                    input, context=context, execution_id=execution_id, **kwargs
-                )
+                spend = _RunUsage()
+                spend_token = _team_spend.set(spend)
+                try:
+                    result = await agent.arun(
+                        input, context=context, execution_id=execution_id, **kwargs
+                    )
+                finally:
+                    _team_spend.reset(spend_token)
+                result = _with_spend(result, spend)
             span.set_attribute("supervisor.output", result.output)
             # Read off the result rather than chosen up front: with no id given,
             # each ``validate_outputs`` retry of a routed worker picks its own,
@@ -1045,6 +1090,11 @@ class Supervisor:
     ) -> AsyncGenerator[StreamEvent, None]:
         worker, route = await self._route(input)
         self._stamp_route(span, route)
+        spend = _team_spend.get()
+        if spend is not None:
+            # The routing call's cost is already in the stream's run scope; its
+            # tokens come with no ``Usage`` event, so ``stream()`` missed them.
+            spend.tokens += _route_tokens(route)
         yield HandoffEvent(
             from_agent=self.name,
             to_agent=worker.role,
@@ -1063,6 +1113,10 @@ class Supervisor:
             result = await self._finish_routed(
                 worker, task, first, route, context=context, execution_id=None
             )
+            # Run through ``arun``, its spend is on its result, not in the stream.
+            spend = _team_spend.get()
+            if spend is not None:
+                _count_run(spend, result)
             if result.output:
                 yield TextDelta(text=result.output)
             yield StreamDone()
@@ -1092,13 +1146,13 @@ class Supervisor:
             # run looked free. ``Usage`` is the only event carrying a stream's
             # token counts.
             #
-            # These are the SUPERVISOR's own turns. A delegated worker runs
-            # through ``arun`` inside a delegate tool, which opens its own
-            # accumulator and reports on its own result — so the worker's spend
-            # is counted once, there, and not re-counted here. That is the same
-            # boundary ``run``/``arun`` have, and the same one ``cost`` took in
-            # 1.67.0.
+            # ``Usage`` events are the turns streamed here. A delegated worker
+            # runs through ``arun`` inside a delegate tool and reports its spend
+            # on its own result, which the delegate tool adds to ``spend``; the
+            # whole team's spend is the result's (1.99.0), as on ``run``.
             streamed_tokens = 0
+            spend = _RunUsage()
+            spend_token = _team_spend.set(spend)
             rcost_token = start_run_cost()
             try:
                 with self._root_span(input) as span:
@@ -1114,21 +1168,25 @@ class Supervisor:
                         _streaming_root.reset(root_token)
                     output = "".join(text_parts)
                     span.set_attribute("supervisor.output", output)
-                    span.set_attribute("supervisor.tokens_used", streamed_tokens)
+                    span.set_attribute("supervisor.tokens_used", streamed_tokens + spend.tokens)
                     trace_id = trace_id_of(span)
                 latency = int((time.monotonic() - start) * 1000)
                 cost, cost_known = run_cost()
-                return AgentResult(
-                    output=output,
-                    tokens_used=streamed_tokens,
-                    cost=cost,
-                    cost_known=cost_known,
-                    latency_ms=latency,
-                    trace_id=trace_id,
-                    guardrails=collected_firings(),
+                return _with_spend(
+                    AgentResult(
+                        output=output,
+                        tokens_used=streamed_tokens,
+                        cost=cost,
+                        cost_known=cost_known,
+                        latency_ms=latency,
+                        trace_id=trace_id,
+                        guardrails=collected_firings(),
+                    ),
+                    spend,
                 )
             finally:
                 stop_run_cost(rcost_token)
+                _team_spend.reset(spend_token)
                 stop_firing_collection(gf_token)
 
         return run_sync(_collect())

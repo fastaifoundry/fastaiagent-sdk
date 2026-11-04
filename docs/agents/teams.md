@@ -170,17 +170,18 @@ Since 1.68.0 that hand-built result also carries `tokens_used`, `cost` and
 `cost_known`. All three used to come back at their defaults, so a streamed
 supervisor run looked free while the identical `arun()` reported real numbers.
 
-!!! info "A supervisor's tokens and cost are the **supervisor's own** turns"
-    A delegated worker runs through `Agent.arun()` inside a `delegate_to_<role>`
-    tool. That call opens its own accumulator and reports its spend on its own
-    `AgentResult` — so a worker's tokens are counted once, there, and are **not**
-    re-counted on the supervisor's result.
+!!! info "A supervisor's tokens and cost are the **whole team's** (1.99.0)"
+    `tokens_used`, `cost` and `cost_known` on `run()`, `arun()` and `stream()` cover
+    the lead's turns and every worker run: each delegated run, every
+    `validate_outputs` retry, and the routing decision with `routing="decisions"`.
+    `cost_known` is `False` if any part of the team ran a model with no rate. A
+    `Swarm` has always summed its hops the same way.
 
-    This is a scope boundary, not a missing number, and it is the same one `run()`
-    and `arun()` have always had: `cost` took it in 1.67.0 and `tokens_used` takes
-    it in 1.68.0. To get a team-wide total, sum the supervisor's figure with each
-    worker's — do not expect the supervisor's alone to be it. (A `Swarm` differs:
-    hops are peers of one run, so `Swarm` sums across them.)
+    Before 1.99.0 the result carried the lead's turns only. In a live team run that
+    was 7,528 of 29,339 tokens. The docs said to add each worker's own figure, but
+    the delegate tool dropped the worker's result, so there was nothing to add. A
+    routed run that retried after a rejected review also dropped the rejected
+    attempt's spend. The plane's trace total was always the whole team's.
 
 ## Dynamic Instructions
 
