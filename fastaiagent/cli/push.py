@@ -23,15 +23,37 @@ console = Console()
 
 
 def _discover_agents(module: Any) -> list[Any]:
-    """Collect distinct Agent instances defined at module scope."""
+    """Collect the distinct agents defined at module scope.
+
+    A ``Supervisor`` contributes its lead (the agent its run registers, with the
+    ``delegate_to_*`` tools; none with ``routing="decisions"``, which runs no lead)
+    and its workers' agents; a ``Swarm`` its members. Until 1.99.0 only bare
+    ``Agent`` objects were found, so a team defined at module scope registered
+    its workers at best and never its lead.
+    """
     from fastaiagent.agent.agent import Agent
+    from fastaiagent.agent.swarm import Swarm
+    from fastaiagent.agent.team import Supervisor
 
     found: list[Any] = []
     seen: set[int] = set()
+
+    def add(agent: Agent) -> None:
+        if id(agent) not in seen:
+            seen.add(id(agent))
+            found.append(agent)
+
     for value in vars(module).values():
-        if isinstance(value, Agent) and id(value) not in seen:
-            seen.add(id(value))
-            found.append(value)
+        if isinstance(value, Agent):
+            add(value)
+        elif isinstance(value, Supervisor):
+            if value.routing == "tools":
+                add(value._build_inner_agent())
+            for worker in value.workers:
+                add(worker.agent)
+        elif isinstance(value, Swarm):
+            for member in value.agents.values():
+                add(member)
     return found
 
 
@@ -69,7 +91,8 @@ def push(
     if not agents:
         console.print(
             f"[yellow]No agents found in[/yellow] {module!r}. "
-            "Define module-level `fa.Agent(...)` objects there."
+            "Define module-level `fa.Agent(...)`, `fa.Supervisor(...)` or "
+            "`fa.Swarm(...)` objects there."
         )
         raise typer.Exit(code=1)
 

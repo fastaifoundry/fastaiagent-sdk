@@ -67,6 +67,12 @@ fastaiagent push --module my_app.agents --dry-run   # preview the payloads
 `--dry-run` prints one JSON array of the request bodies on stdout and its notes on
 stderr, so `--dry-run | jq` works (since 1.97.0).
 
+A module-level `Supervisor` registers its lead (the agent with the `delegate_to_*`
+tools; there's none with `routing="decisions"`) and every worker's agent. A `Swarm`
+registers each member, and an agent in several teams is pushed once (since 1.99.0;
+before, only bare `Agent` objects were found, so a team's lead was never registered
+from CI).
+
 ## What gets pushed
 
 `Agent.to_dict()` — `name`, `system_prompt` (or `prompt_slug` when the agent
