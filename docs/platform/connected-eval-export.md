@@ -197,6 +197,12 @@ the first copy of a `run_id`, so the real verdict arriving later was discarded. 
 process running an older SDK against the same `local.db` can still send those
 runs; upgrade every process that shares the file.
 
+One drain runs at a time per `local.db`. The gate's background kick, a span flush and
+`fastaiagent eval export` used to drain the same rows at once and post a run twice.
+The plane answered the duplicate with 409, and the SDK logged a rejection for a run
+that had landed. A drain that finds one in flight now asks it to go round once more
+instead (since 1.99.0).
+
 `record_gate_result()` raises `ValueError` for any outcome other than `passed`,
 `failed` or `invalid`. The plane would reject it with a 4xx, which is never
 retried, and the bad run would hold back every run batched with it.

@@ -399,10 +399,43 @@ class EvalRunExporter(SpanExporter):
         return self._store
 
     def export(self, spans: Sequence[ReadableSpan] = ()) -> SpanExportResult:
+        """Drain the outbox, one drain per database file at a time (1.99.0).
+
+        ``record_gate_result`` kicks a drain on a thread, a span flush triggers
+        another, ``fastaiagent eval export`` a third. Run together they read the
+        same unsynced rows and posted the same run twice, which the plane
+        answers with 409. A drain that finds one running asks it to go round
+        once more instead, so nothing is sent twice and nothing is left waiting
+        — and a span-flush thread never blocks behind a slow POST.
+        """
         from fastaiagent.client import _connection
 
         if not _connection.is_connected or not eval_export_enabled():
             return SpanExportResult.SUCCESS
+        try:
+            key = self._get_store().db_path
+        except Exception:
+            logger.debug("Eval run export drain failed", exc_info=True)
+            return SpanExportResult.SUCCESS
+        with _drain_lock:
+            if key in _draining:
+                _draining[key] = True  # the running drain goes round again
+                return SpanExportResult.SUCCESS
+            _draining[key] = False
+        try:
+            while True:
+                self._drain_once(_connection)
+                with _drain_lock:
+                    if not _draining[key]:
+                        break
+                    _draining[key] = False
+        finally:
+            with _drain_lock:
+                _draining.pop(key, None)
+        # Always SUCCESS: the durable buffer owns retry, not the processor.
+        return SpanExportResult.SUCCESS
+
+    def _drain_once(self, _connection: _Connection) -> None:
         try:
             from fastaiagent._internal.project import safe_get_project_id
 
@@ -426,8 +459,6 @@ class EvalRunExporter(SpanExporter):
                 )
         except Exception:
             logger.debug("Eval run export drain failed", exc_info=True)
-        # Always SUCCESS: the durable buffer owns retry, not the processor.
-        return SpanExportResult.SUCCESS
 
     def _post_with_retry(self, conn: _Connection, wire: list[dict[str, Any]]) -> bool:
         """POST to ``/public/v1/eval/runs/ingest``. True on a confirmed 2xx."""
@@ -451,7 +482,9 @@ class EvalRunExporter(SpanExporter):
                         "left buffered for the bound to age out. 403 = the API key "
                         "lacks the 'eval:execute' scope, or the domain is not entitled "
                         "to connected_state_plane. 404 = the plane predates the eval "
-                        "ingest endpoint (SDK 1.49.0 needs wire v1.6).",
+                        "ingest endpoint (SDK 1.49.0 needs wire v1.6). 409 = the plane "
+                        "already holds one of these runs (another process sent it at the "
+                        "same moment); the next drain resends it and is acknowledged.",
                         len(wire),
                         code,
                     )
@@ -501,6 +534,11 @@ def _log_contract_once(conn: _Connection) -> None:
 
 _exporter: EvalRunExporter | None = None
 _exporter_lock = threading.Lock()
+
+#: Database files with a drain in progress → whether another drain was asked
+#: for meanwhile (see :meth:`EvalRunExporter.export`).
+_draining: dict[str, bool] = {}
+_drain_lock = threading.Lock()
 
 
 def get_eval_exporter() -> EvalRunExporter:
