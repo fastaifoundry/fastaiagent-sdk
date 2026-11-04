@@ -93,8 +93,8 @@ def _with_worker_calls(
     for call in result.tool_calls:
         merged.append({**call, "agent": call.get("agent") or lead})
         name = str(call.get("tool_name") or "")
-        role = name[len("delegate_to_") :] if name.startswith("delegate_to_") else None
-        queue = pending.get(role) if role is not None else None
+        delegated = name[len("delegate_to_") :] if name.startswith("delegate_to_") else None
+        queue = pending.get(delegated) if delegated is not None else None
         if queue:
             merged.extend(queue.pop(0))
     for queue in pending.values():  # a delegation the lead's record does not show
