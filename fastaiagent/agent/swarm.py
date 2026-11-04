@@ -135,14 +135,27 @@ async def _bound_to(
 
 
 class _Hop:
-    """One hop of a swarm run: the request the swarm is serving, and whether
-    this hop ended by handing off."""
+    """One hop of a swarm run: the request the swarm is serving, whether this
+    hop ended by handing off, and what its tools returned (1.99.0)."""
 
-    __slots__ = ("handed_off", "original_input")
+    __slots__ = ("findings", "handed_off", "original_input")
 
     def __init__(self, original_input: Any) -> None:
         self.original_input = original_input
         self.handed_off = False
+        self.findings: list[dict[str, str]] = []
+
+
+#: The most of one tool result a handoff briefing repeats. A briefing lists every
+#: finding so far, so one large result (a fetched page) must not crowd out the rest.
+_FINDING_CHARS = 4000
+
+
+def _finding(tool: str, output: Any) -> dict[str, str]:
+    text = output if isinstance(output, str) else repr(output)
+    if len(text) > _FINDING_CHARS:
+        text = f"{text[:_FINDING_CHARS]} [… {len(text) - _FINDING_CHARS} more characters]"
+    return {"tool": tool, "result": text}
 
 
 class _HopMemory:
@@ -192,7 +205,8 @@ class _ExitAfterHandoff(AgentMiddleware):
     tends to re-call the handoff tool on the next iteration (since the
     sentinel string looks like legitimate tool output), which burns the
     MaxIterations budget. It also marks its hop as handed off, so the hop's
-    memory writes are dropped (see :class:`_HopMemory`).
+    memory writes are dropped (see :class:`_HopMemory`), and keeps what the
+    hop's other tools returned, for the next agent's briefing (1.99.0).
     """
 
     name = "_exit_after_handoff"
@@ -208,15 +222,17 @@ class _ExitAfterHandoff(AgentMiddleware):
         call_next: ToolCallNext,
     ) -> ToolResult:
         result = await call_next(tool, args)
-        if tool.name.startswith("handoff_to_"):
-            if self._hop is not None:
-                self._hop.handed_off = True
-            # StopAgent short-circuits the remaining tool calls in this
-            # iteration and the rest of the inner tool loop. Gap 3's
-            # executor preserves ``all_tool_calls`` so the swarm outer
-            # loop can still see the handoff record.
-            raise StopAgent(_HANDOFF_SENTINEL)
-        return result
+        if not tool.name.startswith("handoff_to_"):
+            if self._hop is not None and result.error is None:
+                self._hop.findings.append(_finding(tool.name, result.output))
+            return result
+        if self._hop is not None:
+            self._hop.handed_off = True
+        # StopAgent short-circuits the remaining tool calls in this
+        # iteration and the rest of the inner tool loop. Gap 3's
+        # executor preserves ``all_tool_calls`` so the swarm outer
+        # loop can still see the handoff record.
+        raise StopAgent(_HANDOFF_SENTINEL)
 
 
 class SwarmError(AgentError):
@@ -235,12 +251,16 @@ class SwarmState:
         handoff_count: Number of handoffs so far (used by the cycle guard).
         path: Ordered list of agent names visited this run.
         last_reason: Reason string from the most recent handoff call.
+        findings: What every hop's tools returned so far, oldest first, as
+            ``{"agent", "tool", "result"}`` (1.99.0). Each briefing lists them, so
+            an agent sees what earlier agents found and does not redo it.
     """
 
     shared: dict[str, Any] = field(default_factory=dict)
     handoff_count: int = 0
     path: list[str] = field(default_factory=list)
     last_reason: str = ""
+    findings: list[dict[str, str]] = field(default_factory=list)
 
 
 #: The root span ``Swarm.stream()`` opened around its ``astream()``, with the
@@ -290,26 +310,43 @@ def _build_handoff_input(
     around the *original* user request — so multimodal payloads (Image,
     PDF) flow through to the target intact rather than being collapsed to
     a string. Pure text inputs keep the legacy single-string template.
+
+    Since 1.99.0 it also lists what the team's tools found so far
+    (``state.findings``). Before, an agent's findings reached the next one
+    only if its model copied them into ``reason`` or ``context``; live, tech
+    solved its part, billing never saw it, handed back, and tech searched again.
     """
     from fastaiagent.multimodal.image import Image as MMImage
     from fastaiagent.multimodal.pdf import PDF as MMPDF
 
+    found = _findings_text(state.findings)
     handoff_text = (
         f"{source} handed off to you with reason: {reason!r}. "
-        f"Current shared state: {state.shared!r}. "
+        f"Current shared state: {state.shared!r}.{found} "
         f"The original request follows — please continue."
     )
     if isinstance(original_input, str):
         return (
             f"{source} handed off to you with reason: {reason!r}. "
             f"Earlier request: {original_input!r}. Current shared state: "
-            f"{state.shared!r}. Please continue."
+            f"{state.shared!r}.{found} Please continue."
         )
     if isinstance(original_input, (MMImage, MMPDF)):
         return [handoff_text, original_input]
     if isinstance(original_input, list):
         return [handoff_text, *original_input]
-    return f"{source} handed off to you with reason: {reason!r}. Please continue."
+    return f"{source} handed off to you with reason: {reason!r}.{found} Please continue."
+
+
+def _findings_text(findings: list[dict[str, str]]) -> str:
+    """The briefing's "found so far" part; empty when no tool has run yet."""
+    if not findings:
+        return ""
+    lines = "\n".join(f"- {f['agent']} ran {f['tool']}: {f['result']}" for f in findings)
+    return (
+        "\nWhat the team has found so far (tool results, oldest first) — use these "
+        f"rather than running the same tools again:\n{lines}\n"
+    )
 
 
 def _swarm_snapshot(
@@ -340,6 +377,7 @@ def _swarm_snapshot(
         "handoff_count": state.handoff_count,
         "path": list(state.path),
         "last_reason": state.last_reason,
+        "findings": list(state.findings),
         "accumulated_tool_calls": list(accumulated_tool_calls),
         "total_tokens": total_tokens,
     }
@@ -354,6 +392,7 @@ def _restore_state(snapshot: dict[str, Any]) -> SwarmState:
     state.handoff_count = int(snapshot.get("handoff_count", 0))
     state.path = list(snapshot.get("path", []))
     state.last_reason = str(snapshot.get("last_reason", ""))
+    state.findings = [dict(f) for f in snapshot.get("findings", [])]
     return state
 
 
@@ -739,8 +778,9 @@ class Swarm:
                 result = injected
                 injected = None
             else:
+                hop = _Hop(original_input)
                 active = self._active_agent(
-                    current, state, context=context, original_input=original_input
+                    current, state, context=context, original_input=original_input, hop=hop
                 )
                 # Pass the same execution_id to child agents so all
                 # checkpoints land under one umbrella execution.
@@ -750,6 +790,7 @@ class Swarm:
                     execution_id=exec_id,
                     **kwargs,
                 )
+                state.findings.extend({"agent": current, **f} for f in hop.findings)
 
             # Bubble paused state up — the active agent already wrote its
             # interrupted checkpoint with the swarm-prefixed agent_path.
@@ -1082,7 +1123,10 @@ class Swarm:
         swarm_path = f"swarm:{self.name}"
 
         while True:
-            active = self._active_agent(current, state, context=context, original_input=input)
+            hop = _Hop(input)
+            active = self._active_agent(
+                current, state, context=context, original_input=input, hop=hop
+            )
             handoff_from_stream: tuple[str, str] | None = None
 
             inner_stream = active.astream(
@@ -1110,6 +1154,7 @@ class Swarm:
             finally:
                 await inner_stream.aclose()
 
+            state.findings.extend({"agent": current, **f} for f in hop.findings)
             if handoff_from_stream is None:
                 return
             target, reason = handoff_from_stream
@@ -1206,6 +1251,7 @@ class Swarm:
         state: SwarmState,
         context: RunContext[Any] | None = None,
         original_input: Any = None,
+        hop: _Hop | None = None,
     ) -> Agent:
         """Return a clone of ``agents[name]`` with handoff tools injected.
 
@@ -1215,10 +1261,10 @@ class Swarm:
         untouched so multiple swarms can share the same agent instances without
         cross-contamination. Its memory is seen through a :class:`_HopMemory`
         for this hop, so the run records the user's ``original_input`` once, not
-        the hand-off mechanics.
+        the hand-off mechanics. ``hop`` collects what its tools return.
         """
         base = self.agents[name]
-        hop = _Hop(original_input)
+        hop = hop or _Hop(original_input)
         return base._team_member(
             # ``swarm:<s>/agent:<name>`` is what ``aresume`` parses the active
             # agent out of, whatever label the agent carries on its own.

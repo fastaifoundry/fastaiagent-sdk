@@ -69,7 +69,7 @@ Every turn, the currently active agent is cloned and given one `handoff_to_<peer
 1. The swarm's outer loop notices the handoff in the agent's `tool_calls`.
 2. It enforces the allowlist: the target must be in `handoffs[current]`.
 3. It bumps `state.handoff_count` and checks `max_handoffs`.
-4. It constructs a briefing message for the next agent: "`researcher` handed off to you with reason: '...'. Earlier request: '...'. Current shared state: {...}. Please continue."
+4. It constructs a briefing message for the next agent: "`researcher` handed off to you with reason: '...'. Earlier request: '...'. Current shared state: {...}." It then lists what the team has found so far (below) and ends "Please continue."
 5. The next agent runs. When *it* either produces a final response with no tool call, or calls another handoff, the loop continues.
 
 No central LLM. No state graph. A plain `while` loop plus tool-call inspection.
@@ -187,6 +187,25 @@ researcher calls handoff_to_writer(
 ```
 
 The writer sees `Current shared state: {'sources': ['arxiv:2024.12345'], 'tone': 'academic'}` in its briefing.
+
+### What the team found (`SwarmState.findings`, 1.99.0)
+
+Every agent's tool results are kept, oldest first, and each briefing lists them, whether
+or not the model put them in `context=`:
+
+```
+What the team has found so far (tool results, oldest first) — use these rather than
+running the same tools again:
+- tech ran search_tech_kb: Hold reset for 15 seconds, then re-pair. Escalation code TCH-77.
+- billing ran search_policy_kb: Annual plans cancelled within 30 days carry a fee of $17.40.
+```
+
+Before 1.99.0 the next agent saw only what the model chose to copy into `reason` or
+`context`. In a live billing ↔ tech swarm, billing never learned that tech had solved the
+router issue. It handed back, tech searched again, and one run hit `max_handoffs`. Each
+result is repeated up to 4,000 characters; a longer one ends with `[… N more characters]`,
+and the agent can run the tool again for the rest. The list is kept in the swarm's
+checkpoints, so a resumed run keeps it. Handoff calls themselves are not listed.
 
 ## Streaming
 
