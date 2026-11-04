@@ -293,13 +293,13 @@ The tool returns formatted search results:
 Use domain-sharded KBs with an agent that routes queries to the right KB:
 
 ```python
-kb_billing = LocalKB(name="billing")
+kb_billing = LocalKB(name="billing", description="invoices, refunds, payment methods")
 kb_billing.add("billing-docs/")
 
-kb_shipping = LocalKB(name="shipping")
+kb_shipping = LocalKB(name="shipping", description="delivery times, carriers, tracking")
 kb_shipping.add("shipping-docs/")
 
-kb_returns = LocalKB(name="returns")
+kb_returns = LocalKB(name="returns", description="return windows and conditions")
 kb_returns.add("return-policy-docs/")
 
 agent = Agent(
@@ -311,6 +311,12 @@ agent = Agent(
 ```
 
 Each KB is searched independently — search stays fast even with thousands of documents across all domains.
+
+**Say what each KB holds.** The model picks a tool by its name and description.
+`description=` (1.99.0) completes the tool's description: "Search the 'billing' knowledge
+base: invoices, refunds, payment methods". Without it, the description names the KB only.
+The tool name is `search_<name>`, and characters a tool name cannot hold become `_`
+(`"Product docs"` → `search_Product_docs`).
 
 ## Embedding Providers
 

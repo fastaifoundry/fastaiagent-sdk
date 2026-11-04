@@ -43,7 +43,13 @@ def main() -> int:
         target=os.environ.get("FASTAIAGENT_TARGET", "https://app.fastaiagent.net"),
     )
 
-    kb = fa.PlatformKB(kb_id=os.environ["FA_TEST_KB_ID"])
+    # name + description (1.99.0) become the tool the agent sees:
+    # search_policy-kb — "Search the 'policy-kb' platform knowledge base: ..."
+    kb = fa.PlatformKB(
+        kb_id=os.environ["FA_TEST_KB_ID"],
+        name="policy-kb",
+        description="refund, return and support policies",
+    )
 
     agent = fa.Agent(
         name="policy-bot",

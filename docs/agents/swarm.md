@@ -280,7 +280,7 @@ An agent that uses a `LocalKB` as a tool keeps that capability inside the swarm:
 ```python
 from fastaiagent.kb import LocalKB
 
-kb = LocalKB(name="product-docs")
+kb = LocalKB(name="product-docs", description="setup guides and troubleshooting")
 kb.add("docs/")
 
 support = Agent(
