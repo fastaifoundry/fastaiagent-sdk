@@ -67,8 +67,12 @@ class LocalKB:
         vector_store: VectorStore | None = None,
         keyword_store: KeywordStore | None = None,
         metadata_store: MetadataStore | None = None,
+        *,
+        description: str | None = None,
     ):
         self.name = name
+        #: What the KB holds, for the tool ``as_tool()`` makes (1.99.0).
+        self.description = description
         self.path = Path(path) / name
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
@@ -453,10 +457,12 @@ class LocalKB:
                 parts.append(f"[Score: {r.score:.3f}] {r.chunk.content}")
             return "\n\n".join(parts)
 
+        from fastaiagent.kb._tool import kb_tool_description, kb_tool_name
+
         tool = FunctionTool(
-            name=f"search_{self.name}",
+            name=kb_tool_name(self.name),
             fn=kb_search,
-            description=f"Search the '{self.name}' knowledge base",
+            description=kb_tool_description(self.name, self.description, platform=False),
         )
         # Distinguish KB-derived tools from plain @tool functions in the UI.
         tool.origin = "kb"

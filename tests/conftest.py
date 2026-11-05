@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
@@ -45,6 +46,9 @@ class CaptureServer:
         self._lock = threading.Lock()
         self._server: HTTPServer | None = None
         self._thread: threading.Thread | None = None
+        #: Seconds each request is held before it is answered — widens a race
+        #: window so a concurrency test reproduces every time.
+        self.delay = 0.0
 
     def set_status_sequence(self, codes: list[int]) -> None:
         with self._lock:
@@ -111,6 +115,8 @@ class CaptureServer:
                     capture.requests.append(
                         {"path": self.path, "headers": dict(self.headers), "body": body}
                     )
+                if capture.delay:
+                    time.sleep(capture.delay)
                 code, payload, content_type, extra_headers = capture._next_response()
                 self.send_response(code)
                 self.send_header("Content-Type", content_type)

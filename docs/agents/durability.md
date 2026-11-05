@@ -199,6 +199,12 @@ There is no separate API to opt in. Text-only messages take the unchanged
 fast path; only messages whose content list contains an `Image` or `PDF`
 go through the base64 envelope.
 
+A **Swarm** resumes a multimodal request the same way: after `swarm.resume()`,
+whether after a pause or a crash, the agents still receive the `Image` / `PDF`
+parts. Before 1.99.0 the swarm turned the stored request back into text, so every
+agent after a resume was briefed with the envelope's text, base64 included, instead
+of the photo.
+
 ## See also
 
 - [Suspending HITL — `interrupt()`](../chains/hitl.md) — the primitive

@@ -69,7 +69,7 @@ Every turn, the currently active agent is cloned and given one `handoff_to_<peer
 1. The swarm's outer loop notices the handoff in the agent's `tool_calls`.
 2. It enforces the allowlist: the target must be in `handoffs[current]`.
 3. It bumps `state.handoff_count` and checks `max_handoffs`.
-4. It constructs a briefing message for the next agent: "`researcher` handed off to you with reason: '...'. Earlier request: '...'. Current shared state: {...}. Please continue."
+4. It constructs a briefing message for the next agent: "`researcher` handed off to you with reason: '...'. Earlier request: '...'. Current shared state: {...}." It then lists what the team has found so far (below) and ends "Please continue."
 5. The next agent runs. When *it* either produces a final response with no tool call, or calls another handoff, the loop continues.
 
 No central LLM. No state graph. A plain `while` loop plus tool-call inspection.
@@ -188,6 +188,25 @@ researcher calls handoff_to_writer(
 
 The writer sees `Current shared state: {'sources': ['arxiv:2024.12345'], 'tone': 'academic'}` in its briefing.
 
+### What the team found (`SwarmState.findings`, 1.99.0)
+
+Every agent's tool results are kept, oldest first, and each briefing lists them, whether
+or not the model put them in `context=`:
+
+```
+What the team has found so far (tool results, oldest first) — use these rather than
+running the same tools again:
+- tech ran search_tech_kb: Hold reset for 15 seconds, then re-pair. Escalation code TCH-77.
+- billing ran search_policy_kb: Annual plans cancelled within 30 days carry a fee of $17.40.
+```
+
+Before 1.99.0 the next agent saw only what the model chose to copy into `reason` or
+`context`. In a live billing ↔ tech swarm, billing never learned that tech had solved the
+router issue. It handed back, tech searched again, and one run hit `max_handoffs`. Each
+result is repeated up to 4,000 characters; a longer one ends with `[… N more characters]`,
+and the agent can run the tool again for the rest. The list is kept in the swarm's
+checkpoints, so a resumed run keeps it. Handoff calls themselves are not listed.
+
 ## Streaming
 
 `swarm.astream(input)` yields the full stream of the currently active agent (TextDelta, ToolCallStart, ToolCallEnd, Usage). When a handoff fires, a single `HandoffEvent(from_agent, to_agent, reason)` is emitted before the target agent starts streaming:
@@ -201,6 +220,12 @@ async for event in swarm.astream("Write a poem about bridges."):
     elif isinstance(event, HandoffEvent):
         print(f"\n[{event.from_agent} → {event.to_agent}: {event.reason}]\n")
 ```
+
+A streamed run is one trace under a `swarm.<name>` root span, the same as `run()`. Before
+1.99.0 `astream()` opened no root span, so each hop was an unrelated trace locally and on
+the plane. The root span's `swarm.handoff_count` counts handoffs on every path. Before
+1.99.0 it counted every tool call, KB searches included, and `stream()`/`astream()` left
+it unset.
 
 ## Composing with other primitives
 
@@ -255,7 +280,7 @@ An agent that uses a `LocalKB` as a tool keeps that capability inside the swarm:
 ```python
 from fastaiagent.kb import LocalKB
 
-kb = LocalKB(name="product-docs")
+kb = LocalKB(name="product-docs", description="setup guides and troubleshooting")
 kb.add("docs/")
 
 support = Agent(
@@ -271,6 +296,15 @@ swarm = Swarm(
     entrypoint="triage",
 )
 ```
+
+## On the control plane
+
+Each hop runs a copy of the agent you built, with the `handoff_to_*` tools added.
+Since 1.99.0 the copy registers as your agent: the pushed definition has your agent's
+own tools and prompt slug, not the handoff tools. The `agent_id` lands on your agent,
+so managed governance gates its tools on every run, and its registry prompt is
+stamped on its model calls. See
+[Team members on the control plane](teams.md#team-members-on-the-control-plane).
 
 ## Serialization
 
@@ -314,6 +348,7 @@ except SwarmError as e:
 
 ## Next Steps
 
+- [Example 117](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/117_teams_end_to_end.py) — a Swarm and a Supervisor end to end, on or off the control plane
 - [Supervisor / Worker Teams](teams.md) — Centralized delegation topology
 - [Memory](memory.md) — Add long-term memory to swarm agents
 - [KB Backends](../knowledge-base/backends.md) — Give swarm agents searchable knowledge

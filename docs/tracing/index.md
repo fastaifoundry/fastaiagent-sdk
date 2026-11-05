@@ -343,6 +343,8 @@ The SDK follows the OpenTelemetry GenAI semantic conventions for LLM-related att
 | Attribute | Description |
 |-----------|-------------|
 | `agent.name` | Agent name |
+| `agent.id` | The agent's plane id, on its own span once it is registered (1.99.0). A Supervisor worker's or Swarm member's span carries its own, so a team run names each registered agent, not only the root |
+| `supervisor.workers` / `swarm.agents` | On a team's root span: the member agents' names, in order (1.99.0) |
 | `fastaiagent.chain.name` | Chain name |
 | `fastaiagent.chain.node_id` | Current node in chain |
 | `fastaiagent.chain.iteration` | Cycle iteration count |

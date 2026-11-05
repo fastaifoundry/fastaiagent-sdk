@@ -32,9 +32,18 @@ results = await kb.asearch("refund policy", top_k=3)
 
 ## Using with an Agent
 
-Wire it into an `Agent` via `.as_tool()` — identical to `LocalKB`:
+Wire it into an `Agent` via `.as_tool()` — identical to `LocalKB`. Give it a `name` and a
+`description` (1.99.0) so the agent knows what it holds:
 
 ```python
+kb = fa.PlatformKB(
+    kb_id="c876a247-4fa1-4796-9d89-cc9a9e5fd4a3",
+    name="refund-policy",
+    description="refund windows, fees and refund codes",
+)
+# tool: search_refund-policy — "Search the 'refund-policy' platform knowledge base:
+#                               refund windows, fees and refund codes"
+
 agent = fa.Agent(
     name="policy-bot",
     system_prompt="Use the search tool to answer from the KB.",
@@ -47,6 +56,15 @@ print(result.output)
 ```
 
 Because both `LocalKB` and `PlatformKB` expose the same `search(query, top_k) -> list[SearchResult]` surface and the same `as_tool()` helper, an Agent wired for one works for the other — swap as you promote a KB from local prototyping to platform hosting. Both tools carry `origin="kb"`, so the Local UI lists them under the agent's knowledge bases (before 1.91.0 a `PlatformKB` tool showed up as a plain function tool).
+
+Without `name`, the tool is `search_<kb_id>` and its description names only the id. An
+agent holding its own KB and a shared one then can't tell which holds what. Retrieval
+spans carry the `name` as `retrieval.kb_name` and keep the id in `retrieval.kb_id`.
+
+Each hit reaches the model as the **whole chunk**, as `LocalKB`'s do. Before 1.99.0
+`PlatformKB.as_tool()` cut every hit to its first 200 characters, so a fact further into a
+chunk never reached the model. In a live test the agent answered with none of the facts it
+was asked for, and searched again and again for text it was never shown.
 
 ## What Runs Where
 

@@ -523,3 +523,60 @@ def test_record_gate_result_rejects_an_unknown_outcome(isolated_local_db, bad):
     run_id = results.persist_local(db_path=isolated_local_db, run_name="typo")
     with pytest.raises(ValueError):
         record_gate_result(run_id, gate_outcome=bad, db_path=isolated_local_db)
+
+
+# ── one drain at a time (1.99.0) ───────────────────────────────────────────
+
+
+def _sent(server, run_id: str) -> int:
+    return sum(
+        1 for r in _eval_requests(server) for run in r["body"]["runs"] if run["run_id"] == run_id
+    )
+
+
+def test_concurrent_drains_send_a_run_once(isolated_local_db, capture_server):
+    """``record_gate_result``'s kick, a span flush and ``eval export`` drained the
+    same rows at once and posted the run twice; the plane answered the second
+    with 409 and the SDK logged a rejection for a run that had landed."""
+    import threading
+
+    _connect(capture_server.url)
+    run_id = _seed_run(isolated_local_db)
+    capture_server.delay = 0.3  # hold the first POST open while the others start
+    barrier = threading.Barrier(3)
+
+    def drain() -> None:
+        barrier.wait()
+        EvalRunExporter(db_path=isolated_local_db).export([])
+
+    threads = [threading.Thread(target=drain) for _ in range(3)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+
+    assert _sent(capture_server, run_id) == 1
+    assert _synced(isolated_local_db, run_id) == 1
+
+
+def test_a_run_recorded_during_a_drain_is_still_sent(isolated_local_db, capture_server):
+    """A drain asked for while one is in flight is not dropped: the running one
+    goes round again and sends what arrived meanwhile."""
+    import threading
+    import time
+
+    _connect(capture_server.url)
+    first = _seed_run(isolated_local_db, run_name="first")
+    capture_server.delay = 0.3
+    running = threading.Thread(target=lambda: EvalRunExporter(db_path=isolated_local_db).export([]))
+    running.start()
+    deadline = time.time() + 10
+    while time.time() < deadline and not _eval_requests(capture_server):
+        time.sleep(0.01)  # the first POST is in flight
+
+    second = _seed_run(isolated_local_db, run_name="second")
+    EvalRunExporter(db_path=isolated_local_db).export([])  # returns at once
+    running.join(timeout=30)
+
+    assert (_sent(capture_server, first), _sent(capture_server, second)) == (1, 1)
+    assert _synced(isolated_local_db, first) == _synced(isolated_local_db, second) == 1

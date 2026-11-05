@@ -11,8 +11,6 @@ Use **Supervisor** when a central LLM should orchestrate and synthesize results.
 
 A supervisor agent delegates tasks to specialized worker agents. This pattern is useful when different parts of a task require different expertise, models, or tool sets.
 
-## Supervisor / Worker Pattern
-
 ```python
 from fastaiagent import Agent, LLMClient, Supervisor, Worker
 
@@ -127,6 +125,52 @@ ctx = RunContext(state=TeamState(db=get_db(), user_id="u-456", company="Acme"))
 result = supervisor.run("Show my open tickets and latest invoice", context=ctx)
 ```
 
+## What the result carries
+
+`run`, `arun` and `resume` return one `AgentResult` for the whole team:
+
+| Field | Notes |
+|---|---|
+| `output` | The lead's final answer (the worker's reply with `routing="decisions"`) |
+| `tool_calls` | The lead's `delegate_to_*` calls, each followed by the calls of the worker it ran (every `validate_outputs` attempt). Each entry has `agent`; a worker's also has `worker` (its role). Since 1.99.0; before, only the `delegate_to_*` calls, so a trajectory eval never saw a worker's tools |
+| `tokens_used` / `cost` / `cost_known` | The whole team's (1.99.0), as below |
+| `trace_id` | The `supervisor.<name>` root span: one trace for the run |
+
+`stream()` returns `output`, `tokens_used`, `cost`, `cost_known` and `trace_id`, but no
+`tool_calls`.
+
+## Conversation memory
+
+Give the supervisor `memory=` and the team holds a conversation (since 1.99.0):
+
+```python
+from fastaiagent import Memory
+
+supervisor = Supervisor(
+    name="support-lead",
+    llm=llm,
+    workers=[...],
+    memory=Memory(),   # the lead's own conversation
+)
+
+supervisor.run("Where is order A100?")
+supervisor.run("Which order was that?")   # the lead sees the first turn
+```
+
+- **One turn per run.** The memory records the user's request and the team's final
+  answer, not the `delegate_to_*` calls in between. It works the same on `run`, `stream`
+  and `astream`, and `resume` continues the turn that paused, not an earlier one.
+- **Workers see only what the lead passes them.** A worker gets the `task` the lead
+  writes, not the conversation. Give a worker its own `memory=` if it needs its own
+  history.
+- **Per user.** `Memory(user_id=lambda ctx: ...)` keeps users apart. The `context=`
+  you pass the supervisor reaches the lead's memory.
+- **Not with `routing="decisions"`.** That mode has no lead, so the constructor refuses
+  `memory=`. Give the workers memory instead.
+
+Before 1.99.0 a supervisor took no memory, and a follow-up worked only if a worker
+happened to have one.
+
 ## Streaming
 
 Stream the supervisor's output in real-time. Worker delegation appears as `ToolCallStart` / `ToolCallEnd` events, and the supervisor's synthesized response streams as `TextDelta` events.
@@ -161,21 +205,27 @@ streamed run renders as one trace and its result carries a `trace_id` — `run()
 and `arun()` always had one by inheriting it from the inner agent, and the
 stream path built its result by hand and inherited nothing.
 
+Since 1.99.0 that is the only `supervisor.<name>` span in a streamed run. `stream()`
+and `astream()` used to open one each, nested, so the supervisor appeared twice in
+the trace. `astream()` with `routing="decisions"` now runs under the root span too;
+before, its worker's spans were a trace of their own.
+
 Since 1.68.0 that hand-built result also carries `tokens_used`, `cost` and
 `cost_known`. All three used to come back at their defaults, so a streamed
 supervisor run looked free while the identical `arun()` reported real numbers.
 
-!!! info "A supervisor's tokens and cost are the **supervisor's own** turns"
-    A delegated worker runs through `Agent.arun()` inside a `delegate_to_<role>`
-    tool. That call opens its own accumulator and reports its spend on its own
-    `AgentResult` — so a worker's tokens are counted once, there, and are **not**
-    re-counted on the supervisor's result.
+!!! info "A supervisor's tokens and cost are the **whole team's** (1.99.0)"
+    `tokens_used`, `cost` and `cost_known` on `run()`, `arun()` and `stream()` cover
+    the lead's turns and every worker run: each delegated run, every
+    `validate_outputs` retry, and the routing decision with `routing="decisions"`.
+    `cost_known` is `False` if any part of the team ran a model with no rate. A
+    `Swarm` has always summed its hops the same way.
 
-    This is a scope boundary, not a missing number, and it is the same one `run()`
-    and `arun()` have always had: `cost` took it in 1.67.0 and `tokens_used` takes
-    it in 1.68.0. To get a team-wide total, sum the supervisor's figure with each
-    worker's — do not expect the supervisor's alone to be it. (A `Swarm` differs:
-    hops are peers of one run, so `Swarm` sums across them.)
+    Before 1.99.0 the result carried the lead's turns only. In a live team run that
+    was 7,528 of 29,339 tokens. The docs said to add each worker's own figure, but
+    the delegate tool dropped the worker's result, so there was nothing to add. A
+    routed run that retried after a rejected review also dropped the rejected
+    attempt's spend. The plane's trace total was always the whole team's.
 
 ## Dynamic Instructions
 
@@ -362,6 +412,32 @@ Its `--compare` flag runs the same tickets through both modes. The same routing
 as a Chain graph is in
 [`107_call_center_chain.py`](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/107_call_center_chain.py).
 
+## Team members on the control plane
+
+A worker runs as a per-run copy of the agent you built, and since 1.99.0 that copy
+keeps everything the agent has. That matters once you `fa.connect()`:
+
+- **It registers as your agent.** The definition pushed on its first run is your
+  agent's own: its tools, its prompt slug. It doesn't include the team's internal
+  `handoff_to_*` tools. The `agent_id` the plane hands back lands on your agent too.
+- **Managed governance gates it on every run.** Approval policies and plane guardrails
+  key on that `agent_id`. Before 1.99.0 the id landed only on the throwaway copy, so
+  a worker built after `connect()` (the order you need when its prompt comes from
+  the plane) was never gated after its first run. A tool behind an
+  "always require approval" policy ran unapproved.
+- **Its prompt lineage survives.** A worker built from a registry `Prompt` stamps
+  `fastaiagent.prompt.*` on its own model calls inside the team, the same as when
+  it runs alone.
+
+- **Its spans name it.** Each agent span carries `agent.id`, and the team's root span
+  lists the members (`supervisor.workers`, `swarm.agents`). The plane matches a trace to
+  an agent by the root span, so it ties a team run to the lead, or to no agent for a
+  Swarm. These attributes are there for it to tie the run to each member; until the
+  plane reads them, a member's page shows only its own runs.
+
+The same holds for a [Swarm](swarm.md) member. The supervisor's lead, which is rebuilt
+each run, is linked to its plane id from its second run on.
+
 ## API Reference
 
 ### `Supervisor`
@@ -371,7 +447,7 @@ Supervisor(
     name: str,
     llm: LLMClient | None = None,
     workers: list[Worker] | None = None,
-    system_prompt: str | Callable[[RunContext | None], str] = "",
+    system_prompt: str | Prompt | Callable[[RunContext | None], str] = "",
     max_delegation_rounds: int = 3,
     checkpointer: Checkpointer | None = None,
     validate_outputs: bool = False,
@@ -391,6 +467,7 @@ Supervisor(
     middleware: list[AgentMiddleware] | None = None,  # 1.91.0 — the supervisor's own
     *,
     timeout_seconds: float | None = None,   # 1.93.0
+    memory: MemoryLike | None = None,       # 1.99.0 — the lead's conversation
 )
 ```
 
@@ -404,13 +481,14 @@ the routed worker's run, like `guardrails=`. See
 | `name` | `str` | Yes | Supervisor name |
 | `llm` | `LLMClient \| None` | No | LLM for the supervisor (defaults to OpenAI gpt-4o-mini) |
 | `workers` | `list[Worker] \| None` | No | Workers available for delegation |
-| `system_prompt` | `str \| Callable` | No | Custom instructions. If omitted, auto-generates from worker descriptions |
+| `system_prompt` | `str \| Prompt \| Callable` | No | Custom instructions. If omitted, auto-generates from worker descriptions. A registry `Prompt` links the lead like an `Agent`: its model calls carry `fastaiagent.prompt.*`, and the pushed lead keeps a plane prompt's slug. `prompt.format(...)` text links nothing |
 | `max_delegation_rounds` | `int` | No | Max delegation rounds (default: 3, translates to `max_iterations * 2`) |
 | `validate_outputs` | `bool` | No | (v1.9.0) When `True`, supervisor LLM reviews each worker output |
 | `validation_prompt` | `str \| None` | No | (v1.9.0) Override the default validator prompt; must include `{task}` and `{output}` placeholders |
 | `max_validation_retries_per_worker` | `int` | No | (v1.9.0) Max retries per delegate after rejection (default `1`) |
 | `guardrails` | `list[Guardrail] \| None` | No | (1.90.0) The supervisor's **own** guardrails, as on `Agent`: they judge its input, its `delegate_to_*` calls and its answer, on `run`, `astream`, `stream` and `resume`. Each worker keeps its own. With `routing="decisions"` there is no supervisor loop, so they judge the routed worker's input and output. Before 1.90.0 a supervisor took none. |
 | `middleware` | `list[AgentMiddleware] \| None` | No | (1.91.0) The supervisor's **own** middleware: it runs on the supervisor's loop and sees its `delegate_to_*` calls; each worker keeps its own. With `routing="decisions"` it runs on the routed worker's run. |
+| `memory` | `MemoryLike \| None` | No | (1.99.0, keyword) The lead's conversation memory: each run records the request and the final answer once, and the next run's lead sees them. Workers keep their own `memory=`. Refused with `routing="decisions"`, which has no lead. See [Conversation memory](#conversation-memory). |
 
 **Methods:**
 
@@ -457,6 +535,7 @@ Worker(
 
 ## Next Steps
 
+- [Example 117](https://github.com/fastaifoundry/fastaiagent-sdk/blob/main/examples/117_teams_end_to_end.py) -- a Supervisor and a Swarm end to end, on or off the control plane
 - [Agents](index.md) -- Core agent documentation
 - [Context & Dependency Injection](../tools/context.md) -- RunContext details
 - [Streaming](../streaming/index.md) -- Streaming architecture

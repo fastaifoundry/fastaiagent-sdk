@@ -33,13 +33,19 @@ class PlatformKB:
         results = kb.search("refund policy", top_k=5)
         for r in results:
             print(r.score, r.chunk.content[:80])
+
+    ``name`` and ``description`` (1.99.0) are what an agent sees: the tool is
+    ``search_<name>`` and its description says what the KB holds. Without them
+    the tool is ``search_<kb_id>`` described by the id alone, and an agent with
+    its own KB and a shared one cannot tell which holds what.
     """
 
-    def __init__(self, kb_id: str):
+    def __init__(self, kb_id: str, *, name: str | None = None, description: str | None = None):
         if not kb_id:
             raise ValueError("kb_id is required")
         self.kb_id = kb_id
-        self.name = kb_id  # parity with LocalKB.name
+        self.name = name or kb_id  # parity with LocalKB.name
+        self.description = description
 
     def search(self, query: str, top_k: int = 5) -> list[SearchResult]:
         from fastaiagent.kb._tracing import retrieval_span
@@ -85,7 +91,10 @@ class PlatformKB:
         """Create a FunctionTool that wraps this KB for agent use.
 
         Mirrors ``LocalKB.as_tool()`` so a ``PlatformKB`` can drop into the same
-        ``tools=[kb.as_tool()]`` wiring on ``Agent``.
+        ``tools=[kb.as_tool()]`` wiring on ``Agent``. Each hit is the whole
+        chunk, as ``LocalKB``'s are. Until 1.99.0 this tool cut every hit to its
+        first 200 characters, so a fact further into a chunk never reached the
+        model.
         """
         from fastaiagent.tool.function import FunctionTool
 
@@ -95,13 +104,15 @@ class PlatformKB:
                 return "No results found."
             parts = []
             for r in results:
-                parts.append(f"[Score: {r.score:.3f}] {r.chunk.content[:200]}")
+                parts.append(f"[Score: {r.score:.3f}] {r.chunk.content}")
             return "\n\n".join(parts)
 
+        from fastaiagent.kb._tool import kb_tool_description, kb_tool_name
+
         tool = FunctionTool(
-            name=f"search_{self.name}",
+            name=kb_tool_name(self.name),
             fn=kb_search,
-            description=f"Search the '{self.name}' platform knowledge base",
+            description=kb_tool_description(self.name, self.description, platform=True),
         )
         # As ``LocalKB.as_tool`` does, so the Local UI lists it under knowledge
         # bases rather than tools (1.91.0, X10).

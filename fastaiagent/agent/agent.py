@@ -9,7 +9,7 @@ import uuid
 from collections.abc import AsyncGenerator, Callable, Coroutine, Iterator, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any, Generic, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, overload
 
 from pydantic import BaseModel, Field, field_validator
 from typing_extensions import TypeVar as TypeVarWithDefault
@@ -92,6 +92,9 @@ from fastaiagent.multimodal.image import Image as MultimodalImage
 from fastaiagent.multimodal.pdf import PDF as MultimodalPDF  # noqa: N811
 from fastaiagent.multimodal.types import ContentPart, normalize_input
 from fastaiagent.tool.base import Tool
+
+if TYPE_CHECKING:
+    from fastaiagent.prompt.prompt import Prompt
 
 logger = logging.getLogger(__name__)
 
@@ -493,7 +496,7 @@ class Agent:
     def __init__(
         self,
         name: str,
-        system_prompt: str | Callable[..., str] = "",
+        system_prompt: str | Prompt | Callable[..., str] = "",
         llm: LLMClient | None = None,
         tools: Sequence[Tool] | None = None,
         guardrails: Sequence[Guardrail] | None = None,
@@ -512,7 +515,12 @@ class Agent:
         # so the plane can match approval policies (Task C). Without it the
         # governance gate is a no-op (the agent isn't enrolled).
         self.agent_id = agent_id
-        self.system_prompt = system_prompt
+        from fastaiagent.prompt.prompt import Prompt as _RegistryPrompt
+
+        # A registry ``Prompt`` runs as its template (its lineage is kept below).
+        self.system_prompt: str | Callable[..., str] = (
+            system_prompt.template if isinstance(system_prompt, _RegistryPrompt) else system_prompt
+        )
         # A control-plane prompt-registry reference. When set, to_dict() emits
         # this slug and sends system_prompt="" so a pushed agent links to the
         # governed prompt (console shows the slug, not "Inline") instead of
@@ -580,6 +588,9 @@ class Agent:
         # Default ``"agent:<name>"``; ``Supervisor`` uses ``"supervisor:<name>"``,
         # delegated workers use ``"worker:<role>"``.
         self._agent_path_label: str = agent_path_label or f"agent:{self.name}"
+        # The agent a copy was made from (see :meth:`_copy`); ``None`` on an
+        # agent the user built. Registration pushes and stamps the origin.
+        self._registration_origin: Agent | None = None
         # Gap 2 registration: track this agent so a later connect() can flush it
         # to the plane (best-effort; never breaks construction).
         try:
@@ -605,13 +616,12 @@ class Agent:
 
     def _with_outer_middleware(self, outer: Sequence[AgentMiddleware]) -> Agent:
         """This agent with ``outer`` middleware around its own — how a Chain runs
-        an agent node under the chain's middleware (1.91.0, 1C). A shallow copy:
-        same tools, memory, model and checkpointer; ``self`` is not changed."""
-        import copy
-
+        an agent node under the chain's middleware (1.91.0, 1C). A shallow copy
+        (:meth:`_copy`): same tools, memory, model and checkpointer; ``self`` is
+        not changed."""
         if not outer:
             return self
-        clone = copy.copy(self)
+        clone = self._copy()
         clone.middleware = [*outer, *self.middleware]
         clone._mw_pipeline = clone._make_pipeline()
         clone._check_tool_names()
@@ -620,13 +630,59 @@ class Agent:
     def _with_output_type(self, output_type: type | None) -> Agent:
         """This agent with a per-run ``output_type`` (1.91.0, 2H). A shallow copy,
         like :meth:`_with_outer_middleware`; ``self`` is not changed."""
-        import copy
-
         if output_type is None or output_type is self.output_type:
             return self
-        clone = copy.copy(self)
+        clone = self._copy()
         clone.output_type = output_type
         clone._output_spec = OutputSpec(output_type)
+        return clone
+
+    def _copy(self) -> Agent:
+        """A shallow copy of this agent that still registers as this agent (1.99.0).
+
+        Every copy an agent runs as — a Supervisor worker, a Swarm hop, a Chain
+        node under chain middleware — is made here. ``copy.copy`` keeps every
+        field; the Supervisor and Swarm used to rebuild the agent field by field
+        and dropped what they did not list: ``agent_id`` until 1.74.0, then the
+        prompt lineage and ``prompt_slug``. The copy also remembers the agent it
+        came from, so a first-run registration pushes that agent's definition and
+        stamps its ``agent_id`` there — not on a copy thrown away after the run,
+        which left a team member ungoverned on every later run. Not tracked for
+        registration: only the user's own agents are.
+        """
+        import copy
+
+        clone = copy.copy(self)
+        clone._registration_origin = getattr(self, "_registration_origin", None) or self
+        clone.tools = list(self.tools)
+        clone.guardrails = list(self.guardrails)
+        clone.middleware = list(self.middleware)
+        return clone
+
+    def _team_member(
+        self,
+        *,
+        agent_path_label: str,
+        checkpointer: Checkpointer | None,
+        extra_tools: Sequence[Tool] = (),
+        outer_middleware: Sequence[AgentMiddleware] = (),
+        memory: Any = None,
+    ) -> Agent:
+        """The copy a ``Supervisor`` or ``Swarm`` runs for this agent (1.99.0).
+
+        ``memory`` replaces the agent's own only when given (a Swarm hop's view of
+        it). ``checkpointer`` is the team's, even when ``None``, so every member
+        writes under the team's execution.
+        """
+        clone = self._copy()
+        clone._agent_path_label = agent_path_label
+        clone._checkpointer = checkpointer
+        if memory is not None:
+            clone.memory = memory
+        clone.tools = [*clone.tools, *extra_tools]
+        clone.middleware = [*outer_middleware, *clone.middleware]
+        clone._mw_pipeline = clone._make_pipeline()
+        clone._check_tool_names()
         return clone
 
     def cancel(self, execution_id: str) -> bool:
@@ -1393,7 +1449,24 @@ class Agent:
                 # Callable system_prompt that needs context — best-effort only.
                 logger.debug("Failed to resolve system prompt for trace", exc_info=True)
 
-            yield span
+            self._stamp_agent_id(span)
+            try:
+                yield span
+            finally:
+                # A first run registers on a background thread; its id is known
+                # by the end of the run, if not at the start.
+                self._stamp_agent_id(span)
+
+    def _stamp_agent_id(self, span: Any) -> None:
+        """``agent.id`` — the plane's id for this agent — on its span (1.99.0).
+
+        The plane matches a trace to an agent by its root span's name, so a
+        Supervisor worker or a Swarm member — a nested span — was never tied to
+        its registered agent. Its span now carries the id; how nested runs are
+        attributed is the plane's call.
+        """
+        if span is not None and self.agent_id:
+            span.set_attribute("agent.id", self.agent_id)
 
     @staticmethod
     def _close_run_span(span: Any, result: AgentResult) -> None:
@@ -1854,8 +1927,18 @@ class Agent:
                 # Same link ``arun`` stamps: the run's checkpoints and any
                 # resume of it are found by this id.
                 span.set_attribute("agent.execution_id", exec_id)
-                if outcome is not None:
-                    outcome["trace_id"] = format(span.get_span_context().trace_id, "032x")
+            # First-run registration, as ``arun`` does (1.99.0). A streamed run
+            # never registered: an agent built after ``connect()`` and only ever
+            # streamed had no ``agent_id``, so managed governance never gated it.
+            try:
+                from fastaiagent._platform.push import auto_register_async
+
+                auto_register_async(self)
+            except Exception:
+                pass
+            self._stamp_agent_id(span)
+            if span is not None and outcome is not None:
+                outcome["trace_id"] = format(span.get_span_context().trace_id, "032x")
             if outcome is not None:
                 outcome["execution_id"] = exec_id
             from fastaiagent.prompt.provenance import (
@@ -2177,6 +2260,7 @@ class Agent:
             if span is not None:
                 span.set_attribute("agent.output", output)
                 span.set_attribute("agent.tokens_used", streamed_tokens)
+            self._stamp_agent_id(span)  # a first run's id lands while it runs
             if outcome is not None:
                 outcome["tokens_used"] = streamed_tokens
                 outcome["output"] = output

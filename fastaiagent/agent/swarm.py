@@ -43,7 +43,9 @@ from __future__ import annotations
 
 import time
 import uuid
-from collections.abc import AsyncGenerator, Callable, Sequence
+from collections.abc import AsyncGenerator, Callable, Iterator, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -133,14 +135,27 @@ async def _bound_to(
 
 
 class _Hop:
-    """One hop of a swarm run: the request the swarm is serving, and whether
-    this hop ended by handing off."""
+    """One hop of a swarm run: the request the swarm is serving, whether this
+    hop ended by handing off, and what its tools returned (1.99.0)."""
 
-    __slots__ = ("handed_off", "original_input")
+    __slots__ = ("findings", "handed_off", "original_input")
 
     def __init__(self, original_input: Any) -> None:
         self.original_input = original_input
         self.handed_off = False
+        self.findings: list[dict[str, str]] = []
+
+
+#: The most of one tool result a handoff briefing repeats. A briefing lists every
+#: finding so far, so one large result (a fetched page) must not crowd out the rest.
+_FINDING_CHARS = 4000
+
+
+def _finding(tool: str, output: Any) -> dict[str, str]:
+    text = output if isinstance(output, str) else repr(output)
+    if len(text) > _FINDING_CHARS:
+        text = f"{text[:_FINDING_CHARS]} [… {len(text) - _FINDING_CHARS} more characters]"
+    return {"tool": tool, "result": text}
 
 
 class _HopMemory:
@@ -190,7 +205,8 @@ class _ExitAfterHandoff(AgentMiddleware):
     tends to re-call the handoff tool on the next iteration (since the
     sentinel string looks like legitimate tool output), which burns the
     MaxIterations budget. It also marks its hop as handed off, so the hop's
-    memory writes are dropped (see :class:`_HopMemory`).
+    memory writes are dropped (see :class:`_HopMemory`), and keeps what the
+    hop's other tools returned, for the next agent's briefing (1.99.0).
     """
 
     name = "_exit_after_handoff"
@@ -206,15 +222,17 @@ class _ExitAfterHandoff(AgentMiddleware):
         call_next: ToolCallNext,
     ) -> ToolResult:
         result = await call_next(tool, args)
-        if tool.name.startswith("handoff_to_"):
-            if self._hop is not None:
-                self._hop.handed_off = True
-            # StopAgent short-circuits the remaining tool calls in this
-            # iteration and the rest of the inner tool loop. Gap 3's
-            # executor preserves ``all_tool_calls`` so the swarm outer
-            # loop can still see the handoff record.
-            raise StopAgent(_HANDOFF_SENTINEL)
-        return result
+        if not tool.name.startswith("handoff_to_"):
+            if self._hop is not None and result.error is None:
+                self._hop.findings.append(_finding(tool.name, result.output))
+            return result
+        if self._hop is not None:
+            self._hop.handed_off = True
+        # StopAgent short-circuits the remaining tool calls in this
+        # iteration and the rest of the inner tool loop. Gap 3's
+        # executor preserves ``all_tool_calls`` so the swarm outer
+        # loop can still see the handoff record.
+        raise StopAgent(_HANDOFF_SENTINEL)
 
 
 class SwarmError(AgentError):
@@ -233,12 +251,32 @@ class SwarmState:
         handoff_count: Number of handoffs so far (used by the cycle guard).
         path: Ordered list of agent names visited this run.
         last_reason: Reason string from the most recent handoff call.
+        findings: What every hop's tools returned so far, oldest first, as
+            ``{"agent", "tool", "result"}`` (1.99.0). Each briefing lists them, so
+            an agent sees what earlier agents found and does not redo it.
     """
 
     shared: dict[str, Any] = field(default_factory=dict)
     handoff_count: int = 0
     path: list[str] = field(default_factory=list)
     last_reason: str = ""
+    findings: list[dict[str, str]] = field(default_factory=list)
+
+
+#: The root span ``Swarm.stream()`` opened around its ``astream()``, with the
+#: swarm that opened it — so ``astream`` stamps that span instead of nesting a
+#: second ``swarm.<name>`` under it. Only ``stream()`` sets it.
+_streaming_root: ContextVar[tuple[Any, Any] | None] = ContextVar(
+    "_fastaiagent_swarm_streaming_root", default=None
+)
+
+
+def _handoffs_in(tool_calls: list[dict[str, Any]] | None) -> int:
+    """How many of a run's tool calls were handoffs. ``swarm.handoff_count`` was
+    ``len(tool_calls)`` until 1.99.0 — every hop's KB searches included."""
+    return sum(
+        1 for c in tool_calls or [] if str(c.get("tool_name") or "").startswith("handoff_to_")
+    )
 
 
 def _encode_handoff(target: str, reason: str) -> str:
@@ -272,26 +310,43 @@ def _build_handoff_input(
     around the *original* user request — so multimodal payloads (Image,
     PDF) flow through to the target intact rather than being collapsed to
     a string. Pure text inputs keep the legacy single-string template.
+
+    Since 1.99.0 it also lists what the team's tools found so far
+    (``state.findings``). Before, an agent's findings reached the next one
+    only if its model copied them into ``reason`` or ``context``; live, tech
+    solved its part, billing never saw it, handed back, and tech searched again.
     """
     from fastaiagent.multimodal.image import Image as MMImage
     from fastaiagent.multimodal.pdf import PDF as MMPDF
 
+    found = _findings_text(state.findings)
     handoff_text = (
         f"{source} handed off to you with reason: {reason!r}. "
-        f"Current shared state: {state.shared!r}. "
+        f"Current shared state: {state.shared!r}.{found} "
         f"The original request follows — please continue."
     )
     if isinstance(original_input, str):
         return (
             f"{source} handed off to you with reason: {reason!r}. "
             f"Earlier request: {original_input!r}. Current shared state: "
-            f"{state.shared!r}. Please continue."
+            f"{state.shared!r}.{found} Please continue."
         )
     if isinstance(original_input, (MMImage, MMPDF)):
         return [handoff_text, original_input]
     if isinstance(original_input, list):
         return [handoff_text, *original_input]
-    return f"{source} handed off to you with reason: {reason!r}. Please continue."
+    return f"{source} handed off to you with reason: {reason!r}.{found} Please continue."
+
+
+def _findings_text(findings: list[dict[str, str]]) -> str:
+    """The briefing's "found so far" part; empty when no tool has run yet."""
+    if not findings:
+        return ""
+    lines = "\n".join(f"- {f['agent']} ran {f['tool']}: {f['result']}" for f in findings)
+    return (
+        "\nWhat the team has found so far (tool results, oldest first) — use these "
+        f"rather than running the same tools again:\n{lines}\n"
+    )
 
 
 def _swarm_snapshot(
@@ -322,6 +377,7 @@ def _swarm_snapshot(
         "handoff_count": state.handoff_count,
         "path": list(state.path),
         "last_reason": state.last_reason,
+        "findings": list(state.findings),
         "accumulated_tool_calls": list(accumulated_tool_calls),
         "total_tokens": total_tokens,
     }
@@ -336,6 +392,7 @@ def _restore_state(snapshot: dict[str, Any]) -> SwarmState:
     state.handoff_count = int(snapshot.get("handoff_count", 0))
     state.path = list(snapshot.get("path", []))
     state.last_reason = str(snapshot.get("last_reason", ""))
+    state.findings = [dict(f) for f in snapshot.get("findings", [])]
     return state
 
 
@@ -468,6 +525,42 @@ class Swarm:
         self._mark_run_end(exec_id, result)
         return result
 
+    @contextmanager
+    def _root_span(self, input: Any, execution_id: str | None) -> Iterator[Any]:
+        """The ``swarm.<name>`` root span, so every hop's agent span is a
+        descendant and the run is one trace. ``arun``, ``astream`` and ``stream``
+        share it; ``astream`` opened none before 1.99.0, so a streamed run was one
+        unrelated trace per hop. Inside ``stream()`` it is the span ``stream``
+        already opened, not a second one."""
+        opened = _streaming_root.get()
+        if opened is not None and opened[0] is self:
+            yield opened[1]
+            return
+        from fastaiagent.agent.agent import _input_summary_text
+        from fastaiagent.multimodal.types import normalize_input
+        from fastaiagent.trace.otel import get_tracer
+
+        with get_tracer().start_as_current_span(f"swarm.{self.name}") as span:
+            span.set_attribute("swarm.name", self.name)
+            span.set_attribute("swarm.entrypoint", self.entrypoint)
+            span.set_attribute("swarm.agent_count", len(getattr(self, "agents", []) or []))
+            # The members' names (1.99.0): the plane matches a trace to an agent
+            # by its root span, and a swarm's root names no agent.
+            span.set_attribute("swarm.agents", list(self.agents))
+            span.set_attribute("fastaiagent.runner.type", "swarm")
+            span.set_attribute("fastaiagent.framework", "fastaiagent")
+            self._stamp_middleware(span)
+            # OTel only accepts primitive attribute values — coerce
+            # multimodal lists to a readable text summary the same way
+            # ``Agent._arun_traced`` does.
+            span.set_attribute(
+                "swarm.input",
+                input if isinstance(input, str) else _input_summary_text(normalize_input(input)),
+            )
+            if execution_id:
+                span.set_attribute("swarm.execution_id", execution_id)
+            yield span
+
     def _middleware_keys(self) -> list[str]:
         """The keys the swarm's middleware are saved under in a hop's checkpoint
         (the hop pipeline is ``[_ExitAfterHandoff, *swarm, *agent]``)."""
@@ -528,35 +621,13 @@ class Swarm:
         ``checkpointer`` on the Swarm to get crash- and interrupt-recovery
         via :meth:`resume`.
         """
-        from fastaiagent.trace.otel import get_tracer
         from fastaiagent.trace.span import trace_id_of
 
-        tracer = get_tracer()
-        # Root span wraps the whole swarm run so every child agent span is a
-        # descendant — the UI renders one trace with the handoff path.
-        with tracer.start_as_current_span(f"swarm.{self.name}") as span:
-            span.set_attribute("swarm.name", self.name)
-            span.set_attribute("swarm.entrypoint", self.entrypoint)
-            span.set_attribute("swarm.agent_count", len(getattr(self, "agents", []) or []))
-            span.set_attribute("fastaiagent.runner.type", "swarm")
-            span.set_attribute("fastaiagent.framework", "fastaiagent")
-            self._stamp_middleware(span)
-            # OTel only accepts primitive attribute values — coerce
-            # multimodal lists to a readable text summary the same way
-            # ``Agent._arun_traced`` does.
-            from fastaiagent.agent.agent import _input_summary_text
-            from fastaiagent.multimodal.types import normalize_input
-
-            swarm_input_text = (
-                input if isinstance(input, str) else _input_summary_text(normalize_input(input))
-            )
-            span.set_attribute("swarm.input", swarm_input_text)
-            # Chosen here so the root span can name the run its checkpoints and
-            # any resume of it are filed under (``_arun_swarm`` would otherwise
-            # pick it, after the span had nothing to say).
-            execution_id = execution_id or str(uuid.uuid4())
-            span.set_attribute("swarm.execution_id", execution_id)
-
+        # Chosen here so the root span can name the run its checkpoints and
+        # any resume of it are filed under (``_arun_swarm`` would otherwise
+        # pick it, after the span had nothing to say).
+        execution_id = execution_id or str(uuid.uuid4())
+        with self._root_span(input, execution_id) as span:
             state_token = open_container_state(self.middleware)
             try:
                 result = await self._arun_swarm(
@@ -566,7 +637,7 @@ class Swarm:
                 close_container_state(state_token)
 
             span.set_attribute("swarm.output", result.output)
-            span.set_attribute("swarm.handoff_count", len(result.tool_calls or []))
+            span.set_attribute("swarm.handoff_count", _handoffs_in(result.tool_calls))
             # Stamped HERE, at the span, rather than at each of the three
             # ``AgentResult(...)`` sites inside ``_run_loop`` — one place per
             # topology, so a future return site cannot forget. Deliberately NOT
@@ -710,8 +781,9 @@ class Swarm:
                 result = injected
                 injected = None
             else:
+                hop = _Hop(original_input)
                 active = self._active_agent(
-                    current, state, context=context, original_input=original_input
+                    current, state, context=context, original_input=original_input, hop=hop
                 )
                 # Pass the same execution_id to child agents so all
                 # checkpoints land under one umbrella execution.
@@ -721,6 +793,7 @@ class Swarm:
                     execution_id=exec_id,
                     **kwargs,
                 )
+                state.findings.extend({"agent": current, **f} for f in hop.findings)
 
             # Bubble paused state up — the active agent already wrote its
             # interrupted checkpoint with the swarm-prefixed agent_path.
@@ -839,6 +912,7 @@ class Swarm:
         with get_tracer().start_as_current_span(f"swarm.{self.name}") as span:
             span.set_attribute("swarm.name", self.name)
             span.set_attribute("swarm.resumed_execution_id", execution_id)
+            span.set_attribute("swarm.agents", list(self.agents))
             span.set_attribute("swarm.execution_id", execution_id)
             span.set_attribute("fastaiagent.runner.type", "swarm")
             span.set_attribute("fastaiagent.framework", "fastaiagent")
@@ -921,9 +995,16 @@ class Swarm:
                 "pass resume_value=Resume(...) to swarm.resume()."
             )
 
+        from fastaiagent.chain.state import _hydrate_from_checkpoint
+
         state = _restore_state(snapshot)
-        current_input = str(snapshot.get("current_input", ""))
-        original_input = str(snapshot.get("original_input", current_input))
+        # Rehydrated, never ``str()``-ed (1.99.0): the snapshot stores an
+        # Image/PDF as a JSON-safe dict, and stringifying it briefed every agent
+        # after the resume with the dict's text — base64 and all — not the photo.
+        current_input = _hydrate_from_checkpoint(snapshot.get("current_input", ""))
+        original_input = _hydrate_from_checkpoint(
+            snapshot.get("original_input", snapshot.get("current_input", ""))
+        )
         accumulated = list(snapshot.get("accumulated_tool_calls", []))
         total_tokens = int(snapshot.get("total_tokens", 0))
         iteration = int(snapshot.get("iteration", 0))
@@ -1009,8 +1090,14 @@ class Swarm:
         if self._checkpointer is not None:
             self._checkpointer.setup()
         try:
-            async for event in self._astream_hops(input, exec_id, control, context, kwargs):
-                yield event
+            with self._root_span(input, exec_id) as span:
+                span.set_attribute("swarm.streamed", True)
+                handoffs = 0
+                async for event in self._astream_hops(input, exec_id, control, context, kwargs):
+                    if isinstance(event, HandoffEvent):
+                        handoffs += 1
+                    yield event
+                span.set_attribute("swarm.handoff_count", handoffs)
         except run_control._RunCancelled as stopped:
             if parent is not None:
                 raise  # the enclosing run ends it
@@ -1047,7 +1134,10 @@ class Swarm:
         swarm_path = f"swarm:{self.name}"
 
         while True:
-            active = self._active_agent(current, state, context=context, original_input=input)
+            hop = _Hop(input)
+            active = self._active_agent(
+                current, state, context=context, original_input=input, hop=hop
+            )
             handoff_from_stream: tuple[str, str] | None = None
 
             inner_stream = active.astream(
@@ -1075,6 +1165,7 @@ class Swarm:
             finally:
                 await inner_stream.aclose()
 
+            state.findings.extend({"agent": current, **f} for f in hop.findings)
             if handoff_from_stream is None:
                 return
             target, reason = handoff_from_stream
@@ -1100,11 +1191,11 @@ class Swarm:
     def stream(self, input: Any, *, context: RunContext[Any] | None = None) -> AgentResult:
         """Synchronous streaming — collects into an :class:`AgentResult`.
 
-        Opens a ``swarm.<name>`` root span, so a streamed swarm renders as one
+        Opens the ``swarm.<name>`` root span, so a streamed swarm renders as one
         trace and the returned result can name it — the same identity
-        :meth:`arun` has always had.
+        :meth:`arun` has always had. ``astream`` runs inside that span rather
+        than opening its own.
         """
-        from fastaiagent.trace.otel import get_tracer
         from fastaiagent.trace.span import trace_id_of
 
         async def _collect() -> AgentResult:
@@ -1118,27 +1209,26 @@ class Swarm:
             # agent yields one through ``astream``.
             streamed_tokens = 0
             rcost_token = start_run_cost()
+            exec_id = str(uuid.uuid4())
             try:
-                with get_tracer().start_as_current_span(f"swarm.{self.name}") as span:
-                    span.set_attribute("swarm.name", self.name)
-                    span.set_attribute("swarm.entrypoint", self.entrypoint)
-                    span.set_attribute("fastaiagent.runner.type", "swarm")
-                    span.set_attribute("fastaiagent.framework", "fastaiagent")
-                    span.set_attribute("swarm.streamed", True)
-                    self._stamp_middleware(span)
+                with self._root_span(input, exec_id) as span:
                     # Each hop's ``Agent.astream`` publishes its final reply
                     # here; the last hop to finish is the swarm's answer — what
                     # ``arun`` returns (1.91.0, X14). Joining every delta also
                     # took in what an agent said before handing off.
                     outcome: dict[str, Any] = {}
                     so_token = _stream_outcome.set(outcome)
+                    root_token = _streaming_root.set((self, span))
                     try:
-                        async for event in self.astream(input, context=context):
+                        async for event in self.astream(
+                            input, context=context, execution_id=exec_id
+                        ):
                             if isinstance(event, TextDelta):
                                 text_parts.append(event.text)
                             elif isinstance(event, Usage):
                                 streamed_tokens += event.prompt_tokens + event.completion_tokens
                     finally:
+                        _streaming_root.reset(root_token)
                         _stream_outcome.reset(so_token)
                     output = str(outcome.get("output", "".join(text_parts)))
                     span.set_attribute("swarm.output", output)
@@ -1153,6 +1243,7 @@ class Swarm:
                     cost_known=cost_known,
                     latency_ms=latency,
                     trace_id=trace_id,
+                    execution_id=exec_id,
                     guardrails=collected_firings(),
                 )
             finally:
@@ -1171,42 +1262,35 @@ class Swarm:
         state: SwarmState,
         context: RunContext[Any] | None = None,
         original_input: Any = None,
+        hop: _Hop | None = None,
     ) -> Agent:
         """Return a clone of ``agents[name]`` with handoff tools injected.
 
-        The clone shares everything with the original (llm, system_prompt,
-        memory, guardrails, middleware) but gets additional per-run handoff
-        tools. The original agent is left untouched so multiple swarms can
-        share the same agent instances without cross-contamination. Its
-        memory is seen through a :class:`_HopMemory` for this hop, so the run
-        records the user's ``original_input`` once, not the hand-off mechanics.
+        The clone is a copy of the original (``Agent._team_member``: every field,
+        ``agent_id`` and prompt lineage included, registering as the original)
+        with additional per-run handoff tools. The original agent is left
+        untouched so multiple swarms can share the same agent instances without
+        cross-contamination. Its memory is seen through a :class:`_HopMemory`
+        for this hop, so the run records the user's ``original_input`` once, not
+        the hand-off mechanics. ``hop`` collects what its tools return.
         """
         base = self.agents[name]
-        hop = _Hop(original_input)
-        handoff_tools = self._build_handoff_tools(name, state)
-        merged_tools: list[Tool] = list(base.tools) + handoff_tools
-        # Prepend the internal exit-after-handoff middleware so the inner
-        # tool loop stops as soon as a handoff executes. User-supplied
-        # middleware still runs (around the real tool) because ours wraps
-        # outermost and only short-circuits after the real tool returns.
-        merged_middleware = [_ExitAfterHandoff(hop), *self.middleware, *base.middleware]
-        return Agent(
-            name=base.name,
-            # Managed policy and plane guardrails key on the platform identity;
-            # without it the clone was never gated (fixed 1.74.0).
-            agent_id=base.agent_id,
-            system_prompt=base.system_prompt,
-            llm=base.llm,
-            tools=merged_tools,
-            guardrails=base.guardrails,
-            memory=_HopMemory(base.memory, hop) if base.memory is not None else None,
-            config=base.config,
-            output_type=base.output_type,
-            middleware=merged_middleware,
+        hop = hop or _Hop(original_input)
+        return base._team_member(
+            # ``swarm:<s>/agent:<name>`` is what ``aresume`` parses the active
+            # agent out of, whatever label the agent carries on its own.
+            agent_path_label=f"agent:{base.name}",
             # Forward the swarm's checkpointer so the cloned agent writes
             # turn / tool / interrupted checkpoints under the same execution
             # with the nested ``swarm:.../agent:...`` path.
             checkpointer=self._checkpointer,
+            extra_tools=self._build_handoff_tools(name, state),
+            # The internal exit-after-handoff middleware is outermost so the
+            # inner tool loop stops as soon as a handoff executes. User-supplied
+            # middleware still runs (around the real tool) because ours only
+            # short-circuits after the real tool returns.
+            outer_middleware=[_ExitAfterHandoff(hop), *self.middleware],
+            memory=_HopMemory(base.memory, hop) if base.memory is not None else None,
         )
 
     def _build_handoff_tools(self, current: str, state: SwarmState) -> list[Tool]:

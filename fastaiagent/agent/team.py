@@ -9,15 +9,19 @@ import uuid
 from collections.abc import AsyncGenerator, Callable, Iterator, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
+if TYPE_CHECKING:
+    from fastaiagent.prompt.prompt import Prompt
+
 from fastaiagent._internal.async_utils import run_sync
-from fastaiagent._internal.pricing import run_cost, start_run_cost, stop_run_cost
+from fastaiagent._internal.pricing import _RunUsage, run_cost, start_run_cost, stop_run_cost
 from fastaiagent.agent.agent import Agent, AgentConfig, AgentResult
 from fastaiagent.agent.context import RunContext
 from fastaiagent.agent.executor import _AgentInterrupted
+from fastaiagent.agent.memory import MemoryLike
 from fastaiagent.agent.middleware import AgentMiddleware
 from fastaiagent.chain.checkpoint import latest_resumable
 from fastaiagent.chain.interrupt import (
@@ -45,6 +49,83 @@ _log = logging.getLogger(__name__)
 # check in this task, so a routed run can report it on ``SupervisorRoute.reviews``.
 # A ContextVar, not instance state: one Supervisor may serve concurrent runs.
 _last_review: ContextVar[float | None] = ContextVar("_fastaiagent_last_review", default=None)
+
+#: The spend of every worker run in this supervisor run (1.99.0): a delegated
+#: worker reports it on its own ``AgentResult``, which the delegate tool used to
+#: drop, so ``Supervisor.run()`` reported the lead's turns only (~26% of a live
+#: team's tokens) and the documented "sum it with each worker's" had nothing to
+#: sum. Opened by ``arun``/``stream``, filled by the delegate tool.
+_team_spend: ContextVar[_RunUsage | None] = ContextVar("_fastaiagent_team_spend", default=None)
+
+
+def _count_run(spend: _RunUsage, result: AgentResult) -> None:
+    """Add one finished run's reported spend to ``spend``."""
+    spend.tokens += result.tokens_used
+    spend.calls += 1
+    if result.cost_known:
+        spend.priced_calls += 1
+        spend.usd += result.cost
+
+
+#: Each delegation's worker tool calls in this supervisor run, in call order, as
+#: ``(role, calls)`` (1.99.0). The lead's result listed only its own
+#: ``delegate_to_*`` calls, so a trajectory scorer never saw what a worker ran.
+_worker_calls: ContextVar[list[tuple[str, list[dict[str, Any]]]] | None] = ContextVar(
+    "_fastaiagent_worker_calls", default=None
+)
+
+
+def _tag_calls(calls: list[dict[str, Any]], worker: Worker) -> list[dict[str, Any]]:
+    """A worker's tool calls tagged with who made them, as a Swarm tags its hops'."""
+    name = worker.agent.name
+    return [{**c, "agent": c.get("agent") or name, "worker": worker.role} for c in calls]
+
+
+def _with_worker_calls(
+    result: AgentResult, delegations: list[tuple[str, list[dict[str, Any]]]], lead: str
+) -> AgentResult:
+    """``result.tool_calls`` with each delegation's worker calls right after the
+    ``delegate_to_<role>`` call that ran them, every call tagged with its ``agent``."""
+    pending: dict[str, list[list[dict[str, Any]]]] = {}
+    for role, calls in delegations:
+        pending.setdefault(role, []).append(calls)
+    merged: list[dict[str, Any]] = []
+    for call in result.tool_calls:
+        merged.append({**call, "agent": call.get("agent") or lead})
+        name = str(call.get("tool_name") or "")
+        delegated = name[len("delegate_to_") :] if name.startswith("delegate_to_") else None
+        queue = pending.get(delegated) if delegated is not None else None
+        if queue:
+            merged.extend(queue.pop(0))
+    for queue in pending.values():  # a delegation the lead's record does not show
+        for calls in queue:
+            merged.extend(calls)
+    result.tool_calls = merged
+    return result
+
+
+def _route_tokens(route: SupervisorRoute) -> int:
+    """The routing decision's tokens (0 when it reported none)."""
+    from fastaiagent.llm.decisions import DecisionResult
+
+    if isinstance(route.answers, DecisionResult):
+        return int(route.answers.usage.get("total_tokens") or 0)
+    return 0
+
+
+def _with_spend(result: AgentResult, spend: _RunUsage) -> AgentResult:
+    """``result`` with ``spend`` added: tokens and cost; unknown if any part is."""
+    result.tokens_used += spend.tokens
+    result.cost += spend.usd
+    result.cost_known = result.cost_known and spend.known
+    return result
+
+#: The root span ``Supervisor.stream()`` opened around its ``astream()``, with
+#: the supervisor that opened it, so ``astream`` stamps that span instead of
+#: nesting a second one under it. Only ``stream()`` sets it.
+_streaming_root: ContextVar[tuple[Any, Any] | None] = ContextVar(
+    "_fastaiagent_supervisor_streaming_root", default=None
+)
 
 ROUTING_MODES = ("tools", "decisions")
 _DEFAULT_ROUTING_INSTRUCTIONS = "Which team member should handle this request?"
@@ -153,7 +234,7 @@ class Supervisor:
         name: str,
         llm: LLMClient | None = None,
         workers: list[Worker] | None = None,
-        system_prompt: str | Callable[..., str] = "",
+        system_prompt: str | Prompt | Callable[..., str] = "",
         max_delegation_rounds: int = 3,
         checkpointer: Checkpointer | None = None,
         validate_outputs: bool = False,
@@ -173,10 +254,21 @@ class Supervisor:
         middleware: Sequence[AgentMiddleware] | None = None,
         *,
         timeout_seconds: float | None = None,
+        memory: MemoryLike | None = None,
     ):
         self.name = name
         self.llm = llm or LLMClient()
         self.workers = workers or []
+        #: The lead's own conversation memory (1.99.0): each team turn records the
+        #: request and the final answer once, and the next turn's lead sees them.
+        #: Workers keep their own ``memory=``. None before 1.99.0, so a team had
+        #: no conversation of its own and a follow-up depended on a worker's.
+        self.memory = memory
+        if memory is not None and routing == "decisions":
+            raise ValueError(
+                "Supervisor(memory=...) needs routing='tools': with routing='decisions' "
+                "there is no lead to hold the conversation. Give the workers memory instead."
+            )
         if timeout_seconds is not None and timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be > 0")
         #: The whole supervisor run's wall clock, workers included (1.93.0): the
@@ -364,51 +456,57 @@ class Supervisor:
         context: RunContext[Any] | None,
         execution_id: str | None,
     ) -> AgentResult:
-        """Apply ``validate_outputs`` to a routed worker's result (same contract as tools)."""
+        """Apply ``validate_outputs`` to a routed worker's result (same contract as tools).
+
+        The result returned carries every attempt's spend (1.99.0); a retry used
+        to replace the rejected attempt's result, and its tokens and cost with it.
+        """
         result = first
         if result.status == "paused" or not self.validate_outputs:
             return result
+        earlier = _RunUsage()
         current_task, last_feedback = task, ""
         for attempt in range(1 + self.max_validation_retries_per_worker):
             if attempt > 0:
+                _count_run(earlier, result)
                 result = await self._routed_clone(worker).arun(
                     current_task, context=context, execution_id=execution_id
                 )
                 if result.status == "paused":
-                    return result
+                    return _with_spend(result, earlier)
             approved, feedback = await self._validate_worker_output(
                 worker_role=worker.role, task=task, output=result.output
             )
             route.reviews.append(_last_review.get())
             if approved:
-                return result
+                return _with_spend(result, earlier)
             last_feedback = feedback
             current_task = f"{task}\n\n[Supervisor feedback]: {feedback or 'please revise.'}"
         self._log_validation_warning(
             worker_role=worker.role, task=task, output=result.output, feedback=last_feedback
         )
-        return result
+        return _with_spend(result, earlier)
 
     def _merge_route(self, result: AgentResult, route: SupervisorRoute, span: Any) -> AgentResult:
         """Stamp the route on the result and span, and add the decisions' spend."""
-        from fastaiagent.llm.decisions import DecisionResult
-
         extra_cost = route.cost_usd
-        extra_tokens = 0
-        if isinstance(route.answers, DecisionResult):
-            extra_tokens = int(route.answers.usage.get("total_tokens") or 0)
+        extra_tokens = _route_tokens(route)
         result.route = route
         result.tokens_used += extra_tokens
         if extra_cost is None:
             result.cost_known = False
         else:
             result.cost += extra_cost
+        self._stamp_route(span, route)
+        return result
+
+    @staticmethod
+    def _stamp_route(span: Any, route: SupervisorRoute) -> None:
         span.set_attribute("supervisor.routing", "decisions")
         span.set_attribute("supervisor.route.worker", route.worker)
         span.set_attribute("supervisor.route.fallback", route.fallback)
         if route.confidence is not None:
             span.set_attribute("supervisor.route.confidence", route.confidence)
-        return result
 
     async def _arun_routed(
         self,
@@ -428,6 +526,9 @@ class Supervisor:
         result = await self._finish_routed(
             worker, task, first, route, context=context, execution_id=execution_id
         )
+        # The routed result is the worker's own: tag its calls as a tools-routed
+        # supervisor's are (1.99.0).
+        result.tool_calls = _tag_calls(result.tool_calls, worker)
         return self._merge_route(result, route, span)
 
     def _stamp_middleware(self, span: Any) -> None:
@@ -451,30 +552,16 @@ class Supervisor:
     def _build_worker_clone(self, worker: Worker) -> Agent:
         """Build the agent that actually runs when ``delegate_to_<role>`` fires.
 
-        The clone shares everything with the user's worker.agent but:
+        A copy of the user's worker.agent (``Agent._team_member``: every field,
+        ``agent_id`` and prompt lineage included, registering as the worker
+        itself) except that it:
             - uses the supervisor's checkpointer (so its checkpoints land
               under the supervisor's execution_id);
             - uses ``"worker:<role>"`` as its agent_path label so paths nest
               as ``supervisor:<s>/worker:<role>/...``.
         """
-        base = worker.agent
-        return Agent(
-            name=base.name,
-            # The platform identity is what managed policy is enforced on
-            # (``/policy/decide``) and what plane guardrails are scoped to. A
-            # clone without it was never gated: a worker's approval-policy tool
-            # ran with no approval at all (fixed 1.74.0).
-            agent_id=base.agent_id,
-            system_prompt=base.system_prompt,
-            llm=base.llm,
-            tools=list(base.tools),
-            guardrails=list(base.guardrails),
-            memory=base.memory,
-            config=base.config,
-            output_type=base.output_type,
-            middleware=list(base.middleware),
-            checkpointer=self._checkpointer,
-            agent_path_label=f"worker:{worker.role}",
+        return worker.agent._team_member(
+            agent_path_label=f"worker:{worker.role}", checkpointer=self._checkpointer
         )
 
     def _has_worker_state(self, execution_id: str, worker_role: str) -> bool:
@@ -670,6 +757,12 @@ class Supervisor:
                 current_task = task
                 last_output = ""
                 last_feedback = ""
+                # This delegation's worker tool calls, every attempt's, for the
+                # supervisor's result (1.99.0). Registered now, in call order.
+                ran: list[dict[str, Any]] = []
+                collector = _worker_calls.get()
+                if collector is not None:
+                    collector.append((_worker.role, ran))
 
                 # First attempt + up to N validation-driven retries. With
                 # ``validate_outputs=False`` the loop runs exactly once.
@@ -680,6 +773,11 @@ class Supervisor:
                 )
                 for attempt in range(attempts):
                     result = await _invoke_worker(current_task)
+                    ran.extend(_tag_calls(result.tool_calls, _worker))
+                    # Every attempt's spend is the team's, a rejected one too.
+                    spend = _team_spend.get()
+                    if spend is not None:
+                        _count_run(spend, result)
                     # The worker's run collected its own firings (and shadowed
                     # ours while it ran). ``result.guardrails`` is documented as
                     # every guardrail that executed, so hand them up (1.89.0).
@@ -748,15 +846,26 @@ class Supervisor:
     def _root_span(self, input: str, *, resumed: str | None = None) -> Iterator[Any]:
         """The ``supervisor.<name>`` root span, so the delegated worker spans
         nest under it in the UI span tree; also readies the checkpointer.
-        ``arun`` and ``astream`` share it (``astream`` opened none before 1.93.0)."""
+        ``arun``, ``astream`` and ``stream`` share it (``astream`` opened none
+        before 1.93.0). Inside ``stream()`` it is the span ``stream`` already
+        opened: until 1.99.0 the two nested a second ``supervisor.<name>``."""
         from fastaiagent.trace.otel import get_tracer
 
+        opened = _streaming_root.get()
+        if opened is not None and opened[0] is self:
+            if self._checkpointer is not None:
+                self._checkpointer.setup()
+            yield opened[1]
+            return
         with get_tracer().start_as_current_span(f"supervisor.{self.name}") as span:
             span.set_attribute("supervisor.name", self.name)
             span.set_attribute(
                 "supervisor.worker_count",
                 len(getattr(self, "workers", []) or []),
             )
+            # The workers' agent names (1.99.0), so a trace can be tied to each
+            # registered worker and not only to the lead its root span names.
+            span.set_attribute("supervisor.workers", [w.agent.name for w in self.workers])
             span.set_attribute("fastaiagent.runner.type", "supervisor")
             self._stamp_middleware(span)
             span.set_attribute("fastaiagent.framework", "fastaiagent")
@@ -783,6 +892,7 @@ class Supervisor:
             agent_path_label=f"supervisor:{self.name}",
             guardrails=self.guardrails,
             middleware=self.middleware,
+            memory=self.memory,
         )
 
     def run(
@@ -831,9 +941,18 @@ class Supervisor:
                 )
             else:
                 agent = self._build_inner_agent(context=context)
-                result = await agent.arun(
-                    input, context=context, execution_id=execution_id, **kwargs
-                )
+                spend = _RunUsage()
+                delegations: list[tuple[str, list[dict[str, Any]]]] = []
+                spend_token = _team_spend.set(spend)
+                calls_token = _worker_calls.set(delegations)
+                try:
+                    result = await agent.arun(
+                        input, context=context, execution_id=execution_id, **kwargs
+                    )
+                finally:
+                    _worker_calls.reset(calls_token)
+                    _team_spend.reset(spend_token)
+                result = _with_worker_calls(_with_spend(result, spend), delegations, self.name)
             span.set_attribute("supervisor.output", result.output)
             # Read off the result rather than chosen up front: with no id given,
             # each ``validate_outputs`` retry of a routed worker picks its own,
@@ -966,6 +1085,7 @@ class Supervisor:
             span.set_attribute("fastaiagent.framework", "fastaiagent")
             span.set_attribute("supervisor.routing", "decisions")
             span.set_attribute("supervisor.route.worker", worker.role)
+            span.set_attribute("supervisor.workers", [w.agent.name for w in self.workers])
             span.set_attribute("supervisor.resumed", True)
             self._stamp_middleware(span)
             span.set_attribute("supervisor.resumed_execution_id", execution_id)
@@ -978,11 +1098,17 @@ class Supervisor:
                 **kwargs,
             )
             result.route = SupervisorRoute(worker=worker.role, chosen=worker.role)
+            result.tool_calls = _tag_calls(result.tool_calls, worker)
             span.set_attribute("supervisor.output", result.output)
             return result
 
     def _hydrate_input(self, store: Checkpointer, execution_id: str) -> str | None:
-        """Pull the original supervisor input from its earliest turn checkpoint."""
+        """Pull the original supervisor input from its earliest turn checkpoint.
+
+        The LAST user message of that checkpoint: the lead's memory (1.99.0)
+        puts earlier turns' user messages ahead of this one, and the first of
+        them would resume the run with an old request.
+        """
         prefix_exact = f"supervisor:{self.name}"
         # ``list`` returns checkpoints in chronological order — first match
         # wins. Filter to checkpoints written by the supervisor itself
@@ -990,9 +1116,13 @@ class Supervisor:
         for cp in store.list(execution_id, limit=500):
             if (cp.agent_path or "") != prefix_exact:
                 continue
-            for raw in cp.state_snapshot.get("messages", []) or []:
-                if (raw or {}).get("role") == "user" and raw.get("content"):
-                    return str(raw["content"])
+            users = [
+                raw
+                for raw in cp.state_snapshot.get("messages", []) or []
+                if (raw or {}).get("role") == "user" and raw.get("content")
+            ]
+            if users:
+                return str(users[-1]["content"])
         return None
 
     async def astream(
@@ -1011,8 +1141,11 @@ class Supervisor:
         streamed to the caller).
         """
         if self.routing == "decisions":
-            async for event in self._astream_routed(input, context=context, **kwargs):
-                yield event
+            # Under the root span too (1.99.0): a routed stream opened none, so
+            # its worker's spans were a trace of their own.
+            with self._root_span(input) as span:
+                async for event in self._astream_routed(input, span, context=context, **kwargs):
+                    yield event
             return
         # The same inner agent as ``arun``, under the same root span (1.93.0).
         # Before, the streamed supervisor had no checkpointer — no run-end
@@ -1028,9 +1161,20 @@ class Supervisor:
                 yield event
 
     async def _astream_routed(
-        self, input: str, *, context: RunContext[Any] | None = None, **kwargs: Any
+        self,
+        input: str,
+        span: Any,
+        *,
+        context: RunContext[Any] | None = None,
+        **kwargs: Any,
     ) -> AsyncGenerator[StreamEvent, None]:
         worker, route = await self._route(input)
+        self._stamp_route(span, route)
+        spend = _team_spend.get()
+        if spend is not None:
+            # The routing call's cost is already in the stream's run scope; its
+            # tokens come with no ``Usage`` event, so ``stream()`` missed them.
+            spend.tokens += _route_tokens(route)
         yield HandoffEvent(
             from_agent=self.name,
             to_agent=worker.role,
@@ -1049,6 +1193,10 @@ class Supervisor:
             result = await self._finish_routed(
                 worker, task, first, route, context=context, execution_id=None
             )
+            # Run through ``arun``, its spend is on its result, not in the stream.
+            spend = _team_spend.get()
+            if spend is not None:
+                _count_run(spend, result)
             if result.output:
                 yield TextDelta(text=result.output)
             yield StreamDone()
@@ -1061,12 +1209,12 @@ class Supervisor:
     ) -> AgentResult:
         """Synchronous streaming — collects stream into AgentResult.
 
-        Opens a ``supervisor.<name>`` root span so a streamed supervisor run has
+        Opens the ``supervisor.<name>`` root span so a streamed supervisor run has
         the same identity ``run``/``arun`` do. ``run`` got its ``trace_id`` for
         free by inheriting the inner agent's; the stream path built its result
-        by hand and inherited nothing.
+        by hand and inherited nothing. ``astream`` runs inside that span rather
+        than opening its own.
         """
-        from fastaiagent.trace.otel import get_tracer
         from fastaiagent.trace.span import trace_id_of
 
         async def _collect() -> AgentResult:
@@ -1078,46 +1226,47 @@ class Supervisor:
             # run looked free. ``Usage`` is the only event carrying a stream's
             # token counts.
             #
-            # These are the SUPERVISOR's own turns. A delegated worker runs
-            # through ``arun`` inside a delegate tool, which opens its own
-            # accumulator and reports on its own result — so the worker's spend
-            # is counted once, there, and not re-counted here. That is the same
-            # boundary ``run``/``arun`` have, and the same one ``cost`` took in
-            # 1.67.0.
+            # ``Usage`` events are the turns streamed here. A delegated worker
+            # runs through ``arun`` inside a delegate tool and reports its spend
+            # on its own result, which the delegate tool adds to ``spend``; the
+            # whole team's spend is the result's (1.99.0), as on ``run``.
             streamed_tokens = 0
+            spend = _RunUsage()
+            spend_token = _team_spend.set(spend)
             rcost_token = start_run_cost()
             try:
-                with get_tracer().start_as_current_span(f"supervisor.{self.name}") as span:
-                    span.set_attribute("supervisor.name", self.name)
-                    span.set_attribute(
-                        "supervisor.worker_count", len(getattr(self, "workers", []) or [])
-                    )
-                    span.set_attribute("fastaiagent.runner.type", "supervisor")
-                    span.set_attribute("fastaiagent.framework", "fastaiagent")
-                    self._stamp_middleware(span)
+                with self._root_span(input) as span:
                     span.set_attribute("supervisor.streamed", True)
-                    async for event in self.astream(input, context=context, **kwargs):
-                        if isinstance(event, TextDelta):
-                            text_parts.append(event.text)
-                        elif isinstance(event, Usage):
-                            streamed_tokens += event.prompt_tokens + event.completion_tokens
+                    root_token = _streaming_root.set((self, span))
+                    try:
+                        async for event in self.astream(input, context=context, **kwargs):
+                            if isinstance(event, TextDelta):
+                                text_parts.append(event.text)
+                            elif isinstance(event, Usage):
+                                streamed_tokens += event.prompt_tokens + event.completion_tokens
+                    finally:
+                        _streaming_root.reset(root_token)
                     output = "".join(text_parts)
                     span.set_attribute("supervisor.output", output)
-                    span.set_attribute("supervisor.tokens_used", streamed_tokens)
+                    span.set_attribute("supervisor.tokens_used", streamed_tokens + spend.tokens)
                     trace_id = trace_id_of(span)
                 latency = int((time.monotonic() - start) * 1000)
                 cost, cost_known = run_cost()
-                return AgentResult(
-                    output=output,
-                    tokens_used=streamed_tokens,
-                    cost=cost,
-                    cost_known=cost_known,
-                    latency_ms=latency,
-                    trace_id=trace_id,
-                    guardrails=collected_firings(),
+                return _with_spend(
+                    AgentResult(
+                        output=output,
+                        tokens_used=streamed_tokens,
+                        cost=cost,
+                        cost_known=cost_known,
+                        latency_ms=latency,
+                        trace_id=trace_id,
+                        guardrails=collected_firings(),
+                    ),
+                    spend,
                 )
             finally:
                 stop_run_cost(rcost_token)
+                _team_spend.reset(spend_token)
                 stop_firing_collection(gf_token)
 
         return run_sync(_collect())
