@@ -71,6 +71,20 @@ class TestPlatformAPIErrors:
         with pytest.raises(PlatformConnectionError, match="500"):
             api._handle_response(self._make_response(500))
 
+    def test_500_hint_points_self_hosted_at_its_own_deployment(self):
+        api = PlatformAPI(api_key="key", base_url="https://plane.internal.example")
+        with pytest.raises(PlatformConnectionError, match="that deployment's own logs"):
+            api._handle_response(self._make_response(503))
+
+    def test_500_from_hosted_plane_names_no_dead_status_page(self):
+        # status.fastaiagent.net does not resolve; until 1.100.0 the hint named it.
+        api = PlatformAPI(api_key="key", base_url="https://acme-dev.api.fastaiagent.net")
+        with pytest.raises(PlatformConnectionError) as err:
+            api._handle_response(self._make_response(503))
+        assert "acme-dev.api.fastaiagent.net" in str(err.value)
+        assert "status.fastaiagent.net" not in str(err.value)
+        assert "own logs" not in str(err.value)
+
     def test_200_returns_json(self):
         api = PlatformAPI(api_key="key", base_url="https://example.com")
         result = api._handle_response(self._make_response(200, {"ok": True}))
@@ -189,7 +203,7 @@ class TestConnection:
             mock_client_cls.return_value = mock_client
 
             with pytest.raises(PlatformAuthError, match="Invalid API key"):
-                connect(api_key="bad-key")
+                connect(api_key="bad-key", target="https://example.com")
 
         assert _connection.is_connected is False
 

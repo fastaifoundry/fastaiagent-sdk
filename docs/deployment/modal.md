@@ -132,10 +132,10 @@ Wire up the fastaiagent Platform inside `@modal.enter()`:
 def startup(self):
     import os
     import fastaiagent as fa
-    if os.environ.get("FASTAIAGENT_PLATFORM_URL"):
+    if os.environ.get("FASTAIAGENT_API_KEY"):
         fa.connect(
-            os.environ["FASTAIAGENT_PLATFORM_URL"],
             api_key=os.environ["FASTAIAGENT_API_KEY"],
+            target=os.environ["FASTAIAGENT_TARGET"],  # your program address
         )
     # build agent...
 ```

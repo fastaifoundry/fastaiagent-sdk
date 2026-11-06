@@ -49,7 +49,7 @@ class _Connection:
 
     def __init__(self) -> None:
         self.api_key: str | None = None
-        self.target: str = "https://app.fastaiagent.net"
+        self.target: str = ""
         self.project: str | None = None
         self.domain_id: str | None = None
         self.project_id: str | None = None
@@ -195,7 +195,7 @@ def _normalize_target(target: str) -> str:
 
 def connect(
     api_key: str,
-    target: str = "https://app.fastaiagent.net",
+    target: str | None = None,
     project: str | None = None,
     *,
     governance_fail_mode: str | None = None,
@@ -220,6 +220,12 @@ def connect(
     The API key carries its own domain and project scope from the
     platform. The ``project`` parameter is an optional override
     for the trace export payload.
+
+    ``target`` is your program address, shown in the console when you create
+    an API key. It falls back to ``FASTAIAGENT_TARGET``; with neither, this
+    raises ``ValueError``. Until 1.100.0 it defaulted to
+    ``https://app.fastaiagent.net``, a host that no longer exists — every
+    account now has its own address, so no fixed default can be right.
 
     ``governance_fail_mode`` (WS4) is an opt-in posture: ``"closed"`` makes a
     governed agent refuse tool calls when governance can't be confirmed (the
@@ -284,8 +290,17 @@ def connect(
 
     from fastaiagent._internal.errors import PlatformAuthError, PlatformConnectionError
 
+    # Resolve and validate before touching the connection, so a missing or bad
+    # target leaves the previous connection as it was.
+    resolved_target = _normalize_target(target or os.environ.get("FASTAIAGENT_TARGET") or "")
+    if not resolved_target:
+        raise ValueError(
+            "No target. Pass target= or set FASTAIAGENT_TARGET to your program "
+            "address, shown in the console when you create an API key."
+        )
+
     _connection.api_key = api_key
-    _connection.target = _normalize_target(target)
+    _connection.target = resolved_target
     _connection.project = project
     # WS4 governance fail mode: explicit kwarg > env var > "open" (non-breaking
     # default = today's fail-open behavior). Only the literal "closed" hardens the
@@ -342,8 +357,8 @@ def connect(
                 _connection.api_key = None
                 _connection.project = None
                 raise PlatformAuthError(
-                    "Invalid API key. Check your key at "
-                    "https://app.fastaiagent.net/settings/api-keys"
+                    "Invalid API key. Check your key in the console "
+                    "(https://login.fastaiagent.net/ for the hosted plane)."
                 )
             if resp.status_code == 403:
                 _connection.api_key = None

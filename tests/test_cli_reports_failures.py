@@ -130,6 +130,26 @@ def test_connect_to_a_plane_that_verifies_the_key(
     assert credentials.exists()
 
 
+def test_connect_without_a_target_says_so_and_saves_nothing(
+    isolated_local_db: Path, credentials: Path
+) -> None:
+    # Until 1.100.0 --target defaulted to app.fastaiagent.net, which no longer resolves.
+    result = runner.invoke(app, ["connect", "--api-key", "fa_k_test"])
+    assert result.exit_code == 1, result.output
+    assert "No target" in result.stdout
+    assert not credentials.exists()
+
+
+def test_connect_takes_the_target_from_the_environment(
+    isolated_local_db: Path, credentials: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    url = _dead_url()
+    monkeypatch.setenv("FASTAIAGENT_TARGET", url)
+    result = runner.invoke(app, ["connect", "--api-key", "fa_k_test"])
+    assert result.exit_code == 1, result.output  # saved, not verified: nothing listens
+    assert f'target = "{url}"' in credentials.read_text()
+
+
 # ── kb ───────────────────────────────────────────────────────────────────────
 
 

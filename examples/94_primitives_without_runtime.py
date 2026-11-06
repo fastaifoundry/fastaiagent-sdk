@@ -70,7 +70,7 @@ def main() -> int:
     # ── 1. Connect for policy + scorers ONLY. No second exporter, no global
     #    provider hijack. (With a real key this is the whole connect call.)
     #
-    #    fa.connect(api_key="fa_...", target="https://app.fastaiagent.net",
+    #    fa.connect(api_key="fa_k_...", target="https://<label>-dev.api.fastaiagent.net",
     #               export_traces=False)
     #
     #    Offline stand-in for the /policy pull that connect() performs:

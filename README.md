@@ -14,7 +14,7 @@ pip install fastaiagent
 
 Runs fully standalone, or connect to the [FastAIAgent Platform](https://fastaiagent.net) for hosted observability, prompt management, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.99.0)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.100.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -922,7 +922,8 @@ asyncio.run(stream_supervisor())
 ```python
 import fastaiagent as fa
 
-fa.connect(api_key="fa-...", project="my-project")
+# target is your program address, shown in the console when you create an API key
+fa.connect(api_key="fa_k_...", target="https://<label>-dev.api.fastaiagent.net", project="my-project")
 
 # Traces automatically sent to platform dashboard
 result = agent.run("Help me")
@@ -938,7 +939,7 @@ results.publish()
 **SDK works standalone. Platform adds: production observability, prompt management,
 evaluation dashboards, team collaboration, HITL approval workflows.**
 
-[Free tier available →](https://app.fastaiagent.net)
+[Free tier available →](https://login.fastaiagent.net/)
 
 ---
 

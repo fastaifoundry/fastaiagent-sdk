@@ -44,7 +44,7 @@ def main() -> None:
     if api_key:
         fa.connect(
             api_key=api_key,
-            target=os.environ.get("FASTAIAGENT_TARGET", "https://app.fastaiagent.net"),
+            target=os.environ.get("FASTAIAGENT_TARGET"),  # your program address
             # export_evals=False,   # ← the opt-out. Honored always; the plane
             #                          cannot override it (same rule as traces).
         )

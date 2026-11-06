@@ -20,9 +20,9 @@ from fastaiagent._version import __version__
 logger = logging.getLogger(__name__)
 
 
-#: The hosted plane. Used to decide whether the public status page is the
-#: right thing to point an operator at when the plane returns a 5xx.
-_HOSTED_BASE_URL = "https://app.fastaiagent.net"
+#: Hosted program addresses live under this domain (``<label>-dev.api.fastaiagent.net``).
+#: Used to decide whether a 5xx hint about "that deployment's own logs" applies.
+_HOSTED_DOMAIN = ".fastaiagent.net"
 
 
 class PlatformAPI:
@@ -34,7 +34,7 @@ class PlatformAPI:
     def __init__(
         self,
         api_key: str,
-        base_url: str = _HOSTED_BASE_URL,
+        base_url: str,
         timeout: int = 30,
     ):
         self._api_key = api_key
@@ -67,7 +67,8 @@ class PlatformAPI:
         """Handle HTTP response, raising appropriate SDK errors."""
         if response.status_code == 401:
             raise PlatformAuthError(
-                "Invalid API key. Check your key at https://app.fastaiagent.net/settings/api-keys"
+                "Invalid API key. Check your key in the console "
+                "(https://login.fastaiagent.net/ for the hosted plane)."
             )
         elif response.status_code == 403:
             detail = ""
@@ -80,7 +81,8 @@ class PlatformAPI:
                 logger.debug("Failed to parse platform 403 response body", exc_info=True)
             if "tier" in str(detail).lower():
                 raise PlatformTierLimitError(
-                    f"Tier limit reached: {detail}. Upgrade at https://app.fastaiagent.net/billing"
+                    f"Tier limit reached: {detail}. "
+                    "Upgrade in the console (https://login.fastaiagent.net/)."
                 )
             if "scope" in str(detail).lower():
                 raise PlatformAuthError(
@@ -94,16 +96,17 @@ class PlatformAPI:
             retry_after = response.headers.get("Retry-After", "60")
             raise PlatformRateLimitError(f"Rate limit exceeded. Retry after {retry_after} seconds.")
         elif response.status_code >= 500:
-            # Name the plane the caller actually configured. The hosted status
-            # page says nothing about a self-hosted deployment, and pointing an
-            # operator at it during an outage of *their own* plane costs them
-            # the first minutes of the incident.
+            # Name the plane the caller actually configured. A self-hosted
+            # operator gets pointed at their own deployment; the hosted plane
+            # has no public status page (status.fastaiagent.net does not
+            # resolve), so it gets no hint.
+            host = (httpx.URL(self._base_url).host or "").lower()
             raise PlatformConnectionError(
-                f"Platform server error ({response.status_code}) from {self._base_url}. "
+                f"Platform server error ({response.status_code}) from {self._base_url}."
                 + (
-                    "Check status at https://status.fastaiagent.net"
-                    if self._base_url == _HOSTED_BASE_URL
-                    else "Check that deployment's own logs and health endpoint."
+                    ""
+                    if host.endswith(_HOSTED_DOMAIN)
+                    else " Check that deployment's own logs and health endpoint."
                 )
             )
 

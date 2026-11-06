@@ -55,17 +55,22 @@ and exits `1`; a target that answers anything else, such as a `404` from a serve
 that is not a plane, saves nothing and exits `1`. Before 1.97.0 both printed
 "✓ Connected" and exited `0`.
 
+`--target` is your program address, shown in the console when you create an API
+key. It falls back to `FASTAIAGENT_TARGET`; with neither, `connect` saves nothing
+and exits `1`. Until 1.100.0 it defaulted to `https://app.fastaiagent.net`, a host
+that no longer exists.
+
 ```bash
 # Save + verify
-fastaiagent connect --api-key fa_live_...
+fastaiagent connect --api-key fa_k_... --target https://<label>-dev.api.fastaiagent.net
 
-# Override target / project
-fastaiagent connect --api-key fa_live_... --target https://platform.mycorp.com --project billing
+# Self-hosted plane, with a project
+fastaiagent connect --api-key fa_k_... --target https://platform.mycorp.com --project billing
 
 # Inspect
 fastaiagent auth status
 #   Connected (source: file)
-#     Target:  https://app.fastaiagent.net
+#     Target:  https://<label>-dev.api.fastaiagent.net
 #     Project: (default)
 #     API key: fa_liv…ab34
 

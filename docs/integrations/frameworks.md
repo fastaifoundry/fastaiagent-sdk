@@ -266,7 +266,7 @@ an agent on the plane:
 ```python
 import fastaiagent as fa
 
-fa.connect(api_key="fa_k_…", target="https://app.fastaiagent.net")
+fa.connect(api_key="fa_k_…", target="https://<label>-dev.api.fastaiagent.net")
 fa.Agent(
     name="support",
     system_prompt="You are a support agent.",

@@ -52,7 +52,7 @@ Every platform-facing feature in the SDK goes through the same `PlatformAPI` HTT
 class _Connection:
     def __init__(self):
         self.api_key: str | None = None
-        self.target: str = "https://app.fastaiagent.net"
+        self.target: str = ""   # set by connect(); no default since 1.100.0
         self.project: str | None = None
         self.domain_id: str | None = None
         self.project_id: str | None = None
@@ -81,11 +81,15 @@ Created once at module load. Every platform feature imports `_connection` direct
 **File:** `fastaiagent/client.py` (lines 61–136)
 
 ```
-fa.connect(api_key="fa_k_...", target="localhost:8001", project="my-project")
+fa.connect(api_key="fa_k_...", target="http://localhost:8001/", project="my-project")
+    │
+    ├── 0. Resolve target: target= argument, else FASTAIAGENT_TARGET, else
+    │       raise ValueError — before _connection is touched, so a missing or
+    │       bad target leaves the previous connection as it was
     │
     ├── 1. Store credentials on _connection
     │       api_key = "fa_k_..."
-    │       target = _normalize_target("localhost:8001")  → "http://localhost:8001"
+    │       target = _normalize_target("http://localhost:8001/")  → "http://localhost:8001"
     │       project = "my-project"
     │
     ├── 2. Auth check: GET {target}/public/v1/auth/check
@@ -109,10 +113,11 @@ fa.connect(api_key="fa_k_...", target="localhost:8001", project="my-project")
 ```
 
 **Target URL normalization** (`_normalize_target()`, lines 41–58):
-- `"localhost:8001"` → `"http://localhost:8001"` (auto-prepends `http://` for localhost)
-- `"app.fastaiagent.net"` → `"https://app.fastaiagent.net"` (auto-prepends `https://` for public hosts)
 - `"http://localhost:8001"` → unchanged
 - Strips trailing slashes
+- No scheme (`"localhost:8001"`) or a scheme other than `http`/`https` → `ValueError`.
+  It used to add one silently; that hid a typo like `localhost.attacker.com`
+  getting plain `http://`.
 
 ### What `fa.disconnect()` Does
 

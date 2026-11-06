@@ -9,7 +9,7 @@ the runner.
 
 ```bash
 fastaiagent runner \
-  --connect https://app.fastaiagent.net \
+  --connect https://<label>-dev.api.fastaiagent.net \
   --key $FASTAIAGENT_API_KEY \
   --labels region=eu --labels gpu=false \
   --max-concurrency 4
@@ -114,7 +114,7 @@ and reports `{"success": bool, "result": <output>}` (the platform reads
 reported `trace_id`.
 
 ```bash
-fastaiagent runner --connect https://app.fastaiagent.net --key $FASTAIAGENT_API_KEY \
+fastaiagent runner --connect https://<label>-dev.api.fastaiagent.net --key $FASTAIAGENT_API_KEY \
   --tools myconnectors:register
 ```
 

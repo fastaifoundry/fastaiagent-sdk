@@ -6,7 +6,8 @@ reranking, relevance gate) — the SDK is a thin client.
 
 Required environment:
     FASTAIAGENT_API_KEY  — API key with ``kb:read`` scope
-    FASTAIAGENT_TARGET   — platform URL (defaults to https://app.fastaiagent.net)
+    FASTAIAGENT_TARGET   — your program address, shown in the console when you
+                           create an API key (https://<label>-dev.api.fastaiagent.net)
     FA_TEST_KB_ID        — UUID of a seeded KB accessible to the API key
     OPENAI_API_KEY       — for the agent's LLM
 
@@ -30,7 +31,7 @@ def main() -> int:
     # handles the same situation this way.
     missing = [
         name
-        for name in ("FASTAIAGENT_API_KEY", "FA_TEST_KB_ID", "OPENAI_API_KEY")
+        for name in ("FASTAIAGENT_API_KEY", "FASTAIAGENT_TARGET", "FA_TEST_KB_ID", "OPENAI_API_KEY")
         if not os.environ.get(name)
     ]
     if missing:
@@ -40,7 +41,7 @@ def main() -> int:
 
     fa.connect(
         api_key=os.environ["FASTAIAGENT_API_KEY"],
-        target=os.environ.get("FASTAIAGENT_TARGET", "https://app.fastaiagent.net"),
+        target=os.environ["FASTAIAGENT_TARGET"],
     )
 
     # name + description (1.99.0) become the tool the agent sees:

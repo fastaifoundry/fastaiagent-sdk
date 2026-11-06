@@ -1,6 +1,6 @@
 # Platform Connection
 
-FastAIAgent SDK works fully standalone. Optionally connect to [FastAIAgent Platform](https://app.fastaiagent.net) for production observability, prompt management, and evaluation services.
+FastAIAgent SDK works fully standalone. Optionally connect to [FastAIAgent Platform](https://login.fastaiagent.net/) for production observability, prompt management, and evaluation services.
 
 ## Design Principle
 
@@ -16,7 +16,7 @@ result = agent.run("Help me")
 
 # With connect — same code, platform backends
 import fastaiagent as fa
-fa.connect(api_key="fa-...", project="my-project")
+fa.connect(api_key="fa_k_...", target="https://<label>-dev.api.fastaiagent.net", project="my-project")
 result = agent.run("Help me")
 # Traces → platform (with local SQLite fallback)
 # Prompts → platform registry (with local cache)
@@ -28,7 +28,7 @@ result = agent.run("Help me")
 ### 1. Create an Account
 
 **SaaS (hosted):**
-- Go to [https://app.fastaiagent.net](https://app.fastaiagent.net)
+- Go to [https://login.fastaiagent.net/](https://login.fastaiagent.net/)
 - Sign up with email or SSO
 
 **On-premise (self-hosted):**
@@ -38,7 +38,10 @@ result = agent.run("Help me")
 
 - Go to Settings -> API Keys -> Create Key
 - Select the **domain** and optionally a specific **project**
-- Copy the key (shown only once): `fa-...`
+- Copy the key (shown only once): `fa_k_...`
+- Copy your **program address** from the same dialog:
+  `https://<label>-dev.api.fastaiagent.net`. Every account has its own, so there
+  is no default — `connect()` needs it.
 
 ### 3. Connect
 
@@ -46,24 +49,29 @@ result = agent.run("Help me")
 import fastaiagent as fa
 
 fa.connect(
-    api_key="fa-...",
-    target="https://app.fastaiagent.net",  # default
+    api_key="fa_k_...",
+    target="https://<label>-dev.api.fastaiagent.net",  # your program address
     project="my-project",
 )
 ```
 
-**Environment variables** (alternative):
+**Environment variables** (alternative): `connect()` reads `FASTAIAGENT_TARGET`
+when `target=` is not passed, and raises `ValueError` when neither is set.
 ```bash
-export FASTAIAGENT_API_KEY=fa-...
-export FASTAIAGENT_TARGET=https://app.fastaiagent.net
+export FASTAIAGENT_API_KEY=fa_k_...
+export FASTAIAGENT_TARGET=https://<label>-dev.api.fastaiagent.net
 ```
+
+!!! note "No default target since 1.100.0"
+    Until 1.100.0 `target` defaulted to `https://app.fastaiagent.net`, a host
+    that no longer exists, so `connect(api_key=...)` alone reached nothing.
 
 ### Parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `api_key` | `str` | Required | Platform API key |
-| `target` | `str` | `https://app.fastaiagent.net` | Platform URL |
+| `target` | `str \| None` | `FASTAIAGENT_TARGET` | Your program address. Required: from the argument, else the env var, else `ValueError` |
 | `project` | `str \| None` | None | Project scope |
 | `governance_fail_mode` | `str \| None` | `"open"` | `"closed"` makes a governed agent refuse tool calls when governance can't be confirmed. Falls back to `FASTAIAGENT_GOVERNANCE_FAIL_MODE` |
 | `auto_register` | `bool` | `True` | Register every agent as a governed console object (see [above](#3-connect)) |
@@ -78,7 +86,7 @@ export FASTAIAGENT_TARGET=https://app.fastaiagent.net
 Every `agent.run()` automatically sends traces to the platform. Local SQLite storage continues as both primary local store and offline fallback.
 
 ```python
-fa.connect(api_key="fa-...", project="my-project")
+fa.connect(api_key="fa_k_...", target="https://<label>-dev.api.fastaiagent.net", project="my-project")
 result = agent.run("Help me")
 # Trace automatically sent to platform
 ```
@@ -216,7 +224,7 @@ their traces group by `agent_id`. You never write a raw `httpx.post(...)`.
 ```python
 import fastaiagent as fa
 
-fa.connect(api_key="fa_k_…", target="https://app.fastaiagent.net")
+fa.connect(api_key="fa_k_…", target="https://<label>-dev.api.fastaiagent.net")
 
 agent = Agent(
     name="support-bot",
@@ -361,9 +369,11 @@ from fastaiagent._internal.errors import (
 )
 
 try:
-    fa.connect(api_key="bad-key")
+    fa.connect(api_key="bad-key", target="https://<label>-dev.api.fastaiagent.net")
 except PlatformAuthError as e:
     print(f"Auth failed: {e}")
+except ValueError as e:  # no target= and no FASTAIAGENT_TARGET, or a bad URL
+    print(f"Bad target: {e}")
 ```
 
 ## Public API

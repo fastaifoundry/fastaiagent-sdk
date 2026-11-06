@@ -258,9 +258,6 @@ _DOC_ONLY_ENV_VARS = {
     # CI-only overrides consumed by tests/e2e, documented in docs/cli/index.md.
     "FASTAIAGENT_LIVE_OPENAI_MODEL",
     "FASTAIAGENT_LIVE_ANTHROPIC_MODEL",
-    # Appears only inside user-authored deployment snippets (docker/modal/
-    # replicate), where the *example* reads it and passes it to connect(target=).
-    "FASTAIAGENT_PLATFORM_URL",
 }
 
 

@@ -66,7 +66,7 @@ import fastaiagent as fa
 from fastaiagent import Agent, LLMClient
 
 # An admin created a "block-ssn-output" regex guardrail in the console.
-fa.connect(api_key="fa_k_...", target="https://app.fastaiagent.net")
+fa.connect(api_key="fa_k_...", target="https://<label>-dev.api.fastaiagent.net")
 
 agent = Agent(name="support", llm=LLMClient(provider="openai", model="gpt-4o"))
 #                                    ^ no guardrails=[...] defined locally
@@ -137,7 +137,7 @@ import fastaiagent as fa
 from fastaiagent import Agent, FunctionTool, LLMClient
 from fastaiagent.checkpointers.sqlite import SQLiteCheckpointer
 
-fa.connect(api_key="fa_k_...", target="https://app.fastaiagent.net")
+fa.connect(api_key="fa_k_...", target="https://<label>-dev.api.fastaiagent.net")
 
 agent = Agent(
     name="banker",

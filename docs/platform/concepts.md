@@ -7,12 +7,12 @@ safe. For setup see the [Platform Connection reference](index.md).
 
 ## What it is
 
-The SDK works fully standalone. `fa.connect(api_key=..., project=...)` is an
-optional upgrade that lights up observability, governance, and shared resources:
+The SDK works fully standalone. `fa.connect(api_key=..., target=..., project=...)`
+is an optional upgrade that lights up observability, governance, and shared resources:
 
 ```python
 import fastaiagent as fa
-fa.connect(api_key="fa-...", project="my-project")
+fa.connect(api_key="fa_k_...", target="https://<label>-dev.api.fastaiagent.net", project="my-project")
 ```
 
 Your agent code doesn't change. What changes is where telemetry *also* goes, and

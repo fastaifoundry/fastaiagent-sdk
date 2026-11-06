@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.100.0] - 2026-11-06 — `connect()` has no default target
+
+`connect()` defaulted to `https://app.fastaiagent.net`, the old production
+server. It was phased out and no longer resolves, so `fa.connect(api_key=...)`
+copied from the README reached nothing. Every account now has its own program
+address, `https://<label>-dev.api.fastaiagent.net`, shown in the console when you
+create an API key, so no fixed default can be right. None changes the wire.
+
+### Changed
+
+- **Breaking signature: `connect()` needs a target.** It comes from `target=`,
+  else `FASTAIAGENT_TARGET` (which `connect()` did not read before), else
+  `ValueError` naming both. No working setup breaks — the old default reached
+  nothing — but `target` no longer has a usable default.
+- **`fastaiagent connect` needs a target too.** `--target` falls back to
+  `FASTAIAGENT_TARGET`, which it ignored before; with neither it saves nothing and
+  exits `1`. `fastaiagent push` no longer falls back to the dead host, and
+  `auth status` shows `(not set)` instead of it.
+- **`PlatformAPI(base_url=...)` is required.** Its only caller,
+  `get_platform_api()`, always passed one.
+
+### Fixed
+
+- **Error messages pointed at dead links.** An invalid key named
+  `app.fastaiagent.net/settings/api-keys` and a tier limit named
+  `app.fastaiagent.net/billing`; both now point at the console
+  (`https://login.fastaiagent.net/`). A `5xx` from the hosted plane named
+  `status.fastaiagent.net`, which does not resolve; it now names only the address
+  that failed. A self-hosted plane still gets "check that deployment's own logs".
+- **A bad target left a half-replaced connection.** `connect()` stored the new
+  API key before validating the target, so `connect(key2, "no-scheme")` raised
+  but left `key2` paired with the previous target. The target is now resolved and
+  validated before anything is stored.
+- **Three deployment pages showed a call that raised `TypeError`.** The Docker,
+  Modal and Replicate snippets passed the URL positionally *and* `api_key=` by
+  keyword, from an env var the SDK never read (`FASTAIAGENT_PLATFORM_URL`). They
+  now read `FASTAIAGENT_API_KEY` and `FASTAIAGENT_TARGET`.
+- **Docs, README and examples** use the program-address form throughout, and no
+  example falls back to the dead host. The README "Free tier" link now points at
+  the console.
+
 ## [1.99.0] - 2026-11-04 — Supervisor and Swarm on the control plane
 
 A live test of both team types against a local plane found nine bugs. The test

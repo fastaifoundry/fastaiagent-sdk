@@ -123,7 +123,7 @@ def push(
     try:
         _client.connect(
             api_key=resolved_key,
-            target=resolved_target or "https://app.fastaiagent.net",
+            target=resolved_target,
             project=creds.get("project"),
             auto_register=False,
         )

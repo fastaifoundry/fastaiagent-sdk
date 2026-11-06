@@ -304,7 +304,7 @@ To test HITL interactively, ask: *"I was charged twice this month — please fil
 | `LLM_MODEL` | No | Override the default `gpt-4o` |
 | `FASTAIAGENT_API_KEY` | No | Platform API key for `fa.connect()` |
 | `FASTAIAGENT_PROJECT` | No | Platform project name (default: `support-bot`) |
-| `FASTAIAGENT_TARGET` | No | Platform URL (default: `https://app.fastaiagent.net`) |
+| `FASTAIAGENT_TARGET` | With `--connect` | Your program address, shown in the console when you create an API key (`https://<label>-dev.api.fastaiagent.net`) |
 
 ---
 

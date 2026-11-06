@@ -633,7 +633,7 @@ When connected to the FastAIAgent Platform, traces are automatically sent to the
 ```python
 import fastaiagent as fa
 
-fa.connect(api_key="fa-...", project="my-project")
+fa.connect(api_key="fa_k_...", target="https://<label>-dev.api.fastaiagent.net", project="my-project")
 
 # Every agent.run() now sends traces to both local SQLite and platform
 result = agent.run("Help me")

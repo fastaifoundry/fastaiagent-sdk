@@ -64,7 +64,7 @@ echo ""
 # --- Push to platform ---
 echo "12. Push to platform (requires API key)"
 echo "    export FASTAIAGENT_API_KEY=fa_k_..."
-echo "    export FASTAIAGENT_TARGET=https://app.fastaiagent.net"
+echo "    export FASTAIAGENT_TARGET=https://<label>-dev.api.fastaiagent.net   # your program address"
 echo "    fastaiagent push --module myapp.agents"
 echo "    fastaiagent push --module myapp.agents --dry-run   # print, don't send"
 echo ""

@@ -224,7 +224,7 @@ def main() -> None:
     if args.connect:
         api_key = os.getenv("FASTAIAGENT_API_KEY")
         project = os.getenv("FASTAIAGENT_PROJECT", "deep-research-agent")
-        target = os.getenv("FASTAIAGENT_TARGET", "https://app.fastaiagent.net")
+        target = os.getenv("FASTAIAGENT_TARGET")  # your program address
         if api_key:
             fa.connect(api_key=api_key, target=target, project=project)
             print(f"Connected to FastAIAgent Platform (project: {project})")
