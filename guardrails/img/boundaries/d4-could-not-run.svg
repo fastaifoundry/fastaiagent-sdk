@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 660" width="1200" height="660" role="img" aria-label="Two kinds of failure: a check that ran and failed carries a verdict and its action; a check that could not run carries errored=True and on_error decides whether that passes or blocks; a configuration that cannot check anything is the second kind and always errors; an errored result blocks whatever action was configured.">
+  <title>Two kinds of failure: a check that ran and failed carries a verdict and its action; a check that could not run carries errored=True and on_error decides whether that passes or blocks; a configuration that cannot check anything is the second kind and always errors; an errored result blocks whatever action was configured.</title>
+  <rect x="0" y="0" width="1200" height="660" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">'Could not run' is not 'found nothing'</text>
+  <rect x="48" y="130" width="500" height="120" rx="12" fill="#fdefe8" stroke="#eb6834" stroke-width="2"/>
+  <text x="68" y="166" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">the check ran and failed</text>
+  <text x="68" y="189" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">passed=False · errored=False</text>
+  <text x="68" y="209" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">the action decides the cost: block, warn, mask …</text>
+  <rect x="652" y="130" width="500" height="120" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="672" y="166" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">the check could not run</text>
+  <text x="672" y="189" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">errored=True · passed = (on_error == 'allow')</text>
+  <text x="672" y="209" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">the action is overruled: it always blocks</text>
+  <rect x="652" y="270" width="240" height="42" rx="8" fill="#ffffff" stroke="#d6d4cc" stroke-width="1.5"/>
+  <text x="666" y="295.68" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#0b0b0b" text-anchor="start">on_error='allow'  fail open</text>
+  <rect x="912" y="270" width="240" height="42" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="926" y="295.68" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#0b0b0b" text-anchor="start">on_error='block'  fail closed</text>
+  <text x="652" y="340" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">a judge that timed out · a detector not installed · a config that names nothing</text>
+  <rect x="48" y="290" width="560" height="147.0" rx="10" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="62" y="322" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="start">a config that cannot check anything → errored</text>
+  <text x="62" y="341.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">schema {}            pii {entities: []}     regex {pattern: ''}</text>
+  <text x="62" y="361.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">topic {topics: []}   classifier {categories: {}}</text>
+  <text x="62" y="381.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">content_safety {categories: [S99]}   groundedness {}  (no context)</text>
+  <text x="62" y="401.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start"></text>
+  <text x="62" y="421.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">all ten: passed=False  errored=True  — never 'no PII found'</text>
+  <circle cx="60" cy="470" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="463" x2="67" y2="477" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="477" x2="67" y2="463" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="476" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#eb6834" text-anchor="start">three releases shipped a clean verdict from an empty config (topic 1.58, schema 1.59, pii 1.61);</text>
+  <text x="78" y="498" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#eb6834" text-anchor="start">tests/test_guardrail_unusable_config_sweep.py now fails when a new type ships without that case</text>
+  <polyline points="50,540 57,548 71,531" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="78" y="546" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1baf7a" text-anchor="start">live: a topic rule answered matched=['competitor pricing']; groundedness scored 0.5 with context</text>
+  <text x="78" y="568" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1baf7a" text-anchor="start">and errored without it — the missing slot is not a pass</text>
+  <text x="48" y="620" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">The errored flag is what tells a fail-open apart from a genuine pass, on the result and on the span.</text>
+</svg>

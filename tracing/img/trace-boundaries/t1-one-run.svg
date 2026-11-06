@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720" width="1200" height="720" role="img" aria-label="One run: the agent, model and tool spans nest by runtime call flow; each span is written to local.db as one flat row the moment it ends; the Local UI, Replay, curation and the plane exporter all read that table.">
+  <title>One run: the agent, model and tool spans nest by runtime call flow; each span is written to local.db as one flat row the moment it ends; the Local UI, Replay, curation and the plane exporter all read that table.</title>
+  <rect x="0" y="0" width="1200" height="720" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">One run, one tree, one table</text>
+  <text x="48" y="98" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="19" font-weight="400" fill="#52514e" text-anchor="start">Spans nest by what called what. Each one is a row the moment it ends. Everything else reads the rows.</text>
+  <rect x="48" y="130" width="420" height="400" rx="16" fill="none" stroke="#2a78d6" stroke-width="2" stroke-dasharray="10 8"/>
+  <text x="68" y="162" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#2a78d6" text-anchor="start">THE RUN · one tree</text>
+  <rect x="68" y="182" width="380" height="56" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="88" y="218" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="19" font-weight="700" fill="#0b0b0b" text-anchor="start">agent.shipping</text>
+  <rect x="104" y="252" width="344" height="48" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="124" y="288" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#0b0b0b" text-anchor="start">llm.openai.gpt-4.1-mini</text>
+  <rect x="104" y="312" width="344" height="48" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="124" y="348" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#0b0b0b" text-anchor="start">tool.lookup_order</text>
+  <rect x="140" y="372" width="308" height="48" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="160" y="408" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#0b0b0b" text-anchor="start">db.query  ← your trace_context()</text>
+  <rect x="104" y="432" width="344" height="48" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="124" y="468" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#0b0b0b" text-anchor="start">llm.openai.gpt-4.1-mini</text>
+  <text x="68" y="512" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">nesting: OTel's ContextVar, no parent passed around</text>
+  <polyline points="448,276 530,276 530,340" fill="none" stroke="#8a8880" stroke-width="1.5" stroke-linejoin="round"/>
+  <polyline points="448,336 530,336 530,340" fill="none" stroke="#8a8880" stroke-width="1.5" stroke-linejoin="round"/>
+  <polyline points="448,396 530,396 530,340" fill="none" stroke="#8a8880" stroke-width="1.5" stroke-linejoin="round"/>
+  <polyline points="448,456 530,456 530,340" fill="none" stroke="#8a8880" stroke-width="1.5" stroke-linejoin="round"/>
+  <polyline points="448,206 530,206 530,340" fill="none" stroke="#8a8880" stroke-width="1.5" stroke-linejoin="round"/>
+  <polyline points="530,340 580,340" fill="none" stroke="#52514e" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="580,340 566.0,333.0 566.0,347.0" fill="#52514e"/>
+  <rect x="471.96" y="308.7" width="66.08" height="18.900000000000002" rx="4" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="505" y="322" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="500" fill="#52514e" text-anchor="middle">on_end</text>
+  <path d="M580,216 L580,474 A150.0,16 0 0 0 880,474 L880,216" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <ellipse cx="730.0" cy="216" rx="150.0" ry="16" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <text x="730" y="250" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" font-weight="700" fill="#0b0b0b" text-anchor="middle">local.db · spans</text>
+  <text x="600" y="284" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">span_id · parent_span_id</text>
+  <text x="600" y="304" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">name · status · start/end</text>
+  <text x="600" y="324" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">attributes JSON · events JSON</text>
+  <text x="600" y="344" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">project_id · synced</text>
+  <text x="730" y="412" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="middle" font-style="italic">one INSERT OR REPLACE per span,</text>
+  <text x="730" y="432" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="middle" font-style="italic">keyed by span_id, as it ends;</text>
+  <text x="730" y="452" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="middle" font-style="italic">the tree is rebuilt on read</text>
+  <text x="920" y="164" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#1baf7a" text-anchor="start">READERS</text>
+  <rect x="920" y="184" width="232" height="52" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="940" y="220" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0b0b0b" text-anchor="start">Local UI</text>
+  <text x="940" y="237" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#52514e" text-anchor="start">the trace page, the replay page</text>
+  <polyline points="880,340 920,210" fill="none" stroke="#1baf7a" stroke-width="1.5" stroke-linejoin="round"/>
+  <polygon points="920,210 909.2,221.3 922.6,225.4" fill="#1baf7a"/>
+  <rect x="920" y="242" width="232" height="52" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="940" y="278" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0b0b0b" text-anchor="start">Agent Replay</text>
+  <text x="940" y="295" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#52514e" text-anchor="start">rebuilds the agent from the root</text>
+  <polyline points="880,340 920,268" fill="none" stroke="#1baf7a" stroke-width="1.5" stroke-linejoin="round"/>
+  <polygon points="920,268 907.1,276.8 919.3,283.6" fill="#1baf7a"/>
+  <rect x="920" y="300" width="232" height="52" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="940" y="336" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0b0b0b" text-anchor="start">curate_from_traces</text>
+  <text x="940" y="353" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#52514e" text-anchor="start">turns traces into eval datasets</text>
+  <polyline points="880,340 920,326" fill="none" stroke="#1baf7a" stroke-width="1.5" stroke-linejoin="round"/>
+  <polygon points="920,326 904.5,324.0 909.1,337.2" fill="#1baf7a"/>
+  <rect x="920" y="358" width="232" height="52" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="940" y="394" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0b0b0b" text-anchor="start">TraceStore</text>
+  <text x="940" y="411" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#52514e" text-anchor="start">list_traces · get_trace · list_spans</text>
+  <polyline points="880,340 920,384" fill="none" stroke="#1baf7a" stroke-width="1.5" stroke-linejoin="round"/>
+  <polygon points="920,384 915.8,368.9 905.4,378.3" fill="#1baf7a"/>
+  <rect x="920" y="416" width="232" height="52" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="940" y="452" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0b0b0b" text-anchor="start">plane exporter</text>
+  <text x="940" y="469" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#52514e" text-anchor="start">drains unsent rows, filtered</text>
+  <polyline points="880,340 920,442" fill="none" stroke="#1baf7a" stroke-width="1.5" stroke-linejoin="round"/>
+  <polygon points="920,442 921.4,426.4 908.4,431.5" fill="#1baf7a"/>
+  <rect x="920" y="474" width="232" height="52" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="940" y="510" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0b0b0b" text-anchor="start">add_exporter()</text>
+  <text x="940" y="527" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#52514e" text-anchor="start">OTLP and friends, filtered</text>
+  <polyline points="880,340 920,500" fill="none" stroke="#1baf7a" stroke-width="1.5" stroke-linejoin="round"/>
+  <polygon points="920,500 923.4,484.7 909.8,488.1" fill="#1baf7a"/>
+  <text x="48" y="600" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">Every claim below was checked on this run (a real gpt-4.1-mini call) or on an offline proof script.</text>
+  <text x="48" y="626" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#8a8880" text-anchor="start">Code: agent/agent.py::_arun_traced · llm/client.py::acomplete · trace/storage.py::LocalStorageProcessor</text>
+</svg>

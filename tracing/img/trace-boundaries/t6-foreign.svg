@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 660" width="1200" height="660" role="img" aria-label="Between frameworks: a third-party OpenTelemetry instrumentor emits spans in its own convention; enable_otel_capture attaches the SDK's storage processor to whichever tracer provider is active and, at write time, normalize_attributes fills the canonical gen_ai.* and runner.type keys from the OpenInference or OpenLLMetry ones, keeping the originals; the span lands in the same table and renders like a native one.">
+  <title>Between frameworks: a third-party OpenTelemetry instrumentor emits spans in its own convention; enable_otel_capture attaches the SDK's storage processor to whichever tracer provider is active and, at write time, normalize_attributes fills the canonical gen_ai.* and runner.type keys from the OpenInference or OpenLLMetry ones, keeping the originals; the span lands in the same table and renders like a native one.</title>
+  <rect x="0" y="0" width="1200" height="660" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Between frameworks: a foreign span lands in the same shape</text>
+  <rect x="48" y="130" width="300" height="150" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="68" y="166" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#0b0b0b" text-anchor="start">a foreign instrumentor</text>
+  <text x="68" y="189" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">openinference-instrumentation-*</text>
+  <text x="68" y="209" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">LangChain, LlamaIndex, CrewAI…</text>
+  <text x="68" y="229" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">its own OTel spans, its own keys</text>
+  <polyline points="348,205 420,205" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="420,205 406.0,198.0 406.0,212.0" fill="#2a78d6"/>
+  <rect x="420" y="130" width="330" height="150" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="440" y="166" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#0b0b0b" text-anchor="start">the active TracerProvider</text>
+  <text x="440" y="188" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">enable_otel_capture() joins it:</text>
+  <text x="440" y="207" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">attaches LocalStorageProcessor,</text>
+  <text x="440" y="226" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">or claims the global if none is set;</text>
+  <text x="440" y="245" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">import order stops mattering</text>
+  <polyline points="750,205 820,205" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="820,205 806.0,198.0 806.0,212.0" fill="#2a78d6"/>
+  <path d="M820,146 L820,264 A166.0,16 0 0 0 1152,264 L1152,146" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <ellipse cx="986.0" cy="146" rx="166.0" ry="16" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <text x="986" y="180" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#0b0b0b" text-anchor="middle">local.db · the same table</text>
+  <text x="986" y="206" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="middle">the same UI, the same list_traces()</text>
+  <text x="986" y="228" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="middle">foreign and native, side by side</text>
+  <text x="48" y="330" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="start">At write time, normalize_attributes fills what is missing and keeps the originals:</text>
+  <rect x="48" y="356" width="460" height="38" rx="8" fill="#ffffff" stroke="#d6d4cc" stroke-width="1.5"/>
+  <text x="62" y="380.04" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#0b0b0b" text-anchor="start">openinference.span.kind = LLM</text>
+  <polyline points="508,375 560,375" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="560,375 546.0,368.0 546.0,382.0" fill="#2a78d6"/>
+  <rect x="560" y="356" width="592" height="38" rx="8" fill="#e5f6ef" stroke="#1baf7a" stroke-width="1.5"/>
+  <text x="574" y="380.04" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#0b0b0b" text-anchor="start">fastaiagent.runner.type = llm</text>
+  <rect x="48" y="402" width="460" height="38" rx="8" fill="#ffffff" stroke="#d6d4cc" stroke-width="1.5"/>
+  <text x="62" y="426.04" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#0b0b0b" text-anchor="start">llm.model_name</text>
+  <polyline points="508,421 560,421" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="560,421 546.0,414.0 546.0,428.0" fill="#2a78d6"/>
+  <rect x="560" y="402" width="592" height="38" rx="8" fill="#e5f6ef" stroke="#1baf7a" stroke-width="1.5"/>
+  <text x="574" y="426.04" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#0b0b0b" text-anchor="start">gen_ai.request.model</text>
+  <rect x="48" y="448" width="460" height="38" rx="8" fill="#ffffff" stroke="#d6d4cc" stroke-width="1.5"/>
+  <text x="62" y="472.04" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#0b0b0b" text-anchor="start">llm.token_count.prompt / .completion</text>
+  <polyline points="508,467 560,467" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="560,467 546.0,460.0 546.0,474.0" fill="#2a78d6"/>
+  <rect x="560" y="448" width="592" height="38" rx="8" fill="#e5f6ef" stroke="#1baf7a" stroke-width="1.5"/>
+  <text x="574" y="472.04" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#0b0b0b" text-anchor="start">gen_ai.usage.input_tokens / output_tokens</text>
+  <rect x="48" y="494" width="460" height="38" rx="8" fill="#ffffff" stroke="#d6d4cc" stroke-width="1.5"/>
+  <text x="62" y="518.04" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#0b0b0b" text-anchor="start">input.value / output.value</text>
+  <polyline points="508,513 560,513" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="560,513 546.0,506.0 546.0,520.0" fill="#2a78d6"/>
+  <rect x="560" y="494" width="592" height="38" rx="8" fill="#e5f6ef" stroke="#1baf7a" stroke-width="1.5"/>
+  <text x="574" y="518.04" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#0b0b0b" text-anchor="start">gen_ai.request.messages / gen_ai.response.content</text>
+  <rect x="48" y="540" width="460" height="38" rx="8" fill="#ffffff" stroke="#d6d4cc" stroke-width="1.5"/>
+  <text x="62" y="564.04" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#0b0b0b" text-anchor="start">scope openinference.instrumentation.openai</text>
+  <polyline points="508,559 560,559" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="560,559 546.0,552.0 546.0,566.0" fill="#2a78d6"/>
+  <rect x="560" y="540" width="592" height="38" rx="8" fill="#e5f6ef" stroke="#1baf7a" stroke-width="1.5"/>
+  <text x="574" y="564.04" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#0b0b0b" text-anchor="start">fastaiagent.framework = openai</text>
+  <text x="48" y="600" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">Native spans are untouched: only absent keys are filled, so a fastaiagent span never changes.</text>
+  <text x="48" y="632" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#8a8880" text-anchor="start">Code: trace/otel_capture.py::enable_otel_capture · trace/normalize.py::normalize_attributes</text>
+</svg>

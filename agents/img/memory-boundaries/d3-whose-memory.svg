@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" width="1200" height="700" role="img" aria-label="Whose memory: a resolver reads the user from each run and routes it to that user's compartment; an unresolved caller gets only global facts and writes nothing.">
+  <title>Whose memory: a resolver reads the user from each run and routes it to that user's compartment; an unresolved caller gets only global facts and writes nothing.</title>
+  <rect x="0" y="0" width="1200" height="700" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Whose memory is it? A resolver, and a compartment per user</text>
+  <rect x="48" y="150" width="250" height="60" rx="8" fill="#ffffff" stroke="#d6d4cc" stroke-width="1.5"/>
+  <text x="62" y="187.2" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" font-weight="400" fill="#0b0b0b" text-anchor="start">alice · run()</text>
+  <rect x="48" y="240" width="250" height="60" rx="8" fill="#ffffff" stroke="#d6d4cc" stroke-width="1.5"/>
+  <text x="62" y="277.2" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" font-weight="400" fill="#0b0b0b" text-anchor="start">bob · astream()</text>
+  <rect x="48" y="330" width="250" height="60" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="62" y="367.2" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" font-weight="400" fill="#0b0b0b" text-anchor="start">no user resolved</text>
+  <rect x="350" y="210" width="230" height="124" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="370" y="246" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">resolver</text>
+  <text x="370" y="271" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">user_id=lambda ctx:</text>
+  <text x="370" y="293" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">  ctx.state.user_id</text>
+  <polyline points="298,180 350,236" fill="none" stroke="#52514e" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="350,236 345.6,221.0 335.3,230.5" fill="#52514e"/>
+  <polyline points="298,270 350,272" fill="none" stroke="#52514e" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="350,272 336.3,264.5 335.7,278.5" fill="#52514e"/>
+  <polyline points="298,360 350,308" fill="none" stroke="#52514e" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="350,308 335.2,312.9 345.1,322.8" fill="#52514e"/>
+  <rect x="630" y="140" width="250" height="300" rx="12" fill="#ffffff" stroke="#2a78d6" stroke-width="2.5"/>
+  <text x="650" y="176" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">alice</text>
+  <rect x="650" y="196" width="210" height="42" rx="8" fill="#eaf2fc" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="664" y="223.12" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="start">window</text>
+  <rect x="650" y="252" width="210" height="42" rx="8" fill="#eaf2fc" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="664" y="279.12" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="start">summary</text>
+  <rect x="650" y="308" width="210" height="42" rx="8" fill="#eaf2fc" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="664" y="335.12" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="start">facts  user:alice</text>
+  <rect x="650" y="364" width="210" height="42" rx="8" fill="#eaf2fc" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="664" y="391.12" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="start">recall  user:alice</text>
+  <rect x="900" y="140" width="250" height="300" rx="12" fill="#ffffff" stroke="#2a78d6" stroke-width="2.5"/>
+  <text x="920" y="176" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">bob</text>
+  <rect x="920" y="196" width="210" height="42" rx="8" fill="#eaf2fc" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="934" y="223.12" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="start">window</text>
+  <rect x="920" y="252" width="210" height="42" rx="8" fill="#eaf2fc" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="934" y="279.12" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="start">summary</text>
+  <rect x="920" y="308" width="210" height="42" rx="8" fill="#eaf2fc" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="934" y="335.12" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="start">facts  user:bob</text>
+  <rect x="920" y="364" width="210" height="42" rx="8" fill="#eaf2fc" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="934" y="391.12" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="17" font-weight="400" fill="#0b0b0b" text-anchor="start">recall  user:bob</text>
+  <polyline points="580,240 630,240" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="630,240 616.0,233.0 616.0,247.0" fill="#2a78d6"/>
+  <polyline points="465,210 465,118 1025,118 1025,140" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="1025,140 1032.0,126.0 1018.0,126.0" fill="#2a78d6"/>
+  <path d="M630,516 L630,604 A260.0,16 0 0 0 1150,604 L1150,516" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <ellipse cx="890.0" cy="516" rx="260.0" ry="16" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <line x1="890" y1="530" x2="890" y2="604" stroke="#1baf7a" stroke-width="2"/>
+  <text x="760" y="574" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="18" font-weight="400" fill="#0b0b0b" text-anchor="middle">user:alice</text>
+  <text x="1020" y="574" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="18" font-weight="400" fill="#0b0b0b" text-anchor="middle">user:bob</text>
+  <text x="890" y="650" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="middle">one shared recall store — each user reads only their namespace</text>
+  <polyline points="755,406 755,516" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="755,516 762.0,502.0 748.0,502.0" fill="#1baf7a"/>
+  <polyline points="1025,406 1025,516" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="1025,516 1032.0,502.0 1018.0,502.0" fill="#1baf7a"/>
+  <polyline points="465,334 465,480" fill="none" stroke="#eb6834" stroke-width="2.5" stroke-linejoin="round" stroke-dasharray="8 6"/>
+  <polygon points="465,480 472.0,466.0 458.0,466.0" fill="#eb6834"/>
+  <rect x="48" y="480" width="532" height="110" rx="12" fill="#fdefe8" stroke="#eb6834" stroke-width="2"/>
+  <text x="68" y="516" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">Unresolved caller</text>
+  <text x="68" y="544" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="400" fill="#52514e" text-anchor="start">global facts only · nothing is written</text>
+  <text x="68" y="568" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="18" font-weight="400" fill="#52514e" text-anchor="start">no shared anonymous window</text>
+  <text x="48" y="650" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">max_users=10,000: the least-recently-used window is dropped;</text>
+  <text x="48" y="674" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start">that user's facts stay in the store</text>
+</svg>

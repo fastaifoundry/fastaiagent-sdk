@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 620" width="1200" height="620" role="img" aria-label="A version is a draft until an eval says otherwise: v1 on the production alias and v2 as a draft are run through evaluate() on the same dataset with the same model and scorer; the alias moves to v2 only if its pass rate is at least v1's.">
+  <title>A version is a draft until an eval says otherwise: v1 on the production alias and v2 as a draft are run through evaluate() on the same dataset with the same model and scorer; the alias moves to v2 only if its pass rate is at least v1's.</title>
+  <rect x="0" y="0" width="1200" height="620" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">A version is a draft until an eval says otherwise</text>
+  <rect x="48" y="150" width="250" height="96" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="68" y="186" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">v1 · production</text>
+  <text x="68" y="211" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">no routing rules</text>
+  <rect x="48" y="290" width="250" height="96" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="68" y="326" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">v2 · draft</text>
+  <text x="68" y="351" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">explicit routing rules</text>
+  <polyline points="298,198 340,198 340,268 380,268" fill="none" stroke="#52514e" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="380,268 366.0,261.0 366.0,275.0" fill="#52514e"/>
+  <polyline points="298,338 340,338 340,268" fill="none" stroke="#52514e" stroke-width="2.5" stroke-linejoin="round"/>
+  <rect x="380" y="210" width="230" height="116" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="400" y="246" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">the same dataset</text>
+  <text x="400" y="271" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">10 tickets</text>
+  <text x="400" y="293" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">expected queue each</text>
+  <polyline points="610,268 660,268" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="660,268 646.0,261.0 646.0,275.0" fill="#2a78d6"/>
+  <rect x="660" y="210" width="230" height="116" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="680" y="246" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">evaluate()</text>
+  <text x="680" y="271" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">same model (gpt-4.1-mini)</text>
+  <text x="680" y="293" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">same scorer</text>
+  <polyline points="890,250 940,220" fill="none" stroke="#eb6834" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="940,220 924.4,221.2 931.6,233.2" fill="#eb6834"/>
+  <polyline points="890,290 940,310" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="940,310 929.6,298.3 924.4,311.3" fill="#1baf7a"/>
+  <rect x="940" y="196" width="212" height="46" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="954" y="225.48" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="18" font-weight="400" fill="#0b0b0b" text-anchor="start">v1 → 0.90</text>
+  <rect x="940" y="290" width="212" height="46" rx="8" fill="#e5f6ef" stroke="#1baf7a" stroke-width="1.5"/>
+  <text x="954" y="319.48" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="18" font-weight="400" fill="#0b0b0b" text-anchor="start">v2 → 1.00</text>
+  <rect x="660" y="380" width="492" height="130" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="680" y="416" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">the gate</text>
+  <text x="680" y="441" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">v2 ≥ v1 → set_alias('ticket-router', 2, 'production')</text>
+  <text x="680" y="463" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">otherwise production stays on v1</text>
+  <text x="680" y="485" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">the dataset decides, not an eyeball</text>
+  <text x="48" y="430" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">the inner loop: the Playground — edit, run, see</text>
+  <text x="48" y="452" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">the outer loop: AutoLLM hands back a winner;</text>
+  <text x="48" y="474" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">register it as a version, then gate it the same way</text>
+  <text x="48" y="496" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">in CI: pytest --eval-baseline</text>
+</svg>

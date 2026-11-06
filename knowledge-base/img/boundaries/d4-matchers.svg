@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 660" width="1200" height="660" role="img" aria-label="Vector, keyword, hybrid: a query is scored by cosine on the vector side and by BM25 on the keyword side, each over-fetching three times top_k; hybrid min-max normalizes each list to zero-to-one and fuses them with alpha 0.7; when one side returns nothing the other side's raw scores pass straight through.">
+  <title>Vector, keyword, hybrid: a query is scored by cosine on the vector side and by BM25 on the keyword side, each over-fetching three times top_k; hybrid min-max normalizes each list to zero-to-one and fuses them with alpha 0.7; when one side returns nothing the other side's raw scores pass straight through.</title>
+  <rect x="0" y="0" width="1200" height="660" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Meaning and words — vector, keyword, and how hybrid fuses them</text>
+  <rect x="48" y="190" width="160" height="80" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="68" y="226" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">query</text>
+  <polyline points="208,230 240,230 240,175 280,175" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="280,175 266.0,168.0 266.0,182.0" fill="#2a78d6"/>
+  <polyline points="240,230 240,315 280,315" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="280,315 266.0,308.0 266.0,322.0" fill="#2a78d6"/>
+  <rect x="280" y="120" width="300" height="110" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="300" y="156" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">vector</text>
+  <text x="300" y="179" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">embed · nearest vectors</text>
+  <text x="300" y="199" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">cosine in [-1, 1]</text>
+  <rect x="280" y="260" width="300" height="110" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="300" y="296" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">keyword</text>
+  <text x="300" y="319" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">BM25 term scores</text>
+  <text x="300" y="339" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">exact tokens, no synonyms</text>
+  <polyline points="580,175 650,175" fill="none" stroke="#52514e" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="650,175 636.0,168.0 636.0,182.0" fill="#52514e"/>
+  <rect x="575.825" y="148.65" width="78.35000000000001" height="17.55" rx="4" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="615" y="161" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="500" fill="#52514e" text-anchor="middle">3 × top_k</text>
+  <polyline points="580,315 650,315" fill="none" stroke="#52514e" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="650,315 636.0,308.0 636.0,322.0" fill="#52514e"/>
+  <rect x="575.825" y="288.65" width="78.35000000000001" height="17.55" rx="4" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="615" y="301" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="500" fill="#52514e" text-anchor="middle">3 × top_k</text>
+  <rect x="650" y="120" width="200" height="110" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="670" y="156" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">min-max</text>
+  <text x="670" y="179" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">→ [0, 1]</text>
+  <text x="670" y="199" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">best hit = 1.0</text>
+  <rect x="650" y="260" width="200" height="110" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="670" y="296" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">min-max</text>
+  <text x="670" y="319" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">→ [0, 1]</text>
+  <text x="670" y="339" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">best hit = 1.0</text>
+  <polyline points="850,175 900,230" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="900,230 895.8,214.9 885.4,224.3" fill="#1baf7a"/>
+  <polyline points="850,315 900,260" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="900,260 885.4,265.7 895.8,275.1" fill="#1baf7a"/>
+  <rect x="900" y="190" width="252" height="110" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="920" y="226" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">0.7 · v + 0.3 · k</text>
+  <text x="920" y="249" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">alpha = 0.7</text>
+  <text x="920" y="269" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">top_k, sorted</text>
+  <rect x="48" y="410" width="1104" height="114.0" rx="10" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="62" y="442" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="700" fill="#0b0b0b" text-anchor="start">proof 3, top hit per matcher</text>
+  <text x="62" y="463.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">'ERR-4012'                  vector 0.806 | keyword 2.121 | hybrid 1.000   = 0.7·1.0 + 0.3·1.0</text>
+  <text x="62" y="484.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">'reimbursement timeframe?'  vector 0.681 | keyword  —    | hybrid 0.681   raw cosine, passed through</text>
+  <text x="62" y="505.0" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">'ERR-4012 payment failed'   vector 0.880 | keyword 3.421 | hybrid 1.000</text>
+  <circle cx="60" cy="596" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="589" x2="67" y2="603" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="603" x2="67" y2="589" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="602" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#eb6834" text-anchor="start">a hybrid score is a rank position, not a similarity — except when one side is empty, and then it is</text>
+  <text x="78" y="624" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#eb6834" text-anchor="start">a cosine again. The same number means two things across two calls.</text>
+</svg>

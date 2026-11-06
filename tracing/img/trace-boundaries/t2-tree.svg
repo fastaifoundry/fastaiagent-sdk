@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" width="1200" height="700" role="img" aria-label="Nesting is discovered, not declared: each run pushes its span onto OTel's context, a ContextVar, so a span opened anywhere inside, including in a tool body, attaches to the current span; two runs at once keep separate contexts; the rows carry parent_span_id and the tree is rebuilt from it.">
+  <title>Nesting is discovered, not declared: each run pushes its span onto OTel's context, a ContextVar, so a span opened anywhere inside, including in a tool body, attaches to the current span; two runs at once keep separate contexts; the rows carry parent_span_id and the tree is rebuilt from it.</title>
+  <rect x="0" y="0" width="1200" height="700" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Between calls: the tree is discovered, not declared</text>
+  <rect x="48" y="120" width="340" height="330" rx="16" fill="none" stroke="#2a78d6" stroke-width="2" stroke-dasharray="10 8"/>
+  <text x="66" y="150" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#2a78d6" text-anchor="start">run alpha · its own ContextVar</text>
+  <rect x="66" y="168" width="300" height="40" rx="8" fill="#eaf2fc" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="80" y="193.76" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="16" font-weight="400" fill="#0b0b0b" text-anchor="start">agent.alpha</text>
+  <rect x="96" y="220" width="270" height="38" rx="8" fill="#ffffff" stroke="#d6d4cc" stroke-width="1.5"/>
+  <text x="110" y="244.4" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#0b0b0b" text-anchor="start">llm.test.function-model</text>
+  <rect x="96" y="268" width="270" height="38" rx="8" fill="#ffffff" stroke="#d6d4cc" stroke-width="1.5"/>
+  <text x="110" y="292.4" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#0b0b0b" text-anchor="start">tool.lookup_alpha</text>
+  <rect x="126" y="316" width="240" height="38" rx="8" fill="#e5f6ef" stroke="#1baf7a" stroke-width="1.5"/>
+  <text x="140" y="340.4" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#0b0b0b" text-anchor="start">db.query  (inside the tool)</text>
+  <rect x="96" y="364" width="270" height="38" rx="8" fill="#ffffff" stroke="#d6d4cc" stroke-width="1.5"/>
+  <text x="110" y="388.4" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#0b0b0b" text-anchor="start">llm.test.function-model</text>
+  <text x="66" y="430" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">5 rows · 1 parentless root</text>
+  <rect x="420" y="120" width="340" height="330" rx="16" fill="none" stroke="#2a78d6" stroke-width="2" stroke-dasharray="10 8"/>
+  <text x="438" y="150" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#2a78d6" text-anchor="start">run beta · its own ContextVar</text>
+  <rect x="438" y="168" width="300" height="40" rx="8" fill="#eaf2fc" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="452" y="193.76" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="16" font-weight="400" fill="#0b0b0b" text-anchor="start">agent.beta</text>
+  <rect x="468" y="220" width="270" height="38" rx="8" fill="#ffffff" stroke="#d6d4cc" stroke-width="1.5"/>
+  <text x="482" y="244.4" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#0b0b0b" text-anchor="start">llm.test.function-model</text>
+  <rect x="468" y="268" width="270" height="38" rx="8" fill="#ffffff" stroke="#d6d4cc" stroke-width="1.5"/>
+  <text x="482" y="292.4" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#0b0b0b" text-anchor="start">tool.lookup_beta</text>
+  <rect x="498" y="316" width="240" height="38" rx="8" fill="#e5f6ef" stroke="#1baf7a" stroke-width="1.5"/>
+  <text x="512" y="340.4" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#0b0b0b" text-anchor="start">db.query  (inside the tool)</text>
+  <rect x="468" y="364" width="270" height="38" rx="8" fill="#ffffff" stroke="#d6d4cc" stroke-width="1.5"/>
+  <text x="482" y="388.4" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#0b0b0b" text-anchor="start">llm.test.function-model</text>
+  <text x="438" y="430" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">5 rows · 1 parentless root</text>
+  <circle cx="400" cy="290" r="15" fill="#fcfcfb"/>
+  <line x1="392" y1="282" x2="408" y2="298" stroke="#eb6834" stroke-width="3"/>
+  <line x1="392" y1="298" x2="408" y2="282" stroke="#eb6834" stroke-width="3"/>
+  <text x="400" y="330" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#eb6834" text-anchor="middle">never</text>
+  <text x="400" y="346" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#eb6834" text-anchor="middle">cross</text>
+  <rect x="800" y="120" width="352" height="166.5" rx="10" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="814" y="152" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="start">rows, as stored</text>
+  <text x="814" y="171.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">span_id  parent  name</text>
+  <text x="814" y="191.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">a1       —       agent.alpha</text>
+  <text x="814" y="211.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">a2       a1      llm.test…</text>
+  <text x="814" y="231.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">a3       a1      tool.lookup_alpha</text>
+  <text x="814" y="251.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">a4       a3      db.query</text>
+  <text x="814" y="271.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">a5       a1      llm.test…</text>
+  <polyline points="800,300 760,300" fill="none" stroke="#52514e" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="760,300 774.0,307.0 774.0,293.0" fill="#52514e"/>
+  <rect x="758.7" y="309.65" width="42.6" height="17.55" rx="4" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="780" y="322" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="500" fill="#52514e" text-anchor="middle">read</text>
+  <text x="800" y="330" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0b0b0b" text-anchor="start">runner.type, for machines:</text>
+  <text x="800" y="354" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">tool spans      → "tool"</text>
+  <text x="800" y="373" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">memory, retrieval,</text>
+  <text x="800" y="392" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">chain, swarm…   → set explicitly</text>
+  <text x="800" y="411" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">agent · llm     → not set; readers</text>
+  <text x="800" y="430" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">                  default to agent</text>
+  <text x="48" y="490" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="start">Rules the proof checked:</text>
+  <text x="48" y="516" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">• a span opened inside a tool body nests under the tool span, with no plumbing</text>
+  <text x="48" y="540" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">• each run has exactly one parentless root, named for its runner (agent.* · chain.* · swarm.* · supervisor.*)</text>
+  <text x="48" y="564" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">• two runs in one process, at the same time, never share a tree — the context is per task</text>
+  <text x="48" y="588" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">• the tree is rebuilt from parent_span_id on read; nothing is stored as a tree</text>
+  <text x="48" y="650" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#8a8880" text-anchor="start">Code: trace/otel.py::get_tracer · trace/storage.py::_write · tool spans in agent/executor.py</text>
+</svg>

@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 680" width="1200" height="680" role="img" aria-label="Who sees which split: the proposer reads train failures and few-shot demos come from train; every candidate is scored and selected on dev; nothing in the search touches holdout, which is scored only at the end for the baseline and the winner.">
+  <title>Who sees which split: the proposer reads train failures and few-shot demos come from train; every candidate is scored and selected on dev; nothing in the search touches holdout, which is scored only at the end for the baseline and the winner.</title>
+  <rect x="0" y="0" width="1200" height="680" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Who sees which split — the search never sees the exam</text>
+  <rect x="48" y="130" width="340" height="50" rx="8" fill="#eaf2fc" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="62" y="162.2" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" font-weight="400" fill="#0b0b0b" text-anchor="start">TRAIN · 50%</text>
+  <rect x="48" y="204" width="340" height="128" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="68" y="240" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="19" font-weight="700" fill="#0b0b0b" text-anchor="start">the proposer reads</text>
+  <text x="68" y="265" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">its failing cases — with the</text>
+  <text x="68" y="287" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">expected output and the</text>
+  <text x="68" y="309" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">scorer's reason</text>
+  <rect x="48" y="350" width="340" height="128" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="68" y="386" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="19" font-weight="700" fill="#0b0b0b" text-anchor="start">few-shot demos come from it</text>
+  <text x="68" y="411" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">gold (input, expected) pairs;</text>
+  <text x="68" y="433" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">the teacher pass runs here</text>
+  <rect x="430" y="130" width="340" height="50" rx="8" fill="#eaf2fc" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="444" y="162.2" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" font-weight="400" fill="#0b0b0b" text-anchor="start">DEV · 25%</text>
+  <rect x="430" y="204" width="340" height="128" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="450" y="240" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="19" font-weight="700" fill="#0b0b0b" text-anchor="start">every candidate is scored here</text>
+  <text x="450" y="265" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">one evaluate() run each</text>
+  <rect x="430" y="350" width="340" height="128" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="450" y="386" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="19" font-weight="700" fill="#0b0b0b" text-anchor="start">accept / reject is decided here</text>
+  <text x="450" y="411" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">the proposer never reads it;</text>
+  <text x="450" y="433" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">no demo may carry its inputs</text>
+  <rect x="812" y="130" width="340" height="50" rx="8" fill="#fdefe8" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="826" y="162.2" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" font-weight="400" fill="#0b0b0b" text-anchor="start">HOLDOUT · 25%</text>
+  <rect x="812" y="204" width="340" height="128" rx="12" fill="#fdefe8" stroke="#eb6834" stroke-width="2"/>
+  <text x="832" y="240" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="19" font-weight="700" fill="#0b0b0b" text-anchor="start">nothing in the search touches it</text>
+  <text x="832" y="265" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">not the proposer, not a demo,</text>
+  <text x="832" y="287" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">not selection</text>
+  <rect x="812" y="350" width="340" height="128" rx="12" fill="#fdefe8" stroke="#eb6834" stroke-width="2"/>
+  <text x="832" y="386" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="19" font-weight="700" fill="#0b0b0b" text-anchor="start">scored twice, at the very end</text>
+  <text x="832" y="411" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">the baseline and the winner;</text>
+  <text x="832" y="433" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start">a regression reverts the winner</text>
+  <polyline points="388,268 430,268" fill="none" stroke="#8a8880" stroke-width="2.5" stroke-linejoin="round" stroke-dasharray="4 6"/>
+  <polyline points="770,268 812,268" fill="none" stroke="#8a8880" stroke-width="2.5" stroke-linejoin="round" stroke-dasharray="4 6"/>
+  <circle cx="60" cy="524" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="517" x2="67" y2="531" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="531" x2="67" y2="517" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="530" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="600" fill="#eb6834" text-anchor="start">a demo never carries a dev or holdout input</text>
+  <circle cx="60" cy="556" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="549" x2="67" y2="563" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="563" x2="67" y2="549" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="562" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="600" fill="#eb6834" text-anchor="start">the proposer never sees a dev or holdout case</text>
+  <rect x="640" y="500" width="512" height="97.5" rx="10" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="654" y="532" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="700" fill="#0b0b0b" text-anchor="start">the split is seeded (seed=0)</text>
+  <text x="654" y="554.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">same seed → same split, run after run,</text>
+  <text x="654" y="576.5" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">model after model — the same exam for all</text>
+  <text x="48" y="640" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">A real run on 60 tickets: dev 1.000, but holdout 0.533 against the baseline's 0.600 — reverted.</text>
+</svg>

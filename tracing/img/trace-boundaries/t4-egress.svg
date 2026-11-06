@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" width="1200" height="760" role="img" aria-label="Between capture and egress: local.db always holds the full span; the plane exporter and add_exporter() both pass every span through apply_export_policy on the way out, where FASTAIAGENT_TRACE_PAYLOADS=0 drops the payload keys from attributes, events and the status description, and an installed RedactionPolicy masks what remains; the master switch FASTAIAGENT_TRACE_ENABLED=0 captures nothing at all.">
+  <title>Between capture and egress: local.db always holds the full span; the plane exporter and add_exporter() both pass every span through apply_export_policy on the way out, where FASTAIAGENT_TRACE_PAYLOADS=0 drops the payload keys from attributes, events and the status description, and an installed RedactionPolicy masks what remains; the master switch FASTAIAGENT_TRACE_ENABLED=0 captures nothing at all.</title>
+  <rect x="0" y="0" width="1200" height="760" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Between capture and egress: full fidelity in, filtered out</text>
+  <path d="M48,166 L48,364 A150.0,16 0 0 0 348,364 L348,166" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <ellipse cx="198.0" cy="166" rx="150.0" ry="16" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2.5"/>
+  <text x="198" y="200" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="middle">local.db</text>
+  <text x="70" y="236" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">always full fidelity:</text>
+  <text x="70" y="256" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">prompt · messages · tool args</text>
+  <text x="70" y="276" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">tool results · output</text>
+  <text x="70" y="296" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">so the UI and Replay work</text>
+  <text x="198" y="360" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="middle" font-style="italic">the one exception →</text>
+  <rect x="48" y="400" width="300" height="92" rx="12" fill="#fdefe8" stroke="#eb6834" stroke-width="2"/>
+  <text x="68" y="436" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="start">RedactionPolicy, capture mode</text>
+  <text x="68" y="458" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">masks before the row is written —</text>
+  <text x="68" y="477" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">local.db is masked too</text>
+  <polyline points="348,265 420,265" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="420,265 406.0,258.0 406.0,272.0" fill="#2a78d6"/>
+  <rect x="420" y="150" width="440" height="362" rx="16" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="440" y="182" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#2a78d6" text-anchor="start">ON THE WAY OUT · apply_export_policy</text>
+  <text x="440" y="206" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">the plane exporter, and add_exporter() (wrapped)</text>
+  <rect x="440" y="224" width="400" height="118" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="460" y="260" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="start">1 · the payload gate</text>
+  <text x="460" y="282" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">FASTAIAGENT_TRACE_PAYLOADS=0 drops the</text>
+  <text x="460" y="301" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">SENSITIVE_ATTR_KEYS from attributes,</text>
+  <text x="460" y="320" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">exception events, the status description;</text>
+  <text x="460" y="339" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">a typo in the value fails closed</text>
+  <rect x="440" y="354" width="400" height="140" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="460" y="390" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#0b0b0b" text-anchor="start">2 · redaction</text>
+  <text x="460" y="412" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">an installed RedactionPolicy masks</text>
+  <text x="460" y="431" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">whatever payload remains — the same</text>
+  <text x="460" y="450" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">policy that masked local.db</text>
+  <text x="460" y="469" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">structure survives either way: model,</text>
+  <text x="460" y="488" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">tokens, tool names, status code</text>
+  <polyline points="860,265 890,265" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="890,265 876.0,258.0 876.0,272.0" fill="#2a78d6"/>
+  <rect x="890" y="190" width="262" height="150" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="910" y="226" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#0b0b0b" text-anchor="start">what leaves</text>
+  <text x="910" y="248" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">gen_ai.request.model ✓</text>
+  <text x="910" y="267" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">gen_ai.usage.* ✓</text>
+  <text x="910" y="286" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">agent.input  ✗ stripped</text>
+  <text x="910" y="305" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">gen_ai.request.messages ✗</text>
+  <text x="890" y="362" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">with payloads off</text>
+  <rect x="48" y="530" width="1104" height="110" rx="14" fill="#fdefe8" stroke="#eb6834" stroke-width="2"/>
+  <text x="68" y="562" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#eb6834" text-anchor="start">THE MASTER SWITCH · FASTAIAGENT_TRACE_ENABLED=0</text>
+  <text x="68" y="590" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">get_tracer_provider() hands back OTel's NoOpTracerProvider: spans never record, on_end never fires, local.db gets no row,</text>
+  <text x="68" y="612" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#52514e" text-anchor="start">result.trace_id is None, and enable_otel_capture() refuses to attach — nothing captured, so nothing to filter.</text>
+  <text x="48" y="680" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">Two different questions: "may this leave the machine?" (the payload gate) and "record anything at all?" (the master switch).</text>
+  <text x="48" y="720" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="13" font-weight="400" fill="#8a8880" text-anchor="start">Code: trace/span.py::export_payloads_enabled · trace/redaction.py::apply_export_policy · trace/otel.py::_EgressFilteredExporter</text>
+</svg>

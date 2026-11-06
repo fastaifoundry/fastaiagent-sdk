@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 680" width="1200" height="680" role="img" aria-label="Between the process that paused and the one that resumes: in process A a tool calls interrupt, the executor records the interrupted checkpoint and the pending row in one transaction and returns a paused result with the frozen context, and the process exits; in process B resume claims the pending row atomically, re-invokes the tool with the Resume value in scope so interrupt returns it, and the loop continues; a second resume finds no row and raises AlreadyResumed; five racing resumers produce exactly one winner.">
+  <title>Between the process that paused and the one that resumes: in process A a tool calls interrupt, the executor records the interrupted checkpoint and the pending row in one transaction and returns a paused result with the frozen context, and the process exits; in process B resume claims the pending row atomically, re-invokes the tool with the Resume value in scope so interrupt returns it, and the loop continues; a second resume finds no row and raises AlreadyResumed; five racing resumers produce exactly one winner.</title>
+  <rect x="0" y="0" width="1200" height="680" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Between the process that paused and the one that resumes</text>
+  <rect x="48" y="120" width="520" height="300" rx="18" fill="none" stroke="#8a8880" stroke-width="2" stroke-dasharray="10 8"/>
+  <text x="70" y="150" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#8a8880" text-anchor="start">PROCESS A · pid 43173</text>
+  <rect x="70" y="166" width="220" height="96" rx="12" fill="#fdefe8" stroke="#eb6834" stroke-width="2"/>
+  <text x="90" y="202" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">the tool</text>
+  <text x="90" y="222" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">interrupt(reason, context)</text>
+  <text x="90" y="240" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">→ InterruptSignal</text>
+  <polyline points="290,214 340,214" fill="none" stroke="#eb6834" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="340,214 326.0,207.0 326.0,221.0" fill="#eb6834"/>
+  <rect x="340" y="166" width="210" height="96" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="360" y="202" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">record_interrupt</text>
+  <text x="360" y="222" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">one transaction:</text>
+  <text x="360" y="240" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">row + pending</text>
+  <rect x="70" y="290" width="480" height="100" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="90" y="326" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">AgentResult(status='paused')</text>
+  <text x="90" y="346" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">pending_interrupt.context = {order, amount, balance}</text>
+  <text x="90" y="364" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">the process exits — or crashes, or is redeployed</text>
+  <polyline points="568,270 632,270" fill="none" stroke="#52514e" stroke-width="2.5" stroke-linejoin="round" stroke-dasharray="6 5"/>
+  <polygon points="632,270 618.0,263.0 618.0,277.0" fill="#52514e"/>
+  <rect x="576.5" y="242.6" width="47.0" height="16.200000000000003" rx="4" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="600" y="254" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12" font-weight="500" fill="#52514e" text-anchor="middle">later</text>
+  <rect x="632" y="120" width="520" height="300" rx="18" fill="none" stroke="#1baf7a" stroke-width="2" stroke-dasharray="10 8"/>
+  <text x="654" y="150" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#1baf7a" text-anchor="start">PROCESS B · pid 43168</text>
+  <rect x="654" y="166" width="220" height="96" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="674" y="202" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">resume(id, Resume)</text>
+  <text x="674" y="222" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">claim: delete the</text>
+  <text x="674" y="240" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">pending row, atomically</text>
+  <polyline points="874,214 924,214" fill="none" stroke="#1baf7a" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="924,214 910.0,207.0 910.0,221.0" fill="#1baf7a"/>
+  <rect x="924" y="166" width="210" height="96" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="944" y="202" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">the tool, again</text>
+  <text x="944" y="222" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">interrupt() returns</text>
+  <text x="944" y="240" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">the Resume</text>
+  <rect x="654" y="290" width="480" height="100" rx="12" fill="#ffffff" stroke="#d6d4cc" stroke-width="2"/>
+  <text x="674" y="326" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">AgentResult(status='completed')</text>
+  <text x="674" y="346" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">Resume.metadata = {'approver': 'alice'}</text>
+  <text x="674" y="364" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">the loop continued to the model's answer</text>
+  <polyline points="50,460 57,468 71,451" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="78" y="466" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1baf7a" text-anchor="start">the context the approver saw was frozen at the pause: JSON in the row, never recomputed</text>
+  <circle cx="60" cy="500" r="14" fill="#fcfcfb"/>
+  <line x1="53" y1="493" x2="67" y2="507" stroke="#eb6834" stroke-width="3"/>
+  <line x1="53" y1="507" x2="67" y2="493" stroke="#eb6834" stroke-width="3"/>
+  <text x="78" y="506" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#eb6834" text-anchor="start">a second resume → AlreadyResumed: no pending row to claim</text>
+  <polyline points="50,540 57,548 71,531" fill="none" stroke="#1baf7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="78" y="546" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#1baf7a" text-anchor="start">five resumers at once → ['AlreadyResumed' × 4, 'completed'] — one claim, one charge</text>
+  <text x="48" y="610" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">Proof 2 is two real processes on one SQLite file; the tool list must match between them.</text>
+</svg>

@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 560" width="1200" height="560" role="img" aria-label="Every step is a row: one optimize_runs row per run links to one optimize_iterations row per candidate, each linking to the eval_runs row its scoring produced, which links to its eval_cases and their traces; nothing is stored twice.">
+  <title>Every step is a row: one optimize_runs row per run links to one optimize_iterations row per candidate, each linking to the eval_runs row its scoring produced, which links to its eval_cases and their traces; nothing is stored twice.</title>
+  <rect x="0" y="0" width="1200" height="560" rx="0" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="48" y="62" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="32" font-weight="700" fill="#0b0b0b" text-anchor="start">Every step is a row you can open — links, not copies</text>
+  <rect x="48" y="130" width="250" height="230" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="68" y="166" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">optimize_runs</text>
+  <text x="68" y="189" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">one row per run:</text>
+  <text x="68" y="209" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">baseline, best, holdout</text>
+  <text x="68" y="229" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">stopped_reason</text>
+  <text x="68" y="249" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">reverted, the winner</text>
+  <text x="68" y="269" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">the starting prompt</text>
+  <polyline points="298,245 328,245" fill="none" stroke="#52514e" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="328,245 314.0,238.0 314.0,252.0" fill="#52514e"/>
+  <rect x="328" y="130" width="250" height="230" rx="12" fill="#e5f6ef" stroke="#1baf7a" stroke-width="2"/>
+  <text x="348" y="166" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">optimize_iterations</text>
+  <text x="348" y="189" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">one row per candidate:</text>
+  <text x="348" y="209" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">lever, dev_score</text>
+  <text x="348" y="229" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">accepted, skipped</text>
+  <text x="348" y="249" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">rationale</text>
+  <text x="348" y="269" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">eval_run_id  ──→</text>
+  <polyline points="578,245 608,245" fill="none" stroke="#52514e" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="608,245 594.0,238.0 594.0,252.0" fill="#52514e"/>
+  <rect x="608" y="130" width="250" height="230" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="628" y="166" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">eval_runs</text>
+  <text x="628" y="189" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">the candidate's real</text>
+  <text x="628" y="209" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">evaluate() run:</text>
+  <text x="628" y="229" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">the same rows a</text>
+  <text x="628" y="249" font-family="'SF Mono', Menlo, Consolas, monospace" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">hand-run eval writes</text>
+  <polyline points="858,245 888,245" fill="none" stroke="#52514e" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="888,245 874.0,238.0 874.0,252.0" fill="#52514e"/>
+  <rect x="888" y="130" width="250" height="230" rx="12" fill="#eaf2fc" stroke="#2a78d6" stroke-width="2"/>
+  <text x="908" y="166" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">eval_cases → traces</text>
+  <text x="908" y="189" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">per case: expected,</text>
+  <text x="908" y="209" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">actual, trace_id</text>
+  <text x="908" y="229" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">→ the llm spans,</text>
+  <text x="908" y="249" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="400" fill="#52514e" text-anchor="start">prompt and reply</text>
+  <rect x="195.62499999999994" y="383.85" width="808.7500000000001" height="22.950000000000003" rx="4" fill="#fcfcfb" stroke="none" stroke-width="2"/>
+  <text x="600" y="400" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="500" fill="#52514e" text-anchor="middle">no duplicate storage: an optimize row only points at the eval rows that already exist</text>
+  <text x="48" y="460" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="17" font-weight="700" fill="#0b0b0b" text-anchor="start">In the Local UI:</text>
+  <rect x="190" y="436" width="105" height="40" rx="8" fill="#e5f6ef" stroke="#1baf7a" stroke-width="1.5"/>
+  <text x="204" y="461.76" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#0b0b0b" text-anchor="start">AutoLLM</text>
+  <polyline points="295,456 317,456" fill="none" stroke="#8a8880" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="317,456 303.0,449.0 303.0,463.0" fill="#8a8880"/>
+  <rect x="321" y="436" width="83" height="40" rx="8" fill="#eaf2fc" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="335" y="461.76" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#0b0b0b" text-anchor="start">a run</text>
+  <polyline points="404,456 426,456" fill="none" stroke="#8a8880" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="426,456 412.0,449.0 412.0,463.0" fill="#8a8880"/>
+  <rect x="430" y="436" width="149" height="40" rx="8" fill="#eaf2fc" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="444" y="461.76" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#0b0b0b" text-anchor="start">Winner card</text>
+  <polyline points="579,456 601,456" fill="none" stroke="#8a8880" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="601,456 587.0,449.0 587.0,463.0" fill="#8a8880"/>
+  <rect x="605" y="436" width="182" height="40" rx="8" fill="#eaf2fc" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="619" y="461.76" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#0b0b0b" text-anchor="start">trajectory row</text>
+  <polyline points="787,456 809,456" fill="none" stroke="#8a8880" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="809,456 795.0,449.0 795.0,463.0" fill="#8a8880"/>
+  <rect x="813" y="436" width="160" height="40" rx="8" fill="#eaf2fc" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="827" y="461.76" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#0b0b0b" text-anchor="start">its eval run</text>
+  <polyline points="973,456 995,456" fill="none" stroke="#8a8880" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="995,456 981.0,449.0 981.0,463.0" fill="#8a8880"/>
+  <rect x="999" y="436" width="138" height="40" rx="8" fill="#eaf2fc" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="1013" y="461.76" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#0b0b0b" text-anchor="start">its traces</text>
+  <text x="48" y="520" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="400" fill="#52514e" text-anchor="start" font-style="italic">persist=False writes none of it — and skips the per-candidate eval rows too.</text>
+</svg>
