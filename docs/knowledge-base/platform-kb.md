@@ -15,7 +15,7 @@ Use this when your KB is managed centrally (uploaded via the platform UI, shared
 ```python
 import fastaiagent as fa
 
-fa.connect(api_key="fa_k_...", target="https://app.fastaiagent.net")
+fa.connect(api_key="fa_k_...", target="https://<label>-dev.api.fastaiagent.net")
 
 kb = fa.PlatformKB(kb_id="c876a247-4fa1-4796-9d89-cc9a9e5fd4a3")
 

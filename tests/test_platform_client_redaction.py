@@ -32,7 +32,9 @@ def test_m8_platformapi_repr_redacts_api_key():
     """Same property for ``PlatformAPI``."""
     from fastaiagent._platform.api import PlatformAPI
 
-    api = PlatformAPI(api_key="sk-real-platform-key-with-many-chars-CD34")
+    api = PlatformAPI(
+        api_key="sk-real-platform-key-with-many-chars-CD34", base_url="https://example.com"
+    )
     text = repr(api)
     assert "sk-real-platform-key-with-many-chars" not in text
     assert "CD34" in text

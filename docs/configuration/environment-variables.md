@@ -32,7 +32,7 @@ two processes must share.
 | Variable | Default | Purpose |
 |---|---|---|
 | `FASTAIAGENT_API_KEY` | — | API key used by `connect()` / the CLI when not passed explicitly. |
-| `FASTAIAGENT_TARGET` | `https://app.fastaiagent.net` | Platform base URL. |
+| `FASTAIAGENT_TARGET` | — | Your program address, shown in the console when you create an API key (`https://<label>-dev.api.fastaiagent.net`). Used by `connect()` and `fastaiagent connect` when no target is passed; with neither, they raise. No default since 1.100.0. |
 | `FASTAIAGENT_PROJECT` | — | Project override for the trace-export payload. |
 | `FASTAIAGENT_CONSOLE_URL` | = target | Console origin for console deep links (split-origin dev). |
 | `FASTAIAGENT_GOVERNANCE_FAIL_MODE` | `open` | 🔒 `closed` makes governed tool calls refuse when the policy can't be confirmed; `open` preserves fail-open. **Not a boolean**: only the literal `closed` hardens the gate, so a typo can never silently fail-*close* a production gate. An unrecognised value logs a warning and stays `open`. |

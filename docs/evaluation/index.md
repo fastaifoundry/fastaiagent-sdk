@@ -539,7 +539,7 @@ When connected to the FastAIAgent Platform, you can pull shared datasets, publis
 ```python
 import fastaiagent as fa
 
-fa.connect(api_key="fa-...", project="my-project")
+fa.connect(api_key="fa_k_...", target="https://<label>-dev.api.fastaiagent.net", project="my-project")
 
 # Pull dataset from platform
 dataset = Dataset.from_platform("golden-test-set")

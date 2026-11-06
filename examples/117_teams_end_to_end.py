@@ -126,7 +126,7 @@ def main() -> None:
     if os.environ.get("FASTAIAGENT_API_KEY"):
         fa.connect(
             api_key=os.environ["FASTAIAGENT_API_KEY"],
-            target=os.environ.get("FASTAIAGENT_TARGET", "https://app.fastaiagent.net"),
+            target=os.environ.get("FASTAIAGENT_TARGET"),  # your program address
         )
         print("Connected: each member registers as itself on its first run.\n")
 

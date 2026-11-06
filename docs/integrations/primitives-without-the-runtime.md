@@ -36,8 +36,8 @@ Everything on this page follows from these:
 import fastaiagent as fa
 
 fa.connect(
-    api_key="fa_...",
-    target="https://app.fastaiagent.net",
+    api_key="fa_k_...",
+    target="https://<label>-dev.api.fastaiagent.net",
     export_traces=False,   # ← no platform span exporter, no global provider claim
 )
 ```

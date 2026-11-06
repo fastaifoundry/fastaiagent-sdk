@@ -76,7 +76,7 @@ def _load_tools(entrypoints: list[str]) -> None:
 @runner_app.callback(invoke_without_command=True)
 def runner(
     connect: str = typer.Option(
-        ..., "--connect", help="Platform base URL (e.g. https://app.fastaiagent.net)."
+        ..., "--connect", help="Your program address (e.g. https://<label>-dev.api.fastaiagent.net)."
     ),
     key: str = typer.Option(
         ..., "--key", help="SDK API key — sent as X-API-Key to register the runner."

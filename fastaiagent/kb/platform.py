@@ -21,13 +21,13 @@ if TYPE_CHECKING:
 class PlatformKB:
     """Query a KB hosted on the FastAIAgent platform.
 
-    Requires ``fa.connect(api_key=...)`` to have been called. The API key must
-    have the ``kb:read`` scope and domain access to the KB.
+    Requires ``fa.connect(api_key=..., target=...)`` to have been called. The API
+    key must have the ``kb:read`` scope and domain access to the KB.
 
     Example::
 
         import fastaiagent as fa
-        fa.connect(api_key="...")
+        fa.connect(api_key="fa_k_...", target="https://<label>-dev.api.fastaiagent.net")
 
         kb = fa.PlatformKB(kb_id="kb_abc123")
         results = kb.search("refund policy", top_k=5)

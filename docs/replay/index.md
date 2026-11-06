@@ -523,7 +523,7 @@ When connected to the FastAIAgent Platform, you can pull any trace from the plat
 ```python
 import fastaiagent as fa
 
-fa.connect(api_key="fa-...", project="my-project")
+fa.connect(api_key="fa_k_...", target="https://<label>-dev.api.fastaiagent.net", project="my-project")
 
 # Pull a platform trace and replay locally
 replay = Replay.from_platform(trace_id="tr-abc123")

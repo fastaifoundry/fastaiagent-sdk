@@ -24,7 +24,7 @@ Either way, `connect()` is the single entry point.
 ```python
 import fastaiagent as fa
 
-fa.connect(api_key="fa_k_…", target="https://app.fastaiagent.net")
+fa.connect(api_key="fa_k_…", target="https://<label>-dev.api.fastaiagent.net")
 
 agent = fa.Agent(name="Support", system_prompt="Help the customer.")
 agent.run("hi")          # auto-registers on first run → appears in the console

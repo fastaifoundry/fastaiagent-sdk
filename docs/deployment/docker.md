@@ -184,10 +184,10 @@ The fastaiagent Platform already handles observability. Wire it up at server sta
 import fastaiagent as fa
 import os
 
-if os.environ.get("FASTAIAGENT_PLATFORM_URL"):
+if os.environ.get("FASTAIAGENT_API_KEY"):
     fa.connect(
-        os.environ["FASTAIAGENT_PLATFORM_URL"],
         api_key=os.environ["FASTAIAGENT_API_KEY"],
+        target=os.environ["FASTAIAGENT_TARGET"],  # your program address
     )
 ```
 

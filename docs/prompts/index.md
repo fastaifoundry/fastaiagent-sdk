@@ -344,7 +344,7 @@ Publish to platform:
 ```python
 import fastaiagent as fa
 
-fa.connect(api_key="fa-...", project="my-project")
+fa.connect(api_key="fa_k_...", target="https://<label>-dev.api.fastaiagent.net", project="my-project")
 registry = PromptRegistry()
 registry.publish(slug="greeting", content=prompt.template, variables=prompt.variables)
 ```
@@ -403,7 +403,7 @@ When connected to the FastAIAgent Platform, `PromptRegistry` can pull versioned 
 ```python
 import fastaiagent as fa
 
-fa.connect(api_key="fa-...", project="my-project")
+fa.connect(api_key="fa_k_...", target="https://<label>-dev.api.fastaiagent.net", project="my-project")
 
 registry = PromptRegistry()
 

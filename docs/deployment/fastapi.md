@@ -228,7 +228,7 @@ With `Memory` attached, the server keeps the conversation, so:
 - **Workers and memory.** The server above keeps no state, so `--workers` is safe. With `Memory` attached, each worker holds its own recent turns; see [Let the server remember users](#let-the-server-remember-users-memory).
 - **Graceful shutdown.** Uvicorn handles `SIGTERM` cleanly out of the box; Kubernetes will wait for in-flight requests to finish.
 - **Timeouts.** An agent that loops on tool calls can run for minutes. Set a per-route timeout on your ingress (nginx/ALB/Cloud Run) to something generous (`300s`) and handle the truncation server-side via a [middleware-enforced `ToolBudget`](../agents/middleware.md#toolbudgetmax_calls10-message).
-- **Observability.** Call `fa.connect(api_key=os.environ["FASTAIAGENT_API_KEY"])` inside `build_agent()` (or at module import time) and production traces land in the same dashboard you use for dev. Pass `target=` only for a plane other than `https://app.fastaiagent.net`.
+- **Observability.** Call `fa.connect(api_key=os.environ["FASTAIAGENT_API_KEY"])` inside `build_agent()` (or at module import time) and production traces land in the same dashboard you use for dev. Set `FASTAIAGENT_TARGET` to your program address (shown in the console when you create an API key) or pass `target=`; with neither, `connect()` raises.
 
 ## Deploying the container
 

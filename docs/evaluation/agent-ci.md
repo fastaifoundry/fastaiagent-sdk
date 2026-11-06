@@ -377,7 +377,7 @@ fastaiagent eval export --status        # posture + how many runs are queued
 ### Turning it off
 
 ```python
-fa.connect(api_key=..., export_evals=False)     # or FASTAIAGENT_EXPORT_EVALS=0
+fa.connect(api_key=..., target=..., export_evals=False)     # or FASTAIAGENT_EXPORT_EVALS=0
 ```
 
 Eval export is *egress*, so this flag is final — the plane cannot override it, the

@@ -84,7 +84,7 @@ cog login
 cog push r8.im/<username>/my-agent
 ```
 
-In the Replicate UI, set `OPENAI_API_KEY` (and optionally `FASTAIAGENT_PLATFORM_URL` / `FASTAIAGENT_API_KEY`) as secrets on the model's settings page.
+In the Replicate UI, set `OPENAI_API_KEY` (and optionally `FASTAIAGENT_API_KEY` / `FASTAIAGENT_TARGET`) as secrets on the model's settings page.
 
 ## Call the public endpoint
 
@@ -162,10 +162,10 @@ Same pattern — wire up the fastaiagent Platform in `setup()`:
 def setup(self) -> None:
     import os
     import fastaiagent as fa
-    if os.environ.get("FASTAIAGENT_PLATFORM_URL"):
+    if os.environ.get("FASTAIAGENT_API_KEY"):
         fa.connect(
-            os.environ["FASTAIAGENT_PLATFORM_URL"],
             api_key=os.environ["FASTAIAGENT_API_KEY"],
+            target=os.environ["FASTAIAGENT_TARGET"],  # your program address
         )
     # ... build agent ...
 ```

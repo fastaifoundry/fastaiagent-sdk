@@ -22,7 +22,6 @@ from rich.console import Console
 console = Console()
 err_console = Console(stderr=True)
 
-_DEFAULT_TARGET = "https://app.fastaiagent.net"
 _CREDENTIALS_PATH = Path.home() / ".fastaiagent" / "credentials.toml"
 
 
@@ -81,10 +80,11 @@ def connect(
         hide_input=True,
         help="Your FastAIAgent Platform API key.",
     ),
-    target: str = typer.Option(
-        _DEFAULT_TARGET,
+    target: str | None = typer.Option(
+        None,
         "--target",
-        help="Platform URL.",
+        help="Your program address, shown in the console when you create an API key. "
+        "Defaults to FASTAIAGENT_TARGET.",
     ),
     project: str | None = typer.Option(
         None,
@@ -94,8 +94,9 @@ def connect(
 ) -> None:
     """Save Platform credentials to ~/.fastaiagent/credentials.toml and verify them.
 
-    ``fa.connect(api_key=...)`` in Python is unchanged — this CLI just saves
-    the key once so you don't have to pass it every time in scripts / CI.
+    ``fa.connect(api_key=..., target=...)`` in Python is unchanged — this CLI just
+    saves the key and target once so you don't have to pass them every time in
+    scripts / CI.
     """
     from fastaiagent import client as _client
 
@@ -104,6 +105,8 @@ def connect(
     except Exception as err:
         console.print(f"[red]Connection failed:[/red] {err}")
         raise typer.Exit(code=1) from err
+    # The address connect() resolved (--target, else FASTAIAGENT_TARGET), normalized.
+    target = _client._connection.target
 
     # Until 1.97.0 every outcome below printed "✓ Connected" and exited 0.
     result = _client._connection.check_result or "unreachable"
@@ -158,7 +161,7 @@ def auth_status() -> None:
         console.print("[yellow]Not connected.[/yellow] Run `fastaiagent connect --api-key ...`.")
         raise typer.Exit(code=1)
     source = creds.get("_source", "file")
-    target = creds.get("target", _DEFAULT_TARGET)
+    target = creds.get("target") or "(not set)"
     project = creds.get("project")
     masked = creds["api_key"][:6] + "…" + creds["api_key"][-4:]
     console.print(f"[green]Connected[/green] (source: {source})")

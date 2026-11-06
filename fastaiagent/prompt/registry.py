@@ -33,7 +33,8 @@ class PromptRegistry:
         text = prompt.format(name="World")
 
     With platform:
-        fa.connect(api_key="fa-...", project="my-project")
+        fa.connect(api_key="fa_k_...", target="https://<label>-dev.api.fastaiagent.net",
+                   project="my-project")
         reg = PromptRegistry()
         prompt = reg.get("support-prompt")  # fetches from platform
     """

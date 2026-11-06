@@ -41,7 +41,10 @@ import os
 
 import fastaiagent as fa
 
-fa.connect(api_key=os.environ["FASTAIAGENT_API_KEY"])
+fa.connect(
+    api_key=os.environ["FASTAIAGENT_API_KEY"],
+    target=os.environ["FASTAIAGENT_TARGET"],  # your program address
+)
 # ...define agent, start server...
 ```
 
