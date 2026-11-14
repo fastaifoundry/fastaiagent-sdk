@@ -150,14 +150,14 @@ def _check_file(path: Path, rep: Report) -> None:
             for item in node.names:
                 if item.name == "*":
                     continue
-                ok, obj = _member(owner, item.name)
+                ok, imported = _member(owner, item.name)
                 if not ok:
                     dotted = f"{mod}.{item.name}"
                     rep.problem(
                         path, node.lineno, f"cannot import {item.name} from {mod}{_hint(dotted)}"
                     )
-                elif isinstance(obj, types.ModuleType):
-                    aliases[item.asname or item.name] = obj
+                elif isinstance(imported, types.ModuleType):
+                    aliases[item.asname or item.name] = imported
 
     reported: set[tuple[int, str]] = set()
     for node in ast.walk(tree):

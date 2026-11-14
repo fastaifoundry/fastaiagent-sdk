@@ -82,4 +82,5 @@ print(fastaiagent.__version__)  # 1.0.0
 ## Next Steps
 
 - [Build Your First Agent](first-agent.md)
+- [Use fastaiagent with a coding assistant](coding-assistants.md) — `fastaiagent skills install` teaches Claude Code, Copilot, Cursor and Antigravity this SDK's real API
 - [Explore the Documentation](../index.md)

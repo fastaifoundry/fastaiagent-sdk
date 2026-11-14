@@ -69,4 +69,12 @@ echo "    fastaiagent push --module myapp.agents"
 echo "    fastaiagent push --module myapp.agents --dry-run   # print, don't send"
 echo ""
 
+# --- Skills for coding assistants ---
+echo "13. Agent Skills for Claude Code, Copilot, Cursor, Antigravity"
+fastaiagent skills list
+echo "    fastaiagent skills install            # .claude/skills + .agents/skills in this project"
+echo "    fastaiagent skills install --user     # ~/.claude/skills + ~/.agents/skills"
+echo "    fastaiagent skills install --force    # replace a copy left by an older SDK"
+echo ""
+
 echo "=== Done ==="
