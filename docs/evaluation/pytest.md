@@ -65,7 +65,7 @@ evaluate_one(
     expected=None,               # overrides @case / @dataset
     scorers=["exact_match"],     # str names or Scorer instances
     assert_pass=True,            # set False to inspect the record manually
-    case_name=None,              # appended to the run_name for grouping
+    case_name=None,              # accepted, currently unused (no effect on the run)
     persist=True,                # write to local.db
 )
 ```

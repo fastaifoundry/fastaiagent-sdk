@@ -188,18 +188,45 @@ data = json.loads(content)
 
 ## Using with Agents
 
-Pass `response_format` through the agent's `run()` or `arun()` kwargs. The format is forwarded to the underlying LLM:
+For an agent, use `output_type=` (see [Output Type](#output-type-pydantic-models) below). It builds the `response_format`, parses the reply onto `result.parsed`, and re-asks the model when the reply does not validate:
 
 ```python
+from pydantic import BaseModel
 from fastaiagent import Agent, LLMClient
+
+class Person(BaseModel):
+    name: str
+    age: int
+    city: str
 
 agent = Agent(
     name="data-extractor",
     system_prompt="Extract structured data from user messages.",
     llm=LLMClient(provider="openai", model="gpt-4.1"),
+    output_type=Person,
 )
 
-result = agent.run(
+result = agent.run("Alice is 30 years old and lives in Paris")
+if result.parsed is None:   # no exception is raised when the retries run out
+    print("could not parse:", result.output)
+else:
+    print(result.parsed)    # Person(name='Alice', age=30, city='Paris')
+```
+
+`result.parsed` is `None` when the reply still does not validate after `output_retries` re-asks (default 2). The run does not raise; `result.output` holds the raw text, so always check `parsed` before using it.
+
+### Hand-written `response_format`
+
+`agent.run()` / `arun()` also forward a `response_format` kwarg straight to the LLM. This is the lower-level route: you build the format and parse the reply yourself, and there is no retry and no `result.parsed`:
+
+```python
+plain_agent = Agent(      # no output_type
+    name="data-extractor",
+    system_prompt="Extract structured data from user messages.",
+    llm=LLMClient(provider="openai", model="gpt-4.1"),
+)
+
+result = plain_agent.run(
     "Alice is 30 years old and lives in Paris",
     response_format={
         "type": "json_schema",
@@ -219,7 +246,7 @@ result = agent.run(
 )
 
 import json
-person = json.loads(result.output)
+person = json.loads(result.output)   # raises json.JSONDecodeError on bad JSON
 print(person)  # {"name": "Alice", "age": 30, "city": "Paris"}
 ```
 

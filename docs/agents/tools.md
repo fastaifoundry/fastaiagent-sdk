@@ -104,7 +104,7 @@ result = calculate.execute({"expression": "2 + 2"})
 | `MCPTool` | Use an MCP server's tools | `MCPTool.from_server("http://localhost:3000/mcp")` |
 | [Provider-run](../tools/provider-tools.md) | Web search, code execution, file search run by the model's provider (1.91.0) | `web_search()`, `code_execution()`, `file_search(["vs_1"])` from `fastaiagent.tool` |
 
-The first three (and `@tool`) accept an optional `replay_class` (`read_only` / `idempotent` / `side_effecting`, default `side_effecting`) that controls inject-vs-execute during [Agent Replay](../replay/index.md). See [Tools → Replay safety](../tools/index.md#replay-safety-replay_class).
+The first three (and `@tool`) accept an optional `replay_class` (`read_only` / `idempotent` / `side_effecting`, default `side_effecting`) that is recorded on each tool span and read by a central Replay engine to choose inject-vs-execute; the SDK's own rerun ignores it and blocks tools you did not supply (see [Agent Replay](../replay/index.md)). See [Tools → Replay safety](../tools/index.md#replay-safety-replay_class).
 
 ## ToolResult
 

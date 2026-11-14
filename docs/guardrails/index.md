@@ -20,6 +20,7 @@ User Input → [Input Guardrails] → LLM → [Output Guardrails] → Response
 4. **Tool result guardrails** run on tool output before sending back to the LLM
 
 If a **blocking** guardrail fails, execution stops immediately with `GuardrailBlockedError`.
+Import it with `from fastaiagent._internal.errors import GuardrailBlockedError` (it is not exported from `fastaiagent`).
 
 ## Built-in Guardrails
 

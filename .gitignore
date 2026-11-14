@@ -78,6 +78,9 @@ claude_files/
 
 # Scripts / recordings / videos
 scripts/
+# ...but a skill's scripts/ folder is part of the skill and ships in the wheel (hatch honours
+# .gitignore, so without this check_imports.py is silently left out of the package).
+!fastaiagent/skills/*/scripts/
 
 # Ad-hoc source dirs created by examples that seed a KB (e.g. 37, 41).
 .fastaiagent-source-docs/

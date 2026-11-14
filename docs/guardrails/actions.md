@@ -30,7 +30,7 @@ Guardrail(
 
 | `action` | What happens on a failure |
 |---|---|
-| `block` | Raise `GuardrailBlockedError`. The default, and what every rule authored before wire v1.9 does. |
+| `block` | Raise `GuardrailBlockedError` (`from fastaiagent._internal.errors import GuardrailBlockedError`). The default, and what every rule authored before wire v1.9 does. |
 | `warn` | Record the failure and continue. The verdict is still a failure — the evidence stays honest — it just doesn't halt. |
 | `mask` | Replace the offending spans and continue with the redacted value. Defined for the types that locate the offending text: `regex` and `classifier` re-run their pattern, `pii` and `secrets` replace the spans their detectors return. Everything else returns a bare verdict, and a mask with nothing to redact degrades to a block. |
 | `override` | Replace the payload with `config["override_message"]` (falling back to the rule's tripwire message) and continue. |

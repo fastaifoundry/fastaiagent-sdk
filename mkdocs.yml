@@ -87,6 +87,7 @@ nav:
           - getting-started/index.md
           - Installation: getting-started/installation.md
           - "Build Your First Agent": getting-started/first-agent.md
+          - "Use a coding assistant": getting-started/coding-assistants.md
       - Tutorials:
           - tutorials/index.md
           - "Build Your First Agent in 5 Minutes": tutorials/first-agent.md

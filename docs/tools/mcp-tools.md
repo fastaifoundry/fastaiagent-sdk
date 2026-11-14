@@ -86,8 +86,8 @@ before anything reaches the server.
   (`command=`) tool rebuilt from a payload therefore has nothing to run and refuses with an error —
   a payload can never start a process.
 
-> **Replay safety.** Pass `replay_class="read_only" | "idempotent" | "side_effecting"` to mark how
-> [Agent Replay](../replay/index.md) treats this tool — default `side_effecting`, never auto-inferred.
+> **Replay safety.** Pass `replay_class="read_only" | "idempotent" | "side_effecting"` to label the tool
+> for a central [Agent Replay](../replay/index.md) engine (the SDK's own rerun ignores it) — default `side_effecting`, never auto-inferred.
 > See [Replay safety](index.md#replay-safety-replay_class).
 
 ## Upgrading from 1.91

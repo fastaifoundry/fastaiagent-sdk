@@ -24,8 +24,8 @@ chain.add_node("translate", agent=translator)
 chain.connect("summarize", "translate")
 
 result = chain.execute({"message": "Python is a popular programming language"})
-print(result.output)
-print(result.node_results)     # {"summarize": {...}, "translate": {...}}
+print(result.output["output"])  # the final text: an agent node's output is a dict
+print(result.node_results)     # {"summarize": {"output": ..., "tool_calls": []}, "translate": {...}}
 print(result.execution_id)     # UUID for checkpointing/resume
 ```
 
@@ -350,10 +350,10 @@ Every chain execution returns a `ChainResult`:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `output` | `Any` | Final node's output |
+| `output` | `Any` | Final node's output, as that node returned it. For an agent node this is a dict, `{"output": <text>, "tool_calls": [...]}`, so the text is `result.output["output"]` |
 | `final_state` | `dict` | Chain state after all nodes complete |
 | `execution_id` | `str` | UUID for checkpointing and resume |
-| `node_results` | `dict` | Map of node_id -> output for each executed node |
+| `node_results` | `dict` | Map of node_id -> output for each executed node. Same shape as `output`: an agent node's entry is `{"output": ..., "tool_calls": [...]}`, a tool node's is `{"output": ..., "error": ...}` |
 | `status` | `str` | `"completed"`, `"paused"`, `"rejected"`, or `"cancelled"` (1.93.0) |
 
 ```python
@@ -425,6 +425,10 @@ result = await chain.aexecute({"input": "data"})
 result = await chain.resume(execution_id="<id>")
 ```
 
+`Chain.resume` is a coroutine; there is no synchronous form, so call it with
+`await` (or `asyncio.run(...)`). `chain.aresume(...)` is an alias for it.
+(`Agent.resume` is the synchronous one.)
+
 ## Error Handling
 
 ```python
@@ -488,7 +492,7 @@ result = chain.execute(
     {"message": "My order hasn't arrived"},
     hitl_handler=lambda n, c, s: True,  # Auto-approve for demo
 )
-print(result.output)
+print(result.output["output"])  # "send" is an agent node, so output is {"output": ..., "tool_calls": [...]}
 ```
 
 ---

@@ -34,6 +34,12 @@ OpenAI id no preset provider serves, so an omitted model could never work. The
 built-in providers above still default to `gpt-4o-mini`, so pass `model=` for
 every built-in except `openai`.
 
+The "(specify)" cells in the built-in table do **not** mean an error is raised.
+`LLMClient(provider="anthropic")` (likewise `ollama`, `azure`, `bedrock`,
+`custom`) constructs without complaint and `client.model` is silently
+`"gpt-4o-mini"`; that id is what the call sends, so the mistake surfaces as an error from the provider on the first request (a
+provider that does not serve that id), not at construction.
+
 | Key | Wire | Default model | API key env var | Tools | Streaming | `response_format` |
 |---|---|---|---|---|---|---|
 | `gemini` | native | `gemini-3.8-flash` | `GEMINI_API_KEY` | ✓ | ✓ | native (`responseSchema`) |

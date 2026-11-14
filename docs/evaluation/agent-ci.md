@@ -274,14 +274,15 @@ either a callable or any object with a `.run` method (e.g. an `Agent`).
 |---|---|
 | `0` | Gate passed |
 | `1` | Quality gate failed (threshold miss or regression) |
-| `3` | Run invalid: the error rate exceeded `--max-error-rate`, nothing was scored, a gated scorer could not run or applied to no case, the threshold is not a metric (`overall.avg_score`), or the dataset or the agent could not be loaded (*1.97.0*; it was `1`) |
+| `3` | Run invalid: the error rate exceeded `--max-error-rate`, nothing was scored, a gated scorer could not run or applied to no case, the threshold is not a metric (`overall.avg_score`), the dataset was not found, or the agent module failed to import (*1.97.0*; it was `1`) |
 
 `eval run` prints an `errored` and an `n/a` column per scorer, an
 `overall (checks)` row and a `cases` row; `--json` adds `scorecard.cases` and
 `gate.invalid_reasons`. `eval compare` adds rows for errored cases, cases only
 in one run, score drift and the cases-rate delta.
 
-(`2` is reserved by the CLI framework for usage errors.)
+(`2` is the CLI framework's usage-error code. It is what a malformed `--agent`
+spec (no `:`) or a module without that attribute exits with.)
 
 ## From production failure to gate
 

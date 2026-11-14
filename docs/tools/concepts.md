@@ -116,8 +116,12 @@ The `@tool` decorator is the shorthand for the common case; it accepts
 Every tool carries a `replay_class` — `read_only`, `idempotent`, or
 `side_effecting` (the safe default). It's **never auto-inferred**: a GET-style
 REST tool is not assumed read-only, because guessing wrong would re-fire a call
-during replay. The mark tells the central Replay engine whether it may
-re-execute the tool or must inject the recorded output. See
+during replay. The SDK records the mark on every tool span
+(`fastaiagent.tool.replay_class`) and in `to_dict()`; a central Replay engine
+can use it to decide whether to re-execute the tool or inject the recorded
+output. The SDK's own `ForkedReplay.rerun()` never reads it: it blocks every
+tool you did not supply or allow (`with_tool_policy`, `with_tool_override`,
+`with_tool_stub`). See
 [Agent Replay](../replay/concepts.md) and
 [Fidelity Guarantees](../replay/guarantees.md).
 

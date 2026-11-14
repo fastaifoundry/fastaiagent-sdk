@@ -24,8 +24,8 @@ except ImportError:  # pragma: no cover — exercised by subprocess test
     def _missing_pytest(*_args: Any, **_kwargs: Any) -> Any:
         raise ImportError(
             "fastaiagent.eval.case / fastaiagent.eval.pytest_dataset require "
-            "``pytest``. Install it with `pip install pytest` or include the "
-            "fastaiagent[testing] extra in your dev environment."
+            "``pytest``, which is not a fastaiagent dependency. Install it "
+            "with `pip install pytest`."
         )
 
     case = _missing_pytest  # type: ignore[assignment]
