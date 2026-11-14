@@ -247,10 +247,11 @@ _UNPARSEABLE_ALLOWLIST: dict[str, str] = {
     "docs/agents/dynamic-instructions.md:51fb9f07f4e1": "callable type signature",
     "docs/agents/teams.md:266c2eaac065": "Supervisor() signature listing",
     "docs/agents/teams.md:6a1a1fa678ab": "Worker() signature listing",
-    "docs/testing/index.md:8596e8cc4d60": "TestModel() signature listing",
+    "docs/testing/index.md:482bc97793bc": "TestModel() signature listing",
+    "docs/testing/index.md:5986e4cce414": "FunctionModel() signature listing",
     "docs/internals/evaluation-system.md:4f74fd7b5845": "evaluate() signature listing",
     "docs/internals/evaluation-system.md:27fefff8a1db": "LLMJudge() signature listing",
-    "docs/evaluation/pytest.md:444d78c8cd49": "evaluate_one() signature listing",
+    "docs/evaluation/pytest.md:39b10283161d": "evaluate_one() signature listing",
 }
 
 

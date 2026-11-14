@@ -302,7 +302,7 @@ result = chain.execute(
     {"message": "My order hasn't arrived"},
     hitl_handler=review_handler,
 )
-print(result.output)
+print(result.output["output"])  # "send" is an agent node: output is {"output": ..., "tool_calls": [...]}
 ```
 
 ---

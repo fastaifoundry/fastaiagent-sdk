@@ -155,16 +155,22 @@ Each item is a dict. The only required field is `input`. Other common fields:
 |-------|---------|-------------|
 | `input` | All scorers | The input to send to the agent |
 | `expected` or `expected_output` | ExactMatch, Contains, LLMJudge | The expected correct answer |
-| `conversation` | Session scorers | Multi-turn chat history |
+| `conversation` | Session scorers (not forwarded by `evaluate()`; see below) | Multi-turn chat history |
 | `expected_trajectory` | Trajectory scorers | Expected tool call sequence |
 | `tags` | Filtering | Labels for grouping test cases |
 
-> **What `evaluate()` forwards to scorers:** per case, the eval loop passes only
-> `input` and `expected`/`expected_output`. Fields like `conversation`,
-> `expected_trajectory`, and `context` are consumed by specific scorers — pass
-> them as keyword arguments to `evaluate()` (applied to every case) or call the
-> scorer's `.score(...)` directly per case. See the
-> [trajectory](trajectory-scoring.md) and [session](session-scoring.md) docs.
+> **What `evaluate()` forwards to scorers:** per case, the eval loop passes
+> `input`, the agent's output, and `expected`/`expected_output`, plus these dataset
+> row fields when the row has them: `expected_trajectory`, `expected_tool_calls`,
+> `expected_steps`, `context` and `contexts`. It also passes what the run
+> measured (`cost`, `cost_known`, `latency_ms`), the agent's tool calls
+> (`actual_trajectory`, `actual_tool_calls`, `actual_steps`, only when the agent
+> returns an `AgentResult`), and any extra keyword arguments you give
+> `evaluate()` (applied to every case; a row's own value wins for the row
+> fields). It does **not** forward `conversation` (or `goal`): pass them as
+> keyword arguments to `evaluate()` or call the scorer's `.score(...)` directly
+> per case. See the [trajectory](trajectory-scoring.md) and
+> [session](session-scoring.md) docs.
 
 ## Built-in Scorers
 
@@ -496,8 +502,9 @@ fastaiagent eval curate --filter failed -o cases/regressions.jsonl
 ```
 
 Exit codes: `0` gate passed · `1` quality gate failed · `3` run invalid
-(infra error rate exceeded, a gated scorer could not run, nothing scored, or the
-dataset or the agent could not be loaded).
+(infra error rate exceeded, a gated scorer could not run, nothing scored, the
+dataset was not found, or the agent module failed to import). A malformed
+`--agent` spec or a missing attribute is a usage error and exits `2`.
 `--fail-under "cases.pass_rate=0.8"` gates on cases instead of checks. See
 **[Agent CI](agent-ci.md)** for the
 pytest-native gate, baselines, and the GitHub Actions recipe.

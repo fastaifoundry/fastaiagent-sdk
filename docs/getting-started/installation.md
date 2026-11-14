@@ -76,10 +76,11 @@ print(fastaiagent.__version__)  # 1.0.0
 |----------|---------|----------|
 | `OPENAI_API_KEY` | OpenAI API calls | If using OpenAI provider |
 | `ANTHROPIC_API_KEY` | Anthropic API calls | If using Anthropic provider |
-| `FASTAIAGENT_API_KEY` | Platform sync | If connecting to platform |
-| `FASTAIAGENT_PROJECT` | Platform project name | If connecting to platform |
+| `FASTAIAGENT_API_KEY` | Platform API key. Read by the CLI only; Python `connect()` never reads it, so pass `api_key=os.environ["FASTAIAGENT_API_KEY"]` | Optional |
+| `FASTAIAGENT_PROJECT` | Platform project name. Read by the CLI only; Python `connect()` takes `project=` | Optional |
 
 ## Next Steps
 
 - [Build Your First Agent](first-agent.md)
+- [Use fastaiagent with a coding assistant](coding-assistants.md) — `fastaiagent skills install` teaches Claude Code, Copilot, Cursor and Antigravity this SDK's real API
 - [Explore the Documentation](../index.md)

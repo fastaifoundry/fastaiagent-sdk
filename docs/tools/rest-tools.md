@@ -36,7 +36,7 @@ result = await weather_api.aexecute({"city": "Paris", "days": 3})
     private/metadata addresses and drops credential headers on a cross-origin
     redirect. See [Security Posture](../security.md).
 
-> **Replay safety.** Pass `replay_class="read_only" | "idempotent" | "side_effecting"` to mark how [Agent Replay](../replay/index.md) treats this tool — default `side_effecting`. A `GET` is **not** auto-classified `read_only`; mark it explicitly. See [Replay safety](index.md#replay-safety-replay_class).
+> **Replay safety.** Pass `replay_class="read_only" | "idempotent" | "side_effecting"` to label the tool for a central [Agent Replay](../replay/index.md) engine (the SDK's own rerun ignores it) — default `side_effecting`. A `GET` is **not** auto-classified `read_only`; mark it explicitly. See [Replay safety](index.md#replay-safety-replay_class).
 
 ## Body Mapping Options
 

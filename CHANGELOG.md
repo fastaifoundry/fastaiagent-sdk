@@ -7,6 +7,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.101.0] - 2026-11-14 — skills for coding assistants
+
+A coding assistant was not trained on this SDK's current API, so it guesses one: `connect()`
+without a target, the LangChain adapter removed in 1.96.0, `discover_tools()`. The code reads
+right and fails when run. This release ships an Agent Skill that teaches the real API, a
+command that installs it where Claude Code, GitHub Copilot, Cursor, Google Antigravity and the
+other tools read it, and a checker that fails on a name that does not exist. Additive only.
+**It does not touch the wire protocol** — no payload, header or route changes.
+
+### Added
+
+- **`fastaiagent-sdk` skill** under `fastaiagent/skills/`, in the open Agent Skills format
+  (`SKILL.md` + `references/` + `scripts/`). It carries the ten mistakes assistants make most and
+  a reference each for agents, tools, teams, guardrails, evals, platform, testing and
+  what changed by version. Written from the code at this commit; the tests below keep it true.
+- **`fastaiagent skills list | install | path`.** `install` copies the skill into
+  `.claude/skills/` (Claude Code; Copilot and Cursor read it too) and `.agents/skills/` (Copilot,
+  Cursor, Antigravity, Codex, Gemini CLI and others), or `~/.claude/skills` and `~/.agents/skills`
+  with `--user`. It stamps the SDK version in each copy, so `skills list` flags copies installed by
+  another version. It refuses to replace a copy without `--force`, never writes through a symlink,
+  and appends a three-line pointer to `AGENTS.md` only when asked (or when you answer yes at a
+  terminal); `CLAUDE.md` only with `--claude-md`. JSON on stdout, notes on stderr.
+- **`scripts/check_imports.py`** inside the skill: resolves every `fastaiagent` import and
+  `fa.X` attribute in a file against the installed SDK, names the replacement for removed
+  names, and warns on `connect()` without a target and on the dead `app.fastaiagent.net` address.
+- **`docs/getting-started/coding-assistants.md`**, a `fastaiagent skills` section in the CLI
+  reference, a README section, and `docs/llms.txt` / `docs/llms-full.txt` generated from the skill.
+- **The public repository [`fastaifoundry/fastaiagent-skills`](https://github.com/fastaifoundry/fastaiagent-skills)**
+  — a generated copy for `npx skills add`, `gh skill install` and Claude Code's
+  `/plugin marketplace add`. `scripts/sync_skills_repo.py` builds it and `--check` fails on drift.
+
+### Tests
+
+- `tests/test_skills_package.py`: Agent Skills format limits (name equals folder, lengths, body
+  size, references one level deep and linked); every Python snippet in the skill parses and its
+  imports resolve; every quoted signature matches `inspect.signature`; the skill files, including
+  `scripts/`, are in the built wheel; the public repository copy is byte-identical and drift fails;
+  `llms.txt` is current.
+- `tests/test_cli_skills.py`: install into both folders, one tool, `--user`, `--force`, stale
+  detection, the `AGENTS.md` pointer (created, appended, never duplicated), no prompt without a
+  terminal, symlink refusal.
+
+### Fixed
+
+- **`.gitignore` ignored every folder named `scripts/`**, which would have left a skill's
+  `check_imports.py` out of git and out of the wheel (hatch honours `.gitignore`). The skill's
+  `scripts/` folder is now excluded from that rule; the wheel test caught it.
+- **Docs that disagreed with the code**, found while writing the skill from the source (each
+  proved with a small offline run before the page was changed):
+  - `TestModel(response=["", "final"], tool_calls=[...])` does script a tool turn then an answer;
+    a single-string `response=""` with `tool_calls` loops to the iteration limit.
+  - `evaluate()` forwards more than `input`/`expected` to scorers (trajectory, tool calls, `context`,
+    `contexts`, cost, latency, extra kwargs), but not `conversation`.
+  - The persisted pytest run is named `pytest::<rootdir name>` (or `--eval-run-name`), not
+    `pytest::<nodeid>`; `evaluate_one(case_name=)` and `@case(name=)` are accepted and unused.
+  - `eval run` exits 2 for a malformed `--agent` spec or a missing attribute, and 3 for a module
+    that fails to import or a missing dataset.
+  - `ChainResult.output` of an agent node is `{"output": ..., "tool_calls": [...]}`; a typed
+    `int` input fed from `{{state.n}}` fails because templates render strings; `Chain.resume`
+    is async only.
+  - `GuardrailBlockedError` is importable only from `fastaiagent._internal.errors`.
+  - `output_type=` is the supported structured-output path and `result.parsed` can be `None`
+    after the retries, with no exception; providers other than `openai` given no model silently
+    use `gpt-4o-mini`.
+  - `replay_class` is recorded on each tool span for a replay engine; the SDK's own
+    `ForkedReplay.rerun()` never reads it. `Tool.from_dict` raises on an unknown value.
+  - `connect()` never reads `FASTAIAGENT_API_KEY` or `FASTAIAGENT_PROJECT`; only the CLI does.
+  - The pytest-missing `ImportError` in `fastaiagent.eval` no longer names a `fastaiagent[testing]`
+    extra that does not exist; the `tools/index.md` quick example no longer uses `eval()`.
+
 ## [1.100.0] - 2026-11-06 — `connect()` has no default target
 
 `connect()` defaulted to `https://app.fastaiagent.net`, the old production

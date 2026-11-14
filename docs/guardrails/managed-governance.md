@@ -72,6 +72,7 @@ agent = Agent(name="support", llm=LLMClient(provider="openai", model="gpt-4o"))
 #                                    ^ no guardrails=[...] defined locally
 agent.run("Confirm my record: name Dana, SSN 123-45-6789.")
 # -> GuardrailBlockedError(guardrail_name="block-ssn-output")
+#    from fastaiagent._internal.errors import GuardrailBlockedError
 ```
 
 - **No new check engine.** A rule is mapped onto the SDK's own

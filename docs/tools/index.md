@@ -15,18 +15,20 @@ Tools give agents the ability to take actions — call APIs, query databases, ru
 ## Quick Example
 
 ```python
-from fastaiagent import Agent, FunctionTool, RESTTool, LLMClient
+from fastaiagent import Agent, RESTTool, LLMClient
+from fastaiagent.tool import tool
 
-def calculate(expression: str) -> str:
-    """Evaluate a math expression."""
-    return str(eval(expression))
+@tool(name="percent_of")
+def percent_of(percent: float, value: float) -> str:
+    """Return `percent` percent of `value`."""
+    return str(value * percent / 100)
 
 agent = Agent(
     name="assistant",
     system_prompt="Use tools to answer questions.",
     llm=LLMClient(provider="openai", model="gpt-4.1"),
     tools=[
-        FunctionTool(name="calculate", fn=calculate),
+        percent_of,   # @tool returns a FunctionTool
         RESTTool(name="weather", url="https://api.weather.com/v1", method="GET"),
     ],
 )
@@ -73,10 +75,12 @@ This format is automatically converted to Anthropic's `input_schema` format when
 
 ## Replay safety (`replay_class`)
 
-Every tool type and the `@tool` decorator accept an optional `replay_class` that
-tells the central Replay engine whether a recorded tool call may be
-**re-executed** during a rerun or must have its **recorded output injected**
-instead.
+Every tool type and the `@tool` decorator accept an optional `replay_class`. It
+is a label the SDK records: it is stamped on each tool span as
+`fastaiagent.tool.replay_class` and serialised in `to_dict()`. An external
+(central) Replay engine can read it to decide whether a recorded tool call may be
+**re-executed** or must have its **recorded output injected** instead. The SDK's
+own rerun never reads it (see the note below).
 
 !!! note "The SDK's own rerun does not act on `replay_class`"
     Since 1.89.0 `ForkedReplay.rerun()` blocks every tool you did not supply or
@@ -86,7 +90,7 @@ instead.
     tool in the Local UI's fork dialog, to help you choose. See
     [Replay guarantees](../replay/guarantees.md#tools-a-rerun-runs-only-what-you-supply).
 
-| `replay_class` | Meaning | Replay behavior |
+| `replay_class` | Meaning | What a central Replay engine does with it (the SDK's own rerun ignores it) |
 |----------------|---------|-----------------|
 | `"read_only"` | No side effects; safe to call again (e.g. a GET, a pure lookup). | May be re-executed during replay. |
 | `"idempotent"` | Repeating the call with the same args is safe / converges. | Recorded output is injected (not re-executed). |
@@ -117,7 +121,10 @@ def charge_card(amount: int) -> str:
   only an explicit mark makes a tool re-executable. Auto-inferring would violate
   the replay-safety invariant.
 - **Validated strictly.** A value outside `read_only` / `idempotent` /
-  `side_effecting` raises `ValueError` at construction.
+  `side_effecting` raises `ValueError` at construction, and `Tool.from_dict`
+  raises it too (it builds through the same constructor). Only the SDK's
+  replay-rebuild path, which reads tools back out of a trace, coerces an unknown
+  value to `side_effecting` instead of raising.
 - The resolved value is emitted on every tool-call span as
   `fastaiagent.tool.replay_class` (see [Tracing](../tracing/index.md)).
 

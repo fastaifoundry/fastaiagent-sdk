@@ -105,9 +105,10 @@ call that fails, or a reply with no `score` field, is **errored**.
 
 Session scorers operate on conversation data passed through keyword arguments —
 `turns` for `ConversationCoherence`, `goal` for `GoalCompletion`. Because
-`evaluate()`'s dataset loop only forwards `input`/`expected` per case (not
-`conversation`/`goal`), call `.score(...)` directly with the conversation you
-captured:
+`evaluate()`'s dataset loop does not forward `conversation`/`goal` from a row
+(it forwards `input`, `expected` and a fixed set of row fields; see
+[Evaluation](index.md#dataset-item-fields)), call `.score(...)` directly with
+the conversation you captured:
 
 ```python
 from fastaiagent.eval import ConversationCoherence, GoalCompletion

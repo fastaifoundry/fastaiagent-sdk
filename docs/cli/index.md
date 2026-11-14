@@ -27,6 +27,7 @@ fastaiagent --help
 | `fastaiagent ui` | Start the Local UI — traces, prompts, evals, guardrails, approvals |
 | `fastaiagent agent` | Run an Agent or Chain as an HTTP service |
 | `fastaiagent mcp` | Expose an Agent or Chain as an MCP server |
+| `fastaiagent skills` | Install Agent Skills that teach coding assistants this SDK (`list`, `install`, `path`) |
 | `fastaiagent resume` | Resume a paused execution (durability) |
 | `fastaiagent list-pending` | List pending interrupts awaiting human approval |
 | `fastaiagent inspect` | Show checkpoint history for an execution |
@@ -202,8 +203,9 @@ refused.
 **Exit codes:** `0` gate passed · `1` quality gate failed (threshold miss or
 regression) · `3` run invalid (infra error rate exceeded, nothing scored, a
 gated scorer could not run or applied to no case, a threshold that is not a
-metric, or the dataset or the agent could not be loaded; before 1.97.0 those two
-exited `1` with a traceback). `2` is reserved for usage errors.
+metric, the dataset was not found, or the agent module failed to import; before
+1.97.0 those two exited `1` with a traceback). `2` is a usage error, including a
+malformed `--agent` spec or a missing attribute.
 
 For gating your existing pytest suite — with baselines and regression detection —
 see [Agent CI](../evaluation/agent-ci.md).
@@ -391,6 +393,36 @@ Requires: `pip install 'fastaiagent[mcp]'`.
 
 ---
 
+## `fastaiagent skills`
+
+Install the Agent Skills that teach a coding assistant this SDK — see
+[Use fastaiagent with a coding assistant](../getting-started/coding-assistants.md).
+
+```bash
+fastaiagent skills install                  # this project: .claude/skills and .agents/skills
+fastaiagent skills install --user           # every project: ~/.claude/skills and ~/.agents/skills
+fastaiagent skills install --tool agents    # only .agents/skills (Copilot, Cursor, Antigravity, Codex...)
+fastaiagent skills install --force          # replace a copy left by an older SDK
+fastaiagent skills list                     # packaged skills + installed copies, with a stale flag
+fastaiagent skills path                     # the folder the skills ship in
+```
+
+`install` copies each skill into `.claude/skills/<name>/` (Claude Code) and
+`.agents/skills/<name>/` (GitHub Copilot, Cursor, Google Antigravity, Codex, Gemini CLI and
+others), and stamps the SDK version in each copy. It prints a JSON summary on stdout, notes on
+stderr, and exits `1` when a copy already exists from another version and `--force` was not given,
+or the destination is a symbolic link; `2` for an unknown `--tool`.
+
+| Option | Does |
+|---|---|
+| `--tool claude\|agents\|all` | Which folder to install into (default `all`) |
+| `--user` | Install into your home folder instead of the project |
+| `--force` | Replace an existing copy |
+| `--agents-md / --no-agents-md` | Add a three-line pointer to `AGENTS.md` — created if missing, appended to otherwise, never rewritten. Asked about only when there is a terminal; skipped when there is none. |
+| `--claude-md` | Also add the pointer to `CLAUDE.md`, which is never edited otherwise |
+
+---
+
 ## Durability commands
 
 The four commands below cover the v1.0 [durability](../durability/index.md) workflow: pause an execution with `interrupt()`, list what's waiting, then resume from any process.
@@ -460,9 +492,9 @@ See [docs/durability/checkpointers.md](../durability/checkpointers.md) for the f
 
 | Variable | Used by |
 |---|---|
-| `FASTAIAGENT_API_KEY` | Platform connection (Python + CLI) |
+| `FASTAIAGENT_API_KEY` | `fastaiagent auth status` / `auth env` (CLI only; Python `connect()` does not read it, pass `api_key=`) |
 | `FASTAIAGENT_TARGET` | Platform URL override |
-| `FASTAIAGENT_PROJECT` | Platform project override |
+| `FASTAIAGENT_PROJECT` | `fastaiagent auth status` / `auth env` (CLI only; Python `connect()` takes `project=`) |
 | `FASTAIAGENT_LOCAL_DB` | Local SQLite store (traces, checkpoints, idempotency, prompts) |
 | `FASTAIAGENT_CHECKPOINT_DB_PATH` | Override checkpoint store path (legacy; prefer `FASTAIAGENT_LOCAL_DB`) |
 | `FASTAIAGENT_LIVE_OPENAI_MODEL` | Override OpenAI model in live tests |

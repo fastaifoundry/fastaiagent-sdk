@@ -56,7 +56,9 @@ fa.connect(
 ```
 
 **Environment variables** (alternative): `connect()` reads `FASTAIAGENT_TARGET`
-when `target=` is not passed, and raises `ValueError` when neither is set.
+when `target=` is not passed, and raises `ValueError` when neither is set. It
+does **not** read `FASTAIAGENT_API_KEY`: `api_key` is required, so pass it
+yourself, e.g. `fa.connect(api_key=os.environ["FASTAIAGENT_API_KEY"])`.
 ```bash
 export FASTAIAGENT_API_KEY=fa_k_...
 export FASTAIAGENT_TARGET=https://<label>-dev.api.fastaiagent.net

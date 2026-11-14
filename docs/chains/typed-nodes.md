@@ -59,6 +59,15 @@ def make_user(name: str) -> dict:
 `validate_input=False` to skip it). You can also set `input_schema=` /
 `output_schema=` / `output_key=` directly on `add_node` for any node.
 
+!!! warning "Templates render as strings"
+    An `input_mapping` value containing `{{...}}` is rendered to a **string**
+    before the input schema is checked, so a typed `int` parameter fed from
+    `{{state.n}}` fails with `Node 'dbl' input failed input_schema: Expected
+    integer, got string`, even when `state.n` is the integer `5`. A literal
+    (non-template) mapping value such as `{"n": 5}` keeps its type. To read a
+    number from state, take the parameter as `str` and convert it inside the
+    function.
+
 ## What's intentionally out
 
 This is a tight slice. Sub-DAGs / composite nodes, multi-node transactions, and a

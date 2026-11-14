@@ -1,0 +1,15 @@
+{
+  "name": "fastaiagent-skills",
+  "description": "Agent Skills that teach coding assistants the FastAIAgent SDK",
+  "owner": {
+    "name": "FastAIFoundry",
+    "url": "https://github.com/fastaifoundry"
+  },
+  "plugins": [
+    {
+      "name": "fastaiagent",
+      "source": "./",
+      "description": "Skills for writing, testing and operating agents with the fastaiagent SDK"
+    }
+  ]
+}

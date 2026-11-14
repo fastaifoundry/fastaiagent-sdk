@@ -74,5 +74,6 @@ print(Replay.load(result.trace_id).summary())
 
 - [Installation Guide](getting-started/installation.md)
 - [Build Your First Agent in 5 Minutes](tutorials/first-agent.md)
+- [Use fastaiagent with a coding assistant](getting-started/coding-assistants.md)
 - [Use fastaiagent with your existing framework](integrations/frameworks.md)
 - [Debug with Agent Replay](tutorials/debug-with-replay.md)

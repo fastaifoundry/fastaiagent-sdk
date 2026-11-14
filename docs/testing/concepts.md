@@ -58,11 +58,14 @@ produced no trace at all.
   conversation** and computes the next response, so it can branch on history.
   This is how you script a state machine.
 
-!!! info "A real limitation worth knowing"
-    `TestModel` attaches tool calls only to a single string response — you
-    **cannot** script "call a tool on turn 1, then answer on turn 2" with
-    `TestModel` alone. Use `FunctionModel` with a closure over turn state for
-    multi-turn tool flows.
+!!! info "Scripting a tool turn with `TestModel`"
+    `TestModel` attaches `tool_calls` to the **first** canned response only. To
+    script "call a tool on turn 1, then answer on turn 2", pass a list:
+    `TestModel(response=["", "final"], tool_calls=[...])`. With a single string
+    (`TestModel(response="", tool_calls=[...])`) the sticky last turn repeats the
+    tool call forever, so the agent runs until the max-iterations error. For
+    flows that must branch on the conversation, use `FunctionModel` with a closure
+    over turn state.
 
 ### How a test becomes an eval run
 
@@ -82,7 +85,8 @@ its helpers are unaffected.
   and asserts.
 
 Results persist to `eval_runs` / `eval_cases` in `local.db` under a run name of
-`pytest::<nodeid>`, so CI runs show up in the Local UI alongside everything else.
+`pytest::<rootdir name>` (or whatever `--eval-run-name` sets), one run per pytest
+session, so CI runs show up in the Local UI alongside everything else.
 
 ### Closing the loop from production
 

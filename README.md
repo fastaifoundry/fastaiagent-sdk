@@ -14,7 +14,7 @@ pip install fastaiagent
 
 Runs fully standalone, or connect to the [FastAIAgent Platform](https://fastaiagent.net) for hosted observability, prompt management, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.100.0)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.101.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -41,6 +41,21 @@ result = agent.run("What is the capital of France?")
 print(result.output)
 print(result.trace_id)  # every run is traced — use this ID for replay/debugging
 ```
+
+## Use it with a coding assistant
+
+Claude Code, GitHub Copilot, Cursor, Google Antigravity and the rest were not trained on this
+SDK's current API, so they guess it. One command installs a skill that teaches them the real one,
+and a checker that fails on a name that does not exist:
+
+```bash
+fastaiagent skills install    # .claude/skills and .agents/skills in this project
+```
+
+No SDK needed to install it: `npx skills add fastaifoundry/fastaiagent-skills`, `gh skill install
+fastaifoundry/fastaiagent-skills fastaiagent-sdk`, or in Claude Code
+`/plugin marketplace add fastaifoundry/fastaiagent-skills`.
+See [Use fastaiagent with a coding assistant](docs/getting-started/coding-assistants.md).
 
 ## Providers
 

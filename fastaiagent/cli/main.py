@@ -18,6 +18,7 @@ from fastaiagent.cli.push import register_push_command
 from fastaiagent.cli.replay import replay_app
 from fastaiagent.cli.resume import register as register_resume_commands
 from fastaiagent.cli.runner import runner_app
+from fastaiagent.cli.skills import skills_app
 from fastaiagent.cli.traces import traces_app
 from fastaiagent.cli.ui import ui_app
 from fastaiagent.learn.cli import learn_app
@@ -38,6 +39,11 @@ app.add_typer(mcp_app, name="mcp", help="Expose an Agent or Chain as an MCP serv
 app.add_typer(agent_app, name="agent", help="Run an Agent or Chain as a service")
 app.add_typer(runner_app, name="runner", help="Run a registered runner daemon (pulls live jobs)")
 app.add_typer(auth_app, name="auth", help="Inspect saved Platform credentials")
+app.add_typer(
+    skills_app,
+    name="skills",
+    help="Install Agent Skills that teach coding assistants this SDK",
+)
 app.add_typer(ui_app, name="ui", help="Local web UI (traces, prompts, evals, guardrails)")
 app.add_typer(
     learn_app,

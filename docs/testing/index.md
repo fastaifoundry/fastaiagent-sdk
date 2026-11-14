@@ -26,8 +26,13 @@ TestModel(
     usage: tuple[int, int] = (0, 0),
     model: str = "test-model",
     delay_ms: int = 0,
+    decisions: DecisionResult | dict | list | None = None,  # canned decide() results
 )
 ```
+
+`decisions=` serves canned [Decisions API](../llm/decisions.md#testing-without-the-network)
+results (one for every call, or a list served in order, the last repeating).
+Without it, `decide()` raises.
 
 Pass a list to round-robin through several responses on successive calls:
 
@@ -44,6 +49,11 @@ TestModel(
     tool_calls=[{"name": "search", "arguments": {"q": "x"}}],
 )
 ```
+
+The tool calls attach to the **first** canned response. With a single string the
+last turn repeats, so an agent keeps calling the tool until it hits the
+max-iterations error. To call a tool and then answer, pass a list:
+`TestModel(response=["", "final"], tool_calls=[...])`.
 
 `tm.calls` records every invocation (`messages`, `tools`, `kwargs`) for
 test assertions.
@@ -69,6 +79,21 @@ agent = Agent(name="searcher",
               llm=FunctionModel(responder),
               tools=[search_tool])
 ```
+
+Constructor:
+
+```python
+FunctionModel(
+    fn,                          # the responder, below
+    *,
+    model: str = "function-model",
+    delay_ms: int = 0,
+    decide_fn=None,              # (input, questions) -> DecisionResult | dict, for decide()
+)
+```
+
+Without `decide_fn`, `decide()` raises. See
+[Decisions: testing without the network](../llm/decisions.md#testing-without-the-network).
 
 The responder may be sync or async, and may return:
 

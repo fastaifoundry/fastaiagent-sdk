@@ -71,8 +71,11 @@ class Tool:
         self.parameters = parameters or {"type": "object", "properties": {}}
         # Resolve the safe default *before* validating, so unset always passes.
         # Strict: an explicit out-of-set value is a developer error and raises
-        # loudly here (the authoring boundary). The wire/replay layer stays
-        # lenient and coerces unknown values to ``side_effecting`` at read time.
+        # loudly here (the authoring boundary). ``Tool.from_dict`` goes through
+        # this constructor, so it raises ``ValueError`` on an unknown value too.
+        # Only the replay-rebuild path (``tool/_replay_blocked.py`` /
+        # ``trace/replay.py``) is lenient: it coerces an unknown value to
+        # ``side_effecting`` before constructing.
         resolved = _DEFAULT_REPLAY_CLASS if replay_class is None else replay_class
         if resolved not in _ALLOWED_REPLAY_CLASSES:
             raise ValueError(
