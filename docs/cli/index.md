@@ -28,6 +28,7 @@ fastaiagent --help
 | `fastaiagent agent` | Run an Agent or Chain as an HTTP service |
 | `fastaiagent mcp` | Expose an Agent or Chain as an MCP server |
 | `fastaiagent skills` | Install Agent Skills that teach coding assistants this SDK (`list`, `install`, `path`) |
+| `fastaiagent studio` | Build an agent through Agent Studio, headless: send a spec, try it, eval it, export it (`context`, `new`, `spec`, `show`, `try`, `eval`, `export` …) |
 | `fastaiagent resume` | Resume a paused execution (durability) |
 | `fastaiagent list-pending` | List pending interrupts awaiting human approval |
 | `fastaiagent inspect` | Show checkpoint history for an execution |
@@ -420,6 +421,58 @@ or the destination is a symbolic link; `2` for an unknown `--tool`.
 | `--force` | Replace an existing copy |
 | `--agents-md / --no-agents-md` | Add a three-line pointer to `AGENTS.md` — created if missing, appended to otherwise, never rewritten. Asked about only when there is a terminal; skipped when there is none. |
 | `--claude-md` | Also add the pointer to `CLAUDE.md`, which is never edited otherwise |
+
+---
+
+## `fastaiagent studio`
+
+Build an agent through Agent Studio from a terminal or a coding tool. You (or the tool's model) design
+the agent and write it as a spec; Studio checks it, renders the code, runs trials and evals in its
+sandbox, keeps every version and exports a project. It never calls Studio's own model. It needs a
+platform at 0.20.0 or later and a key with `studio:read` and `studio:write`. The whole story is in
+[Agent Studio from the command line and from code](../platform/agent-studio.md).
+
+```bash
+fastaiagent studio context --json
+fastaiagent studio new --name "Order desk" --brief "Answer order-status questions." --data orders.csv
+fastaiagent studio spec validate "Order desk" spec.json
+fastaiagent studio spec push "Order desk" spec.json --note "first design" --wait
+fastaiagent studio try "Order desk" "What is the status of order 1003?"
+fastaiagent studio eval "Order desk"
+fastaiagent studio export "Order desk" --out .
+```
+
+`<draft>` is a draft's id or its name. Credentials are resolved as `fastaiagent push` does (`--api-key`
+and `--target`, else `FASTAIAGENT_API_KEY` and `FASTAIAGENT_TARGET`, else what `fastaiagent connect`
+saved). Every command takes `--json` (the answer as one JSON document on stdout), `--api-key`,
+`--target` and `--project-id` (only for a key that is not tied to one project). Notes and errors go to
+stderr. Exit `0` means it happened, `1` that it did not (a refusal, a spec with problems, an eval case
+that failed), `2` a usage error. With `--json` a failure is also printed on stdout as
+`{"error": {"code", "message", "hint", "status", "details"}}`.
+
+| Command | Does |
+|---|---|
+| `studio context` | The project's LLM endpoints, knowledge bases, guardrail names, tool types, limits and SDK contract. Read it first |
+| `studio list [--status S] [--query Q] [--limit N]` | The project's drafts, each with its step |
+| `studio new --name N --brief B [--data FILE]... [--data-text NAME=FILE]... [--harness] [--endpoint ID]` | Make a draft and add sample data. `--data-text` is for text you read yourself (a scan or image). `--endpoint` is needed when the project has more than one LLM endpoint |
+| `studio status <draft>` | The step state and the next action. Says so when someone changed the draft in the console (`stale`) |
+| `studio spec schema [--full]` | Print the spec's JSON Schema |
+| `studio spec validate <draft> <file>` | Check a spec; makes nothing. Exit `0` only with no problems; warnings do not change it |
+| `studio spec push <draft> <file> [--note T] [--wait]` | Make the next version from a whole spec |
+| `studio spec get <draft> [--version N] [--out FILE]` | The spec of a version, to edit and push again |
+| `studio show <draft> [--version N] [--files] [--file PATH]` | The design (blueprint), or the generated code |
+| `studio diff <draft> A B` | What changed between versions A and B |
+| `studio try <draft> QUESTION [--worker W] [--version N] [--wait\|--no-wait]` | One question in the sandbox (started if needed): the answer, the tool calls, the trace link. A team needs `--worker`. Waits by default; exit `1` if the trial failed |
+| `studio eval <draft> [--worker W] [--case C] [--wait\|--no-wait]` | Run the eval cases. **Exit `0` only when no case failed.** A case that "needs review" is not a failure |
+| `studio export <draft> [--out DIR] [--version N] [--force]` | Unpack the project into a folder. Refuses to overwrite without `--force`, and then writes nothing |
+| `studio promote <draft> --agent ID` | Turn the eval cases into an eval suite on an agent the exported code registered |
+| `studio open <draft>` | Print the draft's console address (it does not open a browser) |
+| `studio delete <draft> [--yes]` | Delete a draft. It asks only at a terminal |
+
+There is no `studio plan`, `build`, `refine` or `reset`: those need Studio's own model and stay in the
+console. A trial applies no guardrails and answers tools from sample data; guardrails apply in the
+exported code. A coding assistant is taught the loop by the `fastaiagent-studio` skill, which
+`fastaiagent skills install` installs.
 
 ---
 

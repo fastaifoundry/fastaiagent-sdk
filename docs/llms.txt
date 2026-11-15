@@ -7,7 +7,8 @@ Assistants: read the full reference first. It lists the mistakes assistants make
 ## Read first
 
 - [Full reference for coding assistants](https://docs.fastaiagent.net/llms-full.txt): the ten rules, then agents, tools, teams, guardrails, evals, platform, testing, what changed
-- [Use fastaiagent with a coding assistant](https://docs.fastaiagent.net/getting-started/coding-assistants/): install the skill (`fastaiagent skills install`)
+- [Use fastaiagent with a coding assistant](https://docs.fastaiagent.net/getting-started/coding-assistants/): install the skills (`fastaiagent skills install`)
+- [Agent Studio from the command line](https://docs.fastaiagent.net/platform/agent-studio/): build an agent through Agent Studio with `fastaiagent studio` (the spec, the commands, the errors); also the last part of the full reference above
 
 ## Documentation
 

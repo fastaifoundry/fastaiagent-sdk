@@ -2,7 +2,7 @@
 
 > Use when writing, changing, testing or debugging Python code that imports `fastaiagent` (the FastAIAgent SDK) — agents, tools, guardrails, evals, tracing, multi-agent teams, or connecting to a FastAIAgent platform. Covers the real API (Agent, LLMClient, AgentConfig, @tool, RESTTool, MCPTool, Supervisor, Swarm, Chain, evaluate, connect) and the mistakes assistants make when they guess it from older versions. Read it before writing any fastaiagent code, and run scripts/check_imports.py on what you wrote.
 
-This page is the `fastaiagent-sdk` skill: the main page, then one reference per area. Install it into a project with `fastaiagent skills install`.
+This page is the `fastaiagent-sdk` skill: the main page, then one reference per area. The `fastaiagent-studio` skill follows it (building an agent through Agent Studio, needs a platform). Install both into a project with `fastaiagent skills install`.
 
 ---
 
@@ -115,12 +115,14 @@ it works.
 
 # What older answers get wrong
 
-Read this when your memory of the SDK predates 1.100.0, or when code or advice you recall fails: each row is something that was removed, renamed or changed in meaning between 1.40 and 1.100.0. Purely additive features are left out.
+Read this when your memory of the SDK predates 1.102.0, or when code or advice you recall fails: each row is something that was removed, renamed or changed in meaning between 1.40 and 1.102.0. Purely additive features are left out.
 
 Rule of thumb: if an answer from memory imports a framework adapter, calls `connect()` with only a key, or waits for an approval inside `arun()`, it is out of date.
 
 | Old (what you may remember) | Now | Since |
 |---|---|---|
+| An output guardrail such as `allowed_topics` on a `Swarm` member stops the swarm at its first handoff ("Off topic") | The handoff turn is not judged; the member that answers is. Its `stop_reason` is `"handoff"` | 1.102.0 |
+| `PlatformAPI` has only `get` and `post` and returns a dict; `PlatformRateLimitError` has only a message | `patch`, `delete`, `post_multipart`, `download` (and async twins); the body is any JSON; `PlatformRateLimitError.retry_after` | 1.102.0 |
 | `fa.connect(api_key=...)` with no target, defaulting to `app.fastaiagent.net` | `target=` is required, else `FASTAIAGENT_TARGET`, else `ValueError`. The old host is dead; never write an address you were not given. `PlatformAPI(base_url=...)` is required too. | 1.100.0 |
 | `fastaiagent connect` / `push` falling back to a built-in host | `--target`, else `FASTAIAGENT_TARGET`; with neither, nothing is saved and exit code is 1. | 1.100.0 |
 | `fastaiagent connect` prints "Connected" and exits 0 whatever happened | Unreachable or 5xx plane: saves, says "not verified", exit 1. A non-plane answer (e.g. 404): saves nothing, exit 1. Python `fa.connect()` still connects offline and only logs a warning. | 1.97.0 |
@@ -754,6 +756,7 @@ fastaiagent.Swarm.resume(execution_id, resume_value=, context=, **kwargs)
 - The run ends when an agent answers with no handoff. The handoff tool accepts `reason` and an optional `context` dict that merges into the shared blackboard and is shown to later agents; tool results from earlier agents are also listed in each briefing (since 1.99.0).
 - Errors: `SwarmError` (a subclass of `AgentError`) for a missing entrypoint, duplicate names, unknown peers, a disallowed handoff, or exceeding `max_handoffs`. Do tune `max_handoffs` to the topology; a writer <-> critic loop with no exit hits it.
 - `timeout_seconds` bounds the whole run and raises `AgentTimeoutError`.
+- A member's output guardrails are not run on its handoff turn (that turn's `stop_reason` is `"handoff"`, since 1.102.0): the reply is a control marker, and an allow-style rule such as `allowed_topics` used to block the swarm on its first handoff. They still judge the member that answers.
 
 ```python
 from fastaiagent import Agent, Swarm
@@ -1797,3 +1800,790 @@ Run `fastaiagent <command> --help` for flags. Entry point: `fastaiagent` (also `
 | `optimize --agent --dataset` | Eval-driven prompt optimisation loop for an agent. |
 
 Don't call `fastaiagent connect` from CI without `--target` or `FASTAIAGENT_TARGET` — it fails with the no-target error, exit 1.
+
+## Agent Studio from code or the command line (1.102.0)
+
+Not for writing agent code by hand. A platform at 0.20.0 or later can build an agent from a spec you
+design: `fastaiagent studio …` (`context`, `new`, `spec validate|push|get`, `show`, `try`, `eval`,
+`export`, …) and `fastaiagent.studio.StudioClient` (also `fa.studio`). The `fastaiagent-studio` skill
+teaches the loop, the spec and the errors; read that skill, not this paragraph, before you use it.
+`StudioError(code, message, status, details)` is a `PlatformError`; a platform without Studio raises
+`StudioError("studio_not_available")`.
+
+---
+
+# The `fastaiagent-studio` skill
+
+> Use when the person wants an agent built, tried and evaluated through FastAIAgent Agent Studio from the command line — "build me an order-status agent with Studio", "make a support team and test it", "change the agent Studio made". You design the agent and write it as a spec; the `fastaiagent studio` commands check it, render the code, run trials and evals in Studio's sandbox, keep versions and export a project. Needs a FastAIAgent platform (0.20.0 or later) and an API key with Agent Studio permissions. For writing fastaiagent code yourself, use the fastaiagent-sdk skill instead.
+
+# Agent Studio, from the command line
+
+Agent Studio is the FastAIAgent platform's builder: it checks a design, renders real SDK code
+from it, tries the agent against sample data, scores eval cases and exports a project. From the
+command line **you are the planner**. Studio's own model is never called: you design the agent
+with your model and send the design as a **spec**. Studio checks it and does the rest.
+
+After the export the code is the person's. Studio assists; it is not where agents live.
+
+## Before you start
+
+- A platform **0.20.0 or later** and an API key with `studio:read` and `studio:write` (the
+  console's "Agent Studio" key preset has both). Credentials come from `fastaiagent connect`,
+  or `FASTAIAGENT_API_KEY` and `FASTAIAGENT_TARGET`. Never ask for a key in chat, never print
+  one, never write one into a file.
+- Every command takes `--json` and prints one JSON document on stdout; notes and errors go to
+  stderr. **Always pass `--json`** and read the document. Exit 0 means it happened; exit 1 means
+  it did not (a refusal, a spec with problems, an eval that failed).
+- `<draft>` is a draft's id or its name.
+
+## The loop
+
+Do the steps in order. Do not skip step 3.
+
+1. **`fastaiagent studio context --json`** — the project's LLM endpoints, knowledge bases, the
+   guardrail names and tool types a spec may use, and the limits. **No LLM endpoint: stop** and
+   tell the person to add one in the console; nothing can be made without it. Writes off
+   (`environment.studio_writes_allowed` is false): stop and say so.
+2. **Read what the person wants.** Read any requirements document yourself. Read any scan or image
+   yourself, and say plainly what you could not read.
+3. **Lay the design out for the person and wait for a yes.** Say: the shape (one agent, a
+   supervisor team, or a swarm), each worker and what it does, each tool and where its data comes
+   from, the guardrails, and the eval cases. There is no plan step in the API, so this is where
+   the person approves. Never push a spec they have not agreed to.
+4. **`studio new --name … --brief "…" --data orders.csv --data-text scan=scan.txt --endpoint <id>`**
+   — makes the draft and adds the sample data. Pass `--endpoint` when the project has more than
+   one. A PDF or Word file with a text layer can be uploaded as it is; **a scan, a photo or any
+   image is refused** (`no_text_layer`): read it yourself, write the text to a file, and pass it
+   with `--data-text name=file`. Add `--harness` only when the person wants the prompts and eval
+   cases wired to the platform.
+5. **Write the spec** (`references/spec.md`), then **`studio spec validate <draft> spec.json
+   --json`**. Fix every problem it lists, each names its place. **Read every warning out to the
+   person**: a warning does not stop a version, and the person may not want what it says.
+6. **`studio spec push <draft> spec.json --note "…" --wait --json`** — makes the next version.
+7. **Look, then try, then evaluate:** `studio show <draft> --json` (the blueprint), `studio show
+   <draft> --files`, `studio try <draft> "a real question" --json`, `studio eval <draft> --json`.
+   Report what happened as it happened: failed cases and their reasons, and cases that "need
+   review" because the word rules cannot score them.
+8. **To change anything:** `studio spec get <draft> --out spec.json`, edit it, `validate`, `push`.
+   A new version is made and the old one is kept. A spec is always sent whole, never a patch.
+   Results count for one version: a pass on v1 is not carried to v2, so evaluate again.
+9. **`studio export <draft> --out <repo folder>`** — unpacks the project. Run its tests (they run
+   offline). Tell the person how to run the agent with their own model key. After the export,
+   the code is theirs.
+
+## The rules
+
+- **Never push a spec the person has not agreed to.** The platform cannot know they agreed.
+- **Never print or store a key.**
+- **A refusal is an answer, not an obstacle.** When a command fails, read `error.code`,
+  `error.message` and `error.hint`, tell the person, and stop. Do not retry a refusal, and do not
+  look for another way round it (`environment_rule`, `insufficient_scope`, `no_llm_endpoint`,
+  `key_has_no_owner`). `references/errors.md` says what each code means.
+- **Stale: stop and ask.** If `studio status` says `steps.stale` is true, someone changed the
+  draft in the console after the current version was made. Ask the person before changing anything.
+- **A team is tried one worker at a time** (`studio try … --worker orders`). Its end-to-end eval
+  cases run only from the exported code.
+- **Guardrails are not applied in a sandbox trial.** They apply in the exported code. Never tell
+  the person a guardrail "passed" because a trial succeeded.
+- **Tools answer from sample data in a trial,** never from a live system (except a knowledge-base
+  tool, which searches its knowledge base). A passing trial does not prove a REST tool works.
+- **Do not invent commands.** There is no `studio plan`, `build`, `refine` or `reset`: planning
+  and building from a description, and starting over, are console-only. To start over, push a new
+  spec; it makes a new version.
+- **Do not ask a draft's model to design for you.** You design; Studio checks and renders.
+- Use `--json`, branch on `error.code`, and do not parse the human text.
+
+## Where to read
+
+| You are doing | Read |
+|---|---|
+| Writing the spec: every field, the tool types, guardrails, eval criteria, worked examples for a single agent, a supervisor team and a swarm | `references/spec.md` |
+| Running a command: its options, and the JSON it prints | `references/commands.md` |
+| A command failed | `references/errors.md` |
+
+To write the SDK code the exported project is built from, or to change it by hand afterwards, use
+the `fastaiagent-sdk` skill.
+
+---
+
+# Writing a spec
+
+A **spec** is the design of one agent, as one JSON object. Studio checks it, renders the SDK
+code from it (the spec is the only input to the renderer), and keeps every version. You send it
+whole each time (`studio spec push`); there is no partial update. Print the exact JSON Schema
+with `fastaiagent studio spec schema`; this page is what a schema cannot say.
+
+Validate before you push: `fastaiagent studio spec validate <draft> spec.json --json`. A
+**problem** stops a version; a **warning** does not. Both name their place in `where`.
+
+## The top level
+
+| Field | Rule |
+|---|---|
+| `spec_version` | `1` |
+| `name` | The agent's name in code: `^[a-z][a-z0-9_-]{2,63}$`. Not the draft's display name. |
+| `description` | 1 to 1,000 characters. |
+| `architecture` | `single`, `supervisor` or `swarm`. (`chain` is in the schema but is refused.) |
+| `system_prompt` | A single agent's prompt, or a supervisor's routing prompt. At least 40 characters. A swarm has none: its workers own theirs. |
+| `llm` | `{"endpoint_id": "<id>"}`, an LLM endpoint of the project (`studio context`). The generated code is written for that endpoint's provider and model. |
+| `tools` | A single agent's tools. For a team it must be empty: every tool belongs to a worker. |
+| `guardrails` | Safety checks on the whole agent (see below). |
+| `eval_cases` | **At least 3.** For a team these are the end-to-end cases. |
+| `config` | Optional: `max_iterations` (1 to 25, default 10), `temperature` (0 to 2), `max_tokens` (1 to 32000). |
+| `workers` | Teams only: **2 to 6**, names unique. |
+| `max_delegation_rounds` | Supervisor only, 1 to 8 (default 3). |
+| `entrypoint`, `handoffs`, `max_handoffs` | Swarm only. `max_handoffs` is 1 to 16 (default 8). |
+
+A team size a person fixed in the console binds a spec sent here: a different worker count is a
+problem that names the fixed size.
+
+## Tools
+
+Every tool has `name` (a lowercase Python identifier, **unique across the whole spec**),
+`description` (1 to 500 characters; the agent's model reads it), `parameters`, and optionally
+`fixture_ref` (the sample-data file that answers for it in a trial).
+
+`parameters` is flat. Each entry is an object, never a bare string:
+
+```json
+{ "order_id": { "type": "string", "description": "the order number" } }
+```
+
+`type` is `string`, `integer`, `number` or `boolean`. Parameter names are lowercase identifiers.
+
+| `type` | Extra fields | In the exported code | In a trial |
+|---|---|---|---|
+| `mock` | `fixture_ref` (required), `match_keys` (each must be one of `parameters`), `default_response` | A lookup over the bundled sample data | The same lookup, served by Studio |
+| `rest` | `url` (http or https), `method` (`GET` default, `POST`, `PUT`, `DELETE`), `auth` (`none`, `bearer_env`, `api_key_env`) | A `RESTTool`; the secret is read from the environment | Answered from `fixture_ref` if set |
+| `mcp` | `server_url`, `tool_name` | An `MCPTool` | Answered from `fixture_ref` if set |
+| `kb` | `kb_id` (a knowledge base from `studio context`) | A `PlatformKB` search; needs a draft made with `--harness` | With `kb_id`: a search of that knowledge base. With `fixture_ref`: sample data |
+| `function` | `returns` (`str`, `int`, `float`, `bool`) | A typed stub the developer finishes | Answered from `fixture_ref` if set |
+
+**No tool ever carries a secret.** With `auth: bearer_env` the exported code reads
+`TOOL_API_TOKEN`; with `api_key_env` it reads `TOOL_API_KEY`. Never put a key in a spec.
+
+**Sample data must be reachable.** If you uploaded data, at least one tool must read it, and a
+`mock` tool names it with `fixture_ref` and the sample file's name (`orders.csv` is `orders`). A
+`mock` tool matches rows on `match_keys` (for `order_id`, the row whose `order_id` equals what the
+agent passed) and answers `default_response` when no row matches.
+
+## Guardrails
+
+`{"factory": "<name>", "kwargs": {...}}`. An unknown name, a missing required argument or an
+extra one is a problem. `studio context` lists the names; these are the arguments:
+
+| Factory | Arguments | Notes |
+|---|---|---|
+| `no_pii` | none | |
+| `no_secrets` | none | |
+| `no_prompt_injection` | none | |
+| `responsible_ai` | none | |
+| `openai_moderation` | none | Calls OpenAI's moderation API. The exported agent needs the `openai` package and an OpenAI key, and **blocks every answer without them** |
+| `toxicity_check` | optional `threshold` | |
+| `cost_limit` | required `max_usd` | |
+| `allowed_domains` | required `domains` | |
+| `banned_topics` | required `topics` | |
+| `allowed_topics` | required `topics` | In a **swarm** it is generated to check the question, not the answer (warning `guardrail_checks_question`) |
+| `json_valid` | none | **Warns.** Blocks every answer that is not a JSON document; only for an agent told to answer in JSON |
+| `grounded` | required `reference`, optional `threshold` | **Warns.** Checks the answer against a fixed reference text, so answers built from tool results fail |
+| `no_hallucination` | required `reference`, optional `threshold` | **Warns.** Same as `grounded` |
+
+Guardrails are **not applied in a sandbox trial**: only in the exported code. A worker with its
+own non-empty `guardrails` replaces the team's for that worker; an empty list inherits them.
+
+## Eval cases
+
+```json
+{
+  "name": "found_1003",
+  "input": "What is the status of order 1003?",
+  "expected_output": "Order 1003 has shipped.",
+  "criteria": { "must_mention": ["1003", "shipped"], "must_not_mention": ["refund"] }
+}
+```
+
+`name` and `input` are required. `criteria` may hold `must_mention` (a list), `must_not_mention`
+(a list) and `behaviour` (a sentence).
+
+**Scoring is by word rules, not a judge.** Every `must_mention` value must appear; no
+`must_not_mention` value may; and a case that does not use those rules passes on a 60% word overlap
+with `expected_output`. A case with only a `behaviour` can be neither passed nor failed: it reads
+**needs review**, and a person reads the answer. A value too short to score (one character, say)
+is a warning (`eval_value_unusable`) and is ignored. Prefer specific words ("shipped", "1003") over
+common ones. Write at least one case that should be refused or answered "not found".
+
+## Workers
+
+```json
+{
+  "name": "orders",
+  "description": "Order status and delivery questions",
+  "system_prompt": "You answer order status questions. Use orders_lookup with the order id and answer briefly.",
+  "tools": [],
+  "guardrails": [],
+  "eval_cases": []
+}
+```
+
+`name` is a lowercase identifier, unique in the spec; `description` (1 to 500) is what a supervisor
+or a peer reads to choose; `system_prompt` is at least 40 characters. Optional: `llm_endpoint_id`
+(another endpoint of the project), `max_iterations`. A worker's own `eval_cases` are scored in a
+sandbox, one worker at a time; give each worker at least one, or `studio eval --worker` refuses
+that worker (`worker_has_no_cases`).
+
+## Swarms
+
+Peers hand control to each other. Name an `entrypoint` (the first worker; it defaults to the first
+listed) and list each allowed handoff as `{"from_worker", "to_worker", "when"}`. A worker cannot
+hand off to itself, and **every worker must be reachable from the entrypoint**; an unreachable one is
+a problem. A swarm has no `system_prompt`.
+
+## Warnings
+
+| Code | Meaning |
+|---|---|
+| `guardrail_blocks_output` | A guardrail that will block every answer this agent gives (`json_valid`, `grounded`, `no_hallucination`) |
+| `guardrail_checks_question` | In a swarm, `allowed_topics` is generated to check the question |
+| `eval_value_unusable` | An eval value too short to score reliably; it is ignored |
+| `eval_dataset_not_updated` | The draft has a linked eval dataset and the spec carries different cases; this version uses the spec's cases |
+
+Nothing is changed behind your back: the spec that is checked is the spec that is rendered.
+
+## Example: one agent
+
+Sample data: `orders.csv` with `order_id`, `status`, `total`.
+
+```json spec
+{
+  "spec_version": 1,
+  "name": "order-status-bot",
+  "description": "Answers questions about customer orders from the uploaded orders data.",
+  "architecture": "single",
+  "system_prompt": "You answer order-status questions for customers. Use the orders_lookup tool with the order id. If the order is not found, say so plainly. Never reveal one customer's order to another. Answer in one or two sentences.",
+  "llm": { "endpoint_id": "ENDPOINT_ID" },
+  "tools": [
+    {
+      "type": "mock",
+      "name": "orders_lookup",
+      "description": "Look up one order by its id",
+      "parameters": { "order_id": { "type": "string", "description": "the order number" } },
+      "fixture_ref": "orders",
+      "match_keys": ["order_id"],
+      "default_response": "No order with that id."
+    }
+  ],
+  "guardrails": [{ "factory": "no_pii", "kwargs": {} }],
+  "eval_cases": [
+    { "name": "found_1003", "input": "What is the status of order 1003?", "criteria": { "must_mention": ["1003", "shipped"] } },
+    { "name": "missing_9999", "input": "Where is order 9999?", "criteria": { "behaviour": "says plainly that no such order was found" } },
+    { "name": "delivered_1004", "input": "Has order 1004 arrived?", "criteria": { "must_mention": ["1004", "delivered"] } }
+  ]
+}
+```
+
+## Example: a supervisor team
+
+A supervisor routes each request to one worker and gives the answer. Every tool is a worker's.
+
+```json spec
+{
+  "spec_version": 1,
+  "name": "support-triage-team",
+  "description": "Routes a support request to the orders or the billing specialist.",
+  "architecture": "supervisor",
+  "system_prompt": "You route each customer request to the right specialist, orders or billing, then give the customer their answer in one or two sentences.",
+  "llm": { "endpoint_id": "ENDPOINT_ID" },
+  "max_delegation_rounds": 3,
+  "tools": [],
+  "guardrails": [],
+  "workers": [
+    {
+      "name": "orders",
+      "description": "Order status and delivery questions",
+      "system_prompt": "You answer order status questions. Use orders_lookup with the order id and answer briefly.",
+      "tools": [
+        {
+          "type": "mock",
+          "name": "orders_lookup",
+          "description": "Look up one order by its id",
+          "parameters": { "order_id": { "type": "string", "description": "the order number" } },
+          "fixture_ref": "orders",
+          "match_keys": ["order_id"],
+          "default_response": "No order with that id."
+        }
+      ],
+      "eval_cases": [
+        { "name": "orders_1003", "input": "Where is order 1003?", "criteria": { "must_mention": ["1003", "shipped"] } }
+      ]
+    },
+    {
+      "name": "billing",
+      "description": "What an order cost",
+      "system_prompt": "You answer questions about what an order cost. Use billing_lookup with the order id and answer briefly.",
+      "tools": [
+        {
+          "type": "mock",
+          "name": "billing_lookup",
+          "description": "Look up what one order cost",
+          "parameters": { "order_id": { "type": "string", "description": "the order number" } },
+          "fixture_ref": "orders",
+          "match_keys": ["order_id"],
+          "default_response": "No order with that id."
+        }
+      ],
+      "eval_cases": [
+        { "name": "billing_1002", "input": "What did order 1002 cost?", "criteria": { "must_mention": ["89"] } }
+      ]
+    }
+  ],
+  "eval_cases": [
+    { "name": "end_to_end_status", "input": "Where is order 1003?" },
+    { "name": "end_to_end_cost", "input": "What did order 1002 cost?" },
+    { "name": "end_to_end_unknown", "input": "Where is order 9999?" }
+  ]
+}
+```
+
+## Example: a swarm
+
+```json spec
+{
+  "spec_version": 1,
+  "name": "support-swarm",
+  "description": "Peers that hand a customer to whoever can help, starting with orders.",
+  "architecture": "swarm",
+  "llm": { "endpoint_id": "ENDPOINT_ID" },
+  "entrypoint": "orders",
+  "max_handoffs": 6,
+  "tools": [],
+  "guardrails": [{ "factory": "no_pii", "kwargs": {} }],
+  "workers": [
+    {
+      "name": "orders",
+      "description": "Order status. Hands billing questions to billing.",
+      "system_prompt": "You answer order status questions with orders_lookup. If the customer asks what an order cost, hand off to billing.",
+      "tools": [
+        {
+          "type": "mock",
+          "name": "orders_lookup",
+          "description": "Look up one order by its id",
+          "parameters": { "order_id": { "type": "string", "description": "the order number" } },
+          "fixture_ref": "orders",
+          "match_keys": ["order_id"],
+          "default_response": "No order with that id."
+        }
+      ],
+      "eval_cases": [
+        { "name": "orders_1003", "input": "Where is order 1003?", "criteria": { "must_mention": ["1003", "shipped"] } }
+      ]
+    },
+    {
+      "name": "billing",
+      "description": "What an order cost. Hands status questions back to orders.",
+      "system_prompt": "You answer questions about what an order cost with billing_lookup. If the customer asks where an order is, hand off to orders.",
+      "tools": [
+        {
+          "type": "mock",
+          "name": "billing_lookup",
+          "description": "Look up what one order cost",
+          "parameters": { "order_id": { "type": "string", "description": "the order number" } },
+          "fixture_ref": "orders",
+          "match_keys": ["order_id"],
+          "default_response": "No order with that id."
+        }
+      ],
+      "eval_cases": [
+        { "name": "billing_1002", "input": "What did order 1002 cost?", "criteria": { "must_mention": ["89"] } }
+      ]
+    }
+  ],
+  "handoffs": [
+    { "from_worker": "orders", "to_worker": "billing", "when": "the customer asks what an order cost" },
+    { "from_worker": "billing", "to_worker": "orders", "when": "the customer asks where an order is" }
+  ],
+  "eval_cases": [
+    { "name": "end_to_end_status", "input": "Where is order 1003?" },
+    { "name": "end_to_end_cost", "input": "What did order 1002 cost?" },
+    { "name": "end_to_end_unknown", "input": "Where is order 9999?" }
+  ]
+}
+```
+
+## Choosing a shape
+
+Start with a single agent. Use a supervisor when distinct specialists have distinct tools and one
+router should pick; use a swarm when the specialists hand the same conversation back and forth.
+Do not add workers to look thorough: each one is a prompt, tools and cases someone has to keep true.
+
+---
+
+# When a command fails
+
+A failed command exits 1. With `--json` stdout holds one document:
+
+```json
+{
+  "error": {
+    "code": "spec_invalid",
+    "message": "The spec has 1 problem; nothing was made.",
+    "hint": "…",
+    "status": 422,
+    "details": { "problems": [{ "where": "tools[0]", "message": "…" }] }
+  }
+}
+```
+
+Branch on `code`. `message` is the platform's own words (quote it to the person); `hint` is what to
+do; `status` is the HTTP status; `details` carries what the code needs (`problems`, `workers`,
+`dataset_id`). Without `--json` the same words go to stderr and stdout stays empty.
+
+**A refusal is an answer.** Say what was refused and why, and stop or change the request. Do not
+retry the same call, and do not look for a way around a rule.
+
+## Stop and tell the person
+
+| Code | Meaning | What to say or do |
+|---|---|---|
+| `insufficient_scope` | The key lacks `studio:read` or `studio:write` (`details.required_scope`) | Tell them which permission to add; the console's "Agent Studio" key preset has both |
+| `feature_not_available` | The plan does not include Agent Studio | Tell them |
+| `environment_rule` | Studio is off on this install (production or acceptance rules). Reads and `export` still work | Tell them. Do not retry |
+| `key_has_no_owner` | The person who made the key is no longer a member | Tell them to make a new key |
+| `no_llm_endpoint` | The project has no LLM endpoint, or the draft's was removed | Tell them to add one in the console; nothing can be made without it |
+| `auth_error` | No usable key (`invalid_api_key`, or on a multi-workspace server `customer_required`) | Tell them to connect (`fastaiagent connect`) or set `FASTAIAGENT_API_KEY` |
+| `studio_not_available` | This platform has no headless Agent Studio | It needs 0.20.0 or later |
+| `topology_promote_unsupported` | A team's eval cases cannot be promoted | Export instead |
+| `not_sdk_owned` | `promote` onto an agent the exported code did not register | Run the exported agent once with a key, so it registers, then promote |
+
+## Fix the request
+
+| Code | Meaning | What to do |
+|---|---|---|
+| `spec_invalid` | The spec has problems (`details.problems`, each with `where`) | Fix every one and push again. `studio spec validate` first. Nothing was made |
+| `invalid_request` | The request itself is malformed (`details.problems`) | Fix the request |
+| `invalid_input` | The command was used wrongly, or a local file could not be read | Read the message (a missing file, a spec that is not JSON, a bad `--data-text`) |
+| `project_required` | The key is not tied to one project | Pass `--project-id` |
+| `name_taken` | A draft with that name exists (case ignored) | Choose another name, or use that draft |
+| `worker_required` | A team was tried without `--worker` (`details.workers`) | Name one |
+| `unknown_worker` | No worker by that name (`details.workers`; empty for a single agent) | Use a name from the list; for a single agent leave `--worker` out |
+| `worker_has_no_cases` | That worker has no eval cases of its own | Add cases to the spec |
+| `unknown_case` | No eval case by that name | Check the name with `studio eval` (no `--case`) |
+| `no_version` | The draft has no completed version | Push a spec first |
+| `not_found` | No such draft, version, fixture or trial in reach. A draft in another project reads as not found too | Check the id or name with `studio list` |
+| `ambiguous_draft` | More than one draft has that name | Use an id |
+| `unsupported_file` | Not `.csv`, `.json`, `.jsonl`, `.md`, `.txt`, `.pdf` or `.docx` | Convert it, or read it yourself and send the text with `--data-text` |
+| `no_text_layer` | A PDF or image with no readable text (a scan) | Read it yourself with your own model, write the text to a file, pass `--data-text name=file` |
+| `too_many_fixtures` | More than 20 sample-data files on one draft | Combine or drop some |
+| `dataset_already_linked` | An eval dataset is already linked (`details.dataset_id`) | Use the dataset import instead |
+| `no_linked_dataset` | Dataset import on a draft with no linked dataset | Link one first |
+
+## Wait, then continue
+
+| Code | Meaning | What to do |
+|---|---|---|
+| `build_in_progress` | A version of this draft is still being made | Wait for it (`studio status`), then retry |
+| `no_active_sandbox` | The trial sandbox is not ready | `try` and `eval` already start it and retry; if you see this, run the command again once |
+| `rate_limited` | Over the key's limit (60 a minute by default) | The command already waits out a short `Retry-After`; if this reaches you, wait the time it names |
+| `wait_timeout` | A version, sandbox or trial did not finish in time | It may still be going: read `studio status`, then ask again |
+| `version_failed` | `spec push --wait` ended with the version failed (`message` says why) | Read the message; fix the spec and push again |
+| `connection_error` | The platform could not be reached (or answered with a server error) | Check the address (`FASTAIAGENT_TARGET`); try once more later |
+
+## Writing to the draft's files
+
+| Code | Meaning | What to do |
+|---|---|---|
+| `export_would_overwrite` | A file the export would write already exists; nothing was written | Choose another `--out`, or pass `--force` if the person agrees to overwrite |
+| `unsafe_export` | The export holds a path outside the target folder; nothing was written | Do not use it; tell the person |
+
+---
+
+# The commands
+
+Every command takes `--json` (one JSON document on stdout), and these three, which are left out
+of the lines below:
+
+- `--api-key KEY` and `--target ADDRESS` override the saved credentials;
+- `--project-id ID` is only for a key that is not tied to one project.
+
+Exit 0 means it happened. Exit 1 means it did not; with `--json` stdout then holds an `error`
+document (`references/errors.md`). Exit 2 is a usage error (a missing argument, a bad option).
+`<draft>` is a draft's id or its name. JSON below is trimmed to the keys you will use; the plane
+may add more.
+
+## context
+
+```command
+fastaiagent studio context
+```
+
+What the project has. Read it first.
+
+```json
+{
+  "project": { "id": "7fe6…", "name": "Agent Studio", "domain_id": "18a5…" },
+  "environment": { "tier": "development", "studio_writes_allowed": true },
+  "llm_endpoints": [{ "id": "7d95…", "name": "OpenAI cheap", "provider": "openai", "model": "gpt-5.4-mini" }],
+  "knowledge_bases": [{ "id": "kb1…", "name": "Support KB" }],
+  "sdk": { "sdk_pin": "1.88.0", "renderer_version": 16, "dependency_range": "fastaiagent>=1.88.0,<2.0.0" },
+  "limits": { "max_fixtures_per_draft": 20, "max_workers": 6, "min_eval_cases": 3 },
+  "spec_version": 1,
+  "architectures": ["single", "supervisor", "swarm"],
+  "tool_types": ["rest", "mcp", "kb", "function", "mock"],
+  "eval_criteria_keys": ["must_mention", "must_not_mention", "behaviour"],
+  "guardrails": [{ "factory": "cost_limit", "required": ["max_usd"], "optional": [] }],
+  "guardrails_that_warn": { "json_valid": "blocks every answer that is not a JSON document" },
+  "guardrails_on_the_question_in_a_swarm": { "allowed_topics": "in a swarm it checks the question, not the answer" }
+}
+```
+
+The generated code targets `sdk.dependency_range`: that is the SDK the exported project asks for,
+which may be older than the one installed here.
+
+## list
+
+```command
+fastaiagent studio list [--status STATUS] [--query TEXT] [--limit N]
+```
+
+The project's drafts (`status` is `drafting`, `generating`, `ready`, `failed` or `exported`). A JSON
+array; each draft has `id`, `name`, `status`, `architecture`, `created_via`, `console_url` and
+`steps_summary` (`current` step, `stale`, `version`, `evals`).
+
+## new
+
+```command
+fastaiagent studio new --name NAME --brief TEXT [--data FILE]... [--data-text NAME=FILE]... [--harness] [--endpoint ID]
+```
+
+Makes the draft and adds the sample data, one file per request. `--brief` is what the person asked
+for (at least 10 characters). `--endpoint` is required when the project has more than one LLM
+endpoint. `--data-text name=file` is for text you read yourself (a scan, an image, an OCR result):
+`name` is the sample-data name a tool's `fixture_ref` will use. Exit 1 if any file was not added;
+the draft still exists and the JSON says which.
+
+```json
+{
+  "draft": { "id": "c6e2…", "name": "Order desk", "status": "drafting", "created_via": "api" },
+  "fixtures": [{ "id": "9bc8…", "name": "orders", "kind": "csv" }, { "id": "a1f0…", "name": "receipt", "kind": "doc" }]
+}
+```
+
+## status
+
+```command
+fastaiagent studio status <draft>
+```
+
+Where the draft is and what to do next. `steps.stale` true means someone changed it in the console:
+stop and ask. `steps.next.action` is one of `push_spec`, `wait`, `start_sandbox`, `trial`, `eval`,
+`export`, `none`.
+
+```json
+{
+  "id": "c6e2…", "name": "Order desk", "status": "ready", "architecture": "single",
+  "steps": {
+    "current": "try", "stale": false,
+    "steps": [{ "key": "build", "state": "done", "summary": "v2, made through the API" }],
+    "next": { "action": "trial", "reason": "Not tried yet", "hint": "fastaiagent studio try … \"<a question>\"" }
+  },
+  "versions": [{ "id": "79c9…", "version": 2, "generation_status": "completed", "note": "repeat the id" }],
+  "fixtures": [{ "id": "9bc8…", "name": "orders", "kind": "csv" }]
+}
+```
+
+## spec schema
+
+```command
+fastaiagent studio spec schema [--full]
+```
+
+Prints the spec's JSON Schema (always JSON). `--full` also prints the guardrail names, tool types
+and limits.
+
+## spec validate
+
+```command
+fastaiagent studio spec validate <draft> <file>
+```
+
+Checks a spec and makes nothing. `<file>` is a JSON file, or `-` for stdin. **Exit 0 only when
+there are no problems.** Warnings do not change the exit code: read them out.
+
+```json
+{
+  "ok": false,
+  "problems": [{ "where": "tools[0]", "message": "tool 'orders_lookup' references fixture 'nope' but uploaded fixtures are: ['orders']" }],
+  "warnings": [{ "where": "guardrails[0]", "code": "guardrail_blocks_output", "message": "json_valid blocks every answer that is not a JSON document" }]
+}
+```
+
+## spec push
+
+```command
+fastaiagent studio spec push <draft> <file> [--note TEXT] [--wait]
+```
+
+Makes the next version from a whole spec. Problems make nothing: exit 1 with `spec_invalid`.
+`--wait` waits until the version is made (a couple of seconds) and exits 1 if it failed
+(`version_failed`).
+
+```json
+{
+  "version_id": "2a83…", "version": 1, "warnings": [],
+  "generation": { "id": "2a83…", "version": 1, "generation_status": "completed", "created_via": "api" }
+}
+```
+
+Without `--wait` there is no `generation`; the version is still being made.
+
+## spec get
+
+```command
+fastaiagent studio spec get <draft> [--version N] [--out FILE]
+```
+
+The spec of a version (the current one by default), to edit and push again. Prints it, or writes
+it to `--out`. Always JSON.
+
+## show
+
+```command
+fastaiagent studio show <draft> [--version N] [--files] [--file PATH]
+```
+
+The design at a glance, or the generated code. `--files` lists the generated files; `--file
+agent.py` prints one.
+
+```json
+{
+  "version": { "id": "79c9…", "version": 2, "note": "repeat the id", "generation_status": "completed" },
+  "blueprint": {
+    "name": "order-status-bot", "architecture": "single", "description": "…",
+    "guardrails": ["no_pii"], "eval_cases": 3, "tools": ["orders_lookup (mock)"]
+  }
+}
+```
+
+A team's blueprint has `workers` (each with `name`, `tools`, `eval_cases`) instead of `tools`; a
+swarm also has `entrypoint` and `handoffs`.
+
+## diff
+
+```command
+fastaiagent studio diff <draft> A B
+```
+
+What changed from version A to version B (numbers).
+
+```json
+{
+  "from": 1, "to": 2,
+  "spec_changes": [{ "where": "system_prompt", "kind": "changed" }, { "where": "tools.escalate", "kind": "added" }],
+  "files": [{ "path": "agent.py", "kind": "changed" }]
+}
+```
+
+## try
+
+```command
+fastaiagent studio try <draft> QUESTION [--worker NAME] [--version N] [--wait | --no-wait]
+```
+
+Asks the agent one question in the sandbox, starting the sandbox first if needed. A team needs
+`--worker`. It waits for the answer by default (there is no command to read a trial later). Exit 1
+if the trial failed. A guardrail is not applied.
+
+```json
+{
+  "id": "7652…", "kind": "chat", "worker": "orders", "status": "completed",
+  "output": "Order 1003 is shipped.",
+  "mock_calls": [{ "tool": "orders_lookup", "args": { "order_id": "1003" }, "matched": true }],
+  "trace_id": "0008…", "trace_url": "https://<console>/next/traces/0008…"
+}
+```
+
+Use `output` for the answer. `matched` says whether a sample-data row (or a knowledge-base passage)
+came back for that call; a false one is worth reporting.
+
+## eval
+
+```command
+fastaiagent studio eval <draft> [--worker NAME] [--case NAME] [--wait | --no-wait]
+```
+
+Runs the eval cases in the sandbox. A single agent is one run; a team with `--worker` runs that
+worker's cases; a team without it runs every worker that has cases. The team's own end-to-end
+cases run only from the exported code. **Exit 0 only when no case failed**; a case that "needs
+review" is not a failure.
+
+```json
+{
+  "runs": [{ "id": "93a7…", "kind": "eval_preview", "status": "completed" }],
+  "rollup": {
+    "version": 2,
+    "totals": { "passed": 2, "failed": 0, "needs_review": 1, "not_run": 0, "runnable_here": 3, "on_export_only": 0 },
+    "groups": [{
+      "scope": "agent",
+      "cases": [
+        { "name": "found_1003", "status": "passed", "output": "Order 1003 is shipped.", "detail": "all mentions present" },
+        { "name": "missing_9999", "status": "needs_review", "criteria": { "behaviour": "says plainly that no such order was found" } }
+      ]
+    }]
+  }
+}
+```
+
+A case's `status` is `passed`, `failed`, `needs_review`, `not_run` or `on_export`. A group's `scope`
+is a worker's name, `agent` (a single agent) or `end_to_end` (a team's own cases). Results are
+for one version.
+
+## export
+
+```command
+fastaiagent studio export <draft> [--out DIR] [--version N] [--force]
+```
+
+Unpacks the project (code, tests, eval cases, sample data) into `DIR` (default: the current
+folder), under one folder named after the draft. It writes **nothing** if any file already exists,
+unless `--force`. Needs only `studio:read`. After it, the code is the person's.
+
+```json
+{ "out": "/work/repo", "folders": ["order-desk"], "files": ["order-desk/agent.py", "order-desk/tests/test_agent.py"] }
+```
+
+## promote
+
+```command
+fastaiagent studio promote <draft> --agent ID
+```
+
+Turns the eval cases into a real eval suite on an agent the exported code has already registered
+(run it once with a key). A team's cases cannot be promoted. Optional, after the export.
+
+```json
+{ "suite_id": "s1…", "dataset_id": "ds1…", "cases": 3 }
+```
+
+## open
+
+```command
+fastaiagent studio open <draft>
+```
+
+Prints the draft's console address. It does not open a browser.
+
+```json
+{ "id": "c6e2…", "name": "Order desk", "console_url": "https://<console>/next/studio/c6e2…" }
+```
+
+## delete
+
+```command
+fastaiagent studio delete <draft> [--yes]
+```
+
+Deletes a draft and its versions. It cannot be undone. It asks only at a terminal; `--yes` skips
+that. Delete only what you made, and only when the person asks.
+
+```json
+{ "deleted": "c6e2…", "name": "Order desk" }
+```

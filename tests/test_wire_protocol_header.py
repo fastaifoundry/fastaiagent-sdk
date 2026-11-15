@@ -1,4 +1,7 @@
-"""Every call to the plane announces ``X-FAA-Protocol: v1.11`` (1.94.0, S7).
+"""Every call to the plane announces ``X-FAA-Protocol: v1.12``.
+
+1.94.0 (S7) began sending the header at v1.11; 1.102.0 sends v1.12, the version that
+adds headless Agent Studio.
 
 The plane reads the header for telemetry and feature-gating. The SDK never sent
 it, though the plane's S7 brief assumed it had since wire v1.10. Asserted on the
@@ -24,8 +27,8 @@ def _protocol(request: dict) -> str | None:
     return headers.get("x-faa-protocol")
 
 
-def test_the_wire_version_is_v1_11() -> None:
-    assert PLANE_WIRE_PROTOCOL == "v1.11"
+def test_the_wire_version_is_v1_12() -> None:
+    assert PLANE_WIRE_PROTOCOL == "v1.12"
 
 
 def test_trace_export_sends_the_header(isolated_local_db, capture_server) -> None:
@@ -37,7 +40,7 @@ def test_trace_export_sends_the_header(isolated_local_db, capture_server) -> Non
         _seed_span(store, "s1")
         PlatformSpanExporter().export([])
         (request,) = capture_server.ingest_requests
-        assert _protocol(request) == "v1.11"
+        assert _protocol(request) == "v1.12"
         store.close()
     finally:
         _connection.api_key = None
@@ -50,7 +53,7 @@ def test_platform_api_sends_the_header(capture_server) -> None:
 
     capture_server.set_response_sequence([(200, json.dumps({"ok": True}))])
     PlatformAPI(api_key="fa_k_test", base_url=capture_server.url).get("/public/v1/anything")
-    assert _protocol(capture_server.requests[-1]) == "v1.11"
+    assert _protocol(capture_server.requests[-1]) == "v1.12"
 
 
 def test_the_runner_channel_sends_the_header(capture_server) -> None:
@@ -70,4 +73,4 @@ def test_the_runner_channel_sends_the_header(capture_server) -> None:
 
     asyncio.run(run())
     register, heartbeat = capture_server.requests[-2:]
-    assert _protocol(register) == "v1.11" and _protocol(heartbeat) == "v1.11"
+    assert _protocol(register) == "v1.12" and _protocol(heartbeat) == "v1.12"

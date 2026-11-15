@@ -14,7 +14,7 @@ pip install fastaiagent
 
 Runs fully standalone, or connect to the [FastAIAgent Platform](https://fastaiagent.net) for hosted observability, prompt management, and team collaboration.
 
-[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.101.0)](https://pypi.org/project/fastaiagent/)
+[![PyPI](https://img.shields.io/pypi/v/fastaiagent?v=1.102.0)](https://pypi.org/project/fastaiagent/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Tests](https://github.com/fastaifoundry/fastaiagent-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/fastaifoundry/fastaiagent-sdk/actions)
 [![Python](https://img.shields.io/pypi/pyversions/fastaiagent)](https://pypi.org/project/fastaiagent/)
@@ -56,6 +56,24 @@ No SDK needed to install it: `npx skills add fastaifoundry/fastaiagent-skills`, 
 fastaifoundry/fastaiagent-skills fastaiagent-sdk`, or in Claude Code
 `/plugin marketplace add fastaifoundry/fastaiagent-skills`.
 See [Use fastaiagent with a coding assistant](docs/getting-started/coding-assistants.md).
+
+### Build an agent through Agent Studio, from the command line
+
+With a FastAIAgent platform (0.20.0 or later), a coding assistant can design an agent with its own
+model and send the design to Agent Studio as a spec. Studio checks it, renders the code, tries and
+evaluates it in a sandbox, keeps every version and exports a project. The same commands work by hand:
+
+```bash
+fastaiagent studio context --json
+fastaiagent studio new --name "Order desk" --brief "Answer order-status questions." --data orders.csv
+fastaiagent studio spec push "Order desk" spec.json --wait
+fastaiagent studio try "Order desk" "What is the status of order 1003?"
+fastaiagent studio export "Order desk" --out .
+```
+
+`fastaiagent skills install` also installs the `fastaiagent-studio` skill that teaches an assistant
+the loop, including showing you the design and waiting for a yes before anything is pushed. See
+[Agent Studio from the command line and from code](docs/platform/agent-studio.md).
 
 ## Providers
 

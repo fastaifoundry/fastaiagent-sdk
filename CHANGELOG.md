@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.102.0] - 2026-11-15 — Agent Studio from the command line
+
+A coding tool can now build an agent through Agent Studio, the platform's builder: it designs the
+agent with its own model, writes the design as a spec, and the SDK's commands send it to Studio,
+which checks it, renders the code, tries and evaluates it in a sandbox, keeps every version and
+exports a project. Studio's own model is never called on this route. It needs a platform at
+**0.20.0 or later**. Additive, except two small behaviours listed under *Changed*.
+**The SDK now announces wire protocol v1.12** (it was v1.11) on every call to the platform.
+
+### Added
+
+- **`fastaiagent studio …`** — `context`, `list`, `new`, `status`, `spec schema|validate|push|get`,
+  `show`, `diff`, `try`, `eval`, `export`, `promote`, `open`, `delete`. Credentials are resolved as
+  `fastaiagent push` does. Every command takes `--json` (one document on stdout; notes and errors on
+  stderr); exit `0` means it happened and `1` that it did not, including a spec with problems and an
+  eval run with a failed case. With `--json` a failure is also printed on stdout as
+  `{"error": {"code", "message", "hint", "status", "details"}}`. `<draft>` is an id or a name.
+  `export` writes nothing if any file already exists, unless `--force`, and refuses a path that
+  would leave the target folder. There is no `plan`, `build`, `refine` or `reset`: those need Studio's
+  own model and stay in the console. `try` and `eval` wait by default (`--no-wait` opts out), because
+  there is no command to read a trial later; the hand-over note listed `--wait` as an opt-in.
+- **`fastaiagent.studio.StudioClient`** (also `fa.studio`) — one method per route (27), each with an
+  `a`-prefixed async twin, typed pydantic answers that keep keys they do not know, and `StudioError`
+  (`.code`, `.message`, `.status`, `.details`, `.problems`), a `PlatformError`. `wait_for_version`,
+  `wait_for_sandbox` and `wait_for_trial` poll with a monotonic deadline and the plane's own
+  `retry_after_seconds`; `run_trial` and `run_evals` start the sandbox, ask, wait, and start the sandbox
+  again (up to three attempts) when it read `ready` but its runner had just gone.
+- **The `fastaiagent-studio` skill** (`fastaiagent skills install` installs it with the other): the
+  nine-step loop, whose third step is to show the person the design and wait for a yes; `references/`
+  for the spec (every field, the tool types, guardrails, eval criteria, a worked example for a single
+  agent, a supervisor team and a swarm), every command with its JSON, and every error code.
+- **`PlatformAPI`**: `patch`, `delete`, `post_multipart` and `download` (streamed to a file; nothing is
+  written on an error status), each with an async twin; `post` takes `params=` and an empty body.
+- **Docs:** `docs/platform/agent-studio.md`, `fastaiagent studio` in the CLI reference, the Studio skill
+  on the coding-assistants page, the Studio routes in `docs/internals/platform-api.md`, README.
+  `llms.txt` and `llms-full.txt` cover both skills.
+- **Tests:** `tests/test_studio_client.py` (85) and `tests/test_cli_studio.py` (88) against a real
+  local HTTP server; `tests/test_studio_skill.py` (the skill's commands run with `--help`, its example
+  specs validate against the schema the plane serves, its tables match that schema);
+  `tests/test_platform_api_verbs.py`; and the live gate `tests/e2e/test_gate_agent_studio.py`, which runs
+  the loop through the real CLI against a plane with real model calls (it skips when no plane is named).
+
+### Changed
+
+- **Wire protocol v1.12** is sent as `X-FAA-Protocol` (was v1.11): the version that adds the
+  `/public/v1/agent-studio` routes. A plane that does not know v1.12 serves its newest minor instead of
+  refusing the call. No SDK release before 1.94.0 sent the header, and 1.94.0 to 1.101.0 sent v1.11, so no
+  SDK sends v1.8.
+- **`PlatformAPI` returns whatever JSON the route sends** (it was typed `dict`), `{}` for a 204, and raises
+  **`PlatformConnectionError` for any `httpx` transport failure** (a timeout, a connection closed mid-answer),
+  where `get`/`post` raised it only for a refused connection and let the rest escape as `httpx` errors.
+  `PlatformRateLimitError` gained `.retry_after` (seconds, from `Retry-After`).
+- A mock-based unit test of `PlatformAPI.get` was replaced by one against a real local server.
+
+### Fixed
+
+- **A `Swarm` member's output guardrails no longer judge its handoff.** A member that hands off ends its
+  turn with the marker `__HANDOFF__`, and output guardrails ran on it: an allow-style rule such as
+  `allowed_topics` read the marker as off-topic and stopped the swarm at its first handoff with
+  `GuardrailBlockedError: Off topic`. Reported by the platform's swarm lab on a Studio-exported swarm
+  (the same on 1.88.0 and 1.101.0). The handoff turn now has `stop_reason == "handoff"` (the reason is
+  reserved) and its output guardrails are skipped; the member that answers is still judged, and any other
+  `StopAgent` message still is.
+
 ## [1.101.0] - 2026-11-14 — skills for coding assistants
 
 A coding assistant was not trained on this SDK's current API, so it guesses one: `connect()`

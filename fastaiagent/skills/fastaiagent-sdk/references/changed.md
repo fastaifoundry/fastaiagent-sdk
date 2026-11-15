@@ -1,11 +1,13 @@
 # What older answers get wrong
 
-Read this when your memory of the SDK predates 1.100.0, or when code or advice you recall fails: each row is something that was removed, renamed or changed in meaning between 1.40 and 1.100.0. Purely additive features are left out.
+Read this when your memory of the SDK predates 1.102.0, or when code or advice you recall fails: each row is something that was removed, renamed or changed in meaning between 1.40 and 1.102.0. Purely additive features are left out.
 
 Rule of thumb: if an answer from memory imports a framework adapter, calls `connect()` with only a key, or waits for an approval inside `arun()`, it is out of date.
 
 | Old (what you may remember) | Now | Since |
 |---|---|---|
+| An output guardrail such as `allowed_topics` on a `Swarm` member stops the swarm at its first handoff ("Off topic") | The handoff turn is not judged; the member that answers is. Its `stop_reason` is `"handoff"` | 1.102.0 |
+| `PlatformAPI` has only `get` and `post` and returns a dict; `PlatformRateLimitError` has only a message | `patch`, `delete`, `post_multipart`, `download` (and async twins); the body is any JSON; `PlatformRateLimitError.retry_after` | 1.102.0 |
 | `fa.connect(api_key=...)` with no target, defaulting to `app.fastaiagent.net` | `target=` is required, else `FASTAIAGENT_TARGET`, else `ValueError`. The old host is dead; never write an address you were not given. `PlatformAPI(base_url=...)` is required too. | 1.100.0 |
 | `fastaiagent connect` / `push` falling back to a built-in host | `--target`, else `FASTAIAGENT_TARGET`; with neither, nothing is saved and exit code is 1. | 1.100.0 |
 | `fastaiagent connect` prints "Connected" and exits 0 whatever happened | Unreachable or 5xx plane: saves, says "not verified", exit 1. A non-plane answer (e.g. 404): saves nothing, exit 1. Python `fa.connect()` still connects offline and only logs a warning. | 1.97.0 |

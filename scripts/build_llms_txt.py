@@ -18,6 +18,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 SKILL = REPO / "fastaiagent" / "skills" / "fastaiagent-sdk"
+STUDIO = REPO / "fastaiagent" / "skills" / "fastaiagent-studio"
 SITE = "https://docs.fastaiagent.net"
 
 # (title, docs path, one line)
@@ -40,10 +41,10 @@ def _split(text: str) -> tuple[str, str]:
     return head, body.lstrip("\n")
 
 
-def _reference_order() -> list[Path]:
+def _reference_order(skill: Path = SKILL) -> list[Path]:
     """References in the order SKILL.md's map lists them, then any not listed."""
-    skill_md = (SKILL / "SKILL.md").read_text(encoding="utf-8")
-    refs = {p.name: p for p in sorted((SKILL / "references").glob("*.md"))}
+    skill_md = (skill / "SKILL.md").read_text(encoding="utf-8")
+    refs = {p.name: p for p in sorted((skill / "references").glob("*.md"))}
     ordered: list[Path] = []
     for line in skill_md.splitlines():
         for name in list(refs):
@@ -63,11 +64,29 @@ def build_full() -> str:
         "# FastAIAgent SDK — full reference for coding assistants\n",
         f"> {description}\n",
         "This page is the `fastaiagent-sdk` skill: the main page, then one reference per area. "
-        "Install it into a project with `fastaiagent skills install`.\n",
+        "The `fastaiagent-studio` skill follows it (building an agent through Agent Studio, "
+        "needs a platform). Install both into a project with `fastaiagent skills install`.\n",
         "---\n",
         body.rstrip() + "\n",
     ]
     for ref in _reference_order():
+        parts += ["---\n", ref.read_text(encoding="utf-8").rstrip() + "\n"]
+    studio_head, studio_body = _split((STUDIO / "SKILL.md").read_text(encoding="utf-8"))
+    studio_description = next(
+        (
+            ln.split(":", 1)[1].strip()
+            for ln in studio_head.splitlines()
+            if ln.startswith("description:")
+        ),
+        "",
+    )
+    parts += [
+        "---\n",
+        "# The `fastaiagent-studio` skill\n",
+        f"> {studio_description}\n",
+        studio_body.rstrip() + "\n",
+    ]
+    for ref in _reference_order(STUDIO):
         parts += ["---\n", ref.read_text(encoding="utf-8").rstrip() + "\n"]
     return "\n".join(parts)
 
@@ -88,7 +107,10 @@ def build_index() -> str:
         "the ten rules, then agents, tools, teams, guardrails, evals, platform, testing, "
         "what changed",
         f"- [Use fastaiagent with a coding assistant]({SITE}/getting-started/coding-assistants/): "
-        "install the skill (`fastaiagent skills install`)",
+        "install the skills (`fastaiagent skills install`)",
+        f"- [Agent Studio from the command line]({SITE}/platform/agent-studio/): "
+        "build an agent through Agent Studio with `fastaiagent studio` (the spec, the commands, "
+        "the errors); also the last part of the full reference above",
         "",
         "## Documentation",
         "",

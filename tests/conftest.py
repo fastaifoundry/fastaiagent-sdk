@@ -113,7 +113,14 @@ class CaptureServer:
                     body = None
                 with capture._lock:
                     capture.requests.append(
-                        {"path": self.path, "headers": dict(self.headers), "body": body}
+                        {
+                            "method": self.command,
+                            "path": self.path,
+                            "headers": dict(self.headers),
+                            "body": body,
+                            # The bytes as sent: a multipart upload is not JSON.
+                            "raw": raw,
+                        }
                     )
                 if capture.delay:
                     time.sleep(capture.delay)
@@ -130,6 +137,8 @@ class CaptureServer:
             # must stay do_POST/do_GET (N815 mixedCase is unavoidable here).
             do_POST = _handle  # noqa: N815
             do_GET = _handle  # noqa: N815 — also answers /auth/check if a test connects
+            do_PATCH = _handle  # noqa: N815
+            do_DELETE = _handle  # noqa: N815
 
         self._server = HTTPServer(("127.0.0.1", 0), _Handler)
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)

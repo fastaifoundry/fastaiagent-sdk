@@ -227,7 +227,50 @@ class PlatformNotConnectedError(PlatformError):
 
 
 class PlatformRateLimitError(PlatformError):
-    """Platform rate limit exceeded."""
+    """Platform rate limit exceeded.
+
+    ``retry_after`` is the plane's ``Retry-After`` in seconds, when it sent one.
+    """
+
+    def __init__(self, message: str = "", retry_after: float | None = None):
+        self.retry_after = retry_after
+        super().__init__(message)
+
+
+class StudioError(PlatformError):
+    """Agent Studio refused a request, or could not finish one.
+
+    ``code`` is the plane's error code (``spec_invalid``, ``name_taken``,
+    ``no_llm_endpoint``, ``environment_rule`` …) or one of the client's own
+    (``studio_not_available``, ``wait_timeout``). ``status`` is the HTTP status
+    (0 for the client's own). ``details`` is every other field the plane sent with
+    the code — ``problems`` for ``spec_invalid``, ``workers`` for ``worker_required``,
+    ``dataset_id`` for ``dataset_already_linked``.
+
+    Authentication, rate-limit, connection and server errors are not Studio errors:
+    they raise :class:`PlatformAuthError`, :class:`PlatformRateLimitError` and
+    :class:`PlatformConnectionError`, as for every other plane call.
+    """
+
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        status: int = 0,
+        details: dict[str, Any] | None = None,
+    ):
+        self.code = code
+        self.message = message
+        self.status = status
+        self.details: dict[str, Any] = details or {}
+        super().__init__(f"{code}: {message}")
+
+    @property
+    def problems(self) -> list[dict[str, Any]]:
+        """The fixable list a ``spec_invalid`` / ``invalid_request`` answer carries."""
+        found = self.details.get("problems")
+        return list(found) if isinstance(found, list) else []
 
 
 # --- Prompt errors ---

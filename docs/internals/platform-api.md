@@ -209,16 +209,22 @@ Every platform-facing method calls this before making an HTTP request.
 
 | Method | Signature | What it does |
 |--------|-----------|-------------|
-| `get(path, params)` | Sync GET → `dict` | `httpx.Client().get(url, params=params, headers=...)` → parse JSON |
-| `post(path, data)` | Sync POST → `dict` | `httpx.Client().post(url, json=data, headers=...)` → parse JSON |
-| `aget(path, params)` | Async GET → `dict` | `httpx.AsyncClient().get(...)` |
-| `apost(path, data)` | Async POST → `dict` | `httpx.AsyncClient().post(...)` |
+| `get(path, params)` | Sync GET → decoded JSON | One request through `httpx.Client`; the body is whatever JSON the route sends (an object, or a list for the Studio list routes) |
+| `post(path, data, params=None)` | Sync POST → decoded JSON | JSON body; `data=None` sends no body (`POST …/sandbox`) |
+| `patch(path, data, params=None)` | Sync PATCH → decoded JSON | (1.102.0) |
+| `delete(path, params=None)` | Sync DELETE → `{}` for a 204 | (1.102.0) |
+| `post_multipart(path, files, field="files", params=None)` | Sync multipart upload | `(filename, content)` pairs under one form field, typed from the extension (1.102.0) |
+| `download(path, dest, params=None)` | Streams a GET answer to a file → `Path` | Written in chunks; the file is created only after a 2xx, so an error leaves nothing behind (1.102.0) |
+| `aget`, `apost`, `apatch`, `adelete`, `apost_multipart`, `adownload` | Async twins | `httpx.AsyncClient` |
 
-All four methods call `_handle_response(response)` which handles errors uniformly:
+Every method calls `_handle_response(response)`, which handles errors uniformly. A subclass can override
+it: `fastaiagent.studio` does, to keep the plane's Studio error codes (`StudioTransport`). Any
+`httpx.TransportError` (a refused connection, a timeout, a connection closed mid-answer) is raised as
+`PlatformConnectionError`.
 
 ### Error Handling
 
-**File:** `fastaiagent/_platform/api.py` (lines 43–81)
+**File:** `fastaiagent/_platform/api.py`
 
 | HTTP Status | Exception Raised | Detection Logic |
 |-------------|-----------------|-----------------|
@@ -226,11 +232,43 @@ All four methods call `_handle_response(response)` which handles errors uniforml
 | 403 | `PlatformTierLimitError` | If response body contains "tier" |
 | 403 | `PlatformAuthError` | Otherwise |
 | 404 | `PlatformNotFoundError` | Always |
-| 429 | `PlatformRateLimitError` | Includes `Retry-After` header value in the exception |
+| 429 | `PlatformRateLimitError` | Includes the `Retry-After` header value in the message, and as `.retry_after` (seconds, when it is a number) |
 | 500+ | `PlatformConnectionError` | Any server error |
-| 200–299 | (success) | Returns `response.json()` |
+| 200–299 | (success) | Returns the decoded JSON (`{}` for a 204 or an empty body) |
 
 This error mapping is shared by every feature. A contributor adding a new platform endpoint gets this error handling for free by using `api.get()` / `api.post()`.
+
+### The Agent Studio routes (`/public/v1/agent-studio`)
+
+Plane 0.20.0, wire protocol v1.12. Called by `fastaiagent.studio.StudioClient` (and so by
+`fastaiagent studio …`). Reads need the `studio:read` scope; everything else needs `studio:write`.
+The plane's own contract is `docs/Agent_Studio_API.md` in the platform repository.
+
+| Method and path | Does |
+|---|---|
+| `GET /context` | The project's LLM endpoints, knowledge bases, SDK contract and limits |
+| `GET /spec-schema` | The spec's JSON Schema, guardrail names with arguments, tool types, limits |
+| `GET /drafts` · `POST /drafts` | List drafts (`status`, `q`, `limit`, `skip`) · make a draft |
+| `GET /drafts/{id}` · `PATCH /drafts/{id}` · `DELETE /drafts/{id}` | A draft with its step state, versions and sample data · change it · delete it |
+| `POST /drafts/{id}/fixtures` · `POST /drafts/{id}/fixtures/text` | Upload sample data (multipart) · add text the caller read itself |
+| `GET /fixtures/{id}` · `DELETE /fixtures/{id}` | One sample-data file · delete it |
+| `POST /drafts/{id}/spec/validate` | Problems and warnings; makes nothing |
+| `GET /drafts/{id}/versions` · `POST /drafts/{id}/versions` | List versions · make the next version from a whole spec (202; poll the version) |
+| `GET /drafts/{id}/versions/{vid}` · `…/{vid}/diff?against=` | A version (`?include=files` for the code) · what changed |
+| `POST /drafts/{id}/sandbox` · `GET /drafts/{id}/sandbox` | Start (or re-arm) the project's sandbox · read its status |
+| `POST /drafts/{id}/trials` · `GET /trials/{id}` · `GET /drafts/{id}/trials` | Ask one question · read a trial or eval run · list them |
+| `POST /drafts/{id}/evals/run` · `GET /drafts/{id}/evals` | Run eval cases · the results of one version |
+| `POST /drafts/{id}/eval-dataset` · `POST /drafts/{id}/eval-dataset/import` | Put the cases in a dataset · bring curated cases back as a version |
+| `GET /drafts/{id}/export` | The project as a zip (needs only `studio:read`) |
+| `POST /drafts/{id}/promote` | Turn the cases into an eval suite on a registered agent |
+
+Every refusal has one body shape, `{"detail": {"error": "<code>", "message": "…", …}}`, which
+`StudioTransport` turns into `StudioError(code, message, status, details)`. Two answers are not Studio
+errors and keep the platform classes: no usable key (401 `invalid_api_key`, or 400 `customer_required` on a
+server that holds several workspaces) is `PlatformAuthError`, and 429 is `PlatformRateLimitError`. Every
+read of something that takes time carries `retry_after_seconds` (`0` means stop polling). A platform that
+does not have these routes is detected when a route answers a bare 404, by reading
+`GET /public/v1/version`, which lists its routes.
 
 ---
 

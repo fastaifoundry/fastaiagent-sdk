@@ -19,6 +19,7 @@ from fastaiagent.cli.replay import replay_app
 from fastaiagent.cli.resume import register as register_resume_commands
 from fastaiagent.cli.runner import runner_app
 from fastaiagent.cli.skills import skills_app
+from fastaiagent.cli.studio import studio_app
 from fastaiagent.cli.traces import traces_app
 from fastaiagent.cli.ui import ui_app
 from fastaiagent.learn.cli import learn_app
@@ -43,6 +44,11 @@ app.add_typer(
     skills_app,
     name="skills",
     help="Install Agent Skills that teach coding assistants this SDK",
+)
+app.add_typer(
+    studio_app,
+    name="studio",
+    help="Build an agent through Agent Studio, headless (spec, try, eval, export)",
 )
 app.add_typer(ui_app, name="ui", help="Local web UI (traces, prompts, evals, guardrails)")
 app.add_typer(
@@ -81,9 +87,7 @@ register_push_command(app)
 )
 def export_trace_cli(
     trace_id: str = typer.Option(..., "--trace-id", help="Trace ID to export."),
-    output: str = typer.Option(
-        "trace.json", "--output", "-o", help="Output JSON file path."
-    ),
+    output: str = typer.Option("trace.json", "--output", "-o", help="Output JSON file path."),
     include_attachments: bool = typer.Option(
         False,
         "--include-attachments",

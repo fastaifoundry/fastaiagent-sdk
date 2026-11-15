@@ -118,6 +118,7 @@ fastaiagent.Swarm.resume(execution_id, resume_value=, context=, **kwargs)
 - The run ends when an agent answers with no handoff. The handoff tool accepts `reason` and an optional `context` dict that merges into the shared blackboard and is shown to later agents; tool results from earlier agents are also listed in each briefing (since 1.99.0).
 - Errors: `SwarmError` (a subclass of `AgentError`) for a missing entrypoint, duplicate names, unknown peers, a disallowed handoff, or exceeding `max_handoffs`. Do tune `max_handoffs` to the topology; a writer <-> critic loop with no exit hits it.
 - `timeout_seconds` bounds the whole run and raises `AgentTimeoutError`.
+- A member's output guardrails are not run on its handoff turn (that turn's `stop_reason` is `"handoff"`, since 1.102.0): the reply is a control marker, and an allow-style rule such as `allowed_topics` used to block the swarm on its first handoff. They still judge the member that answers.
 
 ```python
 from fastaiagent import Agent, Swarm
