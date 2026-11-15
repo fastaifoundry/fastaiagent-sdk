@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -149,9 +150,10 @@ COMMANDS = [
 
 @pytest.mark.parametrize("command", COMMANDS, ids=[" ".join(c) for c in COMMANDS])
 def test_every_command_has_help_and_takes_json(command: list[str]) -> None:
-    result = runner.invoke(app, ["studio", *command, "--help"])
+    result = runner.invoke(app, ["studio", *command, "--help"], terminal_width=200)
     assert result.exit_code == 0, result.output
-    assert "--json" in result.stdout
+    # CI forces colour, and Rich then writes "-" and "-json" as two styled runs.
+    assert "--json" in re.sub(r"\x1b\[[0-9;]*m", "", result.stdout)
 
 
 def test_there_is_no_plan_build_refine_or_reset() -> None:

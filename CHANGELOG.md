@@ -66,6 +66,11 @@ exports a project. Studio's own model is never called on this route. It needs a 
 
 ### Fixed
 
+- **The saved credentials file was ignored on Python 3.10.** `fastaiagent connect` writes
+  `~/.fastaiagent/credentials.toml`; reading it needs `tomllib`, which is stdlib only from Python 3.11,
+  and on 3.10 the read failed with a warning and returned nothing — so `fastaiagent push`, `auth status`
+  and the new `studio` commands saw no key unless it was in the environment. The `tomli` backport
+  (MIT, pure Python) is now a dependency on 3.10 only. Found by the new `studio` tests on CI's 3.10 job.
 - **A `Swarm` member's output guardrails no longer judge its handoff.** A member that hands off ends its
   turn with the marker `__HANDOFF__`, and output guardrails ran on it: an allow-style rule such as
   `allowed_topics` read the marker as off-topic and stopped the swarm at its first handoff with

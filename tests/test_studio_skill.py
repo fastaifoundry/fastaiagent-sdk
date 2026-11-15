@@ -44,6 +44,12 @@ SCHEMA_ANSWER = json.loads((ROOT / "tests" / "data" / "agent_studio_spec_schema.
 _FENCE = re.compile(r"^```([^\n`]*)\n(.*?)^```$", re.S | re.M)
 
 
+def _plain(text: str) -> str:
+    """``--help`` text without colour codes. CI forces colour, and Rich then writes ``--json``
+    as two styled runs (``-`` and ``-json``), so the literal option name is not in the output."""
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)
+
+
 def _fences(path: Path) -> list[tuple[str, str, str]]:
     """``(info string, body, "file:line")`` for every fenced block in a markdown file."""
     text = path.read_text(encoding="utf-8")
@@ -111,8 +117,9 @@ def test_each_documented_command_runs_with_help_and_lists_real_options(
     assert words[:1] == ["studio"], f"{where}: {line!r} is not a studio command"
     result = runner.invoke(app, [*words, "--help"], terminal_width=200)
     assert result.exit_code == 0, f"{where}: {line!r}\n{result.output}"
+    shown = _plain(result.stdout)
     for flag in sorted(set(re.findall(r"--[a-z][a-z-]*", line))):
-        assert flag in result.stdout, f"{where}: {line!r} lists {flag}, which --help does not"
+        assert flag in shown, f"{where}: {line!r} lists {flag}, which --help does not"
 
 
 def test_no_real_command_is_left_undocumented() -> None:
@@ -130,7 +137,7 @@ def test_every_option_of_every_command_is_documented_or_shared() -> None:
     problems = []
     for words, line, where in _documented_commands():
         result = runner.invoke(app, [*words, "--help"], terminal_width=200)
-        real = set(re.findall(r"--[a-z][a-z-]*", result.stdout)) - shared
+        real = set(re.findall(r"--[a-z][a-z-]*", _plain(result.stdout))) - shared
         listed = set(re.findall(r"--[a-z][a-z-]*", line))
         for flag in sorted(real - listed):
             problems.append(f"{where}: `{' '.join(words)}` has {flag}, which its line omits")

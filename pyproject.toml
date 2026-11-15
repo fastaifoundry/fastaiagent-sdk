@@ -51,6 +51,10 @@ dependencies = [
     # under-enforces when the extra is missing is the defect this dependency
     # exists to close. MIT, pure Python, no transitive weight of note.
     "jsonschema>=4.20.0,<5",
+    # ``tomllib`` is stdlib only from Python 3.11. On 3.10 the saved credentials file
+    # (``fastaiagent connect`` writes it, ``push`` and ``studio`` read it) was silently
+    # ignored without this backport. MIT, pure Python.
+    "tomli>=2.0,<3; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]
