@@ -60,6 +60,9 @@ exports a project. Studio's own model is never called on this route. It needs a 
   where `get`/`post` raised it only for a refused connection and let the rest escape as `httpx` errors.
   `PlatformRateLimitError` gained `.retry_after` (seconds, from `Retry-After`).
 - A mock-based unit test of `PlatformAPI.get` was replaced by one against a real local server.
+- `tests/data/agent_studio_spec_schema.json` is the platform's own copy of the spec schema
+  (`files_claude/agent-studio-spec-schema.json`, the body of `GET /spec-schema`, platform PR #268);
+  refresh it by copying that file, never by editing this one.
 
 ### Fixed
 

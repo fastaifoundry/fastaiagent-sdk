@@ -280,7 +280,7 @@ def test_new_makes_the_draft_with_the_projects_only_endpoint(
         "llm_endpoint_id": "ep1",
         "use_harness": True,
     }
-    assert b'filename="orders.csv"' in upload["raw"]
+    assert b'filename="orders.csv"' in upload.raw
     assert text["body"] == {
         "name": "receipt",
         "text": "Receipt: order 1003, 42.00",

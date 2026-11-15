@@ -48,7 +48,7 @@ def test_delete_answers_empty_for_a_204(capture_server) -> None:
     assert _api(capture_server).delete("/x/drafts/d1") == {}
     (request,) = capture_server.requests
     assert request["method"] == "DELETE"
-    assert request["raw"] == b""
+    assert request.raw == b""
 
 
 def test_a_list_body_comes_back_as_a_list(capture_server) -> None:
@@ -62,7 +62,7 @@ def test_post_with_no_body_and_a_query(capture_server) -> None:
     assert out == {"status": "requested"}
     (request,) = capture_server.requests
     assert request["path"] == "/x/drafts/d1/sandbox?project_id=p"
-    assert request["raw"] == b""
+    assert request.raw == b""
 
 
 def test_post_multipart_sends_each_file_under_one_field(capture_server) -> None:
@@ -75,7 +75,7 @@ def test_post_multipart_sends_each_file_under_one_field(capture_server) -> None:
     (request,) = capture_server.requests
     content_type = _headers(request)["content-type"]
     assert content_type.startswith("multipart/form-data; boundary=")
-    raw = request["raw"]
+    raw = request.raw
     assert raw.count(b'name="files"') == 2
     assert b'filename="orders.csv"' in raw and b"Content-Type: text/csv" in raw
     assert b"1003,shipped" in raw and b'filename="notes.txt"' in raw

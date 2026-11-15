@@ -8,6 +8,13 @@ Format limits, links, python snippets and quoted signatures are checked for ever
 * every example spec in ``spec.md`` validates against the JSON Schema the plane serves (a
   copy is vendored in ``tests/data``; ``tests/e2e/test_gate_agent_studio.py`` also sends them
   to a live plane, which knows the rules a schema cannot say);
+
+The vendored copy is the platform repository's ``files_claude/agent-studio-spec-schema.json``,
+the body of ``GET /spec-schema`` byte for byte (platform PR #268, which keeps it true with a
+test of its own; first vendored from the live route, and found identical). To refresh it after
+the platform changes the spec, copy that file over ``tests/data/agent_studio_spec_schema.json``.
+Never edit one copy.
+
 * the guardrail, tool-type and warning tables in ``spec.md`` agree with that schema answer;
 * every error code a command can print is explained in ``errors.md``.
 """

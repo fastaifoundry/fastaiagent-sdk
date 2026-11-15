@@ -22,6 +22,17 @@ def temp_dir(tmp_path: Path) -> Path:
     return tmp_path
 
 
+class _CapturedRequest(dict):  # type: ignore[type-arg]
+    """One request the server received.
+
+    A plain ``dict`` of ``method``, ``path``, ``headers`` and ``body`` (the parsed JSON, or
+    ``None``), so it can be ``json.dumps``-ed, as several tests do. ``.raw`` holds the bytes as
+    sent — a multipart upload is not JSON — and is an attribute, not a key, for that reason.
+    """
+
+    raw: bytes = b""
+
+
 class CaptureServer:
     """A real localhost HTTP server that records requests and returns
     programmable status codes.
@@ -111,17 +122,12 @@ class CaptureServer:
                     body = json.loads(raw) if raw else None
                 except Exception:
                     body = None
+                entry = _CapturedRequest(
+                    method=self.command, path=self.path, headers=dict(self.headers), body=body
+                )
+                entry.raw = raw
                 with capture._lock:
-                    capture.requests.append(
-                        {
-                            "method": self.command,
-                            "path": self.path,
-                            "headers": dict(self.headers),
-                            "body": body,
-                            # The bytes as sent: a multipart upload is not JSON.
-                            "raw": raw,
-                        }
-                    )
+                    capture.requests.append(entry)
                 if capture.delay:
                     time.sleep(capture.delay)
                 code, payload, content_type, extra_headers = capture._next_response()

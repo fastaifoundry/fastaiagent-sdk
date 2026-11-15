@@ -420,7 +420,7 @@ def test_upload_fixtures_is_a_multipart_form(capture_server) -> None:
     (request,) = _calls(capture_server)
     assert request["path"] == f"{BASE}/drafts/d1/fixtures"
     assert request["headers"]["Content-Type"].startswith("multipart/form-data")
-    assert b'filename="orders.csv"' in request["raw"] and b"1003,shipped" in request["raw"]
+    assert b'filename="orders.csv"' in request.raw and b"1003,shipped" in request.raw
     assert out[0].name == "orders" and out[0].kind == "csv"
 
 
