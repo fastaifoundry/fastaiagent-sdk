@@ -206,3 +206,12 @@ Run `fastaiagent <command> --help` for flags. Entry point: `fastaiagent` (also `
 | `optimize --agent --dataset` | Eval-driven prompt optimisation loop for an agent. |
 
 Don't call `fastaiagent connect` from CI without `--target` or `FASTAIAGENT_TARGET` — it fails with the no-target error, exit 1.
+
+## Agent Studio from code or the command line (1.102.0)
+
+Not for writing agent code by hand. A platform at 0.20.0 or later can build an agent from a spec you
+design: `fastaiagent studio …` (`context`, `new`, `spec validate|push|get`, `show`, `try`, `eval`,
+`export`, …) and `fastaiagent.studio.StudioClient` (also `fa.studio`). The `fastaiagent-studio` skill
+teaches the loop, the spec and the errors; read that skill, not this paragraph, before you use it.
+`StudioError(code, message, status, details)` is a `PlatformError`; a platform without Studio raises
+`StudioError("studio_not_available")`.

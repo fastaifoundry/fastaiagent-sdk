@@ -55,6 +55,7 @@ from fastaiagent._internal.pricing import run_cost, start_run_cost, stop_run_cos
 from fastaiagent.agent import run_control
 from fastaiagent.agent.agent import Agent, AgentResult, _stream_outcome
 from fastaiagent.agent.context import RunContext
+from fastaiagent.agent.executor import HANDOFF_STOP_REASON
 from fastaiagent.agent.middleware import (
     AgentMiddleware,
     MiddlewareContext,
@@ -232,7 +233,7 @@ class _ExitAfterHandoff(AgentMiddleware):
         # iteration and the rest of the inner tool loop. Gap 3's
         # executor preserves ``all_tool_calls`` so the swarm outer
         # loop can still see the handoff record.
-        raise StopAgent(_HANDOFF_SENTINEL)
+        raise StopAgent(_HANDOFF_SENTINEL, reason=HANDOFF_STOP_REASON)
 
 
 class SwarmError(AgentError):

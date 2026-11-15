@@ -707,6 +707,13 @@ async def _record_provider_calls(
             records.append(record)
 
 
+#: The ``StopAgent`` reason of a swarm handoff (1.102.0). A member that hands off ends its
+#: turn with a control marker, not an answer for the person, so ``Agent`` does not run its
+#: output guardrails on it. Reserved: middleware that raises ``StopAgent`` with this reason
+#: gets the same treatment.
+HANDOFF_STOP_REASON = "handoff"
+
+
 class _StoppedResponse(LLMResponse):
     """The loop's answer when middleware raised ``StopAgent`` (1.90.0, F8).
 

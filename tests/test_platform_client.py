@@ -106,23 +106,18 @@ class TestPlatformAPIHeaders:
 
 
 class TestPlatformAPIGet:
-    def test_get_calls_correct_url(self):
-        api = PlatformAPI(api_key="key", base_url="https://example.com")
-        mock_response = httpx.Response(
-            200,
-            json={"data": "test"},
-            request=httpx.Request("GET", "https://example.com/public/v1/test"),
-        )
-        with patch("httpx.Client") as mock_client_cls:
-            mock_client = MagicMock()
-            mock_client.__enter__ = MagicMock(return_value=mock_client)
-            mock_client.__exit__ = MagicMock(return_value=False)
-            mock_client.get.return_value = mock_response
-            mock_client_cls.return_value = mock_client
+    def test_get_calls_correct_url(self, capture_server):
+        # Was a mock of ``httpx.Client`` asserting which method got called (1.102.0
+        # replaced it with a real local server: what is checked is what was sent).
+        capture_server.set_response_sequence([(200, {"data": "test"})])
+        api = PlatformAPI(api_key="key", base_url=capture_server.url)
 
-            result = api.get("/public/v1/test", params={"version": 3})
-            assert result == {"data": "test"}
-            mock_client.get.assert_called_once()
+        result = api.get("/public/v1/test", params={"version": 3})
+
+        assert result == {"data": "test"}
+        (request,) = capture_server.requests
+        assert request["method"] == "GET"
+        assert request["path"] == "/public/v1/test?version=3"
 
 
 # --- Connection management tests ---

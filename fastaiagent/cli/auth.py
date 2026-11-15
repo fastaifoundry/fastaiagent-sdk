@@ -29,7 +29,10 @@ def _read_credentials() -> dict[str, Any]:
     if not _CREDENTIALS_PATH.exists():
         return {}
     try:
-        import tomllib
+        if sys.version_info >= (3, 11):
+            import tomllib
+        else:  # Python 3.10: the same parser, as a backport
+            import tomli as tomllib
 
         parsed: dict[str, Any] = tomllib.loads(_CREDENTIALS_PATH.read_text())
         return parsed

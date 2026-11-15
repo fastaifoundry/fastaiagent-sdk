@@ -138,6 +138,12 @@ def __getattr__(name: str) -> object:
         from fastaiagent.tool.mcp_server import FastAIAgentMCPServer
 
         return FastAIAgentMCPServer
+    if name == "studio":
+        # Headless Agent Studio (``fa.studio.StudioClient``). Lazy so the models and
+        # the polling helpers load only for a caller who uses them.
+        import fastaiagent.studio as studio  # noqa: PLC0415
+
+        return studio
     if name == "integrations":
         # ``fastaiagent.integrations.openai.enable()`` and its anthropic
         # sibling. Lazy-import the subpackage so provider SDKs don't load

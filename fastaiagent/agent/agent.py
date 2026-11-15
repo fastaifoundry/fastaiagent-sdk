@@ -33,6 +33,7 @@ from fastaiagent.agent.context import (
     set_active_run_context,
 )
 from fastaiagent.agent.executor import (
+    HANDOFF_STOP_REASON,
     _AgentInterrupted,
     _governed_tool_call,
     _stopped_response,
@@ -1709,8 +1710,11 @@ class Agent:
 
                 # Execute output guardrails. Unlike every other position this one
                 # can re-drive the model, so a `reask` rule is honoured here rather
-                # than degraded to a block.
-                if eff_guardrails:
+                # than degraded to a block. Not on a swarm handoff: its output is the
+                # hand-off marker, a control signal no rule was written to read, and an
+                # allow-style rule (``allowed_topics``) would stop the swarm on its first
+                # handoff. The member that finally answers is still judged (1.102.0).
+                if eff_guardrails and stop_reason != HANDOFF_STOP_REASON:
                     output, parsed, guardrail_tokens = await self._guard_output(
                         output,
                         parsed,
@@ -2227,8 +2231,9 @@ class Agent:
             # so a mask cannot un-emit the span it was meant to redact and a
             # re-ask cannot retract the text the caller already read. Both
             # degrade to a block here — the fail-closed reading, and the reason
-            # a team that authors a rewriting rule should not stream.
-            if eff_guardrails:
+            # a team that authors a rewriting rule should not stream. A swarm handoff
+            # is not judged (see ``run``): its reply is the hand-off marker.
+            if eff_guardrails and final_reply.get("stop_reason") != HANDOFF_STOP_REASON:
                 # ``allow_reask=True`` only so the refusal below can explain
                 # itself; nothing here can actually re-drive the model.
                 out_outcome = await execute_guardrails(

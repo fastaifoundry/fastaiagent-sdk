@@ -155,6 +155,18 @@ Swarm(..., max_handoffs=3)
 
 Default is `8`. Tune to your topology: a linear pipeline of 4 agents needs at most 3 handoffs.
 
+### Guardrails and handoffs (1.102.0)
+
+A member that hands off ends its turn with a control marker, not a sentence for the person.
+Its **output guardrails are not run on that marker**; they run on the reply of the member that
+finally answers, and on every other output. Until 1.102.0 they ran on the marker too, so an
+allow-style rule such as `allowed_topics(["orders"])` read it as off-topic and stopped the swarm on
+its first handoff with `GuardrailBlockedError: Off topic`. Input guardrails are unchanged.
+
+The skipped turn is the one whose `AgentResult.stop_reason` is `"handoff"`. The reason is reserved:
+middleware that ends a run with `StopAgent("…", reason="handoff")` gets the same treatment, so use
+another reason for your own stops (any other stop message is still judged by the output rules).
+
 ### Cancel and `timeout_seconds` (1.93.0)
 
 ```python
