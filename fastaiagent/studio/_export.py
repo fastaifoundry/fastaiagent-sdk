@@ -37,7 +37,7 @@ def unpack_export(archive: str | Path, out_dir: str | Path, *, force: bool = Fal
             targets.append((member, target))
         clashes = [t for _, t in targets if t.exists()]
         if clashes and not force:
-            shown = ", ".join(str(c.relative_to(root)) for c in clashes[:5])
+            shown = ", ".join(c.relative_to(root).as_posix() for c in clashes[:5])
             more = f" (and {len(clashes) - 5} more)" if len(clashes) > 5 else ""
             raise StudioError(
                 "export_would_overwrite",

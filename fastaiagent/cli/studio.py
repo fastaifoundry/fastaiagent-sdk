@@ -859,7 +859,8 @@ def export(
             archive = studio.export(draft_id, Path(scratch) / "project.zip", version_id=version_id)
             written = unpack_export(archive, out, force=force)
         root = Path(out).resolve()
-        relative = sorted(str(p.relative_to(root)) for p in written)
+        # Forward slashes on every platform: a tool reads this JSON, and the zip names them so.
+        relative = sorted(p.relative_to(root).as_posix() for p in written)
         folders = sorted({r.split("/", 1)[0] for r in relative})
         if json_out:
             _out({"out": str(root), "folders": folders, "files": relative})
