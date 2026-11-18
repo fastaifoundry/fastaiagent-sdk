@@ -10,7 +10,16 @@ reads when the work calls for it.
 
 - **`fastaiagent-sdk`** is read when the assistant is about to write `fastaiagent` code. It holds
   the ten mistakes assistants make most, a reference per area (agents, tools, teams, guardrails,
-  evals, platform, testing, what changed), and a script that checks what the assistant wrote.
+  evals, platform, testing, what changed), a script that checks what the assistant wrote, and a
+  short recipe for starting a project: a layout where plain `pytest` works and an entry point that
+  connects and always ends with `disconnect()`.
+
+  It also asks the assistant to do more than write code that passes its offline tests. Those tests
+  use scripted models, so they cannot see a wrong model id, a missing key or a dead server. When
+  your model key is in the environment the assistant should run the real entry point once and say
+  what it ran and what it did not. It should keep an address you give it in `FASTAIAGENT_TARGET`
+  instead of in code, test an MCP tool against a real local server instead of a fake, and not add
+  tools or helpers you did not ask for.
 - **`fastaiagent-studio`** is read when you ask for an agent to be built through
   [Agent Studio](../platform/agent-studio.md). It teaches the `fastaiagent studio` commands and how
   to write a spec (see [The Studio skill](#the-studio-skill) below). It needs a platform.

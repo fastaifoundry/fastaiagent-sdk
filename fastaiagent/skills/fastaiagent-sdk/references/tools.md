@@ -177,6 +177,51 @@ def build_agent() -> Agent:
     return Agent(name="files", llm=LLMClient(provider="openai", model="gpt-4o-mini"), tools=tools)
 ```
 
+**An MCP server is optional infrastructure.** `from_server` connects when it is called, so an agent
+builder that calls it at construction makes the whole app (every agent, every question) fail when
+the server is down or not configured. Build the tool only when the server is configured, and
+without it give the agent no tool and an instruction to say the lookup is unavailable (not to guess).
+Do not make up a server address; take it from the user or the environment.
+
+**Test it against a real server, not a fake.** Do not monkeypatch `from_server` or the tool's call:
+that tests your wiring, never MCP. A local stdio server needs no port and no network. Put it next to
+the tests (needs the `mcp` extra):
+
+```python
+# tests/rates_server.py
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("rates")
+
+
+@mcp.tool()
+def get_shipping_rates(zip_code: str, weight_kg: float) -> str:
+    """Shipping rates for a destination zip code and a package weight in kg."""
+    return f"standard: ${4.5 + weight_kg * 1.2:.2f} to {zip_code}"
+
+
+if __name__ == "__main__":
+    mcp.run()  # stdio
+```
+
+```python
+# tests/test_rates.py
+import sys
+from pathlib import Path
+
+from fastaiagent import MCPTool
+
+SERVER = str(Path(__file__).parent / "rates_server.py")
+
+
+def test_the_real_mcp_tool_is_found_and_called():
+    tools = MCPTool.from_server(command=[sys.executable, SERVER], replay_class="read_only")
+    assert [t.name for t in tools] == ["get_shipping_rates"]
+    result = tools[0].execute({"zip_code": "94105", "weight_kg": 2})
+    assert result.error is None
+    assert "94105" in result.output
+```
+
 ## Deferred tools
 
 - `deferred=True` (on `@tool`, `FunctionTool`, `RESTTool`, `MCPTool`, or via `from_server(deferred=True)`) keeps a tool's definition out of the model request until needed. The model is offered one built-in tool, `load_tools(names)`, whose description lists each deferred tool by name and first docstring line; a loaded tool stays available for the rest of the run.

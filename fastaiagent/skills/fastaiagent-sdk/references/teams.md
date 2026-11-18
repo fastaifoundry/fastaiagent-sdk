@@ -65,7 +65,7 @@ assert result.tool_calls[0]["tool_name"] == "delegate_to_researcher"
 
 ## Supervisor routing="decisions" and decide()
 
-`routing="decisions"` replaces the lead chat model with one call to OpenAI's Decisions API. It picks exactly ONE worker and returns that worker's reply unchanged (no synthesis turn). Requires an OpenAI-served decisions endpoint at run time (default router model `gpt-6-luna`; a key is needed: `# needs: OPENAI_API_KEY`) — offline, give `router_llm=TestModel(decisions=...)`.
+`routing="decisions"` replaces the lead chat model with one call to OpenAI's Decisions API. It picks exactly ONE worker and returns that worker's reply unchanged (no synthesis turn). Requires an OpenAI-served decisions endpoint at run time (default router model `gpt-6-luna`; a key is needed: `# needs: OPENAI_API_KEY`) — offline, give `router_llm=TestModel(decisions=...)`. Do not replace the default router model with a chat model such as `gpt-4o-mini`: the Decisions API does not serve it (404), and only a real run shows that. The default Supervisor routing (`routing="tools"`, the lead model delegates) needs no special endpoint; tell the user which one you chose and why.
 
 - Constructor refuses (`ValueError`): fewer than 2 workers, duplicate roles, `fallback_worker` not one of the roles, a `routing_questions` key named `"worker"`, `routing_min_confidence` outside 0..1, or `memory=`.
 - A refusal, or confidence below `routing_min_confidence`, goes to `fallback_worker`. The router never guesses a specialist. `llm=` is not used for routing.

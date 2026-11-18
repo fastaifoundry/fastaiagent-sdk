@@ -32,6 +32,7 @@ fa.connect(
 fa.disconnect()  # flushes pending spans first
 ```
 
+- Where the calls go: `connect()` once at startup of the entry point that runs the agents, `disconnect()` in a `finally` at exit (a no-op when never connected). A helper that nothing calls sends no traces; a short script that exits without `disconnect()` can lose the last ones. After a connected run, read the trace back (`GET {target}/public/v1/traces/{trace_id}` with the `X-API-Key` header) before saying it reached the platform. `SKILL.md` has a complete `main.py`.
 - `target` is REQUIRED since 1.100.0: the argument, else `FASTAIAGENT_TARGET`, else `ValueError` ("No target. Pass target= or set FASTAIAGENT_TARGET ..."). Don't call `fa.connect(api_key=...)` alone — it raises instead of reaching a default host. A failed resolve leaves the previous connection untouched.
 - `target` needs an explicit `http://` or `https://` scheme; `"localhost:7842"` raises `ValueError` (message mentions the scheme). A trailing `/` is stripped.
 - `api_key` has no default and Python `connect()` does NOT read `FASTAIAGENT_API_KEY`. Read the env var yourself and pass it, as above. Only the CLI reads that variable.

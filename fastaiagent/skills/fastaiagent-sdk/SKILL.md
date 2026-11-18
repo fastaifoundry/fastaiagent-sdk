@@ -20,7 +20,8 @@ Each is a mistake assistants make today.
    default since 1.100.0, so `connect(api_key=...)` alone fails. `connect()` is only for talking
    to a FastAIAgent platform; an agent runs fine without it.
 2. **Never invent a platform address.** `app.fastaiagent.net` is dead. Take the address from the
-   user or the environment. If you do not have one, ask.
+   user or the environment. If you do not have one, ask. When the user gives you one, keep it in
+   `FASTAIAGENT_TARGET`, not in code.
 3. **The framework adapters are gone** (1.96.0). `fastaiagent.integrations.langchain`,
    `.crewai` and `.pydanticai` do not exist. For an agent built in another framework use
    `enable_otel_capture()` with that framework's own OpenTelemetry instrumentation, a plain function
@@ -42,9 +43,15 @@ Each is a mistake assistants make today.
    without one.
 9. **Start with a single agent.** Reach for `Supervisor`, `Swarm` or `Chain` only when the work
    genuinely splits (see `references/teams.md`).
-10. **Check before you say done:** `python scripts/check_imports.py <your files>` from this skill's
-    folder. It resolves every `fastaiagent` import and attribute in your files against the installed
-    SDK and flags removed names. Then run your offline test.
+10. **Check, then run the real thing.** Run this skill's `scripts/check_imports.py <your files>`
+    with the project's own interpreter (for example `.venv/bin/python
+    .agents/skills/fastaiagent-sdk/scripts/check_imports.py desk/agent.py`); it works from the
+    project root. It resolves every `fastaiagent` import and attribute against the installed SDK
+    and flags removed names. Then run your offline test. Then, if the user's model key is in the
+    environment, run the real entry point once and read what it prints. Offline tests use scripted
+    models, so they cannot see a wrong model id, a missing key or a dead server. **Never "fix" a
+    model id or an address you have not tried:** a failing real run is evidence, your belief is
+    not. If you have no key, say you did not run it.
 
 ## Where to read
 
@@ -92,6 +99,56 @@ def test_calculator_answers_offline():
 For a real run, pass `llm=LLMClient(provider=..., model=...)` with the key in the environment
 (`references/agents.md` has the signature and the provider names).
 
+## Starting a new project
+
+A project that only has agents and tests is not finished: tests must run with plain `pytest`, and
+something must actually start the agent.
+
+```text
+my_app/
+  agents.py        build_agent(llm=None) and the other builders
+  main.py          the entry point (below)
+  tests/           offline tests, TestModel or FunctionModel
+  pytest.ini       [pytest]  then  pythonpath = .   (without it plain `pytest` cannot import my_app)
+  .gitignore       .fastaiagent/   (local traces and the eval database)
+```
+
+An entry point loads the keys from the environment, connects only when a platform is configured,
+and always ends with `disconnect()`. A helper such as `connect_platform()` that nothing calls
+sends no traces, and a short script can exit before the background export finishes:
+
+```python
+import os
+import sys
+
+import fastaiagent as fa
+from fastaiagent import LLMClient
+
+from my_app.agents import build_agent
+
+
+def main(question: str) -> None:
+    if os.environ.get("FASTAIAGENT_API_KEY") and os.environ.get("FASTAIAGENT_TARGET"):
+        fa.connect(
+            api_key=os.environ["FASTAIAGENT_API_KEY"],
+            target=os.environ["FASTAIAGENT_TARGET"],
+        )
+    try:
+        agent = build_agent(llm=LLMClient(provider="openai", model="gpt-5-mini"))
+        print(agent.run(question).output)
+    finally:
+        fa.disconnect()  # flushes pending traces first; a no-op when never connected
+
+
+if __name__ == "__main__":
+    main(sys.argv[1])
+```
+
+Build what was asked. Do not add tools, fake data, aliases or helper layers the user did not ask
+for; say what you would add and let them decide. When a choice has a cost the user should hear
+(for example `routing="decisions"` needs OpenAI's Decisions endpoint at run time, or a keyword topic
+guardrail is coarse), say it in your summary.
+
 ## When something fails
 
 - **`ImportError` / `AttributeError` on a `fastaiagent` name:** you guessed it. Run
@@ -104,6 +161,7 @@ For a real run, pass `llm=LLMClient(provider=..., model=...)` with the key in th
 
 ## Reporting
 
-When you finish, say which files you wrote, what `check_imports.py` printed, and what your
-offline test did. If you could not run something (no key, no network), say so; do not claim
-it works.
+When you finish, say which files you wrote, what `check_imports.py` printed, what your offline
+test did, and what you ran for real (the entry point, the model, the platform) with what it
+printed. If you could not run something (no key, no network, no server), say so; do not claim it
+works.

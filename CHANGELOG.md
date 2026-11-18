@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.103.0] - 2026-11-18 — The SDK skill asks assistants to run what they build
+
+We ran GitHub Copilot, with and without the `fastaiagent-sdk` skill, through the same tasks in a
+fresh project. The skill held up on the API (right references read, `replay_class`, environment
+keys, offline tests that run the agent). It was weak on the work around the API, and one run
+broke a working app while "fixing" it. No code in the SDK changes; the skill text and its
+references do.
+
+### Changed
+
+- **`fastaiagent-sdk` rule 10** is now "check, then run the real thing": run the checker with the
+  project's interpreter, run the offline test, then run the real entry point once when a model key
+  is in the environment, and never "fix" a model id or an address that was not tried. Offline tests
+  use scripted models and cannot see a wrong model id (a run changed the router's `gpt-6-luna` to
+  `gpt-4o-mini`, which the Decisions API answers with a 404). The reporting section now asks for
+  what was run for real, not only what the offline test did.
+- **Rule 2** keeps an address the user gives in `FASTAIAGENT_TARGET`, not in code.
+
+### Added
+
+- **"Starting a new project"** in `SKILL.md`: a layout with `pytest.ini` (`pythonpath = .`), because
+  plain `pytest` could not import the project in every run; an entry point that connects from the
+  environment and ends with `disconnect()`, because a connect helper nothing called sent no traces;
+  and "build what was asked", because a run added invented tools and alias helpers. The entry
+  point is checked by the skill's own tests and was run against a platform.
+- **`references/tools.md`**: an MCP server is optional infrastructure (one run made every question
+  fail when the server was not configured), and a test against a real local stdio server instead of
+  a fake `from_server`.
+- **`references/evals.md`**: what an offline eval proves (the wiring, not the quality).
+- **`references/teams.md`, `guardrails.md`, `platform.md`**: tell the user which routing mode and
+  topic mode you chose and its cost; the default router model must not be swapped for a chat model;
+  where `connect()` and `disconnect()` go; read a trace back before saying it reached the platform.
+
 ## [1.102.0] - 2026-11-15 — Agent Studio from the command line
 
 A coding tool can now build an agent through Agent Studio, the platform's builder: it designs the
