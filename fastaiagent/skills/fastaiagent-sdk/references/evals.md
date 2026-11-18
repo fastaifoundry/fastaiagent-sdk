@@ -131,6 +131,12 @@ gate(results, *, fail_under=None, max_error_rate=None) -> GateReport
 
 A run is `invalid` (not `failed`) when `max_error_rate` is exceeded, nothing was scored, a gated scorer errored on some cases and `max_error_rate` is unset or exceeded, or a gated named scorer applied to no case. `invalid` outranks `failed`. A threshold naming a scorer the run did not produce **fails**, so a typo never greens a build. Do set `max_error_rate` whenever any scorer is an LLM judge or the dataset can trigger approvals. Don't gate on one run when the agent is stochastic and the dataset is small: a single run can pass or fail on the model's luck.
 
+**What an offline eval proves.** With `TestModel` or `FunctionModel` the agent's answers are
+scripted, so a gate over them proves the wiring (the dataset loads, the scorer runs, the gate
+fails when it should) and never the quality of the agent. A scripted model that echoes the tool's
+output scores 100% by construction. Say that in your summary, and keep the quality eval as a
+separate `e2e`-marked run against a real model (skipped without a key, and reported as skipped).
+
 ## pytest plugin
 
 Installing `fastaiagent` plus `pytest` registers the plugin automatically (entry point `pytest11`); tests that do not use it are unaffected. `pytest` itself is not a fastaiagent dependency. Not xdist-aware: run eval-gated suites in one process.

@@ -23,7 +23,8 @@ Each is a mistake assistants make today.
    default since 1.100.0, so `connect(api_key=...)` alone fails. `connect()` is only for talking
    to a FastAIAgent platform; an agent runs fine without it.
 2. **Never invent a platform address.** `app.fastaiagent.net` is dead. Take the address from the
-   user or the environment. If you do not have one, ask.
+   user or the environment. If you do not have one, ask. When the user gives you one, keep it in
+   `FASTAIAGENT_TARGET`, not in code.
 3. **The framework adapters are gone** (1.96.0). `fastaiagent.integrations.langchain`,
    `.crewai` and `.pydanticai` do not exist. For an agent built in another framework use
    `enable_otel_capture()` with that framework's own OpenTelemetry instrumentation, a plain function
@@ -45,9 +46,15 @@ Each is a mistake assistants make today.
    without one.
 9. **Start with a single agent.** Reach for `Supervisor`, `Swarm` or `Chain` only when the work
    genuinely splits (see `references/teams.md`).
-10. **Check before you say done:** `python scripts/check_imports.py <your files>` from this skill's
-    folder. It resolves every `fastaiagent` import and attribute in your files against the installed
-    SDK and flags removed names. Then run your offline test.
+10. **Check, then run the real thing.** Run this skill's `scripts/check_imports.py <your files>`
+    with the project's own interpreter (for example `.venv/bin/python
+    .agents/skills/fastaiagent-sdk/scripts/check_imports.py desk/agent.py`); it works from the
+    project root. It resolves every `fastaiagent` import and attribute against the installed SDK
+    and flags removed names. Then run your offline test. Then, if the user's model key is in the
+    environment, run the real entry point once and read what it prints. Offline tests use scripted
+    models, so they cannot see a wrong model id, a missing key or a dead server. **Never "fix" a
+    model id or an address you have not tried:** a failing real run is evidence, your belief is
+    not. If you have no key, say you did not run it.
 
 ## Where to read
 
@@ -95,6 +102,56 @@ def test_calculator_answers_offline():
 For a real run, pass `llm=LLMClient(provider=..., model=...)` with the key in the environment
 (`references/agents.md` has the signature and the provider names).
 
+## Starting a new project
+
+A project that only has agents and tests is not finished: tests must run with plain `pytest`, and
+something must actually start the agent.
+
+```text
+my_app/
+  agents.py        build_agent(llm=None) and the other builders
+  main.py          the entry point (below)
+  tests/           offline tests, TestModel or FunctionModel
+  pytest.ini       [pytest]  then  pythonpath = .   (without it plain `pytest` cannot import my_app)
+  .gitignore       .fastaiagent/   (local traces and the eval database)
+```
+
+An entry point loads the keys from the environment, connects only when a platform is configured,
+and always ends with `disconnect()`. A helper such as `connect_platform()` that nothing calls
+sends no traces, and a short script can exit before the background export finishes:
+
+```python
+import os
+import sys
+
+import fastaiagent as fa
+from fastaiagent import LLMClient
+
+from my_app.agents import build_agent
+
+
+def main(question: str) -> None:
+    if os.environ.get("FASTAIAGENT_API_KEY") and os.environ.get("FASTAIAGENT_TARGET"):
+        fa.connect(
+            api_key=os.environ["FASTAIAGENT_API_KEY"],
+            target=os.environ["FASTAIAGENT_TARGET"],
+        )
+    try:
+        agent = build_agent(llm=LLMClient(provider="openai", model="gpt-5-mini"))
+        print(agent.run(question).output)
+    finally:
+        fa.disconnect()  # flushes pending traces first; a no-op when never connected
+
+
+if __name__ == "__main__":
+    main(sys.argv[1])
+```
+
+Build what was asked. Do not add tools, fake data, aliases or helper layers the user did not ask
+for; say what you would add and let them decide. When a choice has a cost the user should hear
+(for example `routing="decisions"` needs OpenAI's Decisions endpoint at run time, or a keyword topic
+guardrail is coarse), say it in your summary.
+
 ## When something fails
 
 - **`ImportError` / `AttributeError` on a `fastaiagent` name:** you guessed it. Run
@@ -107,9 +164,10 @@ For a real run, pass `llm=LLMClient(provider=..., model=...)` with the key in th
 
 ## Reporting
 
-When you finish, say which files you wrote, what `check_imports.py` printed, and what your
-offline test did. If you could not run something (no key, no network), say so; do not claim
-it works.
+When you finish, say which files you wrote, what `check_imports.py` printed, what your offline
+test did, and what you ran for real (the entry point, the model, the platform) with what it
+printed. If you could not run something (no key, no network, no server), say so; do not claim it
+works.
 
 ---
 
@@ -346,6 +404,51 @@ def build_agent() -> Agent:
         timeout=30,
     )
     return Agent(name="files", llm=LLMClient(provider="openai", model="gpt-4o-mini"), tools=tools)
+```
+
+**An MCP server is optional infrastructure.** `from_server` connects when it is called, so an agent
+builder that calls it at construction makes the whole app (every agent, every question) fail when
+the server is down or not configured. Build the tool only when the server is configured, and
+without it give the agent no tool and an instruction to say the lookup is unavailable (not to guess).
+Do not make up a server address; take it from the user or the environment.
+
+**Test it against a real server, not a fake.** Do not monkeypatch `from_server` or the tool's call:
+that tests your wiring, never MCP. A local stdio server needs no port and no network. Put it next to
+the tests (needs the `mcp` extra):
+
+```python
+# tests/rates_server.py
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("rates")
+
+
+@mcp.tool()
+def get_shipping_rates(zip_code: str, weight_kg: float) -> str:
+    """Shipping rates for a destination zip code and a package weight in kg."""
+    return f"standard: ${4.5 + weight_kg * 1.2:.2f} to {zip_code}"
+
+
+if __name__ == "__main__":
+    mcp.run()  # stdio
+```
+
+```python
+# tests/test_rates.py
+import sys
+from pathlib import Path
+
+from fastaiagent import MCPTool
+
+SERVER = str(Path(__file__).parent / "rates_server.py")
+
+
+def test_the_real_mcp_tool_is_found_and_called():
+    tools = MCPTool.from_server(command=[sys.executable, SERVER], replay_class="read_only")
+    assert [t.name for t in tools] == ["get_shipping_rates"]
+    result = tools[0].execute({"zip_code": "94105", "weight_kg": 2})
+    assert result.error is None
+    assert "94105" in result.output
 ```
 
 ## Deferred tools
@@ -703,7 +806,7 @@ assert result.tool_calls[0]["tool_name"] == "delegate_to_researcher"
 
 ## Supervisor routing="decisions" and decide()
 
-`routing="decisions"` replaces the lead chat model with one call to OpenAI's Decisions API. It picks exactly ONE worker and returns that worker's reply unchanged (no synthesis turn). Requires an OpenAI-served decisions endpoint at run time (default router model `gpt-6-luna`; a key is needed: `# needs: OPENAI_API_KEY`) — offline, give `router_llm=TestModel(decisions=...)`.
+`routing="decisions"` replaces the lead chat model with one call to OpenAI's Decisions API. It picks exactly ONE worker and returns that worker's reply unchanged (no synthesis turn). Requires an OpenAI-served decisions endpoint at run time (default router model `gpt-6-luna`; a key is needed: `# needs: OPENAI_API_KEY`) — offline, give `router_llm=TestModel(decisions=...)`. Do not replace the default router model with a chat model such as `gpt-4o-mini`: the Decisions API does not serve it (404), and only a real run shows that. The default Supervisor routing (`routing="tools"`, the lead model delegates) needs no special endpoint; tell the user which one you chose and why.
 
 - Constructor refuses (`ValueError`): fewer than 2 workers, duplicate roles, `fallback_worker` not one of the roles, a `routing_questions` key named `"worker"`, `routing_min_confidence` outside 0..1, or `memory=`.
 - A refusal, or confidence below `routing_min_confidence`, goes to `fallback_worker`. The router never guesses a specialist. `llm=` is not used for routing.
@@ -1221,6 +1324,8 @@ fastaiagent.guardrail.responsible_ai(pii=, prompt_injection=, secrets=, toxicity
 
 `banned_topics` / `allowed_topics` in `mode="llm"` with no live-client `llm=` produce a `topic`-type rule; with `mode="keyword"` or a live `LLMClient` they stay a local `code` rule.
 
+`mode="keyword"` is a word match: it needs no model, and it passes any text that contains a listed word ("tell me a joke about my order" passes an order-topics whitelist). Use it for offline tests or a coarse first line, and tell the user so; use `mode="llm"` when the meaning matters. A blocked run raises `GuardrailBlockedError` to the caller; an application should catch it and answer the person, not crash.
+
 ```python
 from fastaiagent import Agent
 from fastaiagent._internal.errors import GuardrailBlockedError
@@ -1513,6 +1618,12 @@ gate(results, *, fail_under=None, max_error_rate=None) -> GateReport
 
 A run is `invalid` (not `failed`) when `max_error_rate` is exceeded, nothing was scored, a gated scorer errored on some cases and `max_error_rate` is unset or exceeded, or a gated named scorer applied to no case. `invalid` outranks `failed`. A threshold naming a scorer the run did not produce **fails**, so a typo never greens a build. Do set `max_error_rate` whenever any scorer is an LLM judge or the dataset can trigger approvals. Don't gate on one run when the agent is stochastic and the dataset is small: a single run can pass or fail on the model's luck.
 
+**What an offline eval proves.** With `TestModel` or `FunctionModel` the agent's answers are
+scripted, so a gate over them proves the wiring (the dataset loads, the scorer runs, the gate
+fails when it should) and never the quality of the agent. A scripted model that echoes the tool's
+output scores 100% by construction. Say that in your summary, and keep the quality eval as a
+separate `e2e`-marked run against a real model (skipped without a key, and reported as skipped).
+
 ## pytest plugin
 
 Installing `fastaiagent` plus `pytest` registers the plugin automatically (entry point `pytest11`); tests that do not use it are unaffected. `pytest` itself is not a fastaiagent dependency. Not xdist-aware: run eval-gated suites in one process.
@@ -1626,6 +1737,7 @@ fa.connect(
 fa.disconnect()  # flushes pending spans first
 ```
 
+- Where the calls go: `connect()` once at startup of the entry point that runs the agents, `disconnect()` in a `finally` at exit (a no-op when never connected). A helper that nothing calls sends no traces; a short script that exits without `disconnect()` can lose the last ones. After a connected run, read the trace back (`GET {target}/public/v1/traces/{trace_id}` with the `X-API-Key` header) before saying it reached the platform. `SKILL.md` has a complete `main.py`.
 - `target` is REQUIRED since 1.100.0: the argument, else `FASTAIAGENT_TARGET`, else `ValueError` ("No target. Pass target= or set FASTAIAGENT_TARGET ..."). Don't call `fa.connect(api_key=...)` alone — it raises instead of reaching a default host. A failed resolve leaves the previous connection untouched.
 - `target` needs an explicit `http://` or `https://` scheme; `"localhost:7842"` raises `ValueError` (message mentions the scheme). A trailing `/` is stripped.
 - `api_key` has no default and Python `connect()` does NOT read `FASTAIAGENT_API_KEY`. Read the env var yourself and pass it, as above. Only the CLI reads that variable.

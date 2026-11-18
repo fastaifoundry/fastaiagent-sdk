@@ -57,6 +57,8 @@ fastaiagent.guardrail.responsible_ai(pii=, prompt_injection=, secrets=, toxicity
 
 `banned_topics` / `allowed_topics` in `mode="llm"` with no live-client `llm=` produce a `topic`-type rule; with `mode="keyword"` or a live `LLMClient` they stay a local `code` rule.
 
+`mode="keyword"` is a word match: it needs no model, and it passes any text that contains a listed word ("tell me a joke about my order" passes an order-topics whitelist). Use it for offline tests or a coarse first line, and tell the user so; use `mode="llm"` when the meaning matters. A blocked run raises `GuardrailBlockedError` to the caller; an application should catch it and answer the person, not crash.
+
 ```python
 from fastaiagent import Agent
 from fastaiagent._internal.errors import GuardrailBlockedError
