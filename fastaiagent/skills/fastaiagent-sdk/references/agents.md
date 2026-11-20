@@ -10,7 +10,7 @@ fastaiagent.Agent(name, system_prompt=, llm=, tools=, guardrails=, memory=, conf
 
 - `name` is the only required parameter. There is no `model=`, `instructions=`, `max_iterations=` or `temperature=` on `Agent`. Put the model on `llm=LLMClient(...)` and the loop knobs on `config=AgentConfig(...)`. Passing an unknown keyword raises `TypeError`.
 - `system_prompt` takes a `str`, a registry `Prompt`, or a callable `(RunContext | None) -> str` (dynamic instructions, below).
-- `llm` must be an `LLMClient` (or `TestModel`/`FunctionModel`). A raw `openai.OpenAI` client raises `TypeError`; wrap it with `LLMClient(openai_client=...)`. Omitting `llm` silently builds `LLMClient()`, which is OpenAI `gpt-4o-mini` and needs `OPENAI_API_KEY`.
+- `llm` must be an `LLMClient` (or `TestModel`/`FunctionModel`). A raw `openai.OpenAI` client raises `TypeError`; wrap it with `LLMClient(openai_client=...)`. Omitting `llm` silently builds `LLMClient()`, which is OpenAI `gpt-4o-mini` and needs `OPENAI_API_KEY`. That default is old: pick a current model yourself (for example `gpt-5-mini`) unless the user named one, and do not change a model id the user gave you or one that already runs (`SKILL.md` rule 10).
 - `tools=` takes `Tool` objects (`FunctionTool`, `RESTTool`, `MCPTool`...), not bare functions. A plain `def` in the list fails; wrap it with `@tool` or `FunctionTool` (see `tools.md`).
 - `checkpointer=` (for example `SQLiteCheckpointer`) enables `resume`/`fork` and pausing via `interrupt()`.
 

@@ -213,3 +213,64 @@ fastaiagent eval compare main pr --tolerance 0.02
 | `3` | Run invalid: error rate over `--max-error-rate`, nothing scored, gated scorer could not run, unknown or argument-needing scorer name, `overall.avg_score`, dataset file missing, agent module fails to import |
 
 `eval compare` exits `1` on a pass-rate drop beyond `--tolerance` and `3` when a run is not found.
+
+## With a platform
+
+Evals always run in your process, with your model keys. A connected plane can supply datasets and
+judge configurations and receives the verdicts.
+
+| What | How |
+|---|---|
+| Pull a dataset | `Dataset.from_platform(name)`, then pass it to `evaluate` |
+| Push a dataset | `Dataset([...]).publish(name)` |
+| Pull a judge | `Scorer.from_platform(name)` returns an `LLMJudge` (criteria, prompt template, scale); it runs locally. An unknown name raises `PlatformNotFoundError`. |
+| Send a verdict | A **gated** run only (below) |
+| Run an eval the plane asks for | `fastaiagent runner` executes the plane's `eval_run` jobs in your process (`platform.md`); for an agent built in Agent Studio, `fastaiagent studio eval` (the `fastaiagent-studio` skill) |
+
+**A run is sent only once its gate verdict is recorded.** `evaluate()` followed by `gate()` sends
+nothing: the run waits in `local.db`. The `fastaiagent eval run` CLI and the pytest plugin record
+the verdict for you. In Python, record it yourself:
+
+```python
+# needs: a connected plane; the API key needs the eval:execute scope
+import os
+
+import fastaiagent as fa
+from fastaiagent import Agent, Dataset, LLMClient
+from fastaiagent.eval import evaluate, gate, record_gate_result
+
+fa.connect(api_key=os.environ["FASTAIAGENT_API_KEY"], target=os.environ["FASTAIAGENT_TARGET"])
+try:
+    agent = Agent(name="support", llm=LLMClient(provider="openai", model="gpt-5-mini"))
+    results = evaluate(agent.run, Dataset.from_platform("support-regression"), scorers=["contains"])
+    report = gate(results, fail_under=["contains.pass_rate=0.9"], max_error_rate=0.1)
+    record_gate_result(
+        results.run_id, gate_outcome=report.outcome, thresholds={"contains.pass_rate": 0.9}
+    )
+    print(report.outcome, results.run_id)
+finally:
+    fa.disconnect()  # also sends the queued verdict
+```
+
+- **Only real runs are sent.** The plane counts a recorded verdict as evidence about the agent, and
+  a run that `TestModel` or `FunctionModel` answered or judged scores what you scripted. The SDK
+  keeps such a run local: `evaluate()` and the pytest plugin mark it (`scripted_models` in the run's
+  local metadata), it is never queued, and `record_gate_result()` logs a warning when connected. Do
+  not work around that. With no model key, stop and say the eval could not run; a scripted run
+  is not a substitute.
+- Only metadata leaves: aggregates, the verdict, thresholds, git provenance and per-case scorer
+  verdicts with their `trace_id`. Inputs and outputs never do; the plane joins them from traces.
+- The key needs the `eval:execute` scope, which is not a default. Without it (or without the
+  domain's `connected_state_plane` entitlement) the plane answers 403, the SDK warns once and the
+  run stays queued. `connect(export_evals=False)` or `FASTAIAGENT_EXPORT_EVALS=0` keeps every run
+  local, and the plane cannot override that.
+- The CLI and pytest plugin do not call `connect()`. Their verdicts are sent only when something in
+  the same process connected (for example the agent module or `conftest.py`). Otherwise they wait
+  in `local.db` and go with the next connected gated run.
+- Check before claiming: after `disconnect()`, `fastaiagent eval export --status` shows how many runs
+  are still waiting. A run leaves that count only when the plane has confirmed it, so 0 means it
+  arrived. `--dry-run` prints the exact payload and names runs that have no verdict yet. The plane's
+  API has no read for these runs (`/public/v1/evals/runs/{id}` serves only runs the plane ran
+  itself), so point the user to the console to see them.
+- `EvalResults.publish(run_name)` is an older call that posts scores without a verdict. Use the
+  gated path above for evidence the plane counts.

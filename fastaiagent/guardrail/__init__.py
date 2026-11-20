@@ -1,5 +1,6 @@
 """Guardrail system with 10 implementation types and built-in factories."""
 
+from fastaiagent._internal.errors import GuardrailBlockedError
 from fastaiagent.guardrail.actions import ACTIONS, ACTIONS_TAKEN
 from fastaiagent.guardrail.builtins import (
     allowed_domains,
@@ -37,6 +38,7 @@ from fastaiagent.guardrail.implementations import run_guardrail
 
 __all__ = [
     "Guardrail",
+    "GuardrailBlockedError",
     "GuardrailResult",
     "GuardrailPosition",
     "GuardrailType",

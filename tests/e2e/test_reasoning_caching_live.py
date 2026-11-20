@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import uuid
 from typing import Any
 
@@ -93,7 +94,8 @@ def test_each_provider_accepts_the_level(provider: str, model: str, level: str, 
         LLMClient(provider=provider, model=model, reasoning=level), [UserMessage(PUZZLE)]
     )
     # Accepted (no 400), and the answer is the answer: no reasoning glued into it.
-    assert "0.05" in (response.content or ""), response.content
+    # "Just the amount" is "$0.05" or "5 cents": claude-haiku-5-5 has said either.
+    assert re.search(r"0\.05|\b5\s*(cents?|¢)", response.content or "", re.I), response.content
     assert len(response.content or "") < 40, response.content
 
 

@@ -23,6 +23,7 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from fastaiagent._internal.scripted import note_scripted_call
 from fastaiagent.llm.client import LLMClient, LLMResponse
 from fastaiagent.llm.decisions import DecisionResult
 from fastaiagent.llm.message import Message, ToolCall
@@ -312,6 +313,7 @@ class TestModel(LLMClient):
         *,
         safety_identifier: str | None = None,
     ) -> DecisionResult:
+        note_scripted_call()
         if self._delay_ms:
             await asyncio.sleep(self._delay_ms / 1000.0)
 
@@ -343,6 +345,7 @@ class TestModel(LLMClient):
     ) -> LLMResponse:
         if self._delay_ms:
             await asyncio.sleep(self._delay_ms / 1000.0)
+        note_scripted_call()  # an eval run answered by a script stays local
         self.calls.append({"messages": messages, "tools": tools, "kwargs": kwargs})
         turn = self._next_turn()
         prompt_t, comp_t = turn.usage
@@ -370,6 +373,7 @@ class TestModel(LLMClient):
     ) -> AsyncGenerator[StreamEvent, None]:
         if self._delay_ms:
             await asyncio.sleep(self._delay_ms / 1000.0)
+        note_scripted_call()  # an eval run answered by a script stays local
         self.calls.append({"messages": messages, "tools": tools, "kwargs": kwargs})
         turn = self._next_turn()
         # Build a minimal LLMResponse for the trace span.
@@ -502,6 +506,7 @@ class FunctionModel(LLMClient):
         """
         if self._decide_fn is None:
             raise ValueError("FunctionModel.decide() needs FunctionModel(..., decide_fn=...)")
+        note_scripted_call()
         if self._delay_ms:
             await asyncio.sleep(self._delay_ms / 1000.0)
         return await _test_decide(self, input, questions, self._decide_fn)
@@ -514,6 +519,7 @@ class FunctionModel(LLMClient):
     ) -> LLMResponse:
         if self._delay_ms:
             await asyncio.sleep(self._delay_ms / 1000.0)
+        note_scripted_call()  # an eval run answered by a script stays local
         self.calls.append({"messages": messages, "tools": tools, "kwargs": kwargs})
         start = time.monotonic()
         # Allow async responders too — common when reusing real test

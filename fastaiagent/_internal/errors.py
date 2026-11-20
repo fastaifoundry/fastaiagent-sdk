@@ -3,6 +3,19 @@
 from typing import Any
 
 
+def _current_trace_id() -> str | None:
+    """The trace id of the span current where an error is raised, or ``None``
+    (no span, or tracing off — see ``trace.span.trace_id_of``). Never raises."""
+    try:
+        from opentelemetry import trace as otel_trace
+
+        from fastaiagent.trace.span import trace_id_of
+
+        return trace_id_of(otel_trace.get_current_span().get_span_context())
+    except Exception:
+        return None
+
+
 class FastAIAgentError(Exception):
     """Base exception for all FastAIAgent SDK errors."""
 
@@ -171,6 +184,10 @@ class GuardrailBlockedError(GuardrailError):
     def __init__(self, guardrail_name: str, message: str = "", results: list[Any] | None = None):
         self.guardrail_name = guardrail_name
         self.results = results or []
+        # The trace of the run that was blocked (1.104.0). A blocked run raises
+        # instead of returning a result, so before this there was no id to read
+        # its trace back by. ``None`` when nothing is being traced.
+        self.trace_id: str | None = _current_trace_id()
         super().__init__(message or f"Blocked by guardrail: {guardrail_name}")
 
     def __repr__(self) -> str:

@@ -114,6 +114,11 @@ The responder may be sync or async, and may return:
   against the actual provider. Gate these with
   `pytest.mark.skipif(not os.environ.get("OPENAI_API_KEY"))`.
 
+An eval run that `TestModel` or `FunctionModel` answered or judged proves the
+wiring, not the agent, so a connected SDK keeps it local: it is never sent to the
+plane as evidence (*since 1.104.0*; see
+[Connected eval export](../platform/connected-eval-export.md)).
+
 ## See also
 
 - [`@case` and `@pytest_dataset`](../evaluation/pytest.md) — turn these

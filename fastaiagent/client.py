@@ -416,8 +416,14 @@ def connect(
                 len(_connection.policy_cache.get("approval_policies", []) or []),
                 len(_connection.policy_cache.get("guardrail_rules", []) or []),
             )
-    except Exception:
-        logger.debug("Could not pull governance policy (keeping last-known)", exc_info=True)
+        elif _connection.check_result == "verified":
+            _warn_policy_unavailable(f"HTTP {presp.status_code}", presp.status_code)
+    except Exception as exc:
+        # An unreachable plane was already reported by the key check above.
+        if _connection.check_result == "verified":
+            _warn_policy_unavailable(type(exc).__name__, None)
+        else:
+            logger.debug("Could not pull governance policy (keeping last-known)", exc_info=True)
 
     # Register platform trace exporter. Skipped by export_traces=False so a
     # foreign runtime keeps exactly one exporter — its own.
@@ -661,6 +667,28 @@ def refresh_policy() -> str | None:
             from fastaiagent.guardrail.from_policy import clear_cache
 
             clear_cache()
-    except Exception:
-        logger.debug("refresh_policy: could not pull policy (keeping last-known)", exc_info=True)
+        else:
+            _warn_policy_unavailable(f"HTTP {presp.status_code}", presp.status_code)
+    except Exception as exc:
+        _warn_policy_unavailable(type(exc).__name__, None)
     return _plane_policy_version()
+
+
+def _warn_policy_unavailable(reason: str, status: int | None) -> None:
+    """Say, at WARNING, that the plane's policy could not be pulled.
+
+    It used to be a debug line. A connected agent then enforced no plane-authored
+    guardrails and gated no tools, and nothing distinguished that from a plane
+    with no rules authored.
+    """
+    kept = _connection.policy_cache is not None
+    hint = " The API key needs the 'policy:read' scope." if status in (401, 403) else ""
+    logger.warning(
+        "Could not pull the plane's policy from %s (%s). %s%s",
+        _connection.target,
+        reason,
+        "Keeping the last policy pulled: rules authored since then do not apply."
+        if kept
+        else "No plane-authored guardrails or approval policies apply in this process.",
+        hint,
+    )

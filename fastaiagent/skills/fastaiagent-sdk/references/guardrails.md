@@ -18,7 +18,7 @@ fastaiagent.Guardrail.aexecute(data)
 - Attach with `Agent(..., guardrails=[...])`. A `Supervisor` takes its own `guardrails=` too (see `teams.md`).
 - `fn(text)` returns a `bool` or a `GuardrailResult(passed, score=, message=, metadata=)`. A dict payload is passed to `fn` as JSON text.
 - `execute` is sync. Inside async code use `await guardrail.aexecute(...)`.
-- A blocking failure raises `GuardrailBlockedError` out of `agent.run()`. Import it from `fastaiagent._internal.errors` (it has `.guardrail_name` and `.results`); it is not exported at the top level.
+- A blocking failure raises `GuardrailBlockedError` out of `agent.run()`. Import it with `from fastaiagent import GuardrailBlockedError` (it has `.guardrail_name`, `.results` and `.trace_id`, the blocked run's trace, `None` when tracing is off). Code written for 1.103.0 or earlier imports it from `fastaiagent._internal.errors`, which still works.
 
 ## Built-in factories
 
@@ -60,8 +60,7 @@ fastaiagent.guardrail.responsible_ai(pii=, prompt_injection=, secrets=, toxicity
 `mode="keyword"` is a word match: it needs no model, and it passes any text that contains a listed word ("tell me a joke about my order" passes an order-topics whitelist). Use it for offline tests or a coarse first line, and tell the user so; use `mode="llm"` when the meaning matters. A blocked run raises `GuardrailBlockedError` to the caller; an application should catch it and answer the person, not crash.
 
 ```python
-from fastaiagent import Agent
-from fastaiagent._internal.errors import GuardrailBlockedError
+from fastaiagent import Agent, GuardrailBlockedError
 from fastaiagent.guardrail import banned_topics, json_valid, no_pii, no_secrets
 from fastaiagent.testing import TestModel
 
@@ -80,8 +79,7 @@ except GuardrailBlockedError as err:
 A tool-call gate runs before the tool executes (the tool never runs on a block):
 
 ```python
-from fastaiagent import Agent, FunctionTool
-from fastaiagent._internal.errors import GuardrailBlockedError
+from fastaiagent import Agent, FunctionTool, GuardrailBlockedError
 from fastaiagent.guardrail import allowed_domains
 from fastaiagent.testing import FunctionModel
 
@@ -212,6 +210,56 @@ Do wrap the run in `with fa.guardrail_context(...)`. Don't rely on it being set:
 
 - The SDK executes: every type above runs in-process. A connected agent also turns plane-authored rules (`regex`, `schema`, `classifier`, `llm_judge`, `content_safety`, `groundedness`, `topic`, `pii`, `secrets`) into `Guardrail(origin="plane")` at all four positions; a plane `code` rule is skipped because its logic is not distributable.
 - Plane-authored rules are enforced alongside local ones. `floor` and draft/publish governance are plane concepts; locally `floor` is only displayed.
+
+### Plane-authored rules on a connected agent
+
+You do not fetch them or pass them in. `connect()` pulls the policy once, and every run adds the
+rules that apply to that agent to its own `guardrails=[...]`. What you write is the check that they
+arrived:
+
+```python
+# needs: a connected plane with at least one active guardrail rule
+import os
+
+import fastaiagent as fa
+from fastaiagent import Agent, GuardrailBlockedError, LLMClient
+
+fa.connect(api_key=os.environ["FASTAIAGENT_API_KEY"], target=os.environ["FASTAIAGENT_TARGET"])
+try:
+    agent = Agent(name="support", llm=LLMClient(provider="openai", model="gpt-5-mini"))
+    agent.push()  # registers it now, so its id is known before you list its rules
+    plane_rules = fa.plane_guardrails_for_agent(agent.agent_id)
+    print([(g.name, g.position.value) for g in plane_rules])
+    try:
+        agent.run("an input one of those rules should block")
+    except GuardrailBlockedError as err:
+        print("blocked by", err.guardrail_name, "trace", err.trace_id)  # read this trace back
+finally:
+    fa.disconnect()
+```
+
+- **When they change.** The policy is not re-pulled by itself. A rule authored or edited after
+  `connect()` applies after `fa.refresh_policy()`; the next run rebuilds the list.
+- **Which ones apply.** A rule with no agents attached is domain-wide. A rule attached to agents
+  applies to those plane agent ids only. `plane_guardrails_for_agent` takes the id, or the name of
+  an agent this process has pushed. An agent gets its id when it registers, which a connected
+  agent does on its first run; that run waits for it (up to 5 s) when rules are attached to agents.
+  If registration takes longer, a warning says the attached rules were not applied to that run.
+  The plane identifies an agent by name, so a new agent that reuses an existing name in the
+  domain gets that agent's rules: pick a name that is not taken.
+- **An empty list is not a pass.** It means none apply, the rule was authored after `connect()`,
+  it is a `code` rule (skipped), or the policy pull failed. A failed pull is logged as a warning
+  and keeps the last policy, so read the log and say what you saw; do not say the rules are
+  enforced.
+- **Do not copy them into code.** Do not rebuild a plane rule locally or pass the result of
+  `plane_guardrails_for_agent` into `guardrails=[...]`. Plane rules are never pushed back with the
+  agent's definition.
+- **Testing.** An offline test with `TestModel` sees no plane rules, and a test that passes a local
+  guardrail (`no_pii()`, a regex) in their place tests that guardrail, not the plane's. Put the
+  test that proves a plane rule fires in `tests/e2e/`, marked `e2e`, skipped when
+  `FASTAIAGENT_TARGET` is not set, and do not add a `guardrails=` parameter only to fake it.
+- **Evidence.** Each check is a guardrail span on the run's trace, which reaches the plane with the
+  trace. The plane's own guardrail views are read in the console, not through the SDK.
 - SDK-only: `action="reask"`, `guardrail_context`, `timeout_seconds` and the regex ReDoS bound, and `code` rules via `fn=`.
 - Traces: local capture is full fidelity. Guardrail span detail leaving the process is an allowlist per type; setting `FASTAIAGENT_TRACE_PAYLOADS=0` stops payload-bearing attributes from being exported.
 - Test offline with `TestModel` / `FunctionModel` (see `teams.md`); keep tests of model-backed judges in `tests/e2e/` marked `e2e`.

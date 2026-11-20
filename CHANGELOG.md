@@ -7,6 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.104.0] - 2026-11-19 — A connected agent gets what the plane meant for it, from its first run
+
+Writing the connected-agent part of the `fastaiagent-sdk` skill meant checking every claim against
+a live plane. Three of them were SDK behaviour the skill would only have been working around, so
+they are fixed here instead.
+
+### Fixed
+
+- **An agent's first connected run could skip rules attached to it and run governed tools
+  ungated.** Rules attached to agents and approval policies are matched by the plane's `agent_id`,
+  which an agent gets when it registers, and auto-registration ran in the background while the
+  first run chose its guardrails. Over a slow link that run saw only domain-wide rules, and a tool
+  under an approval policy was not gated, with nothing logged. Against the local plane, the same
+  eval gated `passed` on one run and `invalid` on the next. The first run now waits for its own
+  registration, up to 5 seconds, but only when the policy has a rule attached to agents or an
+  approval policy on one of its tools; with domain-wide rules only it does not wait. If
+  registration takes longer the run goes on, and a warning says what it did not apply.
+- **A failed policy pull was a debug line.** `connect()` and `fa.refresh_policy()` now log a warning
+  when the key checked out but the policy could not be pulled, naming the status and, for 401/403,
+  the `policy:read` scope. Before, "no plane rules apply" looked the same as "no rules authored". An
+  unreachable plane still gets one warning, not two.
+
+- **A scripted eval run could be sent to the plane as evidence.** In a skill test, Copilot had no
+  model key, answered the plane's dataset with a `FunctionModel`, scored 100% by construction and
+  recorded a passing verdict, which the plane counted for the agent. A run that `TestModel` or
+  `FunctionModel` answered or judged is now marked (`scripted_models` in its local metadata) by
+  `evaluate()` and the pytest plugin, written `synced=1` so it is never queued, and
+  `record_gate_result()` warns when connected. Local only: nothing new on the wire.
+
+### Added
+
+- `GuardrailBlockedError.trace_id`: the blocked run's trace (`None` with tracing off). A blocked
+  run raises instead of returning a result, so there was no id to read its trace back by.
+- `fastaiagent.GuardrailBlockedError` and `fastaiagent.guardrail.GuardrailBlockedError`. It was only
+  importable from `fastaiagent._internal.errors`, and two docs pages said so.
+- `fastaiagent.eval.record_gate_result`. A connected plane receives an eval run only once its gate
+  verdict is recorded; in Python that call was only importable from `fastaiagent.eval.results`.
+
+### The `fastaiagent-sdk` skill
+
+- `references/platform.md`: what a connected agent gets from the plane (guardrail rules, approval
+  policies, prompts, datasets, judges, knowledge-base search, curated memory facts), what it sends
+  (traces, agent definitions, gated eval verdicts), what stays in the SDK, and an eight-step
+  **connected-agent checklist**, each step naming what proves it.
+- `references/guardrails.md`: plane-authored rules — they are applied, not fetched; `refresh_policy()`
+  for rules authored after `connect()`; how scoping works, including that a new agent reusing a
+  name in the domain gets that agent's rules; an empty rule list is not a pass; a test that proves
+  a plane rule fires belongs in `tests/e2e/`.
+- `references/evals.md`, "With a platform": `Dataset.from_platform`, `Scorer.from_platform`, and
+  the rule an assistant would otherwise miss: `evaluate()` then `gate()` sends nothing until
+  `record_gate_result()`. The CLI and pytest plugin record the verdict but do not connect. Proof of
+  arrival is `fastaiagent eval export --status` showing 0 runs waiting; the plane's API has no read
+  for these runs.
+- From testing 1.103.0 with GitHub Copilot: test the MCP transport the app uses (stdio is not
+  HTTP); `LLMClient()`'s default model is old, so pick a current one; unasked command-line flags
+  are scope creep; a missing key means asking the user, not searching their home directory; tracing
+  is on by default.
+- From testing this release's skill with GitHub Copilot against a live plane (guardrails, then
+  evals): with no model key, say the eval could not run rather than substitute a scripted model
+  (the SDK now keeps such a run local, above); take the input that should trip a plane rule from
+  the rule or the user rather than searching the pattern; read a blocked run's trace back by
+  `err.trace_id`.
+- **The two skills no longer overlap.** Asked to evaluate a project's agent against a platform
+  dataset, Copilot once picked `fastaiagent-studio` (its description said "built, tried and
+  evaluated") and stopped to ask for Agent Studio permissions. The Studio skill is now only for
+  building or changing an agent inside Studio, says what it is not for, and opens with a check to
+  switch skills when the project already has `fastaiagent` code; the SDK skill names platform
+  datasets and platform guardrails.
+- `scripts/check_imports.py` warns when a name is imported from a private module (for example
+  `fastaiagent._internal.errors`) that the package also exports, and names the public import.
+  When `fastaiagent` cannot be imported it now prints the actual exception and the interpreter,
+  instead of always saying "install it": Copilot hit that message three times in a venv where the
+  SDK was installed.
+- `docs/`: managed governance and connected eval export say the same; every `GuardrailBlockedError`
+  import uses the public path.
+
 ## [1.103.0] - 2026-11-18 — The SDK skill asks assistants to run what they build
 
 We ran GitHub Copilot, with and without the `fastaiagent-sdk` skill, through the same tasks in a

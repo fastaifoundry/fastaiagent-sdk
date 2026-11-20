@@ -36,7 +36,7 @@ from fastaiagent.eval.compare import RunComparison, compare_runs, load_run
 from fastaiagent.eval.gate import GateReport, gate
 from fastaiagent.eval.harden import HardeningReport, Recommendation, aharden, harden
 from fastaiagent.eval.rag import AnswerRelevancy, ContextPrecision, ContextRecall, Faithfulness
-from fastaiagent.eval.results import EvalResults, MetricSummary, Scorecard
+from fastaiagent.eval.results import EvalResults, MetricSummary, Scorecard, record_gate_result
 from fastaiagent.eval.safety import (
     Bias,
     OpenAIModeration,
@@ -81,6 +81,9 @@ __all__ = [
     "evaluate",
     "Dataset",
     "curate_from_traces",
+    # Records a gate verdict on a persisted run; a connected plane receives a
+    # run only once this has been called (the CLI and pytest plugin call it).
+    "record_gate_result",
     "Scorer",
     "ScorerResult",
     "EvalResults",

@@ -317,8 +317,14 @@ async def aevaluate(
             )
             return record, scored
 
-    # ``gather`` returns in the order the cases were given — the dataset's.
-    for record, scored in await asyncio.gather(*(eval_one(i, item) for i, item in enumerate(ds))):
+    # ``gather`` returns in the order the cases were given — the dataset's. The
+    # recorder notes whether a scripted model (TestModel / FunctionModel) answered
+    # any case or judged it: such a run measures the script, and stays local.
+    from fastaiagent._internal.scripted import scripted_model_recorder
+
+    with scripted_model_recorder() as scripted:
+        gathered = await asyncio.gather(*(eval_one(i, item) for i, item in enumerate(ds)))
+    for record, scored in gathered:
         for scorer_name, result in scored:
             results.add(scorer_name, result)
         results.add_case(record)
@@ -333,6 +339,7 @@ async def aevaluate(
                 # Fall back to the callable's own agent so connected runs attach
                 # to a real system instead of landing unattributed.
                 agent_name=agent_name or infer_agent_name(agent_fn),
+                metadata={"scripted_models": True} if scripted else None,
             )
             # Stash the run_id on the returned object so callers can deep-link
             # into the Local UI (e.g. /evals/<run_id> or /evals/compare?a=…).
