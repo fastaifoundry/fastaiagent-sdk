@@ -36,13 +36,30 @@ def test_https_redirect_through_the_sync_helper() -> None:
     "url", ["https://wrong.host.badssl.com/", "https://self-signed.badssl.com/"]
 )
 async def test_a_bad_certificate_is_still_refused(url: str) -> None:
+    import asyncio
+
     from fastaiagent._internal.http_errors import is_transport_error
 
     # Matched by name and message, not class: in a long test run something
     # re-imports httpcore and the raw httpcore.ConnectError arrives (X25).
-    with pytest.raises(Exception, match="CERTIFICATE_VERIFY_FAILED") as caught:
-        await asafe_http_request(url, timeout=20, max_redirects=0, max_bytes=1_000_000)
-    assert is_transport_error(caught.value)
+    #
+    # badssl.com is someone else's server. A timeout or reset before the TLS
+    # handshake (an empty message, seen once in CI on 1.104.0) proves nothing
+    # about certificates, so it is retried; the run still has to reach the
+    # handshake and be refused for the certificate, or the test fails.
+    seen: list[str] = []
+    for attempt in range(3):
+        try:
+            await asafe_http_request(url, timeout=20, max_redirects=0, max_bytes=1_000_000)
+        except Exception as err:  # noqa: BLE001 - classified just below
+            if "CERTIFICATE_VERIFY_FAILED" in str(err):
+                assert is_transport_error(err)
+                return
+            seen.append(f"{type(err).__name__}: {err!s}")
+            await asyncio.sleep(2 * (attempt + 1))
+            continue
+        pytest.fail(f"{url} was fetched: a bad certificate was accepted")
+    pytest.fail(f"{url} never reached the TLS handshake in 3 tries: {seen}")
 
 
 def test_image_from_url() -> None:
