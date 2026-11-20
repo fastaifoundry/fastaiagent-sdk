@@ -109,8 +109,15 @@ def _ledger(plane: GovPlane, run_id: str, expect: int = 0) -> list[tuple[Any, ..
     get_hitl_exporter().export([])  # synchronous drain; the emit's own drain may race it
     # When the emit's background drain holds the events, ours returns before
     # they land: wait for the ones the test needs (a Windows CI runner lost it).
+    # And drain again while waiting: a POST that failed once on a busy runner
+    # leaves the events buffered (the buffer owns retry), and nothing else would
+    # send them before the deadline (ubuntu 3.10 CI, 1.104.0: 0 events in 10 s).
     deadline = time.monotonic() + 10
+    next_drain = time.monotonic() + 0.5
     while len(plane.ledger(run_id)) < expect and time.monotonic() < deadline:
+        if time.monotonic() >= next_drain:
+            get_hitl_exporter().export([])
+            next_drain = time.monotonic() + 0.5
         time.sleep(0.05)
     return [(e["event_type"], e["kind"], e["status"], e["resolver"]) for e in plane.ledger(run_id)]
 
