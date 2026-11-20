@@ -7,6 +7,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.105.0] - 2026-11-22 — A chain loop stops where its edge says
+
+We ran the skills through fourteen more blind assistant runs (Agent Studio for the first time,
+memory, chains, replay, prompts, the runner, six trap prompts). All passed; one of them found a
+defect that has been in the chain executor since 0.1.
+
+### Fixed
+
+- **A chain loop's `max_iterations` above 1 was never enforced.** Each pass of a loop re-enters the
+  executor, and each call counted from zero, so every frame reached 1 and no further. A reviewer
+  that never passed, on an edge with `max_iterations=3`, ran about 980 passes and then failed with
+  `RecursionError`: with a real model, close to two thousand calls. The count is now shared across
+  the loop, and the chain raises `ChainCycleError` at the cap, as the docs always said.
+  **If a loop of yours relied on running past its `max_iterations` (or past the default of 10),
+  it now raises at the cap: set `max_iterations` to what you need.**
+- **A node after a loop ran once per pass.** Three reviews meant three sends. It runs once, after
+  the last pass.
+- **Chain middleware was skipped inside a loop pass**, so a redaction or budget middleware covered
+  only the first pass. It applies on every pass, with one state for the whole run.
+- **A loop pass could not see nodes that ran before the loop**, and an `exit_condition` on
+  `{{state...}}` read the state from before the node ran, so it lagged one pass.
+- **An `exit_condition` without `max_iterations` was dropped**: the edge was not a loop, and a chain
+  whose every node sat on it "completed" having run nothing. It is now a loop with the default cap
+  of 10. `validate()` reports a loop drawn with ordinary edges, which the executor never follows.
+- **The loop example in the README, the docs and the skill could not work**, for two reasons.
+  `exit_condition="quality >= 0.8"` compares the literal word `quality`; conditions are templates
+  (`{{state.quality}} >= 0.8`). And its judge was an agent node, which was handed the chain's input
+  and never the draft it was meant to judge. All three now show a tested form, and the loops page
+  shows both judges: a function (tool node), and an agent given the draft with the new `input=`.
+- **`ChainCycleError` suggested `on_max_reached='continue'`**, which `connect()` does not accept. It
+  now suggests raising the limit or checking the exit condition, with a template example.
+- **`examples/02_chain_with_cycles.py` had no loop in it.** It was a two-node straight chain. It is
+  now a real retry loop, run against a real model (first check `FAIL: 244 words`, second `PASS`).
+- `fastaiagent ui start` without the UI extra told you to run `pip install 'fastaiagent'`: Rich read
+  `[ui]` as a style tag and dropped it. It prints `pip install 'fastaiagent[ui]'`.
+
+Not changed: a resumed run starts its loop count again from zero.
+
+### Added
+
+- **`Chain.add_node(..., input=...)`: an agent node that works on another node's output.** An agent
+  node is given the chain's input, which is right when each agent answers the user's request. But
+  "A drafts, B reviews the draft" was not possible: B never saw the draft. `input=` is an optional,
+  per-node template — `input="Review this draft:\n{{node_results.draft.output}}"` — over
+  `node_results`, `state` and `input`, re-rendered on every loop pass. Without it nothing changes.
+  An input that renders empty raises `ChainError` before the agent is called, and `validate()`
+  reports a misspelled node name or `input=` on a node that is not an agent.
+  `examples/36_chain_workflow.py` (research then summarise) had this bug: the summariser was told
+  to summarise research bullets and was handed the topic. It now passes `input=`.
+- `fastaiagent.testing.plane_rules(rules)`: run a block as if a connected platform had distributed
+  these guardrail rules, to test how your app handles a platform block with no platform. The rules
+  go through the same cache and builder as a real policy pull; a rule the edge would skip (a `code`
+  rule) raises `ValueError`. It tests your app's handling, not that your platform has the rule.
+  Without it, assistants wrote to the SDK's private connection state and called that proof.
+
+### The skills
+
+- `references/testing.md` and `references/guardrails.md`: `plane_rules` for the offline test, a
+  connected `e2e` test for the proof, and never private state.
+- `references/evals.md`: the scorers and the pass bar are the user's decision. Two runs gated the
+  same dataset on different scorers and thresholds; never lower a threshold to turn a gate green.
+- `references/teams.md`: loops as above, "do not write your own attempt cap", and how data moves
+  in a chain (an agent node gets the chain's input, not the previous node's output), which cost
+  the test run 76 steps to work out.
+- `examples/60_test_model.py` shows `plane_rules`.
+- `SKILL.md`: check before saying a key or setting is missing (three runs said "no key in the
+  environment" without looking); when asked to show a run and a key is set, show the real-model
+  run; no handling for cases that do not exist yet; where the prompt registry is documented.
+
 ## [1.104.0] - 2026-11-19 — A connected agent gets what the plane meant for it, from its first run
 
 Writing the connected-agent part of the `fastaiagent-sdk` skill meant checking every claim against

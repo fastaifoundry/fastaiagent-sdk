@@ -102,6 +102,50 @@ The responder may be sync or async, and may return:
 - `LLMResponse(...)` — full control over the wire shape (including
   `usage`, `finish_reason`, etc.).
 
+## Platform guardrail rules, offline
+
+*New in 1.105.0.* A connected agent enforces the guardrail rules its platform authored
+([managed governance](../guardrails/managed-governance.md)). `plane_rules` runs a block as if the
+platform had sent a set of rules, so you can test how your app handles a block with no platform:
+
+```python
+import pytest
+from fastaiagent import Agent, GuardrailBlockedError
+from fastaiagent.testing import TestModel, plane_rules
+
+RULE = {
+    "name": "no-codenames",
+    "guardrail_type": "input",            # input | output | tool
+    "implementation_type": "regex",
+    "config": {"pattern": r"(?i)\bbluejay\b", "should_match": False},
+    "validation_mode": "blocking",
+    "on_error": "block",
+}
+
+def test_a_plane_block_reaches_the_caller():
+    agent = Agent(name="support", llm=TestModel("ok"))
+    with plane_rules([RULE]):
+        with pytest.raises(GuardrailBlockedError) as err:
+            agent.run("tell me about bluejay")
+    assert err.value.guardrail_name == "no-codenames"
+```
+
+The rules use the platform's policy shape and pass through the same cache and builder as a real
+policy pull, so a rule gives the same verdict here as on a connected run.
+
+- A rule with `agent_ids` applies only to an `Agent(agent_id=...)` with a matching id; a rule
+  without `agent_ids` applies to every agent, as on the platform.
+- A rule that cannot be enforced from its configuration (a `code` rule, whose logic lives on the
+  platform) raises `ValueError`. A connected agent would skip it, and a test that silently checked
+  nothing would be worse than one that fails.
+- The policy is process-wide, like the real one: do not nest `plane_rules` or use it from parallel
+  threads. The previous policy is restored when the block exits.
+
+!!! warning "What it does not prove"
+    `plane_rules` tests **your app's handling** of a platform rule. It does not show that your
+    platform has such a rule, or that a connected agent receives it. Keep a connected test for
+    that. Do not write to `fastaiagent.client._connection` in tests: it is private state.
+
 ## When should I use these?
 
 - **TestModel** — you know the exact response your agent should produce

@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 #: left the node with nothing to run.
 _KNOWN_CONFIG_KEYS = frozenset(
     {
+        "agent_input",
         "agent_name",
         "agents",
         "auto_approve",
@@ -242,9 +243,17 @@ class Chain:
         output_key: str | None = None,
         input_schema: dict[str, Any] | None = None,
         output_schema: dict[str, Any] | None = None,
+        input: str | None = None,  # noqa: A002 - the name a reader expects
         **config: Any,
     ) -> Chain:
         """Add a node to the chain.
+
+        ``input`` (1.105.0, agent nodes only, optional): what the agent is given,
+        as a template over the run — ``"{{node_results.draft.output}}"`` hands
+        it another node's output, ``"Review this: {{node_results.draft.output}}"``
+        frames it, ``{{state.<key>}}`` and ``{{input.<key>}}`` work too. Without
+        it an agent node gets the chain's input, as it always has: use it only
+        where an agent should work on what an earlier node produced.
 
         **The node's type is inferred from what you attach** when you do not
         pass ``type=`` yourself: ``tool=`` builds a tool node, ``node=`` builds a
@@ -325,6 +334,13 @@ class Chain:
         # NodeConfig serialization and the executor can read them per node.
         if output_key is not None:
             config["output_key"] = output_key
+        if input is not None:
+            if not isinstance(input, str):
+                raise TypeError(
+                    f"add_node({id!r}, input=...) takes a template string such as "
+                    f"'{{{{node_results.<node>.output}}}}', not {_type_name(input)}."
+                )
+            config["agent_input"] = input
         if input_schema is not None:
             config["input_schema"] = input_schema
         if output_schema is not None:
@@ -371,12 +387,19 @@ class Chain:
         exit_condition: str | None = None,
         label: str = "",
     ) -> Chain:
-        """Connect two nodes with an edge."""
-        is_cyclic = max_iterations is not None
+        """Connect two nodes with an edge.
+
+        ``max_iterations`` or ``exit_condition`` makes it a loop edge: the chain
+        re-enters at ``target`` until the exit condition holds, at most
+        ``max_iterations`` times (10 when only an exit condition is given), then
+        raises ``ChainCycleError``. Before 1.105.0 an exit condition without
+        ``max_iterations`` was dropped and the edge was not a loop at all.
+        """
+        is_cyclic = max_iterations is not None or exit_condition is not None
         cycle_config: dict[str, Any] = {}
         if is_cyclic:
             cycle_config = {
-                "max_iterations": max_iterations,
+                "max_iterations": max_iterations if max_iterations is not None else 10,
                 "exit_condition": exit_condition,
                 "on_max_reached": "error",
             }

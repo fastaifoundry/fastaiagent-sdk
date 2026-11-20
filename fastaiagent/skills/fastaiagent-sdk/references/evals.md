@@ -131,6 +131,15 @@ gate(results, *, fail_under=None, max_error_rate=None) -> GateReport
 
 A run is `invalid` (not `failed`) when `max_error_rate` is exceeded, nothing was scored, a gated scorer errored on some cases and `max_error_rate` is unset or exceeded, or a gated named scorer applied to no case. `invalid` outranks `failed`. A threshold naming a scorer the run did not produce **fails**, so a typo never greens a build. Do set `max_error_rate` whenever any scorer is an LLM judge or the dataset can trigger approvals. Don't gate on one run when the agent is stochastic and the dataset is small: a single run can pass or fail on the model's luck.
 
+**The scorers and the pass bar are the user's decision, not yours.** Two assistants given the same
+dataset gated it on `contains` at 1.0 and on `contains` at 0.8 with `exact_match` ungated: the
+same agent, two different verdicts. Use the scorer and threshold the user named; else what the
+project already uses (an existing eval, `pytest` options, CI config); else ask. If you cannot ask,
+pick the strictest scorer that fits the expected answers (`exact_match` for exact strings,
+`contains` for a required phrase, an `LLMJudge` for free text), gate on every scorer you report,
+and say in your summary which scorers and thresholds you chose and that they were your choice.
+Never lower a threshold or drop a scorer to turn a failing gate green.
+
 **What an offline eval proves.** With `TestModel` or `FunctionModel` the agent's answers are
 scripted, so a gate over them proves the wiring (the dataset loads, the scorer runs, the gate
 fails when it should) and never the quality of the agent. A scripted model that echoes the tool's

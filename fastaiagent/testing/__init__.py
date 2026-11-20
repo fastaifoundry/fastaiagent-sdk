@@ -22,5 +22,6 @@ Example:
 """
 
 from fastaiagent.testing.models import FunctionModel, TestModel
+from fastaiagent.testing.plane import plane_rules
 
-__all__ = ["TestModel", "FunctionModel"]
+__all__ = ["TestModel", "FunctionModel", "plane_rules"]

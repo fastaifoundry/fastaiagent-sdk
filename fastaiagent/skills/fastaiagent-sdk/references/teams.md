@@ -154,7 +154,7 @@ A `Chain` is a directed graph you build with `add_node` and `connect`; the execu
 
 ```signature
 fastaiagent.Chain(name, state_schema=, checkpoint_enabled=, checkpointer=, strict_routing=, middleware=)
-fastaiagent.Chain.add_node(id, agent=, tool=, type=, name=, node=, output_key=, input_schema=, output_schema=, **config)
+fastaiagent.Chain.add_node(id, agent=, tool=, type=, name=, node=, output_key=, input_schema=, output_schema=, input=, **config)
 fastaiagent.Chain.connect(source, target, condition=, max_iterations=, exit_condition=, label=)
 fastaiagent.Chain.validate()
 fastaiagent.Chain.execute(initial_state=, trace=, context=, **kwargs)
@@ -164,6 +164,7 @@ fastaiagent.Chain.cancel(execution_id)
 ```
 
 - Node type is inferred: `agent=` -> agent node, `tool=` or `node=` -> tool node. Others need `type=NodeType.<condition|transformer|parallel|hitl|start|end>` (import `NodeType` from `fastaiagent.chain`).
+- **What an agent node is given.** By default, the chain's input (the state at the start of the pass, as text), NOT the previous node's output: in `draft -> review` with no `input=`, `review` is handed the original message, never the draft. When an agent should work on an earlier node's output, pass `input=` (1.105.0), a template: `chain.add_node("review", agent=reviewer, input="Review this draft:\n{{node_results.draft.output}}")`. It can read `{{node_results.<node>.output}}`, `{{state.<key>}}` and `{{input.<key>}}`, and is re-rendered on every loop pass. Use it only on the nodes that need it; an agent that answers the user's request keeps the default. An input that renders empty raises `ChainError` before the agent is called; `validate()` reports a misspelled node name. Tool nodes read earlier results with `input_mapping=`, transformers with `template=`; `input=` is for agent nodes only.
 - A node with nothing to run FAILS the run (`ChainError`) and `validate()` reports it. Do call `chain.validate()` (returns a list of error strings; `[]` is valid) before running.
 - `Chain` checkpoints by default (`checkpoint_enabled=True`) into a local SQLite store. Do pass `checkpoint_enabled=False` in unit tests so nothing is written.
 - `ChainResult`: `output`, `final_state`, `node_results`, `execution_id`, `status` (`completed|paused|rejected|cancelled`), `pending_interrupt`, `trace_id`. For an agent node, `node_results[id]` and `output` are dicts shaped `{"output": ..., "tool_calls": [...]}` — read `["output"]` for the text (the docs print the dict).
@@ -203,7 +204,21 @@ assert typed.execute({"text": "hi"}).final_state["shouted"] == "HI"
 ### Typed nodes, cycles, decision nodes, approval gates (brief)
 
 - `@node(output_key=, output_schema=, validate_input=)` turns a function into a tool node; its type hints become `input_schema`. Templates render as STRINGS, so an `int` parameter fed from `{{state.n}}` fails input validation — type it `str` and convert inside.
-- Cycle: `chain.connect("evaluate", "research", max_iterations=3, exit_condition="quality >= 0.8")`. A cyclic edge without `max_iterations` fails `validate()`; exceeding it raises `ChainCycleError`.
+- Loop (retry until good, at most N times): a node drafts, a node checks, and the edge that goes
+  back is marked. The check can be a tool node (a rule in code) or an agent given
+  `input="{{node_results.draft.output}}"` (a model's judgement).
+  `chain.connect("check", "draft", max_iterations=3, exit_condition="{{node_results.check.output}} startswith PASS")`.
+  The loop body runs at most `max_iterations` times (10 when only `exit_condition` is given), then
+  raises `ChainCycleError` (`fastaiagent._internal.errors`). On a second pass the drafting agent's
+  input holds the check's last output, so have the check return what to fix and tell the agent in
+  its system prompt to follow it. A node after the loop (`chain.connect("check", "publish")`) runs
+  once, after the last pass. Chain middleware applies on every pass. Working example:
+  `examples/02_chain_with_cycles.py` in the SDK repository. Do NOT write your own attempt counter or cap middleware: the edge is the cap (it
+  was not enforced before 1.105.0, when a loop that never exited ran about 980 passes).
+- Exit and routing conditions are templates: `{{state.quality}} >= 0.8`, never the bare
+  `quality >= 0.8`, which compares the literal word and is never true. An edge that goes back
+  with neither `max_iterations` nor `exit_condition` is not a loop and is never followed;
+  `validate()` reports it.
 - Decision node (needs a Decisions endpoint at run time): `chain.add_node("triage", type=NodeType.condition, decision=Choice(instructions=..., options={...}))` with `from fastaiagent.llm import Choice`, then one `connect(..., label=<option>)` per option plus an unlabelled default edge (taken on refusal or low confidence). Its `llm=` takes shareable kwargs only; an `api_key` raises at `add_node`.
 - Approval: inside any node call `interrupt(reason, context)` (`from fastaiagent import interrupt, Resume`); `execute` returns `status="paused"`, and later `await chain.resume(execution_id, resume_value=Resume(approved=True))`. Pass your own `execution_id=` to `aexecute` so you can find it. `NodeType.hitl` with `hitl_handler=` is the blocking, in-process variant. A rejected gate gives `status="rejected"` and stops the chain.
 - Nodes may re-run on resume; make side-effecting nodes idempotent (`@idempotent`, see `docs/chains/idempotency.md` in the repo).

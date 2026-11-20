@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from fastaiagent.chain.node import Edge, NodeConfig, NodeType
 
 
@@ -47,6 +49,11 @@ def _payload_errors(node: NodeConfig) -> list[str]:
     "default", which name the *routing* findings a caller may filter on.
     """
     errors: list[str] = []
+    if "agent_input" in node.config and node.type != NodeType.agent:
+        errors.append(
+            f"Node '{node.id}' has input= but is a {node.type.value} node; input= is read "
+            f"by agent nodes only (a tool node uses input_mapping=, a transformer template=)."
+        )
     if node.type == NodeType.agent:
         if node.agent is None:
             errors.append(
@@ -115,6 +122,19 @@ def validate_chain(nodes: list[NodeConfig], edges: list[Edge]) -> list[str]:
     for node in nodes:
         errors.extend(_payload_errors(node))
 
+    # An agent node's input= naming a node that does not exist (1.105.0): it
+    # would render empty and stop the run, so say so before the run starts.
+    for node in nodes:
+        template = node.config.get("agent_input")
+        if not isinstance(template, str):
+            continue
+        for ref in re.findall(r"\{\{\s*node_results\.([^.}\s]+)", template):
+            if ref not in node_ids:
+                errors.append(
+                    f"Node '{node.id}' input= reads node_results.{ref}, but there is no node "
+                    f"'{ref}' in this chain."
+                )
+
     # Check cyclic edges have max_iterations
     for edge in edges:
         if edge.is_cyclic:
@@ -123,6 +143,32 @@ def validate_chain(nodes: list[NodeConfig], edges: list[Edge]) -> list[str]:
                 errors.append(
                     f"Cyclic edge {edge.source} → {edge.target} must have max_iterations >= 1"
                 )
+
+    # A loop drawn with ordinary edges (1.105.0). The executor orders nodes by
+    # the non-cyclic edges, so a back edge with neither ``max_iterations`` nor
+    # ``exit_condition`` is never followed: the nodes run once, or (when every
+    # node sits on the loop) not at all, and the run still says "completed".
+    indegree = {n.id: 0 for n in nodes}
+    for e in edges:
+        if not e.is_cyclic and e.source in node_ids and e.target in node_ids:
+            indegree[e.target] += 1
+    ready = [nid for nid, deg in indegree.items() if deg == 0]
+    ordered = 0
+    while ready:
+        nid = ready.pop()
+        ordered += 1
+        for e in edges:
+            if not e.is_cyclic and e.source == nid and e.target in indegree:
+                indegree[e.target] -= 1
+                if indegree[e.target] == 0:
+                    ready.append(e.target)
+    if ordered < len(nodes):
+        stuck = sorted(nid for nid, deg in indegree.items() if deg > 0)
+        errors.append(
+            f"Nodes {stuck} form a loop through ordinary edges, which is never followed. "
+            "Mark the edge that goes back with connect(..., max_iterations=N) "
+            "(and exit_condition= to leave early)."
+        )
 
     # Routing rules — mirror the selection logic in
     # ``executor._select_outgoing_edges`` so misconfigured chains surface

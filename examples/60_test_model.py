@@ -52,3 +52,35 @@ def test_tool_then_answer() -> None:
     result = agent.run("say it")
     assert result.output == "got: boo"
     assert state["calls"] == 2  # exactly two LLM iterations
+
+
+# --- Test 4: plane_rules — a platform guardrail rule, with no platform -------
+#
+# A connected agent enforces the rules its platform authored. ``plane_rules``
+# runs a block as if the platform had sent these rules (same cache and builder
+# as a real policy pull), so you can test how your app handles a block offline.
+# It tests your app's handling; that your platform has the rule needs a
+# connected test.
+
+
+def test_platform_rule_blocks_offline() -> None:
+    import pytest
+
+    from fastaiagent import GuardrailBlockedError
+    from fastaiagent.testing import plane_rules
+
+    rule = {
+        "name": "no-codenames",
+        "guardrail_type": "input",
+        "implementation_type": "regex",
+        "config": {"pattern": r"(?i)\bbluejay\b", "should_match": False},
+        "validation_mode": "blocking",
+        "on_error": "block",
+    }
+    agent = Agent(name="support", llm=TestModel(response="ok"))
+    with plane_rules([rule]):
+        with pytest.raises(GuardrailBlockedError) as err:
+            agent.run("tell me about bluejay")
+        assert agent.run("how do refunds work?").output == "ok"
+    assert err.value.guardrail_name == "no-codenames"
+    assert agent.run("tell me about bluejay").output == "ok"  # outside the block: no rule

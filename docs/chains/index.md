@@ -10,17 +10,21 @@ from fastaiagent import Agent, Chain, LLMClient
 summarizer = Agent(
     name="summarizer",
     system_prompt="Summarize the input in one sentence.",
-    llm=LLMClient(provider="openai", model="gpt-4.1"),
+    llm=LLMClient(provider="openai", model="gpt-5-mini"),
 )
 translator = Agent(
     name="translator",
     system_prompt="Translate the input to French. Output only the French text.",
-    llm=LLMClient(provider="anthropic", model="claude-sonnet-4-6"),
+    llm=LLMClient(provider="openai", model="gpt-5-mini"),
 )
 
 chain = Chain("summarize-and-translate")
-chain.add_node("summarize", agent=summarizer)
-chain.add_node("translate", agent=translator)
+chain.add_node("summarize", agent=summarizer)          # given the chain's input
+chain.add_node(
+    "translate",
+    agent=translator,
+    input="{{node_results.summarize.output}}",          # given the summary
+)
 chain.connect("summarize", "translate")
 
 result = chain.execute({"message": "Python is a popular programming language"})
@@ -148,7 +152,7 @@ State is validated:
 
 ### Accessing State in Nodes
 
-Each node receives the current state in its context. Agent nodes receive the input as their prompt. Transformer nodes can template against the full state:
+Each node receives the current state in its context. Transformer nodes can template against the full state:
 
 ```python
 chain.add_node(
@@ -157,6 +161,41 @@ chain.add_node(
     template="Customer {{state.name}} (priority: {{state.priority}}): {{node_results.classify.output}}",
 )
 ```
+
+### What an agent node is given
+
+By default an agent node is given **the chain's input**, whatever came before it. That is right
+when each agent answers the user's request on its own terms.
+
+When an agent should work on what an earlier node produced, give it `input=` (*new in 1.105.0*),
+a template over the run:
+
+```python
+chain.add_node("draft", agent=drafter)                    # given the chain's input
+chain.add_node(
+    "review",
+    agent=reviewer,
+    input="Review this draft:\n{{node_results.draft.output}}",   # given the draft
+)
+chain.connect("draft", "review")
+```
+
+`input=` is optional and per node, so a chain can mix both: some agents answer the user's
+request, others work on another node's output. The template can read:
+
+- `{{node_results.<node>.output}}`: an earlier node's text output
+- `{{state.<key>}}`: chain state, including what a node wrote with `output_key=`
+- `{{input.<key>}}`: the chain's input
+
+If the template renders empty (it reads a node that has not run on this path, or a misspelled
+name), the chain raises `ChainError` and the agent is not called. `validate()` reports a name that
+is not a node in the chain, and `input=` on a node that is not an agent node (a tool node uses
+`input_mapping=`, a transformer `template=`).
+
+!!! note "Before 1.105.0"
+    There was no `input=`: every agent node got the chain's input, so in `draft -> review` the
+    reviewer never saw the draft. Earlier versions of this documentation showed agent-to-agent
+    pipelines as if each agent received the previous one's output.
 
 ## Parallel Execution
 
@@ -268,7 +307,10 @@ else:
 Checks for:
 - Missing edge targets (referencing nonexistent nodes)
 - Orphaned nodes (no incoming or outgoing edges)
-- Cyclic edges without `max_iterations`
+- Loop edges whose `max_iterations` is below 1
+- A loop drawn with ordinary edges (no `max_iterations` or `exit_condition` on the edge that goes
+  back): the executor never follows it, so this is reported instead of silently skipped (1.105.0).
+  See [Cyclic Workflows](cyclic-workflows.md).
 - Routing ambiguity (more than one default edge; an unlabeled condition handle)
 - **Nodes with nothing to run** — an agent node with no agent, a tool node with
   no tool, a transformer with no template, a parallel node with no children, a

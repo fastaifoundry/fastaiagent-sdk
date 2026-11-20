@@ -37,7 +37,7 @@ writer     = Agent(name="writer",     llm=llm)
 
 chain = Chain("refund-flow")
 chain.add_node("research", agent=researcher)
-chain.add_node("write",    agent=writer)
+chain.add_node("write",    agent=writer, input="{{node_results.research.output}}")
 chain.connect("research", "write")
 
 app = build_app(runners=[chain])
